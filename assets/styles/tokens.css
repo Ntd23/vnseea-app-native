@@ -1,0 +1,247 @@
+/* ============================================================
+   VNSEEA Design Tokens
+   Khai báo 1 lần, dùng khắp nơi.
+   ============================================================ */
+
+/* ──────────────────────────────────────────────────────────── 
+   1. FONTS
+   - Primary: Inter — UI font chuẩn, hỗ trợ Vietnamese tốt,
+     fallback hệ thống iOS/Android đều ok
+   - Secondary: Be Vietnam Pro — font Việt chuyên dụng,
+     dùng cho heading nổi bật
+   ──────────────────────────────────────────────────────────── */
+:root {
+  --font-primary: "Inter", "SF Pro Display", -apple-system, "Segoe UI",
+    "Roboto", "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-secondary: "Be Vietnam Pro", "Inter", -apple-system, "Segoe UI",
+    "Roboto", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", "Cascadia Code",
+    monospace;
+}
+
+/* ──────────────────────────────────────────────────────────── 
+   2. COLORS
+   Primary   = xanh #0000ff chủ đạo (brand)
+   Secondary = slate tối cho text / neutral
+   Accent    = cam/vàng cho highlight
+   Status    = success / warning / error / info
+   ──────────────────────────────────────────────────────────── */
+:root {
+  /* Primary */
+  --color-primary-50: #eef0ff;
+  --color-primary-100: #dfe4ff;
+  --color-primary-200: #c5caff;
+  --color-primary-300: #a1a4ff;
+  --color-primary-400: #7b73ff;
+  --color-primary-500: #0000ff;
+  --color-primary-600: #0000e6;
+  --color-primary-700: #0000cc;
+  --color-primary-800: #0000a3;
+  --color-primary-900: #000080;
+
+  /* Secondary (neutral / slate) */
+  --color-secondary-50: #f8fafc;
+  --color-secondary-100: #f1f5f9;
+  --color-secondary-200: #e2e8f0;
+  --color-secondary-300: #cbd5e1;
+  --color-secondary-400: #94a3b8;
+  --color-secondary-500: #64748b;
+  --color-secondary-600: #475569;
+  --color-secondary-700: #334155;
+  --color-secondary-800: #1e293b;
+  --color-secondary-900: #0f172a;
+
+  /* Accent */
+  --color-accent-50: #fff7eb;
+  --color-accent-100: #ffedd5;
+  --color-accent-500: #f59e0b;
+  --color-accent-600: #d97706;
+  --color-accent-700: #b45309;
+
+  /* Status */
+  --color-success: #0ea5e9;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+}
+
+/* ──────────────────────────────────────────────────────────── 
+   3. TEXT STYLES
+   Tổ chức theo cấp bậc:
+     display  — số liệu lớn, hero
+     heading  — tiêu đề section
+     title    — tiêu đề card/item
+     body     — nội dung chính
+     caption  — phụ đề, thời gian
+     label    — nhãn, badge, tag
+   Mỗi cấp có: primary (đậm) + secondary (nhạt)
+   ──────────────────────────────────────────────────────────── */
+:root {
+  /* Font sizes */
+  --text-display: 28px;
+  --text-heading: 20px;
+  --text-title: 15px;
+  --text-body: 14px;
+  --text-caption: 12px;
+  --text-label: 11px;
+  --text-micro: 10px;
+
+  /* Font weights */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-extrabold: 800;
+
+  /* Line heights */
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.75;
+
+  /* Text colors: primary = chính, secondary = phụ */
+  --text-primary: #000000;
+  --text-secondary: var(--color-secondary-500);    /* #64748b */
+  --text-tertiary: var(--color-secondary-400);     /* #94a3b8 */
+  --text-inverse: #ffffff;
+  --text-brand: var(--color-primary-500);           /* #0000ff */
+  --text-link: var(--color-primary-600);            /* #0000e6 */
+  --text-danger: var(--color-error);
+  --text-success: var(--color-success);
+}
+
+/* ──────────────────────────────────────────────────────────── 
+   4. ICON TOKENS
+     primary   = màu đậm, rõ ràng (action chính)
+     secondary = màu nhạt (trang trí, phụ)
+   ──────────────────────────────────────────────────────────── */
+:root {
+  /* Icon sizes */
+  --icon-xs: 14px;
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --icon-xl: 32px;
+
+  /* Icon colors */
+  --icon-primary: #000000;
+  --icon-secondary: var(--color-secondary-400);   /* #94a3b8 — nhạt */
+  --icon-brand: var(--color-primary-500);          /* #0000ff */
+  --icon-inverse: #ffffff;
+  --icon-danger: var(--color-error);
+  --icon-success: var(--color-success);
+}
+
+/* ──────────────────────────────────────────────────────────── 
+   5. SURFACES & BORDERS
+   ──────────────────────────────────────────────────────────── */
+:root {
+  --bg-base: #f1f4fb;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f7f9ff;
+  --bg-surface-active: #edf1ff;
+  --bg-muted: var(--color-secondary-100);
+  --bg-brand: var(--color-primary-500);
+  --bg-brand-hover: var(--color-primary-600);
+
+  --border-light: rgba(0, 0, 255, 0.08);
+  --border-default: rgba(0, 0, 255, 0.12);
+  --border-strong: rgba(0, 0, 255, 0.20);
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+}
+
+/* ──────────────────────────────────────────────────────────── 
+   6. SHADOWS
+   ──────────────────────────────────────────────────────────── */
+:root {
+  --shadow-sm: 0 2px 8px rgba(0, 0, 255, 0.04);
+  --shadow-md: 0 4px 20px rgba(0, 0, 255, 0.06);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 255, 0.09);
+  --shadow-xl: 0 12px 40px rgba(0, 0, 255, 0.13);
+  --shadow-brand: 0 4px 14px rgba(0, 0, 255, 0.28);
+}
+
+/* ──────────────────────────────────────────────────────────── 
+   7. SPACING (dùng cho padding/margin nhất quán)
+   ──────────────────────────────────────────────────────────── */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+}
+
+/* ──────────────────────────────────────────────────────────── 
+   8. TRANSITIONS
+   ──────────────────────────────────────────────────────────── */
+:root {
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+}
+
+/* ============================================================
+   UTILITY CLASSES — gọi ra dùng trực tiếp
+   ============================================================ */
+
+/* --- Text Utilities --- */
+.text-display       { font-family: var(--font-secondary); font-size: var(--text-display); font-weight: var(--weight-extrabold); line-height: var(--leading-tight); letter-spacing: -0.02em; }
+.text-heading       { font-family: var(--font-secondary); font-size: var(--text-heading); font-weight: var(--weight-bold); line-height: var(--leading-tight); letter-spacing: -0.01em; }
+.text-title-primary { font-family: var(--font-primary); font-size: var(--text-title); font-weight: var(--weight-bold); line-height: var(--leading-tight); color: var(--text-primary); }
+.text-title-secondary { font-family: var(--font-primary); font-size: var(--text-title); font-weight: var(--weight-semibold); line-height: var(--leading-tight); color: var(--text-secondary); }
+.text-body-primary  { font-family: var(--font-primary); font-size: var(--text-body); font-weight: var(--weight-regular); line-height: var(--leading-relaxed); color: var(--text-primary); }
+.text-body-secondary { font-family: var(--font-primary); font-size: var(--text-body); font-weight: var(--weight-regular); line-height: var(--leading-relaxed); color: var(--text-secondary); }
+.text-caption-primary { font-family: var(--font-primary); font-size: var(--text-caption); font-weight: var(--weight-medium); line-height: var(--leading-normal); color: var(--text-primary); }
+.text-caption-secondary { font-family: var(--font-primary); font-size: var(--text-caption); font-weight: var(--weight-regular); line-height: var(--leading-normal); color: var(--text-secondary); }
+.text-label-primary { font-family: var(--font-primary); font-size: var(--text-label); font-weight: var(--weight-bold); line-height: 1; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-primary); }
+.text-label-secondary { font-family: var(--font-primary); font-size: var(--text-label); font-weight: var(--weight-semibold); line-height: 1; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-tertiary); }
+.text-brand         { color: var(--text-brand); }
+.text-link          { color: var(--text-link); }
+.text-link:hover    { text-decoration: underline; }
+
+/* --- Icon Utilities --- */
+.icon-xs            { width: var(--icon-xs); height: var(--icon-xs); }
+.icon-sm            { width: var(--icon-sm); height: var(--icon-sm); }
+.icon-md            { width: var(--icon-md); height: var(--icon-md); }
+.icon-lg            { width: var(--icon-lg); height: var(--icon-lg); }
+.icon-xl            { width: var(--icon-xl); height: var(--icon-xl); }
+.icon-primary       { color: var(--icon-primary); }
+.icon-secondary     { color: var(--icon-secondary); }
+.icon-brand         { color: var(--icon-brand); }
+.icon-inverse       { color: var(--icon-inverse); }
+.icon-danger        { color: var(--icon-danger); }
+
+/* --- Surface Utilities --- */
+.surface-base       { background-color: var(--bg-base); }
+.surface-card       { background-color: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-xl); box-shadow: var(--shadow-md); }
+.surface-card-hover { background-color: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-xl); box-shadow: var(--shadow-md); transition: box-shadow var(--duration-normal) var(--ease-default); }
+.surface-card-hover:hover { box-shadow: var(--shadow-lg); }
+.surface-brand      { background-color: var(--bg-brand); color: var(--text-inverse); }
+.surface-muted      { background-color: var(--bg-muted); }
+
+/* --- Button Base Utilities --- */
+.btn-primary        { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 6px; padding: 8px 20px; background-color: var(--bg-brand); color: var(--text-inverse); font-family: var(--font-primary); font-size: var(--text-body); font-weight: var(--weight-semibold); border-radius: var(--radius-full); box-shadow: var(--shadow-brand); border: none; }
+.btn-primary:active { transform: scale(0.97); }
+
+.btn-secondary      { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 6px; padding: 8px 20px; background-color: transparent; color: var(--text-brand); font-family: var(--font-primary); font-size: var(--text-body); font-weight: var(--weight-semibold); border-radius: var(--radius-full); border: 1px solid var(--border-default); }
+
+.btn-ghost          { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 6px; padding: 8px 16px; background-color: transparent; color: var(--text-secondary); font-family: var(--font-primary); font-size: var(--text-body); font-weight: var(--weight-medium); border-radius: var(--radius-md); border: none; }
+
+/* --- Avatar Utilities --- */
+.avatar-sm          { width: 32px; height: 32px; border-radius: var(--radius-full); display: flex; align-items: center; justify-content: center; font-size: var(--text-micro); font-weight: var(--weight-bold); }
+.avatar-md          { width: 40px; height: 40px; border-radius: var(--radius-full); display: flex; align-items: center; justify-content: center; font-size: var(--text-caption); font-weight: var(--weight-bold); }
+.avatar-lg          { width: 48px; height: 48px; border-radius: var(--radius-full); display: flex; align-items: center; justify-content: center; font-size: var(--text-body); font-weight: var(--weight-bold); }
+.avatar-xl          { width: 64px; height: 64px; border-radius: var(--radius-full); display: flex; align-items: center; justify-content: center; font-size: var(--text-title); font-weight: var(--weight-bold); }
+.avatar-brand       { background-color: var(--bg-brand); color: var(--text-inverse); box-shadow: 0 4px 12px rgba(0, 0, 255, 0.2); }
+.avatar-muted       { background-color: var(--color-secondary-200); color: var(--color-secondary-600); }
