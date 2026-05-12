@@ -1,5 +1,3 @@
-Description: Design system brief for Stitch to create visually consistent VnseeaRn mobile app screens.
-
 # VnseeaRn Design System
 
 ## Product Feel
@@ -265,12 +263,13 @@ Base screen:
 - full height
 - safe-area aware
 
-Card:
+Card (Transparent, Soft Border & Glass UI effects):
 
-- white background
-- subtle blue border
+- semi-transparent white background (rgba(255, 255, 255, 0.15))
+- soft border (1px solid rgba(255, 255, 255, 0.2))
+- glass blur effect (backdrop-filter: blur(12px))
 - soft shadow
-- rounded corners
+- rounded corners (24px)
 - content-first layout
 
 Muted surface:
@@ -286,25 +285,27 @@ Brand surface:
 
 ## Buttons
 
-Primary button:
+Primary button (Glass effect):
 
-- brand blue background
+- brand blue background (with slight transparency to enable glass effect)
+- apply backdrop blur (e.g., backdrop-filter: blur(10px))
 - white text
 - rounded full
 - medium or semibold text
 - strong but clean shadow
 - used for the main screen action only
 
-Secondary button:
+Secondary button (Outline effect):
 
 - transparent or white background
 - brand blue text
-- subtle blue border
+- 2px solid brand blue border
 - rounded full
 
-Ghost button:
+Ghost button (Inset shadow effect):
 
 - transparent background
+- apply inset shadow (e.g., box-shadow: inset 0 4px 10px rgba(0, 0, 255, 0.15))
 - secondary text
 - no border
 - used for low-priority actions
@@ -496,17 +497,15 @@ Forms should keep the primary CTA visible or easy to reach when the keyboard is 
 
 ## Bottom Navigation
 
-When a screen needs app-level navigation, use a simple bottom tab pattern:
+Use a simple bottom tab bar when app-level navigation is needed:
 
 - Feed
-- Search or Explore
-- Messages
+- Explore
+- Reel
 - Notifications
-- Profile
+- Setting
 
-Active tab uses brand blue.
-Inactive tabs use neutral gray.
-Keep labels short.
+Active: brand blue. Inactive: neutral gray. Keep labels short.
 
 ## Design Consistency Rules
 
