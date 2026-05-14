@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+
+<html class="light" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Thu nhập</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;700;800&amp;family=Inter:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">tailwind.config = {darkMode: "class", theme: {extend: {colors: {"on-primary-container": "#b3b7ff", "on-secondary-fixed-variant": "#38485d", "info-blue": "#3b82f6", "on-error": "#ffffff", error: "#ba1a1a", "tertiary-fixed": "#ffdad5", "surface-container-lowest": "#ffffff", "on-secondary-container": "#54647a", surface: "#f8f9ff", "surface-container": "#e5eeff", "primary-900": "#000080", outline: "#757589", "on-primary-fixed": "#00006e", "on-background": "#0b1c30", primary: "#0000ff", "error-container": "#ffdad6", "primary-container": "#0000ff", "surface-container-high": "#dce9ff", "slate-50": "#f8fafc", background: "#f8f9ff", "primary-50": "#eef0ff", secondary: "#505f76", "inverse-primary": "#bec2ff", "inverse-on-surface": "#eaf1ff", "bg-base": "#f1f4fb", "surface-variant": "#d3e4fe", "on-tertiary-fixed": "#410000", "surface-dim": "#cbdbf5", "on-primary": "#ffffff", "surface-tint": "#343dff", "border-light": "rgba(0, 0, 255, 0.08)", "tertiary-fixed-dim": "#ffb4a9", "on-primary-fixed-variant": "#0000ef", "secondary-fixed": "#d3e4fe", "surface-container-low": "#eff4ff", "accent-amber": "#f59e0b", "on-tertiary": "#ffffff", "primary-fixed": "#e0e0ff", "on-tertiary-fixed-variant": "#8c170f", tertiary: "#720001", "on-secondary": "#ffffff", "surface-bright": "#f8f9ff", "outline-variant": "#c5c4db", "secondary-container": "#d0e1fb", "on-error-container": "#93000a", "error-red": "#ef4444", "surface-container-highest": "#d3e4fe", "secondary-fixed-dim": "#b7c8e1", "inverse-surface": "#213145", "tertiary-container": "#941d14", "primary-fixed-dim": "#bec2ff", "success-blue": "#0ea5e9", "on-surface": "#0b1c30", "slate-900": "#0f172a", "on-tertiary-container": "#ffa698", "on-surface-variant": "#454558", "on-secondary-fixed": "#0b1c30"}, borderRadius: {DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px"}, spacing: {"space-1": "4px", "space-6": "24px", "space-12": "48px", "space-3": "12px", "space-8": "32px", "base-unit": "4px", "space-2": "8px", "space-4": "16px"}, fontFamily: {label: ["Inter"], caption: ["Inter"], "title-primary": ["Inter"], heading: ["Be Vietnam Pro"], "body-primary": ["Inter"], display: ["Be Vietnam Pro"], headline: ["Be Vietnam Pro"], body: ["Inter"]}, fontSize: {label: ["11px", {lineHeight: "1", letterSpacing: "0.05em", fontWeight: "700"}], caption: ["12px", {lineHeight: "1.5", fontWeight: "400"}], "title-primary": ["15px", {lineHeight: "1.25", fontWeight: "700"}], heading: ["20px", {lineHeight: "1.25", letterSpacing: "-0.01em", fontWeight: "700"}], "body-primary": ["14px", {lineHeight: "1.75", fontWeight: "400"}], display: ["28px", {lineHeight: "1.25", letterSpacing: "-0.02em", fontWeight: "800"}]}}}};</script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background min-h-screen text-on-surface font-body-primary flex flex-col md:max-w-md md:mx-auto md:border md:border-outline-variant md:shadow-xl">
+<!-- TopAppBar -->
+<header class="bg-[#0000ff] flex items-center w-full px-space-4 sticky top-0 z-50 py-2 min-h-[56px]">
+<div class="flex items-center z-10">
+<button class="text-on-primary p-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined" data-icon="arrow_back" data-weight="regular">arrow_back</span>
+</button>
+</div>
+<h1 class="absolute inset-0 flex items-center justify-center text-heading font-display text-on-primary font-bold pointer-events-none">Thu nhập</h1>
+<div class="w-10"></div></header>
+<main class="flex-1 flex flex-col p-space-4 gap-space-6 pb-space-12 relative z-10 bg-background">
+<!-- Hero/Promo Banner Component (Abstracted from IMAGE_4) -->
+<button class="w-full bg-surface-container-highest rounded-xl border border-border-light shadow-md p-space-4 flex items-center justify-between hover:bg-surface-container-high transition-all group text-left">
+<div class="flex flex-col gap-space-1 pr-space-4">
+<h2 class="text-heading font-heading text-on-surface font-bold">Tăng thu nhập của bạn</h2>
+<p class="text-body-primary font-body-primary text-on-surface-variant leading-tight">Khám phá các chương trình tiếp thị liên kết mới nhất.</p>
+</div>
+<div class="flex-shrink-0">
+<span class="material-symbols-outlined text-primary text-2xl group-hover:translate-x-1 transition-transform" data-icon="chevron_right" data-weight="regular">chevron_right</span>
+</div>
+</button>
+<!-- Section: Thu nhập (Earnings) -->
+<section class="flex flex-col gap-space-2">
+<h3 class="text-title-primary font-title-primary text-on-surface px-space-2">Thu nhập</h3>
+<div class="bg-surface rounded-xl border border-border-light shadow-md flex flex-col divide-y divide-border-light overflow-hidden">
+<button class="flex items-center justify-between p-space-4 hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-primary-50 flex items-center justify-center text-primary group-hover:bg-primary-fixed transition-colors">
+<span class="material-symbols-outlined" data-icon="group" data-weight="fill">group</span>
+</div>
+<span class="text-body-primary font-body-primary text-on-surface">Cộng tác viên của tôi</span>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-primary transition-colors" data-icon="chevron_right" data-weight="regular">chevron_right</span>
+</button>
+<button class="flex items-center justify-between p-space-4 hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-primary-50 flex items-center justify-center text-primary group-hover:bg-primary-fixed transition-colors">
+<span class="material-symbols-outlined" data-icon="account_balance_wallet" data-weight="fill">account_balance_wallet</span>
+</div>
+<span class="text-body-primary font-body-primary text-on-surface">Số dư của tôi</span>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-primary transition-colors" data-icon="chevron_right" data-weight="regular">chevron_right</span>
+</button>
+<button class="flex items-center justify-between p-space-4 hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-primary-50 flex items-center justify-center text-primary group-hover:bg-primary-fixed transition-colors">
+<span class="material-symbols-outlined" data-icon="stars" data-weight="fill">stars</span>
+</div>
+<span class="text-body-primary font-body-primary text-on-surface">Điểm của tôi</span>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-primary transition-colors" data-icon="chevron_right" data-weight="regular">chevron_right</span>
+</button>
+<button class="flex items-center justify-between p-space-4 hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-primary-50 flex items-center justify-center text-primary group-hover:bg-primary-fixed transition-colors">
+<span class="material-symbols-outlined" data-icon="payments" data-weight="fill">payments</span>
+</div>
+<span class="text-body-primary font-body-primary text-on-surface">Rút tiền</span>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-primary transition-colors" data-icon="chevron_right" data-weight="regular">chevron_right</span>
+</button>
+</div>
+</section>
+<!-- Section: Giới thiệu bạn bè (Referrals) -->
+<section class="flex flex-col gap-space-2 mt-space-2">
+<h3 class="text-title-primary font-title-primary text-on-surface px-space-2">Giới thiệu bạn bè</h3>
+<div class="bg-surface rounded-xl border border-border-light shadow-md flex flex-col divide-y divide-border-light overflow-hidden">
+<button class="flex items-center justify-between p-space-4 hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-secondary-fixed flex items-center justify-center text-primary group-hover:bg-secondary-container transition-colors">
+<span class="material-symbols-outlined" data-icon="person_add" data-weight="fill">person_add</span>
+</div>
+<span class="text-body-primary font-body-primary text-on-surface">Mời bạn bè</span>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-primary transition-colors" data-icon="chevron_right" data-weight="regular">chevron_right</span>
+</button>
+<button class="flex items-center justify-between p-space-4 hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-3">
+<div class="w-10 h-10 rounded-full bg-secondary-fixed flex items-center justify-center text-primary group-hover:bg-secondary-container transition-colors">
+<span class="material-symbols-outlined" data-icon="share" data-weight="fill">share</span>
+</div>
+<span class="text-body-primary font-body-primary text-on-surface">Chia sẻ</span>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-primary transition-colors" data-icon="chevron_right" data-weight="regular">chevron_right</span>
+</button>
+</div>
+</section>
+</main>
+</body></html>

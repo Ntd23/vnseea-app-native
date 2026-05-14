@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+
+<html lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Rút tiền</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700;800&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-container": "#e5eeff",
+                      "outline": "#757589",
+                      "error-container": "#ffdad6",
+                      "on-surface": "#0b1c30",
+                      "surface-container-highest": "#d3e4fe",
+                      "on-tertiary-fixed": "#410000",
+                      "inverse-on-surface": "#eaf1ff",
+                      "surface-container-high": "#dce9ff",
+                      "secondary-container": "#d0e1fb",
+                      "on-tertiary": "#ffffff",
+                      "primary-fixed": "#e0e0ff",
+                      "outline-variant": "#c5c4db",
+                      "secondary": "#505f76",
+                      "secondary-fixed-dim": "#b7c8e1",
+                      "background": "#f8f9ff",
+                      "tertiary-container": "#941d14",
+                      "on-primary": "#ffffff",
+                      "surface-container-lowest": "#ffffff",
+                      "on-error": "#ffffff",
+                      "tertiary": "#720001",
+                      "primary-fixed-dim": "#bec2ff",
+                      "surface-variant": "#d3e4fe",
+                      "surface-container-low": "#eff4ff",
+                      "tertiary-fixed-dim": "#ffb4a9",
+                      "on-primary-container": "#b3b7ff",
+                      "surface": "#f8f9ff",
+                      "on-error-container": "#93000a",
+                      "on-background": "#0b1c30",
+                      "inverse-primary": "#bec2ff",
+                      "on-secondary-container": "#54647a",
+                      "on-tertiary-container": "#ffa698",
+                      "on-secondary-fixed-variant": "#38485d",
+                      "on-primary-fixed-variant": "#0000ef",
+                      "surface-tint": "#343dff",
+                      "on-surface-variant": "#454558",
+                      "error": "#ba1a1a",
+                      "on-secondary": "#ffffff",
+                      "on-tertiary-fixed-variant": "#8c170f",
+                      "on-secondary-fixed": "#0b1c30",
+                      "on-primary-fixed": "#00006e",
+                      "surface-bright": "#f8f9ff",
+                      "primary-container": "#0000ff",
+                      "primary": "#0001bb",
+                      "inverse-surface": "#213145",
+                      "tertiary-fixed": "#ffdad5",
+                      "surface-dim": "#cbdbf5",
+                      "secondary-fixed": "#d3e4fe"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "space-12": "48px",
+                      "space-6": "24px",
+                      "space-1": "4px",
+                      "base-unit": "4px",
+                      "space-8": "32px",
+                      "space-2": "8px",
+                      "space-4": "16px",
+                      "space-3": "12px"
+              },
+              "fontFamily": {
+                      "body-primary": [
+                              "Inter"
+                      ],
+                      "title-primary": [
+                              "Inter"
+                      ],
+                      "heading": [
+                              "Be Vietnam Pro"
+                      ],
+                      "display": [
+                              "Be Vietnam Pro"
+                      ],
+                      "caption": [
+                              "Inter"
+                      ],
+                      "label": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "body-primary": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.75",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "title-primary": [
+                              "15px",
+                              {
+                                      "lineHeight": "1.25",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "heading": [
+                              "20px",
+                              {
+                                      "lineHeight": "1.25",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "display": [
+                              "28px",
+                              {
+                                      "lineHeight": "1.25",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "800"
+                              }
+                      ],
+                      "caption": [
+                              "12px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label": [
+                              "11px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-primary text-body-primary min-h-screen pb-space-12 md:pb-0">
+<!-- TopAppBar -->
+<header class="bg-primary-container text-on-primary fixed top-0 w-full z-50 border-b border-light shadow-md">
+<div class="flex items-center px-space-4 h-16 w-full">
+<button class="flex items-center justify-center w-10 h-10 rounded-full hover:bg-white/10 transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-heading text-heading ml-space-2">Rút tiền</h1>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-20 px-space-4 md:px-space-8 max-w-3xl mx-auto space-y-space-6 pb-space-12">
+<!-- Current Balance Card -->
+<section class="bg-surface-container-lowest rounded-xl p-space-6 shadow-sm border border-surface-variant flex flex-col items-center justify-center">
+<p class="font-body-primary text-body-primary text-on-surface-variant mb-space-2">Số dư hiện tại</p>
+<h2 class="font-display text-display text-primary">$1,250.00</h2>
+</section>
+<!-- Withdrawal Form -->
+<form class="bg-surface-container-lowest rounded-xl p-space-6 shadow-sm border border-surface-variant space-y-space-6">
+<!-- Withdraw Method -->
+<div class="space-y-space-2">
+<label class="block font-title-primary text-title-primary text-on-surface" for="withdraw-method">Phương thức rút tiền</label>
+<div class="relative">
+<select class="block w-full rounded-lg border-outline-variant bg-surface px-space-4 py-space-3 text-on-surface focus:border-primary focus:ring-primary appearance-none" id="withdraw-method" name="withdraw-method">
+<option value="paypal">PayPal</option>
+<option value="bank_transfer">Chuyển khoản ngân hàng</option>
+<option value="momo">Ví MoMo</option>
+</select>
+<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-space-4 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Amount Input -->
+<div class="space-y-space-2">
+<label class="block font-title-primary text-title-primary text-on-surface" for="amount">Số tiền (USD)</label>
+<div class="relative mt-1 rounded-md shadow-sm">
+<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-space-4">
+<span class="text-on-surface-variant sm:text-sm">$</span>
+</div>
+<input aria-describedby="amount-currency" class="block w-full rounded-lg border-outline-variant bg-surface pl-10 pr-space-4 py-space-3 text-on-surface focus:border-primary focus:ring-primary sm:text-sm" id="amount" name="amount" placeholder="0.00" type="number"/>
+</div>
+<p class="font-caption text-caption text-on-surface-variant">Số tiền tối thiểu: $50.00</p>
+</div>
+<!-- Email PayPal Input -->
+<div class="space-y-space-2">
+<label class="block font-title-primary text-title-primary text-on-surface" for="paypal-email">Email PayPal</label>
+<input class="block w-full rounded-lg border-outline-variant bg-surface px-space-4 py-space-3 text-on-surface focus:border-primary focus:ring-primary sm:text-sm" id="paypal-email" name="paypal-email" placeholder="email@example.com" type="email"/>
+</div>
+<!-- Submit Button -->
+<div class="pt-space-4">
+<button class="w-full flex justify-center py-space-3 px-space-4 border border-transparent rounded-full shadow-[0_4px_14px_0_rgba(0,0,255,0.39)] font-title-primary text-title-primary text-on-primary bg-primary-container hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary active:scale-95 transition-all duration-200" type="submit">
+                    Yêu cầu rút tiền
+                </button>
+</div>
+</form>
+</main>
+</body></html>

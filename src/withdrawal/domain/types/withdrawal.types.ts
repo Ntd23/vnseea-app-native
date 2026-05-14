@@ -1,7 +1,14 @@
 // Withdrawal domain types
-// Port từ: client/src/withdrawal/domain/types/
 
-export interface WithdrawalItem {
-  id: string | number;
-  // TODO: thêm fields từ API response
+export type WithdrawalMethodId = 'paypal' | 'bank_transfer' | 'momo';
+
+export interface WithdrawalMethod {
+  id: WithdrawalMethodId;
+  label: string;
+}
+
+export interface WithdrawalForm {
+  method: WithdrawalMethod;
+  amount: string;
+  email: string;
 }
