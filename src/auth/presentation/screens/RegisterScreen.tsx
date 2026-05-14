@@ -166,6 +166,7 @@ function RegisterScreen() {
               <TouchableOpacity
                 className="btn-primary mt-2 min-h-[48px]"
                 activeOpacity={0.9}
+                onPress={() => navigation.navigate(ROUTES.MAIN_TABS)}
               >
                 <Text className="text-title-primary text-inverse">Đăng ký</Text>
                 <ArrowRight size={20} color="#FFFFFF" />

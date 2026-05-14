@@ -374,6 +374,38 @@
   background-color: #cbd5e1;
   height: 1px;
 }
+.progress-track {
+  background-color: #e2e8f0;
+  border-radius: 9999px;
+  height: 6px;
+}
+.progress-fill {
+  background-color: #0000ff;
+  border-radius: 9999px;
+  height: 6px;
+}
+.preview-panel {
+  background-color: #eef0ff;
+  border-width: 1px;
+  border-color: rgba(0, 0, 255, 0.08);
+  border-radius: 24px;
+}
+.form-note-panel {
+  background-color: #f1f5f9;
+  border-radius: 14px;
+}
+.category-chip {
+  background-color: #ffffff;
+  border-width: 1px;
+  border-color: #cbd5e1;
+  border-radius: 9999px;
+}
+.category-chip-active {
+  background-color: #0000ff;
+  border-width: 1px;
+  border-color: #0000ff;
+  border-radius: 9999px;
+}
 .choice-dot {
   width: 16px;
   height: 16px;
