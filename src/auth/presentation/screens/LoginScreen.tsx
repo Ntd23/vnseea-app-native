@@ -124,6 +124,7 @@ function LoginScreen() {
             <TouchableOpacity
               className="btn-primary mt-6 min-h-[48px]"
               activeOpacity={0.9}
+              onPress={() => navigation.navigate(ROUTES.MAIN_TABS)}
             >
               <Text className="text-title-primary text-inverse">Đăng nhập</Text>
               <ArrowRight size={20} color="#FFFFFF" />
