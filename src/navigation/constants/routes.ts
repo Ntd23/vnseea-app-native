@@ -10,6 +10,11 @@ export const ROUTES = {
   NOTIFICATIONS: 'Notifications',
   CREATE_PAGE: 'CreatePage',
   SETTINGS: 'Settings',
+  EARNINGS: 'Earnings',
+  AFFILIATES: 'Affiliates',
+  INVITE_FRIENDS: 'InviteFriends',
+  MY_POINTS: 'MyPoints',
+  WITHDRAWAL: 'Withdrawal',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];

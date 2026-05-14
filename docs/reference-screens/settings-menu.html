@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+
+<html lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>WoWonder Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&amp;family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed-dim": "#c2c6d3",
+                        "on-secondary": "#ffffff",
+                        "surface-variant": "#e2e2e5",
+                        "surface-container-highest": "#e2e2e5",
+                        "on-primary": "#ffffff",
+                        "tertiary-container": "#005367",
+                        "outline-variant": "#c5c4db",
+                        "on-secondary-container": "#60646f",
+                        "primary-container": "#0000ff",
+                        "primary-fixed-dim": "#bec2ff",
+                        "surface": "#f9f9fc",
+                        "on-error": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "inverse-surface": "#2f3133",
+                        "error": "#ba1a1a",
+                        "on-tertiary-fixed": "#001f28",
+                        "tertiary": "#003b49",
+                        "on-tertiary": "#ffffff",
+                        "background": "#f9f9fc",
+                        "on-primary-fixed-variant": "#0000ef",
+                        "inverse-primary": "#bec2ff",
+                        "tertiary-fixed": "#b7eaff",
+                        "on-surface": "#1a1c1e",
+                        "on-background": "#1a1c1e",
+                        "on-surface-variant": "#454558",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-fixed": "#dee2ef",
+                        "on-primary-container": "#b3b7ff",
+                        "tertiary-fixed-dim": "#4cd6ff",
+                        "surface-bright": "#f9f9fc",
+                        "surface-container-high": "#e8e8ea",
+                        "secondary-container": "#dee2ef",
+                        "surface-container": "#eeeef0",
+                        "surface-tint": "#343dff",
+                        "surface-container-low": "#f3f3f6",
+                        "on-tertiary-container": "#00cdfa",
+                        "surface-dim": "#dadadc",
+                        "on-tertiary-fixed-variant": "#004e60",
+                        "primary-fixed": "#e0e0ff",
+                        "inverse-on-surface": "#f0f0f3",
+                        "secondary": "#5a5e69",
+                        "on-secondary-fixed": "#171c25",
+                        "on-error-container": "#93000a",
+                        "on-secondary-fixed-variant": "#424751",
+                        "on-primary-fixed": "#00006e",
+                        "primary": "#0001bb",
+                        "outline": "#757589"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px",
+                        "card": "32px"
+                    },
+                    "spacing": {
+                        "container-padding": "20px",
+                        "inline-gap": "12px",
+                        "stack-gap": "16px",
+                        "page-margin": "24px",
+                        "section-spacing": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Be Vietnam Pro"],
+                        "headline-sm": ["Be Vietnam Pro"],
+                        "display-lg": ["Be Vietnam Pro"],
+                        "body-md": ["Inter"],
+                        "label-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "button-text": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "headline-sm-mobile": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                        "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "button-text": ["14px", {"lineHeight": "20px", "fontWeight": "600"}]
+                    },
+                    "boxShadow": {
+                        "brand": "0 4px 12px rgba(0, 0, 255, 0.08)",
+                        "brand-hover": "0 8px 24px rgba(0, 0, 255, 0.12)"
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .glass-header {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.7);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen pb-24">
+<!-- Top App Bar -->
+<header class="fixed top-0 left-0 w-full z-50 glass-header flex justify-between items-center px-page-margin h-[64px]">
+<h1 class="text-headline-sm-mobile font-headline-sm-mobile font-bold text-error">WoWonder</h1>
+<div class="flex gap-4">
+<button class="hover:opacity-80 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-primary">search</span>
+</button>
+<button class="hover:opacity-80 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-primary">add_box</span>
+</button>
+</div>
+</header>
+<main class="pt-[80px] px-page-margin space-y-6">
+<!-- Profile Header Card -->
+<section class="bg-surface-container-lowest rounded-card p-container-padding shadow-brand flex items-center gap-4 active:scale-[0.98] transition-transform">
+<div class="relative">
+<img alt="Nguyễn Dũng" class="w-16 h-16 rounded-full object-cover border-2 border-primary" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCwLgJzTsST__BtKLfgmBIXNoJLFSWBUL8UiTVdCRLSKV15jKDv9EPcYYN95o7MfX2m36wui_f98fCH2kYf_soAiBTBuSUfg83Xl5tdnp5XrqR--0l3mSpXMAdmAFphEI0Jm3jTsS6MQza_GCw2r4_SA7Nt1QPgaLnZKWKeg0RZ-ZDDxU5yP2Q_KR1Wj9K2efXFTzIZOA7m18HsWJA5NvKJzyMmYSu2TWyT6nZkEDWMrOcLzwqKFVG6dwFFo3nz9DnYGm-lA4nauo"/>
+<div class="absolute bottom-0 right-0 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+</div>
+<div class="flex-1">
+<h2 class="text-headline-sm font-headline-sm">Nguyễn Dũng</h2>
+<p class="text-primary font-label-md text-label-md uppercase tracking-wider">Xem hồ sơ</p>
+</div>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</section>
+<!-- Feature Grid (Expanded) -->
+<section class="grid grid-cols-4 gap-y-6 gap-x-2">
+<!-- Messages -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">chat_bubble</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Tin nhắn</span>
+</div>
+<!-- Following -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">person_add</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Theo dõi</span>
+</div>
+<!-- Pokes -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-pink-50 flex items-center justify-center text-pink-600 group-hover:bg-pink-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">back_hand</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Chọc</span>
+</div>
+<!-- Albums -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">photo_album</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Album</span>
+</div>
+<!-- My Images (Ảnh) -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center text-red-600 group-hover:bg-red-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">image</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Ảnh</span>
+</div>
+<!-- My Videos -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">video_library</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Video của tôi</span>
+</div>
+<!-- Saved Posts -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-cyan-50 flex items-center justify-center text-cyan-600 group-hover:bg-cyan-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">bookmark</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Đã lưu</span>
+</div>
+<!-- Groups -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-violet-50 flex items-center justify-center text-violet-600 group-hover:bg-violet-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">groups</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Nhóm</span>
+</div>
+<!-- Pages -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">flag</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Trang</span>
+</div>
+<!-- Articles -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">article</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Bài viết</span>
+</div>
+<!-- Market Place -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-sky-50 flex items-center justify-center text-sky-600 group-hover:bg-sky-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">storefront</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Cửa hàng</span>
+</div>
+<!-- Boosted -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 group-hover:bg-rose-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">rocket_launch</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Boosted</span>
+</div>
+<!-- Popular Posts -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-fuchsia-50 flex items-center justify-center text-fuchsia-600 group-hover:bg-fuchsia-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">local_fire_department</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Xu hướng</span>
+</div>
+<!-- Events -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 group-hover:bg-teal-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">event</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Sự kiện</span>
+</div>
+<!-- Find Friends -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">person_search</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Tìm bạn</span>
+</div>
+<!-- Offers -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-lime-50 flex items-center justify-center text-lime-600 group-hover:bg-lime-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">sell</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Ưu đãi</span>
+</div>
+<!-- Movies -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-yellow-50 flex items-center justify-center text-yellow-600 group-hover:bg-yellow-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">movie</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Phim</span>
+</div>
+<!-- Jobs -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center text-green-600 group-hover:bg-green-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">work</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Việc làm</span>
+</div>
+<!-- Common Things -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 group-hover:bg-slate-600 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">category</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Chung</span>
+</div>
+<!-- Memories -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center text-orange-500 group-hover:bg-orange-500 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">history</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Kỷ niệm</span>
+</div>
+<!-- Funding -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-cyan-50 flex items-center justify-center text-cyan-500 group-hover:bg-cyan-500 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">volunteer_activism</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Gây quỹ</span>
+</div>
+<!-- Games -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-violet-50 flex items-center justify-center text-violet-500 group-hover:bg-violet-500 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">sports_esports</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Trò chơi</span>
+</div>
+<!-- Live Videos -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center text-red-500 group-hover:bg-red-500 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">live_tv</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Trực tiếp</span>
+</div>
+<!-- Advertising -->
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-all shadow-brand">
+<span class="material-symbols-outlined">campaign</span>
+</div>
+<span class="text-[10px] font-semibold text-center leading-tight">Quảng cáo</span>
+</div>
+</section>
+<!-- Subscription Banner -->
+<section class="bg-primary rounded-card p-6 text-white shadow-brand overflow-hidden relative group cursor-pointer">
+<div class="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform"></div>
+<div class="relative z-10 flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">workspace_premium</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-headline-sm">Go Pro Account</h3>
+<p class="text-white/80 text-body-md font-body-md">Mở khóa tất cả tính năng cao cấp</p>
+</div>
+</div>
+<span class="material-symbols-outlined">arrow_forward</span>
+</div>
+</section>
+<!-- Settings List -->
+<section class="space-y-2">
+<h3 class="text-label-md font-label-md text-outline px-2 uppercase tracking-widest mb-4">Other Settings</h3>
+<div class="bg-surface-container-lowest rounded-card shadow-brand divide-y divide-surface-variant overflow-hidden">
+<div class="flex items-center gap-4 p-container-padding hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="text-primary"><span class="material-symbols-outlined">person_outline</span></div>
+<span class="flex-1 font-body-lg text-body-lg">Cài đặt chung</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<div class="flex items-center gap-4 p-container-padding hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="text-primary"><span class="material-symbols-outlined">lock_open</span></div>
+<span class="flex-1 font-body-lg text-body-lg">Quyền riêng tư</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<div class="flex items-center gap-4 p-container-padding hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="text-primary"><span class="material-symbols-outlined">notifications</span></div>
+<span class="flex-1 font-body-lg text-body-lg">Thông báo</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<div class="flex items-center gap-4 p-container-padding hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="text-primary"><span class="material-symbols-outlined">link</span></div>
+<span class="flex-1 font-body-lg text-body-lg">Link mời</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<div class="flex items-center gap-4 p-container-padding hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="text-primary"><span class="material-symbols-outlined">info</span></div>
+<span class="flex-1 font-body-lg text-body-lg">Thông tin của tôi</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<div class="flex items-center gap-4 p-container-padding hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="text-primary"><span class="material-symbols-outlined">location_on</span></div>
+<span class="flex-1 font-body-lg text-body-lg">Địa chỉ</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<!-- Missing items added here -->
+<div class="flex items-center gap-4 p-container-padding hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="text-primary"><span class="material-symbols-outlined">payments</span></div>
+<span class="flex-1 font-body-lg text-body-lg">Thu nhập</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<div class="flex items-center gap-4 p-container-padding hover:bg-surface-container-low transition-colors cursor-pointer">
+<div class="text-primary"><span class="material-symbols-outlined">help</span></div>
+<span class="flex-1 font-body-lg text-body-lg">Hỗ trợ &amp; Trợ giúp</span>
+<span class="material-symbols-outlined text-outline">chevron_right</span>
+</div>
+<!-- Logout -->
+<div class="flex items-center gap-4 p-container-padding hover:bg-surface-container-low transition-colors cursor-pointer text-error">
+<div><span class="material-symbols-outlined">logout</span></div>
+<span class="flex-1 font-body-lg text-body-lg">Đăng xuất</span>
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-[72px] px-container-padding bg-background/80 backdrop-blur-xl shadow-brand">
+<button class="text-on-surface-variant dark:text-outline-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">home</span>
+</button>
+<button class="text-on-surface-variant dark:text-outline-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant dark:text-outline-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">play_circle</span>
+</button>
+<button class="text-on-surface-variant dark:text-outline-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">local_fire_department</span>
+</button>
+<button class="text-error relative after:content-[''] after:absolute after:-bottom-1 after:w-1 after:h-1 after:bg-error after:rounded-full scale-90 transition-all">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">settings</span>
+</button>
+</nav>
+</body></html>
