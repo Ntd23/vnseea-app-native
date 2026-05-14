@@ -1,5 +1,6 @@
+/* Description: Loads app-wide design tokens before Tailwind and NativeWind utilities. */
+@import './assets/styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import "./assets/styles/tokens.css";

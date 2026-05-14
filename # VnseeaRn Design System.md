@@ -99,3 +99,5 @@ Active tab: brand blue. Inactive tabs: neutral gray. Keep labels short.
 Do: use brand blue for primary actions, use the light app background, use white cards for grouped content, keep hierarchy compact, use Vietnamese text, create screen states, and respect mobile safe areas.
 
 Do not: create a marketing landing page, use heavy gradients, use dark mode unless requested, make every section a floating card, use random colors, invent new font scales, use oversized desktop typography, or put business architecture into the design output.
+
+

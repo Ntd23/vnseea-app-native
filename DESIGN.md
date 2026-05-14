@@ -1,3 +1,5 @@
+<!-- Description: Defines the VnseeaRn app-wide design system and token usage rules. -->
+
 # VnseeaRn Design System
 
 ## Product Feel
@@ -51,6 +53,34 @@ Use `docs/screen-ui-plan.md` to map each reference screenshot to its owning doma
 ## Design Role
 
 This document is for visual design generation only.
+
+## Token Source Of Truth
+
+`assets/styles/tokens.css` is the implementation source of truth for the app-wide visual system.
+
+All screens should map visual styling to reusable token utilities before using one-off NativeWind values.
+
+Use token utilities for:
+
+- typography
+- text colors
+- icon colors
+- base surfaces
+- cards and panels
+- top app bars
+- input shells
+- buttons
+- avatars
+- radius
+- shadows
+- borders
+
+Stitch and reference screenshots define layout, content order, hierarchy, and screen-specific composition.
+They do not override the app token system for repeated primitives.
+
+If a repeated visual primitive is missing, add it to `assets/styles/tokens.css` first, then use the new utility across screens.
+
+Use arbitrary Tailwind values only for one-off geometry needed to match a specific reference, such as exact screen padding, spacer height, or component dimensions.
 
 Stitch should define:
 
@@ -368,16 +398,22 @@ If no image is available, use initials on a brand or muted background.
 
 ### Auth And Single-Task Screens
 
-Use a strong brand header with a rounded card body when appropriate.
+Use the auth pattern that matches the Stitch or reference screen.
+The generic hero header is only a default when no reference layout exists.
 
-Pattern:
+Supported patterns:
 
 - brand blue hero/header
+- rounded top content area
+- top app bar with centered card
+- no-footer single-task card
 - small logo or symbol
 - app name or screen title
-- rounded top content area
-- white card for the form or main action
-- secondary link below
+- white or token panel for the form or main action
+- secondary link below only when present in the reference
+
+When a Stitch screen says "No Footer", do not add footer content.
+When preserving a reference brand such as WoWonder is required for parity, keep that visible brand text unless a task explicitly asks to replace it with VnseeaRn.
 
 ### Feed And Social Screens
 
@@ -511,9 +547,10 @@ Active: brand blue. Inactive: neutral gray. Keep labels short.
 
 Do:
 
+- use `assets/styles/tokens.css` utilities as the first styling choice
 - use brand blue consistently for primary action
 - use the light app background
-- use white cards for grouped content
+- use token cards or panels for grouped content
 - keep visual hierarchy compact
 - use Vietnamese text
 - create screen states
@@ -527,6 +564,7 @@ Do not:
 - make every section a floating decorative card
 - use random colors outside the token set
 - invent new font scales per screen
+- repeat arbitrary Tailwind values when a token utility exists
 - use overly large desktop-like typography
 - put business architecture into the design output
 
@@ -549,7 +587,7 @@ Codex will then implement:
 - components in `src/{domain}/presentation/components/*`
 - mock ViewModel in `src/{domain}/application/view-models/*`
 - route constants and navigator registration
-- NativeWind class names
+- NativeWind class names using `assets/styles/tokens.css` utilities first
 - React Native touch behavior
 
 ## Screen Reference Mapping
