@@ -73,3 +73,7 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Local MCP/Stitch credentials and cache
+.vscode/mcp.json
+.stitch-mcp/

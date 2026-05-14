@@ -1,10 +1,49 @@
-import React, {useState} from 'react';
-import {StatusBar, Text, TextInput, TouchableOpacity, View} from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation} from '@react-navigation/native';
-import {Eye, EyeOff, Globe, Lock, Mail, User} from 'lucide-react-native';
+// Description: Renders the Stitch VNSEEA-style register screen using shared design token utilities.
+import React, { useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { ArrowRight, Network } from 'lucide-react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
-import {ROUTES} from '../../../navigation/constants/routes';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ROUTES } from '../../../navigation/constants/routes';
+
+function Field({
+  label,
+  placeholder,
+  secureTextEntry,
+  keyboardType,
+}: {
+  label: string;
+  placeholder: string;
+  secureTextEntry?: boolean;
+  keyboardType?: 'default' | 'email-address';
+}) {
+  return (
+    <View>
+      <Text className="mb-2 text-label-primary text-slate-500">{label}</Text>
+      <View className="input-shell min-h-[48px] justify-center px-3">
+        <TextInput
+          className="text-body-primary"
+          placeholder={placeholder}
+          placeholderTextColor="#94A3B8"
+          secureTextEntry={secureTextEntry}
+          keyboardType={keyboardType}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+    </View>
+  );
+}
 
 function SocialButton({
   label,
@@ -15,159 +54,160 @@ function SocialButton({
 }) {
   return (
     <TouchableOpacity
-      className="flex-1 flex-row items-center justify-center rounded-2xl border border-[#DEE4FF] bg-white px-4 py-4"
-      activeOpacity={0.85}>
+      className="btn-secondary min-h-[44px]"
+      activeOpacity={0.8}
+    >
       {icon}
-      <Text className="ml-2 text-sm font-semibold text-slate-700">{label}</Text>
+      <Text className="text-title-primary">{label}</Text>
     </TouchableOpacity>
   );
 }
 
 function RegisterScreen() {
   const navigation = useNavigation<any>();
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [gender, setGender] = useState<'male' | 'female'>('male');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   return (
-    <SafeAreaView className="flex-1 bg-[#EEF2FF]">
-      <StatusBar barStyle="light-content" />
+    <SafeAreaView className="flex-1 surface-base">
+      <StatusBar barStyle="dark-content" backgroundColor="#f8f9ff" />
 
-      <View className="flex-1">
-        <View className="overflow-hidden bg-[#0700FF] px-6 pb-16 pt-5">
-          <View className="absolute -left-8 top-16 h-28 w-28 rounded-full bg-white/8" />
-          <View className="absolute right-0 top-0 h-48 w-48 rounded-full bg-white/8" />
-          <View className="items-center pt-10">
-            <View className="h-14 w-14 items-center justify-center rounded-full border border-white/20 bg-white/12">
-              <Text className="text-3xl text-white">V</Text>
-            </View>
-            <Text className="mt-4 text-[34px] font-extrabold tracking-wide text-white">
-              VNSEEA
-            </Text>
-            <Text className="mt-1 text-sm font-semibold tracking-[4px] text-white/75">
-              CREATE ACCOUNT
-            </Text>
-          </View>
-        </View>
-
-        <View className="-mt-10 flex-1 rounded-t-[38px] bg-[#EEF2FF] px-5 pt-5">
-          <View className="rounded-[28px] bg-white px-6 py-7 shadow-[0px_18px_40px_rgba(15,23,42,0.08)]">
-            <Text className="text-[28px] font-extrabold text-slate-900">
-              Đăng ký
-            </Text>
-            <Text className="mt-2 text-base text-slate-500">
-              Tạo tài khoản mới để bắt đầu kết nối
-            </Text>
-
-            <View className="mt-6">
-              <Text className="mb-3 text-sm font-bold text-slate-900">Họ và tên</Text>
-              <View className="flex-row items-center rounded-2xl border border-[#D9E0FF] bg-[#FAFBFF] px-4 py-4">
-                <User size={18} color="#94A3B8" />
-                <TextInput
-                  className="ml-3 flex-1 text-base text-slate-900"
-                  placeholder="Nguyễn Văn A"
-                  placeholderTextColor="#94A3B8"
-                />
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          className="flex-1"
+          contentContainerClassName="flex-grow justify-center px-4 py-12"
+          keyboardShouldPersistTaps="handled"
+        >
+          <View className="surface-panel overflow-hidden px-6 py-8">
+            <View className="items-center pb-4">
+              <View className="icon-chip mb-4 h-12 w-12 items-center justify-center">
+                <Network size={26} color="#0000FF" strokeWidth={2.6} />
               </View>
+              <Text className="text-display text-brand">WoWonder</Text>
+              <Text className="mt-2 text-heading">Đăng ký</Text>
             </View>
 
-            <View className="mt-5">
-              <Text className="mb-3 text-sm font-bold text-slate-900">Email</Text>
-              <View className="flex-row items-center rounded-2xl border border-[#D9E0FF] bg-[#FAFBFF] px-4 py-4">
-                <Mail size={18} color="#94A3B8" />
-                <TextInput
-                  className="ml-3 flex-1 text-base text-slate-900"
-                  placeholder="your@email.com"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
+            <View className="gap-4">
+              <View className="flex-row gap-4">
+                <View className="flex-1">
+                  <Field label="First Name" placeholder="Nguyễn Văn" />
+                </View>
+                <View className="flex-1">
+                  <Field label="Last Name" placeholder="A" />
+                </View>
               </View>
-            </View>
 
-            <View className="mt-5">
-              <Text className="mb-3 text-sm font-bold text-slate-900">Mật khẩu</Text>
-              <View className="flex-row items-center rounded-2xl border border-[#D9E0FF] bg-[#FAFBFF] px-4 py-4">
-                <Lock size={18} color="#94A3B8" />
-                <TextInput
-                  className="ml-3 flex-1 text-base text-slate-900"
-                  placeholder="Tạo mật khẩu"
-                  placeholderTextColor="#94A3B8"
-                  secureTextEntry={!showPassword}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword(value => !value)}
-                  activeOpacity={0.75}>
-                  {showPassword ? (
-                    <EyeOff size={20} color="#94A3B8" />
-                  ) : (
-                    <Eye size={20} color="#94A3B8" />
-                  )}
-                </TouchableOpacity>
+              <Field label="Username" placeholder="nguyenvana123" />
+              <Field
+                label="Email"
+                placeholder="email@example.com"
+                keyboardType="email-address"
+              />
+              <Field label="Password" placeholder="••••••••" secureTextEntry />
+              <Field
+                label="Confirm Password"
+                placeholder="••••••••"
+                secureTextEntry
+              />
+
+              <View className="pt-2">
+                <Text className="mb-3 text-label-primary text-slate-500">
+                  Gender
+                </Text>
+                <View className="flex-row gap-8">
+                  <TouchableOpacity
+                    className="flex-row items-center"
+                    activeOpacity={0.8}
+                    onPress={() => setGender('male')}
+                  >
+                    <View
+                      className={
+                        gender === 'male' ? 'choice-dot-active' : 'choice-dot'
+                      }
+                    />
+                    <Text className="ml-2 text-body-primary">Male</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="flex-row items-center"
+                    activeOpacity={0.8}
+                    onPress={() => setGender('female')}
+                  >
+                    <View
+                      className={
+                        gender === 'female' ? 'choice-dot-active' : 'choice-dot'
+                      }
+                    />
+                    <Text className="ml-2 text-body-primary">Female</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
+
+              <TouchableOpacity
+                className="flex-row items-start pt-2"
+                activeOpacity={0.8}
+                onPress={() => setAcceptedTerms(value => !value)}
+              >
+                <View
+                  className={
+                    acceptedTerms ? 'choice-dot-active mt-1' : 'choice-dot mt-1'
+                  }
+                />
+                <Text className="ml-3 flex-1 text-caption-secondary">
+                  Bằng việc đăng ký, bạn đồng ý với{' '}
+                  <Text className="text-brand">Điều khoản dịch vụ</Text> và{' '}
+                  <Text className="text-brand">Chính sách bảo mật</Text> của
+                  chúng tôi.
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                className="btn-primary mt-2 min-h-[48px]"
+                activeOpacity={0.9}
+              >
+                <Text className="text-title-primary text-inverse">Đăng ký</Text>
+                <ArrowRight size={20} color="#FFFFFF" />
+              </TouchableOpacity>
             </View>
 
-            <View className="mt-5">
-              <Text className="mb-3 text-sm font-bold text-slate-900">
-                Xác nhận mật khẩu
+            <View className="my-6 flex-row items-center">
+              <View className="divider-line flex-1" />
+              <Text className="mx-4 text-caption-secondary">
+                Hoặc đăng ký với
               </Text>
-              <View className="flex-row items-center rounded-2xl border border-[#D9E0FF] bg-[#FAFBFF] px-4 py-4">
-                <Lock size={18} color="#94A3B8" />
-                <TextInput
-                  className="ml-3 flex-1 text-base text-slate-900"
-                  placeholder="Nhập lại mật khẩu"
-                  placeholderTextColor="#94A3B8"
-                  secureTextEntry={!showConfirmPassword}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowConfirmPassword(value => !value)}
-                  activeOpacity={0.75}>
-                  {showConfirmPassword ? (
-                    <EyeOff size={20} color="#94A3B8" />
-                  ) : (
-                    <Eye size={20} color="#94A3B8" />
-                  )}
-                </TouchableOpacity>
-              </View>
+              <View className="divider-line flex-1" />
             </View>
 
-            <TouchableOpacity
-              className="mt-7 items-center rounded-2xl bg-[#0700FF] py-4 shadow-[0px_12px_24px_rgba(7,0,255,0.25)]"
-              activeOpacity={0.9}>
-              <Text className="text-base font-bold text-white">Đăng ký</Text>
-            </TouchableOpacity>
-
-            <View className="mt-6 flex-row items-center">
-              <View className="h-px flex-1 bg-[#E5E9F8]" />
-              <Text className="mx-3 text-sm font-semibold text-slate-400">
-                Hoặc tiếp tục bằng
-              </Text>
-              <View className="h-px flex-1 bg-[#E5E9F8]" />
-            </View>
-
-            <View className="mt-5 flex-row gap-3">
+            <View className="mb-6 gap-4">
               <SocialButton
-                label="Web"
-                icon={<Globe size={18} color="#0EA5E9" />}
+                label="Google"
+                icon={<Icon name="google" size={20} color="#4285F4" />}
               />
               <SocialButton
                 label="Facebook"
-                icon={<Icon name="facebook" size={18} color="#1877F2" />}
+                icon={<Icon name="facebook" size={20} color="#1877F2" />}
+              />
+              <SocialButton
+                label="Apple"
+                icon={<Icon name="apple" size={22} color="#000000" />}
               />
             </View>
-          </View>
 
-          <View className="flex-row items-center justify-center py-5">
-            <Text className="text-sm text-slate-500">
-              Đã có tài khoản?{' '}
-            </Text>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate(ROUTES.LOGIN)}>
-              <Text className="text-sm font-bold text-[#0700FF]">Đăng nhập</Text>
-            </TouchableOpacity>
+            <View className="flex-row items-center justify-center">
+              <Text className="text-body-secondary">Đã có tài khoản?</Text>
+              <TouchableOpacity
+                className="ml-1"
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate(ROUTES.LOGIN)}
+              >
+                <Text className="text-title-primary text-brand">Đăng nhập</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
