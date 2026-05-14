@@ -12,7 +12,6 @@ import {
   Bell,
   Edit3,
   ImageIcon,
-  Menu,
   MessageCircle,
   MoreHorizontal,
   Plus,
@@ -102,10 +101,7 @@ function FeedHeader() {
   return (
     <View className="surface-topbar h-20 flex-row items-center justify-between px-4">
       <View className="flex-row items-center">
-        <IconButton>
-          <Menu size={24} color="#0000FF" />
-        </IconButton>
-        <Text className="ml-1 text-display text-brand">WoWonder</Text>
+        <Text className="ml-1 text-display text-brand">VNSEEA</Text>
       </View>
       <View className="flex-row items-center">
         <IconButton>
