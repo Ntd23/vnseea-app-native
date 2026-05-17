@@ -1,12 +1,23 @@
-import React, {useCallback} from 'react';
-import {ScrollView, StatusBar, Text, TouchableOpacity, View} from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
-import {Plus, Search} from 'lucide-react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import type {RootStackParamList} from '../../../navigation/AppNavigator';
-import {ROUTES} from '../../../navigation/constants/routes';
-import {useSettingsViewModel} from '../../application/view-models/useSettingsViewModel';
+// Description: Renders the main settings tab with profile, feature shortcuts, and settings menu.
+import React, { useCallback, useState } from 'react';
+import {
+  ScrollView,
+  StatusBar,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Plus, Search } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { ROUTES } from '../../../navigation/constants/routes';
+import type {
+  RootStackParamList,
+  RootStackRouteName,
+} from '../../../navigation/types';
+import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
+import { useSettingsViewModel } from '../../application/view-models/useSettingsViewModel';
 import ProfileHeaderCard from '../components/ProfileHeaderCard';
 import FeatureGrid from '../components/FeatureGrid';
 import GoProBanner from '../components/GoProBanner';
@@ -16,7 +27,29 @@ type SettingsNav = NativeStackNavigationProp<RootStackParamList>;
 
 function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
-  const {profile, features, settingsMenu} = useSettingsViewModel();
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const { profile, features, settingsMenu } = useSettingsViewModel();
+
+  const handleCreateNavigate = useCallback(
+    (route: RootStackRouteName) => {
+      if (route === ROUTES.CREATE_EVENT) {
+        navigation.navigate(ROUTES.CREATE_EVENT);
+      }
+
+      if (route === ROUTES.CREATE_PRODUCT) {
+        navigation.navigate(ROUTES.CREATE_PRODUCT);
+      }
+
+      if (route === ROUTES.CREATE_PAGE) {
+        navigation.navigate(ROUTES.CREATE_PAGE);
+      }
+
+      if (route === ROUTES.CREATE_GROUP) {
+        navigation.navigate(ROUTES.CREATE_GROUP);
+      }
+    },
+    [navigation],
+  );
 
   const handleSettingsItemPress = useCallback(
     (id: string) => {
@@ -24,6 +57,63 @@ function SettingsScreen() {
         navigation.navigate(ROUTES.EARNINGS);
       }
       // TODO: handle other settings items
+    },
+    [navigation],
+  );
+
+  const handleFeaturePress = useCallback(
+    (id: string) => {
+      if (id === 'messages') {
+        navigation.navigate(ROUTES.MESSAGES);
+      }
+
+      if (id === 'following') {
+        navigation.navigate(ROUTES.FOLLOWING);
+      }
+
+      if (id === 'photos') {
+        navigation.navigate(ROUTES.MY_PHOTOS);
+      }
+
+      if (id === 'albums') {
+        navigation.navigate(ROUTES.ALBUMS);
+      }
+
+      if (id === 'videos') {
+        navigation.navigate(ROUTES.MY_VIDEOS);
+      }
+
+      if (id === 'saved') {
+        navigation.navigate(ROUTES.SAVED_POSTS);
+      }
+
+      if (id === 'groups') {
+        navigation.navigate(ROUTES.EXPLORE_GROUPS);
+      }
+
+      if (id === 'boosted') {
+        navigation.navigate(ROUTES.BOOSTED);
+      }
+
+      if (id === 'blogs') {
+        navigation.navigate(ROUTES.BLOGS);
+      }
+
+      if (id === 'events') {
+        navigation.navigate(ROUTES.EVENTS);
+      }
+
+      if (id === 'movies') {
+        navigation.navigate(ROUTES.MOVIES);
+      }
+
+      if (id === 'jobs') {
+        navigation.navigate(ROUTES.JOBS);
+      }
+
+      if (id === 'funding') {
+        navigation.navigate(ROUTES.FUNDING);
+      }
     },
     [navigation],
   );
@@ -38,12 +128,16 @@ function SettingsScreen() {
         <View className="flex-row items-center gap-4">
           <TouchableOpacity
             activeOpacity={0.8}
-            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={() => navigation.navigate(ROUTES.SEARCH)}
+          >
             <Search size={22} color="#0000ff" />
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.8}
-            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={() => setSheetVisible(true)}
+          >
             <Plus size={22} color="#0000ff" />
           </TouchableOpacity>
         </View>
@@ -52,13 +146,20 @@ function SettingsScreen() {
       <ScrollView
         className="flex-1"
         contentContainerClassName="px-5 pb-8 pt-4"
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+      >
         {/* Profile Header Card */}
-        <ProfileHeaderCard profile={profile} />
+        <ProfileHeaderCard
+          profile={profile}
+          onPress={() => navigation.navigate(ROUTES.PROFILE)}
+        />
 
         {/* Feature Grid */}
         <View className="mt-5">
-          <FeatureGrid features={features} />
+          <FeatureGrid
+            features={features}
+            onFeaturePress={handleFeaturePress}
+          />
         </View>
 
         {/* Go Pro Banner */}
@@ -74,6 +175,12 @@ function SettingsScreen() {
           />
         </View>
       </ScrollView>
+
+      <CreateActionSheet
+        visible={sheetVisible}
+        onClose={() => setSheetVisible(false)}
+        onNavigate={handleCreateNavigate}
+      />
     </SafeAreaView>
   );
 }

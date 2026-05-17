@@ -13,8 +13,8 @@ import {
 } from 'lucide-react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import type {RootStackParamList} from '../../../navigation/AppNavigator';
 import {ROUTES} from '../../../navigation/constants/routes';
+import type {RootStackParamList} from '../../../navigation/types';
 import {useEarningsViewModel} from '../../application/view-models/useEarningsViewModel';
 import type {EarningsMenuItem} from '../../domain/types/wallet.types';
 

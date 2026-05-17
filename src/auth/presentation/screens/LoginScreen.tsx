@@ -11,10 +11,14 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ArrowRight, Eye, EyeOff, Network } from 'lucide-react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
+import type { RootStackParamList } from '../../../navigation/types';
+
+type LoginNav = NativeStackNavigationProp<RootStackParamList>;
 
 function SocialButton({
   label,
@@ -35,7 +39,7 @@ function SocialButton({
 }
 
 function LoginScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<LoginNav>();
   const [showPassword, setShowPassword] = useState(false);
 
   return (

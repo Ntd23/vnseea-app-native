@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,6 +23,9 @@ import {
   Shapes,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { RootStackParamList } from '../../../navigation/types';
+
+type CreatePageNav = NativeStackNavigationProp<RootStackParamList>;
 
 const PAGE_NAME_IMAGE =
   'https://lh3.googleusercontent.com/aida/ADBb0uh_7Hk2tZCJt_ZuSsmInEFIKcYkz_I_p1kiGHq0GazO9hqsIvzmyq5Wr9x0B1Qdov7k0AbFSs9RbfDPS7pV0l6H8F7Z-Yiqx03wvB9nNiJBvp9MxkAKieDmqOpkzzFSr8wSdGKiHddzN0mXES5-t-vCUBIC3WTWgZuCHehFVRfvKen58-5_QxROCtcOBTRP85jB2W81AXDNWDJpipz5TWEe28e2OQYBoTtFU94UQEoFhLhd-gG6VejH2YA4smY6HQRD3hI41wxKgA';
@@ -278,7 +282,7 @@ function StepThree({ onNext }: { onNext: () => void }) {
 }
 
 function CreatePageScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<CreatePageNav>();
   const [step, setStep] = useState(1);
 
   const headerRaised = step === 3;

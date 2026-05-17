@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   ArrowLeft,
   ArrowRight,
@@ -21,9 +22,12 @@ import {
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
+import type { RootStackParamList } from '../../../navigation/types';
+
+type ForgotPasswordNav = NativeStackNavigationProp<RootStackParamList>;
 
 function ForgotPasswordScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<ForgotPasswordNav>();
 
   return (
     <SafeAreaView className="flex-1 surface-base">

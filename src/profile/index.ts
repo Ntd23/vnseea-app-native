@@ -1,5 +1,6 @@
-// Profile domain barrel exports
+// Description: Exposes the public Profile context API and route screens.
 export * from './domain/types/profile.types';
 export * from './domain/repositories/ProfileRepository';
 export { createProfileRepository } from './infrastructure/repositories/ApiProfileRepository';
 export { useProfileViewModel } from './application/view-models/useProfileViewModel';
+export { default as ProfileScreen } from './presentation/screens/ProfileScreen';
