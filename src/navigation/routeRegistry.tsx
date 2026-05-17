@@ -1,6 +1,6 @@
 // Description: Centralizes app screen registrations for stack and tab navigators.
 import React from 'react';
-import { Bell, Compass, Home, PlaySquare, Settings } from 'lucide-react-native';
+import { Bell, Hash, Home, PlaySquare, Settings } from 'lucide-react-native';
 import { ROUTES } from './constants/routes';
 import type { MainTabRouteName, RootStackRouteName } from './types';
 import { ForgotPasswordScreen, LoginScreen, RegisterScreen } from '../auth';
@@ -71,8 +71,8 @@ export const TAB_ROUTES: TabRouteDefinition[] = [
   {
     name: ROUTES.EXPLORE,
     component: ExploreScreen,
-    Icon: Compass,
-    accessibilityLabel: 'Explore',
+    Icon: Hash,
+    accessibilityLabel: 'Hashtags',
   },
   {
     name: ROUTES.REELS,
