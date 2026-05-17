@@ -11,10 +11,14 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ArrowRight, Network } from 'lucide-react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
+import type { RootStackParamList } from '../../../navigation/types';
+
+type RegisterNav = NativeStackNavigationProp<RootStackParamList>;
 
 function Field({
   label,
@@ -64,7 +68,7 @@ function SocialButton({
 }
 
 function RegisterScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<RegisterNav>();
   const [gender, setGender] = useState<'male' | 'female'>('male');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 

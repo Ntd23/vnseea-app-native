@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Copy, Share2 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../../../navigation/AppNavigator';
+import type { RootStackParamList } from '../../../navigation/types';
 import { useAffiliatesViewModel } from '../../application/view-models/useAffiliatesViewModel';
 
 type AffiliatesNav = NativeStackNavigationProp<RootStackParamList>;

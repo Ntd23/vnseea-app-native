@@ -8,3 +8,6 @@ Terminal 2: chạy app
 Nếu cắm máy không nhận, kiểm tra:
     adb devices
     -> Hiện: xxxxxxxx    device
+
+kết nối qua wifi: adb connect IP:PORT
+                  

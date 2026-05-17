@@ -1,48 +1,21 @@
 // Description: Provides the icon-only bottom tab navigator for the authenticated app shell.
 import React from 'react';
-import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import {
   BottomTabBarProps,
   createBottomTabNavigator,
 } from '@react-navigation/bottom-tabs';
-import { Bell, Compass, Home, PlaySquare, Settings } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from './constants/routes';
-import FeedScreen from '../feed/presentation/screens/FeedScreen';
-import ExploreScreen from '../explore/presentation/screens/ExploreScreen';
-import ReelsScreen from '../reels/presentation/screens/ReelsScreen';
-import NotificationsScreen from '../notifications/presentation/screens/NotificationsScreen';
-import SettingsScreen from '../settings/presentation/screens/SettingsScreen';
-
-export type MainTabParamList = {
-  [ROUTES.FEED]: undefined;
-  [ROUTES.EXPLORE]: undefined;
-  [ROUTES.REELS]: undefined;
-  [ROUTES.NOTIFICATIONS]: undefined;
-  [ROUTES.SETTINGS]: undefined;
-};
+import { TAB_ROUTES } from './routeRegistry';
+import type { MainTabParamList } from './types';
 
 const BRAND = '#0000FF';
 const ICON_ACTIVE = '#FFFFFF';
 const ICON_INACTIVE = 'rgba(255,255,255,0.45)';
 
-type TabDef = {
-  route: string;
-  isCenter?: boolean;
-  Icon: React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
-};
-
-const TABS: TabDef[] = [
-  { route: ROUTES.FEED, Icon: Home },
-  { route: ROUTES.EXPLORE, Icon: Compass },
-  { route: ROUTES.REELS, Icon: PlaySquare, isCenter: true },
-  { route: ROUTES.NOTIFICATIONS, Icon: Bell },
-  { route: ROUTES.SETTINGS, Icon: Settings },
-];
-
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  // Both platforms: absolute at bottom, float above content
   const bottom = Math.max(insets.bottom, 10);
 
   function onPress(name: string, key: string, isFocused: boolean) {
@@ -51,6 +24,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       target: key,
       canPreventDefault: true,
     });
+
     if (!isFocused && !event.defaultPrevented) {
       navigation.navigate(name);
     }
@@ -58,45 +32,34 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
   return (
     <View style={[styles.container, { bottom }]}>
-      {/* Glass bar — blue with no visible border-top */}
       <View style={styles.bar}>
-        {/* Gloss highlight at top edge (glass illusion only, very subtle) */}
         <View style={styles.gloss} pointerEvents="none" />
 
         <View style={styles.row}>
-          {TABS.map(({ route, isCenter, Icon }) => {
-            const idx = state.routes.findIndex(r => r.name === route);
+          {TAB_ROUTES.map(({ name, isCenter, Icon, accessibilityLabel }) => {
+            const idx = state.routes.findIndex(route => route.name === name);
             const focused = state.index === idx;
-            const r = state.routes[idx];
-
-            if (isCenter) {
-              return (
-                <View key={route} style={styles.tabSlot}>
-                  <TouchableOpacity
-                    style={styles.centerBtn}
-                    onPress={() => onPress(r.name, r.key, focused)}
-                    activeOpacity={0.85}
-                    accessibilityLabel="Reels"
-                  >
-                    <PlaySquare size={22} color="#FFFFFF" strokeWidth={2.2} />
-                  </TouchableOpacity>
-                </View>
-              );
-            }
+            const route = state.routes[idx];
 
             return (
               <TouchableOpacity
-                key={route}
-                style={styles.tabSlot}
-                onPress={() => onPress(r.name, r.key, focused)}
-                activeOpacity={0.75}
-                accessibilityLabel={route}
+                key={name}
+                style={
+                  isCenter
+                    ? [styles.tabSlot, styles.centerSlot]
+                    : styles.tabSlot
+                }
+                onPress={() => onPress(route.name, route.key, focused)}
+                activeOpacity={isCenter ? 0.85 : 0.75}
+                accessibilityLabel={accessibilityLabel}
               >
-                <Icon
-                  size={22}
-                  color={focused ? ICON_ACTIVE : ICON_INACTIVE}
-                  strokeWidth={2.2}
-                />
+                <View style={isCenter ? styles.centerBtn : undefined}>
+                  <Icon
+                    size={22}
+                    color={focused || isCenter ? ICON_ACTIVE : ICON_INACTIVE}
+                    strokeWidth={2.2}
+                  />
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -115,11 +78,9 @@ function MainTabNavigator() {
       tabBar={props => <CustomTabBar {...props} />}
       screenOptions={{ headerShown: false }}
     >
-      <Tab.Screen name={ROUTES.FEED} component={FeedScreen} />
-      <Tab.Screen name={ROUTES.EXPLORE} component={ExploreScreen} />
-      <Tab.Screen name={ROUTES.REELS} component={ReelsScreen} />
-      <Tab.Screen name={ROUTES.NOTIFICATIONS} component={NotificationsScreen} />
-      <Tab.Screen name={ROUTES.SETTINGS} component={SettingsScreen} />
+      {TAB_ROUTES.map(({ name, component }) => (
+        <Tab.Screen key={name} name={name} component={component} />
+      ))}
     </Tab.Navigator>
   );
 }
@@ -128,18 +89,14 @@ const ITEM_HEIGHT = 48;
 const CENTER_SIZE = 40;
 
 const styles = StyleSheet.create({
-  // Floats above content on BOTH platforms
   container: {
     position: 'absolute',
     left: 14,
     right: 14,
   },
-
-  // Blue glass pill — NO separate border-top
   bar: {
     backgroundColor: 'rgba(0, 0, 255, 0.82)',
     borderRadius: 28,
-    // subtle glass border all around (no extra border-top)
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.22)',
     shadowColor: BRAND,
@@ -149,8 +106,6 @@ const styles = StyleSheet.create({
     elevation: 14,
     overflow: 'hidden',
   },
-
-  // Thin gloss line at very top to create glass illusion
   gloss: {
     position: 'absolute',
     top: 0,
@@ -160,24 +115,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.5)',
     borderRadius: 1,
   },
-
-  // Horizontal row — all items same height
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
     paddingHorizontal: 4,
   },
-
-  // Each tab slot — equal width via flex:1, same height
   tabSlot: {
     flex: 1,
     height: ITEM_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // Center button circle — same height slot, just styled as a circle
+  centerSlot: {
+    height: ITEM_HEIGHT,
+  },
   centerBtn: {
     width: CENTER_SIZE,
     height: CENTER_SIZE,
@@ -195,4 +147,5 @@ const styles = StyleSheet.create({
   },
 });
 
+export type { MainTabParamList } from './types';
 export default MainTabNavigator;

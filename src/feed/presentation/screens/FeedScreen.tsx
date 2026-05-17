@@ -1,5 +1,5 @@
 // Description: Renders the Stitch Facebook-style VNSEEA feed inside the main tab shell.
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Image,
   ScrollView,
@@ -9,7 +9,6 @@ import {
   View,
 } from 'react-native';
 import {
-  Bell,
   Edit3,
   ImageIcon,
   MessageCircle,
@@ -23,8 +22,14 @@ import {
   ThumbsUp,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
+import type { RootStackParamList } from '../../../navigation/types';
+import type { RootStackRouteName } from '../../../navigation/types';
+import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
+
+type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
 const images = {
   me: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw',
@@ -52,11 +57,18 @@ const stories = [
   { name: 'Linh Chi', image: images.linh, active: false },
 ];
 
-function IconButton({ children }: { children: React.ReactNode }) {
+function IconButton({
+  children,
+  onPress,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+}) {
   return (
     <TouchableOpacity
       className="h-10 w-10 items-center justify-center rounded-full"
       activeOpacity={0.75}
+      onPress={onPress}
     >
       {children}
     </TouchableOpacity>
@@ -96,29 +108,61 @@ function ActionButton({
 }
 
 function FeedHeader() {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<FeedNav>();
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const handleCreateNavigate = useCallback(
+    (route: RootStackRouteName) => {
+      if (route === ROUTES.CREATE_EVENT) {
+        navigation.navigate(ROUTES.CREATE_EVENT);
+      }
+
+      if (route === ROUTES.CREATE_PRODUCT) {
+        navigation.navigate(ROUTES.CREATE_PRODUCT);
+      }
+
+      if (route === ROUTES.CREATE_PAGE) {
+        navigation.navigate(ROUTES.CREATE_PAGE);
+      }
+
+      if (route === ROUTES.CREATE_GROUP) {
+        navigation.navigate(ROUTES.CREATE_GROUP);
+      }
+    },
+    [navigation],
+  );
 
   return (
-    <View className="surface-topbar h-20 flex-row items-center justify-between px-4">
-      <View className="flex-row items-center">
-        <Text className="ml-1 text-display text-brand">VNSEEA</Text>
+    <>
+      <View className="surface-topbar h-20 flex-row items-center justify-between px-4">
+        <View className="flex-row items-center">
+          <Text className="ml-1 text-display text-brand">VNSEEA</Text>
+        </View>
+        <View className="flex-row items-center">
+          <TouchableOpacity
+            className="h-10 w-10 items-center justify-center rounded-full"
+            activeOpacity={0.75}
+            onPress={() => navigation.navigate(ROUTES.SEARCH)}
+          >
+            <Search size={22} color="#0000FF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="h-10 w-10 items-center justify-center rounded-full"
+            activeOpacity={0.75}
+            onPress={() => setSheetVisible(true)}
+          >
+            <Plus size={24} color="#0000FF" />
+          </TouchableOpacity>
+          <IconButton onPress={() => navigation.navigate(ROUTES.MESSAGES)}>
+            <MessageCircle size={22} color="#0000FF" />
+          </IconButton>
+        </View>
       </View>
-      <View className="flex-row items-center">
-        <IconButton>
-          <Search size={22} color="#0000FF" />
-        </IconButton>
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          activeOpacity={0.75}
-          onPress={() => navigation.navigate(ROUTES.CREATE_PAGE)}
-        >
-          <Plus size={24} color="#0000FF" />
-        </TouchableOpacity>
-        <IconButton>
-          <Bell size={22} color="#0000FF" />
-        </IconButton>
-      </View>
-    </View>
+      <CreateActionSheet
+        visible={sheetVisible}
+        onClose={() => setSheetVisible(false)}
+        onNavigate={handleCreateNavigate}
+      />
+    </>
   );
 }
 

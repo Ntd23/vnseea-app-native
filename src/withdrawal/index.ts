@@ -1,4 +1,4 @@
-// Withdrawal domain barrel exports
+// Description: Exposes the public Withdrawal context API and route screens.
 export * from './domain/types/withdrawal.types';
 export * from './domain/repositories/WithdrawalRepository';
 export { createWithdrawalRepository } from './infrastructure/repositories/ApiWithdrawalRepository';
