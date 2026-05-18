@@ -71,6 +71,14 @@ function SettingsScreen() {
         navigation.navigate(ROUTES.FOLLOWING);
       }
 
+      if (id === 'memories') {
+        navigation.navigate(ROUTES.MEMORIES);
+      }
+
+      if (id === 'offers') {
+        navigation.navigate(ROUTES.OFFERS);
+      }
+
       if (id === 'photos') {
         navigation.navigate(ROUTES.MY_PHOTOS);
       }
@@ -114,6 +122,10 @@ function SettingsScreen() {
       if (id === 'funding') {
         navigation.navigate(ROUTES.FUNDING);
       }
+
+      if (id === 'ads') {
+        navigation.navigate(ROUTES.ADVERTISING);
+      }
     },
     [navigation],
   );
@@ -145,7 +157,7 @@ function SettingsScreen() {
 
       <ScrollView
         className="flex-1"
-        contentContainerClassName="px-5 pb-8 pt-4"
+        contentContainerClassName="px-5 pb-28 pt-4"
         showsVerticalScrollIndicator={false}
       >
         {/* Profile Header Card */}

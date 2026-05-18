@@ -41,6 +41,10 @@ export const ROUTES = {
   INVITE_FRIENDS: 'InviteFriends',
   MY_POINTS: 'MyPoints',
   WITHDRAWAL: 'Withdrawal',
+  MEMORIES: 'Memories',
+  OFFERS: 'Offers',
+  ADVERTISING: 'Advertising',
+  CREATE_AD: 'CreateAd',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];

@@ -3,3 +3,4 @@ export * from './domain/types/memories.types';
 export * from './domain/repositories/MemoriesRepository';
 export { createMemoriesRepository } from './infrastructure/repositories/ApiMemoriesRepository';
 export { useMemoriesViewModel } from './application/view-models/useMemoriesViewModel';
+export { default as MemoriesScreen } from './presentation/screens/MemoriesScreen';
