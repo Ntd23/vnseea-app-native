@@ -46,6 +46,10 @@ export type RootStackParamList = {
   [ROUTES.INVITE_FRIENDS]: undefined;
   [ROUTES.MY_POINTS]: undefined;
   [ROUTES.WITHDRAWAL]: undefined;
+  [ROUTES.MEMORIES]: undefined;
+  [ROUTES.OFFERS]: undefined;
+  [ROUTES.ADVERTISING]: undefined;
+  [ROUTES.CREATE_AD]: undefined;
 };
 
 export type MainTabRouteName = keyof MainTabParamList;

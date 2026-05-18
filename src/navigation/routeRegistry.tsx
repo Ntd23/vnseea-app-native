@@ -8,7 +8,9 @@ import { FeedScreen } from '../feed';
 import { ExploreScreen } from '../explore';
 import { ReelsScreen } from '../reels';
 import { NotificationsScreen } from '../notifications';
-import { SettingsScreen } from '../settings';
+import { MemoriesScreen } from '../memories';
+import { OffersScreen } from '../offers';
+import { AdvertisingScreen, CreateAdScreen, SettingsScreen } from '../settings';
 import {
   BlogDetailScreen,
   BlogFilterCategoryScreen,
@@ -134,6 +136,10 @@ export function createStackRoutes(
     { name: ROUTES.AFFILIATES, component: AffiliatesScreen },
     { name: ROUTES.INVITE_FRIENDS, component: InviteFriendsScreen },
     { name: ROUTES.MY_POINTS, component: MyPointsScreen },
+    { name: ROUTES.MEMORIES, component: MemoriesScreen },
+    { name: ROUTES.OFFERS, component: OffersScreen },
     { name: ROUTES.WITHDRAWAL, component: WithdrawalScreen },
+    { name: ROUTES.ADVERTISING, component: AdvertisingScreen },
+    { name: ROUTES.CREATE_AD, component: CreateAdScreen },
   ];
 }

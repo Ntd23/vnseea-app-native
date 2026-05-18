@@ -18,6 +18,11 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const bottom = Math.max(insets.bottom, 10);
 
+  const currentRouteName = state.routes[state.index].name;
+  if (currentRouteName === ROUTES.REELS) {
+    return null;
+  }
+
   function onPress(name: string, key: string, isFocused: boolean) {
     const event = navigation.emit({
       type: 'tabPress',
