@@ -1,6 +1,8 @@
-// Description: Renders the Stitch VNSEEA-style login screen using shared design token utilities.
+// Description: Renders the Stitch VNSEEA-style login screen using the real auth API.
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -17,6 +19,7 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { useAuthViewModel } from '../../application/view-models/useAuthViewModel';
 
 type LoginNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -41,6 +44,27 @@ function SocialButton({
 function LoginScreen() {
   const navigation = useNavigation<LoginNav>();
   const [showPassword, setShowPassword] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const { error, isLoading, login } = useAuthViewModel();
+
+  async function handleLogin() {
+    try {
+      const result = await login({ username, password });
+
+      if (result.status === 'authenticated') {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: ROUTES.MAIN_TABS }],
+        });
+        return;
+      }
+
+      Alert.alert('Cần xác minh', result.message);
+    } catch {
+      // The view model exposes the message for inline rendering.
+    }
+  }
 
   return (
     <SafeAreaView className="flex-1 surface-base">
@@ -72,17 +96,18 @@ function LoginScreen() {
 
             <View>
               <Text className="mb-2 text-label-primary text-slate-500">
-                Email
+                Email hoặc username
               </Text>
               <View className="input-shell min-h-[48px] justify-center px-4">
                 <TextInput
                   className="text-body-primary"
-                  placeholder="Nhập địa chỉ email"
+                  placeholder="Nhập email hoặc username"
                   placeholderTextColor="#94A3B8"
-                  keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
                   returnKeyType="next"
+                  value={username}
+                  onChangeText={setUsername}
                 />
               </View>
             </View>
@@ -110,6 +135,9 @@ function LoginScreen() {
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   returnKeyType="done"
+                  value={password}
+                  onChangeText={setPassword}
+                  onSubmitEditing={handleLogin}
                 />
                 <TouchableOpacity
                   activeOpacity={0.8}
@@ -128,11 +156,26 @@ function LoginScreen() {
             <TouchableOpacity
               className="btn-primary mt-6 min-h-[48px]"
               activeOpacity={0.9}
-              onPress={() => navigation.navigate(ROUTES.MAIN_TABS)}
+              disabled={isLoading}
+              onPress={handleLogin}
             >
-              <Text className="text-title-primary text-inverse">Đăng nhập</Text>
-              <ArrowRight size={20} color="#FFFFFF" />
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text className="text-title-primary text-inverse">
+                    Đăng nhập
+                  </Text>
+                  <ArrowRight size={20} color="#FFFFFF" />
+                </>
+              )}
             </TouchableOpacity>
+
+            {error ? (
+              <Text className="mt-3 text-center text-caption-primary text-red-500">
+                {error}
+              </Text>
+            ) : null}
 
             <View className="my-6 flex-row items-center">
               <View className="divider-line flex-1" />

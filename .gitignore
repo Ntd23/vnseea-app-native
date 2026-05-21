@@ -80,3 +80,8 @@ yarn-error.log
 # Local MCP/Stitch credentials and cache
 .vscode/mcp.json
 .stitch-mcp/
+
+# Local environment
+.env
+.env.*
+!.env.example

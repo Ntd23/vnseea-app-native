@@ -1,0 +1,201 @@
+<script>
+    var woAudioCallReturnUrl = encodeURIComponent(typeof Wo_GetCallReturnUrl === 'function' ? Wo_GetCallReturnUrl() : window.location.href);
+    window.location.href = "<?php echo $wo['incall']['url'];?>&return_url=" + woAudioCallReturnUrl;
+</script>
+<div class="modal fade" id="re-talking-modal" role="dialog" data-backdrop="static" data-keyboard="false">
+   <div class="modal-dialog">
+      <div class="modal-content">
+         <div class="modal-header">
+            <h4 class="modal-title"><i class="fa fa fa-phone"></i> <?php echo $wo['lang']['audio_call'];?></h4>
+         </div>
+         <div class="modal-body">
+            <div class="row">
+              <div class="col-md-2" style="<?php echo ($wo['language_type'] == 'rtl') ? 'padding-left: 0; padding-right: 15px;' : 'padding-right:0; ';?>">
+                <img src="<?php echo $wo['incall']['in_call_user']['avatar'];?>" alt="" class="hidden-mobile-image">
+              </div>
+              <div class="col-md-10">
+                <p><?php echo $wo['lang']['audio_call_desc'];?><b> <?php echo $wo['incall']['in_call_user']['name'];?></b></p>
+              </div>
+              <div class="clear"></div>
+              <div id="me"></div>
+              <div id="remote-media">
+                  <h3><i class="fa fa-spin fa-spinner"></i> <?php echo $wo['lang']['please_wait']?></h3>
+              </div>
+            </div>
+         </div>
+         <div class="modal-footer">
+             <button type="button" class="btn decline-call btn-default" onclick="Wo_CloseCall('<?php echo $wo['incall']['id'];?>', '<?php echo (!empty($wo['incall']['provider']) ? $wo['incall']['provider'] : Wo_GetActiveCallProvider('audio'));?>', 'audio');"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12.0007 10.5865L16.9504 5.63672L18.3646 7.05093L13.4149 12.0007L18.3646 16.9504L16.9504 18.3646L12.0007 13.4149L7.05093 18.3646L5.63672 16.9504L10.5865 12.0007L5.63672 7.05093L7.05093 5.63672L12.0007 10.5865Z"></path></svg> <?php echo $wo['lang']['cancel'];?></button>
+         </div>
+      </div>
+   </div>
+</div>
+<?php if (!empty($wo['incall']['provider']) && $wo['incall']['provider'] == 'agora') { ?>
+  <script type="text/javascript">
+    var woTalkingReturnUrl = document.referrer || "<?php echo $wo['config']['site_url']; ?>";
+    navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+    if (!navigator.getUserMedia) {
+      $('#remote-media h3').text('Sorry, WebRTC is not available in your browser.');
+    }
+    var agoraAppId = "<?php echo $wo['config']['agora_chat_app_id'];?>";
+    var token = "<?php echo $wo['incall']['access_token'];?>";
+    var channelName = "<?php echo $wo['incall']['room'];?>";
+    var uid = <?php echo $wo['user']['id'];?>;
+
+    let handleError = function(err){
+            console.log("Error: ", err);
+    };
+    var cameraVideoProfile = '480p_4';
+    var screenVideoProfile = '480p_2';
+    var client = AgoraRTC.createClient({mode: 'rtc', codec: 'vp8'});
+    function initClientAndJoinChannel(agoraAppId, token, channelName, uid) {
+      client.init(agoraAppId, function () {
+        console.log("AgoraRTC client initialized");
+        joinChannel(channelName, uid, token);
+      }, function (err) {
+        console.log("[ERROR] : AgoraRTC client init failed", err);
+      });
+    }
+    function joinChannel(channelName, uid, token) {
+      client.join(token, channelName, uid, function(uid) {
+          console.log("User " + uid + " join channel successfully");
+          createCameraStream(uid);
+      }, function(err) {
+          console.log("[ERROR] : join channel failed", err);
+      });
+    }
+
+    function createCameraStream(uid) {
+      var localStream = AgoraRTC.createStream({
+        streamID: uid,
+        audio: true,
+        video: false,
+        screen: false
+      });
+      localStream.setVideoProfile(cameraVideoProfile);
+      localStream.init(function() {
+        console.log("getUserMedia successfully");
+        localStream.play('me');
+        client.publish(localStream, function (err) {
+          console.log("[ERROR] : publish local stream error: " + err);
+        });
+      }, function (err) {
+        console.log("[ERROR] : getUserMedia failed", err);
+      });
+    }
+    client.on('stream-added', function (evt) {
+      client.subscribe(evt.stream,  function (err) {
+          console.log("[ERROR] : subscribe stream failed", err);
+        });
+    });
+
+    client.on('stream-subscribed', function (evt) {
+      var remoteStream = evt.stream;
+      $('#remote-media').empty();
+      remoteStream.play('remote-media');
+    });
+    function leaveChannel() {
+      client.leave(function() {
+        $("#remote-media").empty();
+        location.href = woTalkingReturnUrl;
+      }, function(err) {
+        console.log("client leave failed ", err);
+      });
+    }
+    client.on("peer-leave", function(evt) {
+      location.href = woTalkingReturnUrl;
+    });
+
+    function generateToken() {
+      return null;
+    }
+    $(document).on('click', '.decline-call', function(e) {
+        leaveChannel();
+        location.href = woTalkingReturnUrl;
+    });
+
+    initClientAndJoinChannel(agoraAppId, token, channelName, uid);
+  </script>
+<?php }else{ ?>
+<script>
+var woTalkingReturnUrl = document.referrer || "<?php echo $wo['config']['site_url']; ?>";
+var woTalkingCallId = <?php echo (int) $wo['incall']['id']; ?>;
+var woTalkingJoinedAt = 0;
+var woTalkingClosed = false;
+
+function Wo_ReportTalkingClose(status, redirectNow) {
+  if (woTalkingClosed || woTalkingCallId < 1) {
+    if (redirectNow === true) {
+      location.href = woTalkingReturnUrl;
+    }
+    return;
+  }
+  woTalkingClosed = true;
+  var duration = woTalkingJoinedAt > 0 ? Math.max(0, Math.round((Date.now() - woTalkingJoinedAt) / 1000)) : 0;
+  $.get(Wo_Ajax_Requests_File(), {
+    f: 'close_call',
+    id: woTalkingCallId,
+    call_type: 'audio',
+    provider: '<?php echo (!empty($wo['incall']['provider']) ? $wo['incall']['provider'] : Wo_GetActiveCallProvider('audio')); ?>',
+    status: status,
+    duration: duration
+  }).always(function () {
+    if (redirectNow === true) {
+      location.href = woTalkingReturnUrl;
+    }
+  });
+}
+
+navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+if (!navigator.getUserMedia) {
+  $('#remote-media h3').text('Sorry, WebRTC is not available in your browser.');
+}
+
+Twilio.Video.connect('<?php echo $wo['incall']['access_token'];?>', { name: '<?php echo $wo['incall']['room'];?>', audio: true, video: false }).then(room => {
+  console.log('Connected to Room "%s"', room.name);
+
+  room.participants.forEach(participantConnected);
+  room.on('participantConnected', participantConnected);
+  room.on('disconnected', room => {
+    room.localParticipant.tracks.forEach(publication => {
+      const attachedElements = publication.track.detach();
+      attachedElements.forEach(element => element.remove());
+      Wo_ReportTalkingClose((woTalkingJoinedAt > 0 ? 'ended' : 'cancelled'), true);
+    });
+  });
+  room.on('participantDisconnected', function(participant) {
+    console.log(participant.identity + ' left the Room');
+    Wo_ReportTalkingClose((woTalkingJoinedAt > 0 ? 'ended' : 'cancelled'), true);
+  });
+
+  $(document).on('click', 'a[data-ajax]', function(e) {
+      Wo_ReportTalkingClose((woTalkingJoinedAt > 0 ? 'ended' : 'cancelled'), false);
+      room.disconnect();
+  });
+  $(document).on('click', '.decline-call', function(e) {
+      Wo_ReportTalkingClose((woTalkingJoinedAt > 0 ? 'ended' : 'cancelled'), false);
+      room.disconnect();
+  });
+});
+
+function participantConnected(participant) {
+  console.log('Participant "%s" connected', participant.identity);
+  if (woTalkingJoinedAt === 0) {
+    woTalkingJoinedAt = Date.now();
+  }
+
+  const div = document.createElement('div');
+  div.id = participant.sid;
+  participant.tracks.forEach(publication => {
+    if (publication.isSubscribed) {
+      const track = publication.track;
+      div.appendChild(track.attach());
+    }
+  });
+  participant.on('trackSubscribed', track => {
+    document.getElementById('remote-media').appendChild(track.attach());
+  });
+
+  $('#remote-media').html(div);
+}
+</script>
+<?php } ?>

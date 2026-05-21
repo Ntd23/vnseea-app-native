@@ -1,6 +1,7 @@
-// Description: Renders the no-footer forgot password screen adapted from the Stitch auth design.
-import React from 'react';
+// Description: Renders the no-footer forgot password screen using the real auth API.
+import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -23,11 +24,23 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { useAuthViewModel } from '../../application/view-models/useAuthViewModel';
 
 type ForgotPasswordNav = NativeStackNavigationProp<RootStackParamList>;
 
 function ForgotPasswordScreen() {
   const navigation = useNavigation<ForgotPasswordNav>();
+  const [email, setEmail] = useState('');
+  const { error, forgotPassword, isLoading, passwordResetSent } =
+    useAuthViewModel();
+
+  async function handleSubmit() {
+    try {
+      await forgotPassword({ email });
+    } catch {
+      // The view model exposes the message for inline rendering.
+    }
+  }
 
   return (
     <SafeAreaView className="flex-1 surface-base">
@@ -79,6 +92,9 @@ function ForgotPasswordScreen() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   returnKeyType="send"
+                  value={email}
+                  onChangeText={setEmail}
+                  onSubmitEditing={handleSubmit}
                 />
               </View>
             </View>
@@ -86,10 +102,30 @@ function ForgotPasswordScreen() {
             <TouchableOpacity
               className="btn-primary mt-6 min-h-[48px] flex-row rounded-full"
               activeOpacity={0.9}
+              disabled={isLoading}
+              onPress={handleSubmit}
             >
-              <Text className="text-title-primary text-inverse">Gửi</Text>
-              <ArrowRight size={20} color="#FFFFFF" />
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text className="text-title-primary text-inverse">Gửi</Text>
+                  <ArrowRight size={20} color="#FFFFFF" />
+                </>
+              )}
             </TouchableOpacity>
+
+            {error ? (
+              <Text className="mt-3 text-center text-caption-primary text-red-500">
+                {error}
+              </Text>
+            ) : null}
+
+            {passwordResetSent ? (
+              <Text className="mt-3 text-center text-caption-primary text-brand">
+                Email đặt lại mật khẩu đã được gửi.
+              </Text>
+            ) : null}
 
             <TouchableOpacity
               className="mt-6 min-h-[44px] flex-row items-center justify-center"

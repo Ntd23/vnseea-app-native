@@ -1,0 +1,430 @@
+<div class="wo_settings_page wow_content">
+	<div class="avatar-holder profile">
+		<img src="<?php echo $wo['setting']['avatar']?>" alt="<?php echo $wo['setting']['name']?> Profile Picture" class="avatar">
+		<div class="infoz">
+			<h5 title="<?php echo $wo['setting']['name']?>"><a href="<?php echo Wo_SeoLink('index.php?link1=timeline&u=' . $wo['setting']['username'] . '');?>" data-ajax="?link1=timeline&u=<?php echo $wo['setting']['username'] ?>"><?php echo $wo['setting']['name']?></a></h5>
+			<p><?php echo $wo['lang']['profile_setting']; ?></p>
+		</div>
+	</div>
+	<hr>
+
+	<form  method="post" class="form-horizontal setting-profile-form">
+		<div class="setting-profile-alert setting-update-alert"></div>
+		
+		<div class="row">
+			<div class="col-md-6">
+				<div class="wow_form_fields">
+					<label for="first_name"><?php echo $wo['lang']['first_name']; ?></label>  
+					<input id="first_name" name="first_name" type="text" value="<?php echo $wo['setting']['first_name'];?>">
+				</div>
+			</div>
+			<div class="col-md-6">
+				<div class="wow_form_fields">
+					<label for="last_name"><?php echo $wo['lang']['last_name']; ?></label>  
+					<input id="last_name" name="last_name" type="text" value="<?php echo $wo['setting']['last_name'];?>">
+				</div>
+			</div>
+		</div>
+		<div class="wow_form_fields">
+			<label for="about"><?php echo $wo['lang']['about_me']; ?></label>  
+			<?php $text = br2nl($wo['setting']['about']); ?>
+			<textarea id="about" name="about" rows="4"><?php echo $text;?></textarea>
+		</div>
+		<div class="wow_form_fields profile_location_field">
+			<label for="profile_location_input"><?php echo $wo['lang']['location']; ?></label>  
+			<input id="profile_location_input" name="profile_location_search" type="search" autocomplete="nope" autocorrect="off" autocapitalize="off" spellcheck="false" role="presentation" aria-autocomplete="list" value="<?php echo $wo['setting']['address'];?>">
+			<input id="profile_address_value" name="address" type="hidden" value="<?php echo $wo['setting']['address'];?>">
+			<div class="product_location_suggestions profile_location_suggestions"></div>
+		</div>
+		<div class="wow_form_fields mb-0">
+			<label for="school"><?php echo $wo['lang']['school']; ?></label>  
+		</div>
+		<div class="row">
+			<div class="col-md-6">
+				<div class="wow_form_fields mt-0">
+					<input id="school" name="school" type="text" value="<?php echo $wo['setting']['school'];?>">
+				</div>
+			</div>
+			<div class="col-md-6 round-check">
+				<input type="checkbox" id="completed" name="completed" <?php echo ($wo['setting']['school_completed'] == 1)   ? 'checked' : '';?>>
+				<label for="completed"><?php echo $wo['lang']['completed']; ?></label>
+			</div>
+		</div>
+		<hr>
+		<div class="wow_form_fields mb-0">
+			<label for="working"><?php echo $wo['lang']['working_at']; ?></label>  
+		</div>
+		<div class="row">
+			<div class="col-md-6">
+				<div class="wow_form_fields mt-0">
+					<input id="working" name="working" type="text" value="<?php echo $wo['setting']['working'];?>">
+					<span class="help-block">(e.g Apple)</span>
+				</div>
+			</div>
+			<div class="col-md-6">
+				<div class="wow_form_fields mt-0">
+					<input id="working_link" name="working_link" type="text" value="<?php echo $wo['setting']['working_link'];?>">
+					<span class="help-block"><?php echo $wo['lang']['company_website']; ?></span>
+				</div>
+			</div>
+		</div>
+		<div class="row">
+			<div class="col-md-6">
+				<div class="wow_form_fields">
+					<label for="website"><?php echo $wo['lang']['website']; ?></label>
+					<input id="website" name="website" type="text" value="<?php echo $wo['setting']['website'];?>">
+				</div>
+			</div>
+			<div class="col-md-6">
+				<div class="wow_form_fields">
+					<label for="relationship"><?php echo $wo['lang']['relationship']; ?></label>
+					<select id="relationship" name="relationship" onchange="if(this.value > 1 && this.value <= 4){$('#choose_rel_ship').modal('show');}">
+						<option value="0"><?php echo $wo['lang']['none']; ?></option>
+						<?php 
+							foreach ($wo['relationship'] as $relationship_ids => $relationship) { 
+							$relationship_id = $wo['setting']['relationship_id'];
+							$selected_relationship = ($relationship_ids == $relationship_id) ? ' selected' : '' ;
+						?>
+							<option value="<?php echo $relationship_ids;?>" <?php echo $selected_relationship;?> ><?php echo $relationship;?></option>
+						<?php } ?>
+					</select>
+				</div>
+			</div>
+			<?php if ($wo['config']['website_mode'] == 'linkedin') { ?>
+				<div class="col-md-12 skills_div">
+					<div class="wow_form_fields">
+						<label for="skills"><?php echo $wo['lang']['skills']; ?></label>
+						<input id="skills" name="skills" type="text" value="<?php echo $wo['setting']['skills'];?>">
+						<div class="skills_result"></div>
+					</div>
+				</div>
+				<div class="col-md-12 languages_div">
+					<div class="wow_form_fields">
+						<label for="languages"><?php echo $wo['lang']['languages']; ?></label>
+						<input id="languages" name="languages" type="text" value="<?php echo implode(",", $wo['setting']['formated_langs']);?>">
+						<div class="dropdown-menu languages_result"></div>
+					</div>
+				</div>
+		  <?php } ?>
+		</div>
+
+		<?php
+			$fields = Wo_GetProfileFields('profile');
+			if (count($fields) > 0) {
+				foreach ($fields as $key => $wo['field']) {
+					echo Wo_LoadPage('setting/profile-fields');
+				}
+				echo '<input name="custom_fields" type="hidden" value="1">';
+			}
+		?>
+		
+		<div class="text-center">
+			<button type="submit" class="btn btn-main btn-mat btn-mat-raised add_wow_loader"><?php echo $wo['lang']['save']; ?></button>
+		</div>
+
+		<input type="hidden" name="user_id" id="user-id" value="<?php echo $wo['setting']['user_id'];?>">
+		<input type="hidden" name="relationship_user" id="relationship_user_id" value="0">
+		<input type="hidden" name="hash_id" value="<?php echo Wo_CreateSession();?>">
+	</form>
+</div>
+
+<div class="modal fade" id="choose_rel_ship" role="dialog">
+	<div class="modal-dialog">
+		<div class="modal-content">
+			<div class="modal-header">
+				<button type="button" class="close" data-dismiss="modal" aria-label="Close" onclick="$('#relationship_user_id').val(0);"><span aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-x"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span></button>
+				<h4 class="modal-title"><?php echo $wo['lang']['relationship_status']; ?></h4>
+			</div>
+			<div class="choose_rel_ship_alert">
+             
+			</div>
+			<div class="modal-body">
+				<div class="col-md-3">
+					<div class="choose_rel_ship_avatar">
+						<div>
+							<i class="fa fa-user-circle-o"></i>
+						</div>
+					</div>
+				</div>
+				<div class="col-md-9">
+					<div class="form-group">
+						<input type="text" class="form-control" onkeyup="Wo_RelationshipSearch(this.value);" placeholder="<?php echo $wo['lang']['username']; ?>">
+						<div>
+							<div class="dropdown" id="select_relationship_with">
+								<ul class="dropdown-menu" style="width: 100%;">
+                        
+								</ul>
+							</div>
+						</div>
+					</div>
+					<div class="form-group choose_rel_ship_meta" >
+						<h4></h4>
+						<p class="user-lastseen"></p>  
+					</div>
+				</div>
+				<div class="clear"></div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-main" data-dismiss="modal"><?php echo $wo['lang']['save']; ?></button>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script type="text/javascript">
+<?php if ($wo['config']['website_mode'] == 'linkedin') { ?>
+	$("#skills").tagsinput({});
+	$("#languages").tagsinput({});
+
+	$($('.skills_div .bootstrap-tagsinput').find('input')).on('keyup', function(event) {
+			SearchSkill($(this).val())
+	});
+
+	$($('.languages_div .bootstrap-tagsinput').find('input')).on('keyup', function(event) {
+			SearchLanguages($(this).val())
+	});
+<?php } ?>
+var relationship_users = [];
+var relationship_user  = 0;
+function Wo_RelationshipSearch(name = ''){
+  if (!name) { return false;}
+  $.ajax({
+    url: Wo_Ajax_Requests_File(),
+    type: 'GET',
+    dataType: 'json',
+    data: {f: 'family',s:'search',name:name},
+  })
+  .done(function(data) {
+    if (data.status == 200 && data.users.length > 0) {
+      relationship_users = data.users
+      var html = '';
+      for (var i = 0; i < data.users.length; i++) {
+        html += '<li class="pointer select_relationship_user" data-id="'+i+'"><a>'+data.users[i].name+'</a></li>';        
+      }
+      $("#select_relationship_with").addClass('open').find('ul').html(html);
+    }
+    else{
+      $("#select_relationship_with").removeClass('open');
+    }
+  })
+  .fail(function() {
+    console.log("error");
+  })
+}
+
+$(function() {
+  $(document).on('click', '.select_relationship_user', function(event) {
+    event.preventDefault();
+    var user_data     = relationship_users[$(this).attr('data-id')];
+    $("#relationship_user_id").val(user_data.user_id);
+    $(".choose_rel_ship_meta").find('h4').text(user_data.name);
+    $(".choose_rel_ship_meta").find('p').html(user_data.lastseen);
+    $(".choose_rel_ship_avatar").html('<img src="'+user_data.avatar+'" alt="Picture">');
+    $("#select_relationship_with").removeClass('open').find('ul').empty();
+  });
+
+  $('form.setting-profile-form').ajaxForm({
+    url: Wo_Ajax_Requests_File() + '?f=update_profile_setting',
+    beforeSend: function() {
+      $('.wo_settings_page').find('.add_wow_loader').addClass('btn-loading');
+    },
+    success: function(data) {
+    	$('.skills_result').html('');
+      if (data.status == 200) {
+        <?php if($wo['user']['user_id'] == $wo['setting']['user_id']) { ?>
+        if (data.first_name != '' || data.last_name != '') {
+            var displayName = data.first_name || (data.last_name || '');
+        	<?php if ($wo['config']['node_socket_flow'] == "1") { ?>
+            socket.emit("on_name_changed", {from_id: _getCookie("user_id"), name: displayName});
+            <?php } ?>
+          $('[id^=user-full-name]').text(displayName);
+        }
+        <?php } ?>
+        scrollToTop();
+        $('.setting-profile-alert').html('<div class="alert alert-success">' + data.message + '</div>');
+        $('.alert-success').fadeIn('fast', function() {
+          $(this).delay(2500).slideUp(500, function() {
+            $(this).remove();
+          });
+        });
+      } else if (data.errors) {
+        var errors = data.errors.join("<br>");
+        scrollToTop();
+        $('.setting-profile-alert').html('<div class="alert alert-danger">' + errors + '</div>');
+        $('.alert-danger').fadeIn(300);
+      }
+      $('.wo_settings_page').find('.add_wow_loader').removeClass('btn-loading');
+    }
+  });
+});
+
+// --- Profile Location Autocomplete (Nominatim) ---
+var woProfileLocationLocale = <?php echo json_encode(strtolower($wo['language'])); ?>;
+function Wo_GetProfileLocationLanguage() {
+	return (woProfileLocationLocale || document.documentElement.lang || navigator.language || navigator.userLanguage || 'en').toLowerCase();
+}
+function Wo_IsVietnameseProfileLocation() {
+	var language = Wo_GetProfileLocationLanguage();
+	return language.indexOf('vi') === 0 || language.indexOf('vietnam') !== -1;
+}
+function Wo_NormalizeProfileLocationPart(value) {
+	return (value || '')
+		.toLowerCase()
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/[^a-z0-9]+/g, ' ')
+		.trim();
+}
+function Wo_GetProfileLocationCanonicalPart(value) {
+	return Wo_NormalizeProfileLocationPart(value)
+		.replace(/^(phuong|xa|quan|huyen|tinh|thanh pho|tp)\s+/i, '')
+		.replace(/\s+(ward|district|province|city)$/i, '')
+		.trim();
+}
+function Wo_LocalizeVietnameseProfileLocationPart(value) {
+	if (!value) return '';
+	var v = value.trim();
+	v = v.replace(/^(.+?)\s+Road$/i, 'Đường $1');
+	v = v.replace(/^(.+?)\s+Street$/i, '$1');
+	v = v.replace(/^(.+?)\s+Ward$/i, 'Phường $1');
+	v = v.replace(/^Ward\s+(.+)$/i, 'Phường $1');
+	v = v.replace(/^District\s+(.+)$/i, 'Quận $1');
+	v = v.replace(/^Province\s+(.+)$/i, 'Tỉnh $1');
+	v = v.replace(/^City\s+(.+)$/i, 'Thành phố $1');
+	v = v.replace(/^Vietnam$/i, 'Việt Nam');
+	v = v.replace(/^Ha Noi$/i, 'Hà Nội');
+	v = v.replace(/^Ho Chi Minh City$/i, 'TP Hồ Chí Minh');
+	return v;
+}
+function Wo_GetProfileLocationText(item, queryValue) {
+	if (!item || !item.address) {
+		return item && (item.display_name || item.name) ? (item.display_name || item.name) : '';
+	}
+	var address = item.address;
+	var isVi = Wo_IsVietnameseProfileLocation();
+	var parts = [];
+	var firstLine = [];
+	var houseNumber = address.house_number || address.house_name || '';
+	var road = address.road || address.pedestrian || address.footway || address.cycleway || '';
+	var nq = Wo_NormalizeProfileLocationPart(queryValue || '');
+	var nr = Wo_NormalizeProfileLocationPart(road);
+	if (isVi && nq && nr) {
+		if (nq.indexOf(nr) !== -1 || nr.indexOf(nq) !== -1) road = queryValue;
+	}
+	if (houseNumber) firstLine.push(houseNumber);
+	if (road) firstLine.push(isVi ? Wo_LocalizeVietnameseProfileLocationPart(road) : road);
+	if (firstLine.length > 0) parts.push(firstLine.join(' '));
+	[
+		address.suburb, address.neighbourhood, address.quarter,
+		address.city_district, address.county, address.district,
+		address.city, address.town, address.municipality,
+		address.state_district, address.state, address.country
+	].forEach(function(val) {
+		if (!val) return;
+		var lv = isVi ? Wo_LocalizeVietnameseProfileLocationPart(val) : val;
+		var cv = Wo_GetProfileLocationCanonicalPart(lv);
+		var exists = parts.some(function(ev) { return Wo_GetProfileLocationCanonicalPart(ev) === cv; });
+		if (!exists) parts.push(lv);
+	});
+	return parts.join(', ');
+}
+function Wo_GetProfileLocationSearchUrl(locationValue, limit) {
+	var params = new URLSearchParams({
+		format: 'jsonv2',
+		addressdetails: '1',
+		limit: String(limit || 10),
+		'accept-language': Wo_GetProfileLocationLanguage(),
+		q: locationValue
+	});
+	if (Wo_IsVietnameseProfileLocation()) params.set('countrycodes', 'vn');
+	return 'https://nominatim.openstreetmap.org/search?' + params.toString();
+}
+function Wo_RenderProfileLocationSuggestions(items, queryValue) {
+	var box = $('.profile_location_suggestions');
+	if (!Array.isArray(items) || items.length === 0) { box.empty().hide(); return; }
+	var seen = {};
+	var html = '';
+	items.forEach(function(item) {
+		var dn = Wo_GetProfileLocationText(item, queryValue);
+		var ndn = Wo_NormalizeProfileLocationPart(dn);
+		if (!dn || seen[ndn]) return;
+		seen[ndn] = true;
+		html += '<p class="pointer product_location_suggestion_item profile_location_suggestion_item" data-location="' + escapeHtml(dn) + '">' + escapeHtml(dn) + '</p>';
+	});
+	if (!html) { box.empty().hide(); return; }
+	box.html(html).show();
+}
+function Wo_SearchProfileLocationSuggestions(locationValue) {
+	if (!locationValue || locationValue.length < 3) { Wo_RenderProfileLocationSuggestions([], locationValue); return; }
+	fetch(Wo_GetProfileLocationSearchUrl(locationValue, 10), {
+		headers: { 'Accept': 'application/json' }
+	}).then(function(r) {
+		if (!r.ok) throw new Error('Profile location suggestion request failed');
+		return r.json();
+	}).then(function(results) {
+		Wo_RenderProfileLocationSuggestions(results, locationValue);
+	}).catch(function() {
+		Wo_RenderProfileLocationSuggestions([], locationValue);
+	});
+}
+$(function() {
+	var woProfileLocTimer = null;
+	$('#profile_location_input').on('input', function() {
+		clearTimeout(woProfileLocTimer);
+		var val = $(this).val().trim();
+		$('#profile_address_value').val(val);
+		woProfileLocTimer = setTimeout(function() {
+			Wo_SearchProfileLocationSuggestions(val);
+		}, 250);
+	});
+	$('#profile_location_input').on('change blur', function() {
+		$('#profile_address_value').val($(this).val().trim());
+		setTimeout(function() { Wo_RenderProfileLocationSuggestions([]); }, 150);
+	});
+	$(document).on('mousedown', '.profile_location_suggestion_item', function(e) {
+		e.preventDefault();
+		var loc = $(this).attr('data-location') || '';
+		$('#profile_location_input').val(loc);
+		$('#profile_address_value').val(loc);
+		Wo_RenderProfileLocationSuggestions([]);
+	});
+	$('form.setting-profile-form').on('submit', function() {
+		$('#profile_address_value').val($('#profile_location_input').val().trim());
+	});
+});
+</script>
+<style>
+.profile_location_field {
+	position: relative;
+}
+.profile_location_field .profile_location_suggestions {
+	position: absolute;
+	left: 0;
+	right: 0;
+	width: 100%;
+	top: 100%;
+	z-index: 999;
+	background: var(--wo-white-bg, #fff);
+	border: 1px solid var(--wo-border-color, #e0e0e0);
+	border-top: none;
+	border-radius: 0 0 8px 8px;
+	max-height: 220px;
+	overflow-y: auto;
+	box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+	display: none;
+}
+.profile_location_field .profile_location_suggestions p {
+	margin: 0;
+	padding: 10px 14px;
+	font-size: 13.5px;
+	border-bottom: 1px solid var(--wo-border-color, #eee);
+	transition: background 0.15s ease;
+	cursor: pointer;
+}
+.profile_location_field .profile_location_suggestions p:last-child {
+	border-bottom: none;
+}
+.profile_location_field .profile_location_suggestions p:hover {
+	background: var(--wo-hover-bg, #f5f5f5);
+}
+</style>
