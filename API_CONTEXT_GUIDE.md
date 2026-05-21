@@ -278,3 +278,118 @@ Include:
 - loading state
 - auth/session dependency if needed
 - regression commands
+
+## Test Case Workflow
+
+Create or update the test case file in the same context folder:
+
+```txt
+src/<context>/TEST_CASE.md
+```
+
+Rules:
+
+- Start the file with an English description line.
+- Keep test cases executable by another developer without reading implementation history.
+- Use stable IDs with the context prefix.
+- Mark status with:
+  - `[ ]` not run
+  - `[x]` passed
+  - `[~]` blocked or partial
+- Do not mark mock behavior as production-passed.
+- Mention backend requirements such as auth token, server key, or specific test account.
+- Add regression commands at the bottom.
+
+ID convention:
+
+```txt
+<CTX>-SMOKE-001
+<CTX>-API-001
+<CTX>-UI-001
+<CTX>-UX-001
+<CTX>-REG-001
+```
+
+Examples:
+
+```txt
+AUTH-LOGIN-001
+FEED-API-001
+PROFILE-UI-001
+MESSAGES-REG-001
+```
+
+## Test Case Template
+
+Copy this when creating a new context test file:
+
+```md
+# Description: Test cases for the <context> bounded context.
+
+# <Context> Test Cases
+
+## Scope
+
+- Context: `src/<context>`
+- Routes:
+  - `<RouteName>`
+- Main entry points:
+  - `src/<context>/presentation/screens/<Screen>.tsx`
+  - `src/<context>/application/view-models/use<Context>ViewModel.ts`
+  - `src/<context>/infrastructure/repositories/Api<Context>Repository.ts`
+- Out of scope:
+  - `<explicit exclusions>`
+
+## Environment
+
+- React Native target: Android debug build on physical device or emulator.
+- Backend API: `https://demo.vnseea.vn/api`
+- Backend session source: WoWonder `access_token` stored in MMKV.
+- Auth requirement: `<guest/authenticated/optional>`
+
+## Smoke
+
+| ID                | Status | Case              | Entry            | Expected                                               |
+| ----------------- | ------ | ----------------- | ---------------- | ------------------------------------------------------ |
+| `<CTX>-SMOKE-001` | `[ ]`  | Screen renders    | `<RouteName>`    | Screen renders without runtime error or broken layout. |
+| `<CTX>-SMOKE-002` | `[ ]`  | Client navigation | `<from> -> <to>` | Route changes without stale state or console error.    |
+
+## API And Data
+
+| ID              | Status | Case             | Entry                            | Expected                                                        |
+| --------------- | ------ | ---------------- | -------------------------------- | --------------------------------------------------------------- |
+| `<CTX>-API-001` | `[ ]`  | Success response | `<repository/view-model action>` | UI renders real backend data, not mock data.                    |
+| `<CTX>-API-002` | `[ ]`  | Backend error    | `<invalid payload/token>`        | User sees readable error state; no unhandled promise rejection. |
+| `<CTX>-API-003` | `[ ]`  | Empty response   | `<empty backend result>`         | Empty state is clear and usable.                                |
+
+## UI And UX
+
+| ID             | Status | Case          | Viewport      | Expected                                                 |
+| -------------- | ------ | ------------- | ------------- | -------------------------------------------------------- |
+| `<CTX>-UI-001` | `[ ]`  | Mobile layout | Android phone | No clipped text, overflow, or broken tap target.         |
+| `<CTX>-UX-001` | `[ ]`  | Loading state | Slow API      | Loading state appears and action is not submitted twice. |
+| `<CTX>-UX-002` | `[ ]`  | Retry path    | Backend error | User can retry or navigate away safely.                  |
+
+## Regression Commands
+
+\`\`\`powershell
+npx tsc --noEmit
+npx jest --passWithNoTests
+\`\`\`
+
+## Notes
+
+- `<backend endpoint notes>`
+- `<known blocked cases>`
+```
+
+## When To Update Test Cases
+
+Update `TEST_CASE.md` when:
+
+- A context switches from mock data to backend API.
+- A route or screen entry point changes.
+- A new backend endpoint is added.
+- A loading, empty, or error state changes.
+- A bug is fixed and should not regress.
+- A context starts depending on auth/session behavior.
