@@ -1,5 +1,5 @@
 // Description: Provides the shared Axios backend API client for all bounded contexts.
-import axios from 'axios';
+import axios, { AxiosHeaders, type AxiosRequestHeaders } from 'axios';
 import { backendConfig } from '../config/env';
 import { sessionStorage } from '../storage/sessionStorage';
 
@@ -32,39 +32,51 @@ function isFormData(value: unknown): value is FormData {
   return typeof FormData !== 'undefined' && value instanceof FormData;
 }
 
+function serializeBackendValue(value: unknown) {
+  if (Array.isArray(value) || typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
 function appendFormDataValue(formData: FormData, key: string, value: unknown) {
   if (value === undefined || value === null) {
     return;
   }
 
-  if (Array.isArray(value) || typeof value === 'object') {
-    formData.append(key, JSON.stringify(value));
-    return;
-  }
-
-  formData.append(key, String(value));
+  formData.append(key, serializeBackendValue(value));
 }
 
-function toBackendFormData(data: unknown) {
-  if (isFormData(data)) {
-    return data;
-  }
-
-  const formData = new FormData();
+function toUrlEncodedBackendPayload(data: unknown) {
+  const params = new URLSearchParams();
 
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     Object.entries(data).forEach(([key, value]) => {
-      appendFormDataValue(formData, key, value);
+      if (value !== undefined && value !== null) {
+        params.append(key, serializeBackendValue(value));
+      }
     });
   }
 
-  return formData;
+  params.append('server_key', backendConfig.serverKey);
+
+  return params.toString();
 }
 
-function injectServerKey(data: unknown) {
-  const formData = toBackendFormData(data);
-  formData.append('server_key', backendConfig.serverKey);
-  return formData;
+function injectServerKey(data: unknown, headers: AxiosRequestHeaders) {
+  if (isFormData(data)) {
+    data.append('server_key', backendConfig.serverKey);
+    return data;
+  }
+
+  const requestHeaders = AxiosHeaders.from(headers);
+  requestHeaders.set('Content-Type', 'application/x-www-form-urlencoded');
+
+  return {
+    data: toUrlEncodedBackendPayload(data),
+    headers: requestHeaders,
+  };
 }
 
 const apiClient = axios.create({
@@ -82,30 +94,54 @@ apiClient.interceptors.request.use(config => {
   }
 
   if (config.method?.toLowerCase() !== 'get') {
-    config.data = injectServerKey(config.data);
+    const payload = injectServerKey(config.data, config.headers);
+
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      'data' in payload &&
+      'headers' in payload
+    ) {
+      config.data = payload.data;
+      config.headers = payload.headers;
+    } else {
+      config.data = payload;
+    }
   }
 
   return config;
 });
 
-apiClient.interceptors.response.use(response => {
-  const { data } = response;
+apiClient.interceptors.response.use(
+  response => {
+    const { data } = response;
 
-  if (data?.api_status && !SUCCESS_STATUSES.has(String(data.api_status))) {
-    const message =
-      data?.errors?.error_text ??
-      data?.errors?.message ??
-      data?.message ??
-      JSON.stringify(data?.errors ?? data);
+    if (data?.api_status && !SUCCESS_STATUSES.has(String(data.api_status))) {
+      const message =
+        data?.errors?.error_text ??
+        data?.errors?.message ??
+        data?.message ??
+        JSON.stringify(data?.errors ?? data);
 
-    throw new BackendApiError(
-      message,
-      String(data.api_status),
-      data?.errors?.error_id ? String(data.errors.error_id) : undefined,
-    );
-  }
+      throw new BackendApiError(
+        message,
+        String(data.api_status),
+        data?.errors?.error_id ? String(data.errors.error_id) : undefined,
+      );
+    }
 
-  return response;
-});
+    return response;
+  },
+  error => {
+    if (axios.isAxiosError(error) && !error.response) {
+      const url = [error.config?.baseURL, error.config?.url]
+        .filter(Boolean)
+        .join('');
+      throw new BackendApiError(`${error.message}: ${url}`, error.code);
+    }
+
+    throw error;
+  },
+);
 
 export default apiClient;
