@@ -46,11 +46,27 @@ function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [validationError, setValidationError] = useState<string | null>(null);
   const { error, isLoading, login } = useAuthViewModel();
+  const visibleError = validationError ?? error;
 
   async function handleLogin() {
+    const normalizedUsername = username.trim();
+
+    if (!normalizedUsername) {
+      setValidationError('Nhập email hoặc username.');
+      return;
+    }
+
+    if (!password) {
+      setValidationError('Nhập mật khẩu.');
+      return;
+    }
+
+    setValidationError(null);
+
     try {
-      const result = await login({ username, password });
+      const result = await login({ username: normalizedUsername, password });
 
       if (result.status === 'authenticated') {
         navigation.reset({
@@ -107,7 +123,10 @@ function LoginScreen() {
                   autoCorrect={false}
                   returnKeyType="next"
                   value={username}
-                  onChangeText={setUsername}
+                  onChangeText={value => {
+                    setUsername(value);
+                    setValidationError(null);
+                  }}
                 />
               </View>
             </View>
@@ -136,7 +155,10 @@ function LoginScreen() {
                   autoCapitalize="none"
                   returnKeyType="done"
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={value => {
+                    setPassword(value);
+                    setValidationError(null);
+                  }}
                   onSubmitEditing={handleLogin}
                 />
                 <TouchableOpacity
@@ -171,10 +193,12 @@ function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            {error ? (
-              <Text className="mt-3 text-center text-caption-primary text-red-500">
-                {error}
-              </Text>
+            {visibleError ? (
+              <View className="mt-4 rounded-xl bg-red-50 px-4 py-3">
+                <Text className="text-center text-sm font-semibold text-red-600">
+                  {visibleError}
+                </Text>
+              </View>
             ) : null}
 
             <View className="my-6 flex-row items-center">
