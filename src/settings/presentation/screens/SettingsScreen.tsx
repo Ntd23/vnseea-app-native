@@ -1,6 +1,7 @@
 // Description: Renders the main settings tab with profile, feature shortcuts, and settings menu.
 import React, { useCallback, useState } from 'react';
 import {
+  Alert,
   ScrollView,
   StatusBar,
   Text,
@@ -16,6 +17,7 @@ import type {
   RootStackParamList,
   RootStackRouteName,
 } from '../../../navigation/types';
+import { useAuthViewModel } from '../../../auth/application/view-models/useAuthViewModel';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
 import { useSettingsViewModel } from '../../application/view-models/useSettingsViewModel';
 import ProfileHeaderCard from '../components/ProfileHeaderCard';
@@ -29,6 +31,7 @@ function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const [sheetVisible, setSheetVisible] = useState(false);
   const { profile, features, settingsMenu } = useSettingsViewModel();
+  const { logout } = useAuthViewModel();
 
   const handleCreateNavigate = useCallback(
     (route: RootStackRouteName) => {
@@ -52,13 +55,27 @@ function SettingsScreen() {
   );
 
   const handleSettingsItemPress = useCallback(
-    (id: string) => {
+    async (id: string) => {
       if (id === 'earnings') {
         navigation.navigate(ROUTES.EARNINGS);
       }
-      // TODO: handle other settings items
+
+      if (id === 'logout') {
+        try {
+          await logout();
+          navigation.reset({
+            index: 0,
+            routes: [{ name: ROUTES.LOGIN }],
+          });
+        } catch (error) {
+          Alert.alert(
+            'Đăng xuất',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
     },
-    [navigation],
+    [logout, navigation],
   );
 
   const handleFeaturePress = useCallback(
