@@ -1,7 +1,50 @@
-// Auth domain types
-// Port từ: client/src/auth/domain/types/
+// Description: Defines domain types for backend authentication flows.
+export type AuthUser = {
+  id: string;
+  username?: string;
+  name?: string;
+  email?: string;
+  avatar?: string;
+};
 
-export interface AuthItem {
-  id: string | number;
-  // TODO: thêm fields từ API response
-}
+export type AuthSession = {
+  accessToken: string;
+  userId: string;
+  userPlatform?: string;
+  membershipRequired?: boolean;
+};
+
+export type LoginCredentials = {
+  username: string;
+  password: string;
+};
+
+export type RegisterInput = {
+  firstName: string;
+  lastName: string;
+  username: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  gender: 'male' | 'female';
+};
+
+export type ForgotPasswordInput = {
+  email: string;
+};
+
+export type AuthResult =
+  | {
+      status: 'authenticated';
+      session: AuthSession;
+    }
+  | {
+      status: 'verification_required';
+      userId: string;
+      message: string;
+    };
+
+export type CurrentUserResult = {
+  user: AuthUser;
+  sessionHash?: string;
+};

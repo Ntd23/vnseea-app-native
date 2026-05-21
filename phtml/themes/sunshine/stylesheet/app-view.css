@@ -1,0 +1,526 @@
+/* English description: Styles for the dedicated mobile WebView app shell. */
+body.app-view {
+  background:
+    radial-gradient(circle at top, rgba(37, 99, 235, 0.12), transparent 34%),
+    linear-gradient(180deg, #f8fbff 0%, #f3f7fb 42%, #eef3f8 100%);
+  color: var(--app-shell-ink);
+}
+
+body.app-view .content-container {
+  min-height: 100dvh;
+  width: 100%;
+  max-width: none;
+  padding-top: 0;
+  padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+}
+
+body.app-view .content-container.wo-msg-container {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+body.app-view #contnet.effect-load {
+  width: 100%;
+}
+
+body.app-view .page-margin {
+  margin: 0 auto !important;
+  padding: 14px 14px 0;
+  max-width: 960px;
+}
+
+body.app-view.page-messages .page-margin {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+body.app-view .profile-container,
+body.app-view .wo_settings_page,
+body.app-view .wo_search_page {
+  width: 100%;
+}
+
+body.app-view .wow_content,
+body.app-view .post-container,
+body.app-view .wo_settings_page,
+body.app-view .wo_search_page,
+body.app-view .profile-container .card,
+body.app-view .home-announcement .alert,
+body.app-view .user-status-home {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 22px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+body.app-view .profile-container .cardheader,
+body.app-view .profile-container .user-cover {
+  border-radius: 22px 22px 0 0;
+  overflow: hidden;
+}
+
+body.app-view.page-home .page-margin > .row > .col-md-3:first-child,
+body.app-view.page-home .page-margin > .row > .sidebar,
+body.app-view .wo_setting_sidebar,
+body.app-view .sidebar:not(.messages-sidebar),
+body.app-view .left-sidebar,
+body.app-view .right-sidebar,
+body.app-view .leftcol,
+body.app-view .rightcol {
+  display: none !important;
+}
+
+body.app-view.page-home .page-margin > .row > .col-md-9,
+body.app-view #wo_main_sett_mid,
+body.app-view .wo_setting_showpage {
+  width: 100% !important;
+}
+
+body.app-view .row.page-margin {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+body.app-view .row.page-margin > [class*="col-"],
+body.app-view .page-margin > .row > [class*="col-"] {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+body.app-view .app-shell-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1080;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 14px 12px;
+  backdrop-filter: blur(18px);
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+body.app-view .app-shell-header__inner {
+  max-width: 960px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 12px;
+}
+
+body.app-view .app-shell-header__slot {
+  display: flex;
+  align-items: center;
+}
+
+body.app-view .app-shell-header__slot--right {
+  justify-content: flex-end;
+}
+
+body.app-view .app-shell-header__button,
+body.app-view .app-shell-header__brand {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--app-shell-ink);
+  text-decoration: none;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.07);
+}
+
+body.app-view .app-shell-header__button {
+  padding: 0;
+  cursor: pointer;
+}
+
+body.app-view .app-shell-header__button svg,
+body.app-view .app-shell-bottom-nav__link svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.app-view .app-shell-header__brand-mark {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--app-shell-accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+body.app-view .app-shell-header__center {
+  min-width: 0;
+}
+
+body.app-view .app-shell-header__eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(100, 116, 139, 0.95);
+}
+
+body.app-view .app-shell-header__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--app-shell-ink);
+}
+
+body.app-view .app-shell-header__ghost {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+}
+
+body.app-view .app-shell-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1080;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  backdrop-filter: blur(18px);
+  background: rgba(255, 255, 255, 0.94);
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 -14px 36px rgba(15, 23, 42, 0.08);
+}
+
+body.app-view .app-shell-bottom-nav__list {
+  max-width: 960px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body.app-view .app-shell-bottom-nav__link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 56px;
+  border-radius: 18px;
+  color: #64748b;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+body.app-view .app-shell-bottom-nav__link.is-active {
+  color: var(--app-shell-accent);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+body.app-view .app-shell-bottom-nav__link span {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.app-view .messages-search-users-form,
+body.app-view .messages-users-list,
+body.app-view .message-user {
+  border-radius: 0;
+}
+
+body.app-view.page-home .home-announcement,
+body.app-view.page-home .greetalert,
+body.app-view.page-home #scroll_filter_click,
+body.app-view.page-home #filterby-post,
+body.app-view.page-home .order-by {
+  display: none !important;
+}
+
+body.app-view.page-home .wow_home_stories .status-list {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 6px 2px 10px;
+  margin: 0;
+  scroll-snap-type: x proximity;
+}
+
+body.app-view.page-home .wow_home_stories .status-list > li {
+  flex: 0 0 78px;
+  scroll-snap-align: start;
+}
+
+body.app-view.page-home .post.publisher-box {
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+body.app-view.page-home .post.publisher-box textarea.postText {
+  min-height: 60px !important;
+}
+
+body.app-view.page-search .wow_main_blogs_bg,
+body.app-view.page-search .popular_posts_hdr {
+  display: none !important;
+}
+
+body.app-view.page-search .wow_search_head,
+body.app-view.page-search .wo_job_head_filter,
+body.app-view.page-search .page-margin.wow_content.wow_big_head_link.full.flex.wow_search_head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+body.app-view.page-search .search-blog,
+body.app-view.page-search .wo_job_main_widget,
+body.app-view.page-search .market_widget,
+body.app-view.page-search .market_widget.count,
+body.app-view.page-search #query,
+body.app-view.page-search #country,
+body.app-view.page-search .btn[type="submit"] {
+  width: 100%;
+}
+
+body.app-view.page-search .wow_srch_drp_mnu {
+  width: min(420px, calc(100vw - 28px));
+  max-width: calc(100vw - 28px);
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 20px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.14);
+}
+
+body.app-view.page-setting .setting-panel {
+  display: block;
+}
+
+body.app-view.page-setting #wo_main_sett_side,
+body.app-view.page-setting #wo_main_sett_mid {
+  display: block !important;
+  width: 100% !important;
+  float: none !important;
+}
+
+body.app-view.page-setting #wo_main_sett_side {
+  position: sticky;
+  top: calc(76px + env(safe-area-inset-top, 0px));
+  z-index: 6;
+  margin-bottom: 14px;
+  padding-bottom: 4px;
+  background: transparent;
+}
+
+body.app-view.page-setting #wo_main_sett_side .wow_content,
+body.app-view.page-setting #wo_main_sett_side .wow_sett_sidebar {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+body.app-view.page-setting #wo_main_sett_side ul {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  margin: 0;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+body.app-view.page-setting #wo_main_sett_side ul::-webkit-scrollbar {
+  display: none;
+}
+
+body.app-view.page-setting #wo_main_sett_side li {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+body.app-view.page-setting #wo_main_sett_side li hr {
+  display: none;
+}
+
+body.app-view.page-setting #wo_main_sett_side a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.96);
+  color: #475569;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+body.app-view.page-setting #wo_main_sett_side li.active a {
+  color: var(--app-shell-accent);
+  border-color: rgba(37, 99, 235, 0.2);
+  background: rgba(37, 99, 235, 0.1);
+}
+
+body.app-view.page-setting #wo_main_sett_side svg {
+  width: 18px;
+  height: 18px;
+}
+
+body.app-view.page-timeline .profile-container .card.hovercard,
+body.app-view.page-page .profile-container .card.hovercard,
+body.app-view.page-group .profile-container .card.hovercard {
+  overflow: hidden;
+}
+
+body.app-view.page-timeline .profile-container .cardheader.user-cover,
+body.app-view.page-page .profile-container .cardheader.user-cover,
+body.app-view.page-group .profile-container .cardheader.user-cover {
+  min-height: 190px;
+}
+
+body.app-view.page-timeline .pic-info-cont,
+body.app-view.page-page .pic-info-cont,
+body.app-view.page-group .pic-info-cont {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 0 16px 18px;
+  margin-top: -26px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(255, 255, 255, 0));
+}
+
+body.app-view.page-timeline .user-avatar,
+body.app-view.page-page .user-avatar,
+body.app-view.page-group .user-avatar {
+  width: 92px;
+  min-width: 92px;
+  height: 92px;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 4px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+}
+
+body.app-view.page-timeline .user-avatar img,
+body.app-view.page-page .user-avatar img,
+body.app-view.page-group .user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+body.app-view.page-timeline .pic-info-cont .info,
+body.app-view.page-page .pic-info-cont .info,
+body.app-view.page-group .pic-info-cont .info {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+body.app-view.page-timeline .options-buttons,
+body.app-view.page-page .options-buttons,
+body.app-view.page-group .options-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+body.app-view.page-timeline .options-buttons .btn,
+body.app-view.page-page .options-buttons .btn,
+body.app-view.page-group .options-buttons .btn {
+  border-radius: 999px;
+}
+
+body.app-view.page-timeline .profile-lists,
+body.app-view.page-page .profile-lists,
+body.app-view.page-group .profile-lists {
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+body.app-view.page-messages .wo_kb_msg_page,
+body.app-view.page-messages .msg_under_hood {
+  min-height: calc(100dvh - 176px);
+}
+
+body.app-view.page-messages .messages-search-users-form {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 12px 12px 8px;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+body.app-view.page-messages .wo_msg_tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 0 8px;
+  padding: 0 0 4px;
+  border-bottom: 0;
+  white-space: nowrap;
+}
+
+body.app-view.page-messages .wo_msg_tabs li {
+  float: none;
+  display: inline-flex;
+}
+
+body.app-view.page-messages .wo_msg_tabs li a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 10px 14px;
+  border: 0 !important;
+  border-radius: 999px;
+  background: #f8fafc;
+}
+
+body.app-view.page-messages .wo_msg_tabs li.active a {
+  color: var(--app-shell-accent);
+  background: rgba(37, 99, 235, 0.1);
+}
+
+body.app-view .cc-window,
+body.app-view .theme-settings,
+body.app-view .ads-navbar-wrapper {
+  display: none !important;
+}
+
+@media (max-width: 767px) {
+  body.app-view .page-margin {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  body.app-view.page-timeline .page-margin,
+  body.app-view.page-page .page-margin,
+  body.app-view.page-group .page-margin,
+  body.app-view.page-messages .page-margin {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  body.app-view .app-shell-header__title {
+    font-size: 17px;
+  }
+}

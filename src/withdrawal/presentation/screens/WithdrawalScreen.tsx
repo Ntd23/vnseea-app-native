@@ -89,15 +89,17 @@ function MethodPickerModal({
       visible={mounted}
       transparent
       animationType="none"
-      onRequestClose={onClose}>
+      onRequestClose={onClose}
+    >
       {/* Dim backdrop */}
       <Animated.View
         pointerEvents="box-none"
-        style={[StyleSheet.absoluteFillObject, { opacity: backdropOpacity }]}>
+        style={[StyleSheet.absoluteFill, { opacity: backdropOpacity }]}
+      >
         <TouchableWithoutFeedback onPress={onClose}>
           <View
             style={[
-              StyleSheet.absoluteFillObject,
+              StyleSheet.absoluteFill,
               { backgroundColor: 'rgba(0,0,0,0.42)' },
             ]}
           />
@@ -106,10 +108,8 @@ function MethodPickerModal({
 
       {/* Bottom sheet */}
       <Animated.View
-        style={[
-          pickerStyles.sheet,
-          { transform: [{ translateY }] },
-        ]}>
+        style={[pickerStyles.sheet, { transform: [{ translateY }] }]}
+      >
         {/* Drag handle */}
         <View style={pickerStyles.handle} />
 
@@ -125,12 +125,14 @@ function MethodPickerModal({
               style={[
                 pickerStyles.row,
                 index < methods.length - 1 && pickerStyles.rowDivider,
-              ]}>
+              ]}
+            >
               <Text
                 style={[
                   pickerStyles.rowLabel,
                   isActive && pickerStyles.rowLabelActive,
-                ]}>
+                ]}
+              >
                 {method.label}
               </Text>
               {isActive && <Check size={18} color="#0000ff" />}
@@ -203,7 +205,13 @@ const pickerStyles = StyleSheet.create({
 function FieldLabel({ label }: { label: string }) {
   return (
     <Text
-      style={{ fontSize: 15, fontWeight: '700', color: '#000000', marginBottom: 8 }}>
+      style={{
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#000000',
+        marginBottom: 8,
+      }}
+    >
       {label}
     </Text>
   );
@@ -259,7 +267,8 @@ function WithdrawalScreen() {
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
           <ArrowLeft size={24} color="#ffffff" />
         </TouchableOpacity>
         <Text className="text-heading text-inverse ml-3">Rút tiền</Text>
@@ -267,13 +276,14 @@ function WithdrawalScreen() {
 
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <ScrollView
           className="flex-1"
           contentContainerClassName="px-4 pb-16 pt-5"
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
-
+          showsVerticalScrollIndicator={false}
+        >
           {/* ── Balance Card ── */}
           <View className="surface-card items-center justify-center p-6 mb-5">
             <Text className="text-body-secondary mb-1">Số dư hiện tại</Text>
@@ -282,14 +292,14 @@ function WithdrawalScreen() {
 
           {/* ── Form Card ── */}
           <View className="surface-card p-5">
-
             {/* Method picker trigger */}
             <View style={{ marginBottom: 20 }}>
               <FieldLabel label="Phương thức rút tiền" />
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() => setPickerVisible(true)}
-                style={formStyles.inputRow}>
+                style={formStyles.inputRow}
+              >
                 <Text style={formStyles.inputText}>{selectedMethod.label}</Text>
                 <ChevronDown size={18} color="#64748b" />
               </TouchableOpacity>
@@ -299,7 +309,9 @@ function WithdrawalScreen() {
             <View style={{ marginBottom: 20 }}>
               <FieldLabel label="Số tiền (USD)" />
               <View style={[formStyles.inputRow, { paddingVertical: 14 }]}>
-                <Text style={{ fontSize: 14, color: '#64748b', marginRight: 6 }}>
+                <Text
+                  style={{ fontSize: 14, color: '#64748b', marginRight: 6 }}
+                >
                   $
                 </Text>
                 <TextInput
@@ -318,7 +330,8 @@ function WithdrawalScreen() {
                   color: '#64748b',
                   lineHeight: 18,
                   marginTop: 6,
-                }}>
+                }}
+              >
                 Số tiền tối thiểu: $50.00
               </Text>
             </View>
@@ -349,8 +362,11 @@ function WithdrawalScreen() {
                   paddingHorizontal: 16,
                   paddingVertical: 12,
                   marginBottom: 16,
-                }}>
-                <Text style={{ fontSize: 13, color: '#dc2626', lineHeight: 20 }}>
+                }}
+              >
+                <Text
+                  style={{ fontSize: 13, color: '#dc2626', lineHeight: 20 }}
+                >
                   {error}
                 </Text>
               </View>
@@ -361,11 +377,14 @@ function WithdrawalScreen() {
               activeOpacity={0.9}
               onPress={handleSubmit}
               disabled={isLoading}
-              style={formStyles.submitBtn}>
+              style={formStyles.submitBtn}
+            >
               {isLoading ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#ffffff' }}>
+                <Text
+                  style={{ fontSize: 15, fontWeight: '700', color: '#ffffff' }}
+                >
                   Yêu cầu rút tiền
                 </Text>
               )}

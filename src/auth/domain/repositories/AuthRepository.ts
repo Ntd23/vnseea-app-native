@@ -1,10 +1,16 @@
-// Auth Repository Interface
-// Port từ: client/src/auth/domain/repositories/
-
-import type { AuthItem } from '../types/auth.types';
+// Description: Declares the auth repository contract used by application view models.
+import type {
+  AuthResult,
+  CurrentUserResult,
+  ForgotPasswordInput,
+  LoginCredentials,
+  RegisterInput,
+} from '../types/auth.types';
 
 export interface AuthRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<AuthItem[]>;
-  // getById(id: string | number): Promise<AuthItem | null>;
+  login(credentials: LoginCredentials): Promise<AuthResult>;
+  register(input: RegisterInput): Promise<AuthResult>;
+  forgotPassword(input: ForgotPasswordInput): Promise<void>;
+  logout(): Promise<void>;
+  getCurrentUser(): Promise<CurrentUserResult | null>;
 }

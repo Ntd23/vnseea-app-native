@@ -1,6 +1,8 @@
-// Description: Renders the Stitch VNSEEA-style register screen using shared design token utilities.
+// Description: Renders the Stitch VNSEEA-style register screen using the real auth API.
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -17,20 +19,27 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { useAuthViewModel } from '../../application/view-models/useAuthViewModel';
 
 type RegisterNav = NativeStackNavigationProp<RootStackParamList>;
+
+type FieldProps = {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  secureTextEntry?: boolean;
+  keyboardType?: 'default' | 'email-address';
+};
 
 function Field({
   label,
   placeholder,
+  value,
+  onChangeText,
   secureTextEntry,
   keyboardType,
-}: {
-  label: string;
-  placeholder: string;
-  secureTextEntry?: boolean;
-  keyboardType?: 'default' | 'email-address';
-}) {
+}: FieldProps) {
   return (
     <View>
       <Text className="mb-2 text-label-primary text-slate-500">{label}</Text>
@@ -43,6 +52,8 @@ function Field({
           keyboardType={keyboardType}
           autoCapitalize="none"
           autoCorrect={false}
+          value={value}
+          onChangeText={onChangeText}
         />
       </View>
     </View>
@@ -69,8 +80,46 @@ function SocialButton({
 
 function RegisterScreen() {
   const navigation = useNavigation<RegisterNav>();
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [gender, setGender] = useState<'male' | 'female'>('male');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const { error, isLoading, register } = useAuthViewModel();
+
+  async function handleRegister() {
+    if (!acceptedTerms) {
+      Alert.alert('Điều khoản', 'Bạn cần đồng ý điều khoản trước khi đăng ký.');
+      return;
+    }
+
+    try {
+      const result = await register({
+        firstName,
+        lastName,
+        username,
+        email,
+        password,
+        confirmPassword,
+        gender,
+      });
+
+      if (result.status === 'authenticated') {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: ROUTES.MAIN_TABS }],
+        });
+        return;
+      }
+
+      Alert.alert('Cần xác minh', result.message);
+    } catch {
+      // The view model exposes the message for inline rendering.
+    }
+  }
 
   return (
     <SafeAreaView className="flex-1 surface-base">
@@ -97,24 +146,49 @@ function RegisterScreen() {
             <View className="gap-4">
               <View className="flex-row gap-4">
                 <View className="flex-1">
-                  <Field label="First Name" placeholder="Nguyễn Văn" />
+                  <Field
+                    label="First Name"
+                    placeholder="Nguyễn Văn"
+                    value={firstName}
+                    onChangeText={setFirstName}
+                  />
                 </View>
                 <View className="flex-1">
-                  <Field label="Last Name" placeholder="A" />
+                  <Field
+                    label="Last Name"
+                    placeholder="A"
+                    value={lastName}
+                    onChangeText={setLastName}
+                  />
                 </View>
               </View>
 
-              <Field label="Username" placeholder="nguyenvana123" />
+              <Field
+                label="Username"
+                placeholder="nguyenvana123"
+                value={username}
+                onChangeText={setUsername}
+              />
               <Field
                 label="Email"
                 placeholder="email@example.com"
                 keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
               />
-              <Field label="Password" placeholder="••••••••" secureTextEntry />
+              <Field
+                label="Password"
+                placeholder="********"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
               <Field
                 label="Confirm Password"
-                placeholder="••••••••"
+                placeholder="********"
                 secureTextEntry
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
               />
 
               <View className="pt-2">
@@ -170,11 +244,26 @@ function RegisterScreen() {
               <TouchableOpacity
                 className="btn-primary mt-2 min-h-[48px]"
                 activeOpacity={0.9}
-                onPress={() => navigation.navigate(ROUTES.MAIN_TABS)}
+                disabled={isLoading}
+                onPress={handleRegister}
               >
-                <Text className="text-title-primary text-inverse">Đăng ký</Text>
-                <ArrowRight size={20} color="#FFFFFF" />
+                {isLoading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Text className="text-title-primary text-inverse">
+                      Đăng ký
+                    </Text>
+                    <ArrowRight size={20} color="#FFFFFF" />
+                  </>
+                )}
               </TouchableOpacity>
+
+              {error ? (
+                <Text className="text-center text-caption-primary text-red-500">
+                  {error}
+                </Text>
+              ) : null}
             </View>
 
             <View className="my-6 flex-row items-center">

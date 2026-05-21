@@ -1,0 +1,37 @@
+<?php // English description: Bottom navigation for the dedicated mobile WebView mode. ?>
+<?php
+$app_shell = !empty($wo['app_shell']) ? $wo['app_shell'] : array();
+$app_nav = !empty($app_shell['nav']) ? $app_shell['nav'] : array();
+$app_search_label = !empty($app_shell['search_label']) ? $app_shell['search_label'] : (!empty($wo['lang']['search']) ? $wo['lang']['search'] : 'Search');
+$app_profile_url = Wo_SeoLink('index.php?link1=timeline&u=' . $wo['user']['username']);
+?>
+<nav class="app-shell-bottom-nav" aria-label="App navigation">
+  <div class="app-shell-bottom-nav__list">
+    <a class="app-shell-bottom-nav__link<?php echo !empty($app_nav['home']) ? ' is-active' : ''; ?>" href="<?php echo $wo['config']['site_url']; ?>" data-ajax="?link1=home">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"></path>
+      </svg>
+      <span><?php echo $wo['lang']['home']; ?></span>
+    </a>
+    <a class="app-shell-bottom-nav__link<?php echo !empty($app_nav['search']) ? ' is-active' : ''; ?>" href="<?php echo Wo_SeoLink('index.php?link1=search'); ?>" data-ajax="?link1=search">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M11 5a6 6 0 1 0 0 12a6 6 0 0 0 0-12Z"></path>
+        <path d="M16 16l4 4"></path>
+      </svg>
+      <span><?php echo $app_search_label; ?></span>
+    </a>
+    <a class="app-shell-bottom-nav__link<?php echo !empty($app_nav['messages']) ? ' is-active' : ''; ?>" href="<?php echo Wo_SeoLink('index.php?link1=messages'); ?>" data-ajax="?link1=messages">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 6h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4V8a2 2 0 0 1 2-2z"></path>
+      </svg>
+      <span><?php echo $wo['lang']['messages']; ?></span>
+    </a>
+    <a class="app-shell-bottom-nav__link<?php echo !empty($app_nav['profile']) ? ' is-active' : ''; ?>" href="<?php echo $app_profile_url; ?>" data-ajax="?link1=timeline&u=<?php echo $wo['user']['username']; ?>">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 12a4 4 0 1 0 0-8a4 4 0 0 0 0 8Z"></path>
+        <path d="M4 20a8 8 0 0 1 16 0"></path>
+      </svg>
+      <span><?php echo $wo['lang']['profile']; ?></span>
+    </a>
+  </div>
+</nav>
