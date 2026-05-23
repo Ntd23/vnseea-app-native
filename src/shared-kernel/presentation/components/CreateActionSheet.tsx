@@ -35,7 +35,7 @@ const actions: CreateAction[] = [
   },
   { label: 'Create New Page', Icon: FilePlus2, route: ROUTES.CREATE_PAGE },
   { label: 'Create New Group', Icon: Users, route: ROUTES.CREATE_GROUP },
-  { label: 'Create Reel Video', Icon: PlaySquare },
+  { label: 'Create Reel Video', Icon: PlaySquare, route: ROUTES.CREATE_REEL },
 ];
 
 type CreateActionSheetProps = {

@@ -45,6 +45,7 @@ export const ROUTES = {
   OFFERS: 'Offers',
   ADVERTISING: 'Advertising',
   CREATE_AD: 'CreateAd',
+  CREATE_REEL: 'CreateReel',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];

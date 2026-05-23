@@ -127,6 +127,10 @@ function FeedHeader() {
       if (route === ROUTES.CREATE_GROUP) {
         navigation.navigate(ROUTES.CREATE_GROUP);
       }
+
+      if (route === ROUTES.CREATE_REEL) {
+        navigation.navigate(ROUTES.CREATE_REEL);
+      }
     },
     [navigation],
   );

@@ -16,10 +16,15 @@ export const apiRoutes = {
     suggestions: '/api/get-user-suggestions',
     nearby: '/api/get-nearby-users',
   },
+  reels: {
+    create: '/api/new_post',
+    hashtagSuggestions: '/api/hashtag-suggestions',
+  },
   feed: {
     posts: '/api/posts',
     newPost: '/api/new_post',
     postActions: '/api/post-actions',
+    comments: '/api/comments',
     getPost: '/api/get-post-data',
     generalData: '/api/get-general-data',
   },
@@ -28,6 +33,9 @@ export const apiRoutes = {
     followRequest: '/api/follow-request-action',
     block: '/api/block-user',
     friends: '/api/get-friends',
+  },
+  search: {
+    all: '/api/search',
   },
   stories: {
     get: '/api/get-stories',

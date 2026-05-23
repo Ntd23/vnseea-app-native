@@ -6,7 +6,7 @@ import type { MainTabRouteName, RootStackRouteName } from './types';
 import { ForgotPasswordScreen, LoginScreen, RegisterScreen } from '../auth';
 import { FeedScreen } from '../feed';
 import { ExploreScreen } from '../explore';
-import { ReelsScreen } from '../reels';
+import { CreateReelScreen, ReelsScreen } from '../reels';
 import { NotificationsScreen } from '../notifications';
 import { MemoriesScreen } from '../memories';
 import { OffersScreen } from '../offers';
@@ -141,5 +141,6 @@ export function createStackRoutes(
     { name: ROUTES.WITHDRAWAL, component: WithdrawalScreen },
     { name: ROUTES.ADVERTISING, component: AdvertisingScreen },
     { name: ROUTES.CREATE_AD, component: CreateAdScreen },
+    { name: ROUTES.CREATE_REEL, component: CreateReelScreen },
   ];
 }
