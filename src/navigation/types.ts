@@ -50,6 +50,7 @@ export type RootStackParamList = {
   [ROUTES.OFFERS]: undefined;
   [ROUTES.ADVERTISING]: undefined;
   [ROUTES.CREATE_AD]: undefined;
+  [ROUTES.CREATE_REEL]: undefined;
 };
 
 export type MainTabRouteName = keyof MainTabParamList;
