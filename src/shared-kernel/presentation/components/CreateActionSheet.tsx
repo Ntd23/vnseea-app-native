@@ -25,7 +25,7 @@ type CreateAction = {
 };
 
 const actions: CreateAction[] = [
-  { label: 'Create Post', Icon: ImagePlus },
+  { label: 'Create Post', Icon: ImagePlus, route: ROUTES.CREATE_POST },
   { label: 'Create Ad', Icon: Pencil },
   { label: 'Create Event', Icon: CalendarDays, route: ROUTES.CREATE_EVENT },
   {

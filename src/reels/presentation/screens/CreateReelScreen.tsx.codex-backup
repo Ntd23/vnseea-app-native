@@ -1,0 +1,572 @@
+// Description: Screen cho phép người dùng chọn hoặc quay video, xem trước, rồi đăng lên dưới dạng Reel.
+import React, { useCallback, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  KeyboardAvoidingView,
+  Linking,
+  PermissionsAndroid,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  launchCamera,
+  launchImageLibrary,
+} from 'react-native-image-picker';
+import type { ImagePickerResponse } from 'react-native-image-picker';
+import VideoPlayer from 'react-native-video';
+import {
+  ChevronLeft,
+  Film,
+  Globe,
+  Lock,
+  Pause,
+  Play,
+  RotateCcw,
+  Users,
+  Video,
+  Volume2,
+  VolumeX,
+} from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
+import { useCreateReelViewModel } from '../../application/view-models/useCreateReelViewModel';
+import type { ReelPrivacy } from '../../domain/types/reels.types';
+
+const PRIVACY_OPTIONS = [
+  { label: 'Công khai', value: 0 as ReelPrivacy, icon: Globe },
+  { label: 'Bạn bè', value: 1 as ReelPrivacy, icon: Users },
+  { label: 'Chỉ mình tôi', value: 2 as ReelPrivacy, icon: Lock },
+];
+
+const VIDEO_OPTIONS = {
+  mediaType: 'video' as const,
+  durationLimit: 60,
+  includeBase64: false,
+} as const;
+
+function getVideoAsset(response: ImagePickerResponse) {
+  if (response.didCancel || response.errorCode || !response.assets?.length) {
+    return null;
+  }
+  return response.assets[0];
+}
+
+/** Request CAMERA + RECORD_AUDIO runtime permissions on Android. */
+async function requestCameraPermissions(): Promise<boolean> {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+
+  try {
+    const results = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+    ]);
+
+    const cameraGranted =
+      results[PermissionsAndroid.PERMISSIONS.CAMERA] ===
+      PermissionsAndroid.RESULTS.GRANTED;
+    const audioGranted =
+      results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] ===
+      PermissionsAndroid.RESULTS.GRANTED;
+
+    if (!cameraGranted || !audioGranted) {
+      const neverAskCamera =
+        results[PermissionsAndroid.PERMISSIONS.CAMERA] ===
+        results[PermissionsAndroid.PERMISSIONS.CAMERA]; // always match the android flow
+      const neverAskAudio =
+        results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] ===
+        results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+
+      Alert.alert(
+        'Cần cấp quyền',
+        'Vui lòng cấp quyền Camera và Microphone để quay video.',
+      );
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export default function CreateReelScreen() {
+  const navigation = useNavigation();
+  const vm = useCreateReelViewModel();
+  const [paused, setPaused] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+
+  const handlePickFromLibrary = useCallback(async () => {
+    const response = await launchImageLibrary(VIDEO_OPTIONS);
+    const asset = getVideoAsset(response);
+    if (asset?.uri && asset.type && asset.fileName) {
+      vm.setVideo(asset.uri, asset.type, asset.fileName);
+      setPaused(false);
+      setMuted(false);
+    }
+  }, [vm]);
+
+  const handleRecordVideo = useCallback(async () => {
+    const hasPermission = await requestCameraPermissions();
+    if (!hasPermission) {
+      return;
+    }
+
+    const response = await launchCamera({
+      ...VIDEO_OPTIONS,
+      cameraType: 'back',
+      saveToPhotos: true,
+    });
+    const asset = getVideoAsset(response);
+    if (asset?.uri && asset.type && asset.fileName) {
+      vm.setVideo(asset.uri, asset.type, asset.fileName);
+      setPaused(false);
+      setMuted(false);
+    }
+  }, [vm]);
+
+  const handleSubmit = useCallback(async () => {
+    await vm.submit();
+  }, [vm]);
+
+  const handleInsertMention = useCallback(() => {
+    const currentCaption = vm.draft.caption ?? '';
+    const suffix = currentCaption === '' || currentCaption.endsWith(' ') ? '@' : ' @';
+    vm.setCaption(currentCaption + suffix);
+    inputRef.current?.focus();
+  }, [vm]);
+
+  const handleInsertHashtag = useCallback(() => {
+    const currentCaption = vm.draft.caption ?? '';
+    const suffix = currentCaption === '' || currentCaption.endsWith(' ') ? '#' : ' #';
+    vm.setCaption(currentCaption + suffix);
+    inputRef.current?.focus();
+  }, [vm]);
+
+  // Show result alerts
+  React.useEffect(() => {
+    if (vm.uploadState.phase === 'success') {
+      const { result } = vm.uploadState;
+      if (result.status === 'created') {
+        Alert.alert('Thành công', 'Video Reel đã được đăng lên!', [
+          { text: 'OK', onPress: () => { vm.reset(); navigation.goBack(); } },
+        ]);
+      } else if (result.status === 'processing') {
+        Alert.alert('Đang xử lý', result.message ?? 'Video đang được máy chủ xử lý, vui lòng chờ.', [
+          { text: 'OK', onPress: () => { vm.reset(); navigation.goBack(); } },
+        ]);
+      } else if (result.status === 'review') {
+        Alert.alert('Chờ duyệt', 'Video của bạn đang chờ quản trị viên phê duyệt.', [
+          { text: 'OK', onPress: () => { vm.reset(); navigation.goBack(); } },
+        ]);
+      }
+    }
+  }, [vm.uploadState.phase, navigation, vm]);
+
+  return (
+    <SafeAreaView className="flex-1 surface-base">
+      <StatusBar barStyle="dark-content" />
+
+      {/* App bar */}
+      <View 
+        className="surface-topbar h-14 flex-row items-center px-4 border-b border-slate-100 bg-white"
+        style={{
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.05,
+          shadowRadius: 2,
+          elevation: 1,
+        }}
+      >
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          className="h-10 w-10 items-center justify-center rounded-full bg-slate-50 border border-slate-100"
+          style={({ pressed }) => [
+            { transform: [{ scale: pressed ? 0.96 : 1 }] }
+          ]}
+        >
+          <ChevronLeft size={20} color="#334155" strokeWidth={2.5} />
+        </Pressable>
+        <Text className="text-heading flex-1 text-center font-bold text-slate-800 mr-10">
+          Đăng Reel Video
+        </Text>
+      </View>
+
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          className="flex-1"
+          contentContainerClassName="px-4 py-5"
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Video picker / preview section */}
+          {!vm.hasVideo ? (
+            /* Empty state — pick or record */
+            <View 
+              className="surface-card mb-5 items-center px-6 py-12 border border-dashed border-blue-200"
+              style={{ backgroundColor: 'rgba(239, 246, 255, 0.05)' }}
+            >
+              <View 
+                className="mb-5 h-20 w-20 items-center justify-center rounded-full bg-blue-50 border border-blue-100"
+                style={{
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 2,
+                  elevation: 1,
+                }}
+              >
+                <Film size={32} color="#0000FF" strokeWidth={2} />
+              </View>
+              <Text className="text-lg font-bold text-slate-850 mb-1 text-center">
+                Tải lên Reel Video của bạn
+              </Text>
+              <Text className="text-body-secondary mb-8 text-center max-w-[245px]">
+                Tạo thước phim ngắn tối đa 60 giây để chia sẻ những khoảnh khắc tuyệt vời.
+              </Text>
+
+              <Pressable
+                className="w-full flex-row items-center justify-center py-4 bg-[#0000ff] rounded-full mb-3"
+                style={({ pressed }) => [
+                  {
+                    shadowColor: '#0000ff',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 8,
+                    elevation: 4,
+                    transform: [{ scale: pressed ? 0.96 : 1 }],
+                  }
+                ]}
+                onPress={handlePickFromLibrary}
+              >
+                <Film size={18} color="#fff" strokeWidth={2.2} />
+                <Text className="ml-2 text-base font-semibold text-white">
+                  Chọn từ thư viện máy
+                </Text>
+              </Pressable>
+
+              <Pressable
+                className="w-full flex-row items-center justify-center py-4 bg-white border border-slate-200 rounded-full"
+                style={({ pressed }) => [
+                  {
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.05,
+                    shadowRadius: 2,
+                    elevation: 1,
+                    transform: [{ scale: pressed ? 0.96 : 1 }],
+                  }
+                ]}
+                onPress={handleRecordVideo}
+              >
+                <Video size={18} color="#0000FF" strokeWidth={2.2} />
+                <Text className="ml-2 text-base font-semibold text-brand">
+                  Quay video trực tiếp
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            /* Video preview player card */
+            <View 
+              className="surface-card mb-5 overflow-hidden border border-slate-100"
+              style={{
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.04,
+                shadowRadius: 4,
+                elevation: 2,
+              }}
+            >
+              {/* Video player container — black background to blend margins */}
+              <View 
+                className="relative bg-slate-950 items-center justify-center overflow-hidden self-center my-4 rounded-xl" 
+                style={{ width: 214, height: 380 }}
+              >
+                <VideoPlayer
+                  source={{ uri: vm.draft.videoUri! }}
+                  style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                  resizeMode="contain"
+                  repeat
+                  paused={paused}
+                  muted={muted}
+                  useTextureView={false}
+                  // @ts-expect-error Existing preview behavior kept for create-video flow.
+                  playsInline
+                  onError={(e) => console.log('Preview video error:', e)}
+                />
+
+                {/* Big Center Play/Pause Indicator (Tap overlay) */}
+                <Pressable
+                  onPress={() => setPaused(p => !p)}
+                  className="absolute inset-0 items-center justify-center"
+                  style={{ backgroundColor: 'rgba(0, 0, 0, 0.1)' }}
+                >
+                  {paused && (
+                    <View 
+                      className="h-16 w-16 items-center justify-center rounded-full"
+                      style={{
+                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                      }}
+                    >
+                      <Play size={32} color="#ffffff" fill="#ffffff" style={{ marginLeft: 4 }} />
+                    </View>
+                  )}
+                </Pressable>
+
+                {/* Bottom modern floating controls capsule */}
+                <View 
+                  className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between rounded-2xl px-4 py-3"
+                  style={{
+                    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderWidth: 1,
+                  }}
+                >
+                  <View className="flex-row items-center gap-3">
+                    <Pressable
+                      onPress={() => setPaused(p => !p)}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    >
+                      {paused ? (
+                        <Play size={20} color="#fff" fill="#fff" />
+                      ) : (
+                        <Pause size={20} color="#fff" fill="#fff" />
+                      )}
+                    </Pressable>
+                    <Text className="text-white text-xs font-semibold">Xem trước Reel</Text>
+                  </View>
+
+                  <Pressable
+                    onPress={() => setMuted(m => !m)}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    className="h-8 w-8 items-center justify-center rounded-full"
+                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }}
+                  >
+                    {muted ? (
+                      <VolumeX size={18} color="#fff" />
+                    ) : (
+                      <Volume2 size={18} color="#fff" />
+                    )}
+                  </Pressable>
+                </View>
+                
+                {/* Sleek bottom progress indicator bar */}
+                <View 
+                  className="absolute bottom-0 left-0 right-0 h-1"
+                  style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}
+                >
+                  <View className="h-full bg-[#0000ff] w-1/3" />
+                </View>
+              </View>
+
+              {/* Change video buttons */}
+              <View className="flex-row gap-3 px-4 py-4 border-t border-slate-100 bg-slate-50">
+                <Pressable
+                  className="flex-1 flex-row items-center justify-center rounded-xl border border-slate-200 bg-white py-3"
+                  style={({ pressed }) => [
+                    {
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.05,
+                      shadowRadius: 2,
+                      elevation: 1,
+                      transform: [{ scale: pressed ? 0.96 : 1 }],
+                    }
+                  ]}
+                  onPress={handlePickFromLibrary}
+                >
+                  <RotateCcw size={16} color="#475569" strokeWidth={2.2} />
+                  <Text className="ml-2 text-xs font-bold text-slate-700">
+                    Chọn video khác
+                  </Text>
+                </Pressable>
+                <Pressable
+                  className="flex-1 flex-row items-center justify-center rounded-xl border border-slate-200 bg-white py-3"
+                  style={({ pressed }) => [
+                    {
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.05,
+                      shadowRadius: 2,
+                      elevation: 1,
+                      transform: [{ scale: pressed ? 0.96 : 1 }],
+                    }
+                  ]}
+                  onPress={handleRecordVideo}
+                >
+                  <Video size={16} color="#475569" strokeWidth={2.2} />
+                  <Text className="ml-2 text-xs font-bold text-slate-700">
+                    Quay lại video
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+
+          {/* Caption input */}
+          <View 
+            className="surface-card mb-5 p-5 border border-slate-100"
+            style={{
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 4,
+              elevation: 2,
+            }}
+          >
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-caption-primary text-slate-500 font-semibold uppercase tracking-wider">
+                MÔ TẢ (tuỳ chọn)
+              </Text>
+              <Text className="text-xs font-medium text-slate-400">
+                {(vm.draft.caption ?? '').length}/500
+              </Text>
+            </View>
+            <TextInput
+              ref={inputRef}
+              className="input-shell min-h-[100px] px-4 py-3 text-body-primary border"
+              style={{
+                borderColor: isFocused ? '#0000ff' : '#e2e8f0',
+              }}
+              placeholder="Viết gì đó về video này..."
+              placeholderTextColor="#94a3b8"
+              multiline
+              maxLength={500}
+              value={vm.draft.caption ?? ''}
+              onChangeText={vm.setCaption}
+              textAlignVertical="top"
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+            />
+
+            {/* Quick tag helpers */}
+            <View className="flex-row gap-2 mt-3">
+              <Pressable
+                onPress={handleInsertMention}
+                className="flex-row items-center bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5"
+                style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.96 : 1 }] }]}
+              >
+                <Text className="text-xs font-bold text-[#0000ff]">@ Gắn thẻ</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleInsertHashtag}
+                className="flex-row items-center bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5"
+                style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.96 : 1 }] }]}
+              >
+                <Text className="text-xs font-bold text-[#0000ff]"># Hashtag</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Privacy selector */}
+          <View 
+            className="surface-card mb-6 p-5 border border-slate-100"
+            style={{
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 4,
+              elevation: 2,
+            }}
+          >
+            <Text className="text-caption-primary mb-3 text-slate-500 font-semibold uppercase tracking-wider">
+              ĐỐI TƯỢNG XEM
+            </Text>
+            <View className="flex-row flex-wrap gap-2">
+              {PRIVACY_OPTIONS.map(opt => {
+                const isSelected = (vm.draft.privacy ?? 0) === opt.value;
+                const IconComponent = opt.icon;
+                return (
+                  <Pressable
+                    key={opt.value}
+                    onPress={() => vm.setPrivacy(opt.value)}
+                    className="flex-row items-center rounded-full px-4 py-2.5 border"
+                    style={({ pressed }) => [
+                      {
+                        backgroundColor: isSelected ? '#0000ff' : '#ffffff',
+                        borderColor: isSelected ? '#0000ff' : '#e2e8f0',
+                        transform: [{ scale: pressed ? 0.96 : 1 }],
+                      }
+                    ]}
+                  >
+                    <IconComponent
+                      size={15}
+                      color={isSelected ? '#ffffff' : '#64748b'}
+                      strokeWidth={2.2}
+                    />
+                    <Text
+                      className="ml-2 text-xs font-semibold"
+                      style={{
+                        color: isSelected ? '#ffffff' : '#334155',
+                      }}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Error message */}
+          {vm.uploadState.phase === 'error' && (
+            <View className="mb-5 rounded-2xl bg-red-50 border border-red-100 px-4 py-3">
+              <Text className="text-sm font-medium text-red-600">
+                {vm.uploadState.message}
+              </Text>
+            </View>
+          )}
+
+          {/* Submit button */}
+          <Pressable
+            className="flex-row items-center justify-center py-4 rounded-full bg-[#0000ff]"
+            style={({ pressed }) => [
+              {
+                shadowColor: '#0000ff',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.2,
+                shadowRadius: 8,
+                elevation: 4,
+                opacity: (!vm.hasVideo || vm.isUploading) ? 0.5 : 1,
+                transform: [{ scale: (!vm.hasVideo || vm.isUploading) ? 1 : (pressed ? 0.96 : 1) }],
+              }
+            ]}
+            onPress={handleSubmit}
+            disabled={!vm.hasVideo || vm.isUploading}
+          >
+            {vm.isUploading ? (
+              <>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text className="ml-2 text-base font-semibold text-white">
+                  Đang đăng Reel...
+                </Text>
+              </>
+            ) : (
+              <>
+                <Film size={18} color="#fff" strokeWidth={2.2} className="mr-2" />
+                <Text className="ml-2 text-base font-semibold text-white">
+                  Đăng Reel Video
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}

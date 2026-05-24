@@ -4,7 +4,7 @@ import { Bell, Hash, Home, PlaySquare, Settings } from 'lucide-react-native';
 import { ROUTES } from './constants/routes';
 import type { MainTabRouteName, RootStackRouteName } from './types';
 import { ForgotPasswordScreen, LoginScreen, RegisterScreen } from '../auth';
-import { FeedScreen } from '../feed';
+import { CreatePostScreen, FeedScreen } from '../feed';
 import { ExploreScreen } from '../explore';
 import { CreateReelScreen, ReelsScreen } from '../reels';
 import { NotificationsScreen } from '../notifications';
@@ -142,5 +142,6 @@ export function createStackRoutes(
     { name: ROUTES.ADVERTISING, component: AdvertisingScreen },
     { name: ROUTES.CREATE_AD, component: CreateAdScreen },
     { name: ROUTES.CREATE_REEL, component: CreateReelScreen },
+    { name: ROUTES.CREATE_POST, component: CreatePostScreen },
   ];
 }

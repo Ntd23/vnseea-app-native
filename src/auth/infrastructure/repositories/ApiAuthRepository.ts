@@ -144,5 +144,29 @@ export function createAuthRepository(): AuthRepository {
 
       return mapCurrentUser(response);
     },
+
+    async fetchUserById(userId: string) {
+      // ── WoWonder /api/get-user-data contract ──────────────────────────
+      // Required POST params:
+      //   • user_id  — the user to look up
+      //   • fetch    — comma-separated sections to include. We only need
+      //                display fields, so `user_data` is enough. Other
+      //                values (followers, following, …) trigger extra
+      //                queries we don't want to pay for.
+      //
+      // The response wraps the result the same way `/api/get-current-user`
+      // does (`{ api_status, user_data: { user_id, name, avatar, … } }`),
+      // so we can route both through the same `mapCurrentUser` helper.
+      if (!userId || !sessionStorage.getAccessToken()) {
+        return null;
+      }
+
+      const response = await backendApi.post<CurrentUserResponse>(
+        apiRoutes.user.get,
+        { user_id: userId, fetch: 'user_data' },
+      );
+
+      return mapCurrentUser(response);
+    },
   };
 }

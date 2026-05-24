@@ -1,7 +1,144 @@
 // Feed domain types
-// Port từ: client/src/feed/domain/types/
+// Port from: client/src/feed/domain/types/
+
+import type { ReactionType } from '../../../reels/domain/types/reels.types';
 
 export interface FeedItem {
   id: string | number;
-  // TODO: thêm fields từ API response
+  // TODO: add fields from API response
+}
+
+// ── Create-post types (Facebook-style composer) ─────────────────────────
+//
+// WoWonder's `/api/new_post` accepts MANY fields, but for the MVP composer
+// we only surface: text, multi-photos, privacy, feeling. Other fields
+// (poll, sticker, check-in, color background, link preview) are
+// intentionally deferred — we can add them later without breaking this
+// contract because they're all optional in the wire format.
+
+/**
+ * Privacy levels mirroring WoWonder's `postPrivacy` numeric field:
+ *
+ *   public   → 0
+ *   friends  → 1
+ *   only_me  → 2
+ *
+ * We use string literals here (not numbers) so the domain stays readable
+ * and grep-able. The repository layer is responsible for the mapping.
+ */
+export type PostPrivacy = 'public' | 'friends' | 'only_me';
+
+/**
+ * A single photo attached to a draft post. The `uri` is a local
+ * `file://...` path coming from the image picker — it gets uploaded via
+ * multipart FormData when the user submits, and the server returns a
+ * public URL we store in `FeedTextPost.photos`.
+ *
+ * `name` + `type` are required by React Native's FormData impl —
+ * omitting either causes the file to be sent as a string blob.
+ */
+export interface PostPhotoAttachment {
+  uri: string;
+  name: string;
+  type: string; // MIME, e.g. 'image/jpeg'
+  width?: number;
+  height?: number;
+}
+
+/**
+ * Optional "feeling" attached to a post (the FB "đang cảm thấy vui vẻ"
+ * row). Maps 1:1 to WoWonder's `feeling_type` + `feeling` POST fields.
+ *
+ * `type` selects which bucket of feelings the value belongs to:
+ *   feelings   → mood emojis (happy, sad, blessed, ...)
+ *   traveling  → free-text destination
+ *   watching   → movie/show name
+ *   playing    → game name
+ *   listening  → song/artist
+ *
+ * `emoji` + `label` are presentational hints — the server only needs
+ * `type` + `value`.
+ */
+export interface PostFeeling {
+  type: 'feelings' | 'traveling' | 'watching' | 'playing' | 'listening';
+  value: string;
+  emoji?: string;
+  label?: string;
+}
+
+/**
+ * The local "draft" the composer screen owns. View-model mutates this as
+ * the user types / picks photos / changes privacy. On submit we pass it
+ * to the repository which serialises it into FormData.
+ */
+export interface CreatePostDraft {
+  text: string;
+  photos: PostPhotoAttachment[];
+  privacy: PostPrivacy;
+  feeling?: PostFeeling;
+}
+
+/**
+ * What the repository returns after a successful create. We always get
+ * back the new post itself so the feed can optimistically prepend it —
+ * no need for a refetch.
+ */
+export interface CreatePostResult {
+  postId: string;
+  post: FeedTextPost;
+}
+
+/**
+ * A non-video post (text-only OR text+photos) shown on the home feed.
+ * Sibling to `FeedVideoPost` — same publisher / reaction shape, but the
+ * media payload is an array of image URLs instead of a single video.
+ *
+ * `photos.length === 0` → pure text post (FB-style coloured background
+ * is a future enhancement, not in MVP).
+ */
+export interface FeedTextPost {
+  id: string;
+  caption?: string;
+  photos: string[];
+  postedAt?: number;
+  likeCount: number;
+  commentCount: number;
+  isLiked: boolean;
+  myReaction: ReactionType | null;
+  feeling?: PostFeeling;
+  privacy: PostPrivacy;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface FeedVideoPost {
+  id: string;
+  caption?: string;
+  videoUrl: string;
+  thumbnailUrl?: string;
+  postedAt?: number;
+  likeCount: number;
+  commentCount: number;
+  /** True if the viewer has any reaction on the post (love/like/haha/…). */
+  isLiked: boolean;
+  /**
+   * The viewer's current reaction, or `null` if none. Drives the
+   * Facebook-style "Thích / Yêu thích / Haha / Wow / Buồn / Phẫn nộ"
+   * action-row label + color, and the per-post reaction badge.
+   *
+   * Sourced from the backend's `reaction.type` when available, falling
+   * back to a per-user MMKV cache for installs where the backend doesn't
+   * expose reaction state in the posts response.
+   */
+  myReaction: ReactionType | null;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
 }

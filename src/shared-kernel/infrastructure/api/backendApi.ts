@@ -40,6 +40,18 @@ export const backendApi = {
         return;
       }
 
+      // Array values → append each item under `key[]` so PHP receives
+      // them as `$_FILES[key]['name'][i]` (multi-file uploads like
+      // WoWonder's `postPhotos[]` album endpoint). Existing callers that
+      // pass single files/strings are untouched.
+      if (Array.isArray(value)) {
+        value.forEach(item => {
+          if (item === undefined || item === null) return;
+          formData.append(`${key}[]`, item as string | Blob);
+        });
+        return;
+      }
+
       formData.append(key, value as string | Blob);
     });
 

@@ -1,13 +1,18 @@
 // Description: Renders the Stitch Facebook-style VNSEEA feed inside the main tab shell.
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Dimensions,
   Image,
+  Modal,
+  Pressable,
   ScrollView,
   StatusBar,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import VideoPlayer from 'react-native-video';
 import {
   Edit3,
   ImageIcon,
@@ -21,6 +26,44 @@ import {
   Tag,
   ThumbsUp,
 } from 'lucide-react-native';
+import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
+
+// ── Facebook-style reaction lookup tables ─────────────────────────────────
+// Same shape we use in the comments sheet, kept local here so the feed
+// module stays self-contained (no shared "design tokens" file yet).
+
+const REACTION_EMOJI: Record<ReactionType, string> = {
+  like: '👍',
+  love: '❤️',
+  haha: '😂',
+  wow: '😮',
+  sad: '😢',
+  angry: '😡',
+};
+
+const REACTION_LABEL: Record<ReactionType, string> = {
+  like: 'Đã thích',
+  love: 'Yêu thích',
+  haha: 'Haha',
+  wow: 'Wow',
+  sad: 'Buồn',
+  angry: 'Phẫn nộ',
+};
+
+const REACTION_COLOR: Record<ReactionType, string> = {
+  like: '#0866ff',
+  love: '#f33e58',
+  haha: '#f7b125',
+  wow: '#f7b125',
+  sad: '#f7b125',
+  angry: '#e9710f',
+};
+
+// Floating picker pill geometry — used to clamp X within the viewport.
+const PICKER_WIDTH = 282;
+const PICKER_HEIGHT = 52;
+const PICKER_GAP = 8;
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,6 +71,14 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { RootStackRouteName } from '../../../navigation/types';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
+import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
+import { postCreatedEvents } from '../../application/events/postCreatedEvents';
+import type {
+  FeedTextPost,
+  FeedVideoPost,
+} from '../../domain/types/feed.types';
+import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
+import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -131,6 +182,10 @@ function FeedHeader() {
       if (route === ROUTES.CREATE_REEL) {
         navigation.navigate(ROUTES.CREATE_REEL);
       }
+
+      if (route === ROUTES.CREATE_POST) {
+        navigation.navigate(ROUTES.CREATE_POST);
+      }
     },
     [navigation],
   );
@@ -200,7 +255,11 @@ function FilterTabs() {
   );
 }
 
-function ComposerCard() {
+function ComposerCard({ onPress }: { onPress: () => void }) {
+  // The whole card is a single nav entry-point to CreatePostScreen.
+  // We expose `onPress` separately on the text bubble AND on each
+  // action button so the user can tap anywhere natural — Facebook lets
+  // you tap "Photo" / "Feeling" to land directly inside the composer.
   return (
     <View className="surface-card mx-4 mb-6 p-4">
       <View className="mb-3 flex-row items-center border-b border-slate-200 pb-3">
@@ -208,23 +267,36 @@ function ComposerCard() {
         <TouchableOpacity
           className="surface-muted ml-3 min-h-[42px] flex-1 justify-center rounded-full px-4"
           activeOpacity={0.8}
+          onPress={onPress}
         >
           <Text className="text-body-secondary">Bạn đang nghĩ gì?</Text>
         </TouchableOpacity>
       </View>
       <View className="flex-row items-center justify-between">
-        <ActionButton
-          icon={<ImageIcon size={20} color="#45BD62" />}
-          label="Thư viện"
-        />
-        <ActionButton
-          icon={<Tag size={20} color="#0000FF" />}
-          label="Gắn thẻ"
-        />
-        <ActionButton
-          icon={<Smile size={20} color="#F59E0B" />}
-          label="Cảm xúc"
-        />
+        <TouchableOpacity
+          className="flex-row items-center"
+          activeOpacity={0.75}
+          onPress={onPress}
+        >
+          <ImageIcon size={20} color="#45BD62" />
+          <Text className="ml-2 text-title-secondary">Thư viện</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          className="flex-row items-center"
+          activeOpacity={0.75}
+          onPress={onPress}
+        >
+          <Tag size={20} color="#0000FF" />
+          <Text className="ml-2 text-title-secondary">Gắn thẻ</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          className="flex-row items-center"
+          activeOpacity={0.75}
+          onPress={onPress}
+        >
+          <Smile size={20} color="#F59E0B" />
+          <Text className="ml-2 text-title-secondary">Cảm xúc</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -304,6 +376,454 @@ function GreetingCard() {
         </Text>
       </View>
       <Text className="text-4xl">🌅</Text>
+    </View>
+  );
+}
+
+function formatCount(count: number) {
+  if (!Number.isFinite(count) || count <= 0) return '0';
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
+  return String(count);
+}
+
+function formatPostTime(timestamp?: number) {
+  if (!timestamp) return 'Vừa xong';
+  const now = Math.floor(Date.now() / 1000);
+  const diff = Math.max(0, now - timestamp);
+  if (diff < 60) return 'Vừa xong';
+  if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)} ngày trước`;
+  return new Date(timestamp * 1000).toLocaleDateString('vi-VN');
+}
+
+function HomeVideoPostCard({
+  post,
+  onReact,
+  onOpenPicker,
+  onCommentTap,
+  isActive,
+  onReportLayout,
+}: {
+  post: FeedVideoPost;
+  onReact: (postId: string, reaction: ReactionType) => void;
+  onOpenPicker: (postId: string, x: number, y: number) => void;
+  onCommentTap: (postId: string) => void;
+  isActive: boolean;
+  onReportLayout: (id: string, y: number, height: number) => void;
+}) {
+  const [manuallyPaused, setManuallyPaused] = useState(false);
+  const [muted, setMuted] = useState(true);
+
+  useEffect(() => {
+    if (!isActive) {
+      setManuallyPaused(false);
+    }
+  }, [isActive]);
+
+  const playing = isActive && !manuallyPaused;
+
+  // Need an on-screen position for the "Thích" button so the picker
+  // anchors above it (matches the Facebook web/mobile pattern).
+  const likeButtonRef = useRef<View>(null);
+
+  const handleLikeTap = useCallback(() => {
+    // Default reaction is 'like' — same as Facebook. Tapping again clears
+    // it (the view-model handles the toggle-off).
+    onReact(post.id, 'like');
+  }, [onReact, post.id]);
+
+  const handleLikeLongPress = useCallback(() => {
+    if (!likeButtonRef.current) {
+      onOpenPicker(post.id, 100, 200);
+      return;
+    }
+    likeButtonRef.current.measureInWindow((x, y, width) => {
+      onOpenPicker(post.id, x + width / 2, y);
+    });
+  }, [onOpenPicker, post.id]);
+
+  return (
+    <View
+      onLayout={(e) => {
+        const { y, height } = e.nativeEvent.layout;
+        onReportLayout(post.id, y, height);
+      }}
+      className="surface-card mx-4 mb-6 overflow-hidden"
+    >
+      <View className="p-5">
+        <PostHeader
+          avatar={post.publisher.avatarUrl}
+          name={post.publisher.name}
+          time={formatPostTime(post.postedAt)}
+        />
+        {post.caption ? (
+          <Text className="text-body-primary">{post.caption}</Text>
+        ) : null}
+      </View>
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => setManuallyPaused(prev => !prev)}
+        className="h-56 w-full bg-black"
+      >
+        <VideoPlayer
+          source={{ uri: post.videoUrl }}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="cover"
+          paused={!playing}
+          controls={false}
+          muted={muted}
+          repeat
+          ignoreSilentSwitch="ignore"
+          poster={post.thumbnailUrl}
+          posterResizeMode="cover"
+        />
+        {/* Big play button overlay while paused */}
+        {!playing ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <View
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: 32,
+                backgroundColor: 'rgba(0,0,0,0.55)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 26, marginLeft: 4 }}>
+                ▶
+              </Text>
+            </View>
+          </View>
+        ) : null}
+        {/* Mute toggle — top-right when playing */}
+        {playing ? (
+          <TouchableOpacity
+            onPress={() => setMuted(m => !m)}
+            activeOpacity={0.85}
+            style={{
+              position: 'absolute',
+              top: 10,
+              right: 10,
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: 'rgba(0,0,0,0.45)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 16 }}>
+              {muted ? '🔇' : '🔊'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </TouchableOpacity>
+      <View className="p-5">
+        <VideoReactionSummary
+          likeCount={post.likeCount}
+          commentCount={post.commentCount}
+          myReaction={post.myReaction}
+        />
+        <VideoPostActions
+          myReaction={post.myReaction}
+          likeButtonRef={likeButtonRef}
+          onLikeTap={handleLikeTap}
+          onLikeLongPress={handleLikeLongPress}
+          onCommentTap={() => onCommentTap(post.id)}
+        />
+      </View>
+    </View>
+  );
+}
+
+// ── Facebook-style summary row above the action buttons ──────────────────
+// Shows a stacked emoji badge ("👍❤️") followed by either the viewer's
+// own reaction label ("Bạn và 14 người khác") OR a generic count when the
+// viewer hasn't reacted.
+function VideoReactionSummary({
+  likeCount,
+  commentCount,
+  myReaction,
+}: {
+  likeCount: number;
+  commentCount: number;
+  myReaction: ReactionType | null;
+}) {
+  // Don't render the row at all if nobody has reacted AND there are no
+  // comments — keeps simple posts visually quiet, FB-style.
+  if (likeCount <= 0 && commentCount <= 0) return null;
+
+  const othersCount = myReaction ? Math.max(0, likeCount - 1) : likeCount;
+  const summaryLeft = (() => {
+    if (myReaction && othersCount > 0) {
+      return `Bạn và ${formatCount(othersCount)} người khác`;
+    }
+    if (myReaction) {
+      return 'Bạn';
+    }
+    if (likeCount > 0) {
+      return formatCount(likeCount);
+    }
+    return '';
+  })();
+
+  return (
+    <View className="mb-4 flex-row items-center justify-between">
+      {/* Left: reaction badge + label — flex-1 so it doesn't crowd the right */}
+      <View className="mr-2 flex-1 flex-row items-center">
+        {likeCount > 0 ? (
+          <>
+            {/* Show ONLY the viewer's active reaction OR a generic thumbs-up.
+                Never render both stacked — that caused the double-emoji bug
+                when swapping reactions (old icon stayed, new one appeared
+                on top). */}
+            {myReaction && myReaction !== 'like' ? (
+              <View className="h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white">
+                <Text style={{ fontSize: 11 }}>{REACTION_EMOJI[myReaction]}</Text>
+              </View>
+            ) : (
+              <View className="h-5 w-5 items-center justify-center rounded-full bg-blue-600">
+                <ThumbsUp size={10} color="#FFFFFF" />
+              </View>
+            )}
+            <Text
+              className="ml-2 text-caption-secondary"
+              numberOfLines={1}
+              style={{ flexShrink: 1 }}
+            >
+              {summaryLeft}
+            </Text>
+          </>
+        ) : null}
+      </View>
+      {/* Right: comment count — no flex so it stays at its natural width */}
+      {commentCount > 0 ? (
+        <Text className="text-caption-secondary" numberOfLines={1}>
+          {formatCount(commentCount)} bình luận
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+// ── Action row — Thích / Bình luận / Chia sẻ ─────────────────────────────
+// The "Thích" button is the interesting one:
+//   • Label + color change to mirror the current reaction (Đã thích = blue,
+//     Yêu thích = red, Haha/Wow/Sad = yellow, Phẫn nộ = orange)
+//   • Long-press opens the picker pill (handled by the parent screen via
+//     `onLikeLongPress` which measures this button's on-screen position)
+function VideoPostActions({
+  myReaction,
+  likeButtonRef,
+  onLikeTap,
+  onLikeLongPress,
+  onCommentTap,
+}: {
+  myReaction: ReactionType | null;
+  // React 19+'s `useRef<View>(null)` returns `RefObject<View | null>`,
+  // so we widen the type here to accept it. Same Pressable ref target,
+  // just a stricter null-check in the type.
+  likeButtonRef: React.RefObject<View | null>;
+  onLikeTap: () => void;
+  onLikeLongPress: () => void;
+  onCommentTap: () => void;
+}) {
+  const label = myReaction ? REACTION_LABEL[myReaction] : 'Thích';
+  const color = myReaction ? REACTION_COLOR[myReaction] : '#64748B';
+
+  return (
+    <View className="flex-row items-center justify-between border-t border-slate-200 pt-4">
+      <Pressable
+        ref={likeButtonRef}
+        onPress={onLikeTap}
+        onLongPress={onLikeLongPress}
+        delayLongPress={280}
+        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        className="flex-row items-center"
+      >
+        {myReaction ? (
+          <Text style={{ fontSize: 18 }}>{REACTION_EMOJI[myReaction]}</Text>
+        ) : (
+          <ThumbsUp size={19} color={color} />
+        )}
+        <Text
+          style={{
+            marginLeft: 6,
+            color,
+            fontWeight: myReaction ? '700' : '600',
+            fontSize: 14,
+          }}
+        >
+          {label}
+        </Text>
+      </Pressable>
+
+      <TouchableOpacity
+        className="flex-row items-center"
+        activeOpacity={0.75}
+        onPress={onCommentTap}
+      >
+        <MessageCircle size={19} color="#64748B" />
+        <Text style={{ marginLeft: 6, color: '#64748B', fontSize: 14 }}>
+          Bình luận
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity className="flex-row items-center" activeOpacity={0.75}>
+        <Share2 size={19} color="#64748B" />
+        <Text style={{ marginLeft: 6, color: '#64748B', fontSize: 14 }}>
+          Chia sẻ
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ── Floating reaction picker (Facebook-style 6-emoji pill) ────────────────
+// Renders in a transparent full-screen Modal so it always floats above
+// every other content (cards, sticky header, etc.). Position is clamped
+// inside the viewport so a long-press near the right edge still shows the
+// full pill.
+function ReactionPickerOverlay({
+  anchor,
+  onPick,
+  onDismiss,
+}: {
+  anchor: { postId: string; x: number; y: number } | null;
+  onPick: (reaction: ReactionType) => void;
+  onDismiss: () => void;
+}) {
+  if (!anchor) return null;
+
+  const screenWidth = Dimensions.get('window').width;
+  const left = Math.max(
+    10,
+    Math.min(anchor.x - PICKER_WIDTH / 2, screenWidth - PICKER_WIDTH - 10),
+  );
+  const top = Math.max(40, anchor.y - PICKER_HEIGHT - PICKER_GAP);
+
+  return (
+    <Modal
+      transparent
+      visible
+      animationType="fade"
+      onRequestClose={onDismiss}
+      statusBarTranslucent
+    >
+      <Pressable
+        onPress={onDismiss}
+        style={{ flex: 1, backgroundColor: 'transparent' }}
+      >
+        <View
+          style={{
+            position: 'absolute',
+            left,
+            top,
+            width: PICKER_WIDTH,
+            height: PICKER_HEIGHT,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 8,
+            backgroundColor: '#fff',
+            borderRadius: 26,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.18,
+            shadowRadius: 10,
+            elevation: 12,
+          }}
+        >
+          {ALL_REACTION_TYPES.map(type => (
+            <TouchableOpacity
+              key={type}
+              activeOpacity={0.7}
+              onPress={() => onPick(type)}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+            >
+              <Text style={{ fontSize: 28, lineHeight: 32 }}>
+                {REACTION_EMOJI[type]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function HomeVideoPosts({
+  posts,
+  isLoading,
+  error,
+  onReact,
+  onOpenPicker,
+  onCommentTap,
+  activeVideoId,
+  onReportLayout,
+  onReportSectionY,
+}: {
+  posts: FeedVideoPost[];
+  isLoading: boolean;
+  error: string | null;
+  onReact: (postId: string, reaction: ReactionType) => void;
+  onOpenPicker: (postId: string, x: number, y: number) => void;
+  onCommentTap: (postId: string) => void;
+  activeVideoId: string | null;
+  onReportLayout: (id: string, y: number, height: number) => void;
+  onReportSectionY: (y: number) => void;
+}) {
+  if (isLoading && posts.length === 0) {
+    return (
+      <View className="surface-card mx-4 mb-6 items-center p-5">
+        <ActivityIndicator color="#0000FF" size="small" />
+        <Text className="mt-2 text-body-secondary">Đang tải video...</Text>
+      </View>
+    );
+  }
+
+  if (posts.length === 0) {
+    return null;
+  }
+
+  return (
+    <View onLayout={(e) => onReportSectionY(e.nativeEvent.layout.y)}>
+      <View className="mb-3 flex-row items-center justify-between px-4">
+        <Text className="text-heading">Video mới</Text>
+        {error ? <Text className="text-caption-secondary">Không tải thêm được</Text> : null}
+      </View>
+      {posts.map(post => (
+        <HomeVideoPostCard
+          key={post.id}
+          post={post}
+          onReact={onReact}
+          onOpenPicker={onOpenPicker}
+          onCommentTap={onCommentTap}
+          isActive={activeVideoId === post.id}
+          onReportLayout={onReportLayout}
+        />
+      ))}
     </View>
   );
 }
@@ -495,7 +1015,270 @@ function GalleryPost() {
   );
 }
 
+// ── Text / photo post card ────────────────────────────────────────────
+// Renders a non-video post from `vm.textPosts`. Same FB-style chrome as
+// the mock posts (header → caption → photos → reaction summary → action
+// row) but data-driven instead of hardcoded.
+function TextPostCard({
+  post,
+  onReact,
+  onOpenPicker,
+  onCommentTap,
+}: {
+  post: FeedTextPost;
+  onReact: (postId: string, reaction: ReactionType) => void;
+  onOpenPicker: (postId: string, x: number, y: number) => void;
+  onCommentTap: (postId: string) => void;
+}) {
+  const likeButtonRef = useRef<View>(null);
+  const handleLikeTap = useCallback(
+    () => onReact(post.id, 'like'),
+    [onReact, post.id],
+  );
+  const handleLikeLongPress = useCallback(() => {
+    if (!likeButtonRef.current) {
+      onOpenPicker(post.id, 100, 200);
+      return;
+    }
+    likeButtonRef.current.measureInWindow((x, y, width) => {
+      onOpenPicker(post.id, x + width / 2, y);
+    });
+  }, [onOpenPicker, post.id]);
+
+  // Photo grid: 1 photo → big, 2+ → 2-column. Same shape as the composer
+  // grid for visual consistency.
+  const single = post.photos.length === 1;
+
+  return (
+    <View className="surface-card mx-4 mb-6 overflow-hidden">
+      <View className="p-5">
+        <PostHeader
+          avatar={post.publisher.avatarUrl}
+          name={post.publisher.name}
+          time={formatPostTime(post.postedAt)}
+        />
+        {post.caption ? (
+          <Text className="text-body-primary">{post.caption}</Text>
+        ) : null}
+        {post.feeling ? (
+          <Text className="mt-1 text-caption-secondary">
+            đang cảm thấy {post.feeling.label ?? post.feeling.value}{' '}
+            {post.feeling.emoji ?? ''}
+          </Text>
+        ) : null}
+      </View>
+      {post.photos.length > 0 ? (
+        <View className="flex-row flex-wrap px-1">
+          {post.photos.map(url => (
+            <View
+              key={url}
+              style={{
+                width: single ? '100%' : '50%',
+                aspectRatio: single ? 1.4 : 1,
+                padding: 2,
+              }}
+            >
+              <Image
+                source={{ uri: url }}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: 8,
+                  backgroundColor: '#F1F5F9',
+                }}
+                resizeMode="cover"
+              />
+            </View>
+          ))}
+        </View>
+      ) : null}
+      <View className="p-5">
+        <VideoReactionSummary
+          likeCount={post.likeCount}
+          commentCount={post.commentCount}
+          myReaction={post.myReaction}
+        />
+        <VideoPostActions
+          myReaction={post.myReaction}
+          likeButtonRef={likeButtonRef}
+          onLikeTap={handleLikeTap}
+          onLikeLongPress={handleLikeLongPress}
+          onCommentTap={() => onCommentTap(post.id)}
+        />
+      </View>
+    </View>
+  );
+}
+
+// Section wrapper — header + empty/loading/error states + list of cards.
+function TextPostFeed({
+  posts,
+  isLoading,
+  error,
+  onReact,
+  onOpenPicker,
+  onCommentTap,
+}: {
+  posts: FeedTextPost[];
+  isLoading: boolean;
+  error: string | null;
+  onReact: (postId: string, reaction: ReactionType) => void;
+  onOpenPicker: (postId: string, x: number, y: number) => void;
+  onCommentTap: (postId: string) => void;
+}) {
+  if (isLoading && posts.length === 0) {
+    return (
+      <View className="surface-card mx-4 mb-6 items-center p-5">
+        <ActivityIndicator color="#0000FF" size="small" />
+        <Text className="mt-2 text-body-secondary">Đang tải bài viết...</Text>
+      </View>
+    );
+  }
+  if (posts.length === 0) {
+    return null;
+  }
+  return (
+    <View>
+      <View className="mb-3 flex-row items-center justify-between px-4">
+        <Text className="text-heading">Bài viết mới</Text>
+        {error ? (
+          <Text className="text-caption-secondary">Không tải thêm được</Text>
+        ) : null}
+      </View>
+      {posts.map(post => (
+        <TextPostCard
+          key={post.id}
+          post={post}
+          onReact={onReact}
+          onOpenPicker={onOpenPicker}
+          onCommentTap={onCommentTap}
+        />
+      ))}
+    </View>
+  );
+}
+
 function FeedScreen() {
+  const navigation = useNavigation<FeedNav>();
+  const vm = useFeedViewModel();
+
+  // Subscribe to the global "post created" event so the home feed gets
+  // an instant prepend the moment CreatePostScreen finishes. We mount
+  // ONCE per FeedScreen instance and unsubscribe on unmount so dropped
+  // events never leak into stale listeners.
+  useEffect(() => {
+    const unsubscribe = postCreatedEvents.subscribe(post => {
+      vm.prependTextPost(post);
+    });
+    return unsubscribe;
+  }, [vm]);
+
+  const goToCreatePost = useCallback(() => {
+    navigation.navigate(ROUTES.CREATE_POST);
+  }, [navigation]);
+
+  const commentVm = useFeedCommentsViewModel({
+    onCommentCountChange: vm.updateCommentCount,
+  });
+
+  // The comment sheet is shared by both video and text posts — look up
+  // the active post in both lists so the comment count badge stays
+  // accurate regardless of which type triggered it.
+  const selectedCommentPost = useMemo(
+    () =>
+      vm.videoPosts.find(post => post.id === commentVm.selectedCommentPostId) ??
+      vm.textPosts.find(post => post.id === commentVm.selectedCommentPostId) ??
+      null,
+    [vm.videoPosts, vm.textPosts, commentVm.selectedCommentPostId],
+  );
+
+  const handleRetryComments = useCallback(() => {
+    if (commentVm.selectedCommentPostId) {
+      commentVm.openComments(commentVm.selectedCommentPostId);
+    }
+  }, [commentVm]);
+
+  // Viewport tracking & Autoplay logic for ScrollView video cards
+  const [videoSectionY, setVideoSectionY] = useState(0);
+  const cardLayouts = useRef<Record<string, { y: number; height: number }>>({});
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+
+  const handleReportSectionY = useCallback((y: number) => {
+    setVideoSectionY(y);
+  }, []);
+
+  const handleReportLayout = useCallback((id: string, y: number, height: number) => {
+    cardLayouts.current[id] = { y, height };
+  }, []);
+
+  const handleScroll = useCallback((event: any) => {
+    const scrollY = event.nativeEvent.contentOffset.y;
+    const viewportHeight = Dimensions.get('window').height;
+    const viewportCenter = scrollY + viewportHeight / 2;
+
+    let closestId: string | null = null;
+    let minDistance = Infinity;
+
+    for (const [id, layout] of Object.entries(cardLayouts.current)) {
+      const cardAbsoluteY = videoSectionY + layout.y;
+      const cardCenter = cardAbsoluteY + layout.height / 2;
+      const distance = Math.abs(viewportCenter - cardCenter);
+
+      const isVisible =
+        cardAbsoluteY + layout.height > scrollY &&
+        cardAbsoluteY < scrollY + viewportHeight;
+
+      if (isVisible && distance < minDistance) {
+        minDistance = distance;
+        closestId = id;
+      }
+    }
+
+    setActiveVideoId(closestId);
+  }, [videoSectionY]);
+
+  // Autoplay the first video on mount / load
+  useEffect(() => {
+    if (vm.videoPosts.length > 0 && !activeVideoId) {
+      setActiveVideoId(vm.videoPosts[0].id);
+    }
+  }, [vm.videoPosts, activeVideoId]);
+
+  // Reaction picker state — anchored to whichever "Thích" button was
+  // long-pressed. Stored at this level (not inside each card) so only one
+  // picker can ever be open at a time AND the picker can float above
+  // every card without being clipped by the parent ScrollView.
+  const [pickerAnchor, setPickerAnchor] = useState<{
+    postId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const handleOpenPicker = useCallback(
+    (postId: string, x: number, y: number) => {
+      setPickerAnchor({ postId, x, y });
+    },
+    [],
+  );
+
+  const handlePickReaction = useCallback(
+    (reaction: ReactionType) => {
+      if (!pickerAnchor) return;
+      // The picker is shared between video posts and text posts. Look
+      // up which list owns the anchored post so we hit the right
+      // optimistic-state slice — calling the wrong one would no-op
+      // visually (state never matches) and confuse the rollback.
+      const isText = vm.textPosts.some(p => p.id === pickerAnchor.postId);
+      if (isText) {
+        vm.toggleTextPostReaction(pickerAnchor.postId, reaction);
+      } else {
+        vm.toggleReaction(pickerAnchor.postId, reaction);
+      }
+      setPickerAnchor(null);
+    },
+    [pickerAnchor, vm],
+  );
+
   return (
     <SafeAreaView className="flex-1 surface-base">
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
@@ -505,11 +1288,32 @@ function FeedScreen() {
           className="flex-1"
           contentContainerClassName="pb-24"
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={handleScroll}
         >
           <FilterTabs />
-          <ComposerCard />
+          <ComposerCard onPress={goToCreatePost} />
           <StoriesRow />
           <GreetingCard />
+          <HomeVideoPosts
+            posts={vm.videoPosts}
+            isLoading={vm.isLoadingVideos}
+            error={vm.videoError}
+            onReact={vm.toggleReaction}
+            onOpenPicker={handleOpenPicker}
+            onCommentTap={commentVm.openComments}
+            activeVideoId={activeVideoId}
+            onReportLayout={handleReportLayout}
+            onReportSectionY={handleReportSectionY}
+          />
+          <TextPostFeed
+            posts={vm.textPosts}
+            isLoading={vm.isLoadingTextPosts}
+            error={vm.textPostsError}
+            onReact={vm.toggleTextPostReaction}
+            onOpenPicker={handleOpenPicker}
+            onCommentTap={commentVm.openComments}
+          />
           <ScenicPost />
           <SponsoredPost />
           <GalleryPost />
@@ -521,6 +1325,36 @@ function FeedScreen() {
           <Edit3 size={26} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
+      <ReactionPickerOverlay
+        anchor={pickerAnchor}
+        onPick={handlePickReaction}
+        onDismiss={() => setPickerAnchor(null)}
+      />
+      <ReelCommentsSheet
+        visible={commentVm.isCommentsOpen}
+        comments={commentVm.comments}
+        commentCount={selectedCommentPost?.commentCount ?? commentVm.comments.length}
+        isLoading={commentVm.isCommentsLoading}
+        isLoadingMore={commentVm.isCommentsLoadingMore}
+        isSubmitting={commentVm.isSubmittingComment}
+        error={commentVm.commentError}
+        repliesById={commentVm.repliesById}
+        loadingRepliesIds={commentVm.loadingRepliesIds}
+        replyingTo={commentVm.replyingTo}
+        onClose={commentVm.closeComments}
+        onEndReached={commentVm.loadMoreComments}
+        onRetry={handleRetryComments}
+        onSubmit={commentVm.submitComment}
+        onSubmitReply={commentVm.submitReply}
+        onSetReaction={commentVm.setCommentReaction}
+        onDelete={commentVm.deleteComment}
+        onLoadReplies={commentVm.loadReplies}
+        onCollapseReplies={commentVm.collapseReplies}
+        onStartReply={commentVm.startReplyTo}
+        onCancelReply={commentVm.cancelReply}
+        onRetryFailedComment={commentVm.retryFailedComment}
+        onDeleteFailedComment={commentVm.deleteFailedComment}
+      />
     </SafeAreaView>
   );
 }
