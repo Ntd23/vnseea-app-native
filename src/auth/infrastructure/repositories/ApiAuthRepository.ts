@@ -1,6 +1,6 @@
 // Description: Implements the auth repository using the WoWonder backend API.
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
-import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { AuthRepository } from '../../domain/repositories/AuthRepository';
 import type {
@@ -87,7 +87,7 @@ function mapCurrentUser(
 export function createAuthRepository(): AuthRepository {
   return {
     async login(credentials: LoginCredentials) {
-      const response = await backendApi.post<AuthResponse>(
+      const response = await apiBridge.post<AuthResponse>(
         apiRoutes.auth.login,
         {
           username: credentials.username.trim(),
@@ -100,7 +100,7 @@ export function createAuthRepository(): AuthRepository {
     },
 
     async register(input: RegisterInput) {
-      const response = await backendApi.post<AuthResponse>(
+      const response = await apiBridge.post<AuthResponse>(
         apiRoutes.auth.register,
         {
           first_name: input.firstName.trim(),
@@ -118,7 +118,7 @@ export function createAuthRepository(): AuthRepository {
     },
 
     async forgotPassword(input) {
-      await backendApi.post(apiRoutes.auth.forgotPassword, {
+      await apiBridge.post(apiRoutes.auth.forgotPassword, {
         email: input.email.trim(),
       });
     },
@@ -126,7 +126,7 @@ export function createAuthRepository(): AuthRepository {
     async logout() {
       try {
         if (sessionStorage.getAccessToken()) {
-          await backendApi.post(apiRoutes.auth.logout);
+          await apiBridge.post(apiRoutes.auth.logout);
         }
       } finally {
         sessionStorage.clearSession();
@@ -138,7 +138,7 @@ export function createAuthRepository(): AuthRepository {
         return null;
       }
 
-      const response = await backendApi.post<CurrentUserResponse>(
+      const response = await apiBridge.post<CurrentUserResponse>(
         apiRoutes.auth.me,
       );
 

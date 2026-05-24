@@ -7,7 +7,7 @@
 Use one flow for every context:
 
 ```txt
-Screen -> ViewModel -> Repository interface -> API repository -> backendApi -> apiClient -> WoWonder API
+Screen -> ViewModel -> Repository interface -> API repository -> apiBridge -> apiClient -> WoWonder API
 ```
 
 Do not call API directly from screens.
@@ -41,15 +41,15 @@ Rules:
 Use:
 
 ```txt
-src/shared-kernel/infrastructure/api/backendApi.ts
+src/shared-kernel/infrastructure/api/apiBridge.ts
 ```
 
 Helpers:
 
 ```ts
-backendApi.get<TResponse>(url, params);
-backendApi.post<TResponse>(url, payload);
-backendApi.multipart<TResponse>(url, payload);
+apiBridge.get<TResponse>(url, params);
+apiBridge.post<TResponse>(url, payload);
+apiBridge.multipart<TResponse>(url, payload);
 ```
 
 The shared client already handles:
@@ -58,14 +58,50 @@ The shared client already handles:
 - `server_key`
 - `access_token`
 - URL normalization from `/api/auth` to `/auth`
-- backend error normalization
+- API envelope/error normalization through `apiResponse.ts`
 - URL-encoded POST payloads for PHP `$_POST`
 
 Do not manually add `server_key`, `access_token`, base URL, or request headers in context repositories.
 
+## Foundation Mappers
+
+Use `foundation` for shared raw API value resolution and summary mapping:
+
+```txt
+src/foundation
+```
+
+Foundation owns:
+
+- primitive normalizers: id, string, number, boolean
+- URL normalizers that convert relative media paths into full URLs
+- pagination payload helpers
+- reusable summary mappers:
+  - user
+  - page
+  - group
+  - post
+  - media
+
+Foundation does not own:
+
+- API clients
+- session storage
+- screen state
+- React Native UI components
+- feature-specific business rules
+
+When a context needs shared mapping, prefer:
+
+```ts
+import { resolveSummaryMappers } from '../../foundation';
+```
+
+If a mapper is only used by one context, keep it inside that context first. Move it into `foundation` only after at least two contexts need the same shape.
+
 ## Routes
 
-Declare backend API paths in:
+Declare API paths in:
 
 ```txt
 src/shared-kernel/application/constants/route-registry.ts
@@ -141,7 +177,7 @@ src/<context>/
 ```ts
 // Description: Implements the events repository using the shared backend API.
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
-import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import type { EventsRepository } from '../../domain/repositories/EventsRepository';
 import type { EventItem } from '../../domain/types/events.types';
 
@@ -160,7 +196,7 @@ function mapEvent(raw: Record<string, unknown>): EventItem {
 export function createEventsRepository(): EventsRepository {
   return {
     async getEvents() {
-      const response = await backendApi.post<EventsResponse>(
+      const response = await apiBridge.post<EventsResponse>(
         apiRoutes.events.list,
       );
 
@@ -221,7 +257,7 @@ Screens should only:
 
 Screens should not:
 
-- Import `backendApi` or `apiClient`.
+- Import `apiBridge` or `apiClient`.
 - Know `server_key`.
 - Know `access_token`.
 - Map raw backend payloads.
@@ -273,7 +309,7 @@ Include:
 
 - route or screen smoke cases
 - API success
-- API backend error
+- API error
 - empty state
 - loading state
 - auth/session dependency if needed
@@ -358,9 +394,9 @@ Copy this when creating a new context test file:
 
 | ID              | Status | Case             | Entry                            | Expected                                                        |
 | --------------- | ------ | ---------------- | -------------------------------- | --------------------------------------------------------------- |
-| `<CTX>-API-001` | `[ ]`  | Success response | `<repository/view-model action>` | UI renders real backend data, not mock data.                    |
-| `<CTX>-API-002` | `[ ]`  | Backend error    | `<invalid payload/token>`        | User sees readable error state; no unhandled promise rejection. |
-| `<CTX>-API-003` | `[ ]`  | Empty response   | `<empty backend result>`         | Empty state is clear and usable.                                |
+| `<CTX>-API-001` | `[ ]`  | Success response | `<repository/view-model action>` | UI renders real API data, not mock data.                        |
+| `<CTX>-API-002` | `[ ]`  | API error        | `<invalid payload/token>`        | User sees readable error state; no unhandled promise rejection. |
+| `<CTX>-API-003` | `[ ]`  | Empty response   | `<empty API result>`             | Empty state is clear and usable.                                |
 
 ## UI And UX
 
@@ -368,7 +404,7 @@ Copy this when creating a new context test file:
 | -------------- | ------ | ------------- | ------------- | -------------------------------------------------------- |
 | `<CTX>-UI-001` | `[ ]`  | Mobile layout | Android phone | No clipped text, overflow, or broken tap target.         |
 | `<CTX>-UX-001` | `[ ]`  | Loading state | Slow API      | Loading state appears and action is not submitted twice. |
-| `<CTX>-UX-002` | `[ ]`  | Retry path    | Backend error | User can retry or navigate away safely.                  |
+| `<CTX>-UX-002` | `[ ]`  | Retry path    | API error     | User can retry or navigate away safely.                  |
 
 ## Regression Commands
 
@@ -379,7 +415,7 @@ npx jest --passWithNoTests
 
 ## Notes
 
-- `<backend endpoint notes>`
+- `<API endpoint notes>`
 - `<known blocked cases>`
 ```
 
