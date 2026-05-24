@@ -1,6 +1,22 @@
 pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+def reactNativeCliCommand = System.getProperty("os.name").toLowerCase().contains("windows")
+  ? ["cmd", "/c", "npx", "@react-native-community/cli", "config"]
+  : ["npx", "@react-native-community/cli", "config"]
+
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+  ex.autolinkLibrariesFromCommand(
+    reactNativeCliCommand,
+    file(".."),
+    files(
+      "../yarn.lock",
+      "../package-lock.json",
+      "../package.json",
+      "../react-native.config.js",
+      "../pnpm-lock.yaml"
+    )
+  )
+}
 rootProject.name = 'VnseeaRn'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
