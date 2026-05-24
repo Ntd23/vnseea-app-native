@@ -1,4 +1,4 @@
-// Description: Normalizes React Native environment variables for backend integration.
+// Description: Normalizes React Native environment variables for API integration.
 import Config from 'react-native-config';
 
 function requireEnv(name: keyof typeof Config) {
@@ -22,7 +22,7 @@ function parseRequiredNumber(name: keyof typeof Config) {
   return parsed;
 }
 
-export const backendConfig = {
+export const apiConfig = {
   apiBaseUrl: requireEnv('API_BASE_URL'),
   webBaseUrl: requireEnv('WEB_BASE_URL'),
   serverKey: requireEnv('SERVER_KEY'),

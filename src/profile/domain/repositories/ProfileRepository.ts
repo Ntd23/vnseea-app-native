@@ -1,10 +1,6 @@
-// Profile Repository Interface
-// Port từ: client/src/profile/domain/repositories/
-
-import type { ProfileItem } from '../types/profile.types';
+// Description: Defines the profile repository contract for profile presentation data.
+import type { ProfileData, ProfileLoadInput } from '../types/profile.types';
 
 export interface ProfileRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<ProfileItem[]>;
-  // getById(id: string | number): Promise<ProfileItem | null>;
+  loadProfile(input?: ProfileLoadInput): Promise<ProfileData | null>;
 }

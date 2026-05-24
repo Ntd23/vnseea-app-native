@@ -1,4 +1,5 @@
 <?php
+// Description: Authenticates API users and clears stale bad-login locks after valid credentials.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -29,9 +30,6 @@ if (empty($error_code)) {
     if (empty($recipient_data)) {
         $error_code    = 4;
         $error_message = 'Username not found';
-    }elseif ($wo['config']['prevent_system'] == 1 && !WoCanLogin()) {
-        $error_code    = 6;
-        $error_message = 'Too many login attempts please try again later';
     }
     elseif (Wo_IsBanned($username)) {
         $error_code    = 7;
@@ -39,12 +37,21 @@ if (empty($error_code)) {
      } else {
         $login = Wo_Login($username, $password);
         if (!$login) {
-            $error_code    = 5;
-            $error_message = 'Password is incorrect';
-            if ($wo['config']['prevent_system'] == 1) {
+            if ($wo['config']['prevent_system'] == 1 && !WoCanLogin()) {
+                $error_code    = 6;
+                $error_message = 'Too many login attempts please try again later';
+            }
+            else {
+                $error_code    = 5;
+                $error_message = 'Password is incorrect';
+            }
+            if ($wo['config']['prevent_system'] == 1 && $error_code == 5) {
                 WoAddBadLoginLog();
             }
         } else {
+            if ($wo['config']['prevent_system'] == 1) {
+                Wo_DeleteBadLogins();
+            }
             if (Wo_TwoFactor($_POST['username']) != false) {
                 $time           = time();
                 $cookie         = '';

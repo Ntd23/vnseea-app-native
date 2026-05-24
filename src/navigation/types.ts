@@ -14,7 +14,7 @@ export type RootStackParamList = {
   [ROUTES.REGISTER]: undefined;
   [ROUTES.FORGOT_PASSWORD]: undefined;
   [ROUTES.MAIN_TABS]: undefined;
-  [ROUTES.PROFILE]: undefined;
+  [ROUTES.PROFILE]: { userId?: string } | undefined;
   [ROUTES.MY_PHOTOS]: undefined;
   [ROUTES.ALBUMS]: undefined;
   [ROUTES.CREATE_ALBUM]: undefined;
