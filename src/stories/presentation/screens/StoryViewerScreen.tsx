@@ -83,16 +83,47 @@ function formatRelativeTime(timestamp?: number) {
 
 function StoryViewerScreen({ route }: Props) {
   const navigation = useNavigation<Nav>();
-  const { initialUserIndex } = route.params;
 
-  // We snapshot the stories list at mount so the viewer is unaffected by
-  // any rail updates that happen in the background (e.g. a refetch). The
-  // local copy also lets us mutate (delete, react) without prop drilling.
-  const [stories, setStories] = useState<StoryItem[]>(route.params.stories);
-  const [userIndex, setUserIndex] = useState(
-    // Clamp in case the caller passed an out-of-range index.
-    Math.max(0, Math.min(initialUserIndex, route.params.stories.length - 1)),
-  );
+  // Support BOTH: new API (stories array passed directly) AND old API
+  // (stories list + initialUserIndex). This keeps backwards compat while
+  // migrating to the cleaner "pass filtered stories" pattern.
+  const passedStories = Array.isArray(route.params?.stories)
+    ? route.params.stories
+    : undefined;
+
+  const [stories, setStories] = useState<StoryItem[]>(passedStories ?? []);
+
+  const userIndexRef = useRef<number>(0);
+
+  // If we got an explicit index from the caller, use it (but clamp to bounds).
+  if (route.params?.initialStoryIndex !== undefined) {
+    const clamped = Math.max(
+      0,
+      Math.min(
+        route.params.initialStoryIndex,
+        (passedStories?.length ?? stories.length) - 1
+      )
+    );
+    userIndexRef.current = clamped;
+  }
+
+  // When passing `stories` array from FeedScreen, always start at index 0
+  // because we already filtered down to the specific user's stories.
+  if (passedStories && passedStories.length > 0) {
+    userIndexRef.current = 0;
+  }
+
+  const [userIndex, setUserIndex] = useState(userIndexRef.current);
+
+  // Debug log for testing
+  useEffect(() => {
+    if (stories.length > 0) {
+      console.log('[StoryViewer] Loaded', stories.length, 'stories:',
+        stories.map(s => `${s.publisher.name} (${s.media.length} segments)`));
+    } else {
+      console.warn('[StoryViewer] NO STORIES loaded from route.params');
+    }
+  }, [stories]);
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   // Set by VideoPlayer's onLoad — null while waiting for metadata so we

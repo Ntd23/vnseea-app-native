@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { StoryItem } from '../../domain/types/stories.types';
 
@@ -27,17 +28,112 @@ export function useStoriesViewModel() {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Refetch the full friends-stories list. Called on mount AND from
-   * pull-to-refresh on the home feed. We intentionally clear `error`
-   * on the way in so a previous failure doesn't linger after a
-   * successful retry.
+   * Load stories from API OR mock data for testing. Uncomment mock section
+   * to test Facebook-style grouping without backend.
    */
   const loadStories = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const fresh = await repository.getStories();
-      setStories(fresh);
+      // OPTION 1: Real API (comment this out when testing mock)
+      const [friendsStories, allUserStories] = await Promise.all([
+        repository.getStories(),
+        repository.getUserStories(),
+      ]);
+
+      const sessionUserId = sessionStorage.getSession()?.userId;
+      const ownStories = allUserStories.filter(story =>
+        sessionUserId ? story.publisher.userId === sessionUserId : story.isOwner
+      );
+
+      const merged = [...ownStories];
+      for (const story of friendsStories) {
+        if (!merged.some(s => s.id === story.id)) {
+          merged.push(story);
+        }
+      }
+
+      setStories(merged);
+
+      // OPTION 2: Mock data for testing multi-segment stories (uncomment to test)
+      /*
+      const MOCK_STORIES: StoryItem[] = [
+        // User 1: 3 photo segments
+        {
+          id: 'story-1',
+          publisher: {
+            userId: 'user-1',
+            username: 'nguyen_a',
+            name: 'Nguyễn Á',
+            avatarUrl: 'https://i.pravatar.cc/150?u=user-1',
+            isVerified: false,
+          },
+          title: 'Chillin pool',
+          description: 'Cuối tuần thư giãn 🏊',
+          postedAt: Math.floor(Date.now() / 1000) - 7200,
+          expiresAt: Math.floor(Date.now() / 1000) + 82800,
+          thumbnailUrl: 'https://picsum.photos/400/600?random=1',
+          media: [
+            { id: 'm1-1', type: 'image', url: 'https://picsum.photos/400/600?random=1' },
+            { id: 'm1-2', type: 'image', url: 'https://picsum.photos/400/600?random=2' },
+            { id: 'm1-3', type: 'image', url: 'https://picsum.photos/400/600?random=3' },
+          ],
+          isOwner: false,
+          isViewed: false,
+          hasUnseen: true,
+          myReaction: null,
+          reactionCount: 5,
+        },
+        // User 2: 2 video segments
+        {
+          id: 'story-2',
+          publisher: {
+            userId: 'user-2',
+            username: 'tran_b',
+            name: 'Trần B',
+            avatarUrl: 'https://i.pravatar.cc/150?u=user-2',
+            isVerified: true,
+          },
+          title: 'Vlog ngày hè',
+          postedAt: Math.floor(Date.now() / 1000) - 3600,
+          expiresAt: Math.floor(Date.now() / 1000) + 86400,
+          thumbnailUrl: 'https://picsum.photos/400/600?random=4',
+          media: [
+            { id: 'm2-1', type: 'video', url: 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' },
+            { id: 'm2-2', type: 'video', url: 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4' },
+          ],
+          isOwner: false,
+          isViewed: false,
+          hasUnseen: true,
+          myReaction: 'like',
+          reactionCount: 12,
+        },
+        // User 3: 1 photo (no grouping badge should show)
+        {
+          id: 'story-3',
+          publisher: {
+            userId: 'user-3',
+            username: 'lee_c',
+            name: 'Lê C',
+            avatarUrl: 'https://i.pravatar.cc/150?u=user-3',
+            isVerified: false,
+          },
+          title: 'Coffee break ☕',
+          postedAt: Math.floor(Date.now() / 1000) - 1800,
+          expiresAt: Math.floor(Date.now() / 1000) + 88200,
+          thumbnailUrl: 'https://picsum.photos/400/600?random=5',
+          media: [
+            { id: 'm3-1', type: 'image', url: 'https://picsum.photos/400/600?random=5' },
+          ],
+          isOwner: false,
+          isViewed: false,
+          hasUnseen: true,
+          myReaction: null,
+          reactionCount: 3,
+        },
+      ];
+      setStories(MOCK_STORIES);
+      */
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -54,6 +150,8 @@ export function useStoriesViewModel() {
   // per hook instance, not on every render.
   useEffect(() => {
     void loadStories();
+    // Debug log for testing
+    console.log('[useStoriesViewModel] Loaded', stories.length, 'stories');
   }, [loadStories]);
 
   /**

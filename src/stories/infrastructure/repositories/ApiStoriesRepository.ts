@@ -276,6 +276,27 @@ export function createStoriesRepository(): StoriesRepository {
       return out;
     },
 
+    async getUserStories() {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        stories?: Array<Record<string, unknown>>;
+      }>(apiRoutes.stories.getUserStories, {});
+
+      const users = response.stories ?? [];
+      const out: StoryItem[] = [];
+      for (const user of users) {
+        const storiesList = Array.isArray(user.stories) ? user.stories : [];
+        for (const storyRaw of storiesList) {
+          const raw = storyRaw as Record<string, unknown>;
+          const mapped = mapStory(raw);
+          if (mapped && mapped.media.length > 0) {
+            out.push(mapped);
+          }
+        }
+      }
+      return out;
+    },
+
     async createStory(draft: CreateStoryDraft): Promise<CreateStoryResult> {
       // ── Field name caveat ─────────────────────────────────────────────
       //

@@ -304,6 +304,53 @@ function ComposerCard({ onPress }: { onPress: () => void }) {
   );
 }
 
+// Group stories by publisher and create group objects with count + aggregated state
+function groupStoriesByPublisher(stories: StoryItem[]): Array<{
+  userId: string;
+  username: string;
+  name: string;
+  avatarUrl: string;
+  isVerified?: boolean;
+  storyCount: number;
+  hasUnseen: boolean;
+  isViewed: boolean;
+  thumbnailUrl?: string;
+  storyIds: string[];
+}> {
+  const map = new Map<string, typeof stories[0]>();
+
+  for (const story of stories) {
+    const key = story.publisher.userId;
+    if (!map.has(key)) {
+      map.set(key, { ...story });
+    } else {
+      const existing = map.get(key)!;
+      existing.storyCount = (existing.storyCount || 1) + 1;
+      existing.storyIds = [...(existing.storyIds || []), story.id];
+      // Aggregate hasUnseen: if ANY story has unseen, group is unseen
+      existing.hasUnseen = existing.hasUnseen || story.hasUnseen;
+      existing.isViewed = existing.isViewed && story.isViewed;
+      // Keep the first thumbnail
+      if (!existing.thumbnailUrl && story.thumbnailUrl) {
+        existing.thumbnailUrl = story.thumbnailUrl;
+      }
+    }
+  }
+
+  return Array.from(map.values()).map(s => ({
+    userId: s.publisher.userId,
+    username: s.publisher.username,
+    name: s.publisher.name,
+    avatarUrl: s.publisher.avatarUrl,
+    isVerified: s.publisher.isVerified,
+    storyCount: s.storyCount || 1,
+    hasUnseen: s.hasUnseen,
+    isViewed: s.isViewed,
+    thumbnailUrl: s.thumbnailUrl,
+    storyIds: s.storyIds || [s.id],
+  }));
+}
+
 function StoriesRow() {
   const navigation = useNavigation<FeedNav>();
   const vm = useStoriesViewModel();
@@ -329,14 +376,23 @@ function StoriesRow() {
     navigation.navigate(ROUTES.CREATE_STORY);
   }, [navigation]);
 
-  // Open the full-screen viewer at a specific user-index. We pass the
-  // full stories array so the viewer can swipe between users without
-  // refetching — the network call already happened here.
-  const goToViewer = useCallback(
-    (userIndex: number) => {
+  // Get grouped stories for rendering
+  const groupedStories = useMemo(
+    () => groupStoriesByPublisher(vm.stories),
+    [vm.stories]
+  );
+
+  // Open the full-screen viewer at a specific GROUP index. We pass the
+  // full stories array plus the specific storyIds for this user, so the
+  // viewer knows which subset to display.
+  const goToViewerForGroup = useCallback(
+    (groupIndex: number, storyIds: string[]) => {
+      const storiesToShow = vm.stories.filter(s => storyIds.includes(s.id));
+      const initialStoryIndex = storiesToShow.findIndex(s => s.id === storyIds[0]);
+
       navigation.navigate(ROUTES.STORY_VIEWER, {
-        stories: vm.stories,
-        initialUserIndex: userIndex,
+        stories: storiesToShow,
+        initialStoryIndex: Math.max(0, initialStoryIndex),
       });
     },
     [navigation, vm.stories],
@@ -375,30 +431,31 @@ function StoriesRow() {
           </View>
         </TouchableOpacity>
 
-        {/* Real story bubbles. We dim already-seen entries to mirror the
-            FB/IG "ring goes grey after viewed" treatment. */}
-        {vm.stories.map((story, index) => {
-          const hasUnseen = story.hasUnseen && !story.isViewed;
+        {/* Grouped story bubbles (Facebook-style):
+            Multiple stories from same user → one avatar + count badge */}
+        {groupedStories.map((group, index) => {
+          const hasUnseen = group.hasUnseen && !group.isViewed;
+
           return (
             <TouchableOpacity
-              key={story.id}
+              key={group.userId}
               activeOpacity={0.85}
-              onPress={() => goToViewer(index)}
+              onPress={() => goToViewerForGroup(index, group.storyIds)}
               className={`h-48 w-28 overflow-hidden rounded-2xl ${
                 hasUnseen ? '' : 'opacity-80'
               }`}
             >
               {/* Cover image — thumbnail when available, falls back to
-                  the publisher's avatar (PHP does the same fallback when
-                  the story has no media thumb). */}
+                  the publisher's avatar. */}
               <Image
                 source={{
-                  uri: story.thumbnailUrl ?? story.publisher.avatarUrl,
+                  uri: group.thumbnailUrl ?? group.avatarUrl,
                 }}
                 className="h-full w-full"
                 resizeMode="cover"
               />
               <View className="absolute inset-0 bg-black/20" />
+
               {/* Avatar bubble overlay (top-left), ring colored by
                   unseen-state — blue when unseen, grey once viewed. */}
               <View
@@ -407,16 +464,26 @@ function StoriesRow() {
                 } bg-white p-0.5`}
               >
                 <Image
-                  source={{ uri: story.publisher.avatarUrl }}
+                  source={{ uri: group.avatarUrl }}
                   className="h-full w-full rounded-full"
                   resizeMode="cover"
                 />
+
+                {/* Count badge (only show when > 1 story) */}
+                {group.storyCount > 1 && (
+                  <View className="absolute -bottom-2 -right-2 flex h-5 items-center justify-center rounded-full bg-blue-600 px-1">
+                    <Text className="text-[10px] font-bold text-white">
+                      {group.storyCount}
+                    </Text>
+                  </View>
+                )}
               </View>
+
               <Text
                 className="absolute bottom-2 left-2 right-2 text-caption-primary text-white"
                 numberOfLines={1}
               >
-                {story.publisher.name}
+                {group.name}
               </Text>
             </TouchableOpacity>
           );

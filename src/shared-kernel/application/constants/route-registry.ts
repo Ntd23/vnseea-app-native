@@ -39,6 +39,7 @@ export const apiRoutes = {
   },
   stories: {
     get: '/api/get-stories',
+    getUserStories: '/api/get-user-stories',
     create: '/api/create-story',
     delete: '/api/delete-story',
     react: '/api/react_story',

@@ -30,6 +30,11 @@ export interface StoriesRepository {
   getStories(): Promise<StoryItem[]>;
 
   /**
+   * Fetch stories grouped by user, which includes the user's own stories.
+   */
+  getUserStories(): Promise<StoryItem[]>;
+
+  /**
    * Upload a new story. WoWonder's create endpoint requires a SINGLE
    * media file per call (image OR video) + an explicit `file_type`
    * discriminator. Title/description are optional but have hard length
