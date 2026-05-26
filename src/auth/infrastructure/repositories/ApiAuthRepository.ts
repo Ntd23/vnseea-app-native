@@ -161,7 +161,7 @@ export function createAuthRepository(): AuthRepository {
         return null;
       }
 
-      const response = await backendApi.post<CurrentUserResponse>(
+      const response = await apiBridge.post<CurrentUserResponse>(
         apiRoutes.user.get,
         { user_id: userId, fetch: 'user_data' },
       );

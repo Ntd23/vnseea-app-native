@@ -1,5 +1,6 @@
 // Description: Repository interface for the reels bounded context.
 import type {
+  CommentImageAttachment,
   ReactionType,
   ReelCaptionSuggestion,
   ReelCaptionSuggestionKind,
@@ -71,8 +72,17 @@ export interface ReelsRepository {
     options?: { limit?: number; offset?: number },
   ): Promise<ReelComment[]>;
 
-  /** Post a text comment on a reel. */
-  addComment(postId: string, text: string): Promise<ReelComment>;
+  /**
+   * Post a comment on a reel. Either `text` OR `image` (or both) must be
+   * non-empty — the backend rejects fully empty comments. When `image`
+   * is provided, the call switches to multipart/form-data so the file is
+   * uploaded as `$_FILES['image']`.
+   */
+  addComment(
+    postId: string,
+    text: string,
+    image?: CommentImageAttachment,
+  ): Promise<ReelComment>;
 
   /**
    * Toggle the viewer's simple-like on a comment (legacy `comment_like`
@@ -112,8 +122,16 @@ export interface ReelsRepository {
     options?: { limit?: number; offset?: number },
   ): Promise<ReelComment[]>;
 
-  /** Post a reply on a comment. */
-  addReply(commentId: string, text: string): Promise<ReelComment>;
+  /**
+   * Post a reply on a comment. Same `image` semantics as `addComment`:
+   * optional, switches to multipart when present, must have at least
+   * text OR image to satisfy the backend.
+   */
+  addReply(
+    commentId: string,
+    text: string,
+    image?: CommentImageAttachment,
+  ): Promise<ReelComment>;
 
   /** Search mention or hashtag suggestions while composing a reel caption */
   searchCaptionSuggestions(

@@ -111,10 +111,36 @@ export interface ReelComment {
   postOwner: boolean;
   /** Optional inline image (`c_file` in WoWonder) — full URL ready to render. */
   imageUrl?: string;
+  /**
+   * Local-only preview URI used while an optimistic comment is uploading.
+   * Lets the bubble show the picked image instantly before the server
+   * round-trip returns the canonical `imageUrl`. Cleared once the server
+   * response replaces the temp comment with the real one.
+   */
+  pendingImageUri?: string;
   /** Optimistic update state: true if comment/reply is currently sending */
   isSending?: boolean;
   /** Optimistic update state: true if sending failed */
   isFailed?: boolean;
+}
+
+/**
+ * A single image attached to a comment or reply draft. The `uri` is a
+ * local `file://...` path coming from the image picker — uploaded via
+ * multipart FormData (field name `image`) by the comment endpoint
+ * (`/api/comments`, action `create` / `create_reply`). On success the
+ * server returns the post-CDN URL in `c_file`, surfaced to the UI as
+ * `ReelComment.imageUrl`.
+ *
+ * `name` + `type` are required by React Native's FormData — omitting
+ * either causes the file to be sent as an inert string blob.
+ */
+export interface CommentImageAttachment {
+  uri: string;
+  name: string;
+  type: string; // MIME, e.g. 'image/jpeg'
+  width?: number;
+  height?: number;
 }
 
 /** Privacy level matching WoWonder postPrivacy values */

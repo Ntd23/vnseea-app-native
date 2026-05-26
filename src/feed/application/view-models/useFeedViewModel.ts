@@ -1,9 +1,20 @@
 // Feed - useFeedViewModel ViewModel
-// Port from: client/src/feed/application/view-models/
+//
+// SINGLE-LIST FEED ARCHITECTURE
+// ─────────────────────────────
+// We hold ONE source of truth (`posts: FeedPost[]`) sorted by `postedAt`
+// descending. Both video and text/photo cards are rendered from this
+// merged list — Facebook-style.
+//
+// Backward-compat exports `videoPosts` and `textPosts` as DERIVED
+// (`useMemo`) slices so existing UI code that consumed them keeps
+// working while the home screen is being refactored. Once the UI uses
+// `posts` directly, those derived exports can be deleted.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedRepository';
 import type {
+  FeedPost,
   FeedTextPost,
   FeedVideoPost,
 } from '../../domain/types/feed.types';
@@ -11,90 +22,88 @@ import type { ReactionType } from '../../../reels/domain/types/reels.types';
 
 const repository = createFeedRepository();
 
+/**
+ * Re-sort by `postedAt` desc so optimistic prepends and updates keep
+ * the merged feed in chronological order. Posts without a timestamp
+ * (very rare — defensive) bubble to the bottom.
+ */
+function sortByTime(posts: FeedPost[]): FeedPost[] {
+  return [...posts].sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+}
+
 export function useFeedViewModel() {
-  const [videoPosts, setVideoPosts] = useState<FeedVideoPost[]>([]);
-  const [isLoadingVideos, setIsLoadingVideos] = useState(false);
-  const [videoError, setVideoError] = useState<string | null>(null);
+  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Text/photo posts live in a SEPARATE state slice from videos because
-  // the UI renders them in different sections (a "Video mới" carousel
-  // vs. a regular post feed) and we want each section's loading/error
-  // states to be independent — a failed text fetch shouldn't blank
-  // the video carousel.
-  const [textPosts, setTextPosts] = useState<FeedTextPost[]>([]);
-  const [isLoadingTextPosts, setIsLoadingTextPosts] = useState(false);
-  const [textPostsError, setTextPostsError] = useState<string | null>(null);
-
-  const loadVideoPosts = useCallback(async () => {
-    setIsLoadingVideos(true);
-    setVideoError(null);
+  const loadPosts = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      setVideoPosts(await repository.getVideoPosts());
+      setPosts(await repository.getAllPosts());
     } catch (caught) {
-      setVideoError(
-        caught instanceof Error ? caught.message : 'Không tải được video.',
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Không tải được bảng tin.',
       );
     } finally {
-      setIsLoadingVideos(false);
-    }
-  }, []);
-
-  const loadTextPosts = useCallback(async () => {
-    setIsLoadingTextPosts(true);
-    setTextPostsError(null);
-    try {
-      setTextPosts(await repository.getTextPosts());
-    } catch (caught) {
-      setTextPostsError(
-        caught instanceof Error ? caught.message : 'Không tải được bài đăng.',
-      );
-    } finally {
-      setIsLoadingTextPosts(false);
+      setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // Fire both fetches in parallel — they hit the same endpoint but
-    // we hand off filtering to the repository, so the network cost is
-    // 2× (acceptable for now). When we add pagination we can share a
-    // single network call and split client-side.
-    void loadVideoPosts();
-    void loadTextPosts();
-  }, [loadVideoPosts, loadTextPosts]);
+    void loadPosts();
+  }, [loadPosts]);
+
+  // ── Derived (backward-compat) slices ─────────────────────────────
+  // Older UI code reads `vm.videoPosts` / `vm.textPosts`. We keep these
+  // as memoised projections of the single source of truth so the home
+  // screen can migrate to `vm.posts` at its own pace.
+  const videoPosts = useMemo<FeedVideoPost[]>(
+    () => posts.filter((p): p is FeedVideoPost => p.kind === 'video'),
+    [posts],
+  );
+  const textPosts = useMemo<FeedTextPost[]>(
+    () => posts.filter((p): p is FeedTextPost => p.kind === 'text'),
+    [posts],
+  );
 
   /**
-   * Insert a freshly-created post at the top of the text-posts feed.
-   * Called by `useCreatePostViewModel.submit()` after a successful API
-   * round-trip — gives the user the satisfying "my post appeared
-   * instantly" feedback without waiting for a feed refetch.
+   * Insert a freshly-created post at the top of the merged feed.
+   * Called by `useCreatePostViewModel.submit()` (for text posts) and
+   * potentially `useCreateReelViewModel` (for videos, if wired up
+   * later).
    *
-   * Dedupe by `id` so an accidental double-call (e.g. user mashes
-   * Submit twice) doesn't show the same post twice.
+   * Dedupe by `id` so an accidental double-emit doesn't show the same
+   * post twice. Then re-sort so the new post lands in its real
+   * chronological slot — usually the top, but defensive in case the
+   * server returns an older `time` than we expect.
    */
-  const prependTextPost = useCallback((post: FeedTextPost) => {
-    setTextPosts(prev => {
+  const prependPost = useCallback((post: FeedPost) => {
+    setPosts(prev => {
       if (prev.some(p => p.id === post.id)) return prev;
-      return [post, ...prev];
+      return sortByTime([post, ...prev]);
     });
   }, []);
 
   /**
-   * Add, swap, or clear a reaction on a video post — Facebook-style.
+   * Add, swap, or clear the viewer's reaction on a post (any kind).
+   * Same Facebook-style logic the old per-slice toggle used:
    *
    *   • No reaction       + nextReaction='like' → adds 'like'
    *   • Has 'like'        + nextReaction='like' → clears (toggle off)
    *   • Has 'like'        + nextReaction='love' → swaps to 'love'
    *
-   * Optimistic: state flips immediately, then we round-trip to the server.
-   * On failure we restore the original post. Count is adjusted ±1 at the
-   * null boundary and 0 when swapping between two non-null reactions.
+   * Optimistic update first, server round-trip second. On failure we
+   * roll the touched post back to its pre-toggle snapshot.
    */
   const toggleReaction = useCallback(
     async (postId: string, nextReaction: ReactionType) => {
-      let snapshot: FeedVideoPost | undefined;
+      let snapshot: FeedPost | undefined;
       let targetReaction: ReactionType | null = nextReaction;
 
-      setVideoPosts(prev =>
+      setPosts(prev =>
         prev.map(post => {
           if (post.id !== postId) return post;
           snapshot = post;
@@ -105,11 +114,29 @@ export function useFeedViewModel() {
           const willBeReacted = targetReaction !== null;
           const countDelta = Number(willBeReacted) - Number(wasReacted);
 
+          // Optimistically update topReactions when the viewer switches
+          // or clears their reaction:
+          //   1. Remove the OLD reaction type if the viewer had one and
+          //      it's different from the new one (or they're clearing).
+          //      This stops the stale icon from lingering until reload.
+          //   2. Prepend the NEW reaction type if it isn't already there.
+          const prevReaction = post.myReaction;
+          let newTopReactions = [...post.topReactions];
+          if (prevReaction && prevReaction !== targetReaction) {
+            newTopReactions = newTopReactions.filter(t => t !== prevReaction);
+          }
+          if (targetReaction && !newTopReactions.includes(targetReaction)) {
+            newTopReactions = [targetReaction, ...newTopReactions].slice(0, 3);
+          }
+
+          // The spread preserves `kind` so the discriminator survives —
+          // TypeScript narrows correctly when consumers read the post.
           return {
             ...post,
             myReaction: targetReaction,
             isLiked: willBeReacted,
             likeCount: Math.max(0, post.likeCount + countDelta),
+            topReactions: newTopReactions,
           };
         }),
       );
@@ -119,7 +146,7 @@ export function useFeedViewModel() {
       } catch {
         if (snapshot) {
           const original = snapshot;
-          setVideoPosts(prev =>
+          setPosts(prev =>
             prev.map(post => (post.id === postId ? original : post)),
           );
         }
@@ -129,63 +156,13 @@ export function useFeedViewModel() {
   );
 
   /**
-   * Same reaction logic as videos, but operates on the textPosts slice.
-   * Kept as a separate function (rather than overloading toggleReaction)
-   * because the state slice + snapshot shape differ — keeping them
-   * separate makes the rollback type-safe without `any`.
+   * Increment / decrement a post's `commentCount` (used by the comments
+   * sheet for optimistic +1 on send, -1 on delete). Works on any post
+   * kind — the unified posts array makes this trivial.
    */
-  const toggleTextPostReaction = useCallback(
-    async (postId: string, nextReaction: ReactionType) => {
-      let snapshot: FeedTextPost | undefined;
-      let targetReaction: ReactionType | null = nextReaction;
-
-      setTextPosts(prev =>
-        prev.map(post => {
-          if (post.id !== postId) return post;
-          snapshot = post;
-          const willClear = post.myReaction === nextReaction;
-          targetReaction = willClear ? null : nextReaction;
-
-          const wasReacted = post.myReaction !== null;
-          const willBeReacted = targetReaction !== null;
-          const countDelta = Number(willBeReacted) - Number(wasReacted);
-
-          return {
-            ...post,
-            myReaction: targetReaction,
-            isLiked: willBeReacted,
-            likeCount: Math.max(0, post.likeCount + countDelta),
-          };
-        }),
-      );
-
-      try {
-        await repository.setReaction(postId, targetReaction);
-      } catch {
-        if (snapshot) {
-          const original = snapshot;
-          setTextPosts(prev =>
-            prev.map(post => (post.id === postId ? original : post)),
-          );
-        }
-      }
-    },
-    [],
-  );
-
   const updateCommentCount = useCallback(
     (postId: string, delta: number) => {
-      setVideoPosts(prev =>
-        prev.map(post =>
-          post.id === postId
-            ? { ...post, commentCount: Math.max(0, post.commentCount + delta) }
-            : post,
-        ),
-      );
-      // Also update text/photo posts since they go through the same
-      // comments sheet wiring — comment counts must stay in sync there
-      // too.
-      setTextPosts(prev =>
+      setPosts(prev =>
         prev.map(post =>
           post.id === postId
             ? { ...post, commentCount: Math.max(0, post.commentCount + delta) }
@@ -197,24 +174,32 @@ export function useFeedViewModel() {
   );
 
   return {
-    // Aggregate loading/error (backwards-compat with existing screen code
-    // that reads `isLoading` / `error`).
-    isLoading: isLoadingVideos || isLoadingTextPosts,
-    error: videoError ?? textPostsError,
-    // Videos
-    videoPosts,
-    isLoadingVideos,
-    videoError,
-    reloadVideoPosts: loadVideoPosts,
+    // ── Primary (unified) API ─────────────────────────────────────
+    posts,
+    isLoading,
+    error,
+    reloadPosts: loadPosts,
+    prependPost,
     toggleReaction,
-    // Text/photo posts
-    textPosts,
-    isLoadingTextPosts,
-    textPostsError,
-    reloadTextPosts: loadTextPosts,
-    prependTextPost,
-    toggleTextPostReaction,
-    // Shared
     updateCommentCount,
+
+    // ── Backward-compat aliases ──────────────────────────────────
+    // Older screen code reads these names. They are derived state
+    // pointing at the same underlying `posts` array; deleting them is
+    // safe once no consumer references them.
+    videoPosts,
+    isLoadingVideos: isLoading,
+    videoError: error,
+    reloadVideoPosts: loadPosts,
+
+    textPosts,
+    isLoadingTextPosts: isLoading,
+    textPostsError: error,
+    reloadTextPosts: loadPosts,
+    prependTextPost: prependPost,
+    // `toggleTextPostReaction` was a separate fn when video/text lived
+    // in different state slices. With unified state it's literally the
+    // same function — alias for backward compat.
+    toggleTextPostReaction: toggleReaction,
   };
 }

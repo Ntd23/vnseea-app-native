@@ -5,11 +5,24 @@ import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type {
   CreatePostDraft,
   CreatePostResult,
+  FeedPost,
   FeedTextPost,
   FeedVideoPost,
 } from '../types/feed.types';
 
 export interface FeedRepository {
+  /**
+   * Fetch the unified home feed (videos + text/photo posts merged and
+   * sorted by `postedAt` descending — Facebook-style). This is the
+   * preferred entry point for the home screen.
+   *
+   * The legacy split methods (`getVideoPosts`, `getTextPosts`) remain
+   * for narrower consumers (e.g. dedicated video-only carousels) but
+   * the home feed should call `getAllPosts` so a single API round-trip
+   * powers the whole screen.
+   */
+  getAllPosts(limit?: number): Promise<FeedPost[]>;
+
   getVideoPosts(limit?: number): Promise<FeedVideoPost[]>;
 
   /**

@@ -13,13 +13,38 @@ import { createReelsRepository } from '../../infrastructure/repositories/ApiReel
 import { createAuthRepository } from '../../../auth/infrastructure/repositories/ApiAuthRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
+  CommentImageAttachment,
   ReactionType,
   ReelComment,
   ReelPublisher,
   ReelsItem,
 } from '../../domain/types/reels.types';
+import type { FeedVideoPost } from '../../../feed/domain/types/feed.types';
 
 const repository = createReelsRepository();
+
+const mapFeedVideoToReel = (post: FeedVideoPost): ReelsItem => {
+  return {
+    id: post.id,
+    videoUrl: post.videoUrl,
+    thumbnailUrl: post.thumbnailUrl,
+    caption: post.caption,
+    postedAt: post.postedAt,
+    publisher: {
+      userId: post.publisher.id,
+      username: post.publisher.username,
+      name: post.publisher.name,
+      avatarUrl: post.publisher.avatarUrl,
+      isVerified: false,
+    },
+    likeCount: post.likeCount,
+    commentCount: post.commentCount,
+    viewCount: 0,
+    isLiked: post.isLiked,
+    isSaved: false,
+    myReaction: post.myReaction,
+  };
+};
 
 const PAGE_SIZE = 10;
 const COMMENT_PAGE_SIZE = 20;
@@ -29,6 +54,7 @@ type CommentPhase = 'idle' | 'loading' | 'loading-more' | 'submitting';
 
 export function useReelsViewModel() {
   const [items, setItems] = useState<ReelsItem[]>([]);
+  const initialVideoInfoRef = useRef<{ id: string; post: FeedVideoPost } | null>(null);
   const [phase, setPhase] = useState<LoadPhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -186,10 +212,26 @@ export function useReelsViewModel() {
     setError(null);
     try {
       const page = await repository.fetchReels({ limit: PAGE_SIZE });
-      setItems(filterUnavailable(page.items));
+      let nextItems = filterUnavailable(page.items);
+      let targetActiveIndex = 0;
+
+      if (initialVideoInfoRef.current) {
+        const { id, post } = initialVideoInfoRef.current;
+        const index = nextItems.findIndex(item => String(item.id) === String(id));
+        if (index === -1) {
+          const mapped = mapFeedVideoToReel(post);
+          nextItems = [mapped, ...nextItems];
+          targetActiveIndex = 0;
+        } else {
+          targetActiveIndex = index;
+        }
+        initialVideoInfoRef.current = null; // consumed
+      }
+
+      setItems(nextItems);
       cursorRef.current = page.nextCursor;
       setHasMore(page.nextCursor !== null);
-      setActiveIndex(0);
+      setActiveIndex(targetActiveIndex);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : 'Không tải được reels.',
@@ -503,70 +545,79 @@ export function useReelsViewModel() {
     }
   }, [hasMoreComments, selectedCommentPostId]);
 
-  const submitComment = useCallback(async (text: string) => {
-    const trimmed = text.trim();
-    if (!selectedCommentPostId || !trimmed) return null;
+  const submitComment = useCallback(
+    async (text: string, image?: CommentImageAttachment) => {
+      const trimmed = text.trim();
+      // Allow image-only comments (backend does too).
+      if (!selectedCommentPostId || (!trimmed && !image)) return null;
 
-    const tempId = `temp-${Date.now()}`;
-    const publisher = getFallbackPublisher();
-    const newComment: ReelComment = {
-      id: tempId,
-      text: trimmed,
-      postedAt: Math.floor(Date.now() / 1000),
-      publisher,
-      likeCount: 0,
-      replyCount: 0,
-      isLiked: false,
-      myReaction: null,
-      owner: true,
-      postOwner: false,
-      isSending: true,
-    };
+      const tempId = `temp-${Date.now()}`;
+      const publisher = getFallbackPublisher();
+      const newComment: ReelComment = {
+        id: tempId,
+        text: trimmed,
+        postedAt: Math.floor(Date.now() / 1000),
+        publisher,
+        likeCount: 0,
+        replyCount: 0,
+        isLiked: false,
+        myReaction: null,
+        owner: true,
+        postOwner: false,
+        isSending: true,
+        pendingImageUri: image?.uri,
+      };
 
-    // Add the optimistic comment instantly
-    setComments(prev => [...prev, newComment]);
+      // Add the optimistic comment instantly
+      setComments(prev => [...prev, newComment]);
 
-    // Increment count on the post optimistically
-    setItems(prev =>
-      prev.map(item =>
-        item.id === selectedCommentPostId
-          ? { ...item, commentCount: item.commentCount + 1 }
-          : item,
-      ),
-    );
-
-    try {
-      const createdComment = await repository.addComment(selectedCommentPostId, trimmed);
-      // Replace the temp comment with the actual one from server
-      setComments(prev =>
-        prev.map(c => (c.id === tempId ? createdComment : c)),
-      );
-      return createdComment;
-    } catch (caught) {
-      // Mark as failed in comments list
-      setComments(prev =>
-        prev.map(c =>
-          c.id === tempId
-            ? { ...c, isSending: false, isFailed: true }
-            : c,
-        ),
-      );
-      // Rollback the post's commentCount change
+      // Increment count on the post optimistically
       setItems(prev =>
         prev.map(item =>
           item.id === selectedCommentPostId
-            ? { ...item, commentCount: Math.max(0, item.commentCount - 1) }
+            ? { ...item, commentCount: item.commentCount + 1 }
             : item,
         ),
       );
-      setCommentError(
-        caught instanceof Error
-          ? caught.message
-          : 'Không gửi được bình luận.',
-      );
-      return null;
-    }
-  }, [selectedCommentPostId, getFallbackPublisher]);
+
+      try {
+        const createdComment = await repository.addComment(
+          selectedCommentPostId,
+          trimmed,
+          image,
+        );
+        // Replace the temp comment with the actual one from server
+        setComments(prev =>
+          prev.map(c => (c.id === tempId ? createdComment : c)),
+        );
+        return createdComment;
+      } catch (caught) {
+        // Mark as failed in comments list
+        setComments(prev =>
+          prev.map(c =>
+            c.id === tempId
+              ? { ...c, isSending: false, isFailed: true }
+              : c,
+          ),
+        );
+        // Rollback the post's commentCount change
+        setItems(prev =>
+          prev.map(item =>
+            item.id === selectedCommentPostId
+              ? { ...item, commentCount: Math.max(0, item.commentCount - 1) }
+              : item,
+          ),
+        );
+        setCommentError(
+          caught instanceof Error
+            ? caught.message
+            : 'Không gửi được bình luận.',
+        );
+        return null;
+      }
+    },
+    [selectedCommentPostId, getFallbackPublisher],
+  );
 
   // ── Comment actions (like / delete / edit) ───────────────────────────
   //
@@ -788,7 +839,7 @@ export function useReelsViewModel() {
         }
       }
     },
-    [applyToComment, selectedCommentPostId],
+    [selectedCommentPostId],
   );
 
   const editComment = useCallback(
@@ -877,9 +928,14 @@ export function useReelsViewModel() {
   }, []);
 
   const submitReply = useCallback(
-    async (commentId: string, text: string) => {
+    async (
+      commentId: string,
+      text: string,
+      image?: CommentImageAttachment,
+    ) => {
       const trimmed = text.trim();
-      if (!commentId || !trimmed) return null;
+      // Text OR image required.
+      if (!commentId || (!trimmed && !image)) return null;
 
       const tempId = `temp-${Date.now()}`;
       const publisher = getFallbackPublisher();
@@ -895,6 +951,7 @@ export function useReelsViewModel() {
         owner: true,
         postOwner: false,
         isSending: true,
+        pendingImageUri: image?.uri,
       };
 
       // Add the optimistic reply instantly
@@ -915,7 +972,7 @@ export function useReelsViewModel() {
       setReplyingTo(null);
 
       try {
-        const created = await repository.addReply(commentId, trimmed);
+        const created = await repository.addReply(commentId, trimmed, image);
         // Replace temp reply with the actual one from server
         setRepliesById(prev => ({
           ...prev,
@@ -958,9 +1015,20 @@ export function useReelsViewModel() {
   );
 
   const retryFailedComment = useCallback((comment: ReelComment) => {
+    // Re-pack the cached local URI as a CommentImageAttachment so the
+    // retry submission carries the original image through. The file://
+    // URI from the picker stays valid until app restart.
+    const retryImage: CommentImageAttachment | undefined = comment.pendingImageUri
+      ? {
+          uri: comment.pendingImageUri,
+          name: `retry-${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        }
+      : undefined;
+
     if (comments.some(c => c.id === comment.id)) {
       setComments(prev => prev.filter(c => c.id !== comment.id));
-      submitComment(comment.text);
+      submitComment(comment.text, retryImage);
     } else {
       let parentId: string | null = null;
       for (const [pId, replies] of Object.entries(repliesById)) {
@@ -980,7 +1048,7 @@ export function useReelsViewModel() {
             c.id === pId ? { ...c, replyCount: Math.max(0, c.replyCount - 1) } : c,
           ),
         );
-        submitReply(pId, comment.text);
+        submitReply(pId, comment.text, retryImage);
       }
     }
   }, [comments, repliesById, submitComment, submitReply]);
@@ -1000,6 +1068,26 @@ export function useReelsViewModel() {
       }
     }
   }, [comments, repliesById]);
+
+  // Set initial video (when clicked from Feed screen)
+  const setInitialVideo = useCallback((id: string, post: FeedVideoPost) => {
+    initialVideoInfoRef.current = { id, post };
+    setItems(prev => {
+      if (prev.length === 0) {
+        return [mapFeedVideoToReel(post)];
+      }
+      const index = prev.findIndex(item => String(item.id) === String(id));
+      let nextList = [...prev];
+      if (index === -1) {
+        const mapped = mapFeedVideoToReel(post);
+        nextList = [mapped, ...prev];
+      }
+      
+      const targetIdx = nextList.findIndex(item => String(item.id) === String(id));
+      setActiveIndex(targetIdx !== -1 ? targetIdx : 0);
+      return nextList;
+    });
+  }, []);
 
   // Initial load on mount
   useEffect(() => {
@@ -1027,6 +1115,7 @@ export function useReelsViewModel() {
     loadingRepliesIds,
     replyingTo,
     setActiveIndex,
+    setInitialVideo,
     refresh,
     loadMore,
     retry: loadInitial,

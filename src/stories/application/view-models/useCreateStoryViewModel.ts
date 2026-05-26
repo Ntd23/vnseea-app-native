@@ -1,0 +1,212 @@
+// Stories - useCreateStoryViewModel
+//
+// Owns the state of the "Create Story" composer screen. The screen is a
+// dumb view that just reads `draft` + calls these actions — all the
+// business rules (validation, optimistic state, error recovery) live here.
+//
+// Wire-up flow on submit:
+//   1. user picks media → setMedia(...)
+//   2. user (optionally) types title/description → setTitle / setDescription
+//   3. user taps "Đăng" → submit()
+//        → validate → repository.createStory(draft)
+//        → on success: call onCreated? then reset()
+//        → on failure: keep the draft so the user can retry without
+//          re-picking the media
+//
+// We expose `phase` so the UI can show 'Đang đăng...' / 'Đăng' / error
+// states without juggling its own loading bool.
+
+import { useCallback, useMemo, useState } from 'react';
+import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
+import type {
+  CreateStoryDraft,
+  CreateStoryResult,
+  StoryMediaUpload,
+} from '../../domain/types/stories.types';
+
+const repository = createStoriesRepository();
+
+// ── Validation limits (mirror create_story.php) ─────────────────────────
+// PHP enforces these server-side too, but we want to surface the error
+// BEFORE the upload starts so the user doesn't waste 30s on a 60MB video
+// that's about to be rejected for a title-too-long.
+const MAX_TITLE_LENGTH = 100;
+const MIN_DESCRIPTION_LENGTH = 10;
+const MAX_DESCRIPTION_LENGTH = 300;
+// Story videos are loosely capped at 60s in the official WoWonder client.
+// We enforce the same here so the upload UI doesn't accept clips the
+// viewer will skip past anyway.
+const MAX_VIDEO_DURATION_SECONDS = 60;
+
+type Phase =
+  | { type: 'idle' }
+  | { type: 'uploading' }
+  | { type: 'success'; result: CreateStoryResult }
+  | { type: 'error'; message: string };
+
+export interface UseCreateStoryOptions {
+  /**
+   * Called after a successful create. The parent screen uses this to
+   * either (a) reload the stories rail or (b) optimistically prepend a
+   * placeholder StoryItem. The parent owns that choice because optimistic
+   * prepend needs the publisher's avatar which the composer doesn't have
+   * to hand.
+   */
+  onCreated?: (result: CreateStoryResult) => void;
+}
+
+export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
+  const { onCreated } = options;
+
+  const [media, setMediaState] = useState<StoryMediaUpload | null>(null);
+  const [title, setTitleState] = useState('');
+  const [description, setDescriptionState] = useState('');
+  const [phase, setPhase] = useState<Phase>({ type: 'idle' });
+
+  // ── Draft mutators ────────────────────────────────────────────────────
+
+  const setMedia = useCallback((next: StoryMediaUpload | null) => {
+    setMediaState(next);
+    // Clear any prior error when the user picks a new file — gives them
+    // a clean attempt without having to dismiss the banner manually.
+    setPhase({ type: 'idle' });
+  }, []);
+
+  const setTitle = useCallback((next: string) => {
+    setTitleState(next);
+  }, []);
+
+  const setDescription = useCallback((next: string) => {
+    setDescriptionState(next);
+  }, []);
+
+  const reset = useCallback(() => {
+    setMediaState(null);
+    setTitleState('');
+    setDescriptionState('');
+    setPhase({ type: 'idle' });
+  }, []);
+
+  // ── Validation ────────────────────────────────────────────────────────
+  //
+  // Returns the first failing error message OR null when valid. Surfaced
+  // both via `canSubmit` (UI button-enable) and inside `submit` (last-line
+  // guard before hitting the network).
+
+  const validate = useCallback((): string | null => {
+    if (!media) return 'Hãy chọn 1 ảnh hoặc 1 video.';
+
+    if (
+      media.fileType === 'video' &&
+      typeof media.durationSeconds === 'number' &&
+      media.durationSeconds > MAX_VIDEO_DURATION_SECONDS
+    ) {
+      return `Video tối đa ${MAX_VIDEO_DURATION_SECONDS} giây.`;
+    }
+
+    const trimmedTitle = title.trim();
+    if (trimmedTitle.length > MAX_TITLE_LENGTH) {
+      return `Tiêu đề tối đa ${MAX_TITLE_LENGTH} ký tự.`;
+    }
+
+    const trimmedDescription = description.trim();
+    if (trimmedDescription.length > 0) {
+      // PHP only saves description when it's >= 10 chars (see line 109 of
+      // create_story.php). Anything shorter just gets silently dropped,
+      // so we WARN here rather than wasting an upload.
+      if (trimmedDescription.length < MIN_DESCRIPTION_LENGTH) {
+        return `Mô tả phải có ít nhất ${MIN_DESCRIPTION_LENGTH} ký tự (hoặc để trống).`;
+      }
+      if (trimmedDescription.length > MAX_DESCRIPTION_LENGTH) {
+        return `Mô tả tối đa ${MAX_DESCRIPTION_LENGTH} ký tự.`;
+      }
+    }
+
+    return null;
+  }, [media, title, description]);
+
+  const canSubmit = useMemo(() => {
+    if (phase.type === 'uploading') return false;
+    return validate() === null;
+  }, [phase.type, validate]);
+
+  // ── Submit ────────────────────────────────────────────────────────────
+
+  const submit = useCallback(async (): Promise<CreateStoryResult | null> => {
+    const error = validate();
+    if (error) {
+      setPhase({ type: 'error', message: error });
+      return null;
+    }
+    if (!media) {
+      // Defensive — validate() already covers this but TS doesn't know.
+      return null;
+    }
+
+    const draft: CreateStoryDraft = {
+      media,
+      title: title.trim() || undefined,
+      description: description.trim() || undefined,
+    };
+
+    setPhase({ type: 'uploading' });
+    try {
+      const result = await repository.createStory(draft);
+      setPhase({ type: 'success', result });
+      // Notify parent FIRST so the rail updates while we're still in
+      // the 'success' phase. Reset is intentionally NOT called here —
+      // the screen pops itself after `onCreated` fires and a fresh
+      // mount starts with a clean state anyway.
+      onCreated?.(result);
+      return result;
+    } catch (caught) {
+      const rawMessage =
+        caught instanceof Error
+          ? caught.message
+          : 'Đã xảy ra lỗi không xác định.';
+
+      // Friendly Vietnamese rewrites for common network failures, same
+      // strategy as the reel composer.
+      let friendly = rawMessage;
+      const lowered = rawMessage.toLowerCase();
+      if (lowered.includes('timeout') || lowered.includes('econnaborted')) {
+        friendly =
+          'Tải lên quá lâu. Vui lòng kiểm tra kết nối hoặc chọn tệp nhẹ hơn.';
+      } else if (lowered.includes('network error')) {
+        friendly = 'Không kết nối được máy chủ. Vui lòng kiểm tra Wi-Fi/4G.';
+      }
+
+      setPhase({ type: 'error', message: friendly });
+      return null;
+    }
+  }, [media, title, description, validate, onCreated]);
+
+  // Convenience getter so the screen doesn't have to switch on `phase.type`
+  // for the most common cases.
+  const isUploading = phase.type === 'uploading';
+  const error = phase.type === 'error' ? phase.message : null;
+
+  return {
+    // State
+    media,
+    title,
+    description,
+    phase,
+    isUploading,
+    error,
+    canSubmit,
+    // Mutators
+    setMedia,
+    setTitle,
+    setDescription,
+    // Lifecycle
+    submit,
+    reset,
+    // Constants the UI may want to reference (so it doesn't hardcode the
+    // same numbers and drift from PHP).
+    maxTitleLength: MAX_TITLE_LENGTH,
+    minDescriptionLength: MIN_DESCRIPTION_LENGTH,
+    maxDescriptionLength: MAX_DESCRIPTION_LENGTH,
+    maxVideoDurationSeconds: MAX_VIDEO_DURATION_SECONDS,
+  };
+}

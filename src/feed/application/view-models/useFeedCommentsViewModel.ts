@@ -6,6 +6,7 @@ import { createReelsRepository } from '../../../reels/infrastructure/repositorie
 import { createAuthRepository } from '../../../auth/infrastructure/repositories/ApiAuthRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
+  CommentImageAttachment,
   ReactionType,
   ReelComment,
   ReelPublisher,
@@ -190,59 +191,73 @@ export function useFeedCommentsViewModel({
     }
   }, [hasMoreComments, selectedCommentPostId]);
 
-  const submitComment = useCallback(async (text: string) => {
-    const trimmed = text.trim();
-    if (!selectedCommentPostId || !trimmed) return null;
+  const submitComment = useCallback(
+    async (text: string, image?: CommentImageAttachment) => {
+      const trimmed = text.trim();
+      // Allow image-only comments (backend does too) — must have AT LEAST
+      // text OR image, not both empty.
+      if (!selectedCommentPostId || (!trimmed && !image)) return null;
 
-    const tempId = `temp-${Date.now()}`;
-    const publisher = getFallbackPublisher();
-    const newComment: ReelComment = {
-      id: tempId,
-      text: trimmed,
-      postedAt: Math.floor(Date.now() / 1000),
-      publisher,
-      likeCount: 0,
-      replyCount: 0,
-      isLiked: false,
-      myReaction: null,
-      owner: true,
-      postOwner: false,
-      isSending: true,
-    };
+      const tempId = `temp-${Date.now()}`;
+      const publisher = getFallbackPublisher();
+      const newComment: ReelComment = {
+        id: tempId,
+        text: trimmed,
+        postedAt: Math.floor(Date.now() / 1000),
+        publisher,
+        likeCount: 0,
+        replyCount: 0,
+        isLiked: false,
+        myReaction: null,
+        owner: true,
+        postOwner: false,
+        isSending: true,
+        // Local file:// URI so the bubble can render the image instantly
+        // while the upload is in flight. Swapped out for `imageUrl` (CDN
+        // URL) once the server response lands.
+        pendingImageUri: image?.uri,
+      };
 
-    // Add the optimistic comment instantly
-    setComments(prev => [...prev, newComment]);
+      // Add the optimistic comment instantly
+      setComments(prev => [...prev, newComment]);
 
-    // Increment count on the post optimistically
-    onCommentCountChange?.(selectedCommentPostId, 1);
+      // Increment count on the post optimistically
+      onCommentCountChange?.(selectedCommentPostId, 1);
 
-    try {
-      const createdComment = await repository.addComment(selectedCommentPostId, trimmed);
-      // Replace the temp comment with the actual one from server
-      setComments(prev =>
-        prev.map(c => (c.id === tempId ? createdComment : c)),
-      );
-      return createdComment;
-    } catch (caught) {
-      // Mark as failed in comments list
-      setComments(prev =>
-        prev.map(c =>
-          c.id === tempId
-            ? { ...c, isSending: false, isFailed: true }
-            : c,
-        ),
-      );
-      // Rollback the post's commentCount change
-      onCommentCountChange?.(selectedCommentPostId, -1);
+      try {
+        const createdComment = await repository.addComment(
+          selectedCommentPostId,
+          trimmed,
+          image,
+        );
+        // Replace the temp comment with the actual one from server
+        setComments(prev =>
+          prev.map(c => (c.id === tempId ? createdComment : c)),
+        );
+        return createdComment;
+      } catch (caught) {
+        // Mark as failed in comments list (keep `pendingImageUri` so the
+        // user can see what they tried to send and retry).
+        setComments(prev =>
+          prev.map(c =>
+            c.id === tempId
+              ? { ...c, isSending: false, isFailed: true }
+              : c,
+          ),
+        );
+        // Rollback the post's commentCount change
+        onCommentCountChange?.(selectedCommentPostId, -1);
 
-      setCommentError(
-        caught instanceof Error
-          ? caught.message
-          : 'Không gửi được bình luận.',
-      );
-      return null;
-    }
-  }, [selectedCommentPostId, getFallbackPublisher, onCommentCountChange]);
+        setCommentError(
+          caught instanceof Error
+            ? caught.message
+            : 'Không gửi được bình luận.',
+        );
+        return null;
+      }
+    },
+    [selectedCommentPostId, getFallbackPublisher, onCommentCountChange],
+  );
 
   const applyToComment = useCallback(
     (
@@ -497,9 +512,14 @@ export function useFeedCommentsViewModel({
   }, []);
 
   const submitReply = useCallback(
-    async (commentId: string, text: string) => {
+    async (
+      commentId: string,
+      text: string,
+      image?: CommentImageAttachment,
+    ) => {
       const trimmed = text.trim();
-      if (!commentId || !trimmed) return null;
+      // Same rule as `submitComment` — text OR image is required.
+      if (!commentId || (!trimmed && !image)) return null;
 
       const tempId = `temp-${Date.now()}`;
       const publisher = getFallbackPublisher();
@@ -515,6 +535,7 @@ export function useFeedCommentsViewModel({
         owner: true,
         postOwner: false,
         isSending: true,
+        pendingImageUri: image?.uri,
       };
 
       // Add the optimistic reply instantly
@@ -533,7 +554,7 @@ export function useFeedCommentsViewModel({
       setReplyingTo(null);
 
       try {
-        const created = await repository.addReply(commentId, trimmed);
+        const created = await repository.addReply(commentId, trimmed, image);
         // Replace temp reply with actual one
         setRepliesById(prev => ({
           ...prev,
@@ -574,9 +595,20 @@ export function useFeedCommentsViewModel({
   );
 
   const retryFailedComment = useCallback((comment: ReelComment) => {
+    // Re-package the cached local URI as a CommentImageAttachment so the
+    // retry path is identical to a fresh submit. The local file:// URI
+    // from the original picker call is still valid until app restart.
+    const retryImage: CommentImageAttachment | undefined = comment.pendingImageUri
+      ? {
+          uri: comment.pendingImageUri,
+          name: `retry-${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        }
+      : undefined;
+
     if (comments.some(c => c.id === comment.id)) {
       setComments(prev => prev.filter(c => c.id !== comment.id));
-      submitComment(comment.text);
+      submitComment(comment.text, retryImage);
     } else {
       let parentId: string | null = null;
       for (const [pId, replies] of Object.entries(repliesById)) {
@@ -596,7 +628,7 @@ export function useFeedCommentsViewModel({
             c.id === pId ? { ...c, replyCount: Math.max(0, c.replyCount - 1) } : c,
           ),
         );
-        submitReply(pId, comment.text);
+        submitReply(pId, comment.text, retryImage);
       }
     }
   }, [comments, repliesById, submitComment, submitReply]);

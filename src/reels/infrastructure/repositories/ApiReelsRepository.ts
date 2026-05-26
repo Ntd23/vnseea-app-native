@@ -429,41 +429,43 @@ async function fetchReelsPage(options: FetchReelsOptions = {}): Promise<ReelsPag
   const cursor = options.cursor ?? null;
 
   // ── Endpoint selection ────────────────────────────────────────────────
-  // The v2 /api/posts endpoint has TWO problems we have to design around
-  // without touching PHP:
   //
-  //   1. `get_news_feed` applies a "follower filter" — only posts from
-  //      accounts the user follows (plus the user's own) make it back.
-  //      Whether the filter fires depends on the site's
-  //      $wo['config']['order_posts_by'] setting, so behaviour is
-  //      unpredictable across environments.
+  // PREVIOUSLY this method called `get_user_posts` with the session
+  // user_id, which meant the Reels tab only ever showed the viewer's
+  // OWN videos — no one else's. The user shipped that and immediately
+  // hit the "không có video người khác" bug.
   //
-  //   2. `Wo_GetPosts` always appends `AND is_reel = 0` to the SQL unless
-  //      the `is_reel` key is in the data array — and posts.php doesn't
-  //      forward that param. So reels uploaded via the dedicated web
-  //      Reels feature (is_reel=1) are SQL-filtered out and we have no
-  //      way to retrieve them.
+  // The correct endpoint for a TikTok-style cross-user video feed is
+  // WoWonder's `get_random_videos`:
   //
-  // To guarantee SOMETHING shows up, we default to `get_user_posts` with
-  // the current logged-in user id. This branch has no follower filter and
-  // returns the user's own uploads (which use is_reel=0 with
-  // postType='reel' — passing the SQL filter). If an explicit publisherId
-  // was passed in we honor it, otherwise we look the id up in MMKV.
-  const sessionUserId = sessionStorage.getSession()?.userId;
-  const targetUserId = options.publisherId ?? sessionUserId;
-
+  //   SELECT id FROM T_POSTS
+  //    WHERE postPrivacy = '0'                      ← PUBLIC ONLY
+  //      AND (postYoutube <> '' OR postVine <> ''
+  //           OR postFacebook <> '' OR postDailymotion <> ''
+  //           OR postVimeo <> '' OR postPlaytube <> ''
+  //           OR postFile LIKE '%_video%')          ← any video
+  //    ORDER BY id DESC LIMIT $limit
+  //
+  // No follow-graph filter, no `is_reel=0` filter (the type handler
+  // bypasses Wo_GetPosts entirely and goes straight to a rawQuery).
+  // Pagination is via `after_post_id` (rows with `id < cursor`).
+  //
+  // If `options.publisherId` is explicitly passed (e.g. "show only this
+  // user's videos" from a profile screen), we honour it via the
+  // `get_user_posts` branch instead.
   const payload: Record<string, unknown> = {
     post_type: 'video',
     limit,
   };
 
-  if (targetUserId) {
+  if (options.publisherId) {
+    // Profile-scoped fetch — caller wants ONE user's videos.
     payload.type = 'get_user_posts';
-    payload.id = targetUserId;
+    payload.id = options.publisherId;
   } else {
-    // No session id available — fall back to news feed (mostly useful for
-    // anonymous / logged-out browsing).
-    payload.type = 'get_news_feed';
+    // Default: site-wide public videos. This is what the Reels tab
+    // wants — discovery of everyone's content, just like TikTok.
+    payload.type = 'get_random_videos';
   }
 
   if (cursor) payload.after_post_id = cursor;
@@ -475,20 +477,15 @@ async function fetchReelsPage(options: FetchReelsOptions = {}): Promise<ReelsPag
 
   const rawList = response.data ?? [];
 
-  // Backend constraint we work around: Wo_GetPosts defaults to filtering
-  // out reels (`is_reel=0`) and posts.php doesn't expose an opt-in for the
-  // `is_reel` param. Without touching PHP, what comes back here is the set
-  // of *non-reel* video posts. That's still good enough for a "Reels"
-  // feed because:
-  //   • Any uploaded video file becomes a vertical playable card
-  //   • The user's own uploads (from CreateReelScreen) come through since
-  //     v2 new_post.php doesn't flip `is_reel=1` either
-  //   • YouTube/Vimeo embeds get dropped below because they have no postFile
+  // Backend constraint reminder: `Wo_GetPosts` (used by `get_user_posts`)
+  // appends `AND is_reel = 0` unless `is_reel` is in the data array, but
+  // `get_random_videos` bypasses Wo_GetPosts and runs its own rawQuery
+  // — so reels uploaded via the dedicated web Reels feature DO show up
+  // through this path now.
   //
-  // So we keep the filter simple: anything with a playable `postFile` URL
-  // is shown. The `postType==='reel'` check is intentionally NOT enforced
-  // here — that would empty the feed on installations where reels aren't
-  // tagged via postType.
+  // We still keep the client-side filter `Boolean(postFile)` because
+  // external embeds (YouTube/Vimeo/etc.) have no `postFile` and can't
+  // be played by `react-native-video`.
   const items = rawList
     .filter(raw => Boolean(readString(raw, 'postFile')))
     .map(mapReel)
@@ -502,6 +499,19 @@ async function fetchReelsPage(options: FetchReelsOptions = {}): Promise<ReelsPag
       .reduce((min, n) => (min === 0 || n < min ? n : min), 0);
     nextCursor = minRawId > 0 ? String(minRawId) : null;
   }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    '[reels] page →',
+    'type:',
+    payload.type,
+    'raw:',
+    rawList.length,
+    'playable:',
+    items.length,
+    'nextCursor:',
+    nextCursor,
+  );
 
   return { items, nextCursor };
 }
@@ -685,7 +695,36 @@ export function createReelsRepository(): ReelsRepository {
       return (response.data ?? []).map(mapComment);
     },
 
-    async addComment(postId, text) {
+    async addComment(postId, text, image) {
+      // ── Image branch ──────────────────────────────────────────────────
+      // When the user attached an image, switch from JSON POST to
+      // multipart/form-data so the backend sees the file under
+      // `$_FILES['image']` (see phtml/api/v2/endpoints/comments.php
+      // lines 54-65 — `Wo_ShareFile` reads the uploaded blob there).
+      // Text becomes optional in this path because PHP accepts comments
+      // that are image-only.
+      if (image) {
+        const response = await backendApi.multipart<{
+          api_status: number | string;
+          data?: Record<string, unknown>;
+        }>(apiRoutes.feed.comments, {
+          type: 'create',
+          post_id: postId,
+          // Send text only when non-empty so the PHP `!empty($_POST['text'])`
+          // check doesn't false-positive on an empty string.
+          ...(text ? { text } : {}),
+          image: {
+            uri: image.uri,
+            name: image.name,
+            type: image.type,
+          },
+        });
+        const raw = response.data ?? {};
+        return mapComment(raw);
+      }
+
+      // ── Text-only branch ──────────────────────────────────────────────
+      // Keeps the cheaper JSON POST when there's nothing to upload.
       const response = await backendApi.post<{
         api_status: number | string;
         data?: Record<string, unknown>;
@@ -792,7 +831,27 @@ export function createReelsRepository(): ReelsRepository {
       return (response.data ?? []).map(mapComment);
     },
 
-    async addReply(commentId, text) {
+    async addReply(commentId, text, image) {
+      // Same dual-branch pattern as `addComment` above — multipart when
+      // there's an image to upload, JSON post otherwise.
+      if (image) {
+        const response = await backendApi.multipart<{
+          api_status: number | string;
+          data?: Record<string, unknown>;
+        }>(apiRoutes.feed.comments, {
+          type: 'create_reply',
+          comment_id: commentId,
+          ...(text ? { text } : {}),
+          image: {
+            uri: image.uri,
+            name: image.name,
+            type: image.type,
+          },
+        });
+        const raw = response.data ?? {};
+        return mapComment(raw);
+      }
+
       const response = await backendApi.post<{
         api_status: number | string;
         data?: Record<string, unknown>;

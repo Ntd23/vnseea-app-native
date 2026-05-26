@@ -97,6 +97,8 @@ export interface CreatePostResult {
  * is a future enhancement, not in MVP).
  */
 export interface FeedTextPost {
+  /** Discriminator for the `FeedPost` union — see `FeedVideoPost.kind`. */
+  kind: 'text';
   id: string;
   caption?: string;
   photos: string[];
@@ -105,6 +107,13 @@ export interface FeedTextPost {
   commentCount: number;
   isLiked: boolean;
   myReaction: ReactionType | null;
+  /**
+   * Top reaction types sorted by count descending (max 3).
+   * Used by the reaction summary row to display stacked emoji badges
+   * like Facebook (e.g. 👍❤️😂). Extracted from the WoWonder
+   * `reaction` object's per-type counts.
+   */
+  topReactions: ReactionType[];
   feeling?: PostFeeling;
   privacy: PostPrivacy;
   publisher: {
@@ -116,6 +125,12 @@ export interface FeedTextPost {
 }
 
 export interface FeedVideoPost {
+  /**
+   * Discriminator for the `FeedPost` union — lets the UI render the
+   * right card type with a single `switch (post.kind)` instead of
+   * sniffing other fields.
+   */
+  kind: 'video';
   id: string;
   caption?: string;
   videoUrl: string;
@@ -135,6 +150,11 @@ export interface FeedVideoPost {
    * expose reaction state in the posts response.
    */
   myReaction: ReactionType | null;
+  /**
+   * Top reaction types sorted by count descending (max 3).
+   * Same as `FeedTextPost.topReactions` — see its JSDoc.
+   */
+  topReactions: ReactionType[];
   publisher: {
     id: string;
     name: string;
@@ -142,3 +162,19 @@ export interface FeedVideoPost {
     avatarUrl?: string;
   };
 }
+
+/**
+ * Unified feed post — anything that can appear in the merged home feed.
+ *
+ * We render the home screen from a single time-sorted `posts: FeedPost[]`
+ * array (Facebook-style). The UI uses `post.kind` to pick the right card
+ * component:
+ *
+ *   if (post.kind === 'video') → <HomeVideoPostCard post={post} />
+ *   if (post.kind === 'text')  → <TextPostCard post={post} />
+ *
+ * Adding a new post type later (e.g. polls, shares) is just a matter of
+ * extending this union with a new `kind` literal — no refactor of the
+ * surrounding plumbing needed.
+ */
+export type FeedPost = FeedVideoPost | FeedTextPost;

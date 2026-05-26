@@ -43,9 +43,11 @@ import {
   type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
+import { useEffect } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  interpolate,
   runOnJS,
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -71,12 +73,41 @@ const PRELOAD_RADIUS = 1; // mount video for current ± this many neighbors
 // threshold and target translation.
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as any;
 
 export default function ReelsScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const isFocusedScreen = useIsFocused();
   const insets = useSafeAreaInsets();
   const vm = useReelsViewModel();
+
+  const initialVideoId = route.params?.initialVideoId;
+  const initialPost = route.params?.post;
+  const flatListRef = useRef<FlatList>(null);
+  const entryProgress = useSharedValue(1);
+
+  useEffect(() => {
+    if (isFocusedScreen && initialVideoId && initialPost) {
+      // Trigger cinematic scale + slide + fade entry animation
+      entryProgress.value = 0;
+      entryProgress.value = withTiming(1, { duration: 350 });
+
+      const index = vm.items.findIndex(item => String(item.id) === String(initialVideoId));
+      
+      vm.setInitialVideo(initialVideoId, initialPost);
+      
+      const targetIndex = index !== -1 ? index : 0;
+      if (targetIndex > 0) {
+        setTimeout(() => {
+          flatListRef.current?.scrollToIndex({ index: targetIndex, animated: false });
+        }, 150);
+      }
+      
+      // Clear navigation params so we don't trigger repeatedly
+      navigation.setParams({ initialVideoId: undefined, post: undefined });
+    }
+  }, [isFocusedScreen, initialVideoId, initialPost, vm, navigation, entryProgress]);
 
   // Use the full screen height — the feed is meant to be edge-to-edge.
   const [viewportHeight, setViewportHeight] = useState(
@@ -86,7 +117,7 @@ export default function ReelsScreen() {
 
   const [isMuted, setIsMuted] = useState(true); // start muted (TikTok-style)
   const [isFocused, setIsFocused] = useState(true);
-  const [preloadRadius, setPreloadRadius] = useState(1);
+  const [preloadRadius, setPreloadRadius] = useState(PRELOAD_RADIUS);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
@@ -310,9 +341,20 @@ export default function ReelsScreen() {
     [dragX, goBackToFeed, vm.isCommentsOpen],
   );
 
-  const screenAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: dragX.value }],
-  }));
+  const screenAnimatedStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(entryProgress.value, [0, 1], [0.5, 1]);
+    const scale = interpolate(entryProgress.value, [0, 1], [0.92, 1]);
+    const translateY = interpolate(entryProgress.value, [0, 1], [250, 0]);
+
+    return {
+      opacity,
+      transform: [
+        { translateX: dragX.value },
+        { translateY },
+        { scale },
+      ],
+    };
+  });
 
   // ── Render branches ──────────────────────────────────────────────────
 
@@ -367,6 +409,7 @@ export default function ReelsScreen() {
         <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
         <AnimatedFlatList
+          ref={flatListRef as any}
           data={vm.items}
           keyExtractor={keyExtractor}
           renderItem={renderItem}

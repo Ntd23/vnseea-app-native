@@ -9,11 +9,12 @@
 // can optimistically prepend the new post and the user lands back on a
 // feed that already shows their content.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -32,8 +33,10 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
+  AtSign,
   ChevronDown,
   Globe2,
+  Hash,
   ImagePlus,
   Lock,
   Smile,
@@ -83,21 +86,38 @@ const PRIVACY_OPTIONS: Array<{
   },
 ];
 
-// Common Facebook feelings. WoWonder's `feeling_type='feelings'` accepts
-// these `value` strings — they're keys into the backend's `feelingIcons`
-// table. Add more as needed; deleting one here doesn't affect existing
-// posts, just hides it from the picker.
+// Common Facebook feelings. WoWonder's `feeling_type='feelings'` only
+// accepts the 18 keys defined in `$wo['feelingIcons']`
+// (phtml/assets/includes/data.php) — anything else gets SILENTLY
+// REJECTED by `new_post.php` line 353:
+//
+//   if (array_key_exists($_POST['feeling'], $wo['feelingIcons'])) {
+//       $feeling = $_POST['feeling'];
+//   }
+//
+// That's why earlier values like 'excited' / 'grateful' / 'thoughtful'
+// looked fine in the app but never showed up on the post — the backend
+// dropped them and saved an empty `postFeeling`. Every value below is
+// guaranteed-valid against the current whitelist.
 const FEELING_OPTIONS: PostFeeling[] = [
   { type: 'feelings', value: 'happy', emoji: '😊', label: 'vui vẻ' },
   { type: 'feelings', value: 'loved', emoji: '🥰', label: 'được yêu' },
-  { type: 'feelings', value: 'sad', emoji: '😢', label: 'buồn' },
-  { type: 'feelings', value: 'angry', emoji: '😠', label: 'tức giận' },
-  { type: 'feelings', value: 'excited', emoji: '🤩', label: 'phấn khích' },
-  { type: 'feelings', value: 'tired', emoji: '😩', label: 'mệt mỏi' },
-  { type: 'feelings', value: 'blessed', emoji: '🙏', label: 'biết ơn' },
-  { type: 'feelings', value: 'grateful', emoji: '💖', label: 'hạnh phúc' },
-  { type: 'feelings', value: 'thoughtful', emoji: '🤔', label: 'suy nghĩ' },
+  { type: 'feelings', value: 'lovely', emoji: '❤️', label: 'yêu thương' },
+  { type: 'feelings', value: 'funny', emoji: '😂', label: 'vui nhộn' },
   { type: 'feelings', value: 'cool', emoji: '😎', label: 'ngầu' },
+  { type: 'feelings', value: 'blessed', emoji: '😇', label: 'may mắn' },
+  { type: 'feelings', value: 'pretty', emoji: '☺️', label: 'thư thái' },
+  { type: 'feelings', value: 'smirk', emoji: '😏', label: 'đắc ý' },
+  { type: 'feelings', value: 'sad', emoji: '😞', label: 'buồn' },
+  { type: 'feelings', value: 'so_sad', emoji: '😭', label: 'rất buồn' },
+  { type: 'feelings', value: 'angry', emoji: '😠', label: 'tức giận' },
+  { type: 'feelings', value: 'tired', emoji: '😩', label: 'mệt mỏi' },
+  { type: 'feelings', value: 'sleepy', emoji: '😴', label: 'buồn ngủ' },
+  { type: 'feelings', value: 'bored', emoji: '😒', label: 'chán' },
+  { type: 'feelings', value: 'confused', emoji: '😕', label: 'bối rối' },
+  { type: 'feelings', value: 'shocked', emoji: '😱', label: 'sốc' },
+  { type: 'feelings', value: 'broke', emoji: '💔', label: 'tan vỡ' },
+  { type: 'feelings', value: 'expressionless', emoji: '😑', label: 'vô cảm' },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -377,6 +397,50 @@ function CreatePostScreen() {
 
   const currentPrivacy = findPrivacyLabel(vm.draft.privacy);
 
+  // ── Caption mention/hashtag plumbing ──────────────────────────────
+  // Refs + keyboard tracking so the floating suggestion bar can sit
+  // right above the keyboard like FB/TikTok do. Mirrors the working
+  // setup in `CreateReelScreen` so behaviour is identical between the
+  // two composers.
+  const textInputRef = useRef<TextInput | null>(null);
+  const [isTextFocused, setIsTextFocused] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, e => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // Android with adjustResize already shrinks the view above the keyboard,
+  // so we anchor the bar at bottom=0. iOS overlays the keyboard, so we
+  // lift the bar by `keyboardHeight`.
+  const suggestionBarBottom = Platform.OS === 'ios' ? keyboardHeight : 0;
+  const isSuggestionBarVisible = isTextFocused && keyboardHeight > 0;
+
+  /** Insert `#` or `@` at the end of the text, with a leading space if needed. */
+  const insertCaptionChar = useCallback(
+    (char: '#' | '@') => {
+      const current = vm.draft.text;
+      const needsSpace = current.length > 0 && !/\s$/.test(current);
+      vm.setText(`${current}${needsSpace ? ' ' : ''}${char}`);
+      // Keep focus so the suggestion fetcher actually runs.
+      textInputRef.current?.focus();
+    },
+    [vm],
+  );
+
   const handlePickPhotos = useCallback(async () => {
     const remaining = vm.maxPhotos - vm.draft.photos.length;
     if (remaining <= 0) {
@@ -443,6 +507,38 @@ function CreatePostScreen() {
     // intentionally empty — vm.setText already clears nothing; we keep
     // this hook reserved for future "auto-save draft" wiring.
   }, []);
+
+  const renderBottomActions = (isFloating: boolean) => (
+    <View className={`border-t border-slate-200 bg-white px-4 ${isFloating ? 'py-1' : 'py-3'}`}>
+      {!isFloating && <Text className="mb-2 text-caption-primary">Thêm vào bài viết</Text>}
+      <View className="flex-row items-center justify-around">
+        <TouchableOpacity
+          onPress={handlePickPhotos}
+          activeOpacity={0.7}
+          className="flex-1 flex-row items-center justify-center py-2"
+        >
+          <ImagePlus size={22} color="#22C55E" />
+          <Text className="ml-2 text-title-secondary">Ảnh</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setFeelingSheetVisible(true)}
+          activeOpacity={0.7}
+          className="flex-1 flex-row items-center justify-center py-2"
+        >
+          <Smile size={22} color="#F59E0B" />
+          <Text className="ml-2 text-title-secondary">Cảm xúc</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setPrivacySheetVisible(true)}
+          activeOpacity={0.7}
+          className="flex-1 flex-row items-center justify-center py-2"
+        >
+          <currentPrivacy.Icon size={22} color="#3B82F6" />
+          <Text className="ml-2 text-title-secondary">Quyền</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -540,8 +636,11 @@ function CreatePostScreen() {
 
         {/* ── Text input ─────────────────────────────────────────── */}
         <TextInput
+          ref={textInputRef}
           value={vm.draft.text}
           onChangeText={vm.setText}
+          onFocus={() => setIsTextFocused(true)}
+          onBlur={() => setIsTextFocused(false)}
           placeholder="Bạn đang nghĩ gì?"
           placeholderTextColor="#94A3B8"
           multiline
@@ -572,35 +671,7 @@ function CreatePostScreen() {
       </ScrollView>
 
       {/* ── Bottom action row ────────────────────────────────────── */}
-      <View className="border-t border-slate-200 bg-white px-4 py-3">
-        <Text className="mb-2 text-caption-primary">Thêm vào bài viết</Text>
-        <View className="flex-row items-center justify-around">
-          <TouchableOpacity
-            onPress={handlePickPhotos}
-            activeOpacity={0.7}
-            className="flex-1 flex-row items-center justify-center py-2"
-          >
-            <ImagePlus size={22} color="#22C55E" />
-            <Text className="ml-2 text-title-secondary">Ảnh</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setFeelingSheetVisible(true)}
-            activeOpacity={0.7}
-            className="flex-1 flex-row items-center justify-center py-2"
-          >
-            <Smile size={22} color="#F59E0B" />
-            <Text className="ml-2 text-title-secondary">Cảm xúc</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setPrivacySheetVisible(true)}
-            activeOpacity={0.7}
-            className="flex-1 flex-row items-center justify-center py-2"
-          >
-            <currentPrivacy.Icon size={22} color="#3B82F6" />
-            <Text className="ml-2 text-title-secondary">Quyền</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      {!isSuggestionBarVisible && renderBottomActions(false)}
 
       <PrivacyPickerSheet
         visible={privacySheetVisible}
@@ -615,6 +686,183 @@ function CreatePostScreen() {
         onPick={vm.setFeeling}
         onClear={() => vm.setFeeling(undefined)}
       />
+
+      {/* ── Floating mention / hashtag bar above the keyboard ── */}
+      {isSuggestionBarVisible && (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: suggestionBarBottom,
+            backgroundColor: '#FFFFFF',
+            borderTopWidth: 1,
+            borderTopColor: '#E5E7EB',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.05,
+            shadowRadius: 4,
+            elevation: 8,
+          }}
+        >
+          {/* Render the bottom actions shifted above the hashtag/mention selection when keyboard is open */}
+          {renderBottomActions(true)}
+          {/* Row 1: Suggestion chips (only when there are matches or loading) */}
+          {(vm.isLoadingCaptionSuggestions ||
+            vm.captionSuggestions.length > 0) && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="always"
+              contentContainerStyle={{
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                gap: 8,
+                alignItems: 'center',
+              }}
+            >
+              {vm.isLoadingCaptionSuggestions &&
+              vm.captionSuggestions.length === 0 ? (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                  }}
+                >
+                  <ActivityIndicator color="#0866FF" size="small" />
+                  <Text
+                    style={{
+                      marginLeft: 8,
+                      fontSize: 13,
+                      color: '#64748B',
+                      fontWeight: '500',
+                    }}
+                  >
+                    Đang tìm gợi ý...
+                  </Text>
+                </View>
+              ) : (
+                vm.captionSuggestions.map(suggestion => {
+                  const isMention = suggestion.kind === 'mention';
+                  return (
+                    <TouchableOpacity
+                      key={`${suggestion.kind}-${suggestion.id}`}
+                      activeOpacity={0.75}
+                      onPress={() => vm.applyCaptionSuggestion(suggestion)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderRadius: 999,
+                        backgroundColor: isMention ? '#EFF6FF' : '#F5F3FF',
+                        borderWidth: 1,
+                        borderColor: isMention ? '#DBEAFE' : '#EDE9FE',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: '600',
+                          color: isMention ? '#1D4ED8' : '#6D28D9',
+                        }}
+                        numberOfLines={1}
+                      >
+                        {suggestion.label}
+                      </Text>
+                      {suggestion.subtitle ? (
+                        <Text
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 11,
+                            color: isMention ? '#60A5FA' : '#A78BFA',
+                          }}
+                          numberOfLines={1}
+                        >
+                          {suggestion.subtitle}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          )}
+
+          {/* Row 2: Quick-insert toolbar (# / @ / Done) */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              borderTopWidth:
+                vm.isLoadingCaptionSuggestions ||
+                vm.captionSuggestions.length > 0
+                  ? 1
+                  : 0,
+              borderTopColor: '#F1F5F9',
+            }}
+          >
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => insertCaptionChar('#')}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 4,
+              }}
+            >
+              <Hash size={20} color="#475569" strokeWidth={2.2} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => insertCaptionChar('@')}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <AtSign size={20} color="#475569" strokeWidth={2.2} />
+            </TouchableOpacity>
+
+            <View style={{ flex: 1 }} />
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => Keyboard.dismiss()}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 999,
+                backgroundColor: '#0866FF',
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: '700',
+                  color: '#FFFFFF',
+                }}
+              >
+                Hoàn tất
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }

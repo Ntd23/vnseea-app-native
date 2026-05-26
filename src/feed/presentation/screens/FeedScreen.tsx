@@ -1,11 +1,12 @@
 // Description: Renders the Stitch Facebook-style VNSEEA feed inside the main tab shell.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Dimensions,
+  FlatList,
   Image,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StatusBar,
   Text,
@@ -13,8 +14,21 @@ import {
   View,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  interpolate,
+  Extrapolation,
+  runOnJS,
+  useAnimatedReaction,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   Edit3,
+  Globe,
   ImageIcon,
   MessageCircle,
   MoreHorizontal,
@@ -25,6 +39,7 @@ import {
   Smile,
   Tag,
   ThumbsUp,
+  X,
 } from 'lucide-react-native';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
@@ -74,11 +89,17 @@ import CreateActionSheet from '../../../shared-kernel/presentation/components/Cr
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
 import type {
+  FeedPost,
   FeedTextPost,
   FeedVideoPost,
 } from '../../domain/types/feed.types';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
+import {
+  storyCreatedEvents,
+  storyDeletedEvents,
+  useStoriesViewModel,
+} from '../../../stories';
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -137,26 +158,7 @@ function Avatar({ uri, size = 40 }: { uri: string; size?: number }) {
   );
 }
 
-function ActionButton({
-  icon,
-  label,
-  active = false,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <TouchableOpacity className="flex-row items-center" activeOpacity={0.75}>
-      {icon}
-      <Text
-        className={`ml-2 text-title-secondary ${active ? 'text-brand' : ''}`}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
+
 
 function FeedHeader() {
   const navigation = useNavigation<FeedNav>();
@@ -303,6 +305,43 @@ function ComposerCard({ onPress }: { onPress: () => void }) {
 }
 
 function StoriesRow() {
+  const navigation = useNavigation<FeedNav>();
+  const vm = useStoriesViewModel();
+
+  // Subscribe to the cross-screen pub/sub so the rail stays in sync
+  // with composer creates AND viewer deletes — without forcing either
+  // screen to know about FeedScreen directly. Mounted ONCE per row, so
+  // the cleanup runs reliably even if FeedScreen re-renders.
+  useEffect(() => {
+    const unsubCreated = storyCreatedEvents.subscribe(story => {
+      vm.prependStory(story);
+    });
+    const unsubDeleted = storyDeletedEvents.subscribe(storyId => {
+      vm.removeStoryLocal(storyId);
+    });
+    return () => {
+      unsubCreated();
+      unsubDeleted();
+    };
+  }, [vm]);
+
+  const goToCreateStory = useCallback(() => {
+    navigation.navigate(ROUTES.CREATE_STORY);
+  }, [navigation]);
+
+  // Open the full-screen viewer at a specific user-index. We pass the
+  // full stories array so the viewer can swipe between users without
+  // refetching — the network call already happened here.
+  const goToViewer = useCallback(
+    (userIndex: number) => {
+      navigation.navigate(ROUTES.STORY_VIEWER, {
+        stories: vm.stories,
+        initialUserIndex: userIndex,
+      });
+    },
+    [navigation, vm.stories],
+  );
+
   return (
     <View className="mb-6">
       <View className="mb-3 flex-row items-center justify-between px-4">
@@ -317,7 +356,12 @@ function StoriesRow() {
         showsHorizontalScrollIndicator={false}
         contentContainerClassName="gap-3 px-4"
       >
-        <View className="surface-card h-48 w-28 overflow-hidden">
+        {/* "Tạo tin" card — always first, leading entry point. */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={goToCreateStory}
+          className="surface-card h-48 w-28 overflow-hidden"
+        >
           <Image
             source={{ uri: images.me }}
             className="h-32 w-full"
@@ -329,37 +373,54 @@ function StoriesRow() {
             </View>
             <Text className="mt-3 text-caption-primary">Tạo tin</Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
-        {stories.map(story => (
-          <View
-            key={story.name}
-            className={`h-48 w-28 overflow-hidden rounded-2xl ${
-              story.active ? '' : 'opacity-80'
-            }`}
-          >
-            <Image
-              source={{ uri: story.image }}
-              className="h-full w-full"
-              resizeMode="cover"
-            />
-            <View className="absolute inset-0 bg-black/20" />
-            <View
-              className={`absolute left-2 top-2 h-10 w-10 overflow-hidden rounded-full border-2 ${
-                story.active ? 'border-blue-600' : 'border-slate-300'
-              } bg-white p-0.5`}
+        {/* Real story bubbles. We dim already-seen entries to mirror the
+            FB/IG "ring goes grey after viewed" treatment. */}
+        {vm.stories.map((story, index) => {
+          const hasUnseen = story.hasUnseen && !story.isViewed;
+          return (
+            <TouchableOpacity
+              key={story.id}
+              activeOpacity={0.85}
+              onPress={() => goToViewer(index)}
+              className={`h-48 w-28 overflow-hidden rounded-2xl ${
+                hasUnseen ? '' : 'opacity-80'
+              }`}
             >
+              {/* Cover image — thumbnail when available, falls back to
+                  the publisher's avatar (PHP does the same fallback when
+                  the story has no media thumb). */}
               <Image
-                source={{ uri: story.image }}
-                className="h-full w-full rounded-full"
+                source={{
+                  uri: story.thumbnailUrl ?? story.publisher.avatarUrl,
+                }}
+                className="h-full w-full"
                 resizeMode="cover"
               />
-            </View>
-            <Text className="absolute bottom-2 left-2 right-2 text-caption-primary text-white">
-              {story.name}
-            </Text>
-          </View>
-        ))}
+              <View className="absolute inset-0 bg-black/20" />
+              {/* Avatar bubble overlay (top-left), ring colored by
+                  unseen-state — blue when unseen, grey once viewed. */}
+              <View
+                className={`absolute left-2 top-2 h-10 w-10 overflow-hidden rounded-full border-2 ${
+                  hasUnseen ? 'border-blue-600' : 'border-slate-300'
+                } bg-white p-0.5`}
+              >
+                <Image
+                  source={{ uri: story.publisher.avatarUrl }}
+                  className="h-full w-full rounded-full"
+                  resizeMode="cover"
+                />
+              </View>
+              <Text
+                className="absolute bottom-2 left-2 right-2 text-caption-primary text-white"
+                numberOfLines={1}
+              >
+                {story.publisher.name}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -398,13 +459,16 @@ function formatPostTime(timestamp?: number) {
   return new Date(timestamp * 1000).toLocaleDateString('vi-VN');
 }
 
-function HomeVideoPostCard({
+const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   post,
   onReact,
   onOpenPicker,
   onCommentTap,
   isActive,
   onReportLayout,
+  gestureX,
+  gestureY,
+  gestureActive,
 }: {
   post: FeedVideoPost;
   onReact: (postId: string, reaction: ReactionType) => void;
@@ -412,9 +476,41 @@ function HomeVideoPostCard({
   onCommentTap: (postId: string) => void;
   isActive: boolean;
   onReportLayout: (id: string, y: number, height: number) => void;
+  gestureX: any;
+  gestureY: any;
+  gestureActive: any;
 }) {
+  const navigation = useNavigation<any>();
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [muted, setMuted] = useState(true);
+
+  const handleVideoPress = useCallback(() => {
+    // eslint-disable-next-line no-console
+    console.log('[HomeVideoPostCard] Video pressed! Navigating to Reels with ID:', post.id);
+    navigation.navigate(ROUTES.REELS, {
+      initialVideoId: post.id,
+      post: post,
+    });
+  }, [navigation, post]);
+
+  // ── Mount strategy — keep player alive, just pause ───────────────
+  //
+  // Previously we mount/unmount the entire <VideoPlayer> based on
+  // `isActive`. That caused massive FPS drops during scroll because
+  // ExoPlayer init (decoder creation, buffer allocation) is very
+  // expensive on Android.
+  //
+  // New strategy: we mount the player ONCE when it first becomes
+  // active, and after that we KEEP it mounted — just toggle `paused`.
+  // This avoids repeated ExoPlayer init/destroy cycles during scroll.
+  //
+  // `hasBeenActive` is a one-way latch: once true, stays true.
+  const [hasBeenActive, setHasBeenActive] = useState(false);
+  useEffect(() => {
+    if (isActive && !hasBeenActive) {
+      setHasBeenActive(true);
+    }
+  }, [isActive, hasBeenActive]);
 
   useEffect(() => {
     if (!isActive) {
@@ -464,21 +560,50 @@ function HomeVideoPostCard({
       </View>
       <TouchableOpacity
         activeOpacity={0.9}
-        onPress={() => setManuallyPaused(prev => !prev)}
+        onPress={handleVideoPress}
         className="h-56 w-full bg-black"
       >
-        <VideoPlayer
-          source={{ uri: post.videoUrl }}
-          style={{ width: '100%', height: '100%' }}
-          resizeMode="cover"
-          paused={!playing}
-          controls={false}
-          muted={muted}
-          repeat
-          ignoreSilentSwitch="ignore"
-          poster={post.thumbnailUrl}
-          posterResizeMode="cover"
-        />
+        {/* react-native-video v6 — keep mounted, toggle `paused` */}
+        {hasBeenActive ? (
+          <View pointerEvents="none" style={{ width: '100%', height: '100%' }}>
+            <VideoPlayer
+              source={{ uri: post.videoUrl }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+            paused={!playing}
+            controls={false}
+            muted={muted}
+            repeat
+            ignoreSilentSwitch="ignore"
+            playInBackground={false}
+            playWhenInactive={false}
+            useTextureView={false}
+            poster={post.thumbnailUrl}
+            posterResizeMode="cover"
+            bufferConfig={{
+              minBufferMs: 2000,
+              maxBufferMs: 5000,
+              bufferForPlaybackMs: 1000,
+              bufferForPlaybackAfterRebufferMs: 2000,
+            }}
+            onError={(error) => {
+              // eslint-disable-next-line no-console
+              console.warn(
+                '[HomeVideoPostCard] video error',
+                post.id,
+                post.videoUrl,
+                error,
+              );
+            }}
+          />
+          </View>
+        ) : post.thumbnailUrl ? (
+          <Image
+            source={{ uri: post.thumbnailUrl }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        ) : null}
         {/* Big play button overlay while paused */}
         {!playing ? (
           <View
@@ -537,6 +662,7 @@ function HomeVideoPostCard({
           likeCount={post.likeCount}
           commentCount={post.commentCount}
           myReaction={post.myReaction}
+          topReactions={post.topReactions}
         />
         <VideoPostActions
           myReaction={post.myReaction}
@@ -544,24 +670,366 @@ function HomeVideoPostCard({
           onLikeTap={handleLikeTap}
           onLikeLongPress={handleLikeLongPress}
           onCommentTap={() => onCommentTap(post.id)}
+          gestureX={gestureX}
+          gestureY={gestureY}
+          gestureActive={gestureActive}
         />
       </View>
     </View>
   );
-}
+});
 
 // ── Facebook-style summary row above the action buttons ──────────────────
-// Shows a stacked emoji badge ("👍❤️") followed by either the viewer's
+// Shows stacked emoji badges ("👍❤️😂") followed by either the viewer's
 // own reaction label ("Bạn và 14 người khác") OR a generic count when the
 // viewer hasn't reacted.
+
+// Background colors for each reaction type's circular badge (FB-style)
+const REACTION_BADGE_BG: Record<ReactionType, string> = {
+  like: '#0866FF',
+  love: '#F33E58',
+  haha: '#F7B125',
+  wow: '#F7B125',
+  sad: '#F7B125',
+  angry: '#E9710F',
+};
+
+// ── Photo Viewer Modal ────────────────────────────────────────────────────
+// Full-screen Facebook-style photo viewer: black bg, swipe left/right,
+// page counter, caption overlay, publisher info + reaction counts at bottom.
+
+type PhotoViewerState = {
+  post: FeedTextPost;
+  initialIndex: number;
+} | null;
+
+function PhotoViewerModal({
+  state,
+  onClose,
+  onReact,
+  onCommentTap,
+  posts,
+}: {
+  state: PhotoViewerState;
+  onClose: () => void;
+  onReact: (postId: string, reaction: ReactionType) => void;
+  onCommentTap: (postId: string) => void;
+  posts: FeedPost[];
+}) {
+  const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const translateY = useSharedValue(0);
+  const openProgress = useSharedValue(0);
+
+  // Sync page and trigger fade-in and scale-up transition on mount / state change
+  useEffect(() => {
+    if (state) {
+      setCurrentIndex(state.initialIndex);
+      translateY.value = 0;
+      openProgress.value = 0;
+      openProgress.value = withTiming(1, { duration: 200 });
+    }
+  }, [state, translateY, openProgress]);
+
+  const handleClose = useCallback(() => {
+    openProgress.value = withTiming(0, { duration: 180 }, (finished) => {
+      if (finished) {
+        runOnJS(onClose)();
+      }
+    });
+  }, [onClose, openProgress]);
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetY([-10, 10])
+    .failOffsetX([-10, 10])
+    .onUpdate((event) => {
+      translateY.value = event.translationY;
+    })
+    .onEnd((event) => {
+      if (event.translationY > 100 || event.velocityY > 500) {
+        // Slide off screen downwards
+        translateY.value = withTiming(SCREEN_H, { duration: 180 }, (finished) => {
+          if (finished) {
+            runOnJS(onClose)();
+          }
+        });
+      } else {
+        // Snap back to center
+        translateY.value = withSpring(0, { damping: 15 });
+      }
+    });
+
+  const containerStyle = useAnimatedStyle(() => {
+    const dragProgress = interpolate(
+      Math.abs(translateY.value),
+      [0, SCREEN_H * 0.5],
+      [1, 0],
+      Extrapolation.CLAMP
+    );
+    const finalOpacity = dragProgress * openProgress.value;
+    return {
+      flex: 1,
+      backgroundColor: `rgba(0, 0, 0, ${finalOpacity})`,
+    };
+  });
+
+  const contentStyle = useAnimatedStyle(() => {
+    const dragScale = interpolate(
+      Math.abs(translateY.value),
+      [0, SCREEN_H * 0.5],
+      [1, 0.8],
+      Extrapolation.CLAMP
+    );
+    const openScale = interpolate(
+      openProgress.value,
+      [0, 1],
+      [0.85, 1],
+      Extrapolation.CLAMP
+    );
+    return {
+      flex: 1,
+      transform: [
+        { translateY: translateY.value },
+        { scale: dragScale * openScale }
+      ],
+      opacity: openProgress.value,
+    };
+  });
+
+  if (!state) return null;
+  const { post } = state;
+  const total = post.photos.length;
+
+  // Resolve the live version of this post so reactions/counts update in real time.
+  const livePost = (posts.find(p => p.id === post.id) as FeedTextPost) || post;
+
+  return (
+    <Modal
+      visible
+      transparent
+      animationType="none" // Use custom JS animated transitions instead of raw fade
+      onRequestClose={handleClose}
+      statusBarTranslucent
+    >
+      <StatusBar barStyle="light-content" backgroundColor="#000" translucent />
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <GestureDetector gesture={panGesture}>
+          <Animated.View style={containerStyle}>
+            <Animated.View style={[contentStyle, { flex: 1 }]}>
+
+              {/* ── Top bar: page counter (left) + close button (right) ── */}
+              <View
+                style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20,
+                  paddingTop: 48, paddingHorizontal: 16,
+                  flexDirection: 'row', alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                {total > 1 ? (
+                  <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+                    {currentIndex + 1} / {total}
+                  </Text>
+                ) : (
+                  <View />
+                )}
+                <TouchableOpacity
+                  onPress={handleClose}
+                  style={{
+                    width: 36, height: 36, borderRadius: 18,
+                    backgroundColor: 'rgba(0,0,0,0.3)',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <X size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* ── Horizontally paginated photo list ── */}
+              <FlatList
+                data={livePost.photos}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                initialScrollIndex={state.initialIndex}
+                getItemLayout={(_, index) => ({
+                  length: SCREEN_W, offset: SCREEN_W * index, index,
+                })}
+                onMomentumScrollEnd={e => {
+                  const idx = Math.round(
+                    e.nativeEvent.contentOffset.x / SCREEN_W,
+                  );
+                  setCurrentIndex(idx);
+                }}
+                keyExtractor={(url, i) => `viewer-${i}-${url}`}
+                renderItem={({ item: url }) => (
+                  <View
+                    style={{
+                      width: SCREEN_W, height: SCREEN_H,
+                      justifyContent: 'center', alignItems: 'center',
+                    }}
+                  >
+                    <Image
+                      source={{ uri: url }}
+                      style={{ width: SCREEN_W, height: SCREEN_H * 0.62 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+                )}
+              />
+
+              {/* ── Bottom overlay: publisher + reaction counts ── */}
+              <View
+                style={{
+                  position: 'absolute', bottom: 0, left: 0, right: 0,
+                  backgroundColor: 'rgba(0,0,0,0.6)',
+                  paddingHorizontal: 16, paddingTop: 20, paddingBottom: 40,
+                }}
+              >
+                {/* Caption text */}
+                {livePost.caption ? (
+                  <Text
+                    style={{
+                      color: '#fff',
+                      fontSize: 15,
+                      lineHeight: 20,
+                      marginBottom: 12,
+                      textShadowColor: 'rgba(0,0,0,0.8)',
+                      textShadowOffset: { width: 0, height: 1 },
+                      textShadowRadius: 3,
+                    }}
+                    numberOfLines={4}
+                  >
+                    {livePost.caption}
+                  </Text>
+                ) : null}
+
+                {/* Publisher row */}
+                <View
+                  style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}
+                >
+                  {livePost.publisher.avatarUrl ? (
+                    <Image
+                      source={{ uri: livePost.publisher.avatarUrl }}
+                      style={{
+                        width: 40, height: 40, borderRadius: 20,
+                        marginRight: 10,
+                        borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
+                      }}
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        width: 40, height: 40, borderRadius: 20,
+                        backgroundColor: '#555', marginRight: 10,
+                      }}
+                    />
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
+                      {livePost.publisher.name}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '600' }}>
+                        {formatPostTime(livePost.postedAt).toUpperCase()}
+                      </Text>
+                      <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginHorizontal: 4 }}>•</Text>
+                      <Globe size={11} color="rgba(255,255,255,0.6)" />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Actions and reactions row */}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  {/* Left: Like, Comment, Share buttons */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 24 }}>
+                    {/* Like action button */}
+                    <TouchableOpacity
+                      onPress={() => onReact(livePost.id, 'like')}
+                      style={{ flexDirection: 'row', alignItems: 'center' }}
+                      activeOpacity={0.75}
+                    >
+                      {livePost.myReaction ? (
+                        <Text style={{ fontSize: 18 }}>{REACTION_EMOJI[livePost.myReaction]}</Text>
+                      ) : (
+                        <ThumbsUp size={20} color="#fff" />
+                      )}
+                      <Text style={{ color: '#fff', marginLeft: 8, fontSize: 14, fontWeight: '600' }}>
+                        {livePost.likeCount}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* Comment action button */}
+                    <TouchableOpacity
+                      onPress={() => onCommentTap(livePost.id)}
+                      style={{ flexDirection: 'row', alignItems: 'center' }}
+                      activeOpacity={0.75}
+                    >
+                      <MessageCircle size={20} color="#fff" />
+                      <Text style={{ color: '#fff', marginLeft: 8, fontSize: 14, fontWeight: '600' }}>
+                        {livePost.commentCount}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* Share action button */}
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center' }}
+                      activeOpacity={0.75}
+                    >
+                      <Share2 size={20} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Right: Stacked reactions badges */}
+                  {livePost.topReactions && livePost.topReactions.length > 0 ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {livePost.topReactions.map((type, i) => (
+                        <View
+                          key={type}
+                          style={{
+                            width: 22, height: 22, borderRadius: 11,
+                            backgroundColor: REACTION_BADGE_BG[type],
+                            alignItems: 'center', justifyContent: 'center',
+                            marginLeft: i > 0 ? -6 : 0,
+                            zIndex: livePost.topReactions.length - i,
+                            borderWidth: 1.5, borderColor: '#000',
+                          }}
+                        >
+                          {type === 'like'
+                            ? <ThumbsUp size={11} color="#fff" />
+                            : <Text style={{ fontSize: 11 }}>{REACTION_EMOJI[type]}</Text>}
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+
+          </Animated.View>
+        </Animated.View>
+      </GestureDetector>
+      </GestureHandlerRootView>
+    </Modal>
+  );
+}
+
 function VideoReactionSummary({
   likeCount,
   commentCount,
   myReaction,
+  topReactions,
 }: {
   likeCount: number;
   commentCount: number;
   myReaction: ReactionType | null;
+  topReactions: ReactionType[];
 }) {
   // Don't render the row at all if nobody has reacted AND there are no
   // comments — keeps simple posts visually quiet, FB-style.
@@ -583,23 +1051,40 @@ function VideoReactionSummary({
 
   return (
     <View className="mb-4 flex-row items-center justify-between">
-      {/* Left: reaction badge + label — flex-1 so it doesn't crowd the right */}
+      {/* Left: stacked reaction badges + label */}
       <View className="mr-2 flex-1 flex-row items-center">
         {likeCount > 0 ? (
           <>
-            {/* Show ONLY the viewer's active reaction OR a generic thumbs-up.
-                Never render both stacked — that caused the double-emoji bug
-                when swapping reactions (old icon stayed, new one appeared
-                on top). */}
-            {myReaction && myReaction !== 'like' ? (
-              <View className="h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white">
-                <Text style={{ fontSize: 11 }}>{REACTION_EMOJI[myReaction]}</Text>
-              </View>
-            ) : (
-              <View className="h-5 w-5 items-center justify-center rounded-full bg-blue-600">
-                <ThumbsUp size={10} color="#FFFFFF" />
-              </View>
-            )}
+            {/* Facebook-style stacked emoji badges — each badge overlaps
+                the previous one by ~6px, with z-index decreasing so the
+                first (most popular) reaction sits on top. */}
+            <View style={{ flexDirection: 'row' }}>
+              {topReactions.map((type, index) => (
+                <View
+                  key={type}
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    backgroundColor: type === 'like' ? REACTION_BADGE_BG.like : REACTION_BADGE_BG[type],
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1.5,
+                    borderColor: '#FFFFFF',
+                    marginLeft: index > 0 ? -6 : 0,
+                    zIndex: topReactions.length - index,
+                  }}
+                >
+                  {type === 'like' ? (
+                    <ThumbsUp size={10} color="#FFFFFF" />
+                  ) : (
+                    <Text style={{ fontSize: 10, lineHeight: 13 }}>
+                      {REACTION_EMOJI[type]}
+                    </Text>
+                  )}
+                </View>
+              ))}
+            </View>
             <Text
               className="ml-2 text-caption-secondary"
               numberOfLines={1}
@@ -610,7 +1095,7 @@ function VideoReactionSummary({
           </>
         ) : null}
       </View>
-      {/* Right: comment count — no flex so it stays at its natural width */}
+      {/* Right: comment count */}
       {commentCount > 0 ? (
         <Text className="text-caption-secondary" numberOfLines={1}>
           {formatCount(commentCount)} bình luận
@@ -632,45 +1117,69 @@ function VideoPostActions({
   onLikeTap,
   onLikeLongPress,
   onCommentTap,
+  gestureX,
+  gestureY,
+  gestureActive,
 }: {
   myReaction: ReactionType | null;
-  // React 19+'s `useRef<View>(null)` returns `RefObject<View | null>`,
-  // so we widen the type here to accept it. Same Pressable ref target,
-  // just a stricter null-check in the type.
   likeButtonRef: React.RefObject<View | null>;
   onLikeTap: () => void;
   onLikeLongPress: () => void;
   onCommentTap: () => void;
+  gestureX: any;
+  gestureY: any;
+  gestureActive: any;
 }) {
   const label = myReaction ? REACTION_LABEL[myReaction] : 'Thích';
   const color = myReaction ? REACTION_COLOR[myReaction] : '#64748B';
 
+  const pan = Gesture.Pan()
+    .activateAfterLongPress(250)
+    .onStart((e) => {
+      gestureActive.value = true;
+      gestureX.value = e.absoluteX;
+      gestureY.value = e.absoluteY;
+      runOnJS(onLikeLongPress)();
+    })
+    .onUpdate((e) => {
+      gestureX.value = e.absoluteX;
+      gestureY.value = e.absoluteY;
+    })
+    .onEnd(() => {
+      gestureActive.value = false;
+    });
+
+  const tap = Gesture.Tap().maxDuration(250).onEnd(() => {
+    runOnJS(onLikeTap)();
+  });
+
+  const composedGesture = Gesture.Exclusive(pan, tap);
+
   return (
     <View className="flex-row items-center justify-between border-t border-slate-200 pt-4">
-      <Pressable
-        ref={likeButtonRef}
-        onPress={onLikeTap}
-        onLongPress={onLikeLongPress}
-        delayLongPress={280}
-        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-        className="flex-row items-center"
-      >
-        {myReaction ? (
-          <Text style={{ fontSize: 18 }}>{REACTION_EMOJI[myReaction]}</Text>
-        ) : (
-          <ThumbsUp size={19} color={color} />
-        )}
-        <Text
-          style={{
-            marginLeft: 6,
-            color,
-            fontWeight: myReaction ? '700' : '600',
-            fontSize: 14,
-          }}
+      <GestureDetector gesture={composedGesture}>
+        <Animated.View
+          ref={likeButtonRef as any}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          className="flex-row items-center"
         >
-          {label}
-        </Text>
-      </Pressable>
+          {myReaction ? (
+            <Text style={{ fontSize: 18 }}>{REACTION_EMOJI[myReaction]}</Text>
+          ) : (
+            <ThumbsUp size={19} color={color} />
+          )}
+          <Text
+            style={{
+              marginLeft: 6,
+              color,
+              fontWeight: myReaction ? '700' : '600',
+              fontSize: 14,
+            }}
+          >
+            {label}
+          </Text>
+        </Animated.View>
+      </GestureDetector>
 
       <TouchableOpacity
         className="flex-row items-center"
@@ -702,10 +1211,16 @@ function ReactionPickerOverlay({
   anchor,
   onPick,
   onDismiss,
+  gestureX,
+  gestureY,
+  gestureActive,
 }: {
   anchor: { postId: string; x: number; y: number } | null;
   onPick: (reaction: ReactionType) => void;
   onDismiss: () => void;
+  gestureX: any;
+  gestureY: any;
+  gestureActive: any;
 }) {
   if (!anchor) return null;
 
@@ -717,113 +1232,255 @@ function ReactionPickerOverlay({
   const top = Math.max(40, anchor.y - PICKER_HEIGHT - PICKER_GAP);
 
   return (
-    <Modal
-      transparent
-      visible
-      animationType="fade"
-      onRequestClose={onDismiss}
-      statusBarTranslucent
-    >
+    <>
       <Pressable
         onPress={onDismiss}
-        style={{ flex: 1, backgroundColor: 'transparent' }}
+        style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 99, backgroundColor: 'transparent' }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left,
+          top,
+          width: PICKER_WIDTH,
+          height: PICKER_HEIGHT,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 8,
+          backgroundColor: '#fff',
+          borderRadius: 26,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.18,
+          shadowRadius: 10,
+          elevation: 12,
+          zIndex: 100,
+        }}
+        pointerEvents="box-none"
       >
-        <View
-          style={{
-            position: 'absolute',
-            left,
-            top,
-            width: PICKER_WIDTH,
-            height: PICKER_HEIGHT,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: 8,
-            backgroundColor: '#fff',
-            borderRadius: 26,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.18,
-            shadowRadius: 10,
-            elevation: 12,
-          }}
-        >
-          {ALL_REACTION_TYPES.map(type => (
-            <TouchableOpacity
-              key={type}
-              activeOpacity={0.7}
-              onPress={() => onPick(type)}
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-            >
-              <Text style={{ fontSize: 28, lineHeight: 32 }}>
-                {REACTION_EMOJI[type]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Pressable>
-    </Modal>
+        {ALL_REACTION_TYPES.map((type, index) => (
+          <ReactionIcon
+            key={type}
+            type={type}
+            index={index}
+            pickerLeft={left}
+            pickerTop={top}
+            gestureX={gestureX}
+            gestureY={gestureY}
+            gestureActive={gestureActive}
+            onPick={onPick}
+            onDismiss={onDismiss}
+          />
+        ))}
+      </View>
+    </>
   );
 }
 
-function HomeVideoPosts({
+function ReactionIcon({
+  type,
+  index,
+  pickerLeft,
+  pickerTop,
+  gestureX,
+  gestureY,
+  gestureActive,
+  onPick,
+  onDismiss,
+}: {
+  type: ReactionType;
+  index: number;
+  pickerLeft: number;
+  pickerTop: number;
+  gestureX: any;
+  gestureY: any;
+  gestureActive: any;
+  onPick: (reaction: ReactionType) => void;
+  onDismiss: () => void;
+}) {
+  // Approximate center of this icon in absolute screen coordinates
+  const iconCenterX = pickerLeft + 8 + index * 44 + 20;
+  const iconCenterY = pickerTop + PICKER_HEIGHT / 2;
+
+  useAnimatedReaction(
+    () => gestureActive.value,
+    (isActive, previous) => {
+      // Calculate which icon is hovered on release
+      if (previous && !isActive) {
+        const dx = gestureX.value - iconCenterX;
+        const dy = gestureY.value - iconCenterY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 40) {
+          runOnJS(onPick)(type);
+        } else if (index === 0) { // Only dismiss once to avoid multiple dismiss calls
+          // If gesture was released outside any icon, dismiss (or we could just leave picker open if dist > some big number)
+          runOnJS(onDismiss)();
+        }
+      }
+    }
+  );
+
+  const style = useAnimatedStyle(() => {
+    if (!gestureActive.value) return { transform: [{ scale: 1 }, { translateY: 0 }] };
+    
+    const dx = gestureX.value - iconCenterX;
+    const dy = gestureY.value - iconCenterY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    
+    const scale = interpolate(dist, [0, 40, 60], [1.5, 1.1, 1], Extrapolation.CLAMP);
+    const translateY = interpolate(dist, [0, 40, 60], [-15, -5, 0], Extrapolation.CLAMP);
+    
+    return {
+      transform: [
+        { scale: withSpring(scale, { damping: 15 }) },
+        { translateY: withSpring(translateY, { damping: 15 }) }
+      ]
+    };
+  });
+
+  return (
+    <Animated.View style={[{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }, style]}>
+      <TouchableOpacity onPress={() => onPick(type)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
+        <Text style={{ fontSize: 28, lineHeight: 32 }}>{REACTION_EMOJI[type]}</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+
+function PostSkeleton() {
+  // Pulse animation: opacity oscillate 0.4 → 0.8 → 0.4 mỗi 1.5s
+  const opacity = useSharedValue(0.4);
+  useEffect(() => {
+    opacity.value = withRepeat(
+      withTiming(0.8, { duration: 750 }),
+      -1,
+      true,
+    );
+  }, [opacity]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View
+      style={animatedStyle}
+      className="surface-card mx-4 mb-6 overflow-hidden"
+    >
+      <View className="p-5">
+        {/* Header: avatar + name + time */}
+        <View className="mb-4 flex-row items-center">
+          <View className="h-10 w-10 rounded-full bg-slate-200" />
+          <View className="ml-3 flex-1">
+            <View className="h-3 w-32 rounded bg-slate-200" />
+            <View className="mt-2 h-2 w-20 rounded bg-slate-200" />
+          </View>
+        </View>
+        {/* Caption */}
+        <View className="h-3 w-full rounded bg-slate-200" />
+        <View className="mt-2 h-3 w-3/4 rounded bg-slate-200" />
+      </View>
+      {/* Media placeholder — random height giả lập photo / video */}
+      <View className="h-56 w-full bg-slate-200" />
+      {/* Action row */}
+      <View className="flex-row justify-between border-t border-slate-200 p-5">
+        <View className="h-6 w-16 rounded bg-slate-200" />
+        <View className="h-6 w-20 rounded bg-slate-200" />
+        <View className="h-6 w-16 rounded bg-slate-200" />
+      </View>
+    </Animated.View>
+  );
+}
+
+function MergedFeed({
   posts,
   isLoading,
   error,
   onReact,
   onOpenPicker,
   onCommentTap,
+  onPhotoPress,
   activeVideoId,
   onReportLayout,
   onReportSectionY,
+  gestureX,
+  gestureY,
+  gestureActive,
 }: {
-  posts: FeedVideoPost[];
+  posts: FeedPost[];
   isLoading: boolean;
   error: string | null;
   onReact: (postId: string, reaction: ReactionType) => void;
   onOpenPicker: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
+  onPhotoPress: (post: FeedTextPost, photoIndex: number) => void;
   activeVideoId: string | null;
   onReportLayout: (id: string, y: number, height: number) => void;
   onReportSectionY: (y: number) => void;
+  gestureX: any;
+  gestureY: any;
+  gestureActive: any;
 }) {
+  // ── Skeleton loading state ──
   if (isLoading && posts.length === 0) {
     return (
-      <View className="surface-card mx-4 mb-6 items-center p-5">
-        <ActivityIndicator color="#0000FF" size="small" />
-        <Text className="mt-2 text-body-secondary">Đang tải video...</Text>
+      <View>
+        {[1, 2, 3].map(i => (
+          <PostSkeleton key={i} />
+        ))}
       </View>
     );
   }
 
+  // ── Empty state ──
   if (posts.length === 0) {
-    return null;
+    return null; // hoặc empty message
   }
 
+  // ── Time-sorted render ──
   return (
     <View onLayout={(e) => onReportSectionY(e.nativeEvent.layout.y)}>
-      <View className="mb-3 flex-row items-center justify-between px-4">
-        <Text className="text-heading">Video mới</Text>
-        {error ? <Text className="text-caption-secondary">Không tải thêm được</Text> : null}
-      </View>
-      {posts.map(post => (
-        <HomeVideoPostCard
-          key={post.id}
-          post={post}
-          onReact={onReact}
-          onOpenPicker={onOpenPicker}
-          onCommentTap={onCommentTap}
-          isActive={activeVideoId === post.id}
-          onReportLayout={onReportLayout}
-        />
-      ))}
+      {posts.map(post => {
+        if (post.kind === 'video') {
+          return (
+            <HomeVideoPostCard
+              key={post.id}
+              post={post}
+              onReact={onReact}
+              onOpenPicker={onOpenPicker}
+              onCommentTap={onCommentTap}
+              isActive={activeVideoId === post.id}
+              onReportLayout={onReportLayout}
+              gestureX={gestureX}
+              gestureY={gestureY}
+              gestureActive={gestureActive}
+            />
+          );
+        }
+        if (post.kind === 'text') {
+          return (
+            <TextPostCard
+              key={post.id}
+              post={post}
+              onReact={onReact}
+              onOpenPicker={onOpenPicker}
+              onCommentTap={onCommentTap}
+              onPhotoPress={onPhotoPress}
+              gestureX={gestureX}
+              gestureY={gestureY}
+              gestureActive={gestureActive}
+            />
+          );
+        }
+        return null;
+      })}
+      {error ? (
+        <View className="mx-4 mb-4 rounded-lg bg-red-50 px-3 py-2">
+          <Text style={{ color: '#B91C1C', fontSize: 13 }}>{error}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -866,169 +1523,32 @@ function PostHeader({
   );
 }
 
-function ReactionSummary({
-  likes,
-  comments,
-  shares,
-}: {
-  likes: string;
-  comments: string;
-  shares: string;
-}) {
-  return (
-    <View className="mb-4 flex-row items-center justify-between">
-      <View className="flex-row items-center">
-        <View className="h-5 w-5 items-center justify-center rounded-full bg-blue-600">
-          <ThumbsUp size={10} color="#FFFFFF" />
-        </View>
-        <View className="-ml-1 h-5 w-5 items-center justify-center rounded-full bg-red-500">
-          <Text className="text-[10px] text-white">♥</Text>
-        </View>
-        <Text className="ml-2 text-caption-secondary">{likes}</Text>
-      </View>
-      <Text className="text-caption-secondary">
-        {comments} bình luận · {shares} chia sẻ
-      </Text>
-    </View>
-  );
-}
-
-function PostActions({ liked = false }: { liked?: boolean }) {
-  return (
-    <View className="flex-row items-center justify-between border-t border-slate-200 pt-4">
-      <ActionButton
-        active={liked}
-        icon={<ThumbsUp size={19} color={liked ? '#0000FF' : '#64748B'} />}
-        label="Thích"
-      />
-      <ActionButton
-        icon={<MessageCircle size={19} color="#64748B" />}
-        label="Bình luận"
-      />
-      <ActionButton
-        icon={<Share2 size={19} color="#64748B" />}
-        label="Chia sẻ"
-      />
-    </View>
-  );
-}
-
-function ScenicPost() {
-  return (
-    <View className="surface-card mx-4 mb-6 overflow-hidden">
-      <View className="p-5">
-        <PostHeader
-          avatar={images.thanhAvatar}
-          name="Thanh Thảo"
-          time="Vừa xong"
-        />
-        <Text className="text-body-primary">
-          Hôm nay bầu trời thật đẹp! Đã lâu lắm rồi mới có thời gian thong dong
-          như thế này. 🌿✨ #hanoi #chill #peaceful
-        </Text>
-      </View>
-      <Image
-        source={{ uri: images.scenic }}
-        className="h-56 w-full"
-        resizeMode="cover"
-      />
-      <View className="p-5">
-        <ReactionSummary likes="42 lượt thích" comments="12" shares="4" />
-        <PostActions liked />
-      </View>
-    </View>
-  );
-}
-
-function SponsoredPost() {
-  return (
-    <View className="surface-card mx-4 mb-6 overflow-hidden">
-      <View className="p-5">
-        <PostHeader
-          name="SF Corporation"
-          time="15 phút trước"
-          badge="Được tài trợ"
-        />
-        <Text className="text-body-primary">
-          Khám phá giải pháp công nghệ mới nhất cho doanh nghiệp của bạn. Tối ưu
-          hóa quy trình làm việc và tăng năng suất ngay hôm nay! 🚀
-        </Text>
-      </View>
-      <View className="preview-panel mx-5 mb-5 h-56 items-center justify-center px-6">
-        <Text className="text-display text-brand">S&F Corporation</Text>
-        <Text className="mt-3 text-center text-title-primary">
-          Dẫn đầu kỷ nguyên số
-        </Text>
-        <TouchableOpacity className="btn-primary mt-6 px-8" activeOpacity={0.9}>
-          <Text className="text-title-primary text-inverse">Tìm hiểu ngay</Text>
-        </TouchableOpacity>
-      </View>
-      <View className="border-t border-slate-200 p-5">
-        <PostActions />
-      </View>
-    </View>
-  );
-}
-
-function GalleryPost() {
-  return (
-    <View className="surface-card mx-4 mb-6 overflow-hidden">
-      <View className="p-5">
-        <PostHeader
-          avatar={images.longAvatar}
-          name="Hoàng Long"
-          time="2 giờ trước"
-        />
-        <Text className="text-body-primary">
-          Cuối tuần rực rỡ tại Đà Lạt. Không khí se lạnh thật là tuyệt vời! 🌲🍓
-        </Text>
-      </View>
-      <View className="h-64 flex-row gap-1 px-5">
-        <Image
-          source={{ uri: images.galleryOne }}
-          className="h-full flex-1 rounded-l-2xl"
-          resizeMode="cover"
-        />
-        <View className="flex-1 gap-1">
-          <Image
-            source={{ uri: images.galleryTwo }}
-            className="flex-1 rounded-tr-2xl"
-            resizeMode="cover"
-          />
-          <View className="flex-1 overflow-hidden rounded-br-2xl">
-            <Image
-              source={{ uri: images.galleryThree }}
-              className="h-full w-full"
-              resizeMode="cover"
-            />
-            <View className="absolute inset-0 items-center justify-center bg-black/45">
-              <Text className="text-heading text-white">+3</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-      <View className="p-5">
-        <ReactionSummary likes="125" comments="42" shares="8" />
-        <PostActions />
-      </View>
-    </View>
-  );
-}
-
 // ── Text / photo post card ────────────────────────────────────────────
 // Renders a non-video post from `vm.textPosts`. Same FB-style chrome as
 // the mock posts (header → caption → photos → reaction summary → action
 // row) but data-driven instead of hardcoded.
-function TextPostCard({
+const TextPostCard = React.memo(function TextPostCard({
   post,
   onReact,
   onOpenPicker,
   onCommentTap,
+  onPhotoPress,
+  gestureX,
+  gestureY,
+  gestureActive,
 }: {
   post: FeedTextPost;
   onReact: (postId: string, reaction: ReactionType) => void;
   onOpenPicker: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
+  onPhotoPress: (post: FeedTextPost, photoIndex: number) => void;
+  // Reanimated shared values for the FB-style drag-to-pick reaction
+  // picker. Threaded through `VideoPostActions` so the long-press +
+  // pan gesture can update them and `ReactionIcon` can react to the
+  // movement. `any` typing matches Antigravity's existing convention.
+  gestureX: any;
+  gestureY: any;
+  gestureActive: any;
 }) {
   const likeButtonRef = useRef<View>(null);
   const handleLikeTap = useCallback(
@@ -1069,9 +1589,11 @@ function TextPostCard({
       </View>
       {post.photos.length > 0 ? (
         <View className="flex-row flex-wrap px-1">
-          {post.photos.map(url => (
-            <View
+          {post.photos.map((url, index) => (
+            <TouchableOpacity
               key={url}
+              onPress={() => onPhotoPress(post, index)}
+              activeOpacity={0.95}
               style={{
                 width: single ? '100%' : '50%',
                 aspectRatio: single ? 1.4 : 1,
@@ -1088,7 +1610,7 @@ function TextPostCard({
                 }}
                 resizeMode="cover"
               />
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       ) : null}
@@ -1097,6 +1619,7 @@ function TextPostCard({
           likeCount={post.likeCount}
           commentCount={post.commentCount}
           myReaction={post.myReaction}
+          topReactions={post.topReactions}
         />
         <VideoPostActions
           myReaction={post.myReaction}
@@ -1104,63 +1627,25 @@ function TextPostCard({
           onLikeTap={handleLikeTap}
           onLikeLongPress={handleLikeLongPress}
           onCommentTap={() => onCommentTap(post.id)}
+          gestureX={gestureX}
+          gestureY={gestureY}
+          gestureActive={gestureActive}
         />
       </View>
     </View>
   );
-}
+});
 
 // Section wrapper — header + empty/loading/error states + list of cards.
-function TextPostFeed({
-  posts,
-  isLoading,
-  error,
-  onReact,
-  onOpenPicker,
-  onCommentTap,
-}: {
-  posts: FeedTextPost[];
-  isLoading: boolean;
-  error: string | null;
-  onReact: (postId: string, reaction: ReactionType) => void;
-  onOpenPicker: (postId: string, x: number, y: number) => void;
-  onCommentTap: (postId: string) => void;
-}) {
-  if (isLoading && posts.length === 0) {
-    return (
-      <View className="surface-card mx-4 mb-6 items-center p-5">
-        <ActivityIndicator color="#0000FF" size="small" />
-        <Text className="mt-2 text-body-secondary">Đang tải bài viết...</Text>
-      </View>
-    );
-  }
-  if (posts.length === 0) {
-    return null;
-  }
-  return (
-    <View>
-      <View className="mb-3 flex-row items-center justify-between px-4">
-        <Text className="text-heading">Bài viết mới</Text>
-        {error ? (
-          <Text className="text-caption-secondary">Không tải thêm được</Text>
-        ) : null}
-      </View>
-      {posts.map(post => (
-        <TextPostCard
-          key={post.id}
-          post={post}
-          onReact={onReact}
-          onOpenPicker={onOpenPicker}
-          onCommentTap={onCommentTap}
-        />
-      ))}
-    </View>
-  );
-}
+
 
 function FeedScreen() {
   const navigation = useNavigation<FeedNav>();
   const vm = useFeedViewModel();
+
+  const gestureX = useSharedValue(0);
+  const gestureY = useSharedValue(0);
+  const gestureActive = useSharedValue(false);
 
   // Subscribe to the global "post created" event so the home feed gets
   // an instant prepend the moment CreatePostScreen finishes. We mount
@@ -1168,7 +1653,7 @@ function FeedScreen() {
   // events never leak into stale listeners.
   useEffect(() => {
     const unsubscribe = postCreatedEvents.subscribe(post => {
-      vm.prependTextPost(post);
+      vm.prependPost(post);
     });
     return unsubscribe;
   }, [vm]);
@@ -1185,11 +1670,8 @@ function FeedScreen() {
   // the active post in both lists so the comment count badge stays
   // accurate regardless of which type triggered it.
   const selectedCommentPost = useMemo(
-    () =>
-      vm.videoPosts.find(post => post.id === commentVm.selectedCommentPostId) ??
-      vm.textPosts.find(post => post.id === commentVm.selectedCommentPostId) ??
-      null,
-    [vm.videoPosts, vm.textPosts, commentVm.selectedCommentPostId],
+     () => vm.posts.find(post => post.id === commentVm.selectedCommentPostId) ?? null,
+     [vm.posts, commentVm.selectedCommentPostId],
   );
 
   const handleRetryComments = useCallback(() => {
@@ -1211,38 +1693,68 @@ function FeedScreen() {
     cardLayouts.current[id] = { y, height };
   }, []);
 
+  // ── Debounced scroll → activeVideoId ─────────────────────────────
+  // Previously this ran `setActiveVideoId` on EVERY scroll event
+  // (60×/sec), causing the entire feed to re-render continuously
+  // while the user was scrolling and making ExoPlayer mount/unmount.
+  //
+  // Now we debounce: the calculation runs 150ms AFTER the last scroll
+  // event, so activeVideoId only changes when the user pauses or
+  // stops scrolling. During the scroll itself, zero re-renders.
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleScroll = useCallback((event: any) => {
     const scrollY = event.nativeEvent.contentOffset.y;
-    const viewportHeight = Dimensions.get('window').height;
-    const viewportCenter = scrollY + viewportHeight / 2;
 
-    let closestId: string | null = null;
-    let minDistance = Infinity;
-
-    for (const [id, layout] of Object.entries(cardLayouts.current)) {
-      const cardAbsoluteY = videoSectionY + layout.y;
-      const cardCenter = cardAbsoluteY + layout.height / 2;
-      const distance = Math.abs(viewportCenter - cardCenter);
-
-      const isVisible =
-        cardAbsoluteY + layout.height > scrollY &&
-        cardAbsoluteY < scrollY + viewportHeight;
-
-      if (isVisible && distance < minDistance) {
-        minDistance = distance;
-        closestId = id;
-      }
+    if (scrollTimerRef.current) {
+      clearTimeout(scrollTimerRef.current);
     }
 
-    setActiveVideoId(closestId);
+    scrollTimerRef.current = setTimeout(() => {
+      const viewportHeight = Dimensions.get('window').height;
+      const viewportCenter = scrollY + viewportHeight / 2;
+
+      let closestId: string | null = null;
+      let minDistance = Infinity;
+
+      for (const [id, layout] of Object.entries(cardLayouts.current)) {
+        const cardAbsoluteY = videoSectionY + layout.y;
+        const cardCenter = cardAbsoluteY + layout.height / 2;
+        const distance = Math.abs(viewportCenter - cardCenter);
+
+        const isVisible =
+          cardAbsoluteY + layout.height > scrollY &&
+          cardAbsoluteY < scrollY + viewportHeight;
+
+        if (isVisible && distance < minDistance) {
+          minDistance = distance;
+          closestId = id;
+        }
+      }
+
+      setActiveVideoId(closestId);
+    }, 150);
   }, [videoSectionY]);
 
   // Autoplay the first video on mount / load
   useEffect(() => {
-    if (vm.videoPosts.length > 0 && !activeVideoId) {
-      setActiveVideoId(vm.videoPosts[0].id);
+    const firstVideo = vm.posts.find(p => p.kind === 'video');
+    if (firstVideo && !activeVideoId) {
+      setActiveVideoId(firstVideo.id);
     }
-  }, [vm.videoPosts, activeVideoId]);
+  }, [vm.posts, activeVideoId]);
+
+  // ── Photo viewer state ───────────────────────────────────────────────
+  // Set when the user taps a photo in a text post. Cleared by the modal's
+  // close button or Android back press.
+  const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
+
+  const handlePhotoPress = useCallback(
+    (post: FeedTextPost, photoIndex: number) => {
+      setPhotoViewer({ post, initialIndex: photoIndex });
+    },
+    [],
+  );
 
   // Reaction picker state — anchored to whichever "Thích" button was
   // long-pressed. Stored at this level (not inside each card) so only one
@@ -1264,23 +1776,15 @@ function FeedScreen() {
   const handlePickReaction = useCallback(
     (reaction: ReactionType) => {
       if (!pickerAnchor) return;
-      // The picker is shared between video posts and text posts. Look
-      // up which list owns the anchored post so we hit the right
-      // optimistic-state slice — calling the wrong one would no-op
-      // visually (state never matches) and confuse the rollback.
-      const isText = vm.textPosts.some(p => p.id === pickerAnchor.postId);
-      if (isText) {
-        vm.toggleTextPostReaction(pickerAnchor.postId, reaction);
-      } else {
-        vm.toggleReaction(pickerAnchor.postId, reaction);
-      }
+      vm.toggleReaction(pickerAnchor.postId, reaction);
       setPickerAnchor(null);
     },
     [pickerAnchor, vm],
   );
 
   return (
-    <SafeAreaView className="flex-1 surface-base">
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView className="flex-1 surface-base">
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
       <FeedHeader />
       <View className="flex-1">
@@ -1290,33 +1794,33 @@ function FeedScreen() {
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           onScroll={handleScroll}
+          refreshControl={
+            <RefreshControl
+              refreshing={vm.isLoading && vm.posts.length > 0}
+              onRefresh={vm.reloadPosts}
+              tintColor="#0866FF"
+            />
+          }
         >
           <FilterTabs />
           <ComposerCard onPress={goToCreatePost} />
           <StoriesRow />
           <GreetingCard />
-          <HomeVideoPosts
-            posts={vm.videoPosts}
-            isLoading={vm.isLoadingVideos}
-            error={vm.videoError}
+          <MergedFeed
+            posts={vm.posts}
+            isLoading={vm.isLoading}
+            error={vm.error}
             onReact={vm.toggleReaction}
             onOpenPicker={handleOpenPicker}
             onCommentTap={commentVm.openComments}
+            onPhotoPress={handlePhotoPress}
             activeVideoId={activeVideoId}
             onReportLayout={handleReportLayout}
             onReportSectionY={handleReportSectionY}
+            gestureX={gestureX}
+            gestureY={gestureY}
+            gestureActive={gestureActive}
           />
-          <TextPostFeed
-            posts={vm.textPosts}
-            isLoading={vm.isLoadingTextPosts}
-            error={vm.textPostsError}
-            onReact={vm.toggleTextPostReaction}
-            onOpenPicker={handleOpenPicker}
-            onCommentTap={commentVm.openComments}
-          />
-          <ScenicPost />
-          <SponsoredPost />
-          <GalleryPost />
         </ScrollView>
         <TouchableOpacity
           className="surface-brand absolute bottom-6 right-5 h-14 w-14 items-center justify-center rounded-full"
@@ -1329,6 +1833,17 @@ function FeedScreen() {
         anchor={pickerAnchor}
         onPick={handlePickReaction}
         onDismiss={() => setPickerAnchor(null)}
+        gestureX={gestureX}
+        gestureY={gestureY}
+        gestureActive={gestureActive}
+      />
+      {/* ── Photo Viewer ── */}
+      <PhotoViewerModal
+        state={photoViewer}
+        onClose={() => setPhotoViewer(null)}
+        onReact={vm.toggleReaction}
+        onCommentTap={commentVm.openComments}
+        posts={vm.posts}
       />
       <ReelCommentsSheet
         visible={commentVm.isCommentsOpen}
@@ -1356,6 +1871,7 @@ function FeedScreen() {
         onDeleteFailedComment={commentVm.deleteFailedComment}
       />
     </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 

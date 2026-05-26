@@ -18,9 +18,12 @@
 // Anyone can subscribe; the FeedScreen does so on mount and calls
 // `vm.prependTextPost` when the event fires.
 
-import type { FeedTextPost } from '../../domain/types/feed.types';
+import type { FeedPost } from '../../domain/types/feed.types';
 
-type PostCreatedListener = (post: FeedTextPost) => void;
+// Widened to `FeedPost` (union of video + text) so a future
+// `CreateReelScreen` integration can emit through the same channel —
+// the home feed prepends both kinds the same way.
+type PostCreatedListener = (post: FeedPost) => void;
 
 const listeners = new Set<PostCreatedListener>();
 
@@ -37,7 +40,7 @@ export const postCreatedEvents = {
   },
 
   /** Fire the event for all current subscribers. */
-  emit(post: FeedTextPost): void {
+  emit(post: FeedPost): void {
     listeners.forEach(listener => {
       try {
         listener(post);

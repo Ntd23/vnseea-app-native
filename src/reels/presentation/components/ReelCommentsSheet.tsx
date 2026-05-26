@@ -45,8 +45,23 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronDown, SendHorizonal, ThumbsUp, X } from 'lucide-react-native';
-import type { ReactionType, ReelComment } from '../../domain/types/reels.types';
+import {
+  ChevronDown,
+  ImagePlus,
+  SendHorizonal,
+  ThumbsUp,
+  X,
+} from 'lucide-react-native';
+import {
+  launchCamera,
+  launchImageLibrary,
+  type MediaType,
+} from 'react-native-image-picker';
+import type {
+  CommentImageAttachment,
+  ReactionType,
+  ReelComment,
+} from '../../domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../domain/types/reels.types';
 
 const AVATAR_FALLBACK = 'https://demo.vnseea.vn/upload/photos/d-avatar.jpg';
@@ -107,8 +122,15 @@ interface Props {
   onClose: () => void;
   onEndReached: () => void;
   onRetry: () => void;
-  onSubmit: (text: string) => Promise<ReelComment | null>;
-  onSubmitReply: (commentId: string, text: string) => Promise<ReelComment | null>;
+  onSubmit: (
+    text: string,
+    image?: CommentImageAttachment,
+  ) => Promise<ReelComment | null>;
+  onSubmitReply: (
+    commentId: string,
+    text: string,
+    image?: CommentImageAttachment,
+  ) => Promise<ReelComment | null>;
   onSetReaction: (commentId: string, reaction: ReactionType) => void;
   onDelete: (commentId: string) => void;
   onLoadReplies: (commentId: string) => void;
@@ -149,7 +171,7 @@ function ReelCommentsSheetBase({
   commentCount,
   isLoading,
   isLoadingMore,
-  isSubmitting,
+  isSubmitting: _isSubmitting,
   error,
   repliesById,
   loadingRepliesIds,
@@ -170,6 +192,15 @@ function ReelCommentsSheetBase({
 }: Props) {
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState('');
+  // Image picked by the user for the next comment / reply. Local file://
+  // URI; uploaded via multipart when `onSubmit` fires. Cleared after
+  // submit or by tapping the X on the preview thumbnail.
+  const [pendingImage, setPendingImage] =
+    useState<CommentImageAttachment | null>(null);
+  // Which comment-image URL is open in the full-screen viewer (null = closed).
+  // Used both for already-uploaded `imageUrl` and pending local previews so
+  // the user can tap any comment image to see it big.
+  const [imageViewerUri, setImageViewerUri] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(visible);
   const openProgress = useRef(new Animated.Value(0)).current;
 
@@ -185,6 +216,8 @@ function ReelCommentsSheetBase({
     if (!visible) {
       setDraft('');
       setPickerAnchor(null);
+      setPendingImage(null);
+      setImageViewerUri(null);
     }
   }, [visible]);
 
@@ -235,17 +268,100 @@ function ReelCommentsSheetBase({
 
   const handleSubmit = useCallback(() => {
     const trimmed = draft.trim();
-    if (!trimmed) return;
+    // Accept comment if it has text OR an image (matches backend
+    // validation — image-only comments are valid).
+    if (!trimmed && !pendingImage) return;
 
+    // Snapshot the image then clear local state immediately so the
+    // composer feels responsive even while the multipart upload is in
+    // flight. The view-model already shows the optimistic bubble.
+    const image = pendingImage ?? undefined;
     setDraft('');
+    setPendingImage(null);
 
     if (replyingTo) {
-      onSubmitReply(replyingTo.commentId, trimmed);
+      onSubmitReply(replyingTo.commentId, trimmed, image);
       onCancelReply();
     } else {
-      onSubmit(trimmed);
+      onSubmit(trimmed, image);
     }
-  }, [draft, onSubmit, onSubmitReply, replyingTo, onCancelReply]);
+  }, [
+    draft,
+    pendingImage,
+    onSubmit,
+    onSubmitReply,
+    replyingTo,
+    onCancelReply,
+  ]);
+
+  /**
+   * Open the gallery picker and stash the first selected image in
+   * `pendingImage`. We normalise the Asset shape into our domain
+   * `CommentImageAttachment` (with sane defaults for missing `fileName`
+   * / `type` — Android omits both on some devices) so the repo can pass
+   * it straight to FormData.
+   */
+  const handleImagePickerResult = useCallback((result: any) => {
+    if (result.didCancel) return;
+    if (result.errorCode) {
+      Alert.alert('Lỗi', result.errorMessage ?? 'Không thực hiện được thao tác.');
+      return;
+    }
+    const asset = result.assets?.[0];
+    if (!asset?.uri) return;
+
+    const uri =
+      Platform.OS === 'android' && !asset.uri.startsWith('file://')
+        ? `file://${asset.uri}`
+        : asset.uri;
+
+    setPendingImage({
+      uri,
+      name: asset.fileName ?? `comment-${Date.now()}.jpg`,
+      type: asset.type ?? 'image/jpeg',
+      width: asset.width,
+      height: asset.height,
+    });
+  }, []);
+
+  /**
+   * Open the gallery picker or camera and stash the selected image in
+   * `pendingImage`.
+   */
+  const handlePickImage = useCallback(async () => {
+    Alert.alert(
+      'Chọn ảnh bình luận',
+      'Bạn muốn chụp ảnh mới hay chọn ảnh từ thư viện?',
+      [
+        {
+          text: 'Chụp ảnh',
+          onPress: async () => {
+            const result = await launchCamera({
+              mediaType: 'photo' as MediaType,
+              quality: 0.8,
+              saveToPhotos: false,
+              includeBase64: false,
+            });
+            handleImagePickerResult(result);
+          },
+        },
+        {
+          text: 'Chọn từ thư viện',
+          onPress: async () => {
+            const result = await launchImageLibrary({
+              mediaType: 'photo' as MediaType,
+              selectionLimit: 1,
+              quality: 0.8,
+              includeBase64: false,
+            });
+            handleImagePickerResult(result);
+          },
+        },
+        { text: 'Hủy', style: 'cancel' },
+      ],
+      { cancelable: true },
+    );
+  }, [handleImagePickerResult]);
 
   const handleLongPressRow = useCallback(
     (comment: ReelComment) => {
@@ -311,6 +427,13 @@ function ReelCommentsSheetBase({
     setPickerAnchor(null);
   }, []);
 
+  // Stable handler so memoised rows don't re-render on every parent
+  // update — `setImageViewerUri` is referentially stable, but we wrap it
+  // to keep the prop name consistent with the rest of the row callbacks.
+  const handleOpenImage = useCallback((uri: string) => {
+    setImageViewerUri(uri);
+  }, []);
+
   const renderThread = useCallback(
     ({ item }: { item: ReelComment }) => {
       const replies = repliesById[item.id];
@@ -329,11 +452,13 @@ function ReelCommentsSheetBase({
           onLoadReplies={onLoadReplies}
           onCollapseReplies={onCollapseReplies}
           onStartReply={onStartReply}
+          onOpenImage={handleOpenImage}
         />
       );
     },
     [
       handleLongPressRow,
+      handleOpenImage,
       handleOpenPicker,
       loadingRepliesIds,
       onCollapseReplies,
@@ -457,7 +582,40 @@ function ReelCommentsSheetBase({
             </View>
           ) : null}
 
+          {/* ── Pending image preview (above the input row) ─────────────
+              Rendered only while the user has an image queued. FB-style:
+              a bigger preview thumbnail (88×88) with a circular X button
+              to clear it. Sits in its own row so the input stays at a
+              single line height. */}
+          {pendingImage ? (
+            <View style={styles.pendingImageRow}>
+              <View style={styles.pendingImageWrap}>
+                <Image
+                  source={{ uri: pendingImage.uri }}
+                  style={styles.pendingImageThumb}
+                  resizeMode="cover"
+                />
+                <TouchableOpacity
+                  onPress={() => setPendingImage(null)}
+                  style={styles.pendingImageRemove}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <X size={14} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.inputBar}>
+            {/* Image picker button — leftmost in the row, mirrors FB layout */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handlePickImage}
+              style={styles.imageButton}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            >
+              <ImagePlus size={22} color="#0866ff" />
+            </TouchableOpacity>
             <TextInput
               value={draft}
               onChangeText={setDraft}
@@ -474,10 +632,14 @@ function ReelCommentsSheetBase({
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleSubmit}
-              disabled={!draft.trim()}
+              // Enable submit if EITHER text or an image is provided —
+              // matches the backend's "text OR image required" rule.
+              disabled={!draft.trim() && !pendingImage}
               style={[
                 styles.sendButton,
-                !draft.trim() ? styles.sendButtonDisabled : null,
+                !draft.trim() && !pendingImage
+                  ? styles.sendButtonDisabled
+                  : null,
               ]}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
@@ -495,6 +657,52 @@ function ReelCommentsSheetBase({
         onPick={handlePickReaction}
         onDismiss={handleClosePicker}
       />
+
+      {/* ── Full-screen image viewer ─────────────────────────────────────
+          Opens when the user taps any comment-bubble image (uploaded or
+          pending). Single-image, single-page — no swipe between siblings
+          because each comment carries at most one image. */}
+      <CommentImageViewer
+        uri={imageViewerUri}
+        onClose={() => setImageViewerUri(null)}
+      />
+    </Modal>
+  );
+}
+
+// ── CommentImageViewer ────────────────────────────────────────────────────
+//
+// A black, full-screen modal that displays a single comment image. Reuses
+// the same UX language as `PhotoViewerModal` (close X in the corner, image
+// centered on a black bg) but without the multi-image swipe + caption
+// overlay, since a comment carries exactly one image at most.
+
+function CommentImageViewer({
+  uri,
+  onClose,
+}: {
+  uri: string | null;
+  onClose: () => void;
+}) {
+  if (!uri) return null;
+  return (
+    <Modal
+      visible
+      transparent={false}
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <Pressable style={styles.viewerBackdrop} onPress={onClose}>
+        <Image
+          source={{ uri }}
+          style={styles.viewerImage}
+          resizeMode="contain"
+        />
+      </Pressable>
+      <TouchableOpacity onPress={onClose} style={styles.viewerClose}>
+        <X size={20} color="#fff" />
+      </TouchableOpacity>
     </Modal>
   );
 }
@@ -560,6 +768,8 @@ interface ThreadProps {
   onLoadReplies: (commentId: string) => void;
   onCollapseReplies: (commentId: string) => void;
   onStartReply: (commentId: string, username: string) => void;
+  /** Threaded through to each row so taps on comment images open the viewer. */
+  onOpenImage: (uri: string) => void;
 }
 
 function CommentThreadBase({
@@ -573,6 +783,7 @@ function CommentThreadBase({
   onLoadReplies,
   onCollapseReplies,
   onStartReply,
+  onOpenImage,
 }: ThreadProps) {
   const username =
     comment.publisher.username || comment.publisher.name || 'unknown';
@@ -600,6 +811,7 @@ function CommentThreadBase({
         onOpenPicker={onOpenPicker}
         onLongPressRow={onLongPressRow}
         onReply={handleReply}
+        onOpenImage={onOpenImage}
       />
 
       {comment.replyCount > 0 || isExpanded ? (
@@ -642,6 +854,7 @@ function CommentThreadBase({
                   reply.publisher.username || reply.publisher.name || 'unknown',
                 )
               }
+              onOpenImage={onOpenImage}
             />
           ))}
         </View>
@@ -669,6 +882,8 @@ interface RowProps {
   onOpenPicker: (commentId: string, anchorX: number, anchorY: number) => void;
   onLongPressRow: (comment: ReelComment) => void;
   onReply: () => void;
+  /** Called when the user taps the comment's image — opens the viewer. */
+  onOpenImage: (uri: string) => void;
 }
 
 function CommentRow({
@@ -678,6 +893,7 @@ function CommentRow({
   onOpenPicker,
   onLongPressRow,
   onReply,
+  onOpenImage,
 }: RowProps) {
   const displayName =
     comment.publisher.name || comment.publisher.username || 'Người dùng';
@@ -747,12 +963,32 @@ function CommentRow({
               <Text style={styles.commentText}>{comment.text}</Text>
             ) : null}
 
-            {comment.imageUrl ? (
-              <Image
-                source={{ uri: comment.imageUrl }}
-                style={styles.commentImage}
-                resizeMode="cover"
-              />
+            {/* Comment image — prefer the local pending URI while the
+                upload is in flight so the bubble shows the picked file
+                INSTANTLY, then falls back to the CDN URL the server
+                returns. Tap to open in full-screen viewer. */}
+            {comment.pendingImageUri || comment.imageUrl ? (
+              <Pressable
+                onPress={() => {
+                  const uri = comment.pendingImageUri ?? comment.imageUrl;
+                  if (uri) onOpenImage(uri);
+                }}
+                style={styles.commentImageWrap}
+              >
+                <Image
+                  source={{
+                    uri: comment.pendingImageUri ?? comment.imageUrl,
+                  }}
+                  style={styles.commentImage}
+                  resizeMode="cover"
+                />
+                {/* Subtle loading indicator overlay while uploading */}
+                {isSending && comment.pendingImageUri ? (
+                  <View style={styles.commentImageOverlay}>
+                    <ActivityIndicator color="#fff" size="small" />
+                  </View>
+                ) : null}
+              </Pressable>
             ) : null}
           </View>
 
@@ -1017,12 +1253,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 19,
   },
-  commentImage: {
+  // Wrapper for tappable comment image — opens full-screen viewer.
+  // We split the wrap/image so the Pressable can hold the overlay and
+  // the inner Image renders crisply at cover-mode.
+  commentImageWrap: {
     marginTop: 6,
-    width: 200,
-    height: 150,
-    borderRadius: 10,
+    width: 220,
+    height: 165,
+    borderRadius: 12,
+    overflow: 'hidden',
     backgroundColor: '#e5e7eb',
+  },
+  commentImage: {
+    width: '100%',
+    height: '100%',
+  },
+  commentImageOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Reaction count badge — anchored to the bottom-right of the bubble
@@ -1185,6 +1439,68 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     opacity: 0.42,
+  },
+
+  // ── Image picker button + preview ───────────────────────────────────
+  imageButton: {
+    width: 38,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  pendingImageRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+    backgroundColor: '#fff',
+  },
+  pendingImageWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#e5e7eb',
+    position: 'relative',
+  },
+  pendingImageThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  pendingImageRemove: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // ── Image viewer modal ──────────────────────────────────────────────
+  viewerBackdrop: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewerImage: {
+    width: '100%',
+    height: '80%',
+  },
+  viewerClose: {
+    position: 'absolute',
+    top: 48,
+    right: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // ── Reaction picker ─────────────────────────────────────────────────
