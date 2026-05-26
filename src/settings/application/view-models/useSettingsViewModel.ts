@@ -1,19 +1,9 @@
-// Description: Provides static settings screen data for the UI-only settings phase.
+// Description: Provides settings screen data with real user profile from WoWonder API.
 import { useState } from 'react';
-import type {
-  FeatureGridItem,
-  SettingsMenuItem,
-  UserProfile,
-} from '../../domain/types/settings.types';
+import type { FeatureGridItem, SettingsMenuItem } from '../../domain/types/settings.types';
+import { useUserProfileViewModel } from './useUserProfileViewModel';
 
 const BRAND = '#0000FF';
-
-const MOCK_PROFILE: UserProfile = {
-  id: '1',
-  name: 'Nguyễn Dũng',
-  avatarUrl: null,
-  isOnline: true,
-};
 
 const MOCK_FEATURES: FeatureGridItem[] = [
   {
@@ -199,17 +189,16 @@ const MOCK_SETTINGS: SettingsMenuItem[] = [
 ];
 
 export function useSettingsViewModel() {
-  const [profile] = useState<UserProfile>(MOCK_PROFILE);
+  const userProfileVm = useUserProfileViewModel();
+
   const [features] = useState<FeatureGridItem[]>(MOCK_FEATURES);
   const [settingsMenu] = useState<SettingsMenuItem[]>(MOCK_SETTINGS);
-  const [isLoading] = useState(false);
-  const [error] = useState<string | null>(null);
 
   return {
-    profile,
+    profile: userProfileVm.profile,
     features,
     settingsMenu,
-    isLoading,
-    error,
+    isLoading: userProfileVm.isLoading,
+    error: userProfileVm.error,
   };
 }

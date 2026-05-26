@@ -130,6 +130,7 @@ function mapPublisher(
 function mapMediaItem(
   raw: Record<string, unknown>,
   fallbackType: 'image' | 'video',
+  storyId?: string,
 ): StoryMedia | null {
   const url = readString(raw, 'filename', 'url');
   if (!url) return null;
@@ -140,10 +141,11 @@ function mapMediaItem(
     id: readString(raw, 'id') || `${type}-${url}`,
     type,
     url,
+    storyId,
   };
 }
 
-function extractMedia(raw: Record<string, unknown>): StoryMedia[] {
+function extractMedia(raw: Record<string, unknown>, storyId: string): StoryMedia[] {
   const out: StoryMedia[] = [];
 
   // The first (cover) image is shipped under `thumb` in `get_stories.php`
@@ -151,14 +153,14 @@ function extractMedia(raw: Record<string, unknown>): StoryMedia[] {
   // so the viewer opens on the same image the bubble previewed.
   const thumb = raw.thumb as Record<string, unknown> | undefined;
   if (thumb && typeof thumb === 'object') {
-    const mapped = mapMediaItem(thumb, 'image');
+    const mapped = mapMediaItem(thumb, 'image', storyId);
     if (mapped) out.push(mapped);
   }
 
   const images = Array.isArray(raw.images) ? raw.images : [];
   for (const item of images) {
     if (item && typeof item === 'object') {
-      const mapped = mapMediaItem(item as Record<string, unknown>, 'image');
+      const mapped = mapMediaItem(item as Record<string, unknown>, 'image', storyId);
       // Dedupe by URL so the thumb doesn't appear twice if it's also in
       // the images list.
       if (mapped && !out.some(m => m.url === mapped.url)) out.push(mapped);
@@ -168,8 +170,23 @@ function extractMedia(raw: Record<string, unknown>): StoryMedia[] {
   const videos = Array.isArray(raw.videos) ? raw.videos : [];
   for (const item of videos) {
     if (item && typeof item === 'object') {
-      const mapped = mapMediaItem(item as Record<string, unknown>, 'video');
+      const mapped = mapMediaItem(item as Record<string, unknown>, 'video', storyId);
       if (mapped) out.push(mapped);
+    }
+  }
+
+  // FALLBACK: If no media segments were found but a thumbnail/cover is present,
+  // treat the thumbnail URL as the main image segment.
+  if (out.length === 0) {
+    const thumbnail = readString(raw, 'thumbnail', 'cover_image');
+    if (thumbnail && thumbnail.length > 0) {
+      const isVideo = /\.(mp4|mov|3gp|webm|avi|mkv)$/i.test(thumbnail);
+      out.push({
+        id: `thumb-fallback-${storyId}`,
+        type: isVideo ? 'video' : 'image',
+        url: thumbnail,
+        storyId,
+      });
     }
   }
 
@@ -235,15 +252,29 @@ function mapStory(raw: Record<string, unknown>): StoryItem | null {
     }
   }
 
+  // DEBUG: Log raw timestamps for debugging new uploads
+  const postedAt = readNumber(raw, 'posted', 'time');
+  const expiresAt = readNumber(raw, 'expire');
+  console.log(
+    '[ApiStoriesRepository] mapStory - ID:',
+    id,
+    'posted:',
+    postedAt,
+    'expire:',
+    expiresAt,
+    'current time:',
+    Math.floor(Date.now() / 1000)
+  );
+
   return {
     id,
     publisher,
     title: readString(raw, 'title') || undefined,
     description: readString(raw, 'description') || undefined,
-    postedAt: readNumber(raw, 'posted', 'time'),
-    expiresAt: readNumber(raw, 'expire'),
+    postedAt,
+    expiresAt,
     thumbnailUrl,
-    media: extractMedia(raw),
+    media: extractMedia(raw, id),
     isOwner: readBool(raw, 'is_owner'),
     isViewed: readBool(raw, 'is_viewed'),
     hasUnseen: readBool(raw, 'have_not_seen'),
@@ -263,17 +294,48 @@ export function createStoriesRepository(): StoriesRepository {
       }>(apiRoutes.stories.get, {});
 
       const rows = response.stories ?? [];
-      const out: StoryItem[] = [];
-      for (const row of rows) {
+
+      // DEBUG: Log raw response for debugging
+      console.log('[StoriesRepo] getStories - received', rows.length, 'rows');
+
+      const validRows = rows;
+
+      // WoWonder's get_stories returns EACH STORY SEGMENT AS A SEPARATE ROW.
+      // We need to group by (publisher.userId + storyId) so multi-segment stories render
+      // correctly with swipe left/right.
+      const grouped = new Map<string, StoryItem>();
+
+      for (const row of validRows) {
         const mapped = mapStory(row);
-        if (mapped && mapped.media.length > 0) {
-          // Only surface stories that actually have something to show —
-          // defensive against partial inserts (story row exists, media
-          // upload failed half-way) that occasionally happen in the wild.
-          out.push(mapped);
+        if (!mapped || mapped.media.length === 0) continue;
+
+        // Group key = userId + storyId (same story from same user)
+        const key = `${mapped.publisher.userId}-${mapped.id}`;
+
+        if (grouped.has(key)) {
+          // Merge only NEW media segments (dedupe by URL to avoid duplication)
+          const existing = grouped.get(key)!;
+          for (const newMedia of mapped.media) {
+            if (!existing.media.some(m => m.url === newMedia.url)) {
+              existing.media.push(newMedia);
+            }
+          }
+          // Preserve highest-fidelity thumbnail
+          if (!existing.thumbnailUrl && mapped.thumbnailUrl) {
+            existing.thumbnailUrl = mapped.thumbnailUrl;
+          }
+        } else {
+          grouped.set(key, mapped);
         }
       }
-      return out;
+
+      console.log(
+        '[StoriesRepo] getStories - final grouped count:',
+        grouped.size,
+        'stories'
+      );
+
+      return Array.from(grouped.values());
     },
 
     async getUserStories() {
@@ -283,18 +345,58 @@ export function createStoriesRepository(): StoriesRepository {
       }>(apiRoutes.stories.getUserStories, {});
 
       const users = response.stories ?? [];
-      const out: StoryItem[] = [];
+
+      // DEBUG: Log raw response for debugging
+      console.log(
+        '[StoriesRepo] getUserStories - received',
+        users.length,
+        'users'
+      );
+
+      // Group multi-segment stories by publisher + storyId
+      // CRITICAL: Each user's stories are already grouped by PHP on server side
+      // But we still need to dedupe media segments within each story
+      const grouped = new Map<string, StoryItem>();
+
       for (const user of users) {
         const storiesList = Array.isArray(user.stories) ? user.stories : [];
+        console.log(
+          `[StoriesRepo] getUserStories - user ${user.user_id || user.id} has ${storiesList.length} story rows`
+        );
+
         for (const storyRaw of storiesList) {
           const raw = storyRaw as Record<string, unknown>;
+
           const mapped = mapStory(raw);
-          if (mapped && mapped.media.length > 0) {
-            out.push(mapped);
+          if (!mapped || mapped.media.length === 0) continue;
+
+          const key = `${mapped.publisher.userId}-${mapped.id}`;
+
+          if (grouped.has(key)) {
+            // Merge only NEW media segments (dedupe by URL)
+            const existing = grouped.get(key)!;
+            for (const newMedia of mapped.media) {
+              if (!existing.media.some(m => m.url === newMedia.url)) {
+                existing.media.push(newMedia);
+              }
+            }
+            // Preserve highest-fidelity thumbnail
+            if (!existing.thumbnailUrl && mapped.thumbnailUrl) {
+              existing.thumbnailUrl = mapped.thumbnailUrl;
+            }
+          } else {
+            grouped.set(key, mapped);
           }
         }
       }
-      return out;
+
+      console.log(
+        '[StoriesRepo] getUserStories - final grouped count:',
+        grouped.size,
+        'stories'
+      );
+
+      return Array.from(grouped.values());
     },
 
     async createStory(draft: CreateStoryDraft): Promise<CreateStoryResult> {

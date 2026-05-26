@@ -40,6 +40,10 @@ export interface StoryMedia {
   type: 'image' | 'video';
   /** Full URL (CDN-normalised by `Wo_GetMedia()`). */
   url: string;
+  /** ID of the parent story this segment belongs to. */
+  storyId?: string;
+  /** Unix seconds — when this specific segment was posted. */
+  postedAt?: number;
 }
 
 /**
