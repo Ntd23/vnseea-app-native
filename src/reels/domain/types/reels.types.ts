@@ -10,6 +10,29 @@ export interface ReelPublisher {
   isFollowing?: boolean;
 }
 
+/**
+ * Reaction types supported by WoWonder.
+ *
+ * These map 1:1 to the keys in `$wo['reactions_types']` on the PHP side
+ * and to the `reaction` POST param accepted by `/api/v2/post-actions`.
+ *
+ * NOTE: A WoWonder admin can technically rename/add reactions through the
+ * admin panel; we hard-code the canonical 6 here because that's what the
+ * default install ships with and what TikTok/Facebook also use. Any custom
+ * reaction the server returns that isn't in this set will be coerced to
+ * `null` (no reaction) when mapping from the API.
+ */
+export type ReactionType = 'like' | 'love' | 'haha' | 'wow' | 'sad' | 'angry';
+
+export const ALL_REACTION_TYPES: ReactionType[] = [
+  'like',
+  'love',
+  'haha',
+  'wow',
+  'sad',
+  'angry',
+];
+
 export interface ReelsItem {
   /** Backend post id (numeric string) */
   id: string;
@@ -32,6 +55,17 @@ export interface ReelsItem {
   /** Viewer-state flags */
   isLiked: boolean;
   isSaved: boolean;
+  /**
+   * The current viewer's reaction on this reel, or `null` if they haven't
+   * reacted. Drives the colored heart + which emoji is highlighted in the
+   * long-press picker.
+   *
+   * NOTE: This is derived from the post's `reaction.type` field which the
+   * backend only populates when the site is configured for rich reactions.
+   * On a "simple-like" install this will be `null` even after the user
+   * likes, and the heart UI falls back to using `isLiked` as a boolean.
+   */
+  myReaction: ReactionType | null;
 }
 
 /** Page of reels returned by the API — `nextCursor` is the id of the last item, used for `after_post_id`. */
@@ -41,17 +75,72 @@ export interface ReelsPage {
   nextCursor: string | null;
 }
 
-/** A single reel comment */
+/**
+ * A single reel comment.
+ *
+ * The same shape is used for top-level comments AND for replies — the
+ * backend (`Wo_GetPostComment` vs `Wo_GetCommentReply`) returns nearly
+ * identical fields. Whether an item is a reply is implied by where it
+ * lives (replies are kept in a separate `repliesById` map keyed by
+ * parent comment id, not in the top-level `comments` list).
+ *
+ *   • For top-level comments: `replyCount` is how many replies it has.
+ *   • For replies: `replyCount` is always 0 (no nested replies in WoWonder).
+ */
 export interface ReelComment {
   id: string;
   text: string;
   postedAt?: number;
   publisher: ReelPublisher;
+  /** Total reactions on the comment (or simple-likes on legacy installs). */
   likeCount: number;
+  /** Only meaningful on top-level comments. Replies always report 0. */
   replyCount: number;
+  /** True when the viewer has ANY reaction (or simple-like) on this comment. */
   isLiked: boolean;
+  /**
+   * The viewer's current reaction on the comment, or `null` if none.
+   * Drives the Facebook-style action row (👍 Thích / ❤ Yêu thích / …).
+   * Sourced from the backend's `reaction.type` when available, falling
+   * back to the per-user MMKV cache for installs that don't expose it.
+   */
+  myReaction: ReactionType | null;
+  /** Viewer is the comment's author — drives edit/delete affordances. */
   owner: boolean;
+  /** Viewer owns the parent post — also allowed to delete others' comments. */
   postOwner: boolean;
+  /** Optional inline image (`c_file` in WoWonder) — full URL ready to render. */
+  imageUrl?: string;
+  /**
+   * Local-only preview URI used while an optimistic comment is uploading.
+   * Lets the bubble show the picked image instantly before the server
+   * round-trip returns the canonical `imageUrl`. Cleared once the server
+   * response replaces the temp comment with the real one.
+   */
+  pendingImageUri?: string;
+  /** Optimistic update state: true if comment/reply is currently sending */
+  isSending?: boolean;
+  /** Optimistic update state: true if sending failed */
+  isFailed?: boolean;
+}
+
+/**
+ * A single image attached to a comment or reply draft. The `uri` is a
+ * local `file://...` path coming from the image picker — uploaded via
+ * multipart FormData (field name `image`) by the comment endpoint
+ * (`/api/comments`, action `create` / `create_reply`). On success the
+ * server returns the post-CDN URL in `c_file`, surfaced to the UI as
+ * `ReelComment.imageUrl`.
+ *
+ * `name` + `type` are required by React Native's FormData — omitting
+ * either causes the file to be sent as an inert string blob.
+ */
+export interface CommentImageAttachment {
+  uri: string;
+  name: string;
+  type: string; // MIME, e.g. 'image/jpeg'
+  width?: number;
+  height?: number;
 }
 
 /** Privacy level matching WoWonder postPrivacy values */

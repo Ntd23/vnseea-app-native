@@ -28,7 +28,7 @@
 
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Animated,
+  Animated as RNAnimated,
   Dimensions,
   Easing,
   Image,
@@ -38,6 +38,11 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  interpolate,
+  type SharedValue,
+} from 'react-native-reanimated';
 import VideoPlayer from 'react-native-video';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -50,13 +55,31 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react-native';
-import type { ReelsItem } from '../../domain/types/reels.types';
+import type { ReactionType, ReelsItem } from '../../domain/types/reels.types';
+import { ALL_REACTION_TYPES } from '../../domain/types/reels.types';
 
 const AVATAR_FALLBACK = 'https://demo.vnseea.vn/upload/photos/d-avatar.jpg';
 
 // Screen width used by the SVG gradient — computed once at module level.
 // Rotation is not a concern for a portrait-locked reels feed.
 const SCREEN_W = Dimensions.get('window').width;
+
+// Maps a backend reaction type to the emoji we render in the picker and
+// (when applicable) inside the heart button itself.
+const REACTION_EMOJI: Record<ReactionType, string> = {
+  like: '👍',
+  love: '❤️',
+  haha: '😂',
+  wow: '😮',
+  sad: '😢',
+  angry: '😡',
+};
+
+// Time window within which two taps count as a double-tap. 320ms is
+// slightly more forgiving than Apple's 280ms — testing on Android showed
+// the second tap sometimes arrived at ~300ms when the user wasn't trying
+// to be especially fast.
+const DOUBLE_TAP_MS = 320;
 
 interface Props {
   item: ReelsItem;
@@ -69,11 +92,30 @@ interface Props {
   /** Global mute state shared across the feed. */
   isMuted: boolean;
   onToggleMute: () => void;
-  onLike: (postId: string) => void;
+  /**
+   * Toggle a rich reaction on this reel.
+   *   • Single-tap on the heart button → onReaction(id, 'love')
+   *   • Long-press on the heart button → opens picker, onReaction(id, picked)
+   *   • Double-tap anywhere on the surface → onReaction(id, 'love')
+   *
+   * The view-model handles the "same reaction tapped twice = clear" logic,
+   * so this component always passes a concrete ReactionType and lets the
+   * parent decide whether to add, swap, or clear.
+   */
+  onReaction: (postId: string, reaction: ReactionType, forceSet?: boolean) => void;
   onSave: (postId: string) => void;
   onOpenComments?: (postId: string) => void;
   onShare?: (item: ReelsItem) => void;
   onOpenProfile?: (userId: string) => void;
+  /**
+   * Fired the first time the underlying VideoPlayer reports an error
+   * (404, decode failure, broken CDN url, …). The screen-level handler
+   * should treat this as "this reel is permanently bad — remove it from
+   * the feed and don't return it on future page loads".
+   */
+  onUnavailable?: (postId: string) => void;
+  scrollY?: SharedValue<number>;
+  index?: number;
 }
 
 function formatCount(n: number): string {
@@ -90,28 +132,192 @@ function ReelItemBase({
   shouldMount,
   isMuted,
   onToggleMute,
-  onLike,
+  onReaction,
   onSave,
   onOpenComments,
   onShare,
   onOpenProfile,
+  onUnavailable,
+  scrollY,
+  index,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [userPaused, setUserPaused] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    if (scrollY === undefined || index === undefined) {
+      return {};
+    }
+
+    const inputRange = [
+      (index - 1) * height,
+      index * height,
+      (index + 1) * height,
+    ];
+
+    const scale = interpolate(
+      scrollY.value,
+      inputRange,
+      [0.92, 1, 0.92],
+      'clamp'
+    );
+
+    const opacity = interpolate(
+      scrollY.value,
+      inputRange,
+      [0.6, 1, 0.6],
+      'clamp'
+    );
+
+    const translateY = interpolate(
+      scrollY.value,
+      inputRange,
+      [-height * 0.05, 0, height * 0.05],
+      'clamp'
+    );
+
+    return {
+      opacity,
+      transform: [
+        { scale },
+        { translateY },
+      ],
+    };
+  });
 
   // The video plays iff: active + not manually paused + no decode error.
   const playing = isActive && !userPaused && !hasError;
 
-  // Show the big center play icon only when the user has explicitly tapped
-  // to pause (or on decode error). We do NOT show it for non-active items —
-  // those are just visually paused and don't need a UI affordance.
-  const showPauseOverlay = isActive && (userPaused || hasError);
+  // Only the user-paused state shows the big center play overlay. Errors
+  // do NOT — instead the parent is notified via `onUnavailable` and the
+  // reel is removed from the feed (see effect below). Showing an error
+  // overlay would be visual noise the user would only see for ~120ms.
+  const showPauseOverlay = isActive && userPaused;
 
-  const handleSurfaceTap = useCallback(() => {
-    setUserPaused(prev => !prev);
+  // ── Tap-surface gesture ──────────────────────────────────────────────
+  //
+  // Why not react-native-gesture-handler?
+  //   Tried Gesture.Exclusive(doubleTap, singleTap) — works in isolation
+  //   but inside a FlatList the native ScrollView consistently steals the
+  //   second tap, so double-tap detection silently failed. We get more
+  //   reliable behaviour using plain RN's TouchableWithoutFeedback + a
+  //   manual timer to disambiguate single vs double.
+  //
+  // Algorithm (TikTok-style):
+  //   • First tap arrives → schedule the single-tap action after DOUBLE_TAP_MS.
+  //   • If a second tap arrives WITHIN DOUBLE_TAP_MS → cancel the pending
+  //     timer and fire the double-tap action (heart) instead.
+  //   • If no second tap arrives → timer fires the single-tap (pause).
+  //
+  //   This gives:
+  //     - Double-tap → only heart, no pause flash (timer was cancelled)
+  //     - Single-tap → only pause, after a ~320 ms wait (acceptable, matches
+  //       what TikTok itself does)
+  //
+  // Refs we keep across renders:
+  //   - lastTapAtRef         → timestamp of the most recent tap
+  //   - singleTapTimerRef    → handle for the pending single-tap timer
+  //   - onReactionRef/itemIdRef → so the callback sees freshest values
+  //     even when the memo skips re-renders.
+
+  const lastTapAtRef = useRef(0);
+  const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onReactionRef = useRef(onReaction);
+  onReactionRef.current = onReaction;
+  const itemIdRef = useRef(item.id);
+  itemIdRef.current = item.id;
+
+  const [floatingHearts, setFloatingHearts] = useState<Array<{ id: number; x: number; y: number; rotate: string; anim: RNAnimated.Value }>>([]);
+  const heartCounter = useRef(0);
+
+  const triggerHeartBurst = useCallback((x: number, y: number) => {
+    const id = heartCounter.current++;
+    const anim = new RNAnimated.Value(0);
+    const randomRotate = `${Math.floor(Math.random() * 40) - 20}deg`;
+    
+    setFloatingHearts(prev => [...prev, { id, x, y, rotate: randomRotate, anim }]);
+
+    RNAnimated.sequence([
+      RNAnimated.timing(anim, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.back(2.2)),
+        useNativeDriver: true,
+      }),
+      RNAnimated.delay(380),
+      RNAnimated.timing(anim, {
+        toValue: 2,
+        duration: 420,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start((result) => {
+      if (result.finished) {
+        setFloatingHearts(prev => prev.filter(h => h.id !== id));
+      }
+    });
   }, []);
+
+  const handleSurfaceTap = useCallback((event: any) => {
+    const { locationX, locationY } = event.nativeEvent;
+    const now = Date.now();
+    const sinceLast = now - lastTapAtRef.current;
+    lastTapAtRef.current = now;
+
+    // Second tap within the double-tap window → cancel the pending
+    // single-tap timer (so pause never fires) and trigger the heart.
+    if (sinceLast < DOUBLE_TAP_MS && singleTapTimerRef.current !== null) {
+      clearTimeout(singleTapTimerRef.current);
+      singleTapTimerRef.current = null;
+      lastTapAtRef.current = 0;
+      triggerHeartBurst(locationX, locationY);
+      onReactionRef.current(itemIdRef.current, 'love', true);
+      return;
+    }
+
+    // First tap — schedule the single-tap (pause) for after the window
+    // expires. If a second tap arrives in time, the branch above cancels
+    // this timer before it ever runs.
+    if (singleTapTimerRef.current !== null) {
+      clearTimeout(singleTapTimerRef.current);
+    }
+    singleTapTimerRef.current = setTimeout(() => {
+      singleTapTimerRef.current = null;
+      setUserPaused(prev => !prev);
+    }, DOUBLE_TAP_MS);
+  }, [triggerHeartBurst]);
+
+  // Clean up any pending single-tap timer when the reel unmounts so we
+  // don't try to toggle state on a dead component.
+  useEffect(() => {
+    return () => {
+      if (singleTapTimerRef.current !== null) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Close picker when the user scrolls past this reel (otherwise a
+  // forgotten open picker leaks into the next item visually).
+  useEffect(() => {
+    if (!isActive && isPickerOpen) setIsPickerOpen(false);
+  }, [isActive, isPickerOpen]);
+
+  // ── Auto-remove broken reels ─────────────────────────────────────────
+  // When the VideoPlayer fires onError we flip `hasError`. This effect
+  // bubbles that up to the parent via `onUnavailable` so the reel can be
+  // dropped from the list. We use a setTimeout(0) escape hatch so we don't
+  // mutate the parent's state synchronously during our own render commit.
+  useEffect(() => {
+    if (!hasError) return;
+    if (!onUnavailable) return;
+    const handle = setTimeout(() => onUnavailable(item.id), 0);
+    return () => clearTimeout(handle);
+  }, [hasError, item.id, onUnavailable]);
 
   // Bottom safe-area offset so action buttons clear the home indicator.
   const railBottom = Math.max(insets.bottom + 28, 44);
@@ -122,7 +328,7 @@ function ReelItemBase({
   const gradId = `rg-${item.id}`;
 
   return (
-    <View style={{ width: '100%', height, backgroundColor: '#000', overflow: 'hidden' }}>
+    <Animated.View style={[{ width: '100%', height, backgroundColor: '#000', overflow: 'hidden' }, animatedStyle]}>
 
       {/* ── Thumbnail / poster ───────────────────────────────────────── */}
       {item.thumbnailUrl ? (
@@ -146,6 +352,7 @@ function ReelItemBase({
           playInBackground={false}
           playWhenInactive={false}
           progressUpdateInterval={1000}
+          useTextureView={false}
           onReadyForDisplay={() => setIsReady(true)}
           onLoad={() => setIsReady(true)}
           onError={() => {
@@ -155,7 +362,11 @@ function ReelItemBase({
         />
       ) : null}
 
-      {/* ── Tap surface — captures taps to toggle play/pause ────────── */}
+      {/* ── Tap surface ─────────────────────────────────────────────────
+            Double-tap → heart reaction (fires on the 2nd tap, no delay)
+            Single-tap → pause / play  (fires ~320 ms after the 1st tap if
+                          no second tap arrives — so it never races the
+                          heart) */}
       <TouchableWithoutFeedback onPress={handleSurfaceTap}>
         <View style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
@@ -179,19 +390,15 @@ function ReelItemBase({
         <Rect width={SCREEN_W} height={height} fill={`url(#${gradId})`} />
       </Svg>
 
-      {/* ── Center play / error overlay ──────────────────────────────── */}
+      {/* ── Center play overlay (only when user explicitly paused) ──── */}
       {showPauseOverlay ? (
         <View pointerEvents="none" style={styles.centerOverlay}>
           <View style={styles.centerBubble}>
-            {hasError ? (
-              <Text style={styles.errorText}>⚠ Không phát được</Text>
-            ) : (
-              <Play
-                size={50}
-                color="rgba(255,255,255,0.92)"
-                fill="rgba(255,255,255,0.92)"
-              />
-            )}
+            <Play
+              size={50}
+              color="rgba(255,255,255,0.92)"
+              fill="rgba(255,255,255,0.92)"
+            />
           </View>
         </View>
       ) : null}
@@ -202,6 +409,49 @@ function ReelItemBase({
           <View style={styles.bufferDot} />
         </View>
       ) : null}
+
+      {/* ── Floating heart on double-tap ─────────────────────────────── */}
+      {/* Animated.Value progresses 0 → 1 → 2:
+            • 0 → 1: pop-in with back easing
+            • 1 → 2: float up + fade out
+          The Animated.View only matters during the burst — at rest its
+          opacity is 0 so it doesn't capture touches. */}
+      {floatingHearts.map(heart => (
+        <RNAnimated.View
+          key={heart.id}
+          pointerEvents="none"
+          style={[
+            styles.floatingHeartItem,
+            {
+              left: heart.x - 60,
+              top: heart.y - 60,
+              opacity: heart.anim.interpolate({
+                inputRange: [0, 0.4, 1, 2],
+                outputRange: [0, 1, 1, 0],
+              }),
+              transform: [
+                {
+                  scale: heart.anim.interpolate({
+                    inputRange: [0, 1, 2],
+                    outputRange: [0.4, 1, 1.3],
+                  }),
+                },
+                {
+                  translateY: heart.anim.interpolate({
+                    inputRange: [0, 1, 2],
+                    outputRange: [0, 0, -100],
+                  }),
+                },
+                {
+                  rotate: heart.rotate,
+                },
+              ],
+            },
+          ]}
+        >
+          <Heart size={120} color="#ff2d55" fill="#ff2d55" />
+        </RNAnimated.View>
+      ))}
 
       {/* ── Top-right: mute toggle ────────────────────────────────────── */}
       <TouchableOpacity
@@ -243,15 +493,10 @@ function ReelItemBase({
         <View style={styles.railSpacer} />
 
         <RailButton
-          icon={
-            <Heart
-              size={32}
-              color={item.isLiked ? '#ff2d55' : '#fff'}
-              fill={item.isLiked ? '#ff2d55' : 'transparent'}
-            />
-          }
+          icon={<ReactionIcon reaction={item.myReaction} />}
           label={formatCount(item.likeCount)}
-          onPress={() => onLike(item.id)}
+          onPress={() => onReaction(item.id, item.myReaction ?? 'love')}
+          onLongPress={() => setIsPickerOpen(true)}
         />
         <RailButton
           icon={<MessageCircle size={30} color="#fff" />}
@@ -279,6 +524,52 @@ function ReelItemBase({
           isSpinning={playing}
         />
       </View>
+
+      {/* ── Reaction picker overlay (long-press the heart to open) ───── */}
+      {/* Rendered AFTER the right rail so it sits on top of it. A full-
+          screen invisible backdrop catches taps outside the pill itself
+          and dismisses the picker. The pill is positioned to the left of
+          the heart icon, near the right edge. */}
+      {isPickerOpen ? (
+        <>
+          <TouchableWithoutFeedback onPress={() => setIsPickerOpen(false)}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+          <View
+            style={[
+              styles.reactionPicker,
+              {
+                // Roughly align the picker with the heart button (which
+                // sits ~270px above railBottom: avatar + spacer + button).
+                bottom: railBottom + 290,
+              },
+            ]}
+          >
+            {ALL_REACTION_TYPES.map(type => {
+              const isCurrent = item.myReaction === type;
+              return (
+                <TouchableOpacity
+                  key={type}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setIsPickerOpen(false);
+                    onReaction(item.id, type);
+                  }}
+                  style={[
+                    styles.reactionPickerItem,
+                    isCurrent && styles.reactionPickerItemActive,
+                  ]}
+                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                >
+                  <Text style={styles.reactionPickerEmoji}>
+                    {REACTION_EMOJI[type]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
 
       {/* ── Bottom-left: @username + caption ─────────────────────────── */}
       <View
@@ -309,8 +600,30 @@ function ReelItemBase({
         ) : null}
       </View>
 
-    </View>
+    </Animated.View>
   );
+}
+
+// ── ReactionIcon ──────────────────────────────────────────────────────────
+// Renders the icon inside the heart RailButton based on the viewer's
+// current reaction.
+//
+//   • null  → outline Heart (white)
+//   • 'love' → filled red Heart (matches the floating double-tap heart so
+//             the two pieces of UI feel like the same thing)
+//   • any other reaction → emoji at heart-icon size
+//
+// Using emoji for non-love reactions sidesteps the fact that lucide-react
+// doesn't ship love/haha/wow/sad/angry icons that match its visual style.
+
+function ReactionIcon({ reaction }: { reaction: ReactionType | null }) {
+  if (reaction === null) {
+    return <Heart size={32} color="#fff" fill="transparent" />;
+  }
+  if (reaction === 'love') {
+    return <Heart size={32} color="#ff2d55" fill="#ff2d55" />;
+  }
+  return <Text style={styles.reactionIconEmoji}>{REACTION_EMOJI[reaction]}</Text>;
 }
 
 // ── RailButton ────────────────────────────────────────────────────────────
@@ -319,15 +632,21 @@ function RailButton({
   icon,
   label,
   onPress,
+  onLongPress,
 }: {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
+  onLongPress?: () => void;
 }) {
   return (
     <TouchableOpacity
       activeOpacity={0.7}
       onPress={onPress}
+      onLongPress={onLongPress}
+      // 280ms feels snappier than RN's 500ms default but is still safe
+      // against accidental long-presses while scrolling.
+      delayLongPress={280}
       style={styles.railBtn}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
@@ -346,14 +665,14 @@ function MusicDisc({
   avatarUrl: string;
   isSpinning: boolean;
 }) {
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const rotateAnim = useRef(new RNAnimated.Value(0)).current;
+  const loopRef = useRef<RNAnimated.CompositeAnimation | null>(null);
 
   useEffect(() => {
     if (isSpinning) {
       loopRef.current?.stop();
-      loopRef.current = Animated.loop(
-        Animated.timing(rotateAnim, {
+      loopRef.current = RNAnimated.loop(
+        RNAnimated.timing(rotateAnim, {
           toValue: 1,
           duration: 3600,
           easing: Easing.linear,
@@ -379,12 +698,12 @@ function MusicDisc({
   });
 
   return (
-    <Animated.View style={[styles.musicDisc, { transform: [{ rotate: spin }] }]}>
+    <RNAnimated.View style={[styles.musicDisc, { transform: [{ rotate: spin }] }]}>
       <View style={styles.musicDiscRing}>
         <Image source={{ uri: avatarUrl }} style={styles.musicDiscAvatar} />
         <View style={styles.musicDiscHole} />
       </View>
-    </Animated.View>
+    </RNAnimated.View>
   );
 }
 
@@ -428,6 +747,64 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: 'rgba(255,255,255,0.8)',
+  },
+
+  // Floating double-tap heart — centered on the reel
+  floatingHeart: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingHeartItem: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Reaction picker (long-press popover)
+  reactionPicker: {
+    position: 'absolute',
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(28,28,30,0.92)',
+    borderRadius: 28,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    // Soft shadow to lift off the video
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  reactionPickerItem: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 2,
+  },
+  reactionPickerItemActive: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  reactionPickerEmoji: {
+    fontSize: 26,
+    // Counter-acting font baseline so the emoji sits visually centered
+    lineHeight: 30,
+  },
+
+  // Emoji inside the heart RailButton (when myReaction is non-love)
+  reactionIconEmoji: {
+    fontSize: 30,
+    lineHeight: 36,
   },
 
   // Mute button — top-right corner
@@ -587,6 +964,8 @@ export const ReelItem = memo(ReelItemBase, (prev, next) => {
     prev.isActive === next.isActive &&
     prev.shouldMount === next.shouldMount &&
     prev.isMuted === next.isMuted &&
-    prev.height === next.height
+    prev.height === next.height &&
+    prev.scrollY === next.scrollY &&
+    prev.index === next.index
   );
 });

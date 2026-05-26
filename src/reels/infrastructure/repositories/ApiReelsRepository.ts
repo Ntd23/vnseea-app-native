@@ -7,6 +7,7 @@ import type {
   ReelsRepository,
 } from '../../domain/repositories/ReelsRepository';
 import type {
+  ReactionType,
   ReelCaptionSuggestion,
   ReelCaptionSuggestionKind,
   ReelComment,
@@ -16,6 +17,7 @@ import type {
   ReelsItem,
   ReelsPage,
 } from '../../domain/types/reels.types';
+import { reelsReactionsStorage } from '../storage/reelsReactionsStorage';
 
 type NewPostResponse = {
   api_status: number | string;
@@ -141,41 +143,206 @@ function cleanCaption(raw: string): string {
     .trim();
 }
 
+// ── Wire format mapping ────────────────────────────────────────────────
+//
+// THIS IS THE PIECE THAT MAKES REACTIONS ACTUALLY WORK.
+//
+// WoWonder's PHP backend keys `$wo['reactions_types']` by the numeric `id`
+// column from `Wo_Reactions_Types` (1=Like, 2=Love, 3=Haha, 4=Wow, 5=Sad,
+// 6=Angry), NOT by the reaction name. The post-actions endpoint then does:
+//
+//   in_array($_POST['reaction'], array_keys($wo['reactions_types']))
+//
+// which means it only accepts '1'..'6' — sending `reaction=love` silently
+// fails with "reaction missing" (we confirmed this by inspecting WoWonder's
+// own web client at script.js:4489 where it sends `name: '1'..'6'`).
+//
+// We keep the domain layer talking in human-friendly strings ('love',
+// 'haha', …) and convert here, right at the wire boundary.
+const REACTION_TO_WIRE: Record<ReactionType, string> = {
+  like: '1',
+  love: '2',
+  haha: '3',
+  wow: '4',
+  sad: '5',
+  angry: '6',
+};
+
+// Reverse lookup for parsing what the server sends back. Keyed by string
+// so we can do `WIRE_TO_REACTION[String(value)]` regardless of whether the
+// JSON came back as number or string.
+const WIRE_TO_REACTION: Record<string, ReactionType> = {
+  '1': 'like',
+  '2': 'love',
+  '3': 'haha',
+  '4': 'wow',
+  '5': 'sad',
+  '6': 'angry',
+  // Also accept the lowercase name in case some endpoint normalizes
+  // before responding (defensive — wire format IS numeric, but we've
+  // seen older WoWonder builds occasionally pass the name through).
+  like: 'like',
+  love: 'love',
+  haha: 'haha',
+  wow: 'wow',
+  sad: 'sad',
+  angry: 'angry',
+};
+
+/**
+ * Pull the viewer's current reaction (if any) out of a raw post.
+ *
+ * WoWonder's posts endpoint embeds reaction state inside a `reaction`
+ * object that looks like:
+ *   { '1': 1, '2': 1, is_reacted: true, type: '2', count: 12 }
+ *
+ * The `type` field is the wire-format id (string '1'..'6') because
+ * Wo_AddReactions stored the id directly into Wo_Reactions.reaction.
+ * We translate it to our domain ReactionType through WIRE_TO_REACTION.
+ *
+ * Any non-canonical value (custom reactions an admin added in the
+ * admin panel) is coerced to `null` so the UI doesn't break.
+ */
+function extractMyReaction(raw: Record<string, unknown>): ReactionType | null {
+  const reaction = raw.reaction;
+  if (!reaction || typeof reaction !== 'object') return null;
+  const reactionObj = reaction as Record<string, unknown>;
+  // `is_reacted` may be boolean or "1"/"0" string depending on PHP json mode
+  const reacted =
+    reactionObj.is_reacted === true ||
+    reactionObj.is_reacted === 'true' ||
+    reactionObj.is_reacted === 1 ||
+    reactionObj.is_reacted === '1';
+  if (!reacted) return null;
+  const rawType = String(reactionObj.type ?? '').trim();
+  return WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()] ?? null;
+}
+
 function mapReel(raw: Record<string, unknown>): ReelsItem {
   const publisherRaw =
     (raw.publisher as Record<string, unknown> | undefined) ??
     (raw.user_data as Record<string, unknown> | undefined) ??
     undefined;
 
+  const postId = readString(raw, 'id', 'post_id');
+
+  // Prefer the backend's reaction state when present. On installs where
+  // `second_post_button != 'reaction'` the backend omits the field entirely
+  // even though the DB row exists — fall back to the local cache so the
+  // viewer's previous tap is restored after reload / app restart.
+  const sessionUserId = sessionStorage.getSession()?.userId;
+  const apiReaction = extractMyReaction(raw);
+  const cachedReaction = reelsReactionsStorage.get(sessionUserId, postId);
+  const myReaction = apiReaction ?? cachedReaction;
+
+  // ── likeCount reconciliation ─────────────────────────────────────────
+  // WoWonder has TWO separate counter tables and which one shows up in
+  // `postLikes` depends on admin config:
+  //
+  //   second_post_button = 'reaction'  → postLikes = COUNT(*) Wo_Reactions
+  //   second_post_button = anything else → postLikes = COUNT(*) Wo_Likes
+  //
+  // On THIS install the second branch is in effect, so `postLikes` only
+  // reflects people who tapped the simple Like button — NOT people who
+  // tapped a reaction emoji. The post object also doesn't carry a
+  // `reaction.count`, so we have no way to learn the true reaction total
+  // without an extra endpoint call.
+  //
+  // The minimum that keeps the UI consistent: if the viewer's heart is
+  // visibly red (they have a reaction), the count should include that one
+  // reaction. So we add +1 whenever we know about a viewer reaction that
+  // the server's postLikes can't have counted.
+  const apiLikeCount = readNumber(raw, 'postLikes', 'likes', 'likeCount');
+  const reactionObj = raw.reaction as Record<string, unknown> | undefined;
+  const apiReactionCount =
+    reactionObj && typeof reactionObj === 'object'
+      ? Number((reactionObj as { count?: unknown }).count ?? NaN)
+      : NaN;
+
+  let likeCount: number;
+  if (Number.isFinite(apiReactionCount) && apiReactionCount > 0) {
+    // Install IS configured with reactions — server gave us a real total.
+    likeCount = apiReactionCount;
+  } else if (myReaction !== null && apiReaction === null) {
+    // Viewer has a cached reaction the server didn't count. Bump by 1 so
+    // the visible heart + visible number agree.
+    likeCount = apiLikeCount + 1;
+  } else {
+    likeCount = apiLikeCount;
+  }
+
   return {
-    id: readString(raw, 'id', 'post_id'),
+    id: postId,
     videoUrl: readString(raw, 'postFile') || undefined,
     thumbnailUrl: readString(raw, 'postFileThumb') || undefined,
     caption: cleanCaption(readString(raw, 'postText')) || undefined,
     privacy: readNumber(raw, 'postPrivacy'),
     postedAt: readNumber(raw, 'time') || undefined,
     publisher: mapPublisher(publisherRaw),
-    likeCount: readNumber(raw, 'postLikes', 'likes', 'likeCount'),
+    likeCount,
     commentCount: readNumber(raw, 'post_comments', 'commentCount'),
     viewCount: readNumber(raw, 'videoViews'),
-    isLiked: readBool(raw, 'isLiked', 'postReacted'),
+    // Treat "user has any reaction" as liked, falling back to the
+    // legacy boolean for installs that only have simple likes.
+    isLiked:
+      myReaction !== null || readBool(raw, 'isLiked', 'postReacted'),
     isSaved: readBool(raw, 'isSaved'),
+    myReaction,
   };
 }
 
 function mapComment(raw: Record<string, unknown>): ReelComment {
   const publisherRaw =
     (raw.publisher as Record<string, unknown> | undefined) ?? undefined;
+  // `c_file` is the image-attachment column. comments.php already pipes it
+  // through `Wo_GetMedia`, so by the time it lands here it's a full URL
+  // (or empty string if no image). Treat empty as no attachment.
+  const imageUrl = readString(raw, 'c_file');
+  const commentId = readString(raw, 'id', 'comment_id');
+
+  // Reaction state. Same logic as for posts: prefer the backend's
+  // `reaction.type` when it's there, fall back to the local MMKV cache so
+  // a previous tap survives reload on installs where the backend doesn't
+  // include the reaction field.
+  const sessionUserId = sessionStorage.getSession()?.userId;
+  const apiReaction = extractMyReaction(raw);
+  const cachedReaction = reelsReactionsStorage.getComment(
+    sessionUserId,
+    commentId,
+  );
+  const myReaction = apiReaction ?? cachedReaction;
+
+  // Reconcile like count the same way we do for posts: if the user has a
+  // cached reaction the server's `comment_likes` (which only counts the
+  // legacy comment_likes table) won't reflect, bump by 1 so the UI is
+  // consistent.
+  const apiLikeCount = readNumber(raw, 'comment_likes', 'likes', 'likeCount');
+  const reactionObj = raw.reaction as Record<string, unknown> | undefined;
+  const apiReactionCount =
+    reactionObj && typeof reactionObj === 'object'
+      ? Number((reactionObj as { count?: unknown }).count ?? NaN)
+      : NaN;
+  let likeCount: number;
+  if (Number.isFinite(apiReactionCount) && apiReactionCount > 0) {
+    likeCount = apiReactionCount;
+  } else if (myReaction !== null && apiReaction === null) {
+    likeCount = apiLikeCount + 1;
+  } else {
+    likeCount = apiLikeCount;
+  }
+
   return {
-    id: readString(raw, 'id', 'comment_id'),
+    id: commentId,
     text: cleanCaption(readString(raw, 'text', 'comment_text')),
     postedAt: readNumber(raw, 'time') || undefined,
     publisher: mapPublisher(publisherRaw),
-    likeCount: readNumber(raw, 'comment_likes', 'likes', 'likeCount'),
+    likeCount,
     replyCount: readNumber(raw, 'replies', 'replies_count', 'replyCount'),
-    isLiked: readBool(raw, 'is_comment_liked', 'isLiked'),
+    isLiked: myReaction !== null || readBool(raw, 'is_comment_liked', 'isLiked'),
+    myReaction,
     owner: readBool(raw, 'onwer', 'owner'),
     postOwner: readBool(raw, 'post_onwer', 'postOwner'),
+    imageUrl: imageUrl || undefined,
   };
 }
 
@@ -262,41 +429,43 @@ async function fetchReelsPage(options: FetchReelsOptions = {}): Promise<ReelsPag
   const cursor = options.cursor ?? null;
 
   // ── Endpoint selection ────────────────────────────────────────────────
-  // The v2 /api/posts endpoint has TWO problems we have to design around
-  // without touching PHP:
   //
-  //   1. `get_news_feed` applies a "follower filter" — only posts from
-  //      accounts the user follows (plus the user's own) make it back.
-  //      Whether the filter fires depends on the site's
-  //      $wo['config']['order_posts_by'] setting, so behaviour is
-  //      unpredictable across environments.
+  // PREVIOUSLY this method called `get_user_posts` with the session
+  // user_id, which meant the Reels tab only ever showed the viewer's
+  // OWN videos — no one else's. The user shipped that and immediately
+  // hit the "không có video người khác" bug.
   //
-  //   2. `Wo_GetPosts` always appends `AND is_reel = 0` to the SQL unless
-  //      the `is_reel` key is in the data array — and posts.php doesn't
-  //      forward that param. So reels uploaded via the dedicated web
-  //      Reels feature (is_reel=1) are SQL-filtered out and we have no
-  //      way to retrieve them.
+  // The correct endpoint for a TikTok-style cross-user video feed is
+  // WoWonder's `get_random_videos`:
   //
-  // To guarantee SOMETHING shows up, we default to `get_user_posts` with
-  // the current logged-in user id. This branch has no follower filter and
-  // returns the user's own uploads (which use is_reel=0 with
-  // postType='reel' — passing the SQL filter). If an explicit publisherId
-  // was passed in we honor it, otherwise we look the id up in MMKV.
-  const sessionUserId = sessionStorage.getSession()?.userId;
-  const targetUserId = options.publisherId ?? sessionUserId;
-
+  //   SELECT id FROM T_POSTS
+  //    WHERE postPrivacy = '0'                      ← PUBLIC ONLY
+  //      AND (postYoutube <> '' OR postVine <> ''
+  //           OR postFacebook <> '' OR postDailymotion <> ''
+  //           OR postVimeo <> '' OR postPlaytube <> ''
+  //           OR postFile LIKE '%_video%')          ← any video
+  //    ORDER BY id DESC LIMIT $limit
+  //
+  // No follow-graph filter, no `is_reel=0` filter (the type handler
+  // bypasses Wo_GetPosts entirely and goes straight to a rawQuery).
+  // Pagination is via `after_post_id` (rows with `id < cursor`).
+  //
+  // If `options.publisherId` is explicitly passed (e.g. "show only this
+  // user's videos" from a profile screen), we honour it via the
+  // `get_user_posts` branch instead.
   const payload: Record<string, unknown> = {
     post_type: 'video',
     limit,
   };
 
-  if (targetUserId) {
+  if (options.publisherId) {
+    // Profile-scoped fetch — caller wants ONE user's videos.
     payload.type = 'get_user_posts';
-    payload.id = targetUserId;
+    payload.id = options.publisherId;
   } else {
-    // No session id available — fall back to news feed (mostly useful for
-    // anonymous / logged-out browsing).
-    payload.type = 'get_news_feed';
+    // Default: site-wide public videos. This is what the Reels tab
+    // wants — discovery of everyone's content, just like TikTok.
+    payload.type = 'get_random_videos';
   }
 
   if (cursor) payload.after_post_id = cursor;
@@ -308,20 +477,15 @@ async function fetchReelsPage(options: FetchReelsOptions = {}): Promise<ReelsPag
 
   const rawList = response.data ?? [];
 
-  // Backend constraint we work around: Wo_GetPosts defaults to filtering
-  // out reels (`is_reel=0`) and posts.php doesn't expose an opt-in for the
-  // `is_reel` param. Without touching PHP, what comes back here is the set
-  // of *non-reel* video posts. That's still good enough for a "Reels"
-  // feed because:
-  //   • Any uploaded video file becomes a vertical playable card
-  //   • The user's own uploads (from CreateReelScreen) come through since
-  //     v2 new_post.php doesn't flip `is_reel=1` either
-  //   • YouTube/Vimeo embeds get dropped below because they have no postFile
+  // Backend constraint reminder: `Wo_GetPosts` (used by `get_user_posts`)
+  // appends `AND is_reel = 0` unless `is_reel` is in the data array, but
+  // `get_random_videos` bypasses Wo_GetPosts and runs its own rawQuery
+  // — so reels uploaded via the dedicated web Reels feature DO show up
+  // through this path now.
   //
-  // So we keep the filter simple: anything with a playable `postFile` URL
-  // is shown. The `postType==='reel'` check is intentionally NOT enforced
-  // here — that would empty the feed on installations where reels aren't
-  // tagged via postType.
+  // We still keep the client-side filter `Boolean(postFile)` because
+  // external embeds (YouTube/Vimeo/etc.) have no `postFile` and can't
+  // be played by `react-native-video`.
   const items = rawList
     .filter(raw => Boolean(readString(raw, 'postFile')))
     .map(mapReel)
@@ -335,6 +499,19 @@ async function fetchReelsPage(options: FetchReelsOptions = {}): Promise<ReelsPag
       .reduce((min, n) => (min === 0 || n < min ? n : min), 0);
     nextCursor = minRawId > 0 ? String(minRawId) : null;
   }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    '[reels] page →',
+    'type:',
+    payload.type,
+    'raw:',
+    rawList.length,
+    'playable:',
+    items.length,
+    'nextCursor:',
+    nextCursor,
+  );
 
   return { items, nextCursor };
 }
@@ -428,6 +605,64 @@ export function createReelsRepository(): ReelsRepository {
       return { isLiked, likeCount };
     },
 
+    async setReaction(postId: string, reaction: ReactionType | null) {
+      // ── WoWonder reaction contract ────────────────────────────────────
+      //
+      //   POST /api/post-actions
+      //     action  = 'reaction'
+      //     post_id = '<numeric post id>'
+      //     reaction = '<NUMERIC ID 1..6>'   ← critical: NOT 'love' / 'haha'
+      //
+      // Why numeric? Because the server checks
+      //   in_array($_POST['reaction'], array_keys($wo['reactions_types']))
+      // and `$wo['reactions_types']` is keyed by the `id` column of
+      // Wo_Reactions_Types, which is 1..6. Sending the human-readable name
+      // silently fails (api returns "reaction missing") — confirmed by
+      // looking at WoWonder's own web client (script.js:4489).
+      //
+      // Server semantics:
+      //   POST with `reaction=2`           → if user has no reaction: add 2.
+      //                                      if user has any other: swap to 2.
+      //                                      if user already has 2: deletes
+      //                                        then re-adds (no-op effectively).
+      //   POST without `reaction` param    → deletes current reaction (if any).
+      //                                      400 "reaction missing" if none.
+      //
+      // To CLEAR we must omit the param — passing the same type wouldn't
+      // clear, it would re-add. That's why our signature is
+      // `ReactionType | null` (null = omit).
+      const payload: Record<string, unknown> = {
+        action: 'reaction',
+        post_id: postId,
+      };
+      if (reaction !== null) {
+        payload.reaction = REACTION_TO_WIRE[reaction];
+      }
+
+      const response = await backendApi.post<{
+        api_status: number | string;
+        action?: string;
+        code?: number;
+      }>(apiRoutes.feed.postActions, payload);
+
+      // The response interceptor in client.ts already throws on non-200,
+      // but we double-check here so the cache-write below only happens on
+      // a confirmed success.
+      const ok = String(response.api_status) === '200';
+      if (!ok) {
+        throw new Error('Không gửi được biểu cảm. Vui lòng thử lại.');
+      }
+
+      // Persist the reaction to the per-user MMKV cache so a reload still
+      // shows it. This is the workaround for WoWonder NOT including the
+      // viewer's reaction in `Wo_GetPosts` responses unless the admin has
+      // set `second_post_button = 'reaction'` (see reelsReactionsStorage.ts).
+      const sessionUserId = sessionStorage.getSession()?.userId;
+      reelsReactionsStorage.set(sessionUserId, postId, reaction);
+
+      return { reaction };
+    },
+
     async toggleSave(postId: string) {
       const response = await backendApi.post<{
         api_status: number | string;
@@ -460,13 +695,169 @@ export function createReelsRepository(): ReelsRepository {
       return (response.data ?? []).map(mapComment);
     },
 
-    async addComment(postId, text) {
+    async addComment(postId, text, image) {
+      // ── Image branch ──────────────────────────────────────────────────
+      // When the user attached an image, switch from JSON POST to
+      // multipart/form-data so the backend sees the file under
+      // `$_FILES['image']` (see phtml/api/v2/endpoints/comments.php
+      // lines 54-65 — `Wo_ShareFile` reads the uploaded blob there).
+      // Text becomes optional in this path because PHP accepts comments
+      // that are image-only.
+      if (image) {
+        const response = await backendApi.multipart<{
+          api_status: number | string;
+          data?: Record<string, unknown>;
+        }>(apiRoutes.feed.comments, {
+          type: 'create',
+          post_id: postId,
+          // Send text only when non-empty so the PHP `!empty($_POST['text'])`
+          // check doesn't false-positive on an empty string.
+          ...(text ? { text } : {}),
+          image: {
+            uri: image.uri,
+            name: image.name,
+            type: image.type,
+          },
+        });
+        const raw = response.data ?? {};
+        return mapComment(raw);
+      }
+
+      // ── Text-only branch ──────────────────────────────────────────────
+      // Keeps the cheaper JSON POST when there's nothing to upload.
       const response = await backendApi.post<{
         api_status: number | string;
         data?: Record<string, unknown>;
       }>(apiRoutes.feed.comments, {
         type: 'create',
         post_id: postId,
+        text,
+      });
+      const raw = response.data ?? {};
+      return mapComment(raw);
+    },
+
+    async toggleCommentLike(commentId) {
+      // ── WoWonder comment-like contract ────────────────────────────────
+      //   POST { type: 'comment_like', comment_id }
+      //     → liked   → response = { api_status: 200, code: 1 }
+      //     → unliked → response = { api_status: 200, code: 0 }
+      //
+      // The endpoint does NOT return the updated like count, so the
+      // caller is expected to adjust ±1 client-side and re-fetch on next
+      // pagination if it needs the authoritative value.
+      const response = await backendApi.post<{
+        api_status: number | string;
+        code?: number;
+      }>(apiRoutes.feed.comments, {
+        type: 'comment_like',
+        comment_id: commentId,
+      });
+      const isLiked = Number(response.code) === 1;
+      return { isLiked };
+    },
+
+    async setCommentReaction(commentId, reaction) {
+      // ── WoWonder reaction_comment contract ────────────────────────────
+      //
+      //   POST { type: 'reaction_comment', comment_id, reaction: '<1-6>' }
+      //     → adds (or swaps to) the reaction
+      //   POST { type: 'reaction_comment', comment_id }  // no reaction
+      //     → if viewer had one: deletes it
+      //     → if viewer had none: 400 "reaction missing"
+      //
+      // Same numeric wire format as post reactions (see REACTION_TO_WIRE
+      // above). Sending 'love' instead of '2' silently fails because the
+      // server checks `in_array($_POST['reaction'], array_keys($wo['reactions_types']))`
+      // and the keys are integer ids.
+      const payload: Record<string, unknown> = {
+        type: 'reaction_comment',
+        comment_id: commentId,
+      };
+      if (reaction !== null) {
+        payload.reaction = REACTION_TO_WIRE[reaction];
+      }
+
+      const response = await backendApi.post<{
+        api_status: number | string;
+      }>(apiRoutes.feed.comments, payload);
+      const ok = String(response.api_status) === '200';
+      if (!ok) {
+        throw new Error('Không gửi được biểu cảm. Vui lòng thử lại.');
+      }
+
+      // Mirror to the per-user MMKV cache so a reload keeps the choice
+      // visible — backend doesn't return reaction state on installs where
+      // `second_post_button != 'reaction'` is configured.
+      const sessionUserId = sessionStorage.getSession()?.userId;
+      reelsReactionsStorage.setComment(sessionUserId, commentId, reaction);
+
+      return { reaction };
+    },
+
+    async deleteComment(commentId) {
+      // Server is permissive: it deletes whatever id you give it as long
+      // as you have access. We don't verify ownership client-side beyond
+      // hiding the button — the server will reject silently if you don't.
+      await backendApi.post(apiRoutes.feed.comments, {
+        type: 'delete',
+        comment_id: commentId,
+      });
+    },
+
+    async editComment(commentId, text) {
+      // Returns `{ api_status: 200, message: "comment successfully edited." }`
+      // — no fresh comment object, so the caller must update the local
+      // copy by hand with the text it just sent.
+      await backendApi.post(apiRoutes.feed.comments, {
+        type: 'edit',
+        comment_id: commentId,
+        text,
+      });
+    },
+
+    async fetchReplies(commentId, { limit = 20, offset = 0 } = {}) {
+      // Same cursor-style pagination as comments: `offset` is the highest
+      // reply id from the previous page (`AND id > offset ORDER BY id ASC`).
+      const response = await backendApi.post<{
+        api_status: number | string;
+        data?: Array<Record<string, unknown>>;
+      }>(apiRoutes.feed.comments, {
+        type: 'fetch_comments_reply',
+        comment_id: commentId,
+        limit,
+        offset,
+      });
+      return (response.data ?? []).map(mapComment);
+    },
+
+    async addReply(commentId, text, image) {
+      // Same dual-branch pattern as `addComment` above — multipart when
+      // there's an image to upload, JSON post otherwise.
+      if (image) {
+        const response = await backendApi.multipart<{
+          api_status: number | string;
+          data?: Record<string, unknown>;
+        }>(apiRoutes.feed.comments, {
+          type: 'create_reply',
+          comment_id: commentId,
+          ...(text ? { text } : {}),
+          image: {
+            uri: image.uri,
+            name: image.name,
+            type: image.type,
+          },
+        });
+        const raw = response.data ?? {};
+        return mapComment(raw);
+      }
+
+      const response = await backendApi.post<{
+        api_status: number | string;
+        data?: Record<string, unknown>;
+      }>(apiRoutes.feed.comments, {
+        type: 'create_reply',
+        comment_id: commentId,
         text,
       });
       const raw = response.data ?? {};

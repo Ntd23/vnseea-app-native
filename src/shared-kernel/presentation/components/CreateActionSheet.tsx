@@ -3,6 +3,7 @@ import React from 'react';
 import { Modal, Pressable, Text, TouchableOpacity, View } from 'react-native';
 import {
   CalendarDays,
+  CircleDot,
   FilePlus2,
   ImagePlus,
   PackagePlus,
@@ -25,7 +26,8 @@ type CreateAction = {
 };
 
 const actions: CreateAction[] = [
-  { label: 'Create Post', Icon: ImagePlus },
+  { label: 'Create Post', Icon: ImagePlus, route: ROUTES.CREATE_POST },
+  { label: 'Create Story', Icon: CircleDot, route: ROUTES.CREATE_STORY },
   { label: 'Create Ad', Icon: Pencil },
   { label: 'Create Event', Icon: CalendarDays, route: ROUTES.CREATE_EVENT },
   {

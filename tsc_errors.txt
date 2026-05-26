@@ -1,0 +1,17 @@
+﻿src/auth/infrastructure/repositories/ApiAuthRepository.ts(164,30): error TS2304: Cannot find name 'backendApi'.
+src/reels/presentation/screens/ReelsScreen.tsx(371,11): error TS2322: Type '(item: ReelsItem) => string' is not assignable to type '((item: unknown, index: number) => string) | SharedValue<((item: unknown, index: number) => string) | undefined> | undefined'.
+  Type '(item: ReelsItem) => string' is not assignable to type '(item: unknown, index: number) => string'.
+    Types of parameters 'item' and 'item' are incompatible.
+      Type 'unknown' is not assignable to type 'ReelsItem'.
+src/reels/presentation/screens/ReelsScreen.tsx(372,11): error TS2322: Type '({ item, index }: { item: ReelsItem; index: number; }) => React.JSX.Element' is not assignable to type 'ListRenderItem<unknown> | SharedValue<ListRenderItem<unknown> | null | undefined> | null | undefined'.
+  Type '({ item, index }: { item: ReelsItem; index: number; }) => React.JSX.Element' is not assignable to type 'ListRenderItem<unknown>'.
+    Types of parameters '__0' and 'info' are incompatible.
+      Type 'ListRenderItemInfo<unknown>' is not assignable to type '{ item: ReelsItem; index: number; }'.
+        Types of property 'item' are incompatible.
+          Type 'unknown' is not assignable to type 'ReelsItem'.
+src/reels/presentation/screens/ReelsScreen.tsx(373,11): error TS2322: Type '(_: ArrayLike<ReelsItem> | null | undefined, index: number) => { length: number; offset: number; index: number; }' is not assignable to type '((data: ArrayLike<unknown> | null | undefined, index: number) => { length: number; offset: number; index: number; }) | SharedValue<((data: ArrayLike<unknown> | null | undefined, index: number) => { ...; }) | undefined> | undefined'.
+  Type '(_: ArrayLike<ReelsItem> | null | undefined, index: number) => { length: number; offset: number; index: number; }' is not assignable to type '(data: ArrayLike<unknown> | null | undefined, index: number) => { length: number; offset: number; index: number; }'.
+    Types of parameters '_' and 'data' are incompatible.
+      Type 'ArrayLike<unknown> | null | undefined' is not assignable to type 'ArrayLike<ReelsItem> | null | undefined'.
+        Type 'ArrayLike<unknown>' is not assignable to type 'ArrayLike<ReelsItem>'.
+          Type 'unknown' is not assignable to type 'ReelsItem'.

@@ -46,6 +46,9 @@ export const ROUTES = {
   ADVERTISING: 'Advertising',
   CREATE_AD: 'CreateAd',
   CREATE_REEL: 'CreateReel',
+  CREATE_POST: 'CreatePost',
+  CREATE_STORY: 'CreateStory',
+  STORY_VIEWER: 'StoryViewer',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];

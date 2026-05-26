@@ -1,5 +1,6 @@
 // Description: Defines typed navigation parameter lists shared across app navigators.
 import { ROUTES } from './constants/routes';
+import type { StoryItem } from '../stories/domain/types/stories.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -51,6 +52,18 @@ export type RootStackParamList = {
   [ROUTES.ADVERTISING]: undefined;
   [ROUTES.CREATE_AD]: undefined;
   [ROUTES.CREATE_REEL]: undefined;
+  [ROUTES.CREATE_POST]: undefined;
+  [ROUTES.CREATE_STORY]: undefined;
+  /**
+   * Pass the full stories list + the user-index to open at. The viewer
+   * uses these as its initial state and manages segment progression
+   * locally. Stories are JSON-serialisable (just primitives + URLs) so
+   * RN Navigation accepts them as params without complaint.
+   */
+  [ROUTES.STORY_VIEWER]: {
+    stories: StoryItem[];
+    initialUserIndex: number;
+  };
 };
 
 export type MainTabRouteName = keyof MainTabParamList;

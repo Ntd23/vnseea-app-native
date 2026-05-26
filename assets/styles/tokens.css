@@ -245,14 +245,14 @@
   font-family: var(--font-primary);
   font-size: var(--text-caption);
   font-weight: var(--weight-medium);
-  line-height: var(--leading-normal);
+  line-height: 16px;
   color: var(--text-primary);
 }
 .text-caption-secondary {
   font-family: var(--font-primary);
   font-size: var(--text-caption);
   font-weight: var(--weight-regular);
-  line-height: var(--leading-normal);
+  line-height: 16px;
   color: var(--text-secondary);
 }
 .text-label-primary {
