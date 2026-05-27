@@ -178,10 +178,21 @@ function SettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Profile Header Card */}
-        <ProfileHeaderCard
-          profile={profile}
-          onPress={() => navigation.navigate(ROUTES.PROFILE)}
-        />
+        {profile ? (
+          <ProfileHeaderCard
+            profile={profile}
+            onPress={() => navigation.navigate(ROUTES.PROFILE)}
+          />
+        ) : (
+          // Loading skeleton for profile card
+          <View className="surface-card flex-row items-center gap-4 px-5 py-4">
+            <View className="h-16 w-16 rounded-full bg-gray-200" />
+            <View className="flex-1">
+              <View className="h-5 w-32 rounded bg-gray-200 mb-2" />
+              <View className="h-4 w-24 rounded bg-gray-200" />
+            </View>
+          </View>
+        )}
 
         {/* Feature Grid */}
         <View className="mt-5">

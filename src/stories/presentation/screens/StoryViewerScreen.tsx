@@ -56,6 +56,7 @@ import { ChevronDown, MoreHorizontal, Repeat, ThumbsUp } from 'lucide-react-nati
 import type { RootStackParamList } from '../../../navigation/types';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
 import { storyDeletedEvents } from '../../application/events/storyDeletedEvents';
+import { storyReactedEvents } from '../../application/events/storyReactedEvents';
 import type { StoryItem } from '../../domain/types/stories.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 
@@ -83,16 +84,49 @@ function formatRelativeTime(timestamp?: number) {
 
 function StoryViewerScreen({ route }: Props) {
   const navigation = useNavigation<Nav>();
-  const { initialUserIndex } = route.params;
 
-  // We snapshot the stories list at mount so the viewer is unaffected by
-  // any rail updates that happen in the background (e.g. a refetch). The
-  // local copy also lets us mutate (delete, react) without prop drilling.
-  const [stories, setStories] = useState<StoryItem[]>(route.params.stories);
-  const [userIndex, setUserIndex] = useState(
-    // Clamp in case the caller passed an out-of-range index.
-    Math.max(0, Math.min(initialUserIndex, route.params.stories.length - 1)),
-  );
+  // Support BOTH: new API (stories array passed directly) AND old API
+  // (stories list + initialUserIndex). This keeps backwards compat while
+  // migrating to the cleaner "pass filtered stories" pattern.
+  const passedStories = Array.isArray(route.params?.stories)
+    ? route.params.stories
+    : undefined;
+
+  const [stories, setStories] = useState<StoryItem[]>(passedStories ?? []);
+
+  const userIndexRef = useRef<number>(0);
+
+  // If we got an explicit index from the caller, use it (but clamp to bounds).
+  if (route.params?.initialUserIndex !== undefined) {
+    const clamped = Math.max(
+      0,
+      Math.min(
+        route.params.initialUserIndex,
+        stories.length - 1
+      )
+    );
+    userIndexRef.current = clamped;
+  } else if (passedStories && passedStories.length > 0) {
+    userIndexRef.current = 0;
+  }
+
+  const [userIndex, setUserIndex] = useState(userIndexRef.current);
+
+  // Debug log for testing
+  useEffect(() => {
+    if (passedStories && passedStories.length > 0) {
+      console.log(
+        '[StoryViewer] Raw passed:',
+        passedStories.length,
+        'stories:',
+        stories.length
+      );
+      console.log(
+        '[StoryViewer] Story segments:',
+        stories.map(s => `${s.publisher.name} (${s.media.length} segments)`)
+      );
+    }
+  }, [stories, passedStories]);
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   // Set by VideoPlayer's onLoad — null while waiting for metadata so we
@@ -205,8 +239,9 @@ function StoryViewerScreen({ route }: Props) {
   // useStoriesViewModel uses in the rail.
   const onReact = useCallback(
     async (reaction: ReactionType) => {
-      if (!currentStory) return;
-      const storyId = currentStory.id;
+      if (!currentStory || !currentSegment) return;
+      const activeStoryId = currentStory.id;
+      const targetStoryId = currentSegment.storyId || currentStory.id;
       const prev = currentStory.myReaction;
       const willClear = prev === reaction;
       const targetReaction = willClear ? null : reaction;
@@ -215,7 +250,7 @@ function StoryViewerScreen({ route }: Props) {
       // Optimistic update — mutate local stories array
       setStories(arr =>
         arr.map(s => {
-          if (s.id !== storyId) return s;
+          if (s.id !== activeStoryId) return s;
           const wasReacted = s.myReaction !== null;
           const willBeReacted = targetReaction !== null;
           const delta = Number(willBeReacted) - Number(wasReacted);
@@ -227,25 +262,29 @@ function StoryViewerScreen({ route }: Props) {
         }),
       );
 
+      // Notify other parts of the app (like home rail FeedScreen)
+      storyReactedEvents.emit(targetStoryId, targetReaction);
+
       try {
         if (prev && prev !== reaction) {
           // Swap: clear old, then add new.
-          await repository.reactStory(storyId, prev);
-          await repository.reactStory(storyId, reaction);
+          await repository.reactStory(targetStoryId, prev);
+          await repository.reactStory(targetStoryId, reaction);
         } else {
-          await repository.reactStory(storyId, reaction);
+          await repository.reactStory(targetStoryId, reaction);
         }
       } catch {
         // Rollback on failure.
-        setStories(arr => arr.map(s => (s.id === storyId ? snapshot : s)));
+        setStories(arr => arr.map(s => (s.id === activeStoryId ? snapshot : s)));
+        storyReactedEvents.emit(targetStoryId, prev);
       }
     },
-    [currentStory],
+    [currentStory, currentSegment],
   );
 
   // ── Delete (owner only) ────────────────────────────────────────────
   const onDelete = useCallback(() => {
-    if (!currentStory || !currentStory.isOwner) return;
+    if (!currentStory || !currentStory.isOwner || !currentSegment) return;
     Alert.alert(
       'Xoá tin?',
       'Tin sẽ bị xoá vĩnh viễn.',
@@ -255,7 +294,7 @@ function StoryViewerScreen({ route }: Props) {
           text: 'Xoá',
           style: 'destructive',
           onPress: async () => {
-            const storyId = currentStory.id;
+            const storyId = currentSegment.storyId || currentStory.id;
             try {
               await repository.deleteStory(storyId);
               // Tell the rail to drop its copy so it doesn't reappear
@@ -275,7 +314,7 @@ function StoryViewerScreen({ route }: Props) {
       ],
       { cancelable: true },
     );
-  }, [currentStory, close]);
+  }, [currentStory, currentSegment, close]);
 
   const handleMorePress = useCallback(() => {
     setIsPaused(true);
@@ -332,6 +371,7 @@ function StoryViewerScreen({ route }: Props) {
       <View style={styles.mediaWrap}>
         {currentSegment.type === 'image' ? (
           <Image
+            key={`img-${currentStory.id}-${segmentIndex}`}
             source={{ uri: currentSegment.url }}
             style={styles.media}
             resizeMode="contain"
@@ -341,7 +381,7 @@ function StoryViewerScreen({ route }: Props) {
             // `key` ensures the player remounts when we move to a new
             // video segment — otherwise the old VideoPlayer instance
             // would keep playing the previous URL until React reconciles.
-            key={`${currentStory.id}-${segmentIndex}`}
+            key={`vid-${currentStory.id}-${segmentIndex}`}
             source={{ uri: currentSegment.url }}
             style={styles.media}
             paused={isPaused}
@@ -389,13 +429,13 @@ function StoryViewerScreen({ route }: Props) {
 
       {/* ── Top overlay: progress bars + header + tags ──────────────────── */}
       <View style={styles.topOverlay} pointerEvents="box-none">
-        {/* Progress bars — one per segment */}
+        {/* Progress bars — one per segment (Facebook style: each segment has its own bar) */}
         <View style={styles.progressRow}>
           {segments.map((_, idx) => {
             const isPast = idx < segmentIndex;
             const isActive = idx === segmentIndex;
             return (
-              <View key={idx} style={styles.progressTrack}>
+              <View key={`${segmentIndex}-${idx}`} style={styles.progressTrack}>
                 {isPast ? (
                   // Past segments — fully filled
                   <View style={[styles.progressFill, { width: '100%' }]} />
@@ -439,7 +479,7 @@ function StoryViewerScreen({ route }: Props) {
             <Text style={styles.headerName} numberOfLines={1}>
               {currentStory.publisher.name}{' '}
               <Text style={styles.headerTime}>
-                {formatRelativeTime(currentStory.postedAt)}
+                {formatRelativeTime(currentSegment.postedAt ?? currentStory.postedAt)}
               </Text>
             </Text>
           </View>
@@ -546,11 +586,28 @@ function StoryViewerScreen({ route }: Props) {
                     ]}
                   >
                     {type === 'like' ? (
-                      <View style={styles.fbLikeCircle}>
-                        <ThumbsUp size={15} color="#fff" fill="#fff" />
+                      <View style={[
+                        styles.fbLikeCircle,
+                        { 
+                          backgroundColor: isActive ? '#1877F2' : '#2A2B2C',
+                          opacity: isActive ? 1 : 0.6 
+                        }
+                      ]}>
+                        <ThumbsUp 
+                          size={15} 
+                          color={isActive ? '#fff' : 'rgba(255, 255, 255, 0.7)'} 
+                          fill={isActive ? '#fff' : 'none'} 
+                        />
                       </View>
                     ) : (
-                      <Text style={styles.quickReactionEmoji}>{emoji}</Text>
+                      <Text 
+                        style={[
+                          styles.quickReactionEmoji,
+                          { opacity: isActive ? 1 : 0.6 }
+                        ]}
+                      >
+                        {emoji}
+                      </Text>
                     )}
                   </TouchableOpacity>
                 );

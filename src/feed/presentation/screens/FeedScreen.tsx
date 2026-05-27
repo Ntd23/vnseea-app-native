@@ -100,6 +100,8 @@ import {
   storyDeletedEvents,
   useStoriesViewModel,
 } from '../../../stories';
+import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
+import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -257,7 +259,7 @@ function FilterTabs() {
   );
 }
 
-function ComposerCard({ onPress }: { onPress: () => void }) {
+function ComposerCard({ onPress, avatarUrl }: { onPress: () => void; avatarUrl?: string }) {
   // The whole card is a single nav entry-point to CreatePostScreen.
   // We expose `onPress` separately on the text bubble AND on each
   // action button so the user can tap anywhere natural — Facebook lets
@@ -265,7 +267,7 @@ function ComposerCard({ onPress }: { onPress: () => void }) {
   return (
     <View className="surface-card mx-4 mb-6 p-4">
       <View className="mb-3 flex-row items-center border-b border-slate-200 pb-3">
-        <Avatar uri={images.me} />
+        <Avatar uri={avatarUrl ?? images.me} />
         <TouchableOpacity
           className="surface-muted ml-3 min-h-[42px] flex-1 justify-center rounded-full px-4"
           activeOpacity={0.8}
@@ -304,7 +306,9 @@ function ComposerCard({ onPress }: { onPress: () => void }) {
   );
 }
 
-function StoriesRow() {
+// Open the full-screen viewer at a specific user index. We pass the
+// full stories array plus the index, so the viewer knows where to start.
+function StoriesRow({ avatarUrl }: { avatarUrl?: string }) {
   const navigation = useNavigation<FeedNav>();
   const vm = useStoriesViewModel();
 
@@ -329,14 +333,12 @@ function StoriesRow() {
     navigation.navigate(ROUTES.CREATE_STORY);
   }, [navigation]);
 
-  // Open the full-screen viewer at a specific user-index. We pass the
-  // full stories array so the viewer can swipe between users without
-  // refetching — the network call already happened here.
-  const goToViewer = useCallback(
-    (userIndex: number) => {
+  const goToViewerForGroup = useCallback(
+    (index: number) => {
+      console.log('[FeedScreen] goToViewerForGroup user index:', index, 'total stories:', vm.stories.length);
       navigation.navigate(ROUTES.STORY_VIEWER, {
         stories: vm.stories,
-        initialUserIndex: userIndex,
+        initialUserIndex: index,
       });
     },
     [navigation, vm.stories],
@@ -363,7 +365,7 @@ function StoriesRow() {
           className="surface-card h-48 w-28 overflow-hidden"
         >
           <Image
-            source={{ uri: images.me }}
+            source={{ uri: avatarUrl ?? images.me }}
             className="h-32 w-full"
             resizeMode="cover"
           />
@@ -375,22 +377,22 @@ function StoriesRow() {
           </View>
         </TouchableOpacity>
 
-        {/* Real story bubbles. We dim already-seen entries to mirror the
-            FB/IG "ring goes grey after viewed" treatment. */}
+        {/* Grouped story bubbles (Facebook-style):
+            Multiple stories from same user → one avatar + count badge */}
         {vm.stories.map((story, index) => {
           const hasUnseen = story.hasUnseen && !story.isViewed;
+
           return (
             <TouchableOpacity
-              key={story.id}
+              key={story.publisher.userId}
               activeOpacity={0.85}
-              onPress={() => goToViewer(index)}
+              onPress={() => goToViewerForGroup(index)}
               className={`h-48 w-28 overflow-hidden rounded-2xl ${
                 hasUnseen ? '' : 'opacity-80'
               }`}
             >
               {/* Cover image — thumbnail when available, falls back to
-                  the publisher's avatar (PHP does the same fallback when
-                  the story has no media thumb). */}
+                  the publisher's avatar. */}
               <Image
                 source={{
                   uri: story.thumbnailUrl ?? story.publisher.avatarUrl,
@@ -399,6 +401,7 @@ function StoriesRow() {
                 resizeMode="cover"
               />
               <View className="absolute inset-0 bg-black/20" />
+
               {/* Avatar bubble overlay (top-left), ring colored by
                   unseen-state — blue when unseen, grey once viewed. */}
               <View
@@ -411,7 +414,17 @@ function StoriesRow() {
                   className="h-full w-full rounded-full"
                   resizeMode="cover"
                 />
+
+                {/* Count badge (only show when > 1 story) */}
+                {story.media.length > 1 && (
+                  <View className="absolute -bottom-2 -right-2 flex h-5 items-center justify-center rounded-full bg-blue-600 px-1">
+                    <Text className="text-[10px] font-bold text-white">
+                      {story.media.length}
+                    </Text>
+                  </View>
+                )}
               </View>
+
               <Text
                 className="absolute bottom-2 left-2 right-2 text-caption-primary text-white"
                 numberOfLines={1}
@@ -426,11 +439,14 @@ function StoriesRow() {
   );
 }
 
-function GreetingCard() {
+
+function GreetingCard({ userName }: { userName?: string }) {
+  const displayName = userName || 'Nguyễn Dũng';
+
   return (
     <View className="preview-panel mx-4 mb-6 flex-row items-center justify-between p-4">
       <View className="flex-1 pr-3">
-        <Text className="text-heading">Chào buổi tối, Nguyễn Dũng</Text>
+        <Text className="text-heading">Chào buổi tối, {displayName}</Text>
         <Text className="mt-1 text-body-secondary">
           Buổi tối là cách cuộc sống nói rằng bạn đang gần hơn với giấc mơ của
           mình.
@@ -464,6 +480,7 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   onReact,
   onOpenPicker,
   onCommentTap,
+  onShare,
   isActive,
   onReportLayout,
   gestureX,
@@ -474,6 +491,7 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   onReact: (postId: string, reaction: ReactionType) => void;
   onOpenPicker: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
+  onShare?: (post: FeedVideoPost) => void;
   isActive: boolean;
   onReportLayout: (id: string, y: number, height: number) => void;
   gestureX: any;
@@ -670,6 +688,8 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           onLikeTap={handleLikeTap}
           onLikeLongPress={handleLikeLongPress}
           onCommentTap={() => onCommentTap(post.id)}
+          onShare={onShare}
+          post={post}
           gestureX={gestureX}
           gestureY={gestureY}
           gestureActive={gestureActive}
@@ -1117,6 +1137,8 @@ function VideoPostActions({
   onLikeTap,
   onLikeLongPress,
   onCommentTap,
+  onShare,
+  post,
   gestureX,
   gestureY,
   gestureActive,
@@ -1126,6 +1148,8 @@ function VideoPostActions({
   onLikeTap: () => void;
   onLikeLongPress: () => void;
   onCommentTap: () => void;
+  onShare?: (post: FeedVideoPost) => void;
+  post: FeedVideoPost;
   gestureX: any;
   gestureY: any;
   gestureActive: any;
@@ -1192,7 +1216,11 @@ function VideoPostActions({
         </Text>
       </TouchableOpacity>
 
-      <TouchableOpacity className="flex-row items-center" activeOpacity={0.75}>
+      <TouchableOpacity
+        className="flex-row items-center"
+        activeOpacity={0.75}
+        onPress={() => onShare?.(post)}
+      >
         <Share2 size={19} color="#64748B" />
         <Text style={{ marginLeft: 6, color: '#64748B', fontSize: 14 }}>
           Chia sẻ
@@ -1401,6 +1429,7 @@ function MergedFeed({
   onReact,
   onOpenPicker,
   onCommentTap,
+  onShare,
   onPhotoPress,
   activeVideoId,
   onReportLayout,
@@ -1415,6 +1444,7 @@ function MergedFeed({
   onReact: (postId: string, reaction: ReactionType) => void;
   onOpenPicker: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
+  onShare?: (post: FeedPost) => void;
   onPhotoPress: (post: FeedTextPost, photoIndex: number) => void;
   activeVideoId: string | null;
   onReportLayout: (id: string, y: number, height: number) => void;
@@ -1451,6 +1481,7 @@ function MergedFeed({
               onReact={onReact}
               onOpenPicker={onOpenPicker}
               onCommentTap={onCommentTap}
+              onShare={onShare}
               isActive={activeVideoId === post.id}
               onReportLayout={onReportLayout}
               gestureX={gestureX}
@@ -1468,6 +1499,7 @@ function MergedFeed({
               onOpenPicker={onOpenPicker}
               onCommentTap={onCommentTap}
               onPhotoPress={onPhotoPress}
+              onShare={onShare}
               gestureX={gestureX}
               gestureY={gestureY}
               gestureActive={gestureActive}
@@ -1533,6 +1565,7 @@ const TextPostCard = React.memo(function TextPostCard({
   onOpenPicker,
   onCommentTap,
   onPhotoPress,
+  onShare,
   gestureX,
   gestureY,
   gestureActive,
@@ -1542,6 +1575,7 @@ const TextPostCard = React.memo(function TextPostCard({
   onOpenPicker: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
   onPhotoPress: (post: FeedTextPost, photoIndex: number) => void;
+  onShare?: (post: FeedTextPost) => void;
   // Reanimated shared values for the FB-style drag-to-pick reaction
   // picker. Threaded through `VideoPostActions` so the long-press +
   // pan gesture can update them and `ReactionIcon` can react to the
@@ -1627,6 +1661,8 @@ const TextPostCard = React.memo(function TextPostCard({
           onLikeTap={handleLikeTap}
           onLikeLongPress={handleLikeLongPress}
           onCommentTap={() => onCommentTap(post.id)}
+          onShare={onShare}
+          post={post}
           gestureX={gestureX}
           gestureY={gestureY}
           gestureActive={gestureActive}
@@ -1642,6 +1678,7 @@ const TextPostCard = React.memo(function TextPostCard({
 function FeedScreen() {
   const navigation = useNavigation<FeedNav>();
   const vm = useFeedViewModel();
+  const userVm = useCurrentUserViewModel();
 
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -1766,6 +1803,11 @@ function FeedScreen() {
     y: number;
   } | null>(null);
 
+  // Share action sheet state
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(undefined);
+  const [sharingStory, setSharingStory] = useState<any | undefined>(undefined);
+
   const handleOpenPicker = useCallback(
     (postId: string, x: number, y: number) => {
       setPickerAnchor({ postId, x, y });
@@ -1781,6 +1823,25 @@ function FeedScreen() {
     },
     [pickerAnchor, vm],
   );
+
+  // Share handlers
+  const handleOpenSharePost = useCallback((post: FeedPost) => {
+    setSharingPost(post);
+    setShareModalVisible(true);
+  }, []);
+
+  const handleCloseShareModal = useCallback(() => {
+    setShareModalVisible(false);
+    setTimeout(() => {
+      setSharingPost(undefined);
+      setSharingStory(undefined);
+    }, 300); // Wait for animation
+  }, []);
+
+  const handleShareCopied = useCallback(() => {
+    // Show toast or feedback when link is copied
+    console.log('[Feed] Link copied to clipboard');
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -1803,9 +1864,9 @@ function FeedScreen() {
           }
         >
           <FilterTabs />
-          <ComposerCard onPress={goToCreatePost} />
-          <StoriesRow />
-          <GreetingCard />
+          <ComposerCard onPress={goToCreatePost} avatarUrl={userVm.user?.avatar} />
+          <StoriesRow avatarUrl={userVm.user?.avatar} />
+          <GreetingCard userName={userVm.user?.name} />
           <MergedFeed
             posts={vm.posts}
             isLoading={vm.isLoading}
@@ -1813,6 +1874,7 @@ function FeedScreen() {
             onReact={vm.toggleReaction}
             onOpenPicker={handleOpenPicker}
             onCommentTap={commentVm.openComments}
+            onShare={handleOpenSharePost}
             onPhotoPress={handlePhotoPress}
             activeVideoId={activeVideoId}
             onReportLayout={handleReportLayout}
@@ -1869,6 +1931,13 @@ function FeedScreen() {
         onCancelReply={commentVm.cancelReply}
         onRetryFailedComment={commentVm.retryFailedComment}
         onDeleteFailedComment={commentVm.deleteFailedComment}
+      />
+      {/* ── Share Action Sheet ── */}
+      <ShareActionSheet
+        visible={shareModalVisible}
+        onClose={handleCloseShareModal}
+        post={sharingPost}
+        onCopied={handleShareCopied}
       />
     </SafeAreaView>
     </GestureHandlerRootView>

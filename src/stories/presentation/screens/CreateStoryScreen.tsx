@@ -26,7 +26,7 @@
 // On submit success we emit through `storyCreatedEvents` so the FeedScreen
 // can prepend the new story to its rail (Phase 3 wires that listener).
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -47,7 +47,7 @@ import {
 } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Camera, ImagePlus, Trash2, Video as VideoIcon, X } from 'lucide-react-native';
+import { ImagePlus, Trash2, Video as VideoIcon, X } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useCreateStoryViewModel } from '../../application/view-models/useCreateStoryViewModel';
 import { storyCreatedEvents } from '../../application/events/storyCreatedEvents';
@@ -95,7 +95,6 @@ function CreateStoryScreen() {
       const profile = sessionStorage.getUserProfile();
       const sessionUserId = sessionStorage.getSession()?.userId;
       if (vm.media && result.storyId && sessionUserId) {
-        const now = Math.floor(Date.now() / 1000);
         const optimistic: StoryItem = {
           id: result.storyId,
           publisher: {
@@ -107,8 +106,8 @@ function CreateStoryScreen() {
           },
           title: vm.title.trim() || undefined,
           description: vm.description.trim() || undefined,
-          postedAt: now,
-          expiresAt: now + 60 * 60 * 24,
+          postedAt: Math.floor(Date.now() / 1000), // CRITICAL: Always use current timestamp
+          expiresAt: Math.floor(Date.now() / 1000) + 60 * 60 * 24,
           thumbnailUrl: vm.media.uri, // local URI — replaced on next fetch
           media: [
             {
