@@ -19,6 +19,7 @@ type AuthResponse = {
   user_platform?: string;
   membership?: boolean;
   message?: string;
+  user_data?: Record<string, unknown>;
 };
 
 type CurrentUserResponse = {
@@ -38,6 +39,16 @@ function mapAuthResponse(response: AuthResponse): AuthResult {
     };
 
     sessionStorage.setSession(session);
+
+    // Also save user profile data for quick access in Settings and other screens
+    if (response.user_data && typeof response.user_data === 'object') {
+      const userData = response.user_data as Record<string, unknown>;
+      sessionStorage.setUserProfile({
+        name: stringField(userData, 'name') || stringField(userData, 'first_name') || '',
+        username: stringField(userData, 'username') || '',
+        avatarUrl: stringField(userData, 'avatar') || '',
+      });
+    }
 
     return {
       status: 'authenticated',

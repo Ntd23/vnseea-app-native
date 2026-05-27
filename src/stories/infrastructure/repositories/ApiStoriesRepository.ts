@@ -416,6 +416,8 @@ export function createStoriesRepository(): StoriesRepository {
       // in `$_FILES['image']` while line 15 of v2 checks `$_FILES['file']`.
       // The title/description fields silently get dropped.
       const payload: Record<string, unknown> = {
+        // WoWonder API v2 endpoints typically require a `type` field in the body
+        type: 'create_story',
         file_type: draft.media.fileType,
         // ⚠ MUST be 'file' to satisfy v2 endpoint's $_FILES['file'] check.
         file: {
@@ -436,21 +438,23 @@ export function createStoriesRepository(): StoriesRepository {
         message?: string;
         story_id?: string | number;
         errors?: unknown;
+        status?: number | string;
+        error?: string;
       }>(apiRoutes.stories.create, payload, {
-        // Story videos can be larger than text-post photos — match the
-        // reels upload timeout (5 min) so a slow 3G doesn't ECONNABORTED
-        // a 30s clip.
         timeout: 5 * 60 * 1000,
       });
 
-      const ok = String(response.api_status) === '200';
+      const status = String(response.api_status ?? response.status ?? '');
+      const ok = status === '200' || status === '220';
+
       if (!ok) {
         const errMsg =
           (response.errors &&
             Array.isArray(response.errors) &&
             response.errors[0]) ||
           response.message ||
-          'Không đăng được tin. Vui lòng thử lại.';
+          response.error ||
+          `Status: ${status}`;
         throw new Error(String(errMsg));
       }
 

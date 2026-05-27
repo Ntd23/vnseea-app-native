@@ -42,6 +42,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  ToastAndroid,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -237,15 +238,46 @@ function StoryViewerScreen({ route }: Props) {
   // the same reaction twice removes it. So a SWAP (e.g. like → love)
   // is two API calls: clear-old then add-new. We mirror the same logic
   // useStoriesViewModel uses in the rail.
+
+  // Bounce animation for the reaction buttons
+  const reactionScale = useRef(new Animated.Value(1)).current;
+  const bounceReaction = useCallback(() => {
+    reactionScale.setValue(1.4);
+    Animated.spring(reactionScale, {
+      toValue: 1,
+      friction: 3,
+      tension: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [reactionScale]);
+
+  const showToast = useCallback((msg: string) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(msg, ToastAndroid.SHORT);
+    }
+    // On iOS, we rely on the visual state change (button highlight)
+  }, []);
+
   const onReact = useCallback(
     async (reaction: ReactionType) => {
-      if (!currentStory || !currentSegment) return;
+      if (!currentStory || !currentSegment) {
+        console.warn('[StoryViewer] onReact: no currentStory or currentSegment');
+        return;
+      }
       const activeStoryId = currentStory.id;
       const targetStoryId = currentSegment.storyId || currentStory.id;
       const prev = currentStory.myReaction;
       const willClear = prev === reaction;
       const targetReaction = willClear ? null : reaction;
       const snapshot = currentStory;
+
+      console.log(
+        '[StoryViewer] onReact:',
+        { targetStoryId, reaction, prev, willClear, targetReaction },
+      );
+
+      // Bounce animation for visual feedback
+      bounceReaction();
 
       // Optimistic update — mutate local stories array
       setStories(arr =>
@@ -273,13 +305,27 @@ function StoryViewerScreen({ route }: Props) {
         } else {
           await repository.reactStory(targetStoryId, reaction);
         }
-      } catch {
+        // Show success feedback
+        const emojiMap: Record<string, string> = {
+          like: '👍', love: '❤️', haha: '😆', wow: '😮', sad: '😢', angry: '😡',
+        };
+        const emoji = emojiMap[reaction] ?? reaction;
+        if (willClear) {
+          showToast('Đã bỏ cảm xúc');
+        } else {
+          showToast(`Đã thả ${emoji}`);
+        }
+        console.log('[StoryViewer] reactStory API success');
+      } catch (err) {
+        console.error('[StoryViewer] reactStory API error:', err);
         // Rollback on failure.
         setStories(arr => arr.map(s => (s.id === activeStoryId ? snapshot : s)));
         storyReactedEvents.emit(targetStoryId, prev);
+        // Notify user about the failure
+        showToast('Không thể thả cảm xúc. Vui lòng thử lại.');
       }
     },
-    [currentStory, currentSegment],
+    [currentStory, currentSegment, bounceReaction, showToast],
   );
 
   // ── Delete (owner only) ────────────────────────────────────────────
@@ -421,11 +467,13 @@ function StoryViewerScreen({ route }: Props) {
       </View>
 
       {/* ── Floating Text Overlay (Facebook Style) ── */}
-      <View style={styles.floatingCaptionWrap} pointerEvents="none">
-        <Text style={styles.floatingCaptionText}>
-          {currentStory.title || 'Hé hé hé'}
-        </Text>
-      </View>
+      {currentStory.title ? (
+        <View style={styles.floatingCaptionWrap} pointerEvents="none">
+          <Text style={styles.floatingCaptionText}>
+            {currentStory.title}
+          </Text>
+        </View>
+      ) : null}
 
       {/* ── Top overlay: progress bars + header + tags ──────────────────── */}
       <View style={styles.topOverlay} pointerEvents="box-none">
@@ -502,84 +550,32 @@ function StoryViewerScreen({ route }: Props) {
             <MoreHorizontal size={22} color="#fff" />
           </TouchableOpacity>
         </View>
-
-        {/* Music Tag (Facebook Style) */}
-        <View style={styles.musicTag}>
-          <Text style={styles.musicIcon}>🎵</Text>
-          <Text style={styles.musicText} numberOfLines={1}>
-            哈基米....
-          </Text>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text style={styles.musicAction}>Dùng thử</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Mention Tag (Facebook Style) */}
-        <View style={styles.mentionTag}>
-          <View style={styles.mentionIconCircle}>
-            <Text style={styles.mentionIconText}>@</Text>
-          </View>
-          <Text style={styles.mentionText}>Chớ Sùng</Text>
-        </View>
       </View>
 
-      {/* ── Bottom overlay: Quick replies + messages + reactions picker ─────────────── */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.bottomOverlay}
-        pointerEvents="box-none"
-      >
-        {/* Quick replies pills */}
-        <View style={styles.quickReplyRow}>
-          {['Quá ổn rồi', 'Hát hay ❤️', '❤️'].map(text => (
-            <TouchableOpacity
-              key={text}
-              activeOpacity={0.85}
-              onPress={() => {
-                Alert.alert('Đã gửi phản hồi', `Đã phản hồi: "${text}"`);
-              }}
-              style={styles.quickReplyPill}
-            >
-              <Text style={styles.quickReplyText}>{text}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
+      {/* ── Bottom overlay: reactions picker ─────────────── */}
+      <View style={styles.bottomOverlay} pointerEvents="box-none">
         {/* Solid black bottom bar */}
         <View style={styles.bottomBarContainer}>
           <View style={styles.inputRow}>
-            {/* Left loop button */}
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.leftActionBtn}
-              onPress={goBack}
-            >
-              <Repeat size={18} color="#fff" />
-            </TouchableOpacity>
-
-            {/* Text Input */}
-            <View style={styles.inputPill}>
-              <TextInput
-                value={replyText}
-                onChangeText={setReplyText}
-                placeholder="Gửi tin nhắn..."
-                placeholderTextColor="rgba(255, 255, 255, 0.6)"
-                onFocus={handleInputFocus}
-                onBlur={handleInputBlur}
-                onSubmitEditing={handleSendReply}
-                style={styles.inputText}
-              />
-            </View>
-
             {/* Quick Reactions */}
-            <View style={styles.quickReactions}>
-              {[(['love', '❤️'] as const), (['like', '👍'] as const), (['haha', '😆'] as const)].map(([type, emoji]) => {
+            <Animated.View style={[styles.quickReactions, { transform: [{ scale: reactionScale }] }]}>
+              {[
+                (['like', '👍'] as const),
+                (['love', '❤️'] as const),
+                (['haha', '😆'] as const),
+                (['wow', '😮'] as const),
+                (['sad', '😢'] as const),
+                (['angry', '😡'] as const),
+              ].map(([type, emoji]) => {
                 const isActive = currentStory.myReaction === type;
                 return (
                   <TouchableOpacity
                     key={type}
-                    onPress={() => onReact(type)}
-                    activeOpacity={0.7}
+                    onPress={() => {
+                      console.log('[StoryViewer] Reaction button pressed:', type);
+                      onReact(type);
+                    }}
+                    activeOpacity={0.5}
                     style={[
                       styles.quickReactionBtn,
                       isActive ? styles.reactionBtnActive : null,
@@ -594,7 +590,7 @@ function StoryViewerScreen({ route }: Props) {
                         }
                       ]}>
                         <ThumbsUp 
-                          size={15} 
+                          size={16} 
                           color={isActive ? '#fff' : 'rgba(255, 255, 255, 0.7)'} 
                           fill={isActive ? '#fff' : 'none'} 
                         />
@@ -612,10 +608,10 @@ function StoryViewerScreen({ route }: Props) {
                   </TouchableOpacity>
                 );
               })}
-            </View>
+            </Animated.View>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -861,54 +857,34 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  leftActionBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#2A2B2C',
-    alignItems: 'center',
     justifyContent: 'center',
-  },
-  inputPill: {
-    flex: 1,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#2A2B2C',
-    paddingHorizontal: 14,
-    justifyContent: 'center',
-  },
-  inputText: {
-    color: '#ffffff',
-    fontSize: 13.5,
-    padding: 0, // remove default android padding
+    width: '100%',
   },
   quickReactions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 14,
   },
   quickReactionBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickReactionEmoji: {
-    fontSize: 26,
+    fontSize: 28,
   },
   fbLikeCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#1877F2',
     alignItems: 'center',
     justifyContent: 'center',
   },
   fbLikeThumbsUp: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#ffffff',
   },
   reactionBtnActive: {

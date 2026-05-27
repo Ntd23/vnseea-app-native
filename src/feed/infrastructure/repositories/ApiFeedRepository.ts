@@ -882,5 +882,39 @@ export function createFeedRepository(): FeedRepository {
 
       return { reaction };
     },
+
+    async getUserPosts(userId, limit = 20) {
+      try {
+        console.log('[ApiFeedRepository] getUserPosts called for userId:', userId);
+        const response = await backendApi.post<{
+          api_status: number | string;
+          data?: Array<Record<string, unknown>>;
+        }>(apiRoutes.feed.posts, {
+          type: 'get_user_posts',
+          id: userId,
+          limit,
+        });
+
+        console.log('[ApiFeedRepository] getUserPosts API response status:', response?.api_status);
+        const raw = response.data ?? [];
+        console.log('[ApiFeedRepository] getUserPosts raw posts count:', raw.length);
+        const posts: FeedPost[] = [];
+        for (const item of raw) {
+          if (looksLikeVideo(item)) {
+            posts.push(mapVideoPost(item));
+          } else if (looksLikeTextOrPhoto(item)) {
+            posts.push(mapTextPost(item));
+          }
+        }
+
+        console.log('[ApiFeedRepository] getUserPosts mapped posts count:', posts.length);
+        return posts.sort(
+          (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
+        );
+      } catch (err) {
+        console.error('[ApiFeedRepository] getUserPosts error:', err);
+        throw err;
+      }
+    },
   };
 }

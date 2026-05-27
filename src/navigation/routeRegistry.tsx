@@ -12,21 +12,13 @@ import { NotificationsScreen } from '../notifications';
 import { MemoriesScreen } from '../memories';
 import { OffersScreen } from '../offers';
 import { AdvertisingScreen, CreateAdScreen, SettingsScreen } from '../settings';
-import {
-  BlogDetailScreen,
-  BlogFilterCategoryScreen,
-  BlogsScreen,
-} from '../blogs';
+import { BlogDetailScreen, BlogFilterCategoryScreen, BlogsScreen } from '../blogs';
 import { BoostedScreen } from '../boosted';
 import { CreatePageScreen } from '../pages';
-import { CreateProductScreen } from '../market';
+import { CreateProductScreen } from '../product';
 import { CreateEventScreen, EventsScreen } from '../events';
-import {
-  CreateGroupScreen,
-  ExploreGroupsScreen,
-  FollowingScreen,
-  GroupDetailScreen,
-} from '../community';
+import { CreatePollScreen } from '../poll';
+import { CreateGroupScreen, ExploreGroupsScreen, FollowingScreen, GroupDetailScreen } from '../community';
 import { FundingScreen } from '../funding';
 import { MoviesScreen } from '../movies';
 import { JobDetailScreen, JobsScreen } from '../jobs';
@@ -36,20 +28,11 @@ import { MyVideosScreen } from '../videos';
 import { CallScreen, MessageScreen } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { SavedPostsScreen } from '../saved';
-import {
-  AffiliatesScreen,
-  EarningsScreen,
-  InviteFriendsScreen,
-  MyPointsScreen,
-} from '../wallet';
+import { AffiliatesScreen, EarningsScreen, InviteFriendsScreen, MyPointsScreen } from '../wallet';
 import { WithdrawalScreen } from '../withdrawal';
 
 type ScreenComponent = React.ComponentType<any>;
-type TabIconComponent = React.ComponentType<{
-  size: number;
-  color: string;
-  strokeWidth: number;
-}>;
+type TabIconComponent = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
 
 export type StackRouteDefinition = {
   name: RootStackRouteName;
@@ -65,42 +48,14 @@ export type TabRouteDefinition = {
 };
 
 export const TAB_ROUTES: TabRouteDefinition[] = [
-  {
-    name: ROUTES.FEED,
-    component: FeedScreen,
-    Icon: Home,
-    accessibilityLabel: 'Feed',
-  },
-  {
-    name: ROUTES.EXPLORE,
-    component: ExploreScreen,
-    Icon: Hash,
-    accessibilityLabel: 'Hashtags',
-  },
-  {
-    name: ROUTES.REELS,
-    component: ReelsScreen,
-    Icon: PlaySquare,
-    accessibilityLabel: 'Reels',
-    isCenter: true,
-  },
-  {
-    name: ROUTES.NOTIFICATIONS,
-    component: NotificationsScreen,
-    Icon: Bell,
-    accessibilityLabel: 'Notifications',
-  },
-  {
-    name: ROUTES.SETTINGS,
-    component: SettingsScreen,
-    Icon: Settings,
-    accessibilityLabel: 'Settings',
-  },
+  { name: ROUTES.FEED, component: FeedScreen, Icon: Home, accessibilityLabel: 'Feed' },
+  { name: ROUTES.EXPLORE, component: ExploreScreen, Icon: Hash, accessibilityLabel: 'Hashtags' },
+  { name: ROUTES.REELS, component: ReelsScreen, Icon: PlaySquare, accessibilityLabel: 'Reels', isCenter: true },
+  { name: ROUTES.NOTIFICATIONS, component: NotificationsScreen, Icon: Bell, accessibilityLabel: 'Notifications' },
+  { name: ROUTES.SETTINGS, component: SettingsScreen, Icon: Settings, accessibilityLabel: 'Settings' },
 ];
 
-export function createStackRoutes(
-  MainTabsComponent: ScreenComponent,
-): StackRouteDefinition[] {
+export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRouteDefinition[] {
   return [
     { name: ROUTES.LOGIN, component: LoginScreen },
     { name: ROUTES.REGISTER, component: RegisterScreen },
@@ -120,6 +75,7 @@ export function createStackRoutes(
     { name: ROUTES.CREATE_PAGE, component: CreatePageScreen },
     { name: ROUTES.CREATE_PRODUCT, component: CreateProductScreen },
     { name: ROUTES.CREATE_EVENT, component: CreateEventScreen },
+    { name: ROUTES.CREATE_POLL, component: CreatePollScreen },
     { name: ROUTES.CREATE_GROUP, component: CreateGroupScreen },
     { name: ROUTES.EXPLORE_GROUPS, component: ExploreGroupsScreen },
     { name: ROUTES.GROUP_DETAIL, component: GroupDetailScreen },

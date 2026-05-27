@@ -486,21 +486,30 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   gestureX,
   gestureY,
   gestureActive,
+  navigateToProfile,
 }: {
   post: FeedVideoPost;
   onReact: (postId: string, reaction: ReactionType) => void;
   onOpenPicker: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
-  onShare?: (post: FeedVideoPost) => void;
+  onShare?: (post: FeedPost) => void;
   isActive: boolean;
   onReportLayout: (id: string, y: number, height: number) => void;
   gestureX: any;
   gestureY: any;
   gestureActive: any;
+  navigateToProfile: (userId: string) => void;
 }) {
   const navigation = useNavigation<any>();
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [muted, setMuted] = useState(true);
+
+  // Profile tap handler
+  const handleProfilePress = useCallback(() => {
+    if (post.publisher.id) {
+      navigateToProfile(post.publisher.id);
+    }
+  }, [navigateToProfile, post.publisher.id]);
 
   const handleVideoPress = useCallback(() => {
     // eslint-disable-next-line no-console
@@ -571,6 +580,7 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           avatar={post.publisher.avatarUrl}
           name={post.publisher.name}
           time={formatPostTime(post.postedAt)}
+          onPress={post.publisher.id ? handleProfilePress : undefined}
         />
         {post.caption ? (
           <Text className="text-body-primary">{post.caption}</Text>
@@ -1148,8 +1158,8 @@ function VideoPostActions({
   onLikeTap: () => void;
   onLikeLongPress: () => void;
   onCommentTap: () => void;
-  onShare?: (post: FeedVideoPost) => void;
-  post: FeedVideoPost;
+  onShare?: (post: FeedPost) => void;
+  post: FeedPost;
   gestureX: any;
   gestureY: any;
   gestureActive: any;
@@ -1437,6 +1447,7 @@ function MergedFeed({
   gestureX,
   gestureY,
   gestureActive,
+  navigateToProfile,
 }: {
   posts: FeedPost[];
   isLoading: boolean;
@@ -1452,6 +1463,7 @@ function MergedFeed({
   gestureX: any;
   gestureY: any;
   gestureActive: any;
+  navigateToProfile: (userId: string) => void;
 }) {
   // ── Skeleton loading state ──
   if (isLoading && posts.length === 0) {
@@ -1487,6 +1499,7 @@ function MergedFeed({
               gestureX={gestureX}
               gestureY={gestureY}
               gestureActive={gestureActive}
+              navigateToProfile={navigateToProfile}
             />
           );
         }
@@ -1503,6 +1516,7 @@ function MergedFeed({
               gestureX={gestureX}
               gestureY={gestureY}
               gestureActive={gestureActive}
+              navigateToProfile={navigateToProfile}
             />
           );
         }
@@ -1522,14 +1536,21 @@ function PostHeader({
   name,
   time,
   badge,
+  onPress,
 }: {
   avatar?: string;
   name: string;
   time: string;
   badge?: string;
+  onPress?: () => void;
 }) {
   return (
-    <View className="mb-4 flex-row items-center justify-between">
+    <TouchableOpacity
+      className="mb-4 flex-row items-center justify-between"
+      activeOpacity={0.8}
+      onPress={onPress}
+      disabled={!onPress}
+    >
       <View className="flex-row items-center">
         {avatar ? (
           <Avatar uri={avatar} />
@@ -1551,7 +1572,7 @@ function PostHeader({
         </View>
       </View>
       <MoreHorizontal size={22} color="#94A3B8" />
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -1569,13 +1590,14 @@ const TextPostCard = React.memo(function TextPostCard({
   gestureX,
   gestureY,
   gestureActive,
+  navigateToProfile,
 }: {
   post: FeedTextPost;
   onReact: (postId: string, reaction: ReactionType) => void;
   onOpenPicker: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
   onPhotoPress: (post: FeedTextPost, photoIndex: number) => void;
-  onShare?: (post: FeedTextPost) => void;
+  onShare?: (post: FeedPost) => void;
   // Reanimated shared values for the FB-style drag-to-pick reaction
   // picker. Threaded through `VideoPostActions` so the long-press +
   // pan gesture can update them and `ReactionIcon` can react to the
@@ -1583,8 +1605,17 @@ const TextPostCard = React.memo(function TextPostCard({
   gestureX: any;
   gestureY: any;
   gestureActive: any;
+  navigateToProfile: (userId: string) => void;
 }) {
   const likeButtonRef = useRef<View>(null);
+
+  // Profile tap handler
+  const handleProfilePress = useCallback(() => {
+    if (post.publisher.id) {
+      navigateToProfile(post.publisher.id);
+    }
+  }, [navigateToProfile, post.publisher.id]);
+
   const handleLikeTap = useCallback(
     () => onReact(post.id, 'like'),
     [onReact, post.id],
@@ -1610,6 +1641,7 @@ const TextPostCard = React.memo(function TextPostCard({
           avatar={post.publisher.avatarUrl}
           name={post.publisher.name}
           time={formatPostTime(post.postedAt)}
+          onPress={post.publisher.id ? handleProfilePress : undefined}
         />
         {post.caption ? (
           <Text className="text-body-primary">{post.caption}</Text>
@@ -1697,6 +1729,11 @@ function FeedScreen() {
 
   const goToCreatePost = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_POST);
+  }, [navigation]);
+
+  // Navigate to user profile
+  const navigateToProfile = useCallback((userId: string) => {
+    navigation.navigate(ROUTES.PROFILE, { userId });
   }, [navigation]);
 
   const commentVm = useFeedCommentsViewModel({
@@ -1882,6 +1919,7 @@ function FeedScreen() {
             gestureX={gestureX}
             gestureY={gestureY}
             gestureActive={gestureActive}
+            navigateToProfile={navigateToProfile}
           />
         </ScrollView>
         <TouchableOpacity

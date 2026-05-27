@@ -2,6 +2,7 @@
 import React from 'react';
 import { Modal, Pressable, Text, TouchableOpacity, View } from 'react-native';
 import {
+  BarChart3,
   CalendarDays,
   CircleDot,
   FilePlus2,
@@ -26,18 +27,19 @@ type CreateAction = {
 };
 
 const actions: CreateAction[] = [
-  { label: 'Create Post', Icon: ImagePlus, route: ROUTES.CREATE_POST },
-  { label: 'Create Story', Icon: CircleDot, route: ROUTES.CREATE_STORY },
-  { label: 'Create Ad', Icon: Pencil },
-  { label: 'Create Event', Icon: CalendarDays, route: ROUTES.CREATE_EVENT },
+  { label: 'Tạo bài đăng', Icon: ImagePlus, route: ROUTES.CREATE_POST },
+  { label: 'Tạo tin', Icon: CircleDot, route: ROUTES.CREATE_STORY },
+  { label: 'Tạo quảng cáo', Icon: Pencil },
+  { label: 'Tạo sự kiện', Icon: CalendarDays, route: ROUTES.CREATE_EVENT },
+  { label: 'Tạo cuộc thăm dò', Icon: BarChart3, route: ROUTES.CREATE_POLL },
   {
-    label: 'Create New Product',
+    label: 'Tạo sản phẩm',
     Icon: PackagePlus,
     route: ROUTES.CREATE_PRODUCT,
   },
-  { label: 'Create New Page', Icon: FilePlus2, route: ROUTES.CREATE_PAGE },
-  { label: 'Create New Group', Icon: Users, route: ROUTES.CREATE_GROUP },
-  { label: 'Create Reel Video', Icon: PlaySquare, route: ROUTES.CREATE_REEL },
+  { label: 'Tạo trang mới', Icon: FilePlus2, route: ROUTES.CREATE_PAGE },
+  { label: 'Tạo nhóm mới', Icon: Users, route: ROUTES.CREATE_GROUP },
+  { label: 'Tạo video', Icon: PlaySquare, route: ROUTES.CREATE_REEL },
 ];
 
 type CreateActionSheetProps = {

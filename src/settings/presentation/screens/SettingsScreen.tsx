@@ -143,6 +143,10 @@ function SettingsScreen() {
       if (id === 'ads') {
         navigation.navigate(ROUTES.ADVERTISING);
       }
+
+      if (id === 'find-friends') {
+        navigation.navigate(ROUTES.SEARCH);
+      }
     },
     [navigation],
   );

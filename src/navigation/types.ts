@@ -29,6 +29,7 @@ export type RootStackParamList = {
   [ROUTES.CREATE_PAGE]: undefined;
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;
+  [ROUTES.CREATE_POLL]: undefined;
   [ROUTES.CREATE_GROUP]: undefined;
   [ROUTES.EXPLORE_GROUPS]: undefined;
   [ROUTES.GROUP_DETAIL]: undefined;

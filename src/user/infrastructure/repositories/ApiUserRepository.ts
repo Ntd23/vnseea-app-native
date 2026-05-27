@@ -109,6 +109,26 @@ export function createUserRepository(): UserRepository {
     },
 
     async getUserProfile(input: GetUserProfileInput) {
+      // If no userId provided, fetch current user's profile via get-current-user endpoint
+      if (!input?.userId) {
+        const currentUserResponse = await apiBridge.post<CurrentUserResponse>(
+          apiRoutes.auth.me,
+        );
+
+        if (!currentUserResponse.user_data) {
+          return { profile: undefined, followers: [], following: [], likedPages: [], joinedGroups: [], family: [] };
+        }
+
+        return {
+          profile: mapUserProfile(currentUserResponse.user_data, apiConfig.webBaseUrl),
+          followers: [],
+          following: [],
+          likedPages: [],
+          joinedGroups: [],
+          family: [],
+        };
+      }
+
       const response = await apiBridge.post<UserProfileResponse>(
         apiRoutes.user.get,
         {

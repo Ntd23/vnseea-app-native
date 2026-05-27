@@ -9,16 +9,9 @@ import { sessionStorage } from '../storage/sessionStorage';
 
 export const BASE_URL = apiConfig.apiBaseUrl;
 
-const API_PREFIX_PATTERN = /^\/api(?=\/|$)/;
-
-function normalizeEndpointUrl(url: string | undefined) {
-  if (!url || /^https?:\/\//i.test(url)) {
-    return url;
-  }
-
-  const normalized = url.replace(API_PREFIX_PATTERN, '');
-  return normalized || '/';
-}
+// NOTE: The WoWonder backend routes everything through api-v2.php using .htaccess RewriteRule.
+// The axios baseURL already includes /api, so we do NOT strip it here.
+// Previously normalizeEndpointUrl stripped /api prefix, which broke WoWonder routing.
 
 function isFormData(value: unknown): value is FormData {
   return typeof FormData !== 'undefined' && value instanceof FormData;
@@ -77,15 +70,32 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use(config => {
-  config.url = normalizeEndpointUrl(config.url);
-
   const accessToken = sessionStorage.getAccessToken();
 
   if (accessToken) {
     config.params = { ...config.params, access_token: accessToken };
   }
 
-  if (config.method?.toLowerCase() !== 'get') {
+  // Always add server_key to params
+  config.params = {
+    ...config.params,
+    server_key: apiConfig.serverKey,
+  };
+
+  // Log the final request for debugging
+  const url = config.url || '';
+  const fullUrl = `${config.baseURL}/${url}`.replace(/\/+/g, '/');
+  console.log('[apiClient] Request:', config.method?.toUpperCase(), fullUrl);
+  console.log('[apiClient] Request data (before body transform):', config.data);
+
+  return config;
+});
+
+// Separate interceptor for request body formatting (runs after the first one)
+apiClient.interceptors.request.use(config => {
+  // For non-GET requests, format body with URL-encoded data
+  // BUT: Skip for FormData (multipart) - those need to stay as FormData
+  if (config.method?.toLowerCase() !== 'get' && !isFormData(config.data)) {
     const payload = injectServerKey(config.data, config.headers);
 
     if (
@@ -99,6 +109,10 @@ apiClient.interceptors.request.use(config => {
     } else {
       config.data = payload;
     }
+    console.log('[apiClient] Final POST body:', config.data);
+    console.log('[apiClient] Content-Type:', config.headers?.['Content-Type']);
+  } else if (isFormData(config.data)) {
+    console.log('[apiClient] FormData detected - preserving multipart format');
   }
 
   return config;

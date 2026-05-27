@@ -76,7 +76,7 @@ export type UserProfileFetch = {
 };
 
 export type GetUserProfileInput = {
-  userId: string;
+  userId?: string;
   fetch?: UserProfileFetch;
   sendVisitNotification?: boolean;
 };

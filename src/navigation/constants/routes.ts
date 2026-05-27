@@ -22,6 +22,7 @@ export const ROUTES = {
   CREATE_PAGE: 'CreatePage',
   CREATE_PRODUCT: 'CreateProduct',
   CREATE_EVENT: 'CreateEvent',
+  CREATE_POLL: 'CreatePoll',
   CREATE_GROUP: 'CreateGroup',
   EXPLORE_GROUPS: 'ExploreGroups',
   GROUP_DETAIL: 'GroupDetail',

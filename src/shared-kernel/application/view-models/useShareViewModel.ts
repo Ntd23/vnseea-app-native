@@ -43,7 +43,7 @@ export function useShareViewModel() {
         message += `${post.caption || ''}\n\n🎥 Video từ VNSEEA`;
       }
 
-      message += `\n\n#${app.split(' ')[0]} #SocialNetwork`;
+      message += `\n\n#${appName.split(' ')[0]} #SocialNetwork`;
       message += `\n\nXem tại: ${await getShareableUrl(post.id, 'post')}`;
 
       // Get current time for formatting
@@ -56,17 +56,24 @@ export function useShareViewModel() {
 
       const shareText = `💬 [${dateString}] ${timeString}\n${message}`;
 
-      const result = await Share.share({
-        title: options?.title || 'Chia sẻ bài viết',
-        subject: options?.subject || `Bài viết từ ${appName}`,
-        message: shareText,
-        url: await getShareableUrl(post.id, 'post'),
-        dialogTitle: options?.dialogTitle || 'Chia sẻ qua ứng dụng nào?',
-      });
+      const result = await Share.share(
+        {
+          title: options?.title || 'Chia sẻ bài viết',
+          message: shareText,
+          url: await getShareableUrl(post.id, 'post'),
+        },
+        {
+          dialogTitle: options?.dialogTitle || 'Chia sẻ qua ứng dụng nào?',
+          subject: options?.subject || `Bài viết từ ${appName}`,
+        }
+      );
 
       console.log('[useShare] Post shared:', result.action);
 
-      return result;
+      return {
+        action: result.action,
+        method: result.action === 'sharedAction' ? 'shared' : 'dismissed',
+      };
     } catch (error) {
       console.error('[useShare] Error sharing post:', error);
       return null;
@@ -102,7 +109,7 @@ export function useShareViewModel() {
         message += `\n"${story.description}"`;
       }
 
-      message += `\n\n#\{app.split(' ')[0]} #Stories`;
+      message += `\n\n#${appName.split(' ')[0]} #Stories`;
       message += `\n\nXem ngay: ${await getShareableUrl(story.id, 'story')}`;
 
       const now = new Date();
@@ -114,17 +121,24 @@ export function useShareViewModel() {
 
       const shareText = `🌟 [${dateString}] ${timeString}\n${message}`;
 
-      const result = await Share.share({
-        title: options?.title || 'Chia sẻ tin tức',
-        subject: options?.subject || `Tin mới từ ${appName}`,
-        message: shareText,
-        url: await getShareableUrl(story.id, 'story'),
-        dialogTitle: options?.dialogTitle || 'Chia sẻ qua ứng dụng nào?',
-      });
+      const result = await Share.share(
+        {
+          title: options?.title || 'Chia sẻ tin tức',
+          message: shareText,
+          url: await getShareableUrl(story.id, 'story'),
+        },
+        {
+          dialogTitle: options?.dialogTitle || 'Chia sẻ qua ứng dụng nào?',
+          subject: options?.subject || `Tin mới từ ${appName}`,
+        }
+      );
 
       console.log('[useShare] Story shared:', result.action);
 
-      return result;
+      return {
+        action: result.action,
+        method: result.action === 'sharedAction' ? 'shared' : 'dismissed',
+      };
     } catch (error) {
       console.error('[useShare] Error sharing story:', error);
       return null;
