@@ -21,7 +21,7 @@ export interface FeedRepository {
    * the home feed should call `getAllPosts` so a single API round-trip
    * powers the whole screen.
    */
-  getAllPosts(limit?: number): Promise<FeedPost[]>;
+  getAllPosts(limit?: number, afterPostId?: string): Promise<FeedPost[]>;
 
   getVideoPosts(limit?: number): Promise<FeedVideoPost[]>;
 

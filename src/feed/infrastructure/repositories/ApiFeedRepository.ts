@@ -459,6 +459,74 @@ function looksLikeTextOrPhoto(raw: Record<string, unknown>): boolean {
   return Boolean(text) || hasPhoto;
 }
 
+function readSharedInfo(
+  raw: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const shared = raw.shared_info;
+  return shared && typeof shared === 'object'
+    ? (shared as Record<string, unknown>)
+    : null;
+}
+
+function readPostOwnerId(raw: Record<string, unknown>): string {
+  const publisher =
+    (raw.publisher as Record<string, unknown> | undefined) ??
+    (raw.user_data as Record<string, unknown> | undefined) ??
+    {};
+
+  return (
+    readString(raw, 'user_id') ||
+    readString(publisher, 'user_id', 'id')
+  );
+}
+
+function rawPostKey(raw: Record<string, unknown>): string {
+  return readString(raw, 'id', 'post_id') || JSON.stringify(raw).slice(0, 80);
+}
+
+function mapProfilePost(raw: Record<string, unknown>): FeedTextPost | FeedVideoPost {
+  if (looksLikeVideo(raw)) {
+    return mapVideoPost(raw);
+  }
+
+  if (looksLikeTextOrPhoto(raw)) {
+    return mapTextPost(raw);
+  }
+
+  const shared = readSharedInfo(raw);
+  const base = mapTextPost(raw);
+
+  if (shared && looksLikeVideo(shared)) {
+    const sharedVideo = mapVideoPost(shared);
+    return {
+      ...sharedVideo,
+      id: base.id,
+      caption: base.caption ?? sharedVideo.caption ?? 'Đã chia sẻ một video',
+      postedAt: base.postedAt,
+      likeCount: base.likeCount,
+      commentCount: base.commentCount,
+      isLiked: base.isLiked,
+      myReaction: base.myReaction,
+      topReactions: base.topReactions,
+      publisher: base.publisher,
+    };
+  }
+
+  if (shared && looksLikeTextOrPhoto(shared)) {
+    const sharedText = mapTextPost(shared);
+    return {
+      ...base,
+      caption: base.caption ?? sharedText.caption ?? 'Đã chia sẻ một bài viết',
+      photos: base.photos.length > 0 ? base.photos : sharedText.photos,
+    };
+  }
+
+  return {
+    ...base,
+    caption: base.caption ?? 'Đã tạo một bài viết',
+  };
+}
+
 function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
   const publisher =
     (raw.publisher as Record<string, unknown> | undefined) ??
@@ -554,6 +622,7 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
 // the FB / Twitter home tab.
 async function fetchRawFeedPosts(
   limit: number,
+  afterPostId?: string,
 ): Promise<Array<Record<string, unknown>>> {
   const tryFetch = async (
     payload: Record<string, unknown>,
@@ -591,9 +660,9 @@ async function fetchRawFeedPosts(
    * extra posts max — still well under 100 after dedup with the other
    * streams.
    */
-  const fetchDiscoveryPosts = async (): Promise<
-    Array<Record<string, unknown>>
-  > => {
+  const fetchDiscoveryPosts = async (
+    afterPostId?: string,
+  ): Promise<Array<Record<string, unknown>>> => {
     const collectUserIds = (
       list: Array<Record<string, unknown>> | undefined,
     ): string[] => {
@@ -694,7 +763,12 @@ async function fetchRawFeedPosts(
 
     const perUser = await Promise.all(
       ids.map(id =>
-        tryFetch({ type: 'get_user_posts', id, limit: 5 }),
+        tryFetch({
+          type: 'get_user_posts',
+          id,
+          limit: 5,
+          after_post_id: afterPostId,
+        }),
       ),
     );
 
@@ -706,13 +780,28 @@ async function fetchRawFeedPosts(
 
   const sessionUserId = sessionStorage.getSession()?.userId;
 
-  const [followedRaw, ownRaw, discoveryRaw] = await Promise.all([
-    tryFetch({ type: 'get_news_feed', limit }),
+  // 1. Fetch followed feed and own feed in parallel first
+  const [followedRaw, ownRaw] = await Promise.all([
+    tryFetch({ type: 'get_news_feed', limit, after_post_id: afterPostId }),
     sessionUserId
-      ? tryFetch({ type: 'get_user_posts', id: sessionUserId, limit })
+      ? tryFetch({ type: 'get_user_posts', id: sessionUserId, limit, after_post_id: afterPostId })
       : Promise.resolve<Array<Record<string, unknown>>>([]),
-    fetchDiscoveryPosts(),
   ]);
+
+  // 2. Fetch discovery posts conditionally.
+  // We fetch discovery posts if followed + own posts returned is low (< 5).
+  // If it's page 1 (afterPostId is undefined), we call fetchDiscoveryPosts without cursor.
+  // If it's page 2+ (afterPostId is defined), we call fetchDiscoveryPosts passing afterPostId.
+  let discoveryRaw: Array<Record<string, unknown>> = [];
+  const localPostsCount = followedRaw.length + ownRaw.length;
+  if (localPostsCount < 5) {
+    // eslint-disable-next-line no-console
+    console.log('[feed] local posts count is low:', localPostsCount, 'fetching discovery posts with afterPostId:', afterPostId);
+    discoveryRaw = await fetchDiscoveryPosts(afterPostId);
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('[feed] skipping discovery posts fetch (afterPostId:', afterPostId, 'localCount:', localPostsCount, ')');
+  }
 
   // Diagnostics — kept until the "I only see my own posts" report
   // stops coming in. Drop once we're confident the feed is healthy.
@@ -766,8 +855,8 @@ export function createFeedRepository(): FeedRepository {
      * we sort defensively after merging in case the server-side order
      * ever changes (and so optimistic prepend stays consistent).
      */
-    async getAllPosts(limit = 20): Promise<FeedPost[]> {
-      const raw = await fetchRawFeedPosts(limit);
+    async getAllPosts(limit = 20, afterPostId?: string): Promise<FeedPost[]> {
+      const raw = await fetchRawFeedPosts(limit, afterPostId);
       const posts: FeedPost[] = [];
       for (const item of raw) {
         if (looksLikeVideo(item)) {
@@ -896,16 +985,27 @@ export function createFeedRepository(): FeedRepository {
         });
 
         console.log('[ApiFeedRepository] getUserPosts API response status:', response?.api_status);
-        const raw = response.data ?? [];
-        console.log('[ApiFeedRepository] getUserPosts raw posts count:', raw.length);
-        const posts: FeedPost[] = [];
-        for (const item of raw) {
-          if (looksLikeVideo(item)) {
-            posts.push(mapVideoPost(item));
-          } else if (looksLikeTextOrPhoto(item)) {
-            posts.push(mapTextPost(item));
-          }
+        const ownRaw = response.data ?? [];
+        console.log('[ApiFeedRepository] getUserPosts raw posts count:', ownRaw.length);
+
+        const publicVideosResponse = await backendApi.post<{
+          api_status: number | string;
+          data?: Array<Record<string, unknown>>;
+        }>(apiRoutes.feed.posts, {
+          type: 'get_random_videos',
+          limit: 50,
+        }).catch(() => ({ data: [] as Array<Record<string, unknown>> }));
+
+        const publicVideoRaw = (publicVideosResponse.data ?? []).filter(
+          item => String(readPostOwnerId(item)) === String(userId),
+        );
+
+        const rawMap = new Map<string, Record<string, unknown>>();
+        for (const item of [...ownRaw, ...publicVideoRaw]) {
+          rawMap.set(rawPostKey(item), item);
         }
+
+        const posts = Array.from(rawMap.values()).map(mapProfilePost);
 
         console.log('[ApiFeedRepository] getUserPosts mapped posts count:', posts.length);
         return posts.sort(

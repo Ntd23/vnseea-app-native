@@ -12,6 +12,7 @@
 // `posts` directly, those derived exports can be deleted.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { InteractionManager } from 'react-native';
 import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedRepository';
 import type {
   FeedPost,
@@ -19,6 +20,7 @@ import type {
   FeedVideoPost,
 } from '../../domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
 
 const repository = createFeedRepository();
 
@@ -32,15 +34,27 @@ function sortByTime(posts: FeedPost[]): FeedPost[] {
 }
 
 export function useFeedViewModel() {
-  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [posts, setPosts] = useState<FeedPost[]>(() => {
+    return feedCacheStorage.getCachedPosts();
+  });
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isAllLoaded, setIsAllLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPosts = useCallback(async () => {
-    setIsLoading(true);
+  const loadPosts = useCallback(async (isPullToRefresh = false) => {
+    if (isPullToRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
+    setIsAllLoaded(false); // Reset pagination
     try {
-      setPosts(await repository.getAllPosts());
+      const freshPosts = await repository.getAllPosts(10);
+      setPosts(freshPosts);
+      feedCacheStorage.setCachedPosts(freshPosts);
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -49,8 +63,50 @@ export function useFeedViewModel() {
       );
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, []);
+
+  const loadMorePosts = useCallback(async () => {
+    if (isLoading || isLoadingMore || isAllLoaded || posts.length === 0) return;
+
+    setIsLoadingMore(true);
+    setError(null);
+    try {
+      // Find the last post ID in the list to act as the cursor
+      const lastPost = posts[posts.length - 1];
+      if (!lastPost) return;
+
+      const lastPostId = lastPost.id;
+      // Get older posts
+      const olderPosts = await repository.getAllPosts(10, lastPostId);
+
+      if (olderPosts.length === 0) {
+        setIsAllLoaded(true);
+      } else {
+        InteractionManager.runAfterInteractions(() => {
+          setPosts(prev => {
+            // Deduplicate older posts against current posts
+            const existingIds = new Set(prev.map(p => p.id));
+            const newPosts = olderPosts.filter(p => !existingIds.has(p.id));
+            if (newPosts.length === 0) {
+              setIsAllLoaded(true);
+              return prev;
+            }
+            return [...prev, ...newPosts];
+          });
+        });
+      }
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Không tải được thêm bài viết.',
+      );
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoading, isLoadingMore, isAllLoaded, posts]);
 
   useEffect(() => {
     void loadPosts();
@@ -181,9 +237,13 @@ export function useFeedViewModel() {
   return {
     // ── Primary (unified) API ─────────────────────────────────────
     posts,
-    isLoading,
+    isLoading: isLoading || isRefreshing,
+    isRefreshing,
+    isLoadingMore,
+    isAllLoaded,
     error,
     reloadPosts: loadPosts,
+    loadMorePosts,
     prependPost,
     toggleReaction,
     updateCommentCount,

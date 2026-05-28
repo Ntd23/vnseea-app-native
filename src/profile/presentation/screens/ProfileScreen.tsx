@@ -6,6 +6,7 @@ import {
   Dimensions,
   Image,
   ScrollView,
+  StyleSheet,
   StatusBar,
   Text,
   TouchableOpacity,
@@ -55,6 +56,7 @@ type ProfileRoute = RouteProp<RootStackParamList, typeof ROUTES.PROFILE>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const FRIEND_ITEM_WIDTH = (SCREEN_WIDTH - 64 - 16) / 3;
+const PROFILE_POST_MEDIA_HEIGHT = Math.min(320, Math.round(SCREEN_WIDTH * 0.62));
 
 const FALLBACK_COVER =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCNqLNeeWsi7Qk4abx08XCTrKI5CmUGgDCiX-kH7Y_8LIIX5Slo9GRgEra_4deGp5e9pYozUmQdYGZi1sNQSks0QtbNWgpmn5gJgrF62Z8I8UMQpqKiMHLQ8Rzd9oUUIITFJPuwExVflVdeB1fRKjSGDO7zAocaZElLgpqJr6Mjvoj2FKOUVfnTk8XxnkG5WNijLpmXavW9TFlNhtlfLYbSE2qofOA8or7d_AfsUWZV43ADdtVFNH7VwEEazqapaL-Vndqksu_vDnE';
@@ -65,6 +67,182 @@ const FALLBACK_FRIENDS = [
   'https://lh3.googleusercontent.com/aida-public/AB6AXuDLWS5tf0Fpf1ZFDA8P_g7Gl6UFYvTeEdbq0rTHTrnIJFduAXKiZilywPSKobKVJmePltF4AL3UzBkk86bs_-nCNz21jwD7bIY4qdP0TW7-e8IaeD7K_I1_x9z7CY766cwG1ylT91GzYqnWsS4RT8sCyL7FGgLp9PgrttHr18EyTTnJ5q9ohUrT9wLqxfikI6VjZ3R7Yt0S1ii4gM3UjuX0GR4JJeQj7M6QJI_vyBu-PAzJn0IF7i4EFtXmnRSAjppkw1CfWjMcuVE',
   'https://lh3.googleusercontent.com/aida-public/AB6AXuDBM__UehaAgiDA9uC3Kw8OPZ3kYz67EbNRd0wutGdRStdNAQuO0bto9DiVW1VWK8Yedmg9NDq7gtlhaK1r-06a7Da1fs5flP275bMscPfGbnGLhLuJ4AvhV57akqf3YcT1OuEZ8ec6CzJxl9QXZpFcb2iJ5XcAwJcy4PfAo3-wMa2kEGtv108qFxXFyCnHe38B1ei1Jrx-dxSsVshOyAE4UluTEh_assYq9hyzWTJa2d71vIxqOp-U1-5oh8O1wKYT0Kivx75ge0U',
 ];
+
+const profilePostStyles = StyleSheet.create({
+  stateCard: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E4E6EB',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stateText: {
+    color: '#65676B',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#E4E6EB',
+    marginBottom: 8,
+    padding: 14,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  author: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    overflow: 'hidden',
+    backgroundColor: '#F1F5F9',
+    marginRight: 10,
+  },
+  avatar: {
+    width: '100%',
+    height: '100%',
+  },
+  authorText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  authorName: {
+    color: '#050505',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  metaText: {
+    color: '#65676B',
+    fontSize: 12,
+    marginRight: 4,
+  },
+  moreButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  caption: {
+    color: '#050505',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  mediaWrap: {
+    marginTop: 8,
+    overflow: 'hidden',
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  mediaImage: {
+    width: '100%',
+    height: PROFILE_POST_MEDIA_HEIGHT,
+    backgroundColor: '#F1F5F9',
+  },
+  photoGrid: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  gridImage: {
+    flex: 1,
+    height: 160,
+    backgroundColor: '#F1F5F9',
+  },
+  videoWrap: {
+    width: '100%',
+    height: PROFILE_POST_MEDIA_HEIGHT,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  videoThumb: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    opacity: 0.72,
+  },
+  playBadge: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(255,255,255,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsRow: {
+    marginTop: 12,
+    paddingTop: 9,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F2F5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  likeSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  likeBadge: {
+    width: 17,
+    height: 17,
+    borderRadius: 9,
+    backgroundColor: '#1877F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryText: {
+    color: '#65676B',
+    fontSize: 12,
+    marginLeft: 6,
+  },
+  actionRow: {
+    marginTop: 10,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F2F5',
+    flexDirection: 'row',
+  },
+  actionButton: {
+    flex: 1,
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionText: {
+    marginLeft: 6,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+});
 
 function formatRelativeTime(timestamp: number | undefined) {
   if (!timestamp) return '';
@@ -797,85 +975,95 @@ function ProfileScreen() {
             <PostSkeletonCard />
           </View>
         ) : postsError ? (
-          <View className="mx-4 mt-2 rounded-xl bg-white p-6 items-center justify-center border border-[#E4E6EB]">
-            <Text className="text-[14px] font-semibold text-red-500 text-center">
+          <View style={profilePostStyles.stateCard}>
+            <Text style={[profilePostStyles.stateText, { color: '#EF4444' }]}>
               Lỗi tải bài viết: {postsError}
             </Text>
           </View>
         ) : posts.length === 0 ? (
-          <View className="mx-4 mt-2 rounded-xl bg-white p-6 items-center justify-center border border-[#E4E6EB]">
-            <Text className="text-[14px] font-semibold text-[#65676B]">Chưa có bài viết nào</Text>
+          <View style={profilePostStyles.stateCard}>
+            <Text style={profilePostStyles.stateText}>Chưa có bài viết nào</Text>
           </View>
         ) : (
           <View>
-            {posts.map(post => {
+            {posts.map((post, index) => {
               const postPublisher = post.publisher || {};
               const postName = postPublisher.name || displayName || 'Người dùng';
-              const postAvatar = postPublisher.avatarUrl || avatarUrl;
+              const postAvatar = postPublisher.avatarUrl || avatarUrl || FALLBACK_AVATAR;
+              const photoUrls = post.kind === 'text' ? post.photos ?? [] : [];
+              const likeCount = Number(post.likeCount || 0);
+              const commentCount = Number(post.commentCount || 0);
+              const likedColor = post.isLiked ? '#1877F2' : '#65676B';
 
               return (
                 <View
-                  key={post.id}
-                  className="w-full bg-white mb-2 p-4 border-t border-b border-[#E4E6EB]"
+                  key={`${post.kind}-${post.id}-${index}`}
+                  style={profilePostStyles.card}
                 >
                   {/* Post Header */}
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center">
-                      <View className="h-9.5 w-9.5 overflow-hidden rounded-full bg-slate-100 mr-2.5">
-                        <Image source={{ uri: postAvatar }} className="h-full w-full" />
+                  <View style={profilePostStyles.header}>
+                    <View style={profilePostStyles.author}>
+                      <View style={profilePostStyles.avatarWrap}>
+                        <Image
+                          source={{ uri: postAvatar }}
+                          style={profilePostStyles.avatar}
+                          resizeMode="cover"
+                        />
                       </View>
-                      <View>
-                        <Text className="text-[14px] font-bold text-[#050505]">{postName}</Text>
-                        <View className="flex-row items-center mt-0.5">
-                          <Text className="text-[12px] text-[#65676B] mr-1">
-                            {formatRelativeTime(post.postedAt)}
+                      <View style={profilePostStyles.authorText}>
+                        <Text style={profilePostStyles.authorName} numberOfLines={1}>
+                          {postName}
+                        </Text>
+                        <View style={profilePostStyles.metaRow}>
+                          <Text style={profilePostStyles.metaText}>
+                            {formatRelativeTime(post.postedAt) || 'Vừa xong'}
                           </Text>
                           <Globe size={11} color="#65676B" />
                         </View>
                       </View>
                     </View>
-                    <TouchableOpacity activeOpacity={0.8}>
+                    <TouchableOpacity style={profilePostStyles.moreButton} activeOpacity={0.8}>
                       <MoreHorizontal size={18} color="#65676B" />
                     </TouchableOpacity>
                   </View>
 
                   {/* Post Content */}
                   {!!post.caption && (
-                    <Text className="text-[14px] text-[#050505] leading-relaxed mt-3 mb-2">
-                      {post.caption}
-                    </Text>
+                    <Text style={profilePostStyles.caption}>{post.caption}</Text>
                   )}
 
                   {/* Post Media */}
                   {post.kind === 'video' && post.videoUrl ? (
-                    <View className="w-full h-[220px] bg-black rounded-lg mt-2 overflow-hidden justify-center items-center relative">
-                      {!!post.thumbnailUrl && (
-                        <Image
-                          source={{ uri: post.thumbnailUrl }}
-                          className="absolute h-full w-full opacity-60"
-                          resizeMode="cover"
-                        />
-                      )}
-                      <View className="h-12 w-12 rounded-full bg-white/30 items-center justify-center border border-white/20">
-                        <Play size={20} color="#FFFFFF" fill="#FFFFFF" className="ml-1" />
+                    <View style={profilePostStyles.mediaWrap}>
+                      <View style={profilePostStyles.videoWrap}>
+                        {!!post.thumbnailUrl && (
+                          <Image
+                            source={{ uri: post.thumbnailUrl }}
+                            style={profilePostStyles.videoThumb}
+                            resizeMode="cover"
+                          />
+                        )}
+                        <View style={profilePostStyles.playBadge}>
+                          <Play size={22} color="#FFFFFF" fill="#FFFFFF" />
+                        </View>
                       </View>
                     </View>
-                  ) : post.kind === 'text' && post.photos && post.photos.length > 0 ? (
-                    <View className="mt-2">
-                      {post.photos.length === 1 && (
+                  ) : photoUrls.length > 0 ? (
+                    <View style={profilePostStyles.mediaWrap}>
+                      {photoUrls.length === 1 && (
                         <Image
-                          source={{ uri: post.photos[0] }}
-                          className="w-full h-[220px] rounded-lg bg-slate-100"
+                          source={{ uri: photoUrls[0] }}
+                          style={profilePostStyles.mediaImage}
                           resizeMode="cover"
                         />
                       )}
-                      {post.photos.length > 1 && (
-                        <View className="flex-row gap-1">
-                          {post.photos.slice(0, 2).map((photoUrl, idx) => (
+                      {photoUrls.length > 1 && (
+                        <View style={profilePostStyles.photoGrid}>
+                          {photoUrls.slice(0, 2).map((photoUrl, idx) => (
                             <Image
                               key={`${photoUrl}-${idx}`}
                               source={{ uri: photoUrl }}
-                              className="flex-1 h-[150px] rounded-lg bg-slate-100"
+                              style={profilePostStyles.gridImage}
                               resizeMode="cover"
                             />
                           ))}
@@ -885,24 +1073,22 @@ function ProfileScreen() {
                   ) : null}
 
                   {/* Stats Divider & Row */}
-                  {(post.likeCount > 0 || post.commentCount > 0) && (
-                    <View className="mt-3.5 pt-2 flex-row justify-between items-center border-t border-[#F0F2F5]">
-                      <View className="flex-row items-center">
-                        {post.likeCount > 0 && (
+                  {(likeCount > 0 || commentCount > 0) && (
+                    <View style={profilePostStyles.statsRow}>
+                      <View style={profilePostStyles.likeSummary}>
+                        {likeCount > 0 && (
                           <>
-                            <View className="h-4 w-4 rounded-full bg-[#1877F2] items-center justify-center">
+                            <View style={profilePostStyles.likeBadge}>
                               <ThumbsUp size={9} color="#FFFFFF" />
                             </View>
-                            <Text className="text-[12px] text-[#65676B] ml-1.5">
-                              {post.likeCount}
-                            </Text>
+                            <Text style={profilePostStyles.summaryText}>{likeCount}</Text>
                           </>
                         )}
                       </View>
                       <View>
-                        {post.commentCount > 0 && (
-                          <Text className="text-[12px] text-[#65676B]">
-                            {post.commentCount} bình luận
+                        {commentCount > 0 && (
+                          <Text style={profilePostStyles.metaText}>
+                            {commentCount} bình luận
                           </Text>
                         )}
                       </View>
@@ -910,40 +1096,39 @@ function ProfileScreen() {
                   )}
 
                   {/* Post Action Buttons Row */}
-                  <View className="mt-3 border-t border-[#F0F2F5] pt-1 flex-row">
+                  <View style={profilePostStyles.actionRow}>
                     <TouchableOpacity
-                      className="flex-1 flex-row justify-center items-center py-2"
+                      style={profilePostStyles.actionButton}
                       activeOpacity={0.8}
                       onPress={() => handleToggleLike(post)}
                     >
                       <ThumbsUp
                         size={16}
-                        color={post.isLiked ? '#1877F2' : '#65676B'}
+                        color={likedColor}
                       />
                       <Text
-                        className="ml-1.5 text-[13px] font-bold"
-                        style={{ color: post.isLiked ? '#1877F2' : '#65676B' }}
+                        style={[profilePostStyles.actionText, { color: likedColor }]}
                       >
                         Thích
                       </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      className="flex-1 flex-row justify-center items-center py-2"
+                      style={profilePostStyles.actionButton}
                       activeOpacity={0.8}
                     >
                       <MessageCircle size={16} color="#65676B" />
-                      <Text className="ml-1.5 text-[13px] font-bold text-[#65676B]">
+                      <Text style={[profilePostStyles.actionText, { color: '#65676B' }]}>
                         Bình luận
                       </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      className="flex-1 flex-row justify-center items-center py-2"
+                      style={profilePostStyles.actionButton}
                       activeOpacity={0.8}
                     >
                       <Share2 size={16} color="#65676B" />
-                      <Text className="ml-1.5 text-[13px] font-bold text-[#65676B]">
+                      <Text style={[profilePostStyles.actionText, { color: '#65676B' }]}>
                         Chia sẻ
                       </Text>
                     </TouchableOpacity>

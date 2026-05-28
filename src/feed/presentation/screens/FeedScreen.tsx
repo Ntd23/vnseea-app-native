@@ -13,6 +13,8 @@ import {
   TouchableOpacity,
   View,
   Alert,
+  ActivityIndicator,
+  InteractionManager,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -547,19 +549,6 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // `isActive`. That caused massive FPS drops during scroll because
   // ExoPlayer init (decoder creation, buffer allocation) is very
   // expensive on Android.
-  //
-  // New strategy: we mount the player ONCE when it first becomes
-  // active, and after that we KEEP it mounted — just toggle `paused`.
-  // This avoids repeated ExoPlayer init/destroy cycles during scroll.
-  //
-  // `hasBeenActive` is a one-way latch: once true, stays true.
-  const [hasBeenActive, setHasBeenActive] = useState(false);
-  useEffect(() => {
-    if (isActive && !hasBeenActive) {
-      setHasBeenActive(true);
-    }
-  }, [isActive, hasBeenActive]);
-
   useEffect(() => {
     if (!isActive) {
       setManuallyPaused(false);
@@ -614,8 +603,8 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         onPress={handleVideoPress}
         className="h-56 w-full bg-black"
       >
-        {/* react-native-video v6 — keep mounted, toggle `paused` */}
-        {hasBeenActive ? (
+        {/* react-native-video v6 — unmount when inactive to release native decoders */}
+        {isActive ? (
           <View pointerEvents="none" style={{ width: '100%', height: '100%' }}>
             <VideoPlayer
               source={{ uri: post.videoUrl }}
@@ -1570,6 +1559,7 @@ function MergedFeed({
                   product={productPost.product}
                   onPress={onProductPress}
                   onProfilePress={navigateToProfile}
+                  compact={true}
                 />
               </View>
             ))}
@@ -1844,10 +1834,28 @@ function FeedScreen() {
     }
   }, [commentVm]);
 
-  // Viewport tracking & Autoplay logic for ScrollView video cards
-  const [videoSectionY, setVideoSectionY] = useState(0);
-  const cardLayouts = useRef<Record<string, { y: number; height: number }>>({});
+  // Viewport tracking & Autoplay logic for video cards (using native onViewableItemsChanged)
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+
+  // Viewability config for FlatList autoplay
+  const viewabilityConfigRef = useRef({
+    itemVisiblePercentThreshold: 60, // 60% of the item must be visible
+  });
+
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: any[] }) => {
+    // Find the first viewable video post
+    const viewableVideo = viewableItems.find(
+      (item) => item.isViewable && item.item && item.item.kind === 'video'
+    );
+    
+    if (viewableVideo) {
+      setActiveVideoId(viewableVideo.item.id);
+    } else {
+      setActiveVideoId(null);
+    }
+  }, []);
+
+  const handleReportLayout = useCallback((_id: string, _y: number, _height: number) => {}, []);
 
   // ── Post menu state ──────────────────────────────────────────────────
   const [postMenuVisible, setPostMenuVisible] = useState(false);
@@ -1889,57 +1897,6 @@ function FeedScreen() {
     }
   }, [vm]);
 
-  const handleReportSectionY = useCallback((y: number) => {
-    setVideoSectionY(y);
-  }, []);
-
-  const handleReportLayout = useCallback((id: string, y: number, height: number) => {
-    cardLayouts.current[id] = { y, height };
-  }, []);
-
-  // ── Debounced scroll → activeVideoId ─────────────────────────────
-  // Previously this ran `setActiveVideoId` on EVERY scroll event
-  // (60×/sec), causing the entire feed to re-render continuously
-  // while the user was scrolling and making ExoPlayer mount/unmount.
-  //
-  // Now we debounce: the calculation runs 150ms AFTER the last scroll
-  // event, so activeVideoId only changes when the user pauses or
-  // stops scrolling. During the scroll itself, zero re-renders.
-  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleScroll = useCallback((event: any) => {
-    const scrollY = event.nativeEvent.contentOffset.y;
-
-    if (scrollTimerRef.current) {
-      clearTimeout(scrollTimerRef.current);
-    }
-
-    scrollTimerRef.current = setTimeout(() => {
-      const viewportHeight = Dimensions.get('window').height;
-      const viewportCenter = scrollY + viewportHeight / 2;
-
-      let closestId: string | null = null;
-      let minDistance = Infinity;
-
-      for (const [id, layout] of Object.entries(cardLayouts.current)) {
-        const cardAbsoluteY = videoSectionY + layout.y;
-        const cardCenter = cardAbsoluteY + layout.height / 2;
-        const distance = Math.abs(viewportCenter - cardCenter);
-
-        const isVisible =
-          cardAbsoluteY + layout.height > scrollY &&
-          cardAbsoluteY < scrollY + viewportHeight;
-
-        if (isVisible && distance < minDistance) {
-          minDistance = distance;
-          closestId = id;
-        }
-      }
-
-      setActiveVideoId(closestId);
-    }, 150);
-  }, [videoSectionY]);
-
   // Autoplay the first video on mount / load
   useEffect(() => {
     const firstVideo = vm.posts.find(p => p.kind === 'video');
@@ -1947,6 +1904,42 @@ function FeedScreen() {
       setActiveVideoId(firstVideo.id);
     }
   }, [vm.posts, activeVideoId]);
+
+  // Infinite scroll pagination (proactively loads next page)
+  const handleLoadMore = useCallback(() => {
+    InteractionManager.runAfterInteractions(() => {
+      if (!vm.isLoading && !vm.isLoadingMore && !vm.isAllLoaded) {
+        // eslint-disable-next-line no-console
+        console.log('[FeedScreen] Loading more posts...');
+        vm.loadMorePosts();
+      }
+      if (!productsVm.isLoading && !productsVm.isLoadingMore && !productsVm.isAllLoaded) {
+        // eslint-disable-next-line no-console
+        console.log('[FeedScreen] Loading more products...');
+        productsVm.loadMoreProducts();
+      }
+    });
+  }, [
+    vm.isLoading,
+    vm.isLoadingMore,
+    vm.isAllLoaded,
+    vm.loadMorePosts,
+    productsVm.isLoading,
+    productsVm.isLoadingMore,
+    productsVm.isAllLoaded,
+    productsVm.loadMoreProducts,
+  ]);
+
+  const ListFooterComponent = useMemo(() => {
+    if (vm.isLoadingMore) {
+      return (
+        <View style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="small" color="#0866FF" />
+        </View>
+      );
+    }
+    return null;
+  }, [vm.isLoadingMore]);
 
   // ── Photo viewer state ───────────────────────────────────────────────
   // Set when the user taps a photo in a text post. Cleared by the modal's
@@ -2011,69 +2004,91 @@ function FeedScreen() {
   }, []);
 
   // ── FlatList: Virtualized feed with interleaved products ─────────────
+
+  // Memoize merged posts to prevent unnecessary recalculations
   const mergedPosts = useMemo<FeedPost[]>(() => {
-    const all = [...vm.posts, ...feedProductPosts];
-    return all.sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+    const posts = vm.posts.filter(p => p.kind !== 'product');
+    return [...posts, ...feedProductPosts].sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
   }, [vm.posts, feedProductPosts]);
 
-  const renderItem = useCallback(
-    ({ item }: { item: FeedPost }) => {
-      switch (item.kind) {
-        case 'video': {
-          const vp = item as FeedVideoPost;
-          return (
-            <HomeVideoPostCard
-              key={vp.id}
-              post={vp}
-              onReact={vm.toggleReaction}
-              onOpenPicker={handleOpenPicker}
-              onCommentTap={commentVm.openComments}
-              onShare={handleOpenSharePost}
-              isActive={activeVideoId === vp.id}
-              onReportLayout={handleReportLayout}
-              gestureX={gestureX}
-              gestureY={gestureY}
-              gestureActive={gestureActive}
-              navigateToProfile={navigateToProfile}
-              onOpenPostMenu={handleOpenPostMenu}
-            />
-          );
-        }
-        case 'text': {
-          const tp = item as FeedTextPost;
-          return (
-            <TextPostCard
-              key={tp.id}
-              post={tp}
-              onReact={vm.toggleReaction}
-              onOpenPicker={handleOpenPicker}
-              onCommentTap={commentVm.openComments}
-              onPhotoPress={handlePhotoPress}
-              onShare={handleOpenSharePost}
-              gestureX={gestureX}
-              gestureY={gestureY}
-              gestureActive={gestureActive}
-              navigateToProfile={navigateToProfile}
-              onOpenPostMenu={handleOpenPostMenu}
-            />
-          );
-        }
-        case 'product': {
-          const pp = item as FeedProductPost;
-          return (
-            <View key={pp.id} className="mx-4 mb-6">
-              <ProductPostCard
-                product={pp.product}
-                onPress={handleProductPress}
-                onProfilePress={navigateToProfile}
-              />
-            </View>
-          );
-        }
-        default:
-          return null;
+  // Predictive prefetching for media URLs (images: avatars, post photos, product images, video thumbnails)
+  useEffect(() => {
+    if (mergedPosts.length === 0) return;
+
+    const urlsToPrefetch: string[] = [];
+
+    mergedPosts.forEach(post => {
+      // 1. Publisher avatar
+      if (post.publisher?.avatarUrl && post.publisher.avatarUrl.startsWith('http')) {
+        urlsToPrefetch.push(post.publisher.avatarUrl);
       }
-    },
+
+      // 2. Post photos
+      if (post.kind === 'text') {
+        post.photos?.forEach(photo => {
+          if (photo && photo.startsWith('http')) {
+            urlsToPrefetch.push(photo);
+          }
+        });
+      }
+
+      // 3. Product image & seller avatar
+      if (post.kind === 'product') {
+        const prod = post.product;
+        if (prod) {
+          if (prod.images && Array.isArray(prod.images)) {
+            prod.images.forEach(imgObj => {
+              if (imgObj && typeof imgObj.image === 'string' && imgObj.image.startsWith('http')) {
+                urlsToPrefetch.push(imgObj.image);
+              }
+            });
+          }
+          if (prod.seller?.avatar && prod.seller.avatar.startsWith('http')) {
+            urlsToPrefetch.push(prod.seller.avatar);
+          }
+        }
+      }
+
+      // 4. Video thumbnail
+      if (post.kind === 'video') {
+        if (post.thumbnailUrl && post.thumbnailUrl.startsWith('http')) {
+          urlsToPrefetch.push(post.thumbnailUrl);
+        }
+      }
+    });
+
+    // Deduplicate URLs
+    const uniqueUrls = Array.from(new Set(urlsToPrefetch));
+
+    // Prefetch in background when interaction drops to idle
+    InteractionManager.runAfterInteractions(() => {
+      uniqueUrls.forEach(url => {
+        Image.prefetch(url).catch(err => {
+          console.warn(`[Prefetch] Failed to prefetch ${url}:`, err);
+        });
+      });
+    });
+  }, [mergedPosts]);
+
+  // Separate memoized render functions for each type - prevents full re-render
+  const renderVideoPost = useCallback(
+    ({ item }: { item: FeedVideoPost }) => (
+      <HomeVideoPostCard
+        key={item.id}
+        post={item}
+        onReact={vm.toggleReaction}
+        onOpenPicker={handleOpenPicker}
+        onCommentTap={commentVm.openComments}
+        onShare={handleOpenSharePost}
+        isActive={activeVideoId === item.id}
+        onReportLayout={handleReportLayout}
+        gestureX={gestureX}
+        gestureY={gestureY}
+        gestureActive={gestureActive}
+        navigateToProfile={navigateToProfile}
+        onOpenPostMenu={handleOpenPostMenu}
+      />
+    ),
     [
       activeVideoId,
       commentVm.openComments,
@@ -2082,8 +2097,6 @@ function FeedScreen() {
       gestureY,
       handleOpenPicker,
       handleOpenSharePost,
-      handlePhotoPress,
-      handleProductPress,
       handleReportLayout,
       navigateToProfile,
       handleOpenPostMenu,
@@ -2091,12 +2104,63 @@ function FeedScreen() {
     ],
   );
 
+  const renderTextPost = useCallback(
+    ({ item }: { item: FeedTextPost }) => (
+      <TextPostCard
+        key={item.id}
+        post={item}
+        onReact={vm.toggleReaction}
+        onOpenPicker={handleOpenPicker}
+        onCommentTap={commentVm.openComments}
+        onPhotoPress={handlePhotoPress}
+        onShare={handleOpenSharePost}
+        gestureX={gestureX}
+        gestureY={gestureY}
+        gestureActive={gestureActive}
+        navigateToProfile={navigateToProfile}
+        onOpenPostMenu={handleOpenPostMenu}
+      />
+    ),
+    [
+      commentVm.openComments,
+      gestureActive,
+      gestureX,
+      gestureY,
+      handleOpenPicker,
+      handleOpenSharePost,
+      handlePhotoPress,
+      navigateToProfile,
+      handleOpenPostMenu,
+      vm.toggleReaction,
+    ],
+  );
+
+  const renderProductPost = useCallback(
+    ({ item }: { item: FeedProductPost }) => (
+      <ProductPostCard
+        key={item.id}
+        product={item.product}
+        onPress={handleProductPress}
+        onProfilePress={navigateToProfile}
+        onShare={() => handleOpenSharePost(item)}
+      />
+    ),
+    [handleProductPress, navigateToProfile, handleOpenSharePost],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: FeedPost }) => {
+      switch (item.kind) {
+        case 'video': return renderVideoPost({ item: item as FeedVideoPost });
+        case 'text': return renderTextPost({ item: item as FeedTextPost });
+        case 'product': return renderProductPost({ item: item as FeedProductPost });
+        default: return null;
+      }
+    },
+    [renderVideoPost, renderTextPost, renderProductPost],
+  );
+
   const keyExtractor = useCallback((item: FeedPost) => item.id, []);
-  const getItemLayout = useCallback((_: any, index: number) => {
-    const heights: Record<string, number> = { text: 450, video: 550, product: 320 };
-    const h = heights[mergedPosts[index]?.kind ?? 'text'] ?? 400;
-    return { length: h, offset: h * index, index };
-  }, [mergedPosts]);
 
   const ListHeaderComponent = useMemo(
     () => (
@@ -2120,23 +2184,27 @@ function FeedScreen() {
             data={mergedPosts}
             renderItem={renderItem}
             keyExtractor={keyExtractor}
+            extraData={activeVideoId}
             ListHeaderComponent={ListHeaderComponent}
-            getItemLayout={getItemLayout}
-            windowSize={5}
+            windowSize={11}
             maxToRenderPerBatch={5}
             updateCellsBatchingPeriod={50}
-            removeClippedSubviews={true}
+            removeClippedSubviews={false}
             initialNumToRender={3}
             scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
-            onScroll={handleScroll}
+            onViewableItemsChanged={onViewableItemsChanged}
+            viewabilityConfig={viewabilityConfigRef.current}
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={2.5}
+            ListFooterComponent={ListFooterComponent}
             refreshControl={
               <RefreshControl
-                refreshing={vm.isLoading && vm.posts.length > 0}
+                refreshing={vm.isRefreshing || productsVm.isRefreshing}
                 onRefresh={() => {
-                  vm.reloadPosts();
-                  productsVm.reloadProducts();
+                  vm.reloadPosts(true);
+                  productsVm.reloadProducts(true);
                 }}
                 tintColor="#0866FF"
               />
