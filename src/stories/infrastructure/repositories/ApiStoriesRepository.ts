@@ -70,12 +70,18 @@ function readBool(raw: Record<string, unknown>, ...keys: string[]): boolean {
 
 // ── Reaction wire format ──────────────────────────────────────────────────
 //
-// Stories use the same `T_REACTIONS.reaction` column as posts — numeric
-// strings '1'..'6'. The `react_story.php` endpoint at line 3 validates
-// against `array_keys($wo['reactions_types'])` which on this install is
-// 'like'..'angry' (lowercase names), so we pass the human name on the
-// wire instead of the numeric id. The response in `reaction.type` may
-// still come back as numeric, so the reverse table accepts both.
+// Stories use the same `T_REACTIONS.reaction` column as posts: numeric
+// strings '1'..'6'. The `react_story.php` endpoint validates
+// `$_POST['reaction']` against `array_keys($wo['reactions_types'])`, and
+// those keys are the numeric reaction ids on this WoWonder install.
+const REACTION_TO_WIRE: Record<ReactionType, string> = {
+  like: '1',
+  love: '2',
+  haha: '3',
+  wow: '4',
+  sad: '5',
+  angry: '6',
+};
 
 const WIRE_TO_REACTION: Record<string, ReactionType> = {
   '1': 'like',
@@ -91,6 +97,46 @@ const WIRE_TO_REACTION: Record<string, ReactionType> = {
   sad: 'sad',
   angry: 'angry',
 };
+
+type ReactStoryResponse = {
+  api_status?: number | string;
+  status?: number | string;
+  message?: string;
+  errors?: unknown;
+};
+
+function readErrorText(errors: unknown): string | undefined {
+  if (!errors || typeof errors !== 'object') return undefined;
+  const safe = errors as Record<string, unknown>;
+  const errorText = safe.error_text ?? safe.message;
+  return typeof errorText === 'string' ? errorText : undefined;
+}
+
+function readReactStoryStatus(response: ReactStoryResponse | string) {
+  if (typeof response === 'string') return '';
+  return String(response.api_status ?? response.status ?? '').trim();
+}
+
+function readReactStoryMessage(response: ReactStoryResponse | string) {
+  if (typeof response === 'string') return response;
+  return readErrorText(response.errors) ?? response.message ?? '';
+}
+
+function isReactStorySuccess(response: ReactStoryResponse | string) {
+  const status = readReactStoryStatus(response);
+  if (status === '200' || status === '220') return true;
+
+  const message = readReactStoryMessage(response).toLowerCase();
+  return (
+    status.length === 0 &&
+    (message.includes('story reacted') || message.includes('reaction removed'))
+  );
+}
+
+function isReactionPayloadError(message: string) {
+  const normalized = message.toLowerCase();
+  return normalized.includes('reaction') || normalized.includes('id , reaction');
+}
 
 // ── Publisher mapping ─────────────────────────────────────────────────────
 
@@ -487,27 +533,51 @@ export function createStoriesRepository(): StoriesRepository {
     },
 
     async reactStory(storyId: string, reaction: ReactionType) {
-      // react_story.php expects `id` (story id) + `reaction` (name, NOT
-      // numeric id — it validates against `array_keys($wo['reactions_types'])`
-      // which holds the names).
-      const response = await backendApi.post<{
-        api_status: number | string;
-        message?: string;
-      }>(apiRoutes.stories.react, {
-        id: storyId,
-        reaction,
-      });
+      const wireReaction = REACTION_TO_WIRE[reaction];
+      const payloads = Array.from(new Set([wireReaction, reaction]));
+      let lastError: Error | null = null;
 
-      const ok = String(response.api_status) === '200';
-      if (!ok) {
-        throw new Error(response.message ?? 'Không thả được cảm xúc.');
+      for (let index = 0; index < payloads.length; index += 1) {
+        const payloadReaction = payloads[index];
+
+        try {
+          const response = await backendApi.post<ReactStoryResponse | string>(
+            apiRoutes.stories.react,
+            {
+              id: storyId,
+              reaction: payloadReaction,
+            },
+          );
+
+          if (isReactStorySuccess(response)) {
+            const message = readReactStoryMessage(response);
+            const added = !/removed/i.test(message);
+            return { added };
+          }
+
+          lastError = new Error(
+            readReactStoryMessage(response) ||
+              'Khong tha duoc cam xuc.',
+          );
+        } catch (err) {
+          lastError =
+            err instanceof Error
+              ? err
+              : new Error('Khong tha duoc cam xuc.');
+        }
+
+        const canRetryWithName =
+          index === 0 &&
+          payloads.length > 1 &&
+          lastError !== null &&
+          isReactionPayloadError(lastError.message);
+
+        if (!canRetryWithName) {
+          break;
+        }
       }
 
-      // Endpoint reports outcome via `message` text — 'story reacted' for
-      // an add, 'reaction removed' for the toggle-off. We surface a tidy
-      // boolean to the caller so the view-model can sync optimistic state.
-      const added = !/removed/i.test(response.message ?? '');
-      return { added };
+      throw lastError ?? new Error('Khong tha duoc cam xuc.');
     },
   };
 }

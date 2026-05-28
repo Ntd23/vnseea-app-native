@@ -24,12 +24,12 @@ import type { RootStackParamList } from '../../../navigation/types';
 
 type SearchFilterNav = NativeStackNavigationProp<RootStackParamList>;
 
-const genders = ['All', 'Female', 'Male'];
+const genders = ['Tất cả', 'Nữ', 'Nam'];
 const rows = [
-  { label: 'Location', value: 'All', Icon: MapPin },
-  { label: 'Verified', value: 'All', Icon: BadgeCheck },
-  { label: 'Status', value: 'All', Icon: Globe2 },
-  { label: 'Profile Picture', value: 'All', Icon: ImageIcon },
+  { label: 'Vị trí', value: 'Tất cả', Icon: MapPin },
+  { label: 'Đã xác minh', value: 'Tất cả', Icon: BadgeCheck },
+  { label: 'Trạng thái', value: 'Tất cả', Icon: Globe2 },
+  { label: 'Ảnh đại diện', value: 'Tất cả', Icon: ImageIcon },
 ];
 
 function FilterRow({
@@ -75,7 +75,7 @@ function SearchFilterScreen() {
         >
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text className="text-heading text-inverse">Filter</Text>
+        <Text className="text-heading text-inverse">Bộ lọc</Text>
       </View>
 
       <ScrollView
@@ -86,7 +86,7 @@ function SearchFilterScreen() {
         <View className="surface-card mb-5 p-5">
           <View className="mb-5 flex-row items-center">
             <UserRound size={28} color="#0000ff" strokeWidth={1.8} />
-            <Text className="ml-4 text-heading">Gender</Text>
+            <Text className="ml-4 text-heading">Giới tính</Text>
           </View>
 
           <View className="flex-row gap-3">
@@ -117,7 +117,7 @@ function SearchFilterScreen() {
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center">
               <Cake size={28} color="#0000ff" strokeWidth={1.8} />
-              <Text className="ml-4 text-heading">Age</Text>
+              <Text className="ml-4 text-heading">Tuổi</Text>
             </View>
             <TouchableOpacity
               className={`h-8 w-14 rounded-full px-1 ${
@@ -133,8 +133,7 @@ function SearchFilterScreen() {
           </View>
           {ageEnabled ? (
             <Text className="mt-4 text-body-secondary">
-              Age filtering is enabled. Detailed age range controls will open
-              from the next filter step.
+              Đã bật bộ lọc theo tuổi. Các cài đặt khoảng tuổi chi tiết sẽ hiển thị ở bước tiếp theo.
             </Text>
           ) : null}
         </View>
@@ -149,7 +148,7 @@ function SearchFilterScreen() {
           className="btn-primary min-h-[56px] rounded-[18px]"
           activeOpacity={0.9}
         >
-          <Text className="text-title-primary text-inverse">Apply Filter</Text>
+          <Text className="text-title-primary text-inverse">Áp dụng bộ lọc</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

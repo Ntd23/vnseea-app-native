@@ -106,11 +106,15 @@ export function useFeedViewModel() {
       setPosts(prev =>
         prev.map(post => {
           if (post.id !== postId) return post;
+          // Skip product posts - they don't have reactions
+          if (post.kind === 'product') return post;
+
           snapshot = post;
-          const willClear = post.myReaction === nextReaction;
+          const typedPost = post as FeedTextPost | FeedVideoPost;
+          const willClear = typedPost.myReaction === nextReaction;
           targetReaction = willClear ? null : nextReaction;
 
-          const wasReacted = post.myReaction !== null;
+          const wasReacted = typedPost.myReaction !== null;
           const willBeReacted = targetReaction !== null;
           const countDelta = Number(willBeReacted) - Number(wasReacted);
 
@@ -120,8 +124,8 @@ export function useFeedViewModel() {
           //      it's different from the new one (or they're clearing).
           //      This stops the stale icon from lingering until reload.
           //   2. Prepend the NEW reaction type if it isn't already there.
-          const prevReaction = post.myReaction;
-          let newTopReactions = [...post.topReactions];
+          const prevReaction = typedPost.myReaction;
+          let newTopReactions = [...typedPost.topReactions];
           if (prevReaction && prevReaction !== targetReaction) {
             newTopReactions = newTopReactions.filter(t => t !== prevReaction);
           }
@@ -135,7 +139,7 @@ export function useFeedViewModel() {
             ...post,
             myReaction: targetReaction,
             isLiked: willBeReacted,
-            likeCount: Math.max(0, post.likeCount + countDelta),
+            likeCount: Math.max(0, typedPost.likeCount + countDelta),
             topReactions: newTopReactions,
           };
         }),
@@ -163,11 +167,12 @@ export function useFeedViewModel() {
   const updateCommentCount = useCallback(
     (postId: string, delta: number) => {
       setPosts(prev =>
-        prev.map(post =>
-          post.id === postId
-            ? { ...post, commentCount: Math.max(0, post.commentCount + delta) }
-            : post,
-        ),
+        prev.map(post => {
+          // Skip product posts - they don't have comments in the same way
+          if (post.kind === 'product') return post;
+          const typedPost = post as FeedTextPost | FeedVideoPost;
+          return { ...post, commentCount: Math.max(0, typedPost.commentCount + delta) };
+        }),
       );
     },
     [],
@@ -201,5 +206,16 @@ export function useFeedViewModel() {
     // in different state slices. With unified state it's literally the
     // same function — alias for backward compat.
     toggleTextPostReaction: toggleReaction,
+
+    /**
+     * Toggle save/unsave a post. No optimistic update needed —
+     * the server confirms the state and the UI refreshes on next visit.
+     */
+    savePost: (postId: string) => repository.savePost(postId),
+
+    /**
+     * Toggle report/unreport a post. No optimistic update needed.
+     */
+    reportPost: (postId: string) => repository.reportPost(postId),
   };
 }

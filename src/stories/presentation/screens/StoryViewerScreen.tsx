@@ -33,6 +33,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Animated,
+  Easing,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -44,6 +45,7 @@ import {
   TextInput,
   ToastAndroid,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
@@ -72,6 +74,27 @@ const VIDEO_FALLBACK_MS = 15000;
 
 const repository = createStoriesRepository();
 
+const STORY_REACTION_EMOJI: Record<ReactionType, string> = {
+  like: '\uD83D\uDC4D',
+  love: '\u2764\uFE0F',
+  haha: '\uD83D\uDE06',
+  wow: '\uD83D\uDE2E',
+  sad: '\uD83D\uDE22',
+  angry: '\uD83D\uDE21',
+};
+
+type ReactionBurstItem = {
+  id: string;
+  emoji: string;
+  left: number;
+  size: number;
+  driftX: number;
+  translateY: Animated.Value;
+  opacity: Animated.Value;
+  scale: Animated.Value;
+  rotate: Animated.Value;
+};
+
 /** Format a unix-seconds timestamp as a Vietnamese relative phrase. */
 function formatRelativeTime(timestamp?: number) {
   if (!timestamp) return '';
@@ -85,6 +108,7 @@ function formatRelativeTime(timestamp?: number) {
 
 function StoryViewerScreen({ route }: Props) {
   const navigation = useNavigation<Nav>();
+  const { width: viewportWidth } = useWindowDimensions();
 
   // Support BOTH: new API (stories array passed directly) AND old API
   // (stories list + initialUserIndex). This keeps backwards compat while
@@ -130,6 +154,8 @@ function StoryViewerScreen({ route }: Props) {
   }, [stories, passedStories]);
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [reactionBurst, setReactionBurst] = useState<ReactionBurstItem[]>([]);
+  const reactionBurstId = useRef(0);
   // Set by VideoPlayer's onLoad — null while waiting for metadata so we
   // know NOT to start the progress timer yet for video segments.
   const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
@@ -251,7 +277,86 @@ function StoryViewerScreen({ route }: Props) {
     }).start();
   }, [reactionScale]);
 
+  const launchReactionBurst = useCallback(
+    (reaction: ReactionType) => {
+      const emoji = STORY_REACTION_EMOJI[reaction];
+      const centerX = viewportWidth / 2;
+      const maxLeft = Math.max(24, viewportWidth - 48);
+      const offsets = [-104, -68, -32, 0, 36, 72, 108];
+      const nextItems: ReactionBurstItem[] = offsets.map((offset, index) => {
+        const direction = index % 2 === 0 ? -1 : 1;
+        const left = Math.min(maxLeft, Math.max(24, centerX + offset - 18));
+
+        return {
+          id: `${Date.now()}-${reactionBurstId.current++}`,
+          emoji,
+          left,
+          size: 28 + (index % 3) * 3,
+          driftX: direction * (22 + index * 3),
+          translateY: new Animated.Value(0),
+          opacity: new Animated.Value(0),
+          scale: new Animated.Value(0.72),
+          rotate: new Animated.Value(0),
+        };
+      });
+
+      setReactionBurst(items => [...items, ...nextItems]);
+
+      nextItems.forEach((item, index) => {
+        const delay = index * 55;
+        Animated.parallel([
+          Animated.timing(item.translateY, {
+            toValue: -250 - (index % 3) * 34,
+            duration: 1500 + index * 35,
+            delay,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(item.opacity, {
+              toValue: 1,
+              duration: 120,
+              useNativeDriver: true,
+            }),
+            Animated.delay(930 + index * 30),
+            Animated.timing(item.opacity, {
+              toValue: 0,
+              duration: 360,
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.spring(item.scale, {
+              toValue: 1,
+              friction: 4,
+              tension: 120,
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.timing(item.rotate, {
+            toValue: 1,
+            duration: 1450 + index * 35,
+            delay,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          setReactionBurst(items =>
+            items.filter(existing => existing.id !== item.id),
+          );
+        });
+      });
+    },
+    [viewportWidth],
+  );
+
   const showToast = useCallback((msg: string) => {
+    if (!/^kh/i.test(msg)) {
+      return;
+    }
+
     if (Platform.OS === 'android') {
       ToastAndroid.show(msg, ToastAndroid.SHORT);
     }
@@ -265,7 +370,8 @@ function StoryViewerScreen({ route }: Props) {
         return;
       }
       const activeStoryId = currentStory.id;
-      const targetStoryId = currentSegment.storyId || currentStory.id;
+      // CRITICAL FIX: The storyId might be undefined - use currentStory.id as fallback
+      const targetStoryId = currentStory.id; // Always use currentStory.id directly
       const prev = currentStory.myReaction;
       const willClear = prev === reaction;
       const targetReaction = willClear ? null : reaction;
@@ -278,6 +384,9 @@ function StoryViewerScreen({ route }: Props) {
 
       // Bounce animation for visual feedback
       bounceReaction();
+      if (!willClear) {
+        launchReactionBurst(reaction);
+      }
 
       // Optimistic update — mutate local stories array
       setStories(arr =>
@@ -325,7 +434,13 @@ function StoryViewerScreen({ route }: Props) {
         showToast('Không thể thả cảm xúc. Vui lòng thử lại.');
       }
     },
-    [currentStory, currentSegment, bounceReaction, showToast],
+    [
+      currentStory,
+      currentSegment,
+      bounceReaction,
+      launchReactionBurst,
+      showToast,
+    ],
   );
 
   // ── Delete (owner only) ────────────────────────────────────────────
@@ -553,6 +668,40 @@ function StoryViewerScreen({ route }: Props) {
       </View>
 
       {/* ── Bottom overlay: reactions picker ─────────────── */}
+      <View style={styles.reactionBurstLayer} pointerEvents="none">
+        {reactionBurst.map(item => (
+          <Animated.Text
+            key={item.id}
+            style={[
+              styles.floatingReactionEmoji,
+              {
+                left: item.left,
+                fontSize: item.size,
+                opacity: item.opacity,
+                transform: [
+                  { translateY: item.translateY },
+                  {
+                    translateX: item.translateY.interpolate({
+                      inputRange: [-340, 0],
+                      outputRange: [item.driftX, 0],
+                    }),
+                  },
+                  { scale: item.scale },
+                  {
+                    rotate: item.rotate.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['-10deg', '12deg'],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            {item.emoji}
+          </Animated.Text>
+        ))}
+      </View>
+
       <View style={styles.bottomOverlay} pointerEvents="box-none">
         {/* Solid black bottom bar */}
         <View style={styles.bottomBarContainer}>
@@ -827,6 +976,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+  },
+  reactionBurstLayer: {
+    ...(StyleSheet.absoluteFill as object),
+    zIndex: 30,
+    elevation: 30,
+  },
+  floatingReactionEmoji: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 104 : 88,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.35)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   quickReplyRow: {
     flexDirection: 'row',

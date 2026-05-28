@@ -916,5 +916,43 @@ export function createFeedRepository(): FeedRepository {
         throw err;
       }
     },
+
+    async savePost(postId: string): Promise<{ saved: boolean }> {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        code?: number;
+        action?: string;
+        message?: string;
+      }>(apiRoutes.feed.postActions, {
+        action: 'save',
+        post_id: postId,
+      });
+
+      const ok = String(response.api_status) === '200' || response.code === 1;
+      if (!ok) {
+        throw new Error(response.message ?? 'Không lưu được bài viết.');
+      }
+
+      return { saved: ok };
+    },
+
+    async reportPost(postId: string): Promise<{ reported: boolean }> {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        code?: number;
+        action?: string;
+        message?: string;
+      }>(apiRoutes.feed.postActions, {
+        action: 'report',
+        post_id: postId,
+      });
+
+      const ok = String(response.api_status) === '200' || response.code === 1;
+      if (!ok) {
+        throw new Error(response.message ?? 'Không gửi được báo cáo.');
+      }
+
+      return { reported: ok };
+    },
   };
 }

@@ -26,27 +26,49 @@ import {
   Info,
   MapPin,
   Package,
-  Trash2,
   X,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ROUTES } from '../../../navigation/constants/routes';
-import type { RootStackParamList } from '../../../navigation/types';
 import { useProductViewModel } from '../../application/view-models/useProductViewModel';
 import type { ProductFormData } from '../../application/view-models/useProductViewModel';
 
 type CreateProductNav = NativeStackNavigationProp<RootStackParamList>;
 
-const steps = [
+type RootStackParamList = {
+  Feed: undefined;
+  [key: string]: undefined;
+};
+
+interface StepOption {
+  id: string;
+  name: string;
+}
+
+type StepConfig = {
+  key: string;
+  title: string;
+  helper: string;
+  label?: string;
+  placeholder?: string;
+  keyboard?: 'numeric' | 'default';
+  iconComponent?: typeof DollarSign;
+  field: keyof ProductFormData;
+  select?: boolean;
+  upload?: boolean;
+  multiline?: boolean;
+  options?: StepOption[];
+};
+
+const steps: StepConfig[] = [
   {
     key: 'name',
     title: 'Tên sản phẩm',
     helper: 'Đặt tên rõ ràng để người mua dễ tìm thấy sản phẩm.',
     label: 'Tên sản phẩm',
     placeholder: 'Nhập tên sản phẩm',
-    field: 'product_title' as keyof ProductFormData,
+    field: 'product_title',
   },
   {
     key: 'price',
@@ -54,9 +76,9 @@ const steps = [
     helper: 'Vui lòng nhập giá bán công khai của sản phẩm này.',
     label: 'Mức giá niêm yết (VND)',
     placeholder: '0',
-    keyboard: 'numeric' as const,
-    icon: DollarSign,
-    field: 'product_price' as keyof ProductFormData,
+    keyboard: 'numeric',
+    iconComponent: DollarSign,
+    field: 'product_price',
   },
   {
     key: 'currency',
@@ -65,7 +87,7 @@ const steps = [
     label: 'Loại tiền tệ',
     placeholder: 'VND - Việt Nam Đồng',
     select: true,
-    field: 'currency' as keyof ProductFormData,
+    field: 'currency',
     options: [
       { id: 'VND', name: 'VND - Việt Nam Đồng' },
       { id: 'USD', name: 'USD - Đô la Mỹ' },
@@ -76,7 +98,7 @@ const steps = [
     key: 'category',
     title: 'Chọn danh mục',
     helper: 'Danh mục giúp sản phẩm được phân phối đúng nhóm người mua.',
-    field: 'product_category' as keyof ProductFormData,
+    field: 'product_category',
     options: [
       { id: '1', name: 'Điện tử tiêu dùng' },
       { id: '2', name: 'Thời trang nam' },
@@ -95,13 +117,13 @@ const steps = [
     label: 'Mô tả sản phẩm',
     placeholder: 'Nhập mô tả chi tiết về sản phẩm của bạn...',
     multiline: true,
-    field: 'product_description' as keyof ProductFormData,
+    field: 'product_description',
   },
   {
     key: 'type',
     title: 'Tình trạng sản phẩm',
     helper: 'Chọn tình trạng hiện tại để người mua dễ đánh giá.',
-    field: 'product_type' as keyof ProductFormData,
+    field: 'product_type',
     options: [
       { id: '0', name: 'Sản phẩm bình thường' },
       { id: '1', name: 'Sản phẩm đang bán' },
@@ -112,17 +134,17 @@ const steps = [
     title: 'Hình ảnh sản phẩm',
     helper: 'Tải lên ít nhất 1 ảnh rõ nét cho sản phẩm của bạn.',
     upload: true,
-    field: 'images' as keyof ProductFormData,
+    field: 'images',
   },
   {
     key: 'location',
-    title: 'Vị trí sản phẩm',
-    helper: 'Vị trí chính xác giúp người mua tìm thấy sản phẩm gần họ.',
-    label: 'Chọn vị trí',
-    placeholder: 'Nhập địa chỉ hoặc bấm để lấy vị trí hiện tại',
-    icon: MapPin,
+    title: 'Người bán tỉnh/thành',
+    helper: 'Khu vực vị trí giúp người mua tìm thấy sản phẩm gần họ.',
+    label: 'Tỉnh/Thành phố',
+    placeholder: 'Chọn tỉnh/thành phố',
+    iconComponent: MapPin,
     select: true,
-    field: 'product_location' as keyof ProductFormData,
+    field: 'product_location',
   },
   {
     key: 'units',
@@ -130,12 +152,12 @@ const steps = [
     helper: 'Nhập tổng số lượng đơn vị đang có sẵn.',
     label: 'Tổng số lượng đơn vị',
     placeholder: 'Nhập số lượng (vd: 100)',
-    keyboard: 'numeric' as const,
-    field: 'units' as keyof ProductFormData,
+    keyboard: 'numeric',
+    field: 'units',
   },
 ];
 
-function CreateProductScreen() {
+export default function CreateProductScreen() {
   const navigation = useNavigation<CreateProductNav>();
   const {
     step,
@@ -154,10 +176,105 @@ function CreateProductScreen() {
     resetForm,
   } = useProductViewModel();
 
+  // ALL hooks must be called unconditionally before any early returns
+  const handleBack = useCallback(() => {
+    if (step > 0) {
+      prevStep();
+    } else {
+      Alert.alert(
+        'Hủy tạo sản phẩm',
+        'Bạn có chắc muốn hủy? Thông tin đã nhập sẽ không được lưu.',
+        [
+          { text: 'Không', style: 'cancel' },
+          { text: 'Có', style: 'destructive', onPress: () => navigation.goBack() },
+        ],
+      );
+    }
+  }, [step, prevStep, navigation]);
+
+  const handleNext = useCallback(() => {
+    if (step === totalSteps - 1) {
+      submitProduct();
+    } else {
+      nextStep();
+    }
+  }, [step, totalSteps, nextStep, submitProduct]);
+
   const currentStep = steps[step];
   const progressValue = Math.round(((step + 1) / totalSteps) * 100);
+  const IconComponent = currentStep.iconComponent;
 
-  // Handle success
+  // Get current field value
+  const getFieldValue = (): string => {
+    const value = formData[currentStep.field];
+    if (currentStep.field === 'images') {
+      return '';
+    }
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+  };
+
+  const handleSelectOption = useCallback(
+    (optionId: string) => {
+      if (currentStep.field === 'product_category' || currentStep.field === 'currency') {
+        updateFormData(currentStep.field, optionId);
+      } else if (currentStep.field === 'product_type') {
+        updateFormData(currentStep.field, parseInt(optionId, 10));
+      }
+      nextStep();
+    },
+    [currentStep.field, updateFormData, nextStep],
+  );
+
+  const handleAddImage = useCallback(async () => {
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 10,
+        quality: 0.8,
+      });
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        Alert.alert('Lỗi', result.errorMessage ?? 'Không thể mở thư viện ảnh');
+        return;
+      }
+      const assets = result.assets as Asset[] | undefined;
+      if (assets && assets.length > 0) {
+        for (const asset of assets) {
+          if (asset.uri) {
+            addImage({
+              uri: asset.uri,
+              name: asset.fileName ?? 'product_image.jpg',
+              type: asset.type ?? 'image/jpeg',
+            });
+          }
+        }
+      }
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể chọn hình ảnh');
+    }
+  }, [addImage]);
+
+  const handleRemoveImage = useCallback(
+    (index: number) => {
+      removeImage(index);
+    },
+    [removeImage],
+  );
+
+  const getSelectedOption = (field: keyof ProductFormData, optionId: string): boolean => {
+    if (field === 'product_category') {
+      return formData.product_category === optionId;
+    }
+    if (field === 'product_type') {
+      return formData.product_type === parseInt(optionId, 10);
+    }
+    if (field === 'currency') {
+      return formData.currency === optionId;
+    }
+    return false;
+  };
+
+  // SUCCESS STATE - Conditional JSX return AFTER all hooks
   if (submitSuccess) {
     return (
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
@@ -195,52 +312,7 @@ function CreateProductScreen() {
     );
   }
 
-  const handleBack = useCallback(() => {
-    if (step > 0) {
-      prevStep();
-    } else {
-      Alert.alert(
-        'Hủy tạo sản phẩm',
-        'Bạn có chắc muốn hủy? Thông tin đã nhập sẽ không được lưu.',
-        [
-          { text: 'Không', style: 'cancel' },
-          { text: 'Có', style: 'destructive', onPress: () => navigation.goBack() },
-        ],
-      );
-    }
-  }, [step, prevStep, navigation]);
-
-  const handleNext = useCallback(async () => {
-    if (step === totalSteps - 1) {
-      await submitProduct();
-    } else {
-      nextStep();
-    }
-  }, [step, totalSteps, nextStep, submitProduct]);
-
-  const handleSelectOption = useCallback(
-    (optionId: string) => {
-      if (currentStep.field === 'product_category' || currentStep.field === 'currency') {
-        updateFormData(currentStep.field, optionId);
-      } else if (currentStep.field === 'product_type') {
-        updateFormData(currentStep.field, parseInt(optionId, 10));
-      }
-      nextStep();
-    },
-    [currentStep, updateFormData, nextStep],
-  );
-
-  const FieldIcon = currentStep.icon;
-
-  // Get current field value
-  const getFieldValue = () => {
-    const value = formData[currentStep.field];
-    if (currentStep.field === 'images') {
-      return value;
-    }
-    return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
-  };
-
+  // MAIN FORM STATE
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor="#0000FF" />
@@ -301,7 +373,7 @@ function CreateProductScreen() {
                         />
                         <TouchableOpacity
                           className="absolute -top-2 -right-2 h-6 w-6 items-center justify-center rounded-full bg-red-500"
-                          onPress={() => removeImage(index)}
+                          onPress={() => handleRemoveImage(index)}
                         >
                           <X size={14} color="#FFFFFF" />
                         </TouchableOpacity>
@@ -313,30 +385,7 @@ function CreateProductScreen() {
                 <TouchableOpacity
                   className="preview-panel min-h-[160px] items-center justify-center border border-dashed border-[#0000ff] p-6"
                   activeOpacity={0.85}
-                  onPress={async () => {
-                    const result = await launchImageLibrary({
-                      mediaType: 'photo',
-                      selectionLimit: 10,
-                      quality: 0.8,
-                    });
-                    if (result.didCancel) return;
-                    if (result.errorCode) {
-                      Alert.alert('Lỗi', result.errorMessage ?? 'Không thể mở thư viện ảnh');
-                      return;
-                    }
-                    const assets = result.assets as Asset[] | undefined;
-                    if (assets && assets.length > 0) {
-                      for (const asset of assets) {
-                        if (asset.uri) {
-                          addImage({
-                            uri: asset.uri,
-                            name: asset.fileName ?? 'product_image.jpg',
-                            type: asset.type ?? 'image/jpeg',
-                          });
-                        }
-                      }
-                    }
-                  }}
+                  onPress={handleAddImage}
                 >
                   <ImagePlus size={46} color="#0000FF" />
                   <Text className="mt-4 text-title-primary text-brand">
@@ -357,12 +406,8 @@ function CreateProductScreen() {
             ) : currentStep.options ? (
               // Select Options Step (Category/Type/Currency)
               <View className="gap-3">
-                {(currentStep.options as Array<{ id: string; name: string }>).map((option, index) => {
-                  const isSelected = currentStep.field === 'product_category'
-                    ? formData.product_category === option.id
-                    : currentStep.field === 'product_type'
-                    ? formData.product_type === parseInt(option.id, 10)
-                    : formData.currency === option.id;
+                {currentStep.options.map((option, index) => {
+                  const isSelected = getSelectedOption(currentStep.field, option.id);
 
                   return (
                     <TouchableOpacity
@@ -392,15 +437,15 @@ function CreateProductScreen() {
                       : 'min-h-[54px]'
                   } ${errors[currentStep.field as keyof typeof errors] ? 'border-red-500 border' : ''}`}
                 >
-                  {FieldIcon && <FieldIcon size={20} color="#64748B" />}
+                  {IconComponent && <IconComponent size={20} color="#64748B" />}
                   <TextInput
-                    className={`flex-1 text-body-primary ${FieldIcon ? 'ml-3' : ''}`}
+                    className={`flex-1 text-body-primary ${IconComponent ? 'ml-3' : ''}`}
                     placeholder={currentStep.placeholder}
                     placeholderTextColor="#94A3B8"
-                    keyboardType={currentStep.keyboard}
+                    keyboardType={currentStep.keyboard === 'numeric' ? 'numeric' : 'default'}
                     multiline={currentStep.multiline}
                     textAlignVertical={currentStep.multiline ? 'top' : 'center'}
-                    value={getFieldValue() as string}
+                    value={getFieldValue()}
                     onChangeText={(text) => updateFormData(currentStep.field, text)}
                   />
                   {currentStep.select && <ChevronDown size={20} color="#64748B" />}
@@ -452,5 +497,3 @@ function CreateProductScreen() {
     </SafeAreaView>
   );
 }
-
-export default CreateProductScreen;

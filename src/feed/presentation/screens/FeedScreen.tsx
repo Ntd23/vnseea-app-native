@@ -12,6 +12,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Alert,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -41,6 +42,7 @@ import {
   ThumbsUp,
   X,
 } from 'lucide-react-native';
+import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
 
@@ -92,6 +94,7 @@ import type {
   FeedPost,
   FeedTextPost,
   FeedVideoPost,
+  FeedProductPost,
 } from '../../domain/types/feed.types';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
@@ -102,6 +105,9 @@ import {
 } from '../../../stories';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
+import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
+import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
+import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -165,6 +171,18 @@ function Avatar({ uri, size = 40 }: { uri: string; size?: number }) {
 function FeedHeader() {
   const navigation = useNavigation<FeedNav>();
   const [sheetVisible, setSheetVisible] = useState(false);
+  // Rotation animation for the + button (transforms to X when open)
+  const [buttonRotation, setButtonRotation] = useState('0deg');
+
+  const handleOpenSheet = useCallback(() => {
+    setSheetVisible(true);
+    setButtonRotation('45deg');
+  }, []);
+
+  const handleCloseSheet = useCallback(() => {
+    setSheetVisible(false);
+    setButtonRotation('0deg');
+  }, []);
   const handleCreateNavigate = useCallback(
     (route: RootStackRouteName) => {
       if (route === ROUTES.CREATE_EVENT) {
@@ -211,7 +229,8 @@ function FeedHeader() {
           <TouchableOpacity
             className="h-10 w-10 items-center justify-center rounded-full"
             activeOpacity={0.75}
-            onPress={() => setSheetVisible(true)}
+            onPress={handleOpenSheet}
+            style={{ transform: [{ rotate: buttonRotation }] }}
           >
             <Plus size={24} color="#0000FF" />
           </TouchableOpacity>
@@ -222,7 +241,7 @@ function FeedHeader() {
       </View>
       <CreateActionSheet
         visible={sheetVisible}
-        onClose={() => setSheetVisible(false)}
+        onClose={handleCloseSheet}
         onNavigate={handleCreateNavigate}
       />
     </>
@@ -487,6 +506,7 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   gestureY,
   gestureActive,
   navigateToProfile,
+  onOpenPostMenu,
 }: {
   post: FeedVideoPost;
   onReact: (postId: string, reaction: ReactionType) => void;
@@ -499,6 +519,7 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   gestureY: any;
   gestureActive: any;
   navigateToProfile: (userId: string) => void;
+  onOpenPostMenu: (post: FeedPost) => void;
 }) {
   const navigation = useNavigation<any>();
   const [manuallyPaused, setManuallyPaused] = useState(false);
@@ -581,6 +602,8 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           name={post.publisher.name}
           time={formatPostTime(post.postedAt)}
           onPress={post.publisher.id ? handleProfilePress : undefined}
+          onMorePress={onOpenPostMenu}
+          post={post}
         />
         {post.caption ? (
           <Text className="text-body-primary">{post.caption}</Text>
@@ -1050,7 +1073,7 @@ function PhotoViewerModal({
   );
 }
 
-function VideoReactionSummary({
+const VideoReactionSummary = React.memo(function VideoReactionSummary({
   likeCount,
   commentCount,
   myReaction,
@@ -1133,7 +1156,7 @@ function VideoReactionSummary({
       ) : null}
     </View>
   );
-}
+});
 
 // ── Action row — Thích / Bình luận / Chia sẻ ─────────────────────────────
 // The "Thích" button is the interesting one:
@@ -1141,7 +1164,7 @@ function VideoReactionSummary({
 //     Yêu thích = red, Haha/Wow/Sad = yellow, Phẫn nộ = orange)
 //   • Long-press opens the picker pill (handled by the parent screen via
 //     `onLikeLongPress` which measures this button's on-screen position)
-function VideoPostActions({
+const VideoPostActions = React.memo(function VideoPostActions({
   myReaction,
   likeButtonRef,
   onLikeTap,
@@ -1238,7 +1261,7 @@ function VideoPostActions({
       </TouchableOpacity>
     </View>
   );
-}
+});
 
 // ── Floating reaction picker (Facebook-style 6-emoji pill) ────────────────
 // Renders in a transparent full-screen Modal so it always floats above
@@ -1432,6 +1455,12 @@ function PostSkeleton() {
   );
 }
 
+const ESTIMATED_HEIGHTS = {
+  text: 450,
+  video: 550,
+  product: 320,
+};
+
 function MergedFeed({
   posts,
   isLoading,
@@ -1441,6 +1470,7 @@ function MergedFeed({
   onCommentTap,
   onShare,
   onPhotoPress,
+  onOpenPostMenu,
   activeVideoId,
   onReportLayout,
   onReportSectionY,
@@ -1448,6 +1478,8 @@ function MergedFeed({
   gestureY,
   gestureActive,
   navigateToProfile,
+  products,
+  onProductPress,
 }: {
   posts: FeedPost[];
   isLoading: boolean;
@@ -1457,6 +1489,7 @@ function MergedFeed({
   onCommentTap: (postId: string) => void;
   onShare?: (post: FeedPost) => void;
   onPhotoPress: (post: FeedTextPost, photoIndex: number) => void;
+  onOpenPostMenu: (post: FeedPost) => void;
   activeVideoId: string | null;
   onReportLayout: (id: string, y: number, height: number) => void;
   onReportSectionY: (y: number) => void;
@@ -1464,6 +1497,8 @@ function MergedFeed({
   gestureY: any;
   gestureActive: any;
   navigateToProfile: (userId: string) => void;
+  products?: FeedProductPost[];
+  onProductPress?: (product: any) => void;
 }) {
   // ── Skeleton loading state ──
   if (isLoading && posts.length === 0) {
@@ -1500,6 +1535,7 @@ function MergedFeed({
               gestureY={gestureY}
               gestureActive={gestureActive}
               navigateToProfile={navigateToProfile}
+              onOpenPostMenu={onOpenPostMenu}
             />
           );
         }
@@ -1517,11 +1553,29 @@ function MergedFeed({
               gestureY={gestureY}
               gestureActive={gestureActive}
               navigateToProfile={navigateToProfile}
+              onOpenPostMenu={onOpenPostMenu}
             />
           );
         }
         return null;
       })}
+      {/* Products section - Facebook Marketplace-style */}
+      {products && products.length > 0 && (
+        <View className="mt-2">
+          <Text className="mx-4 mb-3 text-heading">Sản phẩm</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="px-4 gap-4">
+            {products.map(productPost => (
+              <View key={productPost.id} className="w-56">
+                <ProductPostCard
+                  product={productPost.product}
+                  onPress={onProductPress}
+                  onProfilePress={navigateToProfile}
+                />
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      )}
       {error ? (
         <View className="mx-4 mb-4 rounded-lg bg-red-50 px-3 py-2">
           <Text style={{ color: '#B91C1C', fontSize: 13 }}>{error}</Text>
@@ -1531,27 +1585,31 @@ function MergedFeed({
   );
 }
 
-function PostHeader({
+const PostHeader = React.memo(function PostHeader({
   avatar,
   name,
   time,
   badge,
   onPress,
+  onMorePress,
+  post,
 }: {
   avatar?: string;
   name: string;
   time: string;
   badge?: string;
   onPress?: () => void;
+  onMorePress?: (post: FeedPost) => void;
+  post?: FeedPost;
 }) {
   return (
-    <TouchableOpacity
-      className="mb-4 flex-row items-center justify-between"
-      activeOpacity={0.8}
-      onPress={onPress}
-      disabled={!onPress}
-    >
-      <View className="flex-row items-center">
+    <View className="mb-4 flex-row items-center justify-between">
+      <TouchableOpacity
+        className="flex-row items-center"
+        activeOpacity={0.8}
+        onPress={onPress}
+        disabled={!onPress}
+      >
         {avatar ? (
           <Avatar uri={avatar} />
         ) : (
@@ -1570,11 +1628,15 @@ function PostHeader({
           </View>
           <Text className="text-caption-secondary">{time} • Công khai</Text>
         </View>
-      </View>
-      <MoreHorizontal size={22} color="#94A3B8" />
-    </TouchableOpacity>
+      </TouchableOpacity>
+      {onMorePress && post && (
+        <TouchableOpacity onPress={() => post && onMorePress(post)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <MoreHorizontal size={22} color="#94A3B8" />
+        </TouchableOpacity>
+      )}
+    </View>
   );
-}
+});
 
 // ── Text / photo post card ────────────────────────────────────────────
 // Renders a non-video post from `vm.textPosts`. Same FB-style chrome as
@@ -1591,6 +1653,7 @@ const TextPostCard = React.memo(function TextPostCard({
   gestureY,
   gestureActive,
   navigateToProfile,
+  onOpenPostMenu,
 }: {
   post: FeedTextPost;
   onReact: (postId: string, reaction: ReactionType) => void;
@@ -1606,6 +1669,7 @@ const TextPostCard = React.memo(function TextPostCard({
   gestureY: any;
   gestureActive: any;
   navigateToProfile: (userId: string) => void;
+  onOpenPostMenu: (post: FeedPost) => void;
 }) {
   const likeButtonRef = useRef<View>(null);
 
@@ -1642,6 +1706,8 @@ const TextPostCard = React.memo(function TextPostCard({
           name={post.publisher.name}
           time={formatPostTime(post.postedAt)}
           onPress={post.publisher.id ? handleProfilePress : undefined}
+          onMorePress={onOpenPostMenu}
+          post={post}
         />
         {post.caption ? (
           <Text className="text-body-primary">{post.caption}</Text>
@@ -1740,11 +1806,35 @@ function FeedScreen() {
     onCommentCountChange: vm.updateCommentCount,
   });
 
+  // Products for feed (Facebook Marketplace style)
+  const productsVm = useProductsOnFeedViewModel();
+
+  // Convert products to FeedProductPost format
+  const feedProductPosts = useMemo<FeedProductPost[]>(() => {
+    return productsVm.products.map((product, index) => ({
+      kind: 'product' as const,
+      id: `product-${product.id || index}`,
+      product,
+      postedAt: product.time ? parseInt(String(product.time), 10) : undefined,
+      publisher: {
+        id: String(product.seller?.user_id || ''),
+        name: product.seller?.name || 'Người bán',
+        username: '',
+        avatarUrl: product.seller?.avatar,
+      },
+    }));
+  }, [productsVm.products]);
+
+  const handleProductPress = useCallback((product: any) => {
+    // Navigate to product detail screen
+    console.log('[FeedScreen] Product pressed:', product.id);
+  }, []);
+
   // The comment sheet is shared by both video and text posts — look up
   // the active post in both lists so the comment count badge stays
-  // accurate regardless of which type triggered it.
+  // accurate regardless of which type triggered it. Filter out product posts.
   const selectedCommentPost = useMemo(
-     () => vm.posts.find(post => post.id === commentVm.selectedCommentPostId) ?? null,
+     () => vm.posts.find(post => post.kind !== 'product' && post.id === commentVm.selectedCommentPostId) as (FeedTextPost | FeedVideoPost) | null,
      [vm.posts, commentVm.selectedCommentPostId],
   );
 
@@ -1758,6 +1848,46 @@ function FeedScreen() {
   const [videoSectionY, setVideoSectionY] = useState(0);
   const cardLayouts = useRef<Record<string, { y: number; height: number }>>({});
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+
+  // ── Post menu state ──────────────────────────────────────────────────
+  const [postMenuVisible, setPostMenuVisible] = useState(false);
+  const [selectedPostForMenu, setSelectedPostForMenu] = useState<FeedPost | null>(null);
+
+  const handleOpenPostMenu = useCallback((post: FeedPost) => {
+    setSelectedPostForMenu(post);
+    setPostMenuVisible(true);
+  }, []);
+
+  const handleClosePostMenu = useCallback(() => {
+    setPostMenuVisible(false);
+    setSelectedPostForMenu(null);
+  }, []);
+
+  const handleSavePost = useCallback(async (postId: string) => {
+    try {
+      const result = await vm.savePost?.(postId);
+      if (result?.saved) {
+        Alert.alert('Đã lưu', 'Bài viết đã được lưu vào mục đã lưu.');
+      } else {
+        Alert.alert('Đã bỏ lưu', 'Bài viết đã được xóa khỏi mục đã lưu.');
+      }
+    } catch (err) {
+      Alert.alert('Lỗi', 'Không thể lưu bài viết. Vui lòng thử lại.');
+    }
+  }, [vm]);
+
+  const handleReportPost = useCallback(async (postId: string) => {
+    try {
+      const result = await vm.reportPost?.(postId);
+      if (result?.reported) {
+        Alert.alert('Đã gửi báo cáo', 'Cảm ơn bạn đã báo cáo. Chúng tôi sẽ xem xét bài viết này.');
+      } else {
+        Alert.alert('Đã hủy báo cáo', 'Báo cáo đã được xóa.');
+      }
+    } catch (err) {
+      Alert.alert('Lỗi', 'Không thể gửi báo cáo. Vui lòng thử lại.');
+    }
+  }, [vm]);
 
   const handleReportSectionY = useCallback((y: number) => {
     setVideoSectionY(y);
@@ -1880,55 +2010,154 @@ function FeedScreen() {
     console.log('[Feed] Link copied to clipboard');
   }, []);
 
+  // ── FlatList: Virtualized feed with interleaved products ─────────────
+  const mergedPosts = useMemo<FeedPost[]>(() => {
+    const all = [...vm.posts, ...feedProductPosts];
+    return all.sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+  }, [vm.posts, feedProductPosts]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: FeedPost }) => {
+      switch (item.kind) {
+        case 'video': {
+          const vp = item as FeedVideoPost;
+          return (
+            <HomeVideoPostCard
+              key={vp.id}
+              post={vp}
+              onReact={vm.toggleReaction}
+              onOpenPicker={handleOpenPicker}
+              onCommentTap={commentVm.openComments}
+              onShare={handleOpenSharePost}
+              isActive={activeVideoId === vp.id}
+              onReportLayout={handleReportLayout}
+              gestureX={gestureX}
+              gestureY={gestureY}
+              gestureActive={gestureActive}
+              navigateToProfile={navigateToProfile}
+              onOpenPostMenu={handleOpenPostMenu}
+            />
+          );
+        }
+        case 'text': {
+          const tp = item as FeedTextPost;
+          return (
+            <TextPostCard
+              key={tp.id}
+              post={tp}
+              onReact={vm.toggleReaction}
+              onOpenPicker={handleOpenPicker}
+              onCommentTap={commentVm.openComments}
+              onPhotoPress={handlePhotoPress}
+              onShare={handleOpenSharePost}
+              gestureX={gestureX}
+              gestureY={gestureY}
+              gestureActive={gestureActive}
+              navigateToProfile={navigateToProfile}
+              onOpenPostMenu={handleOpenPostMenu}
+            />
+          );
+        }
+        case 'product': {
+          const pp = item as FeedProductPost;
+          return (
+            <View key={pp.id} className="mx-4 mb-6">
+              <ProductPostCard
+                product={pp.product}
+                onPress={handleProductPress}
+                onProfilePress={navigateToProfile}
+              />
+            </View>
+          );
+        }
+        default:
+          return null;
+      }
+    },
+    [
+      activeVideoId,
+      commentVm.openComments,
+      gestureActive,
+      gestureX,
+      gestureY,
+      handleOpenPicker,
+      handleOpenSharePost,
+      handlePhotoPress,
+      handleProductPress,
+      handleReportLayout,
+      navigateToProfile,
+      handleOpenPostMenu,
+      vm.toggleReaction,
+    ],
+  );
+
+  const keyExtractor = useCallback((item: FeedPost) => item.id, []);
+  const getItemLayout = useCallback((_: any, index: number) => {
+    const heights: Record<string, number> = { text: 450, video: 550, product: 320 };
+    const h = heights[mergedPosts[index]?.kind ?? 'text'] ?? 400;
+    return { length: h, offset: h * index, index };
+  }, [mergedPosts]);
+
+  const ListHeaderComponent = useMemo(
+    () => (
+      <View>
+        <FilterTabs />
+        <ComposerCard onPress={goToCreatePost} avatarUrl={userVm.user?.avatar} />
+        <StoriesRow avatarUrl={userVm.user?.avatar} />
+        <GreetingCard userName={userVm.user?.name} />
+      </View>
+    ),
+    [goToCreatePost, userVm.user?.avatar],
+  );
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView className="flex-1 surface-base">
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
-      <FeedHeader />
-      <View className="flex-1">
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="pb-24"
-          showsVerticalScrollIndicator={false}
-          scrollEventThrottle={16}
-          onScroll={handleScroll}
-          refreshControl={
-            <RefreshControl
-              refreshing={vm.isLoading && vm.posts.length > 0}
-              onRefresh={vm.reloadPosts}
-              tintColor="#0866FF"
-            />
-          }
-        >
-          <FilterTabs />
-          <ComposerCard onPress={goToCreatePost} avatarUrl={userVm.user?.avatar} />
-          <StoriesRow avatarUrl={userVm.user?.avatar} />
-          <GreetingCard userName={userVm.user?.name} />
-          <MergedFeed
-            posts={vm.posts}
-            isLoading={vm.isLoading}
-            error={vm.error}
-            onReact={vm.toggleReaction}
-            onOpenPicker={handleOpenPicker}
-            onCommentTap={commentVm.openComments}
-            onShare={handleOpenSharePost}
-            onPhotoPress={handlePhotoPress}
-            activeVideoId={activeVideoId}
-            onReportLayout={handleReportLayout}
-            onReportSectionY={handleReportSectionY}
-            gestureX={gestureX}
-            gestureY={gestureY}
-            gestureActive={gestureActive}
-            navigateToProfile={navigateToProfile}
+        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <FeedHeader />
+        <View className="flex-1">
+          <FlatList
+            data={mergedPosts}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            ListHeaderComponent={ListHeaderComponent}
+            getItemLayout={getItemLayout}
+            windowSize={5}
+            maxToRenderPerBatch={5}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews={true}
+            initialNumToRender={3}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}
+            nestedScrollEnabled
+            onScroll={handleScroll}
+            refreshControl={
+              <RefreshControl
+                refreshing={vm.isLoading && vm.posts.length > 0}
+                onRefresh={() => {
+                  vm.reloadPosts();
+                  productsVm.reloadProducts();
+                }}
+                tintColor="#0866FF"
+              />
+            }
+            ListEmptyComponent={
+              vm.isLoading ? (
+                <View>
+                  {[1, 2, 3].map(i => (
+                    <PostSkeleton key={i} />
+                  ))}
+                </View>
+              ) : null
+            }
           />
-        </ScrollView>
-        <TouchableOpacity
-          className="surface-brand absolute bottom-6 right-5 h-14 w-14 items-center justify-center rounded-full"
-          activeOpacity={0.9}
-        >
-          <Edit3 size={26} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            className="surface-brand absolute bottom-6 right-5 h-14 w-14 items-center justify-center rounded-full"
+            activeOpacity={0.9}
+          >
+            <Edit3 size={26} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       <ReactionPickerOverlay
         anchor={pickerAnchor}
         onPick={handlePickReaction}
@@ -1977,6 +2206,16 @@ function FeedScreen() {
         post={sharingPost}
         onCopied={handleShareCopied}
       />
+      {/* ── Post Menu Action Sheet ── */}
+      <PostMenuActionSheet
+        visible={postMenuVisible}
+        onClose={handleClosePostMenu}
+        post={selectedPostForMenu}
+        onSave={handleSavePost}
+        onReport={handleReportPost}
+      />
+      {/* ── Toast Notification ── */}
+      <ToastContainer />
     </SafeAreaView>
     </GestureHandlerRootView>
   );

@@ -170,6 +170,7 @@ function SettingsScreen() {
             activeOpacity={0.8}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={() => setSheetVisible(true)}
+            style={{ transform: [{ rotate: sheetVisible ? '45deg' : '0deg' }] }}
           >
             <Plus size={22} color="#0000ff" />
           </TouchableOpacity>

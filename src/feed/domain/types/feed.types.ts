@@ -2,6 +2,7 @@
 // Port from: client/src/feed/domain/types/
 
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type { ProductItem } from '../../../product/domain/types/product.types';
 
 export interface FeedItem {
   id: string | number;
@@ -164,6 +165,24 @@ export interface FeedVideoPost {
 }
 
 /**
+ * A product post shown on the home feed (Facebook Marketplace-style).
+ * Displayed as a card with product image, title, price, and seller info.
+ * Links back to a post via `postId` if the product was created as a post.
+ */
+export interface FeedProductPost {
+  kind: 'product';
+  id: string;
+  product: ProductItem;
+  postedAt?: number;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
+/**
  * Unified feed post — anything that can appear in the merged home feed.
  *
  * We render the home screen from a single time-sorted `posts: FeedPost[]`
@@ -177,4 +196,4 @@ export interface FeedVideoPost {
  * extending this union with a new `kind` literal — no refactor of the
  * surrounding plumbing needed.
  */
-export type FeedPost = FeedVideoPost | FeedTextPost;
+export type FeedPost = FeedVideoPost | FeedTextPost | FeedProductPost;

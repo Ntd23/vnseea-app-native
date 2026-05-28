@@ -1,6 +1,8 @@
-// Description: Renders the VNSEEA six-step create event wizard based on Stitch references.
-import React, { useMemo, useState } from 'react';
+// Description: Renders the VNSEEA six-step create event wizard with date/time pickers and image selection.
+import React, { useState } from 'react';
 import {
+  Modal,
+  Platform,
   ScrollView,
   StatusBar,
   Text,
@@ -8,105 +10,447 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
   ArrowLeft,
   CalendarDays,
+  Check,
   Clock,
   ImagePlus,
   Info,
   MapPin,
   PartyPopper,
+  X,
 } from 'lucide-react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 
 type CreateEventNav = NativeStackNavigationProp<RootStackParamList>;
-type EventField = {
-  label: string;
-  placeholder: string;
-  Icon?: React.ComponentType<{ size: number; color: string }>;
-  multiline?: boolean;
-};
-type EventStep = {
-  title: string;
-  helper: string;
-  fields?: EventField[];
-  upload?: boolean;
-};
 
-const steps: EventStep[] = [
-  {
-    title: 'Tên sự kiện',
-    helper: 'Đặt tên ngắn gọn, rõ ràng cho sự kiện của bạn.',
-    fields: [{ label: 'Tên sự kiện', placeholder: 'Nhập tên sự kiện' }],
-  },
-  {
-    title: 'Thời gian diễn ra',
-    helper: 'Chọn ngày và giờ bắt đầu cho sự kiện.',
-    fields: [
-      { label: 'Ngày bắt đầu', placeholder: 'DD/MM/YYYY', Icon: CalendarDays },
-      { label: 'Giờ bắt đầu', placeholder: '08:00 AM', Icon: Clock },
-    ],
-  },
-  {
-    title: 'Thời gian kết thúc',
-    helper: 'Chọn thời điểm kết thúc để khách mời nắm lịch.',
-    fields: [
-      { label: 'Ngày kết thúc', placeholder: 'Chọn ngày', Icon: CalendarDays },
-      { label: 'Giờ kết thúc', placeholder: 'Chọn giờ', Icon: Clock },
-    ],
-  },
-  {
-    title: 'Ảnh sự kiện',
-    helper: 'Chọn ảnh nổi bật để sự kiện hấp dẫn hơn.',
-    upload: true,
-  },
-  {
-    title: 'Vị trí',
-    helper: 'Thêm địa điểm hoặc nơi tổ chức sự kiện.',
-    fields: [
-      { label: 'Vị trí sự kiện', placeholder: 'Chọn vị trí', Icon: MapPin },
-    ],
-  },
-  {
-    title: 'Mô tả sự kiện',
-    helper: 'Mô tả nội dung, agenda hoặc thông tin cần biết.',
-    fields: [
-      {
-        label: 'Mô tả sự kiện',
-        placeholder: 'Nhập mô tả tại đây',
-        multiline: true,
-      },
-    ],
-  },
-];
+interface EventFormData {
+  name: string;
+  startDate: Date | null;
+  startTime: Date | null;
+  endDate: Date | null;
+  endTime: Date | null;
+  image: string | null;
+  location: string;
+  description: string;
+}
 
 function CreateEventScreen() {
   const navigation = useNavigation<CreateEventNav>();
   const [step, setStep] = useState(0);
-  const current = steps[step];
-  const progressValue = useMemo(
-    () => Math.round(((step + 1) / steps.length) * 100),
-    [step],
-  );
-  const progress = `${progressValue}%` as const;
+  const [formData, setFormData] = useState<EventFormData>({
+    name: '',
+    startDate: null,
+    startTime: null,
+    endDate: null,
+    endTime: null,
+    image: null,
+    location: '',
+    description: '',
+  });
 
-  function next() {
-    if (step < steps.length - 1) {
-      setStep(value => value + 1);
-      return;
+  // Date/Time picker state
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+
+  // Image state
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  const progressValue = Math.round(((step + 1) / 6) * 100);
+  const progress = `${progressValue}%`;
+
+  // Format functions
+  const formatDate = (date: Date | null): string => {
+    if (!date) return '';
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
+  const formatTime = (date: Date | null): string => {
+    if (!date) return '';
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const period = date.getHours() >= 12 ? 'PM' : 'AM';
+    return `${hours}:${minutes} ${period}`;
+  };
+
+  // Date/Time handlers
+  const handleStartDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowStartDatePicker(false);
     }
-    navigation.goBack();
+    if (selectedDate) {
+      setFormData(prev => ({ ...prev, startDate: selectedDate }));
+    }
+  };
+
+  const handleStartTimeChange = (event: DateTimePickerEvent, selectedTime?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowStartTimePicker(false);
+    }
+    if (selectedTime) {
+      setFormData(prev => ({ ...prev, startTime: selectedTime }));
+    }
+  };
+
+  const handleEndDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowEndDatePicker(false);
+    }
+    if (selectedDate) {
+      setFormData(prev => ({ ...prev, endDate: selectedDate }));
+    }
+  };
+
+  const handleEndTimeChange = (event: DateTimePickerEvent, selectedTime?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowEndTimePicker(false);
+    }
+    if (selectedTime) {
+      setFormData(prev => ({ ...prev, endTime: selectedTime }));
+    }
+  };
+
+  // Image picker handler
+  const handleSelectImage = async () => {
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        quality: 0.8,
+        maxWidth: 1200,
+        maxHeight: 1200,
+      });
+
+      if (result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setFormData(prev => ({ ...prev, image: asset.uri || null }));
+        setImagePreview(asset.uri || null);
+      }
+    } catch (error) {
+      console.error('Error selecting image:', error);
+    }
+  };
+
+  // Navigation
+  function next() {
+    if (step < 5) {
+      setStep(value => value + 1);
+    } else {
+      // Submit event
+      submitEvent();
+    }
   }
 
   function back() {
     if (step > 0) {
       setStep(value => value - 1);
-      return;
+    } else {
+      navigation.goBack();
     }
+  }
+
+  function submitEvent() {
+    // TODO: Call API to create event
+    console.log('Submitting event:', {
+      name: formData.name,
+      startDate: formData.startDate ? formatDate(formData.startDate) : null,
+      startTime: formData.startTime ? formatTime(formData.startTime) : null,
+      endDate: formData.endDate ? formatDate(formData.endDate) : null,
+      endTime: formData.endTime ? formatTime(formData.endTime) : null,
+      location: formData.location,
+      description: formData.description,
+      hasImage: !!formData.image,
+    });
     navigation.goBack();
+  }
+
+  function renderStepContent() {
+    switch (step) {
+      case 0:
+        // Step 1: Event Name
+        return (
+          <View className="gap-5">
+            <View>
+              <Text className="mb-2 text-label-primary text-slate-500">
+                Tên sự kiện
+              </Text>
+              <View className="input-shell flex-row px-4 min-h-[54px] items-center">
+                <PartyPopper size={20} color="#64748B" />
+                <View className="ml-3 flex-1">
+                  <Text
+                    className="text-body-primary text-[#050505]"
+                    onPress={() => {
+                      // TODO: Navigate to text input screen or use modal
+                    }}
+                  >
+                    {formData.name || 'Nhập tên sự kiện'}
+                  </Text>
+                  {!formData.name && (
+                    <TextInput
+                      className="flex-1 text-body-primary"
+                      placeholder="Nhập tên sự kiện"
+                      placeholderTextColor="#94A3B8"
+                      value={formData.name}
+                      onChangeText={(text: string) => setFormData(prev => ({ ...prev, name: text }))}
+                      autoFocus
+                    />
+                  )}
+                </View>
+              </View>
+            </View>
+          </View>
+        );
+
+      case 1:
+        // Step 2: Start Date & Time
+        return (
+          <View className="gap-5">
+            {/* Start Date */}
+            <View>
+              <Text className="mb-2 text-label-primary text-slate-500">
+                Ngày bắt đầu
+              </Text>
+              <TouchableOpacity
+                className="input-shell flex-row px-4 min-h-[54px] items-center"
+                activeOpacity={0.8}
+                onPress={() => setShowStartDatePicker(true)}
+              >
+                <CalendarDays size={20} color="#64748B" />
+                <Text
+                  className={`ml-3 flex-1 text-body-primary ${
+                    formData.startDate ? 'text-[#050505]' : 'text-[#94A3B8]'
+                  }`}
+                >
+                  {formData.startDate ? formatDate(formData.startDate) : 'Chọn ngày'}
+                </Text>
+                {formData.startDate && (
+                  <TouchableOpacity
+                    onPress={() => setFormData(prev => ({ ...prev, startDate: null }))}
+                  >
+                    <X size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Start Time */}
+            <View>
+              <Text className="mb-2 text-label-primary text-slate-500">
+                Giờ bắt đầu
+              </Text>
+              <TouchableOpacity
+                className="input-shell flex-row px-4 min-h-[54px] items-center"
+                activeOpacity={0.8}
+                onPress={() => setShowStartTimePicker(true)}
+              >
+                <Clock size={20} color="#64748B" />
+                <Text
+                  className={`ml-3 flex-1 text-body-primary ${
+                    formData.startTime ? 'text-[#050505]' : 'text-[#94A3B8]'
+                  }`}
+                >
+                  {formData.startTime ? formatTime(formData.startTime) : 'Chọn giờ'}
+                </Text>
+                {formData.startTime && (
+                  <TouchableOpacity
+                    onPress={() => setFormData(prev => ({ ...prev, startTime: null }))}
+                  >
+                    <X size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+
+      case 2:
+        // Step 3: End Date & Time
+        return (
+          <View className="gap-5">
+            {/* End Date */}
+            <View>
+              <Text className="mb-2 text-label-primary text-slate-500">
+                Ngày kết thúc
+              </Text>
+              <TouchableOpacity
+                className="input-shell flex-row px-4 min-h-[54px] items-center"
+                activeOpacity={0.8}
+                onPress={() => setShowEndDatePicker(true)}
+              >
+                <CalendarDays size={20} color="#64748B" />
+                <Text
+                  className={`ml-3 flex-1 text-body-primary ${
+                    formData.endDate ? 'text-[#050505]' : 'text-[#94A3B8]'
+                  }`}
+                >
+                  {formData.endDate ? formatDate(formData.endDate) : 'Chọn ngày'}
+                </Text>
+                {formData.endDate && (
+                  <TouchableOpacity
+                    onPress={() => setFormData(prev => ({ ...prev, endDate: null }))}
+                  >
+                    <X size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* End Time */}
+            <View>
+              <Text className="mb-2 text-label-primary text-slate-500">
+                Giờ kết thúc
+              </Text>
+              <TouchableOpacity
+                className="input-shell flex-row px-4 min-h-[54px] items-center"
+                activeOpacity={0.8}
+                onPress={() => setShowEndTimePicker(true)}
+              >
+                <Clock size={20} color="#64748B" />
+                <Text
+                  className={`ml-3 flex-1 text-body-primary ${
+                    formData.endTime ? 'text-[#050505]' : 'text-[#94A3B8]'
+                  }`}
+                >
+                  {formData.endTime ? formatTime(formData.endTime) : 'Chọn giờ'}
+                </Text>
+                {formData.endTime && (
+                  <TouchableOpacity
+                    onPress={() => setFormData(prev => ({ ...prev, endTime: null }))}
+                  >
+                    <X size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+
+      case 3:
+        // Step 4: Event Image
+        return (
+          <TouchableOpacity
+            className="preview-panel min-h-[210px] items-center justify-center border border-dashed border-[#0000ff] p-6"
+            activeOpacity={0.85}
+            onPress={handleSelectImage}
+          >
+            {imagePreview ? (
+              <View className="w-full items-center">
+                <View className="relative w-full items-center">
+                  <ImagePlus
+                    size={48}
+                    color="#0000FF"
+                    style={{ opacity: 0.5 }}
+                  />
+                </View>
+                <Text className="mt-4 text-title-primary text-brand">
+                  Đổi ảnh khác
+                </Text>
+              </View>
+            ) : (
+              <>
+                <ImagePlus size={48} color="#0000FF" />
+                <Text className="mt-4 text-title-primary text-brand">
+                  Chọn ảnh từ thư viện
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        );
+
+      case 4:
+        // Step 5: Location
+        return (
+          <View className="gap-5">
+            <View>
+              <Text className="mb-2 text-label-primary text-slate-500">
+                Vị trí sự kiện
+              </Text>
+              <View className="input-shell flex-row px-4 min-h-[54px] items-center">
+                <MapPin size={20} color="#64748B" />
+                <TextInput
+                  className="ml-3 flex-1 text-body-primary"
+                  placeholder="Chọn vị trí"
+                  placeholderTextColor="#94A3B8"
+                  value={formData.location}
+                  onChangeText={(text: string) => setFormData(prev => ({ ...prev, location: text }))}
+                />
+              </View>
+            </View>
+          </View>
+        );
+
+      case 5:
+        // Step 6: Description
+        return (
+          <View className="gap-5">
+            <View>
+              <Text className="mb-2 text-label-primary text-slate-500">
+                Mô tả sự kiện
+              </Text>
+              <View className="input-shell min-h-[190px] items-start py-3 px-4">
+                <TextInput
+                  className="flex-1 w-full text-body-primary"
+                  placeholder="Nhập mô tả tại đây"
+                  placeholderTextColor="#94A3B8"
+                  multiline
+                  textAlignVertical="top"
+                  value={formData.description}
+                  onChangeText={(text: string) => setFormData(prev => ({ ...prev, description: text }))}
+                />
+              </View>
+            </View>
+          </View>
+        );
+
+      default:
+        return null;
+    }
+  }
+
+  function getStepTitle(): string {
+    switch (step) {
+      case 0: return 'Tên sự kiện';
+      case 1: return 'Thời gian bắt đầu';
+      case 2: return 'Thời gian kết thúc';
+      case 3: return 'Ảnh sự kiện';
+      case 4: return 'Vị trí';
+      case 5: return 'Mô tả sự kiện';
+      default: return '';
+    }
+  }
+
+  function getStepHelper(): string {
+    switch (step) {
+      case 0: return 'Đặt tên ngắn gọn, rõ ràng cho sự kiện của bạn.';
+      case 1: return 'Chọn ngày và giờ bắt đầu cho sự kiện.';
+      case 2: return 'Chọn thời điểm kết thúc để khách mời nắm lịch.';
+      case 3: return 'Chọn ảnh nổi bật để sự kiện hấp dẫn hơn.';
+      case 4: return 'Thêm địa điểm hoặc nơi tổ chức sự kiện.';
+      case 5: return 'Mô tả nội dung, agenda hoặc thông tin cần biết.';
+      default: return '';
+    }
+  }
+
+  function getStepIcon() {
+    switch (step) {
+      case 0: return <PartyPopper size={28} color="#0000FF" />;
+      case 1: return <Clock size={28} color="#0000FF" />;
+      case 2: return <Clock size={28} color="#0000FF" />;
+      case 3: return <ImagePlus size={28} color="#0000FF" />;
+      case 4: return <MapPin size={28} color="#0000FF" />;
+      case 5: return <Info size={28} color="#0000FF" />;
+      default: return <PartyPopper size={28} color="#0000FF" />;
+    }
   }
 
   return (
@@ -121,9 +465,7 @@ function CreateEventScreen() {
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
         <Text className="text-heading text-inverse">Tạo sự kiện</Text>
-        <Text className="text-title-primary text-inverse">{`Bước ${
-          step + 1
-        }/6`}</Text>
+        <Text className="text-title-primary text-inverse">{`Bước ${step + 1}/6`}</Text>
       </View>
 
       <ScrollView
@@ -133,7 +475,7 @@ function CreateEventScreen() {
       >
         <View className="mb-6">
           <View className="progress-track">
-            <View className="progress-fill" style={{ width: progress }} />
+            <View className="progress-fill" style={{ width: progress as any }} />
           </View>
           <Text className="mt-2 text-right text-caption-secondary">
             {progress} hoàn thành
@@ -143,58 +485,15 @@ function CreateEventScreen() {
         <View className="surface-card p-5">
           <View className="mb-5 flex-row items-center">
             <View className="icon-chip h-14 w-14 items-center justify-center">
-              <PartyPopper size={28} color="#0000FF" />
+              {getStepIcon()}
             </View>
             <View className="ml-4 flex-1">
-              <Text className="text-display">{current.title}</Text>
-              <Text className="mt-1 text-body-secondary">{current.helper}</Text>
+              <Text className="text-display">{getStepTitle()}</Text>
+              <Text className="mt-1 text-body-secondary">{getStepHelper()}</Text>
             </View>
           </View>
 
-          {current.upload ? (
-            <TouchableOpacity
-              className="preview-panel min-h-[210px] items-center justify-center border border-dashed border-[#0000ff] p-6"
-              activeOpacity={0.85}
-            >
-              <ImagePlus size={48} color="#0000FF" />
-              <Text className="mt-4 text-title-primary text-brand">
-                Chọn ảnh sự kiện
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <View className="gap-5">
-              {current.fields?.map(field => {
-                const FieldIcon = field.Icon;
-                return (
-                  <View key={field.label}>
-                    <Text className="mb-2 text-label-primary text-slate-500">
-                      {field.label}
-                    </Text>
-                    <View
-                      className={`input-shell flex-row px-4 ${
-                        field.multiline
-                          ? 'min-h-[190px] items-start py-3'
-                          : 'min-h-[54px] items-center'
-                      }`}
-                    >
-                      {FieldIcon ? (
-                        <FieldIcon size={20} color="#64748B" />
-                      ) : null}
-                      <TextInput
-                        className={`flex-1 text-body-primary ${
-                          FieldIcon ? 'ml-3' : ''
-                        }`}
-                        placeholder={field.placeholder}
-                        placeholderTextColor="#94A3B8"
-                        multiline={field.multiline}
-                        textAlignVertical={field.multiline ? 'top' : 'center'}
-                      />
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          )}
+          {renderStepContent()}
 
           <View className="form-note-panel mt-6 flex-row items-start p-4">
             <Info size={20} color="#64748B" />
@@ -213,10 +512,154 @@ function CreateEventScreen() {
           onPress={next}
         >
           <Text className="text-title-primary text-inverse">
-            {step === steps.length - 1 ? 'Hoàn tất' : 'Tiếp tục'}
+            {step === 5 ? 'Hoàn tất' : 'Tiếp tục'}
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Start Date Picker Modal (iOS) */}
+      {showStartDatePicker && Platform.OS === 'ios' && (
+        <Modal transparent animationType="slide" visible={showStartDatePicker}>
+          <View className="flex-1 justify-end bg-black/50">
+            <View className="bg-white rounded-t-2xl p-4">
+              <View className="flex-row justify-between items-center mb-4">
+                <TouchableOpacity onPress={() => setShowStartDatePicker(false)}>
+                  <Text className="text-[#65676B]">Hủy</Text>
+                </TouchableOpacity>
+                <Text className="text-title-primary font-semibold">Chọn ngày bắt đầu</Text>
+                <TouchableOpacity onPress={() => setShowStartDatePicker(false)}>
+                  <Check size={24} color="#0000FF" />
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={formData.startDate || new Date()}
+                mode="date"
+                display="spinner"
+                onChange={handleStartDateChange}
+                minimumDate={new Date()}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Start Date Picker (Android) */}
+      {showStartDatePicker && Platform.OS === 'android' && (
+        <DateTimePicker
+          value={formData.startDate || new Date()}
+          mode="date"
+          display="default"
+          onChange={handleStartDateChange}
+          minimumDate={new Date()}
+        />
+      )}
+
+      {/* Start Time Picker Modal (iOS) */}
+      {showStartTimePicker && Platform.OS === 'ios' && (
+        <Modal transparent animationType="slide" visible={showStartTimePicker}>
+          <View className="flex-1 justify-end bg-black/50">
+            <View className="bg-white rounded-t-2xl p-4">
+              <View className="flex-row justify-between items-center mb-4">
+                <TouchableOpacity onPress={() => setShowStartTimePicker(false)}>
+                  <Text className="text-[#65676B]">Hủy</Text>
+                </TouchableOpacity>
+                <Text className="text-title-primary font-semibold">Chọn giờ bắt đầu</Text>
+                <TouchableOpacity onPress={() => setShowStartTimePicker(false)}>
+                  <Check size={24} color="#0000FF" />
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={formData.startTime || new Date()}
+                mode="time"
+                display="spinner"
+                onChange={handleStartTimeChange}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Start Time Picker (Android) */}
+      {showStartTimePicker && Platform.OS === 'android' && (
+        <DateTimePicker
+          value={formData.startTime || new Date()}
+          mode="time"
+          display="default"
+          onChange={handleStartTimeChange}
+        />
+      )}
+
+      {/* End Date Picker Modal (iOS) */}
+      {showEndDatePicker && Platform.OS === 'ios' && (
+        <Modal transparent animationType="slide" visible={showEndDatePicker}>
+          <View className="flex-1 justify-end bg-black/50">
+            <View className="bg-white rounded-t-2xl p-4">
+              <View className="flex-row justify-between items-center mb-4">
+                <TouchableOpacity onPress={() => setShowEndDatePicker(false)}>
+                  <Text className="text-[#65676B]">Hủy</Text>
+                </TouchableOpacity>
+                <Text className="text-title-primary font-semibold">Chọn ngày kết thúc</Text>
+                <TouchableOpacity onPress={() => setShowEndDatePicker(false)}>
+                  <Check size={24} color="#0000FF" />
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={formData.endDate || new Date()}
+                mode="date"
+                display="spinner"
+                onChange={handleEndDateChange}
+                minimumDate={formData.startDate || new Date()}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* End Date Picker (Android) */}
+      {showEndDatePicker && Platform.OS === 'android' && (
+        <DateTimePicker
+          value={formData.endDate || new Date()}
+          mode="date"
+          display="default"
+          onChange={handleEndDateChange}
+          minimumDate={formData.startDate || new Date()}
+        />
+      )}
+
+      {/* End Time Picker Modal (iOS) */}
+      {showEndTimePicker && Platform.OS === 'ios' && (
+        <Modal transparent animationType="slide" visible={showEndTimePicker}>
+          <View className="flex-1 justify-end bg-black/50">
+            <View className="bg-white rounded-t-2xl p-4">
+              <View className="flex-row justify-between items-center mb-4">
+                <TouchableOpacity onPress={() => setShowEndTimePicker(false)}>
+                  <Text className="text-[#65676B]">Hủy</Text>
+                </TouchableOpacity>
+                <Text className="text-title-primary font-semibold">Chọn giờ kết thúc</Text>
+                <TouchableOpacity onPress={() => setShowEndTimePicker(false)}>
+                  <Check size={24} color="#0000FF" />
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={formData.endTime || new Date()}
+                mode="time"
+                display="spinner"
+                onChange={handleEndTimeChange}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* End Time Picker (Android) */}
+      {showEndTimePicker && Platform.OS === 'android' && (
+        <DateTimePicker
+          value={formData.endTime || new Date()}
+          mode="time"
+          display="default"
+          onChange={handleEndTimeChange}
+        />
+      )}
     </SafeAreaView>
   );
 }

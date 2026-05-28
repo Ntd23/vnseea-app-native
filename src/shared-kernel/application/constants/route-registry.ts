@@ -58,7 +58,7 @@ export const apiRoutes = {
   },
   products: {
     get: 'get-products',
-    create: 'new-product',
+    create: 'create-product',
     update: 'edit-product',
     getCategories: 'get-products',
   },

@@ -43,9 +43,14 @@ import { useProfileViewModel } from '../../application/view-models/useProfileVie
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
-import type { FeedPost, FeedTextPost } from '../../../feed/domain/types/feed.types';
+import type { FeedTextPost, FeedVideoPost } from '../../../feed/domain/types/feed.types';
+import type {
+  StoryItem,
+  StoryMedia,
+} from '../../../stories/domain/types/stories.types';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
+type ProfileFeedPost = FeedTextPost | FeedVideoPost;
 type ProfileRoute = RouteProp<RootStackParamList, typeof ROUTES.PROFILE>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -70,6 +75,49 @@ function formatRelativeTime(timestamp: number | undefined) {
   if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
   if (diff < 604800) return `${Math.floor(diff / 86400)} ngày trước`;
   return new Date(timestamp * 1000).toLocaleDateString('vi-VN');
+}
+
+function mergeStoriesForProfile(
+  stories: StoryItem[],
+  targetUserId: string,
+): StoryItem | null {
+  const userStories = stories
+    .filter(story => String(story.publisher.userId) === String(targetUserId))
+    .sort((a, b) => (a.postedAt ?? 0) - (b.postedAt ?? 0));
+
+  if (userStories.length === 0) {
+    return null;
+  }
+
+  const latestStory = userStories[userStories.length - 1];
+  const oldestStory = userStories[0];
+  const media: StoryMedia[] = [];
+
+  for (const story of userStories) {
+    for (const item of story.media) {
+      const segment: StoryMedia = {
+        ...item,
+        storyId: item.storyId ?? story.id,
+        postedAt: item.postedAt ?? story.postedAt,
+      };
+      const exists = media.some(
+        current =>
+          current.url === segment.url &&
+          (current.storyId ?? '') === (segment.storyId ?? ''),
+      );
+      if (!exists) {
+        media.push(segment);
+      }
+    }
+  }
+
+  return {
+    ...latestStory,
+    thumbnailUrl: latestStory.thumbnailUrl ?? oldestStory.thumbnailUrl,
+    media,
+    isViewed: userStories.every(story => story.isViewed),
+    hasUnseen: userStories.some(story => story.hasUnseen && !story.isViewed),
+  };
 }
 
 function DetailRow({ icon, text }: { icon: React.ReactNode; text: string }) {
@@ -222,13 +270,17 @@ function ProfileScreen() {
 
   const session = sessionStorage.getSession();
   const currentUserId = session?.userId;
-  const targetUserId = route.params?.userId || currentUserId;
-  const isOwnProfile = !route.params?.userId || String(route.params.userId) === String(currentUserId);
+  const targetUserId = route.params?.userId ?? currentUserId ?? profile?.id;
+  const isOwnProfile =
+    !route.params?.userId ||
+    (currentUserId
+      ? String(route.params.userId) === String(currentUserId)
+      : false);
 
-  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [posts, setPosts] = useState<ProfileFeedPost[]>([]);
   const [isPostsLoading, setIsPostsLoading] = useState(false);
   const [postsError, setPostsError] = useState<string | null>(null);
-  const [userStory, setUserStory] = useState<any | null>(null);
+  const [userStory, setUserStory] = useState<StoryItem | null>(null);
 
   const feedRepo = useMemo(() => createFeedRepository(), []);
   const storiesRepo = useMemo(() => createStoriesRepository(), []);
@@ -245,6 +297,9 @@ function ProfileScreen() {
     console.log('[ProfileScreen] Loading posts for targetUserId:', targetUserId);
     if (!targetUserId) {
       console.log('[ProfileScreen] targetUserId is empty, skipping load posts');
+      setPosts([]);
+      setPostsError(null);
+      setIsPostsLoading(false);
       return;
     }
     setIsPostsLoading(true);
@@ -252,7 +307,10 @@ function ProfileScreen() {
     feedRepo.getUserPosts(targetUserId)
       .then(res => {
         console.log('[ProfileScreen] Loaded posts count:', res?.length);
-        setPosts(res);
+        const filteredPosts = (res ?? []).filter(
+          (p): p is ProfileFeedPost => p.kind === 'text' || p.kind === 'video'
+        );
+        setPosts(filteredPosts);
       })
       .catch(err => {
         console.error('[ProfileScreen] Error loading posts:', err);
@@ -263,15 +321,39 @@ function ProfileScreen() {
 
   // Load User Active Story
   useEffect(() => {
-    if (!targetUserId) return;
-    storiesRepo.getStories()
-      .then(allStories => {
-        const matched = allStories.find(
-          s => String(s.publisher.userId) === String(targetUserId)
+    if (!targetUserId) {
+      setUserStory(null);
+      return;
+    }
+
+    let cancelled = false;
+    setUserStory(null);
+
+    Promise.all([
+      storiesRepo.getUserStories().catch(() => [] as StoryItem[]),
+      storiesRepo.getStories().catch(() => [] as StoryItem[]),
+    ])
+      .then(([userStories, feedStories]) => {
+        if (cancelled) return;
+
+        const storyMap = new Map<string, StoryItem>();
+        for (const story of [...userStories, ...feedStories]) {
+          storyMap.set(`${story.publisher.userId}-${story.id}`, story);
+        }
+
+        setUserStory(
+          mergeStoriesForProfile(Array.from(storyMap.values()), targetUserId),
         );
-        setUserStory(matched || null);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) {
+          setUserStory(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [storiesRepo, targetUserId]);
 
   const displayName = profile?.name ?? profile?.username ?? '';
@@ -286,7 +368,7 @@ function ProfileScreen() {
       : FALLBACK_FRIENDS;
 
   // Toggle Like Action on a specific post
-  const handleToggleLike = async (post: FeedPost) => {
+  const handleToggleLike = async (post: ProfileFeedPost) => {
     try {
       const newLiked = !post.isLiked;
       // Optimistic update

@@ -63,4 +63,16 @@ export interface FeedRepository {
    */
   createPost(draft: CreatePostDraft): Promise<CreatePostResult>;
   getUserPosts(userId: string, limit?: number): Promise<FeedPost[]>;
+
+  /**
+   * Toggle save/unsave a post via WoWonder's post-actions endpoint.
+   * Returns { saved: true } when the post was saved, { saved: false } when it was unsaved.
+   */
+  savePost(postId: string): Promise<{ saved: boolean }>;
+
+  /**
+   * Toggle report/unreport a post via WoWonder's post-actions endpoint.
+   * Returns { reported: true } when the post was reported, { reported: false } when unreported.
+   */
+  reportPost(postId: string): Promise<{ reported: boolean }>;
 }
