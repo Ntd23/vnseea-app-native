@@ -1,53 +1,118 @@
-// Description: Renders the VNSEEA blog detail article screen with header image and article actions.
-import React from 'react';
+// Description: Renders one real WoWonder article loaded by blog id.
+import React, { useCallback } from 'react';
 import {
+  ActivityIndicator,
   Image,
+  Linking,
   ScrollView,
+  Share,
   StatusBar,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   ArrowLeft,
-  Bookmark,
   Clock3,
-  Heart,
-  MessageCircle,
+  ExternalLink,
+  Eye,
+  FileText,
+  RotateCw,
   Share2,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { useBlogDetailViewModel } from '../../application/view-models/useBlogDetailViewModel';
 
 type BlogDetailNav = NativeStackNavigationProp<RootStackParamList>;
+type BlogDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.BLOG_DETAIL>;
 
-const BRAND = '#0000ff';
-const hero =
-  'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1400&auto=format&fit=crop';
+const BRAND = '#0000FF';
 
 function BlogDetailScreen() {
   const navigation = useNavigation<BlogDetailNav>();
+  const route = useRoute<BlogDetailRoute>();
+  const vm = useBlogDetailViewModel(route.params.blogId);
+
+  const handleShare = useCallback(async () => {
+    if (!vm.article?.url) return;
+    await Share.share({
+      title: vm.article.title,
+      message: vm.article.url,
+      url: vm.article.url,
+    });
+  }, [vm.article]);
+
+  if (vm.isLoading) {
+    return (
+      <SafeAreaView className="flex-1 items-center justify-center surface-base">
+        <ActivityIndicator color={BRAND} size="large" />
+        <Text className="mt-4 text-body-secondary">Đang tải bài viết...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!vm.article) {
+    return (
+      <SafeAreaView className="flex-1 surface-base" edges={['top']}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <View className="surface-topbar h-16 flex-row items-center px-4">
+          <TouchableOpacity
+            className="h-10 w-10 items-center justify-center rounded-full"
+            activeOpacity={0.8}
+            onPress={() => navigation.goBack()}
+          >
+            <ArrowLeft size={22} color="#0F172A" />
+          </TouchableOpacity>
+          <Text className="ml-3 text-heading">Bài viết</Text>
+        </View>
+        <View className="flex-1 items-center justify-center px-8">
+          <FileText size={56} color="rgba(0,0,255,0.32)" />
+          <Text className="mt-5 text-center text-heading">
+            Không tải được bài viết
+          </Text>
+          <Text className="mt-2 text-center text-body-secondary">
+            {vm.error}
+          </Text>
+          <TouchableOpacity
+            className="btn-primary mt-6 min-h-[46px] rounded-xl px-6"
+            activeOpacity={0.85}
+            onPress={() => void vm.retry()}
+          >
+            <RotateCw size={18} color="#FFFFFF" />
+            <Text className="text-title-primary text-inverse">Thử lại</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const article = vm.article;
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
-      <View className="surface-brand h-14 flex-row items-center justify-between px-4">
+      <View className="surface-topbar h-16 flex-row items-center justify-between px-4">
+        <View className="flex-row items-center">
+          <TouchableOpacity
+            className="h-10 w-10 items-center justify-center rounded-full"
+            activeOpacity={0.8}
+            onPress={() => navigation.goBack()}
+          >
+            <ArrowLeft size={22} color="#0F172A" />
+          </TouchableOpacity>
+          <Text className="ml-3 text-heading">Bài viết</Text>
+        </View>
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"
           activeOpacity={0.8}
-          onPress={() => navigation.goBack()}
+          onPress={handleShare}
         >
-          <ArrowLeft size={22} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text className="text-title-primary text-inverse">Article</Text>
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          activeOpacity={0.8}
-        >
-          <Bookmark size={20} color="#FFFFFF" />
+          <Share2 size={20} color={BRAND} />
         </TouchableOpacity>
       </View>
 
@@ -56,64 +121,65 @@ function BlogDetailScreen() {
         contentContainerClassName="pb-10"
         showsVerticalScrollIndicator={false}
       >
-        <Image
-          source={{ uri: hero }}
-          className="h-64 w-full"
-          resizeMode="cover"
-        />
+        {article.thumbnailUrl ? (
+          <Image
+            source={{ uri: article.thumbnailUrl }}
+            className="h-64 w-full bg-slate-200"
+            resizeMode="cover"
+          />
+        ) : (
+          <View className="h-52 w-full items-center justify-center bg-[#EEF2FF]">
+            <FileText size={56} color="rgba(0,0,255,0.34)" />
+          </View>
+        )}
 
         <View className="bg-white px-5 py-5">
-          <View className="self-start rounded-full bg-[#0000ff]/10 px-3 py-1">
-            <Text className="text-caption-primary text-brand">Thiết kế</Text>
+          <View className="self-start rounded-full bg-blue-50 px-3 py-1">
+            <Text className="text-caption-primary text-brand">
+              {article.category || 'Bài viết'}
+            </Text>
           </View>
-          <Text className="mt-4 text-display">
-            Tối ưu trải nghiệm mobile với design system thống nhất
-          </Text>
+          <Text className="mt-4 text-display">{article.title}</Text>
           <Text className="mt-3 text-body-secondary">
-            VNSEEA Editorial · Cập nhật hôm nay
+            {article.author.name}
           </Text>
 
-          <View className="mt-4 flex-row items-center gap-5">
+          <View className="mt-4 flex-row flex-wrap gap-5">
             <View className="flex-row items-center">
               <Clock3 size={16} color={BRAND} />
-              <Text className="ml-2 text-caption-secondary">6 phút đọc</Text>
+              <Text className="ml-2 text-caption-secondary">
+                {article.postedLabel || 'Mới đăng'}
+              </Text>
             </View>
             <View className="flex-row items-center">
-              <MessageCircle size={16} color={BRAND} />
-              <Text className="ml-2 text-caption-secondary">28 bình luận</Text>
+              <Eye size={16} color={BRAND} />
+              <Text className="ml-2 text-caption-secondary">
+                {article.views ?? 0} lượt xem
+              </Text>
             </View>
           </View>
         </View>
 
         <View className="mt-3 bg-white px-5 py-5">
           <Text className="text-body-secondary">
-            Một design system tốt không chỉ là bộ màu, kiểu chữ hay component.
-            Nó là cách đội ngũ sản phẩm thống nhất quyết định giao diện, giảm
-            chi phí lặp lại và giữ trải nghiệm người dùng ổn định qua nhiều màn
-            hình.
-          </Text>
-          <Text className="mt-4 text-body-secondary">
-            Với mobile app, sự nhất quán càng quan trọng vì không gian hiển thị
-            nhỏ, thao tác ngắn và người dùng kỳ vọng mọi thứ phản hồi nhanh. Các
-            token về màu, spacing, typography và trạng thái nên được dùng như
-            nguồn sự thật chung cho toàn bộ màn hình.
-          </Text>
-          <Text className="mt-4 text-body-secondary">
-            VNSEEA ưu tiên các pattern đơn giản: header rõ ràng, icon màu brand,
-            card có nhịp spacing đều và hành động chính luôn dễ nhận diện.
+            {article.content || article.description || 'Bài viết chưa có nội dung.'}
           </Text>
         </View>
 
-        <View className="mx-5 mt-4 flex-row gap-3">
-          <TouchableOpacity className="btn-secondary flex-1 min-h-[46px]">
-            <Heart size={18} color={BRAND} />
-            <Text className="text-title-primary text-brand">Thích</Text>
-          </TouchableOpacity>
-          <TouchableOpacity className="btn-secondary flex-1 min-h-[46px]">
-            <Share2 size={18} color={BRAND} />
-            <Text className="text-title-primary text-brand">Chia sẻ</Text>
-          </TouchableOpacity>
-        </View>
+        {article.url ? (
+          <View className="mx-5 mt-4">
+            <TouchableOpacity
+              className="btn-secondary min-h-[46px]"
+              activeOpacity={0.85}
+              onPress={() => void Linking.openURL(article.url!)}
+            >
+              <ExternalLink size={18} color={BRAND} />
+              <Text className="text-title-primary text-brand">
+                Xem trên website
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );

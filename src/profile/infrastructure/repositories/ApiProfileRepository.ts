@@ -1,9 +1,18 @@
 // Description: Implements profile presentation data loading through the user context API bridge.
+import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { createUserRepository } from '../../../user/infrastructure/repositories/ApiUserRepository';
+import type { FollowState } from '../../../user/domain/types/user.types';
 import type { ProfileRepository } from '../../domain/repositories/ProfileRepository';
 
 const userRepository = createUserRepository();
+
+function toFollowState(status: string | undefined): FollowState {
+  if (status === 'followed') return 'following';
+  if (status === 'requested') return 'requested';
+  return 'none';
+}
 
 export function createProfileRepository(): ProfileRepository {
   return {
@@ -45,6 +54,27 @@ export function createProfileRepository(): ProfileRepository {
           family: false,
         },
         sendVisitNotification: true,
+      });
+    },
+
+    async toggleFollow(userId) {
+      const response = await apiBridge.post<{
+        api_status: number | string;
+        follow_status?: string;
+      }>(apiRoutes.social.follow, {
+        user_id: userId,
+      });
+
+      return toFollowState(response.follow_status);
+    },
+
+    async pokeUser(userId) {
+      await apiBridge.post<{
+        api_status: number | string;
+        message_data?: string;
+      }>(apiRoutes.social.poke, {
+        type: 'create',
+        user_id: userId,
       });
     },
   };

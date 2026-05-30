@@ -5,4 +5,6 @@ export { createSettingsRepository } from './infrastructure/repositories/ApiSetti
 export { useSettingsViewModel } from './application/view-models/useSettingsViewModel';
 export { default as SettingsScreen } from './presentation/screens/SettingsScreen';
 export { default as AdvertisingScreen } from './presentation/screens/AdvertisingScreen';
-export { default as CreateAdScreen } from './presentation/screens/CreateAdScreen';
+export { default as SettingsMessagesScreen } from './presentation/screens/SettingsMessagesScreen';
+// Re-export CreateAdScreen from advertising module
+export { default as CreateAdScreen } from '../advertising/presentation/screens/CreateAdScreen';

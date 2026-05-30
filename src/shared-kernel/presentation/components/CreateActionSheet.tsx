@@ -7,6 +7,7 @@ import {
   CircleDot,
   FilePlus2,
   ImagePlus,
+  Images,
   PackagePlus,
   Pencil,
   PlaySquare,
@@ -29,7 +30,8 @@ type CreateAction = {
 const actions: CreateAction[] = [
   { label: 'Tạo bài đăng', Icon: ImagePlus, route: ROUTES.CREATE_POST },
   { label: 'Tạo tin', Icon: CircleDot, route: ROUTES.CREATE_STORY },
-  { label: 'Tạo quảng cáo', Icon: Pencil },
+  { label: 'Tạo album ảnh', Icon: Images, route: ROUTES.CREATE_ALBUM },
+  { label: 'Tạo quảng cáo', Icon: Pencil, route: ROUTES.CREATE_AD },
   { label: 'Tạo sự kiện', Icon: CalendarDays, route: ROUTES.CREATE_EVENT },
   { label: 'Tạo cuộc thăm dò', Icon: BarChart3, route: ROUTES.CREATE_POLL },
   {

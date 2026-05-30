@@ -1,22 +1,43 @@
-// Description: Provides mock data for the Advertising screen (UI-only phase).
-import { useState } from 'react';
+// Description: Loads the current user's ad campaigns for the Settings advertising screen.
+import { useCallback, useState } from 'react';
+import { createAdsRepository } from '../../../advertising/infrastructure/repositories/ApiAdsRepository';
+import type { AdItem } from '../../../advertising/domain/types/ads.types';
 
-export interface AdCampaign {
-  id: string;
-  title: string;
-  status: 'active' | 'paused' | 'ended';
-  budget: number;
-  reach: number;
-  startDate: string;
-  endDate: string;
-}
-
-const MOCK_ADS: AdCampaign[] = [];
+const repository = createAdsRepository();
 
 export function useAdvertisingViewModel() {
-  const [ads] = useState<AdCampaign[]>(MOCK_ADS);
-  const [isLoading] = useState(false);
-  const [error] = useState<string | null>(null);
+  const [ads, setAds] = useState<AdItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  return { ads, isLoading, error };
+  const fetchAds = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
+    if (mode === 'refresh') {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    setError(null);
+
+    try {
+      const data = await repository.getMyAds();
+      setAds(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không tải được danh sách quảng cáo.');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  const refresh = useCallback(() => fetchAds('refresh'), [fetchAds]);
+
+  return {
+    ads,
+    isLoading,
+    isRefreshing,
+    error,
+    fetchAds,
+    refresh,
+  };
 }

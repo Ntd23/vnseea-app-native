@@ -147,7 +147,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
       <View className="p-5 pb-3">
         <View className="flex-row items-center justify-between">
           <TouchableOpacity
-            className="flex-row items-center"
+            className="flex-row items-center flex-1 mr-2"
             activeOpacity={0.8}
             onPress={handleProfilePress}
           >
@@ -162,18 +162,18 @@ const ProductPostCard = React.memo(function ProductPostCard({
                 <ShoppingBag size={20} color="#FFFFFF" />
               </View>
             )}
-            <View className="ml-3">
-              <View className="flex-row items-center">
-                <Text className="text-title-primary font-bold text-[#050505]">
+            <View className="ml-3 flex-1">
+              <View className="flex-row items-center flex-wrap">
+                <Text className="text-title-primary font-bold text-[#050505] flex-shrink mr-2" numberOfLines={1}>
                   {product.seller?.name || 'Người bán'}
                 </Text>
-                <View className="bg-blue-50 ml-2 rounded px-1.5 py-0.5">
+                <View className="bg-blue-50 rounded px-1.5 py-0.5" style={{ flexShrink: 0 }}>
                   <Text className="text-[10px] font-bold uppercase text-[#0866FF]">
                     Sản phẩm
                   </Text>
                 </View>
               </View>
-              <Text className="text-caption-secondary text-[12px] text-[#65676B] mt-0.5">
+              <Text className="text-caption-secondary text-[12px] text-[#65676B] mt-0.5" numberOfLines={1}>
                 {product.time ? `${formatTimeAgo(product.time)} • ` : ''}Công khai
               </Text>
             </View>
@@ -190,7 +190,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
         {/* Product Title / Description */}
         <View className="mt-3">
-          <Text className="text-body-primary font-bold text-[16px] text-[#050505]">{product.name}</Text>
+          <Text className="text-body-primary font-bold text-[16px] text-[#050505]" numberOfLines={2}>{product.name}</Text>
           {product.description ? (
             <Text className="text-body-primary mt-1 text-[#65676B] text-[13px] leading-relaxed" numberOfLines={3}>
               {product.description}
@@ -222,13 +222,13 @@ const ProductPostCard = React.memo(function ProductPostCard({
       <View className="p-5 pt-4">
         {/* Price & Location Summary */}
         <View className="flex-row items-center justify-between border-b border-[#F0F2F5] pb-3.5 mb-3">
-          <Text className="text-heading text-[18px] font-bold text-[#1877F2]">
+          <Text className="text-heading text-[18px] font-bold text-[#1877F2] flex-shrink mr-4" numberOfLines={1}>
             {formatPrice(product.price, currencySymbol)}
           </Text>
           {product.location ? (
-            <View className="flex-row items-center">
-              <MapPin size={14} color="#65676B" />
-              <Text className="ml-1 text-[13px] text-[#65676B]">
+            <View className="flex-row items-center flex-1 justify-end ml-2">
+              <MapPin size={14} color="#65676B" style={{ flexShrink: 0 }} />
+              <Text className="ml-1 text-[13px] text-[#65676B] flex-shrink" numberOfLines={1}>
                 {product.location}
               </Text>
             </View>
@@ -238,34 +238,34 @@ const ProductPostCard = React.memo(function ProductPostCard({
         {/* Facebook-style Action Buttons (prevent overlapping/wrapping issues) */}
         <View className="flex-row items-center justify-between pt-1">
           <TouchableOpacity
-            className="flex-row items-center py-1.5 px-2"
+            className="flex-1 flex-row items-center justify-center py-1.5 px-1"
             activeOpacity={0.75}
             onPress={handlePress}
           >
             <ShoppingBag size={18} color="#65676B" />
-            <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
-              Xem chi tiết
+            <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
+              Chi tiết
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            className="flex-row items-center py-1.5 px-2"
+            className="flex-1 flex-row items-center justify-center py-1.5 px-1"
             activeOpacity={0.75}
             onPress={handleProfilePress}
           >
             <MessageCircle size={18} color="#65676B" />
-            <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
+            <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
               Nhắn tin
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            className="flex-row items-center py-1.5 px-2"
+            className="flex-1 flex-row items-center justify-center py-1.5 px-1"
             activeOpacity={0.75}
             onPress={handleSharePress}
           >
             <Share2 size={18} color="#65676B" />
-            <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
+            <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
               Chia sẻ
             </Text>
           </TouchableOpacity>

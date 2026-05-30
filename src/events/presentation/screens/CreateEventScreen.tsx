@@ -1,6 +1,8 @@
 // Description: Renders the VNSEEA six-step create event wizard with date/time pickers and image selection.
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -27,6 +29,8 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
+import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
+import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 
 type CreateEventNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -43,6 +47,7 @@ interface EventFormData {
 
 function CreateEventScreen() {
   const navigation = useNavigation<CreateEventNav>();
+  const { isCreating, createEvent } = useEventsViewModel();
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<EventFormData>({
     name: '',
@@ -160,18 +165,47 @@ function CreateEventScreen() {
   }
 
   function submitEvent() {
-    // TODO: Call API to create event
-    console.log('Submitting event:', {
+    // Call API to create event
+    const dateToString = (date: Date | null): string => {
+      if (!date) return '';
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${year}-${month}-${day}`;
+    };
+
+    const timeToString = (date: Date | null): string => {
+      if (!date) return '';
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${hours}:${minutes}`;
+    };
+
+    // Map to API field names as expected by backend
+    const eventData = {
       name: formData.name,
-      startDate: formData.startDate ? formatDate(formData.startDate) : null,
-      startTime: formData.startTime ? formatTime(formData.startTime) : null,
-      endDate: formData.endDate ? formatDate(formData.endDate) : null,
-      endTime: formData.endTime ? formatTime(formData.endTime) : null,
+      startDate: dateToString(formData.startDate),
+      startTime: timeToString(formData.startTime),
+      endDate: dateToString(formData.endDate),
+      endTime: timeToString(formData.endTime),
       location: formData.location,
       description: formData.description,
-      hasImage: !!formData.image,
+      image: formData.image || undefined,
+    };
+
+    console.log('[CreateEventScreen] Submitting event:', eventData);
+
+    createEvent(eventData).then(success => {
+      console.log('[CreateEventScreen] Create event result:', success);
+      if (success) {
+        showToast({ message: 'Tạo sự kiện thành công!', type: 'success' });
+        setTimeout(() => {
+          navigation.goBack();
+        }, 1500);
+      } else {
+        showToast({ message: 'Không thể tạo sự kiện. Vui lòng thử lại.', type: 'error' });
+      }
     });
-    navigation.goBack();
   }
 
   function renderStepContent() {
@@ -186,26 +220,14 @@ function CreateEventScreen() {
               </Text>
               <View className="input-shell flex-row px-4 min-h-[54px] items-center">
                 <PartyPopper size={20} color="#64748B" />
-                <View className="ml-3 flex-1">
-                  <Text
-                    className="text-body-primary text-[#050505]"
-                    onPress={() => {
-                      // TODO: Navigate to text input screen or use modal
-                    }}
-                  >
-                    {formData.name || 'Nhập tên sự kiện'}
-                  </Text>
-                  {!formData.name && (
-                    <TextInput
-                      className="flex-1 text-body-primary"
-                      placeholder="Nhập tên sự kiện"
-                      placeholderTextColor="#94A3B8"
-                      value={formData.name}
-                      onChangeText={(text: string) => setFormData(prev => ({ ...prev, name: text }))}
-                      autoFocus
-                    />
-                  )}
-                </View>
+                <TextInput
+                  className="ml-3 flex-1 text-body-primary"
+                  placeholder="Nhập tên sự kiện"
+                  placeholderTextColor="#94A3B8"
+                  value={formData.name}
+                  onChangeText={(text: string) => setFormData(prev => ({ ...prev, name: text }))}
+                  autoFocus
+                />
               </View>
             </View>
           </View>
@@ -344,15 +366,24 @@ function CreateEventScreen() {
             onPress={handleSelectImage}
           >
             {imagePreview ? (
-              <View className="w-full items-center">
-                <View className="relative w-full items-center">
-                  <ImagePlus
-                    size={48}
-                    color="#0000FF"
-                    style={{ opacity: 0.5 }}
-                  />
+              <View className="relative w-full">
+                <Image
+                  source={{ uri: imagePreview }}
+                  className="h-48 w-full rounded-xl"
+                  resizeMode="cover"
+                />
+                <View className="absolute right-2 top-2">
+                  <TouchableOpacity
+                    className="h-8 w-8 items-center justify-center rounded-full bg-black/50"
+                    onPress={() => {
+                      setImagePreview(null);
+                      setFormData(prev => ({ ...prev, image: null }));
+                    }}
+                  >
+                    <X size={16} color="#FFFFFF" />
+                  </TouchableOpacity>
                 </View>
-                <Text className="mt-4 text-title-primary text-brand">
+                <Text className="mt-3 text-center text-title-primary text-brand">
                   Đổi ảnh khác
                 </Text>
               </View>
@@ -510,10 +541,15 @@ function CreateEventScreen() {
           className="btn-primary min-h-[54px]"
           activeOpacity={0.9}
           onPress={next}
+          disabled={isCreating}
         >
-          <Text className="text-title-primary text-inverse">
-            {step === 5 ? 'Hoàn tất' : 'Tiếp tục'}
-          </Text>
+          {isCreating ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text className="text-title-primary text-inverse">
+              {step === 5 ? 'Hoàn tất' : 'Tiếp tức'}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -660,6 +696,9 @@ function CreateEventScreen() {
           onChange={handleEndTimeChange}
         />
       )}
+
+      {/* Toast Notification */}
+      <ToastContainer />
     </SafeAreaView>
   );
 }

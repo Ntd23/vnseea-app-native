@@ -1,7 +1,12 @@
-// Saved domain types
-// Port từ: client/src/saved/domain/types/
+// Description: Domain model for posts saved by the current user.
+export type SavedItemKind = 'text' | 'photo' | 'video';
 
 export interface SavedItem {
-  id: string | number;
-  // TODO: thêm fields từ API response
+  id: string;
+  title: string;
+  author: string;
+  postedAt?: number;
+  imageUrl?: string;
+  kind: SavedItemKind;
+  postUrl?: string;
 }

@@ -50,6 +50,26 @@ function SettingsScreen() {
       if (route === ROUTES.CREATE_GROUP) {
         navigation.navigate(ROUTES.CREATE_GROUP);
       }
+
+      if (route === ROUTES.CREATE_STORY) {
+        navigation.navigate(ROUTES.CREATE_STORY);
+      }
+
+      if (route === ROUTES.CREATE_POST) {
+        navigation.navigate(ROUTES.CREATE_POST);
+      }
+
+      if (route === ROUTES.CREATE_POLL) {
+        navigation.navigate(ROUTES.CREATE_POLL);
+      }
+
+      if (route === ROUTES.CREATE_REEL) {
+        navigation.navigate(ROUTES.CREATE_REEL);
+      }
+
+      if (route === ROUTES.CREATE_AD) {
+        navigation.navigate(ROUTES.CREATE_AD);
+      }
     },
     [navigation],
   );
@@ -110,6 +130,10 @@ function SettingsScreen() {
 
       if (id === 'saved') {
         navigation.navigate(ROUTES.SAVED_POSTS);
+      }
+
+      if (id === 'pages') {
+        navigation.navigate(ROUTES.PAGES);
       }
 
       if (id === 'groups') {

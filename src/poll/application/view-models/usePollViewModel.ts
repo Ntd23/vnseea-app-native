@@ -9,17 +9,18 @@ export function usePollViewModel() {
   const [error, setError] = useState<string | null>(null);
 
   const createPoll = useCallback(
-    async (question: string, options: string[]) => {
+    async (question: string, options: string[]): Promise<string> => {
       setIsLoading(true);
       setError(null);
 
       try {
-        await repository.createPollPost(question, options);
+        const result = await repository.createPollPost(question, options);
+        return result.postId;
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : 'Failed to create poll';
+          err instanceof Error ? err.message : 'Không thể tạo cuộc thăm dò';
         setError(message);
-        throw err;
+        throw err; // Re-throw so screen can handle
       } finally {
         setIsLoading(false);
       }
@@ -35,7 +36,7 @@ export function usePollViewModel() {
       return await repository.votePoll(optionId);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Failed to vote';
+        err instanceof Error ? err.message : 'Không thể bình chọn';
       setError(message);
       throw err;
     } finally {

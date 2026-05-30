@@ -35,6 +35,7 @@ export const apiRoutes = {
     followRequest: 'follow-request-action',
     block: 'block-user',
     friends: 'get-friends',
+    poke: 'poke',
   },
   search: {
     all: 'search',
@@ -53,6 +54,7 @@ export const apiRoutes = {
     chats: 'get_chats',
     send: 'send-message',
     messages: 'get_user_messages',
+    read: 'read_chats',
     typing: 'set-chat-typing-status',
     delete: 'delete-conversation',
   },
@@ -61,6 +63,34 @@ export const apiRoutes = {
     create: 'create-product',
     update: 'edit-product',
     getCategories: 'get-products',
+  },
+  events: {
+    get: 'get-events',
+    create: 'create-event',
+    getById: 'get_event_by_id',
+  },
+  ads: {
+    main: 'ads',
+  },
+  pages: {
+    create: 'create-page',
+    getMine: 'get-my-pages',
+    recommended: 'fetch-recommended',
+    getById: 'get-page-data',
+    update: 'update-page-data',
+  },
+  groups: {
+    create: 'create-group',
+    getMine: 'get-my-groups',
+    recommended: 'fetch-recommended',
+  },
+  blogs: {
+    get: 'get-articles',
+    getById: 'get-blog-by-id',
+  },
+  photos: {
+    getUserAlbums: 'get-user-albums',
+    create: 'albums',  // POST with type=create
   },
 } as const;
 

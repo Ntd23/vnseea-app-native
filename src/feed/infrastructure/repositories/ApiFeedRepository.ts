@@ -30,8 +30,10 @@ import type {
   CreatePostDraft,
   CreatePostResult,
   FeedPost,
+  FeedAdPost,
   FeedTextPost,
   FeedVideoPost,
+  FeedPollPost,
   PostFeeling,
   PostPrivacy,
 } from '../../domain/types/feed.types';
@@ -175,7 +177,7 @@ function buildFallbackTopReactions(myReaction: ReactionType | null): ReactionTyp
   if (!myReaction) return ['like'];
   if (myReaction === 'like') return ['like'];
   // Viewer has a non-like reaction → show both like + theirs
-  return ['like', myReaction];
+  return [myReaction];
 }
 
 function readBool(raw: Record<string, unknown>, ...keys: string[]) {
@@ -192,6 +194,127 @@ function readBool(raw: Record<string, unknown>, ...keys: string[]) {
 // strings, signed-CDN tokens, weird paths). The `.` is bare so we also
 // catch `video.mp4.encrypted` paths some installs ship with.
 const VIDEO_URL_PATTERN = /\.(mp4|mov|webm|m3u8|mkv|avi)(?:[?#/]|$)/i;
+
+function looksLikeAd(raw: Record<string, unknown>): boolean {
+  return readString(raw, 'postType').toLowerCase() === 'ad' || Boolean(readString(raw, 'ad_media'));
+}
+
+// ── Poll post detection and mapping ───────────────────────────────────────
+function looksLikePoll(raw: Record<string, unknown>): boolean {
+  // Poll posts have poll_id = 1 and options array
+  const pollId = readNumber(raw, 'poll_id');
+  const hasOptions = Array.isArray(raw.options) && (raw.options as unknown[]).length > 0;
+
+  // Debug: log poll detection
+  if (pollId === 1 || hasOptions) {
+    console.log('[feed] Poll detected:', {
+      pollId,
+      hasOptions,
+      postId: readString(raw, 'id', 'post_id'),
+      optionsCount: Array.isArray(raw.options) ? (raw.options as unknown[]).length : 0,
+    });
+  }
+
+  return pollId === 1 || hasOptions;
+}
+
+interface RawPollOption {
+  id: string | number;
+  text: string;
+  option_votes?: number;
+  optionVotes?: number;
+  percentage: string;
+  percentage_num?: number;
+  percentageNum?: number;
+  all: number;
+}
+
+function mapPollOption(raw: RawPollOption) {
+  return {
+    id: String(raw.id ?? ''),
+    text: String(raw.text ?? ''),
+    optionVotes: Number(raw.option_votes ?? raw.optionVotes ?? 0),
+    percentage: String(raw.percentage ?? '0%'),
+    percentageNum: Number(raw.percentage_num ?? raw.percentageNum ?? 0),
+    all: Number(raw.all ?? 0),
+  };
+}
+
+function getPollTotalVotes(options: Array<{ optionVotes: number; all: number }>) {
+  const apiTotal = Math.max(0, ...options.map(option => option.all));
+  if (apiTotal > 0) return apiTotal;
+  return options.reduce((sum, option) => sum + option.optionVotes, 0);
+}
+
+function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
+  const publisher =
+    (raw.publisher as Record<string, unknown> | undefined) ??
+    (raw.user_data as Record<string, unknown> | undefined) ??
+    {};
+  const firstName = readString(publisher, 'first_name');
+  const lastName = readString(publisher, 'last_name');
+  const username = readString(publisher, 'username', 'user_name');
+  const name =
+    [firstName, lastName].filter(Boolean).join(' ').trim() ||
+    readString(publisher, 'name', 'full_name') ||
+    username ||
+    'Người dùng';
+
+  const postId = readString(raw, 'id', 'post_id');
+
+  // Same reaction reconciliation as text posts
+  const sessionUserId = sessionStorage.getSession()?.userId;
+  const apiReaction = extractMyReaction(raw);
+  const cachedReaction = reelsReactionsStorage.get(sessionUserId, postId);
+  const myReaction = apiReaction ?? cachedReaction;
+
+  const apiLikeCount = readNumber(raw, 'postLikes', 'likes', 'likeCount');
+  const reactionObj = raw.reaction as Record<string, unknown> | undefined;
+  const apiReactionCount =
+    reactionObj && typeof reactionObj === 'object'
+      ? Number((reactionObj as { count?: unknown }).count ?? NaN)
+      : NaN;
+  let likeCount: number;
+  if (Number.isFinite(apiReactionCount) && apiReactionCount > 0) {
+    likeCount = apiReactionCount;
+  } else if (myReaction !== null && apiReaction === null) {
+    likeCount = apiLikeCount + 1;
+  } else {
+    likeCount = apiLikeCount;
+  }
+
+  // Parse poll options
+  const rawOptions = raw.options as RawPollOption[] | undefined;
+  const options = (rawOptions ?? []).map(mapPollOption);
+
+  // Calculate total votes
+  const totalVotes = getPollTotalVotes(options);
+
+  // Get voted option id (null if not voted)
+  const votedId = (raw.voted_id as number) > 0 ? String(raw.voted_id) : null;
+
+  return {
+    kind: 'poll',
+    id: postId,
+    caption: cleanCaption(readString(raw, 'postText')) || undefined,
+    pollQuestion: cleanCaption(readString(raw, 'postText')) || undefined,
+    options,
+    votedId,
+    totalVotes,
+    postedAt: readNumber(raw, 'time') || undefined,
+    likeCount,
+    commentCount: readNumber(raw, 'post_comments', 'commentCount'),
+    isLiked: myReaction !== null || readBool(raw, 'isLiked', 'postReacted'),
+    myReaction,
+    topReactions: extractTopReactions(raw, myReaction),
+    publisher: {
+      id: readString(publisher, 'user_id', 'id'),
+      name,
+      username,
+      avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+    },
+  };
+}
 
 function readString(raw: Record<string, unknown>, ...keys: string[]) {
   for (const key of keys) {
@@ -323,6 +446,48 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
   };
 }
 
+function mapAdPost(raw: Record<string, unknown>): FeedAdPost {
+  const publisher =
+    (raw.publisher as Record<string, unknown> | undefined) ??
+    (raw.user_data as Record<string, unknown> | undefined) ??
+    {};
+  const firstName = readString(publisher, 'first_name');
+  const lastName = readString(publisher, 'last_name');
+  const username = readString(publisher, 'username', 'user_name');
+  const name =
+    [firstName, lastName].filter(Boolean).join(' ').trim() ||
+    readString(publisher, 'name', 'full_name') ||
+    username ||
+    'Nhà quảng cáo';
+
+  const adId = readString(raw, 'id', 'ad_id');
+  const mediaUrl = normalizeMediaUrl(readString(raw, 'ad_media')) || undefined;
+  const title =
+    cleanCaption(readString(raw, 'headline')) ||
+    cleanCaption(readString(raw, 'name')) ||
+    'Quảng cáo';
+  const description = cleanCaption(readString(raw, 'description')) || undefined;
+
+  return {
+    kind: 'ad',
+    id: `ad:${adId || title}`,
+    adId,
+    title,
+    description,
+    mediaUrl,
+    isVideo: VIDEO_URL_PATTERN.test(mediaUrl ?? ''),
+    targetUrl: readString(raw, 'url', 'website') || undefined,
+    appears: readString(raw, 'appears') || undefined,
+    postedAt: readNumber(raw, 'posted', 'time') || undefined,
+    publisher: {
+      id: readString(publisher, 'user_id', 'id') || readString(raw, 'user_id'),
+      name,
+      username,
+      avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+    },
+  };
+}
+
 /**
  * Decide whether a raw post is a "video" we want to surface.
  *
@@ -334,6 +499,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
  *      strings + slashes after the extension so signed-CDN URLs work.
  */
 function looksLikeVideo(raw: Record<string, unknown>): boolean {
+  if (looksLikeAd(raw)) return false;
   const postType = readString(raw, 'postType').toLowerCase();
   if (postType === 'video' || postType === 'reel') return true;
   const file = readString(raw, 'postFile');
@@ -453,6 +619,7 @@ function extractFeeling(raw: Record<string, unknown>): PostFeeling | undefined {
  * messages) get filtered out so the feed doesn't show blank cards.
  */
 function looksLikeTextOrPhoto(raw: Record<string, unknown>): boolean {
+  if (looksLikeAd(raw)) return false;
   if (looksLikeVideo(raw)) return false;
   const text = readString(raw, 'postText').trim();
   const hasPhoto = extractPhotoUrls(raw).length > 0;
@@ -481,6 +648,9 @@ function readPostOwnerId(raw: Record<string, unknown>): string {
 }
 
 function rawPostKey(raw: Record<string, unknown>): string {
+  if (looksLikeAd(raw)) {
+    return `ad:${readString(raw, 'id', 'ad_id') || JSON.stringify(raw).slice(0, 80)}`;
+  }
   return readString(raw, 'id', 'post_id') || JSON.stringify(raw).slice(0, 80);
 }
 
@@ -752,7 +922,7 @@ async function fetchRawFeedPosts(
       return [];
     }
 
-    const ids = Array.from(userIds).slice(0, 15);
+    const ids = Array.from(userIds).slice(0, 8);
     // eslint-disable-next-line no-console
     console.log(
       '[feed] discovery: fetching posts for',
@@ -788,19 +958,22 @@ async function fetchRawFeedPosts(
       : Promise.resolve<Array<Record<string, unknown>>>([]),
   ]);
 
-  // 2. Fetch discovery posts conditionally.
-  // We fetch discovery posts if followed + own posts returned is low (< 5).
-  // If it's page 1 (afterPostId is undefined), we call fetchDiscoveryPosts without cursor.
-  // If it's page 2+ (afterPostId is defined), we call fetchDiscoveryPosts passing afterPostId.
+  // 2. Fetch discovery posts ONLY on the first page (no cursor).
+  // Page 2+ relies on the two primary streams above, which is much
+  // faster (2 API calls vs ~10+ fan-out). The initial load already
+  // seeds enough discovery content that pagination continues from the
+  // merged id-space naturally.
   let discoveryRaw: Array<Record<string, unknown>> = [];
-  const localPostsCount = followedRaw.length + ownRaw.length;
-  if (localPostsCount < 5) {
-    // eslint-disable-next-line no-console
-    console.log('[feed] local posts count is low:', localPostsCount, 'fetching discovery posts with afterPostId:', afterPostId);
-    discoveryRaw = await fetchDiscoveryPosts(afterPostId);
+  if (!afterPostId) {
+    const localPostsCount = followedRaw.length + ownRaw.length;
+    if (localPostsCount < 8) {
+      // eslint-disable-next-line no-console
+      console.log('[feed] page-1 local posts low:', localPostsCount, '→ fetching discovery');
+      discoveryRaw = await fetchDiscoveryPosts();
+    }
   } else {
     // eslint-disable-next-line no-console
-    console.log('[feed] skipping discovery posts fetch (afterPostId:', afterPostId, 'localCount:', localPostsCount, ')');
+    console.log('[feed] page 2+ → skipping discovery (afterPostId:', afterPostId, ')');
   }
 
   // Diagnostics — kept until the "I only see my own posts" report
@@ -821,16 +994,22 @@ async function fetchRawFeedPosts(
   // anyway, so the practical effect is just deduplication.
   const seen = new Set<string>();
   const merged: Array<Record<string, unknown>> = [];
+  let pageAdIncluded = false;
   for (const list of [followedRaw, ownRaw, discoveryRaw]) {
     for (const post of list) {
+      const isAd = looksLikeAd(post);
+      if (isAd && pageAdIncluded) continue;
       const id = String(
-        (post as { id?: unknown; post_id?: unknown }).id ??
-          (post as { id?: unknown; post_id?: unknown }).post_id ??
-          '',
+        isAd
+          ? rawPostKey(post)
+          : (post as { id?: unknown; post_id?: unknown }).id ??
+              (post as { id?: unknown; post_id?: unknown }).post_id ??
+              '',
       );
       if (!id || seen.has(id)) continue;
       seen.add(id);
       merged.push(post);
+      if (isAd) pageAdIncluded = true;
     }
   }
 
@@ -838,6 +1017,35 @@ async function fetchRawFeedPosts(
   console.log('[feed] merged unique posts →', merged.length);
 
   return merged;
+}
+
+function mixAdsIntoPosts(posts: FeedPost[]): FeedPost[] {
+  const ads = posts.filter((post): post is FeedAdPost => post.kind === 'ad');
+  if (ads.length === 0) {
+    return posts.sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+  }
+
+  const content = posts
+    .filter((post): post is Exclude<FeedPost, FeedAdPost> => post.kind !== 'ad')
+    .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+
+  if (content.length === 0) {
+    const now = Math.floor(Date.now() / 1000);
+    return ads.map((ad, index) => ({ ...ad, postedAt: now - index }));
+  }
+
+  const mixed: FeedPost[] = [...content];
+  ads.slice(0, 1).forEach((ad, index) => {
+    const insertAt = Math.min(content.length, 4 + index * 8);
+    const previous = mixed[Math.max(0, insertAt - 1)];
+    const next = mixed[insertAt];
+    const previousTime = previous?.postedAt ?? Math.floor(Date.now() / 1000);
+    const nextTime = next?.postedAt ?? previousTime - 2;
+    const adTime = previousTime > nextTime ? (previousTime + nextTime) / 2 : previousTime - 1;
+    mixed.splice(insertAt, 0, { ...ad, postedAt: adTime });
+  });
+
+  return mixed.sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
 }
 
 export function createFeedRepository(): FeedRepository {
@@ -859,16 +1067,20 @@ export function createFeedRepository(): FeedRepository {
       const raw = await fetchRawFeedPosts(limit, afterPostId);
       const posts: FeedPost[] = [];
       for (const item of raw) {
-        if (looksLikeVideo(item)) {
+        if (looksLikeAd(item)) {
+          posts.push(mapAdPost(item));
+        } else if (looksLikeVideo(item)) {
           posts.push(mapVideoPost(item));
+        } else if (looksLikePoll(item)) {
+          // IMPORTANT: Check poll BEFORE text, because poll posts have text content
+          // and would be caught by looksLikeTextOrPhoto first
+          posts.push(mapPollPost(item));
         } else if (looksLikeTextOrPhoto(item)) {
           posts.push(mapTextPost(item));
         }
         // else: shared/empty/system stub — skip silently.
       }
-      return posts.sort(
-        (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
-      );
+      return mixAdsIntoPosts(posts);
     },
 
     async getVideoPosts(limit = 20) {
@@ -1002,6 +1214,7 @@ export function createFeedRepository(): FeedRepository {
 
         const rawMap = new Map<string, Record<string, unknown>>();
         for (const item of [...ownRaw, ...publicVideoRaw]) {
+          if (looksLikeAd(item)) continue;
           rawMap.set(rawPostKey(item), item);
         }
 

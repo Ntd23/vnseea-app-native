@@ -33,14 +33,10 @@ export const apiBridge = {
   ) {
     const formData = new FormData();
 
-    // CRITICAL: Add server_key AND access_token to FormData for WoWonder API validation
-    // For multipart endpoints, these must be in the body, not just params
+    // Add server_key to FormData for WoWonder API validation
     formData.append('server_key', apiConfig.serverKey);
 
-    const accessToken = sessionStorage.getAccessToken();
-    if (accessToken) {
-      formData.append('access_token', accessToken);
-    }
+    // access_token will be added as URL param below
 
     Object.entries(data).forEach(([key, value]) => {
       if (value === undefined || value === null) {
@@ -82,9 +78,20 @@ export const apiBridge = {
     //   axios tries to JSON.stringify or run Node's form-data lib, which
     //     fails on RN's native FormData, returning an instant Network Error.
     //   Fix: bypass transformRequest so it does NOT touch the FormData object.
+
+    // Build params: access_token and server_key go as URL params for WoWonder API
+    const accessToken = sessionStorage.getAccessToken();
+    const params: Record<string, string> = {
+      server_key: apiConfig.serverKey,
+    };
+    if (accessToken) {
+      params.access_token = accessToken;
+    }
+
     const response = await apiClient.post<TResponse>(url, formData, {
       timeout: 5 * 60 * 1000, // 5 minutes for video/image uploads
       ...config,
+      params: { ...params, ...config?.params },
       headers: {
         'Content-Type': 'multipart/form-data',
         ...(config?.headers ?? {}),

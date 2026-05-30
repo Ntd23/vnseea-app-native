@@ -1,10 +1,15 @@
-// Saved Repository Interface
-// Port từ: client/src/saved/domain/repositories/
-
+// Description: Repository port for saved posts.
 import type { SavedItem } from '../types/saved.types';
 
+export interface SavedPostsPage {
+  items: SavedItem[];
+  nextCursor?: string;
+  hasMore: boolean;
+}
+
 export interface SavedRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<SavedItem[]>;
-  // getById(id: string | number): Promise<SavedItem | null>;
+  getSavedPosts(options?: {
+    limit?: number;
+    afterPostId?: string;
+  }): Promise<SavedPostsPage>;
 }

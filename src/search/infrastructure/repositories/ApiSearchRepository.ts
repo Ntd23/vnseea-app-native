@@ -24,7 +24,11 @@ function mapUserToSearchResult(user: Record<string, unknown>): SearchResult {
     cover: user.cover ? String(user.cover) : undefined,
     gender: String(user.gender ?? ''),
     verified: Boolean(user.verified === 1 || user.verified === '1'),
-    isFollowing: user.is_following === 1 || user.is_following === '1',
+    isFollowing:
+      user.is_following === 1 ||
+      user.is_following === '1' ||
+      user.is_following === 'yes' ||
+      user.is_following === true,
     lastSeen: user.lastseen ? String(user.lastseen) : undefined,
     lastSeenText: user.lastseen_time_text ? String(user.lastseen_time_text) : undefined,
     followingCount: user.following_count ? Number(user.following_count) : undefined,
@@ -41,7 +45,11 @@ function mapUserToSuggestionResult(user: Record<string, unknown>): SuggestionRes
     name: String(user.name ?? user.username ?? ''),
     avatar: String(user.avatar ?? ''),
     mutualFriends: user.mutual_friends ? Number(user.mutual_friends) : undefined,
-    isFollowing: user.is_following === 1 || user.is_following === '1',
+    isFollowing:
+      user.is_following === 1 ||
+      user.is_following === '1' ||
+      user.is_following === 'yes' ||
+      user.is_following === true,
   };
 }
 
@@ -147,12 +155,15 @@ export function createSearchRepository(): SearchRepository {
 
       const response = await apiBridge.post<{
         api_status: number;
+        nearby_users?: Record<string, unknown>[];
         users?: Record<string, unknown>[];
       }>(apiRoutes.user.nearby, payload);
 
-      const users: SearchResult[] = (response.users ?? []).map(user =>
-        mapUserToSearchResult(user),
-      );
+      const users: SearchResult[] = (
+        response.nearby_users ??
+        response.users ??
+        []
+      ).map(user => mapUserToSearchResult(user));
 
       return { users };
     },

@@ -367,7 +367,7 @@ function SearchScreen() {
           renderItem={renderUserItem}
           keyExtractor={item => item.userId}
           ListEmptyComponent={
-            isLoading ? (
+            isLoading || isLoadingSuggestions ? (
               <View className="items-center py-12">
                 <ActivityIndicator color="#1877F2" />
               </View>
@@ -378,8 +378,8 @@ function SearchScreen() {
               />
             ) : (
               <EmptyState 
-                message="Tìm kiếm mọi người" 
-                description="Nhập tên hoặc tài khoản của người bạn muốn tìm kiếm." 
+                message="Chưa có người dùng để hiển thị" 
+                description="Bạn vẫn có thể nhập tên hoặc tài khoản để tìm kiếm." 
               />
             )
           }

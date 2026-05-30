@@ -44,16 +44,51 @@ export function createPollRepository(): PollRepository {
         answerParams[`answer[${idx}]`] = opt;
       });
 
-      const response = await apiBridge.post<CreatePollResponse>(
-        apiRoutes.feed.newPost,
-        { postText, ...answerParams },
-      );
+      console.log('[ApiPollRepository] Creating poll with:', {
+        postText,
+        options,
+        answerParams,
+      });
 
-      if (response.api_status !== 200) {
-        throw new Error('Failed to create poll post');
+      try {
+        const response = await apiBridge.post<any>(
+          apiRoutes.feed.newPost,
+          { postText, ...answerParams },
+        );
+
+        console.log('[ApiPollRepository] Response:', JSON.stringify(response, null, 2));
+
+        // Handle both string "200" and number 200 api_status
+        const apiStatus = response?.api_status;
+        const isSuccess = apiStatus == 200 || apiStatus === '200';
+
+        if (!isSuccess) {
+          // Get error message from response
+          const errorMsg = response?.errors?.[0]?.error_text
+            || response?.error_text
+            || response?.message
+            || `Lỗi tạo cuộc thăm dò (mã: ${apiStatus})`;
+          console.log('[ApiPollRepository] Error:', errorMsg);
+          throw new Error(errorMsg);
+        }
+
+        // Check if post is under review
+        if (response?.code === 'review') {
+          console.log('[ApiPollRepository] Post is under review');
+        }
+
+        // Return post ID from response
+        const postId = response?.post_id
+          || response?.post_data?.post_id
+          || response?.post_data?.id;
+        console.log('[ApiPollRepository] Created post ID:', postId);
+
+        return { postId: String(postId ?? '') };
+      } catch (err: any) {
+        console.log('[ApiPollRepository] Catch error:', err?.message);
+        console.log('[ApiPollRepository] Response data:', err?.response?.data);
+        throw err;
       }
-
-      return { postId: String(response.post_id ?? '') };
     },
 
     async votePoll(optionId: string): Promise<PollVoteResponse> {

@@ -3,6 +3,7 @@
 
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { ProductItem } from '../../../product/domain/types/product.types';
+import type { EventsItem } from '../../../events/domain/types/events.types';
 
 export interface FeedItem {
   id: string | number;
@@ -182,6 +183,76 @@ export interface FeedProductPost {
   };
 }
 
+export interface FeedEventPost {
+  kind: 'event';
+  id: string;
+  event: EventsItem;
+  postedAt?: number;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface FeedAdPost {
+  kind: 'ad';
+  id: string;
+  adId: string;
+  title: string;
+  description?: string;
+  mediaUrl?: string;
+  isVideo: boolean;
+  targetUrl?: string;
+  appears?: string;
+  postedAt?: number;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
+/**
+ * Poll option with vote counts and percentages
+ */
+export interface PollOption {
+  id: string;
+  text: string;
+  optionVotes: number;
+  percentage: string;
+  percentageNum: number;
+  all: number;
+}
+
+/**
+ * A poll post shown on the home feed.
+ * Includes question text, options, vote counts, and user's voted option.
+ */
+export interface FeedPollPost {
+  kind: 'poll';
+  id: string;
+  caption?: string;
+  pollQuestion?: string;
+  options: PollOption[];
+  votedId: string | null; // null = chưa vote, otherwise option id đã vote
+  totalVotes: number;
+  postedAt?: number;
+  likeCount: number;
+  commentCount: number;
+  isLiked: boolean;
+  myReaction: ReactionType | null;
+  topReactions: ReactionType[];
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
 /**
  * Unified feed post — anything that can appear in the merged home feed.
  *
@@ -191,9 +262,17 @@ export interface FeedProductPost {
  *
  *   if (post.kind === 'video') → <HomeVideoPostCard post={post} />
  *   if (post.kind === 'text')  → <TextPostCard post={post} />
+ *   if (post.kind === 'product') → <ProductPostCard product={post.product} />
+ *   if (post.kind === 'event') → <EventPostCard event={post.event} />
  *
  * Adding a new post type later (e.g. polls, shares) is just a matter of
  * extending this union with a new `kind` literal — no refactor of the
  * surrounding plumbing needed.
  */
-export type FeedPost = FeedVideoPost | FeedTextPost | FeedProductPost;
+export type FeedPost =
+  | FeedVideoPost
+  | FeedTextPost
+  | FeedProductPost
+  | FeedEventPost
+  | FeedPollPost
+  | FeedAdPost;

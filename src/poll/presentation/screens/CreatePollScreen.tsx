@@ -1,7 +1,7 @@
-// Description: Creates a poll post with question and options.
-import React, { useState } from 'react';
+// Description: Màn hình tạo cuộc thăm dò ý kiến với giao diện đẹp mắt.
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
+  Animated,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -16,8 +16,9 @@ import {
   BarChart3,
   Check,
   Plus,
+  List,
   Trash2,
-  X,
+  Loader2,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -32,14 +33,27 @@ const MAX_OPTIONS = 6;
 
 function CreatePollScreen() {
   const navigation = useNavigation<CreatePollNav>();
-  const { createPoll, isLoading, error } = usePollViewModel();
+  const { createPoll, isLoading, error, clearError } = usePollViewModel();
 
   const [question, setQuestion] = useState('');
   const [options, setOptions] = useState<string[]>(['', '']);
+  const [successMessage, setSuccessMessage] = useState('');
+
+  // Simple fade animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [fadeAnim]);
 
   const canAddMore = options.length < MAX_OPTIONS;
   const canRemove = options.length > MIN_OPTIONS;
   const canSubmit = question.trim().length > 0 && options.filter(o => o.trim()).length >= MIN_OPTIONS;
+  const validOptionsCount = options.filter(o => o.trim()).length;
 
   const addOption = () => {
     if (canAddMore) {
@@ -60,16 +74,19 @@ function CreatePollScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || isLoading) return;
 
     const validOptions = options.filter(o => o.trim());
     try {
       await createPoll(question.trim(), validOptions);
-      Alert.alert('Success', 'Poll created successfully!', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      // Show success message first, then navigate back
+      setSuccessMessage('✓ Đăng thành công!');
+      setTimeout(() => {
+        navigation.goBack();
+      }, 1500);
     } catch (err) {
-      // Error handled by viewmodel
+      // Error will be shown via the error toast
+      clearError();
     }
   };
 
@@ -80,28 +97,34 @@ function CreatePollScreen() {
       {/* Header */}
       <View className="surface-brand h-16 flex-row items-center justify-between px-4">
         <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
+          className="h-10 w-10 items-center justify-center rounded-full active:bg-white/10"
           activeOpacity={0.8}
           onPress={() => navigation.goBack()}
         >
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text className="text-heading text-inverse">Create Poll</Text>
+        <Text className="text-heading text-inverse">Tạo cuộc thăm dò</Text>
         <TouchableOpacity
-          className={`h-10 w-16 items-center justify-center rounded-full ${
+          className={`h-10 min-w-[60px] items-center justify-center rounded-full px-4 ${
             canSubmit ? 'bg-white/20' : 'bg-transparent'
           }`}
           activeOpacity={canSubmit ? 0.8 : 1}
           onPress={handleSubmit}
           disabled={!canSubmit || isLoading}
         >
-          <Text
-            className={`text-title-primary ${
-              canSubmit ? 'text-inverse' : 'text-inverse/50'
-            }`}
-          >
-            {isLoading ? '...' : 'Post'}
-          </Text>
+          {isLoading ? (
+            <View className="h-5 w-5 items-center justify-center">
+              <Loader2 size={18} color="#FFFFFF" className="animate-spin" />
+            </View>
+          ) : (
+            <Text
+              className={`text-title-primary font-semibold ${
+                canSubmit ? 'text-inverse' : 'text-inverse/40'
+              }`}
+            >
+              Đăng
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -111,104 +134,192 @@ function CreatePollScreen() {
       >
         <ScrollView
           className="flex-1"
-          contentContainerClassName="p-5"
+          contentContainerClassName="pb-8"
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Poll Icon */}
-          <View className="mb-6 items-center">
-            <View className="icon-chip h-16 w-16 items-center justify-center">
-              <BarChart3 size={32} color="#0000FF" />
+          <Animated.View
+            style={{
+              padding: 20,
+              opacity: fadeAnim,
+            }}
+          >
+            {/* Poll Icon Header */}
+            <View className="mb-6 items-center">
+              <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-blue-50">
+                <BarChart3 size={40} color="#0000FF" />
+              </View>
+              <Text className="text-heading">Hỏi ý kiến cộng đồng</Text>
+              <Text className="mt-1 text-body-secondary">
+                Tạo cuộc thăm dò để thu thập ý kiến từ bạn bè
+              </Text>
             </View>
-            <Text className="mt-2 text-body-secondary">
-              Create a poll to get opinions
-            </Text>
-          </View>
 
-          {/* Question Input */}
-          <View className="surface-card mb-4 p-4">
-            <Text className="mb-2 text-label-primary text-slate-500">
-              Your Question
-            </Text>
-            <TextInput
-              className="min-h-[60px] text-body-primary"
-              placeholder="What do you want to ask?"
-              placeholderTextColor="#94A3B8"
-              value={question}
-              onChangeText={setQuestion}
-              multiline
-              textAlignVertical="top"
-            />
-          </View>
-
-          {/* Options */}
-          <View className="surface-card p-4">
-            <Text className="mb-4 text-label-primary text-slate-500">
-              Answer Options ({options.length}/{MAX_OPTIONS})
-            </Text>
-
-            {options.map((opt, index) => (
-              <View key={index} className="mb-3 flex-row items-center">
-                <View
-                  className={`input-shell min-h-[50px] flex-1 flex-row items-center px-3 ${
-                    opt.trim() ? 'border-blue-500' : ''
-                  }`}
-                >
-                  <Text className="mr-3 text-caption-secondary">
-                    {index + 1}.
+            {/* Question Input Card */}
+            <View className="mb-5 overflow-hidden rounded-2xl bg-white">
+              <View className="border-b border-slate-100 bg-gradient-to-r from-blue-50 to-white px-5 py-4">
+                <View className="flex-row items-center">
+                  <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-blue-100">
+                    <List size={16} color="#0000FF" />
+                  </View>
+                  <Text className="text-label-primary font-semibold text-slate-700">
+                    Câu hỏi của bạn
                   </Text>
-                  <TextInput
-                    className="flex-1 text-body-primary"
-                    placeholder={`Option ${index + 1}`}
-                    placeholderTextColor="#94A3B8"
-                    value={opt}
-                    onChangeText={value => updateOption(index, value)}
-                  />
-                  {opt.trim() && (
-                    <Check size={18} color="#0000FF" />
-                  )}
                 </View>
-                {canRemove && (
+              </View>
+              <TextInput
+                className="mx-5 my-4 min-h-[80px] text-body-primary"
+                placeholder="Bạn muốn hỏi gì?"
+                placeholderTextColor="#94A3B8"
+                value={question}
+                onChangeText={setQuestion}
+                multiline
+                textAlignVertical="top"
+              />
+            </View>
+
+            {/* Options Card */}
+            <View className="overflow-hidden rounded-2xl bg-white">
+              <View className="border-b border-slate-100 bg-gradient-to-r from-blue-50 to-white px-5 py-4">
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center">
+                    <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-blue-100">
+                      <Check size={16} color="#0000FF" />
+                    </View>
+                    <Text className="text-label-primary font-semibold text-slate-700">
+                      Phương án trả lời
+                    </Text>
+                  </View>
+                  <View className="rounded-full bg-blue-100 px-3 py-1">
+                    <Text className="text-caption-primary font-medium text-blue-600">
+                      {validOptionsCount}/{MAX_OPTIONS}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View className="p-4">
+                {options.map((opt, index) => (
+                  <View key={index} className="mb-3">
+                    <View
+                      className={`flex-row items-center rounded-xl border-2 px-4 py-3 transition-colors ${
+                        opt.trim()
+                          ? 'border-blue-500 bg-blue-50/50'
+                          : 'border-slate-200 bg-slate-50'
+                      }`}
+                    >
+                      <View
+                        className={`mr-3 flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${
+                          opt.trim()
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-slate-200 text-slate-500'
+                        }`}
+                      >
+                        {opt.trim() ? (
+                          <Check size={16} color="#FFFFFF" />
+                        ) : (
+                          <Text>{index + 1}</Text>
+                        )}
+                      </View>
+                      <TextInput
+                        className="flex-1 text-body-primary"
+                        placeholder={`Phương án ${index + 1}`}
+                        placeholderTextColor="#94A3B8"
+                        value={opt}
+                        onChangeText={value => updateOption(index, value)}
+                      />
+                    </View>
+                    {canRemove && (
+                      <TouchableOpacity
+                        className="mt-2 flex-row items-center"
+                        activeOpacity={0.7}
+                        onPress={() => removeOption(index)}
+                      >
+                        <Trash2 size={14} color="#EF4444" />
+                        <Text className="ml-1 text-caption-secondary text-red-500">
+                          Xóa phương án
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+
+                {/* Add Option Button */}
+                {canAddMore && (
                   <TouchableOpacity
-                    className="ml-2 h-10 w-10 items-center justify-center rounded-full bg-red-50"
+                    className="mt-2 flex-row items-center justify-center rounded-xl border-2 border-dashed border-blue-300 bg-blue-50/30 py-4"
                     activeOpacity={0.8}
-                    onPress={() => removeOption(index)}
+                    onPress={addOption}
                   >
-                    <Trash2 size={18} color="#EF4444" />
+                    <Plus size={20} color="#0000FF" />
+                    <Text className="ml-2 text-label-primary font-medium text-blue-600">
+                      Thêm phương án
+                    </Text>
                   </TouchableOpacity>
                 )}
               </View>
-            ))}
+            </View>
 
-            {/* Add Option Button */}
-            {canAddMore && (
-              <TouchableOpacity
-                className="mt-3 flex-row items-center justify-center rounded-lg border border-dashed border-slate-300 py-3"
-                activeOpacity={0.8}
-                onPress={addOption}
-              >
-                <Plus size={18} color="#64748B" />
-                <Text className="ml-2 text-caption-primary text-slate-500">
-                  Add Option
+            {/* Help Text Card */}
+            <View className="mt-5 flex-row items-start rounded-2xl bg-amber-50 p-4">
+              <View className="mr-3 h-6 w-6 items-center justify-center rounded-full bg-amber-200">
+                <Text className="text-xs">💡</Text>
+              </View>
+              <View className="flex-1">
+                <Text className="text-label-primary font-medium text-amber-800">
+                  Mẹo tạo cuộc thăm dò hiệu quả
                 </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+                <Text className="mt-1 text-caption-secondary text-amber-700">
+                  Cần tối thiểu {MIN_OPTIONS} phương án trả lời. Bạn có thể thêm tối đa {MAX_OPTIONS} phương án.
+                  Cuộc thăm dò sẽ được đăng lên bảng tin để bạn bè bình chọn.
+                </Text>
+              </View>
+            </View>
 
-          {/* Help Text */}
-          <View className="mt-4 rounded-lg bg-slate-50 p-4">
-            <Text className="text-caption-secondary">
-              {MIN_OPTIONS}-{MAX_OPTIONS} options required. Poll will be posted
-              to your timeline for followers to vote.
-            </Text>
-          </View>
+            {/* Progress Indicator */}
+            <View className="mt-6 items-center">
+              <View className="mb-2 h-2 w-48 overflow-hidden rounded-full bg-slate-200">
+                <View
+                  className="h-full rounded-full bg-blue-500"
+                  style={{
+                    width: `${Math.min(100, (validOptionsCount / MIN_OPTIONS) * 50 + (question.trim() ? 50 : 0))}%`,
+                  }}
+                />
+              </View>
+              <Text className="text-caption-secondary">
+                {canSubmit ? '✓ Sẵn sàng đăng' : 'Điền đầy đủ thông tin để tiếp tục'}
+              </Text>
+            </View>
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* Success Toast */}
+      {successMessage ? (
+        <View className="absolute bottom-6 left-4 right-4 items-center">
+          <View className="flex-row items-center rounded-2xl bg-green-500 px-5 py-4 shadow-lg">
+            <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-white/20">
+              <Check size={18} color="#FFFFFF" />
+            </View>
+            <Text className="flex-1 text-title-primary text-white font-semibold">
+              {successMessage}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
       {/* Error Toast */}
       {error && (
-        <View className="absolute bottom-20 left-4 right-4 rounded-xl bg-red-50 p-4">
-          <Text className="text-caption-primary text-red-600">{error}</Text>
+        <View className="absolute bottom-6 left-4 right-4 items-center">
+          <View className="flex-row items-center rounded-2xl bg-red-500 px-5 py-4">
+            <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-white/20">
+              <Text>⚠️</Text>
+            </View>
+            <Text className="flex-1 text-title-primary text-white">{error}</Text>
+            <TouchableOpacity onPress={clearError} className="ml-2">
+              <Text className="text-white/80">✕</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
     </SafeAreaView>

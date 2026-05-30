@@ -1,312 +1,318 @@
-// Description: Renders the VNSEEA Hub style messages screen translated from the Stitch reference.
-import React, { useState } from 'react';
+// Description: Messages screen with real API integration - displays chat list and conversations
+import React, { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  FlatList,
   Image,
-  ScrollView,
+  RefreshControl,
   StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { ArrowLeft, Edit3, Plus, Search, Users } from 'lucide-react-native';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Edit3,
+  MessageCircle,
+  MoreVertical,
+  Phone,
+  Search,
+  Send,
+  Video,
+} from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
+import { useMessagesViewModel } from '../../application/view-models/useMessagesViewModel';
+import type { ChatItem } from '../../domain/types/messages.types';
 
 type MessageNav = NativeStackNavigationProp<RootStackParamList>;
 
-const profileAvatar =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuDaMWNcH9S8wHozYQWXCmtbdaxB432TM87BjXOC7GfjDVscn2JUdv2UjZkXJUW9JrXW9TBf9ln1Z7MPs7oolFxWDYK9De2EQwlyFoXF04v_Y3B6mIox1safvM5UTkKqzqNNJNYQVv4Xk3vBBHNAJ-HrF5s3vI8w4mFbYtMvuvLZec2wwbjlytIwiyKdhFyqpBa0Pmy-pAE01j7ZQE5CvXSL7UGYPcSlqWkfBko55z9HyAqrWsrPgrXXLLkhWmeQInHyG5EevGFUMJ8';
+// Avatar placeholder
+const DEFAULT_AVATAR = 'https://via.placeholder.com/100';
 
-const stories = [
-  { name: 'Của tôi', image: profileAvatar, mine: true },
-  {
-    name: 'Anh Nguyễn',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuAhNtDbDnLidJrh7uJcMw04C9XImkl2bziXzrVPrtLMrK-ysn9ImQd876lGPYjuY7tFUHn3UtZ9o1lD6F7WQRB9jBaekz767p-WjqVLj1kYqTwze7XmgrJjywnMTe4KOD6sFtvK1n-ricG1ZcwNbK-fCoqw4EJxbQw7d4mYow5TZiUSIN69aFDwj90HHrXWpBN6iv_oXoZWMbFaC7ADPTayWS3TTFHxpOGdNwb8GjXBkupBgB3z9k6CRnCbE98EScB_wg-fZ--aw_c',
-  },
-  {
-    name: 'Linh Nguyễn',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuAAfTc3Z-4i55DLq_hidez7RMKrJTFQP2p9RBLiLphinXwHMw37O41z6WBhDJ1Ku4-KUD1gLuYH4blfwNGxLvx1uahte17PdEqJpQtFXgF9A7wPIZFyLnMVS0XtGzv7fxTMsX5848aDOyiGCTgWecri_uktPAHQO0knwBcQLOCP6f_Be2Ljcpz04QJUna_orgkkzGltKAo4XBQGd8zlBjd77YqVrnLr9cuUzENgIHiTqgiYX4D3I_URccWw2HXr6f0KhiR5bPtKl3c',
-  },
-  {
-    name: 'Đặng Tuấn',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuBjOwyjzjKG0UF__i_h1zx46TFh3hO5W5JDrPrl5hX-BUR3-6YUpTC9apfXBBEj99b9Oy3bAuR0rzMJDH_xtd0JluYtOft4e9bspgKyqegCaPiQAgWNStBpPq3OE_rUQMKl-Az1HhU1D-tn311RrvbAajCvnL2W1yiWC0TonTYEuaTsFOg2SIX_HZgvyq6wjX1ddliPolbEIkVECdu7VrHDF7omzdftrPjjzbIKXLFpu886LQX8Wt9K95xxRVJVdieM_XkhyBkdAwE',
-  },
-];
+// Format time to Vietnamese style
+function formatTime(timestamp: number): string {
+  const now = Date.now() / 1000;
+  const diff = now - timestamp;
 
-const conversations = [
-  {
-    id: '1',
-    name: 'Lê Thúy Quỳnh',
-    message: 'Dự án VNSEEA đã hoàn thành giai đoạn thiết kế...',
-    time: '10:45',
-    unread: true,
-    online: true,
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuC5xs1SPNNXU968Y61SL6ua59ywyN10iBTWfN7cgi1RF9eEJQc1Uq_-s02nMM_wUaHDspEXJsWXecTy__h82KlCNtEN9VfySSHvQjSdTsDmBo7tyI6WmKg-sCTkTHGbVd5cDlxwaDt9N1X2fr2gVD7lHjI7jUVBpH5ALgXKKQinevzKjSDlFY_JQICBe5NnfupDqzQ-IciJCYId8rP9cjw31flXv3HkBBysbgsOOvIOP1vynMJOoj9X5ehQfpUnP8Vo9I6ppiqqv2Y',
-  },
-  {
-    id: '2',
-    name: 'Nguyễn Minh Đức',
-    message: 'Chào anh, em đã nhận được file báo cáo sáng nay.',
-    time: 'Hôm qua',
-    image: stories[1].image,
-  },
-  {
-    id: '3',
-    name: 'Trần Hoàng Lan',
-    message: 'Hẹn gặp team vào lúc 2h chiều nay tại phòng họp 3 nhé.',
-    time: 'Thứ 3',
-    image: stories[2].image,
-  },
-  {
-    id: '4',
-    name: 'Phạm Huy',
-    message: 'Bạn: Cảm ơn Huy nhiều nhen!',
-    time: '22/10',
-    initials: 'PH',
-  },
-  {
-    id: '5',
-    name: 'Đặng Quốc Tuấn',
-    message: 'Đã gửi một ảnh',
-    time: '15/10',
-    image: stories[3].image,
-  },
-];
+  if (diff < 60) return 'Vừa xong';
+  if (diff < 3600) return `${Math.floor(diff / 60)} phút`;
+  if (diff < 86400) {
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  }
+  if (diff < 604800) {
+    const date = new Date(timestamp * 1000);
+    const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    return days[date.getDay()];
+  }
+  const date = new Date(timestamp * 1000);
+  return `${date.getDate()}/${date.getMonth() + 1}`;
+}
 
-const groupConversations = [
-  {
-    id: 'g1',
-    name: 'VNSEEA Design Team',
-    message: 'Lan: Mình đã cập nhật prototype mới.',
-    time: '11:20',
-    initials: 'VD',
-  },
-  {
-    id: 'g2',
-    name: 'Product Launch',
-    message: 'Đức: Check lại nội dung trước khi publish nhé.',
-    time: 'Hôm qua',
-    initials: 'PL',
-  },
-];
-
-const tabs = ['Gửi nhiều người', 'Người dùng', 'Nhóm'];
-
-function StoryItem({ story }: { story: (typeof stories)[number] }) {
+// Online indicator dot
+function OnlineDot({ isOnline }: { isOnline: boolean }) {
+  if (!isOnline) return null;
   return (
-    <TouchableOpacity className="w-16 items-center" activeOpacity={0.8}>
-      <View
-        className={`relative rounded-full p-0.5 ${
-          story.mine
-            ? 'border-2 border-dashed border-[#c5c4db]'
-            : 'border-2 border-[#0000ff]'
-        }`}
-      >
-        <Image
-          source={{ uri: story.image }}
-          className="h-14 w-14 rounded-full border-2 border-white"
-          resizeMode="cover"
-        />
-        {story.mine ? (
-          <View className="absolute bottom-0 right-0 h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#0000ff]">
-            <Plus size={11} color="#FFFFFF" />
-          </View>
-        ) : null}
-      </View>
-      <Text
-        className="mt-1 w-full text-center text-[10px] text-[#0b1c30]"
-        numberOfLines={1}
-      >
-        {story.name}
-      </Text>
-    </TouchableOpacity>
+    <View className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
   );
 }
 
-function ConversationRow({
-  item,
-  selectable = false,
+// User avatar component
+function UserAvatar({ uri, name, size = 56 }: { uri?: string; name: string; size?: number }) {
+  const [error, setError] = useState(false);
+
+  if (error || !uri) {
+    const initials = name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+
+    return (
+      <View
+        className="items-center justify-center rounded-full bg-blue-100"
+        style={{ width: size, height: size }}
+      >
+        <Text className="text-lg font-bold text-blue-600">{initials}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri }}
+      className="rounded-full"
+      style={{ width: size, height: size }}
+      resizeMode="cover"
+      onError={() => setError(true)}
+    />
+  );
+}
+
+// Unread badge
+function UnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+
+  return (
+    <View className="min-h-6 min-w-6 items-center justify-center rounded-full bg-blue-500 px-2">
+      <Text className="text-xs font-bold text-white">
+        {count > 99 ? '99+' : count}
+      </Text>
+    </View>
+  );
+}
+
+// Chat list item
+function ChatListItem({
+  chat,
+  onPress,
 }: {
-  item: (typeof conversations)[number] | (typeof groupConversations)[number];
-  selectable?: boolean;
+  chat: ChatItem;
+  onPress: (chat: ChatItem) => void;
 }) {
   return (
     <TouchableOpacity
-      className="mb-3 flex-row items-center rounded-[24px] border border-[rgba(0,0,0,0.05)] bg-white p-4"
+      className="flex-row items-center px-4 py-3 active:bg-gray-100"
       activeOpacity={0.8}
+      onPress={() => onPress(chat)}
     >
       <View className="relative">
-        {'image' in item && item.image ? (
-          <Image
-            source={{ uri: item.image }}
-            className="h-14 w-14 rounded-full"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="h-14 w-14 items-center justify-center rounded-full bg-[#d0e1fb]">
-            <Text className="text-title-primary text-brand">
-              {'initials' in item ? item.initials : ''}
-            </Text>
+        <UserAvatar uri={chat.avatar} name={chat.name} />
+        <OnlineDot isOnline={chat.isOnline} />
+      </View>
+
+      <View className="ml-3 flex-1 border-b border-gray-100 py-3">
+        <View className="mb-1 flex-row items-center justify-between">
+          <View className="flex-row items-center">
+            <Text className="text-base font-semibold text-gray-900">{chat.name}</Text>
+            {chat.isVerified && (
+              <CheckCircle2 size={14} color="#3b82f6" className="ml-1" />
+            )}
           </View>
-        )}
-        {'online' in item && item.online ? (
-          <View className="absolute bottom-0 right-0 h-4 w-4 rounded-full border-2 border-white bg-[#22c55e]" />
-        ) : null}
-      </View>
-
-      <View className="ml-4 min-w-0 flex-1">
-        <View className="mb-1 flex-row items-baseline justify-between">
-          <Text className="mr-3 flex-1 text-title-primary" numberOfLines={1}>
-            {item.name}
-          </Text>
-          <Text
-            className={`text-caption-secondary ${
-              'unread' in item && item.unread ? 'text-brand' : ''
-            }`}
-          >
-            {item.time}
-          </Text>
+          <Text className="text-xs text-gray-500">{formatTime(chat.lastMessageTime)}</Text>
         </View>
-        <Text
-          className={`mr-4 text-body-primary ${
-            'unread' in item && item.unread
-              ? 'font-bold text-[#0b1c30]'
-              : 'text-[#454558]'
-          }`}
-          numberOfLines={1}
-        >
-          {item.message}
-        </Text>
+        <View className="flex-row items-center justify-between">
+          <Text
+            className={`flex-1 text-sm ${chat.unreadCount > 0 ? 'font-medium text-gray-800' : 'text-gray-500'}`}
+            numberOfLines={1}
+          >
+            {chat.lastMessage || 'Chưa có tin nhắn'}
+          </Text>
+          <UnreadBadge count={chat.unreadCount} />
+        </View>
       </View>
-
-      {selectable ? (
-        <View className="h-6 w-6 rounded-full border-2 border-[#0000ff]" />
-      ) : 'unread' in item && item.unread ? (
-        <View className="h-2.5 w-2.5 rounded-full bg-[#0000ff]" />
-      ) : null}
     </TouchableOpacity>
   );
 }
 
+// Empty state
+function EmptyChats() {
+  return (
+    <View className="flex-1 items-center justify-center px-8">
+      <View className="mb-6 h-24 w-24 items-center justify-center rounded-full bg-blue-50">
+        <MessageCircle size={48} color="#3b82f6" />
+      </View>
+      <Text className="mb-2 text-xl font-bold text-gray-900">Chưa có tin nhắn nào</Text>
+      <Text className="text-center text-sm text-gray-500">
+        Bắt đầu trò chuyện với bạn bè bằng cách nhấn vào biểu tượng tin nhắn bên dưới
+      </Text>
+    </View>
+  );
+}
+
+// Loading skeleton
+function LoadingSkeleton() {
+  return (
+    <View className="flex-1 px-4">
+      {[1, 2, 3, 4, 5].map(i => (
+        <View key={i} className="flex-row items-center py-4">
+          <View className="h-14 w-14 rounded-full bg-gray-200" />
+          <View className="ml-3 flex-1">
+            <View className="mb-2 h-4 w-32 rounded bg-gray-200" />
+            <View className="h-3 w-48 rounded bg-gray-100" />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// Error state
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <View className="flex-1 items-center justify-center px-8">
+      <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-red-50">
+        <MessageCircle size={40} color="#ef4444" />
+      </View>
+      <Text className="mb-2 text-lg font-semibold text-gray-900">Đã xảy ra lỗi</Text>
+      <Text className="mb-6 text-center text-sm text-gray-500">{message}</Text>
+      <TouchableOpacity
+        className="rounded-full bg-blue-500 px-6 py-3"
+        activeOpacity={0.8}
+        onPress={onRetry}
+      >
+        <Text className="font-semibold text-white">Thử lại</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Search bar
+function SearchBar() {
+  return (
+    <View className="mx-4 mb-4 flex-row items-center rounded-full bg-gray-100 px-4 py-3">
+      <Search size={18} color="#9ca3af" />
+      <TextInput
+        className="ml-3 flex-1 text-sm text-gray-900"
+        placeholder="Tìm kiếm cuộc trò chuyện..."
+        placeholderTextColor="#9ca3af"
+      />
+    </View>
+  );
+}
+
+// Main screen
 function MessageScreen() {
   const navigation = useNavigation<MessageNav>();
-  const [activeTab, setActiveTab] = useState(tabs[1]);
-  const list = activeTab === 'Nhóm' ? groupConversations : conversations;
+  const {
+    chats,
+    isLoadingChats,
+    error,
+    loadChats,
+    loadMessages,
+  } = useMessagesViewModel();
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadChats();
+    setRefreshing(false);
+  }, [loadChats]);
+
+  const handleChatPress = useCallback(
+    (chat: ChatItem) => {
+      loadMessages(chat);
+      // TODO: Navigate to conversation detail screen
+      Alert.alert('Mở cuộc trò chuyện', `Với: ${chat.name}`);
+    },
+    [loadMessages],
+  );
 
   return (
-    <SafeAreaView className="flex-1 bg-[#f8f9ff]" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0000FF" />
-      <View className="surface-brand h-16 flex-row items-center justify-between px-4">
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-            onPress={() => navigation.goBack()}
-          >
-            <ArrowLeft size={22} color="#FFFFFF" />
-          </TouchableOpacity>
-          <Text className="ml-2 text-display text-inverse">Tin nhắn</Text>
-        </View>
-        <Image
-          source={{ uri: profileAvatar }}
-          className="h-10 w-10 rounded-full border-2 border-white/25"
-          resizeMode="cover"
-        />
+    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      <StatusBar barStyle="dark-content" />
+
+      {/* Header */}
+      <View className="flex-row items-center justify-between border-b border-gray-100 px-4 py-3">
+        <TouchableOpacity
+          className="h-10 w-10 items-center justify-center rounded-full"
+          activeOpacity={0.8}
+          onPress={() => navigation.goBack()}
+        >
+          <ArrowLeft size={22} color="#1f2937" />
+        </TouchableOpacity>
+        <Text className="text-lg font-bold text-gray-900">Tin nhắn</Text>
+        <TouchableOpacity
+          className="h-10 w-10 items-center justify-center rounded-full"
+          activeOpacity={0.8}
+        >
+          <Edit3 size={20} color="#1f2937" />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView
-        className="flex-1"
-        contentContainerClassName="px-4 pb-28 pt-4"
-        showsVerticalScrollIndicator={false}
-      >
-        <View className="input-shell mb-6 min-h-[48px] flex-row items-center px-4">
-          <Search size={18} color="#757589" />
-          <TextInput
-            className="ml-3 flex-1 text-body-primary"
-            placeholder="Tìm kiếm hội thoại..."
-            placeholderTextColor="#757589"
-          />
-        </View>
+      {/* Content */}
+      <SearchBar />
 
-        <Text className="mb-3 px-2 text-label-secondary">TIN</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerClassName="gap-4 pb-6"
-        >
-          {stories.map(story => (
-            <StoryItem key={story.name} story={story} />
-          ))}
-        </ScrollView>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerClassName="gap-6 border-b border-[#c5c4db]/30 pb-3"
-        >
-          {tabs.map(tab => (
-            <TouchableOpacity
-              key={tab}
-              activeOpacity={0.8}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text
-                className={`text-title-primary ${
-                  activeTab === tab
-                    ? 'border-b-2 border-[#0000ff] pb-3 text-brand'
-                    : 'pb-3 text-[#757589]'
-                }`}
-              >
-                {tab}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {activeTab === 'Nhóm' ? (
-          <TouchableOpacity
-            className="surface-card my-4 flex-row items-center justify-center p-4"
-            activeOpacity={0.85}
-          >
-            <Users size={20} color="#0000FF" />
-            <Text className="ml-2 text-title-primary text-brand">Tạo nhóm</Text>
-          </TouchableOpacity>
-        ) : null}
-
-        {activeTab === 'Gửi nhiều người' ? (
-          <View className="form-note-panel my-4 p-4">
-            <Text className="text-body-secondary">
-              Chọn nhiều người để gắn thẻ hoặc gửi cùng một nội dung.
-            </Text>
-          </View>
-        ) : null}
-
-        <View className="pt-1">
-          {list.map(item => (
-            <ConversationRow
-              key={item.id}
-              item={item}
-              selectable={activeTab === 'Gửi nhiều người'}
+      {isLoadingChats && !refreshing ? (
+        <LoadingSkeleton />
+      ) : error && chats.length === 0 ? (
+        <ErrorState message={error} onRetry={loadChats} />
+      ) : (
+        <FlatList
+          data={chats}
+          keyExtractor={item => item.id}
+          renderItem={({ item }) => (
+            <ChatListItem chat={item} onPress={handleChatPress} />
+          )}
+          ListEmptyComponent={<EmptyChats />}
+          contentContainerStyle={chats.length === 0 ? { flex: 1 } : undefined}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#3b82f6']}
+              tintColor="#3b82f6"
             />
-          ))}
-        </View>
-      </ScrollView>
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
+      {/* New message FAB */}
       <TouchableOpacity
-        className="absolute bottom-8 right-6 h-14 w-14 items-center justify-center rounded-2xl bg-[#0000ff]"
+        className="absolute bottom-6 right-6 h-14 w-14 items-center justify-center rounded-full bg-blue-500 shadow-lg"
         activeOpacity={0.85}
+        style={{
+          shadowColor: '#3b82f6',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 8,
+        }}
       >
-        <Edit3 size={26} color="#FFFFFF" />
+        <Edit3 size={24} color="#ffffff" />
       </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
-export default MessageScreen;
+export default MessageScreen
