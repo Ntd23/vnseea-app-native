@@ -529,7 +529,7 @@ function formatPostTime(timestamp?: number) {
   return new Date(timestamp * 1000).toLocaleDateString('vi-VN');
 }
 
-const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
+export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   post,
   onReact,
   onOpenPicker,
@@ -554,7 +554,7 @@ const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   gestureY: any;
   gestureActive: any;
   navigateToProfile: (userId: string) => void;
-  onOpenPostMenu: (post: FeedPost) => void;
+  onOpenPostMenu?: (post: FeedPost) => void;
 }) {
   const navigation = useNavigation<any>();
   const [manuallyPaused, setManuallyPaused] = useState(false);
@@ -848,12 +848,12 @@ const REACTION_BADGE_BG: Record<ReactionType, string> = {
 // Full-screen Facebook-style photo viewer: black bg, swipe left/right,
 // page counter, caption overlay, publisher info + reaction counts at bottom.
 
-type PhotoViewerState = {
+export type PhotoViewerState = {
   post: FeedTextPost;
   initialIndex: number;
 } | null;
 
-function PhotoViewerModal({
+export function PhotoViewerModal({
   state,
   onClose,
   onReact,
@@ -1365,7 +1365,7 @@ const VideoPostActions = React.memo(function VideoPostActions({
 // every other content (cards, sticky header, etc.). Position is clamped
 // inside the viewport so a long-press near the right edge still shows the
 // full pill.
-function ReactionPickerOverlay({
+export function ReactionPickerOverlay({
   anchor,
   onPick,
   onDismiss,
@@ -1751,7 +1751,7 @@ const PostHeader = React.memo(function PostHeader({
 // Renders a non-video post from `vm.textPosts`. Same FB-style chrome as
 // the mock posts (header → caption → photos → reaction summary → action
 // row) but data-driven instead of hardcoded.
-const TextPostCard = React.memo(function TextPostCard({
+export const TextPostCard = React.memo(function TextPostCard({
   post,
   onReact,
   onOpenPicker,
@@ -1778,7 +1778,7 @@ const TextPostCard = React.memo(function TextPostCard({
   gestureY: any;
   gestureActive: any;
   navigateToProfile: (userId: string) => void;
-  onOpenPostMenu: (post: FeedPost) => void;
+  onOpenPostMenu?: (post: FeedPost) => void;
 }) {
   const likeButtonRef = useRef<View>(null);
 

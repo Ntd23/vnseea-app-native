@@ -15,6 +15,7 @@ import {
   AtSign,
   BriefcaseBusiness,
   Cake,
+  Edit2,
   Globe2,
   GraduationCap,
   IdCard,
@@ -27,6 +28,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { UserProfile } from '../../../user/domain/types/user.types';
 import { useMyInfoViewModel } from '../../application/view-models/useMyInfoViewModel';
@@ -127,9 +129,17 @@ function MyInfoScreen() {
     Linking.openURL(`tel:${profile.phoneNumber}`).catch(() => undefined);
   }, [profile?.phoneNumber]);
 
+  const handleEditPress = useCallback(() => {
+    navigation.navigate('EditProfile' as any, {
+      profile,
+      avatarUrl: profile?.avatarUrl,
+      coverUrl: profile?.coverUrl,
+    });
+  }, [navigation, profile]);
+
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
-      <View className="h-14 flex-row items-center border-b border-slate-100 bg-white px-3">
+      <View className="h-14 flex-row items-center justify-between border-b border-slate-100 bg-white px-3">
         <TouchableOpacity
           activeOpacity={0.75}
           onPress={() => navigation.goBack()}
@@ -137,9 +147,16 @@ function MyInfoScreen() {
         >
           <ArrowLeft size={23} color="#0F172A" />
         </TouchableOpacity>
-        <Text className="ml-2 text-lg font-bold text-slate-900">
+        <Text className="text-lg font-bold text-slate-900">
           Thông tin của tôi
         </Text>
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={handleEditPress}
+          className="h-10 w-10 items-center justify-center rounded-full"
+        >
+          <Edit2 size={20} color="#2563EB" />
+        </TouchableOpacity>
       </View>
 
       {isLoading && !profile ? (

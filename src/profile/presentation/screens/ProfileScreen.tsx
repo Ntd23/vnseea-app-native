@@ -1,5 +1,5 @@
 // Description: Renders the Facebook-style profile screen with user-backed API data.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -11,6 +11,9 @@ import {
   TouchableOpacity,
   View,
   Alert,
+  ActivityIndicator,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -27,24 +30,39 @@ import {
   Sparkles,
   Verified,
   MessageCircle,
-  Globe,
-  Share2,
   Play,
-  ThumbsUp,
 } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useSharedValue } from 'react-native-reanimated';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
+import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
+import {
+  HomeVideoPostCard,
+  PhotoViewerModal,
+  ReactionPickerOverlay,
+  TextPostCard,
+  type PhotoViewerState,
+} from '../../../feed/presentation/screens/FeedScreen';
+import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
+import { createPollRepository } from '../../../poll/infrastructure/repositories/ApiPollRepository';
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
-import type { FeedTextPost, FeedVideoPost } from '../../../feed/domain/types/feed.types';
+import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
+import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
+import type {
+  FeedPollPost,
+  FeedPost,
+  FeedTextPost,
+  FeedVideoPost,
+} from '../../../feed/domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
-import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
 import type {
   StoryItem,
   StoryMedia,
@@ -52,49 +70,14 @@ import type {
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
-type ProfileFeedPost = FeedTextPost | FeedVideoPost;
+type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
 type ProfileRoute = RouteProp<RootStackParamList, typeof ROUTES.PROFILE>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const FRIEND_ITEM_WIDTH = (SCREEN_WIDTH - 64 - 16) / 3;
 const PROFILE_POST_MEDIA_HEIGHT = Math.min(320, Math.round(SCREEN_WIDTH * 0.62));
 const PROFILE_STORY_MAX_AGE_SECONDS = 24 * 60 * 60;
-
-const REACTION_EMOJI: Record<ReactionType, string> = {
-  like: '👍',
-  love: '❤️',
-  haha: '😂',
-  wow: '😮',
-  sad: '😢',
-  angry: '😡',
-};
-
-const REACTION_LABEL: Record<ReactionType, string> = {
-  like: 'Đã thích',
-  love: 'Yêu thích',
-  haha: 'Haha',
-  wow: 'Wow',
-  sad: 'Buồn',
-  angry: 'Phẫn nộ',
-};
-
-const REACTION_COLOR: Record<ReactionType, string> = {
-  like: '#0866FF',
-  love: '#F33E58',
-  haha: '#F7B125',
-  wow: '#F7B125',
-  sad: '#F7B125',
-  angry: '#E9710F',
-};
-
-const REACTION_BADGE_BG: Record<ReactionType, string> = {
-  like: '#1877F2',
-  love: '#F33E58',
-  haha: '#F7B125',
-  wow: '#F7B125',
-  sad: '#F7B125',
-  angry: '#E9710F',
-};
+const PROFILE_POST_PAGE_SIZE = 20;
 
 const FALLBACK_COVER =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCNqLNeeWsi7Qk4abx08XCTrKI5CmUGgDCiX-kH7Y_8LIIX5Slo9GRgEra_4deGp5e9pYozUmQdYGZi1sNQSks0QtbNWgpmn5gJgrF62Z8I8UMQpqKiMHLQ8Rzd9oUUIITFJPuwExVflVdeB1fRKjSGDO7zAocaZElLgpqJr6Mjvoj2FKOUVfnTk8XxnkG5WNijLpmXavW9TFlNhtlfLYbSE2qofOA8or7d_AfsUWZV43ADdtVFNH7VwEEazqapaL-Vndqksu_vDnE';
@@ -493,17 +476,6 @@ const profileStoryStyles = StyleSheet.create({
   },
 });
 
-function formatRelativeTime(timestamp: number | undefined) {
-  if (!timestamp) return '';
-  const now = Math.floor(Date.now() / 1000);
-  const diff = Math.max(0, now - timestamp);
-  if (diff < 60) return 'Vừa xong';
-  if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)} ngày trước`;
-  return new Date(timestamp * 1000).toLocaleDateString('vi-VN');
-}
-
 function isFreshProfileStory(story: StoryItem, nowSeconds: number) {
   const postedAt = story.postedAt ?? 0;
   if (postedAt <= 0) return false;
@@ -572,27 +544,6 @@ function hasVideoStory(story: StoryItem | null) {
   return Boolean(story?.media.some(item => item.type === 'video'));
 }
 
-function getProfileTopReactions(post: ProfileFeedPost, likeCount: number) {
-  const topReactions = (post.topReactions ?? []).filter(Boolean).slice(0, 3);
-  if (post.myReaction) {
-    return [
-      post.myReaction,
-      ...topReactions.filter(type => type !== post.myReaction),
-    ].slice(0, 3);
-  }
-  if (topReactions.length > 0) return topReactions;
-  return likeCount > 0 ? (['like'] as ReactionType[]) : [];
-}
-
-function getProfileReactionSummary(post: ProfileFeedPost, likeCount: number) {
-  if (likeCount <= 0) return '';
-  if (!post.myReaction) return String(likeCount);
-
-  const othersCount = Math.max(0, likeCount - 1);
-  if (othersCount === 0) return 'Bạn';
-  return `Bạn và ${othersCount} người khác`;
-}
-
 function updateProfileTopReactions(
   current: ReactionType[],
   previousReaction: ReactionType | null,
@@ -614,6 +565,13 @@ function updateProfileTopReactions(
   }
 
   return next.filter(Boolean).slice(0, 3);
+}
+
+function getOldestProfilePostId(posts: ProfileFeedPost[]) {
+  const ids = posts
+    .map(post => Number(post.id))
+    .filter(id => Number.isFinite(id) && id > 0);
+  return ids.length > 0 ? String(Math.min(...ids)) : undefined;
 }
 
 function DetailRow({ icon, text }: { icon: React.ReactNode; text: string }) {
@@ -783,15 +741,42 @@ function ProfileScreen() {
 
   const [posts, setPosts] = useState<ProfileFeedPost[]>([]);
   const [isPostsLoading, setIsPostsLoading] = useState(false);
+  const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
+  const [hasMorePosts, setHasMorePosts] = useState(false);
+  const [postsCursor, setPostsCursor] = useState<string | undefined>(undefined);
+  const isLoadingMorePostsRef = React.useRef(false);
   const [postsError, setPostsError] = useState<string | null>(null);
   const [userStory, setUserStory] = useState<StoryItem | null>(null);
   const [isStoryLoading, setIsStoryLoading] = useState(false);
   const [isConnectLoading, setIsConnectLoading] = useState(false);
   const [isPokeLoading, setIsPokeLoading] = useState(false);
-  const [reactionPickerPostId, setReactionPickerPostId] = useState<string | null>(null);
+  const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
+  const [pickerAnchor, setPickerAnchor] = useState<{
+    postId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(undefined);
+  const gestureX = useSharedValue(0);
+  const gestureY = useSharedValue(0);
+  const gestureActive = useSharedValue(false);
 
   const feedRepo = useMemo(() => createFeedRepository(), []);
+  const pollRepo = useMemo(() => createPollRepository(), []);
   const storiesRepo = useMemo(() => createStoriesRepository(), []);
+  const updateProfileCommentCount = useCallback((postId: string, delta: number) => {
+    setPosts(prev =>
+      prev.map(post =>
+        post.id === postId
+          ? { ...post, commentCount: Math.max(0, post.commentCount + delta) }
+          : post,
+      ),
+    );
+  }, []);
+  const commentVm = useFeedCommentsViewModel({
+    onCommentCountChange: updateProfileCommentCount,
+  });
 
   useEffect(() => {
     loadProfile({
@@ -806,25 +791,47 @@ function ProfileScreen() {
     if (!targetUserId) {
       console.log('[ProfileScreen] targetUserId is empty, skipping load posts');
       setPosts([]);
+      setPostsCursor(undefined);
+      setHasMorePosts(false);
       setPostsError(null);
       setIsPostsLoading(false);
       return;
     }
+
+    let cancelled = false;
+    setPosts([]);
+    setPostsCursor(undefined);
+    setHasMorePosts(false);
+    isLoadingMorePostsRef.current = false;
+    setIsLoadingMorePosts(false);
     setIsPostsLoading(true);
     setPostsError(null);
-    feedRepo.getUserPosts(targetUserId)
+    feedRepo.getUserPosts(targetUserId, PROFILE_POST_PAGE_SIZE)
       .then(res => {
+        if (cancelled) return;
         console.log('[ProfileScreen] Loaded posts count:', res?.length);
         const filteredPosts = (res ?? []).filter(
-          (p): p is ProfileFeedPost => p.kind === 'text' || p.kind === 'video'
+          (p): p is ProfileFeedPost =>
+            p.kind === 'text' || p.kind === 'video' || p.kind === 'poll',
         );
         setPosts(filteredPosts);
+        setPostsCursor(getOldestProfilePostId(filteredPosts));
+        setHasMorePosts(filteredPosts.length >= PROFILE_POST_PAGE_SIZE);
       })
       .catch(err => {
+        if (cancelled) return;
         console.error('[ProfileScreen] Error loading posts:', err);
         setPostsError(err instanceof Error ? err.message : 'Không tải được bài viết.');
       })
-      .finally(() => setIsPostsLoading(false));
+      .finally(() => {
+        if (!cancelled) {
+          setIsPostsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [feedRepo, targetUserId]);
 
   // Load User Active Story
@@ -891,45 +898,212 @@ function ProfileScreen() {
   const isFriendProfile = !isOwnProfile && relationshipState === 'following';
   const isRequestedProfile = !isOwnProfile && relationshipState === 'requested';
 
-  const handleSetPostReaction = async (
-    post: ProfileFeedPost,
+  const handleSetPostReaction = useCallback(async (
+    postId: string,
     nextReaction: ReactionType,
   ) => {
-    const targetReaction = post.myReaction === nextReaction ? null : nextReaction;
-    setReactionPickerPostId(null);
+    let snapshot: ProfileFeedPost | undefined;
+    let targetReaction: ReactionType | null = nextReaction;
+    setPickerAnchor(null);
+
+    setPosts(prev =>
+      prev.map(post => {
+        if (post.id !== postId) return post;
+
+        snapshot = post;
+        targetReaction = post.myReaction === nextReaction ? null : nextReaction;
+        const wasReacted = post.myReaction !== null;
+        const willBeReacted = targetReaction !== null;
+        const countDelta = Number(willBeReacted) - Number(wasReacted);
+        const nextLikeCount = Math.max(0, post.likeCount + countDelta);
+
+        return {
+          ...post,
+          isLiked: willBeReacted,
+          likeCount: nextLikeCount,
+          myReaction: targetReaction,
+          topReactions: updateProfileTopReactions(
+            post.topReactions,
+            post.myReaction,
+            targetReaction,
+            nextLikeCount,
+          ),
+        };
+      }),
+    );
 
     try {
+      await feedRepo.setReaction(postId, targetReaction);
+    } catch {
+      if (snapshot) {
+        const original = snapshot;
+        setPosts(prev => prev.map(post => (post.id === postId ? original : post)));
+      }
+      Alert.alert('Lỗi', 'Không thể cập nhật cảm xúc. Vui lòng thử lại.');
+    }
+  }, [feedRepo]);
+
+  const handleOpenPicker = useCallback((postId: string, x: number, y: number) => {
+    setPickerAnchor({ postId, x, y });
+  }, []);
+
+  const handlePickReaction = useCallback((reaction: ReactionType) => {
+    if (!pickerAnchor) return;
+    handleSetPostReaction(pickerAnchor.postId, reaction);
+  }, [handleSetPostReaction, pickerAnchor]);
+
+  const handlePhotoPress = useCallback((post: FeedTextPost, initialIndex: number) => {
+    setPhotoViewer({ post, initialIndex });
+  }, []);
+
+  const handleOpenSharePost = useCallback((post: FeedPost) => {
+    setSharingPost(post);
+    setShareModalVisible(true);
+  }, []);
+
+  const handleCloseShareModal = useCallback(() => {
+    setShareModalVisible(false);
+    setSharingPost(undefined);
+  }, []);
+
+  const handleNavigateToProfile = useCallback((userId: string) => {
+    navigation.navigate(ROUTES.PROFILE, { userId });
+  }, [navigation]);
+
+  const handleVotePoll = useCallback(async (postId: string, optionId: string) => {
+    let snapshot: FeedPollPost | undefined;
+
+    setPosts(prev =>
+      prev.map(post => {
+        if (post.id !== postId || post.kind !== 'poll') return post;
+        snapshot = post;
+
+        const options = post.options.map(option => ({
+          ...option,
+          optionVotes:
+            option.id === optionId ? option.optionVotes + 1 : option.optionVotes,
+        }));
+        const totalVotes = options.reduce((sum, option) => sum + option.optionVotes, 0);
+
+        return {
+          ...post,
+          options: options.map(option => {
+            const percentageNum =
+              totalVotes > 0 ? Math.round((option.optionVotes / totalVotes) * 100) : 0;
+            return {
+              ...option,
+              all: totalVotes,
+              percentage: `${percentageNum}%`,
+              percentageNum,
+            };
+          }),
+          votedId: optionId,
+          totalVotes,
+        };
+      }),
+    );
+
+    try {
+      const response = await pollRepo.votePoll(optionId);
       setPosts(prev =>
-        prev.map(p => {
-          if (p.id !== post.id) return p;
-
-          const previousReaction = p.myReaction;
-          const wasReacted = previousReaction !== null;
-          const willBeReacted = targetReaction !== null;
-          const countDelta = Number(willBeReacted) - Number(wasReacted);
-          const nextLikeCount = Math.max(0, p.likeCount + countDelta);
-
+        prev.map(post => {
+          if (post.id !== postId || post.kind !== 'poll') return post;
+          const apiTotal = Math.max(0, ...response.options.map(option => option.all));
           return {
-            ...p,
-            isLiked: willBeReacted,
-            likeCount: nextLikeCount,
-            myReaction: targetReaction,
-            topReactions: updateProfileTopReactions(
-              p.topReactions,
-              previousReaction,
-              targetReaction,
-              nextLikeCount,
-            ),
+            ...post,
+            options: response.options,
+            votedId: optionId,
+            totalVotes:
+              apiTotal > 0
+                ? apiTotal
+                : response.options.reduce((sum, option) => sum + option.optionVotes, 0),
           };
         }),
       );
-
-      await feedRepo.setReaction(post.id, targetReaction);
     } catch {
-      setPosts(prev => prev.map(p => (p.id === post.id ? post : p)));
-      Alert.alert('Lỗi', 'Không thể cập nhật cảm xúc. Vui lòng thử lại.');
+      if (snapshot) {
+        const original = snapshot;
+        setPosts(prev => prev.map(post => (post.id === postId ? original : post)));
+      }
+      Alert.alert('Lỗi', 'Không thể gửi phiếu bầu. Vui lòng thử lại.');
     }
-  };
+  }, [pollRepo]);
+
+  const selectedCommentPost = useMemo(
+    () => posts.find(post => post.id === commentVm.selectedCommentPostId) ?? null,
+    [commentVm.selectedCommentPostId, posts],
+  );
+
+  const handleRetryComments = useCallback(() => {
+    if (commentVm.selectedCommentPostId) {
+      commentVm.openComments(commentVm.selectedCommentPostId);
+    }
+  }, [commentVm]);
+
+  const handleLoadMorePosts = useCallback(async () => {
+    if (
+      !targetUserId ||
+      !postsCursor ||
+      !hasMorePosts ||
+      isLoadingMorePostsRef.current
+    ) {
+      return;
+    }
+
+    isLoadingMorePostsRef.current = true;
+    setIsLoadingMorePosts(true);
+    try {
+      const response = await feedRepo.getUserPosts(
+        targetUserId,
+        PROFILE_POST_PAGE_SIZE,
+        postsCursor,
+      );
+      const nextPosts = response.filter(
+        (post): post is ProfileFeedPost =>
+          post.kind === 'text' || post.kind === 'video' || post.kind === 'poll',
+      );
+      const nextCursor = getOldestProfilePostId(nextPosts);
+
+      setPosts(previous => {
+        const merged = new Map(previous.map(post => [post.id, post]));
+        for (const post of nextPosts) {
+          merged.set(post.id, post);
+        }
+        return Array.from(merged.values()).sort(
+          (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
+        );
+      });
+      setPostsCursor(nextCursor ?? postsCursor);
+      setHasMorePosts(
+        nextPosts.length >= PROFILE_POST_PAGE_SIZE &&
+          Boolean(nextCursor) &&
+          nextCursor !== postsCursor,
+      );
+    } catch (caughtError) {
+      console.error('[ProfileScreen] Error loading more posts:', caughtError);
+    } finally {
+      isLoadingMorePostsRef.current = false;
+      setIsLoadingMorePosts(false);
+    }
+  }, [
+    feedRepo,
+    hasMorePosts,
+    postsCursor,
+    targetUserId,
+  ]);
+
+  const handleProfileScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      if (
+        contentSize.height - (contentOffset.y + layoutMeasurement.height) <
+        480
+      ) {
+        handleLoadMorePosts();
+      }
+    },
+    [handleLoadMorePosts],
+  );
 
   // Avatar Press Handler
   const handleAvatarPress = () => {
@@ -1040,8 +1214,9 @@ function ProfileScreen() {
   }
 
   return (
-    <View className="flex-1 bg-[#F0F2F5]">
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View className="flex-1 bg-[#F0F2F5]">
+        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       {/* Fixed Floating Header (Persistent Navigation Controls) */}
       <View
@@ -1078,6 +1253,8 @@ function ProfileScreen() {
         className="flex-1"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
+        onScroll={handleProfileScroll}
+        scrollEventThrottle={240}
       >
         {/* Profile Header Area (Cover Image, Avatar, Profile Info, Buttons) */}
         <View className="bg-white pb-5 shadow-sm">
@@ -1584,218 +1761,112 @@ function ProfileScreen() {
           </View>
         ) : (
           <View>
-            {posts.map((post, index) => {
-              const postPublisher = post.publisher || {};
-              const postName = postPublisher.name || displayName || 'Người dùng';
-              const postAvatar = postPublisher.avatarUrl || avatarUrl || FALLBACK_AVATAR;
-              const photoUrls = post.kind === 'text' ? post.photos ?? [] : [];
-              const likeCount = Number(post.likeCount || 0);
-              const commentCount = Number(post.commentCount || 0);
-              const topReactions = getProfileTopReactions(post, likeCount);
-              const reactionSummary = getProfileReactionSummary(post, likeCount);
-              const actionReaction = post.myReaction;
-              const actionColor = actionReaction
-                ? REACTION_COLOR[actionReaction]
-                : '#65676B';
-              const actionLabel = actionReaction
-                ? REACTION_LABEL[actionReaction]
-                : 'Thích';
+            {posts.map(post => {
+              if (post.kind === 'video') {
+                return (
+                  <HomeVideoPostCard
+                    key={`video-${post.id}`}
+                    post={post}
+                    onReact={handleSetPostReaction}
+                    onOpenPicker={handleOpenPicker}
+                    onCommentTap={commentVm.openComments}
+                    onShare={handleOpenSharePost}
+                    isActive={false}
+                    gestureX={gestureX}
+                    gestureY={gestureY}
+                    gestureActive={gestureActive}
+                    navigateToProfile={handleNavigateToProfile}
+                  />
+                );
+              }
+
+              if (post.kind === 'poll') {
+                return (
+                  <PollPostCard
+                    key={`poll-${post.id}`}
+                    post={post}
+                    onVote={handleVotePoll}
+                    onReact={handleSetPostReaction}
+                    onOpenPicker={handleOpenPicker}
+                    onCommentTap={commentVm.openComments}
+                    onShare={handleOpenSharePost}
+                    onProfilePress={handleNavigateToProfile}
+                    currentUserAvatar={avatarUrl}
+                  />
+                );
+              }
 
               return (
-                <View
-                  key={`${post.kind}-${post.id}-${index}`}
-                  style={profilePostStyles.card}
-                >
-                  {/* Post Header */}
-                  <View style={profilePostStyles.header}>
-                    <View style={profilePostStyles.author}>
-                      <View style={profilePostStyles.avatarWrap}>
-                        <Image
-                          source={{ uri: postAvatar }}
-                          style={profilePostStyles.avatar}
-                          resizeMode="cover"
-                        />
-                      </View>
-                      <View style={profilePostStyles.authorText}>
-                        <Text style={profilePostStyles.authorName} numberOfLines={1}>
-                          {postName}
-                        </Text>
-                        <View style={profilePostStyles.metaRow}>
-                          <Text style={profilePostStyles.metaText}>
-                            {formatRelativeTime(post.postedAt) || 'Vừa xong'}
-                          </Text>
-                          <Globe size={11} color="#65676B" />
-                        </View>
-                      </View>
-                    </View>
-                    <TouchableOpacity style={profilePostStyles.moreButton} activeOpacity={0.8}>
-                      <MoreHorizontal size={18} color="#65676B" />
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Post Content */}
-                  {!!post.caption && (
-                    <Text style={profilePostStyles.caption}>{post.caption}</Text>
-                  )}
-
-                  {/* Post Media */}
-                  {post.kind === 'video' && post.videoUrl ? (
-                    <View style={profilePostStyles.mediaWrap}>
-                      <View style={profilePostStyles.videoWrap}>
-                        {!!post.thumbnailUrl && (
-                          <Image
-                            source={{ uri: post.thumbnailUrl }}
-                            style={profilePostStyles.videoThumb}
-                            resizeMode="cover"
-                          />
-                        )}
-                        <View style={profilePostStyles.playBadge}>
-                          <Play size={22} color="#FFFFFF" fill="#FFFFFF" />
-                        </View>
-                      </View>
-                    </View>
-                  ) : photoUrls.length > 0 ? (
-                    <View style={profilePostStyles.mediaWrap}>
-                      {photoUrls.length === 1 && (
-                        <Image
-                          source={{ uri: photoUrls[0] }}
-                          style={profilePostStyles.mediaImage}
-                          resizeMode="cover"
-                        />
-                      )}
-                      {photoUrls.length > 1 && (
-                        <View style={profilePostStyles.photoGrid}>
-                          {photoUrls.slice(0, 2).map((photoUrl, idx) => (
-                            <Image
-                              key={`${photoUrl}-${idx}`}
-                              source={{ uri: photoUrl }}
-                              style={profilePostStyles.gridImage}
-                              resizeMode="cover"
-                            />
-                          ))}
-                        </View>
-                      )}
-                    </View>
-                  ) : null}
-
-                  {/* Stats Divider & Row */}
-                  {(likeCount > 0 || commentCount > 0) && (
-                    <View style={profilePostStyles.statsRow}>
-                      <View style={profilePostStyles.likeSummary}>
-                        {likeCount > 0 && (
-                          <>
-                            <View style={{ flexDirection: 'row' }}>
-                              {topReactions.map((type, reactionIndex) => (
-                                <View
-                                  key={`${type}-${reactionIndex}`}
-                                  style={[
-                                    profilePostStyles.likeBadge,
-                                    {
-                                      backgroundColor: REACTION_BADGE_BG[type],
-                                      marginLeft: reactionIndex > 0 ? -6 : 0,
-                                      zIndex: topReactions.length - reactionIndex,
-                                    },
-                                  ]}
-                                >
-                                  {type === 'like' ? (
-                                    <ThumbsUp size={10} color="#FFFFFF" />
-                                  ) : (
-                                    <Text style={profilePostStyles.reactionBadgeEmoji}>
-                                      {REACTION_EMOJI[type]}
-                                    </Text>
-                                  )}
-                                </View>
-                              ))}
-                            </View>
-                            <Text style={profilePostStyles.summaryText}>
-                              {reactionSummary}
-                            </Text>
-                          </>
-                        )}
-                      </View>
-                      <View>
-                        {commentCount > 0 && (
-                          <Text style={profilePostStyles.metaText}>
-                            {commentCount} bình luận
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                  )}
-
-                  {/* Post Action Buttons Row */}
-                  {reactionPickerPostId === post.id && (
-                    <View style={profilePostStyles.reactionPicker}>
-                      {ALL_REACTION_TYPES.map(type => (
-                        <TouchableOpacity
-                          key={type}
-                          activeOpacity={0.85}
-                          style={[
-                            profilePostStyles.reactionPickerItem,
-                            post.myReaction === type &&
-                              profilePostStyles.reactionPickerItemActive,
-                          ]}
-                          onPress={() => handleSetPostReaction(post, type)}
-                        >
-                          <Text style={profilePostStyles.reactionPickerEmoji}>
-                            {REACTION_EMOJI[type]}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                  <View style={profilePostStyles.actionRow}>
-                    <TouchableOpacity
-                      style={profilePostStyles.actionButton}
-                      activeOpacity={0.8}
-                      delayLongPress={250}
-                      onPress={() => handleSetPostReaction(post, 'like')}
-                      onLongPress={() => setReactionPickerPostId(post.id)}
-                    >
-                      {actionReaction ? (
-                        <Text style={profilePostStyles.actionEmoji}>
-                          {REACTION_EMOJI[actionReaction]}
-                        </Text>
-                      ) : (
-                        <ThumbsUp
-                          size={16}
-                          color={actionColor}
-                        />
-                      )}
-                      <Text
-                        style={[profilePostStyles.actionText, { color: actionColor }]}
-                      >
-                        {actionLabel}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={profilePostStyles.actionButton}
-                      activeOpacity={0.8}
-                    >
-                      <MessageCircle size={16} color="#65676B" />
-                      <Text style={[profilePostStyles.actionText, { color: '#65676B' }]}>
-                        Bình luận
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={profilePostStyles.actionButton}
-                      activeOpacity={0.8}
-                    >
-                      <Share2 size={16} color="#65676B" />
-                      <Text style={[profilePostStyles.actionText, { color: '#65676B' }]}>
-                        Chia sẻ
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                <TextPostCard
+                  key={`text-${post.id}`}
+                  post={post}
+                  onReact={handleSetPostReaction}
+                  onOpenPicker={handleOpenPicker}
+                  onCommentTap={commentVm.openComments}
+                  onPhotoPress={handlePhotoPress}
+                  onShare={handleOpenSharePost}
+                  gestureX={gestureX}
+                  gestureY={gestureY}
+                  gestureActive={gestureActive}
+                  navigateToProfile={handleNavigateToProfile}
+                />
               );
             })}
           </View>
         )}
-      </ScrollView>
-    </View>
+        {isLoadingMorePosts ? (
+          <View className="items-center py-4">
+            <ActivityIndicator size="small" color="#1877F2" />
+          </View>
+        ) : null}
+        </ScrollView>
+        <ReactionPickerOverlay
+          anchor={pickerAnchor}
+          onPick={handlePickReaction}
+          onDismiss={() => setPickerAnchor(null)}
+          gestureX={gestureX}
+          gestureY={gestureY}
+          gestureActive={gestureActive}
+        />
+        <PhotoViewerModal
+          state={photoViewer}
+          onClose={() => setPhotoViewer(null)}
+          onReact={handleSetPostReaction}
+          onCommentTap={commentVm.openComments}
+          posts={posts}
+        />
+        <ReelCommentsSheet
+          visible={commentVm.isCommentsOpen}
+          comments={commentVm.comments}
+          commentCount={selectedCommentPost?.commentCount ?? commentVm.comments.length}
+          isLoading={commentVm.isCommentsLoading}
+          isLoadingMore={commentVm.isCommentsLoadingMore}
+          isSubmitting={commentVm.isSubmittingComment}
+          error={commentVm.commentError}
+          repliesById={commentVm.repliesById}
+          loadingRepliesIds={commentVm.loadingRepliesIds}
+          replyingTo={commentVm.replyingTo}
+          onClose={commentVm.closeComments}
+          onEndReached={commentVm.loadMoreComments}
+          onRetry={handleRetryComments}
+          onSubmit={commentVm.submitComment}
+          onSubmitReply={commentVm.submitReply}
+          onSetReaction={commentVm.setCommentReaction}
+          onDelete={commentVm.deleteComment}
+          onLoadReplies={commentVm.loadReplies}
+          onCollapseReplies={commentVm.collapseReplies}
+          onStartReply={commentVm.startReplyTo}
+          onCancelReply={commentVm.cancelReply}
+          onRetryFailedComment={commentVm.retryFailedComment}
+          onDeleteFailedComment={commentVm.deleteFailedComment}
+        />
+        <ShareActionSheet
+          visible={shareModalVisible}
+          onClose={handleCloseShareModal}
+          post={sharingPost}
+        />
+      </View>
+    </GestureHandlerRootView>
   );
 }
 

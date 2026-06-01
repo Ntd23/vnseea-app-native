@@ -62,7 +62,11 @@ export interface FeedRepository {
    * optimistically prepend it to the feed without a refetch.
    */
   createPost(draft: CreatePostDraft): Promise<CreatePostResult>;
-  getUserPosts(userId: string, limit?: number): Promise<FeedPost[]>;
+  getUserPosts(
+    userId: string,
+    limit?: number,
+    afterPostId?: string,
+  ): Promise<FeedPost[]>;
 
   /**
    * Toggle save/unsave a post via WoWonder's post-actions endpoint.

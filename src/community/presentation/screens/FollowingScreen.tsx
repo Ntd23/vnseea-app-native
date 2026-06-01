@@ -1,5 +1,5 @@
-// Description: Renders the VNSEEA following list with a following button on each row.
-import React from 'react';
+// Description: Renders the VNSEEA following/followers list with real API data.
+import React, { useEffect } from 'react';
 import {
   Image,
   ScrollView,
@@ -7,55 +7,43 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from 'react-native';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, UserCheck, UserPlus } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { useFollowingViewModel } from '../../application/view-models/useFollowingViewModel';
 
 type FollowingNav = NativeStackNavigationProp<RootStackParamList>;
 
 const BRAND = '#0000ff';
 
-const following = [
-  {
-    id: 'follow-1',
-    name: 'VNSEEA Official',
-    meta: 'Trang · 128K người theo dõi',
-    image:
-      'https://images.unsplash.com/photo-1557804506-669a67965ba0?q=80&w=800&auto=format&fit=crop',
-  },
-  {
-    id: 'follow-2',
-    name: 'Nguyễn Minh Anh',
-    meta: 'Nhà thiết kế sản phẩm',
-    image:
-      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=800&auto=format&fit=crop',
-  },
-  {
-    id: 'follow-3',
-    name: 'React Native Việt Nam',
-    meta: 'Cộng đồng · 54K người theo dõi',
-    image:
-      'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=800&auto=format&fit=crop',
-  },
-  {
-    id: 'follow-4',
-    name: 'Hoàng Long',
-    meta: 'Founder · Startup & Growth',
-    image:
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=800&auto=format&fit=crop',
-  },
-];
-
 function FollowingScreen() {
   const navigation = useNavigation<FollowingNav>();
+  const {
+    currentList,
+    activeTab,
+    error,
+    isLoading,
+    isRefreshing,
+    isLoadingMore,
+    hasMore,
+    loadFirstPage,
+    switchTab,
+  } = useFollowingViewModel();
+
+  useEffect(() => {
+    loadFirstPage();
+  }, [loadFirstPage]);
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor={BRAND} />
 
+      {/* Header */}
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"
@@ -68,34 +56,143 @@ function FollowingScreen() {
         <View className="h-10 w-10" />
       </View>
 
-      <ScrollView
-        className="flex-1"
-        contentContainerClassName="px-4 pb-10 pt-4"
-        showsVerticalScrollIndicator={false}
-      >
-        {following.map(item => (
-          <View
-            key={item.id}
-            className="surface-card mb-3 flex-row items-center p-4"
+      {/* Tab Selector */}
+      <View className="flex-row border-b border-[#E4E6EB] bg-white">
+        <TouchableOpacity
+          className={`flex-1 items-center py-3 ${
+            activeTab === 'following' ? 'border-b-2 border-[#0000ff]' : ''
+          }`}
+          activeOpacity={0.8}
+          onPress={() => switchTab('following')}
+        >
+          <Text
+            className={`text-[14px] font-semibold ${
+              activeTab === 'following' ? 'text-[#0000ff]' : 'text-[#65676B]'
+            }`}
           >
-            <Image
-              source={{ uri: item.image }}
-              className="h-14 w-14 rounded-full"
-              resizeMode="cover"
-            />
-            <View className="ml-4 flex-1">
-              <Text className="text-title-primary">{item.name}</Text>
-              <Text className="mt-1 text-caption-secondary">{item.meta}</Text>
-            </View>
+            Đang theo dõi
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          className={`flex-1 items-center py-3 ${
+            activeTab === 'followers' ? 'border-b-2 border-[#0000ff]' : ''
+          }`}
+          activeOpacity={0.8}
+          onPress={() => switchTab('followers')}
+        >
+          <Text
+            className={`text-[14px] font-semibold ${
+              activeTab === 'followers' ? 'text-[#0000ff]' : 'text-[#65676B]'
+            }`}
+          >
+            Người theo dõi
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Content */}
+      {isLoading && currentList.length === 0 ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color={BRAND} />
+        </View>
+      ) : error && currentList.length === 0 ? (
+        <View className="flex-1 items-center justify-center px-4">
+          <Text className="text-center text-body-secondary">{error}</Text>
+          <TouchableOpacity
+            className="mt-4 rounded-lg bg-[#0000ff] px-6 py-2"
+            activeOpacity={0.8}
+            onPress={() => loadFirstPage()}
+          >
+            <Text className="text-white">Thử lại</Text>
+          </TouchableOpacity>
+        </View>
+      ) : currentList.length === 0 ? (
+        <View className="flex-1 items-center justify-center px-4">
+          <Text className="text-center text-body-secondary">
+            {activeTab === 'following'
+              ? 'Bạn chưa theo dõi ai.'
+              : 'Chưa có ai theo dõi bạn.'}
+          </Text>
+        </View>
+      ) : (
+        <ScrollView
+          className="flex-1"
+          contentContainerClassName="px-4 pb-10 pt-4"
+          showsVerticalScrollIndicator={false}
+          onScrollBeginDrag={() => {
+            if (hasMore) {
+              // Could implement load more on scroll here
+            }
+          }}
+        >
+          {currentList.map(item => (
             <TouchableOpacity
-              className="rounded-full bg-[#0000ff]/10 px-4 py-2"
-              activeOpacity={0.8}
+              key={item.id}
+              className="surface-card mb-3 flex-row items-center p-4"
+              activeOpacity={0.86}
+              onPress={() => navigation.navigate(ROUTES.PROFILE, { userId: item.id })}
             >
-              <Text className="text-caption-primary text-brand">Following</Text>
+              <Image
+                source={{ uri: item.avatarUrl }}
+                className="h-14 w-14 rounded-full"
+                resizeMode="cover"
+              />
+              <View className="ml-4 flex-1">
+                <View className="flex-row items-center">
+                  <Text className="text-title-primary" numberOfLines={1}>
+                    {item.name || item.username}
+                  </Text>
+                  {item.verified && (
+                    <View className="ml-1">
+                      <Text style={{ color: '#1877F2', fontSize: 12 }}>✓</Text>
+                    </View>
+                  )}
+                </View>
+                {item.about && (
+                  <Text className="mt-1 text-caption-secondary" numberOfLines={1}>
+                    {item.about}
+                  </Text>
+                )}
+                <Text className="mt-1 text-caption-secondary">
+                  {item.followersCount !== undefined
+                    ? `${item.followersCount} người theo dõi`
+                    : item.working || item.address || ''}
+                </Text>
+              </View>
+              {item.followingState === 'following' ? (
+                <TouchableOpacity
+                  className="flex-row items-center rounded-full bg-[#0000ff]/10 px-4 py-2"
+                  activeOpacity={0.8}
+                >
+                  <UserCheck size={16} color={BRAND} />
+                  <Text className="ml-2 text-caption-primary text-brand">Following</Text>
+                </TouchableOpacity>
+              ) : item.followingState === 'requested' ? (
+                <TouchableOpacity
+                  className="flex-row items-center rounded-full bg-[#E4E6EB] px-4 py-2"
+                  activeOpacity={0.8}
+                >
+                  <Text className="text-caption-primary text-[#65676B]">Đã gửi</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  className="flex-row items-center rounded-full bg-[#0000ff] px-4 py-2"
+                  activeOpacity={0.8}
+                >
+                  <UserPlus size={16} color="#FFFFFF" />
+                  <Text className="ml-2 text-caption-primary text-white">Theo dõi</Text>
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
-          </View>
-        ))}
-      </ScrollView>
+          ))}
+
+          {isLoadingMore && (
+            <View className="items-center py-4">
+              <ActivityIndicator size="small" color={BRAND} />
+            </View>
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }

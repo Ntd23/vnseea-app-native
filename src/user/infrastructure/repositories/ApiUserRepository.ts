@@ -12,6 +12,8 @@ import { mapPageSummary } from '../../../foundation/application/mappers/pageSumm
 import { asRecord } from '../../../foundation/application/normalizers/resolveValue';
 import type { UserRepository } from '../../domain/repositories/UserRepository';
 import type {
+  FriendsInput,
+  FriendsResult,
   GetUserProfileInput,
   NearbyUsersInput,
   UpdateCurrentUserInput,
@@ -51,6 +53,13 @@ type NearbyUsersResponse = ApiEnvelope & {
 
 type UpdateUserResponse = ApiEnvelope & {
   message?: string;
+};
+
+type FriendsResponse = ApiEnvelope & {
+  data?: {
+    following?: RawApiRecord[];
+    followers?: RawApiRecord[];
+  };
 };
 
 function mapUserList(records: RawApiRecord[] | undefined): UserProfile[] {
@@ -157,6 +166,29 @@ export function createUserRepository(): UserRepository {
       );
 
       return mapUserList(response.nearby_users);
+    },
+
+    async getFriends(input: FriendsInput): Promise<FriendsResult> {
+      // Build type param: "following" and/or "followers"
+      const types = input.type ?? ['following', 'followers'];
+
+      const response = await apiBridge.post<FriendsResponse>(
+        apiRoutes.user.friends,
+        {
+          user_id: input.userId,
+          type: types.join(','),
+          limit: String(input.limit ?? 20),
+          following_offset: input.followingOffset ? String(input.followingOffset) : undefined,
+          followers_offset: input.followersOffset ? String(input.followersOffset) : undefined,
+        },
+      );
+
+      const data = response.data ?? { following: [], followers: [] };
+
+      return {
+        following: mapUserList(data.following),
+        followers: mapUserList(data.followers),
+      };
     },
 
     async updateCurrentUser(input: UpdateCurrentUserInput) {

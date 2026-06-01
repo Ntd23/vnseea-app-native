@@ -56,6 +56,7 @@ export type RootStackParamList = {
   [ROUTES.MEMORIES]: undefined;
   [ROUTES.OFFERS]: undefined;
   [ROUTES.SETTINGS_MY_INFO]: undefined;
+  [ROUTES.EDIT_PROFILE]: undefined;
   [ROUTES.SETTINGS_MESSAGES]: undefined;
   [ROUTES.ADVERTISING]: undefined;
   [ROUTES.CREATE_AD]: undefined;

@@ -13,6 +13,7 @@ import { MemoriesScreen } from '../memories';
 import { OffersScreen } from '../offers';
 import {
   AdvertisingScreen,
+  EditProfileScreen,
   MyInfoScreen,
   SettingsMessagesScreen,
   SettingsScreen,
@@ -105,6 +106,7 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.MEMORIES, component: MemoriesScreen },
     { name: ROUTES.OFFERS, component: OffersScreen },
     { name: ROUTES.SETTINGS_MY_INFO, component: MyInfoScreen },
+    { name: ROUTES.EDIT_PROFILE, component: EditProfileScreen },
     { name: ROUTES.SETTINGS_MESSAGES, component: SettingsMessagesScreen },
     { name: ROUTES.WITHDRAWAL, component: WithdrawalScreen },
     { name: ROUTES.ADVERTISING, component: AdvertisingScreen },
