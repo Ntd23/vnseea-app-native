@@ -194,6 +194,7 @@ function readBool(raw: Record<string, unknown>, ...keys: string[]) {
 // strings, signed-CDN tokens, weird paths). The `.` is bare so we also
 // catch `video.mp4.encrypted` paths some installs ship with.
 const VIDEO_URL_PATTERN = /\.(mp4|mov|webm|m3u8|mkv|avi)(?:[?#/]|$)/i;
+const AUDIO_URL_PATTERN = /\.(mp3|wav)(?:[?#/]|$)/i;
 
 function looksLikeAd(raw: Record<string, unknown>): boolean {
   return readString(raw, 'postType').toLowerCase() === 'ad' || Boolean(readString(raw, 'ad_media'));
@@ -623,7 +624,8 @@ function looksLikeTextOrPhoto(raw: Record<string, unknown>): boolean {
   if (looksLikeVideo(raw)) return false;
   const text = readString(raw, 'postText').trim();
   const hasPhoto = extractPhotoUrls(raw).length > 0;
-  return Boolean(text) || hasPhoto;
+  const hasAudio = AUDIO_URL_PATTERN.test(readString(raw, 'postFile'));
+  return Boolean(text) || hasPhoto || hasAudio;
 }
 
 function readSharedInfo(
@@ -743,6 +745,9 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
     id: postId,
     caption: cleanCaption(readString(raw, 'postText')) || undefined,
     photos: extractPhotoUrls(raw),
+    audioUrl: AUDIO_URL_PATTERN.test(readString(raw, 'postFile'))
+      ? readString(raw, 'postFile')
+      : undefined,
     postedAt: readNumber(raw, 'time') || undefined,
     likeCount,
     commentCount: readNumber(raw, 'post_comments', 'commentCount'),
@@ -1124,6 +1129,14 @@ export function createFeedRepository(): FeedRepository {
         if (draft.photos.length > 1) {
           payload.album_name = `Post ${new Date().toISOString()}`;
         }
+      }
+
+      if (draft.audio) {
+        payload.postMusic = {
+          uri: draft.audio.uri,
+          name: draft.audio.name,
+          type: draft.audio.type,
+        };
       }
 
       // Feeling — two-field combo. `feeling_type` selects the bucket,

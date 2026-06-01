@@ -1,5 +1,6 @@
 // Description: Repository interface for the reels bounded context.
 import type {
+  CommentAudioAttachment,
   CommentImageAttachment,
   ReactionType,
   ReelCaptionSuggestion,
@@ -82,6 +83,7 @@ export interface ReelsRepository {
     postId: string,
     text: string,
     image?: CommentImageAttachment,
+    audio?: CommentAudioAttachment,
   ): Promise<ReelComment>;
 
   /**

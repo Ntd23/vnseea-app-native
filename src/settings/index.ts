@@ -3,8 +3,10 @@ export * from './domain/types/settings.types';
 export * from './domain/repositories/SettingsRepository';
 export { createSettingsRepository } from './infrastructure/repositories/ApiSettingsRepository';
 export { useSettingsViewModel } from './application/view-models/useSettingsViewModel';
+export { useMyInfoViewModel } from './application/view-models/useMyInfoViewModel';
 export { default as SettingsScreen } from './presentation/screens/SettingsScreen';
 export { default as AdvertisingScreen } from './presentation/screens/AdvertisingScreen';
 export { default as SettingsMessagesScreen } from './presentation/screens/SettingsMessagesScreen';
+export { default as MyInfoScreen } from './presentation/screens/MyInfoScreen';
 // Re-export CreateAdScreen from advertising module
 export { default as CreateAdScreen } from '../advertising/presentation/screens/CreateAdScreen';

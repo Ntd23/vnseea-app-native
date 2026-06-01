@@ -80,6 +80,10 @@ function SettingsScreen() {
         navigation.navigate(ROUTES.EARNINGS);
       }
 
+      if (id === 'my-info') {
+        navigation.navigate(ROUTES.SETTINGS_MY_INFO);
+      }
+
       if (id === 'logout') {
         try {
           await logout();
@@ -138,6 +142,10 @@ function SettingsScreen() {
 
       if (id === 'groups') {
         navigation.navigate(ROUTES.EXPLORE_GROUPS);
+      }
+
+      if (id === 'market') {
+        navigation.navigate(ROUTES.MARKETPLACE);
       }
 
       if (id === 'boosted') {

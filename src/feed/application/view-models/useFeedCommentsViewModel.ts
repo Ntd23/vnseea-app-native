@@ -6,6 +6,7 @@ import { createReelsRepository } from '../../../reels/infrastructure/repositorie
 import { createAuthRepository } from '../../../auth/infrastructure/repositories/ApiAuthRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
+  CommentAudioAttachment,
   CommentImageAttachment,
   ReactionType,
   ReelComment,
@@ -192,11 +193,15 @@ export function useFeedCommentsViewModel({
   }, [hasMoreComments, selectedCommentPostId]);
 
   const submitComment = useCallback(
-    async (text: string, image?: CommentImageAttachment) => {
+    async (
+      text: string,
+      image?: CommentImageAttachment,
+      audio?: CommentAudioAttachment,
+    ) => {
       const trimmed = text.trim();
       // Allow image-only comments (backend does too) — must have AT LEAST
       // text OR image, not both empty.
-      if (!selectedCommentPostId || (!trimmed && !image)) return null;
+      if (!selectedCommentPostId || (!trimmed && !image && !audio)) return null;
 
       const tempId = `temp-${Date.now()}`;
       const publisher = getFallbackPublisher();
@@ -216,6 +221,7 @@ export function useFeedCommentsViewModel({
         // while the upload is in flight. Swapped out for `imageUrl` (CDN
         // URL) once the server response lands.
         pendingImageUri: image?.uri,
+        pendingAudioUri: audio?.uri,
       };
 
       // Add the optimistic comment instantly
@@ -229,6 +235,7 @@ export function useFeedCommentsViewModel({
           selectedCommentPostId,
           trimmed,
           image,
+          audio,
         );
         // Replace the temp comment with the actual one from server
         setComments(prev =>
@@ -605,10 +612,17 @@ export function useFeedCommentsViewModel({
           type: 'image/jpeg',
         }
       : undefined;
+    const retryAudio: CommentAudioAttachment | undefined = comment.pendingAudioUri
+      ? {
+          uri: comment.pendingAudioUri,
+          name: `retry-${Date.now()}.mp3`,
+          type: 'audio/mpeg',
+        }
+      : undefined;
 
     if (comments.some(c => c.id === comment.id)) {
       setComments(prev => prev.filter(c => c.id !== comment.id));
-      submitComment(comment.text, retryImage);
+      submitComment(comment.text, retryImage, retryAudio);
     } else {
       let parentId: string | null = null;
       for (const [pId, replies] of Object.entries(repliesById)) {

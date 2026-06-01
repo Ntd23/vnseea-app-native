@@ -4,6 +4,7 @@
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { ProductItem } from '../../../product/domain/types/product.types';
 import type { EventsItem } from '../../../events/domain/types/events.types';
+import type { AudioAttachment } from '../../../shared-kernel/domain/types/audio.types';
 
 export interface FeedItem {
   id: string | number;
@@ -47,6 +48,8 @@ export interface PostPhotoAttachment {
   height?: number;
 }
 
+export type PostAudioAttachment = AudioAttachment;
+
 /**
  * Optional "feeling" attached to a post (the FB "đang cảm thấy vui vẻ"
  * row). Maps 1:1 to WoWonder's `feeling_type` + `feeling` POST fields.
@@ -76,6 +79,7 @@ export interface PostFeeling {
 export interface CreatePostDraft {
   text: string;
   photos: PostPhotoAttachment[];
+  audio?: PostAudioAttachment;
   privacy: PostPrivacy;
   feeling?: PostFeeling;
 }
@@ -104,6 +108,7 @@ export interface FeedTextPost {
   id: string;
   caption?: string;
   photos: string[];
+  audioUrl?: string;
   postedAt?: number;
   likeCount: number;
   commentCount: number;

@@ -11,12 +11,17 @@ import { CreateStoryScreen, StoryViewerScreen } from '../stories';
 import { NotificationsScreen } from '../notifications';
 import { MemoriesScreen } from '../memories';
 import { OffersScreen } from '../offers';
-import { AdvertisingScreen, SettingsMessagesScreen, SettingsScreen } from '../settings';
+import {
+  AdvertisingScreen,
+  MyInfoScreen,
+  SettingsMessagesScreen,
+  SettingsScreen,
+} from '../settings';
 import { CreateAdScreen } from '../advertising';
 import { BlogDetailScreen, BlogFilterCategoryScreen, BlogsScreen } from '../blogs';
 import { BoostedScreen } from '../boosted';
 import { CreatePageScreen, PagesScreen } from '../pages';
-import { CreateProductScreen } from '../product';
+import { CreateProductScreen, MarketplaceScreen } from '../product';
 import { CreateEventScreen, EventsScreen } from '../events';
 import { CreatePollScreen } from '../poll';
 import { CreateGroupScreen, ExploreGroupsScreen, FollowingScreen, GroupDetailScreen } from '../community';
@@ -26,7 +31,7 @@ import { JobDetailScreen, JobsScreen } from '../jobs';
 import { AvatarViewerScreen, ProfileScreen } from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
 import { MyVideosScreen } from '../videos';
-import { CallScreen } from '../messages';
+import { CallScreen, ChatScreen } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { SavedPostsScreen } from '../saved';
 import { AffiliatesScreen, EarningsScreen, InviteFriendsScreen, MyPointsScreen } from '../wallet';
@@ -68,6 +73,7 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.CREATE_ALBUM, component: CreateAlbumScreen },
     { name: ROUTES.MY_VIDEOS, component: MyVideosScreen },
     { name: ROUTES.MESSAGES, component: SettingsMessagesScreen },
+    { name: ROUTES.CHAT, component: ChatScreen },
     { name: ROUTES.CALLS, component: CallScreen },
     { name: ROUTES.SEARCH, component: SearchScreen },
     { name: ROUTES.SEARCH_FILTER, component: SearchFilterScreen },
@@ -75,6 +81,7 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.SEARCH_EMPTY, component: SearchEmptyScreen },
     { name: ROUTES.PAGES, component: PagesScreen },
     { name: ROUTES.CREATE_PAGE, component: CreatePageScreen },
+    { name: ROUTES.MARKETPLACE, component: MarketplaceScreen },
     { name: ROUTES.CREATE_PRODUCT, component: CreateProductScreen },
     { name: ROUTES.CREATE_EVENT, component: CreateEventScreen },
     { name: ROUTES.CREATE_POLL, component: CreatePollScreen },
@@ -97,6 +104,7 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.MY_POINTS, component: MyPointsScreen },
     { name: ROUTES.MEMORIES, component: MemoriesScreen },
     { name: ROUTES.OFFERS, component: OffersScreen },
+    { name: ROUTES.SETTINGS_MY_INFO, component: MyInfoScreen },
     { name: ROUTES.SETTINGS_MESSAGES, component: SettingsMessagesScreen },
     { name: ROUTES.WITHDRAWAL, component: WithdrawalScreen },
     { name: ROUTES.ADVERTISING, component: AdvertisingScreen },

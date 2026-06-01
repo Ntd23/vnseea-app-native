@@ -126,6 +126,7 @@ import { useProductsOnFeedViewModel } from '../../../product/application/view-mo
 import { PollPostCard } from '../components/PollPostCard';
 import { useEventsOnFeedViewModel, EventPostCard } from '../../../events';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -1852,6 +1853,11 @@ const TextPostCard = React.memo(function TextPostCard({
               />
             </TouchableOpacity>
           ))}
+        </View>
+      ) : null}
+      {post.audioUrl ? (
+        <View className="px-5 pb-1">
+          <AudioPlayer uri={post.audioUrl} />
         </View>
       ) : null}
       <View className="p-5">

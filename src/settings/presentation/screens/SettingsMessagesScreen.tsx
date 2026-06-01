@@ -1,5 +1,5 @@
 // Description: Settings Messages screen - displays user conversations with real API data
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -17,8 +17,13 @@ import {
   Check,
   CheckCircle2,
   Edit3,
+  FileText,
+  Film,
+  ImageIcon,
   MessageCircle,
+  Mic,
   MoreVertical,
+  Package,
   Phone,
   Search,
   Send,
@@ -27,11 +32,14 @@ import {
   Plus,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useMessagesViewModel } from '../../../messages/application/view-models/useMessagesViewModel';
-import type { ChatItem } from '../../../messages/domain/types/messages.types';
+import type {
+  ChatItem,
+  ChatPreviewKind,
+} from '../../../messages/domain/types/messages.types';
 import { useStoriesViewModel } from '../../../stories';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -115,6 +123,18 @@ function UnreadBadge({ count }: { count: number }) {
   );
 }
 
+function LastMessagePreviewIcon({ kind }: { kind?: ChatPreviewKind }) {
+  if (kind === 'audio_call') return <Phone size={14} color="#2563EB" />;
+  if (kind === 'video_call') return <Video size={14} color="#2563EB" />;
+  if (kind === 'image') return <ImageIcon size={14} color="#16A34A" />;
+  if (kind === 'video') return <Film size={14} color="#7C3AED" />;
+  if (kind === 'audio') return <Mic size={14} color="#EA580C" />;
+  if (kind === 'file') return <FileText size={14} color="#64748B" />;
+  if (kind === 'product') return <Package size={14} color="#0891B2" />;
+
+  return null;
+}
+
 // Chat list item
 function ChatListItem({
   chat,
@@ -153,12 +173,23 @@ function ChatListItem({
           </Text>
         </View>
         <View className="flex-row items-center justify-between">
-          <Text
-            className={`flex-1 text-sm ${chat.unreadCount > 0 ? 'font-medium text-gray-800' : 'text-gray-500'}`}
-            numberOfLines={1}
-          >
-            {chat.lastMessage || 'Chưa có tin nhắn'}
-          </Text>
+          <View className="flex-1 flex-row items-center">
+            <LastMessagePreviewIcon kind={chat.lastMessageKind} />
+            <Text
+              className={`flex-1 text-sm ${
+                chat.lastMessageKind && chat.lastMessageKind !== 'text'
+                  ? 'ml-1.5'
+                  : ''
+              } ${
+                chat.unreadCount > 0
+                  ? 'font-medium text-gray-800'
+                  : 'text-gray-500'
+              }`}
+              numberOfLines={1}
+            >
+              {chat.lastMessage || 'Chưa có tin nhắn'}
+            </Text>
+          </View>
           {selectable ? (
             <View
               className={`ml-3 h-6 w-6 items-center justify-center rounded-full border ${
@@ -430,7 +461,6 @@ function SettingsMessagesScreen() {
     isLoadingChats,
     error,
     loadChats,
-    loadMessages,
     isSending,
     sendBulkMessages,
   } = useMessagesViewModel();
@@ -441,6 +471,23 @@ function SettingsMessagesScreen() {
   const [broadcastText, setBroadcastText] = useState('');
   const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(
     new Set(),
+  );
+  const hasFocusedOnceRef = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (hasFocusedOnceRef.current) {
+        loadChats(false).catch(() => undefined);
+      } else {
+        hasFocusedOnceRef.current = true;
+      }
+
+      const interval = setInterval(() => {
+        loadChats(false).catch(() => undefined);
+      }, 5000);
+
+      return () => clearInterval(interval);
+    }, [loadChats]),
   );
 
   const visibleChats = useMemo(() => {
@@ -487,13 +534,10 @@ function SettingsMessagesScreen() {
       }
 
       if (chat.chatType === 'user') {
-        void loadMessages(chat);
+        navigation.navigate(ROUTES.CHAT, { chat });
       }
-      // TODO: Navigate to conversation detail screen
-      // For now, just show an alert
-      console.log('Selected chat:', chat.name);
     },
-    [activeFilter, loadMessages],
+    [activeFilter, navigation],
   );
 
   const handleSendBroadcast = useCallback(async () => {
@@ -556,7 +600,9 @@ function SettingsMessagesScreen() {
                 !broadcastText.trim() ||
                 isSending
               }
-              onPress={() => void handleSendBroadcast()}
+              onPress={() => {
+                handleSendBroadcast().catch(() => undefined);
+              }}
             >
               {isSending ? (
                 <ActivityIndicator size="small" color="#ffffff" />

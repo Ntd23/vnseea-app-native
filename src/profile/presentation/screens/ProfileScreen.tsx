@@ -17,7 +17,6 @@ import {
   Briefcase,
   Camera,
   Clock,
-  Edit3,
   MapPin,
   MoreHorizontal,
   PlusCircle,
@@ -50,6 +49,7 @@ import type {
   StoryItem,
   StoryMedia,
 } from '../../../stories/domain/types/stories.types';
+import type { ChatItem } from '../../../messages/domain/types/messages.types';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
 type ProfileFeedPost = FeedTextPost | FeedVideoPost;
@@ -676,7 +676,6 @@ function SkeletonBlock({ height, width, borderRadius }: { height: number | strin
 
 // Full Header Skeleton
 function FullProfileSkeleton() {
-  const insets = useSafeAreaInsets();
   return (
     <View className="flex-1 bg-[#F0F2F5]">
       {/* Cover Skeleton */}
@@ -981,7 +980,26 @@ function ProfileScreen() {
   };
 
   const handleOpenMessages = () => {
-    navigation.navigate(ROUTES.MESSAGES);
+    if (!targetUserId || isOwnProfile) {
+      navigation.navigate(ROUTES.MESSAGES);
+      return;
+    }
+
+    const chat: ChatItem = {
+      id: `user:${targetUserId}`,
+      chatType: 'user',
+      userId: String(targetUserId),
+      username: profile?.username ?? '',
+      name: displayName || profile?.username || 'Người dùng',
+      avatar: avatarUrl,
+      lastMessage: '',
+      lastMessageTime: 0,
+      unreadCount: 0,
+      isOnline: false,
+      isVerified: Boolean(profile?.verified),
+    };
+
+    navigation.navigate(ROUTES.CHAT, { chat });
   };
 
   const handleConnectUser = async () => {

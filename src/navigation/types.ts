@@ -2,6 +2,7 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { ROUTES } from './constants/routes';
 import type { StoryItem } from '../stories/domain/types/stories.types';
+import type { ChatItem } from '../messages/domain/types/messages.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -22,6 +23,7 @@ export type RootStackParamList = {
   [ROUTES.CREATE_ALBUM]: undefined;
   [ROUTES.MY_VIDEOS]: undefined;
   [ROUTES.MESSAGES]: undefined;
+  [ROUTES.CHAT]: { chat: ChatItem };
   [ROUTES.CALLS]: undefined;
   [ROUTES.SEARCH]: undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
@@ -29,6 +31,7 @@ export type RootStackParamList = {
   [ROUTES.SEARCH_EMPTY]: undefined;
   [ROUTES.PAGES]: undefined;
   [ROUTES.CREATE_PAGE]: undefined;
+  [ROUTES.MARKETPLACE]: undefined;
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;
   [ROUTES.CREATE_POLL]: undefined;
@@ -52,6 +55,7 @@ export type RootStackParamList = {
   [ROUTES.WITHDRAWAL]: undefined;
   [ROUTES.MEMORIES]: undefined;
   [ROUTES.OFFERS]: undefined;
+  [ROUTES.SETTINGS_MY_INFO]: undefined;
   [ROUTES.SETTINGS_MESSAGES]: undefined;
   [ROUTES.ADVERTISING]: undefined;
   [ROUTES.CREATE_AD]: undefined;

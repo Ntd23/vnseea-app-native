@@ -1,5 +1,5 @@
 // Messages ViewModel - Handles message list and conversation state
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
 import type { ChatItem, MessageItem } from '../../domain/types/messages.types';
 
@@ -25,10 +25,18 @@ export function useMessagesViewModel() {
     isSending: false,
     error: null,
   });
+  const isLoadingChatsRef = useRef(false);
 
   // Load all chats
-  const loadChats = useCallback(async () => {
-    setState(prev => ({ ...prev, isLoadingChats: true, error: null }));
+  const loadChats = useCallback(async (showSpinner = true) => {
+    if (isLoadingChatsRef.current) return;
+
+    isLoadingChatsRef.current = true;
+    setState(prev => ({
+      ...prev,
+      isLoadingChats: showSpinner,
+      error: null,
+    }));
 
     try {
       const chats = await repository.getChats();
@@ -36,6 +44,8 @@ export function useMessagesViewModel() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Không tải được danh sách tin nhắn';
       setState(prev => ({ ...prev, error: errorMessage, isLoadingChats: false }));
+    } finally {
+      isLoadingChatsRef.current = false;
     }
   }, []);
 
@@ -126,7 +136,7 @@ export function useMessagesViewModel() {
 
   // Initial load
   useEffect(() => {
-    void loadChats();
+    loadChats().catch(() => undefined);
   }, [loadChats]);
 
   return {

@@ -3,9 +3,8 @@
 
 import type {
   ChatItem,
-  ConversationItem,
-  GetChatsResponse,
-  GetMessagesResponse,
+  GetMessagesOptions,
+  MessageAttachment,
   MessageItem,
   SendMessageResponse,
 } from '../types/messages.types';
@@ -21,13 +20,17 @@ export interface MessagesRepository {
    * Get messages from a specific conversation
    * API: POST /api/get_user_messages
    */
-  getMessages(userId: string): Promise<MessageItem[]>;
+  getMessages(userId: string, options?: GetMessagesOptions): Promise<MessageItem[]>;
 
   /**
    * Send a message to a user
    * API: POST /api/send-message
    */
-  sendMessage(toUserId: string, message: string): Promise<SendMessageResponse>;
+  sendMessage(
+    toUserId: string,
+    message: string,
+    attachment?: MessageAttachment,
+  ): Promise<SendMessageResponse>;
 
   /**
    * Delete a conversation
