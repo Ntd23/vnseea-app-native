@@ -1,4 +1,5 @@
 <?php
+// English description: Handles API v2 group chat CRUD, membership management, member search, and message flows.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -19,6 +20,7 @@ $required_fields =  array(
                         'leave',
                         'add_user',
                         'remove_user',
+                        'search_addable_users',
                         'send',
                         'fetch_messages',
                         'get_list',
@@ -367,7 +369,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     foreach ($users as $key => $user) {
                         if (!Wo_IsGChatMemeberExists($id, $user)) {
                             $active = 0;
-                            if ($type == 'channel') {
+                            if ($group_tab['type'] == 'channel' || $group_tab['type'] == 'secret') {
                                 $active = 1;
                             }
                             @mysqli_query($sqlConnect, "INSERT INTO " . T_GROUP_CHAT_USERS . " (`id`,`user_id`,`group_id`,`active`) VALUES (null,$user,$id,'".$active."')");
@@ -375,7 +377,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     }
                     $response_data = array(
                         'api_status' => 200,
-                        'message_data' => 'users successfully joined to group'
+                        'message_data' => 'users successfully invited to group'
                     );
                 }
                 else{
@@ -387,6 +389,83 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 $error_code    = 8;
                 $error_message = 'group not found or removed';
             }
+        }
+    }
+
+    if ($_POST['type'] == 'search_addable_users') {
+        if (empty($_POST['id']) || !is_numeric($_POST['id']) || $_POST['id'] < 1) {
+            $error_code    = 7;
+            $error_message = 'id must be numeric and greater than 0';
+        }
+
+        $group_id = Wo_Secure($_POST['id']);
+        $group_tab = Wo_GroupTabData($group_id);
+        if (empty($error_code) && empty($group_tab)) {
+            $error_code    = 8;
+            $error_message = 'group not found or removed';
+        }
+
+        if (empty($error_code) && $group_tab['user_id'] != $wo['user']['id']) {
+            $error_code    = 11;
+            $error_message = 'sorry you are not the group owner';
+        }
+
+        if (empty($error_code)) {
+            $limit = 12;
+            if (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limit'] > 0) {
+                $limit = min(25, max(1, (int) $_POST['limit']));
+            }
+
+            $keyword = '';
+            if (!empty($_POST['keyword'])) {
+                $keyword = Wo_Secure($_POST['keyword']);
+            }
+
+            $search_limit = max($limit * 4, 24);
+            $users = array();
+            if (function_exists('Wo_GetMessagesUsers')) {
+                $users = Wo_GetMessagesUsers($wo['user']['id'], $keyword, $search_limit, false, 0, 'follow');
+            }
+
+            if ((empty($users) || !is_array($users)) && function_exists('Wo_GetMessagesUsers')) {
+                $users = Wo_GetMessagesUsers($wo['user']['id'], $keyword, $search_limit, false, 0, 'recent');
+            }
+
+            $existing_ids = array();
+            $existing_query = mysqli_query($sqlConnect, "SELECT `user_id` FROM " . T_GROUP_CHAT_USERS . " WHERE `group_id` = {$group_id}");
+            if ($existing_query && mysqli_num_rows($existing_query) > 0) {
+                while ($existing_row = mysqli_fetch_assoc($existing_query)) {
+                    $existing_ids[(int) $existing_row['user_id']] = true;
+                }
+            }
+
+            $existing_ids[(int) $wo['user']['id']] = true;
+            $candidate_users = array();
+
+            if (!empty($users) && is_array($users)) {
+                foreach ($users as $candidate) {
+                    $candidate_id = !empty($candidate['user_id']) ? (int) $candidate['user_id'] : 0;
+                    if ($candidate_id < 1 || !empty($existing_ids[$candidate_id])) {
+                        continue;
+                    }
+
+                    foreach ($non_allowed as $key => $value) {
+                        unset($candidate[$value]);
+                    }
+
+                    $candidate_users[] = $candidate;
+                    $existing_ids[$candidate_id] = true;
+
+                    if (count($candidate_users) >= $limit) {
+                        break;
+                    }
+                }
+            }
+
+            $response_data = array(
+                'api_status' => 200,
+                'data' => $candidate_users
+            );
         }
     }
 
@@ -406,6 +485,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             if (!empty($group_tab)) {
                 if ($group_tab['user_id'] == $wo['user']['id']) {
                     foreach ($users as $key => $user) {
+                        if ((int) $user === (int) $group_tab['user_id']) {
+                            continue;
+                        }
                         if (Wo_IsGChatMemeberExists($id, $user)) {
                             @mysqli_query($sqlConnect, "DELETE FROM " . T_GROUP_CHAT_USERS . " WHERE `user_id` = {$user} AND `group_id` = {$id}");
                         }

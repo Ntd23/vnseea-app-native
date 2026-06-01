@@ -30,6 +30,7 @@ if (!empty($_POST['hash_id'])) {
 // If the request comes from our trusted Nuxt server, we sync the session hash to pass CSRF check.
 if (!empty($_SERVER['HTTP_X_NUXT_BRIDGE']) && !empty($hash_id)) {
     $_SESSION['hash_id'] = $hash_id;
+    $_SESSION['main_hash_id'] = $hash_id;
 }
 
 $data = array();

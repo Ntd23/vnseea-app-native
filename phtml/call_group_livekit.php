@@ -109,18 +109,18 @@ if ($livekitConfigured) {
     <title><?php echo htmlspecialchars($groupName); ?> | <?php echo $wo['config']['siteTitle']; ?></title>
     <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
     <style>
-        :root{--toolbar-height:128px;--toolbar-btn-size:86px;--toolbar-gap:14px;--toolbar-max-width:820px;--panel:#0d1120;--panel-soft:rgba(35,40,57,.88);--danger:#ef2f2f;--danger-shadow:rgba(239,47,47,.35);--accent:#7a88ff;--text:#f8fafc;--muted:#98a4c0;--border:rgba(148,163,184,.18)}
+        :root{--toolbar-height:112px;--toolbar-btn-size:68px;--toolbar-gap:12px;--toolbar-max-width:720px;--panel:#0d1120;--panel-soft:rgba(35,40,57,.88);--danger:#ef4444;--danger-shadow:rgba(239,68,68,.35);--accent:#7a88ff;--text:#f8fafc;--muted:#98a4c0;--border:rgba(148,163,184,.18)}
         *{box-sizing:border-box;margin:0;padding:0}
-        html,body{height:100%;overflow:hidden;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 50% 25%,rgba(96,110,255,.16) 0%,rgba(96,110,255,.06) 24%,rgba(7,10,20,0) 50%),linear-gradient(180deg,#090b12 0%,#0c1020 46%,#06070c 100%)}
-        .gcall-shell{min-height:100vh;min-height:100dvh;padding:26px 20px calc(var(--toolbar-height) + 26px)}
-        .gcall-top{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding-bottom:18px}
-        .gcall-name{font-size:clamp(28px,4vw,44px);font-weight:600;line-height:1.05;letter-spacing:-.04em}
+        html,body{height:100%;overflow:hidden;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#05070d}
+        .gcall-shell{min-height:100vh;min-height:100dvh;padding:18px 18px calc(var(--toolbar-height) + 18px);background:radial-gradient(circle at 50% 0%,rgba(90,105,255,.16),transparent 36%),linear-gradient(180deg,#080b14 0%,#05070d 100%)}
+        .gcall-top{display:flex;align-items:center;justify-content:center;text-align:center;gap:12px;padding-bottom:16px}
+        .gcall-name{max-width:min(62vw,760px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(20px,3vw,34px);font-weight:750;line-height:1.05;letter-spacing:0}
         .gcall-status{display:none}
-        .gcall-timer{display:inline-flex;align-items:center;justify-content:center;min-width:112px;padding:12px 22px;border-radius:999px;background:rgba(111,126,255,.12);border:1px solid rgba(122,136,255,.3);backdrop-filter:blur(18px);color:#eef2ff;font-size:18px;font-weight:500;letter-spacing:.04em;box-shadow:0 18px 36px rgba(41,52,125,.18)}
-        .gcall-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;align-content:start;height:calc(100vh - var(--toolbar-height) - 140px);height:calc(100dvh - var(--toolbar-height) - 140px);overflow:auto;padding-bottom:12px}
-        .gcall-shell.audio-mode .gcall-grid{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
-        .gcall-tile{position:relative;min-height:220px;border-radius:30px;overflow:hidden;border:1px solid var(--border);background:linear-gradient(180deg,rgba(15,23,42,.88) 0%,rgba(17,24,39,.98) 100%);box-shadow:0 18px 40px rgba(2,6,23,.35)}
-        .gcall-shell.audio-mode .gcall-tile{min-height:260px}
+        .gcall-timer{display:inline-flex;align-items:center;justify-content:center;min-width:92px;padding:9px 16px;border-radius:999px;background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.2);backdrop-filter:blur(18px);color:#eef2ff;font-size:15px;font-weight:650;letter-spacing:.02em}
+        .gcall-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr));grid-auto-rows:minmax(210px,1fr);gap:12px;align-content:stretch;height:calc(100vh - var(--toolbar-height) - 84px);height:calc(100dvh - var(--toolbar-height) - 84px);overflow:auto;padding-bottom:6px}
+        .gcall-shell.audio-mode .gcall-grid{grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))}
+        .gcall-tile{position:relative;min-height:210px;aspect-ratio:16/10;border-radius:16px;overflow:hidden;border:1px solid var(--border);background:linear-gradient(180deg,rgba(15,23,42,.88) 0%,rgba(17,24,39,.98) 100%);box-shadow:0 16px 34px rgba(2,6,23,.3)}
+        .gcall-shell.audio-mode .gcall-tile{aspect-ratio:4/3;min-height:230px}
         .gcall-media{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#020617}
         .gcall-media video{width:100%;height:100%;display:block;object-fit:cover;background:#020617}
         .gcall-avatar-wrap{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
@@ -129,19 +129,21 @@ if ($livekitConfigured) {
         .gcall-avatar-inner{width:100%;height:100%;border-radius:999px;overflow:hidden;border:4px solid rgba(5,10,28,.9);background:linear-gradient(180deg,#f5f7fb 0%,#d6deeb 100%);display:flex;align-items:center;justify-content:center}
         .gcall-avatar-inner img{width:100%;height:100%;display:block;object-fit:cover}
         .gcall-avatar-fallback{font-size:52px;font-weight:700;color:#26324d;text-transform:uppercase}
-        .gcall-corner-badges{position:absolute;top:12px;right:12px;display:flex;align-items:center;gap:8px;z-index:2}
-        .gcall-icon-badge{display:inline-flex;align-items:center;justify-content:center;min-width:40px;height:40px;padding:0 12px;border-radius:999px;background:rgba(147,33,43,.96);color:#fff;font-size:12px;font-weight:700;box-shadow:0 10px 24px rgba(15,23,42,.28)}
-        .gcall-icon-badge.soft{background:rgba(71,85,105,.82)}
-        .gcall-nameplate{position:absolute;left:14px;right:14px;bottom:14px;text-align:center;z-index:2}
-        .gcall-nameplate-text{display:inline-block;max-width:100%;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 6px 18px rgba(0,0,0,.42)}
+        .gcall-corner-badges{position:absolute;left:12px;bottom:12px;display:flex;align-items:center;gap:8px;z-index:3}
+        .gcall-state-badge{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:999px;background:rgba(15,23,42,.82);color:#fff;box-shadow:0 10px 24px rgba(15,23,42,.28);backdrop-filter:blur(14px)}
+        .gcall-state-badge.danger{background:rgba(220,38,38,.94)}
+        .gcall-state-badge svg{width:18px;height:18px;fill:currentColor}
+        .gcall-nameplate{position:absolute;left:58px;right:12px;bottom:12px;text-align:left;z-index:2}
+        .gcall-nameplate-text{display:inline-flex;max-width:100%;min-height:34px;align-items:center;border-radius:999px;background:rgba(15,23,42,.72);padding:0 13px;color:#f8fafc;font-size:14px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;backdrop-filter:blur(14px)}
         .gcall-empty{display:flex;align-items:center;justify-content:center;height:100%;border-radius:28px;border:1px dashed rgba(148,163,184,.28);background:rgba(15,23,42,.3);color:var(--muted);font-size:15px}
-        #custom-toolbar{position:fixed;left:50%;transform:translateX(-50%);bottom:max(18px,env(safe-area-inset-bottom));width:min(calc(100% - 28px),var(--toolbar-max-width));display:flex;align-items:center;justify-content:center;gap:var(--toolbar-gap);padding:14px 18px calc(14px + env(safe-area-inset-bottom));background:none;border:0;box-shadow:none;z-index:20}
-        .call-btn{position:relative;flex:0 0 var(--toolbar-btn-size);width:var(--toolbar-btn-size);height:var(--toolbar-btn-size);min-width:var(--toolbar-btn-size);min-height:var(--toolbar-btn-size);border-radius:999px;border:0;background:var(--panel-soft);color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:transform .15s ease,background .15s ease,box-shadow .15s ease;box-shadow:0 8px 20px rgba(0,0,0,.22);touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-        .call-btn.active{background:rgba(122,136,255,.16);box-shadow:0 0 0 1px rgba(123,140,255,.35) inset,0 10px 26px rgba(52,66,183,.22)}
-        .call-btn.muted{background:rgba(147,33,43,.95)}
-        .call-btn.muted::after{content:"";position:absolute;width:40px;height:4px;border-radius:999px;background:#fff;transform:rotate(-45deg);box-shadow:0 0 0 2px rgba(0,0,0,.06)}
+        #custom-toolbar{position:fixed;left:50%;transform:translateX(-50%);bottom:max(18px,env(safe-area-inset-bottom));width:auto;max-width:calc(100% - 28px);display:flex;align-items:center;justify-content:center;gap:var(--toolbar-gap);padding:12px;background:rgba(9,14,26,.76);border:1px solid rgba(148,163,184,.16);border-radius:999px;box-shadow:0 18px 42px rgba(0,0,0,.32);backdrop-filter:blur(18px);z-index:20}
+        .call-btn{position:relative;flex:0 0 var(--toolbar-btn-size);width:var(--toolbar-btn-size);height:var(--toolbar-btn-size);min-width:var(--toolbar-btn-size);min-height:var(--toolbar-btn-size);border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(51,65,85,.92);color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:transform .15s ease,background .15s ease,box-shadow .15s ease;box-shadow:0 8px 20px rgba(0,0,0,.22);touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+        .call-btn:hover{background:rgba(71,85,105,.96)}
+        .call-btn.active{background:rgba(51,65,85,.92)}
+        .call-btn.muted{background:#7f1d1d}
+        .call-btn.muted::after{display:none}
         .btn-hangup{background:var(--danger);box-shadow:0 18px 34px var(--danger-shadow)}
-        .call-btn svg{width:34px;height:34px;fill:currentColor}
+        .call-btn svg{width:28px;height:28px;fill:currentColor}
         #toolbar-more-wrap,#btn-more,.toolbar-popover{display:none}
         .toolbar-popover{position:absolute;right:0;bottom:calc(100% + 10px);display:flex;align-items:center;justify-content:center;gap:10px;padding:10px 12px;border-radius:26px;background:rgba(9,14,26,.94);border:1px solid rgba(148,163,184,.2);box-shadow:0 20px 40px rgba(0,0,0,.32);opacity:0;pointer-events:none;transform:translateY(10px);transition:opacity .18s ease,transform .18s ease}
         .toolbar-popover.is-open{opacity:1;pointer-events:auto;transform:translateY(0)}
@@ -165,7 +167,7 @@ if ($livekitConfigured) {
         .gcall-action-btn{border:0;border-radius:999px;padding:12px 18px;font-size:14px;font-weight:600;cursor:pointer}
         .gcall-action-btn.secondary{background:#f2f4f7;color:#344054}
         .gcall-action-btn.primary{background:#4656d9;color:#fff}
-        @media (max-width:768px){:root{--toolbar-height:114px;--toolbar-gap:8px}.gcall-shell{padding:18px 14px calc(var(--toolbar-height) + 20px)}.gcall-grid{gap:12px;height:calc(100vh - var(--toolbar-height) - 120px);height:calc(100dvh - var(--toolbar-height) - 120px);grid-template-columns:repeat(2,minmax(0,1fr))}.gcall-shell.audio-mode .gcall-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.gcall-tile{min-height:180px;border-radius:24px}.gcall-shell.audio-mode .gcall-tile{min-height:210px}.gcall-avatar{width:112px;height:112px}.gcall-avatar-fallback{font-size:38px}.gcall-corner-badges{top:10px;right:10px}.gcall-icon-badge{min-width:36px;height:36px;padding:0 10px;font-size:11px}.gcall-nameplate{left:10px;right:10px;bottom:10px}.gcall-nameplate-text{font-size:13px}#custom-toolbar{width:auto;max-width:calc(100% - 12px);justify-content:center;gap:6px;padding:8px 10px;background:rgba(9,14,26,.78);border:1px solid rgba(148,163,184,.14);box-shadow:0 18px 34px rgba(0,0,0,.3);backdrop-filter:blur(18px);border-radius:999px;bottom:max(10px,env(safe-area-inset-bottom))}.call-btn{flex:0 0 clamp(62px,18vw,76px);width:clamp(62px,18vw,76px);height:clamp(62px,18vw,76px);min-width:clamp(62px,18vw,76px);min-height:clamp(62px,18vw,76px)}.call-btn svg{width:28px;height:28px}#btn-add{display:none}#toolbar-more-wrap{position:relative;display:flex;align-items:center;justify-content:center}#btn-more{display:inline-flex}.toolbar-popover{display:flex}.toolbar-pop-btn{min-width:58px;width:58px;height:58px;min-height:58px}.toolbar-pop-btn svg{width:24px;height:24px}}
+        @media (max-width:768px){:root{--toolbar-height:106px;--toolbar-gap:8px;--toolbar-btn-size:62px}.gcall-shell{padding:14px 10px calc(var(--toolbar-height) + 12px)}.gcall-top{padding-bottom:12px}.gcall-name{max-width:58vw;font-size:20px}.gcall-timer{min-width:78px;padding:8px 12px;font-size:13px}.gcall-grid{gap:8px;height:calc(100vh - var(--toolbar-height) - 66px);height:calc(100dvh - var(--toolbar-height) - 66px);grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(170px,1fr)}.gcall-shell.audio-mode .gcall-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.gcall-tile{min-height:170px;border-radius:14px}.gcall-shell.audio-mode .gcall-tile{min-height:190px}.gcall-avatar{width:96px;height:96px}.gcall-avatar-fallback{font-size:34px}.gcall-corner-badges{left:8px;bottom:8px}.gcall-state-badge{width:30px;height:30px}.gcall-state-badge svg{width:16px;height:16px}.gcall-nameplate{left:46px;right:8px;bottom:8px}.gcall-nameplate-text{min-height:30px;padding:0 10px;font-size:12px}#custom-toolbar{max-width:calc(100% - 12px);gap:6px;padding:8px;bottom:max(10px,env(safe-area-inset-bottom))}.call-btn svg{width:25px;height:25px}#btn-add{display:none}#toolbar-more-wrap{position:relative;display:flex;align-items:center;justify-content:center}#btn-more{display:inline-flex}.toolbar-popover{display:flex}.toolbar-pop-btn{min-width:56px;width:56px;height:56px;min-height:56px}.toolbar-pop-btn svg{width:23px;height:23px}}
     </style>
 </head>
 <body class="<?php echo $isAudioCall ? 'audio-mode' : ''; ?>">
@@ -227,11 +229,11 @@ if ($livekitConfigured) {
         const initialElapsedSeconds = <?php echo intval($initialElapsedSeconds); ?>;
         const initialParticipants = <?php echo json_encode(!empty($groupSync['participants']) ? $groupSync['participants'] : array()); ?>;
         const requestHash = <?php echo json_encode(!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : ''); ?>;
-        const syncCallUrl = <?php echo json_encode($wo['config']['site_url'] . '/requests.php?f=sync_group_call&call_id=' . intval($groupCall['id']) . '&hash=' . (!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : '')); ?>;
-        const joinCallUrl = <?php echo json_encode($wo['config']['site_url'] . '/requests.php?f=join_group_call&call_id=' . intval($groupCall['id']) . '&hash=' . (!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : '')); ?>;
-        const leaveCallUrl = <?php echo json_encode($wo['config']['site_url'] . '/requests.php?f=leave_group_call&call_id=' . intval($groupCall['id']) . '&hash=' . (!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : '')); ?>;
-        const addMembersUrl = <?php echo json_encode($wo['config']['site_url'] . '/requests.php?f=add_group_call_members&hash=' . (!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : '')); ?>;
-        const candidatesUrl = <?php echo json_encode($wo['config']['site_url'] . '/requests.php?f=get_group_call_candidates&group_id=' . intval($groupCall['group_id']) . '&call_id=' . intval($groupCall['id']) . '&hash=' . (!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : '')); ?>;
+        const syncCallUrl = <?php echo json_encode('/requests.php?f=sync_group_call&call_id=' . intval($groupCall['id']) . '&hash=' . (!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : '')); ?>;
+        const joinCallUrl = <?php echo json_encode('/requests.php?f=join_group_call&call_id=' . intval($groupCall['id']) . '&hash=' . (!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : '')); ?>;
+        const leaveCallUrl = <?php echo json_encode('/requests.php?f=leave_group_call&call_id=' . intval($groupCall['id']) . '&hash=' . (!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : '')); ?>;
+        const addMembersUrl = <?php echo json_encode('/requests.php?f=add_group_call_members&hash=' . (!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : '')); ?>;
+        const candidatesUrl = <?php echo json_encode('/requests.php?f=get_group_call_candidates&group_id=' . intval($groupCall['group_id']) . '&call_id=' . intval($groupCall['id']) . '&hash=' . (!empty($_SESSION['main_hash_id']) ? $_SESSION['main_hash_id'] : '')); ?>;
         const grid = document.getElementById('gcall-grid');
         const statusNode = document.getElementById('gcall-status');
         const timerNode = document.getElementById('gcall-timer');
@@ -254,6 +256,7 @@ if ($livekitConfigured) {
         let microphoneEnabled = true;
         let cameraEnabled = !isAudioCall;
         let speakerEnabled = true;
+        let remoteAudioMuted = false;
         let currentFacingMode = 'user';
         let timerInterval = null;
         let syncInterval = null;
@@ -277,6 +280,22 @@ if ($livekitConfigured) {
             const words = safe.split(/\s+/).filter(Boolean);
             if (words.length === 1) return words[0].slice(0, 1).toUpperCase();
             return (words[0].slice(0, 1) + words[words.length - 1].slice(0, 1)).toUpperCase();
+        }
+
+        function escapeHtml(value) {
+            return String(value || '').replace(/[&<>"']/g, function (char) {
+                return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char] || char;
+            });
+        }
+
+        function iconSvg(name) {
+            if (name === 'mic-off') {
+                return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19,11C19,12.19 18.66,13.3 18.07,14.24L16.62,12.79C16.86,12.25 17,11.64 17,11H19M15,11.17L9,5.17V5A3,3 0 0,1 12,2A3,3 0 0,1 15,5V11.17M4.27,3L21,19.73L19.73,21L15.54,16.81C14.77,17.27 13.91,17.58 13,17.72V21H11V17.72C7.72,17.23 5,14.41 5,11H7A5,5 0 0,0 12,16C12.78,16 13.5,15.82 14.15,15.5L12.66,14.01L12,14A3,3 0 0,1 9,11V10.34L3,4.27L4.27,3Z"/></svg>';
+            }
+            if (name === 'cam-off') {
+                return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21,6.5V17.5L17,13.5V14.82L19.73,17.55L18.46,18.82L3.27,3.64L4.54,2.36L21,18.82L19.73,20.09L17,17.36V17A1,1 0 0,1 16,18H5.64L3.18,15.54C3.06,15.39 3,15.2 3,15V7A1,1 0 0,1 4,6H6.82L2.91,2.09L4.18,.82L21,17.64V6.5Z"/></svg>';
+            }
+            return '';
         }
 
         function showToast(message) {
@@ -325,21 +344,11 @@ if ($livekitConfigured) {
         async function applySpeakerMode(enabled) {
             const audioElements = getAttachedAudioElements();
             if (!audioElements.length) {
-                showToast('No audio output to switch yet.');
                 return;
             }
-            let sinkApplied = false;
             for (let i = 0; i < audioElements.length; i += 1) {
                 const element = audioElements[i];
-                if (typeof element.setSinkId === 'function') {
-                    try {
-                        await element.setSinkId(enabled ? 'default' : 'communications');
-                        sinkApplied = true;
-                    } catch (err) {}
-                }
-            }
-            if (!sinkApplied && typeof HTMLMediaElement !== 'undefined' && !('setSinkId' in HTMLMediaElement.prototype)) {
-                showToast('This browser does not support audio output switching.');
+                element.muted = !enabled;
             }
         }
 
@@ -437,16 +446,16 @@ if ($livekitConfigured) {
                 } else {
                     const avatarWrap = document.createElement('div');
                     avatarWrap.className = 'gcall-avatar-wrap';
-                    avatarWrap.innerHTML = '<div class="gcall-avatar-glow"></div><div class="gcall-avatar"><div class="gcall-avatar-inner">' + (participant.avatar ? '<img src="' + participant.avatar + '" alt="">' : '<div class="gcall-avatar-fallback">' + getInitials(participant.name) + '</div>') + '</div></div>';
+                    avatarWrap.innerHTML = '<div class="gcall-avatar-glow"></div><div class="gcall-avatar"><div class="gcall-avatar-inner">' + (participant.avatar ? '<img src="' + escapeHtml(participant.avatar) + '" alt="">' : '<div class="gcall-avatar-fallback">' + escapeHtml(getInitials(participant.name)) + '</div>') + '</div></div>';
                     media.appendChild(avatarWrap);
                 }
                 tile.appendChild(media);
                 let cornerBadges = '';
                 if (participant.micMuted) {
-                    cornerBadges += '<span class="gcall-icon-badge">Mic off</span>';
+                    cornerBadges += '<span class="gcall-state-badge danger" title="Mic off">' + iconSvg('mic-off') + '</span>';
                 }
                 if (!isAudioCall && participant.cameraOff) {
-                    cornerBadges += '<span class="gcall-icon-badge soft">Cam off</span>';
+                    cornerBadges += '<span class="gcall-state-badge" title="Camera off">' + iconSvg('cam-off') + '</span>';
                 }
                 if (cornerBadges) {
                     const badgeWrap = document.createElement('div');
@@ -456,7 +465,7 @@ if ($livekitConfigured) {
                 }
                 const nameplate = document.createElement('div');
                 nameplate.className = 'gcall-nameplate';
-                nameplate.innerHTML = '<div class="gcall-nameplate-text">' + (participant.name || 'Participant') + (participant.isLocal ? ' (You)' : '') + '</div>';
+                nameplate.innerHTML = '<div class="gcall-nameplate-text">' + escapeHtml((participant.name || 'Participant') + (participant.isLocal ? ' (You)' : '')) + '</div>';
                 tile.appendChild(nameplate);
                 grid.appendChild(tile);
             });
@@ -514,6 +523,7 @@ if ($livekitConfigured) {
             const element = track.attach();
             element.autoplay = true;
             element.playsInline = true;
+            element.muted = remoteAudioMuted;
             participantState[key].audioTrackSid = track.sid || '';
             participantState[key].audioElements.push(element);
             audioSink.appendChild(element);
@@ -873,8 +883,14 @@ if ($livekitConfigured) {
 
         btnMic.addEventListener('click', async function () {
             if (!room) return;
-            microphoneEnabled = !microphoneEnabled;
-            await room.localParticipant.setMicrophoneEnabled(microphoneEnabled);
+            const nextEnabled = !microphoneEnabled;
+            try {
+                await room.localParticipant.setMicrophoneEnabled(nextEnabled);
+                microphoneEnabled = nextEnabled;
+            } catch (err) {
+                showToast('Could not change microphone.');
+                return;
+            }
             btnMic.classList.toggle('muted', !microphoneEnabled);
             btnMic.classList.toggle('active', microphoneEnabled);
             updateParticipantFromPublications(room.localParticipant, true);
@@ -884,15 +900,23 @@ if ($livekitConfigured) {
 
         btnSpeaker.addEventListener('click', async function () {
             speakerEnabled = !speakerEnabled;
+            remoteAudioMuted = !speakerEnabled;
             await applySpeakerMode(speakerEnabled);
             btnSpeaker.classList.toggle('active', speakerEnabled);
+            btnSpeaker.classList.toggle('muted', !speakerEnabled);
         });
 
         if (btnCam) {
             btnCam.addEventListener('click', async function () {
                 if (!room) return;
-                cameraEnabled = !cameraEnabled;
-                await room.localParticipant.setCameraEnabled(cameraEnabled);
+                const nextEnabled = !cameraEnabled;
+                try {
+                    await room.localParticipant.setCameraEnabled(nextEnabled);
+                    cameraEnabled = nextEnabled;
+                } catch (err) {
+                    showToast('Could not change camera.');
+                    return;
+                }
                 btnCam.classList.toggle('muted', !cameraEnabled);
                 btnCam.classList.toggle('active', cameraEnabled);
                 participantState[String(displayUserId)].cameraOff = !cameraEnabled;

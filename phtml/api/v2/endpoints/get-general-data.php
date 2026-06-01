@@ -52,16 +52,26 @@ if (empty($error_code)) {
         $data[$value] = $value;
     }
     if (empty($wo['user']['timezone'])) {
-        $wo['user']['timezone'] = 'UTC';
-    }
-    $timezone      = new DateTimeZone($wo['user']['timezone']);
+    $wo['user']['timezone'] = 'UTC';
+}
+
+if ($wo['user']['timezone'] == 'Asia/Saigon') {
+    $wo['user']['timezone'] = 'Asia/Ho_Chi_Minh';
+}
+
+if (!in_array($wo['user']['timezone'], timezone_identifiers_list())) {
+    $wo['user']['timezone'] = 'UTC';
+}
+
+$timezone = new DateTimeZone($wo['user']['timezone']);
 
     if (!empty($data['notifications'])) {
     	$final_notifications= array();
         $offset = (!empty($_POST['offset']) && is_numeric($_POST['offset']) && $_POST['offset'] > 0 ? Wo_Secure($_POST['offset']) : 0);
         $include_all_notifications = (!empty($_POST['include_all_notifications']) && $_POST['include_all_notifications'] == 1);
         $notifications_options = array(
-            'offset' => $offset
+            'offset' => $offset,
+            'limit' => ($include_all_notifications === true ? 100 : 20)
         );
         if ($include_all_notifications !== true) {
             $notifications_options['remove_notification'] = array(
@@ -72,6 +82,8 @@ if (empty($error_code)) {
                 'forum_reply',
                 'admin_notification',
             );
+        } else {
+            $notifications_options['force_all'] = true;
         }
         $notifications = Wo_GetNotifications($notifications_options);
         
@@ -531,6 +543,11 @@ if (empty($error_code)) {
 
     if (!empty($data['count_new_messages'])) {
         $response_data['count_new_messages'] =  Wo_CountMessages(array('new' => true), 'interval');
+    }
+    if (!empty($data['video_count'])) {
+        $video_query = mysqli_query($sqlConnect, "SELECT COUNT(*) AS count FROM " . T_POSTS . " WHERE postPrivacy = '0' AND (postYoutube <> '' OR postVine <> '' OR postFacebook <> '' OR postDailymotion <> '' OR postVimeo <> '' OR postPlaytube <> '' OR postFile LIKE '%_video%')");
+        $video_count_data = mysqli_fetch_assoc($video_query);
+        $response_data['video_count'] = (int)$video_count_data['count'];
     }
     if (!empty($data['announcement'])) {
         $response_data['announcement'] =  Wo_GetHomeAnnouncements();

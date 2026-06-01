@@ -101,6 +101,9 @@ else {
                 'counterparty_id' => $counterparty_id,
                 'counterparty_name' => $counterparty_name,
                 'extra' => $extra,
+                'points' => isset($extra['points']) ? (int) $extra['points'] : 0,
+                'point_action' => !empty($extra['action']) ? (string) $extra['action'] : '',
+                'point_type' => !empty($extra['type']) ? (string) $extra['type'] : '',
                 'amount' => isset($transaction['amount']) ? (float) $transaction['amount'] : 0,
                 'transaction_dt' => !empty($transaction['transaction_dt']) ? (string) $transaction['transaction_dt'] : '',
             );

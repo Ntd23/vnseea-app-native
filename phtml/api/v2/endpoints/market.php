@@ -160,6 +160,7 @@ elseif ($_POST['type'] == 'checkout') {
 	        } else {
 	            $wo['total'] += ($wo['product']['price'] * $wo['item']->units);
 	        }
+	        $wo['product']['units'] = $wo['item']->units;
 	        $data[] = $wo['product'];
 	    }
 	}
@@ -193,10 +194,72 @@ elseif ($_POST['type'] == 'purchased') {
             if (!empty($order->product) && !empty($order->product['user_data'])) {
                 $order->product['user_data'] = Wo_SecureData([],$order->product['user_data']);
             }
+            if (!empty($order->address_id)) {
+                $order->address = $db->where('id', $order->address_id)->getOne(T_USER_ADDRESS);
+            }
             $purchase->orders[] = $order;
         }
         return $purchase;
     }, $wo['purchased']);
+
+    $response_data = array(
+        'api_status' => 200,
+        'data' => $purchased
+    );
+}
+elseif ($_POST['type'] == 'orders') {
+    $offset = (!empty($_POST['offset']) && is_numeric($_POST['offset']) && $_POST['offset'] > 0 ? Wo_Secure($_POST['offset']) : 0);
+    $limit = (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limit'] > 0 && $_POST['limit'] <= 50 ? Wo_Secure($_POST['limit']) : 20);
+
+    if (!empty($offset)) {
+        $db->where('id', $offset, '<');
+    }
+
+    $orders_list = $db->where('product_owner_id', $wo['user']['user_id'])
+                      ->orderBy('id', 'DESC')
+                      ->groupBy('hash_id')
+                      ->get(T_USER_ORDERS, $limit);
+
+    $purchased = [];
+    if (!empty($orders_list)) {
+        foreach ($orders_list as $order_row) {
+            $hash_id = $order_row->hash_id;
+            $sub_orders = $db->where('hash_id', $hash_id)->get(T_USER_ORDERS);
+            
+            $price_total = 0;
+            $final_price_total = 0;
+            $normalized_sub_orders = [];
+            
+            foreach ($sub_orders as $sub_order) {
+                $sub_order->product = Wo_GetProduct($sub_order->product_id);
+                if (!empty($sub_order->product) && !empty($sub_order->product['user_data'])) {
+                    $sub_order->product['user_data'] = Wo_SecureData([], $sub_order->product['user_data']);
+                }
+                
+                $buyer_data = Wo_UserData($sub_order->user_id);
+                if (!empty($buyer_data)) {
+                    $sub_order->buyer = Wo_SecureData([], $buyer_data);
+                }
+                
+                $normalized_sub_orders[] = $sub_order;
+                $price_total += $sub_order->price;
+                $final_price_total += $sub_order->final_price;
+            }
+
+            $address = $db->where('id', $order_row->address_id)->getOne(T_USER_ADDRESS);
+
+            $purchased[] = [
+                'id' => $order_row->id,
+                'order_hash_id' => $hash_id,
+                'price' => $price_total,
+                'final_price' => $final_price_total,
+                'time' => $order_row->time,
+                'date' => date('c', $order_row->time),
+                'orders' => $normalized_sub_orders,
+                'address' => $address
+            ];
+        }
+    }
 
     $response_data = array(
         'api_status' => 200,
