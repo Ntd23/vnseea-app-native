@@ -50,6 +50,26 @@ function SettingsScreen() {
       if (route === ROUTES.CREATE_GROUP) {
         navigation.navigate(ROUTES.CREATE_GROUP);
       }
+
+      if (route === ROUTES.CREATE_STORY) {
+        navigation.navigate(ROUTES.CREATE_STORY);
+      }
+
+      if (route === ROUTES.CREATE_POST) {
+        navigation.navigate(ROUTES.CREATE_POST);
+      }
+
+      if (route === ROUTES.CREATE_POLL) {
+        navigation.navigate(ROUTES.CREATE_POLL);
+      }
+
+      if (route === ROUTES.CREATE_REEL) {
+        navigation.navigate(ROUTES.CREATE_REEL);
+      }
+
+      if (route === ROUTES.CREATE_AD) {
+        navigation.navigate(ROUTES.CREATE_AD);
+      }
     },
     [navigation],
   );
@@ -58,6 +78,10 @@ function SettingsScreen() {
     async (id: string) => {
       if (id === 'earnings') {
         navigation.navigate(ROUTES.EARNINGS);
+      }
+
+      if (id === 'my-info') {
+        navigation.navigate(ROUTES.SETTINGS_MY_INFO);
       }
 
       if (id === 'logout') {
@@ -112,8 +136,16 @@ function SettingsScreen() {
         navigation.navigate(ROUTES.SAVED_POSTS);
       }
 
+      if (id === 'pages') {
+        navigation.navigate(ROUTES.PAGES);
+      }
+
       if (id === 'groups') {
         navigation.navigate(ROUTES.EXPLORE_GROUPS);
+      }
+
+      if (id === 'market') {
+        navigation.navigate(ROUTES.MARKETPLACE);
       }
 
       if (id === 'boosted') {
@@ -143,6 +175,10 @@ function SettingsScreen() {
       if (id === 'ads') {
         navigation.navigate(ROUTES.ADVERTISING);
       }
+
+      if (id === 'find-friends') {
+        navigation.navigate(ROUTES.SEARCH);
+      }
     },
     [navigation],
   );
@@ -166,6 +202,7 @@ function SettingsScreen() {
             activeOpacity={0.8}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={() => setSheetVisible(true)}
+            style={{ transform: [{ rotate: sheetVisible ? '45deg' : '0deg' }] }}
           >
             <Plus size={22} color="#0000ff" />
           </TouchableOpacity>

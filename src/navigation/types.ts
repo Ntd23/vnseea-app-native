@@ -1,6 +1,8 @@
 // Description: Defines typed navigation parameter lists shared across app navigators.
+import type { NavigatorScreenParams } from '@react-navigation/native';
 import { ROUTES } from './constants/routes';
 import type { StoryItem } from '../stories/domain/types/stories.types';
+import type { ChatItem } from '../messages/domain/types/messages.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -14,21 +16,25 @@ export type RootStackParamList = {
   [ROUTES.LOGIN]: undefined;
   [ROUTES.REGISTER]: undefined;
   [ROUTES.FORGOT_PASSWORD]: undefined;
-  [ROUTES.MAIN_TABS]: undefined;
+  [ROUTES.MAIN_TABS]: NavigatorScreenParams<MainTabParamList> | undefined;
   [ROUTES.PROFILE]: { userId?: string } | undefined;
   [ROUTES.MY_PHOTOS]: undefined;
   [ROUTES.ALBUMS]: undefined;
   [ROUTES.CREATE_ALBUM]: undefined;
   [ROUTES.MY_VIDEOS]: undefined;
   [ROUTES.MESSAGES]: undefined;
+  [ROUTES.CHAT]: { chat: ChatItem };
   [ROUTES.CALLS]: undefined;
   [ROUTES.SEARCH]: undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
   [ROUTES.SAVED_POSTS]: undefined;
   [ROUTES.SEARCH_EMPTY]: undefined;
+  [ROUTES.PAGES]: undefined;
   [ROUTES.CREATE_PAGE]: undefined;
+  [ROUTES.MARKETPLACE]: undefined;
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;
+  [ROUTES.CREATE_POLL]: undefined;
   [ROUTES.CREATE_GROUP]: undefined;
   [ROUTES.EXPLORE_GROUPS]: undefined;
   [ROUTES.GROUP_DETAIL]: undefined;
@@ -38,7 +44,7 @@ export type RootStackParamList = {
   [ROUTES.BOOSTED]: undefined;
   [ROUTES.BLOGS]: undefined;
   [ROUTES.BLOG_FILTER_CATEGORY]: undefined;
-  [ROUTES.BLOG_DETAIL]: undefined;
+  [ROUTES.BLOG_DETAIL]: { blogId: string };
   [ROUTES.MOVIES]: undefined;
   [ROUTES.JOBS]: undefined;
   [ROUTES.JOB_DETAIL]: undefined;
@@ -49,6 +55,8 @@ export type RootStackParamList = {
   [ROUTES.WITHDRAWAL]: undefined;
   [ROUTES.MEMORIES]: undefined;
   [ROUTES.OFFERS]: undefined;
+  [ROUTES.SETTINGS_MY_INFO]: undefined;
+  [ROUTES.SETTINGS_MESSAGES]: undefined;
   [ROUTES.ADVERTISING]: undefined;
   [ROUTES.CREATE_AD]: undefined;
   [ROUTES.CREATE_REEL]: undefined;
@@ -63,6 +71,11 @@ export type RootStackParamList = {
   [ROUTES.STORY_VIEWER]: {
     stories: StoryItem[];
     initialUserIndex: number;
+  };
+  [ROUTES.AVATAR_VIEWER]: {
+    avatarUrl: string;
+    userName: string;
+    userId?: string;
   };
 };
 

@@ -1,5 +1,7 @@
 // Description: Domain types for the reels bounded context.
 
+import type { AudioAttachment } from '../../../shared-kernel/domain/types/audio.types';
+
 /** Publisher info attached to each reel — derived from the post's user_data. */
 export interface ReelPublisher {
   userId: string;
@@ -111,6 +113,8 @@ export interface ReelComment {
   postOwner: boolean;
   /** Optional inline image (`c_file` in WoWonder) — full URL ready to render. */
   imageUrl?: string;
+  /** Optional audio recording (`record` in WoWonder) ready to play. */
+  audioUrl?: string;
   /**
    * Local-only preview URI used while an optimistic comment is uploading.
    * Lets the bubble show the picked image instantly before the server
@@ -118,6 +122,8 @@ export interface ReelComment {
    * response replaces the temp comment with the real one.
    */
   pendingImageUri?: string;
+  /** Local-only preview URI while an audio comment is uploading. */
+  pendingAudioUri?: string;
   /** Optimistic update state: true if comment/reply is currently sending */
   isSending?: boolean;
   /** Optimistic update state: true if sending failed */
@@ -142,6 +148,8 @@ export interface CommentImageAttachment {
   width?: number;
   height?: number;
 }
+
+export type CommentAudioAttachment = AudioAttachment;
 
 /** Privacy level matching WoWonder postPrivacy values */
 export type ReelPrivacy = 0 | 1 | 2 | 3 | 4;

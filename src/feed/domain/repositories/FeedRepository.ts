@@ -21,7 +21,7 @@ export interface FeedRepository {
    * the home feed should call `getAllPosts` so a single API round-trip
    * powers the whole screen.
    */
-  getAllPosts(limit?: number): Promise<FeedPost[]>;
+  getAllPosts(limit?: number, afterPostId?: string): Promise<FeedPost[]>;
 
   getVideoPosts(limit?: number): Promise<FeedVideoPost[]>;
 
@@ -62,4 +62,17 @@ export interface FeedRepository {
    * optimistically prepend it to the feed without a refetch.
    */
   createPost(draft: CreatePostDraft): Promise<CreatePostResult>;
+  getUserPosts(userId: string, limit?: number): Promise<FeedPost[]>;
+
+  /**
+   * Toggle save/unsave a post via WoWonder's post-actions endpoint.
+   * Returns { saved: true } when the post was saved, { saved: false } when it was unsaved.
+   */
+  savePost(postId: string): Promise<{ saved: boolean }>;
+
+  /**
+   * Toggle report/unreport a post via WoWonder's post-actions endpoint.
+   * Returns { reported: true } when the post was reported, { reported: false } when unreported.
+   */
+  reportPost(postId: string): Promise<{ reported: boolean }>;
 }

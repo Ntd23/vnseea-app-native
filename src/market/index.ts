@@ -3,4 +3,6 @@ export * from './domain/types/market.types';
 export * from './domain/repositories/MarketRepository';
 export { createMarketRepository } from './infrastructure/repositories/ApiMarketRepository';
 export { useMarketViewModel } from './application/view-models/useMarketViewModel';
-export { default as CreateProductScreen } from './presentation/screens/CreateProductScreen';
+
+// Re-export CreateProductScreen from product module for backward compatibility
+export { default as CreateProductScreen } from '../product/presentation/screens/CreateProductScreen';

@@ -1,10 +1,21 @@
-// Pages Repository Interface
-// Port từ: client/src/pages/domain/repositories/
+import type {
+  CreatePageDraft,
+  PagesItem,
+  PagesListOptions,
+  PagesListPage,
+} from '../types/pages.types';
 
-import type { PagesItem } from '../types/pages.types';
+export interface CreatePageResult {
+  page: PagesItem;
+  message?: string;
+}
 
 export interface PagesRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<PagesItem[]>;
-  // getById(id: string | number): Promise<PagesItem | null>;
+  getMyPages(options?: PagesListOptions): Promise<PagesListPage>;
+  getSuggestedPages(options?: PagesListOptions): Promise<PagesListPage>;
+  getLikedPages(
+    userId: string | number,
+    options?: PagesListOptions,
+  ): Promise<PagesListPage>;
+  createPage(draft: CreatePageDraft): Promise<CreatePageResult>;
 }

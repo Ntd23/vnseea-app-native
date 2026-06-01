@@ -19,6 +19,7 @@ import type {
   CreatePostDraft,
   CreatePostResult,
   FeedTextPost,
+  PostAudioAttachment,
   PostFeeling,
   PostPhotoAttachment,
   PostPrivacy,
@@ -102,7 +103,7 @@ const MAX_PHOTOS = 10;
 
 // Validation errors surfaced to the UI as Vietnamese-language strings.
 // Keep them human, not technical — the user sees these directly.
-const ERR_EMPTY = 'Hãy viết nội dung hoặc thêm ít nhất 1 ảnh.';
+const ERR_EMPTY = 'Hãy viết nội dung hoặc thêm ít nhất 1 ảnh hoặc âm thanh.';
 const ERR_TOO_MANY_PHOTOS = `Tối đa ${MAX_PHOTOS} ảnh mỗi bài.`;
 
 export type UseCreatePostOptions = {
@@ -153,6 +154,11 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     setDraft(prev => ({ ...prev, feeling }));
   }, []);
 
+  const setAudio = useCallback((audio: PostAudioAttachment | undefined) => {
+    setError(null);
+    setDraft(prev => ({ ...prev, audio, photos: audio ? [] : prev.photos }));
+  }, []);
+
   /**
    * Append photos to the current draft. Dedupes by `uri` so accidental
    * double-pick from the gallery doesn't add the same photo twice, and
@@ -169,9 +175,9 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
         // Trim the overflow and surface a warning — preserve as many
         // as we can rather than rejecting the whole batch.
         setError(ERR_TOO_MANY_PHOTOS);
-        return { ...prev, photos: merged.slice(0, MAX_PHOTOS) };
+        return { ...prev, audio: undefined, photos: merged.slice(0, MAX_PHOTOS) };
       }
-      return { ...prev, photos: merged };
+      return { ...prev, audio: undefined, photos: merged };
     });
   }, []);
 
@@ -276,7 +282,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
    * non-empty. Returns the error message or null when valid.
    */
   const validate = useCallback((d: CreatePostDraft): string | null => {
-    if (d.text.trim().length === 0 && d.photos.length === 0) {
+    if (d.text.trim().length === 0 && d.photos.length === 0 && !d.audio) {
       return ERR_EMPTY;
     }
     if (d.photos.length > MAX_PHOTOS) {
@@ -352,6 +358,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     setText,
     setPrivacy,
     setFeeling,
+    setAudio,
     addPhotos,
     removePhoto,
     applyCaptionSuggestion,

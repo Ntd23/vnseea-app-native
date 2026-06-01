@@ -298,6 +298,7 @@ function mapComment(raw: Record<string, unknown>): ReelComment {
   // through `Wo_GetMedia`, so by the time it lands here it's a full URL
   // (or empty string if no image). Treat empty as no attachment.
   const imageUrl = readString(raw, 'c_file');
+  const audioUrl = readString(raw, 'record');
   const commentId = readString(raw, 'id', 'comment_id');
 
   // Reaction state. Same logic as for posts: prefer the backend's
@@ -343,6 +344,7 @@ function mapComment(raw: Record<string, unknown>): ReelComment {
     owner: readBool(raw, 'onwer', 'owner'),
     postOwner: readBool(raw, 'post_onwer', 'postOwner'),
     imageUrl: imageUrl || undefined,
+    audioUrl: audioUrl || undefined,
   };
 }
 
@@ -695,7 +697,7 @@ export function createReelsRepository(): ReelsRepository {
       return (response.data ?? []).map(mapComment);
     },
 
-    async addComment(postId, text, image) {
+    async addComment(postId, text, image, audio) {
       // ── Image branch ──────────────────────────────────────────────────
       // When the user attached an image, switch from JSON POST to
       // multipart/form-data so the backend sees the file under
@@ -703,7 +705,7 @@ export function createReelsRepository(): ReelsRepository {
       // lines 54-65 — `Wo_ShareFile` reads the uploaded blob there).
       // Text becomes optional in this path because PHP accepts comments
       // that are image-only.
-      if (image) {
+      if (image || audio) {
         const response = await backendApi.multipart<{
           api_status: number | string;
           data?: Record<string, unknown>;
@@ -713,11 +715,24 @@ export function createReelsRepository(): ReelsRepository {
           // Send text only when non-empty so the PHP `!empty($_POST['text'])`
           // check doesn't false-positive on an empty string.
           ...(text ? { text } : {}),
-          image: {
-            uri: image.uri,
-            name: image.name,
-            type: image.type,
-          },
+          ...(image
+            ? {
+                image: {
+                  uri: image.uri,
+                  name: image.name,
+                  type: image.type,
+                },
+              }
+            : {}),
+          ...(audio
+            ? {
+                audio: {
+                  uri: audio.uri,
+                  name: audio.name,
+                  type: audio.type,
+                },
+              }
+            : {}),
         });
         const raw = response.data ?? {};
         return mapComment(raw);

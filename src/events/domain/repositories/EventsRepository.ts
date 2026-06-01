@@ -3,8 +3,29 @@
 
 import type { EventsItem } from '../types/events.types';
 
+export interface EventFormData {
+  name: string;
+  startDate: string; // Format: YYYY-MM-DD
+  startTime: string; // Format: HH:MM
+  endDate: string;   // Format: YYYY-MM-DD
+  endTime: string;   // Format: HH:MM
+  location: string;
+  description: string;
+  image?: string; // local file URI for upload
+}
+
+export interface CreateEventResult {
+  eventId: number;
+  event: EventsItem;
+}
+
 export interface EventsRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<EventsItem[]>;
-  // getById(id: string | number): Promise<EventsItem | null>;
+  getAll(): Promise<EventsItem[]>;
+  getMyEvents(): Promise<EventsItem[]>;
+  getGoingEvents(): Promise<EventsItem[]>;
+  getInterestedEvents(): Promise<EventsItem[]>;
+  getInvitedEvents(): Promise<EventsItem[]>;
+  getPastEvents(): Promise<EventsItem[]>;
+  getById(id: string | number): Promise<EventsItem | null>;
+  createEvent(data: EventFormData): Promise<CreateEventResult>;
 }

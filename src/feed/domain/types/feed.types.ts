@@ -2,6 +2,9 @@
 // Port from: client/src/feed/domain/types/
 
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type { ProductItem } from '../../../product/domain/types/product.types';
+import type { EventsItem } from '../../../events/domain/types/events.types';
+import type { AudioAttachment } from '../../../shared-kernel/domain/types/audio.types';
 
 export interface FeedItem {
   id: string | number;
@@ -45,6 +48,8 @@ export interface PostPhotoAttachment {
   height?: number;
 }
 
+export type PostAudioAttachment = AudioAttachment;
+
 /**
  * Optional "feeling" attached to a post (the FB "đang cảm thấy vui vẻ"
  * row). Maps 1:1 to WoWonder's `feeling_type` + `feeling` POST fields.
@@ -74,6 +79,7 @@ export interface PostFeeling {
 export interface CreatePostDraft {
   text: string;
   photos: PostPhotoAttachment[];
+  audio?: PostAudioAttachment;
   privacy: PostPrivacy;
   feeling?: PostFeeling;
 }
@@ -102,6 +108,7 @@ export interface FeedTextPost {
   id: string;
   caption?: string;
   photos: string[];
+  audioUrl?: string;
   postedAt?: number;
   likeCount: number;
   commentCount: number;
@@ -164,6 +171,94 @@ export interface FeedVideoPost {
 }
 
 /**
+ * A product post shown on the home feed (Facebook Marketplace-style).
+ * Displayed as a card with product image, title, price, and seller info.
+ * Links back to a post via `postId` if the product was created as a post.
+ */
+export interface FeedProductPost {
+  kind: 'product';
+  id: string;
+  product: ProductItem;
+  postedAt?: number;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface FeedEventPost {
+  kind: 'event';
+  id: string;
+  event: EventsItem;
+  postedAt?: number;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface FeedAdPost {
+  kind: 'ad';
+  id: string;
+  adId: string;
+  title: string;
+  description?: string;
+  mediaUrl?: string;
+  isVideo: boolean;
+  targetUrl?: string;
+  appears?: string;
+  postedAt?: number;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
+/**
+ * Poll option with vote counts and percentages
+ */
+export interface PollOption {
+  id: string;
+  text: string;
+  optionVotes: number;
+  percentage: string;
+  percentageNum: number;
+  all: number;
+}
+
+/**
+ * A poll post shown on the home feed.
+ * Includes question text, options, vote counts, and user's voted option.
+ */
+export interface FeedPollPost {
+  kind: 'poll';
+  id: string;
+  caption?: string;
+  pollQuestion?: string;
+  options: PollOption[];
+  votedId: string | null; // null = chưa vote, otherwise option id đã vote
+  totalVotes: number;
+  postedAt?: number;
+  likeCount: number;
+  commentCount: number;
+  isLiked: boolean;
+  myReaction: ReactionType | null;
+  topReactions: ReactionType[];
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
+/**
  * Unified feed post — anything that can appear in the merged home feed.
  *
  * We render the home screen from a single time-sorted `posts: FeedPost[]`
@@ -172,9 +267,17 @@ export interface FeedVideoPost {
  *
  *   if (post.kind === 'video') → <HomeVideoPostCard post={post} />
  *   if (post.kind === 'text')  → <TextPostCard post={post} />
+ *   if (post.kind === 'product') → <ProductPostCard product={post.product} />
+ *   if (post.kind === 'event') → <EventPostCard event={post.event} />
  *
  * Adding a new post type later (e.g. polls, shares) is just a matter of
  * extending this union with a new `kind` literal — no refactor of the
  * surrounding plumbing needed.
  */
-export type FeedPost = FeedVideoPost | FeedTextPost;
+export type FeedPost =
+  | FeedVideoPost
+  | FeedTextPost
+  | FeedProductPost
+  | FeedEventPost
+  | FeedPollPost
+  | FeedAdPost;

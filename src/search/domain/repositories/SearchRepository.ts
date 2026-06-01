@@ -1,10 +1,27 @@
 // Search Repository Interface
-// Port từ: client/src/search/domain/repositories/
+// Based on WoWonder API endpoints
 
-import type { SearchItem } from '../types/search.types';
+import type {
+  FollowResponse,
+  NearbyResponse,
+  SearchFilter,
+  SearchResponse,
+  SuggestionResponse,
+} from '../types/search.types';
 
 export interface SearchRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<SearchItem[]>;
-  // getById(id: string | number): Promise<SearchItem | null>;
+  // Search users by keyword
+  searchUsers(filter: SearchFilter): Promise<SearchResponse>;
+
+  // Get friend suggestions (people you may know)
+  getSuggestions(limit?: number): Promise<SuggestionResponse>;
+
+  // Get nearby users based on location
+  getNearbyUsers(filter: SearchFilter): Promise<NearbyResponse>;
+
+  // Follow a user
+  followUser(userId: string): Promise<FollowResponse>;
+
+  // Unfollow a user (same endpoint, toggles)
+  unfollowUser(userId: string): Promise<FollowResponse>;
 }

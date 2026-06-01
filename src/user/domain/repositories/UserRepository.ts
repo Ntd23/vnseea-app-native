@@ -11,7 +11,7 @@ import type {
 
 export interface UserRepository {
   getCurrentUser(): Promise<UserProfile | null>;
-  getUserProfile(input: GetUserProfileInput): Promise<UserProfileResult>;
+  getUserProfile(input?: GetUserProfileInput): Promise<UserProfileResult>;
   getSuggestions(input?: UserSuggestionsInput): Promise<UserProfile[]>;
   getNearbyUsers(input?: NearbyUsersInput): Promise<UserProfile[]>;
   updateCurrentUser(

@@ -11,45 +11,34 @@ import { CreateStoryScreen, StoryViewerScreen } from '../stories';
 import { NotificationsScreen } from '../notifications';
 import { MemoriesScreen } from '../memories';
 import { OffersScreen } from '../offers';
-import { AdvertisingScreen, CreateAdScreen, SettingsScreen } from '../settings';
 import {
-  BlogDetailScreen,
-  BlogFilterCategoryScreen,
-  BlogsScreen,
-} from '../blogs';
+  AdvertisingScreen,
+  MyInfoScreen,
+  SettingsMessagesScreen,
+  SettingsScreen,
+} from '../settings';
+import { CreateAdScreen } from '../advertising';
+import { BlogDetailScreen, BlogFilterCategoryScreen, BlogsScreen } from '../blogs';
 import { BoostedScreen } from '../boosted';
-import { CreatePageScreen } from '../pages';
-import { CreateProductScreen } from '../market';
+import { CreatePageScreen, PagesScreen } from '../pages';
+import { CreateProductScreen, MarketplaceScreen } from '../product';
 import { CreateEventScreen, EventsScreen } from '../events';
-import {
-  CreateGroupScreen,
-  ExploreGroupsScreen,
-  FollowingScreen,
-  GroupDetailScreen,
-} from '../community';
+import { CreatePollScreen } from '../poll';
+import { CreateGroupScreen, ExploreGroupsScreen, FollowingScreen, GroupDetailScreen } from '../community';
 import { FundingScreen } from '../funding';
 import { MoviesScreen } from '../movies';
 import { JobDetailScreen, JobsScreen } from '../jobs';
-import { ProfileScreen } from '../profile';
+import { AvatarViewerScreen, ProfileScreen } from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
 import { MyVideosScreen } from '../videos';
-import { CallScreen, MessageScreen } from '../messages';
+import { CallScreen, ChatScreen } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { SavedPostsScreen } from '../saved';
-import {
-  AffiliatesScreen,
-  EarningsScreen,
-  InviteFriendsScreen,
-  MyPointsScreen,
-} from '../wallet';
+import { AffiliatesScreen, EarningsScreen, InviteFriendsScreen, MyPointsScreen } from '../wallet';
 import { WithdrawalScreen } from '../withdrawal';
 
 type ScreenComponent = React.ComponentType<any>;
-type TabIconComponent = React.ComponentType<{
-  size: number;
-  color: string;
-  strokeWidth: number;
-}>;
+type TabIconComponent = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
 
 export type StackRouteDefinition = {
   name: RootStackRouteName;
@@ -65,42 +54,14 @@ export type TabRouteDefinition = {
 };
 
 export const TAB_ROUTES: TabRouteDefinition[] = [
-  {
-    name: ROUTES.FEED,
-    component: FeedScreen,
-    Icon: Home,
-    accessibilityLabel: 'Feed',
-  },
-  {
-    name: ROUTES.EXPLORE,
-    component: ExploreScreen,
-    Icon: Hash,
-    accessibilityLabel: 'Hashtags',
-  },
-  {
-    name: ROUTES.REELS,
-    component: ReelsScreen,
-    Icon: PlaySquare,
-    accessibilityLabel: 'Reels',
-    isCenter: true,
-  },
-  {
-    name: ROUTES.NOTIFICATIONS,
-    component: NotificationsScreen,
-    Icon: Bell,
-    accessibilityLabel: 'Notifications',
-  },
-  {
-    name: ROUTES.SETTINGS,
-    component: SettingsScreen,
-    Icon: Settings,
-    accessibilityLabel: 'Settings',
-  },
+  { name: ROUTES.FEED, component: FeedScreen, Icon: Home, accessibilityLabel: 'Feed' },
+  { name: ROUTES.EXPLORE, component: ExploreScreen, Icon: Hash, accessibilityLabel: 'Hashtags' },
+  { name: ROUTES.REELS, component: ReelsScreen, Icon: PlaySquare, accessibilityLabel: 'Reels', isCenter: true },
+  { name: ROUTES.NOTIFICATIONS, component: NotificationsScreen, Icon: Bell, accessibilityLabel: 'Notifications' },
+  { name: ROUTES.SETTINGS, component: SettingsScreen, Icon: Settings, accessibilityLabel: 'Settings' },
 ];
 
-export function createStackRoutes(
-  MainTabsComponent: ScreenComponent,
-): StackRouteDefinition[] {
+export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRouteDefinition[] {
   return [
     { name: ROUTES.LOGIN, component: LoginScreen },
     { name: ROUTES.REGISTER, component: RegisterScreen },
@@ -111,15 +72,19 @@ export function createStackRoutes(
     { name: ROUTES.ALBUMS, component: AlbumsScreen },
     { name: ROUTES.CREATE_ALBUM, component: CreateAlbumScreen },
     { name: ROUTES.MY_VIDEOS, component: MyVideosScreen },
-    { name: ROUTES.MESSAGES, component: MessageScreen },
+    { name: ROUTES.MESSAGES, component: SettingsMessagesScreen },
+    { name: ROUTES.CHAT, component: ChatScreen },
     { name: ROUTES.CALLS, component: CallScreen },
     { name: ROUTES.SEARCH, component: SearchScreen },
     { name: ROUTES.SEARCH_FILTER, component: SearchFilterScreen },
     { name: ROUTES.SAVED_POSTS, component: SavedPostsScreen },
     { name: ROUTES.SEARCH_EMPTY, component: SearchEmptyScreen },
+    { name: ROUTES.PAGES, component: PagesScreen },
     { name: ROUTES.CREATE_PAGE, component: CreatePageScreen },
+    { name: ROUTES.MARKETPLACE, component: MarketplaceScreen },
     { name: ROUTES.CREATE_PRODUCT, component: CreateProductScreen },
     { name: ROUTES.CREATE_EVENT, component: CreateEventScreen },
+    { name: ROUTES.CREATE_POLL, component: CreatePollScreen },
     { name: ROUTES.CREATE_GROUP, component: CreateGroupScreen },
     { name: ROUTES.EXPLORE_GROUPS, component: ExploreGroupsScreen },
     { name: ROUTES.GROUP_DETAIL, component: GroupDetailScreen },
@@ -139,6 +104,8 @@ export function createStackRoutes(
     { name: ROUTES.MY_POINTS, component: MyPointsScreen },
     { name: ROUTES.MEMORIES, component: MemoriesScreen },
     { name: ROUTES.OFFERS, component: OffersScreen },
+    { name: ROUTES.SETTINGS_MY_INFO, component: MyInfoScreen },
+    { name: ROUTES.SETTINGS_MESSAGES, component: SettingsMessagesScreen },
     { name: ROUTES.WITHDRAWAL, component: WithdrawalScreen },
     { name: ROUTES.ADVERTISING, component: AdvertisingScreen },
     { name: ROUTES.CREATE_AD, component: CreateAdScreen },
@@ -146,5 +113,6 @@ export function createStackRoutes(
     { name: ROUTES.CREATE_POST, component: CreatePostScreen },
     { name: ROUTES.CREATE_STORY, component: CreateStoryScreen },
     { name: ROUTES.STORY_VIEWER, component: StoryViewerScreen },
+    { name: ROUTES.AVATAR_VIEWER, component: AvatarViewerScreen },
   ];
 }

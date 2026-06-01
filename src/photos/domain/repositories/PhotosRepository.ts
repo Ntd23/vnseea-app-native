@@ -1,10 +1,19 @@
 // Photos Repository Interface
 // Port từ: client/src/photos/domain/repositories/
 
-import type { PhotosItem } from '../types/photos.types';
+import type {
+  PhotosListOptions,
+  PhotosListPage,
+  AlbumsListPage,
+} from '../types/photos.types';
 
 export interface PhotosRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<PhotosItem[]>;
-  // getById(id: string | number): Promise<PhotosItem | null>;
+  getUserPhotos(
+    userId: string | number,
+    options?: PhotosListOptions,
+  ): Promise<PhotosListPage>;
+  getUserAlbums(
+    userId: string | number,
+    options?: PhotosListOptions,
+  ): Promise<AlbumsListPage>;
 }

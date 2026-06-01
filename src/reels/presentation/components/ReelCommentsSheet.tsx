@@ -48,7 +48,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronDown,
   ImagePlus,
+  Mic,
+  Music2,
   SendHorizonal,
+  Square,
   ThumbsUp,
   X,
 } from 'lucide-react-native';
@@ -58,11 +61,19 @@ import {
   type MediaType,
 } from 'react-native-image-picker';
 import type {
+  CommentAudioAttachment,
   CommentImageAttachment,
   ReactionType,
   ReelComment,
 } from '../../domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../domain/types/reels.types';
+import {
+  formatAudioDuration,
+  pickSupportedAudioFile,
+} from '../../../shared-kernel/application/utils/audioFiles';
+import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/useWavAudioRecorder';
+import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
+import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 
 const AVATAR_FALLBACK = 'https://demo.vnseea.vn/upload/photos/d-avatar.jpg';
 
@@ -125,6 +136,7 @@ interface Props {
   onSubmit: (
     text: string,
     image?: CommentImageAttachment,
+    audio?: CommentAudioAttachment,
   ) => Promise<ReelComment | null>;
   onSubmitReply: (
     commentId: string,
@@ -191,12 +203,22 @@ function ReelCommentsSheetBase({
   onDeleteFailedComment,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const wavRecorder = useWavAudioRecorder();
+  const {
+    isRecording: isWavRecording,
+    durationMs: wavDurationMs,
+    startRecording: startWavRecording,
+    stopRecording: stopWavRecording,
+    cancelRecording: cancelWavRecording,
+  } = wavRecorder;
   const [draft, setDraft] = useState('');
   // Image picked by the user for the next comment / reply. Local file://
   // URI; uploaded via multipart when `onSubmit` fires. Cleared after
   // submit or by tapping the X on the preview thumbnail.
   const [pendingImage, setPendingImage] =
     useState<CommentImageAttachment | null>(null);
+  const [pendingAudio, setPendingAudio] =
+    useState<CommentAudioAttachment | null>(null);
   // Which comment-image URL is open in the full-screen viewer (null = closed).
   // Used both for already-uploaded `imageUrl` and pending local previews so
   // the user can tap any comment image to see it big.
@@ -214,12 +236,14 @@ function ReelCommentsSheetBase({
 
   useEffect(() => {
     if (!visible) {
+      cancelWavRecording().catch(() => undefined);
       setDraft('');
       setPickerAnchor(null);
       setPendingImage(null);
+      setPendingAudio(null);
       setImageViewerUri(null);
     }
-  }, [visible]);
+  }, [cancelWavRecording, visible]);
 
   useEffect(() => {
     if (visible) {
@@ -270,29 +294,70 @@ function ReelCommentsSheetBase({
     const trimmed = draft.trim();
     // Accept comment if it has text OR an image (matches backend
     // validation — image-only comments are valid).
-    if (!trimmed && !pendingImage) return;
+    if (!trimmed && !pendingImage && !pendingAudio) return;
+    if (replyingTo && !trimmed && !pendingImage) return;
 
     // Snapshot the image then clear local state immediately so the
     // composer feels responsive even while the multipart upload is in
     // flight. The view-model already shows the optimistic bubble.
     const image = pendingImage ?? undefined;
+    const audio = pendingAudio ?? undefined;
     setDraft('');
     setPendingImage(null);
+    setPendingAudio(null);
 
     if (replyingTo) {
       onSubmitReply(replyingTo.commentId, trimmed, image);
       onCancelReply();
     } else {
-      onSubmit(trimmed, image);
+      onSubmit(trimmed, image, audio);
     }
   }, [
     draft,
     pendingImage,
+    pendingAudio,
     onSubmit,
     onSubmitReply,
     replyingTo,
     onCancelReply,
   ]);
+
+  const handlePickAudio = useCallback(async () => {
+    try {
+      const audio = await pickSupportedAudioFile();
+      if (audio) {
+        setPendingImage(null);
+        setPendingAudio(audio);
+      }
+    } catch (caught) {
+      Alert.alert(
+        'Không chọn được âm thanh',
+        caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+      );
+    }
+  }, []);
+
+  const handleToggleAudioRecording = useCallback(async () => {
+    try {
+      if (isWavRecording) {
+        const audio = await stopWavRecording();
+        if (audio) {
+          setPendingImage(null);
+          setPendingAudio(audio);
+        }
+        return;
+      }
+
+      setPendingImage(null);
+      setPendingAudio(null);
+      await startWavRecording();
+    } catch (caught) {
+      Alert.alert(
+        'Không ghi âm được',
+        caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+      );
+    }
+  }, [isWavRecording, startWavRecording, stopWavRecording]);
 
   /**
    * Open the gallery picker and stash the first selected image in
@@ -322,7 +387,15 @@ function ReelCommentsSheetBase({
       width: asset.width,
       height: asset.height,
     });
+    setPendingAudio(null);
   }, []);
+
+  useEffect(() => {
+    if (replyingTo) {
+      cancelWavRecording().catch(() => undefined);
+      setPendingAudio(null);
+    }
+  }, [cancelWavRecording, replyingTo]);
 
   /**
    * Open the gallery picker or camera and stash the selected image in
@@ -606,6 +679,55 @@ function ReelCommentsSheetBase({
             </View>
           ) : null}
 
+          {pendingAudio ? (
+            <View style={styles.pendingAudioRow}>
+              <View style={styles.pendingAudioBody}>
+                <Text style={styles.pendingAudioName} numberOfLines={1}>
+                  {pendingAudio.name}
+                </Text>
+                <AudioPlayer uri={pendingAudio.uri} compact />
+              </View>
+              <TouchableOpacity
+                onPress={() => setPendingAudio(null)}
+                style={styles.pendingAudioRemove}
+              >
+                <X size={14} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {isWavRecording ? (
+            <View style={styles.recordingRow}>
+              <View style={styles.recordingDot} />
+              <View style={styles.recordingBody}>
+                <Text style={styles.recordingText}>
+                  Đang ghi âm {formatAudioDuration(wavDurationMs)}
+                </Text>
+                <AudioWaveform
+                  animated
+                  color="#dc2626"
+                  inactiveColor="#fecaca"
+                  height={18}
+                  barCount={30}
+                />
+              </View>
+              <TouchableOpacity
+                onPress={() => cancelWavRecording()}
+                style={styles.recordingCancel}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <X size={16} color="#dc2626" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleToggleAudioRecording}
+                style={styles.recordingStop}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Square size={13} color="#fff" fill="#fff" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <View style={styles.inputBar}>
             {/* Image picker button — leftmost in the row, mirrors FB layout */}
             <TouchableOpacity
@@ -616,6 +738,34 @@ function ReelCommentsSheetBase({
             >
               <ImagePlus size={22} color="#0866ff" />
             </TouchableOpacity>
+            {!replyingTo ? (
+              <>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handlePickAudio}
+                  disabled={isWavRecording}
+                  style={styles.imageButton}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                >
+                  <Music2
+                    size={21}
+                    color={isWavRecording ? '#cbd5e1' : '#ec4899'}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handleToggleAudioRecording}
+                  style={styles.imageButton}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                >
+                  {isWavRecording ? (
+                    <Square size={17} color="#dc2626" fill="#dc2626" />
+                  ) : (
+                    <Mic size={21} color="#dc2626" />
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : null}
             <TextInput
               value={draft}
               onChangeText={setDraft}
@@ -628,16 +778,21 @@ function ReelCommentsSheetBase({
               style={styles.input}
               multiline
               maxLength={500}
+              editable={!isWavRecording}
             />
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleSubmit}
               // Enable submit if EITHER text or an image is provided —
               // matches the backend's "text OR image required" rule.
-              disabled={!draft.trim() && !pendingImage}
+              disabled={
+                isWavRecording ||
+                (!draft.trim() && !pendingImage && !pendingAudio)
+              }
               style={[
                 styles.sendButton,
-                !draft.trim() && !pendingImage
+                isWavRecording ||
+                (!draft.trim() && !pendingImage && !pendingAudio)
                   ? styles.sendButtonDisabled
                   : null,
               ]}
@@ -990,6 +1145,15 @@ function CommentRow({
                 ) : null}
               </Pressable>
             ) : null}
+            {comment.pendingAudioUri || comment.audioUrl ? (
+              <View style={styles.commentAudioWrap}>
+                <AudioPlayer
+                  uri={comment.pendingAudioUri ?? comment.audioUrl!}
+                  pending={Boolean(isSending && comment.pendingAudioUri)}
+                  compact
+                />
+              </View>
+            ) : null}
           </View>
 
           {/* Reaction count overlay — sits half-outside the bottom-right
@@ -1278,6 +1442,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  commentAudioWrap: {
+    marginTop: 6,
+    minWidth: 210,
+  },
 
   // Reaction count badge — anchored to the bottom-right of the bubble
   reactionBadge: {
@@ -1479,8 +1647,78 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  pendingAudioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+    backgroundColor: '#fff',
+  },
+  pendingAudioBody: {
+    flex: 1,
+  },
+  pendingAudioName: {
+    marginBottom: 5,
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pendingAudioRemove: {
+    width: 30,
+    height: 30,
+    marginLeft: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 15,
+    backgroundColor: '#f1f5f9',
+  },
 
   // ── Image viewer modal ──────────────────────────────────────────────
+  recordingRow: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#fef2f2',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#fecaca',
+  },
+  recordingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
+    backgroundColor: '#ef4444',
+  },
+  recordingText: {
+    color: '#b91c1c',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  recordingBody: {
+    flex: 1,
+    height: 39,
+  },
+  recordingCancel: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: '#fff',
+  },
+  recordingStop: {
+    width: 32,
+    height: 32,
+    marginLeft: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: '#dc2626',
+  },
   viewerBackdrop: {
     flex: 1,
     backgroundColor: '#000',

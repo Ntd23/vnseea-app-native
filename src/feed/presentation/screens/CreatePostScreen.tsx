@@ -39,7 +39,9 @@ import {
   Hash,
   ImagePlus,
   Lock,
+  Music2,
   Smile,
+  Square,
   Users,
   X,
 } from 'lucide-react-native';
@@ -47,6 +49,13 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useCreatePostViewModel } from '../../application/view-models/useCreatePostViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
+import {
+  formatAudioDuration,
+  pickSupportedAudioFile,
+} from '../../../shared-kernel/application/utils/audioFiles';
+import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/useWavAudioRecorder';
+import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
+import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 import type {
   PostFeeling,
   PostPhotoAttachment,
@@ -383,6 +392,7 @@ function CreatePostScreen() {
       postCreatedEvents.emit(post);
     },
   });
+  const wavRecorder = useWavAudioRecorder();
 
   // Display name + avatar of the viewer, pulled from MMKV cache. We
   // intentionally do NOT show a loading state here — falling back to
@@ -467,6 +477,59 @@ function CreatePostScreen() {
     }
   }, [vm]);
 
+  const handlePickAudio = useCallback(async () => {
+    try {
+      const audio = await pickSupportedAudioFile();
+      if (audio) vm.setAudio(audio);
+    } catch (caught) {
+      Alert.alert(
+        'Không chọn được âm thanh',
+        caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+      );
+    }
+  }, [vm]);
+
+  const handleToggleAudioRecording = useCallback(async () => {
+    try {
+      if (wavRecorder.isRecording) {
+        const audio = await wavRecorder.stopRecording();
+        if (audio) vm.setAudio(audio);
+        return;
+      }
+
+      vm.setAudio(undefined);
+      await wavRecorder.startRecording();
+    } catch (caught) {
+      Alert.alert(
+        'Không ghi âm được',
+        caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+      );
+    }
+  }, [vm, wavRecorder]);
+
+  const handleAudioAction = useCallback(() => {
+    if (wavRecorder.isRecording) {
+      handleToggleAudioRecording().catch(() => undefined);
+      return;
+    }
+
+    Alert.alert('Thêm âm thanh', 'Bạn muốn thêm âm thanh theo cách nào?', [
+      {
+        text: 'Ghi âm trực tiếp',
+        onPress: () => {
+          handleToggleAudioRecording().catch(() => undefined);
+        },
+      },
+      {
+        text: 'Chọn tệp MP3/WAV',
+        onPress: () => {
+          handlePickAudio().catch(() => undefined);
+        },
+      },
+      { text: 'Hủy', style: 'cancel' },
+    ]);
+  }, [handlePickAudio, handleToggleAudioRecording, wavRecorder.isRecording]);
+
   const handleSubmit = useCallback(async () => {
     const result = await vm.submit();
     if (result) {
@@ -478,7 +541,9 @@ function CreatePostScreen() {
 
   const handleDiscard = useCallback(() => {
     const hasContent =
-      vm.draft.text.trim().length > 0 || vm.draft.photos.length > 0;
+      vm.draft.text.trim().length > 0 ||
+      vm.draft.photos.length > 0 ||
+      Boolean(vm.draft.audio);
     if (!hasContent) {
       navigation.goBack();
       return;
@@ -527,6 +592,18 @@ function CreatePostScreen() {
         >
           <Smile size={22} color="#F59E0B" />
           <Text className="ml-2 text-title-secondary">Cảm xúc</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handleAudioAction}
+          activeOpacity={0.7}
+          className="flex-1 flex-row items-center justify-center py-2"
+        >
+          {wavRecorder.isRecording ? (
+            <Square size={20} color="#DC2626" fill="#DC2626" />
+          ) : (
+            <Music2 size={22} color="#EC4899" />
+          )}
+          <Text className="ml-2 text-title-secondary">Âm thanh</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => setPrivacySheetVisible(true)}
@@ -661,6 +738,56 @@ function CreatePostScreen() {
         <View className="px-3">
           <PhotoGrid photos={vm.draft.photos} onRemove={vm.removePhoto} />
         </View>
+
+        {wavRecorder.isRecording ? (
+          <View className="mx-4 mt-3 flex-row items-center rounded-xl border border-red-100 bg-red-50 p-3">
+            <View className="mr-3 h-3 w-3 rounded-full bg-red-500" />
+            <View className="flex-1">
+              <Text className="text-sm font-semibold text-red-700">
+                Đang ghi âm {formatAudioDuration(wavRecorder.durationMs)}
+              </Text>
+              <View className="mt-2 h-5">
+                <AudioWaveform
+                  animated
+                  color="#DC2626"
+                  inactiveColor="#FECACA"
+                  height={18}
+                  barCount={34}
+                />
+              </View>
+              <Text className="mt-1 text-xs text-red-500">
+                Nhấn nút dừng để dùng bản ghi này.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => wavRecorder.cancelRecording()}
+              className="h-9 w-9 items-center justify-center rounded-full bg-white"
+            >
+              <X size={17} color="#DC2626" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => handleToggleAudioRecording()}
+              className="ml-2 h-9 w-9 items-center justify-center rounded-full bg-red-600"
+            >
+              <Square size={14} color="#FFFFFF" fill="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        ) : vm.draft.audio ? (
+          <View className="mx-4 mt-3 flex-row items-center rounded-xl border border-blue-100 bg-blue-50 p-3">
+            <View className="flex-1">
+              <Text className="mb-2 text-sm font-semibold text-slate-700" numberOfLines={1}>
+                {vm.draft.audio.name}
+              </Text>
+              <AudioPlayer uri={vm.draft.audio.uri} compact />
+            </View>
+            <TouchableOpacity
+              onPress={() => vm.setAudio(undefined)}
+              className="ml-2 h-8 w-8 items-center justify-center rounded-full bg-white"
+            >
+              <X size={16} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* ── Error banner ───────────────────────────────────────── */}
         {vm.error ? (

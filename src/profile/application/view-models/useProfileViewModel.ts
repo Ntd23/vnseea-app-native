@@ -5,8 +5,16 @@ import type {
   ProfileLoadInput,
 } from '../../domain/types/profile.types';
 import { createProfileRepository } from '../../infrastructure/repositories/ApiProfileRepository';
+import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 
 const repository = createProfileRepository();
+
+// Avatar upload response type
+type UpdateAvatarResponse = {
+  api_status: number | string;
+  message?: string;
+};
 
 function toErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
@@ -37,6 +45,52 @@ export function useProfileViewModel() {
     }
   }, []);
 
+  const toggleFollow = useCallback(async (userId: string) => {
+    const nextState = await repository.toggleFollow(userId);
+
+    setProfileData(prev => {
+      if (!prev?.profile || String(prev.profile.id) !== String(userId)) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        profile: {
+          ...prev.profile,
+          followingState: nextState,
+          followedByCurrentUser: nextState === 'following',
+          canFollow: true,
+        },
+      };
+    });
+
+    return nextState;
+  }, []);
+
+  const pokeUser = useCallback(async (userId: string) => {
+    await repository.pokeUser(userId);
+  }, []);
+
+  const updateAvatar = useCallback(async (avatarUri: string): Promise<boolean> => {
+    try {
+      const response = await apiBridge.multipart<UpdateAvatarResponse>(
+        apiRoutes.user.update,
+        {
+          avatar: {
+            uri: avatarUri,
+            name: `avatar_${Date.now()}.jpg`,
+            type: 'image/jpeg',
+          },
+        }
+      );
+
+      return response.api_status === 200;
+    } catch (error) {
+      console.error('[useProfileViewModel] updateAvatar error:', error);
+      return false;
+    }
+  }, []);
+
   return {
     profileData,
     profile: profileData?.profile,
@@ -45,5 +99,8 @@ export function useProfileViewModel() {
     isLoading,
     error,
     loadProfile,
+    toggleFollow,
+    pokeUser,
+    updateAvatar,
   };
 }
