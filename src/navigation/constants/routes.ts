@@ -41,6 +41,7 @@ export const ROUTES = {
   JOB_DETAIL: 'JobDetail',
   SETTINGS: 'Settings',
   SETTINGS_MY_INFO: 'SettingsMyInfo',
+  EDIT_PROFILE: 'EditProfile',
   SETTINGS_MESSAGES: 'SettingsMessages',
   EARNINGS: 'Earnings',
   AFFILIATES: 'Affiliates',

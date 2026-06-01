@@ -8,5 +8,6 @@ export { default as SettingsScreen } from './presentation/screens/SettingsScreen
 export { default as AdvertisingScreen } from './presentation/screens/AdvertisingScreen';
 export { default as SettingsMessagesScreen } from './presentation/screens/SettingsMessagesScreen';
 export { default as MyInfoScreen } from './presentation/screens/MyInfoScreen';
+export { default as EditProfileScreen } from './presentation/screens/EditProfileScreen';
 // Re-export CreateAdScreen from advertising module
 export { default as CreateAdScreen } from '../advertising/presentation/screens/CreateAdScreen';

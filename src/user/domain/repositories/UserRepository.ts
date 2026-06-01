@@ -14,6 +14,7 @@ export interface UserRepository {
   getUserProfile(input?: GetUserProfileInput): Promise<UserProfileResult>;
   getSuggestions(input?: UserSuggestionsInput): Promise<UserProfile[]>;
   getNearbyUsers(input?: NearbyUsersInput): Promise<UserProfile[]>;
+  getFriends(input: FriendsInput): Promise<FriendsResult>;
   updateCurrentUser(
     input: UpdateCurrentUserInput,
   ): Promise<UpdateCurrentUserResult>;

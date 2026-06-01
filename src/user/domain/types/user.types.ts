@@ -107,6 +107,19 @@ export type NearbyUsersInput = {
   lng?: string | number;
 };
 
+export type FriendsInput = {
+  userId: string;
+  type?: ('following' | 'followers')[];
+  limit?: number;
+  followingOffset?: number;
+  followersOffset?: number;
+};
+
+export type FriendsResult = {
+  following: UserProfile[];
+  followers: UserProfile[];
+};
+
 export type UpdateCurrentUserInput = Partial<{
   username: string;
   email: string;

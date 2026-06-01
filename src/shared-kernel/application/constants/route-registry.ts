@@ -17,6 +17,7 @@ export const apiRoutes = {
     update: 'update-user-data',
     suggestions: 'get-user-suggestions',
     nearby: 'get-nearby-users',
+    friends: 'get-friends',  // GET following/followers
   },
   reels: {
     create: 'new_post',
@@ -91,6 +92,11 @@ export const apiRoutes = {
   photos: {
     getUserAlbums: 'get-user-albums',
     create: 'albums',  // POST with type=create
+  },
+  notifications: {
+    list: 'get_notifications',  // Phone API
+    delete: 'notifications',      // v2 API - type=delete
+    markSeen: 'notifications',     // v2 API - type=mark_seen
   },
 } as const;
 

@@ -656,9 +656,15 @@ function rawPostKey(raw: Record<string, unknown>): string {
   return readString(raw, 'id', 'post_id') || JSON.stringify(raw).slice(0, 80);
 }
 
-function mapProfilePost(raw: Record<string, unknown>): FeedTextPost | FeedVideoPost {
+function mapProfilePost(
+  raw: Record<string, unknown>,
+): FeedTextPost | FeedVideoPost | FeedPollPost {
   if (looksLikeVideo(raw)) {
     return mapVideoPost(raw);
+  }
+
+  if (looksLikePoll(raw)) {
+    return mapPollPost(raw);
   }
 
   if (looksLikeTextOrPhoto(raw)) {
@@ -674,6 +680,22 @@ function mapProfilePost(raw: Record<string, unknown>): FeedTextPost | FeedVideoP
       ...sharedVideo,
       id: base.id,
       caption: base.caption ?? sharedVideo.caption ?? 'Đã chia sẻ một video',
+      postedAt: base.postedAt,
+      likeCount: base.likeCount,
+      commentCount: base.commentCount,
+      isLiked: base.isLiked,
+      myReaction: base.myReaction,
+      topReactions: base.topReactions,
+      publisher: base.publisher,
+    };
+  }
+
+  if (shared && looksLikePoll(shared)) {
+    const sharedPoll = mapPollPost(shared);
+    return {
+      ...sharedPoll,
+      id: base.id,
+      caption: base.caption ?? sharedPoll.caption ?? 'Đã chia sẻ một cuộc thăm dò',
       postedAt: base.postedAt,
       likeCount: base.likeCount,
       commentCount: base.commentCount,
@@ -1197,7 +1219,7 @@ export function createFeedRepository(): FeedRepository {
       return { reaction };
     },
 
-    async getUserPosts(userId, limit = 20) {
+    async getUserPosts(userId, limit = 20, afterPostId) {
       try {
         console.log('[ApiFeedRepository] getUserPosts called for userId:', userId);
         const response = await backendApi.post<{
@@ -1207,23 +1229,37 @@ export function createFeedRepository(): FeedRepository {
           type: 'get_user_posts',
           id: userId,
           limit,
+          ...(afterPostId ? { after_post_id: afterPostId } : {}),
         });
 
         console.log('[ApiFeedRepository] getUserPosts API response status:', response?.api_status);
         const ownRaw = response.data ?? [];
         console.log('[ApiFeedRepository] getUserPosts raw posts count:', ownRaw.length);
-
-        const publicVideosResponse = await backendApi.post<{
-          api_status: number | string;
-          data?: Array<Record<string, unknown>>;
-        }>(apiRoutes.feed.posts, {
-          type: 'get_random_videos',
-          limit: 50,
-        }).catch(() => ({ data: [] as Array<Record<string, unknown>> }));
-
-        const publicVideoRaw = (publicVideosResponse.data ?? []).filter(
-          item => String(readPostOwnerId(item)) === String(userId),
+        const oldestOwnPostId = Math.min(
+          ...ownRaw
+            .map(item => Number(readString(item, 'id', 'post_id')))
+            .filter(id => Number.isFinite(id) && id > 0),
         );
+
+        const publicVideoRaw = afterPostId
+          ? []
+          : (
+            await backendApi.post<{
+              api_status: number | string;
+              data?: Array<Record<string, unknown>>;
+            }>(apiRoutes.feed.posts, {
+              type: 'get_random_videos',
+              limit: 50,
+            }).catch(() => ({ data: [] as Array<Record<string, unknown>> }))
+          ).data?.filter(
+            item => {
+              const postId = Number(readString(item, 'id', 'post_id'));
+              return (
+                String(readPostOwnerId(item)) === String(userId) &&
+                (!Number.isFinite(oldestOwnPostId) || postId >= oldestOwnPostId)
+              );
+            },
+          ) ?? [];
 
         const rawMap = new Map<string, Record<string, unknown>>();
         for (const item of [...ownRaw, ...publicVideoRaw]) {
