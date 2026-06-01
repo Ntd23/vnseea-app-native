@@ -1,0 +1,7 @@
+interface:
+  display_name: "Frontend UX Flow"
+  short_description: "Review and repair redirects, auth flow, and loading or error behavior in the Nuxt frontend"
+  default_prompt: "Use $frontend-ux-flow to audit or fix frontend route flow, redirect logic, and loading or error states in this project."
+
+policy:
+  allow_implicit_invocation: true

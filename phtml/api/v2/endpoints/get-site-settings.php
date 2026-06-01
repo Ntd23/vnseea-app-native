@@ -1,4 +1,5 @@
 <?php
+// English description: Returns encrypted mobile settings plus public branding config for frontend clients.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -13,6 +14,19 @@ foreach ($non_allowed_config as $key => $value) {
     unset($get_config[$value]);
 }
 $get_config['logo_url'] = $config['theme_url'] . '/img/logo.' . $get_config['logo_extension'];
+$theme_url = $config['theme_url'];
+$logo_extension = !empty($get_config['logo_extension']) ? $get_config['logo_extension'] : 'png';
+$favicon_extension = !empty($get_config['favicon_extension']) ? $get_config['favicon_extension'] : 'png';
+$public_config = array(
+    'siteName' => !empty($get_config['siteName']) ? $get_config['siteName'] : 'VNSEEA',
+    'siteTitle' => !empty($get_config['siteTitle']) ? $get_config['siteTitle'] : (!empty($get_config['siteName']) ? $get_config['siteName'] : 'VNSEEA'),
+    'siteDesc' => !empty($get_config['siteDesc']) ? $get_config['siteDesc'] : '',
+    'theme' => !empty($get_config['theme']) ? $get_config['theme'] : (!empty($config['theme']) ? $config['theme'] : ''),
+    'theme_url' => $theme_url,
+    'logo_url' => $theme_url . '/img/logo.' . $logo_extension,
+    'night_logo_url' => $theme_url . '/img/night-logo.' . $logo_extension,
+    'favicon_url' => $theme_url . '/img/icon.' . $favicon_extension
+);
 $get_config['page_categories'] = $wo['page_categories'];
 $get_config['group_categories'] = $wo['group_categories'];
 $get_config['blog_categories'] = $wo['blog_categories'];
@@ -51,5 +65,6 @@ $get_config = openssl_encrypt($get_config, "AES-128-ECB", $siteEncryptKey);
 
 $response_data      = array(
     'api_status' => 200,
-    'config' => $get_config
+    'config' => $get_config,
+    'public_config' => $public_config
 );

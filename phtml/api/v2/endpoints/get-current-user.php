@@ -67,6 +67,58 @@ if (empty($current_user_id)) {
 } else {
     $current_user = Wo_UserData($current_user_id);
     // Keep bootstrap lightweight; profile detail refresh can fail under strict SQL mode and break session hash creation.
+    $ads_currency = !empty($wo['config']['ads_currency']) ? (string) $wo['config']['ads_currency'] : (!empty($wo['config']['currency']) ? (string) $wo['config']['currency'] : 'USD');
+    $currency_symbol = function_exists('Wo_GetCurrency') ? Wo_GetCurrency($ads_currency) : '$';
+    $exchange_rates = array();
+
+    if (!empty($wo['config']['exchange'])) {
+        if (is_array($wo['config']['exchange'])) {
+            $exchange_rates = $wo['config']['exchange'];
+        } else {
+            $decoded_exchange_rates = json_decode(html_entity_decode($wo['config']['exchange']), true);
+            if (is_array($decoded_exchange_rates)) {
+                $exchange_rates = $decoded_exchange_rates;
+            }
+        }
+    }
+
+    $exchange_needs_refresh = empty($exchange_rates)
+        || empty($exchange_rates['VND'])
+        || (!empty($wo['config']['exchange_update']) && (int) $wo['config']['exchange_update'] < time());
+
+    if ($exchange_needs_refresh && !empty($wo['config']['exchangerate_key']) && function_exists('fetchDataFromURL')) {
+        $exchange_base_currency = !empty($wo['config']['currency']) ? (string) $wo['config']['currency'] : $ads_currency;
+        $request = fetchDataFromURL("https://v6.exchangerate-api.com/v6/" . $wo['config']['exchangerate_key'] . "/latest/" . $exchange_base_currency);
+        $exchange = json_decode($request, true);
+
+        if (!empty($exchange) && !empty($exchange['result']) && $exchange['result'] === 'success' && !empty($exchange['conversion_rates']) && is_array($exchange['conversion_rates'])) {
+            $exchange_rates = $exchange['conversion_rates'];
+            if (function_exists('Wo_SaveConfig')) {
+                Wo_SaveConfig('exchange', json_encode($exchange_rates));
+                Wo_SaveConfig('exchange_update', (time() + (60 * 60 * 12)));
+            }
+        }
+    }
+
+    $vnd_exchange_rate = 0;
+    if (!empty($exchange_rates['VND']) && is_numeric($exchange_rates['VND']) && (float) $exchange_rates['VND'] > 1000) {
+        $vnd_exchange_rate = (float) $exchange_rates['VND'];
+    } elseif (!empty($exchange_rates['USD']) && is_numeric($exchange_rates['USD']) && (float) $exchange_rates['USD'] > 0 && (float) $exchange_rates['USD'] < 1) {
+        $vnd_exchange_rate = 1 / (float) $exchange_rates['USD'];
+    } elseif ($ads_currency === 'VND' && !empty($wo['config']['usd_to_vnd_rate']) && is_numeric($wo['config']['usd_to_vnd_rate'])) {
+        $vnd_exchange_rate = (float) $wo['config']['usd_to_vnd_rate'];
+    } elseif ($ads_currency === 'VND') {
+        $vnd_exchange_rate = 25000;
+    }
+
+    $usd_to_wallet_rate = 1;
+    if ($ads_currency === 'VND') {
+        $usd_to_wallet_rate = $vnd_exchange_rate;
+    } elseif ($ads_currency === 'USD') {
+        $usd_to_wallet_rate = 1;
+    } elseif ($ads_currency !== 'USD' && !empty($exchange_rates[$ads_currency]) && is_numeric($exchange_rates[$ads_currency])) {
+        $usd_to_wallet_rate = (float) $exchange_rates[$ads_currency];
+    }
 
     $notification_settings = array();
     if (!empty($current_user['notification_settings'])) {
@@ -75,6 +127,11 @@ if (empty($current_user_id)) {
             $notification_settings = $decoded_notification_settings;
         }
     }
+
+    $current_pro_type = isset($current_user['pro_type']) ? (string) $current_user['pro_type'] : '';
+    $current_pro_package = (!empty($current_pro_type) && !empty($wo['pro_packages'][$current_pro_type]) && is_array($wo['pro_packages'][$current_pro_type]))
+        ? $wo['pro_packages'][$current_pro_type]
+        : array();
 
     $response_data = array(
         'api_status' => 200,
@@ -142,10 +199,25 @@ if (empty($current_user_id)) {
             'css_file' => !empty($current_user['css_file']) ? $current_user['css_file'] : '',
             'verified' => isset($current_user['verified']) ? (int) $current_user['verified'] : 0,
             'active' => isset($current_user['active']) ? (int) $current_user['active'] : 0,
-            'pro_type' => isset($current_user['pro_type']) ? (string) $current_user['pro_type'] : '',
+            'pro_type' => $current_pro_type,
             'is_pro' => isset($current_user['is_pro']) ? (int) $current_user['is_pro'] : 0,
+            'can_boost_posts' => !empty($current_pro_package['posts_promotion']) ? (int) $current_pro_package['posts_promotion'] : 0,
+            'can_boost_pages' => !empty($current_pro_package['pages_promotion']) ? (int) $current_pro_package['pages_promotion'] : 0,
             'wallet' => $current_user['wallet'] ?? null,
             'points' => $current_user['points'] ?? null,
+            'points_config' => array(
+                'point_allow_withdrawal' => isset($wo['config']['point_allow_withdrawal']) ? (int) $wo['config']['point_allow_withdrawal'] : 0,
+                'dollar_to_point_cost' => isset($wo['config']['dollar_to_point_cost']) ? (float) $wo['config']['dollar_to_point_cost'] : 0,
+                'ads_currency' => $ads_currency,
+                'currency_symbol' => $currency_symbol,
+                'point_base_currency' => 'USD',
+                'wallet_currency' => $ads_currency,
+                'wallet_exchange_rate' => $usd_to_wallet_rate,
+                'display_currency' => 'VND',
+                'display_currency_symbol' => function_exists('Wo_GetCurrency') ? Wo_GetCurrency('VND') : '₫',
+                'display_exchange_rate' => $vnd_exchange_rate,
+                'exchange_update' => isset($wo['config']['exchange_update']) ? (int) $wo['config']['exchange_update'] : 0,
+            ),
             'session_hash' => function_exists('Wo_CreateSession') ? Wo_CreateSession() : '',
         ),
     );

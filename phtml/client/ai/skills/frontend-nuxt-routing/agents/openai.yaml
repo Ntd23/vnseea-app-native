@@ -1,0 +1,7 @@
+interface:
+  display_name: "Frontend Nuxt Routing"
+  short_description: "Create and audit file-based routes, route wrappers, registries, and middleware in the Nuxt frontend"
+  default_prompt: "Use $frontend-nuxt-routing to add or refactor frontend routes, route wrappers, registries, and redirect middleware in this project."
+
+policy:
+  allow_implicit_invocation: true

@@ -6409,6 +6409,33 @@ function Wo_GetGroupCallParticipant($call_id = 0, $user_id = 0) {
     $row['updated_at'] = intval($row['updated_at']);
     return $row;
 }
+function Wo_GetPendingGroupCallInvite($user_id = 0, $expected_call_id = 0) {
+    global $sqlConnect;
+    $user_id = intval($user_id);
+    $expected_call_id = intval($expected_call_id);
+    if ($user_id <= 0 || !Wo_EnsureGroupCallTables()) {
+        return false;
+    }
+    $call_filter = ($expected_call_id > 0) ? " AND p.`call_id` = '{$expected_call_id}'" : "";
+    $query = mysqli_query($sqlConnect, "SELECT c.* FROM " . T_GROUP_CALL_PARTICIPANTS . " p INNER JOIN " . T_GROUP_CALLS . " c ON c.`id` = p.`call_id` WHERE p.`user_id` = '{$user_id}' AND p.`invite_status` = 'pending' AND c.`status` = 'active' {$call_filter} ORDER BY p.`id` DESC LIMIT 1");
+    if (empty($query) || mysqli_num_rows($query) == 0) {
+        return false;
+    }
+    $row = mysqli_fetch_assoc($query);
+    if (empty($row['id'])) {
+        return false;
+    }
+    $group_call = Wo_GetGroupCallById($row['id']);
+    if (empty($group_call)) {
+        return false;
+    }
+    $group = Wo_GroupTabData($group_call['group_id'], false);
+    $caller = Wo_UserData($group_call['created_by']);
+    $group_call['group_name'] = !empty($group['group_name']) ? $group['group_name'] : '';
+    $group_call['group_avatar'] = !empty($group['avatar']) ? $group['avatar'] : '';
+    $group_call['caller_data'] = !empty($caller) ? $caller : array();
+    return $group_call;
+}
 function Wo_SetGroupCallParticipantState($call_id = 0, $user_id = 0, $invite_status = 'pending', $options = array()) {
     global $sqlConnect;
     $call_id = intval($call_id);
@@ -6577,6 +6604,18 @@ function Wo_CreateNewGroupCall($group_id = 0, $call_type = 'video', $created_by 
         'left_at' => 0,
         'notified_at' => $now
     ));
+    foreach (Wo_GetGroupChatCallMemberIds($group_id) as $member_id) {
+        $member_id = intval($member_id);
+        if ($member_id <= 0 || $member_id === $created_by) {
+            continue;
+        }
+        Wo_SetGroupCallParticipantState($call_id, $member_id, 'pending', array(
+            'invited_by' => $created_by,
+            'joined_at' => 0,
+            'left_at' => 0,
+            'notified_at' => $now
+        ));
+    }
     $group_call = Wo_GetGroupCallById($call_id);
     if (!empty($group_call)) {
         Wo_RegisterGroupCallMessage($group_call, 'started', array(
@@ -8230,14 +8269,18 @@ function Wo_GetPokeById($id) {
     return $data;
 }
 function Wo_GetAllColors() {
-    global $sqlConnect, $wo, $db;
-    $data      = array();
-    $query_one = $db->get(T_COLORS);
-    if ($query_one) {
-        foreach ($query_one as $key => $fetched_data) {
-            $data["" . $fetched_data->id . ""] = $fetched_data;
+    global $sqlConnect, $wo;
+
+    $data = array();
+
+    $query_one = mysqli_query($sqlConnect, "SELECT * FROM " . T_COLORS);
+
+    if ($query_one && mysqli_num_rows($query_one) > 0) {
+        while ($fetched_data = mysqli_fetch_assoc($query_one)) {
+            $data["" . $fetched_data['id'] . ""] = (object) $fetched_data;
         }
     }
+
     return $data;
 }
 function Wo_GetMemoriesPosts($user_id) {

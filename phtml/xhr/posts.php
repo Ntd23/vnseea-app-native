@@ -1646,7 +1646,7 @@ if ($f == 'posts') {
             }
             $comment_image = '';
             if (!empty($_POST['comment_image'])) {
-                if (isset($_SESSION['file']) && $_SESSION['file'] == $_POST['comment_image']) {
+                if (!empty($_SERVER['HTTP_X_NUXT_BRIDGE']) || (isset($_SESSION['file']) && $_SESSION['file'] == $_POST['comment_image'])) {
                     $comment_image = $_POST['comment_image'];
                     unset($_SESSION['file']);
                 }
@@ -1741,7 +1741,7 @@ if ($f == 'posts') {
             }
             $comment_image = '';
             if (!empty($_POST['comment_image'])) {
-                if (isset($_SESSION['file']) && $_SESSION['file'] == $_POST['comment_image']) {
+                if (!empty($_SERVER['HTTP_X_NUXT_BRIDGE']) || (isset($_SESSION['file']) && $_SESSION['file'] == $_POST['comment_image'])) {
                     $comment_image = $_POST['comment_image'];
                     unset($_SESSION['file']);
                 }

@@ -56,6 +56,11 @@ if (in_array('all',$data_type) || in_array('pages',$data_type)) {
 }
 
 
+if (empty($wo['user']['timezone'])) {
+    $wo['user']['timezone'] = 'UTC';
+}
+$timezone = new DateTimeZone($wo['user']['timezone']);
+
 $array = array();
 if (!empty($messages)) {
     foreach ($messages as $value) {

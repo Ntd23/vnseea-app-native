@@ -1,0 +1,7 @@
+interface:
+  display_name: "Frontend UI System"
+  short_description: "Keep Nuxt pages and components aligned with the shared frontend UI system"
+  default_prompt: "Use $frontend-ui-system to update or audit frontend pages and components without drifting from the project's visual system."
+
+policy:
+  allow_implicit_invocation: true

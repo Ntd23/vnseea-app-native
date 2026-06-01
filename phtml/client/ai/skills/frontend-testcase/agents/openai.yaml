@@ -1,0 +1,8 @@
+# English description: Agent-facing metadata for the frontend testcase skill.
+interface:
+  display_name: "Frontend Testcase"
+  short_description: "Create context-level TEST_CASE.md files for Nuxt routes, API flows, UI, UX, and auth behavior"
+  default_prompt: "Use $frontend-testcase to create or update TEST_CASE.md for this bounded context with route, API, UI, UX, and regression coverage."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Frontend SEO Content"
+  short_description: "Audit and apply route-level SEO for the Nuxt frontend without leaking it into child components"
+  default_prompt: "Use $frontend-seo-content to add or review route-level SEO for public frontend pages in this project."
+
+policy:
+  allow_implicit_invocation: true
