@@ -1,0 +1,7 @@
+interface:
+  display_name: "Frontend API Integration"
+  short_description: "Connect frontend contexts to the backend API through the Nuxt bridge and DDD layers"
+  default_prompt: "Use $frontend-api-integration to wire a frontend context to the backend through view-models, repositories, and server/api handlers."
+
+policy:
+  allow_implicit_invocation: true

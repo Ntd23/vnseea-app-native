@@ -1,0 +1,7 @@
+interface:
+  display_name: "Frontend Bounded Context Refactor"
+  short_description: "Refactor frontend runtime into bounded contexts without breaking the Nuxt delivery layer"
+  default_prompt: "Use $frontend-bounded-context-refactor to move frontend runtime into bounded contexts while keeping route wrappers thin and preserving the current Nuxt flow."
+
+policy:
+  allow_implicit_invocation: true

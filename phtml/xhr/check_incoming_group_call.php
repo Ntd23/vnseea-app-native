@@ -11,7 +11,14 @@ if ($f == 'check_incoming_group_call') {
             $data = array(
                 'status' => 200,
                 'call_id' => intval($group_call['id']),
+                'group_id' => intval($group_call['group_id']),
                 'call_type' => $group_call['call_type'],
+                'group_name' => !empty($group_call['group_name']) ? $group_call['group_name'] : '',
+                'group_avatar' => !empty($group_call['group_avatar']) ? $group_call['group_avatar'] : '',
+                'caller_name' => !empty($group_call['caller_data']['name']) ? $group_call['caller_data']['name'] : '',
+                'caller_avatar' => !empty($group_call['caller_data']['avatar']) ? $group_call['caller_data']['avatar'] : '',
+                'participant_count' => intval(!empty($group_call['participant_count']) ? $group_call['participant_count'] : 0),
+                'url' => Wo_BuildGroupCallJoinUrl($group_call['id'], $group_call['call_type']),
                 'html' => Wo_LoadPage($group_call['call_type'] == 'video' ? 'modals/in_group_call' : 'modals/in_group_audio_call')
             );
         }

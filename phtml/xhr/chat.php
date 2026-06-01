@@ -1,4 +1,7 @@
 <?php
+// English description: Handles legacy chat, group chat, participants, and message request actions for the PHP UI and Nuxt bridges.
+// English description: Handles legacy chat ajax actions for participant search, group creation, typing, and chat thread updates.
+
 if ($f == 'chat') {
     if ($s == 'get_group_info') {
         $group_id  = Wo_Secure($_GET['group_id']);
@@ -821,7 +824,9 @@ if ($f == 'chat') {
                 'file' => $_FILES["audio-blob"]["tmp_name"],
                 'name' => $_FILES['audio-blob']['name'],
                 'size' => $_FILES["audio-blob"]["size"],
-                'type' => $_FILES["audio-blob"]["type"]
+                'type' => $_FILES["audio-blob"]["type"],
+                'types' => 'mp3,wav,ogg,m4a,webm',
+                'is_sound' => 1
             );
             $media          = Wo_ShareFile($fileInfo);
             if (!empty($media) && !empty($media['filename'])) {
@@ -997,7 +1002,7 @@ if ($f == 'chat') {
         if (!empty($name)) {
             $user         = (int) $wo['user']['id'];
             $t_followers  = T_FOLLOWERS;
-            $query        = mysqli_query($sqlConnect, "SELECT `user_id` FROM " . T_USERS . " WHERE `user_id` <> {$user} AND `first_name` LIKE '%{$name}%' AND ( `user_id` IN (SELECT `follower_id` FROM $t_followers WHERE `follower_id` <> {$user} AND `active` = '1') OR `user_id` IN (SELECT `following_id` FROM $t_followers WHERE `following_id` <> {$user} AND `active` = '1')) LIMIT 25");
+            $query        = mysqli_query($sqlConnect, "SELECT `user_id` FROM " . T_USERS . " WHERE `user_id` <> {$user} AND (`username` LIKE '%{$name}%' OR `first_name` LIKE '%{$name}%' OR `last_name` LIKE '%{$name}%' OR CONCAT(`first_name`, ' ', `last_name`) LIKE '%{$name}%') AND ( `user_id` IN (SELECT `follower_id` FROM $t_followers WHERE `follower_id` <> {$user} AND `active` = '1') OR `user_id` IN (SELECT `following_id` FROM $t_followers WHERE `following_id` <> {$user} AND `active` = '1')) LIMIT 25");
             if ($query && mysqli_num_rows($query) > 0) {
                 while ($fetched_data = mysqli_fetch_assoc($query)) {
                     $parts[] = Wo_UserData($fetched_data['user_id']);
@@ -1005,12 +1010,26 @@ if ($f == 'chat') {
             }
         }
         $html  = "";
+        $normalized_parts = array();
         if (count($parts) > 0) {
             foreach ($parts as $wo['part']) {
                 $html .= Wo_LoadPage('chat/chat-part-list');
+                $normalized_parts[] = array(
+                    'user_id' => (int) ($wo['part']['user_id'] ?? 0),
+                    'username' => $wo['part']['username'] ?? '',
+                    'name' => $wo['part']['name'] ?? '',
+                    'avatar' => $wo['part']['avatar'] ?? '',
+                    'avatar_full' => $wo['part']['avatar_full'] ?? ($wo['part']['avatar'] ?? ''),
+                    'verified' => (int) ($wo['part']['verified'] ?? 0),
+                    'lastseen' => (int) ($wo['part']['lastseen'] ?? 0),
+                    'lastseen_status' => $wo['part']['lastseen_status'] ?? '',
+                    'lastseen_text' => $wo['part']['lastseen_text'] ?? '',
+                    'showlastseen' => (int) ($wo['part']['showlastseen'] ?? 0)
+                );
             }
             $data['status'] = 200;
             $data['html']   = $html;
+            $data['parts']  = $normalized_parts;
         }
         header("Content-type: application/json");
         echo json_encode($data);
@@ -1026,7 +1045,7 @@ if ($f == 'chat') {
         if (!empty($name)) {
             $user         = (int) $wo['user']['id'];
             $t_followers  = T_FOLLOWERS;
-            $query        = mysqli_query($sqlConnect, "SELECT `user_id` FROM " . T_USERS . " WHERE `user_id` <> {$user} AND `first_name` LIKE '%{$name}%' AND ( `user_id` IN (SELECT `follower_id` FROM $t_followers WHERE `follower_id` <> {$user} AND `active` = '1') OR `user_id` IN (SELECT `following_id` FROM $t_followers WHERE `following_id` <> {$user} AND `active` = '1')) LIMIT 25");
+            $query        = mysqli_query($sqlConnect, "SELECT `user_id` FROM " . T_USERS . " WHERE `user_id` <> {$user} AND (`username` LIKE '%{$name}%' OR `first_name` LIKE '%{$name}%' OR `last_name` LIKE '%{$name}%' OR CONCAT(`first_name`, ' ', `last_name`) LIKE '%{$name}%') AND ( `user_id` IN (SELECT `follower_id` FROM $t_followers WHERE `follower_id` <> {$user} AND `active` = '1') OR `user_id` IN (SELECT `following_id` FROM $t_followers WHERE `following_id` <> {$user} AND `active` = '1')) LIMIT 25");
             if ($query && mysqli_num_rows($query) > 0) {
                 while ($fetched_data = mysqli_fetch_assoc($query)) {
                     $parts[] = Wo_UserData($fetched_data['user_id']);
@@ -1034,13 +1053,23 @@ if ($f == 'chat') {
             }
         }
         $html  = "";
+        $normalized_parts = array();
         if (count($parts) > 0) {
             foreach ($parts as $wo['part']) {
                 $wo['part']['group_id'] = $group;
                 $html .= Wo_LoadPage('chat/add-group-parts');
+                $normalized_parts[] = array(
+                    'user_id' => (int) ($wo['part']['user_id'] ?? 0),
+                    'username' => $wo['part']['username'] ?? '',
+                    'name' => $wo['part']['name'] ?? '',
+                    'avatar' => $wo['part']['avatar'] ?? '',
+                    'lastseen' => $wo['part']['lastseen'] ?? '',
+                    'is_member' => Wo_IsGChatMemeberExists($group, $wo['part']['user_id']) ? 1 : 0,
+                );
             }
             $data['status'] = 200;
             $data['html']   = $html;
+            $data['parts']  = $normalized_parts;
         }
         header("Content-type: application/json");
         echo json_encode($data);

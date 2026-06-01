@@ -1,0 +1,8 @@
+# English description: Agent-facing metadata for the backend API reference skill.
+interface:
+  display_name: "Backend API Reference"
+  short_description: "Map Nuxt contexts to the existing backend API documentation and bridge rules"
+  default_prompt: "Use $backend-api-reference to select backend endpoints and plan Nuxt server/api bridge work for this context."
+
+policy:
+  allow_implicit_invocation: true

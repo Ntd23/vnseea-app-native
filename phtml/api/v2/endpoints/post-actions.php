@@ -163,17 +163,33 @@ if (empty($error_code)) {
 	}  else if ($_POST['action'] == 'reaction') {
 		$reactions_types = array_keys($wo['reactions_types']);
 		$post_id = Wo_Secure($_POST['post_id']);
-		if (Wo_IsReacted($post_id, $wo['user']['user_id']) == true) {
+		$is_reacted = Wo_IsReacted($post_id, $wo['user']['user_id']);
+		
+		$existing_reaction = '';
+		if ($is_reacted) {
+			$existing_reaction_query = mysqli_query($sqlConnect, "SELECT `reaction` FROM " . T_REACTIONS . " WHERE `post_id` = {$post_id} AND `user_id` = " . Wo_Secure($wo['user']['user_id']));
+			if ($existing_reaction_query && mysqli_num_rows($existing_reaction_query) > 0) {
+				$existing_reaction_data = mysqli_fetch_assoc($existing_reaction_query);
+				$existing_reaction = $existing_reaction_data['reaction'];
+			}
+		}
+
+		if ($is_reacted == true) {
 			Wo_DeleteReactions($post_id);
 			$code = 0;
-            $action = 'reaction deleted';
+			$action = 'reaction deleted';
 		}
 
 		if (!empty($_POST['reaction']) && in_array($_POST['reaction'], $reactions_types)) {
 			$reaction = Wo_Secure($_POST['reaction']);
-			Wo_AddReactions($post_id, $reaction);
-			$code = 1;
-            $action = 'reaction Added';
+			if ($existing_reaction != $reaction) {
+				Wo_AddReactions($post_id, $reaction);
+				$code = 1;
+				$action = 'reaction Added';
+			} else {
+				$code = 0;
+				$action = 'reaction deleted';
+			}
 		}
 		elseif (empty($action)){
 			$error_code    = 8;

@@ -31,6 +31,43 @@ if (empty($error_code)) {
 		if (isset($page_data['server_key'])) {
 			unset($page_data['server_key']);
 		}
+		if (isset($page_data['page_place_id'])) {
+			$page_data['place_id'] = $page_data['page_place_id'];
+			unset($page_data['page_place_id']);
+			if (!isset($page['place_id'])) {
+				$page['place_id'] = '';
+			}
+		}
+		if (isset($page_data['placeId'])) {
+			$page_data['place_id'] = $page_data['placeId'];
+			unset($page_data['placeId']);
+			if (!isset($page['place_id'])) {
+				$page['place_id'] = '';
+			}
+		}
+		if (isset($page_data['place_id']) && !isset($page['place_id'])) {
+			$page['place_id'] = '';
+		}
+		if (isset($page_data['page_lat'])) {
+			$page_data['lat'] = $page_data['page_lat'];
+			unset($page_data['page_lat']);
+			if (!isset($page['lat'])) {
+				$page['lat'] = '';
+			}
+		}
+		if (isset($page_data['lat']) && !isset($page['lat'])) {
+			$page['lat'] = '';
+		}
+		if (isset($page_data['page_lng'])) {
+			$page_data['lng'] = $page_data['page_lng'];
+			unset($page_data['page_lng']);
+			if (!isset($page['lng'])) {
+				$page['lng'] = '';
+			}
+		}
+		if (isset($page_data['lng']) && !isset($page['lng'])) {
+			$page['lng'] = '';
+		}
 		if (!empty($page_data['page_name'])) {
 			$is_exist = Wo_IsNameExist($page_data['page_name'], 0);
 		    if (in_array(true, $is_exist) && $page_data['page_name'] != $page['page_name']) {

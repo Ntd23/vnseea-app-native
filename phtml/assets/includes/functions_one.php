@@ -323,7 +323,8 @@ function Wo_CreateLoginSession($user_id = 0)
     $query_two = mysqli_query($sqlConnect, "DELETE FROM " . T_APP_SESSIONS . " WHERE `session_id` = '{$hash}'");
     if ($query_two) {
         $ua = json_encode(getBrowser());
-        $delete_same_session = $db->where('user_id', $user_id)->where('platform_details', $ua)->delete(T_APP_SESSIONS);
+        $ua_safe = mysqli_real_escape_string($sqlConnect, $ua);
+        $delete_same_session = mysqli_query($sqlConnect, "DELETE FROM " . T_APP_SESSIONS . " WHERE `user_id` = '{$user_id}' AND `platform_details` = '{$ua_safe}'");
         $query_three = mysqli_query($sqlConnect, "INSERT INTO " . T_APP_SESSIONS . " (`user_id`, `session_id`, `platform`, `platform_details`, `time`) VALUES('{$user_id}', '{$hash}', 'web', '$ua'," . time() . ")");
         if ($query_three) {
             return $hash;
@@ -753,7 +754,11 @@ function Wo_UserData($user_id, $password = true)
     }
     $fetched_data['API_notification_settings'] = (array)json_decode(html_entity_decode($fetched_data['notification_settings']));
     if ($wo['loggedin']) {
-        $fetched_data['is_notify_stopped'] = $db->where('following_id', $user_id)->where('follower_id', $wo['user']['user_id'])->where('notify', 1)->getValue(T_FOLLOWERS, 'COUNT(*)');
+        $following_id = Wo_Secure($user_id);
+        $follower_id = Wo_Secure($wo['user']['user_id']);
+        $notify_query = mysqli_query($sqlConnect, "SELECT COUNT(*) AS count FROM " . T_FOLLOWERS . " WHERE `following_id` = '{$following_id}' AND `follower_id` = '{$follower_id}' AND `notify` = '1'");
+        $notify_data = $notify_query ? mysqli_fetch_assoc($notify_query) : array('count' => 0);
+        $fetched_data['is_notify_stopped'] = !empty($notify_data['count']) ? (int)$notify_data['count'] : 0;
     }
     $fetched_data['following_data'] = '';
     $fetched_data['followers_data'] = '';
@@ -800,7 +805,16 @@ function Wo_UserData($user_id, $password = true)
     $fetched_data['is_following_me'] = 0;
     $fetched_data['is_following'] = 0;
     if (!empty($wo['user']['id'])) {
-        $is_muted = $db->where('user_id', $wo['user']['id'])->where('story_user_id', $user_id)->getValue(T_MUTE_STORY, 'COUNT(*)');
+        $logged_user_id = Wo_Secure($wo['user']['id']);
+        $story_user_id = Wo_Secure($user_id);
+        $is_muted = 0;
+
+        $mute_query = mysqli_query($sqlConnect, "SELECT COUNT(*) AS count FROM " . T_MUTE_STORY . " WHERE `user_id` = '{$logged_user_id}' AND `story_user_id` = '{$story_user_id}'");
+
+        if ($mute_query) {
+            $mute_data = mysqli_fetch_assoc($mute_query);
+            $is_muted = !empty($mute_data['count']) ? (int) $mute_data['count'] : 0;
+        }
         if ($is_muted > 0) {
             $fetched_data['is_story_muted'] = true;
         }
@@ -809,7 +823,11 @@ function Wo_UserData($user_id, $password = true)
     }
     $fetched_data['is_reported_user'] = 0;
     if ($wo['loggedin']) {
-        $fetched_data['is_reported_user'] = $db->where('user_id', $wo['user']['user_id'])->where('profile_id', $user_id)->getValue(T_REPORTS, 'COUNT(*)');
+        $report_user_id = Wo_Secure($wo['user']['user_id']);
+        $report_profile_id = Wo_Secure($user_id);
+        $report_query = mysqli_query($sqlConnect, "SELECT COUNT(*) AS count FROM " . T_REPORTS . " WHERE `user_id` = '{$report_user_id}' AND `profile_id` = '{$report_profile_id}'");
+        $report_data = $report_query ? mysqli_fetch_assoc($report_query) : array('count' => 0);
+        $fetched_data['is_reported_user'] = !empty($report_data['count']) ? (int)$report_data['count'] : 0;
     }
     $fetched_data['is_open_to_work'] = 0;
     $fetched_data['is_providing_service'] = 0;
@@ -820,17 +838,36 @@ function Wo_UserData($user_id, $password = true)
     if (!empty($_COOKIE['switched_accounts'])) {
         $switched_accounts = json_decode($_COOKIE['switched_accounts'], true);
         foreach ($switched_accounts as $key => $value) {
-            $sessionExist =  $db->where('user_id', $value['user_id'])->where('session_id', $value['session'])->getValue(T_APP_SESSIONS, 'COUNT(*)');
+            $switch_user_id = Wo_Secure($value['user_id']);
+            $switch_session = Wo_Secure($value['session']);
+            $sessionExist = 0;
+
+            $session_query = mysqli_query($sqlConnect, "SELECT COUNT(*) AS count FROM " . T_APP_SESSIONS . " WHERE `user_id` = '{$switch_user_id}' AND `session_id` = '{$switch_session}'");
+
+            if ($session_query) {
+                $session_data = mysqli_fetch_assoc($session_query);
+                $sessionExist = !empty($session_data['count']) ? (int) $session_data['count'] : 0;
+            }
             if ($sessionExist > 0) {
                 $wo['switched_accounts'][] = $value;
             }
         }
     }
     if ($wo['config']['website_mode'] == 'linkedin') {
-        $fetched_data['is_open_to_work'] = $db->where('user_id', $user_id)->where('type', 'find_job')->getValue(T_USER_OPEN_TO, 'COUNT(*)');
-        $fetched_data['open_to_work_data'] = $db->where('user_id', $user_id)->where('type', 'find_job')->getOne(T_USER_OPEN_TO);
-        $fetched_data['is_providing_service'] = $db->where('user_id', $user_id)->where('type', 'service')->getValue(T_USER_OPEN_TO, 'COUNT(*)');
-        $fetched_data['providing_service'] = $db->where('user_id', $user_id)->where('type', 'service')->getOne(T_USER_OPEN_TO);
+        $open_user_id = Wo_Secure($user_id);
+
+        $open_to_work_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_OPEN_TO . " WHERE `user_id` = '{$open_user_id}' AND `type` = 'find_job' LIMIT 1");
+        $open_to_work_row = $open_to_work_query ? mysqli_fetch_object($open_to_work_query) : null;
+
+        $service_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_OPEN_TO . " WHERE `user_id` = '{$open_user_id}' AND `type` = 'service' LIMIT 1");
+        $service_row = $service_query ? mysqli_fetch_object($service_query) : null;
+
+        $fetched_data['open_to_work_data'] = !empty($open_to_work_row) ? $open_to_work_row : '';
+        $fetched_data['is_open_to_work'] = !empty($open_to_work_row) ? 1 : 0;
+
+        $fetched_data['providing_service'] = !empty($service_row) ? $service_row : '';
+        $fetched_data['is_providing_service'] = !empty($service_row) ? 1 : 0;
+
         if (!empty($fetched_data['languages']) && !empty($wo['lang'])) {
             $pieces = explode(",", $fetched_data['languages']);
             if (!empty($pieces)) {
@@ -3018,8 +3055,40 @@ function Wo_GetFollowNotifyUsers($user_id = 0)
 
 function Wo_PublishRealtimeNotification($recipient_id, $notification_id = 0, $kind = 'notification')
 {
-    $internal_url = trim(getenv('REALTIME_INTERNAL_URL'));
-    $secret = trim(getenv('REALTIME_SECRET'));
+    static $realtime_config = null;
+    if ($realtime_config === null) {
+        $realtime_config = array(
+            'internal_url' => trim((string) getenv('REALTIME_INTERNAL_URL')),
+            'public_url' => trim((string) getenv('NUXT_PUBLIC_REALTIME_URL')),
+            'secret' => trim((string) getenv('REALTIME_SECRET'))
+        );
+        $env_path = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'client' . DIRECTORY_SEPARATOR . '.env';
+        if (file_exists($env_path) && is_readable($env_path)) {
+            $env_lines = @file($env_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (is_array($env_lines)) {
+                foreach ($env_lines as $env_line) {
+                    $env_line = trim((string) $env_line);
+                    if ($env_line === '' || strpos($env_line, '#') === 0 || strpos($env_line, '=') === false) {
+                        continue;
+                    }
+                    list($env_key, $env_value) = array_pad(explode('=', $env_line, 2), 2, '');
+                    $env_key = trim($env_key);
+                    $env_value = trim($env_value, " \t\n\r\0\x0B\"'");
+                    if ($env_key === 'REALTIME_INTERNAL_URL' && empty($realtime_config['internal_url'])) {
+                        $realtime_config['internal_url'] = $env_value;
+                    }
+                    if ($env_key === 'NUXT_PUBLIC_REALTIME_URL' && empty($realtime_config['public_url'])) {
+                        $realtime_config['public_url'] = $env_value;
+                    }
+                    if ($env_key === 'REALTIME_SECRET' && empty($realtime_config['secret'])) {
+                        $realtime_config['secret'] = $env_value;
+                    }
+                }
+            }
+        }
+    }
+    $internal_url = trim(!empty($realtime_config['internal_url']) ? $realtime_config['internal_url'] : (!empty($realtime_config['public_url']) ? $realtime_config['public_url'] : 'http://127.0.0.1:3015'));
+    $secret = trim((string) $realtime_config['secret']);
     if (empty($internal_url) || empty($secret) || empty($recipient_id)) {
         return false;
     }
@@ -3241,18 +3310,27 @@ function Wo_RegisterNotification($data = array())
         $group_chat_notifcation_query = ',`group_chat_id`';
         $group_chat_notifcation_query2 = ",{$group_chat_id} ";
     }
-    $query_one = " SELECT `id` FROM " . T_NOTIFICATION . " WHERE `recipient_id` = " . $recipient['user_id'] . " AND `post_id` = " . $data['post_id'] . " AND `type` = '" . $data['type'] . "'";
+    $notification_target_column = 'post_id';
+    $notification_target_value = (int) $data['post_id'];
+    if (!empty($data['reply_id'])) {
+        $notification_target_column = 'reply_id';
+        $notification_target_value = (int) $data['reply_id'];
+    } elseif (!empty($data['comment_id'])) {
+        $notification_target_column = 'comment_id';
+        $notification_target_value = (int) $data['comment_id'];
+    } elseif (!empty($data['story_id'])) {
+        $notification_target_column = 'story_id';
+        $notification_target_value = (int) $data['story_id'];
+    }
+    $query_one = " SELECT `id` FROM " . T_NOTIFICATION . " WHERE `recipient_id` = " . $recipient['user_id'] . " AND `notifier_id` = " . $notifier['user_id'] . " AND `" . $notification_target_column . "` = " . $notification_target_value . " AND `type` = '" . $data['type'] . "'";
     $sql_query_one = mysqli_query($sqlConnect, $query_one);
     if (mysqli_num_rows($sql_query_one) > 0) {
         if ($data['type'] != "following") {
-            if ($data['type'] != "reaction" && empty($data['story_id'])) {
-                $query_two = " DELETE FROM " . T_NOTIFICATION . " WHERE `recipient_id` = " . $recipient['user_id'] . " AND `post_id` = " . $data['post_id'] . " AND `type` = '" . $data['type'] . "'";
+            if ($data['type'] == "reaction" && $data['text'] == "message") {
+                $query_two = " DELETE FROM " . T_NOTIFICATION . " WHERE `recipient_id` = " . $recipient['user_id'] . " AND `notifier_id` = " . $notifier['user_id'] . " AND `type` = '" . $data['type'] . "'";
                 $sql_query_two = mysqli_query($sqlConnect, $query_two);
-            } elseif (!empty($data['story_id'])) {
-                $query_two = " DELETE FROM " . T_NOTIFICATION . " WHERE `recipient_id` = " . $recipient['user_id'] . " AND `story_id` = " . $data['story_id'] . " AND `type` = '" . $data['type'] . "'";
-                $sql_query_two = mysqli_query($sqlConnect, $query_two);
-            } elseif ($data['type'] == "reaction" && $data['text'] == "message") {
-                $query_two = " DELETE FROM " . T_NOTIFICATION . " WHERE `recipient_id` = " . $recipient['user_id'] . " AND `type` = '" . $data['type'] . "'";
+            } else {
+                $query_two = " DELETE FROM " . T_NOTIFICATION . " WHERE `recipient_id` = " . $recipient['user_id'] . " AND `notifier_id` = " . $notifier['user_id'] . " AND `" . $notification_target_column . "` = " . $notification_target_value . " AND `type` = '" . $data['type'] . "'";
                 $sql_query_two = mysqli_query($sqlConnect, $query_two);
             }
         }
@@ -3397,10 +3475,11 @@ function Wo_GetNotifications($data = array())
     if (empty($data['limit'])) {
         $data['limit'] = 15;
     }
+    $force_all_list = (!empty($data['force_all']) && $data['force_all'] === true);
     $new_notif = Wo_CountNotifications(array(
         'unread' => true
     ));
-    if ($new_notif > 0) {
+    if ($new_notif > 0 && $force_all_list !== true) {
         $query_4 = '';
         if (isset($data['type_2']) && !empty($data['type_2'])) {
             if ($data['type_2'] == 'popunder') {
@@ -3747,42 +3826,46 @@ function Wo_GetSearchFilter($result, $limit = 30, $offset = 0)
 }
 
 if (!function_exists('Wo_GetFollowedMessageUsers')) {
-  function Wo_GetFollowedMessageUsers($user_id, $searchQuery = '', $limit = 50) {
-    global $sqlConnect;
-    $user_id = (int)$user_id; $limit = (int)$limit;
-    $whereSearch = '';
-    if (!empty($searchQuery)) {
-      $s = mysqli_real_escape_string($sqlConnect,$searchQuery);
-      $whereSearch = " AND (u.username LIKE '%{$s}%' OR CONCAT(u.first_name,' ',u.last_name) LIKE '%{$s}%') ";
-    }
-    $q = "
+    function Wo_GetFollowedMessageUsers($user_id, $searchQuery = '', $limit = 50)
+    {
+        global $sqlConnect;
+        $user_id = (int)$user_id;
+        $limit = (int)$limit;
+        $whereSearch = '';
+        if (!empty($searchQuery)) {
+            $s = mysqli_real_escape_string($sqlConnect, $searchQuery);
+            $whereSearch = " AND (u.username LIKE '%{$s}%' OR CONCAT(u.first_name,' ',u.last_name) LIKE '%{$s}%') ";
+        }
+        $q = "
       SELECT u.user_id AS conversation_user_id, uc.`time` AS time
-      FROM ".T_FOLLOWERS." f
-      INNER JOIN ".T_USERS." u ON u.user_id = f.following_id
-      LEFT JOIN ".T_U_CHATS." uc ON uc.user_id = {$user_id} AND uc.conversation_user_id = u.user_id
+      FROM " . T_FOLLOWERS . " f
+      INNER JOIN " . T_USERS . " u ON u.user_id = f.following_id
+      LEFT JOIN " . T_U_CHATS . " uc ON uc.user_id = {$user_id} AND uc.conversation_user_id = u.user_id
       WHERE f.follower_id = {$user_id}
         AND f.following_id <> {$user_id}
         AND (f.active = '1' OR f.active IS NULL)
         AND u.active = '1'
-        AND u.user_id NOT IN (SELECT blocked FROM ".T_BLOCKS." WHERE blocker = {$user_id})
-        AND u.user_id NOT IN (SELECT blocker FROM ".T_BLOCKS." WHERE blocked = {$user_id})
+        AND u.user_id NOT IN (SELECT blocked FROM " . T_BLOCKS . " WHERE blocker = {$user_id})
+        AND u.user_id NOT IN (SELECT blocker FROM " . T_BLOCKS . " WHERE blocked = {$user_id})
         {$whereSearch}
       ORDER BY COALESCE(uc.`time`,0) DESC
       LIMIT {$limit}";
-        $data=[]; $res=mysqli_query($sqlConnect,$q);
-    if ($res && mysqli_num_rows($res)>0){
-      while($row=mysqli_fetch_assoc($res)){
-        $u=Wo_UserData($row['conversation_user_id']); if(!$u) continue;
-        $u['chat_time']=!empty($row['time'])?(int)$row['time']:0;
-        $u['message']=['time'=>$u['chat_time']];
-        $data[]=$u;
-      }
+        $data = [];
+        $res = mysqli_query($sqlConnect, $q);
+        if ($res && mysqli_num_rows($res) > 0) {
+            while ($row = mysqli_fetch_assoc($res)) {
+                $u = Wo_UserData($row['conversation_user_id']);
+                if (!$u) continue;
+                $u['chat_time'] = !empty($row['time']) ? (int)$row['time'] : 0;
+                $u['message'] = ['time' => $u['chat_time']];
+                $data[] = $u;
+            }
+        }
+        return $data;
     }
-    return $data;
-  }
 }
 
-function Wo_GetMessagesUsers($user_id, $searchQuery = '', $limit = 50, $new = false, $update = 0,$source = 'recent')
+function Wo_GetMessagesUsers($user_id, $searchQuery = '', $limit = 50, $new = false, $update = 0, $source = 'recent')
 {
     global $wo, $sqlConnect;
     if ($wo['loggedin'] == false) {
@@ -4615,6 +4698,18 @@ function Wo_RegisterMessageGroup($ms_data = array())
         if (!empty($ms_data['from_id'])) {
             $from_id = $ms_data['from_id'];
         }
+        $group_members = Wo_GetGChatMemebers($ms_data['group_id']);
+        if (is_array($group_members)) {
+            foreach ($group_members as $group_member) {
+                $member_id = 0;
+                if (is_array($group_member) && !empty($group_member['user_id'])) {
+                    $member_id = (int) $group_member['user_id'];
+                }
+                if ($member_id > 0 && $member_id != $from_id) {
+                    Wo_PublishRealtimeNotification($member_id, 0, 'message');
+                }
+            }
+        }
         return $message_id;
     } else {
         return false;
@@ -4683,6 +4778,18 @@ function Wo_RegisterGroupMessage($ms_data = array())
     $query = mysqli_query($sqlConnect, " INSERT INTO " . T_MESSAGES . " ({$fields}) VALUES ({$data})");
     if ($query) {
         $message_id = mysqli_insert_id($sqlConnect);
+        $group_members = Wo_GetGChatMemebers($ms_data['group_id']);
+        if (is_array($group_members)) {
+            foreach ($group_members as $group_member) {
+                $member_id = 0;
+                if (is_array($group_member) && !empty($group_member['user_id'])) {
+                    $member_id = (int) $group_member['user_id'];
+                }
+                if ($member_id > 0 && $member_id != (int) $ms_data['from_id']) {
+                    Wo_PublishRealtimeNotification($member_id, 0, 'message');
+                }
+            }
+        }
         return $message_id;
     } else {
         return false;
@@ -5525,6 +5632,8 @@ function Wo_ShareFile($data = array(), $type = 0, $crop = true)
     }
     $new_string = pathinfo($data['name'], PATHINFO_FILENAME) . '.' . strtolower(pathinfo($data['name'], PATHINFO_EXTENSION));
     $file_extension = pathinfo($new_string, PATHINFO_EXTENSION);
+    $normalized_mime_type = !empty($data['type']) ? strtolower($data['type']) : '';
+    $is_sound_upload = !empty($data['is_sound']) || in_array($file_extension, array('mp3', 'wav', 'ogg', 'm4a')) || ($file_extension == 'webm' && strpos($normalized_mime_type, 'audio/') === 0);
     if ($data['is_video'] == 0) {
         if ($wo['config']['fileSharing'] == 1) {
             if (isset($data['types'])) {
@@ -5546,15 +5655,15 @@ function Wo_ShareFile($data = array(), $type = 0, $crop = true)
     if ($file_extension == 'jpg' || $file_extension == 'jpeg' || $file_extension == 'png' || $file_extension == 'gif') {
         $folder = 'photos';
         $fileType = 'image';
+    } else if ($is_sound_upload) {
+        $folder = 'sounds';
+        $fileType = 'soundFile';
     } else if ($file_extension == 'mp4' || $file_extension == 'mov' || $file_extension == 'webm' || $file_extension == 'flv' || $file_extension == 'mkv') {
         $folder = 'videos';
         $fileType = 'video';
     } elseif (!empty($data['is_video']) && $data['is_video'] == 1) {
         $folder = 'videos';
         $fileType = 'video';
-    } else if ($file_extension == 'mp3' || $file_extension == 'wav') {
-        $folder = 'sounds';
-        $fileType = 'soundFile';
     } else {
         $folder = 'files';
         $fileType = 'file';
@@ -5566,6 +5675,15 @@ function Wo_ShareFile($data = array(), $type = 0, $crop = true)
         $mime_types = explode(',', str_replace(' ', '', $wo['config']['mime_types'] . ',application/json,application/octet-stream'));
         if (Wo_IsAdmin()) {
             $mime_types = explode(',', str_replace(' ', '', $wo['config']['mime_types'] . ',application/json,application/octet-stream,image/svg+xml'));
+        }
+        if ($is_sound_upload) {
+            $mime_types = array_unique(array_merge($mime_types, array(
+                'audio/webm',
+                'video/webm',
+                'audio/ogg',
+                'audio/mp4',
+                'audio/x-m4a',
+            )));
         }
         if (!in_array($data['type'], $mime_types)) {
             return false;
@@ -5696,7 +5814,8 @@ function Wo_DisplaySharedFile($media, $placement = '', $cache = false, $is_video
         if ($file_extension == 'doc' || $file_extension == 'docx') {
             $file .= '<i class="fa ' . $icon_size . ' fa-file-word-o"></i> ' . $wo['media']['name'];
         }
-        if ($file_extension == 'mp3' || $file_extension == 'wav') {
+        $is_sound_file = ($file_extension == 'mp3' || $file_extension == 'wav' || $file_extension == 'ogg' || $file_extension == 'm4a' || ($file_extension == 'webm' && strpos($wo['media']['file'], '_soundFile.') !== false));
+        if ($is_sound_file) {
             if ($placement == 'chat') {
                 $file .= '<i class="fa ' . $icon_size . ' fa-music"></i> ' . $wo['media']['name'];
             } else if ($placement == 'message') {
@@ -6394,7 +6513,7 @@ function Wo_PostData($post_id, $placement = '', $limited = '', $comments_limit =
 
     $story['mentions_users'] = [];
     $mention_regex = '/@\[([0-9]+)\]/i';
-    if (preg_match_all($mention_regex, $story['postText']??" ", $matches)) {
+    if (preg_match_all($mention_regex, $story['postText'] ?? " ", $matches)) {
         foreach ($matches[1] as $match) {
             $match = Wo_Secure($match);
             $match_user = Wo_UserData($match);
@@ -7512,7 +7631,7 @@ function Wo_DeletePost($post_id = 0, $type = '')
             mysqli_query($sqlConnect, "DELETE FROM " . T_PRODUCTS_MEDIA . " WHERE `product_id` = {$product_id}");
             mysqli_query($sqlConnect, "DELETE FROM " . T_PRODUCTS . " WHERE `id` = {$product_id}");
         }
-         if (($is_me > 0 || (Wo_IsAdmin() || Wo_IsModerator())) && !empty($fetched_data['user_id'])) {
+        if (($is_me > 0 || (Wo_IsAdmin() || Wo_IsModerator())) && !empty($fetched_data['user_id'])) {
             Wo_RegisterPoint($post_id, "createpost", "-", $fetched_data['user_id']);
         }
         $query_delete = mysqli_query($sqlConnect, "DELETE FROM " . T_POSTS . " WHERE `id` = {$post_id}");
@@ -7887,9 +8006,20 @@ function Wo_RegisterActivity($data = array())
     } else {
         $follow_id = Wo_Secure($data['follow_id']);
     }
-    @$post_id = Wo_Secure($data['post_id']);
-    @$user_id = Wo_Secure($data['user_id']);
-    @$post_user_id = Wo_Secure($data['post_user_id']);
+    $post_id = 0;
+if (!empty($data['post_id']) && is_numeric($data['post_id']) && $data['post_id'] > 0) {
+    $post_id = Wo_Secure($data['post_id']);
+}
+
+$user_id = 0;
+if (!empty($data['user_id']) && is_numeric($data['user_id']) && $data['user_id'] > 0) {
+    $user_id = Wo_Secure($data['user_id']);
+}
+
+$post_user_id = 0;
+if (!empty($data['post_user_id']) && is_numeric($data['post_user_id']) && $data['post_user_id'] > 0) {
+    $post_user_id = Wo_Secure($data['post_user_id']);
+}
     @$activity_type = Wo_Secure($data['activity_type']);
     // @$follow_id = Wo_Secure($data['follow_id']);
     $time = time();
@@ -8440,7 +8570,7 @@ function Wo_GetPostReactionsTypes($object_id, $col = "post", $type = "post")
     if (mysqli_num_rows($sql_query_one)) {
         while ($fetched_data = mysqli_fetch_assoc($sql_query_one)) {
             $reactions[$fetched_data['reaction']] = 1;
-            if ($wo['loggedin'] && $fetched_data['user_id'] == $wo['user']['id']) {
+            if ($wo['loggedin'] && ($fetched_data['user_id'] == $wo['user']['id'] || $fetched_data['user_id'] == $wo['user']['user_id'])) {
                 $reactions['is_reacted'] = true;
                 $reactions['type'] = $fetched_data['reaction'];
             }
@@ -10153,29 +10283,46 @@ function Wo_DeleteBadLogins()
 
 function WoCanLogin()
 {
-    global $wo, $sqlConnect, $db;
+    global $wo, $sqlConnect;
+
     if ($wo['loggedin'] == true && !isset($_POST['add_account'])) {
         return false;
     }
+
     $ip = get_ip_address();
     if (empty($ip)) {
         return true;
     }
+
     if ($wo['config']['lock_time'] < 1) {
         return true;
     }
+
     if ($wo['config']['bad_login_limit'] < 1) {
         return true;
     }
+
+    $ip = Wo_Secure($ip);
     $time = time() - (60 * $wo['config']['lock_time']);
-    $login = $db->where('ip', $ip)->get(T_BAD_LOGIN);
-    if (count($login) >= $wo['config']['bad_login_limit']) {
-        $last = end($login);
-        if ($last->time >= $time) {
+
+    $query = mysqli_query($sqlConnect, "SELECT * FROM " . T_BAD_LOGIN . " WHERE `ip` = '{$ip}' ORDER BY `id` ASC");
+    $count = ($query) ? mysqli_num_rows($query) : 0;
+
+    if ($count >= $wo['config']['bad_login_limit']) {
+        $last = null;
+
+        while ($row = mysqli_fetch_object($query)) {
+            $last = $row;
+        }
+
+        if (!empty($last) && $last->time >= $time) {
             return false;
         }
     }
-    $db->where('time', time() - (60 * $wo['config']['lock_time'] * 2), '<')->delete(T_BAD_LOGIN);
+
+    $delete_time = time() - (60 * $wo['config']['lock_time'] * 2);
+    mysqli_query($sqlConnect, "DELETE FROM " . T_BAD_LOGIN . " WHERE `time` < '{$delete_time}'");
+
     return true;
 }
 
@@ -12273,11 +12420,11 @@ function Wo_GetAllTagsForUser($owner_id = null)
 function Wo_GetTagForUser($owner_id = null, $target_user_id = null)
 {
     global $wo, $sqlConnect;
-    if( empty($wo['loggedin'])) return [];
-    if($target_user_id === null) return [];
+    if (empty($wo['loggedin'])) return [];
+    if ($target_user_id === null) return [];
     $owner_id = (int)$wo['user']['user_id'];
     $target_user_id = (int)$target_user_id;
-    $sql="SELECT UTA.owner_id,UTA.target_user_id,UTA.tag_id,UTL.name,UTL.color FROM ". T_USER_TAG_ASSIGNMENTS . " AS UTA INNER JOIN " . T_USER_TAG_LABELS . " AS UTL ON UTA.tag_id=UTL.id WHERE UTA.owner_id={$owner_id} AND UTA.target_user_id={$target_user_id}";
+    $sql = "SELECT UTA.owner_id,UTA.target_user_id,UTA.tag_id,UTL.name,UTL.color FROM " . T_USER_TAG_ASSIGNMENTS . " AS UTA INNER JOIN " . T_USER_TAG_LABELS . " AS UTL ON UTA.tag_id=UTL.id WHERE UTA.owner_id={$owner_id} AND UTA.target_user_id={$target_user_id}";
     $ok = mysqli_query($sqlConnect, $sql);
     if (!$ok) {
         return [
@@ -12329,15 +12476,16 @@ function Wo_GetUserIdsByTag($tag_id = null)
 }
 
 //Gỡ nhãn
-function Wo_DeleteTagUser($owner_id=null,$target_user_id=null,$label_id=null){
-    global $wo,$sqlConnect;
-    if(empty($wo['loggedin'])) return ['status' => 401, 'message' => 'Not logged in'];
-    if($target_user_id==null) return ['status' => 400, 'message' => 'target_user_id can not be empty'];
-    if($label_id==null) return ['status' => 400, 'message' => 'label_id can not be empty'];
+function Wo_DeleteTagUser($owner_id = null, $target_user_id = null, $label_id = null)
+{
+    global $wo, $sqlConnect;
+    if (empty($wo['loggedin'])) return ['status' => 401, 'message' => 'Not logged in'];
+    if ($target_user_id == null) return ['status' => 400, 'message' => 'target_user_id can not be empty'];
+    if ($label_id == null) return ['status' => 400, 'message' => 'label_id can not be empty'];
     $owner_id = (int)$wo['user']['user_id'];
     $target_user_id = (int)$target_user_id;
     $label_id = (int)$label_id;
-    $sql="DELETE FROM ". T_USER_TAG_ASSIGNMENTS . " WHERE owner_id={$owner_id} AND target_user_id={$target_user_id} AND tag_id={$label_id} LIMIT 1";
+    $sql = "DELETE FROM " . T_USER_TAG_ASSIGNMENTS . " WHERE owner_id={$owner_id} AND target_user_id={$target_user_id} AND tag_id={$label_id} LIMIT 1";
     $ok = mysqli_query($sqlConnect, $sql);
     if (!$ok) {
         return [
@@ -12346,61 +12494,63 @@ function Wo_DeleteTagUser($owner_id=null,$target_user_id=null,$label_id=null){
             'sql_error' => mysqli_error($sqlConnect)
             // 'sql' => $sql, // bật nếu cần debug thêm
         ];
-    } 
+    }
     return ['status' => 200, 'message' => 'Deleted successfully'];
 }
 
 
 //Xóa tag
-function Wo_DeleteTag($owner_id=null,$label_id=null){
-    global $wo,$sqlConnect;
-    if(empty($wo['loggedin'])) return ['status' => 401, 'message' => 'Not logged in'];
-    if($label_id==null) return ['status' => 400, 'message' => 'label_id can not be empty'];
+function Wo_DeleteTag($owner_id = null, $label_id = null)
+{
+    global $wo, $sqlConnect;
+    if (empty($wo['loggedin'])) return ['status' => 401, 'message' => 'Not logged in'];
+    if ($label_id == null) return ['status' => 400, 'message' => 'label_id can not be empty'];
     $owner_id = (int)$wo['user']['user_id'];
     $label_id = (int)$label_id;
-    $sql="DELETE FROM ".T_USER_TAG_LABELS . " WHERE owner_id={$owner_id} AND id={$label_id} LIMIT 1";
+    $sql = "DELETE FROM " . T_USER_TAG_LABELS . " WHERE owner_id={$owner_id} AND id={$label_id} LIMIT 1";
     $ok = mysqli_query($sqlConnect, $sql);
-    if(!$ok){
+    if (!$ok) {
         return [
-            'status'=>500,
-            'message'=>'SQL error',
-            'sql_error'=>mysqli_error($sqlConnect)
+            'status' => 500,
+            'message' => 'SQL error',
+            'sql_error' => mysqli_error($sqlConnect)
         ];
     }
-    return ['status'=>200,'message'=>'Deleted successfully'];
+    return ['status' => 200, 'message' => 'Deleted successfully'];
 }
 
 
-function Wo_PayPointOrSend($owner_id=null,$point=0,$to_user_id=null){
-    global $wo,$sqlConnect;
-    if(empty($wo['loggedin'])) return ['status' => 401, 'message' => 'Not logged in'];  
-    $owner_id=(int)$wo['user']['user_id'];
-    $to_user_id=(int)$to_user_id;
-    if($to_user_id<=0) return ['status'=>400, 'message'=>'To user can not be empty'];
-    if($to_user_id==$owner_id) return ['status'=>400, 'message'=>'You can not send points to yourself'];
-    $point=(int)$point;
-    if($point<=0) return ['status'=>400, 'message'=>'Point must be greater than 0'];
-    if($owner_id<$point) return ['status'=>400, 'message'=>'You do not have enough points'];
-    $sql="UPDATE ".T_USERS." SET points=points-{$point} WHERE user_id={$owner_id} LIMIT 1";
+function Wo_PayPointOrSend($owner_id = null, $point = 0, $to_user_id = null)
+{
+    global $wo, $sqlConnect;
+    if (empty($wo['loggedin'])) return ['status' => 401, 'message' => 'Not logged in'];
+    $owner_id = (int)$wo['user']['user_id'];
+    $to_user_id = (int)$to_user_id;
+    if ($to_user_id <= 0) return ['status' => 400, 'message' => 'To user can not be empty'];
+    if ($to_user_id == $owner_id) return ['status' => 400, 'message' => 'You can not send points to yourself'];
+    $point = (int)$point;
+    if ($point <= 0) return ['status' => 400, 'message' => 'Point must be greater than 0'];
+    if ($owner_id < $point) return ['status' => 400, 'message' => 'You do not have enough points'];
+    $sql = "UPDATE " . T_USERS . " SET points=points-{$point} WHERE user_id={$owner_id} LIMIT 1";
     $ok = mysqli_query($sqlConnect, $sql);
-    if(!$ok){
+    if (!$ok) {
         return [
-            'status'=>500,
-            'message'=>'SQL error',
-            'sql_error'=>mysqli_error($sqlConnect)
+            'status' => 500,
+            'message' => 'SQL error',
+            'sql_error' => mysqli_error($sqlConnect)
         ];
-    }else{
-        $sql2="UPDATE ".T_USERS." SET points=points + {$point} WHERE user_id={$to_user_id} LIMIT 1";
+    } else {
+        $sql2 = "UPDATE " . T_USERS . " SET points=points + {$point} WHERE user_id={$to_user_id} LIMIT 1";
         $ok2 = mysqli_query($sqlConnect, $sql2);
-        if(!$ok2){
+        if (!$ok2) {
             return [
-                'status'=>500,
-                'message'=>'SQL error',
-                'sql_error'=>mysqli_error($sqlConnect)
+                'status' => 500,
+                'message' => 'SQL error',
+                'sql_error' => mysqli_error($sqlConnect)
             ];
         }
     }
-    return ['status'=>200,'message'=>'Points sent successfully'];
+    return ['status' => 200, 'message' => 'Points sent successfully'];
 }
 
 
@@ -12422,5 +12572,3 @@ function Wo_PayPointOrSend($owner_id=null,$point=0,$to_user_id=null){
 //     }
 //     return $countriesData;
 // }
-
-

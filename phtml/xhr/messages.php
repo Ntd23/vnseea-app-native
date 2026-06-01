@@ -571,7 +571,9 @@ if ($f == 'messages') {
                 'file' => $_FILES["audio-blob"]["tmp_name"],
                 'name' => $_FILES['audio-blob']['name'],
                 'size' => $_FILES["audio-blob"]["size"],
-                'type' => $_FILES["audio-blob"]["type"]
+                'type' => $_FILES["audio-blob"]["type"],
+                'types' => 'mp3,wav,ogg,m4a,webm',
+                'is_sound' => 1
             );
             $media          = Wo_ShareFile($fileInfo);
             $data['url']    = $media['filename'];
@@ -588,7 +590,9 @@ if ($f == 'messages') {
                 'file' => $_FILES["audio-blob"]["tmp_name"],
                 'name' => $_FILES['audio-blob']['name'],
                 'size' => $_FILES["audio-blob"]["size"],
-                'type' => $_FILES["audio-blob"]["type"]
+                'type' => $_FILES["audio-blob"]["type"],
+                'types' => 'mp3,wav,ogg,m4a,webm',
+                'is_sound' => 1
             );
             $media          = Wo_ShareFile($fileInfo);
             if (!empty($media) && !empty($media['filename'])) {
@@ -864,6 +868,68 @@ if ($f == 'messages') {
                     }
                 }
             }
+        }
+        header("Content-type: application/json");
+        echo json_encode($data);
+        exit();
+    }
+    if ($s == 'recall_message') {
+        $data = array(
+            'status' => 400,
+            'message' => 'Invalid message recall request.'
+        );
+        if (isset($_GET['message_id']) && Wo_CheckMainSession($hash_id) === true) {
+            $message_id = Wo_Secure($_GET['message_id']);
+            $message    = $db->where('id', $message_id)->getOne(T_MESSAGES);
+            if (empty($message) || empty($message_id) || !is_numeric($message_id) || $message_id <= 0) {
+                $data['message'] = 'Message not found.';
+            } elseif ((int) $message->from_id !== (int) $wo['user']['user_id']) {
+                $data['message'] = 'Only the sender can recall this message.';
+            } else {
+                $deleted_at = time();
+                $deleted_by_name = !empty($wo['user']['name']) ? $wo['user']['name'] : $wo['user']['username'];
+                $payload = base64_encode(json_encode(array(
+                    'deleted_at' => $deleted_at,
+                    'deleted_by' => (int) $wo['user']['user_id'],
+                    'deleted_by_name' => $deleted_by_name
+                )));
+                $recalled_text = Wo_Secure('__VNSEEA_MESSAGE_RECALLED__:' . $payload);
+                $update_data = array(
+                    'text' => $recalled_text,
+                    'media' => '',
+                    'mediaFileName' => '',
+                    'stickers' => '',
+                    'type_two' => ''
+                );
+                if ($db->where('id', $message_id)->update(T_MESSAGES, $update_data)) {
+                    $data = array(
+                        'status' => 200,
+                        'message_id' => (int) $message_id,
+                        'deleted_at' => $deleted_at,
+                        'deleted_by_name' => $deleted_by_name
+                    );
+                    if (!empty($message->group_id)) {
+                        $group_members = Wo_GetGChatMemebers($message->group_id);
+                        if (is_array($group_members)) {
+                            foreach ($group_members as $group_member) {
+                                $member_id = 0;
+                                if (is_array($group_member) && !empty($group_member['user_id'])) {
+                                    $member_id = (int) $group_member['user_id'];
+                                }
+                                if ($member_id > 0 && $member_id != (int) $wo['user']['user_id']) {
+                                    Wo_PublishRealtimeNotification($member_id, 0, 'message');
+                                }
+                            }
+                        }
+                    } elseif (!empty($message->to_id)) {
+                        Wo_PublishRealtimeNotification((int) $message->to_id, 0, 'message');
+                    }
+                } else {
+                    $data['message'] = 'Unable to update the message.';
+                }
+            }
+        } else {
+            $data['message'] = 'Invalid message recall session.';
         }
         header("Content-type: application/json");
         echo json_encode($data);

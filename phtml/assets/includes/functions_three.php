@@ -126,6 +126,18 @@ function Wo_RegisterPoint($post_id, $type, $action = '+', $user_id = 0)
 	}
 	$query = mysqli_query($sqlConnect, $query_one);
 	if ($query) {
+		$point_log_kind = $action == '-' ? 'POINTS_DEDUCT' : 'POINTS_EARNED';
+		$point_log_amount = $action == '-' ? 0 - (float) $wallet : (float) $wallet;
+		$point_log_notes = mysqli_real_escape_string($sqlConnect, $type);
+		$point_log_extra = mysqli_real_escape_string($sqlConnect, json_encode(array(
+			'points' => (int) $points,
+			'action' => $action,
+			'type' => $type,
+			'rate_points' => (float) $dollar_to_point_cost,
+			'base_currency' => 'USD',
+			'base_amount' => (float) $wallet
+		), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+		mysqli_query($sqlConnect, "INSERT INTO " . T_PAYMENT_TRANSACTIONS . " (`userid`, `kind`, `amount`, `notes`, `extra`) VALUES ({$user_id}, '{$point_log_kind}', {$point_log_amount}, '{$point_log_notes}', '{$point_log_extra}')");
 		cache($user_id, 'users', 'delete');
 		return true;
 	}
@@ -170,8 +182,7 @@ function Wo_GetCurrencyRule($currency = 0)
 		$currency_id     = (int) $currency_id;
 		$currency_code   = $wo['currencies'][$currency_id]['text'];
 		$currency_symbol = $wo['currencies'][$currency_id]['symbol'];
-	}
-	elseif (is_string($currency) && isset($wo['config']['currency_symbol_array'][$currency])) {
+	} elseif (is_string($currency) && isset($wo['config']['currency_symbol_array'][$currency])) {
 		$currency_code   = $currency;
 		$currency_symbol = $wo['config']['currency_symbol_array'][$currency];
 		foreach ($wo['currencies'] as $key => $currency_data) {
@@ -286,8 +297,7 @@ function Wo_ParsePriceByCurrency($value, $currency = 0)
 			if ($digits_after !== '' && strlen($digits_after) <= (int) $rule['decimals']) {
 				$decimal_pos = $candidate_pos;
 			}
-		}
-		else {
+		} else {
 			$separator = ($last_dot !== false) ? '.' : ',';
 			$candidate_pos = ($last_dot !== false) ? $last_dot : $last_comma;
 			$digits_after = preg_replace('/\D/', '', substr($value, $candidate_pos + 1));
@@ -5309,6 +5319,19 @@ function Wo_InsertUserStoryMedia($registration_data = array())
 function Wo_GetStroies($args = array())
 {
 	global $sqlConnect, $wo, $db;
+	    // Clear stale MysqliDb state before story queries.
+    if (isset($db)) {
+        try {
+            $reflection = new ReflectionClass($db);
+            if ($reflection->hasMethod('reset')) {
+                $method = $reflection->getMethod('reset');
+                $method->setAccessible(true);
+                $method->invoke($db);
+            }
+        } catch (Throwable $e) {
+            // Ignore reset errors.
+        }
+    }
 	if ($wo['loggedin'] == false) {
 		return false;
 	}
@@ -5425,7 +5448,7 @@ function Wo_GetStoryThumb($story_id = 0, $thumbnail = '')
 }
 function Wo_GetStoryEntryPoint($owner_id = 0, $viewer_id = 0)
 {
-	global $db, $wo;
+	global $db, $wo, $sqlConnect;
 	$owner_id = (int) $owner_id;
 	if ($owner_id < 1) {
 		return null;
@@ -5437,9 +5460,9 @@ function Wo_GetStoryEntryPoint($owner_id = 0, $viewer_id = 0)
 
 	$story = null;
 	if ($viewer_id > 0) {
-		$story = $db->where("expire > " . time() . " AND ad_id IS NULL AND user_id = {$owner_id} AND id NOT IN (SELECT story_id FROM " . T_STORY_SEEN . " WHERE user_id = {$viewer_id})")
-		            ->orderBy('id', 'ASC')
-		            ->getOne(T_USER_STORY);
+		$now = time();
+		$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND `ad_id` IS NULL AND `user_id` = '{$owner_id}' AND `id` NOT IN (SELECT `story_id` FROM " . T_STORY_SEEN . " WHERE `user_id` = '{$viewer_id}') ORDER BY `id` ASC LIMIT 1");
+		$story = $story_query ? mysqli_fetch_object($story_query) : null;
 	}
 
 	if (empty($story)) {
@@ -5447,14 +5470,14 @@ function Wo_GetStoryEntryPoint($owner_id = 0, $viewer_id = 0)
 		$ads_ids = array_filter(array_map('intval', $ads_ids));
 		if (!empty($ads_ids)) {
 			$ads_in = implode(',', $ads_ids);
-			$story  = $db->where("expire > " . time() . " AND ((ad_id IN ({$ads_in})) OR (ad_id IS NULL AND user_id = {$owner_id}))")
-			             ->orderBy('id', 'ASC')
-			             ->getOne(T_USER_STORY);
+			$now = time();
+			$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND ((`ad_id` IN ({$ads_in})) OR (`ad_id` IS NULL AND `user_id` = '{$owner_id}')) ORDER BY `id` ASC LIMIT 1");
+			$story = $story_query ? mysqli_fetch_object($story_query) : null;
 		}
 		if (empty($story)) {
-			$story = $db->where("expire > " . time() . " AND ad_id IS NULL AND user_id = {$owner_id}")
-			            ->orderBy('id', 'ASC')
-			            ->getOne(T_USER_STORY);
+			$now = time();
+			$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND `ad_id` IS NULL AND `user_id` = '{$owner_id}' ORDER BY `id` ASC LIMIT 1");
+			$story = $story_query ? mysqli_fetch_object($story_query) : null;
 		}
 	}
 
@@ -7062,12 +7085,12 @@ function Wo_GetFriendsStatus($data_array = array('limit' => 8, 'user_id' => 0, '
 		$offset_query = " AND `id` < $offset ";
 	}
 	// $query     = "SELECT * FROM " . T_USER_STORY . " WHERE (user_id IN (SELECT following_id FROM " . T_FOLLOWERS . " WHERE follower_id = '$user_id') OR user_id = $user_id) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') $group_by ORDER BY id DESC";
-	$query     = "SELECT DISTINCT user_id,title,description,posted,expire,thumbnail,ad_id,(SELECT MAX(us.id) FROM " . T_USER_STORY . " us WHERE us.user_id = " . T_USER_STORY . ".user_id AND us.expire > UNIX_TIMESTAMP() ) AS id  FROM " . T_USER_STORY . " WHERE  ".T_USER_STORY.".expire > UNIX_TIMESTAMP()   AND  (user_id IN (SELECT following_id FROM " . T_FOLLOWERS . " WHERE follower_id = '$user_id') OR user_id = $user_id  OR user_id IN (SELECT user_id FROM " . T_USER_ADS . " WHERE status = 1) ) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') $offset_query $group_by ORDER BY id DESC LIMIT " . $data_array['limit'];
+	$query     = "SELECT DISTINCT user_id,title,description,posted,expire,thumbnail,ad_id,(SELECT MAX(us.id) FROM " . T_USER_STORY . " us WHERE us.user_id = " . T_USER_STORY . ".user_id AND us.expire > UNIX_TIMESTAMP() ) AS id  FROM " . T_USER_STORY . " WHERE  " . T_USER_STORY . ".expire > UNIX_TIMESTAMP()   AND  (user_id IN (SELECT following_id FROM " . T_FOLLOWERS . " WHERE follower_id = '$user_id') OR user_id = $user_id  OR user_id IN (SELECT user_id FROM " . T_USER_ADS . " WHERE status = 1) ) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') $offset_query $group_by ORDER BY id DESC LIMIT " . $data_array['limit'];
 	$query_run = mysqli_query($sqlConnect, $query);
 	while ($fetched_data = mysqli_fetch_assoc($query_run)) {
 
-		$not_seen = $db->where("(user_id = " . $fetched_data['user_id'] ."
-		AND expire > ".time()."  AND id NOT IN (SELECT story_id FROM " . T_STORY_SEEN . " WHERE user_id = " . $wo['user']['id'] . "))")->getValue(T_USER_STORY, 'COUNT(*)');
+		$not_seen = $db->where("(user_id = " . $fetched_data['user_id'] . "
+		AND expire > " . time() . "  AND id NOT IN (SELECT story_id FROM " . T_STORY_SEEN . " WHERE user_id = " . $wo['user']['id'] . "))")->getValue(T_USER_STORY, 'COUNT(*)');
 		$fetched_data['have_not_seen'] = 0;
 		if ($not_seen > 0 && $fetched_data['user_id'] != $wo['user']['id']) {
 			$fetched_data['have_not_seen'] = 1;
@@ -7120,12 +7143,12 @@ function Wo_GetFriendsStatusAPI($data_array = array('limit' => 8, 'user_id' => 0
 		$offset       = Wo_Secure($data_array['offset']);
 		$offset_query = " AND `user_id` < $offset ";
 	}
-		$story_filter = "(user_id IN (SELECT following_id FROM " . T_FOLLOWERS . " WHERE follower_id = '$user_id') OR user_id = $user_id) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') $offset_query";
-		if (!empty($data_array['api'])) {
-			$query = "SELECT * FROM " . T_USER_STORY . " WHERE $story_filter ORDER BY user_id DESC LIMIT " . $data_array['limit'];
-		} else {
-			$query = "SELECT story.* FROM " . T_USER_STORY . " story INNER JOIN (SELECT user_id, MAX(id) AS id FROM " . T_USER_STORY . " WHERE $story_filter GROUP BY user_id) latest ON latest.id = story.id ORDER BY story.user_id DESC LIMIT " . $data_array['limit'];
-		}
+	$story_filter = "(user_id IN (SELECT following_id FROM " . T_FOLLOWERS . " WHERE follower_id = '$user_id') OR user_id = $user_id) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') $offset_query";
+	if (!empty($data_array['api'])) {
+		$query = "SELECT * FROM " . T_USER_STORY . " WHERE $story_filter ORDER BY user_id DESC LIMIT " . $data_array['limit'];
+	} else {
+		$query = "SELECT story.* FROM " . T_USER_STORY . " story INNER JOIN (SELECT user_id, MAX(id) AS id FROM " . T_USER_STORY . " WHERE $story_filter GROUP BY user_id) latest ON latest.id = story.id ORDER BY story.user_id DESC LIMIT " . $data_array['limit'];
+	}
 	$query_run = mysqli_query($sqlConnect, $query);
 	while ($fetched_data = mysqli_fetch_assoc($query_run)) {
 		$story_images              = Wo_GetStoryMedia($fetched_data['id'], 'image');
@@ -8297,7 +8320,7 @@ function Wo_GetNearbyShops($args = array())
 		$offset_sql = " AND post.`page_id` < '$offset' AND post.`page_id` <> '$offset' ";
 	}
 
-		$sql = "
+	$sql = "
 		SELECT
 			post.`id`,
 			post.`page_id`,
@@ -8321,19 +8344,19 @@ function Wo_GetNearbyShops($args = array())
 	if ($query && mysqli_num_rows($query)) {
 		$pages_data = array();
 		while ($fetched_data = mysqli_fetch_assoc($query)) {
-				$lat = (float) ($fetched_data['lat'] ?? 0);
-				$lng = (float) ($fetched_data['lng'] ?? 0);
-				if (empty($lat) || empty($lng)) {
-					continue;
-				}
-				$distance_value = $unit * acos(
-					cos(deg2rad($user_lat)) *
+			$lat = (float) ($fetched_data['lat'] ?? 0);
+			$lng = (float) ($fetched_data['lng'] ?? 0);
+			if (empty($lat) || empty($lng)) {
+				continue;
+			}
+			$distance_value = $unit * acos(
+				cos(deg2rad($user_lat)) *
 					cos(deg2rad($lat)) *
 					cos(deg2rad($lng) - deg2rad($user_lng)) +
 					sin(deg2rad($user_lat)) *
 					sin(deg2rad($lat))
-				);
-				$fetched_data['distance_value'] = $distance_value;
+			);
+			$fetched_data['distance_value'] = $distance_value;
 			if (empty($name) && $use_distance_filter && $distance_value > $distance) {
 				continue;
 			}
@@ -8351,7 +8374,7 @@ function Wo_GetNearbyShops($args = array())
 		}
 		$data = array_values($pages_data);
 		if (empty($name)) {
-			usort($data, function($a, $b) {
+			usort($data, function ($a, $b) {
 				if ($a['distance_value'] == $b['distance_value']) {
 					return 0;
 				}

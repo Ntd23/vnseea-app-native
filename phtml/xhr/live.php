@@ -1,9 +1,140 @@
 <?php
 if ($f == 'live') {
+    $normalize_live_user = function ($user) {
+        if (is_object($user)) {
+            $user = (array) $user;
+        }
+        if (!is_array($user)) {
+            return array();
+        }
+
+        $avatar = !empty($user['avatar']) ? $user['avatar'] : '';
+        if (!empty($avatar) && filter_var($avatar, FILTER_VALIDATE_URL) === false) {
+            $avatar = Wo_GetMedia(ltrim($avatar, '/'));
+        }
+
+        $name = !empty($user['name']) ? $user['name'] : (!empty($user['username']) ? $user['username'] : 'Host');
+
+        return array(
+            'id' => intval(!empty($user['user_id']) ? $user['user_id'] : 0),
+            'name' => $name,
+            'username' => !empty($user['username']) ? $user['username'] : '',
+            'avatar' => $avatar
+        );
+    };
+    $map_live_comment_payload = function ($comment, $kind = 'comment', $is_host = false) use ($normalize_live_user) {
+        if (is_object($comment)) {
+            $comment = (array) $comment;
+        }
+        if (!is_array($comment)) {
+            return array();
+        }
+
+        $publisher = $normalize_live_user(!empty($comment['publisher']) ? $comment['publisher'] : array());
+        $raw_text = '';
+        if (!empty($comment['Orginaltext'])) {
+            $raw_text = strip_tags(str_replace('<br>', "\n", html_entity_decode($comment['Orginaltext'])));
+        } else if (!empty($comment['text'])) {
+            $raw_text = strip_tags(html_entity_decode($comment['text']));
+        }
+
+        return array(
+            'id' => intval(!empty($comment['id']) ? $comment['id'] : 0),
+            'author' => !empty($publisher['name']) ? $publisher['name'] : 'User',
+            'username' => !empty($publisher['username']) ? $publisher['username'] : '',
+            'avatar' => !empty($publisher['avatar']) ? $publisher['avatar'] : '',
+            'message' => trim($raw_text),
+            'time_text' => !empty($comment['time']) ? Wo_Time_Elapsed_String($comment['time']) : $wo['lang']['now'],
+            'kind' => $kind,
+            'is_host' => $is_host === true
+        );
+    };
+
+    if ($s == 'bootstrap') {
+        header("Content-type: application/json");
+
+        if ($wo['loggedin'] == false) {
+            echo json_encode(array(
+                'status' => 401,
+                'message' => $error_icon . $wo['lang']['please_check_details']
+            ));
+            exit();
+        }
+
+        $enabled = ($wo['config']['live_video'] == 1);
+        $can_use_live = !empty($wo['config']['can_use_live']);
+        $livekit_ready = Wo_IsLiveKitAvailable();
+        $blocked_reason = '';
+
+        if ($enabled !== true) {
+            $blocked_reason = 'live_video_disabled';
+        } else if ($can_use_live !== true) {
+            $blocked_reason = 'live_permission_disabled';
+        } else if ($livekit_ready !== true) {
+            $blocked_reason = 'livekit_not_ready';
+        }
+
+        $active_live = 0;
+        if ($blocked_reason === '') {
+            $active_live = intval(
+                $db
+                    ->where('user_id', $wo['user']['id'])
+                    ->where('stream_name', '', '!=')
+                    ->where('live_ended', 0)
+                    ->where('live_time', time() - 5, '>=')
+                    ->getValue(T_POSTS, 'COUNT(*)')
+            );
+            if ($active_live > 0) {
+                $blocked_reason = 'live_already_running';
+            }
+        }
+
+        $payload = array();
+        if ($blocked_reason === '') {
+            $stream_name = Wo_GenerateLiveStreamName($wo['user']['id']);
+            $payload = Wo_GetLiveKitLivestreamJoinPayload($stream_name, 'host', $wo['user']['id'], $wo['user']);
+            if (empty($payload)) {
+                $blocked_reason = 'bootstrap_failed';
+            }
+        }
+
+        echo json_encode(array(
+            'status' => 200,
+            'enabled' => $enabled ? 1 : 0,
+            'can_use_live' => ($enabled && $can_use_live && $livekit_ready) ? 1 : 0,
+            'blocked_reason' => $blocked_reason,
+            'provider' => 'livekit',
+            'host' => array_merge(
+                $normalize_live_user($wo['user']),
+                array(
+                    'note' => 'Host - timeline'
+                )
+            ),
+            'stream_name' => !empty($payload['stream_name']) ? $payload['stream_name'] : '',
+            'room_name' => !empty($payload['room_name']) ? $payload['room_name'] : '',
+            'ws_url' => !empty($payload['ws_url']) ? $payload['ws_url'] : '',
+            'token' => !empty($payload['token']) ? $payload['token'] : '',
+            'destination' => 'timeline',
+            'current_privacy' => !empty($_COOKIE['post_privacy']) ? Wo_Secure($_COOKIE['post_privacy']) : '0'
+        ));
+        exit();
+    }
+
     if ($s == 'create' && $wo['config']['can_use_live']) {
-        if (!Wo_IsLiveKitAvailable()) {
+        if ($wo['config']['live_video'] != 1 || !Wo_IsLiveKitAvailable()) {
             $data['message'] = $error_icon . $wo['lang']['please_check_details'];
         } else {
+            $if_live = intval(
+                $db
+                    ->where('user_id', $wo['user']['id'])
+                    ->where('stream_name', '', '!=')
+                    ->where('live_ended', 0)
+                    ->where('live_time', time() - 5, '>=')
+                    ->getValue(T_POSTS, 'COUNT(*)')
+            );
+            if ($if_live > 0) {
+                $data['message'] = $error_icon . $wo['lang']['please_check_details'];
+            } else {
             $stream_name = !empty($_POST['stream_name']) ? Wo_Secure($_POST['stream_name']) : Wo_GenerateLiveStreamName($wo['user']['id']);
             $live_title = !empty($_POST['title']) ? Wo_Secure(trim($_POST['title'])) : '';
             $live_description = !empty($_POST['description']) ? Wo_Secure(trim($_POST['description'])) : '';
@@ -27,7 +158,9 @@ if ($f == 'live') {
                     '3',
                     '4'
                 );
-                if (!empty($_COOKIE['post_privacy']) && in_array($_COOKIE['post_privacy'], $privacy_array)) {
+                if (!empty($_POST['post_privacy']) && in_array($_POST['post_privacy'], $privacy_array)) {
+                    $postPrivacy = Wo_Secure($_POST['post_privacy']);
+                } else if (!empty($_COOKIE['post_privacy']) && in_array($_COOKIE['post_privacy'], $privacy_array)) {
                     $postPrivacy = Wo_Secure($_COOKIE['post_privacy']);
                 }
                 $post_id = $db->insert(T_POSTS, array(
@@ -54,10 +187,13 @@ if ($f == 'live') {
                     $data['token']     = $join_payload['token'];
                     $data['title']     = $live_title;
                     $data['description'] = $live_description;
+                    $data['post_url'] = Wo_SeoLink("index.php?link1=post&id=" . $post_id);
+                    $data['started_at'] = time();
                 } else {
                     $data['message'] = $error_icon . $wo['lang']['please_check_details'];
                 }
             }
+        }
         }
         header("Content-type: application/json");
         echo json_encode($data);
@@ -126,19 +262,51 @@ if ($f == 'live') {
                     }
                 }
                 $word = ($stream_state === 'offline') ? $wo['lang']['offline'] : $wo['lang']['live'];
-                $reactions_count = intval($db->where('post_id', $post_id)->getValue(T_REACTIONS, 'COUNT(*)'));
-                $shares_count = intval(Wo_CountShares($post_id)) + intval(Wo_CountPostShare($post_id));
-                $clips_count = 0;
-                if (isset($post_data['clips_count'])) {
-                    $clips_count = intval($post_data['clips_count']);
-                } else if (isset($post_data['clip_count'])) {
-                    $clips_count = intval($post_data['clip_count']);
-                }
-                $html = '';
-                $count = 0;
-                if (intval(!empty($post_data['live_ended']) ? $post_data['live_ended'] : 0) == 0) {
-                    $user_comment_row = $db->where('post_id', $post_id)->where('user_id', $wo['user']['id'])->getOne(T_COMMENTS);
-                    $user_comment = is_object($user_comment_row) ? (array) $user_comment_row : (is_array($user_comment_row) ? $user_comment_row : array());
+                    $reactions_count = intval($db->where('post_id', $post_id)->getValue(T_REACTIONS, 'COUNT(*)'));
+                    $shares_count = intval(Wo_CountShares($post_id)) + intval(Wo_CountPostShare($post_id));
+                    $clips_count = 0;
+                    $structured_comments = array();
+                    $structured_reactions = array();
+                    $joined_payload = array();
+                    $left_payload = array();
+                    if (isset($post_data['clips_count'])) {
+                        $clips_count = intval($post_data['clips_count']);
+                    } else if (isset($post_data['clip_count'])) {
+                        $clips_count = intval($post_data['clip_count']);
+                    }
+                    $html = '';
+                    $html_count = 0;
+                    $viewer_count = 0;
+                    if (intval(!empty($post_data['live_ended']) ? $post_data['live_ended'] : 0) == 0) {
+                        if (!empty($_POST['reaction_ids'])) {
+                            $reaction_ids = array();
+                            foreach ($_POST['reaction_ids'] as $key => $one_id) {
+                                if (is_numeric($one_id) && intval($one_id) > 0) {
+                                    $reaction_ids[] = Wo_Secure($one_id);
+                                }
+                            }
+                            if (!empty($reaction_ids)) {
+                                $db->where('id', $reaction_ids, 'NOT IN')->where('id', end($reaction_ids), '>');
+                            }
+                        }
+                        $live_reactions = $db->where('post_id', $post_id)->orderBy('id', 'DESC')->get(T_REACTIONS, 8);
+                        if (!empty($live_reactions)) {
+                            $live_reactions = array_reverse($live_reactions);
+                            foreach ($live_reactions as $reaction_row) {
+                                $reaction_user = Wo_UserData($reaction_row->user_id);
+                                if (!empty($reaction_user)) {
+                                    $structured_reactions[] = array(
+                                        'id' => intval($reaction_row->id),
+                                        'value' => !empty($reaction_row->reaction) ? strval($reaction_row->reaction) : '',
+                                        'author' => !empty($reaction_user['name']) ? $reaction_user['name'] : '',
+                                        'username' => !empty($reaction_user['username']) ? $reaction_user['username'] : '',
+                                        'avatar' => !empty($reaction_user['avatar']) ? $reaction_user['avatar'] : ''
+                                    );
+                                }
+                            }
+                        }
+                        $user_comment_row = $db->where('post_id', $post_id)->where('user_id', $wo['user']['id'])->getOne(T_COMMENTS);
+                        $user_comment = is_object($user_comment_row) ? (array) $user_comment_row : (is_array($user_comment_row) ? $user_comment_row : array());
                     if (!empty($user_comment)) {
                         $db->where('id', intval($user_comment['id']), '>');
                     }
@@ -154,26 +322,45 @@ if ($f == 'live') {
                     foreach ($comments as $key => $value) {
                         if (!empty($value->text)) {
                             $wo['comment'] = Wo_GetPostComment($value->id);
+                            if (!empty($wo['comment'])) {
+                                $structured_comments[] = $map_live_comment_payload(
+                                    $wo['comment'],
+                                    'comment',
+                                    intval(!empty($post_data['user_id']) ? $post_data['user_id'] : 0) === intval(!empty($wo['comment']['user_id']) ? $wo['comment']['user_id'] : 0)
+                                );
+                            }
                             $html .= Wo_LoadPage('story/includes/live_comment');
-                            $count = $count + 1;
-                            if ($count == 4) {
+                            $html_count = $html_count + 1;
+                            if ($html_count == 4) {
                                 break;
                             }
                         }
                     }
                     if ($stream_state !== 'offline') {
-                        $count = $db->where('post_id', $post_id)->where('time', time() - 6, '>=')->getValue(T_LIVE_SUB, 'COUNT(*)');
+                        $viewer_count = intval($db->where('post_id', $post_id)->where('time', time() - 6, '>=')->getValue(T_LIVE_SUB, 'COUNT(*)'));
                         if ($wo['user']['id'] == intval(!empty($post_data['user_id']) ? $post_data['user_id'] : 0)) {
                             $joined_users = $db->where('post_id', $post_id)->where('time', time() - 6, '>=')->where('is_watching', 0)->get(T_LIVE_SUB);
                             $joined_ids   = array();
                             if (!empty($joined_users)) {
                                 foreach ($joined_users as $key => $value) {
                                     $joined_ids[]  = $value->user_id;
+                                    $user_data     = Wo_UserData($value->user_id);
+                                    if (!empty($user_data)) {
+                                        $joined_payload[] = array(
+                                            'id' => 0,
+                                            'author' => !empty($user_data['name']) ? $user_data['name'] : '',
+                                            'username' => !empty($user_data['username']) ? $user_data['username'] : '',
+                                            'avatar' => !empty($user_data['avatar']) ? $user_data['avatar'] : '',
+                                            'message' => 'joined live video',
+                                            'time_text' => $wo['lang']['now'],
+                                            'kind' => 'joined',
+                                            'is_host' => false
+                                        );
+                                    }
                                     $wo['comment'] = array(
                                         'id' => '',
                                         'text' => 'joined live video'
                                     );
-                                    $user_data     = Wo_UserData($value->user_id);
                                     if (!empty($user_data)) {
                                         $wo['comment']['publisher'] = $user_data;
                                         $html .= Wo_LoadPage('story/includes/live_comment');
@@ -190,11 +377,23 @@ if ($f == 'live') {
                             if (!empty($left_users)) {
                                 foreach ($left_users as $key => $value) {
                                     $left_ids[]    = $value->user_id;
+                                    $user_data     = Wo_UserData($value->user_id);
+                                    if (!empty($user_data)) {
+                                        $left_payload[] = array(
+                                            'id' => 0,
+                                            'author' => !empty($user_data['name']) ? $user_data['name'] : '',
+                                            'username' => !empty($user_data['username']) ? $user_data['username'] : '',
+                                            'avatar' => !empty($user_data['avatar']) ? $user_data['avatar'] : '',
+                                            'message' => 'left live video',
+                                            'time_text' => $wo['lang']['now'],
+                                            'kind' => 'left',
+                                            'is_host' => false
+                                        );
+                                    }
                                     $wo['comment'] = array(
                                         'id' => '',
                                         'text' => 'left live video'
                                     );
-                                    $user_data     = Wo_UserData($value->user_id);
                                     if (!empty($user_data)) {
                                         $wo['comment']['publisher'] = $user_data;
                                         $html .= Wo_LoadPage('story/includes/live_comment');
@@ -209,14 +408,19 @@ if ($f == 'live') {
                     $data = array(
                         'status' => 200,
                         'html' => $html,
-                        'count' => $count,
+                        'count' => $viewer_count,
+                        'viewer_count' => $viewer_count,
                         'word' => $word,
                         'still_live' => $stream_state,
                         'is_final' => intval($stream_state === 'offline'),
                         'heartbeat_age' => $heartbeat_age,
                         'reactions_count' => $reactions_count,
                         'shares_count' => $shares_count,
-                        'clips_count' => $clips_count
+                        'clips_count' => $clips_count,
+                        'comments' => $structured_comments,
+                        'reactions' => $structured_reactions,
+                        'joined' => $joined_payload,
+                        'left' => $left_payload
                     );
                     if ($wo['user']['id'] == intval(!empty($post_data['user_id']) ? $post_data['user_id'] : 0)) {
                         if ($_POST['page'] == 'live') {
@@ -256,7 +460,12 @@ if ($f == 'live') {
                         'heartbeat_age' => $heartbeat_age,
                         'reactions_count' => $reactions_count,
                         'shares_count' => $shares_count,
-                        'clips_count' => $clips_count
+                        'clips_count' => $clips_count,
+                        'viewer_count' => 0,
+                        'comments' => array(),
+                        'reactions' => array(),
+                        'joined' => array(),
+                        'left' => array()
                     );
                 }
             } else {
@@ -271,6 +480,7 @@ if ($f == 'live') {
         exit();
     }
     if ($s == 'delete') {
+        $deleted = false;
         if (!empty($_POST['post_id']) && is_numeric($_POST['post_id']) && $_POST['post_id'] > 0) {
             $db->where('post_id', Wo_Secure($_POST['post_id']))->where('user_id', $wo['user']['id'])->update(T_POSTS, array(
                 'live_ended' => 1,
@@ -300,6 +510,7 @@ if ($f == 'live') {
                     }
                 }
             }
+            $deleted = true;
         }
         $posts = $db->where('stream_name','','<>')->where('postFile','')->get(T_POSTS);
         if (!empty($posts)) {
@@ -309,6 +520,12 @@ if ($f == 'live') {
                 }
             }
         }
+        header("Content-type: application/json");
+        echo json_encode(array(
+            'status' => $deleted ? 200 : 400,
+            'message' => $deleted ? 'Live session ended.' : $error_icon . $wo['lang']['please_check_details']
+        ));
+        exit();
     }
     if ($s == 'create_thumb') {
         if (!empty($_POST['post_id']) && is_numeric($_POST['post_id']) && $_POST['post_id'] > 0 && !empty($_FILES['thumb'])) {
@@ -333,6 +550,7 @@ if ($f == 'live') {
                             'postFileThumb' => $thumb
                         ));
                         $data['status'] = 200;
+                        $data['thumb_url'] = Wo_GetMedia($thumb);
                         header("Content-type: application/json");
                         echo json_encode($data);
                         exit();
@@ -340,5 +558,11 @@ if ($f == 'live') {
                 }
             }
         }
+        header("Content-type: application/json");
+        echo json_encode(array(
+            'status' => 400,
+            'message' => $error_icon . $wo['lang']['please_check_details']
+        ));
+        exit();
     }
 }

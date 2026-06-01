@@ -5,6 +5,29 @@ $response_data = array(
     'api_status' => 400
 );
 
+if (empty($wo['loggedin']) && !empty($_GET['access_token'])) {
+    $session_user_id = 0;
+
+    if (function_exists('Wo_GetUserFromSessionID')) {
+        $resolved_user_id = Wo_GetUserFromSessionID($_GET['access_token']);
+        if (!empty($resolved_user_id)) {
+            $session_user_id = (int) $resolved_user_id;
+        }
+    }
+
+    if (empty($session_user_id) && function_exists('Wo_ValidateAccessToken')) {
+        $resolved_user_id = Wo_ValidateAccessToken($_GET['access_token']);
+        if (!empty($resolved_user_id)) {
+            $session_user_id = (int) $resolved_user_id;
+        }
+    }
+
+    if (!empty($session_user_id)) {
+        $wo['user'] = Wo_UserData($session_user_id);
+        $wo['loggedin'] = !empty($wo['user']['user_id']);
+    }
+}
+
 $packages = array();
 foreach ($wo['pro_packages'] as $key => $package) {
     if (empty($package['status'])) {
