@@ -104,7 +104,7 @@ Ví dụ rút gọn:
 server {
     listen 443 ssl http2;
     server_name your-domain.com;
-    root /var/www/demo.vnseea;
+    root /var/www/v2.vnseea;
 
     index index.php index.html;
 
@@ -178,7 +178,7 @@ module.exports = {
   apps: [
     {
       name: "vnseea-client",
-      cwd: "/var/www/demo.vnseea/client",
+      cwd: "/var/www/v2.vnseea/client",
       script: ".output/server/index.mjs",
       interpreter: "node",
       instances: 1,
@@ -193,7 +193,7 @@ module.exports = {
     },
     {
       name: "vnseea-realtime",
-      cwd: "/var/www/demo.vnseea/client",
+      cwd: "/var/www/v2.vnseea/client",
       script: "realtime/notification-server.mjs",
       interpreter: "node",
       instances: 1,
@@ -222,7 +222,7 @@ Không thêm `vnseea-php-upstreams` vào production PM2.
 8. Smoke test.
 
 ```bash
-cd /var/www/demo.vnseea
+cd /var/www/v2.vnseea
 git pull
 
 cd client

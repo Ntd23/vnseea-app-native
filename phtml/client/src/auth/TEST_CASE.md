@@ -13,7 +13,7 @@ English description: Test cases for the auth bounded context, including backend 
 ## Chuan bi
 
 - Chay frontend: `cd client && npm run dev`.
-- Test uu tien tren domain Laragon: `https://demo.vnseea.test:8443`.
+- Test uu tien tren domain Laragon: `https://v2.vnseea.test:8443`.
 - Mo DevTools:
   - tab `Network` de xem request `/_api/auth/*`
   - tab `Application > Cookies` de xem cookie `user_id`
@@ -44,8 +44,8 @@ Muc tieu cua Postman la test theo cap:
 
 | Key | Value |
 | --- | --- |
-| `backend_url` | `https://demo.vnseea.test:8443` |
-| `nuxt_url` | `https://demo.vnseea.test:8443` |
+| `backend_url` | `https://v2.vnseea.test:8443` |
+| `nuxt_url` | `https://v2.vnseea.test:8443` |
 | `backend_server_key` | Lay tu `NUXT_BACKEND_SERVER_KEY` trong `.env`, khong commit vao doc. |
 | `access_token` | Token tra ve tu PHP `/api/auth` neu login thanh cong. |
 | `content_type` | `application/json` |
@@ -55,7 +55,7 @@ Neu endpoint can session, copy cookie `user_id` tu browser sang Postman:
 1. Login tren browser.
 2. Mo DevTools `Application > Cookies`.
 3. Copy cookie `user_id`.
-4. Trong Postman tab `Cookies`, them cookie cho domain `demo.vnseea.test`.
+4. Trong Postman tab `Cookies`, them cookie cho domain `v2.vnseea.test`.
 
 ### PHP Raw Requests
 

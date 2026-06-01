@@ -5,11 +5,11 @@
 - page detail
 
 Sample đã được scaffold tại:
-- [client/src/community/README.md](/d:/Duong/src/laragon/www/demo.vnseea/client/src/community/README.md)
-- [domain/services/community-metrics.service.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/src/community/domain/services/community-metrics.service.ts)
-- [infrastructure/adapters/communityDirectory.adapter.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/src/community/infrastructure/adapters/communityDirectory.adapter.ts)
-- [application/composables/useCommunityGroupDetail.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/src/community/application/composables/useCommunityGroupDetail.ts)
-- [application/composables/useCommunityPageDetail.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/src/community/application/composables/useCommunityPageDetail.ts)
+- [client/src/community/README.md](/d:/Duong/src/laragon/www/v2.vnseea/client/src/community/README.md)
+- [domain/services/community-metrics.service.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/src/community/domain/services/community-metrics.service.ts)
+- [infrastructure/adapters/communityDirectory.adapter.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/src/community/infrastructure/adapters/communityDirectory.adapter.ts)
+- [application/composables/useCommunityGroupDetail.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/src/community/application/composables/useCommunityGroupDetail.ts)
+- [application/composables/useCommunityPageDetail.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/src/community/application/composables/useCommunityPageDetail.ts)
 
 ## Ý nghĩa bước này
 

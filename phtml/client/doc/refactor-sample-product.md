@@ -3,14 +3,14 @@
 Đây là mẫu refactor cụ thể đầu tiên.
 
 Sample đã được scaffold tại:
-- [client/src/product/README.md](/d:/Duong/src/laragon/www/demo.vnseea/client/src/product/README.md)
-- [domain/types/product-editor.types.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/src/product/domain/types/product-editor.types.ts)
-- [domain/repositories/ProductRepository.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/src/product/domain/repositories/ProductRepository.ts)
-- [domain/specifications/product-editor.specification.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/src/product/domain/specifications/product-editor.specification.ts)
-- [application/use-cases/create-product-draft.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/src/product/application/use-cases/create-product-draft.ts)
-- [application/composables/useProductEditor.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/src/product/application/composables/useProductEditor.ts)
-- [infrastructure/persistence/product-editor.storage.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/src/product/infrastructure/persistence/product-editor.storage.ts)
-- [presentation/pages/NewProductPage.vue](/d:/Duong/src/laragon/www/demo.vnseea/client/src/product/presentation/pages/NewProductPage.vue)
+- [client/src/product/README.md](/d:/Duong/src/laragon/www/v2.vnseea/client/src/product/README.md)
+- [domain/types/product-editor.types.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/src/product/domain/types/product-editor.types.ts)
+- [domain/repositories/ProductRepository.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/src/product/domain/repositories/ProductRepository.ts)
+- [domain/specifications/product-editor.specification.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/src/product/domain/specifications/product-editor.specification.ts)
+- [application/use-cases/create-product-draft.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/src/product/application/use-cases/create-product-draft.ts)
+- [application/composables/useProductEditor.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/src/product/application/composables/useProductEditor.ts)
+- [infrastructure/persistence/product-editor.storage.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/src/product/infrastructure/persistence/product-editor.storage.ts)
+- [presentation/pages/NewProductPage.vue](/d:/Duong/src/laragon/www/v2.vnseea/client/src/product/presentation/pages/NewProductPage.vue)
 
 ## Ý nghĩa sample
 

@@ -52,7 +52,7 @@ import {
 } from 'lucide-react-native';
 import type { ReelsItem } from '../../domain/types/reels.types';
 
-const AVATAR_FALLBACK = 'https://demo.vnseea.vn/upload/photos/d-avatar.jpg';
+const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 
 // Screen width used by the SVG gradient — computed once at module level.
 // Rotation is not a concern for a portrait-locked reels feed.

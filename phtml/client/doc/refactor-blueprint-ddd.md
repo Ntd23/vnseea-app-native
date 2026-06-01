@@ -386,7 +386,7 @@ Tách thêm:
 Chuyển vào:
 - `src/community/presentation/components/*`
 
-Từ [types/community.ts](/d:/Duong/src/laragon/www/demo.vnseea/client/types/community.ts):
+Từ [types/community.ts](/d:/Duong/src/laragon/www/v2.vnseea/client/types/community.ts):
 - types/interface -> `src/community/domain/types/*`
 - create draft helpers -> `src/community/application/*`
 - route map / constants -> `src/community/domain` hoặc `application`, tùy nghĩa

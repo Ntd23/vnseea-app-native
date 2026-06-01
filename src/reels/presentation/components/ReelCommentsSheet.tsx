@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Heart, SendHorizonal, X } from 'lucide-react-native';
 import type { ReelComment } from '../../domain/types/reels.types';
 
-const AVATAR_FALLBACK = 'https://demo.vnseea.vn/upload/photos/d-avatar.jpg';
+const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 
 interface Props {
   visible: boolean;
