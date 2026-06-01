@@ -75,7 +75,7 @@ import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/us
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 
-const AVATAR_FALLBACK = 'https://demo.vnseea.vn/upload/photos/d-avatar.jpg';
+const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 
 // ── Reaction lookup tables ───────────────────────────────────────────────
 // The picker shows all 6 emojis. Each reaction also has a label (shown on

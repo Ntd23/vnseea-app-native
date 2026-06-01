@@ -32,7 +32,7 @@ English description: Test cases for the community bounded context, covering grou
 ## Môi trường
 
 - Nuxt direct: `http://127.0.0.1:3000`
-- Laragon proxy: `http://demo.vnseea.test:8080`
+- Laragon proxy: `http://v2.vnseea.test:8080`
 - Nguồn session backend: PHP browser cookies
 - API bridge:
   - `/_api/community/groups?mode=mine|joined|suggested`
@@ -96,6 +96,6 @@ npm run build
 
 ## Ghi chú
 
-- Test cả `127.0.0.1:3000` và `demo.vnseea.test:8080` khi kiểm tra reload và proxy.
+- Test cả `127.0.0.1:3000` và `v2.vnseea.test:8080` khi kiểm tra reload và proxy.
 - Với các tab suggested, mở DevTools Network để xác nhận request vẫn đi qua `/_api/community/*`, không gọi trực tiếp PHP endpoint.
 - Nếu title, summary, action label hoặc count của card bị lặp chung chung trên nhiều record, đánh fail và lưu lại payload của response `/_api/community/*` tương ứng.

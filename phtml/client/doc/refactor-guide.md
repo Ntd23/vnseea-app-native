@@ -3,8 +3,8 @@
 Đây là **file duy nhất nên dùng làm tài liệu hướng dẫn refactor chính** cho `client`.
 
 Các file khác chỉ là tài liệu tham chiếu chi tiết:
-- [refactor-blueprint-ddd.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/refactor-blueprint-ddd.md): blueprint kiến trúc mục tiêu
-- [product-editor-migration-status.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/product-editor-migration-status.md): inventory module và backlog migration
+- [refactor-blueprint-ddd.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/refactor-blueprint-ddd.md): blueprint kiến trúc mục tiêu
+- [product-editor-migration-status.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/product-editor-migration-status.md): inventory module và backlog migration
 
 ## Mục tiêu
 
@@ -566,8 +566,8 @@ Một bounded context được coi là refactor xong khi:
 ## Cách dùng tài liệu
 
 Nếu team chỉ được chọn **1 file** để bám khi refactor, hãy dùng file này:
-- [refactor-guide.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/refactor-guide.md)
+- [refactor-guide.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/refactor-guide.md)
 
 Khi cần chi tiết hơn:
-- xem blueprint: [refactor-blueprint-ddd.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/refactor-blueprint-ddd.md)
-- xem inventory và backlog module: [product-editor-migration-status.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/product-editor-migration-status.md)
+- xem blueprint: [refactor-blueprint-ddd.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/refactor-blueprint-ddd.md)
+- xem inventory và backlog module: [product-editor-migration-status.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/product-editor-migration-status.md)

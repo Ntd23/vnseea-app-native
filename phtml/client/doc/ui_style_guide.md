@@ -648,16 +648,16 @@ Ví dụ thực tế:
 
 | File | Mô tả |
 |---|---|
-| [PostCard.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/feed/presentation/components/PostCard.vue) | Ghost buttons, soft card |
-| [PostHeader.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/feed/presentation/components/PostHeader.vue) | Gradient avatar, follow pill |
-| [PostMediaGrid.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/feed/presentation/components/PostMediaGrid.vue) | Subtle overlay, corner badge |
-| [FeedPublisherBox.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/feed/presentation/components/FeedPublisherBox.vue) | Compact/expand mode |
-| [StoryCarousel.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/feed/presentation/components/StoryCarousel.vue) | Vertical cards |
-| [SidebarMenuItem.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/navigation/presentation/components/SidebarMenuItem.vue) | Normal case, accent bar |
-| [LeftSidebar.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/navigation/presentation/components/LeftSidebar.vue) | Section title nhẹ |
-| [HeaderIconNav.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/navigation/presentation/components/HeaderIconNav.vue) | Icon+label, desktop only |
-| [HeaderBar.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/navigation/presentation/components/HeaderBar.vue) | Mobile bar, search toggle |
-| [HeaderUserMenu.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/navigation/presentation/components/HeaderUserMenu.vue) | Admin card dropdown |
-| [MobileMenu.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/navigation/presentation/components/MobileMenu.vue) | Clean drawer menu |
-| [ChatWidget.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/navigation/presentation/components/ChatWidget.vue) | Native HTML, soft UI |
-| [HomeFeedPage.vue](file:///d:/Duong/src/laragon/www/demo.vnseea/client/src/feed/presentation/pages/HomeFeedPage.vue) | 16px gap, clean layout |
+| [PostCard.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/feed/presentation/components/PostCard.vue) | Ghost buttons, soft card |
+| [PostHeader.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/feed/presentation/components/PostHeader.vue) | Gradient avatar, follow pill |
+| [PostMediaGrid.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/feed/presentation/components/PostMediaGrid.vue) | Subtle overlay, corner badge |
+| [FeedPublisherBox.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/feed/presentation/components/FeedPublisherBox.vue) | Compact/expand mode |
+| [StoryCarousel.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/feed/presentation/components/StoryCarousel.vue) | Vertical cards |
+| [SidebarMenuItem.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/navigation/presentation/components/SidebarMenuItem.vue) | Normal case, accent bar |
+| [LeftSidebar.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/navigation/presentation/components/LeftSidebar.vue) | Section title nhẹ |
+| [HeaderIconNav.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/navigation/presentation/components/HeaderIconNav.vue) | Icon+label, desktop only |
+| [HeaderBar.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/navigation/presentation/components/HeaderBar.vue) | Mobile bar, search toggle |
+| [HeaderUserMenu.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/navigation/presentation/components/HeaderUserMenu.vue) | Admin card dropdown |
+| [MobileMenu.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/navigation/presentation/components/MobileMenu.vue) | Clean drawer menu |
+| [ChatWidget.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/navigation/presentation/components/ChatWidget.vue) | Native HTML, soft UI |
+| [HomeFeedPage.vue](file:///d:/Duong/src/laragon/www/v2.vnseea/client/src/feed/presentation/pages/HomeFeedPage.vue) | 16px gap, clean layout |

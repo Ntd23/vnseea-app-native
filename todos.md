@@ -23,8 +23,8 @@
 - [x] Add `backendConfig`.
 - [x] Remove direct `process.env` usage from shared API client.
 - [x] Create real local `.env` from `.env.example`.
-- [x] Set `API_BASE_URL` to the deployed API URL, for example `https://demo.vnseea.vn/api`.
-- [x] Set `WEB_BASE_URL` to the deployed web root, for example `https://demo.vnseea.vn`.
+- [x] Set `API_BASE_URL` to the deployed API URL, for example `https://v2.vnseea.vn/api`.
+- [x] Set `WEB_BASE_URL` to the deployed web root, for example `https://v2.vnseea.vn`.
 - [x] Set `SERVER_KEY` from the PHP backend config.
 - [ ] Verify `POST <API_BASE_URL>/get-site-settings` with `server_key` from the device network.
 
