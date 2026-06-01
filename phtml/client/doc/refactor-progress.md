@@ -17,14 +17,14 @@ File này dùng để đánh dấu phần nào của hướng refactor mới đ�
 
 ## Docs
 
-- `[x]` [refactor-guide.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/refactor-guide.md)
-- `[x]` [refactor-blueprint-ddd.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/refactor-blueprint-ddd.md)
-- `[x]` [product-editor-migration-status.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/product-editor-migration-status.md)
-- `[x]` [ui-parity-baseline.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/ui-parity-baseline.md)
-- `[x]` [ui-parity-checklist.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/ui-parity-checklist.md)
-- `[x]` [refactor-sample-product.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/refactor-sample-product.md)
-- `[x]` [refactor-sample-checkout.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/refactor-sample-checkout.md)
-- `[x]` [refactor-sample-community.md](/d:/Duong/src/laragon/www/demo.vnseea/client/doc/refactor-sample-community.md)
+- `[x]` [refactor-guide.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/refactor-guide.md)
+- `[x]` [refactor-blueprint-ddd.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/refactor-blueprint-ddd.md)
+- `[x]` [product-editor-migration-status.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/product-editor-migration-status.md)
+- `[x]` [ui-parity-baseline.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/ui-parity-baseline.md)
+- `[x]` [ui-parity-checklist.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/ui-parity-checklist.md)
+- `[x]` [refactor-sample-product.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/refactor-sample-product.md)
+- `[x]` [refactor-sample-checkout.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/refactor-sample-checkout.md)
+- `[x]` [refactor-sample-community.md](/d:/Duong/src/laragon/www/v2.vnseea/client/doc/refactor-sample-community.md)
 
 ## UI parity recovery
 

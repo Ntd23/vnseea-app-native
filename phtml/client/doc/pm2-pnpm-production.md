@@ -53,7 +53,7 @@ client/ecosystem.config.cjs
 Chay:
 
 ```bash
-cd /path/to/demo.vnseea/client
+cd /path/to/v2.vnseea/client
 pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
@@ -72,7 +72,7 @@ pm2 delete vnseea-client
 ## 5. Update khi deploy ban moi
 
 ```bash
-cd /path/to/demo.vnseea/client
+cd /path/to/v2.vnseea/client
 git pull
 pnpm install --frozen-lockfile
 pnpm build

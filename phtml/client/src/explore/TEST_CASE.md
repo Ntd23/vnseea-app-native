@@ -21,7 +21,7 @@ English description: Test cases for the explore bounded context, covering the me
 ## Môi trường
 
 - Nuxt direct: `http://127.0.0.1:3000`
-- Laragon proxy: `http://demo.vnseea.test:8080`
+- Laragon proxy: `http://v2.vnseea.test:8080`
 - Nguồn session backend: PHP browser cookies
 - API bridge:
   - `/_api/feed/explore`

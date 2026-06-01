@@ -32,8 +32,8 @@ Postman environment:
 
 | Key | Value |
 | --- | --- |
-| `backend_url` | `https://demo.vnseea.test:8443` |
-| `nuxt_url` | `https://demo.vnseea.test:8443` |
+| `backend_url` | `https://v2.vnseea.test:8443` |
+| `nuxt_url` | `https://v2.vnseea.test:8443` |
 | `backend_server_key` | Lay tu `NUXT_BACKEND_SERVER_KEY`. |
 
 | ID | Man hinh | Layer | Method | URL | Body/Params | Ky vong |

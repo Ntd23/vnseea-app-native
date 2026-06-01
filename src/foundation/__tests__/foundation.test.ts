@@ -20,7 +20,7 @@ import { mapPageSummary } from '../application/mappers/pageSummaryMapper';
 import { mapPostSummary } from '../application/mappers/postSummaryMapper';
 import { mapUserSummary } from '../application/mappers/userSummaryMapper';
 
-const WEB_BASE_URL = 'https://demo.vnseea.vn';
+const WEB_BASE_URL = 'https://v2.vnseea.vn';
 
 describe('foundation value resolvers', () => {
   it('normalizes primitive values from raw API payloads', () => {
@@ -60,7 +60,7 @@ describe('foundation URL resolver', () => {
       'https://cdn.vnseea.vn/a.jpg',
     );
     expect(normalizeRawUrl('/upload/photos/a.jpg', WEB_BASE_URL)).toBe(
-      'https://demo.vnseea.vn/upload/photos/a.jpg',
+      'https://v2.vnseea.vn/upload/photos/a.jpg',
     );
     expect(normalizeRawUrl(undefined, WEB_BASE_URL)).toBeUndefined();
   });
@@ -112,7 +112,7 @@ describe('foundation summary mappers', () => {
       id: '7',
       username: 'admin',
       name: 'Admin User',
-      avatarUrl: 'https://demo.vnseea.vn/upload/avatar.jpg',
+      avatarUrl: 'https://v2.vnseea.vn/upload/avatar.jpg',
       verified: true,
     });
   });
@@ -134,8 +134,8 @@ describe('foundation summary mappers', () => {
       id: '12',
       name: 'VNSEEA',
       username: 'vnseea',
-      avatarUrl: 'https://demo.vnseea.vn/upload/page.jpg',
-      coverUrl: 'https://demo.vnseea.vn/upload/cover.jpg',
+      avatarUrl: 'https://v2.vnseea.vn/upload/page.jpg',
+      coverUrl: 'https://v2.vnseea.vn/upload/cover.jpg',
       liked: true,
     });
 
@@ -154,7 +154,7 @@ describe('foundation summary mappers', () => {
       id: '33',
       name: 'Developers',
       username: 'devs',
-      avatarUrl: 'https://demo.vnseea.vn/upload/group.jpg',
+      avatarUrl: 'https://v2.vnseea.vn/upload/group.jpg',
       coverUrl: undefined,
       joined: false,
     });
@@ -171,9 +171,9 @@ describe('foundation summary mappers', () => {
         WEB_BASE_URL,
       ),
     ).toEqual({
-      url: 'https://demo.vnseea.vn/upload/video.mp4',
+      url: 'https://v2.vnseea.vn/upload/video.mp4',
       kind: 'video',
-      thumbnailUrl: 'https://demo.vnseea.vn/upload/thumb.jpg',
+      thumbnailUrl: 'https://v2.vnseea.vn/upload/thumb.jpg',
       mimeType: 'video/mp4',
     });
 
@@ -209,13 +209,13 @@ describe('foundation summary mappers', () => {
         id: '7',
         username: 'admin',
         name: undefined,
-        avatarUrl: 'https://demo.vnseea.vn/upload/avatar.jpg',
+        avatarUrl: 'https://v2.vnseea.vn/upload/avatar.jpg',
         verified: undefined,
       },
       text: 'Hello',
       media: [
         {
-          url: 'https://demo.vnseea.vn/upload/post.jpg',
+          url: 'https://v2.vnseea.vn/upload/post.jpg',
           kind: 'image',
           thumbnailUrl: undefined,
           mimeType: undefined,

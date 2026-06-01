@@ -61,8 +61,8 @@ Postman environment:
 
 | Key | Value |
 | --- | --- |
-| `backend_url` | `https://demo.vnseea.test:8443` hoac `http://demo.vnseea.test:8080` |
-| `nuxt_url` | `https://demo.vnseea.test:8443` hoac `http://demo.vnseea.test:8080` |
+| `backend_url` | `https://v2.vnseea.test:8443` hoac `http://v2.vnseea.test:8080` |
+| `nuxt_url` | `https://v2.vnseea.test:8443` hoac `http://v2.vnseea.test:8080` |
 | `user_id` | Gia tri cookie `user_id` sau khi login. |
 | `hash_id` | Lay tu response `GET {{backend_url}}/api/v2/endpoints/get-current-user.php?session_id={{user_id}}`. |
 

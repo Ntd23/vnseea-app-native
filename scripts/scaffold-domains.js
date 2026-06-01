@@ -135,7 +135,7 @@ function sharedKernelApiClientTemplate() {
 
 import axios from 'axios';
 
-export const BASE_URL = 'https://demo.vnseea.com';
+export const BASE_URL = 'https://v2.vnseea.com';
 const SERVER_KEY = process.env.VNSEEA_SERVER_KEY ?? '';
 
 const apiClient = axios.create({

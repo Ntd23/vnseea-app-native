@@ -7,7 +7,7 @@ import {
   toUserSuggestionsPayload,
 } from '../userPayloadMapper';
 
-const WEB_BASE_URL = 'https://demo.vnseea.vn';
+const WEB_BASE_URL = 'https://v2.vnseea.vn';
 
 describe('userProfileMapper', () => {
   it('maps raw user records into profile domain data', () => {
@@ -42,8 +42,8 @@ describe('userProfileMapper', () => {
         id: '7',
         username: 'admin',
         name: 'Admin User',
-        avatarUrl: 'https://demo.vnseea.vn/upload/avatar.jpg',
-        coverUrl: 'https://demo.vnseea.vn/upload/cover.jpg',
+        avatarUrl: 'https://v2.vnseea.vn/upload/avatar.jpg',
+        coverUrl: 'https://v2.vnseea.vn/upload/cover.jpg',
         verified: true,
         email: 'admin@gmail.com',
         phoneNumber: '0900000000',
