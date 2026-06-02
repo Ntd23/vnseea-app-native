@@ -1,6 +1,10 @@
 // Description: Implements the auth repository using the WoWonder backend API.
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import {
+  identifyPushUser,
+  logoutPushUser,
+} from '../../../shared-kernel/infrastructure/push/oneSignalPush';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { AuthRepository } from '../../domain/repositories/AuthRepository';
 import type {
@@ -20,6 +24,7 @@ type AuthResponse = {
   membership?: boolean;
   message?: string;
   user_data?: Record<string, unknown>;
+  status?: string;
 };
 
 type CurrentUserResponse = {
@@ -30,6 +35,8 @@ type CurrentUserResponse = {
 const AUTH_DEVICE_TYPE = 'phone';
 
 function mapAuthResponse(response: AuthResponse): AuthResult {
+  console.log('[ApiAuthRepository] Login response:', JSON.stringify(response, null, 2));
+
   if (response.access_token && response.user_id) {
     const session: AuthSession = {
       accessToken: response.access_token,
@@ -39,99 +46,71 @@ function mapAuthResponse(response: AuthResponse): AuthResult {
     };
 
     sessionStorage.setSession(session);
+    identifyPushUser(session.userId);
 
-    // Also save user profile data for quick access in Settings and other screens
+    // Save user profile data
     if (response.user_data && typeof response.user_data === 'object') {
-      const userData = response.user_data as Record<string, unknown>;
+      const userData = response.user_data;
       sessionStorage.setUserProfile({
-        name: stringField(userData, 'name') || stringField(userData, 'first_name') || '',
-        username: stringField(userData, 'username') || '',
-        avatarUrl: stringField(userData, 'avatar') || '',
+        name: String(userData.name || userData.first_name || ''),
+        username: String(userData.username || ''),
+        avatarUrl: String(userData.avatar || ''),
       });
     }
 
-    return {
-      status: 'authenticated',
-      session,
-    };
+    return { status: 'authenticated', session };
   }
 
   if (response.user_id && response.message) {
-    return {
-      status: 'verification_required',
-      userId: String(response.user_id),
-      message: response.message,
-    };
+    return { status: 'verification_required', userId: String(response.user_id), message: response.message };
   }
 
-  throw new Error('Authentication response is missing session data');
+  throw new Error(response.message || 'Authentication failed');
 }
 
-function stringField(data: Record<string, unknown>, key: string) {
-  const value = data[key];
-  return typeof value === 'string' ? value : undefined;
-}
-
-function mapCurrentUser(
-  response: CurrentUserResponse,
-): CurrentUserResult | null {
+function mapCurrentUser(response: CurrentUserResponse): CurrentUserResult | null {
   const userData = response.user_data;
-
-  if (!userData) {
-    return null;
-  }
+  if (!userData) return null;
 
   const user: AuthUser = {
     id: String(userData.user_id ?? ''),
-    username: stringField(userData, 'username'),
-    name: stringField(userData, 'name'),
-    email: stringField(userData, 'email'),
-    avatar: stringField(userData, 'avatar'),
+    username: String(userData.username || ''),
+    name: String(userData.name || ''),
+    avatar: String(userData.avatar || ''),
   };
 
-  return {
-    user,
-    sessionHash: stringField(userData, 'session_hash'),
-  };
+  return { user, sessionHash: String(userData.session_hash || '') };
 }
 
 export function createAuthRepository(): AuthRepository {
   return {
     async login(credentials: LoginCredentials) {
-      const response = await apiBridge.post<AuthResponse>(
-        apiRoutes.auth.login,
-        {
-          username: credentials.username.trim(),
-          password: credentials.password,
-          device_type: AUTH_DEVICE_TYPE,
-        },
-      );
-
+      const response = await apiBridge.post<AuthResponse>(apiRoutes.auth.login, {
+        username: credentials.username.trim(),
+        password: credentials.password,
+        device_type: AUTH_DEVICE_TYPE,
+      });
+      console.log('[Auth] API login response:', JSON.stringify(response, null, 2));
       return mapAuthResponse(response);
     },
 
     async register(input: RegisterInput) {
-      const response = await apiBridge.post<AuthResponse>(
-        apiRoutes.auth.register,
-        {
-          first_name: input.firstName.trim(),
-          last_name: input.lastName.trim(),
-          username: input.username.trim(),
-          email: input.email.trim(),
-          password: input.password,
-          confirm_password: input.confirmPassword,
-          gender: input.gender,
-          device_type: AUTH_DEVICE_TYPE,
-        },
-      );
-
+      const response = await apiBridge.post<AuthResponse>(apiRoutes.auth.register, {
+        first_name: input.firstName.trim(),
+        last_name: input.lastName.trim(),
+        username: input.username.trim(),
+        email: input.email.trim(),
+        password: input.password.trim(),
+        confirm_password: input.confirmPassword.trim(),
+        gender: input.gender || 'male',
+        device_type: AUTH_DEVICE_TYPE,
+      });
+      console.log('[ApiAuthRepository] Register response:', response);
       return mapAuthResponse(response);
     },
 
     async forgotPassword(input) {
-      await apiBridge.post(apiRoutes.auth.forgotPassword, {
-        email: input.email.trim(),
-      });
+      await apiBridge.post(apiRoutes.auth.forgotPassword, { email: input.email.trim() });
     },
 
     async logout() {
@@ -140,43 +119,21 @@ export function createAuthRepository(): AuthRepository {
           await apiBridge.post(apiRoutes.auth.logout);
         }
       } finally {
+        logoutPushUser();
         sessionStorage.clearSession();
       }
     },
 
     async getCurrentUser() {
-      if (!sessionStorage.getAccessToken()) {
-        return null;
-      }
-
-      const response = await apiBridge.post<CurrentUserResponse>(
-        apiRoutes.auth.me,
-      );
-
+      if (!sessionStorage.getAccessToken()) return null;
+      const response = await apiBridge.post<CurrentUserResponse>(apiRoutes.auth.me);
+      console.log('[ApiAuthRepository] getCurrentUser response:', response);
       return mapCurrentUser(response);
     },
 
     async fetchUserById(userId: string) {
-      // ── WoWonder /api/get-user-data contract ──────────────────────────
-      // Required POST params:
-      //   • user_id  — the user to look up
-      //   • fetch    — comma-separated sections to include. We only need
-      //                display fields, so `user_data` is enough. Other
-      //                values (followers, following, …) trigger extra
-      //                queries we don't want to pay for.
-      //
-      // The response wraps the result the same way `/api/get-current-user`
-      // does (`{ api_status, user_data: { user_id, name, avatar, … } }`),
-      // so we can route both through the same `mapCurrentUser` helper.
-      if (!userId || !sessionStorage.getAccessToken()) {
-        return null;
-      }
-
-      const response = await apiBridge.post<CurrentUserResponse>(
-        apiRoutes.user.get,
-        { user_id: userId, fetch: 'user_data' },
-      );
-
+      if (!userId || !sessionStorage.getAccessToken()) return null;
+      const response = await apiBridge.post<CurrentUserResponse>(apiRoutes.user.get, { user_id: userId, fetch: 'user_data' });
       return mapCurrentUser(response);
     },
   };

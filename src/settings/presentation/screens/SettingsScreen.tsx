@@ -84,6 +84,10 @@ function SettingsScreen() {
         navigation.navigate(ROUTES.SETTINGS_MY_INFO);
       }
 
+      if (id === 'address') {
+        navigation.navigate(ROUTES.SETTINGS_ADDRESS);
+      }
+
       if (id === 'logout') {
         try {
           await logout();

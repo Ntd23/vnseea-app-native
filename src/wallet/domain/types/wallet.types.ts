@@ -38,3 +38,41 @@ export interface Contact {
   chipText: string;
   isInvited: boolean;
 }
+
+export interface Transaction {
+  id: number;
+  kind: string;
+  notes: string;
+  counterpartyId: number;
+  counterpartyName: string;
+  points: number;
+  pointAction: string;
+  pointType: string;
+  amount: number;
+  transactionDt: string;
+}
+
+export interface TopupMethod {
+  value: string;
+  label: string;
+  type: string;
+  note?: string;
+}
+
+export interface CurrentUser {
+  id: number;
+  name: string;
+  username: string;
+  avatar: string;
+}
+
+export interface WalletOverview {
+  balance: number;
+  withdrawableBalance: number;
+  currency: string;
+  currencySymbol: string;
+  transactions: Transaction[];
+  topupMethods: TopupMethod[];
+  canWithdraw: boolean;
+  currentUser: CurrentUser;
+}

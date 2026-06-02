@@ -109,6 +109,8 @@ function EarningsScreen() {
         navigation.navigate(ROUTES.MY_POINTS);
       } else if (id === 'withdraw') {
         navigation.navigate(ROUTES.WITHDRAWAL);
+      } else if (id === 'balance') {
+        navigation.navigate(ROUTES.MY_BALANCE);
       }
     },
     [navigation],

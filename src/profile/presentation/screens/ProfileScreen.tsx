@@ -25,6 +25,7 @@ import {
   PlusCircle,
   Search,
   User,
+  UserPlus,
   Users,
   UserCheck,
   Sparkles,
@@ -1137,6 +1138,15 @@ function ProfileScreen() {
     }
   };
 
+  // Cover Photo Press Handler
+  const handleCoverPress = () => {
+    navigation.navigate(ROUTES.COVER_VIEWER, {
+      coverUrl: coverUrl,
+      userName: displayName,
+      userId: targetUserId ?? currentUserId ?? profile?.id,
+    });
+  };
+
   const handleOpenStory = () => {
     if (!userStory) return;
     navigation.navigate(ROUTES.STORY_VIEWER, {
@@ -1260,12 +1270,18 @@ function ProfileScreen() {
         <View className="bg-white pb-5 shadow-sm">
           {/* Cover Photo */}
           <View className="relative w-full" style={{ height: 210 }}>
-            <Image
-              source={{ uri: coverUrl }}
-              className="h-full w-full"
-              style={{ width: SCREEN_WIDTH }}
-              resizeMode="cover"
-            />
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={handleCoverPress}
+              style={{ width: SCREEN_WIDTH, height: 210 }}
+            >
+              <Image
+                source={{ uri: coverUrl }}
+                className="h-full w-full"
+                style={{ width: SCREEN_WIDTH }}
+                resizeMode="cover"
+              />
+            </TouchableOpacity>
 
             {/* Gradient Overlays */}
             <View
@@ -1300,6 +1316,7 @@ function ProfileScreen() {
             <TouchableOpacity
               className="absolute bottom-3.5 right-3.5 flex-row items-center rounded-lg bg-black/50 px-3 py-1.5"
               activeOpacity={0.8}
+              onPress={handleCoverPress}
             >
               <Camera size={14} color="#FFFFFF" />
               <Text className="ml-1.5 text-[11px] font-semibold text-white">
@@ -1396,7 +1413,7 @@ function ProfileScreen() {
                 >
                   <UserCheck size={16} color="#050505" />
                   <Text className="ml-1.5 text-[14px] font-bold text-[#050505]">
-                    Bạn bè
+                    Đã theo dõi
                   </Text>
                 </TouchableOpacity>
 
@@ -1433,7 +1450,7 @@ function ProfileScreen() {
                   disabled={isRequestedProfile || isConnectLoading}
                   onPress={handleConnectUser}
                 >
-                  <PlusCircle
+                  <UserPlus
                     size={16}
                     color={isRequestedProfile ? '#050505' : '#FFFFFF'}
                   />
@@ -1443,10 +1460,10 @@ function ProfileScreen() {
                     }`}
                   >
                     {isRequestedProfile
-                      ? 'Đã gửi lời mời'
+                      ? 'Đã gửi yêu cầu'
                       : isConnectLoading
                         ? 'Đang gửi...'
-                        : 'Kết bạn'}
+                        : 'Theo dõi'}
                   </Text>
                 </TouchableOpacity>
 

@@ -11,18 +11,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   Bell,
   BellOff,
   CalendarDays,
   CheckCircle2,
-  Comment,
-  CommentDots,
   Heart,
   Image as ImageIcon,
-  Megaphone,
+  MessageCircle,
   Share2,
   ThumbsUp,
   UserCheck,
@@ -31,6 +29,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import { useNotificationsViewModel } from '../../application/view-models/useNotificationsViewModel';
 import type { NotificationsItem } from '../../domain/types/notifications.types';
 
@@ -44,8 +43,8 @@ const NOTIFICATION_ICONS: Record<string, { Icon: typeof ThumbsUp; iconColor: str
   liked_post: { Icon: Heart, iconColor: '#F33E58' },
   wondered_post: { Icon: Heart, iconColor: '#F7B125' },
   shared_post: { Icon: Share2, iconColor: '#65676B' },
-  comment: { Icon: Comment, iconColor: '#1877F2' },
-  comment_reply: { Icon: CommentDots, iconColor: '#1877F2' },
+  comment: { Icon: MessageCircle, iconColor: '#1877F2' },
+  comment_reply: { Icon: MessageCircle, iconColor: '#1877F2' },
   profile_wall_post: { Icon: ImageIcon, iconColor: '#1877F2' },
   visited_profile: { Icon: UserCheck, iconColor: '#65676B' },
   joined_group: { Icon: UserCheck, iconColor: '#1877F2' },
@@ -56,6 +55,26 @@ const NOTIFICATION_ICONS: Record<string, { Icon: typeof ThumbsUp; iconColor: str
 
 function getNotificationIcon(type: string) {
   return NOTIFICATION_ICONS[type] ?? { Icon: Bell, iconColor: '#65676B' };
+}
+
+function formatMessageTime(timestamp: number): string {
+  if (!timestamp) return 'Vừa xong';
+
+  const now = Date.now() / 1000;
+  const diff = now - timestamp;
+  if (diff < 60) return 'Vừa xong';
+  if (diff < 3600) return `${Math.floor(diff / 60)} phút`;
+  if (diff < 86400) {
+    return new Date(timestamp * 1000).toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  return new Date(timestamp * 1000).toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+  });
 }
 
 // Generate notification text from type and data
@@ -100,17 +119,10 @@ function getNavigateTo(
   item: NotificationsItem,
   navigation: NotificationsNav,
 ) {
-  const base = {
-    postId: item.postId,
-    pageId: item.pageId,
-    groupId: item.groupId,
-    eventId: item.eventId,
-  };
-
   switch (item.type) {
     case 'following':
       if (item.notifierId) {
-        navigation.navigate(ROUTES.PROFILE, { userId: item.notifierId });
+        navigation.navigate(ROUTES.PROFILE, { userId: item.notifierId } as any);
       }
       break;
     case 'liked_post':
@@ -121,32 +133,26 @@ function getNavigateTo(
     case 'comment_mention':
     case 'post_mention':
     case 'profile_wall_post':
-      if (item.postId) {
-        navigation.navigate(ROUTES.FEED, {});
-      }
+      navigation.navigate(ROUTES.FEED as any);
       break;
     case 'joined_group':
     case 'requested_to_join_group':
     case 'accepted_join_request':
       if (item.groupId) {
-        navigation.navigate(ROUTES.GROUP_DETAIL, { groupId: item.groupId } as any);
+        navigation.navigate(ROUTES.GROUP_DETAIL as any, { groupId: item.groupId });
       }
       break;
     case 'interested_event':
     case 'going_event':
     case 'invited_event':
-      if (item.eventId) {
-        navigation.navigate(ROUTES.EVENTS, {});
-      }
+      navigation.navigate(ROUTES.EVENTS as any);
       break;
     case 'liked_page':
-      if (item.pageId) {
-        navigation.navigate(ROUTES.PAGES, {});
-      }
+      navigation.navigate(ROUTES.PAGES as any);
       break;
     default:
       // Navigate to feed by default
-      navigation.navigate(ROUTES.FEED, {});
+      navigation.navigate(ROUTES.FEED as any);
   }
 }
 
@@ -215,10 +221,86 @@ function NotificationCard({ item, onPress, onLongPress }: NotificationCardProps)
   );
 }
 
+function UnreadMessageCard({
+  chat,
+  onPress,
+}: {
+  chat: ChatItem;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      className="surface-card mb-3 flex-row items-center bg-[#E7F3FF] p-4"
+      activeOpacity={0.84}
+      onPress={onPress}
+    >
+      {chat.avatar ? (
+        <Image
+          source={{ uri: chat.avatar }}
+          className="h-14 w-14 rounded-full"
+          resizeMode="cover"
+        />
+      ) : (
+        <View className="h-14 w-14 items-center justify-center rounded-full bg-[#1877F2]">
+          <MessageCircle size={25} color="#FFFFFF" />
+        </View>
+      )}
+      <View className="ml-4 flex-1">
+        <View className="flex-row items-start justify-between">
+          <Text className="flex-1 text-body-primary font-semibold" numberOfLines={1}>
+            {chat.name}
+          </Text>
+          <Text className="ml-2 text-caption-secondary">
+            {formatMessageTime(chat.lastMessageTime)}
+          </Text>
+        </View>
+        <Text className="mt-1 text-body-secondary" numberOfLines={2}>
+          {chat.lastMessage || 'Đã gửi cho bạn một tin nhắn'}
+        </Text>
+      </View>
+      <View className="ml-3 min-h-6 min-w-6 items-center justify-center rounded-full bg-[#1877F2] px-2">
+        <Text className="text-xs font-bold text-white">
+          {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function UnreadMessagesFallbackCard({
+  count,
+  onPress,
+}: {
+  count: number;
+  onPress: () => void;
+}) {
+  if (count <= 0) return null;
+
+  return (
+    <TouchableOpacity
+      className="surface-card mb-3 flex-row items-center bg-[#E7F3FF] p-4"
+      activeOpacity={0.84}
+      onPress={onPress}
+    >
+      <View className="h-14 w-14 items-center justify-center rounded-full bg-[#1877F2]">
+        <MessageCircle size={25} color="#FFFFFF" />
+      </View>
+      <View className="ml-4 flex-1">
+        <Text className="text-body-primary font-semibold">
+          Bạn có {count > 99 ? '99+' : count} tin nhắn chưa đọc
+        </Text>
+        <Text className="mt-1 text-caption-secondary">Nhấn để mở hộp thư</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 function NotificationsScreen() {
   const navigation = useNavigation<NotificationsNav>();
   const {
     notifications,
+    unreadMessageCount,
+    unreadMessageChats,
     error,
     isLoading,
     isRefreshing,
@@ -227,14 +309,36 @@ function NotificationsScreen() {
     loadFirstPage,
     refresh,
     loadMore,
+    markAsSeen,
+    markAllAsSeen,
     deleteNotification,
   } = useNotificationsViewModel();
+  const hasNotifications = notifications.length > 0 || unreadMessageCount > 0;
+  const remainingUnreadMessageCount = Math.max(
+    0,
+    unreadMessageCount -
+      unreadMessageChats.reduce((total, chat) => total + chat.unreadCount, 0),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      loadFirstPage(false, notifications.length > 0);
+      const interval = setInterval(() => {
+        loadFirstPage(false, true);
+      }, 10000);
+
+      return () => clearInterval(interval);
+    }, [loadFirstPage, notifications.length]),
+  );
 
   const handlePress = useCallback(
     (item: NotificationsItem) => {
+      if (!item.seen) {
+        markAsSeen(item.id);
+      }
       getNavigateTo(item, navigation);
     },
-    [navigation],
+    [markAsSeen, navigation],
   );
 
   const handleLongPress = useCallback(
@@ -252,9 +356,20 @@ function NotificationsScreen() {
   );
 
   const handleMarkAllSeen = useCallback(() => {
-    // TODO: implement mark all as seen
+    markAllAsSeen();
     Alert.alert('Thông báo', 'Đã đánh dấu tất cả là đã đọc');
-  }, []);
+  }, [markAllAsSeen]);
+
+  const handleOpenMessages = useCallback(() => {
+    navigation.navigate(ROUTES.MESSAGES);
+  }, [navigation]);
+
+  const handleOpenChat = useCallback(
+    (chat: ChatItem) => {
+      navigation.navigate(ROUTES.CHAT, { chat });
+    },
+    [navigation],
+  );
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
@@ -276,12 +391,12 @@ function NotificationsScreen() {
       </View>
 
       {/* Content */}
-      {isLoading && notifications.length === 0 ? (
+      {isLoading && !hasNotifications ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color={BRAND} />
           <Text className="mt-2 text-body-secondary">Đang tải thông báo...</Text>
         </View>
-      ) : error && notifications.length === 0 ? (
+      ) : error && !hasNotifications ? (
         <View className="flex-1 items-center justify-center px-8">
           <BellOff size={48} color="#CBD5E1" />
           <Text className="mt-4 text-center text-body-secondary">{error}</Text>
@@ -293,7 +408,7 @@ function NotificationsScreen() {
             <Text className="text-white">Thử lại</Text>
           </TouchableOpacity>
         </View>
-      ) : notifications.length === 0 ? (
+      ) : !hasNotifications ? (
         <ScrollView
           className="flex-1"
           contentContainerClassName="flex-1 items-center justify-center px-8"
@@ -335,6 +450,21 @@ function NotificationsScreen() {
           }}
           scrollEventThrottle={400}
         >
+          {unreadMessageChats.map(chat => (
+            <UnreadMessageCard
+              key={`message-${chat.id}`}
+              chat={chat}
+              onPress={() => handleOpenChat(chat)}
+            />
+          ))}
+
+          {remainingUnreadMessageCount > 0 && (
+            <UnreadMessagesFallbackCard
+              count={remainingUnreadMessageCount}
+              onPress={handleOpenMessages}
+            />
+          )}
+
           {notifications.map(item => (
             <NotificationCard
               key={item.id}

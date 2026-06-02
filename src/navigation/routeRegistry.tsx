@@ -12,6 +12,7 @@ import { NotificationsScreen } from '../notifications';
 import { MemoriesScreen } from '../memories';
 import { OffersScreen } from '../offers';
 import {
+  AddressScreen,
   AdvertisingScreen,
   EditProfileScreen,
   MyInfoScreen,
@@ -29,13 +30,13 @@ import { CreateGroupScreen, ExploreGroupsScreen, FollowingScreen, GroupDetailScr
 import { FundingScreen } from '../funding';
 import { MoviesScreen } from '../movies';
 import { JobDetailScreen, JobsScreen } from '../jobs';
-import { AvatarViewerScreen, ProfileScreen } from '../profile';
+import { AvatarViewerScreen, CoverViewerScreen, ProfileScreen } from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
 import { MyVideosScreen } from '../videos';
 import { CallScreen, ChatScreen } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { SavedPostsScreen } from '../saved';
-import { AffiliatesScreen, EarningsScreen, InviteFriendsScreen, MyPointsScreen } from '../wallet';
+import { AffiliatesScreen, DepositScreen, EarningsScreen, InviteFriendsScreen, MyBalanceScreen, MyPointsScreen } from '../wallet';
 import { WithdrawalScreen } from '../withdrawal';
 
 type ScreenComponent = React.ComponentType<any>;
@@ -103,9 +104,12 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.AFFILIATES, component: AffiliatesScreen },
     { name: ROUTES.INVITE_FRIENDS, component: InviteFriendsScreen },
     { name: ROUTES.MY_POINTS, component: MyPointsScreen },
+    { name: ROUTES.MY_BALANCE, component: MyBalanceScreen },
+    { name: ROUTES.DEPOSIT, component: DepositScreen },
     { name: ROUTES.MEMORIES, component: MemoriesScreen },
     { name: ROUTES.OFFERS, component: OffersScreen },
     { name: ROUTES.SETTINGS_MY_INFO, component: MyInfoScreen },
+    { name: ROUTES.SETTINGS_ADDRESS, component: AddressScreen },
     { name: ROUTES.EDIT_PROFILE, component: EditProfileScreen },
     { name: ROUTES.SETTINGS_MESSAGES, component: SettingsMessagesScreen },
     { name: ROUTES.WITHDRAWAL, component: WithdrawalScreen },
@@ -116,5 +120,6 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.CREATE_STORY, component: CreateStoryScreen },
     { name: ROUTES.STORY_VIEWER, component: StoryViewerScreen },
     { name: ROUTES.AVATAR_VIEWER, component: AvatarViewerScreen },
+    { name: ROUTES.COVER_VIEWER, component: CoverViewerScreen },
   ];
 }

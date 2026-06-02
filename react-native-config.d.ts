@@ -5,6 +5,7 @@ declare module 'react-native-config' {
     WEB_BASE_URL?: string;
     SERVER_KEY?: string;
     REQUEST_TIMEOUT_MS?: string;
+    ONESIGNAL_APP_ID?: string;
   }
 
   const Config: NativeConfig;

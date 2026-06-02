@@ -1,5 +1,7 @@
 // Description: Defines the user repository contract for profile and user discovery APIs.
 import type {
+  FriendsInput,
+  FriendsResult,
   GetUserProfileInput,
   NearbyUsersInput,
   UpdateCurrentUserInput,

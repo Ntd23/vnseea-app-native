@@ -27,4 +27,5 @@ export const apiConfig = {
   webBaseUrl: requireEnv('WEB_BASE_URL'),
   serverKey: requireEnv('SERVER_KEY'),
   requestTimeoutMs: parseRequiredNumber('REQUEST_TIMEOUT_MS'),
+  oneSignalAppId: requireEnv('ONESIGNAL_APP_ID'),
 } as const;

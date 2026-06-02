@@ -9,6 +9,7 @@ import {
   View,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { ArrowLeft, Images, Plus, Search } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -144,8 +145,9 @@ function AlbumsScreen() {
         className="flex-1"
         contentContainerClassName="px-4 pb-10 pt-4"
         showsVerticalScrollIndicator={false}
-        refreshing={isRefreshing}
-        onRefresh={refresh}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={refresh} colors={[BRAND]} />
+        }
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
       >

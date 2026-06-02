@@ -41,12 +41,15 @@ export const ROUTES = {
   JOB_DETAIL: 'JobDetail',
   SETTINGS: 'Settings',
   SETTINGS_MY_INFO: 'SettingsMyInfo',
+  SETTINGS_ADDRESS: 'SettingsAddress',
   EDIT_PROFILE: 'EditProfile',
   SETTINGS_MESSAGES: 'SettingsMessages',
   EARNINGS: 'Earnings',
   AFFILIATES: 'Affiliates',
   INVITE_FRIENDS: 'InviteFriends',
   MY_POINTS: 'MyPoints',
+  MY_BALANCE: 'MyBalance',
+  DEPOSIT: 'Deposit',
   WITHDRAWAL: 'Withdrawal',
   MEMORIES: 'Memories',
   OFFERS: 'Offers',
@@ -57,6 +60,7 @@ export const ROUTES = {
   CREATE_STORY: 'CreateStory',
   STORY_VIEWER: 'StoryViewer',
   AVATAR_VIEWER: 'AvatarViewer',
+  COVER_VIEWER: 'CoverViewer',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];

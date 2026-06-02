@@ -18,6 +18,7 @@ export const apiRoutes = {
     suggestions: 'get-user-suggestions',
     nearby: 'get-nearby-users',
     friends: 'get-friends',  // GET following/followers
+    updateCover: 'update_user_cover_picture',  // POST multipart
   },
   reels: {
     create: 'new_post',
@@ -94,9 +95,12 @@ export const apiRoutes = {
     create: 'albums',  // POST with type=create
   },
   notifications: {
-    list: 'get_notifications',  // Phone API
+    list: 'get-general-data',    // v2 API - fetch=notifications
     delete: 'notifications',      // v2 API - type=delete
     markSeen: 'notifications',     // v2 API - type=mark_seen
+  },
+  wallet: {
+    overview: 'wallet-overview',
   },
 } as const;
 

@@ -52,10 +52,13 @@ export type RootStackParamList = {
   [ROUTES.AFFILIATES]: undefined;
   [ROUTES.INVITE_FRIENDS]: undefined;
   [ROUTES.MY_POINTS]: undefined;
+  [ROUTES.MY_BALANCE]: undefined;
+  [ROUTES.DEPOSIT]: { returnTo?: string };
   [ROUTES.WITHDRAWAL]: undefined;
   [ROUTES.MEMORIES]: undefined;
   [ROUTES.OFFERS]: undefined;
   [ROUTES.SETTINGS_MY_INFO]: undefined;
+  [ROUTES.SETTINGS_ADDRESS]: undefined;
   [ROUTES.EDIT_PROFILE]: undefined;
   [ROUTES.SETTINGS_MESSAGES]: undefined;
   [ROUTES.ADVERTISING]: undefined;
@@ -75,6 +78,11 @@ export type RootStackParamList = {
   };
   [ROUTES.AVATAR_VIEWER]: {
     avatarUrl: string;
+    userName: string;
+    userId?: string;
+  };
+  [ROUTES.COVER_VIEWER]: {
+    coverUrl: string;
     userName: string;
     userId?: string;
   };

@@ -61,4 +61,10 @@ export interface NotificationsListPage {
   nextOffset: string | null;
   hasMore: boolean;
   unreadCount: number;
+  unreadMessageCount: number;
+}
+
+export interface NotificationsUnreadCounts {
+  notificationCount: number;
+  messageCount: number;
 }

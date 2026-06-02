@@ -419,6 +419,21 @@ async function fetchCachedChats() {
   return mergeChats(initialChats, ...additionalChats);
 }
 
+async function fetchUnreadUserChats() {
+  const response = await apiBridge.post<GetChatsResponse>(
+    apiRoutes.messages.chats,
+    {
+      data_type: 'users',
+      user_limit: CHAT_PAGE_SIZE,
+    },
+  );
+
+  return (response.data ?? [])
+    .map(item => mapChat(item as RawRecord))
+    .filter(chat => chat.chatType === 'user' && chat.unreadCount > 0)
+    .sort((left, right) => right.lastMessageTime - left.lastMessageTime);
+}
+
 async function fetchDiscoveredUserChats(): Promise<ChatItem[]> {
   const sessionUserId = sessionStorage.getSession()?.userId;
   if (!sessionUserId) return [];
@@ -576,6 +591,10 @@ export function createMessagesRepository(): MessagesRepository {
         fetchDiscoveredUserChats().catch(() => []),
       ]);
       return mergeChats(discoveredChats, chats);
+    },
+
+    async getUnreadChats() {
+      return fetchUnreadUserChats();
     },
 
     async getMessages(userId: string, options?: GetMessagesOptions) {

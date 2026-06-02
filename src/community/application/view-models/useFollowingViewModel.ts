@@ -98,7 +98,7 @@ export function useFollowingViewModel() {
 
       if (activeTab === 'following') {
         const newItems = result.following.filter(
-          item => !following.some(existing => existing.id === item.id)
+          (item) => !following.some(existing => existing.id === item.id)
         );
         setFollowing(prev => [...prev, ...newItems]);
         setHasMoreFollowing(result.following.length >= PAGE_SIZE);
@@ -107,7 +107,7 @@ export function useFollowingViewModel() {
           : null);
       } else {
         const newItems = result.followers.filter(
-          item => !followers.some(existing => existing.id === item.id)
+          (item) => !followers.some(existing => existing.id === item.id)
         );
         setFollowers(prev => [...prev, ...newItems]);
         setHasMoreFollowers(result.followers.length >= PAGE_SIZE);

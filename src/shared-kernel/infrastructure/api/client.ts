@@ -1,8 +1,10 @@
 // Description: Provides the shared Axios API client for all bounded contexts.
 import axios, { AxiosHeaders, type AxiosRequestHeaders } from 'axios';
+import type { ApiEnvelope } from '../../domain/types/api.types';
 import {
   ApiBridgeError,
   assertApiSuccess,
+  normalizeApiResponseData,
 } from '../../application/api/apiResponse';
 import { apiConfig } from '../config/env';
 import { sessionStorage } from '../storage/sessionStorage';
@@ -23,14 +25,6 @@ function serializeApiValue(value: unknown) {
   }
 
   return String(value);
-}
-
-function appendFormDataValue(formData: FormData, key: string, value: unknown) {
-  if (value === undefined || value === null) {
-    return;
-  }
-
-  formData.append(key, serializeApiValue(value));
 }
 
 function toUrlEncodedApiPayload(data: unknown) {
@@ -84,7 +78,7 @@ apiClient.interceptors.request.use(config => {
 
   // DEBUG: Log the full URL that will be sent
   const url = config.url || '';
-  const fullUrl = `${config.baseURL}/${url}`.replace(/\/+/g, '/');
+  const fullUrl = `${String(config.baseURL ?? '').replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
   const queryString = new URLSearchParams(config.params as Record<string, string>).toString();
   console.log('[apiClient] Full URL:', fullUrl + (queryString ? '?' + queryString : ''));
   console.log('[apiClient] Request method:', config.method?.toUpperCase());
@@ -124,10 +118,11 @@ apiClient.interceptors.request.use(config => {
 
 apiClient.interceptors.response.use(
   response => {
-    const { data } = response;
+    const data = normalizeApiResponseData(response.data);
+    response.data = data;
 
     if (data && typeof data === 'object') {
-      assertApiSuccess(data);
+      assertApiSuccess(data as ApiEnvelope);
     }
 
     return response;

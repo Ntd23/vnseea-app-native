@@ -2,15 +2,19 @@
 // Port từ: client/src/notifications/application/view-models/
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
+import type { ChatItem } from '../../../messages/domain/types/messages.types';
+import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
 import type {
   NotificationsItem,
 } from '../../domain/types/notifications.types';
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 100;
 
 export function useNotificationsViewModel() {
   const repository = useMemo(() => createNotificationsRepository(), []);
+  const messagesRepository = useMemo(() => createMessagesRepository(), []);
 
   // State
   const [notifications, setNotifications] = useState<NotificationsItem[]>([]);
@@ -21,20 +25,38 @@ export function useNotificationsViewModel() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [unreadMessageChats, setUnreadMessageChats] = useState<ChatItem[]>([]);
+
+  useEffect(() => {
+    setUnreadBadgeCounts({
+      notificationCount: unreadCount,
+      messageCount: unreadMessageCount,
+    });
+  }, [unreadCount, unreadMessageCount]);
 
   // Load first page
   const loadFirstPage = useCallback(
-    async (refreshing = false) => {
-      refreshing ? setIsRefreshing(true) : setIsLoading(true);
+    async (refreshing = false, silent = false) => {
+      if (refreshing) {
+        setIsRefreshing(true);
+      } else if (!silent) {
+        setIsLoading(true);
+      }
       setError(null);
 
       try {
-        const result = await repository.getNotifications({ limit: PAGE_SIZE });
+        const [result, unreadChats] = await Promise.all([
+          repository.getNotifications({ limit: PAGE_SIZE }),
+          messagesRepository.getUnreadChats().catch(() => []),
+        ]);
 
         setNotifications(result.items);
         setNextOffset(result.nextOffset);
         setHasMore(result.hasMore);
         setUnreadCount(result.unreadCount);
+        setUnreadMessageCount(result.unreadMessageCount);
+        setUnreadMessageChats(unreadChats);
       } catch (err) {
         setError(
           err instanceof Error
@@ -46,12 +68,12 @@ export function useNotificationsViewModel() {
         setIsRefreshing(false);
       }
     },
-    [repository],
+    [messagesRepository, repository],
   );
 
   // Refresh
   const refresh = useCallback(() => {
-    void loadFirstPage(true);
+    loadFirstPage(true);
   }, [loadFirstPage]);
 
   // Load more
@@ -107,10 +129,31 @@ export function useNotificationsViewModel() {
 
   // Mark all as seen
   const markAllAsSeen = useCallback(async () => {
-    // Optimistic update all
+    const unreadNotifications = notifications.filter(notification => !notification.seen);
+    if (unreadNotifications.length === 0) return;
+
     setNotifications(prev => prev.map(n => ({ ...n, seen: true })));
     setUnreadCount(0);
-  }, []);
+
+    const results = await Promise.allSettled(
+      unreadNotifications.map(notification => repository.markAsSeen(notification.id)),
+    );
+    const failedIds = new Set(
+      unreadNotifications
+        .filter((_, index) => results[index].status === 'rejected')
+        .map(notification => notification.id),
+    );
+
+    if (failedIds.size > 0) {
+      setNotifications(prev =>
+        prev.map(notification =>
+          failedIds.has(notification.id) ? { ...notification, seen: false } : notification
+        )
+      );
+      setUnreadCount(prev => prev + failedIds.size);
+      console.warn('[useNotificationsViewModel] markAllAsSeen partially failed');
+    }
+  }, [notifications, repository]);
 
   // Delete notification
   const deleteNotification = useCallback(
@@ -140,19 +183,15 @@ export function useNotificationsViewModel() {
 
   // Retry
   const retry = useCallback(() => {
-    void loadFirstPage(false);
+    loadFirstPage(false);
   }, [loadFirstPage]);
-
-  // Auto-load on mount
-  useEffect(() => {
-    void loadFirstPage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return {
     // State
     notifications,
     unreadCount,
+    unreadMessageCount,
+    unreadMessageChats,
     error,
     isLoading,
     isRefreshing,

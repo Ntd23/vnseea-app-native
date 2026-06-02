@@ -7,7 +7,7 @@ import type { AlbumItem, PhotosItem } from '../../domain/types/photos.types';
 
 type RawRecord = Record<string, unknown>;
 
-type ApiResponse = {
+type PhotosApiResponse = {
   api_status: number | string;
   data?: RawRecord[];
   message?: string;
@@ -125,7 +125,7 @@ export function createPhotosRepository(): PhotosRepository {
       const limit = options.limit ?? 24;
 
       try {
-        const response = await apiBridge.post<UserPhotosResponse>(
+        const response = await apiBridge.post<PhotosApiResponse>(
           apiRoutes.photos.getUserAlbums,
           {
             user_id: String(userId),
@@ -163,7 +163,7 @@ export function createPhotosRepository(): PhotosRepository {
       const limit = options.limit ?? 20;
 
       try {
-        const response = await apiBridge.post<ApiResponse>(
+        const response = await apiBridge.post<PhotosApiResponse>(
           apiRoutes.photos.create,
           {
             type: 'fetch',
