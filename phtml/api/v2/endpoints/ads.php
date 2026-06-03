@@ -1,4 +1,5 @@
 <?php
+// English description: Handles mobile and Nuxt bridge advertising campaign actions from the backend source of truth.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -28,7 +29,10 @@ $required_fields = array(
     'delete',
     'edit',
     'fetch_ads',
-    'fetch_ad_by_id'
+    'fetch_ad_by_id',
+    'fetch_options',
+    'fetch_ad_stats',
+    'update_status'
 );
 
 $limit = (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limit'] > 0 && $_POST['limit'] <= 50 ? Wo_Secure($_POST['limit']) : 20);
@@ -124,7 +128,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields))
                     $error_message = 'Media file is invalid. Please select a valid video';
                 }
             }
-            else if ($_FILES["media"]["size"] > $wo['config']['maxUpload'] || true)
+            else if ($_FILES["media"]["size"] > $wo['config']['maxUpload'])
             {
                 $maxUpload = Wo_SizeUnits($wo['config']['maxUpload']);
                 $error_code = 11;
@@ -264,7 +268,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields))
         {
             $adid = Wo_Secure($_POST['ad_id']);
             $get_ad_data = Wo_GetUserAdData($adid);
-            if (!empty($get_ad_data))
+            if (!empty($get_ad_data) && Wo_IsAdsOwner($get_ad_data['id']))
             {
 
                 $update_data = array(
@@ -383,7 +387,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields))
         {
             $ad_id = Wo_Secure($_POST['ad_id']);
             $get_ad_data = Wo_GetUserAdData($ad_id);
-            if (!empty($get_ad_data))
+            if (!empty($get_ad_data) && Wo_IsAdsOwner($get_ad_data['id']))
             {
                 foreach ($non_allowed as $key4 => $value4)
                 {
@@ -392,13 +396,129 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields))
             }
             else
             {
-                $get_ad_data = array();
+                $error_code = 12;
+                $error_message = 'Ad not found';
             }
+            if (empty($error_message))
+            {
+                $response_data = array(
+                    'api_status' => 200,
+                    'data' => $get_ad_data
+                );
+            }
+        }
+    }
 
-            $response_data = array(
-                'api_status' => 200,
-                'data' => $get_ad_data
-            );
+    if ($_POST['type'] == 'fetch_options')
+    {
+        $pages = Wo_GetMyPages();
+        $response_data = array(
+            'api_status' => 200,
+            'data' => array(
+                'audience' => $wo['countries_name'],
+                'genders' => $wo['genders'],
+                'pages' => !empty($pages) ? $pages : array(),
+                'placements' => array(
+                    'entire' => !empty($wo['lang']['entire_site']) ? $wo['lang']['entire_site'] : 'Entire site',
+                    'post' => !empty($wo['lang']['post']) ? $wo['lang']['post'] : 'Post',
+                    'sidebar' => !empty($wo['lang']['sidebar']) ? $wo['lang']['sidebar'] : 'Sidebar',
+                    'jobs' => !empty($wo['lang']['jobs']) ? $wo['lang']['jobs'] : 'Jobs',
+                    'forum' => !empty($wo['lang']['forum']) ? $wo['lang']['forum'] : 'Forum',
+                    'movies' => !empty($wo['lang']['movies']) ? $wo['lang']['movies'] : 'Movies',
+                    'offer' => !empty($wo['lang']['offer']) ? $wo['lang']['offer'] : 'Offer',
+                    'funding' => !empty($wo['lang']['funding']) ? $wo['lang']['funding'] : 'Funding',
+                    'story' => !empty($wo['lang']['story']) ? $wo['lang']['story'] : 'Story'
+                ),
+                'prices' => array(
+                    'clicks' => $wo['config']['ad_c_price'],
+                    'views' => $wo['config']['ad_v_price'],
+                    'currency' => $wo['config']['currency'],
+                    'currency_symbol' => Wo_GetCurrency($wo['config']['currency'])
+                )
+            )
+        );
+    }
+
+    if ($_POST['type'] == 'fetch_ad_stats')
+    {
+        if (empty($_POST['ad_id']) || !is_numeric($_POST['ad_id']) || $_POST['ad_id'] < 1)
+        {
+            $error_code = 5;
+            $error_message = 'ad_id can not be empty.';
+        }
+        else
+        {
+            $ad_id = Wo_Secure($_POST['ad_id']);
+            $get_ad_data = Wo_GetUserAdData($ad_id);
+            if (!empty($get_ad_data) && Wo_IsAdsOwner($get_ad_data['id']))
+            {
+                global $sqlConnect;
+                $clicks = array();
+                $views = array();
+                $user_id = Wo_Secure($get_ad_data['user_id']);
+                $sqlclicks = "SELECT DATE(dt) DateOnly, SUM(clicks) AS ADClicks , SUM(spend) AS Spend FROM `" . T_USERADS_DATA ."` WHERE user_id = ". $user_id ." AND ad_id = " . $ad_id . " AND clicks > 0 GROUP BY DateOnly,clicks,Spend ORDER BY dt DESC LIMIT 30";
+                $queryclicks = mysqli_query($sqlConnect, $sqlclicks);
+                if ($queryclicks != false && mysqli_num_rows($queryclicks)) {
+                    while ($fetched_data = mysqli_fetch_assoc($queryclicks)) {
+                        $clicks[] = $fetched_data;
+                    }
+                }
+
+                $sqlviews = "SELECT DATE(dt) DateOnly, SUM(views) AS ADviews , SUM(spend) AS Spend FROM `" . T_USERADS_DATA ."` WHERE user_id = ". $user_id ." AND ad_id = " . $ad_id . " AND views > 0 GROUP BY DateOnly,views,Spend ORDER BY dt DESC LIMIT 30";
+                $queryviews = mysqli_query($sqlConnect, $sqlviews);
+                if ($queryviews != false && mysqli_num_rows($queryviews)) {
+                    while ($fetched_data = mysqli_fetch_assoc($queryviews)) {
+                        $views[] = $fetched_data;
+                    }
+                }
+
+                foreach ($non_allowed as $key4 => $value4)
+                {
+                    unset($get_ad_data['user_data'][$value4]);
+                }
+
+                $response_data = array(
+                    'api_status' => 200,
+                    'data' => array(
+                        'ad' => $get_ad_data,
+                        'clicks' => $clicks,
+                        'views' => $views
+                    )
+                );
+            }
+            else
+            {
+                $error_code = 12;
+                $error_message = 'Ad not found';
+            }
+        }
+    }
+
+    if ($_POST['type'] == 'update_status')
+    {
+        if (empty($_POST['ad_id']) || !is_numeric($_POST['ad_id']) || $_POST['ad_id'] < 1)
+        {
+            $error_code = 5;
+            $error_message = 'ad_id can not be empty.';
+        }
+        else
+        {
+            $ad_id = Wo_Secure($_POST['ad_id']);
+            $status = (!empty($_POST['status']) && $_POST['status'] == 1) ? 1 : 0;
+            $ad_data = $db->where('id', $ad_id)->where('user_id', $wo['user']['user_id'])->getOne(T_USER_ADS);
+            if (!empty($ad_data))
+            {
+                $db->where('id', $ad_id)->where('user_id', $wo['user']['user_id'])->update(T_USER_ADS, array('status' => $status));
+                $response_data = array(
+                    'api_status' => 200,
+                    'message' => 'Your Ad status successfully updated.'
+                );
+            }
+            else
+            {
+                $error_code = 12;
+                $error_message = 'Ad not found';
+            }
         }
     }
 

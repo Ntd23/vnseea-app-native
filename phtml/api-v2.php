@@ -1,5 +1,6 @@
 <?php
 
+// English description: Dispatches v2 API endpoint requests with server-key and session validation.
 // API v2 is not yet finished, you have to use the old API version.
 header_remove('Server');
 header("Content-type: application/json");
@@ -50,6 +51,7 @@ if ($server_key != $wo['config']['widnows_app_api_key']) {
 $api                        = "api/v2/endpoints/$type.php";
 $pages_without_access_token = array(
     'get-site-settings',
+    'cms-pages',
     'get-post-colors',
     'go-pro',
     'boosted-posts',
@@ -67,6 +69,7 @@ $pages_without_access_token = array(
 );
 $pages_without_loggedin     = array(
     'get-site-settings',
+    'cms-pages',
     'get-post-colors',
     'go-pro',
     'boosted-posts',
