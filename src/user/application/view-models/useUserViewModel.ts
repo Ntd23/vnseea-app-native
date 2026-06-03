@@ -2,6 +2,7 @@
 import { useCallback, useState } from 'react';
 import type {
   GetUserProfileInput,
+  NearbyPlace,
   NearbyUsersInput,
   UpdateCurrentUserInput,
   UserProfile,
@@ -27,6 +28,7 @@ export function useUserViewModel() {
   );
   const [suggestions, setSuggestions] = useState<UserProfile[]>([]);
   const [nearbyUsers, setNearbyUsers] = useState<UserProfile[]>([]);
+  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,6 +89,24 @@ export function useUserViewModel() {
     [runUserAction],
   );
 
+  const loadNearbyDiscovery = useCallback(
+    (input?: NearbyUsersInput) =>
+      runUserAction(async () => {
+        const [users, places, pages] = await Promise.all([
+          repository.getNearbyUsers(input),
+          repository.getNearbyPlaces(input),
+          repository.getNearbyPages(input).catch(() => []),
+        ]);
+        const discoveryPlaces = [...pages, ...places];
+
+        setNearbyUsers(users);
+        setNearbyPlaces(discoveryPlaces);
+
+        return {places: discoveryPlaces, users};
+      }),
+    [runUserAction],
+  );
+
   const updateCurrentUser = useCallback(
     (input: UpdateCurrentUserInput) =>
       runUserAction(() => repository.updateCurrentUser(input)),
@@ -98,12 +118,14 @@ export function useUserViewModel() {
     profileResult,
     suggestions,
     nearbyUsers,
+    nearbyPlaces,
     isLoading,
     error,
     loadCurrentUser,
     loadUserProfile,
     loadSuggestions,
     loadNearbyUsers,
+    loadNearbyDiscovery,
     updateCurrentUser,
   };
 }

@@ -1,6 +1,6 @@
 // Description: Renders the settings shortcut grid with token-aligned blue feature icons.
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   Bell,
   Bookmark,
@@ -17,6 +17,7 @@ import {
   Images,
   LayoutGrid,
   Link,
+  MapPinned,
   Megaphone,
   MessageCircle,
   Pointer,
@@ -61,6 +62,7 @@ const ICON_MAP: Record<
   Megaphone,
   Bell,
   Link,
+  MapPinned,
 };
 
 interface FeatureGridProps {
@@ -82,7 +84,7 @@ function FeatureGridItemView({
       activeOpacity={0.8}
       onPress={onPress}
       className="items-center gap-2"
-      style={{ width: '25%', paddingVertical: 8 }}
+      style={styles.item}
     >
       {IconComponent ? <IconComponent size={24} color="#0000FF" /> : null}
       <Text
@@ -94,6 +96,13 @@ function FeatureGridItemView({
     </TouchableOpacity>
   );
 }
+
+const styles = StyleSheet.create({
+  item: {
+    paddingVertical: 8,
+    width: '25%',
+  },
+});
 
 export default function FeatureGrid({
   features,

@@ -85,7 +85,7 @@ function CreateAlbumScreen() {
       }
 
       if (result.assets && result.assets.length > 0) {
-        setSelectedImages(prev => [...prev, ...result.assets]);
+        setSelectedImages(prev => [...prev, ...(result.assets ?? [])]);
       }
     } catch (error) {
       console.error('[CreateAlbum] Error selecting images:', error);

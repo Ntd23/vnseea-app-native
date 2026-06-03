@@ -27,6 +27,7 @@ export type RootStackParamList = {
   [ROUTES.CALLS]: undefined;
   [ROUTES.SEARCH]: undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
+  [ROUTES.NEARBY_USERS]: undefined;
   [ROUTES.SAVED_POSTS]: undefined;
   [ROUTES.SEARCH_EMPTY]: undefined;
   [ROUTES.PAGES]: undefined;
@@ -42,20 +43,25 @@ export type RootStackParamList = {
   [ROUTES.FUNDING]: undefined;
   [ROUTES.FOLLOWING]: undefined;
   [ROUTES.BOOSTED]: undefined;
+  [ROUTES.POPULAR]: undefined;
   [ROUTES.BLOGS]: undefined;
   [ROUTES.BLOG_FILTER_CATEGORY]: undefined;
   [ROUTES.BLOG_DETAIL]: { blogId: string };
   [ROUTES.MOVIES]: undefined;
   [ROUTES.JOBS]: undefined;
-  [ROUTES.JOB_DETAIL]: undefined;
+  [ROUTES.JOB_DETAIL]: { jobId?: string };
+  [ROUTES.CREATE_JOB]: undefined;
   [ROUTES.EARNINGS]: undefined;
   [ROUTES.AFFILIATES]: undefined;
   [ROUTES.INVITE_FRIENDS]: undefined;
   [ROUTES.MY_POINTS]: undefined;
+  [ROUTES.MY_BALANCE]: undefined;
+  [ROUTES.DEPOSIT]: { returnTo?: string };
   [ROUTES.WITHDRAWAL]: undefined;
   [ROUTES.MEMORIES]: undefined;
   [ROUTES.OFFERS]: undefined;
   [ROUTES.SETTINGS_MY_INFO]: undefined;
+  [ROUTES.SETTINGS_ADDRESS]: undefined;
   [ROUTES.EDIT_PROFILE]: undefined;
   [ROUTES.SETTINGS_MESSAGES]: undefined;
   [ROUTES.ADVERTISING]: undefined;
@@ -75,6 +81,11 @@ export type RootStackParamList = {
   };
   [ROUTES.AVATAR_VIEWER]: {
     avatarUrl: string;
+    userName: string;
+    userId?: string;
+  };
+  [ROUTES.COVER_VIEWER]: {
+    coverUrl: string;
     userName: string;
     userId?: string;
   };

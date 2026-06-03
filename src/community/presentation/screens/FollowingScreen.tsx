@@ -154,9 +154,7 @@ function FollowingScreen() {
                   </Text>
                 )}
                 <Text className="mt-1 text-caption-secondary">
-                  {item.followersCount !== undefined
-                    ? `${item.followersCount} người theo dõi`
-                    : item.working || item.address || ''}
+                  {item.address || item.working || ''}
                 </Text>
               </View>
               {item.followingState === 'following' ? (

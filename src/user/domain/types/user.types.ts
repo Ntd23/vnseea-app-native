@@ -107,6 +107,36 @@ export type NearbyUsersInput = {
   lng?: string | number;
 };
 
+export type NearbyPlaceKind = 'page' | 'shop' | 'business';
+
+export type NearbyPlace = {
+  id: string;
+  pageId?: string;
+  kind: NearbyPlaceKind;
+  name: string;
+  username?: string;
+  avatarUrl?: string;
+  url?: string;
+  category?: string;
+  description?: string;
+  location?: string;
+  distance?: string | number;
+  coordinate?: {
+    latitude: number;
+    longitude: number;
+  };
+};
+
+export type NearbyPlacesInput = Pick<
+  NearbyUsersInput,
+  'distance' | 'keyword' | 'limit' | 'offset'
+>;
+
+export type NearbyPagesInput = Pick<
+  NearbyUsersInput,
+  'distance' | 'keyword' | 'limit' | 'lat' | 'lng'
+>;
+
 export type FriendsInput = {
   userId: string;
   type?: ('following' | 'followers')[];

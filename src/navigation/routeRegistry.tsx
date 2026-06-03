@@ -12,6 +12,7 @@ import { NotificationsScreen } from '../notifications';
 import { MemoriesScreen } from '../memories';
 import { OffersScreen } from '../offers';
 import {
+  AddressScreen,
   AdvertisingScreen,
   EditProfileScreen,
   MyInfoScreen,
@@ -28,15 +29,17 @@ import { CreatePollScreen } from '../poll';
 import { CreateGroupScreen, ExploreGroupsScreen, FollowingScreen, GroupDetailScreen } from '../community';
 import { FundingScreen } from '../funding';
 import { MoviesScreen } from '../movies';
-import { JobDetailScreen, JobsScreen } from '../jobs';
-import { AvatarViewerScreen, ProfileScreen } from '../profile';
+import { CreateJobScreen, JobDetailScreen, JobsScreen } from '../jobs';
+import { AvatarViewerScreen, CoverViewerScreen, ProfileScreen } from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
 import { MyVideosScreen } from '../videos';
 import { CallScreen, ChatScreen } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { SavedPostsScreen } from '../saved';
-import { AffiliatesScreen, EarningsScreen, InviteFriendsScreen, MyPointsScreen } from '../wallet';
+import { AffiliatesScreen, DepositScreen, EarningsScreen, InviteFriendsScreen, MyBalanceScreen, MyPointsScreen } from '../wallet';
+import { PopularScreen } from '../popular';
 import { WithdrawalScreen } from '../withdrawal';
+import { NearbyUsersScreen } from '../user';
 
 type ScreenComponent = React.ComponentType<any>;
 type TabIconComponent = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
@@ -78,6 +81,7 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.CALLS, component: CallScreen },
     { name: ROUTES.SEARCH, component: SearchScreen },
     { name: ROUTES.SEARCH_FILTER, component: SearchFilterScreen },
+    { name: ROUTES.NEARBY_USERS, component: NearbyUsersScreen },
     { name: ROUTES.SAVED_POSTS, component: SavedPostsScreen },
     { name: ROUTES.SEARCH_EMPTY, component: SearchEmptyScreen },
     { name: ROUTES.PAGES, component: PagesScreen },
@@ -93,19 +97,24 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.FUNDING, component: FundingScreen },
     { name: ROUTES.FOLLOWING, component: FollowingScreen },
     { name: ROUTES.BOOSTED, component: BoostedScreen },
+    { name: ROUTES.POPULAR, component: PopularScreen },
     { name: ROUTES.BLOGS, component: BlogsScreen },
     { name: ROUTES.BLOG_FILTER_CATEGORY, component: BlogFilterCategoryScreen },
     { name: ROUTES.BLOG_DETAIL, component: BlogDetailScreen },
     { name: ROUTES.MOVIES, component: MoviesScreen },
     { name: ROUTES.JOBS, component: JobsScreen },
     { name: ROUTES.JOB_DETAIL, component: JobDetailScreen },
+    { name: ROUTES.CREATE_JOB, component: CreateJobScreen },
     { name: ROUTES.EARNINGS, component: EarningsScreen },
     { name: ROUTES.AFFILIATES, component: AffiliatesScreen },
     { name: ROUTES.INVITE_FRIENDS, component: InviteFriendsScreen },
     { name: ROUTES.MY_POINTS, component: MyPointsScreen },
+    { name: ROUTES.MY_BALANCE, component: MyBalanceScreen },
+    { name: ROUTES.DEPOSIT, component: DepositScreen },
     { name: ROUTES.MEMORIES, component: MemoriesScreen },
     { name: ROUTES.OFFERS, component: OffersScreen },
     { name: ROUTES.SETTINGS_MY_INFO, component: MyInfoScreen },
+    { name: ROUTES.SETTINGS_ADDRESS, component: AddressScreen },
     { name: ROUTES.EDIT_PROFILE, component: EditProfileScreen },
     { name: ROUTES.SETTINGS_MESSAGES, component: SettingsMessagesScreen },
     { name: ROUTES.WITHDRAWAL, component: WithdrawalScreen },
@@ -116,5 +125,6 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.CREATE_STORY, component: CreateStoryScreen },
     { name: ROUTES.STORY_VIEWER, component: StoryViewerScreen },
     { name: ROUTES.AVATAR_VIEWER, component: AvatarViewerScreen },
+    { name: ROUTES.COVER_VIEWER, component: CoverViewerScreen },
   ];
 }

@@ -7,6 +7,7 @@ import type {
 import { createProfileRepository } from '../../infrastructure/repositories/ApiProfileRepository';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import type { ApiFile } from '../../../shared-kernel/domain/types/api.types';
 
 const repository = createProfileRepository();
 
@@ -91,6 +92,22 @@ export function useProfileViewModel() {
     }
   }, []);
 
+  const updateCover = useCallback(async (cover: ApiFile): Promise<boolean> => {
+    try {
+      const response = await apiBridge.multipart<UpdateAvatarResponse>(
+        apiRoutes.user.updateCover,
+        {
+          cover,
+        }
+      );
+
+      return String(response.api_status) === '200';
+    } catch (error) {
+      console.error('[useProfileViewModel] updateCover error:', error);
+      return false;
+    }
+  }, []);
+
   return {
     profileData,
     profile: profileData?.profile,
@@ -102,5 +119,6 @@ export function useProfileViewModel() {
     toggleFollow,
     pokeUser,
     updateAvatar,
+    updateCover,
   };
 }

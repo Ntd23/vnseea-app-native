@@ -7,10 +7,8 @@ import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import type { NotificationsRepository } from '../../domain/repositories/NotificationsRepository';
 import type {
   NotificationsItem,
-  NotificationsListOptions,
-  NotificationsListPage,
+  NotificationsUnreadCounts,
 } from '../../domain/types/notifications.types';
-import { mapUserSummary } from '../../../foundation/application/mappers/userSummaryMapper';
 import { asRecord } from '../../../foundation/application/normalizers/resolveValue';
 
 type NotificationRecord = Record<string, unknown>;
@@ -19,12 +17,15 @@ type NotificationsResponse = {
   api_text?: string;
   notifications?: NotificationRecord[];
   count_notifications?: number;
+  new_notifications_count?: number;
+  count_new_messages?: number;
   data?: NotificationRecord[];
   message?: string;
   errors?: { error_text?: string };
 };
 
 const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
+const NOTIFICATIONS_PAGE_SIZE = 100;
 
 function readString(record: NotificationRecord | undefined, ...keys: string[]): string {
   for (const key of keys) {
@@ -45,7 +46,9 @@ function readNumber(record: NotificationRecord | undefined, ...keys: string[]): 
 
 function readBool(record: NotificationRecord | undefined, key: string): boolean {
   const val = record?.[key];
-  return val === 1 || val === '1' || val === true;
+  if (typeof val === 'number') return val > 0;
+  if (typeof val === 'string') return val !== '' && val !== '0' && val !== 'false';
+  return val === true;
 }
 
 function normalizeUrl(url: string): string {
@@ -68,7 +71,7 @@ function mapNotification(raw: NotificationRecord): NotificationsItem {
     recipientId: readString(raw, 'recipient_id'),
     notifierId,
     type: readString(raw, 'type'),
-    text: readString(raw, 'text', 'description'),
+    text: readString(raw, 'type_text', 'text', 'description'),
     url: normalizeUrl(readString(raw, 'url')),
     postId: readString(raw, 'post_id', 'postId'),
     pageId: readString(raw, 'page_id'),
@@ -94,22 +97,36 @@ function isSuccess(status: number | string | undefined): boolean {
   return status === 200 || status === '200' || status === 'success';
 }
 
+function mapUnreadCounts(response: NotificationsResponse): NotificationsUnreadCounts {
+  return {
+    notificationCount:
+      response.new_notifications_count ?? response.count_notifications ?? 0,
+    messageCount: response.count_new_messages ?? 0,
+  };
+}
+
+function fetchNotificationsResponse(offset?: string | number | null) {
+  const payload: Record<string, string> = {
+    fetch: 'notifications,count_new_messages',
+    include_all_notifications: '1',
+  };
+  if (offset) {
+    payload.offset = String(offset);
+  }
+
+  return apiBridge.post<NotificationsResponse>(
+    apiRoutes.notifications.list,
+    payload,
+  );
+}
+
 export function createNotificationsRepository(): NotificationsRepository {
   return {
     async getNotifications(options = {}) {
-      const limit = options.limit ?? 30;
-
       try {
-        const response = await apiBridge.post<NotificationsResponse>(
-          apiRoutes.notifications.list,
-          {
-            user_id: 'me',
-            limit: String(limit),
-            offset: options.offset ? String(options.offset) : undefined,
-          },
-        );
+        const response = await fetchNotificationsResponse(options.offset);
+        const counts = mapUnreadCounts(response);
 
-        // Handle both response formats: notifications[] or data[]
         const rawItems = response.notifications ?? response.data ?? [];
         const items = Array.isArray(rawItems) ? rawItems : [];
 
@@ -118,18 +135,27 @@ export function createNotificationsRepository(): NotificationsRepository {
         );
 
         const lastItem = items[items.length - 1] as NotificationRecord | undefined;
-        const nextOffset = lastItem
-          ? String(readNumber(lastItem, 'id', 'notification_id') ?? '')
-          : null;
+        const nextOffset = readString(lastItem, 'id', 'notification_id') || null;
 
         return {
           items: mapped,
           nextOffset,
-          hasMore: mapped.length >= limit,
-          unreadCount: response.count_notifications ?? 0,
+          hasMore: mapped.length >= NOTIFICATIONS_PAGE_SIZE,
+          unreadCount: counts.notificationCount,
+          unreadMessageCount: counts.messageCount,
         };
       } catch (error) {
         console.warn('[ApiNotificationsRepository] getNotifications failed', error);
+        throw error;
+      }
+    },
+
+    async getUnreadCounts() {
+      try {
+        const response = await fetchNotificationsResponse();
+        return mapUnreadCounts(response);
+      } catch (error) {
+        console.warn('[ApiNotificationsRepository] getUnreadCounts failed', error);
         throw error;
       }
     },

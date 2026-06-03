@@ -1,6 +1,6 @@
 // Description: Provides the icon-only bottom tab navigator for the authenticated app shell.
 import React from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   BottomTabBarProps,
   createBottomTabNavigator,
@@ -9,13 +9,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from './constants/routes';
 import { TAB_ROUTES } from './routeRegistry';
 import type { MainTabParamList } from './types';
+import { useNotificationBadgeViewModel } from '../notifications';
 
 const BRAND = '#0000FF';
 const ICON_ACTIVE = '#FFFFFF';
 const ICON_INACTIVE = 'rgba(255,255,255,0.45)';
 
-function CustomTabBar({ state, navigation }: BottomTabBarProps) {
+function CustomTabBar({
+  state,
+  navigation,
+}: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { totalUnreadCount: notificationBadgeCount } =
+    useNotificationBadgeViewModel();
   const bottom = Math.max(insets.bottom, 10);
 
   const currentRouteName = state.routes[state.index].name;
@@ -58,12 +64,19 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                 activeOpacity={isCenter ? 0.85 : 0.75}
                 accessibilityLabel={accessibilityLabel}
               >
-                <View style={isCenter ? styles.centerBtn : undefined}>
+                <View style={isCenter ? styles.centerBtn : styles.iconContainer}>
                   <Icon
                     size={22}
                     color={focused || isCenter ? ICON_ACTIVE : ICON_INACTIVE}
                     strokeWidth={2.2}
                   />
+                  {name === ROUTES.NOTIFICATIONS && notificationBadgeCount > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>
+                        {notificationBadgeCount > 99 ? '99+' : notificationBadgeCount}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </TouchableOpacity>
             );
@@ -76,11 +89,15 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
+function renderCustomTabBar(props: BottomTabBarProps) {
+  return <CustomTabBar {...props} />;
+}
+
 function MainTabNavigator() {
   return (
     <Tab.Navigator
       initialRouteName={ROUTES.FEED}
-      tabBar={props => <CustomTabBar {...props} />}
+      tabBar={renderCustomTabBar}
       screenOptions={{ headerShown: false }}
     >
       {TAB_ROUTES.map(({ name, component }) => (
@@ -149,6 +166,32 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.7,
     shadowRadius: 10,
     elevation: 10,
+  },
+  iconContainer: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    top: -9,
+    right: -13,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF3B30',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 12,
   },
 });
 

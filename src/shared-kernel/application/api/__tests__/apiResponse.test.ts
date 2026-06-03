@@ -4,6 +4,7 @@ import {
   assertApiSuccess,
   getApiErrorMessage,
   isApiSuccessStatus,
+  normalizeApiResponseData,
   normalizeApiStatus,
 } from '../apiResponse';
 
@@ -76,5 +77,23 @@ describe('apiResponse bridge helpers', () => {
     };
 
     expect(assertApiSuccess(envelope)).toBe(envelope);
+  });
+
+  it('extracts a JSON envelope when PHP warnings precede the response', () => {
+    expect(
+      normalizeApiResponseData(
+        '<br /><b>Warning</b>: Trying to access array offset on null<br />\n' +
+          '{"api_status":200,"access_token":"token","user_id":"1"}',
+      ),
+    ).toEqual({
+      api_status: 200,
+      access_token: 'token',
+      user_id: '1',
+    });
+  });
+
+  it('keeps non-JSON server responses unchanged', () => {
+    const html = '<br /><b>Warning</b>: Server failed';
+    expect(normalizeApiResponseData(html)).toBe(html);
   });
 });

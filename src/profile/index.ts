@@ -5,3 +5,4 @@ export { createProfileRepository } from './infrastructure/repositories/ApiProfil
 export { useProfileViewModel } from './application/view-models/useProfileViewModel';
 export { default as ProfileScreen } from './presentation/screens/ProfileScreen';
 export { default as AvatarViewerScreen } from './presentation/screens/AvatarViewerScreen';
+export { default as CoverViewerScreen } from './presentation/screens/CoverViewerScreen';

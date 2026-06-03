@@ -17,6 +17,12 @@ export interface MessagesRepository {
   getChats(): Promise<ChatItem[]>;
 
   /**
+   * Get only unread one-to-one chats for lightweight notification previews.
+   * API: POST /api/get_chats
+   */
+  getUnreadChats(): Promise<ChatItem[]>;
+
+  /**
    * Get messages from a specific conversation
    * API: POST /api/get_user_messages
    */

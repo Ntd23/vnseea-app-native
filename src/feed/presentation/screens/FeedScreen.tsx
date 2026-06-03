@@ -11,6 +11,7 @@ import {
   RefreshControl,
   ScrollView,
   StatusBar,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -1803,9 +1804,30 @@ export const TextPostCard = React.memo(function TextPostCard({
     });
   }, [onOpenPicker, post.id]);
 
-  // Photo grid: 1 photo → big, 2+ → 2-column. Same shape as the composer
-  // grid for visual consistency.
-  const single = post.photos.length === 1;
+  // Photo grid: Facebook-style layout up to 4 photos.
+  const totalPhotos = post.photos.length;
+  const displayedPhotos = post.photos.slice(0, 4);
+
+  const { width: screenWidth } = Dimensions.get('window');
+  const cardWidth = screenWidth - 32; // mx-4 is 16px on each side
+  const gridWidth = cardWidth - 8;    // px-1 is 4px on each side
+
+  const getPhotoStyle = (index: number, total: number) => {
+    if (total === 1) {
+      return { width: cardWidth - 8, height: (cardWidth - 8) / 1.4 };
+    }
+    if (total === 2) {
+      return { width: gridWidth / 2, height: gridWidth / 2 };
+    }
+    if (total === 3) {
+      if (index === 0) {
+        return { width: cardWidth - 8, height: (cardWidth - 8) / 1.6 };
+      }
+      return { width: gridWidth / 2, height: gridWidth / 2 };
+    }
+    // total >= 4
+    return { width: gridWidth / 2, height: gridWidth / 2 };
+  };
 
   return (
     <View className="surface-card mx-4 mb-6 overflow-hidden">
@@ -1813,7 +1835,7 @@ export const TextPostCard = React.memo(function TextPostCard({
         <PostHeader
           avatar={post.publisher.avatarUrl}
           name={post.publisher.name}
-          time={formatPostTime(post.postedAt)}
+          time={`${formatPostTime(post.postedAt)} (${totalPhotos} ảnh)`}
           onPress={post.publisher.id ? handleProfilePress : undefined}
           onMorePress={onOpenPostMenu}
           post={post}
@@ -1828,29 +1850,51 @@ export const TextPostCard = React.memo(function TextPostCard({
           </Text>
         ) : null}
       </View>
-      {post.photos.length > 0 ? (
+      {totalPhotos > 0 ? (
         <View className="flex-row flex-wrap px-1">
-          {post.photos.map((url, index) => (
+          {displayedPhotos.map((url, index) => (
             <TouchableOpacity
               key={url}
               onPress={() => onPhotoPress(post, index)}
               activeOpacity={0.95}
               style={{
-                width: single ? '100%' : '50%',
-                aspectRatio: single ? 1.4 : 1,
+                ...getPhotoStyle(index, totalPhotos),
                 padding: 2,
               }}
             >
-              <Image
-                source={{ uri: url }}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  borderRadius: 8,
-                  backgroundColor: '#F1F5F9',
-                }}
-                resizeMode="cover"
-              />
+              <View style={{ flex: 1, borderRadius: 8, overflow: 'hidden' }}>
+                <Image
+                  source={{ uri: url }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    backgroundColor: '#F1F5F9',
+                  }}
+                  resizeMode="cover"
+                />
+                {index === 3 && totalPhotos > 4 && (
+                  <View
+                    style={{
+                      ...StyleSheet.absoluteFillObject,
+                      backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      zIndex: 10,
+                      elevation: 5,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: '#FFFFFF',
+                        fontSize: 22,
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      +{totalPhotos - 4}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </TouchableOpacity>
           ))}
         </View>

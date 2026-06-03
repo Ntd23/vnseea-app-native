@@ -27,6 +27,30 @@ export function isApiSuccessStatus(status: ApiStatus | undefined) {
   return normalized ? SUCCESS_STATUSES.has(normalized) : true;
 }
 
+/**
+ * Some WoWonder hosts print PHP warnings before the JSON envelope. Axios
+ * cannot auto-parse that response, so consumers receive a string even
+ * though a valid API response exists at the end of it.
+ */
+export function normalizeApiResponseData(data: unknown): unknown {
+  if (typeof data !== 'string') {
+    return data;
+  }
+
+  const trimmed = data.trim();
+  const jsonStart = trimmed.indexOf('{');
+  const jsonEnd = trimmed.lastIndexOf('}');
+  if (jsonStart < 0 || jsonEnd < jsonStart) {
+    return data;
+  }
+
+  try {
+    return JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1)) as unknown;
+  } catch {
+    return data;
+  }
+}
+
 function getErrorId(errors: ApiErrorBody | undefined) {
   if (!errors?.error_id) {
     return undefined;

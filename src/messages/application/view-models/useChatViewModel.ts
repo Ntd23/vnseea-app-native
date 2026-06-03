@@ -6,6 +6,7 @@ import type {
 } from '../../domain/types/messages.types';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 
 const PAGE_SIZE = 30;
 const POLL_INTERVAL_MS = 5000;
@@ -49,6 +50,10 @@ export function useChatViewModel(chat: ChatItem) {
       });
       setMessages(mergeMessages(page));
       setHasMore(page.length >= PAGE_SIZE);
+      repository
+        .markAsSeen(chat.userId)
+        .then(() => setUnreadBadgeCounts({ messageCount: 0 }))
+        .catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không tải được tin nhắn');
     } finally {

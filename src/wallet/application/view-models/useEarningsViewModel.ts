@@ -1,7 +1,10 @@
-// Earnings ViewModel — UI-only phase, mock data
+// Earnings ViewModel — connected to real wallet API
 
-import {useState} from 'react';
-import type {EarningsMenuItem} from '../../domain/types/wallet.types';
+import {useCallback, useEffect, useState} from 'react';
+import type {EarningsMenuItem, WalletOverview} from '../../domain/types/wallet.types';
+import {createWalletRepository} from '../../infrastructure/repositories/ApiWalletRepository';
+
+const repository = createWalletRepository();
 
 const MOCK_EARNINGS_ITEMS: EarningsMenuItem[] = [
   {id: 'affiliates', label: 'Cộng tác viên của tôi', iconKey: 'Users', section: 'earnings'},
@@ -18,13 +21,34 @@ const MOCK_REFERRAL_ITEMS: EarningsMenuItem[] = [
 export function useEarningsViewModel() {
   const [earningsItems] = useState<EarningsMenuItem[]>(MOCK_EARNINGS_ITEMS);
   const [referralItems] = useState<EarningsMenuItem[]>(MOCK_REFERRAL_ITEMS);
-  const [isLoading] = useState(false);
-  const [error] = useState<string | null>(null);
+  const [walletOverview, setWalletOverview] = useState<WalletOverview | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadWalletOverview = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const data = await repository.getWalletOverview();
+      setWalletOverview(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadWalletOverview();
+  }, [loadWalletOverview]);
 
   return {
     earningsItems,
     referralItems,
+    walletOverview,
     isLoading,
     error,
+    reload: loadWalletOverview,
   };
 }
