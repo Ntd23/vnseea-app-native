@@ -21,6 +21,7 @@ $public_config = array(
     'siteName' => !empty($get_config['siteName']) ? $get_config['siteName'] : 'VNSEEA',
     'siteTitle' => !empty($get_config['siteTitle']) ? $get_config['siteTitle'] : (!empty($get_config['siteName']) ? $get_config['siteName'] : 'VNSEEA'),
     'siteDesc' => !empty($get_config['siteDesc']) ? $get_config['siteDesc'] : '',
+    'auto_username' => !empty($get_config['auto_username']) ? $get_config['auto_username'] : '0',
     'theme' => !empty($get_config['theme']) ? $get_config['theme'] : (!empty($config['theme']) ? $config['theme'] : ''),
     'theme_url' => $theme_url,
     'logo_url' => $theme_url . '/img/logo.' . $logo_extension,

@@ -1,4 +1,5 @@
 <?php
+// English description: Creates a backend user account for API clients while preserving PHP register behavior.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -19,11 +20,11 @@ $required_fields = array(
 );
 if ($wo['config']['auto_username'] == 1) {
     $_POST['username'] = time() . rand(111111, 999999);
-    if (empty($_POST['first_name']) || empty($_POST['last_name'])) {
+    if (empty($_POST['first_name'])) {
         $error_code    = 3;
-        $error_message = $wo['lang']['first_name_last_name_empty'];
+        $error_message = 'First name is required';
     }
-    elseif (preg_match('/[^\w\s]+/u', $_POST['first_name']) || preg_match('/[^\w\s]+/u', $_POST['last_name'])) {
+    elseif (preg_match('/[^\w\s]+/u', $_POST['first_name']) || (!empty($_POST['last_name']) && preg_match('/[^\w\s]+/u', $_POST['last_name']))) {
         $error_code    = 3;
         $error_message = $wo['lang']['username_invalid_characters'];
     }
@@ -129,11 +130,24 @@ if (empty($error_code)) {
 
         if ($wo['config']['auto_username'] == 1) {
             $account_data['first_name'] = Wo_Secure($_POST['first_name']);
-            $account_data['last_name'] = Wo_Secure($_POST['last_name']);
+            if (!empty($_POST['last_name'])) {
+                $account_data['last_name'] = Wo_Secure($_POST['last_name']);
+            }
         }
 
         $register     = Wo_RegisterUser($account_data);
         if ($register === true) {
+            if ($wo['config']['auto_username'] == 1) {
+                $registered_user_id = Wo_UserIdFromUsername($username);
+                if (!empty($registered_user_id) && is_numeric($registered_user_id)) {
+                    $username = $username . "_" . $registered_user_id;
+                    $_POST['username'] = $username;
+                    $db->where('user_id', $registered_user_id)->update(T_USERS, array(
+                        'username' => $username
+                    ));
+                    cache($registered_user_id, 'users', 'delete');
+                }
+            }
             if (!empty($account_data['referrer']) && is_numeric($wo['config']['affiliate_level']) && $wo['config']['affiliate_level'] > 1) {
                 $user_id = Wo_UserIdFromUsername($username);
                 AddNewRef($account_data['referrer'],$user_id,$wo['config']['amount_ref']);
