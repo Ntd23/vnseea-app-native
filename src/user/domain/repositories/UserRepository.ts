@@ -3,6 +3,9 @@ import type {
   FriendsInput,
   FriendsResult,
   GetUserProfileInput,
+  NearbyPlace,
+  NearbyPagesInput,
+  NearbyPlacesInput,
   NearbyUsersInput,
   UpdateCurrentUserInput,
   UpdateCurrentUserResult,
@@ -16,6 +19,8 @@ export interface UserRepository {
   getUserProfile(input?: GetUserProfileInput): Promise<UserProfileResult>;
   getSuggestions(input?: UserSuggestionsInput): Promise<UserProfile[]>;
   getNearbyUsers(input?: NearbyUsersInput): Promise<UserProfile[]>;
+  getNearbyPlaces(input?: NearbyPlacesInput): Promise<NearbyPlace[]>;
+  getNearbyPages(input?: NearbyPagesInput): Promise<NearbyPlace[]>;
   getFriends(input: FriendsInput): Promise<FriendsResult>;
   updateCurrentUser(
     input: UpdateCurrentUserInput,

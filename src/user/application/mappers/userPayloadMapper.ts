@@ -1,6 +1,8 @@
 // Description: Maps user application inputs into WoWonder API payload fields.
 import type {
   NearbyUsersInput,
+  NearbyPagesInput,
+  NearbyPlacesInput,
   UpdateCurrentUserInput,
   UserProfileFetch,
   UserSuggestionsInput,
@@ -62,6 +64,29 @@ export function toNearbyUsersPayload(input?: NearbyUsersInput) {
   putIfDefined(payload, 'lat', input?.lat);
   putIfDefined(payload, 'lng', input?.lng);
   return payload;
+}
+
+export function toNearbyPlacesPayload(input?: NearbyPlacesInput) {
+  const payload: Record<string, unknown> = {};
+  putIfDefined(payload, 'limit', input?.limit);
+  putIfDefined(payload, 'offset', input?.offset);
+  putIfDefined(payload, 'name', input?.keyword);
+  putIfDefined(payload, 'distance', input?.distance);
+  return payload;
+}
+
+export function toNearbyPagesQuery(input?: NearbyPagesInput) {
+  const query: Record<string, unknown> = {
+    application: 'phone',
+    f: 'explore_nearby_suggestions',
+    type: 'page',
+  };
+  putIfDefined(query, 'query', input?.keyword);
+  putIfDefined(query, 'distance', input?.distance);
+  putIfDefined(query, 'limit', input?.limit);
+  putIfDefined(query, 'origin_lat', input?.lat);
+  putIfDefined(query, 'origin_lng', input?.lng);
+  return query;
 }
 
 export function toUpdateCurrentUserPayload(input: UpdateCurrentUserInput) {

@@ -1,6 +1,9 @@
 // Description: Verifies user profile and payload mappers for the user API bridge.
 import { mapUserProfile } from '../userProfileMapper';
+import { mapNearbyPage, mapNearbyPlace } from '../nearbyPlaceMapper';
 import {
+  toNearbyPagesQuery,
+  toNearbyPlacesPayload,
   toNearbyUsersPayload,
   toUpdateCurrentUserPayload,
   toUserProfileFetchValue,
@@ -107,6 +110,43 @@ describe('userPayloadMapper', () => {
     });
   });
 
+  it('maps nearby places input into nearby endpoint field names', () => {
+    expect(
+      toNearbyPlacesPayload({
+        limit: 20,
+        offset: 40,
+        keyword: 'cafe',
+        distance: 25,
+      }),
+    ).toEqual({
+      limit: 20,
+      offset: 40,
+      name: 'cafe',
+      distance: 25,
+    });
+  });
+
+  it('maps nearby page input into the existing web handler query', () => {
+    expect(
+      toNearbyPagesQuery({
+        limit: 20,
+        keyword: 'cafe',
+        distance: 25,
+        lat: 21.0285,
+        lng: 105.8542,
+      }),
+    ).toEqual({
+      application: 'phone',
+      f: 'explore_nearby_suggestions',
+      type: 'page',
+      query: 'cafe',
+      distance: 25,
+      limit: 20,
+      origin_lat: 21.0285,
+      origin_lng: 105.8542,
+    });
+  });
+
   it('maps update input into WoWonder profile field names', () => {
     expect(
       toUpdateCurrentUserPayload({
@@ -129,5 +169,117 @@ describe('userPayloadMapper', () => {
       showlastseen: 1,
       share_my_location: false,
     });
+  });
+});
+
+describe('nearbyPlaceMapper', () => {
+  it('maps an independent nearby page from the website discovery handler', () => {
+    expect(
+      mapNearbyPage(
+        {
+          id: '19',
+          title: 'VNSEEA Page',
+          subtitle: '@vnseeapage',
+          description: 'Trang cộng đồng',
+          avatar: '/upload/page.jpg',
+          url: 'https://v2.vnseea.vn/vnseeapage',
+          location: 'Hà Nội',
+          lat: '21.0285',
+          lng: '105.8542',
+          distance_meters: '1250',
+        },
+        WEB_BASE_URL,
+      ),
+    ).toEqual({
+      id: 'page:19',
+      pageId: '19',
+      kind: 'page',
+      name: 'VNSEEA Page',
+      username: 'vnseeapage',
+      avatarUrl: 'https://v2.vnseea.vn/upload/page.jpg',
+      url: 'https://v2.vnseea.vn/vnseeapage',
+      description: 'Trang cộng đồng',
+      location: 'Hà Nội',
+      distance: 1.25,
+      coordinate: {
+        latitude: 21.0285,
+        longitude: 105.8542,
+      },
+    });
+  });
+
+  it('maps a nearby shop page and product location', () => {
+    expect(
+      mapNearbyPlace(
+        {
+          distance: '1.25',
+          page_data: {
+            page_id: '17',
+            name: 'VNSEEA Store',
+            username: 'vnseeastore',
+            avatar: '/upload/store.jpg',
+            category: 'Mua sắm',
+            url: 'https://v2.vnseea.vn/vnseeastore',
+          },
+          product: {
+            id: '5',
+            lat: '21.0285',
+            lng: '105.8542',
+            location: 'Hà Nội',
+          },
+        },
+        'shop',
+        WEB_BASE_URL,
+      ),
+    ).toEqual({
+      id: 'shop:17',
+      pageId: '17',
+      kind: 'shop',
+      name: 'VNSEEA Store',
+      username: 'vnseeastore',
+      avatarUrl: 'https://v2.vnseea.vn/upload/store.jpg',
+      url: 'https://v2.vnseea.vn/vnseeastore',
+      category: 'Mua sắm',
+      description: undefined,
+      location: 'Hà Nội',
+      distance: 1.25,
+      coordinate: {
+        latitude: 21.0285,
+        longitude: 105.8542,
+      },
+    });
+  });
+
+  it('maps a nearby business page and job location', () => {
+    expect(
+      mapNearbyPlace(
+        {
+          page_data: {
+            page_id: '18',
+            name: 'VNSEEA Jobs',
+            username: 'vnseeajobs',
+          },
+          job: {
+            id: '6',
+            lat: 10.7769,
+            lng: 106.7009,
+            location: 'TP. Hồ Chí Minh',
+          },
+        },
+        'business',
+        WEB_BASE_URL,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        id: 'business:18',
+        kind: 'business',
+        name: 'VNSEEA Jobs',
+        location: 'TP. Hồ Chí Minh',
+        coordinate: {
+          latitude: 10.7769,
+          longitude: 106.7009,
+        },
+      }),
+    );
   });
 });

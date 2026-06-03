@@ -5,3 +5,4 @@ export { createJobsRepository } from './infrastructure/repositories/ApiJobsRepos
 export { useJobsViewModel } from './application/view-models/useJobsViewModel';
 export { default as JobsScreen } from './presentation/screens/JobsScreen';
 export { default as JobDetailScreen } from './presentation/screens/JobDetailScreen';
+export { default as CreateJobScreen } from './presentation/screens/CreateJobScreen';

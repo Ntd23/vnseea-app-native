@@ -17,8 +17,9 @@ export const apiRoutes = {
     update: 'update-user-data',
     suggestions: 'get-user-suggestions',
     nearby: 'get-nearby-users',
+    nearbyPlaces: 'nearby',
     friends: 'get-friends',  // GET following/followers
-    updateCover: 'update_user_cover_picture',  // POST multipart
+    updateCover: 'update-user-data',  // POST multipart - uses v2 endpoint that handles both avatar and cover
   },
   reels: {
     create: 'new_post',
@@ -101,6 +102,22 @@ export const apiRoutes = {
   },
   wallet: {
     overview: 'wallet-overview',
+    stripe: 'stripe',
+    sepay: 'sepay',
+  },
+  funding: {
+    list: 'funding',
+    userFunding: 'funding',  // type=user_funding
+    detail: 'funding',       // type=get_by_id
+    recentDonations: 'funding', // type=get_recent_donations
+    pay: 'funding',          // type=pay
+  },
+  popular: {
+    mostLiked: 'most_liked',
+  },
+  movies: {
+    get: 'get-movies',
+    comments: 'movies_comments',
   },
 } as const;
 

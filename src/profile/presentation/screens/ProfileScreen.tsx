@@ -33,7 +33,7 @@ import {
   MessageCircle,
   Play,
 } from 'lucide-react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -779,12 +779,12 @@ function ProfileScreen() {
     onCommentCountChange: updateProfileCommentCount,
   });
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     loadProfile({
       userId: route.params?.userId,
       includeFriends: true,
     }).catch(() => undefined);
-  }, [loadProfile, route.params?.userId]);
+  }, [loadProfile, route.params?.userId]));
 
   // Load User Posts
   useEffect(() => {
@@ -1313,16 +1313,18 @@ function ProfileScreen() {
             </View>
 
             {/* Edit Cover Photo Button */}
-            <TouchableOpacity
-              className="absolute bottom-3.5 right-3.5 flex-row items-center rounded-lg bg-black/50 px-3 py-1.5"
-              activeOpacity={0.8}
-              onPress={handleCoverPress}
-            >
-              <Camera size={14} color="#FFFFFF" />
-              <Text className="ml-1.5 text-[11px] font-semibold text-white">
+            {isOwnProfile && (
+              <TouchableOpacity
+                className="absolute bottom-3.5 right-3.5 flex-row items-center rounded-lg bg-black/50 px-3 py-1.5"
+                activeOpacity={0.8}
+                onPress={handleCoverPress}
+              >
+                <Camera size={14} color="#FFFFFF" />
+                <Text className="ml-1.5 text-[11px] font-semibold text-white">
                 Chỉnh sửa
-              </Text>
-            </TouchableOpacity>
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Avatar Section (Overlapping Cover Photo + Story active Ring) */}

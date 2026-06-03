@@ -112,6 +112,13 @@ const MOCK_FEATURES: FeatureGridItem[] = [
     iconColor: BRAND,
   },
   {
+    id: 'nearby',
+    label: 'Người ở gần',
+    iconKey: 'MapPinned',
+    bgColor: '',
+    iconColor: BRAND,
+  },
+  {
     id: 'offers',
     label: 'Ưu đãi',
     iconKey: 'Tag',

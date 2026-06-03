@@ -1,10 +1,16 @@
 // Funding Repository Interface
 // Port từ: client/src/funding/domain/repositories/
 
-import type { FundingItem } from '../types/funding.types';
+import type { FundingItem, FundingDonation } from '../types/funding.types';
 
 export interface FundingRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<FundingItem[]>;
-  // getById(id: string | number): Promise<FundingItem | null>;
+  getFundingList(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<FundingItem[]>;
+  getFundingById(fundId: string): Promise<FundingItem | null>;
+  getRecentDonations(fundId: number, options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<FundingDonation[]>;
 }

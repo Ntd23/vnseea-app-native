@@ -177,7 +177,7 @@ function MyBalanceScreen() {
         {/* Deposit Button */}
         <TouchableOpacity
           activeOpacity={0.8}
-          onPress={() => navigation.navigate(ROUTES.DEPOSIT)}
+          onPress={() => navigation.navigate(ROUTES.DEPOSIT, {})}
           className="mt-3 items-center rounded-full border-2 border-brand bg-transparent py-4">
           <Text className="text-body font-semibold text-brand">Nạp tiền</Text>
         </TouchableOpacity>

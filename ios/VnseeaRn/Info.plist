@@ -35,7 +35,7 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>VNSEEA cần quyền truy cập vị trí để hiển thị người dùng ở gần bạn.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VNSEEA cần quyền truy cập mic để ghi âm tin nhắn thoại.</string>
 	<key>UILaunchStoryboardName</key>

@@ -156,6 +156,10 @@ function SettingsScreen() {
         navigation.navigate(ROUTES.BOOSTED);
       }
 
+      if (id === 'popular') {
+        navigation.navigate(ROUTES.POPULAR);
+      }
+
       if (id === 'blogs') {
         navigation.navigate(ROUTES.BLOGS);
       }
@@ -182,6 +186,10 @@ function SettingsScreen() {
 
       if (id === 'find-friends') {
         navigation.navigate(ROUTES.SEARCH);
+      }
+
+      if (id === 'nearby') {
+        navigation.navigate(ROUTES.NEARBY_USERS);
       }
     },
     [navigation],

@@ -7,7 +7,7 @@ import type {
 import { createProfileRepository } from '../../infrastructure/repositories/ApiProfileRepository';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
-import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import type { ApiFile } from '../../../shared-kernel/domain/types/api.types';
 
 const repository = createProfileRepository();
 
@@ -92,24 +92,16 @@ export function useProfileViewModel() {
     }
   }, []);
 
-  const updateCover = useCallback(async (coverUri: string): Promise<boolean> => {
+  const updateCover = useCallback(async (cover: ApiFile): Promise<boolean> => {
     try {
-      const session = sessionStorage.getSession();
-      const userId = session?.userId;
-
-      const response = await apiBridge.multipart<{ status: number; img?: string }>(
+      const response = await apiBridge.multipart<UpdateAvatarResponse>(
         apiRoutes.user.updateCover,
         {
-          cover: {
-            uri: coverUri,
-            name: `cover_${Date.now()}.jpg`,
-            type: 'image/jpeg',
-          },
-          user_id: userId ?? '',
+          cover,
         }
       );
 
-      return response.status === 200;
+      return String(response.api_status) === '200';
     } catch (error) {
       console.error('[useProfileViewModel] updateCover error:', error);
       return false;

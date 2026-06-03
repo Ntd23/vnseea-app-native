@@ -27,6 +27,7 @@ export type RootStackParamList = {
   [ROUTES.CALLS]: undefined;
   [ROUTES.SEARCH]: undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
+  [ROUTES.NEARBY_USERS]: undefined;
   [ROUTES.SAVED_POSTS]: undefined;
   [ROUTES.SEARCH_EMPTY]: undefined;
   [ROUTES.PAGES]: undefined;
@@ -42,12 +43,14 @@ export type RootStackParamList = {
   [ROUTES.FUNDING]: undefined;
   [ROUTES.FOLLOWING]: undefined;
   [ROUTES.BOOSTED]: undefined;
+  [ROUTES.POPULAR]: undefined;
   [ROUTES.BLOGS]: undefined;
   [ROUTES.BLOG_FILTER_CATEGORY]: undefined;
   [ROUTES.BLOG_DETAIL]: { blogId: string };
   [ROUTES.MOVIES]: undefined;
   [ROUTES.JOBS]: undefined;
-  [ROUTES.JOB_DETAIL]: undefined;
+  [ROUTES.JOB_DETAIL]: { jobId?: string };
+  [ROUTES.CREATE_JOB]: undefined;
   [ROUTES.EARNINGS]: undefined;
   [ROUTES.AFFILIATES]: undefined;
   [ROUTES.INVITE_FRIENDS]: undefined;

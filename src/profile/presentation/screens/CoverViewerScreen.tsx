@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  Image,
   StatusBar,
   StyleSheet,
   Text,
@@ -21,8 +20,8 @@ import { ArrowLeft, Camera, Download } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
-import { launchImageLibrary } from 'react-native-image-picker';
-import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { launchImageLibrary, type Asset } from 'react-native-image-picker';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CoverRoute = RouteProp<RootStackParamList, typeof ROUTES.COVER_VIEWER>;
@@ -35,13 +34,17 @@ type Props = {
 };
 
 function CoverViewerScreen({ route, navigation }: Props) {
-  const nav = navigation ?? useNavigation<Nav>();
-  const screenRoute = route ?? useRoute<CoverRoute>();
+  const fallbackNav = useNavigation<Nav>();
+  const fallbackRoute = useRoute<CoverRoute>();
+  const nav = navigation ?? fallbackNav;
+  const screenRoute = route ?? fallbackRoute;
 
   const { coverUrl, userName, userId } = screenRoute.params;
 
   const { updateCover } = useProfileViewModel();
   const [isLoading, setIsLoading] = useState(false);
+  const currentUserId = sessionStorage.getSession()?.userId;
+  const isOwnProfile = !userId || String(userId) === String(currentUserId);
 
   // Zoom animation values
   const scale = useSharedValue(1);
@@ -137,14 +140,18 @@ function CoverViewerScreen({ route, navigation }: Props) {
                 return;
               }
 
-              const asset = result.assets?.[0];
+              const asset: Asset | undefined = result.assets?.[0];
               if (!asset?.uri) {
                 Alert.alert('Lỗi', 'Không chọn được ảnh');
                 return;
               }
 
               setIsLoading(true);
-              const success = await updateCover(asset.uri);
+              const success = await updateCover({
+                uri: asset.uri,
+                name: asset.fileName || `cover_${Date.now()}.jpg`,
+                type: asset.type || 'image/jpeg',
+              });
 
               if (success) {
                 Alert.alert('Thành công', 'Đã cập nhật ảnh bìa!');
@@ -194,13 +201,15 @@ function CoverViewerScreen({ route, navigation }: Props) {
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <>
-                <TouchableOpacity
-                  style={styles.headerButton}
-                  onPress={handleChangeCover}
-                  activeOpacity={0.8}
-                >
-                  <Camera size={22} color="#FFFFFF" />
-                </TouchableOpacity>
+                {isOwnProfile && (
+                  <TouchableOpacity
+                    style={styles.headerButton}
+                    onPress={handleChangeCover}
+                    activeOpacity={0.8}
+                  >
+                    <Camera size={22} color="#FFFFFF" />
+                  </TouchableOpacity>
+                )}
 
                 <TouchableOpacity
                   style={styles.headerButton}

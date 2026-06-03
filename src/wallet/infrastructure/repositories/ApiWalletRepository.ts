@@ -2,7 +2,7 @@
 
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
-import type { WalletRepository } from '../../domain/repositories/WalletRepository';
+import type { WalletRepository, SepayQRResponse, StripeSessionResponse } from '../../domain/repositories/WalletRepository';
 import type { WalletOverview, Transaction, TopupMethod, CurrentUser } from '../../domain/types/wallet.types';
 
 interface BackendWalletResponse {
@@ -88,6 +88,29 @@ export function createWalletRepository(): WalletRepository {
         canWithdraw: response.can_withdraw,
         currentUser: mapCurrentUser(response.current_user),
       };
+    },
+
+    async createSepayQR(amount: number): Promise<SepayQRResponse> {
+      const response = await apiBridge.post<SepayQRResponse>(
+        `${apiRoutes.wallet.sepay}?action=make_qr`,
+        { amount },
+      );
+      return response;
+    },
+
+    async checkSepayOrder(orderCode: string): Promise<SepayQRResponse> {
+      const response = await apiBridge.get<SepayQRResponse>(
+        `${apiRoutes.wallet.sepay}?action=check&order_code=${orderCode}`,
+      );
+      return response;
+    },
+
+    async createStripeSession(amount: number): Promise<StripeSessionResponse> {
+      const response = await apiBridge.post<StripeSessionResponse>(
+        apiRoutes.wallet.stripe,
+        { type: 'createsession', amount },
+      );
+      return response;
     },
   };
 }

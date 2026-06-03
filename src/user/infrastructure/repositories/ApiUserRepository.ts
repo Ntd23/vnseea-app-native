@@ -1,4 +1,5 @@
 // Description: Implements the user repository through the shared API bridge.
+import axios from 'axios';
 import type {
   ApiEnvelope,
   RawApiRecord,
@@ -15,6 +16,10 @@ import type {
   FriendsInput,
   FriendsResult,
   GetUserProfileInput,
+  NearbyPlace,
+  NearbyPlaceKind,
+  NearbyPagesInput,
+  NearbyPlacesInput,
   NearbyUsersInput,
   UpdateCurrentUserInput,
   UserProfile,
@@ -23,6 +28,12 @@ import type {
 } from '../../domain/types/user.types';
 import { mapUserProfile } from '../../application/mappers/userProfileMapper';
 import {
+  mapNearbyPage,
+  mapNearbyPlace,
+} from '../../application/mappers/nearbyPlaceMapper';
+import {
+  toNearbyPagesQuery,
+  toNearbyPlacesPayload,
   toNearbyUsersPayload,
   toUpdateCurrentUserPayload,
   toUserProfileFetchValue,
@@ -51,6 +62,15 @@ type NearbyUsersResponse = ApiEnvelope & {
   nearby_users?: RawApiRecord[];
 };
 
+type NearbyPlacesResponse = ApiEnvelope & {
+  data?: RawApiRecord[];
+};
+
+type NearbyPagesResponse = {
+  status?: number | string;
+  items?: RawApiRecord[];
+};
+
 type UpdateUserResponse = ApiEnvelope & {
   message?: string;
 };
@@ -66,6 +86,44 @@ function mapUserList(records: RawApiRecord[] | undefined): UserProfile[] {
   return (records ?? []).map(record =>
     mapUserProfile(record, apiConfig.webBaseUrl),
   );
+}
+
+function mapNearbyPlaces(
+  records: RawApiRecord[] | undefined,
+  kind: NearbyPlaceKind,
+): NearbyPlace[] {
+  return (records ?? [])
+    .map(record => mapNearbyPlace(record, kind, apiConfig.webBaseUrl))
+    .filter(Boolean) as NearbyPlace[];
+}
+
+async function fetchNearbyPages(input?: NearbyPagesInput) {
+  const session = sessionStorage.getSession();
+
+  if (!session?.accessToken || !session.userId) {
+    return [];
+  }
+
+  const body = new URLSearchParams();
+  body.append('access_token', session.accessToken);
+  body.append('user_id', session.userId);
+
+  const response = await axios.post<NearbyPagesResponse>(
+    `${apiConfig.webBaseUrl.replace(/\/+$/, '')}/requests.php`,
+    body.toString(),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      params: toNearbyPagesQuery(input),
+      timeout: apiConfig.requestTimeoutMs,
+    },
+  );
+
+  return (response.data.items ?? [])
+    .map(record => mapNearbyPage(record, apiConfig.webBaseUrl))
+    .filter(Boolean) as NearbyPlace[];
 }
 
 function mapFamily(records: UserProfileResponse['family']): UserProfile[] {
@@ -166,6 +224,29 @@ export function createUserRepository(): UserRepository {
       );
 
       return mapUserList(response.nearby_users);
+    },
+
+    async getNearbyPlaces(input?: NearbyPlacesInput) {
+      const payload = toNearbyPlacesPayload(input);
+      const [shopsResponse, businessesResponse] = await Promise.all([
+        apiBridge.post<NearbyPlacesResponse>(apiRoutes.user.nearbyPlaces, {
+          ...payload,
+          type: 'shops',
+        }),
+        apiBridge.post<NearbyPlacesResponse>(apiRoutes.user.nearbyPlaces, {
+          ...payload,
+          type: 'businesses',
+        }),
+      ]);
+
+      return [
+        ...mapNearbyPlaces(shopsResponse.data, 'shop'),
+        ...mapNearbyPlaces(businessesResponse.data, 'business'),
+      ];
+    },
+
+    async getNearbyPages(input?: NearbyPagesInput) {
+      return fetchNearbyPages(input);
     },
 
     async getFriends(input: FriendsInput): Promise<FriendsResult> {
