@@ -284,8 +284,9 @@ export function useFeedViewModel() {
       setPosts(prev =>
         prev.map(post => {
           if (post.id !== postId) return post;
-          // Skip product posts - they don't have reactions
-          if (post.kind === 'product') return post;
+          if (post.kind !== 'text' && post.kind !== 'video' && post.kind !== 'poll') {
+            return post;
+          }
 
           snapshot = post;
           const typedPost = post as FeedTextPost | FeedVideoPost | FeedPollPost;
@@ -353,9 +354,10 @@ export function useFeedViewModel() {
     (postId: string, delta: number) => {
       setPosts(prev =>
         prev.map(post => {
-          // Skip product posts - they don't have comments in the same way
-          if (post.kind === 'product') return post;
-          const typedPost = post as FeedTextPost | FeedVideoPost;
+          if (post.kind !== 'text' && post.kind !== 'video' && post.kind !== 'poll') {
+            return post;
+          }
+          const typedPost = post as FeedTextPost | FeedVideoPost | FeedPollPost;
           return { ...post, commentCount: Math.max(0, typedPost.commentCount + delta) };
         }),
       );

@@ -16,6 +16,7 @@ export const ROUTES = {
   MESSAGES: 'Messages',
   CHAT: 'Chat',
   CALLS: 'Calls',
+  CREATE_GROUP_CHAT: 'CreateGroupChat',
   SEARCH: 'Search',
   SEARCH_FILTER: 'SearchFilter',
   NEARBY_USERS: 'NearbyUsers',
@@ -64,6 +65,9 @@ export const ROUTES = {
   STORY_VIEWER: 'StoryViewer',
   AVATAR_VIEWER: 'AvatarViewer',
   COVER_VIEWER: 'CoverViewer',
+  LIVE: 'Live',
+  LIVE_ROOM: 'LiveRoom',
+  GO_LIVE: 'GoLive',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];

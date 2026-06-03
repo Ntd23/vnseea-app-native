@@ -67,6 +67,16 @@ export interface GetMessagesOptions {
   afterMessageId?: string;
 }
 
+export interface GetChatsOptions {
+  includeDiscovery?: boolean;
+  latestOnly?: boolean;
+}
+
+export interface CreateGroupChatInput {
+  groupName: string;
+  memberUserIds: string[];
+}
+
 export interface ConversationItem {
   id: string;
   userId: string;
@@ -97,6 +107,7 @@ export interface SendMessageResponse {
   api_status: number;
   message_id?: string;
   message?: string;
+  data?: unknown;
   message_data?: unknown[];
   sentMessages?: MessageItem[];
 }

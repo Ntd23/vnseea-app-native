@@ -55,6 +55,7 @@ export const apiRoutes = {
   },
   messages: {
     chats: 'get_chats',
+    groupChat: 'group_chat',
     send: 'send-message',
     messages: 'get_user_messages',
     read: 'read_chats',

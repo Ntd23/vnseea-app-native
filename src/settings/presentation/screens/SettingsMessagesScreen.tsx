@@ -1,9 +1,11 @@
 // Description: Settings Messages screen - displays user conversations with real API data
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
+  Modal,
   RefreshControl,
   StatusBar,
   Text,
@@ -16,7 +18,6 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
-  Edit3,
   FileText,
   Film,
   ImageIcon,
@@ -30,6 +31,7 @@ import {
   Users,
   Video,
   Plus,
+  X,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -453,6 +455,177 @@ function StoriesBubbleRow() {
   );
 }
 
+function CreateGroupChatModal({
+  visible,
+  users,
+  isSubmitting,
+  onClose,
+  onCreate,
+}: {
+  visible: boolean;
+  users: ChatItem[];
+  isSubmitting: boolean;
+  onClose: () => void;
+  onCreate: (input: {
+    groupName: string;
+    memberUserIds: string[];
+  }) => Promise<boolean>;
+}) {
+  const [groupName, setGroupName] = useState('');
+  const [query, setQuery] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!visible) return;
+
+    setGroupName('');
+    setQuery('');
+    setSelectedIds(new Set());
+  }, [visible]);
+
+  const filteredUsers = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('vi-VN');
+
+    if (!normalizedQuery) return users;
+
+    return users.filter(user =>
+      `${user.name} ${user.username}`
+        .toLocaleLowerCase('vi-VN')
+        .includes(normalizedQuery),
+    );
+  }, [query, users]);
+
+  const toggleUser = useCallback((chat: ChatItem) => {
+    setSelectedIds(previous => {
+      const next = new Set(previous);
+
+      if (next.has(chat.userId)) {
+        next.delete(chat.userId);
+      } else {
+        next.add(chat.userId);
+      }
+
+      return next;
+    });
+  }, []);
+
+  const handleCreate = useCallback(async () => {
+    const nextName = groupName.trim();
+
+    if (nextName.length < 4 || nextName.length > 25) {
+      Alert.alert('Tên nhóm chưa hợp lệ', 'Tên nhóm cần từ 4 đến 25 ký tự.');
+      return;
+    }
+
+    if (selectedIds.size === 0) {
+      Alert.alert('Chưa chọn thành viên', 'Vui lòng chọn ít nhất một người để tạo nhóm.');
+      return;
+    }
+
+    const created = await onCreate({
+      groupName: nextName,
+      memberUserIds: [...selectedIds],
+    });
+
+    if (created) {
+      onClose();
+    }
+  }, [groupName, onClose, onCreate, selectedIds]);
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <View className="flex-1 justify-end bg-black/35">
+        <View className="max-h-[86%] rounded-t-3xl bg-white pb-3">
+          <View className="flex-row items-center justify-between border-b border-gray-100 px-4 py-4">
+            <View>
+              <Text className="text-lg font-bold text-gray-900">Tạo nhóm chat</Text>
+              <Text className="mt-0.5 text-xs text-gray-500">
+                Đã chọn {selectedIds.size} thành viên
+              </Text>
+            </View>
+            <TouchableOpacity
+              className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
+              activeOpacity={0.8}
+              onPress={onClose}
+            >
+              <X size={20} color="#111827" />
+            </TouchableOpacity>
+          </View>
+
+          <View className="px-4 py-3">
+            <Text className="mb-2 text-xs font-semibold text-gray-600">Tên nhóm</Text>
+            <TextInput
+              className="rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-900"
+              placeholder="Nhập tên nhóm..."
+              placeholderTextColor="#9ca3af"
+              value={groupName}
+              maxLength={25}
+              onChangeText={setGroupName}
+            />
+            <View className="mt-3 flex-row items-center rounded-2xl bg-gray-100 px-4 py-3">
+              <Search size={17} color="#9ca3af" />
+              <TextInput
+                className="ml-3 flex-1 text-sm text-gray-900"
+                placeholder="Tìm thành viên"
+                placeholderTextColor="#9ca3af"
+                value={query}
+                onChangeText={setQuery}
+              />
+            </View>
+          </View>
+
+          <FlatList
+            data={filteredUsers}
+            keyExtractor={item => item.userId}
+            renderItem={({ item }) => (
+              <ChatListItem
+                chat={item}
+                selectable
+                selected={selectedIds.has(item.userId)}
+                onPress={toggleUser}
+              />
+            )}
+            ListEmptyComponent={
+              <View className="items-center px-8 py-12">
+                <Users size={42} color="#9ca3af" />
+                <Text className="mt-3 text-center text-sm text-gray-500">
+                  Chưa có người dùng phù hợp để chọn.
+                </Text>
+              </View>
+            }
+            style={{ maxHeight: 360 }}
+            keyboardShouldPersistTaps="handled"
+          />
+
+          <View className="border-t border-gray-100 px-4 pt-3">
+            <TouchableOpacity
+              className={`h-12 items-center justify-center rounded-full ${
+                isSubmitting ? 'bg-blue-300' : 'bg-blue-600'
+              }`}
+              activeOpacity={0.85}
+              disabled={isSubmitting}
+              onPress={() => {
+                handleCreate().catch(() => undefined);
+              }}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text className="text-sm font-bold text-white">Tạo nhóm</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // Main screen
 function SettingsMessagesScreen() {
   const navigation = useNavigation<SettingsMessagesNav>();
@@ -461,7 +634,12 @@ function SettingsMessagesScreen() {
     isLoadingChats,
     error,
     loadChats,
+    syncLatestChats,
+    chatSyncIntervalMs,
+    loadGroupChats,
+    createGroupChat,
     isSending,
+    isCreatingGroup,
     sendBulkMessages,
   } = useMessagesViewModel();
 
@@ -469,26 +647,30 @@ function SettingsMessagesScreen() {
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<ChatFilter>('users');
   const [broadcastText, setBroadcastText] = useState('');
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(
     new Set(),
   );
-  const hasFocusedOnceRef = useRef(false);
-
   useFocusEffect(
     useCallback(() => {
-      if (hasFocusedOnceRef.current) {
-        loadChats(false).catch(() => undefined);
-      } else {
-        hasFocusedOnceRef.current = true;
-      }
+      syncLatestChats().catch(() => undefined);
 
       const interval = setInterval(() => {
-        loadChats(false).catch(() => undefined);
-      }, 5000);
+        syncLatestChats().catch(() => undefined);
+        if (activeFilter === 'groups') {
+          loadGroupChats(false).catch(() => undefined);
+        }
+      }, chatSyncIntervalMs);
 
       return () => clearInterval(interval);
-    }, [loadChats]),
+    }, [activeFilter, chatSyncIntervalMs, loadGroupChats, syncLatestChats]),
   );
+
+  useEffect(() => {
+    if (activeFilter !== 'groups') return;
+
+    loadGroupChats(false).catch(() => undefined);
+  }, [activeFilter, loadGroupChats]);
 
   const visibleChats = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('vi-VN');
@@ -510,11 +692,29 @@ function SettingsMessagesScreen() {
     });
   }, [activeFilter, chats, query]);
 
+  const groupCandidateUsers = useMemo(() => {
+    const users = new Map<string, ChatItem>();
+
+    for (const chat of chats) {
+      if (chat.chatType === 'user' && chat.userId && !users.has(chat.userId)) {
+        users.set(chat.userId, chat);
+      }
+    }
+
+    return [...users.values()].sort(
+      (left, right) => right.lastMessageTime - left.lastMessageTime,
+    );
+  }, [chats]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadChats();
+    if (activeFilter === 'groups') {
+      await loadGroupChats();
+    } else {
+      await loadChats(true, { includeDiscovery: true });
+    }
     setRefreshing(false);
-  }, [loadChats]);
+  }, [activeFilter, loadChats, loadGroupChats]);
 
   const handleChatPress = useCallback(
     (chat: ChatItem) => {
@@ -533,7 +733,7 @@ function SettingsMessagesScreen() {
         return;
       }
 
-      if (chat.chatType === 'user') {
+      if (chat.chatType === 'user' || chat.chatType === 'group') {
         navigation.navigate(ROUTES.CHAT, { chat });
       }
     },
@@ -551,6 +751,27 @@ function SettingsMessagesScreen() {
       setBroadcastText('');
     }
   }, [broadcastText, selectedRecipients, sendBulkMessages]);
+
+  const handleOpenCreateGroup = useCallback(() => {
+    setActiveFilter('groups');
+    setIsCreateGroupOpen(true);
+    loadChats(false, { includeDiscovery: true, merge: true }).catch(
+      () => undefined,
+    );
+  }, [loadChats]);
+
+  const handleCreateGroup = useCallback(
+    async (input: { groupName: string; memberUserIds: string[] }) => {
+      const chat = await createGroupChat(input);
+
+      if (!chat) return false;
+
+      setActiveFilter('groups');
+      navigation.navigate(ROUTES.CHAT, { chat });
+      return true;
+    },
+    [createGroupChat, navigation],
+  );
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -650,6 +871,7 @@ function SettingsMessagesScreen() {
       <TouchableOpacity
         className="absolute bottom-6 right-6 h-14 w-14 items-center justify-center rounded-full bg-blue-500 shadow-lg"
         activeOpacity={0.85}
+        onPress={handleOpenCreateGroup}
         style={{
           shadowColor: '#3b82f6',
           shadowOffset: { width: 0, height: 4 },
@@ -658,8 +880,16 @@ function SettingsMessagesScreen() {
           elevation: 8,
         }}
       >
-        <Edit3 size={24} color="#ffffff" />
+        <Users size={24} color="#ffffff" />
       </TouchableOpacity>
+
+      <CreateGroupChatModal
+        visible={isCreateGroupOpen}
+        users={groupCandidateUsers}
+        isSubmitting={isCreatingGroup}
+        onClose={() => setIsCreateGroupOpen(false)}
+        onCreate={handleCreateGroup}
+      />
     </SafeAreaView>
   );
 }
