@@ -1,3 +1,4 @@
+// Description: Renders a Messages chat conversation with media, voice notes, and LiveKit call actions.
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -53,7 +54,10 @@ import { AudioWaveform } from '../../../shared-kernel/presentation/components/Au
 import { useAudioRecorder } from '../../../shared-kernel/application/hooks/useAudioRecorder';
 import { formatAudioDuration } from '../../../shared-kernel/application/utils/audioFiles';
 
-type ChatScreenProps = NativeStackScreenProps<RootStackParamList, typeof ROUTES.CHAT>;
+type ChatScreenProps = NativeStackScreenProps<
+  RootStackParamList,
+  typeof ROUTES.CHAT
+>;
 
 type ChatMediaViewerItem = {
   uri: string;
@@ -81,8 +85,7 @@ const MAX_MEDIA_ATTACHMENTS = 10;
 const IMAGE_GROUP_WINDOW_SECONDS = 120;
 const IMAGE_GALLERY_WIDTH = 268;
 const IMAGE_GALLERY_GAP = 3;
-const IMAGE_GALLERY_TILE_SIZE =
-  (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
+const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
 
 function formatMessageTime(timestamp: number) {
   if (!timestamp) return '';
@@ -100,7 +103,7 @@ function isImageMessage(message: MessageItem) {
 function buildMessageListItems(messages: MessageItem[]): ChatMessageListItem[] {
   const items: ChatMessageListItem[] = [];
 
-  for (let index = 0; index < messages.length;) {
+  for (let index = 0; index < messages.length; ) {
     const message = messages[index];
     if (!isImageMessage(message)) {
       items.push({ kind: 'message', id: message.id, message });
@@ -157,9 +160,7 @@ function assetToAttachment(asset: Asset): MessageAttachment | undefined {
 
   return {
     uri,
-    name:
-      asset.fileName ??
-      `chat-${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`,
+    name: asset.fileName ?? `chat-${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`,
     type: asset.type ?? (isVideo ? 'video/mp4' : 'image/jpeg'),
     mediaType: isVideo ? 'video' : 'image',
   };
@@ -239,13 +240,13 @@ function CallEventContent({ message }: { message: MessageItem }) {
     hasErrorStatus && callEvent.callType === 'audio'
       ? PhoneMissed
       : callEvent.callType === 'video'
-        ? Video
-        : Phone;
+      ? Video
+      : Phone;
   const iconColor = message.isSentByMe
     ? '#ffffff'
     : hasErrorStatus
-      ? '#dc2626'
-      : '#2563eb';
+    ? '#dc2626'
+    : '#2563eb';
 
   return (
     <View className="flex-row items-center">
@@ -254,8 +255,8 @@ function CallEventContent({ message }: { message: MessageItem }) {
           message.isSentByMe
             ? 'bg-white/20'
             : hasErrorStatus
-              ? 'bg-red-100'
-              : 'bg-blue-100'
+            ? 'bg-red-100'
+            : 'bg-blue-100'
         }`}
       >
         <Icon size={19} color={iconColor} />
@@ -266,17 +267,15 @@ function CallEventContent({ message }: { message: MessageItem }) {
             message.isSentByMe ? 'text-white' : 'text-gray-900'
           }`}
         >
-          {callEvent.callType === 'video'
-            ? 'Cuộc gọi video'
-            : 'Cuộc gọi thoại'}
+          {callEvent.callType === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
         </Text>
         <Text
           className={`mt-0.5 text-xs ${
             message.isSentByMe
               ? 'text-blue-100'
               : hasErrorStatus
-                ? 'text-red-600'
-                : 'text-gray-500'
+              ? 'text-red-600'
+              : 'text-gray-500'
           }`}
         >
           {getCallDetail(message)}
@@ -380,7 +379,10 @@ function ImageMessageGroup({
 }) {
   const orderedMessages = [...messages].reverse();
   const visibleMessages = orderedMessages.slice(0, 4);
-  const hiddenCount = Math.max(0, orderedMessages.length - visibleMessages.length);
+  const hiddenCount = Math.max(
+    0,
+    orderedMessages.length - visibleMessages.length,
+  );
   const newestMessage = messages[0];
   const viewerItems = orderedMessages.map(message => ({
     uri: message.media!,
@@ -389,8 +391,9 @@ function ImageMessageGroup({
   const captions = orderedMessages
     .map(message => message.message.trim())
     .filter(Boolean);
-  const deliveryState = messages.find(message => message.deliveryState)
-    ?.deliveryState;
+  const deliveryState = messages.find(
+    message => message.deliveryState,
+  )?.deliveryState;
 
   return (
     <View
@@ -442,8 +445,8 @@ function ImageMessageGroup({
           {deliveryState === 'sending'
             ? 'Đang gửi...'
             : deliveryState === 'failed'
-              ? 'Gửi thất bại'
-              : formatMessageTime(newestMessage.time)}
+            ? 'Gửi thất bại'
+            : formatMessageTime(newestMessage.time)}
         </Text>
       </View>
     </View>
@@ -483,8 +486,8 @@ function MessageBubble({
           isMediaOnly
             ? ''
             : message.isSentByMe
-              ? 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
-              : 'rounded-2xl rounded-bl-md bg-gray-100 px-3 py-2'
+            ? 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
+            : 'rounded-2xl rounded-bl-md bg-gray-100 px-3 py-2'
         } ${message.deliveryState === 'sending' ? 'opacity-70' : ''}`}
       >
         {message.callEvent ? (
@@ -510,17 +513,17 @@ function MessageBubble({
                 ? 'text-red-600'
                 : 'text-red-100'
               : isMediaOnly
-                ? 'text-gray-500'
-                : message.isSentByMe
-                ? 'text-blue-100'
-                : 'text-gray-500'
+              ? 'text-gray-500'
+              : message.isSentByMe
+              ? 'text-blue-100'
+              : 'text-gray-500'
           }`}
         >
           {message.deliveryState === 'sending'
             ? 'Đang gửi...'
             : message.deliveryState === 'failed'
-              ? 'Gửi thất bại'
-              : formatMessageTime(message.time)}
+            ? 'Gửi thất bại'
+            : formatMessageTime(message.time)}
         </Text>
       </View>
     </View>
@@ -548,7 +551,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const [viewerMediaIndex, setViewerMediaIndex] = useState(0);
   const [isViewerMuted, setIsViewerMuted] = useState(false);
   const recorder = useAudioRecorder();
-  const messageItems = useMemo(() => buildMessageListItems(messages), [messages]);
+  const messageItems = useMemo(
+    () => buildMessageListItems(messages),
+    [messages],
+  );
   const viewerMedia = viewerMediaItems[viewerMediaIndex];
 
   const handleOpenMedia = useCallback<OpenChatMedia>(
@@ -636,6 +642,23 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     }
   }, [recorder]);
 
+  const handleStartCall = useCallback(
+    (callType: 'audio' | 'video') => {
+      navigation.navigate(ROUTES.CALL_ROOM, {
+        recipientId: chat.userId,
+        callType,
+        direction: 'outgoing',
+        peer: {
+          id: chat.userId,
+          name: chat.name,
+          avatar: chat.avatar,
+          username: chat.username,
+        },
+      });
+    },
+    [chat.avatar, chat.name, chat.userId, chat.username, navigation],
+  );
+
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
       <KeyboardAvoidingView
@@ -655,19 +678,42 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             className="ml-1 h-10 w-10 rounded-full bg-gray-200"
           />
           <View className="ml-3 flex-1">
-            <Text className="text-base font-bold text-gray-900" numberOfLines={1}>
+            <Text
+              className="text-base font-bold text-gray-900"
+              numberOfLines={1}
+            >
               {chat.name}
             </Text>
             <Text className="text-xs text-gray-500">
               {chat.isOnline ? 'Đang hoạt động' : `@${chat.username}`}
             </Text>
           </View>
+          {chat.chatType === 'user' ? (
+            <>
+              <TouchableOpacity
+                className="h-10 w-10 items-center justify-center rounded-full"
+                activeOpacity={0.75}
+                onPress={() => handleStartCall('audio')}
+              >
+                <Phone size={21} color="#0000ff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="h-10 w-10 items-center justify-center rounded-full"
+                activeOpacity={0.75}
+                onPress={() => handleStartCall('video')}
+              >
+                <Video size={22} color="#0000ff" />
+              </TouchableOpacity>
+            </>
+          ) : null}
         </View>
 
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color="#2563eb" />
-            <Text className="mt-3 text-sm text-gray-500">Đang tải tin nhắn...</Text>
+            <Text className="mt-3 text-sm text-gray-500">
+              Đang tải tin nhắn...
+            </Text>
           </View>
         ) : (
           <FlatList
@@ -697,7 +743,11 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             onEndReachedThreshold={0.2}
             ListFooterComponent={
               isLoadingMore ? (
-                <ActivityIndicator className="my-3" size="small" color="#2563eb" />
+                <ActivityIndicator
+                  className="my-3"
+                  size="small"
+                  color="#2563eb"
+                />
               ) : null
             }
             ListEmptyComponent={
@@ -867,10 +917,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         statusBarTranslucent
         onRequestClose={handleCloseMedia}
       >
-        <SafeAreaView
-          className="flex-1 bg-black"
-          edges={['top', 'bottom']}
-        >
+        <SafeAreaView className="flex-1 bg-black" edges={['top', 'bottom']}>
           <TouchableOpacity
             className="absolute right-4 top-4 z-10 h-11 w-11 items-center justify-center rounded-full bg-black/60"
             activeOpacity={0.8}

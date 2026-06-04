@@ -1,4 +1,5 @@
 <?php
+// English description: Handles legacy PHP ajax actions for creating and managing pages.
 if ($f == 'pages') {
     if (!function_exists('Wo_PageColumnExists')) {
         function Wo_PageColumnExists($column_name = '')
@@ -25,6 +26,7 @@ if ($f == 'pages') {
         }
     }
     if ($s == 'create_page') {
+        Wo_EnsurePageMapPinColumns();
         if (!empty($_POST['page_name']) && ($_POST['page_name'] == 'wowonder' || $_POST['page_name'] == 'sunshine' || $_POST['page_name'] == $wo['config']['theme'])) {
             $_POST['page_name'] = "";
         }
@@ -77,6 +79,10 @@ if ($f == 'pages') {
             if (Wo_PageColumnExists('place_id')) {
                 $re_page_data['place_id'] = !empty($_POST['page_place_id']) ? Wo_Secure($_POST['page_place_id']) : '';
             }
+            $re_page_data = array_merge(
+                $re_page_data,
+                Wo_GetPageMapPinRequestUpdateData(array(), $re_page_data, !empty($_POST['map_pin_requested']))
+            );
             $fields       = Wo_GetCustomFields('page');
             if (!empty($fields)) {
                 foreach ($fields as $key => $field) {
@@ -121,6 +127,7 @@ if ($f == 'pages') {
             }
             if ($PageData['user_id'] == $wo['user']['id'] || Wo_IsCanPageUpdate($_POST['page_id'], 'info')) {
                 if (empty($errors)) {
+                    Wo_EnsurePageMapPinColumns();
                     $Update_data = array(
                         'website' => $_POST['website'],
                         'page_description' => $_POST['page_description'],
@@ -137,6 +144,10 @@ if ($f == 'pages') {
                     if (Wo_PageColumnExists('place_id')) {
                         $Update_data['place_id'] = !empty($_POST['page_place_id']) ? Wo_Secure($_POST['page_place_id']) : '';
                     }
+                    $Update_data = array_merge(
+                        $Update_data,
+                        Wo_GetPageMapPinRequestUpdateData($PageData, $Update_data, !empty($_POST['map_pin_requested']))
+                    );
                     if (Wo_UpdatePageData($_POST['page_id'], $Update_data)) {
                         $old_address = (!empty($PageData['address'])) ? $PageData['address'] : '';
                         $new_address = (!empty($_POST['address'])) ? $_POST['address'] : '';

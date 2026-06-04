@@ -20,29 +20,53 @@ import {
   SettingsScreen,
 } from '../settings';
 import { CreateAdScreen } from '../advertising';
-import { BlogDetailScreen, BlogFilterCategoryScreen, BlogsScreen } from '../blogs';
+import {
+  BlogDetailScreen,
+  BlogFilterCategoryScreen,
+  BlogsScreen,
+} from '../blogs';
 import { BoostedScreen } from '../boosted';
 import { CreatePageScreen, PagesScreen } from '../pages';
 import { CreateProductScreen, MarketplaceScreen } from '../product';
 import { CreateEventScreen, EventsScreen } from '../events';
 import { CreatePollScreen } from '../poll';
-import { CreateGroupScreen, ExploreGroupsScreen, FollowingScreen, GroupDetailScreen } from '../community';
+import {
+  CreateGroupScreen,
+  ExploreGroupsScreen,
+  FollowingScreen,
+  GroupDetailScreen,
+} from '../community';
 import { FundingScreen } from '../funding';
 import { MoviesScreen } from '../movies';
 import { CreateJobScreen, JobDetailScreen, JobsScreen } from '../jobs';
-import { AvatarViewerScreen, CoverViewerScreen, ProfileScreen } from '../profile';
+import {
+  AvatarViewerScreen,
+  CoverViewerScreen,
+  ProfileScreen,
+} from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
 import { MyVideosScreen } from '../videos';
-import { CallScreen, ChatScreen } from '../messages';
+import { CallRoomScreen, CallScreen, ChatScreen } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { SavedPostsScreen } from '../saved';
-import { AffiliatesScreen, DepositScreen, EarningsScreen, InviteFriendsScreen, MyBalanceScreen, MyPointsScreen } from '../wallet';
+import {
+  AffiliatesScreen,
+  DepositScreen,
+  EarningsScreen,
+  InviteFriendsScreen,
+  MyBalanceScreen,
+  MyPointsScreen,
+} from '../wallet';
 import { PopularScreen } from '../popular';
 import { WithdrawalScreen } from '../withdrawal';
 import { NearbyUsersScreen } from '../user';
 
 type ScreenComponent = React.ComponentType<any>;
-type TabIconComponent = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
+type TabIconComponent = React.ComponentType<{
+  size: number;
+  color: string;
+  strokeWidth: number;
+}>;
 
 export type StackRouteDefinition = {
   name: RootStackRouteName;
@@ -58,14 +82,42 @@ export type TabRouteDefinition = {
 };
 
 export const TAB_ROUTES: TabRouteDefinition[] = [
-  { name: ROUTES.FEED, component: FeedScreen, Icon: Home, accessibilityLabel: 'Feed' },
-  { name: ROUTES.EXPLORE, component: ExploreScreen, Icon: Hash, accessibilityLabel: 'Hashtags' },
-  { name: ROUTES.REELS, component: ReelsScreen, Icon: PlaySquare, accessibilityLabel: 'Reels', isCenter: true },
-  { name: ROUTES.NOTIFICATIONS, component: NotificationsScreen, Icon: Bell, accessibilityLabel: 'Notifications' },
-  { name: ROUTES.SETTINGS, component: SettingsScreen, Icon: Settings, accessibilityLabel: 'Settings' },
+  {
+    name: ROUTES.FEED,
+    component: FeedScreen,
+    Icon: Home,
+    accessibilityLabel: 'Feed',
+  },
+  {
+    name: ROUTES.EXPLORE,
+    component: ExploreScreen,
+    Icon: Hash,
+    accessibilityLabel: 'Hashtags',
+  },
+  {
+    name: ROUTES.REELS,
+    component: ReelsScreen,
+    Icon: PlaySquare,
+    accessibilityLabel: 'Reels',
+    isCenter: true,
+  },
+  {
+    name: ROUTES.NOTIFICATIONS,
+    component: NotificationsScreen,
+    Icon: Bell,
+    accessibilityLabel: 'Notifications',
+  },
+  {
+    name: ROUTES.SETTINGS,
+    component: SettingsScreen,
+    Icon: Settings,
+    accessibilityLabel: 'Settings',
+  },
 ];
 
-export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRouteDefinition[] {
+export function createStackRoutes(
+  MainTabsComponent: ScreenComponent,
+): StackRouteDefinition[] {
   return [
     { name: ROUTES.LOGIN, component: LoginScreen },
     { name: ROUTES.REGISTER, component: RegisterScreen },
@@ -79,6 +131,7 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.MESSAGES, component: SettingsMessagesScreen },
     { name: ROUTES.CHAT, component: ChatScreen },
     { name: ROUTES.CALLS, component: CallScreen },
+    { name: ROUTES.CALL_ROOM, component: CallRoomScreen },
     { name: ROUTES.SEARCH, component: SearchScreen },
     { name: ROUTES.SEARCH_FILTER, component: SearchFilterScreen },
     { name: ROUTES.NEARBY_USERS, component: NearbyUsersScreen },

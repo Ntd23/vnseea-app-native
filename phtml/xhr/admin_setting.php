@@ -1,4 +1,5 @@
 <?php
+// English description: Handles admin panel ajax actions for backend moderation and configuration.
 use Aws\S3\S3Client;
 use Google\Cloud\Storage\StorageClient;
 if ($f == 'admin_setting' AND (Wo_IsAdmin() || Wo_IsModerator())) {
@@ -4297,6 +4298,17 @@ if ($f == 'admin_setting' AND (Wo_IsAdmin() || Wo_IsModerator())) {
     if ($s == 'delete_user_page' && isset($_GET['page_id'])) {
         if (Wo_DeletePage($_GET['page_id']) === true) {
             $data['status'] = 200;
+        }
+        header("Content-type: application/json");
+        echo json_encode($data);
+        exit();
+    }
+    if ($s == 'update_page_map_pin' && isset($_POST['page_id']) && isset($_POST['status'])) {
+        $data = array('status' => 400);
+        $review_status = Wo_Secure($_POST['status']);
+        if (Wo_CheckMainSession($hash_id) === true && Wo_UpdatePageMapPinReview($_POST['page_id'], $review_status) === true) {
+            $data['status'] = 200;
+            $data['map_pin_status'] = $review_status;
         }
         header("Content-type: application/json");
         echo json_encode($data);

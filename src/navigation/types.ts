@@ -3,6 +3,7 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 import { ROUTES } from './constants/routes';
 import type { StoryItem } from '../stories/domain/types/stories.types';
 import type { ChatItem } from '../messages/domain/types/messages.types';
+import type { LiveKitCallRouteParams } from '../messages/domain/types/call.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -25,6 +26,7 @@ export type RootStackParamList = {
   [ROUTES.MESSAGES]: undefined;
   [ROUTES.CHAT]: { chat: ChatItem };
   [ROUTES.CALLS]: undefined;
+  [ROUTES.CALL_ROOM]: LiveKitCallRouteParams;
   [ROUTES.SEARCH]: undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
   [ROUTES.NEARBY_USERS]: undefined;

@@ -1,6 +1,7 @@
 <?php
 // English description: Returns nearby user and page suggestions for Nuxt map search.
 if ($f == 'explore_nearby_suggestions') {
+	Wo_EnsurePageMapPinColumns();
 	$data = array(
 		'status' => 200,
 		'items' => array()
@@ -59,6 +60,7 @@ if ($f == 'explore_nearby_suggestions') {
 	$user_has_address = $column_exists(T_USERS, 'address');
 	$user_has_place_id = $column_exists(T_USERS, 'place_id');
 	$page_has_place_id = $column_exists(T_PAGES, 'place_id');
+	$page_has_map_pin_status = $column_exists(T_PAGES, 'map_pin_status');
 
 	$has_origin = ($origin_lat !== null && $origin_lng !== null);
 	$max_distance_meters = $distance * 1000;
@@ -191,7 +193,13 @@ if ($f == 'explore_nearby_suggestions') {
 	}
 
 	if ($type === 'all' || $type === 'page') {
-		$page_order = $keyword !== '' ? "(`page_name` LIKE '{$keyword}%') DESC, (`page_title` LIKE '{$keyword}%') DESC, (`address` LIKE '{$keyword}%') DESC," : "";
+		$page_order = '';
+		if ($page_has_map_pin_status) {
+			$page_order .= "(`map_pin_status` = 'approved') DESC,";
+		}
+		if ($keyword !== '') {
+			$page_order .= "(`page_name` LIKE '{$keyword}%') DESC, (`page_title` LIKE '{$keyword}%') DESC, (`address` LIKE '{$keyword}%') DESC,";
+		}
 		$page_sql = "SELECT `page_id` FROM " . T_PAGES . $page_sql_where . " ORDER BY {$page_order} `page_id` DESC LIMIT {$page_limit}";
 		$page_query = mysqli_query($sqlConnect, $page_sql);
 		if ($page_query && mysqli_num_rows($page_query) > 0) {
@@ -202,7 +210,8 @@ if ($f == 'explore_nearby_suggestions') {
 			}
 
 			$page_distance_meters = (!empty($page['lat']) && !empty($page['lng'])) ? $calculate_distance_meters($page['lat'], $page['lng']) : null;
-			if ($has_origin && ($page_distance_meters === null || $page_distance_meters > $max_distance_meters)) {
+			$page_is_pinned = (!empty($page['map_pin_status']) && $page['map_pin_status'] === 'approved');
+			if (!$page_is_pinned && $has_origin && ($page_distance_meters === null || $page_distance_meters > $max_distance_meters)) {
 				continue;
 			}
 			$page_items[] = array(
@@ -219,6 +228,8 @@ if ($f == 'explore_nearby_suggestions') {
 				'lat' => (!empty($page['lat']) && !empty($page['lng'])) ? (float) $page['lat'] : null,
 				'lng' => (!empty($page['lat']) && !empty($page['lng'])) ? (float) $page['lng'] : null,
 				'distance_meters' => $page_distance_meters,
+				'pinned' => $page_is_pinned ? 1 : 0,
+				'map_pin_status' => (!empty($page['map_pin_status']) ? $page['map_pin_status'] : 'none'),
 				'address' => (!empty($page['address']) ? $page['address'] : ''),
 				'search_value' => (!empty($page['page_title']) ? $page['page_title'] : $page['page_name'])
 			);
@@ -234,3 +245,4 @@ if ($f == 'explore_nearby_suggestions') {
 	echo json_encode($data);
 	exit();
 }
+	

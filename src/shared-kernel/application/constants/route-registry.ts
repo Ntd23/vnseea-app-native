@@ -18,8 +18,8 @@ export const apiRoutes = {
     suggestions: 'get-user-suggestions',
     nearby: 'get-nearby-users',
     nearbyPlaces: 'nearby',
-    friends: 'get-friends',  // GET following/followers
-    updateCover: 'update-user-data',  // POST multipart - uses v2 endpoint that handles both avatar and cover
+    friends: 'get-friends', // GET following/followers
+    updateCover: 'update-user-data', // POST multipart - uses v2 endpoint that handles both avatar and cover
   },
   reels: {
     create: 'new_post',
@@ -60,6 +60,7 @@ export const apiRoutes = {
     read: 'read_chats',
     typing: 'set-chat-typing-status',
     delete: 'delete-conversation',
+    livekit: 'livekit',
   },
   products: {
     get: 'get-products',
@@ -93,12 +94,12 @@ export const apiRoutes = {
   },
   photos: {
     getUserAlbums: 'get-user-albums',
-    create: 'albums',  // POST with type=create
+    create: 'albums', // POST with type=create
   },
   notifications: {
-    list: 'get-general-data',    // v2 API - fetch=notifications
-    delete: 'notifications',      // v2 API - type=delete
-    markSeen: 'notifications',     // v2 API - type=mark_seen
+    list: 'get-general-data', // v2 API - fetch=notifications
+    delete: 'notifications', // v2 API - type=delete
+    markSeen: 'notifications', // v2 API - type=mark_seen
   },
   wallet: {
     overview: 'wallet-overview',
@@ -107,10 +108,10 @@ export const apiRoutes = {
   },
   funding: {
     list: 'funding',
-    userFunding: 'funding',  // type=user_funding
-    detail: 'funding',       // type=get_by_id
+    userFunding: 'funding', // type=user_funding
+    detail: 'funding', // type=get_by_id
     recentDonations: 'funding', // type=get_recent_donations
-    pay: 'funding',          // type=pay
+    pay: 'funding', // type=pay
   },
   popular: {
     mostLiked: 'most_liked',
