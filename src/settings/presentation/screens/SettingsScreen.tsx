@@ -191,6 +191,10 @@ function SettingsScreen() {
       if (id === 'nearby') {
         navigation.navigate(ROUTES.NEARBY_USERS);
       }
+
+      if (id === 'live') {
+        navigation.navigate(ROUTES.LIVE);
+      }
     },
     [navigation],
   );

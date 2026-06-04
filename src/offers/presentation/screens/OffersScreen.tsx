@@ -1,134 +1,270 @@
+// Description: Renders VNSEEA offers list with real API data and beautiful card layout.
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, StatusBar, ScrollView } from 'react-native';
-import { ArrowLeft, Tag } from 'lucide-react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  Text,
+  View,
+} from 'react-native';
+import {
+  ArrowLeft,
+  Tag,
+  Ticket,
+} from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { RootStackParamList } from '../../../navigation/types';
+import { useOffersViewModel } from '../../application/view-models/useOffersViewModel';
+import type { OfferItem, DiscountType, DISCOUNT_TYPE_LABELS } from '../../domain/types/offers.types';
 
-export default function OffersScreen() {
-  const navigation = useNavigation();
+type OffersNav = NativeStackNavigationProp<RootStackParamList>;
+
+const BRAND = '#0000ff';
+
+const DISCOUNT_LABELS: Record<DiscountType, string> = {
+  discount_percent: 'Giảm %',
+  discount_amount: 'Giảm tiền',
+  buy_get_discount: 'Mua X tặng Y',
+  spend_get_off: 'Chi tiêu được giảm',
+  free_shipping: 'Miễn phí ship',
+};
+
+function formatDiscount(offer: OfferItem): string {
+  if (offer.discount_percent > 0) {
+    return `-${offer.discount_percent}%`;
+  }
+  if (offer.discount_amount > 0) {
+    return `-${offer.discount_amount.toLocaleString()}đ`;
+  }
+  if (offer.discount_type === 'free_shipping') {
+    return 'FREE';
+  }
+  if (offer.discount_type === 'buy_get_discount') {
+    return `Mua ${offer.buy} tặng ${offer.get_price}`;
+  }
+  if (offer.discount_type === 'spend_get_off' && offer.spend > 0 && offer.amount_off > 0) {
+    return `Chi ${offer.spend.toLocaleString()}đ giảm ${offer.amount_off}đ`;
+  }
+  return 'Ưu đãi';
+}
+
+function formatExpireDate(expireDate: string): string {
+  if (!expireDate) return '';
+  // Format: YYYY-MM-DD
+  const parts = expireDate.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return expireDate;
+}
+
+interface OfferCardProps {
+  offer: OfferItem;
+  onPress: () => void;
+}
+
+function OfferCard({ offer, onPress }: OfferCardProps) {
+  const discountText = formatDiscount(offer);
+  const isPercent = offer.discount_percent > 0;
 
   return (
-    <SafeAreaView className="flex-1 bg-[#f3f4f6]" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0000ff" />
-      
-      {/* Header */}
-      <View className="h-14 flex-row items-center justify-between px-4 bg-[#0000ff] z-50 shadow-sm relative">
-        <TouchableOpacity 
-          className="p-2 -ml-2 rounded-full active:bg-white/10 z-10" 
-          onPress={() => navigation.goBack()}
-        >
-          <ArrowLeft color="#ffffff" size={24} />
-        </TouchableOpacity>
-        
-        <View className="absolute left-0 w-full h-full flex-row items-center justify-center" pointerEvents="none">
-          <Text className="text-white font-semibold text-lg">
-            Ưu đãi
-          </Text>
+    <Pressable
+      onPress={onPress}
+      activeOpacity={0.9}
+      className="mb-4 overflow-hidden rounded-2xl bg-white shadow-sm"
+    >
+      <View className="flex-row p-3 gap-4">
+        {/* Image */}
+        <View className="relative h-28 w-28 flex-shrink-0 overflow-hidden rounded-xl bg-slate-100">
+          {offer.image ? (
+            <Image
+              source={{ uri: offer.image }}
+              className="h-full w-full"
+              resizeMode="cover"
+            />
+          ) : (
+            <View className="h-full w-full items-center justify-center">
+              <Ticket size={40} color="#94a3b8" />
+            </View>
+          )}
+          {/* Discount Badge */}
+          <View
+            className="absolute left-0 top-0 rounded-br-xl px-2 py-1"
+            style={{ backgroundColor: isPercent ? '#ef4444' : '#22c55e' }}
+          >
+            <Text className="text-[10px] font-bold text-white">{discountText}</Text>
+          </View>
         </View>
-        
-        <View className="w-10" />
+
+        {/* Content */}
+        <View className="flex-1 justify-between py-1">
+          <View>
+            <Text
+              className="text-[15px] font-bold leading-tight text-slate-800"
+              numberOfLines={2}
+            >
+              {offer.description || 'Ưu đãi đặc biệt'}
+            </Text>
+            {offer.page && (
+              <Text className="mt-1 text-[12px] text-slate-500">
+                {offer.page.page_title}
+              </Text>
+            )}
+            {offer.discounted_items && (
+              <Text className="mt-1 text-[12px] text-slate-400">
+                {offer.discounted_items}
+              </Text>
+            )}
+          </View>
+
+          {/* Expire Date */}
+          {offer.expire_date && (
+            <View className="mt-2 flex-row items-center">
+              <View className="rounded-md bg-red-50 px-2 py-1">
+                <Text className="text-[11px] font-medium text-red-600">
+                  Hết hạn: {formatExpireDate(offer.expire_date)}
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function EmptyState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <View className="flex-1 items-center justify-center py-16">
+      <View className="mb-6 h-24 w-24 items-center justify-center rounded-full bg-slate-100">
+        <Tag size={48} color="#94a3b8" />
+      </View>
+      <Text className="text-[18px] font-semibold text-slate-700">
+        Chưa có ưu đãi nào
+      </Text>
+      <Text className="mt-2 text-center text-[13px] text-slate-500">
+        Hãy quay lại sau để xem các ưu đãi mới
+      </Text>
+      <Pressable
+        className="mt-6 rounded-full bg-[#0000ff] px-8 py-3"
+        activeOpacity={0.8}
+        onPress={onRetry}
+      >
+        <Text className="text-[14px] font-semibold text-white">Tải lại</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <View className="flex-1 items-center justify-center px-8 py-20">
+      <View className="mb-6 h-24 w-24 items-center justify-center rounded-full bg-red-50">
+        <Text className="text-4xl">😢</Text>
+      </View>
+      <Text className="text-[18px] font-semibold text-slate-700">
+        Đã xảy ra lỗi
+      </Text>
+      <Text className="mt-2 text-center text-[13px] text-slate-500">{error}</Text>
+      <Pressable
+        className="mt-6 rounded-full bg-[#0000ff] px-8 py-3"
+        activeOpacity={0.8}
+        onPress={onRetry}
+      >
+        <Text className="text-[14px] font-semibold text-white">Thử lại</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function LoadingState() {
+  return (
+    <View className="flex-1 items-center justify-center py-20">
+      <ActivityIndicator size="large" color={BRAND} />
+      <Text className="mt-4 text-[13px] text-slate-500">Đang tải ưu đãi...</Text>
+    </View>
+  );
+}
+
+function OffersScreen() {
+  const navigation = useNavigation<OffersNav>();
+  const { offers, isLoading, error, reload } = useOffersViewModel();
+
+  const handleOfferPress = (offer: OfferItem) => {
+    // TODO: Navigate to offer detail if needed
+    console.log('Offer pressed:', offer.id);
+  };
+
+  return (
+    <SafeAreaView className="flex-1 bg-[#f1f4fb]" edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f1f4fb" />
+
+      {/* Header */}
+      <View className="flex-row items-center justify-between bg-[#f1f4fb] px-4 pb-3">
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm"
+            activeOpacity={0.8}
+            onPress={() => navigation.goBack()}
+          >
+            <ArrowLeft size={22} color="#1e293b" />
+          </Pressable>
+          <View>
+            <Text className="text-[22px] font-bold text-slate-800">Ưu đãi</Text>
+            <Text className="text-[12px] text-slate-500">
+              {offers.length} ưu đãi
+            </Text>
+          </View>
+        </View>
       </View>
 
-      {/* Offers List */}
-      <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4" showsVerticalScrollIndicator={false}>
-        
-        {/* Offer Card 1 */}
-        <TouchableOpacity className="bg-white rounded-xl shadow-sm overflow-hidden flex-row p-3 gap-4 active:scale-[0.98]">
-          <View className="w-28 h-28 flex-shrink-0 relative rounded-lg overflow-hidden border border-gray-100 bg-gray-50">
-            <Image 
-              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBbFTq7qjkqTLurSceaqelPYTLOAC4tOSImrSY7CisPrQgwa2YY2wapVfCTi7zpLL4mp24X2wOSrmzBZiMPcrPmVKWkJ2lFhbKk6p8axQqNOHnVk-S9GbOcKrHDsDuwZSryYPltT5SXyg9iGzmjAu9jjPMCZPp4nFs822On9PoMcDGtpYpyWhLJ5tLm7cHGplpojrqCjk7FXIwH7K_NA53ebdR7duqVlaunlcgiEl72r4tkfptqzYZ-tl9c7ZAK9BidV1NScHvHROFr' }}
-              className="w-full h-full"
-              style={{ resizeMode: 'cover' }}
+      {/* Content */}
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="px-4 pb-8 pt-2"
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={reload}
+            colors={[BRAND]}
+            tintColor={BRAND}
+          />
+        }
+      >
+        {/* Section Title */}
+        <View className="mb-4 flex-row items-center justify-between">
+          <Text className="text-[16px] font-semibold text-slate-800">
+            Ưu đãi hấp dẫn
+          </Text>
+          <Text className="text-[12px] text-slate-400">
+            {offers.length} ưu đãi
+          </Text>
+        </View>
+
+        {isLoading && offers.length === 0 ? (
+          <LoadingState />
+        ) : error ? (
+          <ErrorState error={error} onRetry={reload} />
+        ) : offers.length === 0 ? (
+          <EmptyState onRetry={reload} />
+        ) : (
+          offers.map(offer => (
+            <OfferCard
+              key={offer.id}
+              offer={offer}
+              onPress={() => handleOfferPress(offer)}
             />
-            <View className="absolute top-0 left-0 bg-red-500 rounded-br-lg shadow-sm px-2 py-1">
-              <Text className="text-white text-[10px] font-bold">-10%</Text>
-            </View>
-          </View>
-          <View className="flex-1 flex-col justify-between py-1">
-            <View>
-              <Text className="text-base font-bold text-gray-900 leading-tight" numberOfLines={2}>Ưu đãi 10% Quà Sinh Nhật Đặc Biệt</Text>
-              <Text className="text-sm text-gray-500 mt-1" numberOfLines={2}>Bộ quà tặng thú bông Stitch và socola cao cấp dành cho người thương.</Text>
-            </View>
-            <View className="mt-2 flex-row items-center justify-between">
-              <View className="bg-red-50 px-2 py-1 rounded-md">
-                <Text className="text-xs font-medium text-red-600">Hết hạn: 17/04/2026</Text>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Offer Card 2 */}
-        <TouchableOpacity className="bg-white rounded-xl shadow-sm overflow-hidden flex-row p-3 gap-4 active:scale-[0.98]">
-          <View className="w-28 h-28 flex-shrink-0 relative rounded-lg overflow-hidden border border-gray-100 bg-gray-50">
-            <Image 
-              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD24Ticc_Cm3M_BaRn0FoLAU71GL98_D_U-V1oyzJ8gbsjJ_UXnkO80jpGkC2zERnuKZpG6M8O6P9Ok9pF_IT-4-TzWGND8Y2XO9qu0dXtnq8San-X3Xmul8MT6L_9sUKQlRLI6APNE6etiPWcnGs8tlMue-sE16yRrl1rU-L0Z9rx6yzCzNsMRat6wt59asU1jtkr29aQ2qUv7WEO49rznPESB1vhdatJvQCnn22SppNFxDXaAR8AmGVC1q9ZIIulKOlQfKLjPQJUF' }}
-              className="w-full h-full"
-              style={{ resizeMode: 'cover' }}
-            />
-            <View className="absolute top-0 left-0 bg-red-500 rounded-br-lg shadow-sm px-2 py-1">
-              <Text className="text-white text-[10px] font-bold">-10%</Text>
-            </View>
-          </View>
-          <View className="flex-1 flex-col justify-between py-1">
-            <View>
-              <Text className="text-base font-bold text-gray-900 leading-tight" numberOfLines={2}>Giảm 10% Combo Quà Kỷ Niệm</Text>
-              <Text className="text-sm text-gray-500 mt-1" numberOfLines={2}>Bóng bay Happy Birthday kèm gấu bông xinh xắn.</Text>
-            </View>
-            <View className="mt-2 flex-row items-center justify-between">
-              <View className="bg-red-50 px-2 py-1 rounded-md">
-                <Text className="text-xs font-medium text-red-600">Hết hạn: 17/04/2026</Text>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Offer Card 3 */}
-        <TouchableOpacity className="bg-white rounded-xl shadow-sm overflow-hidden flex-row p-3 gap-4 active:scale-[0.98]">
-          <View className="w-28 h-28 flex-shrink-0 relative rounded-lg overflow-hidden border border-gray-100 bg-gray-50">
-            <Image 
-              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCe_HfhICUcsnv67eZlhklaeSRcJKKR08Qjqw_Lo_Niw6DPNZN_6628Dw0ZQHSkN09sQ5t2aaVYnyD7U9up1NQbFQHVFiKusn1ylsGSmSD7OgQXZdz4KBrtIF_Zqnpa9z8q1mZmXafdPB61hGvvev0sH-MOkRmygvOG4exxubY8sewsSt4CmY5DtLE-sSfIDjF3ZTlynYXpvVDXZxvEJjbQpEz3GwnDRvcbO6229m_Y39fxEJ_JwYelpM_6HsSuXZv5FOMeMqan8mhA' }}
-              className="w-full h-full"
-              style={{ resizeMode: 'cover' }}
-            />
-            <View className="absolute top-0 left-0 bg-red-500 rounded-br-lg shadow-sm px-2 py-1">
-              <Text className="text-white text-[10px] font-bold">-10%</Text>
-            </View>
-          </View>
-          <View className="flex-1 flex-col justify-between py-1">
-            <View>
-              <Text className="text-base font-bold text-gray-900 leading-tight" numberOfLines={2}>Giảm giá 10% Đồ chơi xếp hình LEGO</Text>
-              <Text className="text-sm text-gray-500 mt-1" numberOfLines={2}>Thế giới đồ chơi sáng tạo cho bé phát triển trí tuệ.</Text>
-            </View>
-            <View className="mt-2 flex-row items-center justify-between">
-              <View className="bg-red-50 px-2 py-1 rounded-md">
-                <Text className="text-xs font-medium text-red-600">Hết hạn: 29/12/2025</Text>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Offer Card 4 */}
-        <TouchableOpacity className="bg-white rounded-xl shadow-sm overflow-hidden flex-row p-3 gap-4 active:scale-[0.98] mb-10">
-          <View className="w-28 h-28 flex-shrink-0 relative rounded-lg overflow-hidden border border-gray-100 bg-green-500 flex items-center justify-center">
-            <Tag color="#ffffff" size={48} strokeWidth={1.5} />
-            <View className="absolute top-0 left-0 bg-red-500 rounded-br-lg shadow-sm px-2 py-1">
-              <Text className="text-white text-[10px] font-bold">-1%</Text>
-            </View>
-          </View>
-          <View className="flex-1 flex-col justify-between py-1">
-            <View>
-              <Text className="text-base font-bold text-gray-900 leading-tight" numberOfLines={2}>Giảm 1% Phụ kiện văn phòng</Text>
-              <Text className="text-sm text-gray-500 mt-1" numberOfLines={2}>Bìa hồ sơ, tài liệu lưu trữ chất lượng cao.</Text>
-            </View>
-            <View className="mt-2 flex-row items-center justify-between">
-              <View className="bg-red-50 px-2 py-1 rounded-md">
-                <Text className="text-xs font-medium text-red-600">Hết hạn: 28/08/2025</Text>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+export default OffersScreen;

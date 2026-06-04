@@ -4,6 +4,7 @@ export * from './domain/repositories/CommunityRepository';
 export { createCommunityRepository } from './infrastructure/repositories/ApiCommunityRepository';
 export { useCommunityViewModel } from './application/view-models/useCommunityViewModel';
 export { useMyGroupsViewModel } from './application/view-models/useMyGroupsViewModel';
+export { useSuggestedGroupsOnFeedViewModel } from './application/view-models/useSuggestedGroupsOnFeedViewModel';
 export { default as CreateGroupScreen } from './presentation/screens/CreateGroupScreen';
 export { default as ExploreGroupsScreen } from './presentation/screens/ExploreGroupsScreen';
 export { default as FollowingScreen } from './presentation/screens/FollowingScreen';

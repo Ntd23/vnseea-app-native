@@ -197,7 +197,7 @@ function JobsScreen() {
   }, [searchKeyword, searchJobs]);
 
   const handleJobPress = useCallback((job: JobsItem) => {
-    navigation.navigate(ROUTES.JOB_DETAIL, { jobId: String(job.id) });
+    navigation.navigate(ROUTES.JOB_DETAIL, { jobId: String(job.id), job });
   }, [navigation]);
 
   const renderJob = useCallback(({ item }: { item: JobsItem }) => (

@@ -11,6 +11,7 @@ export interface ChatItem {
   lastMessage: string;
   lastMessageKind?: ChatPreviewKind;
   lastMessageTime: number;
+  paginationCursorTime?: number;
   unreadCount: number;
   isOnline: boolean;
   isVerified: boolean;
@@ -49,6 +50,7 @@ export interface MessageCallEvent {
   duration: number;
   initiatorId: string;
   receiverId: string;
+  groupId?: string;
   statusBy: string;
   isInitiator: boolean;
   isReceiver: boolean;
@@ -65,6 +67,16 @@ export interface GetMessagesOptions {
   limit?: number;
   beforeMessageId?: string;
   afterMessageId?: string;
+}
+
+export interface GetChatsOptions {
+  includeDiscovery?: boolean;
+  latestOnly?: boolean;
+}
+
+export interface CreateGroupChatInput {
+  groupName: string;
+  memberUserIds: string[];
 }
 
 export interface ConversationItem {
@@ -97,6 +109,7 @@ export interface SendMessageResponse {
   api_status: number;
   message_id?: string;
   message?: string;
+  data?: unknown;
   message_data?: unknown[];
   sentMessages?: MessageItem[];
 }

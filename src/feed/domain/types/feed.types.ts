@@ -4,6 +4,7 @@
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { ProductItem } from '../../../product/domain/types/product.types';
 import type { EventsItem } from '../../../events/domain/types/events.types';
+import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
 import type { AudioAttachment } from '../../../shared-kernel/domain/types/audio.types';
 
 export interface FeedItem {
@@ -201,6 +202,19 @@ export interface FeedEventPost {
   };
 }
 
+export interface FeedJobPost {
+  kind: 'job';
+  id: string;
+  job: JobsItem;
+  postedAt?: number;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+}
+
 export interface FeedAdPost {
   kind: 'ad';
   id: string;
@@ -279,5 +293,6 @@ export type FeedPost =
   | FeedTextPost
   | FeedProductPost
   | FeedEventPost
+  | FeedJobPost
   | FeedPollPost
   | FeedAdPost;

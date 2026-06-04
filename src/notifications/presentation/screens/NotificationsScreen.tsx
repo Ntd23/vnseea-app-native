@@ -17,6 +17,7 @@ import {
   Bell,
   BellOff,
   CalendarDays,
+  Check,
   CheckCircle2,
   Heart,
   Image as ImageIcon,
@@ -25,6 +26,8 @@ import {
   ThumbsUp,
   UserCheck,
   UserPlus,
+  Users,
+  X,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -51,6 +54,10 @@ const NOTIFICATION_ICONS: Record<string, { Icon: typeof ThumbsUp; iconColor: str
   accepted_request: { Icon: UserCheck, iconColor: '#34A853' },
   interested_event: { Icon: CalendarDays, iconColor: '#EA4335' },
   going_event: { Icon: CalendarDays, iconColor: '#34A853' },
+  // Group chat notifications
+  added_you_to_group: { Icon: Users, iconColor: '#0000FF' },
+  accept_group_chat_request: { Icon: Users, iconColor: '#34A853' },
+  declined_group_chat_request: { Icon: Users, iconColor: '#DC2626' },
 };
 
 function getNotificationIcon(type: string) {
@@ -81,6 +88,10 @@ function formatMessageTime(timestamp: number): string {
 function getNotificationText(item: NotificationsItem): string {
   const name = item.notifier?.name || 'Người dùng';
 
+  if (item.type === 'added_you_to_group' && item.text) {
+    return item.text;
+  }
+
   switch (item.type) {
     case 'following':
       return `${name} đã theo dõi bạn`;
@@ -103,6 +114,12 @@ function getNotificationText(item: NotificationsItem): string {
       return `${name} đã xem trang cá nhân của bạn`;
     case 'joined_group':
       return `${name} đã tham gia nhóm của bạn`;
+    case 'added_you_to_group':
+      return `${name} đã mời bạn vào nhóm chat`;
+    case 'accept_group_chat_request':
+      return `${name} đã chấp nhận lời mời tham gia nhóm chat`;
+    case 'declined_group_chat_request':
+      return `${name} đã từ chối lời mời tham gia nhóm chat`;
     case 'accepted_request':
       return `${name} đã chấp nhận lời mời kết bạn`;
     case 'interested_event':
@@ -160,62 +177,105 @@ interface NotificationCardProps {
   item: NotificationsItem;
   onPress: (item: NotificationsItem) => void;
   onLongPress?: (item: NotificationsItem) => void;
+  onAcceptGroupChat?: (groupChatId: string) => void;
+  onRejectGroupChat?: (groupChatId: string) => void;
+  isPending?: boolean;
 }
 
-function NotificationCard({ item, onPress, onLongPress }: NotificationCardProps) {
+function NotificationCard({ item, onPress, onLongPress, onAcceptGroupChat, onRejectGroupChat, isPending }: NotificationCardProps) {
   const { Icon, iconColor } = getNotificationIcon(item.type);
   const text = getNotificationText(item);
+  const isGroupChatInvite = item.type === 'added_you_to_group';
 
   return (
     <TouchableOpacity
-      className={`surface-card mb-3 flex-row p-4 ${
+      className={`surface-card mb-3 p-4 ${
         !item.seen ? 'bg-[#E7F3FF]' : ''
       }`}
       activeOpacity={0.84}
       onPress={() => onPress(item)}
       onLongPress={() => onLongPress?.(item)}
     >
-      {/* Avatar or Icon */}
-      {item.notifier?.avatarUrl ? (
-        <View className="relative">
-          <Image
-            source={{ uri: item.notifier.avatarUrl }}
-            className="h-14 w-14 rounded-full"
-            resizeMode="cover"
-          />
-          {/* Notification type badge */}
-          <View
-            className="absolute -bottom-1 -right-1 h-6 w-6 items-center justify-center rounded-full"
-            style={{ backgroundColor: iconColor }}
-          >
-            <Icon size={12} color="#FFFFFF" />
+      <View className="flex-row">
+        {/* Avatar or Icon */}
+        {item.notifier?.avatarUrl ? (
+          <View className="relative">
+            <Image
+              source={{ uri: item.notifier.avatarUrl }}
+              className="h-14 w-14 rounded-full"
+              resizeMode="cover"
+            />
+            <View
+              className="absolute -bottom-1 -right-1 h-6 w-6 items-center justify-center rounded-full"
+              style={{ backgroundColor: iconColor }}
+            >
+              <Icon size={12} color="#FFFFFF" />
+            </View>
           </View>
-        </View>
-      ) : (
-        <View
-          className="h-14 w-14 items-center justify-center rounded-full"
-          style={{ backgroundColor: `${iconColor}20` }}
-        >
-          <Icon size={22} color={iconColor} />
-        </View>
-      )}
-
-      {/* Content */}
-      <View className="ml-4 flex-1">
-        <View className="flex-row items-start justify-between">
-          <Text
-            className="flex-1 text-body-primary leading-snug"
-            numberOfLines={3}
+        ) : (
+          <View
+            className="h-14 w-14 items-center justify-center rounded-full"
+            style={{ backgroundColor: `${iconColor}20` }}
           >
-            {text}
+            <Icon size={22} color={iconColor} />
+          </View>
+        )}
+
+        {/* Content */}
+        <View className="ml-4 flex-1">
+          <View className="flex-row items-start justify-between">
+            <Text
+              className="flex-1 text-body-primary leading-snug"
+              numberOfLines={3}
+            >
+              {text}
+            </Text>
+            {!item.seen && (
+              <View className="ml-2 h-2 w-2 rounded-full bg-[#1877F2]" />
+            )}
+          </View>
+          <Text className="mt-1 text-caption-secondary">
+            {item.timeText || 'Vừa xong'}
           </Text>
-          {!item.seen && (
-            <View className="ml-2 h-2 w-2 rounded-full bg-[#1877F2]" />
+
+          {/* Group chat invite action buttons */}
+          {isGroupChatInvite && onAcceptGroupChat && onRejectGroupChat && (
+            <View className="mt-3 flex-row">
+              <TouchableOpacity
+                className={`flex-1 flex-row items-center justify-center rounded-lg py-2 mr-2 ${
+                  isPending ? 'bg-slate-300' : 'bg-[#0000FF]'
+                }`}
+                activeOpacity={0.8}
+                disabled={isPending}
+                onPress={() => item.groupChatId && onAcceptGroupChat(item.groupChatId)}
+              >
+                {isPending ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Check size={16} color="#FFFFFF" />
+                    <Text className="ml-2 text-[13px] font-semibold text-white">Đồng ý</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 flex-row items-center justify-center rounded-lg border border-red-300 py-2"
+                activeOpacity={0.8}
+                disabled={isPending}
+                onPress={() => item.groupChatId && onRejectGroupChat(item.groupChatId)}
+              >
+                {isPending ? (
+                  <ActivityIndicator size="small" color="#dc2626" />
+                ) : (
+                  <>
+                    <X size={16} color="#dc2626" />
+                    <Text className="ml-2 text-[13px] font-semibold text-red-500">Không</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           )}
         </View>
-        <Text className="mt-1 text-caption-secondary">
-          {item.timeText || 'Vừa xong'}
-        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -312,6 +372,9 @@ function NotificationsScreen() {
     markAsSeen,
     markAllAsSeen,
     deleteNotification,
+    acceptGroupChatInvitation,
+    rejectGroupChatInvitation,
+    pendingActions,
   } = useNotificationsViewModel();
   const hasNotifications = notifications.length > 0 || unreadMessageCount > 0;
   const remainingUnreadMessageCount = Math.max(
@@ -333,8 +396,31 @@ function NotificationsScreen() {
 
   const handlePress = useCallback(
     (item: NotificationsItem) => {
-      if (!item.seen) {
+      const isSyntheticGroupChatRequest = item.id.startsWith('group-chat-request:');
+
+      if (!item.seen && !isSyntheticGroupChatRequest) {
         markAsSeen(item.id);
+      }
+      if (item.type === 'added_you_to_group') {
+        return;
+      }
+      // For accepted group chat, navigate directly to chat
+      if (item.type === 'accept_group_chat_request' && item.groupChatId) {
+        const groupChatItem: ChatItem = {
+          id: `group:${item.groupChatId}`,
+          chatType: 'group',
+          userId: item.groupChatId,
+          username: '',
+          name: item.text.replace(' đã chấp nhận lời mời tham gia nhóm chat', '') || 'Nhóm chat',
+          avatar: item.notifier?.avatarUrl || '',
+          lastMessage: '',
+          lastMessageTime: Date.now() / 1000,
+          unreadCount: 0,
+          isOnline: false,
+          isVerified: false,
+        };
+        navigation.navigate(ROUTES.CHAT, { chat: groupChatItem });
+        return;
       }
       getNavigateTo(item, navigation);
     },
@@ -369,6 +455,30 @@ function NotificationsScreen() {
       navigation.navigate(ROUTES.CHAT, { chat });
     },
     [navigation],
+  );
+
+  const handleAcceptGroupChat = useCallback(
+    async (groupChatId: string) => {
+      const success = await acceptGroupChatInvitation(groupChatId);
+      if (success) {
+        Alert.alert('Thành công', 'Bạn đã tham gia nhóm chat!');
+      } else {
+        Alert.alert('Lỗi', 'Không thể chấp nhận lời mời. Vui lòng thử lại.');
+      }
+    },
+    [acceptGroupChatInvitation],
+  );
+
+  const handleRejectGroupChat = useCallback(
+    async (groupChatId: string) => {
+      const success = await rejectGroupChatInvitation(groupChatId);
+      if (success) {
+        // Silent success - notification is removed
+      } else {
+        Alert.alert('Lỗi', 'Không thể từ chối lời mời. Vui lòng thử lại.');
+      }
+    },
+    [rejectGroupChatInvitation],
   );
 
   return (
@@ -465,14 +575,21 @@ function NotificationsScreen() {
             />
           )}
 
-          {notifications.map(item => (
-            <NotificationCard
-              key={item.id}
-              item={item}
-              onPress={handlePress}
-              onLongPress={handleLongPress}
-            />
-          ))}
+          {notifications.map(item => {
+            const isGroupChatInvite = item.type === 'added_you_to_group';
+            const isPending = isGroupChatInvite && item.groupChatId ? pendingActions.has(item.groupChatId) : false;
+            return (
+              <NotificationCard
+                key={item.id}
+                item={item}
+                onPress={handlePress}
+                onLongPress={isGroupChatInvite ? undefined : handleLongPress}
+                onAcceptGroupChat={isGroupChatInvite ? handleAcceptGroupChat : undefined}
+                onRejectGroupChat={isGroupChatInvite ? handleRejectGroupChat : undefined}
+                isPending={isPending}
+              />
+            );
+          })}
 
           {isLoadingMore && (
             <View className="items-center py-4">

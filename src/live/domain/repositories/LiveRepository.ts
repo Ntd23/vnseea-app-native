@@ -1,10 +1,24 @@
 // Live Repository Interface
 // Port từ: client/src/live/domain/repositories/
 
-import type { LiveItem } from '../types/live.types';
+import type {
+  CreateLivePayload,
+  LiveCommentsResult,
+  LiveStreamComment,
+  LiveStreamItem,
+} from '../types/live.types';
 
 export interface LiveRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<LiveItem[]>;
-  // getById(id: string | number): Promise<LiveItem | null>;
+  getLiveStreams(): Promise<LiveStreamItem[]>;
+  getLiveFriends(): Promise<LiveStreamItem[]>;
+  getLivePost(postId: number): Promise<LiveStreamItem | null>;
+  createLive(payload: CreateLivePayload): Promise<{ postId: number; streamName: string }>;
+  endLive(postId: number): Promise<void>;
+  getComments(
+    postId: number,
+    options?: { offset?: number; limit?: number; page?: 'live' | 'story' },
+  ): Promise<LiveCommentsResult>;
+  addComment(postId: number, text: string): Promise<LiveStreamComment>;
+  heartbeat(postId: number, page?: 'live' | 'story'): Promise<void>;
+  uploadThumbnail(postId: number, thumbBase64: string): Promise<void>;
 }

@@ -33,13 +33,14 @@ import { CreateJobScreen, JobDetailScreen, JobsScreen } from '../jobs';
 import { AvatarViewerScreen, CoverViewerScreen, ProfileScreen } from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
 import { MyVideosScreen } from '../videos';
-import { CallScreen, ChatScreen } from '../messages';
+import { CallScreen, ChatScreen, CreateGroupScreen as CreateGroupChatScreen, GroupInfoScreen, MessageScreen } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { SavedPostsScreen } from '../saved';
 import { AffiliatesScreen, DepositScreen, EarningsScreen, InviteFriendsScreen, MyBalanceScreen, MyPointsScreen } from '../wallet';
 import { PopularScreen } from '../popular';
 import { WithdrawalScreen } from '../withdrawal';
 import { NearbyUsersScreen } from '../user';
+import { LiveScreen, LiveRoomScreen, GoLiveScreen } from '../live';
 
 type ScreenComponent = React.ComponentType<any>;
 type TabIconComponent = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
@@ -76,7 +77,7 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.ALBUMS, component: AlbumsScreen },
     { name: ROUTES.CREATE_ALBUM, component: CreateAlbumScreen },
     { name: ROUTES.MY_VIDEOS, component: MyVideosScreen },
-    { name: ROUTES.MESSAGES, component: SettingsMessagesScreen },
+    { name: ROUTES.MESSAGES, component: MessageScreen },
     { name: ROUTES.CHAT, component: ChatScreen },
     { name: ROUTES.CALLS, component: CallScreen },
     { name: ROUTES.SEARCH, component: SearchScreen },
@@ -126,5 +127,10 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.STORY_VIEWER, component: StoryViewerScreen },
     { name: ROUTES.AVATAR_VIEWER, component: AvatarViewerScreen },
     { name: ROUTES.COVER_VIEWER, component: CoverViewerScreen },
+    { name: ROUTES.CREATE_GROUP_CHAT, component: CreateGroupChatScreen },
+    { name: ROUTES.GROUP_INFO, component: GroupInfoScreen },
+    { name: ROUTES.LIVE, component: LiveScreen },
+    { name: ROUTES.LIVE_ROOM, component: LiveRoomScreen },
+    { name: ROUTES.GO_LIVE, component: GoLiveScreen },
   ];
 }

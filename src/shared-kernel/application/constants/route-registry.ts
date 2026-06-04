@@ -38,6 +38,7 @@ export const apiRoutes = {
     followRequest: 'follow-request-action',
     block: 'block-user',
     friends: 'get-friends',
+    friendsList: 'get-friends',  // v2 - supports following/followers
     poke: 'poke',
   },
   search: {
@@ -53,8 +54,13 @@ export const apiRoutes = {
     delete: 'delete-story',
     react: 'react_story',
   },
+  live: {
+    main: 'live',
+    friends: 'get_live_friends',
+  },
   messages: {
     chats: 'get_chats',
+    groupChat: 'group_chat',
     send: 'send-message',
     messages: 'get_user_messages',
     read: 'read_chats',
