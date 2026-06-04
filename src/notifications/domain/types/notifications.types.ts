@@ -27,6 +27,8 @@ export type NotificationType =
   | 'going_event'
   | 'invited_event'
   | 'accepted_request'
+  | 'accept_group_chat_request'  // Người khác chấp nhận lời mời nhóm chat
+  | 'declined_group_chat_request' // Người khác từ chối lời mời nhóm chat
   | string;
 
 export interface NotificationsItem {
@@ -41,6 +43,7 @@ export interface NotificationsItem {
   pageId?: string;
   groupId?: string;
   eventId?: string;
+  groupChatId?: string;  // ID của nhóm chat khi có lời mời tham gia
   seen: boolean;
   seenAt?: number;
   createdAt: number;

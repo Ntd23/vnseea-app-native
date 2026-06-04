@@ -5,6 +5,7 @@ import type {
   ChatItem,
   CreateGroupChatInput,
   GetChatsOptions,
+  MessageAttachment,
   MessageItem,
 } from '../../domain/types/messages.types';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
@@ -269,17 +270,34 @@ export function useMessagesViewModel() {
   }, [state.selectedChat]);
 
   const sendBulkMessages = useCallback(
-    async (userIds: string[], message: string) => {
+    async (
+      userIds: string[],
+      message: string,
+      attachments: MessageAttachment[] = [],
+    ) => {
       const recipients = [...new Set(userIds.filter(Boolean))];
       const text = message.trim();
 
-      if (recipients.length === 0 || !text) return false;
+      if (recipients.length === 0 || (!text && attachments.length === 0)) {
+        return false;
+      }
 
       setState(prev => ({ ...prev, isSending: true, error: null }));
 
       try {
         for (const userId of recipients) {
-          await repository.sendMessage(userId, text);
+          if (attachments.length === 0) {
+            await repository.sendMessage(userId, text);
+            continue;
+          }
+
+          for (const [index, attachment] of attachments.entries()) {
+            await repository.sendMessage(
+              userId,
+              index === 0 ? text : '',
+              attachment,
+            );
+          }
         }
 
         const chats = await repository.getChats({ includeDiscovery: false });

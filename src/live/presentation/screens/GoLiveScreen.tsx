@@ -2,7 +2,6 @@
 import React, { useCallback } from 'react';
 import {
   Alert,
-  Image,
   ScrollView,
   StatusBar,
   Text,
@@ -11,9 +10,17 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Camera, ChevronLeft, Globe, Lock, Users, UserCheck } from 'lucide-react-native';
+import {
+  Camera,
+  ChevronLeft,
+  Globe,
+  Lock,
+  UserCheck,
+  Users,
+} from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { ROUTES } from '../../../navigation/constants/routes';
 import { useGoLiveViewModel } from '../../application/view-models/useLiveViewModel';
 
 export default function GoLiveScreen() {
@@ -35,13 +42,15 @@ export default function GoLiveScreen() {
       Alert.alert('Thông báo', 'Vui lòng nhập tiêu đề cho live');
       return;
     }
+
     try {
-      await startLive();
-      // TODO: navigate to live room after creating
+      const live = await startLive();
+      navigation.replace(ROUTES.LIVE_ROOM, { postId: live.postId, isHost: true });
     } catch (error) {
+      console.error('[GoLive] create error:', error);
       Alert.alert('Lỗi', 'Không thể bắt đầu live. Vui lòng thử lại.');
     }
-  }, [startLive, title]);
+  }, [navigation, startLive, title]);
 
   const handleBack = useCallback(() => {
     navigation.goBack();
@@ -58,7 +67,6 @@ export default function GoLiveScreen() {
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
       <View className="surface-topbar flex-row items-center justify-between px-4 py-3">
         <TouchableOpacity
           activeOpacity={0.8}
@@ -77,24 +85,19 @@ export default function GoLiveScreen() {
         className="flex-1 px-4 pb-8"
         showsVerticalScrollIndicator={false}
       >
-        {/* Thumbnail Preview */}
         <View className="mt-4 items-center">
-          <TouchableOpacity
-            activeOpacity={0.8}
-            className="surface-card h-48 w-full items-center justify-center overflow-hidden"
-          >
+          <View className="surface-card h-48 w-full items-center justify-center overflow-hidden">
             <View className="items-center gap-2">
               <View className="rounded-full bg-[#0000ff]/10 p-4">
                 <Camera size={32} color="#0000ff" />
               </View>
               <Text className="text-[14px] text-[#64748b]">
-                Thêm ảnh bìa (tùy chọn)
+                Camera sẽ bật khi vào phòng live
               </Text>
             </View>
-          </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Title Input */}
         <View className="mt-6">
           <Text className="mb-2 text-[14px] font-medium text-[#1a1c1e]">
             Tiêu đề *
@@ -112,7 +115,6 @@ export default function GoLiveScreen() {
           </Text>
         </View>
 
-        {/* Description Input */}
         <View className="mt-4">
           <Text className="mb-2 text-[14px] font-medium text-[#1a1c1e]">
             Mô tả
@@ -129,7 +131,6 @@ export default function GoLiveScreen() {
           />
         </View>
 
-        {/* Privacy Selection */}
         <View className="mt-6">
           <Text className="mb-3 text-[14px] font-medium text-[#1a1c1e]">
             Quyền riêng tư
@@ -141,9 +142,7 @@ export default function GoLiveScreen() {
                 activeOpacity={0.8}
                 onPress={() => setPrivacy(option.value)}
                 className={`surface-card flex-row items-center justify-between px-4 py-3 ${
-                  privacy === option.value
-                    ? 'border-2 border-[#0000ff]'
-                    : ''
+                  privacy === option.value ? 'border-2 border-[#0000ff]' : ''
                 }`}
               >
                 <View className="flex-row items-center gap-3">
@@ -153,7 +152,7 @@ export default function GoLiveScreen() {
                   </Text>
                 </View>
                 <View
-                  className={`h-5 w-5 rounded-full border-2 ${
+                  className={`h-5 w-5 items-center justify-center rounded-full border-2 ${
                     privacy === option.value
                       ? 'border-[#0000ff] bg-[#0000ff]'
                       : 'border-[#94a3b8]'
@@ -169,7 +168,6 @@ export default function GoLiveScreen() {
         </View>
       </ScrollView>
 
-      {/* Start Live Button */}
       <View className="border-t border-[rgba(0,0,255,0.08)] p-4">
         <TouchableOpacity
           activeOpacity={0.9}
@@ -177,18 +175,10 @@ export default function GoLiveScreen() {
           disabled={isLoading}
           className="btn-primary flex-row items-center justify-center gap-2 py-4"
         >
-          {isLoading ? (
-            <Text className="text-[16px] font-semibold text-white">
-              Đang bắt đầu...
-            </Text>
-          ) : (
-            <>
-              <View className="h-3 w-3 animate-pulse rounded-full bg-white" />
-              <Text className="text-[16px] font-semibold text-white">
-                Bắt đầu live
-              </Text>
-            </>
-          )}
+          <View className="h-3 w-3 rounded-full bg-white" />
+          <Text className="text-[16px] font-semibold text-white">
+            {isLoading ? 'Đang bắt đầu...' : 'Bắt đầu live'}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

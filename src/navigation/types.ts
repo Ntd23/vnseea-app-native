@@ -25,6 +25,7 @@ export type RootStackParamList = {
   [ROUTES.MESSAGES]: undefined;
   [ROUTES.CREATE_GROUP_CHAT]: undefined;
   [ROUTES.CHAT]: { chat: ChatItem };
+  [ROUTES.GROUP_INFO]: { groupId: number; groupName: string; avatar: string; memberCount: number };
   [ROUTES.CALLS]: undefined;
   [ROUTES.SEARCH]: undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
@@ -91,7 +92,7 @@ export type RootStackParamList = {
     userId?: string;
   };
   [ROUTES.LIVE]: undefined;
-  [ROUTES.LIVE_ROOM]: { postId: number };
+  [ROUTES.LIVE_ROOM]: { postId: number; isHost?: boolean };
   [ROUTES.GO_LIVE]: undefined;
 };
 

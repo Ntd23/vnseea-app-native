@@ -56,7 +56,7 @@ function mapGroupChatItem(raw: any): GroupChatItem {
         time: Number(raw.last_message?.time ?? 0),
         user_data: raw.last_message?.user_data
           ? mapGroupChatUser(raw.last_message.user_data)
-          : null,
+          : { user_id: 0, username: '', first_name: '', last_name: '', avatar: '', cover: '' },
       }
     : undefined;
 
@@ -102,7 +102,19 @@ export function createGroupChatRepository(): GroupChatRepository {
     },
 
     async createGroup(payload: CreateGroupChatPayload) {
-      const partsString = payload.parts.join(',');
+      const parts = [
+        ...new Set(
+          payload.parts
+            .map(userId => Number(userId))
+            .filter(userId => Number.isFinite(userId) && userId > 0),
+        ),
+      ];
+
+      if (parts.length === 0) {
+        throw new Error('Vui lòng chọn ít nhất 1 thành viên hợp lệ');
+      }
+
+      const partsString = parts.join(',');
 
       const params: Record<string, string> = {
         type: 'create',
@@ -179,9 +191,21 @@ export function createGroupChatRepository(): GroupChatRepository {
     },
 
     async addUsers(groupId: number, userIds: number[]) {
+      const parts = [
+        ...new Set(
+          userIds
+            .map(userId => Number(userId))
+            .filter(userId => Number.isFinite(userId) && userId > 0),
+        ),
+      ];
+
+      if (parts.length === 0) {
+        throw new Error('Vui lòng chọn ít nhất 1 thành viên hợp lệ');
+      }
+
       const response = await apiBridge.post<{ api_status: number; message_data?: string }>(
         'group_chat',
-        { type: 'add_user', id: groupId, parts: userIds.join(',') },
+        { type: 'add_user', id: groupId, parts: parts.join(',') },
       );
 
       if (response.api_status !== 200) {

@@ -454,12 +454,43 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           <TouchableOpacity className="h-10 w-10 items-center justify-center rounded-full" activeOpacity={0.7} onPress={() => navigation.goBack()}>
             <ArrowLeft size={22} color="#050505" />
           </TouchableOpacity>
-          <Image source={{ uri: chat.avatar }} className="ml-1 h-11 w-11 rounded-full" />
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => {
+              if (chat.chatType === 'group') {
+                // Extract group ID from format "group:123" -> 123
+                const groupIdStr = chat.id.replace(/^group:/, '');
+                const groupId = parseInt(groupIdStr, 10);
+                // Navigate to Group Info screen
+                navigation.navigate(ROUTES.GROUP_INFO, {
+                  groupId: groupId,
+                  groupName: chat.name,
+                  avatar: chat.avatar,
+                  memberCount: 0, // TODO: pass actual member count
+                });
+              } else if (chat.chatType === 'user') {
+                navigation.navigate(ROUTES.PROFILE, { userId: chat.userId });
+              }
+            }}
+          >
+            <Image source={{ uri: chat.avatar }} className="ml-1 h-11 w-11 rounded-full" />
+          </TouchableOpacity>
           <TouchableOpacity
             className="ml-3 flex-1"
             activeOpacity={0.7}
             onPress={() => {
-              if (chat.chatType === 'user') {
+              if (chat.chatType === 'group') {
+                // Extract group ID from format "group:123" -> 123
+                const groupIdStr = chat.id.replace(/^group:/, '');
+                const groupId = parseInt(groupIdStr, 10);
+                // Navigate to Group Info screen
+                navigation.navigate(ROUTES.GROUP_INFO, {
+                  groupId: groupId,
+                  groupName: chat.name,
+                  avatar: chat.avatar,
+                  memberCount: 0,
+                });
+              } else if (chat.chatType === 'user') {
                 navigation.navigate(ROUTES.PROFILE, { userId: chat.userId });
               }
             }}
@@ -467,7 +498,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             <Text className="text-base font-semibold text-gray-900" numberOfLines={1}>{chat.name}</Text>
             <Text className="text-xs text-gray-500">
               {chat.chatType === 'group'
-                ? 'Nhóm chat'
+                ? `${chat.name} • Nhóm chat`
                 : chat.isOnline
                   ? 'Đang hoạt động'
                   : 'Offline'}

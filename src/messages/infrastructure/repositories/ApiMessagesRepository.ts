@@ -137,23 +137,28 @@ function parseCallEvent(
   value: string,
   sessionUserId: string,
 ): MessageCallEvent | undefined {
-  if (!value.startsWith('{') || !value.endsWith('}')) return undefined;
+  const trimmedValue = value.trim();
+  if (!trimmedValue.startsWith('{') || !trimmedValue.endsWith('}')) return undefined;
 
   try {
-    const payload = JSON.parse(value) as RawRecord;
+    const payload = JSON.parse(trimmedValue) as RawRecord;
     const callId = readString(payload, 'call_id');
     const initiatorId = readString(payload, 'initiator_id');
     const receiverId = readString(payload, 'receiver_id');
+    const groupId = readString(payload, 'group_id');
+    const targetId = receiverId || groupId;
+    const callType = readString(payload, 'call_type');
 
-    if (!callId || !initiatorId || !receiverId) return undefined;
+    if (!callId || !initiatorId || !targetId || !callType) return undefined;
 
     return {
       callId,
-      callType: readString(payload, 'call_type') === 'video' ? 'video' : 'audio',
+      callType: callType === 'video' ? 'video' : 'audio',
       status: readString(payload, 'status') || 'calling',
       duration: readNumber(payload, 'duration'),
       initiatorId,
-      receiverId,
+      receiverId: targetId,
+      groupId: groupId || undefined,
       statusBy: readString(payload, 'status_by'),
       isInitiator: initiatorId === sessionUserId,
       isReceiver: receiverId === sessionUserId,
@@ -243,6 +248,8 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
   const userData = asRecord(raw.user_data) ?? raw;
   const lastMessage = asRecord(raw.last_message) ?? {};
   const lastMessagePreview = getMessagePreview(lastMessage);
+  const lastMessageTime = readNumber(lastMessage, 'time');
+  const paginationCursorTime = readNumber(raw, 'chat_time', 'time');
   const chatId =
     readString(raw, 'chat_id', 'id', 'group_id', 'page_id') ||
     readString(userData, 'user_id', 'id');
@@ -270,8 +277,8 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
       readString(userData, 'avatar', 'profile_picture'),
     lastMessage: lastMessagePreview.text,
     lastMessageKind: lastMessagePreview.kind,
-    lastMessageTime:
-      readNumber(raw, 'chat_time', 'time') || readNumber(lastMessage, 'time'),
+    lastMessageTime: lastMessageTime || paginationCursorTime,
+    paginationCursorTime: paginationCursorTime || lastMessageTime,
     unreadCount:
       chatType === 'group'
         ? readGroupUnreadCount(raw, chatId)
@@ -420,7 +427,9 @@ async function fetchAdditionalCachedChats(
     page += 1
   ) {
     const offset = Math.min(
-      ...previousPage.map(chat => chat.lastMessageTime).filter(Boolean),
+      ...previousPage
+        .map(chat => chat.paginationCursorTime ?? chat.lastMessageTime)
+        .filter(Boolean),
     );
     if (!Number.isFinite(offset) || offset <= 0) break;
 
@@ -508,7 +517,9 @@ async function fetchGroupChats() {
     chats.push(...nextPage);
 
     const nextOffset = Math.min(
-      ...nextPage.map(chat => chat.lastMessageTime).filter(Boolean),
+      ...nextPage
+        .map(chat => chat.paginationCursorTime ?? chat.lastMessageTime)
+        .filter(Boolean),
     );
     if (
       nextPage.length < CHAT_PAGE_SIZE ||
@@ -527,8 +538,18 @@ async function fetchGroupChats() {
 
 async function createGroupChatRequest(input: CreateGroupChatInput) {
   const memberUserIds = [
-    ...new Set(input.memberUserIds.map(id => id.trim()).filter(Boolean)),
+    ...new Set(
+      input.memberUserIds
+        .map(id => Number(id))
+        .filter(id => Number.isFinite(id) && id > 0)
+        .map(id => String(id)),
+    ),
   ];
+
+  if (memberUserIds.length === 0) {
+    throw new Error('Vui lòng chọn ít nhất 1 thành viên hợp lệ');
+  }
+
   const response = await apiBridge.post<GroupChatResponse>(
     apiRoutes.messages.groupChat,
     {

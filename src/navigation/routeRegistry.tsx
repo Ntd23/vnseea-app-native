@@ -33,7 +33,7 @@ import { CreateJobScreen, JobDetailScreen, JobsScreen } from '../jobs';
 import { AvatarViewerScreen, CoverViewerScreen, ProfileScreen } from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
 import { MyVideosScreen } from '../videos';
-import { CallScreen, ChatScreen, CreateGroupScreen as CreateGroupChatScreen, MessageScreen } from '../messages';
+import { CallScreen, ChatScreen, CreateGroupScreen as CreateGroupChatScreen, GroupInfoScreen, MessageScreen } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { SavedPostsScreen } from '../saved';
 import { AffiliatesScreen, DepositScreen, EarningsScreen, InviteFriendsScreen, MyBalanceScreen, MyPointsScreen } from '../wallet';
@@ -128,6 +128,7 @@ export function createStackRoutes(MainTabsComponent: ScreenComponent): StackRout
     { name: ROUTES.AVATAR_VIEWER, component: AvatarViewerScreen },
     { name: ROUTES.COVER_VIEWER, component: CoverViewerScreen },
     { name: ROUTES.CREATE_GROUP_CHAT, component: CreateGroupChatScreen },
+    { name: ROUTES.GROUP_INFO, component: GroupInfoScreen },
     { name: ROUTES.LIVE, component: LiveScreen },
     { name: ROUTES.LIVE_ROOM, component: LiveRoomScreen },
     { name: ROUTES.GO_LIVE, component: GoLiveScreen },

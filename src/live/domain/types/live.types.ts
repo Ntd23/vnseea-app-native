@@ -30,9 +30,15 @@ export type LiveStreamComment = {
   isHost: boolean;
 };
 
+export type LiveCommentsResult = {
+  comments: LiveStreamComment[];
+  viewerCount: number;
+  state: LiveStreamState;
+};
+
 export type CreateLivePayload = {
   title: string;
   description: string;
-  streamName: string;
+  streamName?: string;
   privacy: string;
 };

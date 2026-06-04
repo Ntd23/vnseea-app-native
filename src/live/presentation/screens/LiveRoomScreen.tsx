@@ -1,6 +1,7 @@
-// Description: Live stream viewer room - shows video, comments, reactions.
-import React, { useState, useCallback } from 'react';
+// Description: Live stream viewer room - shows live metadata, comments, and actions.
+import React, { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Image,
@@ -17,103 +18,174 @@ import {
   MessageCircle,
   MoreHorizontal,
   Phone,
+  RefreshCw,
   Send,
   Share2,
   Users,
   X,
 } from 'lucide-react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useLiveRoomViewModel } from '../../application/view-models/useLiveViewModel';
+import { LiveCameraPreview } from '../components/LiveCameraPreview';
 
 type LiveRouteParams = {
   postId: number;
+  isHost?: boolean;
 };
+
+const commentsContentStyle = { paddingBottom: 10 };
 
 export default function LiveRoomScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const route = useRoute<RouteProp<{ params: LiveRouteParams }, 'params'>>();
-  const { postId } = route.params || { postId: 101 };
+  const { postId, isHost: routeIsHost = false } = route.params || {
+    postId: 0,
+    isHost: false,
+  };
 
   const {
     streamInfo,
     comments,
     viewerCount,
     reactionsCount,
+    state,
+    isHost: streamIsHost,
+    isLoading,
+    error,
     sendComment,
+    leave,
   } = useLiveRoomViewModel(postId);
 
   const [commentText, setCommentText] = useState('');
   const [showReactions, setShowReactions] = useState(false);
+  const [isSendingComment, setIsSendingComment] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
+  const isHost = routeIsHost || streamIsHost;
 
-  const handleSendComment = useCallback(() => {
-    if (commentText.trim()) {
-      sendComment(commentText);
+  const handleSendComment = useCallback(async () => {
+    const trimmed = commentText.trim();
+    if (!trimmed || isSendingComment) return;
+
+    setIsSendingComment(true);
+    try {
+      await sendComment(trimmed);
       setCommentText('');
+    } catch (err) {
+      console.error('[LiveRoom] send comment error:', err);
+      Alert.alert('Lỗi', 'Không gửi được bình luận.');
+    } finally {
+      setIsSendingComment(false);
     }
-  }, [commentText, sendComment]);
+  }, [commentText, isSendingComment, sendComment]);
 
   const handleLeave = useCallback(() => {
     Alert.alert(
-      'Rời khỏi',
+      'Rời khỏi live',
       'Bạn có muốn rời khỏi live không?',
       [
         { text: 'Ở lại', style: 'cancel' },
         {
           text: 'Rời đi',
           style: 'destructive',
-          onPress: () => navigation.goBack(),
+          onPress: () => {
+            leave();
+            navigation.goBack();
+          },
         },
       ],
     );
-  }, [navigation]);
+  }, [leave, navigation]);
 
   const handleReaction = useCallback((type: string) => {
     setShowReactions(false);
-    console.log('Reacted:', type);
+    console.log('[LiveRoom] reaction:', type);
   }, []);
+
+  const handleToggleCamera = useCallback(() => {
+    setCameraFacing(current => (current === 'front' ? 'back' : 'front'));
+  }, []);
+
+  if (isLoading) {
+    return (
+      <SafeAreaView className="flex-1 items-center justify-center bg-black">
+        <ActivityIndicator size="large" color="#ffffff" />
+        <Text className="mt-3 text-white/70">Đang tải live...</Text>
+      </SafeAreaView>
+    );
+  }
 
   if (!streamInfo) {
     return (
-      <SafeAreaView className="flex-1 items-center justify-center bg-black">
-        <Text className="text-white">Đang tải...</Text>
+      <SafeAreaView className="flex-1 items-center justify-center bg-black px-6">
+        <Text className="text-center text-[16px] font-semibold text-white">
+          {error || 'Live này không còn hoạt động.'}
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => navigation.goBack()}
+          className="mt-5 rounded-full bg-white px-5 py-3"
+        >
+          <Text className="font-semibold text-[#111827]">Quay lại</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView className="flex-1 bg-black" edges={['top', 'bottom']}>
-      {/* Video Area */}
       <View className="relative h-3/5">
-        {/* Placeholder video - thay bằng video player thực tế */}
-        <View className="absolute inset-0 items-center justify-center bg-gradient-to-b from-gray-800 to-gray-900">
-          <Text className="text-white/50">Video Stream</Text>
+        <View className="absolute inset-0 items-center justify-center bg-slate-950">
+          <View className="rounded-full bg-white/10 p-5">
+            <Users size={42} color="#ffffff" />
+          </View>
+          <Text className="mt-4 text-[15px] font-semibold text-white">
+            {state === 'live' ? 'Đang phát trực tiếp' : 'Đang chờ tín hiệu live'}
+          </Text>
+          <Text className="mt-2 max-w-[280px] text-center text-[12px] text-white/60">
+            App đã nối dữ liệu live thật. Để hiển thị video trực tiếp cần tích hợp SDK LiveKit hoặc Agora.
+          </Text>
+          {isHost && <LiveCameraPreview cameraFacing={cameraFacing} enabled />}
         </View>
 
-        {/* Top Bar */}
-        <View className="absolute top-4 left-4 right-4 flex-row items-center justify-between">
-          {/* Host Info */}
+        {isHost && <View className="absolute inset-x-0 bottom-0 h-40 bg-black/30" />}
+
+        <View className="absolute left-4 right-4 top-4 flex-row items-center justify-between">
           <TouchableOpacity
             activeOpacity={0.8}
             className="flex-row items-center gap-2 rounded-full bg-black/50 px-3 py-2"
           >
             <Image
               source={{ uri: streamInfo.publisher.avatarUrl }}
-              className="h-8 w-8 rounded-full"
+              className="h-8 w-8 rounded-full bg-slate-100"
             />
             <View>
               <Text className="text-[12px] font-semibold text-white">
                 {streamInfo.publisher.name}
               </Text>
               <View className="flex-row items-center gap-1">
-                <View className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-                <Text className="text-[10px] text-white/70">LIVE</Text>
+                <View
+                  className={`h-2 w-2 rounded-full ${
+                    state === 'live' ? 'bg-red-500' : 'bg-orange-400'
+                  }`}
+                />
+                <Text className="text-[10px] text-white/70">
+                  {state === 'live' ? 'LIVE' : 'ĐANG CHỜ'}
+                </Text>
               </View>
             </View>
           </TouchableOpacity>
 
-          {/* Actions */}
           <View className="flex-row items-center gap-2">
+            {isHost && (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleToggleCamera}
+                className="rounded-full bg-black/50 p-2"
+              >
+                <RefreshCw size={18} color="#ffffff" />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               activeOpacity={0.8}
               className="flex-row items-center gap-1 rounded-full bg-black/50 px-3 py-2"
@@ -133,7 +205,6 @@ export default function LiveRoomScreen() {
           </View>
         </View>
 
-        {/* Title */}
         <View className="absolute bottom-16 left-4 right-4">
           <Text className="text-[16px] font-semibold text-white">
             {streamInfo.title}
@@ -146,12 +217,10 @@ export default function LiveRoomScreen() {
         </View>
       </View>
 
-      {/* Comments & Actions Area */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1 rounded-t-3xl bg-white"
       >
-        {/* Action Buttons */}
         <View className="flex-row items-center justify-around border-b border-[rgba(0,0,255,0.08)] py-3">
           <TouchableOpacity
             activeOpacity={0.8}
@@ -190,9 +259,8 @@ export default function LiveRoomScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Reactions Popup */}
         {showReactions && (
-          <View className="absolute bottom-20 left-4 flex-row gap-3 rounded-full bg-white p-3 shadow-lg">
+          <View className="absolute bottom-20 left-4 z-20 flex-row gap-3 rounded-full bg-white p-3 shadow-lg">
             {['❤️', '😂', '😮', '😢', '😡'].map(emoji => (
               <TouchableOpacity
                 key={emoji}
@@ -206,7 +274,6 @@ export default function LiveRoomScreen() {
           </View>
         )}
 
-        {/* Comments List */}
         <FlatList
           data={comments}
           keyExtractor={item => item.id}
@@ -214,7 +281,7 @@ export default function LiveRoomScreen() {
             <View className="flex-row gap-2 px-4 py-2">
               <Image
                 source={{ uri: item.avatarUrl }}
-                className="h-7 w-7 rounded-full"
+                className="h-7 w-7 rounded-full bg-slate-100"
               />
               <View className="flex-1">
                 <View className="flex-row items-center gap-1">
@@ -232,11 +299,17 @@ export default function LiveRoomScreen() {
               </View>
             </View>
           )}
-          contentContainerStyle={{ paddingBottom: 10 }}
+          ListEmptyComponent={
+            <View className="items-center py-8">
+              <Text className="text-[13px] text-[#94a3b8]">
+                Chưa có bình luận
+              </Text>
+            </View>
+          }
+          contentContainerStyle={commentsContentStyle}
           showsVerticalScrollIndicator={false}
         />
 
-        {/* Comment Input */}
         <View className="flex-row items-center gap-2 border-t border-[rgba(0,0,255,0.08)] p-3">
           <TextInput
             className="input-shell flex-1 px-4 py-2"
@@ -249,6 +322,7 @@ export default function LiveRoomScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={handleSendComment}
+            disabled={isSendingComment || !commentText.trim()}
             className="rounded-full bg-[#0000ff] p-2"
           >
             <Send size={18} color="#ffffff" />

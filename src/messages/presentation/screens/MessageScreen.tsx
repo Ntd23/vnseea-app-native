@@ -1,12 +1,16 @@
 // Description: Messages screen with stories, tabs filtering, and multi-user messaging
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Image,
+  Platform,
   RefreshControl,
   ScrollView,
   StatusBar,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -14,6 +18,7 @@ import {
 } from 'react-native';
 import {
   ArrowLeft,
+  Check,
   CheckCircle2,
   Image as ImageIcon,
   MessageCircle,
@@ -23,18 +28,68 @@ import {
   Send,
   Users,
   Video,
+  X,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import {
+  launchImageLibrary,
+  type MediaType,
+} from 'react-native-image-picker';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useMessagesViewModel } from '../../application/view-models/useMessagesViewModel';
 import { useStoriesViewModel } from '../../../stories';
-import type { ChatItem, ChatPreviewKind } from '../../domain/types/messages.types';
+import type {
+  ChatItem,
+  ChatPreviewKind,
+  MessageAttachment,
+} from '../../domain/types/messages.types';
+import { createUserRepository } from '../../../user/infrastructure/repositories/ApiUserRepository';
+import type { UserProfile } from '../../../user/domain/types/user.types';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 
 type MessageNav = NativeStackNavigationProp<RootStackParamList>;
 type TabType = 'users' | 'groups' | 'all';
+type SelectableUser = {
+  id: string;
+  name: string;
+  avatar?: string;
+  isOnline?: boolean;
+};
+
+const userRepository = createUserRepository();
+const MAX_BULK_IMAGE_ATTACHMENTS = 5;
+
+function profileId(profile: UserProfile): string {
+  const raw = (
+    profile as UserProfile & {
+      userId?: string | number;
+      user_id?: string | number;
+    }
+  ).userId ?? (profile as UserProfile & { user_id?: string | number }).user_id ?? profile.id;
+
+  return raw ? String(raw) : '';
+}
+
+function mapProfileToSelectableUser(profile: UserProfile): SelectableUser | null {
+  const id = profileId(profile);
+  if (!id) return null;
+
+  const name =
+    profile.name ||
+    [profile.firstName, profile.lastName].filter(Boolean).join(' ') ||
+    profile.username ||
+    'Người dùng';
+
+  return {
+    id,
+    name,
+    avatar: profile.avatarUrl,
+    isOnline: false,
+  };
+}
 
 // Format time to Vietnamese style
 function formatTime(timestamp: number): string {
@@ -331,38 +386,74 @@ function TabButton({
   );
 }
 
-// User list item (for selecting multiple users)
-function UserListItem({
+// User list item với animation khi chọn (cho multi-user messaging)
+function UserListItemAnimated({
   user,
+  isSelected,
   onPress,
 }: {
-  user: {
-    id: string;
-    name: string;
-    avatar?: string;
-    isOnline?: boolean;
-  };
+  user: SelectableUser;
+  isSelected: boolean;
   onPress: () => void;
 }) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const bgColorAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: isSelected ? 1.02 : 1,
+        friction: 8,
+        tension: 100,
+        useNativeDriver: false,
+      }),
+      Animated.timing(bgColorAnim, {
+        toValue: isSelected ? 1 : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, [isSelected, scaleAnim, bgColorAnim]);
+
+  const bgColor = bgColorAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#FFFFFF', '#EFF6FF'],
+  });
+
   return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={onPress}
-      className="flex-row items-center px-4 py-3"
-    >
-      <View className="relative">
-        <UserAvatar uri={user.avatar} name={user.name} size={48} />
-        {user.isOnline && (
-          <View className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
-        )}
-      </View>
-      <Text className="ml-3 flex-1 text-sm font-medium text-gray-800">{user.name}</Text>
-    </TouchableOpacity>
+    <Animated.View style={[styles.userItemContainer, { backgroundColor: bgColor, transform: [{ scale: scaleAnim }] }]}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={onPress}
+        style={styles.userItemTouchable}
+      >
+        <View className="relative">
+          {/* Avatar với border khi selected */}
+          <View style={[styles.userAvatarWrapper, isSelected && styles.userAvatarSelected]}>
+            <UserAvatar uri={user.avatar} name={user.name} size={48} />
+            {user.isOnline && (
+              <View style={styles.onlineIndicator} />
+            )}
+          </View>
+
+          {/* Check badge khi selected */}
+          {isSelected && (
+            <Animated.View style={styles.checkBadge}>
+              <Check size={12} color="#FFFFFF" strokeWidth={3} />
+            </Animated.View>
+          )}
+        </View>
+
+        <Text style={[styles.userName, isSelected && styles.userNameSelected]} numberOfLines={1}>
+          {user.name}
+        </Text>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
 // Group list item
-function GroupListItem({
+export function GroupListItem({
   group,
   onPress,
 }: {
@@ -450,7 +541,11 @@ export default function MessageScreen() {
   const [isSelectingMode, setIsSelectingMode] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [messageText, setMessageText] = useState('');
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [multiUserCandidates, setMultiUserCandidates] = useState<SelectableUser[]>([]);
+  const [isLoadingMultiUsers, setIsLoadingMultiUsers] = useState(false);
+  const [multiUsersError, setMultiUsersError] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -472,6 +567,83 @@ export default function MessageScreen() {
     await vm.loadChats();
     setRefreshing(false);
   }, [vm]);
+
+  const handlePickBulkImages = useCallback(async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo' as MediaType,
+      selectionLimit: MAX_BULK_IMAGE_ATTACHMENTS,
+      quality: 0.8,
+    });
+
+    if (result.didCancel || result.errorCode) return;
+
+    const selected: MessageAttachment[] = [];
+    for (const asset of result.assets ?? []) {
+      if (!asset.uri) continue;
+
+      const uri =
+        Platform.OS === 'android' &&
+        !/^[a-z][a-z0-9+.-]*:\/\//i.test(asset.uri)
+          ? `file://${asset.uri}`
+          : asset.uri;
+
+      selected.push({
+        uri,
+        name: asset.fileName ?? `bulk-message-${Date.now()}.jpg`,
+        type: asset.type ?? 'image/jpeg',
+        mediaType: 'image',
+      });
+    }
+
+    if (selected.length > 0) {
+      setAttachments(current =>
+        [...current, ...selected].slice(0, MAX_BULK_IMAGE_ATTACHMENTS),
+      );
+    }
+  }, []);
+
+  const loadMultiUserCandidates = useCallback(async () => {
+    const session = sessionStorage.getSession();
+    const currentUserId = session?.userId ? String(session.userId) : '';
+
+    if (!currentUserId) {
+      setMultiUserCandidates([]);
+      setMultiUsersError('Bạn cần đăng nhập lại để chọn người nhận.');
+      return;
+    }
+
+    setIsLoadingMultiUsers(true);
+    setMultiUsersError(null);
+
+    try {
+      const friends = await userRepository.getFriends({
+        userId: currentUserId,
+        type: ['following', 'followers'],
+        limit: 100,
+      });
+      const users = new Map<string, SelectableUser>();
+
+      const addProfile = (profile: UserProfile) => {
+        const user = mapProfileToSelectableUser(profile);
+        if (!user || user.id === currentUserId) return;
+        users.set(user.id, user);
+      };
+
+      friends.following.forEach(addProfile);
+      friends.followers.forEach(addProfile);
+      setMultiUserCandidates([...users.values()]);
+    } catch (caughtError) {
+      console.error('[MessageScreen] load multi-user candidates error:', caughtError);
+      setMultiUsersError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Không tải được danh sách người nhận.',
+      );
+      setMultiUserCandidates([]);
+    } finally {
+      setIsLoadingMultiUsers(false);
+    }
+  }, []);
 
   const handleChatPress = useCallback(
     (chat: ChatItem) => {
@@ -515,15 +687,20 @@ export default function MessageScreen() {
     [navigation, storiesVm.stories],
   );
 
-  const handleStartMultiUser = () => {
+  const handleStartMultiUser = useCallback(() => {
+    setSearchQuery('');
+    setAttachments([]);
     setIsSelectingMode(true);
     setActiveTab('users');
-  };
+    loadMultiUserCandidates().catch(() => undefined);
+  }, [loadMultiUserCandidates]);
 
   const handleCancelSelecting = () => {
     setIsSelectingMode(false);
     setSelectedUserIds([]);
     setMessageText('');
+    setAttachments([]);
+    setSearchQuery('');
   };
 
   const handleUserToggle = (userId: string) => {
@@ -538,35 +715,69 @@ export default function MessageScreen() {
       return;
     }
 
-    if (!messageText.trim()) {
+    if (!messageText.trim() && attachments.length === 0) {
       Alert.alert('Thông báo', 'Vui lòng nhập nội dung tin nhắn.');
       return;
     }
 
-    const success = await vm.sendBulkMessages(selectedUserIds, messageText.trim());
+    const success = await vm.sendBulkMessages(
+      selectedUserIds,
+      messageText.trim(),
+      attachments,
+    );
 
     if (success) {
       Alert.alert('Thành công', `Tin nhắn đã được gửi đến ${selectedUserIds.length} người!`);
       setMessageText('');
       setSelectedUserIds([]);
+      setAttachments([]);
+      setSearchQuery('');
       setIsSelectingMode(false);
     } else {
       Alert.alert('Lỗi', 'Không thể gửi tin nhắn. Vui lòng thử lại.');
     }
   };
 
-  // Get users from chats (for user selection mode)
-  const allUsers = vm.chats
-    .filter(c => c.chatType === 'user')
-    .map(c => ({
-      id: c.userId || c.id,
-      name: c.name,
-      avatar: c.avatar,
-      isOnline: c.isOnline,
-    }));
+  // Get users from chats + following/followers for user selection mode.
+  const chatUsers = useMemo<SelectableUser[]>(
+    () =>
+      vm.chats
+        .filter(c => c.chatType === 'user')
+        .map(c => ({
+          id: c.userId || c.id,
+          name: c.name,
+          avatar: c.avatar,
+          isOnline: c.isOnline,
+        }))
+        .filter(user => Boolean(user.id)),
+    [vm.chats],
+  );
 
-  // Get groups from chats
-  const groupChats = vm.chats.filter(c => c.chatType === 'group');
+  const allUsers = useMemo<SelectableUser[]>(() => {
+    const users = new Map<string, SelectableUser>();
+
+    [...multiUserCandidates, ...chatUsers].forEach(user => {
+      if (!user.id) return;
+      users.set(user.id, {
+        ...users.get(user.id),
+        ...user,
+      });
+    });
+
+    return [...users.values()].sort((left, right) =>
+      left.name.localeCompare(right.name, 'vi'),
+    );
+  }, [chatUsers, multiUserCandidates]);
+
+  const selectableUsers = useMemo(() => {
+    const keyword = searchQuery.trim().toLowerCase();
+    if (!keyword) return allUsers;
+
+    return allUsers.filter(user =>
+      user.name.toLowerCase().includes(keyword) ||
+      user.id.toLowerCase().includes(keyword),
+    );
+  }, [allUsers, searchQuery]);
 
   // Filter chats based on tab and search
   const filteredChats = vm.chats.filter(chat => {
@@ -588,7 +799,28 @@ export default function MessageScreen() {
     ...storiesVm.stories,
   ];
 
-  // Multi-user selection mode
+  // Multi-user selection mode - CHỈ NGƯỜI DÙNG, KHÔNG CÓ NHÓM
+  // Hooks phải đặt ở đây, TRƯỚC if statement
+  const selectedUsers = allUsers.filter(u => selectedUserIds.includes(u.id));
+  const hasBulkMessageContent =
+    messageText.trim().length > 0 || attachments.length > 0;
+  const sendBtnOpacity = useRef(new Animated.Value(0)).current;
+  const sendBtnTranslateY = useRef(new Animated.Value(50)).current;
+
+  useEffect(() => {
+    if (selectedUserIds.length > 0 && hasBulkMessageContent) {
+      Animated.parallel([
+        Animated.spring(sendBtnOpacity, { toValue: 1, friction: 8, tension: 100, useNativeDriver: true }),
+        Animated.spring(sendBtnTranslateY, { toValue: 0, friction: 8, tension: 100, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(sendBtnOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(sendBtnTranslateY, { toValue: 50, duration: 150, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [selectedUserIds.length, hasBulkMessageContent, sendBtnOpacity, sendBtnTranslateY]);
+
   if (isSelectingMode) {
     return (
       <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -616,17 +848,60 @@ export default function MessageScreen() {
           </View>
         </View>
 
-        {/* Selected count */}
-        {selectedUserIds.length > 0 && (
-          <View className="bg-blue-50 px-4 py-2">
-            <Text className="text-sm font-medium text-blue-600">
-              Đã chọn {selectedUserIds.length} người
-            </Text>
-          </View>
-        )}
+        {/* Selected users panel với animation */}
+        <Animated.View style={[styles.selectedPanel, selectedUserIds.length > 0 && styles.selectedPanelVisible]}>
+          {selectedUserIds.length > 0 ? (
+            <View style={styles.selectedPanelInner}>
+              <View style={styles.selectedHeader}>
+                <Text style={styles.selectedCountText}>
+                  Đã chọn {selectedUserIds.length} người
+                </Text>
+                <TouchableOpacity onPress={() => setSelectedUserIds([])}>
+                  <Text style={styles.clearAllText}>Xóa hết</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectedAvatarsScroll}>
+                <View style={styles.selectedAvatarsContainer}>
+                  {selectedUsers.map(user => (
+                    <View key={user.id} style={styles.selectedAvatarItem}>
+                      <TouchableOpacity
+                        style={styles.selectedAvatarTouchable}
+                        onPress={() => handleUserToggle(user.id)}
+                      >
+                        <Image
+                          source={{ uri: user.avatar || 'https://i.pravatar.cc/100' }}
+                          style={styles.selectedAvatar}
+                        />
+                        <View style={styles.selectedAvatarRemove}>
+                          <X size={10} color="#FFFFFF" />
+                        </View>
+                      </TouchableOpacity>
+                      <Text style={styles.selectedAvatarName} numberOfLines={1}>{user.name.split(' ')[0]}</Text>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+          ) : (
+            <Text style={styles.selectHintText}>Chọn người để gửi tin nhắn</Text>
+          )}
+        </Animated.View>
 
         {/* Message input */}
-        <View className="mx-4 mb-3 mt-3 flex-row items-center rounded-full border border-gray-200 bg-gray-50 px-4 py-3">
+        <View className="mx-4 mb-3 mt-2 flex-row items-center rounded-full border border-gray-200 bg-gray-50 px-4 py-3">
+          <TouchableOpacity
+            className="mr-2 h-9 w-9 items-center justify-center rounded-full bg-blue-50"
+            activeOpacity={0.8}
+            disabled={attachments.length >= MAX_BULK_IMAGE_ATTACHMENTS}
+            onPress={() => {
+              handlePickBulkImages().catch(() => undefined);
+            }}
+          >
+            <ImageIcon
+              size={20}
+              color={attachments.length >= MAX_BULK_IMAGE_ATTACHMENTS ? '#94a3b8' : '#2563eb'}
+            />
+          </TouchableOpacity>
           <TextInput
             className="flex-1 text-sm text-gray-900"
             placeholder="Nhập tin nhắn..."
@@ -638,88 +913,126 @@ export default function MessageScreen() {
           />
         </View>
 
-        {/* Tabs for multi-user mode */}
-        <View className="mb-3 flex-row border-b border-gray-200">
-          <TabButton
-            title="Người dùng"
-            isActive={activeTab === 'users'}
-            onPress={() => setActiveTab('users')}
-          />
-          <TabButton
-            title="Các nhóm"
-            isActive={activeTab === 'groups'}
-            onPress={() => setActiveTab('groups')}
+        {attachments.length > 0 && (
+          <View className="mx-4 mb-3 rounded-2xl bg-gray-50 px-3 py-2">
+            <View className="mb-2 flex-row items-center justify-between">
+              <Text className="text-xs font-semibold text-gray-600">
+                Đã chọn {attachments.length} ảnh
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setAttachments([])}
+              >
+                <Text className="text-xs font-semibold text-red-500">Xóa ảnh</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.bulkAttachmentList}
+            >
+              {attachments.map((attachment, index) => (
+                <View key={`${attachment.uri}-${index}`} style={styles.bulkAttachmentItem}>
+                  <Image
+                    source={{ uri: attachment.uri }}
+                    style={styles.bulkAttachmentImage}
+                    resizeMode="cover"
+                  />
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={styles.bulkAttachmentRemove}
+                    onPress={() =>
+                      setAttachments(current =>
+                        current.filter((_, currentIndex) => currentIndex !== index),
+                      )
+                    }
+                  >
+                    <X size={12} color="#ffffff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        <View className="mx-4 mb-2 flex-row items-center rounded-full bg-gray-100 px-4 py-3">
+          <Search size={18} color="#9ca3af" />
+          <TextInput
+            className="ml-3 flex-1 text-sm text-gray-900"
+            placeholder="Tìm người nhận..."
+            placeholderTextColor="#9ca3af"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
           />
         </View>
 
-        {/* User/Group list */}
-        {activeTab === 'users' ? (
-          <FlatList
-            data={allUsers}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <UserListItem
-                user={item}
-                onPress={() => {
-                  handleUserToggle(item.id);
-                }}
-              />
-            )}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={['#3b82f6']}
-              />
-            }
-            ListEmptyComponent={
-              <View className="flex-1 items-center justify-center py-20">
-                <Text className="text-sm text-gray-500">Không có người dùng</Text>
+        {/* User list - CHỈ NGƯỜI DÙNG, KHÔNG CÓ NHÓM */}
+        <FlatList
+          data={selectableUsers}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.userListContent}
+          renderItem={({ item }) => (
+            <UserListItemAnimated
+              user={item}
+              isSelected={selectedUserIds.includes(item.id)}
+              onPress={() => handleUserToggle(item.id)}
+            />
+          )}
+          refreshControl={
+            <RefreshControl
+              refreshing={isLoadingMultiUsers}
+              onRefresh={loadMultiUserCandidates}
+              colors={['#3b82f6']}
+            />
+          }
+          ListHeaderComponent={
+            isLoadingMultiUsers ? (
+              <View className="items-center justify-center py-6">
+                <ActivityIndicator size="small" color="#2563eb" />
+                <Text className="mt-2 text-sm text-gray-500">Đang tải người nhận...</Text>
               </View>
-            }
-          />
-        ) : (
-          <FlatList
-            data={groupChats}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <GroupListItem
-                group={item}
-                onPress={() => {
-                  handleUserToggle(item.id);
-                }}
-              />
-            )}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={['#3b82f6']}
-              />
-            }
-            ListEmptyComponent={
-              <View className="flex-1 items-center justify-center py-20">
-                <Text className="text-sm text-gray-500">Chưa có nhóm nào</Text>
-              </View>
-            }
-          />
-        )}
-
-        {/* Send button */}
-        {selectedUserIds.length > 0 && messageText.trim() && (
-          <View className="absolute bottom-6 left-4 right-4">
-            <TouchableOpacity
-              className="flex-row items-center justify-center rounded-full bg-blue-500 py-4 shadow-lg"
-              activeOpacity={0.85}
-              onPress={handleSendMultiUser}
-            >
-              <Send size={20} color="#ffffff" className="mr-2" />
-              <Text className="text-base font-semibold text-white">
-                Gửi đến {selectedUserIds.length} người
+            ) : null
+          }
+          ListEmptyComponent={
+            <View className="flex-1 items-center justify-center py-20">
+              <Text className="text-center text-sm text-gray-500">
+                {multiUsersError || 'Không tìm thấy người nhận phù hợp'}
               </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+              {multiUsersError && (
+                <TouchableOpacity
+                  className="mt-4 rounded-full bg-blue-600 px-5 py-2"
+                  activeOpacity={0.85}
+                  onPress={loadMultiUserCandidates}
+                >
+                  <Text className="text-sm font-semibold text-white">Tải lại</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          }
+        />
+
+        {/* Send button với animation */}
+        <Animated.View
+          pointerEvents={selectedUserIds.length > 0 && hasBulkMessageContent ? 'auto' : 'none'}
+          style={[
+            styles.sendButtonContainer,
+            {
+              opacity: sendBtnOpacity,
+              transform: [{ translateY: sendBtnTranslateY }],
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.sendButton}
+            activeOpacity={0.85}
+            onPress={handleSendMultiUser}
+          >
+            <Send size={20} color="#FFFFFF" />
+            <Text style={styles.sendButtonText}>
+              Gửi đến {selectedUserIds.length} người
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
       </SafeAreaView>
     );
   }
@@ -894,3 +1207,198 @@ export default function MessageScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  // Multi-user selection mode styles
+  selectedPanel: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+    minHeight: 122,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  selectedPanelVisible: {
+    backgroundColor: '#EFF6FF',
+  },
+  selectedPanelInner: {
+    gap: 8,
+  },
+  selectedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  selectedCountText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  clearAllText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#EF4444',
+  },
+  selectHintText: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  selectedAvatarsScroll: {
+    marginTop: 10,
+    minHeight: 76,
+  },
+  selectedAvatarsContainer: {
+    flexDirection: 'row',
+    gap: 14,
+    paddingTop: 4,
+    paddingRight: 8,
+    paddingBottom: 2,
+  },
+  selectedAvatarItem: {
+    alignItems: 'center',
+    width: 70,
+    minHeight: 72,
+  },
+  selectedAvatarTouchable: {
+    position: 'relative',
+    width: 58,
+    height: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedAvatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 3,
+    borderColor: '#2563EB',
+  },
+  selectedAvatarRemove: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedAvatarName: {
+    fontSize: 11,
+    color: '#374151',
+    marginTop: 4,
+    textAlign: 'center',
+    width: 68,
+  },
+  bulkAttachmentList: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  bulkAttachmentItem: {
+    width: 68,
+    height: 68,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#E5E7EB',
+  },
+  bulkAttachmentImage: {
+    width: '100%',
+    height: '100%',
+  },
+  bulkAttachmentRemove: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userListContent: {
+    paddingBottom: 100,
+  },
+  userItemContainer: {
+    backgroundColor: '#FFFFFF',
+  },
+  userItemTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  userAvatarWrapper: {
+    position: 'relative',
+  },
+  userAvatarSelected: {
+    borderWidth: 3,
+    borderColor: '#2563EB',
+    borderRadius: 27,
+  },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22C55E',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  checkBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#22C55E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  userName: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  userNameSelected: {
+    color: '#1E40AF',
+    fontWeight: '600',
+  },
+  sendButtonContainer: {
+    position: 'absolute',
+    bottom: 24,
+    left: 16,
+    right: 16,
+  },
+  sendButton: {
+    backgroundColor: '#22C55E',
+    borderRadius: 16,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  sendButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+});
