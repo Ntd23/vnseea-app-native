@@ -40,6 +40,8 @@ const pollRepository = createPollRepository();
 // Page size — bumped from 10 to 15 so a single network trip fills
 // more than one screen worth of content.
 const PAGE_SIZE = 15;
+const VIDEO_PAGE_SIZE = 10;
+const VIDEO_INSERT_INTERVAL = 5;
 
 /**
  * Re-sort by `postedAt` desc so optimistic prepends and updates keep
@@ -50,10 +52,54 @@ function sortByTime(posts: FeedPost[]): FeedPost[] {
   return [...posts].sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
 }
 
-function cachePostsAfterInteractions(posts: FeedPost[]) {
+function isLightFeedPost(post: FeedPost): post is Exclude<FeedPost, FeedVideoPost> {
+  return post.kind !== 'video' && post.kind !== 'product' && post.kind !== 'event' && post.kind !== 'job';
+}
+
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    unique.push(item);
+  }
+  return unique;
+}
+
+function interleaveVideos(
+  lightPosts: FeedPost[],
+  videoPosts: FeedVideoPost[],
+): FeedPost[] {
+  const lightIds = new Set(lightPosts.map(post => post.id));
+  const usableVideos = uniqueById(videoPosts)
+    .filter(video => !lightIds.has(video.id))
+    .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+  const result: FeedPost[] = [];
+  let videoIndex = 0;
+
+  lightPosts.forEach((post, index) => {
+    result.push(post);
+    if ((index + 1) % VIDEO_INSERT_INTERVAL === 0 && videoIndex < usableVideos.length) {
+      result.push(usableVideos[videoIndex]);
+      videoIndex += 1;
+    }
+  });
+
+  return result;
+}
+
+function cacheLightPostsAfterInteractions(posts: FeedPost[]) {
   const snapshot = posts.slice(0, 50);
   InteractionManager.runAfterInteractions(() => {
     feedCacheStorage.setCachedPosts(snapshot);
+  });
+}
+
+function cacheVideoPostsAfterInteractions(posts: FeedVideoPost[]) {
+  const snapshot = posts.slice(0, 30);
+  InteractionManager.runAfterInteractions(() => {
+    feedCacheStorage.setCachedVideoPosts(snapshot);
   });
 }
 
@@ -68,7 +114,11 @@ function getPollTotalVotes(options: FeedPollPost['options']) {
 
 export function useFeedViewModel() {
   const [posts, setPosts] = useState<FeedPost[]>(() => {
-    return feedCacheStorage.getCachedPosts();
+    const cachedLightPosts = feedCacheStorage
+      .getCachedPosts()
+      .filter(isLightFeedPost);
+    const cachedVideoPosts = feedCacheStorage.getCachedVideoPosts();
+    return interleaveVideos(cachedLightPosts, cachedVideoPosts);
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -76,11 +126,80 @@ export function useFeedViewModel() {
   const [isAllLoaded, setIsAllLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const lightPostsRef = useRef<FeedPost[]>(
+    feedCacheStorage.getCachedPosts().filter(isLightFeedPost),
+  );
+  const videoPostsRef = useRef<FeedVideoPost[]>(
+    feedCacheStorage.getCachedVideoPosts(),
+  );
+
   // ── Prefetch buffer ────────────────────────────────────────────────
   // Holds the pre-fetched next page so `loadMorePosts` can merge it
   // instantly without waiting for a network round-trip.
   const prefetchBufferRef = useRef<FeedPost[] | null>(null);
   const isPrefetchingRef = useRef(false);
+  const isFetchingVideosRef = useRef(false);
+
+  const commitFeedSources = useCallback(
+    (nextLightPosts: FeedPost[], nextVideoPosts: FeedVideoPost[]) => {
+      const cleanLightPosts = uniqueById(nextLightPosts)
+        .filter(isLightFeedPost)
+        .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+      const cleanVideoPosts = uniqueById(nextVideoPosts).sort(
+        (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
+      );
+
+      lightPostsRef.current = cleanLightPosts;
+      videoPostsRef.current = cleanVideoPosts;
+      setPosts(interleaveVideos(cleanLightPosts, cleanVideoPosts));
+      cacheLightPostsAfterInteractions(cleanLightPosts);
+      cacheVideoPostsAfterInteractions(cleanVideoPosts);
+    },
+    [],
+  );
+
+  const updatePostEverywhere = useCallback((updater: (post: FeedPost) => FeedPost) => {
+    lightPostsRef.current = lightPostsRef.current
+      .map(updater)
+      .filter(isLightFeedPost);
+    videoPostsRef.current = videoPostsRef.current
+      .map(updater)
+      .filter((post): post is FeedVideoPost => post.kind === 'video');
+    setPosts(prev => prev.map(updater));
+    cacheLightPostsAfterInteractions(lightPostsRef.current);
+    cacheVideoPostsAfterInteractions(videoPostsRef.current);
+  }, []);
+
+  const ensureVideoBuffer = useCallback(
+    (lightCount: number) => {
+      if (isFetchingVideosRef.current) return;
+      const requiredVideos = Math.floor(lightCount / VIDEO_INSERT_INTERVAL) + 2;
+      if (videoPostsRef.current.length >= requiredVideos) return;
+
+      const lastVideo = videoPostsRef.current[videoPostsRef.current.length - 1];
+      isFetchingVideosRef.current = true;
+      repository
+        .getVideoPosts(VIDEO_PAGE_SIZE, lastVideo?.id)
+        .then(nextVideos => {
+          if (nextVideos.length === 0) return;
+          const existingIds = new Set(videoPostsRef.current.map(post => post.id));
+          const freshVideos = nextVideos.filter(post => !existingIds.has(post.id));
+          if (freshVideos.length === 0) return;
+          commitFeedSources(lightPostsRef.current, [
+            ...videoPostsRef.current,
+            ...freshVideos,
+          ]);
+        })
+        .catch(err => {
+          // Video is a secondary lane; a failure must not blank or block feed.
+          console.warn('[feed] video background fetch failed:', err);
+        })
+        .finally(() => {
+          isFetchingVideosRef.current = false;
+        });
+    },
+    [commitFeedSources],
+  );
 
   /**
    * Background-fetch the next page and stash it in `prefetchBufferRef`.
@@ -94,18 +213,17 @@ export function useFeedViewModel() {
     isPrefetchingRef.current = true;
 
     repository
-      .getAllPosts(PAGE_SIZE, lastPost.id)
+      .getLightPosts(PAGE_SIZE, lastPost.id)
       .then(nextPosts => {
         if (nextPosts.length === 0) {
           prefetchBufferRef.current = null;
           console.log('[feed] prefetch: server returned 0 → no more pages');
         } else {
-          prefetchBufferRef.current = nextPosts;
+          prefetchBufferRef.current = nextPosts.filter(isLightFeedPost);
         }
       })
       .catch(err => {
         // Non-critical — the user will still get a normal fetch on scroll.
-        // eslint-disable-next-line no-console
         console.warn('[feed] prefetch failed:', err);
         prefetchBufferRef.current = null;
       })
@@ -124,9 +242,11 @@ export function useFeedViewModel() {
     setIsAllLoaded(false); // Reset pagination
     prefetchBufferRef.current = null; // Clear stale buffer
     try {
-      const freshPosts = await repository.getAllPosts(PAGE_SIZE);
-      setPosts(freshPosts);
-      cachePostsAfterInteractions(freshPosts);
+      const freshPosts = (await repository.getLightPosts(PAGE_SIZE)).filter(
+        isLightFeedPost,
+      );
+      commitFeedSources(freshPosts, videoPostsRef.current);
+      ensureVideoBuffer(freshPosts.length);
 
       // Immediately start prefetching page 2 into the buffer
       if (freshPosts.length >= PAGE_SIZE) {
@@ -142,10 +262,13 @@ export function useFeedViewModel() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [prefetchNextPage]);
+  }, [commitFeedSources, ensureVideoBuffer, prefetchNextPage]);
 
   const loadMorePosts = useCallback(async () => {
-    if (isLoading || isLoadingMore || isAllLoaded || posts.length === 0) return;
+    const currentLightPosts = lightPostsRef.current;
+    if (isLoading || isLoadingMore || isAllLoaded || currentLightPosts.length === 0) {
+      return;
+    }
 
     setIsLoadingMore(true);
     setError(null);
@@ -156,68 +279,54 @@ export function useFeedViewModel() {
       if (buffered && buffered.length > 0) {
         prefetchBufferRef.current = null; // Consume the buffer
 
-        // eslint-disable-next-line no-console
         console.log('[feed] loadMore: using prefetch buffer →', buffered.length, 'posts');
 
         // Merge synchronously — buffer data is already in memory,
         // no need to defer via InteractionManager (which was causing
         // a race where isLoadingMore was reset before merge happened).
-        setPosts(prev => {
-          const existingIds = new Set(prev.map(p => p.id));
-          const newPosts = buffered.filter(p => !existingIds.has(p.id));
-          if (newPosts.length === 0) {
-            // Buffer had no new posts, probably because they were already loaded or cached.
-            // Do NOT set isAllLoaded to true, just kick off the next prefetch using current tail.
-            setTimeout(() => prefetchNextPage(prev), 0);
-            return prev;
-          }
-          const merged = [...prev, ...newPosts];
-          cachePostsAfterInteractions(merged);
-
-          // Kick off prefetch for the NEXT page using the merged list
-          // as the cursor source. Runs after this setPosts completes.
-          setTimeout(() => prefetchNextPage(merged), 0);
-
-          return merged;
-        });
+        const existingIds = new Set(currentLightPosts.map(p => p.id));
+        const newPosts = buffered.filter(p => !existingIds.has(p.id));
+        if (newPosts.length === 0) {
+          setTimeout(() => prefetchNextPage(lightPostsRef.current), 0);
+          setIsLoadingMore(false);
+          return;
+        }
+        const merged = [...currentLightPosts, ...newPosts];
+        commitFeedSources(merged, videoPostsRef.current);
+        ensureVideoBuffer(merged.length);
+        setTimeout(() => prefetchNextPage(lightPostsRef.current), 0);
 
         setIsLoadingMore(false);
         return;
       }
 
       // ── Slow path: no buffer → fetch from network ───────────────
-      // eslint-disable-next-line no-console
       console.log('[feed] loadMore: no buffer, fetching from network');
 
-      const lastPost = posts[posts.length - 1];
+      const lastPost = currentLightPosts[currentLightPosts.length - 1];
       if (!lastPost) {
         setIsLoadingMore(false);
         return;
       }
 
       const lastPostId = lastPost.id;
-      const olderPosts = await repository.getAllPosts(PAGE_SIZE, lastPostId);
+      const olderPosts = (await repository.getLightPosts(PAGE_SIZE, lastPostId)).filter(
+        isLightFeedPost,
+      );
 
       if (olderPosts.length === 0) {
         setIsAllLoaded(true);
       } else {
-        setPosts(prev => {
-          const existingIds = new Set(prev.map(p => p.id));
-          const newPosts = olderPosts.filter(p => !existingIds.has(p.id));
-          if (newPosts.length === 0) {
-            // No new posts in this slice, but the server returned data, so don't block future pages.
-            // Queue next prefetch from existing posts.
-            setTimeout(() => prefetchNextPage(prev), 0);
-            return prev;
-          }
-          const merged = [...prev, ...newPosts];
-          cachePostsAfterInteractions(merged);
-
-          // Prefetch next page from the merged tail
-          setTimeout(() => prefetchNextPage(merged), 0);
-
-          return merged;
-        });
+        const existingIds = new Set(currentLightPosts.map(p => p.id));
+        const newPosts = olderPosts.filter(p => !existingIds.has(p.id));
+        if (newPosts.length === 0) {
+          setTimeout(() => prefetchNextPage(lightPostsRef.current), 0);
+          return;
+        }
+        const merged = [...currentLightPosts, ...newPosts];
+        commitFeedSources(merged, videoPostsRef.current);
+        ensureVideoBuffer(merged.length);
+        setTimeout(() => prefetchNextPage(lightPostsRef.current), 0);
       }
     } catch (caught) {
       setError(
@@ -228,10 +337,17 @@ export function useFeedViewModel() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [isLoading, isLoadingMore, isAllLoaded, posts, prefetchNextPage]);
+  }, [
+    commitFeedSources,
+    ensureVideoBuffer,
+    isAllLoaded,
+    isLoading,
+    isLoadingMore,
+    prefetchNextPage,
+  ]);
 
   useEffect(() => {
-    void loadPosts();
+    loadPosts();
   }, [loadPosts]);
 
   // ── Derived (backward-compat) slices ─────────────────────────────
@@ -259,11 +375,18 @@ export function useFeedViewModel() {
    * server returns an older `time` than we expect.
    */
   const prependPost = useCallback((post: FeedPost) => {
-    setPosts(prev => {
-      if (prev.some(p => p.id === post.id)) return prev;
-      return sortByTime([post, ...prev]);
-    });
-  }, []);
+    if (post.kind === 'video') {
+      if (videoPostsRef.current.some(p => p.id === post.id)) return;
+      commitFeedSources(lightPostsRef.current, sortByTime([
+        post,
+        ...videoPostsRef.current,
+      ]) as FeedVideoPost[]);
+      return;
+    }
+
+    if (lightPostsRef.current.some(p => p.id === post.id)) return;
+    commitFeedSources(sortByTime([post, ...lightPostsRef.current]), videoPostsRef.current);
+  }, [commitFeedSources]);
 
   /**
    * Add, swap, or clear the viewer's reaction on a post (any kind).
@@ -281,8 +404,7 @@ export function useFeedViewModel() {
       let snapshot: FeedPost | undefined;
       let targetReaction: ReactionType | null = nextReaction;
 
-      setPosts(prev =>
-        prev.map(post => {
+      updatePostEverywhere(post => {
           if (post.id !== postId) return post;
           if (post.kind !== 'text' && post.kind !== 'video' && post.kind !== 'poll') {
             return post;
@@ -328,21 +450,18 @@ export function useFeedViewModel() {
             likeCount,
             topReactions: newTopReactions,
           };
-        }),
-      );
+        });
 
       try {
         await repository.setReaction(postId, targetReaction);
       } catch {
         if (snapshot) {
           const original = snapshot;
-          setPosts(prev =>
-            prev.map(post => (post.id === postId ? original : post)),
-          );
+          updatePostEverywhere(post => (post.id === postId ? original : post));
         }
       }
     },
-    [],
+    [updatePostEverywhere],
   );
 
   /**
@@ -352,17 +471,15 @@ export function useFeedViewModel() {
    */
   const updateCommentCount = useCallback(
     (postId: string, delta: number) => {
-      setPosts(prev =>
-        prev.map(post => {
+      updatePostEverywhere(post => {
           if (post.kind !== 'text' && post.kind !== 'video' && post.kind !== 'poll') {
             return post;
           }
           const typedPost = post as FeedTextPost | FeedVideoPost | FeedPollPost;
           return { ...post, commentCount: Math.max(0, typedPost.commentCount + delta) };
-        }),
-      );
+        });
     },
-    [],
+    [updatePostEverywhere],
   );
 
   const votePoll = useCallback(
@@ -370,8 +487,7 @@ export function useFeedViewModel() {
       let snapshot: FeedPost | undefined;
       
       // Optimistic update
-      setPosts(prev =>
-        prev.map(post => {
+      updatePostEverywhere(post => {
           if (post.id !== postId || post.kind !== 'poll') return post;
           snapshot = post;
           
@@ -413,15 +529,13 @@ export function useFeedViewModel() {
             votedId: optionId,
             totalVotes,
           };
-        })
-      );
+        });
       
       try {
         const response = await pollRepository.votePoll(optionId);
         
         // Update with actual response data
-        setPosts(prev =>
-          prev.map(post => {
+        updatePostEverywhere(post => {
             if (post.id !== postId || post.kind !== 'poll') return post;
             return {
               ...post,
@@ -429,20 +543,17 @@ export function useFeedViewModel() {
               votedId: optionId,
               totalVotes: getPollTotalVotes(response.options),
             };
-          })
-        );
+          });
       } catch (err) {
         console.error('[useFeedViewModel] votePoll error:', err);
         // Rollback
         if (snapshot) {
           const original = snapshot;
-          setPosts(prev =>
-            prev.map(post => (post.id === postId ? original : post))
-          );
+          updatePostEverywhere(post => (post.id === postId ? original : post));
         }
       }
     },
-    []
+    [updatePostEverywhere]
   );
 
   return {

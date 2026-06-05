@@ -23,7 +23,13 @@ export interface FeedRepository {
    */
   getAllPosts(limit?: number, afterPostId?: string): Promise<FeedPost[]>;
 
-  getVideoPosts(limit?: number): Promise<FeedVideoPost[]>;
+  /**
+   * Fetch only lightweight feed posts (text/photo/poll/ad). Home uses this
+   * first so the user sees content before heavier video/media pages finish.
+   */
+  getLightPosts(limit?: number, afterPostId?: string): Promise<FeedPost[]>;
+
+  getVideoPosts(limit?: number, afterPostId?: string): Promise<FeedVideoPost[]>;
 
   /**
    * Add, swap, or clear the viewer's reaction on a video post.
@@ -46,7 +52,7 @@ export interface FeedRepository {
    * just filters the response on the client side. Falls back to the
    * viewer's own posts when the news-feed is empty (fresh accounts).
    */
-  getTextPosts(limit?: number): Promise<FeedTextPost[]>;
+  getTextPosts(limit?: number, afterPostId?: string): Promise<FeedTextPost[]>;
 
   /**
    * Create a new text / photo post via WoWonder's `/api/new_post`.

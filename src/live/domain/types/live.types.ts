@@ -30,10 +30,30 @@ export type LiveStreamComment = {
   isHost: boolean;
 };
 
+export type LiveReactionType =
+  | 'like'
+  | 'love'
+  | 'haha'
+  | 'wow'
+  | 'sad'
+  | 'angry';
+
+export type LiveReactionEvent = {
+  id: string;
+  userId: string;
+  name: string;
+  username: string;
+  avatarUrl: string;
+  reaction: LiveReactionType;
+  emoji: string;
+};
+
 export type LiveCommentsResult = {
   comments: LiveStreamComment[];
   viewerCount: number;
   state: LiveStreamState;
+  reactionsCount?: number;
+  reactionEvents?: LiveReactionEvent[];
 };
 
 export type CreateLivePayload = {
@@ -41,4 +61,15 @@ export type CreateLivePayload = {
   description: string;
   streamName?: string;
   privacy: string;
+};
+
+export type LiveSession = {
+  postId: number;
+  streamName: string;
+  provider: string;
+  roomName: string;
+  wsUrl: string;
+  token: string;
+  isHost: boolean;
+  state: LiveStreamState;
 };

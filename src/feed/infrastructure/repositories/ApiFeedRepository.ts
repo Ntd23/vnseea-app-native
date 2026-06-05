@@ -1110,13 +1110,28 @@ export function createFeedRepository(): FeedRepository {
       return mixAdsIntoPosts(posts);
     },
 
-    async getVideoPosts(limit = 20) {
-      const raw = await fetchRawFeedPosts(limit);
-      return raw.filter(looksLikeVideo).map(mapVideoPost);
+    async getLightPosts(limit = 20, afterPostId?: string): Promise<FeedPost[]> {
+      const raw = await fetchRawFeedPosts(limit * 2, afterPostId);
+      const posts: FeedPost[] = [];
+      for (const item of raw) {
+        if (looksLikeAd(item)) {
+          posts.push(mapAdPost(item));
+        } else if (looksLikePoll(item)) {
+          posts.push(mapPollPost(item));
+        } else if (looksLikeTextOrPhoto(item)) {
+          posts.push(mapTextPost(item));
+        }
+      }
+      return mixAdsIntoPosts(posts).slice(0, limit);
     },
 
-    async getTextPosts(limit = 20) {
-      const raw = await fetchRawFeedPosts(limit);
+    async getVideoPosts(limit = 20, afterPostId?: string) {
+      const raw = await fetchRawFeedPosts(limit * 2, afterPostId);
+      return raw.filter(looksLikeVideo).map(mapVideoPost).slice(0, limit);
+    },
+
+    async getTextPosts(limit = 20, afterPostId?: string) {
+      const raw = await fetchRawFeedPosts(limit, afterPostId);
       return raw.filter(looksLikeTextOrPhoto).map(mapTextPost);
     },
 

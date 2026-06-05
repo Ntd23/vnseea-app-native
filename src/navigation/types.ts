@@ -3,6 +3,7 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 import { ROUTES } from './constants/routes';
 import type { StoryItem } from '../stories/domain/types/stories.types';
 import type { ChatItem } from '../messages/domain/types/messages.types';
+import type { LiveSession } from '../live/domain/types/live.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -92,7 +93,7 @@ export type RootStackParamList = {
     userId?: string;
   };
   [ROUTES.LIVE]: undefined;
-  [ROUTES.LIVE_ROOM]: { postId: number; isHost?: boolean };
+  [ROUTES.LIVE_ROOM]: { postId: number; isHost?: boolean; liveSession?: LiveSession };
   [ROUTES.GO_LIVE]: undefined;
 };
 

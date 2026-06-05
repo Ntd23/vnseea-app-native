@@ -16,7 +16,6 @@ import {
   TouchableOpacity,
   View,
   Alert,
-  ActivityIndicator,
   InteractionManager,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -1541,9 +1540,6 @@ const VideoPostActions = React.memo(function VideoPostActions({
   onCommentTap,
   onShare,
   post,
-  gestureX,
-  gestureY,
-  gestureActive,
 }: {
   myReaction: ReactionType | null;
   likeButtonRef: React.RefObject<View | null>;
@@ -2210,6 +2206,39 @@ type FeedListItem =
 
 // Section wrapper — header + empty/loading/error states + list of cards.
 
+function interleaveSupplementalPosts(
+  basePosts: FeedPost[],
+  productPosts: FeedProductPost[],
+  eventPosts: FeedEventPost[],
+  jobPosts: FeedJobPost[],
+): FeedPost[] {
+  const result: FeedPost[] = [];
+  let productIndex = 0;
+  let eventIndex = 0;
+  let jobIndex = 0;
+
+  basePosts.forEach((post, index) => {
+    result.push(post);
+    const slot = index + 1;
+
+    if (slot % 7 === 0 && productIndex < productPosts.length) {
+      result.push(productPosts[productIndex]);
+      productIndex += 1;
+    }
+
+    if (slot % 11 === 0 && eventIndex < eventPosts.length) {
+      result.push(eventPosts[eventIndex]);
+      eventIndex += 1;
+    }
+
+    if (slot % 13 === 0 && jobIndex < jobPosts.length) {
+      result.push(jobPosts[jobIndex]);
+      jobIndex += 1;
+    }
+  });
+
+  return result;
+}
 
 function FeedScreen() {
   const navigation = useNavigation<FeedNav>();
@@ -2611,15 +2640,8 @@ function FeedScreen() {
   }, [handleLoadMore]);
 
   const ListFooterComponent = useMemo(() => {
-    if (vm.isLoadingMore) {
-      return (
-        <View style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator size="small" color="#0866FF" />
-        </View>
-      );
-    }
     return null;
-  }, [vm.isLoadingMore]);
+  }, []);
 
   // ── Photo viewer state ───────────────────────────────────────────────
   // Set when the user taps a photo in a text post. Cleared by the modal's
@@ -2690,8 +2712,11 @@ function FeedScreen() {
     const posts = vm.posts.filter(
       p => p.kind !== 'product' && p.kind !== 'event' && p.kind !== 'job',
     );
-    return [...posts, ...feedProductPosts, ...feedEventPosts, ...feedJobPosts].sort(
-      (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
+    return interleaveSupplementalPosts(
+      posts,
+      feedProductPosts,
+      feedEventPosts,
+      feedJobPosts,
     );
   }, [vm.posts, feedProductPosts, feedEventPosts, feedJobPosts]);
 
@@ -2720,6 +2745,11 @@ function FeedScreen() {
   // content the user may never scroll to), we track a "high-water mark"
   // and only prefetch images for the items just beyond what's been seen.
   const prefetchedCountRef = useRef(0);
+  const feedTopPostId = mergedPosts[0]?.id;
+
+  useEffect(() => {
+    prefetchedCountRef.current = 0;
+  }, [feedTopPostId]);
 
   useEffect(() => {
     if (mergedPosts.length === 0) return;
@@ -3003,7 +3033,7 @@ function FeedScreen() {
             onMomentumScrollBegin={handleMomentumScrollBegin}
             onMomentumScrollEnd={handleMomentumScrollEnd}
             onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.8}
+            onEndReachedThreshold={1.4}
             ListFooterComponent={ListFooterComponent}
             refreshControl={
               <RefreshControl
