@@ -4,6 +4,7 @@ import { ROUTES } from './constants/routes';
 import type { StoryItem } from '../stories/domain/types/stories.types';
 import type { ChatItem } from '../messages/domain/types/messages.types';
 import type { LiveKitCallRouteParams } from '../messages/domain/types/call.types';
+import type { GroupLiveKitCallRouteParams } from '../messages/domain/types/groupCall.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -27,6 +28,7 @@ export type RootStackParamList = {
   [ROUTES.CHAT]: { chat: ChatItem };
   [ROUTES.CALLS]: undefined;
   [ROUTES.CALL_ROOM]: LiveKitCallRouteParams;
+  [ROUTES.GROUP_CALL_ROOM]: GroupLiveKitCallRouteParams;
   [ROUTES.SEARCH]: undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
   [ROUTES.NEARBY_USERS]: undefined;

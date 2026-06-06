@@ -45,6 +45,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useChatViewModel } from '../../application/view-models/useChatViewModel';
+import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
+import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 import type {
   MessageAttachment,
   MessageItem,
@@ -642,21 +644,57 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     }
   }, [recorder]);
 
+  const { startOutgoingCall } = useLiveKitCallSession();
+  const { startGroupCall } = useGroupLiveKitCallSession();
+
+  const groupId = useMemo(() => {
+    if (chat.chatType !== 'group') return '';
+    return chat.userId || chat.id.replace(/^group:/, '');
+  }, [chat.chatType, chat.id, chat.userId]);
+
   const handleStartCall = useCallback(
     (callType: 'audio' | 'video') => {
-      navigation.navigate(ROUTES.CALL_ROOM, {
+      const callParams = {
         recipientId: chat.userId,
         callType,
-        direction: 'outgoing',
+        direction: 'outgoing' as const,
         peer: {
           id: chat.userId,
           name: chat.name,
           avatar: chat.avatar,
           username: chat.username,
         },
-      });
+      };
+      startOutgoingCall(callParams);
+      navigation.navigate(ROUTES.CALL_ROOM, callParams);
     },
-    [chat.avatar, chat.name, chat.userId, chat.username, navigation],
+    [
+      chat.avatar,
+      chat.name,
+      chat.userId,
+      chat.username,
+      navigation,
+      startOutgoingCall,
+    ],
+  );
+
+  const handleStartGroupCall = useCallback(
+    (callType: 'audio' | 'video') => {
+      if (!groupId) {
+        Alert.alert('Không gọi được', 'Thiếu mã nhóm để bắt đầu cuộc gọi.');
+        return;
+      }
+      const callParams = {
+        groupId,
+        callType,
+        direction: 'outgoing' as const,
+        groupName: chat.name,
+        groupAvatar: chat.avatar,
+      };
+      startGroupCall(callParams);
+      navigation.navigate(ROUTES.GROUP_CALL_ROOM, callParams);
+    },
+    [chat.avatar, chat.name, groupId, navigation, startGroupCall],
   );
 
   return (
@@ -701,6 +739,23 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 className="h-10 w-10 items-center justify-center rounded-full"
                 activeOpacity={0.75}
                 onPress={() => handleStartCall('video')}
+              >
+                <Video size={22} color="#0000ff" />
+              </TouchableOpacity>
+            </>
+          ) : chat.chatType === 'group' ? (
+            <>
+              <TouchableOpacity
+                className="h-10 w-10 items-center justify-center rounded-full"
+                activeOpacity={0.75}
+                onPress={() => handleStartGroupCall('audio')}
+              >
+                <Phone size={21} color="#0000ff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="h-10 w-10 items-center justify-center rounded-full"
+                activeOpacity={0.75}
+                onPress={() => handleStartGroupCall('video')}
               >
                 <Video size={22} color="#0000ff" />
               </TouchableOpacity>

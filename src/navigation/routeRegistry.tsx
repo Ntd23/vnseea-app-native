@@ -46,7 +46,12 @@ import {
 } from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
 import { MyVideosScreen } from '../videos';
-import { CallRoomScreen, CallScreen, ChatScreen } from '../messages';
+import {
+  CallRoomScreen,
+  CallScreen,
+  ChatScreen,
+  GroupCallRoomScreen,
+} from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { SavedPostsScreen } from '../saved';
 import {
@@ -132,6 +137,7 @@ export function createStackRoutes(
     { name: ROUTES.CHAT, component: ChatScreen },
     { name: ROUTES.CALLS, component: CallScreen },
     { name: ROUTES.CALL_ROOM, component: CallRoomScreen },
+    { name: ROUTES.GROUP_CALL_ROOM, component: GroupCallRoomScreen },
     { name: ROUTES.SEARCH, component: SearchScreen },
     { name: ROUTES.SEARCH_FILTER, component: SearchFilterScreen },
     { name: ROUTES.NEARBY_USERS, component: NearbyUsersScreen },

@@ -18,7 +18,7 @@ describe('liveKitCallMapper', () => {
         busy: '0',
         peer: {
           user_id: 12,
-          name: 'Người nhận',
+          name: 'Receiver',
           avatar: 'https://cdn.vnseea.vn/avatar.jpg',
         },
       }),
@@ -31,20 +31,23 @@ describe('liveKitCallMapper', () => {
       busy: false,
       peer: {
         id: '12',
-        name: 'Người nhận',
+        name: 'Receiver',
         avatar: 'https://cdn.vnseea.vn/avatar.jpg',
         username: '',
       },
     });
   });
 
-  it('maps check responses and marks final statuses as finished', () => {
+  it('maps check responses and server timing', () => {
     expect(
       mapLiveKitCheckResponse({
         call_id: '91',
         call_type: 'video',
         call_status: 'no_answer',
         active: 0,
+        started_at: 1700000000,
+        server_now: 1700000042,
+        elapsed: 42,
       }),
     ).toEqual({
       callId: '91',
@@ -52,6 +55,9 @@ describe('liveKitCallMapper', () => {
       status: 'no_answer',
       active: false,
       finished: true,
+      startedAt: 1700000000,
+      serverNow: 1700000042,
+      elapsedSeconds: 42,
     });
   });
 
@@ -66,7 +72,9 @@ describe('liveKitCallMapper', () => {
         started_at: '1700000000',
       },
       current_user: { id: 1, name: 'Admin', avatar: 'me.jpg' },
-      peer: { id: 2, name: 'Bạn bè', avatar: 'peer.jpg' },
+      peer: { id: 2, name: 'Friend', avatar: 'peer.jpg' },
+      server_now: 1700000015,
+      elapsed: 15,
       livekit: {
         ws_url: 'wss://livekit.vnseea.vn',
         token: 'jwt-token',
@@ -76,6 +84,8 @@ describe('liveKitCallMapper', () => {
 
     expect(payload.wsUrl).toBe('wss://livekit.vnseea.vn');
     expect(payload.token).toBe('jwt-token');
+    expect(payload.serverNow).toBe(1700000015);
+    expect(payload.elapsedSeconds).toBe(15);
     expect(JSON.stringify(payload)).not.toContain('must-not-map');
   });
 

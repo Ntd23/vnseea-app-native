@@ -24,9 +24,14 @@ type CallPhase =
   | 'error';
 
 type CloseReason = 'ended' | 'cancelled' | 'declined' | 'no_answer' | 'missed';
+type CallIdentity = {
+  callId: string;
+  callType: LiveKitCallRouteParams['callType'];
+};
 
 const OUTGOING_RING_TIMEOUT_MS = 43_000;
 const OUTGOING_POLL_INTERVAL_MS = 2_000;
+const CONNECTED_POLL_INTERVAL_MS = 2_000;
 
 export function useLiveKitCallRoom(params: LiveKitCallRouteParams) {
   const repository = useMemo(() => createLiveKitCallRepository(), []);
@@ -39,14 +44,6 @@ export function useLiveKitCallRoom(params: LiveKitCallRouteParams) {
   const [error, setError] = useState('');
   const startedAtRef = useRef(0);
   const closeSentRef = useRef(false);
-
-  const callIdentity = useMemo(
-    () => ({
-      callId,
-      callType: params.callType,
-    }),
-    [callId, params.callType],
-  );
 
   const durationSeconds = useCallback(() => {
     if (!startedAtRef.current) return 0;
@@ -87,14 +84,17 @@ export function useLiveKitCallRoom(params: LiveKitCallRouteParams) {
     [callId, durationSeconds, nativeCallUuid, params.callType, repository],
   );
 
-  const connectPayload = useCallback(async () => {
-    setPhase('connecting');
-    const nextPayload = await repository.getJoinPayload(callIdentity);
-    setPayload(nextPayload);
-    startedAtRef.current = Date.now();
-    if (nativeCallUuid) markNativeCallConnected(nativeCallUuid);
-    setPhase('connected');
-  }, [callIdentity, nativeCallUuid, repository]);
+  const connectPayload = useCallback(
+    async (identity: CallIdentity, callUuid: string) => {
+      setPhase('connecting');
+      const nextPayload = await repository.getJoinPayload(identity);
+      setPayload(nextPayload);
+      startedAtRef.current = Date.now();
+      if (callUuid) markNativeCallConnected(callUuid);
+      setPhase('connected');
+    },
+    [repository],
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -121,6 +121,10 @@ export function useLiveKitCallRoom(params: LiveKitCallRouteParams) {
       }
 
       const nextCallId = created.callId;
+      if (!nextCallId || nextCallId === '0') {
+        throw new Error('Không tạo được cuộc gọi.');
+      }
+
       const nextUuid = createNativeCallUuid(nextCallId, params.callType);
       setCallId(nextCallId);
       setNativeCallUuid(nextUuid);
@@ -155,7 +159,13 @@ export function useLiveKitCallRoom(params: LiveKitCallRouteParams) {
         if (result.status === 'answered' && result.active) {
           if (timeout) clearTimeout(timeout);
           if (interval) clearInterval(interval);
-          await connectPayload();
+          await connectPayload(
+            {
+              callId: nextCallId,
+              callType: params.callType,
+            },
+            nextUuid,
+          );
         } else if (result.finished) {
           if (timeout) clearTimeout(timeout);
           if (interval) clearInterval(interval);
@@ -169,13 +179,23 @@ export function useLiveKitCallRoom(params: LiveKitCallRouteParams) {
       if (!params.callId) {
         throw new Error('Thiếu mã cuộc gọi đến.');
       }
+
+      const nextUuid = createNativeCallUuid(params.callId, params.callType);
+      setCallId(params.callId);
+      setNativeCallUuid(nextUuid);
       setPhase('answering');
       await repository.answerCall({
         callId: params.callId,
         callType: params.callType,
       });
       if (!isMounted) return;
-      await connectPayload();
+      await connectPayload(
+        {
+          callId: params.callId,
+          callType: params.callType,
+        },
+        nextUuid,
+      );
     }
 
     const boot =
@@ -205,6 +225,28 @@ export function useLiveKitCallRoom(params: LiveKitCallRouteParams) {
     params.recipientId,
     repository,
   ]);
+
+  useEffect(() => {
+    if (phase !== 'connected' || !callId) return;
+
+    const interval = setInterval(async () => {
+      const result = await repository
+        .checkCall({
+          callId,
+          callType: params.callType,
+        })
+        .catch(() => null);
+
+      if (!result?.finished) return;
+
+      closeSentRef.current = true;
+      endNativeCall(nativeCallUuid);
+      setPayload(null);
+      setPhase('ended');
+    }, CONNECTED_POLL_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [callId, nativeCallUuid, params.callType, phase, repository]);
 
   const statusText = useMemo(() => {
     const statusMap: Record<CallPhase, string> = {

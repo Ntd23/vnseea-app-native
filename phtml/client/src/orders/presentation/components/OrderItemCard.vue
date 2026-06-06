@@ -2,7 +2,7 @@
 <template>
   <article
     v-if="variant === 'detail'"
-    class="surface-card group order-item-article-detail p-5 transition-all duration-500 hover:bg-white hover:ring-primary-100 ring-1 ring-secondary-100 bg-secondary-50/10"
+    class="surface-card group order-item-article-detail bg-secondary-50/10 p-4 ring-1 ring-secondary-100 transition-all duration-500 hover:bg-white hover:ring-primary-100 sm:p-5"
   >
     <div class="order-item-image-wrapper">
       <div class="order-item-image-bg" :style="{ backgroundImage: item.imageStyle || orderItemFallbackBackground }" />
@@ -17,28 +17,28 @@
     <div class="min-w-0 flex-1 space-y-4">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div class="min-w-0 space-y-1">
-          <p class="text-lg font-black text-secondary-900 tracking-tight group-hover:text-secondary-900 transition-colors">
+          <p class="break-words text-base font-extrabold text-secondary-900 transition-colors group-hover:text-secondary-900 sm:text-lg">
             {{ $t(item.name) }}
           </p>
-          <div class="flex items-center gap-2">
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
             <div class="h-1.5 w-1.5 rounded-full bg-primary-500" />
-            <p class="text-[11px] font-black uppercase tracking-widest text-secondary-400">
+            <p class="min-w-0 break-words text-[11px] font-bold uppercase tracking-[0.06em] text-secondary-400">
               {{ detailMetaText }}
             </p>
           </div>
         </div>
 
-        <p class="text-xl font-black text-secondary-900 tracking-tight">
+        <p class="break-words text-lg font-extrabold text-secondary-900 sm:text-xl">
           {{ formatOrderCurrency(item.price * item.quantity) }}
         </p>
       </div>
 
       <div class="flex flex-wrap gap-2 pt-1">
-        <UBadge color="white" variant="soft" class="rounded-lg bg-white ring-1 ring-secondary-100 px-3 py-1.5 font-black text-[10px] uppercase tracking-widest text-secondary-500 shadow-sm">
+        <UBadge color="white" variant="soft" class="rounded-lg bg-white ring-1 ring-secondary-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-secondary-500 shadow-sm">
           <Icon name="i-ph-hash-duotone" class="mr-1.5 h-3.5 w-3.5" />
           {{ $t("orders.card.qty", { count: item.quantity }) }}
         </UBadge>
-        <UBadge v-if="paymentMethod" color="white" variant="soft" class="rounded-lg bg-white ring-1 ring-secondary-100 px-3 py-1.5 font-black text-[10px] uppercase tracking-widest text-secondary-500 shadow-sm">
+        <UBadge v-if="paymentMethod" color="white" variant="soft" class="rounded-lg bg-white ring-1 ring-secondary-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-secondary-500 shadow-sm">
           <Icon name="i-ph-credit-card-duotone" class="mr-1.5 h-3.5 w-3.5" />
           {{ $t(paymentMethod) }}
         </UBadge>

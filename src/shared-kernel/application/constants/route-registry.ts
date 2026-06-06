@@ -61,6 +61,7 @@ export const apiRoutes = {
     typing: 'set-chat-typing-status',
     delete: 'delete-conversation',
     livekit: 'livekit',
+    groupCall: 'group_call',
   },
   products: {
     get: 'get-products',

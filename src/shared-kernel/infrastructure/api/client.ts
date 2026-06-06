@@ -78,12 +78,26 @@ apiClient.interceptors.request.use(config => {
 
   // DEBUG: Log the full URL that will be sent
   const url = config.url || '';
-  const fullUrl = `${String(config.baseURL ?? '').replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
-  const queryString = new URLSearchParams(config.params as Record<string, string>).toString();
-  console.log('[apiClient] Full URL:', fullUrl + (queryString ? '?' + queryString : ''));
+  const fullUrl = `${String(config.baseURL ?? '').replace(
+    /\/+$/,
+    '',
+  )}/${url.replace(/^\/+/, '')}`;
+  const queryString = new URLSearchParams(
+    config.params as Record<string, string>,
+  ).toString();
+  console.log(
+    '[apiClient] Full URL:',
+    fullUrl + (queryString ? '?' + queryString : ''),
+  );
   console.log('[apiClient] Request method:', config.method?.toUpperCase());
-  console.log('[apiClient] access_token in params:', accessToken ? 'YES (len=' + accessToken.length + ')' : 'NO');
-  console.log('[apiClient] server_key in params:', apiConfig.serverKey ? 'YES (len=' + apiConfig.serverKey.length + ')' : 'NO');
+  console.log(
+    '[apiClient] access_token in params:',
+    accessToken ? 'YES (len=' + accessToken.length + ')' : 'NO',
+  );
+  console.log(
+    '[apiClient] server_key in params:',
+    apiConfig.serverKey ? 'YES (len=' + apiConfig.serverKey.length + ')' : 'NO',
+  );
 
   return config;
 });
@@ -108,7 +122,10 @@ apiClient.interceptors.request.use(config => {
     }
     console.log('[apiClient] POST body after transform:', config.data);
     console.log('[apiClient] Body contains id?', config.data?.includes('id='));
-    console.log('[apiClient] Body contains reaction?', config.data?.includes('reaction='));
+    console.log(
+      '[apiClient] Body contains reaction?',
+      config.data?.includes('reaction='),
+    );
   } else if (isFormData(config.data)) {
     console.log('[apiClient] FormData detected - preserving multipart format');
   }
@@ -129,9 +146,9 @@ apiClient.interceptors.response.use(
   },
   error => {
     if (axios.isAxiosError(error) && !error.response) {
-      const url = [error.config?.baseURL, error.config?.url]
-        .filter(Boolean)
-        .join('');
+      const baseUrl = String(error.config?.baseURL ?? '').replace(/\/+$/, '');
+      const endpoint = String(error.config?.url ?? '').replace(/^\/+/, '');
+      const url = [baseUrl, endpoint].filter(Boolean).join('/');
       throw new ApiBridgeError(`${error.message}: ${url}`, error.code);
     }
 

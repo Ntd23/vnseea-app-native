@@ -121,6 +121,9 @@ export function mapLiveKitCheckResponse(
         'ended',
         'finished',
       ].includes(status),
+    startedAt: resolveNumber(raw.started_at),
+    serverNow: resolveNumber(raw.server_now),
+    elapsedSeconds: resolveNumber(raw.elapsed),
   };
 }
 
@@ -133,6 +136,8 @@ export function mapLiveKitJoinPayload(response: unknown): LiveKitJoinPayload {
     peer: mapLiveKitPeer(raw.peer),
     wsUrl: resolveString(livekit.ws_url),
     token: resolveString(livekit.token),
+    serverNow: resolveNumber(raw.server_now),
+    elapsedSeconds: resolveNumber(raw.elapsed),
   };
 }
 

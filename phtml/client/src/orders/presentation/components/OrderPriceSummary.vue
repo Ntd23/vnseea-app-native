@@ -1,18 +1,18 @@
 <!-- English description: Order price summary card with shared locale-aware currency formatting. -->
 <template>
-  <div :class="cardClass">
-    <p class="text-[10px] font-black uppercase tracking-[0.3em] text-secondary-900 pl-1">
+  <div class="min-w-0" :class="cardClass">
+    <p class="pl-1 text-[10px] font-bold uppercase tracking-[0.06em] text-secondary-900">
       {{ $t("orders.summary.totalPayment") }}
     </p>
 
     <div class="mt-5 space-y-4">
-      <div class="flex items-center justify-between gap-4">
-        <span class="text-xs font-black uppercase tracking-widest text-secondary-500">{{ $t("orders.summary.subtotal") }}</span>
-        <span class="text-sm font-black text-secondary-900">{{ formatOrderCurrency(subtotal) }}</span>
+      <div class="flex min-w-0 items-center justify-between gap-3">
+        <span class="min-w-0 text-xs font-bold uppercase tracking-[0.06em] text-secondary-500">{{ $t("orders.summary.subtotal") }}</span>
+        <span class="shrink-0 text-sm font-extrabold text-secondary-900">{{ formatOrderCurrency(subtotal) }}</span>
       </div>
-      <div class="flex items-center justify-between gap-4">
-        <span class="text-xs font-black uppercase tracking-widest text-secondary-500">{{ $t("orders.summary.shippingFee") }}</span>
-        <span class="text-sm font-black text-secondary-900">
+      <div class="flex min-w-0 items-center justify-between gap-3">
+        <span class="min-w-0 text-xs font-bold uppercase tracking-[0.06em] text-secondary-500">{{ $t("orders.summary.shippingFee") }}</span>
+        <span class="shrink-0 text-sm font-extrabold text-secondary-900">
           {{ order.shippingFee > 0 ? formatOrderCurrency(order.shippingFee) : $t("orders.summary.free") }}
         </span>
       </div>
@@ -20,12 +20,12 @@
 
     <div class="mt-6 border-t border-secondary-100" />
 
-    <div class="mt-6 flex items-end justify-between gap-4">
-      <div class="space-y-1">
-        <p class="text-[10px] font-black uppercase tracking-[0.2em] text-secondary-400 pl-1">
+    <div class="mt-6 flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+      <div class="min-w-0 space-y-1">
+        <p class="pl-1 text-[10px] font-bold uppercase tracking-[0.06em] text-secondary-400">
           {{ $t("orders.summary.totalOrder") }}
         </p>
-        <p class="text-3xl font-black tracking-tight text-secondary-900 leading-none">
+        <p class="break-words text-2xl font-extrabold text-secondary-900 leading-none sm:text-3xl">
           {{ formatOrderCurrency(order.total) }}
         </p>
       </div>

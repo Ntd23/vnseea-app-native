@@ -13,6 +13,10 @@ import type {
   LiveKitCallPeer,
   LiveKitCallType,
 } from '../../domain/types/call.types';
+import type {
+  GroupLiveKitGroup,
+  IncomingGroupLiveKitCall,
+} from '../../domain/types/groupCall.types';
 
 type NativeCallListeners = {
   onAnswer?: (callUuid: string) => void;
@@ -21,9 +25,12 @@ type NativeCallListeners = {
 };
 
 type ActiveNativeCall = {
+  context: 'direct' | 'group';
   callId?: string;
+  groupId?: string;
   callType: LiveKitCallType;
   peer?: LiveKitCallPeer;
+  group?: GroupLiveKitGroup;
   usesNativeCallUi: boolean;
 };
 
@@ -62,11 +69,65 @@ function readPushLiveKitCall(payload: unknown): IncomingLiveKitCall | null {
   };
 }
 
+function readPushLiveKitGroupCall(
+  payload: unknown,
+): IncomingGroupLiveKitCall | null {
+  const provider = readPushString(payload, 'provider');
+  const context = readPushString(payload, 'call_context');
+  const callId = readPushString(payload, 'call_id');
+  const groupId = readPushString(payload, 'group_id');
+  if (provider !== 'livekit_group' && context !== 'group') return null;
+  if (!callId || !groupId) return null;
+
+  const callType =
+    readPushString(payload, 'call_type') === 'audio' ? 'audio' : 'video';
+  return {
+    callId,
+    groupId,
+    callType,
+    provider: 'livekit',
+    roomName: readPushString(payload, 'room_name'),
+    group: {
+      id: groupId,
+      name: readPushString(payload, 'group_name') || 'Nhóm',
+      avatar: readPushString(payload, 'group_avatar'),
+    },
+    caller: {
+      id:
+        readPushString(payload, 'caller_id') ||
+        readPushString(payload, 'from_id'),
+      name:
+        readPushString(payload, 'caller_name') ||
+        readPushString(payload, 'name') ||
+        'Người dùng',
+      avatar:
+        readPushString(payload, 'caller_avatar') ||
+        readPushString(payload, 'avatar'),
+    },
+    participantCount: 0,
+  };
+}
+
 function rememberNativeCallFromPayload(callUuid: string, payload: unknown) {
+  const incomingGroupCall = readPushLiveKitGroupCall(payload);
+  if (incomingGroupCall) {
+    activeCalls.set(callUuid, {
+      context: 'group',
+      callId: incomingGroupCall.callId,
+      groupId: incomingGroupCall.groupId,
+      callType: incomingGroupCall.callType,
+      peer: incomingGroupCall.caller,
+      group: incomingGroupCall.group,
+      usesNativeCallUi: true,
+    });
+    return;
+  }
+
   const incomingCall = readPushLiveKitCall(payload);
   if (!incomingCall) return;
 
   activeCalls.set(callUuid, {
+    context: 'direct',
     callId: incomingCall.callId,
     callType: incomingCall.callType,
     peer: incomingCall.peer,
@@ -108,6 +169,20 @@ export function createNativeCallUuid(
   const seed = callId
     ? `vnseea-livekit|${callType}|${callId}`
     : `vnseea-livekit|${Date.now()}|${Math.random()}`;
+  const hex = MD5(seed).toString();
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
+    12,
+    16,
+  )}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+export function createNativeGroupCallUuid(
+  callId?: string,
+  callType: LiveKitCallType = 'video',
+) {
+  const seed = callId
+    ? `vnseea-livekit-group|${callType}|${callId}`
+    : `vnseea-livekit-group|${Date.now()}|${Math.random()}`;
   const hex = MD5(seed).toString();
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
     12,
@@ -186,6 +261,16 @@ export async function configureNativeCallService() {
       console.log('[LiveKitCall] VoIP token registered:', token ? 'YES' : 'NO');
     });
     RNVoipPushNotification.addEventListener('notification', payload => {
+      const incomingGroupCall = readPushLiveKitGroupCall(payload);
+      if (incomingGroupCall) {
+        displayNativeIncomingGroupCall(incomingGroupCall)
+          .then(callUuid =>
+            RNVoipPushNotification.onVoipNotificationCompleted(callUuid),
+          )
+          .catch(() => undefined);
+        return;
+      }
+
       const incomingCall = readPushLiveKitCall(payload);
       if (!incomingCall) return;
 
@@ -217,6 +302,18 @@ export async function configureNativeCallService() {
       const incomingCall = readPushLiveKitCall(
         event.getNotification().additionalData,
       );
+      const incomingGroupCall = readPushLiveKitGroupCall(
+        event.getNotification().additionalData,
+      );
+      if (incomingGroupCall) {
+        event.preventDefault();
+        if (Platform.OS !== 'android') {
+          displayNativeIncomingGroupCall(incomingGroupCall).catch(
+            () => undefined,
+          );
+        }
+        return;
+      }
       if (!incomingCall) return;
 
       event.preventDefault();
@@ -231,6 +328,15 @@ export async function configureNativeCallService() {
       const incomingCall = readPushLiveKitCall(
         event.notification.additionalData,
       );
+      const incomingGroupCall = readPushLiveKitGroupCall(
+        event.notification.additionalData,
+      );
+      if (incomingGroupCall) {
+        displayNativeIncomingGroupCall(incomingGroupCall).catch(
+          () => undefined,
+        );
+        return;
+      }
       if (!incomingCall) return;
 
       displayNativeIncomingCall(incomingCall).catch(() => undefined);
@@ -259,6 +365,7 @@ export async function startNativeOutgoingCall(params: {
 }) {
   await configureNativeCallService();
   activeCalls.set(params.callUuid, {
+    context: 'direct',
     callType: params.callType,
     peer: params.peer,
     usesNativeCallUi: Platform.OS === 'ios',
@@ -279,6 +386,7 @@ export async function displayNativeIncomingCall(call: IncomingLiveKitCall) {
   await configureNativeCallService();
   const callUuid = createNativeCallUuid(call.callId, call.callType);
   activeCalls.set(callUuid, {
+    context: 'direct',
     callId: call.callId,
     callType: call.callType,
     peer: call.peer,
@@ -303,15 +411,50 @@ export async function displayNativeIncomingCall(call: IncomingLiveKitCall) {
   return callUuid;
 }
 
+export async function displayNativeIncomingGroupCall(
+  call: IncomingGroupLiveKitCall,
+) {
+  await configureNativeCallService();
+  const callUuid = createNativeGroupCallUuid(call.callId, call.callType);
+  activeCalls.set(callUuid, {
+    context: 'group',
+    callId: call.callId,
+    groupId: call.groupId,
+    callType: call.callType,
+    peer: call.caller,
+    group: call.group,
+    usesNativeCallUi: true,
+  });
+  RNCallKeep.displayIncomingCall(
+    callUuid,
+    call.groupId,
+    call.group.name,
+    'generic',
+    call.callType === 'video',
+    {
+      callId: call.callId,
+      groupId: call.groupId,
+      callType: call.callType,
+      provider: 'livekit_group',
+      call_context: 'group',
+      group_name: call.group.name,
+      group_avatar: call.group.avatar,
+      caller_id: call.caller.id,
+      caller_name: call.caller.name,
+      caller_avatar: call.caller.avatar,
+      uuid: callUuid,
+    },
+  );
+  return callUuid;
+}
+
 export function markNativeCallConnected(callUuid: string) {
   const nativeCall = activeCalls.get(callUuid);
   if (!nativeCall?.usesNativeCallUi) return;
 
   if (Platform.OS === 'ios') {
     RNCallKeep.reportConnectedOutgoingCallWithUUID(callUuid);
-    return;
   }
-  RNCallKeep.setCurrentCallActive(callUuid);
 }
 
 export function endNativeCall(callUuid?: string, reason?: number) {

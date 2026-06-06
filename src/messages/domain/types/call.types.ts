@@ -40,6 +40,8 @@ export type LiveKitJoinPayload = {
   peer: LiveKitCallPeer;
   wsUrl: string;
   token: string;
+  serverNow: number;
+  elapsedSeconds: number;
 };
 
 export type LiveKitCallCreateResult = {
@@ -58,6 +60,9 @@ export type LiveKitCallCheckResult = {
   status: LiveKitCallStatus;
   active: boolean;
   finished: boolean;
+  startedAt: number;
+  serverNow: number;
+  elapsedSeconds: number;
 };
 
 export type IncomingLiveKitCall = {

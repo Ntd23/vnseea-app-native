@@ -8250,6 +8250,12 @@ function Wo_GetAllOffers($filter_data = array())
 		$user_id = Wo_Secure($filter_data['user_id']);
 		$query_one .= " AND `user_id` = '{$user_id}'";
 	}
+	if (!empty($filter_data['page_id'])) {
+		if (is_numeric($filter_data['page_id'])) {
+			$page_id = Wo_Secure($filter_data['page_id']);
+			$query_one .= " AND `page_id` = '{$page_id}'";
+		}
+	}
 	$query_one .= " ORDER BY `id` DESC";
 	if (!empty($filter_data['limit'])) {
 		if (is_numeric($filter_data['limit'])) {

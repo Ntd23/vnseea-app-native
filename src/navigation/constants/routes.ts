@@ -17,6 +17,7 @@ export const ROUTES = {
   CHAT: 'Chat',
   CALLS: 'Calls',
   CALL_ROOM: 'CallRoom',
+  GROUP_CALL_ROOM: 'GroupCallRoom',
   SEARCH: 'Search',
   SEARCH_FILTER: 'SearchFilter',
   NEARBY_USERS: 'NearbyUsers',

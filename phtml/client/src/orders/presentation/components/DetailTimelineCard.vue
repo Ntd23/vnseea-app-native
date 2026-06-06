@@ -1,6 +1,7 @@
+<!-- English description: Buyer order detail timeline card with responsive progress events. -->
 <template>
-  <section class="surface-card group p-6 sm:p-8 space-y-8 ring-1 ring-secondary-100 shadow-xl transition-all duration-500">
-    <p class="text-[10px] font-black uppercase tracking-[0.3em] text-secondary-900 pl-1">
+  <section class="surface-card group min-w-0 space-y-6 p-4 ring-1 ring-secondary-100 shadow-xl transition-all duration-500 sm:space-y-8 sm:p-6 lg:p-8">
+    <p class="pl-1 text-[10px] font-bold uppercase tracking-[0.06em] text-secondary-900">
       {{ $t("orders.card.orderProgress") }}
     </p>
 
@@ -8,7 +9,7 @@
       <div
         v-for="event in events"
         :key="event.key"
-        class="group/event flex items-start gap-4 relative"
+        class="group/event relative flex min-w-0 items-start gap-3 sm:gap-4"
       >
         <!-- Timeline Link Line -->
         <div 
@@ -26,9 +27,9 @@
         </div>
 
         <!-- Content Card -->
-        <div class="min-w-0 flex-1 surface-card p-5 group-hover/event:ring-primary-100 transition-all duration-300" :class="event.done ? 'bg-primary-50/20 ring-1 ring-primary-50' : 'bg-white ring-1 ring-secondary-100'">
+        <div class="surface-card min-w-0 flex-1 p-4 transition-all duration-300 group-hover/event:ring-primary-100 sm:p-5" :class="event.done ? 'bg-primary-50/20 ring-1 ring-primary-50' : 'bg-white ring-1 ring-secondary-100'">
           <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p class="text-[15px] font-black text-secondary-900 group-hover/event:text-secondary-900 transition-colors">
+            <p class="break-words text-sm font-extrabold text-secondary-900 transition-colors group-hover/event:text-secondary-900 sm:text-[15px]">
               {{ $t(event.label) }}
             </p>
             <UBadge v-if="event.time" variant="soft" color="white" class="rounded-lg bg-white/50 ring-1 ring-secondary-100 font-black text-[10px] px-2.5 py-1 text-secondary-400">

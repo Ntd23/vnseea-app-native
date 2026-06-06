@@ -4,7 +4,12 @@ import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
-import { IncomingCallWatcher } from './src/messages';
+import {
+  IncomingCallWatcher,
+  GroupLiveKitCallSessionProvider,
+  LiveKitCallSessionProvider,
+  LiveKitMiniCallBar,
+} from './src/messages';
 import { initializePushNotifications } from './src/shared-kernel/infrastructure/push/oneSignalPush';
 
 // GestureHandlerRootView must wrap the entire app tree for any
@@ -18,8 +23,13 @@ function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AppNavigator />
-        <IncomingCallWatcher />
+        <LiveKitCallSessionProvider>
+          <GroupLiveKitCallSessionProvider>
+            <AppNavigator />
+            <IncomingCallWatcher />
+            <LiveKitMiniCallBar />
+          </GroupLiveKitCallSessionProvider>
+        </LiveKitCallSessionProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
