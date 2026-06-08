@@ -29,8 +29,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
-import type { GroupLiveKitParticipant } from '../../domain/types/groupCall.types';
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
+import type { GroupLiveKitParticipant } from '../../domain/types/groupCall.types';
 
 type GroupCallRoomScreenProps = NativeStackScreenProps<
   RootStackParamList,
@@ -103,24 +103,23 @@ function ParticipantTile({
         </View>
       )}
 
-      <View className="absolute bottom-2 left-2 right-2 flex-row items-center">
-        <View className="mr-2 flex-row gap-1">
-          {item.isMicrophoneMuted ? (
-            <View className="h-8 w-8 items-center justify-center rounded-full bg-red-600">
-              <MicOff size={16} color="#ffffff" />
-            </View>
-          ) : null}
-          {!isAudioCall && item.isCameraMuted ? (
-            <View className="h-8 w-8 items-center justify-center rounded-full bg-slate-950/85">
-              <CameraOff size={16} color="#ffffff" />
-            </View>
-          ) : null}
-        </View>
-        <View className="flex-1 rounded-full bg-slate-950/75 px-3 py-1.5">
-          <Text className="text-xs font-bold text-white" numberOfLines={1}>
-            {item.isLocal ? 'Bạn' : item.name || 'Người dùng'}
-          </Text>
-        </View>
+      <View className="absolute bottom-2 left-2 max-w-[68%] rounded-full bg-slate-950/75 px-3 py-1.5">
+        <Text className="text-xs font-bold text-white" numberOfLines={1}>
+          {item.isLocal ? 'Bạn' : item.name || 'Người dùng'}
+        </Text>
+      </View>
+
+      <View className="absolute bottom-2 right-2 flex-row gap-1">
+        {item.isMicrophoneMuted ? (
+          <View className="h-8 w-8 items-center justify-center rounded-full bg-red-600">
+            <MicOff size={16} color="#ffffff" />
+          </View>
+        ) : null}
+        {!isAudioCall && item.isCameraMuted ? (
+          <View className="h-8 w-8 items-center justify-center rounded-full bg-slate-950/85">
+            <CameraOff size={16} color="#ffffff" />
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -140,6 +139,7 @@ function InviteMembersModal({
 
   useEffect(() => {
     if (!visible) return;
+
     setIsLoading(true);
     setSelectedIds(new Set());
     getCandidates()
@@ -166,6 +166,7 @@ function InviteMembersModal({
       onClose();
       return;
     }
+
     setIsLoading(true);
     addMembers(selected)
       .then(() => onClose())
@@ -272,11 +273,7 @@ function GroupCallControls() {
   return (
     <View className="items-center pb-8">
       <View className="flex-row items-center justify-center gap-3 rounded-[28px] bg-slate-950/95 px-4 py-3">
-        <ControlButton
-          onPress={() => {
-            toggleSpeaker().catch(() => undefined);
-          }}
-        >
+        <ControlButton onPress={() => toggleSpeaker().catch(() => undefined)}>
           {session?.isSpeakerEnabled ? (
             <Volume2 size={23} color="#ffffff" />
           ) : (
@@ -284,11 +281,7 @@ function GroupCallControls() {
           )}
         </ControlButton>
 
-        <ControlButton
-          onPress={() => {
-            toggleMic().catch(() => undefined);
-          }}
-        >
+        <ControlButton onPress={() => toggleMic().catch(() => undefined)}>
           {session?.isLocalMicrophoneEnabled ? (
             <Mic size={23} color="#ffffff" />
           ) : (
@@ -299,9 +292,7 @@ function GroupCallControls() {
         {isVideo ? (
           <>
             <ControlButton
-              onPress={() => {
-                toggleCamera().catch(() => undefined);
-              }}
+              onPress={() => toggleCamera().catch(() => undefined)}
             >
               {session?.isLocalCameraEnabled ? (
                 <Video size={23} color="#ffffff" />
@@ -310,9 +301,7 @@ function GroupCallControls() {
               )}
             </ControlButton>
             <ControlButton
-              onPress={() => {
-                switchCamera().catch(() => undefined);
-              }}
+              onPress={() => switchCamera().catch(() => undefined)}
             >
               <RefreshCw size={22} color="#ffffff" />
             </ControlButton>
@@ -323,12 +312,7 @@ function GroupCallControls() {
           <UserPlus size={23} color="#ffffff" />
         </ControlButton>
 
-        <ControlButton
-          isDanger
-          onPress={() => {
-            leaveCall().catch(() => undefined);
-          }}
-        >
+        <ControlButton isDanger onPress={() => leaveCall().catch(() => undefined)}>
           <PhoneOff size={26} color="#ffffff" />
         </ControlButton>
       </View>
@@ -380,11 +364,13 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
           <Text className="text-lg font-bold text-white" numberOfLines={1}>
             {groupName}
           </Text>
-          <Text className="mt-1 text-sm text-slate-300">
-            {session?.phase === 'connected'
-              ? formatCallDuration(session.elapsedSeconds)
-              : statusText}
-          </Text>
+          {session?.phase === 'connected' || statusText ? (
+            <Text className="mt-1 text-sm text-slate-300">
+              {session?.phase === 'connected'
+                ? formatCallDuration(session.elapsedSeconds)
+                : statusText}
+            </Text>
+          ) : null}
         </View>
         <View className="h-11 w-11" />
       </View>
@@ -400,9 +386,11 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
           <Text className="mt-6 text-center text-2xl font-bold text-white">
             {groupName}
           </Text>
-          <Text className="mt-3 text-center text-base text-slate-300">
-            {statusText}
-          </Text>
+          {statusText ? (
+            <Text className="mt-3 text-center text-base text-slate-300">
+              {statusText}
+            </Text>
+          ) : null}
           {session?.phase !== 'error' && session?.phase !== 'ended' ? (
             <ActivityIndicator className="mt-8" color="#0000ff" size="large" />
           ) : null}

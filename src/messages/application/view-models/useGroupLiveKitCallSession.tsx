@@ -23,6 +23,7 @@ import {
   type MediaStreamTrack,
 } from '@livekit/react-native-webrtc';
 import {
+  ConnectionState,
   MediaDeviceFailure,
   ParticipantEvent,
   Room,
@@ -119,6 +120,15 @@ const LIVEKIT_ROOM_OPTIONS = {
 const GroupLiveKitCallSessionContext =
   createContext<GroupLiveKitCallSessionContextValue | null>(null);
 
+function disconnectRoomSafely(room: Room | null) {
+  if (!room || room.state === ConnectionState.Disconnected) return;
+  try {
+    room.disconnect(true).catch(() => undefined);
+  } catch {
+    // Ignore disconnect races while LiveKit is still connecting.
+  }
+}
+
 function resolveTrackStreamUrl(track?: {
   mediaStream?: unknown;
   mediaStreamTrack?: unknown;
@@ -182,7 +192,7 @@ function resolveStatusText(session: GroupLiveKitCallSession | null) {
   if (!session) return '';
   const statusMap: Record<GroupCallPhase, string> = {
     initializing: 'Đang chuẩn bị cuộc gọi nhóm...',
-    connecting: 'Đang kết nối LiveKit...',
+    connecting: '',
     connected: 'Đang trong cuộc gọi nhóm',
     ended: 'Cuộc gọi nhóm đã kết thúc',
     error: session.error || 'Không thể thực hiện cuộc gọi nhóm.',
@@ -503,15 +513,19 @@ export function GroupLiveKitCallSessionProvider({
 
   const patchSession = useCallback(
     (patch: Partial<GroupLiveKitCallSession>) => {
-      setSession(current => (current ? { ...current, ...patch } : current));
+      setSession(current => {
+        const next = current ? { ...current, ...patch } : current;
+        sessionRef.current = next;
+        return next;
+      });
     },
     [],
   );
 
   const patchParticipants = useCallback(
     (participants: GroupLiveKitParticipant[]) => {
-      setSession(current =>
-        current
+      setSession(current => {
+        const next = current
           ? {
               ...current,
               participants: mergeParticipants(
@@ -519,8 +533,10 @@ export function GroupLiveKitCallSessionProvider({
                 participants,
               ),
             }
-          : current,
-      );
+          : current;
+        sessionRef.current = next;
+        return next;
+      });
     },
     [],
   );
@@ -528,11 +544,14 @@ export function GroupLiveKitCallSessionProvider({
   const replaceServerParticipants = useCallback(
     (participants: GroupLiveKitParticipant[]) => {
       setSession(current => {
-        if (!current) return current;
+        if (!current) {
+          sessionRef.current = current;
+          return current;
+        }
         const currentById = new Map(
           current.participants.map(item => [item.id, item]),
         );
-        return {
+        const next = {
           ...current,
           participants: participants.map(item => {
             const currentItem = currentById.get(item.id);
@@ -546,6 +565,8 @@ export function GroupLiveKitCallSessionProvider({
             };
           }),
         };
+        sessionRef.current = next;
+        return next;
       });
     },
     [],
@@ -557,7 +578,7 @@ export function GroupLiveKitCallSessionProvider({
     const room = activeRoomRef.current;
     activeRoomRef.current = null;
     setActiveRoom(null);
-    room?.disconnect(true).catch(() => undefined);
+    disconnectRoomSafely(room);
   }, []);
 
   const finishSession = useCallback(
@@ -566,8 +587,8 @@ export function GroupLiveKitCallSessionProvider({
       disconnectActiveRoom();
       AudioSession.stopAudioSession().catch(() => undefined);
       if (current?.nativeCallUuid) endNativeCall(current.nativeCallUuid);
-      setSession(currentSession =>
-        currentSession
+      setSession(currentSession => {
+        const next = currentSession
           ? {
               ...currentSession,
               ...patch,
@@ -575,8 +596,10 @@ export function GroupLiveKitCallSessionProvider({
               payload: null,
               isMinimized: false,
             }
-          : null,
-      );
+          : null;
+        sessionRef.current = next;
+        return next;
+      });
       exitGroupCallRoomIfFocused();
     },
     [disconnectActiveRoom],
@@ -620,8 +643,8 @@ export function GroupLiveKitCallSessionProvider({
       activeRoomRef.current = nextRoom;
       setActiveRoom(nextRoom);
       const elapsedSeconds = payload.elapsedSeconds;
-      setSession(current =>
-        current
+      setSession(current => {
+        const next: GroupLiveKitCallSession | null = current
           ? {
               ...current,
               callId,
@@ -642,8 +665,10 @@ export function GroupLiveKitCallSessionProvider({
               phase: 'connecting',
               isMinimized: false,
             }
-          : current,
-      );
+          : current;
+        sessionRef.current = next;
+        return next;
+      });
       try {
         await nextRoom.connect(payload.wsUrl, payload.token);
         await Promise.all([
@@ -675,12 +700,12 @@ export function GroupLiveKitCallSessionProvider({
       }
 
       leaveSentRef.current = false;
-      setSession(
-        buildInitialSession({
-          ...params,
-          direction: 'outgoing',
-        }),
-      );
+      const initialSession = buildInitialSession({
+        ...params,
+        direction: 'outgoing',
+      });
+      sessionRef.current = initialSession;
+      setSession(initialSession);
 
       async function boot() {
         const granted = await requestCallMediaPermissions(params.callType);
@@ -727,7 +752,7 @@ export function GroupLiveKitCallSessionProvider({
       }
 
       leaveSentRef.current = false;
-      setSession({
+      const initialSession = {
         ...buildInitialSession({
           groupId: call.groupId,
           callId: call.callId,
@@ -737,7 +762,9 @@ export function GroupLiveKitCallSessionProvider({
           groupAvatar: call.group.avatar,
         }),
         phase: 'initializing',
-      });
+      } satisfies GroupLiveKitCallSession;
+      sessionRef.current = initialSession;
+      setSession(initialSession);
 
       async function boot() {
         const granted = await requestCallMediaPermissions(call.callType);

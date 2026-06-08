@@ -1,4 +1,6 @@
-<?php 
+<?php
+// English description: Handles user verification requests with identity and portrait documents.
+
 if ($f == 'verificate-user') {
     ob_start();
     // echo "<pre>";
@@ -9,6 +11,15 @@ if ($f == 'verificate-user') {
         'message' => ($error_icon . $wo['lang']['please_check_details'])
     );
     $error = false;
+    $allowed_image_types = array(
+        IMAGETYPE_GIF,
+        IMAGETYPE_JPEG,
+        IMAGETYPE_PNG,
+        IMAGETYPE_BMP
+    );
+    if (defined('IMAGETYPE_WEBP')) {
+        $allowed_image_types[] = IMAGETYPE_WEBP;
+    }
     // echo "<pre>";
     // print_r($data);
     // echo "</pre>";
@@ -33,24 +44,14 @@ if ($f == 'verificate-user') {
         }
         if (file_exists($_FILES["passport"]["tmp_name"])) {
             $image = getimagesize($_FILES["passport"]["tmp_name"]);
-            if (!in_array($image[2], array(
-                IMAGETYPE_GIF,
-                IMAGETYPE_JPEG,
-                IMAGETYPE_PNG,
-                IMAGETYPE_BMP
-            ))) {
+            if (empty($image) || !in_array($image[2], $allowed_image_types)) {
                 $error           = true;
                 $data['message'] = $error_icon . $wo['lang']['passport_id_invalid'];
             }
         }
         if (file_exists($_FILES["photo"]["tmp_name"])) {
             $image = getimagesize($_FILES["photo"]["tmp_name"]);
-            if (!in_array($image[2], array(
-                IMAGETYPE_GIF,
-                IMAGETYPE_JPEG,
-                IMAGETYPE_PNG,
-                IMAGETYPE_BMP
-            ))) {
+            if (empty($image) || !in_array($image[2], $allowed_image_types)) {
                 $error           = true;
                 $data['message'] = $error_icon . $wo['lang']['user_picture_invalid'];
             }
@@ -82,7 +83,7 @@ if ($f == 'verificate-user') {
                     'name' => $file[$key]['name'],
                     'size' => $file[$key]["size"],
                     'type' => $file[$key]["type"],
-                    'types' => 'jpg,png,bmp,gif'
+                    'types' => 'jpg,jpeg,png,bmp,gif,webp'
                 );
                 $media             = Wo_ShareFile($fileInfo);
                 if (!empty($media)) {

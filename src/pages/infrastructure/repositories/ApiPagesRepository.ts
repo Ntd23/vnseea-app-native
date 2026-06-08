@@ -1,3 +1,4 @@
+// Description: Implements page listing, creation, and editing through the API bridge.
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
@@ -54,7 +55,10 @@ function readNumber(raw: RawPage | undefined, key: string): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
-function readBoolean(raw: RawPage | undefined, key: string): boolean | undefined {
+function readBoolean(
+  raw: RawPage | undefined,
+  key: string,
+): boolean | undefined {
   const value = raw?.[key];
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value === 1;
@@ -79,6 +83,9 @@ function mapPage(raw: RawPage | undefined): PagesItem {
     pageCategory:
       readString(raw, 'page_category') || readString(raw, 'category'),
     address: readString(raw, 'address'),
+    placeId: readString(raw, 'place_id') || readString(raw, 'placeId'),
+    lat: readNumber(raw, 'lat'),
+    lng: readNumber(raw, 'lng'),
     avatar: normalizeUrl(readString(raw, 'avatar')),
     cover: normalizeUrl(readString(raw, 'cover')),
     url:
@@ -106,14 +113,17 @@ function mapCreatePageError(error: unknown) {
   }
 
   if (message.includes('Invalid Page name characters')) {
-    return 'Trang URL chỉ được dùng chữ cái không dấu, không dùng số, gạch dưới hoặc gạch ngang.';
+    return 'Trang URL chỉ được dùng chữ cái không dấu, số, gạch dưới hoặc gạch ngang.';
   }
 
   if (message.includes('required field')) {
     return 'Backend đang có trường bổ sung bắt buộc cho trang. App cần biết field đó để gửi kèm.';
   }
 
-  if (message === '{"api_status":400}' || message.includes('"api_status":400')) {
+  if (
+    message === '{"api_status":400}' ||
+    message.includes('"api_status":400')
+  ) {
     return 'API tạo trang trả lỗi 400 nhưng không gửi chi tiết. Khả năng cao endpoint mobile create-page chưa lưu trường Địa điểm như form web.';
   }
 
@@ -134,7 +144,11 @@ function mapPagesListError(error: unknown) {
   return message || 'Không thể tải danh sách trang. Vui lòng thử lại.';
 }
 
-function toListPage(response: PagesListResponse, limit: number, paginated = true) {
+function toListPage(
+  response: PagesListResponse,
+  limit: number,
+  paginated = true,
+) {
   if (!isSuccess(response.api_status)) {
     throw new Error(
       response.errors?.error_text ||
@@ -152,8 +166,7 @@ function toListPage(response: PagesListResponse, limit: number, paginated = true
   return {
     items,
     nextOffset: paginated ? lastPage?.pageId || null : null,
-    hasMore:
-      paginated && rawPages.length >= limit && Boolean(lastPage?.pageId),
+    hasMore: paginated && rawPages.length >= limit && Boolean(lastPage?.pageId),
   };
 }
 
@@ -260,19 +273,77 @@ export function createPagesRepository(): PagesRepository {
             {
               page_id: page.pageId,
               address: draft.pageAddress,
+              place_id: draft.placeId,
+              lat: draft.lat,
+              lng: draft.lng,
             },
           );
 
           if (isSuccess(updateResponse.api_status)) {
             page.address = draft.pageAddress;
+            page.placeId = draft.placeId;
+            page.lat = draft.lat;
+            page.lng = draft.lng;
           }
         } catch (error) {
-          console.warn('[ApiPagesRepository] update page address failed', error);
+          console.warn(
+            '[ApiPagesRepository] update page address failed',
+            error,
+          );
         }
       }
 
       return {
         page,
+        message: response.message,
+      };
+    },
+
+    async updatePage(pageId, draft) {
+      let response: UpdatePageResponse;
+
+      try {
+        response = await apiBridge.post<UpdatePageResponse>(
+          apiRoutes.pages.update,
+          {
+            page_id: pageId,
+            page_name: draft.pageName,
+            page_title: draft.pageTitle,
+            page_description: draft.pageDescription,
+            address: draft.pageAddress,
+            place_id: draft.placeId,
+            lat: draft.lat,
+            lng: draft.lng,
+            page_category: draft.pageCategory,
+            page_sub_category: draft.pageSubCategory,
+          },
+        );
+      } catch (error) {
+        console.warn('[ApiPagesRepository] update page failed', error);
+        throw new Error(mapCreatePageError(error));
+      }
+
+      if (!isSuccess(response.api_status)) {
+        throw new Error(
+          response.errors?.error_text ||
+            response.message ||
+            'Không thể cập nhật trang. Vui lòng thử lại.',
+        );
+      }
+
+      return {
+        page: {
+          id: pageId,
+          pageId,
+          pageName: draft.pageName,
+          pageTitle: draft.pageTitle,
+          pageDescription: draft.pageDescription,
+          pageCategory: draft.pageCategory,
+          address: draft.pageAddress,
+          placeId: draft.placeId,
+          lat: draft.lat,
+          lng: draft.lng,
+        },
         message: response.message,
       };
     },

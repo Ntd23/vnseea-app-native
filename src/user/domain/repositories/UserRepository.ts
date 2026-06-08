@@ -6,6 +6,9 @@ import type {
   NearbyPlace,
   NearbyPagesInput,
   NearbyPlacesInput,
+  MapPlacePrediction,
+  MapRoute,
+  MapRouteInput,
   NearbyUsersInput,
   UpdateCurrentUserInput,
   UpdateCurrentUserResult,
@@ -21,6 +24,13 @@ export interface UserRepository {
   getNearbyUsers(input?: NearbyUsersInput): Promise<UserProfile[]>;
   getNearbyPlaces(input?: NearbyPlacesInput): Promise<NearbyPlace[]>;
   getNearbyPages(input?: NearbyPagesInput): Promise<NearbyPlace[]>;
+  getPlacePredictions(input: {
+    query: string;
+    lat?: number;
+    lng?: number;
+  }): Promise<MapPlacePrediction[]>;
+  getPlaceDetails(placeId: string): Promise<NearbyPlace | null>;
+  getRoute(input: MapRouteInput): Promise<MapRoute>;
   getFriends(input: FriendsInput): Promise<FriendsResult>;
   updateCurrentUser(
     input: UpdateCurrentUserInput,

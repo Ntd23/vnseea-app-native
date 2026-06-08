@@ -25,6 +25,7 @@ export const ROUTES = {
   SEARCH_EMPTY: 'SearchEmpty',
   PAGES: 'Pages',
   CREATE_PAGE: 'CreatePage',
+  EDIT_PAGE: 'EditPage',
   MARKETPLACE: 'Marketplace',
   CREATE_PRODUCT: 'CreateProduct',
   CREATE_EVENT: 'CreateEvent',

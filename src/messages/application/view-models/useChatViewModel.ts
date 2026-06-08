@@ -1,6 +1,10 @@
+// Description: Provides chat message and group chat state for the Messages presentation layer.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ChatItem,
+  GroupAddableUser,
+  GroupChatInfo,
+  GroupSharedAssets,
   MessageAttachment,
   MessageItem,
 } from '../../domain/types/messages.types';
@@ -17,7 +21,29 @@ function mergeMessages(...messageLists: MessageItem[][]) {
 
   for (const message of messageLists.flat()) {
     if (message.id) {
-      messages.set(message.id, message);
+      const current = messages.get(message.id);
+      if (!current) {
+        messages.set(message.id, message);
+        continue;
+      }
+
+      const currentStatus = current.callEvent?.status;
+      const nextStatus = message.callEvent?.status;
+      const shouldReplaceCallingStatus =
+        currentStatus === 'calling' &&
+        Boolean(nextStatus) &&
+        nextStatus !== 'calling';
+      const shouldKeepDeliveredOverPending =
+        current.deliveryState !== undefined &&
+        message.deliveryState === undefined;
+
+      if (
+        shouldReplaceCallingStatus ||
+        shouldKeepDeliveredOverPending ||
+        message.time >= current.time
+      ) {
+        messages.set(message.id, message);
+      }
     }
   }
 
@@ -31,7 +57,13 @@ function mergeMessages(...messageLists: MessageItem[][]) {
 
 export function useChatViewModel(chat: ChatItem) {
   const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [groupInfo, setGroupInfo] = useState<GroupChatInfo | null>(null);
+  const [groupSharedAssets, setGroupSharedAssets] =
+    useState<GroupSharedAssets | null>(null);
+  const [addableUsers, setAddableUsers] = useState<GroupAddableUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingGroupInfo, setIsLoadingGroupInfo] = useState(false);
+  const [isLoadingAddableUsers, setIsLoadingAddableUsers] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pendingSendCount, setPendingSendCount] = useState(0);
@@ -45,7 +77,7 @@ export function useChatViewModel(chat: ChatItem) {
     setError(null);
 
     try {
-      const page = await repository.getMessages(chat.userId, {
+      const page = await repository.getMessages(chat, {
         limit: PAGE_SIZE,
       });
       setMessages(mergeMessages(page));
@@ -59,7 +91,7 @@ export function useChatViewModel(chat: ChatItem) {
     } finally {
       setIsLoading(false);
     }
-  }, [chat.userId]);
+  }, [chat]);
 
   const loadOlder = useCallback(async () => {
     if (isLoading || isLoadingMore || !hasMore || messages.length === 0) {
@@ -70,46 +102,53 @@ export function useChatViewModel(chat: ChatItem) {
     setIsLoadingMore(true);
 
     try {
-      const page = await repository.getMessages(chat.userId, {
+      const page = await repository.getMessages(chat, {
         limit: PAGE_SIZE,
         beforeMessageId: oldestMessage.id,
       });
       setMessages(current => mergeMessages(current, page));
       setHasMore(page.length >= PAGE_SIZE);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không tải thêm được tin nhắn');
+      setError(
+        err instanceof Error ? err.message : 'Không tải thêm được tin nhắn',
+      );
     } finally {
       setIsLoadingMore(false);
     }
-  }, [chat.userId, hasMore, isLoading, isLoadingMore, messages]);
+  }, [chat, hasMore, isLoading, isLoadingMore, messages]);
 
-  const refreshLatest = useCallback(async (showSpinner = true) => {
-    if (isLoading || isSending || isRefreshingRef.current) return;
+  const refreshLatest = useCallback(
+    async (showSpinner = true) => {
+      if (isLoading || isSending || isRefreshingRef.current) return;
 
-    isRefreshingRef.current = true;
-    if (showSpinner) setIsRefreshing(true);
+      isRefreshingRef.current = true;
+      if (showSpinner) setIsRefreshing(true);
 
-    try {
-      const latestMessage = messages[0];
-      const page = await repository.getMessages(chat.userId, {
-        limit: PAGE_SIZE,
-        afterMessageId: latestMessage?.id,
-      });
-      setMessages(current => mergeMessages(page, current));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không cập nhật được tin nhắn');
-    } finally {
-      isRefreshingRef.current = false;
-      if (showSpinner) setIsRefreshing(false);
-    }
-  }, [chat.userId, isLoading, isSending, messages]);
+      try {
+        const page = await repository.getMessages(chat, {
+          limit: PAGE_SIZE,
+        });
+        setMessages(current => mergeMessages(current, page));
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Không cập nhật được tin nhắn',
+        );
+      } finally {
+        isRefreshingRef.current = false;
+        if (showSpinner) setIsRefreshing(false);
+      }
+    },
+    [chat, isLoading, isSending, messages],
+  );
 
   const sendMessage = useCallback(
     async (text: string, attachment?: MessageAttachment) => {
       const message = text.trim();
       if (!message && !attachment) return false;
 
-      const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const tempId = `pending-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
       const optimisticMessage: MessageItem = {
         id: tempId,
         conversationId: '',
@@ -130,14 +169,14 @@ export function useChatViewModel(chat: ChatItem) {
 
       try {
         const response = await repository.sendMessage(
-          chat.userId,
+          chat,
           message,
           attachment,
         );
         let sentMessages = response.sentMessages ?? [];
 
         if (sentMessages.length === 0) {
-          sentMessages = await repository.getMessages(chat.userId, {
+          sentMessages = await repository.getMessages(chat, {
             limit: 1,
           });
         }
@@ -150,12 +189,12 @@ export function useChatViewModel(chat: ChatItem) {
         );
         return true;
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Không gửi được tin nhắn');
+        setError(
+          err instanceof Error ? err.message : 'Không gửi được tin nhắn',
+        );
         setMessages(current =>
           current.map(item =>
-            item.id === tempId
-              ? { ...item, deliveryState: 'failed' }
-              : item,
+            item.id === tempId ? { ...item, deliveryState: 'failed' } : item,
           ),
         );
         return false;
@@ -163,7 +202,107 @@ export function useChatViewModel(chat: ChatItem) {
         setPendingSendCount(current => Math.max(0, current - 1));
       }
     },
-    [chat.userId],
+    [chat],
+  );
+
+  const loadGroupInfo = useCallback(async () => {
+    if (chat.chatType !== 'group') return null;
+    const groupId = chat.groupId || chat.userId;
+
+    setIsLoadingGroupInfo(true);
+    setError(null);
+
+    try {
+      const [info, assets] = await Promise.all([
+        repository.getGroupInfo(groupId),
+        repository.getGroupSharedAssets(groupId).catch(() => null),
+      ]);
+      setGroupInfo(info);
+      if (assets) setGroupSharedAssets(assets);
+      return info;
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Không tải được thông tin nhóm',
+      );
+      return null;
+    } finally {
+      setIsLoadingGroupInfo(false);
+    }
+  }, [chat.chatType, chat.groupId, chat.userId]);
+
+  const searchAddableUsers = useCallback(
+    async (keyword: string) => {
+      if (chat.chatType !== 'group') return [];
+
+      setIsLoadingAddableUsers(true);
+      try {
+        const users = await repository.searchAddableUsers(
+          chat.groupId || chat.userId,
+          keyword,
+        );
+        setAddableUsers(users);
+        return users;
+      } finally {
+        setIsLoadingAddableUsers(false);
+      }
+    },
+    [chat.chatType, chat.groupId, chat.userId],
+  );
+
+  const addGroupUsers = useCallback(
+    async (userIds: string[]) => {
+      if (chat.chatType !== 'group' || userIds.length === 0) return false;
+
+      await repository.addGroupUsers(chat.groupId || chat.userId, userIds);
+      await loadGroupInfo();
+      return true;
+    },
+    [chat.chatType, chat.groupId, chat.userId, loadGroupInfo],
+  );
+
+  const removeGroupUser = useCallback(
+    async (userId: string) => {
+      if (chat.chatType !== 'group') return false;
+
+      await repository.removeGroupUser(chat.groupId || chat.userId, userId);
+      await loadGroupInfo();
+      return true;
+    },
+    [chat.chatType, chat.groupId, chat.userId, loadGroupInfo],
+  );
+
+  const clearGroupHistory = useCallback(async () => {
+    if (chat.chatType !== 'group') return false;
+
+    await repository.clearGroupHistory(chat.groupId || chat.userId);
+    setMessages([]);
+    setGroupSharedAssets({
+      media: [],
+      files: [],
+      links: [],
+    });
+    return true;
+  }, [chat.chatType, chat.groupId, chat.userId]);
+
+  const leaveGroup = useCallback(async () => {
+    if (chat.chatType !== 'group') return false;
+
+    await repository.leaveGroup(chat.groupId || chat.userId);
+    return true;
+  }, [chat.chatType, chat.groupId, chat.userId]);
+
+  const editGroup = useCallback(
+    async (input: { name?: string; avatar?: MessageAttachment }) => {
+      if (chat.chatType !== 'group') return null;
+
+      const info = await repository.editGroup(
+        chat.groupId || chat.userId,
+        input,
+      );
+      setGroupInfo(info);
+      return info;
+    },
+    [chat.chatType, chat.groupId, chat.userId],
   );
 
   useEffect(() => {
@@ -180,7 +319,12 @@ export function useChatViewModel(chat: ChatItem) {
 
   return {
     messages,
+    groupInfo,
+    groupSharedAssets,
+    addableUsers,
     isLoading,
+    isLoadingGroupInfo,
+    isLoadingAddableUsers,
     isLoadingMore,
     isRefreshing,
     isSending,
@@ -190,5 +334,12 @@ export function useChatViewModel(chat: ChatItem) {
     loadOlder,
     refreshLatest,
     sendMessage,
+    loadGroupInfo,
+    searchAddableUsers,
+    addGroupUsers,
+    removeGroupUser,
+    clearGroupHistory,
+    leaveGroup,
+    editGroup,
   };
 }

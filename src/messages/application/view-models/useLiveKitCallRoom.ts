@@ -253,7 +253,7 @@ export function useLiveKitCallRoom(params: LiveKitCallRouteParams) {
       initializing: 'Đang chuẩn bị cuộc gọi...',
       ringing: 'Đang gọi...',
       answering: 'Đang trả lời...',
-      connecting: 'Đang kết nối LiveKit...',
+      connecting: '',
       connected: 'Đã kết nối',
       ended: 'Cuộc gọi đã kết thúc',
       error: error || 'Không thể thực hiện cuộc gọi.',

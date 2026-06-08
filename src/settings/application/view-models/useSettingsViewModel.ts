@@ -1,6 +1,9 @@
 // Description: Provides settings screen data with real user profile from WoWonder API.
 import { useState } from 'react';
-import type { FeatureGridItem, SettingsMenuItem } from '../../domain/types/settings.types';
+import type {
+  FeatureGridItem,
+  SettingsMenuItem,
+} from '../../domain/types/settings.types';
 import { useUserProfileViewModel } from './useUserProfileViewModel';
 
 const BRAND = '#0000FF';
@@ -113,7 +116,7 @@ const MOCK_FEATURES: FeatureGridItem[] = [
   },
   {
     id: 'nearby',
-    label: 'Người ở gần',
+    label: 'Gần đây',
     iconKey: 'MapPinned',
     bgColor: '',
     iconColor: BRAND,

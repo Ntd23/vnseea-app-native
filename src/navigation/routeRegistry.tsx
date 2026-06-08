@@ -16,7 +16,6 @@ import {
   AdvertisingScreen,
   EditProfileScreen,
   MyInfoScreen,
-  SettingsMessagesScreen,
   SettingsScreen,
 } from '../settings';
 import { CreateAdScreen } from '../advertising';
@@ -51,6 +50,7 @@ import {
   CallScreen,
   ChatScreen,
   GroupCallRoomScreen,
+  MessageScreen,
 } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
 import { SavedPostsScreen } from '../saved';
@@ -133,7 +133,7 @@ export function createStackRoutes(
     { name: ROUTES.ALBUMS, component: AlbumsScreen },
     { name: ROUTES.CREATE_ALBUM, component: CreateAlbumScreen },
     { name: ROUTES.MY_VIDEOS, component: MyVideosScreen },
-    { name: ROUTES.MESSAGES, component: SettingsMessagesScreen },
+    { name: ROUTES.MESSAGES, component: MessageScreen },
     { name: ROUTES.CHAT, component: ChatScreen },
     { name: ROUTES.CALLS, component: CallScreen },
     { name: ROUTES.CALL_ROOM, component: CallRoomScreen },
@@ -145,6 +145,7 @@ export function createStackRoutes(
     { name: ROUTES.SEARCH_EMPTY, component: SearchEmptyScreen },
     { name: ROUTES.PAGES, component: PagesScreen },
     { name: ROUTES.CREATE_PAGE, component: CreatePageScreen },
+    { name: ROUTES.EDIT_PAGE, component: CreatePageScreen },
     { name: ROUTES.MARKETPLACE, component: MarketplaceScreen },
     { name: ROUTES.CREATE_PRODUCT, component: CreateProductScreen },
     { name: ROUTES.CREATE_EVENT, component: CreateEventScreen },
@@ -175,7 +176,7 @@ export function createStackRoutes(
     { name: ROUTES.SETTINGS_MY_INFO, component: MyInfoScreen },
     { name: ROUTES.SETTINGS_ADDRESS, component: AddressScreen },
     { name: ROUTES.EDIT_PROFILE, component: EditProfileScreen },
-    { name: ROUTES.SETTINGS_MESSAGES, component: SettingsMessagesScreen },
+    { name: ROUTES.SETTINGS_MESSAGES, component: MessageScreen },
     { name: ROUTES.WITHDRAWAL, component: WithdrawalScreen },
     { name: ROUTES.ADVERTISING, component: AdvertisingScreen },
     { name: ROUTES.CREATE_AD, component: CreateAdScreen },

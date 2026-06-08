@@ -7,15 +7,20 @@ import { createStackRoutes } from './routeRegistry';
 import type { RootStackParamList } from './types';
 import MainTabNavigator from './MainTabNavigator';
 import { navigationRef } from './navigationRef';
+import { sessionStorage } from '../shared-kernel/infrastructure/storage/sessionStorage';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const STACK_ROUTES = createStackRoutes(MainTabNavigator);
 
 function AppNavigator() {
+  const initialRouteName = sessionStorage.getAccessToken()
+    ? ROUTES.MAIN_TABS
+    : ROUTES.LOGIN;
+
   return (
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
-        initialRouteName={ROUTES.LOGIN}
+        initialRouteName={initialRouteName}
         screenOptions={{ headerShown: false }}
       >
         {STACK_ROUTES.map(({ name, component }) => (

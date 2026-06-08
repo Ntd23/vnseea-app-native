@@ -1,5 +1,5 @@
 // Description: Renders a Messages chat conversation with media, voice notes, and LiveKit call actions.
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,16 +19,25 @@ import {
 } from 'react-native';
 import {
   ArrowLeft,
+  Check,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   FileText,
   ImagePlus,
+  Info,
+  Link as LinkIcon,
+  LogOut,
   Mic,
+  Pencil,
   Phone,
   PhoneMissed,
   Play,
   Send,
   Square,
+  Trash2,
+  UserMinus,
+  UserPlus,
   Video,
   Volume2,
   VolumeX,
@@ -48,6 +57,10 @@ import { useChatViewModel } from '../../application/view-models/useChatViewModel
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 import type {
+  GroupAddableUser,
+  GroupChatInfo,
+  GroupChatMember,
+  GroupSharedAssets,
   MessageAttachment,
   MessageItem,
 } from '../../domain/types/messages.types';
@@ -190,6 +203,15 @@ function getCallDetail(message: MessageItem) {
     return isInitiator ? 'Đang gọi...' : 'Cuộc gọi đến';
   }
 
+  if (status === 'started') {
+    if (!callEvent.isGroupCall) return 'Đang gọi...';
+    return isInitiator ? 'Bạn đã bắt đầu' : 'Cuộc gọi đã bắt đầu';
+  }
+
+  if (status === 'left') {
+    return 'Đã rời cuộc gọi';
+  }
+
   if (status === 'cancelled') {
     if (statusBy === initiatorId) {
       return isInitiator ? 'Bạn đã hủy cuộc gọi' : 'Người gọi đã hủy cuộc gọi';
@@ -227,6 +249,14 @@ function getCallDetail(message: MessageItem) {
   return callEvent.duration > 0
     ? `Thời lượng · ${formatCallDuration(callEvent.duration)}`
     : 'Cuộc gọi';
+}
+
+function getCallTitle(callEvent: MessageItem['callEvent']) {
+  if (!callEvent) return 'Cuộc gọi';
+  if (callEvent.callType === 'video') {
+    return callEvent.isGroupCall ? 'Cuộc gọi video nhóm' : 'Cuộc gọi video';
+  }
+  return callEvent.isGroupCall ? 'Cuộc gọi thoại nhóm' : 'Cuộc gọi thoại';
 }
 
 function CallEventContent({ message }: { message: MessageItem }) {
@@ -269,7 +299,7 @@ function CallEventContent({ message }: { message: MessageItem }) {
             message.isSentByMe ? 'text-white' : 'text-gray-900'
           }`}
         >
-          {callEvent.callType === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}
+          {getCallTitle(callEvent)}
         </Text>
         <Text
           className={`mt-0.5 text-xs ${
@@ -532,11 +562,427 @@ function MessageBubble({
   );
 }
 
+type GroupInfoSection = 'members' | 'media' | 'files' | 'links';
+
+function SectionHeader({
+  title,
+  isOpen,
+  onPress,
+}: {
+  title: string;
+  isOpen: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      className="flex-row items-center justify-between border-t border-gray-100 px-5 py-4"
+      activeOpacity={0.8}
+      onPress={onPress}
+    >
+      <Text className="text-base font-bold text-gray-950">{title}</Text>
+      <ChevronDown
+        size={20}
+        color="#111827"
+        style={{ transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}
+      />
+    </TouchableOpacity>
+  );
+}
+
+function GroupMemberRow({
+  member,
+  canRemove,
+  onRemove,
+}: {
+  member: GroupChatMember;
+  canRemove: boolean;
+  onRemove: (member: GroupChatMember) => void;
+}) {
+  return (
+    <View className="flex-row items-center px-5 py-2">
+      <Image
+        source={{ uri: member.avatar }}
+        className="h-10 w-10 rounded-full bg-gray-200"
+      />
+      <View className="ml-3 flex-1">
+        <Text className="text-sm font-semibold text-gray-900">
+          {member.name}
+        </Text>
+        <Text className="text-xs text-gray-500">
+          {member.isOwner
+            ? 'Chủ nhóm'
+            : member.isAdmin
+            ? 'Admin'
+            : `@${member.username}`}
+        </Text>
+      </View>
+      {canRemove ? (
+        <TouchableOpacity
+          className="h-9 w-9 items-center justify-center rounded-full bg-red-50"
+          activeOpacity={0.8}
+          onPress={() => onRemove(member)}
+        >
+          <UserMinus size={18} color="#dc2626" />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function AddableUserRow({
+  user,
+  selected,
+  onToggle,
+}: {
+  user: GroupAddableUser;
+  selected: boolean;
+  onToggle: (user: GroupAddableUser) => void;
+}) {
+  return (
+    <TouchableOpacity
+      className="flex-row items-center px-5 py-2"
+      activeOpacity={0.8}
+      onPress={() => onToggle(user)}
+    >
+      <Image
+        source={{ uri: user.avatar }}
+        className="h-10 w-10 rounded-full bg-gray-200"
+      />
+      <View className="ml-3 flex-1">
+        <Text className="text-sm font-semibold text-gray-900">{user.name}</Text>
+        <Text className="text-xs text-gray-500">@{user.username}</Text>
+      </View>
+      <View
+        className={`h-7 w-7 items-center justify-center rounded-full ${
+          selected ? 'bg-blue-600' : 'border border-gray-300 bg-white'
+        }`}
+      >
+        {selected ? <Check size={16} color="#ffffff" /> : null}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function GroupInfoModal({
+  visible,
+  groupInfo,
+  assets,
+  addableUsers,
+  selectedAddableIds,
+  addableQuery,
+  editName,
+  isLoading,
+  isLoadingAddableUsers,
+  expandedSections,
+  onClose,
+  onToggleSection,
+  onChangeAddableQuery,
+  onSearchAddableUsers,
+  onToggleAddableUser,
+  onSubmitAddUsers,
+  onChangeEditName,
+  onPickAvatar,
+  onSaveGroup,
+  onClearHistory,
+  onLeaveGroup,
+  onRemoveMember,
+}: {
+  visible: boolean;
+  groupInfo: GroupChatInfo | null;
+  assets: GroupSharedAssets | null;
+  addableUsers: GroupAddableUser[];
+  selectedAddableIds: Set<string>;
+  addableQuery: string;
+  editName: string;
+  isLoading: boolean;
+  isLoadingAddableUsers: boolean;
+  expandedSections: Set<GroupInfoSection>;
+  onClose: () => void;
+  onToggleSection: (section: GroupInfoSection) => void;
+  onChangeAddableQuery: (value: string) => void;
+  onSearchAddableUsers: () => void;
+  onToggleAddableUser: (user: GroupAddableUser) => void;
+  onSubmitAddUsers: () => void;
+  onChangeEditName: (value: string) => void;
+  onPickAvatar: () => void;
+  onSaveGroup: () => void;
+  onClearHistory: () => void;
+  onLeaveGroup: () => void;
+  onRemoveMember: (member: GroupChatMember) => void;
+}) {
+  const isMembersOpen = expandedSections.has('members');
+  const isMediaOpen = expandedSections.has('media');
+  const isFilesOpen = expandedSections.has('files');
+  const isLinksOpen = expandedSections.has('links');
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
+        <View className="flex-row items-center justify-between border-b border-gray-100 px-5 py-4">
+          <Text className="text-lg font-bold text-gray-950">Thông tin</Text>
+          <TouchableOpacity
+            className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
+            activeOpacity={0.8}
+            onPress={onClose}
+          >
+            <X size={20} color="#111827" />
+          </TouchableOpacity>
+        </View>
+
+        {isLoading && !groupInfo ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" color="#0000ff" />
+          </View>
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View className="items-center px-5 py-6">
+              <Image
+                source={{ uri: groupInfo?.avatar }}
+                className="h-24 w-24 rounded-full bg-red-100"
+              />
+              <View className="mt-4 flex-row items-center">
+                <Text className="text-2xl font-bold text-gray-950">
+                  {groupInfo?.name ?? 'Nhóm'}
+                </Text>
+                {groupInfo?.isOwner ? (
+                  <TouchableOpacity
+                    className="ml-2 h-9 w-9 items-center justify-center rounded-full bg-gray-100"
+                    activeOpacity={0.8}
+                    onPress={onPickAvatar}
+                  >
+                    <Pencil size={17} color="#475569" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <Text className="mt-1 text-sm text-gray-500">
+                {groupInfo?.memberCount ?? 0} thành viên
+              </Text>
+
+              {groupInfo?.isOwner ? (
+                <View className="mt-4 w-full">
+                  <TextInput
+                    className="rounded-2xl border border-gray-200 px-4 py-3 text-base text-gray-900"
+                    placeholder="Tên nhóm"
+                    placeholderTextColor="#94a3b8"
+                    value={editName}
+                    onChangeText={onChangeEditName}
+                  />
+                  <TouchableOpacity
+                    className="mt-3 rounded-2xl bg-blue-600 py-3"
+                    activeOpacity={0.85}
+                    onPress={onSaveGroup}
+                  >
+                    <Text className="text-center text-base font-bold text-white">
+                      Lưu thay đổi
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+            </View>
+
+            {groupInfo?.isOwner ? (
+              <View className="border-t border-gray-100 px-5 py-4">
+                <View className="flex-row items-center">
+                  <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-50">
+                    <UserPlus size={20} color="#0000ff" />
+                  </View>
+                  <Text className="ml-3 text-base font-semibold text-gray-900">
+                    Thêm thành viên
+                  </Text>
+                </View>
+                <View className="mt-3 flex-row">
+                  <TextInput
+                    className="mr-2 flex-1 rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-900"
+                    placeholder="Tìm thành viên"
+                    placeholderTextColor="#94a3b8"
+                    value={addableQuery}
+                    onChangeText={onChangeAddableQuery}
+                    onSubmitEditing={onSearchAddableUsers}
+                  />
+                  <TouchableOpacity
+                    className="h-12 w-12 items-center justify-center rounded-2xl bg-blue-600"
+                    activeOpacity={0.85}
+                    onPress={onSearchAddableUsers}
+                  >
+                    {isLoadingAddableUsers ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <UserPlus size={19} color="#ffffff" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+                {addableUsers.map(user => (
+                  <AddableUserRow
+                    key={user.id}
+                    user={user}
+                    selected={selectedAddableIds.has(user.id)}
+                    onToggle={onToggleAddableUser}
+                  />
+                ))}
+                {!isLoadingAddableUsers && addableUsers.length === 0 ? (
+                  <Text className="mt-3 rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                    Chua co goi y. Nguoi dung da follow qua lai va chua o trong
+                    nhom se hien o day.
+                  </Text>
+                ) : null}
+                {selectedAddableIds.size > 0 ? (
+                  <TouchableOpacity
+                    className="mt-2 rounded-2xl bg-blue-600 py-3"
+                    activeOpacity={0.85}
+                    onPress={onSubmitAddUsers}
+                  >
+                    <Text className="text-center text-sm font-bold text-white">
+                      Thêm {selectedAddableIds.size} người
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
+
+            <SectionHeader
+              title="Thành viên nhóm"
+              isOpen={isMembersOpen}
+              onPress={() => onToggleSection('members')}
+            />
+            {isMembersOpen ? (
+              <View className="pb-3">
+                {(groupInfo?.members ?? []).map(member => (
+                  <GroupMemberRow
+                    key={member.id}
+                    member={member}
+                    canRemove={
+                      Boolean(groupInfo?.isOwner) &&
+                      !member.isOwner &&
+                      member.id !== groupInfo?.ownerId
+                    }
+                    onRemove={onRemoveMember}
+                  />
+                ))}
+              </View>
+            ) : null}
+
+            <SectionHeader
+              title="Ảnh/Video"
+              isOpen={isMediaOpen}
+              onPress={() => onToggleSection('media')}
+            />
+            {isMediaOpen ? (
+              <View className="flex-row flex-wrap px-5 pb-4">
+                {(assets?.media ?? []).length === 0 ? (
+                  <Text className="py-3 text-sm text-gray-500">
+                    Chưa có Ảnh/Video được chia sẻ trong hội thoại này
+                  </Text>
+                ) : (
+                  assets!.media.map(item => (
+                    <Image
+                      key={item.id}
+                      source={{ uri: item.uri }}
+                      className="mr-2 mt-2 h-20 w-20 rounded-xl bg-gray-100"
+                    />
+                  ))
+                )}
+              </View>
+            ) : null}
+
+            <SectionHeader
+              title="File"
+              isOpen={isFilesOpen}
+              onPress={() => onToggleSection('files')}
+            />
+            {isFilesOpen ? (
+              <View className="px-5 pb-4">
+                {(assets?.files ?? []).length === 0 ? (
+                  <Text className="py-3 text-sm text-gray-500">
+                    Chưa có File được chia sẻ trong hội thoại này
+                  </Text>
+                ) : (
+                  assets!.files.map(item => (
+                    <TouchableOpacity
+                      key={item.id}
+                      className="flex-row items-center py-2"
+                      activeOpacity={0.8}
+                      onPress={() =>
+                        Linking.openURL(item.uri).catch(() => undefined)
+                      }
+                    >
+                      <FileText size={18} color="#0000ff" />
+                      <Text className="ml-2 flex-1 text-sm font-semibold text-gray-900">
+                        {item.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </View>
+            ) : null}
+
+            <SectionHeader
+              title="Link"
+              isOpen={isLinksOpen}
+              onPress={() => onToggleSection('links')}
+            />
+            {isLinksOpen ? (
+              <View className="px-5 pb-4">
+                {(assets?.links ?? []).length === 0 ? (
+                  <Text className="py-3 text-sm text-gray-500">
+                    Chưa có Link được chia sẻ trong hội thoại này
+                  </Text>
+                ) : (
+                  assets!.links.map(item => (
+                    <TouchableOpacity
+                      key={item.id}
+                      className="flex-row items-center py-2"
+                      activeOpacity={0.8}
+                      onPress={() =>
+                        Linking.openURL(item.url).catch(() => undefined)
+                      }
+                    >
+                      <LinkIcon size={18} color="#0000ff" />
+                      <Text className="ml-2 flex-1 text-sm font-semibold text-blue-700">
+                        {item.title}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </View>
+            ) : null}
+
+            <View className="mt-2 border-t border-gray-100 px-5 py-4">
+              <TouchableOpacity
+                className="flex-row items-center py-3"
+                activeOpacity={0.8}
+                onPress={onClearHistory}
+              >
+                <Trash2 size={19} color="#111827" />
+                <Text className="ml-3 text-base text-gray-950">
+                  Xóa lịch sử trò chuyện
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-row items-center py-3"
+                activeOpacity={0.8}
+                onPress={onLeaveGroup}
+              >
+                <LogOut size={19} color="#dc2626" />
+                <Text className="ml-3 text-base text-red-600">Rời nhóm</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        )}
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
 function ChatScreen({ navigation, route }: ChatScreenProps) {
   const { chat } = route.params;
   const {
     messages,
+    groupInfo,
+    groupSharedAssets,
+    addableUsers,
     isLoading,
+    isLoadingGroupInfo,
+    isLoadingAddableUsers,
     isLoadingMore,
     isRefreshing,
     error,
@@ -544,9 +990,28 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     loadOlder,
     refreshLatest,
     sendMessage,
+    loadGroupInfo,
+    searchAddableUsers,
+    addGroupUsers,
+    removeGroupUser,
+    clearGroupHistory,
+    leaveGroup,
+    editGroup,
   } = useChatViewModel(chat);
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const [isGroupInfoVisible, setIsGroupInfoVisible] = useState(false);
+  const [expandedGroupInfoSections, setExpandedGroupInfoSections] = useState<
+    Set<GroupInfoSection>
+  >(new Set(['members', 'media', 'files', 'links']));
+  const [addableQuery, setAddableQuery] = useState('');
+  const [selectedAddableIds, setSelectedAddableIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [editGroupName, setEditGroupName] = useState(chat.name);
+  const [editGroupAvatar, setEditGroupAvatar] = useState<
+    MessageAttachment | undefined
+  >(undefined);
   const [viewerMediaItems, setViewerMediaItems] = useState<
     ChatMediaViewerItem[]
   >([]);
@@ -649,17 +1114,34 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   const groupId = useMemo(() => {
     if (chat.chatType !== 'group') return '';
-    return chat.userId || chat.id.replace(/^group:/, '');
-  }, [chat.chatType, chat.id, chat.userId]);
+    return (
+      chat.groupId ||
+      chat.chatId ||
+      chat.userId ||
+      chat.id.replace(/^group:/, '')
+    );
+  }, [chat.chatId, chat.chatType, chat.groupId, chat.id, chat.userId]);
+
+  useEffect(() => {
+    if (chat.chatType !== 'group') return;
+
+    loadGroupInfo().catch(() => undefined);
+  }, [chat.chatType, loadGroupInfo]);
 
   const handleStartCall = useCallback(
     (callType: 'audio' | 'video') => {
+      const recipientId = chat.participantId || chat.userId || chat.chatId;
+      if (!recipientId) {
+        Alert.alert('Không gọi được', 'Thiếu mã người nhận cuộc gọi.');
+        return;
+      }
+
       const callParams = {
-        recipientId: chat.userId,
+        recipientId,
         callType,
         direction: 'outgoing' as const,
         peer: {
-          id: chat.userId,
+          id: recipientId,
           name: chat.name,
           avatar: chat.avatar,
           username: chat.username,
@@ -670,7 +1152,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     },
     [
       chat.avatar,
+      chat.chatId,
       chat.name,
+      chat.participantId,
       chat.userId,
       chat.username,
       navigation,
@@ -695,6 +1179,182 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       navigation.navigate(ROUTES.GROUP_CALL_ROOM, callParams);
     },
     [chat.avatar, chat.name, groupId, navigation, startGroupCall],
+  );
+
+  const handleOpenGroupInfo = useCallback(() => {
+    if (chat.chatType !== 'group') return;
+    setIsGroupInfoVisible(true);
+    setExpandedGroupInfoSections(
+      new Set(['members', 'media', 'files', 'links']),
+    );
+    setSelectedAddableIds(new Set());
+    loadGroupInfo()
+      .then(info => {
+        if (info?.name) setEditGroupName(info.name);
+        if (info?.isOwner) {
+          setAddableQuery('');
+          searchAddableUsers('').catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
+  }, [chat.chatType, loadGroupInfo, searchAddableUsers]);
+
+  const handleToggleGroupInfoSection = useCallback(
+    (section: GroupInfoSection) => {
+      setExpandedGroupInfoSections(current => {
+        const next = new Set(current);
+        if (next.has(section)) {
+          next.delete(section);
+        } else {
+          next.add(section);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleSearchAddableUsers = useCallback(() => {
+    searchAddableUsers(addableQuery).catch(caught => {
+      Alert.alert(
+        'Không tìm được thành viên',
+        caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+      );
+    });
+  }, [addableQuery, searchAddableUsers]);
+
+  const handleToggleAddableUser = useCallback((user: GroupAddableUser) => {
+    setSelectedAddableIds(current => {
+      const next = new Set(current);
+      if (next.has(user.id)) {
+        next.delete(user.id);
+      } else {
+        next.add(user.id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSubmitAddUsers = useCallback(() => {
+    const userIds = [...selectedAddableIds];
+    addGroupUsers(userIds)
+      .then(success => {
+        if (success) {
+          setSelectedAddableIds(new Set());
+          setAddableQuery('');
+          searchAddableUsers('').catch(() => undefined);
+        }
+      })
+      .catch(caught => {
+        Alert.alert(
+          'Không thêm được thành viên',
+          caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+        );
+      });
+  }, [addGroupUsers, searchAddableUsers, selectedAddableIds]);
+
+  const handlePickGroupAvatar = useCallback(async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      selectionLimit: 1,
+      quality: 0.8,
+      includeBase64: false,
+    });
+    const asset = result.assets?.[0];
+    const attachment = asset ? assetToAttachment(asset) : undefined;
+    if (attachment) {
+      setEditGroupAvatar({ ...attachment, mediaType: 'image' });
+    }
+  }, []);
+
+  const handleSaveGroup = useCallback(() => {
+    editGroup({
+      name: editGroupName.trim() || groupInfo?.name,
+      avatar: editGroupAvatar,
+    })
+      .then(info => {
+        if (info) {
+          setEditGroupAvatar(undefined);
+          setEditGroupName(info.name);
+        }
+      })
+      .catch(caught => {
+        Alert.alert(
+          'Không lưu được nhóm',
+          caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+        );
+      });
+  }, [editGroup, editGroupAvatar, editGroupName, groupInfo?.name]);
+
+  const handleClearGroupHistory = useCallback(() => {
+    Alert.alert('Xóa lịch sử trò chuyện', 'Bạn muốn xóa lịch sử nhóm này?', [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Xóa',
+        style: 'destructive',
+        onPress: () => {
+          clearGroupHistory()
+            .then(success => {
+              if (success) {
+                loadInitial().catch(() => undefined);
+                loadGroupInfo().catch(() => undefined);
+              }
+            })
+            .catch(caught => {
+              Alert.alert(
+                'Không xóa được lịch sử',
+                caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+              );
+            });
+        },
+      },
+    ]);
+  }, [clearGroupHistory, loadGroupInfo, loadInitial]);
+
+  const handleLeaveGroup = useCallback(() => {
+    Alert.alert('Rời nhóm', 'Bạn sẽ không còn nhận tin nhắn từ nhóm này.', [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Rời nhóm',
+        style: 'destructive',
+        onPress: () => {
+          leaveGroup()
+            .then(success => {
+              if (success) {
+                setIsGroupInfoVisible(false);
+                navigation.goBack();
+              }
+            })
+            .catch(caught => {
+              Alert.alert(
+                'Không rời được nhóm',
+                caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+              );
+            });
+        },
+      },
+    ]);
+  }, [leaveGroup, navigation]);
+
+  const handleRemoveGroupMember = useCallback(
+    (member: GroupChatMember) => {
+      Alert.alert('Xóa thành viên', `Xóa ${member.name} khỏi nhóm?`, [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: () => {
+            removeGroupUser(member.id).catch(caught => {
+              Alert.alert(
+                'Không xóa được thành viên',
+                caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+              );
+            });
+          },
+        },
+      ]);
+    },
+    [removeGroupUser],
   );
 
   return (
@@ -723,7 +1383,11 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               {chat.name}
             </Text>
             <Text className="text-xs text-gray-500">
-              {chat.isOnline ? 'Đang hoạt động' : `@${chat.username}`}
+              {chat.chatType === 'group'
+                ? `${groupInfo?.memberCount ?? ''} thành viên`
+                : chat.isOnline
+                ? 'Đang hoạt động'
+                : `@${chat.username}`}
             </Text>
           </View>
           {chat.chatType === 'user' ? (
@@ -759,6 +1423,22 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               >
                 <Video size={22} color="#0000ff" />
               </TouchableOpacity>
+              <TouchableOpacity
+                className="h-10 w-10 items-center justify-center rounded-full"
+                activeOpacity={0.75}
+                onPress={handleOpenGroupInfo}
+              >
+                <Info size={21} color="#0000ff" />
+              </TouchableOpacity>
+              {groupInfo?.isOwner ? (
+                <TouchableOpacity
+                  className="h-10 w-10 items-center justify-center rounded-full"
+                  activeOpacity={0.75}
+                  onPress={handleClearGroupHistory}
+                >
+                  <Trash2 size={20} color="#ef4444" />
+                </TouchableOpacity>
+              ) : null}
             </>
           ) : null}
         </View>
@@ -966,6 +1646,30 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+      <GroupInfoModal
+        visible={isGroupInfoVisible}
+        groupInfo={groupInfo}
+        assets={groupSharedAssets}
+        addableUsers={addableUsers}
+        selectedAddableIds={selectedAddableIds}
+        addableQuery={addableQuery}
+        editName={editGroupName}
+        isLoading={isLoadingGroupInfo}
+        isLoadingAddableUsers={isLoadingAddableUsers}
+        expandedSections={expandedGroupInfoSections}
+        onClose={() => setIsGroupInfoVisible(false)}
+        onToggleSection={handleToggleGroupInfoSection}
+        onChangeAddableQuery={setAddableQuery}
+        onSearchAddableUsers={handleSearchAddableUsers}
+        onToggleAddableUser={handleToggleAddableUser}
+        onSubmitAddUsers={handleSubmitAddUsers}
+        onChangeEditName={setEditGroupName}
+        onPickAvatar={handlePickGroupAvatar}
+        onSaveGroup={handleSaveGroup}
+        onClearHistory={handleClearGroupHistory}
+        onLeaveGroup={handleLeaveGroup}
+        onRemoveMember={handleRemoveGroupMember}
+      />
       <Modal
         visible={Boolean(viewerMedia)}
         animationType="fade"

@@ -180,6 +180,10 @@ function WaitingRoom({
   canShowSpinner: boolean;
 }) {
   const { session, endCall } = useLiveKitCallSession();
+  const publicStatusText =
+    session?.phase === 'connecting' || statusText.includes('LiveKit')
+      ? ''
+      : statusText;
 
   return (
     <SafeAreaView className="flex-1 bg-slate-950" edges={['top', 'bottom']}>
@@ -194,9 +198,11 @@ function WaitingRoom({
         <Text className="mt-6 text-center text-2xl font-bold text-white">
           {peerName}
         </Text>
-        <Text className="mt-3 text-center text-base text-slate-300">
-          {statusText}
-        </Text>
+        {publicStatusText ? (
+          <Text className="mt-3 text-center text-base text-slate-300">
+            {publicStatusText}
+          </Text>
+        ) : null}
         {canShowSpinner ? (
           <ActivityIndicator className="mt-8" color="#0000ff" size="large" />
         ) : null}

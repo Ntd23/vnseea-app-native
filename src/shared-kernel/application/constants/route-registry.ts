@@ -18,6 +18,7 @@ export const apiRoutes = {
     suggestions: 'get-user-suggestions',
     nearby: 'get-nearby-users',
     nearbyPlaces: 'nearby',
+    mapDiscovery: 'map_discovery',
     friends: 'get-friends', // GET following/followers
     updateCover: 'update-user-data', // POST multipart - uses v2 endpoint that handles both avatar and cover
   },
@@ -60,6 +61,7 @@ export const apiRoutes = {
     read: 'read_chats',
     typing: 'set-chat-typing-status',
     delete: 'delete-conversation',
+    groupChat: 'group_chat',
     livekit: 'livekit',
     groupCall: 'group_call',
   },

@@ -113,6 +113,8 @@ export type NearbyPlace = {
   id: string;
   pageId?: string;
   kind: NearbyPlaceKind;
+  source?: 'page' | 'google';
+  placeId?: string;
   name: string;
   username?: string;
   avatarUrl?: string;
@@ -121,6 +123,7 @@ export type NearbyPlace = {
   description?: string;
   location?: string;
   distance?: string | number;
+  distanceMeters?: number;
   coordinate?: {
     latitude: number;
     longitude: number;
@@ -136,6 +139,31 @@ export type NearbyPagesInput = Pick<
   NearbyUsersInput,
   'distance' | 'keyword' | 'limit' | 'lat' | 'lng'
 >;
+
+export type MapPlacePrediction = {
+  source: 'google';
+  placeId: string;
+  description: string;
+  mainText: string;
+  secondaryText?: string;
+};
+
+export type MapRouteInput = {
+  originLat: number;
+  originLng: number;
+  destinationLat: number;
+  destinationLng: number;
+};
+
+export type MapRoute = {
+  path: Array<{
+    latitude: number;
+    longitude: number;
+  }>;
+  distanceMeters: number;
+  durationSeconds: number;
+  provider: 'google';
+};
 
 export type FriendsInput = {
   userId: string;

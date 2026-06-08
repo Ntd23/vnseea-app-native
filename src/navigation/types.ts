@@ -5,6 +5,7 @@ import type { StoryItem } from '../stories/domain/types/stories.types';
 import type { ChatItem } from '../messages/domain/types/messages.types';
 import type { LiveKitCallRouteParams } from '../messages/domain/types/call.types';
 import type { GroupLiveKitCallRouteParams } from '../messages/domain/types/groupCall.types';
+import type { PagesItem } from '../pages/domain/types/pages.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -36,6 +37,7 @@ export type RootStackParamList = {
   [ROUTES.SEARCH_EMPTY]: undefined;
   [ROUTES.PAGES]: undefined;
   [ROUTES.CREATE_PAGE]: undefined;
+  [ROUTES.EDIT_PAGE]: { page: PagesItem };
   [ROUTES.MARKETPLACE]: undefined;
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;

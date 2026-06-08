@@ -41,12 +41,65 @@ let listeners: NativeCallListeners = {};
 const pendingAnswerUuids: string[] = [];
 const pendingEndUuids: string[] = [];
 
+function asPushRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function parsePushRecord(value: unknown): Record<string, unknown> | null {
+  const record = asPushRecord(value);
+  if (record) return record;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+
+  try {
+    return asPushRecord(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function getPushRecordCandidates(payload: unknown) {
+  const candidates: Record<string, unknown>[] = [];
+  const root = parsePushRecord(payload);
+  if (!root) return candidates;
+
+  candidates.push(root);
+  for (const key of [
+    'notification_data',
+    'additionalData',
+    'additional_data',
+    'data',
+    'custom',
+    'a',
+  ]) {
+    const nested = parsePushRecord(root[key]);
+    if (nested) {
+      candidates.push(nested);
+    }
+  }
+
+  return candidates;
+}
+
 function readPushString(payload: unknown, key: string) {
-  if (!payload || typeof payload !== 'object') return '';
-  const value = (payload as Record<string, unknown>)[key];
-  return typeof value === 'string' || typeof value === 'number'
-    ? String(value)
-    : '';
+  for (const record of getPushRecordCandidates(payload)) {
+    const value = record[key];
+    if (typeof value === 'string' || typeof value === 'number') {
+      return String(value);
+    }
+  }
+  return '';
+}
+
+function findActiveNativeCallUuid(context: 'direct' | 'group', callId: string) {
+  for (const [callUuid, activeCall] of activeCalls.entries()) {
+    if (activeCall.context === context && activeCall.callId === callId) {
+      return callUuid;
+    }
+  }
+
+  return '';
 }
 
 function readPushLiveKitCall(payload: unknown): IncomingLiveKitCall | null {
@@ -307,19 +360,11 @@ export async function configureNativeCallService() {
       );
       if (incomingGroupCall) {
         event.preventDefault();
-        if (Platform.OS !== 'android') {
-          displayNativeIncomingGroupCall(incomingGroupCall).catch(
-            () => undefined,
-          );
-        }
         return;
       }
       if (!incomingCall) return;
 
       event.preventDefault();
-      if (Platform.OS !== 'android') {
-        displayNativeIncomingCall(incomingCall).catch(() => undefined);
-      }
     },
   );
   OneSignal.Notifications.addEventListener(
@@ -384,6 +429,9 @@ export async function startNativeOutgoingCall(params: {
 
 export async function displayNativeIncomingCall(call: IncomingLiveKitCall) {
   await configureNativeCallService();
+  const existingCallUuid = findActiveNativeCallUuid('direct', call.callId);
+  if (existingCallUuid) return existingCallUuid;
+
   const callUuid = createNativeCallUuid(call.callId, call.callType);
   activeCalls.set(callUuid, {
     context: 'direct',
@@ -415,6 +463,9 @@ export async function displayNativeIncomingGroupCall(
   call: IncomingGroupLiveKitCall,
 ) {
   await configureNativeCallService();
+  const existingCallUuid = findActiveNativeCallUuid('group', call.callId);
+  if (existingCallUuid) return existingCallUuid;
+
   const callUuid = createNativeGroupCallUuid(call.callId, call.callType);
   activeCalls.set(callUuid, {
     context: 'group',

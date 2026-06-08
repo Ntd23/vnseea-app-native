@@ -1,5 +1,5 @@
 // Description: Renders the Stitch VNSEEA-style login screen using the real auth API.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +19,7 @@ import Icon from 'react-native-vector-icons/FontAwesome';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useAuthViewModel } from '../../application/view-models/useAuthViewModel';
 
 type LoginNav = NativeStackNavigationProp<RootStackParamList>;
@@ -49,6 +50,17 @@ function LoginScreen() {
   const [validationError, setValidationError] = useState<string | null>(null);
   const { error, isLoading, login } = useAuthViewModel();
   const visibleError = validationError ?? error;
+
+  useEffect(() => {
+    if (!sessionStorage.getAccessToken()) {
+      return;
+    }
+
+    navigation.reset({
+      index: 0,
+      routes: [{ name: ROUTES.MAIN_TABS }],
+    });
+  }, [navigation]);
 
   async function handleLogin() {
     const normalizedUsername = username.trim();

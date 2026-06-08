@@ -1,4 +1,4 @@
-﻿// Description: Owns the app-level LiveKit call session so calls survive navigation changes.
+// Description: Owns the app-level LiveKit call session so calls survive navigation changes.
 import React, {
   createContext,
   useCallback,
@@ -23,6 +23,7 @@ import {
   type MediaStreamTrack,
 } from '@livekit/react-native-webrtc';
 import {
+  ConnectionState,
   MediaDeviceFailure,
   ParticipantEvent,
   Room,
@@ -63,6 +64,7 @@ type AudioOutputId = 'speaker' | 'earpiece' | 'default' | 'force_speaker';
 
 type LiveKitCallSession = {
   callId: string;
+  recipientId: string;
   callType: LiveKitCallType;
   direction: LiveKitCallRouteParams['direction'];
   peer?: LiveKitCallPeer;
@@ -78,6 +80,7 @@ type LiveKitCallSession = {
   localVideoStreamUrl: string;
   localVideoRenderKey: number;
   remoteVideoStreamUrl: string;
+  hasRemoteParticipant: boolean;
   isLocalMicrophoneEnabled: boolean;
   isLocalCameraEnabled: boolean;
   isSpeakerEnabled: boolean;
@@ -121,6 +124,15 @@ const LIVEKIT_ROOM_OPTIONS = {
 const LiveKitCallSessionContext =
   createContext<LiveKitCallSessionContextValue | null>(null);
 
+function disconnectRoomSafely(room: Room | null) {
+  if (!room || room.state === ConnectionState.Disconnected) return;
+  try {
+    room.disconnect(true).catch(() => undefined);
+  } catch {
+    // Ignore disconnect races while LiveKit is still connecting.
+  }
+}
+
 function resolveTrackStreamUrl(track?: {
   mediaStream?: unknown;
   mediaStreamTrack?: unknown;
@@ -140,8 +152,8 @@ function resolveTrackStreamUrl(track?: {
 
 function formatPermissionError(callType: LiveKitCallType) {
   return callType === 'video'
-    ? 'Báº¡n cáº§n cáº¥p quyá»n mic vÃ  camera Ä‘á»ƒ tham gia cuá»™c gá»i.'
-    : 'Báº¡n cáº§n cáº¥p quyá»n mic Ä‘á»ƒ tham gia cuá»™c gá»i.';
+    ? 'Bạn cần cấp quyền mic và camera để tham gia cuộc gọi.'
+    : 'Bạn cần cấp quyền mic để tham gia cuộc gọi.';
 }
 
 function resolveAudioOutput(
@@ -167,13 +179,13 @@ function resolveStatusText(session: LiveKitCallSession | null) {
   if (!session) return '';
 
   const statusMap: Record<CallPhase, string> = {
-    initializing: 'Äang chuáº©n bá»‹ cuá»™c gá»i...',
-    ringing: 'Äang gá»i...',
-    answering: 'Äang tráº£ lá»i...',
-    connecting: 'Äang káº¿t ná»‘i LiveKit...',
-    connected: 'ÄÃ£ káº¿t ná»‘i',
-    ended: 'Cuá»™c gá»i Ä‘Ã£ káº¿t thÃºc',
-    error: session.error || 'KhÃ´ng thá»ƒ thá»±c hiá»‡n cuá»™c gá»i.',
+    initializing: 'Đang chuẩn bị cuộc gọi...',
+    ringing: 'Đang gọi...',
+    answering: 'Đang trả lời...',
+    connecting: '',
+    connected: 'Đã kết nối',
+    ended: 'Cuộc gọi đã kết thúc',
+    error: session.error || 'Không thể thực hiện cuộc gọi.',
   };
   return statusMap[session.phase];
 }
@@ -184,6 +196,7 @@ function buildInitialSession(
   const callId = params.callId ?? '';
   return {
     callId,
+    recipientId: params.recipientId ?? params.peer?.id ?? '',
     callType: params.callType,
     direction: params.direction,
     peer: params.peer,
@@ -199,6 +212,7 @@ function buildInitialSession(
     localVideoStreamUrl: '',
     localVideoRenderKey: 0,
     remoteVideoStreamUrl: '',
+    hasRemoteParticipant: false,
     isLocalMicrophoneEnabled: true,
     isLocalCameraEnabled: params.callType === 'video',
     isSpeakerEnabled: true,
@@ -235,12 +249,36 @@ function localStartedAtFromElapsed(elapsedSeconds: number) {
   return Date.now() - Math.max(0, elapsedSeconds) * 1000;
 }
 
+function resolveConnectedStartedAt(
+  elapsedSeconds: number,
+  currentStartedAt = 0,
+) {
+  if (elapsedSeconds > 0) return localStartedAtFromElapsed(elapsedSeconds);
+  return currentStartedAt || Date.now();
+}
+
 function exitCallRoomIfFocused() {
   if (!navigationRef.isReady()) return;
   if (navigationRef.getCurrentRoute()?.name !== ROUTES.CALL_ROOM) return;
   if (navigationRef.canGoBack()) {
     navigationRef.goBack();
   }
+}
+
+function isSameOutgoingTarget(
+  current: LiveKitCallSession,
+  params: StartOutgoingCallParams,
+) {
+  if (current.callId && params.callId && current.callId === params.callId) {
+    return true;
+  }
+
+  return Boolean(
+    current.direction === 'outgoing' &&
+      params.recipientId &&
+      current.recipientId === params.recipientId &&
+      current.callType === params.callType,
+  );
 }
 
 function LiveKitMediaBridge({
@@ -316,6 +354,7 @@ function LiveKitMediaBridge({
   useEffect(() => {
     if (!remoteParticipant) {
       onMediaState({
+        hasRemoteParticipant: false,
         isRemoteMicrophoneMuted: true,
         isRemoteCameraMuted: true,
       });
@@ -331,6 +370,7 @@ function LiveKitMediaBridge({
       );
 
       onMediaState({
+        hasRemoteParticipant: true,
         isRemoteMicrophoneMuted:
           !microphonePublication || microphonePublication.isMuted,
         isRemoteCameraMuted: !cameraPublication || cameraPublication.isMuted,
@@ -466,6 +506,7 @@ export function LiveKitCallSessionProvider({
   const roomEventCleanupRef = useRef<(() => void) | null>(null);
   const mediaControllerRef = useRef<LiveKitMediaController | null>(null);
   const closeSentRef = useRef(false);
+  const isJoiningAnsweredCallRef = useRef(false);
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ringPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -478,13 +519,25 @@ export function LiveKitCallSessionProvider({
   }, [activeRoom]);
 
   const patchSession = useCallback((patch: Partial<LiveKitCallSession>) => {
+    if (patch.hasRemoteParticipant === true) {
+      if (ringTimeoutRef.current) clearTimeout(ringTimeoutRef.current);
+      if (ringPollRef.current) clearInterval(ringPollRef.current);
+      ringTimeoutRef.current = null;
+      ringPollRef.current = null;
+    }
+
     setSession(current => {
-      if (!current) return current;
+      if (!current) {
+        sessionRef.current = current;
+        return current;
+      }
 
       const hasChanged = Object.entries(patch).some(
         ([key, value]) => current[key as keyof LiveKitCallSession] !== value,
       );
-      return hasChanged ? { ...current, ...patch } : current;
+      const next = hasChanged ? { ...current, ...patch } : current;
+      sessionRef.current = next;
+      return next;
     });
   }, []);
 
@@ -501,7 +554,7 @@ export function LiveKitCallSessionProvider({
     const room = activeRoomRef.current;
     activeRoomRef.current = null;
     setActiveRoom(null);
-    room?.disconnect(true).catch(() => undefined);
+    disconnectRoomSafely(room);
   }, []);
 
   const durationSeconds = useCallback(() => {
@@ -522,8 +575,8 @@ export function LiveKitCallSessionProvider({
       clearRingTimers();
       resetMediaState();
       if (current?.nativeCallUuid) endNativeCall(current.nativeCallUuid);
-      setSession(currentSession =>
-        currentSession
+      setSession(currentSession => {
+        const next = currentSession
           ? {
               ...currentSession,
               ...patch,
@@ -534,8 +587,10 @@ export function LiveKitCallSessionProvider({
               localVideoRenderKey: Date.now(),
               remoteVideoStreamUrl: '',
             }
-          : null,
-      );
+          : null;
+        sessionRef.current = next;
+        return next;
+      });
       exitCallRoomIfFocused();
     },
     [clearRingTimers, resetMediaState],
@@ -608,8 +663,8 @@ export function LiveKitCallSessionProvider({
 
       activeRoomRef.current = nextRoom;
       setActiveRoom(nextRoom);
-      setSession(current =>
-        current
+      setSession(current => {
+        const next: LiveKitCallSession | null = current
           ? {
               ...current,
               callId,
@@ -620,8 +675,10 @@ export function LiveKitCallSessionProvider({
               phase: 'connecting',
               isMinimized: false,
             }
-          : current,
-      );
+          : current;
+        sessionRef.current = next;
+        return next;
+      });
       try {
         await nextRoom.connect(nextPayload.wsUrl, nextPayload.token);
         await Promise.all([
@@ -638,8 +695,9 @@ export function LiveKitCallSessionProvider({
         nextPayload,
         nextPayload.call.startedAt,
       );
+      const currentStartedAt = sessionRef.current?.startedAt ?? 0;
       patchSession({
-        startedAt: localStartedAtFromElapsed(elapsedSeconds),
+        startedAt: resolveConnectedStartedAt(elapsedSeconds, currentStartedAt),
         elapsedSeconds,
         phase: 'connected',
         isLocalMicrophoneEnabled: true,
@@ -650,17 +708,71 @@ export function LiveKitCallSessionProvider({
     [disconnectActiveRoom, patchSession, repository],
   );
 
+  const joinAnsweredOutgoingCall = useCallback(
+    async (
+      callId: string,
+      callType: LiveKitCallType,
+      callUuid: string,
+    ): Promise<boolean> => {
+      const current = sessionRef.current;
+      if (current?.phase === 'connected' && current.payload) return true;
+      if (isJoiningAnsweredCallRef.current) return true;
+
+      isJoiningAnsweredCallRef.current = true;
+      clearRingTimers();
+      try {
+        await connectPayload(callId, callType, callUuid);
+        return true;
+      } catch (caught) {
+        patchSession({
+          phase: 'error',
+          error:
+            caught instanceof Error
+              ? caught.message
+              : 'Không thể kết nối cuộc gọi.',
+        });
+        return false;
+      } finally {
+        isJoiningAnsweredCallRef.current = false;
+      }
+    },
+    [clearRingTimers, connectPayload, patchSession],
+  );
+
   const startOutgoingCall = useCallback(
     (params: StartOutgoingCallParams) => {
       const current = sessionRef.current;
       if (current && !isFinalPhase(current.phase)) {
-        patchSession({ isMinimized: false });
-        return;
+        const isConnectedCall =
+          current.phase === 'connected' ||
+          current.phase === 'connecting' ||
+          Boolean(current.payload);
+
+        if (isConnectedCall || isSameOutgoingTarget(current, params)) {
+          patchSession({ isMinimized: false });
+          return;
+        }
+
+        clearRingTimers();
+        disconnectActiveRoom();
+        resetMediaState();
+        if (current.nativeCallUuid) endNativeCall(current.nativeCallUuid);
+        if (current.callId) {
+          repository
+            .closeCall({
+              callId: current.callId,
+              callType: current.callType,
+              status: 'cancelled',
+              duration: 0,
+            })
+            .catch(() => undefined);
+        }
       }
 
       closeSentRef.current = false;
       clearRingTimers();
       const initialSession = buildInitialSession(params);
+      sessionRef.current = initialSession;
       setSession(initialSession);
 
       async function boot() {
@@ -671,7 +783,7 @@ export function LiveKitCallSessionProvider({
         patchSession({ hasMediaPermissions: true });
 
         if (!params.recipientId) {
-          throw new Error('Thiáº¿u ngÆ°á»i nháº­n cuá»™c gá»i.');
+          throw new Error('Thiếu người nhận cuộc gọi.');
         }
 
         const created = await repository.createCall({
@@ -680,28 +792,30 @@ export function LiveKitCallSessionProvider({
         });
 
         if (created.busy) {
-          setSession(currentSession =>
-            currentSession
+          setSession(currentSession => {
+            const next: LiveKitCallSession | null = currentSession
               ? {
                   ...currentSession,
                   callId: created.callId,
                   peer: params.peer ?? created.peer,
                   phase: 'error',
-                  error: 'NgÆ°á»i nháº­n Ä‘ang báº­n.',
+                  error: 'Người nhận đang bận.',
                 }
-              : currentSession,
-          );
+              : currentSession;
+            sessionRef.current = next;
+            return next;
+          });
           return;
         }
 
         const nextCallId = created.callId;
         if (!nextCallId || nextCallId === '0') {
-          throw new Error('KhÃ´ng táº¡o Ä‘Æ°á»£c cuá»™c gá»i.');
+          throw new Error('Không tạo được cuộc gọi.');
         }
 
         const nextUuid = createNativeCallUuid(nextCallId, params.callType);
-        setSession(currentSession =>
-          currentSession
+        setSession(currentSession => {
+          const next: LiveKitCallSession | null = currentSession
             ? {
                 ...currentSession,
                 callId: nextCallId,
@@ -709,8 +823,10 @@ export function LiveKitCallSessionProvider({
                 peer: params.peer ?? created.peer,
                 phase: 'ringing',
               }
-            : currentSession,
-        );
+            : currentSession;
+          sessionRef.current = next;
+          return next;
+        });
         await startNativeOutgoingCall({
           callUuid: nextUuid,
           callType: params.callType,
@@ -718,16 +834,51 @@ export function LiveKitCallSessionProvider({
         });
 
         ringTimeoutRef.current = setTimeout(() => {
-          repository
-            .closeCall({
-              callId: nextCallId,
-              callType: params.callType,
-              status: 'no_answer',
-              duration: 0,
-            })
-            .catch(() => undefined);
-          closeSentRef.current = true;
-          finishSession({ error: 'KhÃ´ng cÃ³ pháº£n há»“i.' });
+          async function closeIfStillUnanswered() {
+            const result = await repository
+              .checkCall({
+                callId: nextCallId,
+                callType: params.callType,
+              })
+              .catch(() => null);
+
+            if (
+              result &&
+              (result.status === 'answered' || result.active) &&
+              !result.finished
+            ) {
+              const didJoin = await joinAnsweredOutgoingCall(
+                nextCallId,
+                params.callType,
+                nextUuid,
+              );
+              if (didJoin) return;
+            }
+
+            const current = sessionRef.current;
+            const roomState = activeRoomRef.current?.state;
+            const isAlreadyJoiningOrConnected =
+              current?.phase === 'connecting' ||
+              current?.phase === 'connected' ||
+              Boolean(current?.payload) ||
+              (roomState !== undefined &&
+                roomState !== ConnectionState.Disconnected);
+
+            if (isAlreadyJoiningOrConnected) return;
+
+            await repository
+              .closeCall({
+                callId: nextCallId,
+                callType: params.callType,
+                status: 'no_answer',
+                duration: 0,
+              })
+              .catch(() => undefined);
+            closeSentRef.current = true;
+            finishSession({ error: 'Không có phản hồi.' });
+          }
+
+          closeIfStillUnanswered().catch(() => undefined);
         }, OUTGOING_RING_TIMEOUT_MS);
 
         ringPollRef.current = setInterval(async () => {
@@ -739,18 +890,14 @@ export function LiveKitCallSessionProvider({
             .catch(() => null);
           if (!result) return;
 
-          if (result.status === 'answered' && result.active) {
-            clearRingTimers();
-            await connectPayload(nextCallId, params.callType, nextUuid).catch(
-              caught => {
-                patchSession({
-                  phase: 'error',
-                  error:
-                    caught instanceof Error
-                      ? caught.message
-                      : 'KhÃ´ng thá»ƒ káº¿t ná»‘i LiveKit.',
-                });
-              },
+          if (
+            (result.status === 'answered' || result.active) &&
+            !result.finished
+          ) {
+            await joinAnsweredOutgoingCall(
+              nextCallId,
+              params.callType,
+              nextUuid,
             );
           } else if (result.finished) {
             closeSentRef.current = true;
@@ -765,12 +912,20 @@ export function LiveKitCallSessionProvider({
           error:
             caught instanceof Error
               ? caught.message
-              : 'KhÃ´ng thá»ƒ báº¯t Ä‘áº§u cuá»™c gá»i.',
+              : 'Không thể bắt đầu cuộc gọi.',
           hasMediaPermissions: false,
         });
       });
     },
-    [clearRingTimers, connectPayload, finishSession, patchSession, repository],
+    [
+      clearRingTimers,
+      disconnectActiveRoom,
+      finishSession,
+      joinAnsweredOutgoingCall,
+      patchSession,
+      repository,
+      resetMediaState,
+    ],
   );
 
   const answerIncomingCall = useCallback(
@@ -789,10 +944,12 @@ export function LiveKitCallSessionProvider({
         direction: 'incoming',
         peer: call.peer,
       };
-      setSession({
+      const initialSession = {
         ...buildInitialSession(params),
         phase: 'answering',
-      });
+      } satisfies LiveKitCallSession;
+      sessionRef.current = initialSession;
+      setSession(initialSession);
 
       async function boot() {
         const isGranted = await requestCallMediaPermissions(call.callType);
@@ -816,7 +973,7 @@ export function LiveKitCallSessionProvider({
           error:
             caught instanceof Error
               ? caught.message
-              : 'KhÃ´ng thá»ƒ tráº£ lá»i cuá»™c gá»i.',
+              : 'Không thể trả lời cuộc gọi.',
           hasMediaPermissions: false,
         });
       });
@@ -845,7 +1002,7 @@ export function LiveKitCallSessionProvider({
         roomName: '',
         peer: params.peer ?? {
           id: '',
-          name: 'NgÆ°á»i dÃ¹ng',
+          name: 'Người dùng',
           avatar: '',
         },
       });

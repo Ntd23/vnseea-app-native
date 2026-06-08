@@ -1,18 +1,29 @@
-<?php 
+<?php
+// English description: Handles shop verification requests with identity, shop image, and license documents.
+
 if ($f == 'verificate-shop') {
     $data  = array(
         'status' => 304,
         'message' => ($error_icon . $wo['lang']['please_check_details'])
     );
     $error = false;
-    if (!isset($_POST['name']) || !isset($_POST['text_shop']) || !isset($_FILES['passport']) || !isset($_FILES['photo'])) {
+    $allowed_image_types = array(
+        IMAGETYPE_GIF,
+        IMAGETYPE_JPEG,
+        IMAGETYPE_PNG,
+        IMAGETYPE_BMP
+    );
+    if (defined('IMAGETYPE_WEBP')) {
+        $allowed_image_types[] = IMAGETYPE_WEBP;
+    }
+    if (!isset($_POST['name']) || !isset($_POST['text_shop']) || !isset($_FILES['passport']) || !isset($_FILES['photo']) || !isset($_FILES['shop_image']) || !isset($_FILES['license'])) {
         $error = true;
     } else {
         if (strlen($_POST['name']) < 5 || strlen($_POST['name']) > 50) {
             $error           = true;
             $data['message'] = $error_icon . $wo['lang']['name_shop_characters_length'];
         }
-        if (!file_exists($_FILES['passport']['tmp_name']) || !file_exists($_FILES['photo']['tmp_name'])) {
+        if (!file_exists($_FILES['passport']['tmp_name']) || !file_exists($_FILES['photo']['tmp_name']) || !file_exists($_FILES['shop_image']['tmp_name']) || !file_exists($_FILES['license']['tmp_name'])) {
             $error           = true;
             $data['message'] = $error_icon . $wo['lang']['please_select_passport_id'];
         }
@@ -23,48 +34,28 @@ if ($f == 'verificate-shop') {
         }
         if (file_exists($_FILES["passport"]["tmp_name"])) {
             $image = getimagesize($_FILES["passport"]["tmp_name"]);
-            if (!in_array($image[2], array(
-                IMAGETYPE_GIF,
-                IMAGETYPE_JPEG,
-                IMAGETYPE_PNG,
-                IMAGETYPE_BMP
-            ))) {
+            if (empty($image) || !in_array($image[2], $allowed_image_types)) {
                 $error           = true;
                 $data['message'] = $error_icon . $wo['lang']['passport_id_invalid'];
             }
         }
         if (file_exists($_FILES["photo"]["tmp_name"])) {
             $image = getimagesize($_FILES["photo"]["tmp_name"]);
-            if (!in_array($image[2], array(
-                IMAGETYPE_GIF,
-                IMAGETYPE_JPEG,
-                IMAGETYPE_PNG,
-                IMAGETYPE_BMP
-            ))) {
+            if (empty($image) || !in_array($image[2], $allowed_image_types)) {
                 $error           = true;
                 $data['message'] = $error_icon . $wo['lang']['user_picture_invalid'];
             }
         }
          if (file_exists($_FILES["shop_image"]["tmp_name"])) {
-            $image = getimagesize($_FILES["photo"]["tmp_name"]);
-            if (!in_array($image[2], array(
-                IMAGETYPE_GIF,
-                IMAGETYPE_JPEG,
-                IMAGETYPE_PNG,
-                IMAGETYPE_BMP
-            ))) {
+            $image = getimagesize($_FILES["shop_image"]["tmp_name"]);
+            if (empty($image) || !in_array($image[2], $allowed_image_types)) {
                 $error           = true;
                 $data['message'] = $error_icon . $wo['lang']['user_picture_invalid'];
             }
         }
-         if (file_exists($_FILES["license"]["tmp_name"])) {
-            $image = getimagesize($_FILES["photo"]["tmp_name"]);
-            if (!in_array($image[2], array(
-                IMAGETYPE_GIF,
-                IMAGETYPE_JPEG,
-                IMAGETYPE_PNG,
-                IMAGETYPE_BMP
-            ))) {
+         if (file_exists($_FILES["license"]["tmp_name"]) && $_FILES["license"]["type"] !== 'application/pdf') {
+            $image = getimagesize($_FILES["license"]["tmp_name"]);
+            if (empty($image) || !in_array($image[2], $allowed_image_types)) {
                 $error           = true;
                 $data['message'] = $error_icon . $wo['lang']['user_picture_invalid'];
             }
@@ -97,7 +88,7 @@ if ($f == 'verificate-shop') {
                     'name' => $file[$key]['name'],
                     'size' => $file[$key]["size"],
                     'type' => $file[$key]["type"],
-                    'types' => 'jpg,png,bmp,gif'
+                    'types' => ($key === 'license' ? 'jpg,jpeg,png,bmp,gif,webp,pdf' : 'jpg,jpeg,png,bmp,gif,webp')
                 );
                 $media             = Wo_ShareFile($fileInfo);
                 if (!empty($media)) {
@@ -116,4 +107,3 @@ if ($f == 'verificate-shop') {
     echo json_encode($data);
     exit();
 }
-

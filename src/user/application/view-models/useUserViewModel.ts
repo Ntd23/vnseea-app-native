@@ -2,6 +2,8 @@
 import { useCallback, useState } from 'react';
 import type {
   GetUserProfileInput,
+  MapPlacePrediction,
+  MapRouteInput,
   NearbyPlace,
   NearbyUsersInput,
   UpdateCurrentUserInput,
@@ -29,6 +31,9 @@ export function useUserViewModel() {
   const [suggestions, setSuggestions] = useState<UserProfile[]>([]);
   const [nearbyUsers, setNearbyUsers] = useState<UserProfile[]>([]);
   const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([]);
+  const [placePredictions, setPlacePredictions] = useState<
+    MapPlacePrediction[]
+  >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,10 +107,95 @@ export function useUserViewModel() {
         setNearbyUsers(users);
         setNearbyPlaces(discoveryPlaces);
 
-        return {places: discoveryPlaces, users};
+        return { places: discoveryPlaces, users };
       }),
     [runUserAction],
   );
+
+  const loadNearbyPages = useCallback(
+    (input?: { lat?: number; lng?: number; limit?: number }) =>
+      runUserAction(async () => {
+        const pages = await repository.getNearbyPages({
+          distance: 1,
+          limit: input?.limit ?? 30,
+          lat: input?.lat,
+          lng: input?.lng,
+        });
+        setNearbyUsers([]);
+        setNearbyPlaces(pages);
+        setPlacePredictions([]);
+        return pages;
+      }),
+    [runUserAction],
+  );
+
+  const searchNearbyPagesAndPlaces = useCallback(
+    (input: { query: string; lat?: number; lng?: number; limit?: number }) =>
+      runUserAction(async () => {
+        if (input.query.trim().length < 3) {
+          setNearbyPlaces([]);
+          setPlacePredictions([]);
+          return { pages: [], predictions: [] };
+        }
+
+        const [pagesResult, predictionsResult] = await Promise.allSettled([
+          repository.getNearbyPages({
+            keyword: input.query,
+            distance: 50,
+            limit: input.limit ?? 20,
+            lat: input.lat,
+            lng: input.lng,
+          }),
+          repository.getPlacePredictions(input),
+        ]);
+        const pages =
+          pagesResult.status === 'fulfilled' ? pagesResult.value : [];
+        const predictions =
+          predictionsResult.status === 'fulfilled'
+            ? predictionsResult.value
+            : [];
+
+        if (
+          pagesResult.status === 'rejected' &&
+          predictionsResult.status === 'rejected'
+        ) {
+          throw predictionsResult.reason ?? pagesResult.reason;
+        }
+        if (predictionsResult.status === 'rejected' && pages.length === 0) {
+          throw predictionsResult.reason;
+        }
+        if (pagesResult.status === 'rejected' && predictions.length === 0) {
+          throw pagesResult.reason;
+        }
+
+        setNearbyUsers([]);
+        setNearbyPlaces(pages);
+        setPlacePredictions(predictions);
+
+        return { pages, predictions };
+      }),
+    [runUserAction],
+  );
+
+  const getPlaceDetails = useCallback(
+    (placeId: string) => repository.getPlaceDetails(placeId),
+    [],
+  );
+
+  const getRoute = useCallback(
+    (input: MapRouteInput) => repository.getRoute(input),
+    [],
+  );
+
+  const clearNearbyDiscovery = useCallback(() => {
+    setNearbyUsers([]);
+    setNearbyPlaces([]);
+    setPlacePredictions([]);
+  }, []);
+
+  const clearPlacePredictions = useCallback(() => {
+    setPlacePredictions([]);
+  }, []);
 
   const updateCurrentUser = useCallback(
     (input: UpdateCurrentUserInput) =>
@@ -119,6 +209,7 @@ export function useUserViewModel() {
     suggestions,
     nearbyUsers,
     nearbyPlaces,
+    placePredictions,
     isLoading,
     error,
     loadCurrentUser,
@@ -126,6 +217,12 @@ export function useUserViewModel() {
     loadSuggestions,
     loadNearbyUsers,
     loadNearbyDiscovery,
+    loadNearbyPages,
+    searchNearbyPagesAndPlaces,
+    getPlaceDetails,
+    getRoute,
+    clearNearbyDiscovery,
+    clearPlacePredictions,
     updateCurrentUser,
   };
 }

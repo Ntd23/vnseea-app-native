@@ -5652,7 +5652,7 @@ function Wo_ShareFile($data = array(), $type = 0, $crop = true)
     if ($data['size'] > $wo['config']['maxUpload']) {
         return false;
     }
-    if ($file_extension == 'jpg' || $file_extension == 'jpeg' || $file_extension == 'png' || $file_extension == 'gif') {
+    if ($file_extension == 'jpg' || $file_extension == 'jpeg' || $file_extension == 'png' || $file_extension == 'gif' || $file_extension == 'webp') {
         $folder = 'photos';
         $fileType = 'image';
     } else if ($is_sound_upload) {
@@ -5693,7 +5693,7 @@ function Wo_ShareFile($data = array(), $type = 0, $crop = true)
     $filename = $dir . '/' . Wo_GenerateKey() . '_' . date('d') . '_' . md5(time()) . "_{$fileType}.{$file_extension}";
     $second_file = pathinfo($filename, PATHINFO_EXTENSION);
     if (move_uploaded_file($data['file'], $filename)) {
-        if ($second_file == 'jpg' || $second_file == 'jpeg' || $second_file == 'png' || $second_file == 'gif') {
+        if ($second_file == 'jpg' || $second_file == 'jpeg' || $second_file == 'png' || $second_file == 'gif' || $second_file == 'webp') {
             $check_file = getimagesize($filename);
             if (!$check_file) {
                 unlink($filename);
