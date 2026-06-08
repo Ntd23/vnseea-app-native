@@ -13,7 +13,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 
 const PAGE_SIZE = 30;
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 7000; // Poll every 7 seconds to reduce network/CPU load
 const repository = createMessagesRepository();
 
 function mergeMessages(...messageLists: MessageItem[][]) {
@@ -69,8 +69,26 @@ export function useChatViewModel(chat: ChatItem) {
   const [pendingSendCount, setPendingSendCount] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const isRefreshingRef = useRef(false);
+  const latestMessageIdRef = useRef<string | undefined>(undefined);
+  const messageIdsRef = useRef<Set<string>>(new Set());
   const isSending = pendingSendCount > 0;
+  const getMessagesForChat = useCallback(
+    (options?: Parameters<typeof repository.getMessages>[1]) =>
+      chat.chatType === 'group'
+        ? repository.getGroupMessages(chat.userId, options)
+        : repository.getMessages(chat.userId, options),
+    [chat.chatType, chat.userId],
+  );
+  const sendMessageForChat = useCallback(
+    (message: string, attachment?: MessageAttachment) =>
+      chat.chatType === 'group'
+        ? repository.sendGroupMessage(chat.userId, message, attachment)
+        : repository.sendMessage(chat.userId, message, attachment),
+    [chat.chatType, chat.userId],
+  );
 
   const loadInitial = useCallback(async () => {
     setIsLoading(true);
@@ -80,12 +98,16 @@ export function useChatViewModel(chat: ChatItem) {
       const page = await repository.getMessages(chat, {
         limit: PAGE_SIZE,
       });
-      setMessages(mergeMessages(page));
-      setHasMore(page.length >= PAGE_SIZE);
-      repository
-        .markAsSeen(chat.userId)
-        .then(() => setUnreadBadgeCounts({ messageCount: 0 }))
-        .catch(() => undefined);
+      setMessages(mergeMessages(result.messages));
+      setHasMore(result.messages.length >= PAGE_SIZE);
+      setIsTyping(Boolean(result.typing));
+      setIsRecording(Boolean(result.is_recording));
+      if (chat.chatType !== 'group') {
+        repository
+          .markAsSeen(chat.userId)
+          .then(() => setUnreadBadgeCounts({ messageCount: 0 }))
+          .catch(() => undefined);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không tải được tin nhắn');
     } finally {
@@ -106,8 +128,10 @@ export function useChatViewModel(chat: ChatItem) {
         limit: PAGE_SIZE,
         beforeMessageId: oldestMessage.id,
       });
-      setMessages(current => mergeMessages(current, page));
-      setHasMore(page.length >= PAGE_SIZE);
+      setMessages(current => mergeMessages(current, result.messages));
+      setHasMore(result.messages.length >= PAGE_SIZE);
+      setIsTyping(Boolean(result.typing));
+      setIsRecording(Boolean(result.is_recording));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Không tải thêm được tin nhắn',
@@ -179,6 +203,7 @@ export function useChatViewModel(chat: ChatItem) {
           sentMessages = await repository.getMessages(chat, {
             limit: 1,
           });
+          sentMessages = result.messages;
         }
 
         setMessages(current =>
@@ -310,6 +335,11 @@ export function useChatViewModel(chat: ChatItem) {
   }, [loadInitial]);
 
   useEffect(() => {
+    latestMessageIdRef.current = messages[0]?.id;
+    messageIdsRef.current = new Set(messages.map(message => message.id));
+  }, [messages]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       refreshLatest(false).catch(() => undefined);
     }, POLL_INTERVAL_MS);
@@ -328,6 +358,8 @@ export function useChatViewModel(chat: ChatItem) {
     isLoadingMore,
     isRefreshing,
     isSending,
+    isTyping,
+    isRecording,
     hasMore,
     error,
     loadInitial,

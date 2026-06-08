@@ -65,6 +65,7 @@ import {
 import { PopularScreen } from '../popular';
 import { WithdrawalScreen } from '../withdrawal';
 import { NearbyUsersScreen } from '../user';
+import { LiveScreen, LiveRoomScreen, GoLiveScreen } from '../live';
 
 type ScreenComponent = React.ComponentType<any>;
 type TabIconComponent = React.ComponentType<{
@@ -186,5 +187,10 @@ export function createStackRoutes(
     { name: ROUTES.STORY_VIEWER, component: StoryViewerScreen },
     { name: ROUTES.AVATAR_VIEWER, component: AvatarViewerScreen },
     { name: ROUTES.COVER_VIEWER, component: CoverViewerScreen },
+    { name: ROUTES.CREATE_GROUP_CHAT, component: CreateGroupChatScreen },
+    { name: ROUTES.GROUP_INFO, component: GroupInfoScreen },
+    { name: ROUTES.LIVE, component: LiveScreen },
+    { name: ROUTES.LIVE_ROOM, component: LiveRoomScreen },
+    { name: ROUTES.GO_LIVE, component: GoLiveScreen },
   ];
 }

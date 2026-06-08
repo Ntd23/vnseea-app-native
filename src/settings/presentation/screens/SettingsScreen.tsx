@@ -76,6 +76,12 @@ function SettingsScreen() {
 
   const handleSettingsItemPress = useCallback(
     async (id: string) => {
+      if (id === 'notifications') {
+        navigation.navigate(ROUTES.MAIN_TABS, {
+          screen: ROUTES.NOTIFICATIONS,
+        });
+      }
+
       if (id === 'earnings') {
         navigation.navigate(ROUTES.EARNINGS);
       }
@@ -190,6 +196,10 @@ function SettingsScreen() {
 
       if (id === 'nearby') {
         navigation.navigate(ROUTES.NEARBY_USERS);
+      }
+
+      if (id === 'live') {
+        navigation.navigate(ROUTES.LIVE);
       }
     },
     [navigation],

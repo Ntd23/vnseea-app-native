@@ -3,6 +3,8 @@
 
 import type {
   ChatItem,
+  CreateGroupChatInput,
+  GetChatsOptions,
   GetMessagesOptions,
   GroupAddableUser,
   GroupChatInfo,
@@ -12,12 +14,31 @@ import type {
   SendMessageResponse,
 } from '../types/messages.types';
 
+// Extended response that includes typing/recording status
+export interface GetMessagesResult {
+  messages: MessageItem[];
+  typing: number;
+  is_recording: number;
+}
+
 export interface MessagesRepository {
   /**
    * Get list of all conversations/chats
    * API: POST /api/get_chats
    */
-  getChats(): Promise<ChatItem[]>;
+  getChats(options?: GetChatsOptions): Promise<ChatItem[]>;
+
+  /**
+   * Get only group conversations.
+   * API: POST /api/group_chat with type=get_list
+   */
+  getGroupChats(): Promise<ChatItem[]>;
+
+  /**
+   * Create a group chat.
+   * API: POST /api/group_chat with type=create
+   */
+  createGroupChat(input: CreateGroupChatInput): Promise<ChatItem>;
 
   /**
    * Get only unread one-to-one chats for lightweight notification previews.
@@ -28,6 +49,7 @@ export interface MessagesRepository {
   /**
    * Get messages from a specific conversation
    * API: POST /api/get_user_messages
+   * Returns: messages array + typing/recording status from API
    */
   getMessages(
     chat: ChatItem | string,
@@ -40,6 +62,16 @@ export interface MessagesRepository {
    */
   sendMessage(
     chat: ChatItem | string,
+    message: string,
+    attachment?: MessageAttachment,
+  ): Promise<SendMessageResponse>;
+
+  /**
+   * Send a message to a group chat.
+   * API: POST /api/group_chat with type=send
+   */
+  sendGroupMessage(
+    groupId: string,
     message: string,
     attachment?: MessageAttachment,
   ): Promise<SendMessageResponse>;

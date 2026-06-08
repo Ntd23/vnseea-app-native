@@ -1,5 +1,5 @@
 import { createMMKV } from 'react-native-mmkv';
-import type { FeedPost } from '../../../feed/domain/types/feed.types';
+import type { FeedPost, FeedVideoPost } from '../../../feed/domain/types/feed.types';
 import type { ProductItem } from '../../../product/domain/types/product.types';
 
 const storage = createMMKV({ id: 'vnseea-feed-cache' });
@@ -7,6 +7,7 @@ const storage = createMMKV({ id: 'vnseea-feed-cache' });
 import type { EventsItem } from '../../../events/domain/types/events.types';
 
 const POSTS_CACHE_KEY = 'feed.posts.page1';
+const VIDEOS_CACHE_KEY = 'feed.videos.page1';
 const PRODUCTS_CACHE_KEY = 'feed.products.page1';
 const EVENTS_CACHE_KEY = 'feed.events.page1';
 
@@ -29,6 +30,25 @@ export const feedCacheStorage = {
       storage.set(POSTS_CACHE_KEY, JSON.stringify(posts.slice(0, 50)));
     } catch (err) {
       console.warn('Failed to set cached posts:', err);
+    }
+  },
+
+  getCachedVideoPosts(): FeedVideoPost[] {
+    try {
+      const json = storage.getString(VIDEOS_CACHE_KEY);
+      if (!json) return [];
+      return JSON.parse(json) as FeedVideoPost[];
+    } catch (err) {
+      console.warn('Failed to parse cached feed videos:', err);
+      return [];
+    }
+  },
+
+  setCachedVideoPosts(posts: FeedVideoPost[]) {
+    try {
+      storage.set(VIDEOS_CACHE_KEY, JSON.stringify(posts.slice(0, 30)));
+    } catch (err) {
+      console.warn('Failed to set cached feed videos:', err);
     }
   },
 
@@ -74,6 +94,7 @@ export const feedCacheStorage = {
 
   clearAllCache() {
     storage.remove(POSTS_CACHE_KEY);
+    storage.remove(VIDEOS_CACHE_KEY);
     storage.remove(PRODUCTS_CACHE_KEY);
     storage.remove(EVENTS_CACHE_KEY);
   },

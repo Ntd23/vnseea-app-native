@@ -7,7 +7,9 @@ import type { MessagesRepository } from '../../domain/repositories/MessagesRepos
 import type {
   ChatItem,
   ChatPreviewKind,
+  CreateGroupChatInput,
   GetChatsResponse,
+  GetChatsOptions,
   GetMessagesOptions,
   GetMessagesResponse,
   GroupAddableUser,
@@ -323,9 +325,12 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
       readString(userData, 'avatar', 'profile_picture'),
     lastMessage: lastMessagePreview.text,
     lastMessageKind: lastMessagePreview.kind,
-    lastMessageTime:
-      readNumber(lastMessage, 'time') || readNumber(raw, 'chat_time', 'time'),
-    unreadCount: readNumber(raw, 'message_count', 'unread', 'messages_count'),
+    lastMessageTime: lastMessageTime || paginationCursorTime,
+    paginationCursorTime: paginationCursorTime || lastMessageTime,
+    unreadCount:
+      chatType === 'group'
+        ? readGroupUnreadCount(raw, chatId)
+        : readNumber(raw, 'message_count', 'unread', 'messages_count'),
     isOnline: readBool(userData, 'online'),
     isVerified: readBool(userData, 'verified'),
   };
@@ -464,7 +469,9 @@ async function fetchAdditionalCachedChats(
     page += 1
   ) {
     const offset = Math.min(
-      ...previousPage.map(chat => chat.lastMessageTime).filter(Boolean),
+      ...previousPage
+        .map(chat => chat.paginationCursorTime ?? chat.lastMessageTime)
+        .filter(Boolean),
     );
     if (!Number.isFinite(offset) || offset <= 0) break;
     const response = await apiBridge.post<GetChatsResponse>(
@@ -564,7 +571,7 @@ async function fetchDiscoveredUserChats(): Promise<ChatItem[]> {
         const messages = await fetchRawUserMessages(userId, { limit: 1 }).catch(
           () => [],
         );
-        const lastMessage = messages[0];
+        const lastMessage = result.messages[0];
         if (!lastMessage) return null;
         const isUnread =
           readString(lastMessage, 'to_id') === sessionUserId &&
@@ -729,12 +736,21 @@ function readMediaType(
 }
 export function createMessagesRepository(): MessagesRepository {
   return {
-    async getChats() {
-      const [chats, discoveredChats] = await Promise.all([
-        fetchCachedChats(),
-        fetchDiscoveredUserChats().catch(() => []),
+    async getChats(options?: GetChatsOptions) {
+      const includeDiscovery = options?.includeDiscovery ?? true;
+      const [cachedChats, discoveredChats] = await Promise.all([
+        options?.latestOnly ? fetchLatestCachedChats() : fetchCachedChats(),
+        includeDiscovery ? fetchDiscoveredUserChats().catch(() => []) : [],
       ]);
-      return mergeChats(discoveredChats, chats);
+      return mergeChats(discoveredChats, cachedChats);
+    },
+
+    async getGroupChats() {
+      return fetchGroupChats();
+    },
+
+    async createGroupChat(input: CreateGroupChatInput) {
+      return createGroupChatRequest(input);
     },
     async getUnreadChats() {
       return fetchUnreadUserChats();

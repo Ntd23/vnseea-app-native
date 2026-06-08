@@ -16,8 +16,10 @@ type NotificationsResponse = {
   api_status: number | string;
   api_text?: string;
   notifications?: NotificationRecord[];
+  group_chat_requests?: NotificationRecord[];
   count_notifications?: number;
   new_notifications_count?: number;
+  new_group_chat_requests_count?: number | string;
   count_new_messages?: number;
   data?: NotificationRecord[];
   message?: string;
@@ -93,21 +95,69 @@ function mapNotification(raw: NotificationRecord): NotificationsItem {
   };
 }
 
+function mapGroupChatRequest(raw: NotificationRecord): NotificationsItem | null {
+  const groupTab = asRecord(raw.group_tab) ?? {};
+  const groupChatId =
+    readString(raw, 'group_id') || readString(groupTab, 'group_id', 'id');
+
+  if (!groupChatId) {
+    return null;
+  }
+
+  const groupName =
+    readString(groupTab, 'group_name', 'name') || 'Nhóm chat';
+  const ownerId = readString(groupTab, 'user_id');
+  const avatar = normalizeUrl(readString(groupTab, 'avatar'));
+  const createdAt =
+    readNumber(groupTab, 'time', 'created_at') ??
+    readNumber(raw, 'time', 'created_at') ??
+    0;
+
+  return {
+    id: `group-chat-request:${groupChatId}`,
+    notification_id: `group-chat-request:${groupChatId}`,
+    recipientId: readString(raw, 'user_id'),
+    notifierId: ownerId,
+    type: 'added_you_to_group',
+    text: `Bạn được mời vào nhóm chat ${groupName}`,
+    url: '',
+    groupChatId,
+    seen: false,
+    createdAt,
+    timeText: readString(groupTab, 'time_text') || readString(raw, 'time_text'),
+    notifier: {
+      id: ownerId || groupChatId,
+      name: groupName,
+      avatarUrl: avatar,
+      username: '',
+      verified: false,
+      isFollowing: false,
+      isFollowed: false,
+    },
+  };
+}
+
 function isSuccess(status: number | string | undefined): boolean {
   return status === 200 || status === '200' || status === 'success';
+}
+
+function toCount(value: unknown): number {
+  const count = Number(value);
+  return Number.isFinite(count) && count > 0 ? count : 0;
 }
 
 function mapUnreadCounts(response: NotificationsResponse): NotificationsUnreadCounts {
   return {
     notificationCount:
-      response.new_notifications_count ?? response.count_notifications ?? 0,
-    messageCount: response.count_new_messages ?? 0,
+      toCount(response.new_notifications_count ?? response.count_notifications) +
+      toCount(response.new_group_chat_requests_count),
+    messageCount: toCount(response.count_new_messages),
   };
 }
 
 function fetchNotificationsResponse(offset?: string | number | null) {
   const payload: Record<string, string> = {
-    fetch: 'notifications,count_new_messages',
+    fetch: 'notifications,count_new_messages,group_chat_requests',
     include_all_notifications: '1',
   };
   if (offset) {
@@ -129,9 +179,18 @@ export function createNotificationsRepository(): NotificationsRepository {
 
         const rawItems = response.notifications ?? response.data ?? [];
         const items = Array.isArray(rawItems) ? rawItems : [];
+        const rawGroupRequests = Array.isArray(response.group_chat_requests)
+          ? response.group_chat_requests
+          : [];
 
-        const mapped: NotificationsItem[] = items.map(item =>
+        const mappedNotifications: NotificationsItem[] = items.map(item =>
           mapNotification(item as NotificationRecord)
+        );
+        const mappedGroupRequests = rawGroupRequests
+          .map(item => mapGroupChatRequest(item as NotificationRecord))
+          .filter((item): item is NotificationsItem => Boolean(item));
+        const mapped = [...mappedGroupRequests, ...mappedNotifications].sort(
+          (left, right) => right.createdAt - left.createdAt,
         );
 
         const lastItem = items[items.length - 1] as NotificationRecord | undefined;
@@ -140,7 +199,7 @@ export function createNotificationsRepository(): NotificationsRepository {
         return {
           items: mapped,
           nextOffset,
-          hasMore: mapped.length >= NOTIFICATIONS_PAGE_SIZE,
+          hasMore: items.length >= NOTIFICATIONS_PAGE_SIZE,
           unreadCount: counts.notificationCount,
           unreadMessageCount: counts.messageCount,
         };

@@ -26,7 +26,9 @@ export type RootStackParamList = {
   [ROUTES.CREATE_ALBUM]: undefined;
   [ROUTES.MY_VIDEOS]: undefined;
   [ROUTES.MESSAGES]: undefined;
+  [ROUTES.CREATE_GROUP_CHAT]: undefined;
   [ROUTES.CHAT]: { chat: ChatItem };
+  [ROUTES.GROUP_INFO]: { groupId: number; groupName: string; avatar: string; memberCount: number };
   [ROUTES.CALLS]: undefined;
   [ROUTES.CALL_ROOM]: LiveKitCallRouteParams;
   [ROUTES.GROUP_CALL_ROOM]: GroupLiveKitCallRouteParams;
@@ -55,7 +57,7 @@ export type RootStackParamList = {
   [ROUTES.BLOG_DETAIL]: { blogId: string };
   [ROUTES.MOVIES]: undefined;
   [ROUTES.JOBS]: undefined;
-  [ROUTES.JOB_DETAIL]: { jobId?: string };
+  [ROUTES.JOB_DETAIL]: { jobId?: string; job?: any };
   [ROUTES.CREATE_JOB]: undefined;
   [ROUTES.EARNINGS]: undefined;
   [ROUTES.AFFILIATES]: undefined;
@@ -95,6 +97,9 @@ export type RootStackParamList = {
     userName: string;
     userId?: string;
   };
+  [ROUTES.LIVE]: undefined;
+  [ROUTES.LIVE_ROOM]: { postId: number; isHost?: boolean; liveSession?: LiveSession };
+  [ROUTES.GO_LIVE]: undefined;
 };
 
 export type MainTabRouteName = keyof MainTabParamList;

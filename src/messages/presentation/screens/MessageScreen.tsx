@@ -4,8 +4,11 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Platform,
   RefreshControl,
+  ScrollView,
   StatusBar,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -34,7 +37,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import {
+  launchImageLibrary,
+  type MediaType,
+} from 'react-native-image-picker';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROUTES } from '../../../navigation/constants/routes';
 import { useMessagesViewModel } from '../../application/view-models/useMessagesViewModel';
 import type {
   ChatItem,
@@ -72,6 +80,72 @@ function formatTime(timestamp: number): string {
   return `${date.getDate()}/${date.getMonth() + 1}`;
 }
 
+// Get message preview icon and text based on message kind
+function getMessagePreview(
+  lastMessage: string,
+  messageKind?: ChatPreviewKind,
+  isFromMe: boolean = false
+): { icon: React.ReactNode; text: string } {
+  // Based on ChatPreviewKind type
+  switch (messageKind) {
+    case 'image':
+      return {
+        icon: <ImageIcon size={14} color="#64748b" />,
+        text: isFromMe ? 'Bạn đã gửi ảnh' : 'Đã gửi ảnh',
+      };
+    case 'video':
+      return {
+        icon: <Video size={14} color="#64748b" />,
+        text: isFromMe ? 'Bạn đã gửi video' : 'Đã gửi video',
+      };
+    case 'audio':
+      return {
+        icon: <Mic size={14} color="#64748b" />,
+        text: isFromMe ? 'Bạn đã gửi đoạn ghi âm' : 'Đã gửi đoạn ghi âm',
+      };
+    case 'audio_call':
+      return {
+        icon: <PhoneCall size={14} color="#22c55e" />,
+        text: isFromMe ? 'Cuộc gọi thoại' : 'Cuộc gọi thoại',
+      };
+    case 'video_call':
+      return {
+        icon: <Video size={14} color="#3b82f6" />,
+        text: isFromMe ? 'Cuộc gọi video' : 'Cuộc gọi video',
+      };
+    case 'file':
+      return {
+        icon: <Mic size={14} color="#64748b" />,
+        text: isFromMe ? 'Bạn đã gửi file' : 'Đã gửi file',
+      };
+    case 'product':
+      return {
+        icon: <MessageCircle size={14} color="#64748b" />,
+        text: isFromMe ? 'Bạn đã gửi sản phẩm' : 'Đã gửi sản phẩm',
+      };
+    case 'sticker':
+      return {
+        icon: <MessageCircle size={14} color="#64748b" />,
+        text: isFromMe ? 'Bạn đã gửi nhãn dán' : 'Đã gửi nhãn dán',
+      };
+    case 'text':
+    default:
+      // Text message - show first part or last message
+      if (lastMessage && lastMessage.trim()) {
+        const text = lastMessage.length > 40 ? lastMessage.substring(0, 40) + '...' : lastMessage;
+        return {
+          icon: null,
+          text: isFromMe ? `Bạn: ${text}` : text,
+        };
+      }
+      // No message - show placeholder
+      return {
+        icon: null,
+        text: 'Bắt đầu trò chuyện',
+      };
+  }
+}
+
 // Online indicator dot
 function OnlineDot({ isOnline }: { isOnline: boolean }) {
   if (!isOnline) return null;
@@ -105,7 +179,12 @@ function UserAvatar({
         className="items-center justify-center rounded-full bg-blue-100"
         style={{ width: size, height: size }}
       >
-        <Text className="text-lg font-bold text-blue-600">{initials}</Text>
+        <Text
+          className="font-bold text-blue-600"
+          style={{ fontSize: size ? size * 0.35 : 16 }}
+        >
+          {initials}
+        </Text>
       </View>
     );
   }
@@ -169,14 +248,25 @@ function ChatListItem({
   selectable?: boolean;
   selected?: boolean;
 }) {
+  // Check if this is a group chat
+  const isGroup = chat.chatType === 'group';
+
+  // Get message preview with icon based on lastMessageKind
+  const messagePreview = getMessagePreview(
+    chat.lastMessage || '',
+    chat.lastMessageKind,
+    false // isFromMe - we don't have this info from chat list
+  );
+
   return (
     <TouchableOpacity
       className="flex-row items-center px-4 py-3 active:bg-gray-50"
       activeOpacity={0.8}
       onPress={() => onPress(chat)}
+      onLongPress={() => onLongPress?.(chat)}
     >
       <View className="relative">
-        <UserAvatar uri={chat.avatar} name={chat.name} />
+        <UserAvatar uri={chat.avatar} name={chat.name} size={56} />
         <OnlineDot isOnline={chat.isOnline} />
       </View>
 
@@ -191,6 +281,11 @@ function ChatListItem({
             </Text>
             {chat.isVerified && (
               <CheckCircle2 size={14} color="#3b82f6" className="ml-1" />
+            )}
+            {isGroup && (
+              <View className="ml-1 h-5 w-5 items-center justify-center rounded-full bg-purple-100">
+                <Users size={12} color="#7c3aed" />
+              </View>
             )}
           </View>
           <Text className="ml-2 text-xs text-gray-500">
@@ -239,6 +334,136 @@ function ChatListItem({
   );
 }
 
+// Tab button
+function TabButton({
+  title,
+  isActive,
+  onPress,
+}: {
+  title: string;
+  isActive: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.8}
+      onPress={onPress}
+      className={`flex-1 items-center justify-center px-2 py-3 ${isActive ? 'border-b-2 border-blue-500' : ''}`}
+    >
+      <Text className={`text-sm font-semibold ${isActive ? 'text-blue-600' : 'text-gray-500'}`}>
+        {title}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+// User list item với animation khi chọn (cho multi-user messaging)
+function UserListItemAnimated({
+  user,
+  isSelected,
+  onPress,
+}: {
+  user: SelectableUser;
+  isSelected: boolean;
+  onPress: () => void;
+}) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const bgColorAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: isSelected ? 1.02 : 1,
+        friction: 8,
+        tension: 100,
+        useNativeDriver: false,
+      }),
+      Animated.timing(bgColorAnim, {
+        toValue: isSelected ? 1 : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, [isSelected, scaleAnim, bgColorAnim]);
+
+  const bgColor = bgColorAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#FFFFFF', '#EFF6FF'],
+  });
+
+  return (
+    <Animated.View style={[styles.userItemContainer, { backgroundColor: bgColor, transform: [{ scale: scaleAnim }] }]}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={onPress}
+        style={styles.userItemTouchable}
+      >
+        <View className="relative">
+          {/* Avatar với border khi selected */}
+          <View style={[styles.userAvatarWrapper, isSelected && styles.userAvatarSelected]}>
+            <UserAvatar uri={user.avatar} name={user.name} size={48} />
+            {user.isOnline && (
+              <View style={styles.onlineIndicator} />
+            )}
+          </View>
+
+          {/* Check badge khi selected */}
+          {isSelected && (
+            <Animated.View style={styles.checkBadge}>
+              <Check size={12} color="#FFFFFF" strokeWidth={3} />
+            </Animated.View>
+          )}
+        </View>
+
+        <Text style={[styles.userName, isSelected && styles.userNameSelected]} numberOfLines={1}>
+          {user.name}
+        </Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// Group list item
+export function GroupListItem({
+  group,
+  onPress,
+}: {
+  group: {
+    id: string;
+    name: string;
+    avatar?: string;
+    lastMessageTime?: number;
+    unreadCount?: number;
+  };
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.8}
+      onPress={onPress}
+      className="flex-row items-center px-4 py-3"
+    >
+      <View className="h-12 w-12 items-center justify-center rounded-full bg-purple-100">
+        <Users size={24} color="#7c3aed" />
+      </View>
+      <View className="ml-3 flex-1 border-b border-gray-100 py-2">
+        <View className="flex-row items-center justify-between">
+          <Text className="text-sm font-semibold text-gray-900">{group.name}</Text>
+          {group.lastMessageTime && (
+            <Text className="text-xs text-gray-500">{formatTime(group.lastMessageTime)}</Text>
+          )}
+        </View>
+        {group.unreadCount !== undefined && group.unreadCount > 0 && (
+          <View className="mt-1 flex-row items-center justify-between">
+            <Text className="flex-1 text-xs text-gray-500">Nhắn tin nhóm</Text>
+            <UnreadBadge count={group.unreadCount} />
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 // Empty state
 function EmptyChats({
   filter,
@@ -271,7 +496,7 @@ function LoadingSkeleton() {
   return (
     <View className="flex-1 px-4 py-2">
       {[1, 2, 3, 4, 5].map(i => (
-        <View key={i} className="flex-row items-center py-4">
+        <View key={i} className="mb-4 flex-row items-center">
           <View className="h-14 w-14 rounded-full bg-gray-200" />
           <View className="ml-3 flex-1">
             <View className="mb-2 h-4 w-32 rounded bg-gray-200" />
@@ -555,9 +780,86 @@ function MessageScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadChats();
+    await vm.loadChats();
     setRefreshing(false);
-  }, [loadChats]);
+  }, [vm]);
+
+  const handlePickBulkImages = useCallback(async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo' as MediaType,
+      selectionLimit: MAX_BULK_IMAGE_ATTACHMENTS,
+      quality: 0.8,
+    });
+
+    if (result.didCancel || result.errorCode) return;
+
+    const selected: MessageAttachment[] = [];
+    for (const asset of result.assets ?? []) {
+      if (!asset.uri) continue;
+
+      const uri =
+        Platform.OS === 'android' &&
+        !/^[a-z][a-z0-9+.-]*:\/\//i.test(asset.uri)
+          ? `file://${asset.uri}`
+          : asset.uri;
+
+      selected.push({
+        uri,
+        name: asset.fileName ?? `bulk-message-${Date.now()}.jpg`,
+        type: asset.type ?? 'image/jpeg',
+        mediaType: 'image',
+      });
+    }
+
+    if (selected.length > 0) {
+      setAttachments(current =>
+        [...current, ...selected].slice(0, MAX_BULK_IMAGE_ATTACHMENTS),
+      );
+    }
+  }, []);
+
+  const loadMultiUserCandidates = useCallback(async () => {
+    const session = sessionStorage.getSession();
+    const currentUserId = session?.userId ? String(session.userId) : '';
+
+    if (!currentUserId) {
+      setMultiUserCandidates([]);
+      setMultiUsersError('Bạn cần đăng nhập lại để chọn người nhận.');
+      return;
+    }
+
+    setIsLoadingMultiUsers(true);
+    setMultiUsersError(null);
+
+    try {
+      const friends = await userRepository.getFriends({
+        userId: currentUserId,
+        type: ['following', 'followers'],
+        limit: 100,
+      });
+      const users = new Map<string, SelectableUser>();
+
+      const addProfile = (profile: UserProfile) => {
+        const user = mapProfileToSelectableUser(profile);
+        if (!user || user.id === currentUserId) return;
+        users.set(user.id, user);
+      };
+
+      friends.following.forEach(addProfile);
+      friends.followers.forEach(addProfile);
+      setMultiUserCandidates([...users.values()]);
+    } catch (caughtError) {
+      console.error('[MessageScreen] load multi-user candidates error:', caughtError);
+      setMultiUsersError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Không tải được danh sách người nhận.',
+      );
+      setMultiUserCandidates([]);
+    } finally {
+      setIsLoadingMultiUsers(false);
+    }
+  }, []);
 
   const handleChatPress = useCallback(
     (chat: ChatItem) => {
@@ -654,14 +956,69 @@ function MessageScreen() {
         </View>
       )}
 
-      {isLoadingChats && !refreshing ? (
+      {/* Stories row */}
+      {displayStories.length > 1 && (
+        <View className="mb-3">
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
+          >
+            {displayStories.map((story, index) => (
+              <StoryBubble
+                key={story.id}
+                story={story}
+                onPress={() => {
+                  if (story.id === 'create') {
+                    navigation.navigate(ROUTES.CREATE_STORY);
+                  } else {
+                    handleStoryPress(index - 1);
+                  }
+                }}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Tabs */}
+      <View className="mb-3 flex-row border-b border-gray-200">
+        <TabButton
+          title="Người dùng"
+          isActive={activeTab === 'users'}
+          onPress={() => setActiveTab('users')}
+        />
+        <TabButton
+          title="Các nhóm"
+          isActive={activeTab === 'groups'}
+          onPress={() => setActiveTab('groups')}
+        />
+        <TabButton
+          title="Tất cả"
+          isActive={activeTab === 'all'}
+          onPress={() => setActiveTab('all')}
+        />
+      </View>
+
+      {/* Content */}
+      {vm.isLoadingChats && !refreshing ? (
         <LoadingSkeleton />
-      ) : error && chats.length === 0 ? (
-        <ErrorState message={error} onRetry={loadChats} />
-      ) : (
+      ) : vm.error && filteredChats.length === 0 ? (
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="mb-4 text-sm text-red-500">{vm.error}</Text>
+          <TouchableOpacity
+            className="rounded-full bg-blue-500 px-6 py-3"
+            activeOpacity={0.8}
+            onPress={() => vm.loadChats()}
+          >
+            <Text className="font-semibold text-white">Thử lại</Text>
+          </TouchableOpacity>
+        </View>
+      ) : activeTab === 'users' ? (
         <FlatList
           data={visibleChats}
           keyExtractor={item => item.id}
+          extraData={vm.chats}
           renderItem={({ item }) => (
             <ChatListItem
               chat={item}
@@ -680,31 +1037,66 @@ function MessageScreen() {
             visibleChats.length === 0 ? { flex: 1 } : undefined
           }
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={['#3b82f6']}
-              tintColor="#3b82f6"
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3b82f6']} />
           }
           showsVerticalScrollIndicator={false}
+          ListEmptyComponent={<EmptyChats message="Chưa có cuộc trò chuyện với người dùng nào" />}
+        />
+      ) : activeTab === 'groups' ? (
+        <FlatList
+          data={filteredChats}
+          keyExtractor={item => item.id}
+          extraData={vm.chats}
+          renderItem={({ item }) => (
+            <ChatListItem
+              chat={item}
+              onPress={(chat) => handleChatPress(chat)}
+              onLongPress={(chat) => handleChatLongPress(chat)}
+            />
+          )}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3b82f6']} />
+          }
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={<EmptyChats message="Chưa có nhóm chat nào" />}
+        />
+      ) : (
+        <FlatList
+          data={filteredChats}
+          keyExtractor={item => item.id}
+          extraData={vm.chats}
+          renderItem={({ item }) => (
+            <ChatListItem
+              chat={item}
+              onPress={(chat) => handleChatPress(chat)}
+              onLongPress={(chat) => handleChatLongPress(chat)}
+            />
+          )}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3b82f6']} />
+          }
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={<EmptyChats />}
         />
       )}
 
-      {/* New message FAB */}
-      <TouchableOpacity
-        className="absolute bottom-6 right-6 h-14 w-14 items-center justify-center rounded-full bg-blue-500 shadow-lg"
-        activeOpacity={0.85}
-        style={{
-          shadowColor: '#3b82f6',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.3,
-          shadowRadius: 8,
-          elevation: 8,
-        }}
-      >
-        <Edit3 size={24} color="#ffffff" />
-      </TouchableOpacity>
+      {/* Multi-user message FAB */}
+      <View className="absolute bottom-6 right-6">
+        <TouchableOpacity
+          className="h-14 w-14 items-center justify-center rounded-full bg-green-500 shadow-lg"
+          activeOpacity={0.85}
+          onPress={handleStartMultiUser}
+          style={{
+            shadowColor: '#22c55e',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: 8,
+          }}
+        >
+          <Users size={24} color="#ffffff" />
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }

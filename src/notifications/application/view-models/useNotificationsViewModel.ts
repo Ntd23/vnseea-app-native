@@ -5,12 +5,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
 import type {
   NotificationsItem,
 } from '../../domain/types/notifications.types';
 
 const PAGE_SIZE = 100;
+
+// API response types
+type GroupChatActionResponse = {
+  api_status: number;
+  message_data?: string;
+  errors?: { error_text: string };
+};
 
 export function useNotificationsViewModel() {
   const repository = useMemo(() => createNotificationsRepository(), []);
@@ -27,6 +35,9 @@ export function useNotificationsViewModel() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [unreadMessageChats, setUnreadMessageChats] = useState<ChatItem[]>([]);
+
+  // Pending actions state (for accept/reject group chat)
+  const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setUnreadBadgeCounts({
@@ -186,6 +197,96 @@ export function useNotificationsViewModel() {
     loadFirstPage(false);
   }, [loadFirstPage]);
 
+  // Accept group chat invitation
+  const acceptGroupChatInvitation = useCallback(
+    async (groupChatId: string): Promise<boolean> => {
+      // Prevent duplicate actions
+      if (pendingActions.has(groupChatId)) {
+        return false;
+      }
+
+      setPendingActions(prev => new Set(prev).add(groupChatId));
+
+      try {
+        console.log('[useNotificationsViewModel] Accepting group chat invitation:', groupChatId);
+        const response = await apiBridge.post<GroupChatActionResponse>(
+          'group_chat',
+          { type: 'accept', group_id: groupChatId },
+        );
+
+        console.log('[useNotificationsViewModel] Accept response:', response);
+
+        if (response.api_status === 200) {
+          // Update notification: remove the invite notification
+          setNotifications(prev =>
+            prev.filter(n => n.groupChatId !== groupChatId)
+          );
+          setUnreadCount(prev => Math.max(0, prev - 1));
+          return true;
+        } else {
+          const errorMsg = response.errors?.error_text || 'Không thể chấp nhận lời mời';
+          console.warn('[useNotificationsViewModel] Accept failed:', errorMsg);
+          return false;
+        }
+      } catch (err) {
+        console.error('[useNotificationsViewModel] Accept error:', err);
+        return false;
+      } finally {
+        setPendingActions(prev => {
+          const next = new Set(prev);
+          next.delete(groupChatId);
+          return next;
+        });
+      }
+    },
+    [pendingActions],
+  );
+
+  // Reject group chat invitation
+  const rejectGroupChatInvitation = useCallback(
+    async (groupChatId: string): Promise<boolean> => {
+      // Prevent duplicate actions
+      if (pendingActions.has(groupChatId)) {
+        return false;
+      }
+
+      setPendingActions(prev => new Set(prev).add(groupChatId));
+
+      try {
+        console.log('[useNotificationsViewModel] Rejecting group chat invitation:', groupChatId);
+        const response = await apiBridge.post<GroupChatActionResponse>(
+          'group_chat',
+          { type: 'reject', group_id: groupChatId },
+        );
+
+        console.log('[useNotificationsViewModel] Reject response:', response);
+
+        if (response.api_status === 200) {
+          // Update notification: remove the invite notification
+          setNotifications(prev =>
+            prev.filter(n => n.groupChatId !== groupChatId)
+          );
+          setUnreadCount(prev => Math.max(0, prev - 1));
+          return true;
+        } else {
+          const errorMsg = response.errors?.error_text || 'Không thể từ chối lời mời';
+          console.warn('[useNotificationsViewModel] Reject failed:', errorMsg);
+          return false;
+        }
+      } catch (err) {
+        console.error('[useNotificationsViewModel] Reject error:', err);
+        return false;
+      } finally {
+        setPendingActions(prev => {
+          const next = new Set(prev);
+          next.delete(groupChatId);
+          return next;
+        });
+      }
+    },
+    [pendingActions],
+  );
+
   return {
     // State
     notifications,
@@ -197,6 +298,7 @@ export function useNotificationsViewModel() {
     isRefreshing,
     isLoadingMore,
     hasMore,
+    pendingActions,
     // Actions
     loadFirstPage,
     refresh,
@@ -205,5 +307,7 @@ export function useNotificationsViewModel() {
     markAllAsSeen,
     deleteNotification,
     retry,
+    acceptGroupChatInvitation,
+    rejectGroupChatInvitation,
   };
 }

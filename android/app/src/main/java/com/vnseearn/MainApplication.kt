@@ -10,6 +10,7 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.livekit.reactnative.LiveKitReactNative
 import com.livekit.reactnative.audio.AudioType
 import com.vnseearn.audio.WavAudioRecorderPackage
+import com.vnseearn.live.LiveCameraPreviewPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -18,6 +19,7 @@ class MainApplication : Application(), ReactApplication {
       context = applicationContext,
       packageList = PackageList(this).packages.apply {
         add(WavAudioRecorderPackage())
+        add(LiveCameraPreviewPackage())
       },
     )
   }

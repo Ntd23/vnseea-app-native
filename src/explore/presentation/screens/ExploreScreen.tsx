@@ -1,11 +1,12 @@
-// Description: Renders the VNSEEA hashtags tab that replaces the legacy Explore placeholder.
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import {
   ScrollView,
   StatusBar,
   Text,
   TouchableOpacity,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import {
   ArrowUpRight,
@@ -16,6 +17,7 @@ import {
   Users,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 
 const BRAND = '#0000ff';
 
@@ -73,6 +75,23 @@ const relatedPosts = [
 ];
 
 function ExploreScreen() {
+  const lastScrollY = useRef(0);
+
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const currentY = event.nativeEvent.contentOffset.y;
+    const diff = currentY - lastScrollY.current;
+
+    if (currentY <= 50) {
+      tabBarVisibility.setVisible(true);
+    } else if (diff > 15) {
+      tabBarVisibility.setVisible(false);
+    } else if (diff < -15) {
+      tabBarVisibility.setVisible(true);
+    }
+
+    lastScrollY.current = currentY;
+  }, []);
+
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor={BRAND} />
@@ -94,6 +113,8 @@ function ExploreScreen() {
         className="flex-1"
         contentContainerClassName="px-4 pb-28 pt-4"
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={handleScroll}
       >
         <View className="surface-card mb-5 p-5">
           <View className="flex-row items-center">

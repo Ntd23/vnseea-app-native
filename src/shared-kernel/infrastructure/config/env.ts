@@ -29,4 +29,5 @@ export const apiConfig = {
   requestTimeoutMs: parseRequiredNumber('REQUEST_TIMEOUT_MS'),
   oneSignalAppId: Config.ONESIGNAL_APP_ID || '',
   googleMapsApiKey: Config.GOOGLE_MAPS_API_KEY || '',
+  liveKitWsUrl: Config.LIVEKIT_WS_URL || '',
 } as const;

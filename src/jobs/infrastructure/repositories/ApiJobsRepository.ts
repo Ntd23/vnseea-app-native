@@ -1,7 +1,12 @@
 // Jobs API Repository (Infrastructure)
 // English description: Implements jobs data loading through the WoWonder job API.
-import type { JobsRepository, JobsSearchOptions } from '../../domain/repositories/JobsRepository';
-import type { JobsItem, JobsListResponse, CreateJobPayload } from '../../domain/types/jobs.types';
+import type { JobsRepository } from '../../domain/repositories/JobsRepository';
+import type {
+  CreateJobPayload,
+  CreateJobResponse,
+  JobsItem,
+  JobsListResponse,
+} from '../../domain/types/jobs.types';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 
@@ -36,7 +41,7 @@ export function createJobsRepository(): JobsRepository {
           return [];
         }
 
-        return (response.data ?? []).map(mapJobItem);
+        return ((response.data ?? []) as unknown as Array<Record<string, unknown>>).map(mapJobItem);
       } catch (error) {
         console.error('[ApiJobsRepository] searchJobs error:', error);
         return [];
@@ -60,7 +65,7 @@ export function createJobsRepository(): JobsRepository {
           return [];
         }
 
-        return (response.data ?? []).map(mapJobItem);
+        return ((response.data ?? []) as unknown as Array<Record<string, unknown>>).map(mapJobItem);
       } catch (error) {
         console.error('[ApiJobsRepository] getPageJobs error:', error);
         return [];

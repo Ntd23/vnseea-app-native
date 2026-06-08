@@ -67,6 +67,9 @@ export const ROUTES = {
   STORY_VIEWER: 'StoryViewer',
   AVATAR_VIEWER: 'AvatarViewer',
   COVER_VIEWER: 'CoverViewer',
+  LIVE: 'Live',
+  LIVE_ROOM: 'LiveRoom',
+  GO_LIVE: 'GoLive',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];
