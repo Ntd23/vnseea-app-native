@@ -1,6 +1,6 @@
 // Description: Maps nearby page, shop, and business records from WoWonder into discovery places.
-import type {RawApiRecord} from '../../../shared-kernel/domain/types/api.types';
-import {normalizeRawUrl} from '../../../foundation/application/normalizers/url';
+import type { RawApiRecord } from '../../../shared-kernel/domain/types/api.types';
+import { normalizeRawUrl } from '../../../foundation/application/normalizers/url';
 import {
   asNumber,
   asRecord,
@@ -24,7 +24,7 @@ function mapCoordinate(record: RawApiRecord | undefined) {
     return undefined;
   }
 
-  return {latitude, longitude};
+  return { latitude, longitude };
 }
 
 function removeMentionPrefix(value: string | undefined) {
@@ -69,8 +69,7 @@ export function mapNearbyPlace(
     ]),
     description: firstString(page, ['page_description', 'about']),
     location:
-      firstString(detail ?? {}, ['location']) ||
-      firstString(page, ['address']),
+      firstString(detail ?? {}, ['location']) || firstString(page, ['address']),
     distance: asNumber(record.distance),
     coordinate: mapCoordinate(detail),
   };
@@ -93,6 +92,8 @@ export function mapNearbyPage(
     id: `page:${pageId ?? name}`,
     pageId,
     kind: 'page',
+    source: 'page',
+    placeId: firstString(record, ['place_id', 'placeId']),
     name,
     username: removeMentionPrefix(
       firstString(record, ['subtitle', 'page_name', 'username']),
@@ -104,8 +105,8 @@ export function mapNearbyPage(
     url: normalizeRawUrl(firstString(record, ['url']), webBaseUrl),
     description: firstString(record, ['description', 'page_description']),
     location: firstString(record, ['location', 'address']),
-    distance:
-      distanceMeters === undefined ? undefined : distanceMeters / 1000,
+    distance: distanceMeters === undefined ? undefined : distanceMeters / 1000,
+    distanceMeters,
     coordinate: mapCoordinate(record),
   };
 }

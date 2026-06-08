@@ -3,7 +3,9 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 import { ROUTES } from './constants/routes';
 import type { StoryItem } from '../stories/domain/types/stories.types';
 import type { ChatItem } from '../messages/domain/types/messages.types';
-import type { LiveSession } from '../live/domain/types/live.types';
+import type { LiveKitCallRouteParams } from '../messages/domain/types/call.types';
+import type { GroupLiveKitCallRouteParams } from '../messages/domain/types/groupCall.types';
+import type { PagesItem } from '../pages/domain/types/pages.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -28,6 +30,8 @@ export type RootStackParamList = {
   [ROUTES.CHAT]: { chat: ChatItem };
   [ROUTES.GROUP_INFO]: { groupId: number; groupName: string; avatar: string; memberCount: number };
   [ROUTES.CALLS]: undefined;
+  [ROUTES.CALL_ROOM]: LiveKitCallRouteParams;
+  [ROUTES.GROUP_CALL_ROOM]: GroupLiveKitCallRouteParams;
   [ROUTES.SEARCH]: undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
   [ROUTES.NEARBY_USERS]: undefined;
@@ -35,6 +39,7 @@ export type RootStackParamList = {
   [ROUTES.SEARCH_EMPTY]: undefined;
   [ROUTES.PAGES]: undefined;
   [ROUTES.CREATE_PAGE]: undefined;
+  [ROUTES.EDIT_PAGE]: { page: PagesItem };
   [ROUTES.MARKETPLACE]: undefined;
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;

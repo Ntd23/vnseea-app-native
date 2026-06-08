@@ -1,4 +1,5 @@
 <?php
+// English description: Handles legacy web live stream create, heartbeat, join, and end actions.
 if ($f == 'live') {
     $normalize_live_user = function ($user) {
         if (is_object($user)) {
@@ -482,35 +483,31 @@ if ($f == 'live') {
     if ($s == 'delete') {
         $deleted = false;
         if (!empty($_POST['post_id']) && is_numeric($_POST['post_id']) && $_POST['post_id'] > 0) {
-            $db->where('post_id', Wo_Secure($_POST['post_id']))->where('user_id', $wo['user']['id'])->update(T_POSTS, array(
+            $post_id = Wo_Secure($_POST['post_id']);
+            $post = $db->where('post_id', $post_id)->where('user_id', $wo['user']['id'])->getOne(T_POSTS);
+            if (!empty($post)) {
+                $db->where('post_id', $post_id)->where('user_id', $wo['user']['id'])->update(T_POSTS, array(
                 'live_ended' => 1,
                 'live_time' => 0
-            ));
-            if ($wo['config']['live_video_save'] == 0) {
-                Wo_DeletePost(Wo_Secure($_POST['post_id']));
-            } else {
+                ));
                 if ($wo['config']['agora_live_video'] == 1 && !empty($wo['config']['agora_app_id']) && !empty($wo['config']['agora_customer_id']) && !empty($wo['config']['agora_customer_certificate']) && $wo['config']['live_video_save'] == 1) {
-                    $post = $db->where('post_id', Wo_Secure($_POST['post_id']))->getOne(T_POSTS);
-                    if (!empty($post)) {
+                    try {
+                        $stream_parts = !empty($post->stream_name) ? explode('_', $post->stream_name) : array();
                         StopCloudRecording(array(
                             'resourceId' => $post->agora_resource_id,
                             'sid' => $post->agora_sid,
                             'cname' => $post->stream_name,
                             'post_id' => $post->post_id,
                             'token' => $post->agora_token,
-                            'uid' => 12
+                            'uid' => !empty($stream_parts[2]) ? $stream_parts[2] : 12
                         ));
-                    }
-                }
-                if ($wo['config']['agora_live_video'] == 1 && $wo['config']['amazone_s3_2'] != 1) {
-                    try {
-                        Wo_DeletePost(Wo_Secure($_POST['post_id']));
                     }
                     catch (Exception $e) {
                     }
                 }
+                Wo_DeletePost($post_id);
+                $deleted = true;
             }
-            $deleted = true;
         }
         $posts = $db->where('stream_name','','<>')->where('postFile','')->get(T_POSTS);
         if (!empty($posts)) {

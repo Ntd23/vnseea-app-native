@@ -1,3 +1,4 @@
+// Description: Configures the Android React Native application and native LiveKit audio mode.
 package com.vnseearn
 
 import android.app.Application

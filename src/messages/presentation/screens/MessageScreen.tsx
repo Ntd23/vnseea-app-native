@@ -1,9 +1,7 @@
-// Description: Messages screen with stories, tabs filtering, and multi-user messaging
-import React, { useCallback, useState, useRef, useEffect, useMemo } from 'react';
+// Description: Renders the canonical Messages conversation list with user, broadcast, and group tabs.
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  Animated,
   FlatList,
   Image,
   Platform,
@@ -15,20 +13,26 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ScrollView,
 } from 'react-native';
 import {
   ArrowLeft,
   Check,
   CheckCircle2,
-  Image as ImageIcon,
+  Edit3,
+  FileText,
+  Film,
+  ImageIcon,
   MessageCircle,
   Mic,
-  PhoneCall,
+  MoreVertical,
+  Package,
+  Phone,
   Search,
   Send,
   Users,
   Video,
-  X,
+  Plus,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -40,61 +44,21 @@ import {
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useMessagesViewModel } from '../../application/view-models/useMessagesViewModel';
-import { useStoriesViewModel } from '../../../stories';
 import type {
   ChatItem,
   ChatPreviewKind,
-  MessageAttachment,
 } from '../../domain/types/messages.types';
-import { createUserRepository } from '../../../user/infrastructure/repositories/ApiUserRepository';
-import type { UserProfile } from '../../../user/domain/types/user.types';
+import { useStoriesViewModel } from '../../../stories';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { ROUTES } from '../../../navigation/constants/routes';
 
-type MessageNav = NativeStackNavigationProp<RootStackParamList>;
-type TabType = 'users' | 'groups' | 'all';
-type SelectableUser = {
-  id: string;
-  name: string;
-  avatar?: string;
-  isOnline?: boolean;
-};
+type MessagesNav = NativeStackNavigationProp<RootStackParamList>;
 
-const userRepository = createUserRepository();
-const MAX_BULK_IMAGE_ATTACHMENTS = 5;
-
-function profileId(profile: UserProfile): string {
-  const raw = (
-    profile as UserProfile & {
-      userId?: string | number;
-      user_id?: string | number;
-    }
-  ).userId ?? (profile as UserProfile & { user_id?: string | number }).user_id ?? profile.id;
-
-  return raw ? String(raw) : '';
-}
-
-function mapProfileToSelectableUser(profile: UserProfile): SelectableUser | null {
-  const id = profileId(profile);
-  if (!id) return null;
-
-  const name =
-    profile.name ||
-    [profile.firstName, profile.lastName].filter(Boolean).join(' ') ||
-    profile.username ||
-    'Người dùng';
-
-  return {
-    id,
-    name,
-    avatar: profile.avatarUrl,
-    isOnline: false,
-  };
-}
+type ChatFilter = 'broadcast' | 'users' | 'groups';
 
 // Format time to Vietnamese style
 function formatTime(timestamp: number): string {
-  if (!timestamp || timestamp <= 0) return '';
-
+  if (!timestamp) return '';
   const now = Date.now() / 1000;
   const diff = now - timestamp;
 
@@ -102,7 +66,10 @@ function formatTime(timestamp: number): string {
   if (diff < 3600) return `${Math.floor(diff / 60)} phút`;
   if (diff < 86400) {
     const date = new Date(timestamp * 1000);
-    return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
   if (diff < 604800) {
     const date = new Date(timestamp * 1000);
@@ -183,7 +150,7 @@ function getMessagePreview(
 function OnlineDot({ isOnline }: { isOnline: boolean }) {
   if (!isOnline) return null;
   return (
-    <View className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
+    <View className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
   );
 }
 
@@ -246,62 +213,40 @@ function UnreadBadge({ count }: { count: number }) {
   );
 }
 
-// Story bubble
-function StoryBubble({
-  story,
-  onPress,
-}: {
-  story: {
-    id: string;
-    publisher: { name: string; avatarUrl?: string };
-    thumbnailUrl?: string;
-    hasUnseen: boolean;
-    isViewed: boolean;
-  };
-  onPress: () => void;
-}) {
-  const hasUnseen = story.hasUnseen && !story.isViewed;
-  const ringColor = hasUnseen ? 'ring-blue-500' : 'ring-gray-300';
+function LastMessagePreviewIcon({ kind }: { kind?: ChatPreviewKind }) {
+  if (kind === 'audio_call') return <Phone size={14} color="#2563EB" />;
+  if (kind === 'video_call') return <Video size={14} color="#2563EB" />;
+  if (kind === 'image') return <ImageIcon size={14} color="#16A34A" />;
+  if (kind === 'video') return <Film size={14} color="#7C3AED" />;
+  if (kind === 'audio') return <Mic size={14} color="#EA580C" />;
+  if (kind === 'file') return <FileText size={14} color="#64748B" />;
+  if (kind === 'product') return <Package size={14} color="#0891B2" />;
 
-  return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={onPress}
-      className="items-center"
-      style={{ width: 70 }}
-    >
-      <View className="mb-1">
-        <View className={`h-16 w-16 items-center justify-center rounded-full ring-2 ${ringColor}`}>
-          {story.publisher.avatarUrl ? (
-            <Image
-              source={{ uri: story.publisher.avatarUrl }}
-              className="h-14 w-14 rounded-full"
-              resizeMode="cover"
-            />
-          ) : (
-            <View className="h-14 w-14 rounded-full bg-gray-300" />
-          )}
-        </View>
-        {hasUnseen && (
-          <View className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-blue-500" />
-        )}
-      </View>
-      <Text className="text-xs text-gray-600" numberOfLines={1}>
-        {story.publisher.name}
-      </Text>
-    </TouchableOpacity>
-  );
+  return null;
 }
 
-// Chat list item with message preview, time, and type indicators
+function getVisibleLastMessage(chat: ChatItem) {
+  if (chat.lastMessageKind === 'audio_call') {
+    return chat.chatType === 'group' ? 'Cuộc gọi thoại nhóm' : 'Cuộc gọi thoại';
+  }
+  if (chat.lastMessageKind === 'video_call') {
+    return chat.chatType === 'group' ? 'Cuộc gọi video nhóm' : 'Cuộc gọi video';
+  }
+
+  return chat.lastMessage || 'Chưa có tin nhắn';
+}
+
+// Chat list item
 function ChatListItem({
   chat,
   onPress,
-  onLongPress,
+  selectable = false,
+  selected = false,
 }: {
   chat: ChatItem;
   onPress: (chat: ChatItem) => void;
-  onLongPress?: (chat: ChatItem) => void;
+  selectable?: boolean;
+  selected?: boolean;
 }) {
   // Check if this is a group chat
   const isGroup = chat.chatType === 'group';
@@ -315,7 +260,7 @@ function ChatListItem({
 
   return (
     <TouchableOpacity
-      className="flex-row items-center px-4 py-3"
+      className="flex-row items-center px-4 py-3 active:bg-gray-50"
       activeOpacity={0.8}
       onPress={() => onPress(chat)}
       onLongPress={() => onLongPress?.(chat)}
@@ -327,8 +272,11 @@ function ChatListItem({
 
       <View className="ml-3 flex-1 border-b border-gray-100 py-2">
         <View className="mb-1 flex-row items-center justify-between">
-          <View className="flex-row items-center flex-1 mr-2">
-            <Text className="text-base font-semibold text-gray-900" numberOfLines={1}>
+          <View className="flex-row items-center flex-1">
+            <Text
+              className="text-base font-semibold text-gray-900"
+              numberOfLines={1}
+            >
               {chat.name}
             </Text>
             {chat.isVerified && (
@@ -340,23 +288,46 @@ function ChatListItem({
               </View>
             )}
           </View>
-          <Text className="text-xs text-gray-500 whitespace-nowrap">
+          <Text className="ml-2 text-xs text-gray-500">
             {formatTime(chat.lastMessageTime)}
           </Text>
         </View>
         <View className="flex-row items-center justify-between">
-          <View className="flex-row items-center flex-1 mr-2">
-            {messagePreview.icon && (
-              <View className="mr-1">{messagePreview.icon}</View>
-            )}
+          <View className="flex-1 flex-row items-center">
+            <LastMessagePreviewIcon kind={chat.lastMessageKind} />
             <Text
-              className={`flex-1 text-sm ${chat.unreadCount > 0 ? 'font-medium text-gray-800' : 'text-gray-500'}`}
+              className={`flex-1 text-sm ${
+                chat.lastMessageKind && chat.lastMessageKind !== 'text'
+                  ? 'ml-1.5'
+                  : ''
+              } ${
+                chat.unreadCount > 0
+                  ? 'font-medium text-gray-800'
+                  : 'text-gray-500'
+              }`}
               numberOfLines={1}
             >
-              {messagePreview.text}
+              {getVisibleLastMessage(chat)}
             </Text>
           </View>
-          <UnreadBadge count={chat.unreadCount} />
+          {selectable ? (
+            <View
+              className={`ml-3 h-6 w-6 items-center justify-center rounded-full border ${
+                selected
+                  ? 'border-blue-600 bg-blue-600'
+                  : 'border-gray-300 bg-white'
+              }`}
+            >
+              {selected && <Check size={15} color="#ffffff" />}
+            </View>
+          ) : (
+            <View className="ml-2 flex-row items-center gap-2">
+              <UnreadBadge count={chat.unreadCount} />
+              <TouchableOpacity className="p-1" activeOpacity={0.7}>
+                <MoreVertical size={18} color="#9ca3af" />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -494,15 +465,27 @@ export function GroupListItem({
 }
 
 // Empty state
-function EmptyChats({ message }: { message?: string }) {
+function EmptyChats({
+  filter,
+  hasQuery,
+}: {
+  filter: ChatFilter;
+  hasQuery: boolean;
+}) {
+  const title = hasQuery
+    ? 'Không tìm thấy cuộc trò chuyện'
+    : filter === 'groups'
+    ? 'Chưa có cuộc trò chuyện nhóm'
+    : 'Chưa có cuộc trò chuyện nào';
+
   return (
     <View className="flex-1 items-center justify-center px-8">
       <View className="mb-6 h-24 w-24 items-center justify-center rounded-full bg-blue-50">
         <MessageCircle size={48} color="#3b82f6" />
       </View>
-      <Text className="mb-2 text-xl font-bold text-gray-900">Chưa có cuộc trò chuyện</Text>
+      <Text className="mb-2 text-xl font-bold text-gray-900">{title}</Text>
       <Text className="text-center text-sm text-gray-500">
-        {message || 'Chọn người để bắt đầu cuộc trò chuyện'}
+        Bắt đầu trò chuyện bằng cách nhấn vào biểu tượng soạn tin nhắn.
       </Text>
     </View>
   );
@@ -511,7 +494,7 @@ function EmptyChats({ message }: { message?: string }) {
 // Loading skeleton
 function LoadingSkeleton() {
   return (
-    <View className="flex-1 px-4 py-4">
+    <View className="flex-1 px-4 py-2">
       {[1, 2, 3, 4, 5].map(i => (
         <View key={i} className="mb-4 flex-row items-center">
           <View className="h-14 w-14 rounded-full bg-gray-200" />
@@ -525,42 +508,275 @@ function LoadingSkeleton() {
   );
 }
 
-// Main screen
-export default function MessageScreen() {
-  const navigation = useNavigation<MessageNav>();
-  const vm = useMessagesViewModel();
-  const {
-    chatSyncIntervalMs,
-    loadGroupChats,
-    syncLatestChats,
-  } = vm;
+// Error state
+function ErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <View className="flex-1 items-center justify-center px-8">
+      <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-red-50">
+        <MessageCircle size={40} color="#ef4444" />
+      </View>
+      <Text className="mb-2 text-lg font-semibold text-gray-900">
+        Đã xảy ra lỗi
+      </Text>
+      <Text className="mb-6 text-center text-sm text-gray-500">{message}</Text>
+      <TouchableOpacity
+        className="rounded-full bg-blue-500 px-6 py-3"
+        activeOpacity={0.8}
+        onPress={onRetry}
+      >
+        <Text className="font-semibold text-white">Thử lại</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Search bar
+function SearchBar({
+  value,
+  onChangeText,
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+}) {
+  return (
+    <View className="mx-4 mb-3 flex-row items-center rounded-xl bg-gray-100 px-4 py-3">
+      <Search size={18} color="#9ca3af" />
+      <TextInput
+        className="ml-3 flex-1 text-sm text-gray-900"
+        placeholder="Tìm kiếm"
+        placeholderTextColor="#9ca3af"
+        value={value}
+        onChangeText={onChangeText}
+      />
+    </View>
+  );
+}
+
+const FILTERS: Array<{
+  key: ChatFilter;
+  label: string;
+  icon: typeof MessageCircle;
+}> = [
+  { key: 'broadcast', label: 'Gửi nhiều người', icon: Send },
+  { key: 'users', label: 'Người dùng', icon: MessageCircle },
+  { key: 'groups', label: 'Các nhóm', icon: Users },
+];
+
+function ChatFilters({
+  value,
+  onChange,
+}: {
+  value: ChatFilter;
+  onChange: (value: ChatFilter) => void;
+}) {
+  return (
+    <View className="mx-4 mb-2 flex-row gap-1">
+      {FILTERS.map(filter => {
+        const active = filter.key === value;
+        const Icon = filter.icon;
+
+        return (
+          <TouchableOpacity
+            key={filter.key}
+            className={`flex-1 flex-row items-center justify-center rounded-lg px-1 py-3 ${
+              active ? 'bg-indigo-100' : 'bg-white'
+            }`}
+            activeOpacity={0.8}
+            onPress={() => onChange(filter.key)}
+          >
+            <Icon size={15} color={active ? '#0000ff' : '#8b8b8b'} />
+            <Text
+              className={`ml-1 text-xs font-semibold ${
+                active ? 'text-blue-700' : 'text-gray-500'
+              }`}
+              numberOfLines={1}
+            >
+              {filter.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+// Header action buttons
+function HeaderActions() {
+  return (
+    <View className="flex-row items-center gap-2">
+      <TouchableOpacity
+        className="h-10 w-10 items-center justify-center rounded-full bg-blue-50"
+        activeOpacity={0.8}
+      >
+        <Phone size={18} color="#3b82f6" />
+      </TouchableOpacity>
+      <TouchableOpacity
+        className="h-10 w-10 items-center justify-center rounded-full bg-blue-50"
+        activeOpacity={0.8}
+      >
+        <Video size={18} color="#3b82f6" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Messenger-style Stories row below search bar
+function StoriesBubbleRow() {
+  const navigation = useNavigation<MessagesNav>();
   const storiesVm = useStoriesViewModel();
 
+  const cachedProfile = sessionStorage.getUserProfile();
+  const avatarUrl = cachedProfile?.avatarUrl || undefined;
+
+  const goToCreateStory = useCallback(() => {
+    navigation.navigate(ROUTES.CREATE_STORY);
+  }, [navigation]);
+
+  const goToViewerForGroup = useCallback(
+    (index: number) => {
+      navigation.navigate(ROUTES.STORY_VIEWER, {
+        stories: storiesVm.stories,
+        initialUserIndex: index,
+      });
+    },
+    [navigation, storiesVm.stories],
+  );
+
+  return (
+    <View className="py-3 border-b border-gray-100 bg-white">
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 14 }}
+      >
+        {/* Create Story Button */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={goToCreateStory}
+          className="items-center"
+          style={{ width: 68 }}
+        >
+          <View className="relative h-[60px] w-[60px] items-center justify-center rounded-full bg-slate-100">
+            <Image
+              source={{
+                uri:
+                  avatarUrl ||
+                  'https://cdn-icons-png.flaticon.com/512/847/847969.png',
+              }}
+              className="h-14 w-14 rounded-full"
+              resizeMode="cover"
+            />
+            <View className="absolute bottom-0 right-0 h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-blue-600">
+              <Plus size={12} color="#FFFFFF" strokeWidth={3} />
+            </View>
+          </View>
+          <Text
+            className="mt-1.5 text-center text-xs font-semibold text-gray-500"
+            numberOfLines={1}
+          >
+            Tạo tin
+          </Text>
+        </TouchableOpacity>
+
+        {/* Stories from Friends */}
+        {storiesVm.stories.map((story, index) => {
+          const hasUnseen = story.hasUnseen && !story.isViewed;
+
+          return (
+            <TouchableOpacity
+              key={story.publisher.userId}
+              activeOpacity={0.85}
+              onPress={() => goToViewerForGroup(index)}
+              className="items-center"
+              style={{ width: 68 }}
+            >
+              <View
+                className={`h-[60px] w-[60px] items-center justify-center rounded-full border-2 ${
+                  hasUnseen ? 'border-blue-500' : 'border-gray-200'
+                } p-[2px]`}
+              >
+                <Image
+                  source={{ uri: story.publisher.avatarUrl }}
+                  className="h-full w-full rounded-full"
+                  resizeMode="cover"
+                />
+              </View>
+              <Text
+                className="mt-1.5 text-center text-xs text-gray-700 font-medium"
+                numberOfLines={1}
+              >
+                {story.publisher.name.split(' ').pop()}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+// Main screen
+function MessageScreen() {
+  const navigation = useNavigation<MessagesNav>();
+  const {
+    chats,
+    isLoadingChats,
+    error,
+    loadChats,
+    isSending,
+    sendBulkMessages,
+  } = useMessagesViewModel();
+
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('users');
-  const [isSelectingMode, setIsSelectingMode] = useState(false);
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  const [messageText, setMessageText] = useState('');
-  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [multiUserCandidates, setMultiUserCandidates] = useState<SelectableUser[]>([]);
-  const [isLoadingMultiUsers, setIsLoadingMultiUsers] = useState(false);
-  const [multiUsersError, setMultiUsersError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<ChatFilter>('users');
+  const [broadcastText, setBroadcastText] = useState('');
+  const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(
+    new Set(),
+  );
+  const hasFocusedOnceRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
-      syncLatestChats().catch(() => undefined);
+      if (hasFocusedOnceRef.current) {
+        loadChats(false).catch(() => undefined);
+      } else {
+        hasFocusedOnceRef.current = true;
+      }
 
       const interval = setInterval(() => {
-        syncLatestChats().catch(() => undefined);
-        if (activeTab === 'groups' || activeTab === 'all') {
-          loadGroupChats(false).catch(() => undefined);
-        }
-      }, chatSyncIntervalMs);
+        loadChats(false).catch(() => undefined);
+      }, 5000);
 
       return () => clearInterval(interval);
-    }, [activeTab, chatSyncIntervalMs, loadGroupChats, syncLatestChats]),
+    }, [loadChats]),
   );
+
+  const visibleChats = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('vi-VN');
+
+    return chats.filter(chat => {
+      const matchesFilter =
+        activeFilter === 'groups'
+          ? chat.chatType === 'group'
+          : activeFilter === 'broadcast'
+          ? chat.chatType === 'user'
+          : chat.chatType !== 'group';
+      const matchesQuery =
+        !normalizedQuery ||
+        `${chat.name} ${chat.username} ${getVisibleLastMessage(chat)}`
+          .toLocaleLowerCase('vi-VN')
+          .includes(normalizedQuery);
+
+      return matchesFilter && matchesQuery;
+    });
+  }, [activeFilter, chats, query]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -647,431 +863,98 @@ export default function MessageScreen() {
 
   const handleChatPress = useCallback(
     (chat: ChatItem) => {
-      console.log('[MessageScreen] Opening chat:', chat.name, chat.id);
+      if (activeFilter === 'broadcast') {
+        setSelectedRecipients(previous => {
+          const next = new Set(previous);
+
+          if (next.has(chat.userId)) {
+            next.delete(chat.userId);
+          } else {
+            next.add(chat.userId);
+          }
+
+          return next;
+        });
+        return;
+      }
+
       navigation.navigate(ROUTES.CHAT, { chat });
     },
-    [navigation],
+    [activeFilter, navigation],
   );
 
-  const handleChatLongPress = useCallback(
-    (chat: ChatItem) => {
-      Alert.alert(
-        chat.name,
-        'Chọn hành động',
-        [
-          { text: 'Hủy', style: 'cancel' },
-          {
-            text: 'Xóa cuộc trò chuyện',
-            style: 'destructive',
-            onPress: () => {
-              console.log('Delete chat:', chat.id);
-            },
-          },
-        ],
-      );
-    },
-    [],
-  );
+  const handleSendBroadcast = useCallback(async () => {
+    const sent = await sendBulkMessages([...selectedRecipients], broadcastText);
 
-  const handleCreateGroup = () => {
-    navigation.navigate(ROUTES.CREATE_GROUP_CHAT);
-  };
-
-  const handleStoryPress = useCallback(
-    (index: number) => {
-      navigation.navigate(ROUTES.STORY_VIEWER, {
-        stories: storiesVm.stories,
-        initialUserIndex: index,
-      });
-    },
-    [navigation, storiesVm.stories],
-  );
-
-  const handleStartMultiUser = useCallback(() => {
-    setSearchQuery('');
-    setAttachments([]);
-    setIsSelectingMode(true);
-    setActiveTab('users');
-    loadMultiUserCandidates().catch(() => undefined);
-  }, [loadMultiUserCandidates]);
-
-  const handleCancelSelecting = () => {
-    setIsSelectingMode(false);
-    setSelectedUserIds([]);
-    setMessageText('');
-    setAttachments([]);
-    setSearchQuery('');
-  };
-
-  const handleUserToggle = (userId: string) => {
-    setSelectedUserIds(prev =>
-      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId],
-    );
-  };
-
-  const handleSendMultiUser = async () => {
-    if (selectedUserIds.length === 0) {
-      Alert.alert('Thông báo', 'Vui lòng chọn ít nhất một người để gửi tin nhắn.');
-      return;
+    if (sent) {
+      setSelectedRecipients(new Set());
+      setBroadcastText('');
     }
+  }, [broadcastText, selectedRecipients, sendBulkMessages]);
 
-    if (!messageText.trim() && attachments.length === 0) {
-      Alert.alert('Thông báo', 'Vui lòng nhập nội dung tin nhắn.');
-      return;
-    }
-
-    const success = await vm.sendBulkMessages(
-      selectedUserIds,
-      messageText.trim(),
-      attachments,
-    );
-
-    if (success) {
-      Alert.alert('Thành công', `Tin nhắn đã được gửi đến ${selectedUserIds.length} người!`);
-      setMessageText('');
-      setSelectedUserIds([]);
-      setAttachments([]);
-      setSearchQuery('');
-      setIsSelectingMode(false);
-    } else {
-      Alert.alert('Lỗi', 'Không thể gửi tin nhắn. Vui lòng thử lại.');
-    }
-  };
-
-  // Get users from chats + following/followers for user selection mode.
-  const chatUsers = useMemo<SelectableUser[]>(
-    () =>
-      vm.chats
-        .filter(c => c.chatType === 'user')
-        .map(c => ({
-          id: c.userId || c.id,
-          name: c.name,
-          avatar: c.avatar,
-          isOnline: c.isOnline,
-        }))
-        .filter(user => Boolean(user.id)),
-    [vm.chats],
-  );
-
-  const allUsers = useMemo<SelectableUser[]>(() => {
-    const users = new Map<string, SelectableUser>();
-
-    [...multiUserCandidates, ...chatUsers].forEach(user => {
-      if (!user.id) return;
-      users.set(user.id, {
-        ...users.get(user.id),
-        ...user,
-      });
-    });
-
-    return [...users.values()].sort((left, right) =>
-      left.name.localeCompare(right.name, 'vi'),
-    );
-  }, [chatUsers, multiUserCandidates]);
-
-  const selectableUsers = useMemo(() => {
-    const keyword = searchQuery.trim().toLowerCase();
-    if (!keyword) return allUsers;
-
-    return allUsers.filter(user =>
-      user.name.toLowerCase().includes(keyword) ||
-      user.id.toLowerCase().includes(keyword),
-    );
-  }, [allUsers, searchQuery]);
-
-  // Filter chats based on tab and search
-  const filteredChats = vm.chats.filter(chat => {
-    // Filter by tab
-    if (activeTab === 'users' && chat.chatType !== 'user') return false;
-    if (activeTab === 'groups' && chat.chatType !== 'group') return false;
-
-    // Filter by search
-    if (searchQuery) {
-      return chat.name.toLowerCase().includes(searchQuery.toLowerCase());
-    }
-
-    return true;
-  });
-
-  // Stories from storiesViewModel
-  const displayStories = [
-    { id: 'create', publisher: { name: 'Tạo tin' }, hasUnseen: false, isViewed: false },
-    ...storiesVm.stories,
-  ];
-
-  // Multi-user selection mode - CHỈ NGƯỜI DÙNG, KHÔNG CÓ NHÓM
-  // Hooks phải đặt ở đây, TRƯỚC if statement
-  const selectedUsers = allUsers.filter(u => selectedUserIds.includes(u.id));
-  const hasBulkMessageContent =
-    messageText.trim().length > 0 || attachments.length > 0;
-  const sendBtnOpacity = useRef(new Animated.Value(0)).current;
-  const sendBtnTranslateY = useRef(new Animated.Value(50)).current;
-
-  useEffect(() => {
-    if (selectedUserIds.length > 0 && hasBulkMessageContent) {
-      Animated.parallel([
-        Animated.spring(sendBtnOpacity, { toValue: 1, friction: 8, tension: 100, useNativeDriver: true }),
-        Animated.spring(sendBtnTranslateY, { toValue: 0, friction: 8, tension: 100, useNativeDriver: true }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(sendBtnOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(sendBtnTranslateY, { toValue: 50, duration: 150, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [selectedUserIds.length, hasBulkMessageContent, sendBtnOpacity, sendBtnTranslateY]);
-
-  if (isSelectingMode) {
-    return (
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-        <StatusBar barStyle="dark-content" />
-
-        {/* Header */}
-        <View className="flex-row items-center justify-between border-b border-gray-100 px-4 py-3">
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-            onPress={handleCancelSelecting}
-          >
-            <ArrowLeft size={22} color="#1f2937" />
-          </TouchableOpacity>
-          <Text className="text-lg font-bold text-gray-900">Gửi tin nhắn</Text>
-          <View className="h-10 w-10 items-center justify-center">
-            {selectedUserIds.length > 0 && (
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={handleSendMultiUser}
-              >
-                <Send size={22} color="#3b82f6" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Selected users panel với animation */}
-        <Animated.View style={[styles.selectedPanel, selectedUserIds.length > 0 && styles.selectedPanelVisible]}>
-          {selectedUserIds.length > 0 ? (
-            <View style={styles.selectedPanelInner}>
-              <View style={styles.selectedHeader}>
-                <Text style={styles.selectedCountText}>
-                  Đã chọn {selectedUserIds.length} người
-                </Text>
-                <TouchableOpacity onPress={() => setSelectedUserIds([])}>
-                  <Text style={styles.clearAllText}>Xóa hết</Text>
-                </TouchableOpacity>
-              </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectedAvatarsScroll}>
-                <View style={styles.selectedAvatarsContainer}>
-                  {selectedUsers.map(user => (
-                    <View key={user.id} style={styles.selectedAvatarItem}>
-                      <TouchableOpacity
-                        style={styles.selectedAvatarTouchable}
-                        onPress={() => handleUserToggle(user.id)}
-                      >
-                        <Image
-                          source={{ uri: user.avatar || 'https://i.pravatar.cc/100' }}
-                          style={styles.selectedAvatar}
-                        />
-                        <View style={styles.selectedAvatarRemove}>
-                          <X size={10} color="#FFFFFF" />
-                        </View>
-                      </TouchableOpacity>
-                      <Text style={styles.selectedAvatarName} numberOfLines={1}>{user.name.split(' ')[0]}</Text>
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-          ) : (
-            <Text style={styles.selectHintText}>Chọn người để gửi tin nhắn</Text>
-          )}
-        </Animated.View>
-
-        {/* Message input */}
-        <View className="mx-4 mb-3 mt-2 flex-row items-center rounded-full border border-gray-200 bg-gray-50 px-4 py-3">
-          <TouchableOpacity
-            className="mr-2 h-9 w-9 items-center justify-center rounded-full bg-blue-50"
-            activeOpacity={0.8}
-            disabled={attachments.length >= MAX_BULK_IMAGE_ATTACHMENTS}
-            onPress={() => {
-              handlePickBulkImages().catch(() => undefined);
-            }}
-          >
-            <ImageIcon
-              size={20}
-              color={attachments.length >= MAX_BULK_IMAGE_ATTACHMENTS ? '#94a3b8' : '#2563eb'}
-            />
-          </TouchableOpacity>
-          <TextInput
-            className="flex-1 text-sm text-gray-900"
-            placeholder="Nhập tin nhắn..."
-            placeholderTextColor="#9ca3af"
-            value={messageText}
-            onChangeText={setMessageText}
-            multiline
-            maxLength={500}
-          />
-        </View>
-
-        {attachments.length > 0 && (
-          <View className="mx-4 mb-3 rounded-2xl bg-gray-50 px-3 py-2">
-            <View className="mb-2 flex-row items-center justify-between">
-              <Text className="text-xs font-semibold text-gray-600">
-                Đã chọn {attachments.length} ảnh
-              </Text>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => setAttachments([])}
-              >
-                <Text className="text-xs font-semibold text-red-500">Xóa ảnh</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.bulkAttachmentList}
-            >
-              {attachments.map((attachment, index) => (
-                <View key={`${attachment.uri}-${index}`} style={styles.bulkAttachmentItem}>
-                  <Image
-                    source={{ uri: attachment.uri }}
-                    style={styles.bulkAttachmentImage}
-                    resizeMode="cover"
-                  />
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={styles.bulkAttachmentRemove}
-                    onPress={() =>
-                      setAttachments(current =>
-                        current.filter((_, currentIndex) => currentIndex !== index),
-                      )
-                    }
-                  >
-                    <X size={12} color="#ffffff" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        <View className="mx-4 mb-2 flex-row items-center rounded-full bg-gray-100 px-4 py-3">
-          <Search size={18} color="#9ca3af" />
-          <TextInput
-            className="ml-3 flex-1 text-sm text-gray-900"
-            placeholder="Tìm người nhận..."
-            placeholderTextColor="#9ca3af"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-
-        {/* User list - CHỈ NGƯỜI DÙNG, KHÔNG CÓ NHÓM */}
-        <FlatList
-          data={selectableUsers}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.userListContent}
-          renderItem={({ item }) => (
-            <UserListItemAnimated
-              user={item}
-              isSelected={selectedUserIds.includes(item.id)}
-              onPress={() => handleUserToggle(item.id)}
-            />
-          )}
-          refreshControl={
-            <RefreshControl
-              refreshing={isLoadingMultiUsers}
-              onRefresh={loadMultiUserCandidates}
-              colors={['#3b82f6']}
-            />
-          }
-          ListHeaderComponent={
-            isLoadingMultiUsers ? (
-              <View className="items-center justify-center py-6">
-                <ActivityIndicator size="small" color="#2563eb" />
-                <Text className="mt-2 text-sm text-gray-500">Đang tải người nhận...</Text>
-              </View>
-            ) : null
-          }
-          ListEmptyComponent={
-            <View className="flex-1 items-center justify-center py-20">
-              <Text className="text-center text-sm text-gray-500">
-                {multiUsersError || 'Không tìm thấy người nhận phù hợp'}
-              </Text>
-              {multiUsersError && (
-                <TouchableOpacity
-                  className="mt-4 rounded-full bg-blue-600 px-5 py-2"
-                  activeOpacity={0.85}
-                  onPress={loadMultiUserCandidates}
-                >
-                  <Text className="text-sm font-semibold text-white">Tải lại</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          }
-        />
-
-        {/* Send button với animation */}
-        <Animated.View
-          pointerEvents={selectedUserIds.length > 0 && hasBulkMessageContent ? 'auto' : 'none'}
-          style={[
-            styles.sendButtonContainer,
-            {
-              opacity: sendBtnOpacity,
-              transform: [{ translateY: sendBtnTranslateY }],
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={styles.sendButton}
-            activeOpacity={0.85}
-            onPress={handleSendMultiUser}
-          >
-            <Send size={20} color="#FFFFFF" />
-            <Text style={styles.sendButtonText}>
-              Gửi đến {selectedUserIds.length} người
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </SafeAreaView>
-    );
-  }
-
-  // Normal messages view
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <StatusBar barStyle="dark-content" />
 
       {/* Header */}
       <View className="flex-row items-center justify-between border-b border-gray-100 px-4 py-3">
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          activeOpacity={0.8}
-          onPress={() => navigation.goBack()}
-        >
-          <ArrowLeft size={22} color="#1f2937" />
-        </TouchableOpacity>
-        <Text className="text-lg font-bold text-gray-900">Tin nhắn</Text>
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          activeOpacity={0.8}
-          onPress={handleCreateGroup}
-        >
-          <Users size={20} color="#1f2937" />
-        </TouchableOpacity>
+        <View className="flex-row items-center">
+          <TouchableOpacity
+            className="mr-2 h-10 w-10 items-center justify-center rounded-full"
+            activeOpacity={0.8}
+            onPress={() => navigation.goBack()}
+          >
+            <ArrowLeft size={22} color="#1f2937" />
+          </TouchableOpacity>
+          <Text className="text-lg font-bold text-gray-900">Tin nhắn</Text>
+        </View>
+        <HeaderActions />
       </View>
 
-      {/* Search bar */}
-      <View className="mx-4 mb-3 mt-2 flex-row items-center rounded-full bg-gray-100 px-4 py-3">
-        <Search size={18} color="#9ca3af" />
-        <TextInput
-          className="ml-3 flex-1 text-sm text-gray-900"
-          placeholder="Tìm kiếm cuộc trò chuyện..."
-          placeholderTextColor="#9ca3af"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
+      {/* Content */}
+      <SearchBar value={query} onChangeText={setQuery} />
+      <StoriesBubbleRow />
+      <ChatFilters value={activeFilter} onChange={setActiveFilter} />
+      {activeFilter === 'broadcast' && (
+        <View className="mx-4 mb-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <Text className="mb-2 text-xs font-semibold text-gray-600">
+            Đã chọn {selectedRecipients.size} người
+          </Text>
+          <View className="flex-row items-center">
+            <TextInput
+              className="mr-2 flex-1 rounded-lg bg-white px-3 py-2 text-sm text-gray-900"
+              placeholder="Nhập tin nhắn..."
+              placeholderTextColor="#9ca3af"
+              value={broadcastText}
+              onChangeText={setBroadcastText}
+            />
+            <TouchableOpacity
+              className={`h-10 w-10 items-center justify-center rounded-full ${
+                selectedRecipients.size > 0 &&
+                broadcastText.trim() &&
+                !isSending
+                  ? 'bg-blue-600'
+                  : 'bg-gray-300'
+              }`}
+              activeOpacity={0.8}
+              disabled={
+                selectedRecipients.size === 0 ||
+                !broadcastText.trim() ||
+                isSending
+              }
+              onPress={() => {
+                handleSendBroadcast().catch(() => undefined);
+              }}
+            >
+              {isSending ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Send size={17} color="#ffffff" />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Stories row */}
       {displayStories.length > 1 && (
@@ -1133,16 +1016,26 @@ export default function MessageScreen() {
         </View>
       ) : activeTab === 'users' ? (
         <FlatList
-          data={filteredChats}
+          data={visibleChats}
           keyExtractor={item => item.id}
           extraData={vm.chats}
           renderItem={({ item }) => (
             <ChatListItem
               chat={item}
-              onPress={(chat) => handleChatPress(chat)}
-              onLongPress={(chat) => handleChatLongPress(chat)}
+              onPress={handleChatPress}
+              selectable={activeFilter === 'broadcast'}
+              selected={selectedRecipients.has(item.userId)}
             />
           )}
+          ListEmptyComponent={
+            <EmptyChats
+              filter={activeFilter}
+              hasQuery={query.trim().length > 0}
+            />
+          }
+          contentContainerStyle={
+            visibleChats.length === 0 ? { flex: 1 } : undefined
+          }
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3b82f6']} />
           }
@@ -1208,197 +1101,4 @@ export default function MessageScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  // Multi-user selection mode styles
-  selectedPanel: {
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 10,
-    minHeight: 122,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  selectedPanelVisible: {
-    backgroundColor: '#EFF6FF',
-  },
-  selectedPanelInner: {
-    gap: 8,
-  },
-  selectedHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  selectedCountText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#2563EB',
-  },
-  clearAllText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#EF4444',
-  },
-  selectHintText: {
-    fontSize: 13,
-    color: '#9CA3AF',
-    textAlign: 'center',
-  },
-  selectedAvatarsScroll: {
-    marginTop: 10,
-    minHeight: 76,
-  },
-  selectedAvatarsContainer: {
-    flexDirection: 'row',
-    gap: 14,
-    paddingTop: 4,
-    paddingRight: 8,
-    paddingBottom: 2,
-  },
-  selectedAvatarItem: {
-    alignItems: 'center',
-    width: 70,
-    minHeight: 72,
-  },
-  selectedAvatarTouchable: {
-    position: 'relative',
-    width: 58,
-    height: 58,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  selectedAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    borderWidth: 3,
-    borderColor: '#2563EB',
-  },
-  selectedAvatarRemove: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#EF4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  selectedAvatarName: {
-    fontSize: 11,
-    color: '#374151',
-    marginTop: 4,
-    textAlign: 'center',
-    width: 68,
-  },
-  bulkAttachmentList: {
-    gap: 8,
-    paddingRight: 8,
-  },
-  bulkAttachmentItem: {
-    width: 68,
-    height: 68,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#E5E7EB',
-  },
-  bulkAttachmentImage: {
-    width: '100%',
-    height: '100%',
-  },
-  bulkAttachmentRemove: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(15, 23, 42, 0.72)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  userListContent: {
-    paddingBottom: 100,
-  },
-  userItemContainer: {
-    backgroundColor: '#FFFFFF',
-  },
-  userItemTouchable: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  userAvatarWrapper: {
-    position: 'relative',
-  },
-  userAvatarSelected: {
-    borderWidth: 3,
-    borderColor: '#2563EB',
-    borderRadius: 27,
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#22C55E',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  checkBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#22C55E',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  userName: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-  },
-  userNameSelected: {
-    color: '#1E40AF',
-    fontWeight: '600',
-  },
-  sendButtonContainer: {
-    position: 'absolute',
-    bottom: 24,
-    left: 16,
-    right: 16,
-  },
-  sendButton: {
-    backgroundColor: '#22C55E',
-    borderRadius: 16,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#22C55E',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  sendButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-});
+export default MessageScreen;

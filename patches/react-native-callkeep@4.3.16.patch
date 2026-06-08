@@ -1,0 +1,27 @@
+diff --git a/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java b/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
+index c78c45810e9d30fc063c7fec21bfbd45ac2edbae..2f71f1f495fc759394fc1c5519742c84ef3a8c6b 100644
+--- a/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
++++ b/android/src/main/java/io/wazo/callkeep/RNCallKeepModule.java
+@@ -1,4 +1,6 @@
+ /*
++ * Description: React Native CallKeep Android bridge with TurboModule-safe method exports.
++ *
+  * Copyright (c) 2016-2019 The CallKeep Authors (see the AUTHORS file)
+  * SPDX-License-Identifier: ISC, MIT
+  *
+@@ -434,7 +436,6 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule implements Life
+         this.hasListeners = false;
+     }
+ 
+-    @ReactMethod
+     public void displayIncomingCall(String uuid, String number, String callerName) {
+         this.displayIncomingCall(uuid, number, callerName, false, null);
+     }
+@@ -486,7 +487,6 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule implements Life
+         conn.onAnswer();
+     }
+ 
+-    @ReactMethod
+     public void startCall(String uuid, String number, String callerName) {
+         this.startCall(uuid, number, callerName, false, null);
+     }

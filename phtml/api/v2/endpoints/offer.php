@@ -25,9 +25,17 @@ $limit = (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limi
 
 if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 
-    if ($_POST['type'] == 'create') {
+    if ($wo['config']['offer_system'] != 1) {
+        $error_code    = 5;
+        $error_message = 'offer system disabled';
+    }
+    elseif ($_POST['type'] == 'create') {
 
-    	if (!empty($_POST['discount_type']) && in_array($_POST['discount_type'], $discount_type) && in_array($_POST['currency'], array_keys($wo['currencies'])) && !empty($_FILES["thumbnail"]) && !empty($_POST['page_id'])) {
+    	if (empty($wo['config']['can_use_offer'])) {
+    		$error_code    = 5;
+            $error_message = 'offer creation disabled';
+    	}
+    	elseif (!empty($_POST['discount_type']) && in_array($_POST['discount_type'], $discount_type) && in_array($_POST['currency'], array_keys($wo['currencies'])) && !empty($_FILES["thumbnail"]) && !empty($_POST['page_id'])) {
 
     		$page_data = $db->where('page_id',Wo_Secure($_POST['page_id']))->getOne(T_PAGES);
 
@@ -143,6 +151,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 	    		                                          'page_id' => $page_data->page_id,
 	    		                                          'user_id' => $wo['user']['id'],
 	    		                                          'image' => $media['filename'],
+	    		                                          'currency' => Wo_Secure($_POST['currency']),
 	    		                                          'time' => time()));
                     $description = mb_substr(Wo_Secure($_POST['description']),0,175,"UTF-8") . "...";
 	    			$post_id = $db->insert(T_POSTS,array('page_id' => $page_data->page_id,
@@ -287,7 +296,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 
 			    		if (empty($data['error'])) {
 			    			$description = mb_substr(Wo_Secure($_POST['description']),0,175,"UTF-8") . "...";
-			    			$offer_id = $db->where('id',$offer_id)->update(T_OFFER,array('discount_type' => $discount_type,
+			    			$db->where('id',$offer_id)->update(T_OFFER,array('discount_type' => $discount_type,
 									    		                                          'buy' => $buy,
 									    		                                          'get_price' => $get,
 									    		                                          'discount_amount' => $discount_amount,
@@ -327,6 +336,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     elseif ($_POST['type'] == 'get') {
     	$data['limit'] = $limit;
     	$data['after_id'] = $offset;
+    	if (!empty($_POST['page_id']) && is_numeric($_POST['page_id']) && $_POST['page_id'] > 0) {
+    		$data['page_id'] = Wo_Secure($_POST['page_id']);
+    	}
 		$offers = Wo_GetAllOffers($data);
 		$response_data = array(
                             'api_status' => 200,

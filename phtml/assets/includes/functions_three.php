@@ -9,6 +9,105 @@
 // | Copyright (c) 2022 WoWonder. All rights reserved.
 // +------------------------------------------------------------------------+
 /* Script Main Functions (File 3) */
+if (!function_exists('Wo_PageMapPinColumnExists')) {
+	function Wo_PageMapPinColumnExists($column_name = '', $refresh = false)
+	{
+		global $sqlConnect;
+		static $page_columns = null;
+
+		if ($refresh) {
+			$page_columns = null;
+		}
+		if (empty($column_name)) {
+			return false;
+		}
+		if ($page_columns === null) {
+			$page_columns = array();
+			$columns_query = mysqli_query($sqlConnect, "SHOW COLUMNS FROM " . T_PAGES);
+			if ($columns_query) {
+				while ($column = mysqli_fetch_assoc($columns_query)) {
+					if (!empty($column['Field'])) {
+						$page_columns[$column['Field']] = true;
+					}
+				}
+			}
+		}
+
+		return !empty($page_columns[$column_name]);
+	}
+}
+
+if (!function_exists('Wo_EnsurePageMapPinColumns')) {
+	function Wo_EnsurePageMapPinColumns()
+	{
+		global $sqlConnect;
+		$changed = false;
+
+		$columns = array(
+			'map_pin_status' => "ALTER TABLE " . T_PAGES . " ADD `map_pin_status` VARCHAR(20) NOT NULL DEFAULT 'none'",
+			'map_pin_requested_at' => "ALTER TABLE " . T_PAGES . " ADD `map_pin_requested_at` INT(11) NOT NULL DEFAULT '0'",
+			'map_pin_reviewed_at' => "ALTER TABLE " . T_PAGES . " ADD `map_pin_reviewed_at` INT(11) NOT NULL DEFAULT '0'",
+			'map_pin_reviewed_by' => "ALTER TABLE " . T_PAGES . " ADD `map_pin_reviewed_by` INT(11) NOT NULL DEFAULT '0'",
+		);
+
+		foreach ($columns as $column => $query) {
+			if (!Wo_PageMapPinColumnExists($column)) {
+				if (mysqli_query($sqlConnect, $query)) {
+					$changed = true;
+				}
+			}
+		}
+		if ($changed) {
+			Wo_PageMapPinColumnExists('__refresh__', true);
+		}
+	}
+}
+
+if (!function_exists('Wo_GetPageMapPinRequestUpdateData')) {
+	function Wo_GetPageMapPinRequestUpdateData($current_page = array(), $next_page = array(), $requested = false)
+	{
+		Wo_EnsurePageMapPinColumns();
+
+		$has_status_column = Wo_PageMapPinColumnExists('map_pin_status');
+		if (!$has_status_column) {
+			return array();
+		}
+
+		$current_status = !empty($current_page['map_pin_status']) ? $current_page['map_pin_status'] : 'none';
+		$next_status = $current_status;
+		$now = time();
+		$review_fields = array();
+		$location_fields = array('address', 'lat', 'lng', 'place_id');
+		$location_changed = false;
+
+		foreach ($location_fields as $field) {
+			$current_value = isset($current_page[$field]) ? (string) $current_page[$field] : '';
+			$next_value = isset($next_page[$field]) ? (string) $next_page[$field] : $current_value;
+			if ($current_value !== $next_value) {
+				$location_changed = true;
+				break;
+			}
+		}
+
+		if ($requested || ($current_status === 'approved' && $location_changed)) {
+			$next_status = 'pending';
+			if (Wo_PageMapPinColumnExists('map_pin_requested_at')) {
+				$review_fields['map_pin_requested_at'] = $now;
+			}
+			if (Wo_PageMapPinColumnExists('map_pin_reviewed_at')) {
+				$review_fields['map_pin_reviewed_at'] = 0;
+			}
+			if (Wo_PageMapPinColumnExists('map_pin_reviewed_by')) {
+				$review_fields['map_pin_reviewed_by'] = 0;
+			}
+		} elseif ($current_status !== 'approved') {
+			$next_status = 'none';
+		}
+
+		return array_merge(array('map_pin_status' => $next_status), $review_fields);
+	}
+}
+
 function Wo_RegisterPoint($post_id, $type, $action = '+', $user_id = 0)
 {
 	global $wo, $sqlConnect, $db;
@@ -8249,6 +8348,12 @@ function Wo_GetAllOffers($filter_data = array())
 	if (!empty($filter_data['user_id'])) {
 		$user_id = Wo_Secure($filter_data['user_id']);
 		$query_one .= " AND `user_id` = '{$user_id}'";
+	}
+	if (!empty($filter_data['page_id'])) {
+		if (is_numeric($filter_data['page_id'])) {
+			$page_id = Wo_Secure($filter_data['page_id']);
+			$query_one .= " AND `page_id` = '{$page_id}'";
+		}
 	}
 	$query_one .= " ORDER BY `id` DESC";
 	if (!empty($filter_data['limit'])) {

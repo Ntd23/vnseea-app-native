@@ -1,3 +1,5 @@
+// Description: Defines page domain models, list filters, and create/edit draft data.
+
 export interface PagesItem {
   id: string | number;
   pageId: string;
@@ -6,6 +8,9 @@ export interface PagesItem {
   pageDescription?: string;
   pageCategory?: string;
   address?: string;
+  placeId?: string;
+  lat?: number;
+  lng?: number;
   avatar?: string;
   cover?: string;
   url?: string;
@@ -34,4 +39,7 @@ export interface CreatePageDraft {
   pageAddress: string;
   pageCategory: string;
   pageSubCategory?: string;
+  placeId?: string;
+  lat?: number;
+  lng?: number;
 }

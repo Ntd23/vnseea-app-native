@@ -27,7 +27,7 @@ export const apiConfig = {
   webBaseUrl: requireEnv('WEB_BASE_URL'),
   serverKey: requireEnv('SERVER_KEY'),
   requestTimeoutMs: parseRequiredNumber('REQUEST_TIMEOUT_MS'),
-  oneSignalAppId: requireEnv('ONESIGNAL_APP_ID'),
+  oneSignalAppId: Config.ONESIGNAL_APP_ID || '',
   googleMapsApiKey: Config.GOOGLE_MAPS_API_KEY || '',
   liveKitWsUrl: Config.LIVEKIT_WS_URL || '',
 } as const;

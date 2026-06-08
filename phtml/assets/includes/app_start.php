@@ -1,4 +1,5 @@
 <?php
+// English description: Boots the WoWonder application, database, configuration defaults, and runtime globals.
 ini_set('display_errors', 0);
 ini_set('display_startup_errors', 0);
 error_reporting(0);
@@ -49,6 +50,7 @@ $required_config_defaults = array(
     'livekit_host' => '',
     'livekit_api_key' => '',
     'livekit_api_secret' => '',
+    'google_server_map_api' => '',
     'sepay' => '0',
     'sepay_mode' => 'live',
     'sepay_bank_acc' => '',

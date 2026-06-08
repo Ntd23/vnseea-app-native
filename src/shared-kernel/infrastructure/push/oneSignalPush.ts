@@ -14,6 +14,10 @@ let initialized = false;
 let lastSyncedKey = '';
 let syncInFlight: Promise<void> | null = null;
 
+function isPushConfigured() {
+  return apiConfig.oneSignalAppId.trim().length > 0;
+}
+
 function buildDevicePayload(subscriptionId: string) {
   if (Platform.OS === 'ios') {
     return {
@@ -57,8 +61,9 @@ async function syncPushSubscription(subscriptionId?: string | null) {
 }
 
 async function syncCurrentSubscription() {
-  const subscriptionId =
-    await OneSignal.User.pushSubscription.getIdAsync();
+  if (!initialized || !isPushConfigured()) return;
+
+  const subscriptionId = await OneSignal.User.pushSubscription.getIdAsync();
   await syncPushSubscription(subscriptionId);
 }
 
@@ -70,6 +75,16 @@ function handleSubscriptionChange(event: PushSubscriptionChangedState) {
 
 export function initializePushNotifications() {
   if (initialized) return;
+
+  if (!isPushConfigured()) {
+    if (__DEV__) {
+      console.warn(
+        '[OneSignal] ONESIGNAL_APP_ID is not configured; push notifications are disabled.',
+      );
+    }
+    return;
+  }
+
   initialized = true;
 
   if (__DEV__) {
@@ -100,6 +115,8 @@ export function identifyPushUser(userId: string) {
     initializePushNotifications();
   }
 
+  if (!initialized || !isPushConfigured()) return;
+
   OneSignal.login(userId);
   syncCurrentSubscription().catch(error => {
     console.warn('[OneSignal] Could not sync identified push user', error);
@@ -108,5 +125,7 @@ export function identifyPushUser(userId: string) {
 
 export function logoutPushUser() {
   lastSyncedKey = '';
+  if (!initialized || !isPushConfigured()) return;
+
   OneSignal.logout();
 }

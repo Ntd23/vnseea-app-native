@@ -1,4 +1,5 @@
 <?php
+// English description: Provides shared WoWonder helper functions including group LiveKit call state helpers.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -6662,6 +6663,23 @@ function Wo_LeaveGroupCall($call_id = 0, $user_id = 0) {
     Wo_TouchGroupCall($call_id, $group_call['status']);
     Wo_EndGroupCallIfEmpty($call_id);
     return Wo_GetGroupCallById($call_id);
+}
+function Wo_DeclineGroupCallInvite($call_id = 0, $user_id = 0) {
+    global $wo;
+    $call_id = intval($call_id);
+    if ($user_id <= 0 && !empty($wo['user']['user_id'])) {
+        $user_id = intval($wo['user']['user_id']);
+    }
+    $group_call = Wo_GetGroupCallById($call_id);
+    if (empty($group_call) || $user_id <= 0) {
+        return false;
+    }
+    if (!Wo_IsGroupChatCallMember($group_call['group_id'], $user_id)) {
+        return false;
+    }
+    return Wo_SetGroupCallParticipantState($call_id, $user_id, 'declined', array(
+        'left_at' => time()
+    ));
 }
 function Wo_AddGroupCallMembers($call_id = 0, $user_ids = array(), $invited_by = 0) {
     global $wo;

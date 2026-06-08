@@ -17,6 +17,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
+  Edit3,
   ExternalLink,
   Flag,
   MapPin,
@@ -236,7 +237,15 @@ function PageCover({ page }: { page: PagesItem }) {
   );
 }
 
-function PageCard({ page, onOpen }: { page: PagesItem; onOpen: () => void }) {
+function PageCard({
+  page,
+  onEdit,
+  onOpen,
+}: {
+  page: PagesItem;
+  onEdit?: () => void;
+  onOpen: () => void;
+}) {
   return (
     <View className="surface-card mb-4 overflow-hidden">
       <PageCover page={page} />
@@ -244,18 +253,29 @@ function PageCard({ page, onOpen }: { page: PagesItem; onOpen: () => void }) {
       <View className="px-4 pb-4">
         <View className="-mt-8 flex-row items-end justify-between">
           <PageAvatar page={page} />
-          <TouchableOpacity
-            className="rounded-full bg-[#0000FF] px-4 py-2"
-            activeOpacity={0.85}
-            onPress={onOpen}
-          >
-            <View className="flex-row items-center">
-              <ExternalLink size={16} color="#FFFFFF" />
-              <Text className="ml-2 text-caption-primary text-inverse">
-                Xem trang
-              </Text>
-            </View>
-          </TouchableOpacity>
+          <View className="flex-row items-center gap-2">
+            {onEdit ? (
+              <TouchableOpacity
+                className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+                activeOpacity={0.85}
+                onPress={onEdit}
+              >
+                <Edit3 size={17} color="#0F172A" />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              className="rounded-full bg-[#0000FF] px-4 py-2"
+              activeOpacity={0.85}
+              onPress={onOpen}
+            >
+              <View className="flex-row items-center">
+                <ExternalLink size={16} color="#FFFFFF" />
+                <Text className="ml-2 text-caption-primary text-inverse">
+                  Xem trang
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <Text className="mt-3 text-title-primary" numberOfLines={2}>
@@ -324,11 +344,24 @@ function PagesScreen() {
     void Linking.openURL(page.url);
   }, []);
 
+  const handleEditPage = useCallback(
+    (page: PagesItem) => {
+      navigation.navigate(ROUTES.EDIT_PAGE, { page });
+    },
+    [navigation],
+  );
+
   const renderPage = useCallback(
     ({ item }: ListRenderItemInfo<PagesItem>) => (
-      <PageCard page={item} onOpen={() => handleOpenPage(item)} />
+      <PageCard
+        page={item}
+        onEdit={
+          vm.activeFilter === 'mine' ? () => handleEditPage(item) : undefined
+        }
+        onOpen={() => handleOpenPage(item)}
+      />
     ),
-    [handleOpenPage],
+    [handleEditPage, handleOpenPage, vm.activeFilter],
   );
 
   return (

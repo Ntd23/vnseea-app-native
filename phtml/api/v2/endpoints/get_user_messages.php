@@ -1,4 +1,30 @@
-<?php 
+<?php
+// English description: Returns paginated user chat messages for the mobile API, including normalized call events.
+
+function Wo_ApiUserMessagesCallEvent($message = array()) {
+    if (empty($message) || empty($message['type_two']) || !function_exists('Wo_IsCallLogType') || !Wo_IsCallLogType($message['type_two']) || !function_exists('Wo_GetCallLogMessage')) {
+        return null;
+    }
+
+    $call_log = Wo_GetCallLogMessage($message);
+    if (empty($call_log) || empty($call_log['data']) || !is_array($call_log['data'])) {
+        return null;
+    }
+
+    $data = $call_log['data'];
+    return array(
+        'call_id' => (string) intval(!empty($data['call_id']) ? $data['call_id'] : 0),
+        'call_type' => (!empty($data['call_type']) && $data['call_type'] == 'audio') ? 'audio' : 'video',
+        'provider' => !empty($data['provider']) ? $data['provider'] : '',
+        'status' => !empty($call_log['status']) ? $call_log['status'] : (!empty($data['status']) ? $data['status'] : 'calling'),
+        'duration' => intval(!empty($call_log['duration']) ? $call_log['duration'] : (!empty($data['duration']) ? $data['duration'] : 0)),
+        'initiator_id' => (string) intval(!empty($data['initiator_id']) ? $data['initiator_id'] : (!empty($message['from_id']) ? $message['from_id'] : 0)),
+        'receiver_id' => (string) intval(!empty($data['receiver_id']) ? $data['receiver_id'] : (!empty($message['to_id']) ? $message['to_id'] : 0)),
+        'status_by' => (string) intval(!empty($data['status_by']) ? $data['status_by'] : 0),
+        'started_at' => intval(!empty($data['started_at']) ? $data['started_at'] : 0),
+        'ended_at' => intval(!empty($data['ended_at']) ? $data['ended_at'] : 0)
+    );
+}
 
 if (!empty($_POST['recipient_id']) && is_numeric($_POST['recipient_id']) && $_POST['recipient_id'] > 0) {
 	$json_success_data   = array();
@@ -43,6 +69,10 @@ if (!empty($_POST['recipient_id']) && is_numeric($_POST['recipient_id']) && $_PO
             }
             $timezone = new DateTimeZone($user_login_data['timezone']);
             foreach ($message_info as $message) {
+                $call_event = Wo_ApiUserMessagesCallEvent($message);
+                if (!empty($call_event)) {
+                    $message['call_event'] = $call_event;
+                }
                 $message['text'] = openssl_encrypt($message['text'], "AES-128-ECB", $message['time']);
                 if ($not_include_status == true) {
                     foreach ($not_include_array as $value) {

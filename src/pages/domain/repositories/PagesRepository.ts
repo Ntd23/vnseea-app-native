@@ -1,3 +1,4 @@
+// Description: Defines repository contracts for page listing, creation, and editing.
 import type {
   CreatePageDraft,
   PagesItem,
@@ -18,4 +19,5 @@ export interface PagesRepository {
     options?: PagesListOptions,
   ): Promise<PagesListPage>;
   createPage(draft: CreatePageDraft): Promise<CreatePageResult>;
+  updatePage(pageId: string, draft: CreatePageDraft): Promise<CreatePageResult>;
 }

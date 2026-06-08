@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   ArrowLeft,
@@ -23,14 +23,17 @@ import {
   Edit3,
   FileText,
   Info,
-  MapPin,
   Shapes,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
+import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { usePagesViewModel } from '../../application/view-models/usePagesViewModel';
-import type { CreatePageDraft } from '../../domain/types/pages.types';
+import type {
+  CreatePageDraft,
+  PagesItem,
+} from '../../domain/types/pages.types';
 
 type CreatePageNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -79,7 +82,10 @@ function toSafePageName(value: string) {
     .replace(/Đ/g, 'D')
     .toLowerCase()
     .replace(/^@+/, '')
-    .replace(/[^a-z]+/g, '')
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/_+/g, '_')
+    .replace(/^[-_]+|[-_]+$/g, '')
     .slice(0, 32);
 }
 
@@ -99,10 +105,12 @@ function WizardHeader({
   step,
   raised = false,
   onBack,
+  title = 'Tạo trang mới',
 }: {
   step: number;
   raised?: boolean;
   onBack: () => void;
+  title?: string;
 }) {
   return (
     <View
@@ -118,7 +126,7 @@ function WizardHeader({
         >
           <ArrowLeft size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text className="text-heading text-inverse">Tạo trang mới</Text>
+        <Text className="text-heading text-inverse">{title}</Text>
       </View>
       <Text className="text-label-primary text-inverse opacity-80">
         BƯỚC {step}/4
@@ -191,8 +199,8 @@ function StepOne({
       <View className="mb-10 items-center">
         <Text className="text-center text-display">Đặt tên trang của bạn</Text>
         <Text className="mt-3 max-w-sm text-center text-body-secondary">
-          Tên trang nên phản ánh thương hiệu, tổ chức hoặc chủ đề bạn muốn
-          chia sẻ với cộng đồng.
+          Tên trang nên phản ánh thương hiệu, tổ chức hoặc chủ đề bạn muốn chia
+          sẻ với cộng đồng.
         </Text>
       </View>
 
@@ -322,6 +330,7 @@ function StepThree({
   error,
   onDescriptionChange,
   onAddressChange,
+  onPlaceSelect,
   onNext,
 }: {
   descriptionValue: string;
@@ -329,6 +338,12 @@ function StepThree({
   error?: string | null;
   onDescriptionChange: (value: string) => void;
   onAddressChange: (value: string) => void;
+  onPlaceSelect: (place: {
+    description: string;
+    placeId: string;
+    lat?: number;
+    lng?: number;
+  }) => void;
   onNext: () => void;
 }) {
   return (
@@ -364,23 +379,21 @@ function StepThree({
           />
         </View>
         <View className="mt-2 flex-row justify-between px-1">
-          <Text className="text-caption-secondary">Tối thiểu 10, tối đa 200 ký tự</Text>
+          <Text className="text-caption-secondary">
+            Tối thiểu 10, tối đa 200 ký tự
+          </Text>
           <Text className="text-caption-secondary">
             {descriptionValue.length}/200
           </Text>
         </View>
 
         <Text className="mt-6 text-title-primary">Địa điểm</Text>
-        <View className="input-shell mt-3 min-h-[54px] flex-row items-center px-4">
-          <MapPin size={20} color="#64748B" />
-          <TextInput
-            className="ml-3 flex-1 text-body-primary"
-            placeholder="Địa điểm"
-            placeholderTextColor="#94A3B8"
-            returnKeyType="next"
+        <View className="mt-3">
+          <AddressAutocomplete
             value={addressValue}
+            placeholder="Tìm địa điểm từ Google Maps"
             onChangeText={onAddressChange}
-            onSubmitEditing={onNext}
+            onSelectPlace={onPlaceSelect}
           />
         </View>
         <ErrorMessage message={error} />
@@ -397,12 +410,14 @@ function StepFour({
   selectedId,
   error,
   isCreating,
+  submitLabel = 'Tạo trang',
   onSelect,
   onSubmit,
 }: {
   selectedId: string;
   error?: string | null;
   isCreating: boolean;
+  submitLabel?: string;
   onSelect: (categoryId: string) => void;
   onSubmit: () => void;
 }) {
@@ -419,8 +434,8 @@ function StepFour({
           <View className="mt-5 items-center">
             <Text className="text-display">Chọn danh mục</Text>
             <Text className="mt-2 text-center text-body-secondary">
-              Chọn danh mục phù hợp nhất để mọi người dễ dàng tìm thấy trang
-              của bạn.
+              Chọn danh mục phù hợp nhất để mọi người dễ dàng tìm thấy trang của
+              bạn.
             </Text>
           </View>
 
@@ -457,9 +472,8 @@ function StepFour({
           <View className="form-note-panel mt-4 flex-row items-start p-4">
             <Info size={20} color="#64748B" />
             <Text className="ml-3 flex-1 text-caption-secondary">
-              Trang của bạn sẽ hiển thị trong kết quả tìm kiếm dựa trên danh
-              mục này. Bạn có thể thay đổi danh mục sau trong phần cài đặt
-              trang.
+              Trang của bạn sẽ hiển thị trong kết quả tìm kiếm dựa trên danh mục
+              này. Bạn có thể thay đổi danh mục sau trong phần cài đặt trang.
             </Text>
           </View>
           <ErrorMessage message={error} />
@@ -468,7 +482,7 @@ function StepFour({
 
       <View className="px-6 py-6">
         <NextButton
-          label="Tạo trang"
+          label={submitLabel}
           isLoading={isCreating}
           disabled={isCreating}
           onPress={onSubmit}
@@ -483,9 +497,25 @@ function StepFour({
 
 function CreatePageScreen() {
   const navigation = useNavigation<CreatePageNav>();
+  const route = useRoute<any>();
+  const editingPage = route.params?.page as PagesItem | undefined;
+  const isEditing = Boolean(editingPage?.pageId);
   const pagesVm = usePagesViewModel();
   const [step, setStep] = useState(1);
-  const [draft, setDraft] = useState<CreatePageDraft>(INITIAL_DRAFT);
+  const [draft, setDraft] = useState<CreatePageDraft>(() =>
+    editingPage
+      ? {
+          pageTitle: editingPage.pageTitle || '',
+          pageName: editingPage.pageName || '',
+          pageDescription: editingPage.pageDescription || '',
+          pageAddress: editingPage.address || '',
+          pageCategory: editingPage.pageCategory || PAGE_CATEGORIES[0].id,
+          placeId: editingPage.placeId,
+          lat: editingPage.lat,
+          lng: editingPage.lng,
+        }
+      : INITIAL_DRAFT,
+  );
   const [localError, setLocalError] = useState<string | null>(null);
   const [isPageNameDirty, setIsPageNameDirty] = useState(false);
 
@@ -525,6 +555,21 @@ function CreatePageScreen() {
     [updateDraft],
   );
 
+  const handleAddressChange = useCallback(
+    (value: string) => {
+      setDraft(prev => ({
+        ...prev,
+        pageAddress: value,
+        placeId: undefined,
+        lat: undefined,
+        lng: undefined,
+      }));
+      setLocalError(null);
+      pagesVm.clearError();
+    },
+    [pagesVm],
+  );
+
   const validateStep = useCallback(
     (targetStep: number) => {
       if (targetStep === 1 && draft.pageTitle.trim().length < 2) {
@@ -537,8 +582,8 @@ function CreatePageScreen() {
           return 'Tên URL của trang phải từ 5 đến 32 ký tự.';
         }
 
-        if (!/^[a-z]+$/.test(pageName)) {
-          return 'Tên URL chỉ được dùng chữ cái không dấu, không dùng số, gạch dưới hoặc gạch ngang.';
+        if (!/^[a-z0-9_-]+$/.test(pageName)) {
+          return 'Tên URL chỉ được dùng chữ cái không dấu, số, gạch dưới hoặc gạch ngang.';
         }
       }
 
@@ -550,6 +595,14 @@ function CreatePageScreen() {
 
         if (!draft.pageAddress.trim()) {
           return 'Vui lòng nhập địa điểm của trang.';
+        }
+
+        if (
+          !draft.placeId ||
+          draft.lat === undefined ||
+          draft.lng === undefined
+        ) {
+          return 'Vui lòng chọn địa điểm từ gợi ý Google Maps.';
         }
       }
 
@@ -584,14 +637,19 @@ function CreatePageScreen() {
     setLocalError(null);
 
     try {
-      const createdPage = await pagesVm.createPage(draft);
-      if (!createdPage) {
+      const savedPage =
+        isEditing && editingPage?.pageId
+          ? await pagesVm.updatePage(editingPage.pageId, draft)
+          : await pagesVm.createPage(draft);
+      if (!savedPage) {
         return;
       }
 
       Alert.alert(
-        'Tạo trang thành công',
-        `Trang ${createdPage.pageTitle || draft.pageTitle} đã được tạo.`,
+        isEditing ? 'Cập nhật trang thành công' : 'Tạo trang thành công',
+        `Trang ${savedPage.pageTitle || draft.pageTitle} đã được ${
+          isEditing ? 'cập nhật' : 'tạo'
+        }.`,
         [{ text: 'OK', onPress: () => navigation.goBack() }],
       );
     } catch (err) {
@@ -600,11 +658,18 @@ function CreatePageScreen() {
           ? err.message
           : 'Vui lòng kiểm tra thông tin và thử lại.';
       Alert.alert(
-        'Không thể tạo trang',
+        isEditing ? 'Không thể cập nhật trang' : 'Không thể tạo trang',
         message,
       );
     }
-  }, [draft, navigation, pagesVm, validateStep]);
+  }, [
+    draft,
+    editingPage?.pageId,
+    isEditing,
+    navigation,
+    pagesVm,
+    validateStep,
+  ]);
 
   const content = useMemo(() => {
     if (step === 1) {
@@ -636,7 +701,13 @@ function CreatePageScreen() {
           addressValue={draft.pageAddress}
           error={currentError}
           onDescriptionChange={value => updateDraft('pageDescription', value)}
-          onAddressChange={value => updateDraft('pageAddress', value)}
+          onAddressChange={handleAddressChange}
+          onPlaceSelect={place => {
+            updateDraft('pageAddress', place.description);
+            updateDraft('placeId', place.placeId);
+            updateDraft('lat', place.lat);
+            updateDraft('lng', place.lng);
+          }}
           onNext={goNext}
         />
       );
@@ -647,6 +718,7 @@ function CreatePageScreen() {
         selectedId={draft.pageCategory}
         error={currentError}
         isCreating={pagesVm.isCreating}
+        submitLabel={isEditing ? 'Cập nhật trang' : 'Tạo trang'}
         onSelect={categoryId => updateDraft('pageCategory', categoryId)}
         onSubmit={handleSubmit}
       />
@@ -659,6 +731,7 @@ function CreatePageScreen() {
     draft.pageName,
     draft.pageTitle,
     goNext,
+    handleAddressChange,
     handlePageNameChange,
     handleSubmit,
     handleTitleChange,
@@ -685,7 +758,12 @@ function CreatePageScreen() {
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <WizardHeader step={step} raised={headerRaised} onBack={handleBack} />
+        <WizardHeader
+          step={step}
+          raised={headerRaised}
+          title={isEditing ? 'Sửa trang' : 'Tạo trang mới'}
+          onBack={handleBack}
+        />
         {content}
       </KeyboardAvoidingView>
     </SafeAreaView>

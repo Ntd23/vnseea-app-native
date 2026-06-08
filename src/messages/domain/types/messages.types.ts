@@ -3,7 +3,10 @@
 
 export interface ChatItem {
   id: string;
+  chatId?: string;
   chatType: 'user' | 'group' | 'page';
+  participantId?: string;
+  groupId?: string;
   userId: string;
   username: string;
   name: string;
@@ -54,6 +57,9 @@ export interface MessageCallEvent {
   statusBy: string;
   isInitiator: boolean;
   isReceiver: boolean;
+  isGroupCall?: boolean;
+  groupId?: string;
+  action?: string;
 }
 
 export interface MessageAttachment {
@@ -112,4 +118,60 @@ export interface SendMessageResponse {
   data?: unknown;
   message_data?: unknown[];
   sentMessages?: MessageItem[];
+}
+
+export interface GroupChatMember {
+  id: string;
+  name: string;
+  username: string;
+  avatar: string;
+  isOwner: boolean;
+  isAdmin: boolean;
+  isOnline: boolean;
+}
+
+export interface GroupAddableUser {
+  id: string;
+  name: string;
+  username: string;
+  avatar: string;
+  isOnline: boolean;
+}
+
+export interface GroupChatInfo {
+  id: string;
+  name: string;
+  avatar: string;
+  ownerId: string;
+  type: string;
+  memberCount: number;
+  isOwner: boolean;
+  members: GroupChatMember[];
+}
+
+export interface GroupSharedMedia {
+  id: string;
+  uri: string;
+  mediaType: 'image' | 'video';
+  time: number;
+}
+
+export interface GroupSharedFile {
+  id: string;
+  uri: string;
+  name: string;
+  time: number;
+}
+
+export interface GroupSharedLink {
+  id: string;
+  url: string;
+  title: string;
+  time: number;
+}
+
+export interface GroupSharedAssets {
+  media: GroupSharedMedia[];
+  files: GroupSharedFile[];
+  links: GroupSharedLink[];
 }

@@ -1,4 +1,5 @@
 <?php
+// English description: Dispatches AJAX and webhook requests to legacy PHP request handlers.
 require_once('assets/init.php');
 decryptConfigData();
 $f = '';
@@ -12,6 +13,11 @@ if (isset($_GET['s'])) {
 }
 if (isset($_GET['f'], $_GET['s']) && $_GET['f'] === 'sepay' && $_GET['s'] === 'webhook') {
     include 'xhr/sepay.php';     // file của bạn đã tự kiểm token & xử lý
+    mysqli_close($sqlConnect);
+    exit();
+}
+if (isset($_GET['f'], $_GET['s']) && $_GET['f'] === 'livekit_webhook' && $_GET['s'] === 'events') {
+    include 'xhr/livekit_webhook.php';
     mysqli_close($sqlConnect);
     exit();
 }

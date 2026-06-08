@@ -194,6 +194,8 @@ describe('nearbyPlaceMapper', () => {
       id: 'page:19',
       pageId: '19',
       kind: 'page',
+      source: 'page',
+      placeId: undefined,
       name: 'VNSEEA Page',
       username: 'vnseeapage',
       avatarUrl: 'https://v2.vnseea.vn/upload/page.jpg',
@@ -201,6 +203,7 @@ describe('nearbyPlaceMapper', () => {
       description: 'Trang cộng đồng',
       location: 'Hà Nội',
       distance: 1.25,
+      distanceMeters: 1250,
       coordinate: {
         latitude: 21.0285,
         longitude: 105.8542,

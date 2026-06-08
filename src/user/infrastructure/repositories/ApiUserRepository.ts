@@ -1,5 +1,4 @@
 // Description: Implements the user repository through the shared API bridge.
-import axios from 'axios';
 import type {
   ApiEnvelope,
   RawApiRecord,
@@ -16,6 +15,8 @@ import type {
   FriendsInput,
   FriendsResult,
   GetUserProfileInput,
+  MapPlacePrediction,
+  MapRoute,
   NearbyPlace,
   NearbyPlaceKind,
   NearbyPagesInput,
@@ -67,8 +68,25 @@ type NearbyPlacesResponse = ApiEnvelope & {
 };
 
 type NearbyPagesResponse = {
-  status?: number | string;
+  api_status?: number | string;
   items?: RawApiRecord[];
+};
+
+type PlaceAutocompleteResponse = ApiEnvelope & {
+  predictions?: RawApiRecord[];
+};
+
+type PlaceDetailsResponse = ApiEnvelope & {
+  place?: RawApiRecord;
+};
+
+type RouteResponse = ApiEnvelope & {
+  route?: {
+    path?: Array<{ lat?: number | string; lng?: number | string }>;
+    distanceMeters?: number | string;
+    durationSeconds?: number | string;
+    provider?: string;
+  };
 };
 
 type UpdateUserResponse = ApiEnvelope & {
@@ -98,32 +116,88 @@ function mapNearbyPlaces(
 }
 
 async function fetchNearbyPages(input?: NearbyPagesInput) {
-  const session = sessionStorage.getSession();
-
-  if (!session?.accessToken || !session.userId) {
-    return [];
-  }
-
-  const body = new URLSearchParams();
-  body.append('access_token', session.accessToken);
-  body.append('user_id', session.userId);
-
-  const response = await axios.post<NearbyPagesResponse>(
-    `${apiConfig.webBaseUrl.replace(/\/+$/, '')}/requests.php`,
-    body.toString(),
+  const payload = toNearbyPagesQuery(input);
+  const response = await apiBridge.post<NearbyPagesResponse>(
+    apiRoutes.user.mapDiscovery,
     {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Requested-With': 'XMLHttpRequest',
-      },
-      params: toNearbyPagesQuery(input),
-      timeout: apiConfig.requestTimeoutMs,
+      type: 'page_suggestions',
+      query: payload.query,
+      distance: input?.distance,
+      limit: input?.limit,
+      origin_lat: input?.lat,
+      origin_lng: input?.lng,
     },
   );
 
-  return (response.data.items ?? [])
+  return (response.items ?? [])
     .map(record => mapNearbyPage(record, apiConfig.webBaseUrl))
     .filter(Boolean) as NearbyPlace[];
+}
+
+function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
+  const placeId = String(record.place_id ?? '');
+  const description = String(record.description ?? '');
+  if (!placeId || !description) return null;
+
+  return {
+    source: 'google',
+    placeId,
+    description,
+    mainText: String(record.main_text || description),
+    secondaryText: String(record.secondary_text || ''),
+  };
+}
+
+function mapGooglePlace(record: RawApiRecord | undefined): NearbyPlace | null {
+  if (!record) return null;
+  const placeId = String(record.place_id ?? '');
+  const name = String(record.name || record.address || '');
+  const latitude = Number(record.lat);
+  const longitude = Number(record.lng);
+  if (
+    !placeId ||
+    !name ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude)
+  ) {
+    return null;
+  }
+
+  return {
+    id: `google:${placeId}`,
+    kind: 'page',
+    source: 'google',
+    placeId,
+    name,
+    location: String(record.address || ''),
+    url: String(record.url || ''),
+    coordinate: {
+      latitude,
+      longitude,
+    },
+  };
+}
+
+function mapRoute(response: RouteResponse): MapRoute {
+  const route = response.route;
+  if (!route) {
+    throw new Error('Không tìm thấy đường đi.');
+  }
+
+  return {
+    path: (route.path ?? [])
+      .map(point => ({
+        latitude: Number(point.lat),
+        longitude: Number(point.lng),
+      }))
+      .filter(
+        point =>
+          Number.isFinite(point.latitude) && Number.isFinite(point.longitude),
+      ),
+    distanceMeters: Number(route.distanceMeters ?? 0) || 0,
+    durationSeconds: Number(route.durationSeconds ?? 0) || 0,
+    provider: 'google',
+  };
 }
 
 function mapFamily(records: UserProfileResponse['family']): UserProfile[] {
@@ -183,11 +257,21 @@ export function createUserRepository(): UserRepository {
         );
 
         if (!currentUserResponse.user_data) {
-          return { profile: undefined, followers: [], following: [], likedPages: [], joinedGroups: [], family: [] };
+          return {
+            profile: undefined,
+            followers: [],
+            following: [],
+            likedPages: [],
+            joinedGroups: [],
+            family: [],
+          };
         }
 
         return {
-          profile: mapUserProfile(currentUserResponse.user_data, apiConfig.webBaseUrl),
+          profile: mapUserProfile(
+            currentUserResponse.user_data,
+            apiConfig.webBaseUrl,
+          ),
           followers: [],
           following: [],
           likedPages: [],
@@ -249,6 +333,51 @@ export function createUserRepository(): UserRepository {
       return fetchNearbyPages(input);
     },
 
+    async getPlacePredictions(input) {
+      if (input.query.trim().length < 3) return [];
+      const response = await apiBridge.post<PlaceAutocompleteResponse>(
+        apiRoutes.user.mapDiscovery,
+        {
+          type: 'place_autocomplete',
+          query: input.query.trim(),
+          origin_lat: input.lat,
+          origin_lng: input.lng,
+        },
+      );
+
+      return (response.predictions ?? [])
+        .map(mapPlacePrediction)
+        .filter(Boolean) as MapPlacePrediction[];
+    },
+
+    async getPlaceDetails(placeId: string) {
+      if (!placeId) return null;
+      const response = await apiBridge.post<PlaceDetailsResponse>(
+        apiRoutes.user.mapDiscovery,
+        {
+          type: 'place_details',
+          place_id: placeId,
+        },
+      );
+
+      return mapGooglePlace(response.place);
+    },
+
+    async getRoute(input) {
+      const response = await apiBridge.post<RouteResponse>(
+        apiRoutes.user.mapDiscovery,
+        {
+          type: 'route',
+          origin_lat: input.originLat,
+          origin_lng: input.originLng,
+          destination_lat: input.destinationLat,
+          destination_lng: input.destinationLng,
+        },
+      );
+
+      return mapRoute(response);
+    },
+
     async getFriends(input: FriendsInput): Promise<FriendsResult> {
       // Build type param: "following" and/or "followers"
       const types = input.type ?? ['following', 'followers'];
@@ -259,8 +388,12 @@ export function createUserRepository(): UserRepository {
           user_id: input.userId,
           type: types.join(','),
           limit: String(input.limit ?? 20),
-          following_offset: input.followingOffset ? String(input.followingOffset) : undefined,
-          followers_offset: input.followersOffset ? String(input.followersOffset) : undefined,
+          following_offset: input.followingOffset
+            ? String(input.followingOffset)
+            : undefined,
+          followers_offset: input.followersOffset
+            ? String(input.followersOffset)
+            : undefined,
         },
       );
 

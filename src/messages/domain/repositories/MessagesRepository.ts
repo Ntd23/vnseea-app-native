@@ -6,6 +6,9 @@ import type {
   CreateGroupChatInput,
   GetChatsOptions,
   GetMessagesOptions,
+  GroupAddableUser,
+  GroupChatInfo,
+  GroupSharedAssets,
   MessageAttachment,
   MessageItem,
   SendMessageResponse,
@@ -48,20 +51,17 @@ export interface MessagesRepository {
    * API: POST /api/get_user_messages
    * Returns: messages array + typing/recording status from API
    */
-  getMessages(userId: string, options?: GetMessagesOptions): Promise<GetMessagesResult>;
-
-  /**
-   * Get messages from a group conversation.
-   * API: POST /api/group_chat with type=fetch_messages
-   */
-  getGroupMessages(groupId: string, options?: GetMessagesOptions): Promise<GetMessagesResult>;
+  getMessages(
+    chat: ChatItem | string,
+    options?: GetMessagesOptions,
+  ): Promise<MessageItem[]>;
 
   /**
    * Send a message to a user
    * API: POST /api/send-message
    */
   sendMessage(
-    toUserId: string,
+    chat: ChatItem | string,
     message: string,
     attachment?: MessageAttachment,
   ): Promise<SendMessageResponse>;
@@ -87,4 +87,26 @@ export interface MessagesRepository {
    * API: POST /api/delete-conversation (with action=seen)
    */
   markAsSeen(userId: string): Promise<void>;
+
+  getGroupInfo(groupId: string): Promise<GroupChatInfo>;
+
+  searchAddableUsers(
+    groupId: string,
+    keyword?: string,
+  ): Promise<GroupAddableUser[]>;
+
+  addGroupUsers(groupId: string, userIds: string[]): Promise<void>;
+
+  removeGroupUser(groupId: string, userId: string): Promise<void>;
+
+  clearGroupHistory(groupId: string): Promise<void>;
+
+  leaveGroup(groupId: string): Promise<void>;
+
+  editGroup(
+    groupId: string,
+    input: { name?: string; avatar?: MessageAttachment },
+  ): Promise<GroupChatInfo>;
+
+  getGroupSharedAssets(groupId: string): Promise<GroupSharedAssets>;
 }
