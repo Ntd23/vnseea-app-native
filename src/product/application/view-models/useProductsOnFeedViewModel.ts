@@ -7,6 +7,7 @@
 // `loadMoreProducts`, we merge the buffer instantly (zero wait) and
 // kick off the next prefetch.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { InteractionManager } from 'react-native';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductItem } from '../../domain/types/product.types';
 import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
@@ -16,7 +17,27 @@ const repository = createProductRepository();
 // Bumped from 5 → 10 so each fetch fills more screen real-estate.
 const PRODUCT_PAGE_SIZE = 10;
 
-export function useProductsOnFeedViewModel() {
+type InteractionTask = ReturnType<typeof InteractionManager.runAfterInteractions>;
+
+let pendingProductsCacheTask: InteractionTask | null = null;
+
+function cacheProductsAfterInteractions(products: ProductItem[]) {
+  const snapshot = products.slice(0, 25);
+  pendingProductsCacheTask?.cancel();
+  pendingProductsCacheTask = InteractionManager.runAfterInteractions(() => {
+    feedCacheStorage.setCachedProducts(snapshot);
+    pendingProductsCacheTask = null;
+  });
+}
+
+type UseProductsOnFeedViewModelOptions = {
+  autoLoad?: boolean;
+};
+
+export function useProductsOnFeedViewModel(
+  options: UseProductsOnFeedViewModelOptions = {},
+) {
+  const { autoLoad = true } = options;
   const [products, setProducts] = useState<ProductItem[]>(() => {
     return feedCacheStorage.getCachedProducts();
   });
@@ -36,20 +57,14 @@ export function useProductsOnFeedViewModel() {
     if (!lastProduct) return;
 
     isPrefetchingRef.current = true;
-    // eslint-disable-next-line no-console
-    console.log('[products] prefetch: starting for offset:', lastProduct.id);
 
     repository
       .getProducts({ limit: PRODUCT_PAGE_SIZE, offset: lastProduct.id })
       .then(result => {
         if (result.products.length === 0) {
           prefetchBufferRef.current = null;
-          // eslint-disable-next-line no-console
-          console.log('[products] prefetch: no more pages');
         } else {
           prefetchBufferRef.current = result.products;
-          // eslint-disable-next-line no-console
-          console.log('[products] prefetch: buffer ready with', result.products.length, 'products');
         }
       })
       .catch(err => {
@@ -73,7 +88,7 @@ export function useProductsOnFeedViewModel() {
     try {
       const result = await repository.getProducts({ limit: PRODUCT_PAGE_SIZE });
       setProducts(result.products);
-      feedCacheStorage.setCachedProducts(result.products);
+      cacheProductsAfterInteractions(result.products);
 
       // Immediately prefetch page 2
       if (result.products.length >= PRODUCT_PAGE_SIZE) {
@@ -98,9 +113,6 @@ export function useProductsOnFeedViewModel() {
       if (buffered && buffered.length > 0) {
         prefetchBufferRef.current = null;
 
-        // eslint-disable-next-line no-console
-        console.log('[products] loadMore: using buffer →', buffered.length);
-
         // Merge synchronously (same fix as feed posts — no InteractionManager
         // to avoid the race where isLoadingMore resets before merge).
         setProducts(prev => {
@@ -112,7 +124,7 @@ export function useProductsOnFeedViewModel() {
             return prev;
           }
           const merged = [...prev, ...newProducts];
-          feedCacheStorage.setCachedProducts(merged);
+          cacheProductsAfterInteractions(merged);
           setTimeout(() => prefetchNextPage(merged), 0);
           return merged;
         });
@@ -122,9 +134,6 @@ export function useProductsOnFeedViewModel() {
       }
 
       // ── Slow path: fetch from network ───────────────────────────
-      // eslint-disable-next-line no-console
-      console.log('[products] loadMore: no buffer, fetching from network');
-
       const lastProduct = products[products.length - 1];
       if (!lastProduct) {
         setIsLoadingMore(false);
@@ -147,7 +156,7 @@ export function useProductsOnFeedViewModel() {
             return prev;
           }
           const merged = [...prev, ...newProducts];
-          feedCacheStorage.setCachedProducts(merged);
+          cacheProductsAfterInteractions(merged);
           setTimeout(() => prefetchNextPage(merged), 0);
           return merged;
         });
@@ -161,8 +170,9 @@ export function useProductsOnFeedViewModel() {
   }, [isLoading, isLoadingMore, isAllLoaded, products, prefetchNextPage]);
 
   useEffect(() => {
-    void fetchProducts();
-  }, [fetchProducts]);
+    if (!autoLoad) return;
+    fetchProducts();
+  }, [autoLoad, fetchProducts]);
 
   return {
     products,

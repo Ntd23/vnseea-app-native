@@ -39,12 +39,17 @@ function applyLiveViewerCounts(
   });
 }
 
+type UseLiveViewModelOptions = {
+  autoLoad?: boolean;
+};
+
 // Live List ViewModel
-export function useLiveViewModel() {
+export function useLiveViewModel(options: UseLiveViewModelOptions = {}) {
+  const { autoLoad = true } = options;
   const repository = useMemo(() => createLiveRepository(), []);
   const [liveStreams, setLiveStreams] = useState<LiveStreamItem[]>([]);
   const [friendsLive, setFriendsLive] = useState<LiveStreamItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(autoLoad);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,10 +81,11 @@ export function useLiveViewModel() {
   );
 
   useEffect(() => {
+    if (!autoLoad) return;
     load('initial').catch(err => {
       console.error('[Live] initial load error:', err);
     });
-  }, [load]);
+  }, [autoLoad, load]);
 
   const refreshViewerCounts = useCallback(async () => {
     const postIds = Array.from(

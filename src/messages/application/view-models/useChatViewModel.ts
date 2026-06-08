@@ -9,7 +9,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 
 const PAGE_SIZE = 30;
-const POLL_INTERVAL_MS = 3000; // Poll every 3 seconds for real-time feel
+const POLL_INTERVAL_MS = 7000; // Poll every 7 seconds to reduce network/CPU load
 const repository = createMessagesRepository();
 
 function mergeMessages(...messageLists: MessageItem[][]) {
@@ -114,13 +114,32 @@ export function useChatViewModel(chat: ChatItem) {
     if (showSpinner) setIsRefreshing(true);
 
     try {
+      // Skip polling if no new messages are expected — prevents infinite loop
       const result = await getMessagesForChat({
-        limit: 10,
+        limit: 5,
         afterMessageId: latestMessageIdRef.current,
       });
 
+      // Only update typing/recording - don't merge messages here
       setIsTyping(Boolean(result.typing));
       setIsRecording(Boolean(result.is_recording));
+
+      if (result.messages.length > 0) {
+        setMessages(current => {
+          const existingIds = new Set(current.map(m => m.id));
+          const newOnly = result.messages.filter(m => !existingIds.has(m.id));
+          if (newOnly.length > 0) {
+            return mergeMessages(current, newOnly);
+          }
+          return current;
+        });
+        // Update latestMessageId to highest seen
+        const highest = result.messages.reduce((max, m) =>
+          Number(m.id) > Number(max) ? m.id : max, latestMessageIdRef.current || '0');
+        if (highest !== latestMessageIdRef.current) {
+          latestMessageIdRef.current = highest;
+        }
+      }
 
       if (result.messages.length > 0) {
         const knownIds = messageIdsRef.current;

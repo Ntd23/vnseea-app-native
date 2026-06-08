@@ -6,7 +6,14 @@ import type { GroupItem } from '../../domain/types/community.types';
 const repository = createCommunityRepository();
 const FEED_GROUPS_LIMIT = 10;
 
-export function useSuggestedGroupsOnFeedViewModel() {
+type UseSuggestedGroupsOnFeedViewModelOptions = {
+  autoLoad?: boolean;
+};
+
+export function useSuggestedGroupsOnFeedViewModel(
+  options: UseSuggestedGroupsOnFeedViewModelOptions = {},
+) {
+  const { autoLoad = true } = options;
   const [groups, setGroups] = useState<GroupItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -38,8 +45,9 @@ export function useSuggestedGroupsOnFeedViewModel() {
   }, []);
 
   useEffect(() => {
+    if (!autoLoad) return;
     reloadGroups();
-  }, [reloadGroups]);
+  }, [autoLoad, reloadGroups]);
 
   return {
     groups,

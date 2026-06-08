@@ -1,13 +1,34 @@
 // Description: ViewModel for displaying events on the home feed.
 // Fetches events from get-events API and formats/caches them.
 import { useCallback, useEffect, useState } from 'react';
+import { InteractionManager } from 'react-native';
 import { createEventsRepository } from '../../infrastructure/repositories/ApiEventsRepository';
 import type { EventsItem } from '../../domain/types/events.types';
 import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
 
 const repository = createEventsRepository();
 
-export function useEventsOnFeedViewModel() {
+type InteractionTask = ReturnType<typeof InteractionManager.runAfterInteractions>;
+
+let pendingEventsCacheTask: InteractionTask | null = null;
+
+function cacheEventsAfterInteractions(events: EventsItem[]) {
+  const snapshot = events.slice(0, 10);
+  pendingEventsCacheTask?.cancel();
+  pendingEventsCacheTask = InteractionManager.runAfterInteractions(() => {
+    feedCacheStorage.setCachedEvents(snapshot);
+    pendingEventsCacheTask = null;
+  });
+}
+
+type UseEventsOnFeedViewModelOptions = {
+  autoLoad?: boolean;
+};
+
+export function useEventsOnFeedViewModel(
+  options: UseEventsOnFeedViewModelOptions = {},
+) {
+  const { autoLoad = true } = options;
   const [events, setEvents] = useState<EventsItem[]>(() => {
     return feedCacheStorage.getCachedEvents();
   });
@@ -50,7 +71,7 @@ export function useEventsOnFeedViewModel() {
 
       const mergedList = Array.from(mergedMap.values());
       setEvents(mergedList);
-      feedCacheStorage.setCachedEvents(mergedList);
+      cacheEventsAfterInteractions(mergedList);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không tải được danh sách sự kiện');
     } finally {
@@ -94,8 +115,9 @@ export function useEventsOnFeedViewModel() {
   }, []);
 
   useEffect(() => {
-    void fetchEvents();
-  }, [fetchEvents]);
+    if (!autoLoad) return;
+    fetchEvents();
+  }, [autoLoad, fetchEvents]);
 
   return {
     events,
