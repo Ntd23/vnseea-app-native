@@ -15,7 +15,6 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ArrowRight, Network } from 'lucide-react-native';
-import Icon from 'react-native-vector-icons/FontAwesome';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -60,23 +59,7 @@ function Field({
   );
 }
 
-function SocialButton({
-  label,
-  icon,
-}: {
-  label: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <TouchableOpacity
-      className="btn-secondary min-h-[44px]"
-      activeOpacity={0.8}
-    >
-      {icon}
-      <Text className="text-title-primary">{label}</Text>
-    </TouchableOpacity>
-  );
-}
+
 
 function RegisterScreen() {
   const navigation = useNavigation<RegisterNav>();
@@ -266,28 +249,6 @@ function RegisterScreen() {
               ) : null}
             </View>
 
-            <View className="my-6 flex-row items-center">
-              <View className="divider-line flex-1" />
-              <Text className="mx-4 text-caption-secondary">
-                Hoặc đăng ký với
-              </Text>
-              <View className="divider-line flex-1" />
-            </View>
-
-            <View className="mb-6 gap-4">
-              <SocialButton
-                label="Google"
-                icon={<Icon name="google" size={20} color="#4285F4" />}
-              />
-              <SocialButton
-                label="Facebook"
-                icon={<Icon name="facebook" size={20} color="#1877F2" />}
-              />
-              <SocialButton
-                label="Apple"
-                icon={<Icon name="apple" size={22} color="#000000" />}
-              />
-            </View>
 
             <View className="flex-row items-center justify-center">
               <Text className="text-body-secondary">Đã có tài khoản?</Text>

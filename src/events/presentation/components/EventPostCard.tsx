@@ -111,9 +111,9 @@ const EventPostCard = React.memo(function EventPostCard({
       : 'Chưa có người tham gia';
 
   return (
-    <View className="surface-card mx-4 mb-6 overflow-hidden">
+    <View className="mb-2 border-y border-[#dddfe2] bg-white">
       {/* Publisher Header (Matches other feed posts) */}
-      <View className="p-5 pb-3">
+      <View className="px-3 py-3 pb-2">
         <View className="flex-row items-center justify-between">
           <TouchableOpacity
             className="flex-row items-center flex-1 mr-2"
@@ -168,6 +168,7 @@ const EventPostCard = React.memo(function EventPostCard({
             className="w-full"
             style={{ aspectRatio: 1.6 }}
             resizeMode="cover"
+            fadeDuration={0}
           />
         ) : (
           <View
@@ -180,7 +181,7 @@ const EventPostCard = React.memo(function EventPostCard({
       </TouchableOpacity>
 
       {/* Event Details (Date badge + Info block) */}
-      <View className="p-5 pb-4">
+      <View className="px-3 py-3 pb-3">
         <View className="flex-row border-b border-[#F0F2F5] pb-4 mb-3">
           {/* Calendar style Date block */}
           <View className="h-16 w-16 items-center justify-center rounded-2xl bg-[#0000ff]/10">

@@ -142,9 +142,9 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
   // Full Feed layout (matches Facebook Post/Video post card design)
   return (
-    <View className="surface-card mx-4 mb-6 overflow-hidden">
+    <View className="mb-2 border-y border-[#dddfe2] bg-white">
       {/* Header & Product Text - same padding block for vertical alignment */}
-      <View className="p-5 pb-3">
+      <View className="px-3 py-3 pb-2">
         <View className="flex-row items-center justify-between">
           <TouchableOpacity
             className="flex-row items-center flex-1 mr-2"
@@ -207,6 +207,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
             className="w-full"
             style={{ aspectRatio: 1.4 }}
             resizeMode="cover"
+            fadeDuration={0}
           />
         ) : (
           <View
@@ -219,7 +220,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
       </TouchableOpacity>
 
       {/* Product Footer Actions */}
-      <View className="p-5 pt-4">
+      <View className="px-3 py-3 pt-3">
         {/* Price & Location Summary */}
         <View className="flex-row items-center justify-between border-b border-[#F0F2F5] pb-3.5 mb-3">
           <Text className="text-heading text-[18px] font-bold text-[#1877F2] flex-shrink mr-4" numberOfLines={1}>

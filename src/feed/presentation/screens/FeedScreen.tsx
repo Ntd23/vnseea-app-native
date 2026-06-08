@@ -1,6 +1,7 @@
 // Description: Renders the Stitch Facebook-style VNSEEA feed inside the main tab shell.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   FlatList,
   Image,
@@ -16,7 +17,6 @@ import {
   TouchableOpacity,
   View,
   Alert,
-  ActivityIndicator,
   InteractionManager,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -36,6 +36,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   Briefcase,
+  ChevronRight,
   Edit3,
   Globe,
   ImageIcon,
@@ -45,6 +46,7 @@ import {
   Megaphone,
   MoreHorizontal,
   Plus,
+  Radio,
   Search,
   Share2,
   ShoppingBag,
@@ -89,20 +91,21 @@ const REACTION_COLOR: Record<ReactionType, string> = {
   angry: '#e9710f',
 };
 
-// Floating picker pill geometry — used to clamp X within the viewport.
-const PICKER_WIDTH = 282;
-const PICKER_HEIGHT = 52;
-const PICKER_GAP = 8;
-const VIDEO_BUFFER_CONFIG = {
-  minBufferMs: 2500,
-  maxBufferMs: 5000,
-  bufferForPlaybackMs: 500,
-  bufferForPlaybackAfterRebufferMs: 2000,
+const REACTION_IMAGES: Record<ReactionType, any> = {
+  like: require('../../../assets/reactions/reactions_like.png'),
+  love: require('../../../assets/reactions/reactions_love.png'),
+  haha: require('../../../assets/reactions/reactions_haha.png'),
+  wow: require('../../../assets/reactions/reactions_wow.png'),
+  sad: require('../../../assets/reactions/reactions_sad.png'),
+  angry: require('../../../assets/reactions/reactions_angry.png'),
 };
+
+// Floating picker pill geometry — used to clamp X within the viewport.
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { RootStackRouteName } from '../../../navigation/types';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
@@ -142,6 +145,47 @@ import type { GroupItem } from '../../../community/domain/types/community.types'
 import { useSuggestedGroupsOnFeedViewModel } from '../../../community/application/view-models/useSuggestedGroupsOnFeedViewModel';
 import { ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
+import { useLiveViewModel } from '../../../live/application/view-models/useLiveViewModel';
+import type { LiveStreamItem } from '../../../live/domain/types/live.types';
+
+const PICKER_WIDTH = 282;
+const PICKER_HEIGHT = 52;
+const PICKER_GAP = 8;
+const VIDEO_BUFFER_CONFIG = {
+  minBufferMs: 2500,
+  maxBufferMs: 5000,
+  bufferForPlaybackMs: 500,
+  bufferForPlaybackAfterRebufferMs: 2000,
+};
+const LOAD_MORE_THROTTLE_MS = 800;
+const IMAGE_PREFETCH_LOOKAHEAD = 5;
+const MAX_IMAGE_PREFETCH_URLS = 8;
+const FEED_SCREEN_WIDTH = Dimensions.get('window').width;
+const FEED_CARD_WIDTH = FEED_SCREEN_WIDTH;
+const FEED_PHOTO_GRID_WIDTH = FEED_CARD_WIDTH - 8;
+const FEED_CARD_CLASS = 'mb-2 border-y border-[#dddfe2] bg-white';
+const FEED_CARD_PADDING_CLASS = 'px-3 py-3';
+const FEED_MEDIA_CLASS = 'w-full bg-black';
+const FEED_LIST_CONTENT_STYLE = { paddingBottom: 96 };
+
+// ── Pre-computed photo grid layouts ────────────────────────────────────────
+// Static layout objects for the Facebook-style photo grid. Computed once at
+// module level so TextPostCard never allocates new style objects per-render.
+const PHOTO_GRID_LAYOUTS = {
+  single: { width: FEED_PHOTO_GRID_WIDTH, height: FEED_PHOTO_GRID_WIDTH / 1.4 },
+  duoItem: { width: FEED_PHOTO_GRID_WIDTH / 2, height: FEED_PHOTO_GRID_WIDTH / 2 },
+  triHero: { width: FEED_PHOTO_GRID_WIDTH, height: FEED_PHOTO_GRID_WIDTH / 1.6 },
+  triItem: { width: FEED_PHOTO_GRID_WIDTH / 2, height: FEED_PHOTO_GRID_WIDTH / 2 },
+  quadItem: { width: FEED_PHOTO_GRID_WIDTH / 2, height: FEED_PHOTO_GRID_WIDTH / 2 },
+};
+const PHOTO_GRID_ITEM_PADDING = { padding: 2 };
+
+function getPhotoLayout(index: number, total: number) {
+  if (total === 1) return PHOTO_GRID_LAYOUTS.single;
+  if (total === 2) return PHOTO_GRID_LAYOUTS.duoItem;
+  if (total === 3) return index === 0 ? PHOTO_GRID_LAYOUTS.triHero : PHOTO_GRID_LAYOUTS.triItem;
+  return PHOTO_GRID_LAYOUTS.quadItem;
+}
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -190,16 +234,20 @@ function IconButton({
   );
 }
 
-function Avatar({ uri, size = 40 }: { uri: string; size?: number }) {
+const Avatar = React.memo(function Avatar({ uri, size = 40 }: { uri: string; size?: number }) {
+  const source = useMemo(() => ({ uri }), [uri]);
+  const style = useMemo(() => ({ height: size, width: size }), [size]);
+
   return (
     <Image
-      source={{ uri }}
-      style={{ height: size, width: size }}
+      source={source}
+      style={style}
       className="rounded-full"
       resizeMode="cover"
+      fadeDuration={0}
     />
   );
-}
+});
 
 
 
@@ -301,31 +349,30 @@ function FeedHeader() {
 
 function FilterTabs() {
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerClassName="gap-2 px-4 py-4"
-    >
-      {filters.map((filter, index) => (
-        <TouchableOpacity
-          key={filter}
-          className={`rounded-full px-6 py-2 ${
-            index === 0 ? 'surface-brand' : 'surface-muted'
-          }`}
-          activeOpacity={0.8}
-        >
-          <Text
-            className={
-              index === 0
-                ? 'text-title-primary text-inverse'
-                : 'text-title-secondary'
-            }
+    <View className="border-b border-[#dddfe2] bg-white px-4 pt-4">
+      <View className="flex-row items-end justify-between">
+        {filters.map((filter, index) => (
+          <TouchableOpacity
+            key={filter}
+            className="min-h-[44px] flex-1 items-center justify-center"
+            activeOpacity={0.8}
           >
-            {filter}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
+            <Text
+              className={`text-[17px] font-extrabold ${
+                index === 0 ? 'text-[#0000ff]' : 'text-title-secondary'
+              }`}
+            >
+              {filter}
+            </Text>
+            <View
+              className={`mt-3 h-1 w-24 rounded-full ${
+                index === 0 ? 'bg-[#0000ff]' : 'bg-transparent'
+              }`}
+            />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -335,41 +382,44 @@ function ComposerCard({ onPress, avatarUrl }: { onPress: () => void; avatarUrl?:
   // action button so the user can tap anywhere natural — Facebook lets
   // you tap "Photo" / "Feeling" to land directly inside the composer.
   return (
-    <View className="surface-card mx-4 mb-6 p-4">
-      <View className="mb-3 flex-row items-center border-b border-slate-200 pb-3">
-        <Avatar uri={avatarUrl ?? images.me} />
+    <View className="bg-white px-4 pb-5 pt-5">
+      <View className="mb-4 flex-row items-center">
+        <Avatar uri={avatarUrl ?? images.me} size={56} />
         <TouchableOpacity
-          className="surface-muted ml-3 min-h-[42px] flex-1 justify-center rounded-full px-4"
+          className="ml-4 min-h-[64px] flex-1 flex-row items-center justify-between rounded-2xl border border-[#dfe3eb] bg-white px-5"
           activeOpacity={0.8}
           onPress={onPress}
         >
-          <Text className="text-body-secondary">Bạn đang nghĩ gì?</Text>
+          <Text className="text-[17px] font-semibold text-[#667085]">Bạn đang nghĩ gì?</Text>
+          <ImageIcon size={28} color="#0866ff" />
         </TouchableOpacity>
       </View>
-      <View className="flex-row items-center justify-between">
+      <View className="flex-row items-center justify-between rounded-xl border border-[#edf0f5] bg-white px-3 py-4 shadow-sm">
         <TouchableOpacity
-          className="flex-row items-center"
+          className="flex-1 flex-row items-center justify-center"
           activeOpacity={0.75}
           onPress={onPress}
         >
-          <ImageIcon size={20} color="#45BD62" />
-          <Text className="ml-2 text-title-secondary">Thư viện</Text>
+          <ImageIcon size={20} color="#22c55e" />
+          <Text className="ml-2 text-[15px] font-bold text-[#4b5563]">Thư viện</Text>
         </TouchableOpacity>
+        <View className="h-8 w-px bg-[#dfe3eb]" />
         <TouchableOpacity
-          className="flex-row items-center"
+          className="flex-1 flex-row items-center justify-center"
           activeOpacity={0.75}
           onPress={onPress}
         >
-          <Tag size={20} color="#0000FF" />
-          <Text className="ml-2 text-title-secondary">Gắn thẻ</Text>
+          <Tag size={20} color="#0000ff" />
+          <Text className="ml-2 text-[15px] font-bold text-[#4b5563]">Gắn thẻ</Text>
         </TouchableOpacity>
+        <View className="h-8 w-px bg-[#dfe3eb]" />
         <TouchableOpacity
-          className="flex-row items-center"
+          className="flex-1 flex-row items-center justify-center"
           activeOpacity={0.75}
           onPress={onPress}
         >
-          <Smile size={20} color="#F59E0B" />
-          <Text className="ml-2 text-title-secondary">Cảm xúc</Text>
+          <Smile size={20} color="#f59e0b" />
+          <Text className="ml-2 text-[15px] font-bold text-[#4b5563]">Cảm xúc</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -381,6 +431,8 @@ function ComposerCard({ onPress, avatarUrl }: { onPress: () => void; avatarUrl?:
 function StoriesRow({ avatarUrl }: { avatarUrl?: string }) {
   const navigation = useNavigation<FeedNav>();
   const vm = useStoriesViewModel();
+  const prependStory = vm.prependStory;
+  const removeStoryLocal = vm.removeStoryLocal;
 
   // Subscribe to the cross-screen pub/sub so the rail stays in sync
   // with composer creates AND viewer deletes — without forcing either
@@ -388,16 +440,16 @@ function StoriesRow({ avatarUrl }: { avatarUrl?: string }) {
   // the cleanup runs reliably even if FeedScreen re-renders.
   useEffect(() => {
     const unsubCreated = storyCreatedEvents.subscribe(story => {
-      vm.prependStory(story);
+      prependStory(story);
     });
     const unsubDeleted = storyDeletedEvents.subscribe(storyId => {
-      vm.removeStoryLocal(storyId);
+      removeStoryLocal(storyId);
     });
     return () => {
       unsubCreated();
       unsubDeleted();
     };
-  }, [vm]);
+  }, [prependStory, removeStoryLocal]);
 
   const goToCreateStory = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_STORY);
@@ -405,7 +457,6 @@ function StoriesRow({ avatarUrl }: { avatarUrl?: string }) {
 
   const goToViewerForGroup = useCallback(
     (index: number) => {
-      console.log('[FeedScreen] goToViewerForGroup user index:', index, 'total stories:', vm.stories.length);
       navigation.navigate(ROUTES.STORY_VIEWER, {
         stories: vm.stories,
         initialUserIndex: index,
@@ -415,35 +466,44 @@ function StoriesRow({ avatarUrl }: { avatarUrl?: string }) {
   );
 
   return (
-    <View className="mb-6">
-      <View className="mb-3 flex-row items-center justify-between px-4">
-        <Text className="text-heading">Tin tức mới</Text>
+    <View className="mb-6 bg-white pb-2 pt-1">
+      <View className="mb-4 flex-row items-center justify-between px-4">
+        <Text className="text-[24px] font-extrabold text-[#050505]">Tin tức mới</Text>
         <TouchableOpacity activeOpacity={0.8}>
-          <Text className="text-title-primary text-brand">Xem tất cả</Text>
+          <View className="flex-row items-center">
+            <Text className="text-[16px] font-extrabold text-[#0866ff]">Xem tất cả</Text>
+            <ChevronRight size={22} color="#0866ff" />
+          </View>
         </TouchableOpacity>
       </View>
 
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerClassName="gap-3 px-4"
+        contentContainerClassName="gap-4 px-4"
       >
         {/* "Tạo tin" card — always first, leading entry point. */}
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={goToCreateStory}
-          className="surface-card h-48 w-28 overflow-hidden"
+          className="h-56 w-36 overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white"
         >
           <Image
             source={{ uri: avatarUrl ?? images.me }}
-            className="h-32 w-full"
+            className="h-36 w-full"
             resizeMode="cover"
+            fadeDuration={0}
           />
-          <View className="h-14 items-center justify-center bg-white">
-            <View className="absolute -top-4 h-8 w-8 items-center justify-center rounded-full border-4 border-white bg-blue-600">
-              <Plus size={17} color="#FFFFFF" />
+          <View className="flex-1 items-center justify-center bg-white px-3">
+            <View className="absolute -top-6 h-11 w-11 items-center justify-center rounded-full border-4 border-white bg-[#0866ff]">
+              <Plus size={24} color="#FFFFFF" />
             </View>
-            <Text className="mt-3 text-caption-primary">Tạo tin</Text>
+            <Text className="mt-5 text-center text-[16px] font-extrabold text-[#050505]">
+              Tạo tin
+            </Text>
+            <Text className="mt-1 text-center text-[13px] font-semibold leading-5 text-[#667085]">
+              Chia sẻ khoảnh khắc của bạn
+            </Text>
           </View>
         </TouchableOpacity>
 
@@ -457,7 +517,7 @@ function StoriesRow({ avatarUrl }: { avatarUrl?: string }) {
               key={story.publisher.userId}
               activeOpacity={0.85}
               onPress={() => goToViewerForGroup(index)}
-              className={`h-48 w-28 overflow-hidden rounded-2xl ${
+              className={`h-56 w-36 overflow-hidden rounded-2xl ${
                 hasUnseen ? '' : 'opacity-80'
               }`}
             >
@@ -469,20 +529,23 @@ function StoriesRow({ avatarUrl }: { avatarUrl?: string }) {
                 }}
                 className="h-full w-full"
                 resizeMode="cover"
+                fadeDuration={0}
               />
-              <View className="absolute inset-0 bg-black/20" />
+              <View className="absolute inset-0 bg-black/25" />
+              <View className="absolute bottom-0 left-0 right-0 h-28 bg-black/35" />
 
               {/* Avatar bubble overlay (top-left), ring colored by
                   unseen-state — blue when unseen, grey once viewed. */}
               <View
                 className={`absolute left-2 top-2 h-10 w-10 overflow-hidden rounded-full border-2 ${
-                  hasUnseen ? 'border-blue-600' : 'border-slate-300'
+                  hasUnseen ? 'border-white' : 'border-slate-200'
                 } bg-white p-0.5`}
               >
                 <Image
                   source={{ uri: story.publisher.avatarUrl }}
                   className="h-full w-full rounded-full"
                   resizeMode="cover"
+                  fadeDuration={0}
                 />
 
                 {/* Count badge (only show when > 1 story) */}
@@ -496,7 +559,7 @@ function StoriesRow({ avatarUrl }: { avatarUrl?: string }) {
               </View>
 
               <Text
-                className="absolute bottom-2 left-2 right-2 text-caption-primary text-white"
+                className="absolute bottom-4 left-3 right-3 text-[15px] font-extrabold text-white"
                 numberOfLines={1}
               >
                 {story.publisher.name}
@@ -514,10 +577,15 @@ function GreetingCard({ userName }: { userName?: string }) {
   const displayName = userName || 'Nguyễn Dũng';
 
   return (
-    <View className="preview-panel mx-4 mb-6 flex-row items-center justify-between p-4">
+    <View className="mx-4 mb-6 flex-row items-center justify-between overflow-hidden rounded-2xl border border-[#dfe7ff] bg-[#eef4ff] px-5 py-5">
+      <View className="mr-4 h-14 w-14 items-center justify-center rounded-full bg-white">
+        <Text className="text-3xl">👋</Text>
+      </View>
       <View className="flex-1 pr-3">
-        <Text className="text-heading">Chào buổi tối, {displayName}</Text>
-        <Text className="mt-1 text-body-secondary">
+        <Text className="text-[22px] font-extrabold text-[#050505]">
+          Chào buổi tối, {displayName}
+        </Text>
+        <Text className="mt-2 text-[15px] font-semibold leading-6 text-[#667085]">
           Buổi tối là cách cuộc sống nói rằng bạn đang gần hơn với giấc mơ của
           mình.
         </Text>
@@ -585,9 +653,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   onOpenPicker,
   onCommentTap,
   onShare,
+  isActive: controlledIsActive,
   gestureX,
   gestureY,
   gestureActive,
+  gestureStartX,
+  gestureStartY,
+  hasDragged,
   navigateToProfile,
   onOpenPostMenu,
 }: {
@@ -596,14 +668,33 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   onOpenPicker: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
   onShare?: (post: FeedPost) => void;
-  gestureX: any;
-  gestureY: any;
-  gestureActive: any;
+  isActive?: boolean;
+  gestureX?: any;
+  gestureY?: any;
+  gestureActive?: any;
+  gestureStartX?: any;
+  gestureStartY?: any;
+  hasDragged?: any;
   navigateToProfile: (userId: string) => void;
   onOpenPostMenu?: (post: FeedPost) => void;
 }) {
+  const localX = useSharedValue(0);
+  const localY = useSharedValue(0);
+  const localActive = useSharedValue(false);
+  const localStartX = useSharedValue(0);
+  const localStartY = useSharedValue(0);
+  const localDragged = useSharedValue(false);
+
+  const gX = gestureX ?? localX;
+  const gY = gestureY ?? localY;
+  const gActive = gestureActive ?? localActive;
+  const gStartX = gestureStartX ?? localStartX;
+  const gStartY = gestureStartY ?? localStartY;
+  const gDragged = hasDragged ?? localDragged;
+
   const navigation = useNavigation<any>();
-  const isActive = useFeedVideoActivity(post.id);
+  const trackedIsActive = useFeedVideoActivity(post.id);
+  const isActive = controlledIsActive ?? trackedIsActive;
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [muted, setMuted] = useState(true);
 
@@ -615,20 +706,17 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [navigateToProfile, post.publisher.id]);
 
   const handleVideoPress = useCallback(() => {
-    // eslint-disable-next-line no-console
-    console.log('[HomeVideoPostCard] Video pressed! Navigating to Reels with ID:', post.id);
     navigation.navigate(ROUTES.REELS, {
       initialVideoId: post.id,
-      post: post,
+      post,
     });
   }, [navigation, post]);
 
   // ── Mount strategy — keep player alive, just pause ───────────────
   //
-  // Previously we mount/unmount the entire <VideoPlayer> based on
-  // `isActive`. That caused massive FPS drops during scroll because
-  // ExoPlayer init (decoder creation, buffer allocation) is very
-  // expensive on Android.
+  // Keep VideoPlayer mounted while active (even when paused) — avoids the
+  // expensive ExoPlayer init/teardown cycle that causes frame drops on scroll.
+  const shouldMountVideo = isActive;
   useEffect(() => {
     if (!isActive) {
       setManuallyPaused(false);
@@ -636,9 +724,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [isActive]);
 
   const playing = isActive && !manuallyPaused;
-  // PERFORMANCE FIX: Only mount VideoPlayer when actively playing or about to play
-  // This reduces memory usage and prevents ExoPlayer decoder overhead when scrolling past
-  const shouldMountVideo = isActive && playing;
   const videoSource = useMemo(() => ({ uri: post.videoUrl }), [post.videoUrl]);
 
   // Need an on-screen position for the "Thích" button so the picker
@@ -651,6 +736,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     onReact(post.id, 'like');
   }, [onReact, post.id]);
 
+  const handleCommentTap = useCallback(() => {
+    onCommentTap(post.id);
+  }, [onCommentTap, post.id]);
+
   const handleLikeLongPress = useCallback(() => {
     if (!likeButtonRef.current) {
       onOpenPicker(post.id, 100, 200);
@@ -662,8 +751,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [onOpenPicker, post.id]);
 
   return (
-    <View className="surface-card mx-4 mb-6 overflow-hidden">
-      <View className="p-5">
+    <View className={FEED_CARD_CLASS}>
+      <View className={FEED_CARD_PADDING_CLASS}>
         <PostHeader
           avatar={post.publisher.avatarUrl}
           name={post.publisher.name}
@@ -679,7 +768,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       <TouchableOpacity
         activeOpacity={0.9}
         onPress={handleVideoPress}
-        className="h-56 w-full bg-black"
+        className={`h-56 ${FEED_MEDIA_CLASS}`}
       >
         {/* react-native-video v6 — unmount when inactive to release native decoders */}
         {shouldMountVideo ? (
@@ -698,7 +787,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             useTextureView={false}
             bufferConfig={VIDEO_BUFFER_CONFIG}
             onError={(error) => {
-              // eslint-disable-next-line no-console
               console.warn(
                 '[HomeVideoPostCard] video error',
                 post.id,
@@ -713,6 +801,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             source={{ uri: post.thumbnailUrl }}
             style={{ width: '100%', height: '100%' }}
             resizeMode="cover"
+            fadeDuration={0}
           />
         ) : null}
         {/* Big play button overlay while paused */}
@@ -768,7 +857,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           </TouchableOpacity>
         ) : null}
       </TouchableOpacity>
-      <View className="p-5">
+      <View className={FEED_CARD_PADDING_CLASS}>
         <VideoReactionSummary
           likeCount={post.likeCount}
           commentCount={post.commentCount}
@@ -780,12 +869,15 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           likeButtonRef={likeButtonRef}
           onLikeTap={handleLikeTap}
           onLikeLongPress={handleLikeLongPress}
-          onCommentTap={() => onCommentTap(post.id)}
+          onCommentTap={handleCommentTap}
           onShare={onShare}
           post={post}
-          gestureX={gestureX}
-          gestureY={gestureY}
-          gestureActive={gestureActive}
+          gestureX={gX}
+          gestureY={gY}
+          gestureActive={gActive}
+          gestureStartX={gStartX}
+          gestureStartY={gStartY}
+          hasDragged={gDragged}
         />
       </View>
     </View>
@@ -810,8 +902,8 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
   }, [post.targetUrl]);
 
   return (
-    <View className="surface-card mx-4 mb-6 overflow-hidden">
-      <View className="p-5">
+    <View className={FEED_CARD_CLASS}>
+      <View className={FEED_CARD_PADDING_CLASS}>
         <View className="flex-row items-center">
           <Avatar uri={post.publisher.avatarUrl ?? images.me} size={42} />
           <View className="ml-3 flex-1">
@@ -853,12 +945,12 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
               <Text className="mt-3 text-sm font-semibold text-white">Quảng cáo video</Text>
             </View>
           ) : (
-            <Image source={{ uri: post.mediaUrl }} className="h-full w-full" resizeMode="cover" />
+            <Image source={{ uri: post.mediaUrl }} className="h-full w-full" resizeMode="cover" fadeDuration={0} />
           )}
         </TouchableOpacity>
       )}
 
-      <View className="flex-row items-center justify-between border-t border-slate-200 px-5 py-4">
+      <View className="flex-row items-center justify-between border-t border-[#dddfe2] px-3 py-3">
         <View className="mr-4 flex-1">
           <Text className="text-xs font-semibold uppercase tracking-[0.4px] text-[#64748b]">
             Quảng cáo
@@ -880,6 +972,181 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
     </View>
   );
 });
+
+const FeedLivePostCard = React.memo(function FeedLivePostCard({
+  item,
+  onPress,
+}: {
+  item: LiveStreamItem;
+  onPress: (item: LiveStreamItem) => void;
+}) {
+  const handlePress = useCallback(() => {
+    onPress(item);
+  }, [item, onPress]);
+
+  const startedAtSeconds = Math.floor(new Date(item.startedAt).getTime() / 1000);
+  const timeText = Number.isFinite(startedAtSeconds)
+    ? formatPostTime(startedAtSeconds)
+    : 'Vừa xong';
+  const isStale = item.state === 'stale';
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={handlePress}
+      className={FEED_CARD_CLASS}
+    >
+      <View className={FEED_CARD_PADDING_CLASS}>
+        <View className="flex-row items-center">
+          <Avatar uri={item.publisher.avatarUrl || images.me} size={42} />
+          <View className="ml-3 flex-1">
+            <Text className="text-title-primary text-[#111827]" numberOfLines={1}>
+              {item.publisher.name}
+            </Text>
+            <View className="mt-0.5 flex-row items-center">
+              <View className={`h-2 w-2 rounded-full ${isStale ? 'bg-orange-500' : 'bg-red-500'}`} />
+              <Text className="ml-1 text-xs font-bold text-[#64748b]">
+                {isStale ? 'Đang chờ live' : 'Đang phát trực tiếp'}
+              </Text>
+              <Text className="mx-1 text-xs text-[#94a3b8]">•</Text>
+              <Text className="text-xs font-semibold text-[#64748b]">{timeText}</Text>
+            </View>
+          </View>
+          <View className="h-9 w-9 items-center justify-center rounded-full bg-red-50">
+            <Radio size={18} color="#ef4444" />
+          </View>
+        </View>
+      </View>
+
+      <View className="relative h-52 bg-[#0f172a]">
+        {item.thumbnailUrl ? (
+          <Image
+            source={{ uri: item.thumbnailUrl }}
+            className="h-full w-full opacity-90"
+            resizeMode="cover"
+            fadeDuration={0}
+          />
+        ) : (
+          <View className="absolute inset-0 items-center justify-center">
+            <Radio size={44} color="#ffffff" />
+            <Text className="mt-2 text-sm font-bold text-white/80">
+              Đang phát trực tiếp
+            </Text>
+          </View>
+        )}
+        <View className="absolute right-3 top-3 flex-row items-center rounded-full bg-red-500 px-3 py-1">
+          <View className="h-2 w-2 rounded-full bg-white" />
+          <Text className="ml-1 text-xs font-extrabold text-white">LIVE</Text>
+        </View>
+        <View className="absolute bottom-3 left-3 flex-row items-center rounded-full bg-black/65 px-3 py-1.5">
+          <Users size={14} color="#ffffff" />
+          <Text className="ml-1 text-xs font-bold text-white">
+            {item.viewerCount}
+          </Text>
+        </View>
+      </View>
+
+      <View className={FEED_CARD_PADDING_CLASS}>
+        <Text className="text-[15px] font-extrabold text-[#111827]" numberOfLines={2}>
+          {item.title || `${item.publisher.name} đang phát trực tiếp`}
+        </Text>
+        {!!item.description && (
+          <Text className="mt-1 text-sm text-[#475569]" numberOfLines={2}>
+            {item.description}
+          </Text>
+        )}
+        <View className="mt-4 rounded-xl bg-[#eef2ff] px-4 py-3">
+          <Text className="text-center text-sm font-extrabold text-[#0000ff]">
+            Xem live
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}, (prev, next) => (
+  prev.item.id === next.item.id &&
+  prev.item.viewerCount === next.item.viewerCount &&
+  prev.item.state === next.item.state &&
+  prev.item.thumbnailUrl === next.item.thumbnailUrl &&
+  prev.item.title === next.item.title
+));
+
+const FeedProductPostCard = React.memo(function FeedProductPostCard({
+  post,
+  onPress,
+  onProfilePress,
+  onSharePost,
+}: {
+  post: FeedProductPost;
+  onPress: (product: FeedProductPost['product']) => void;
+  onProfilePress: (userId: string) => void;
+  onSharePost: (post: FeedPost) => void;
+}) {
+  const handleShare = useCallback(() => {
+    onSharePost(post);
+  }, [onSharePost, post]);
+
+  return (
+    <ProductPostCard
+      product={post.product}
+      onPress={onPress}
+      onProfilePress={onProfilePress}
+      onShare={handleShare}
+    />
+  );
+});
+
+const FeedEventPostCard = React.memo(function FeedEventPostCard({
+  post,
+  onPress,
+  onProfilePress,
+  onSharePost,
+  onToggleInterested,
+  onToggleGoing,
+}: {
+  post: FeedEventPost;
+  onPress: (event: FeedEventPost['event']) => void;
+  onProfilePress: (userId: string) => void;
+  onSharePost: (post: FeedPost) => void;
+  onToggleInterested: (eventId: string | number) => void;
+  onToggleGoing: (eventId: string | number) => void;
+  onEditPress?: (event: FeedEventPost['event']) => void;
+}) {
+  const handleShare = useCallback(() => {
+    onSharePost(post);
+  }, [onSharePost, post]);
+
+  const handleInterested = useCallback(() => {
+    onToggleInterested(post.event.id);
+  }, [onToggleInterested, post.event.id]);
+
+  const handleGoing = useCallback(() => {
+    onToggleGoing(post.event.id);
+  }, [onToggleGoing, post.event.id]);
+
+  const handleEdit = useCallback((eventItem: FeedEventPost['event']) => {
+    Alert.alert('Chỉnh sửa', `Tính năng chỉnh sửa sự kiện "${eventItem.event_name || eventItem.name}" đang được phát triển.`);
+  }, []);
+
+  return (
+    <EventPostCard
+      event={post.event}
+      onPress={onPress}
+      onProfilePress={onProfilePress}
+      onShare={handleShare}
+      onInterestedPress={handleInterested}
+      onGoingPress={handleGoing}
+      onEditPress={handleEdit}
+    />
+  );
+}, (prev, next) =>
+  prev.post === next.post &&
+  prev.onPress === next.onPress &&
+  prev.onProfilePress === next.onProfilePress &&
+  prev.onSharePost === next.onSharePost &&
+  prev.onToggleInterested === next.onToggleInterested &&
+  prev.onToggleGoing === next.onToggleGoing
+);
 
 function formatSalary(job: JobsItem) {
   const minimum = Number(job.minimum) || 0;
@@ -916,13 +1183,17 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
   const cover = job.image || job.page?.cover;
   const pageName = job.page?.page_title || post.publisher.name || 'Nhà tuyển dụng';
 
+  const handlePress = useCallback(() => {
+    onPress(job);
+  }, [job, onPress]);
+
   return (
     <TouchableOpacity
-      className="surface-card mx-4 mb-6 overflow-hidden"
+      className={FEED_CARD_CLASS}
       activeOpacity={0.9}
-      onPress={() => onPress(job)}
+      onPress={handlePress}
     >
-      <View className="p-5">
+      <View className={FEED_CARD_PADDING_CLASS}>
         <View className="flex-row items-center">
           <Avatar uri={avatar} size={42} />
           <View className="ml-3 flex-1">
@@ -970,10 +1241,10 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
       </View>
 
       {!!cover && (
-        <Image source={{ uri: cover }} className="h-44 w-full bg-slate-100" resizeMode="cover" />
+        <Image source={{ uri: cover }} className="h-44 w-full bg-slate-100" resizeMode="cover" fadeDuration={0} />
       )}
 
-      <View className="flex-row items-center justify-between border-t border-slate-200 px-5 py-4">
+      <View className="flex-row items-center justify-between border-t border-[#dddfe2] px-3 py-3">
         <View className="mr-4 flex-1">
           <Text className="text-xs font-semibold uppercase tracking-[0.4px] text-[#64748b]">
             Mức lương
@@ -1066,9 +1337,9 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
               onPress={() => onOpenGroup(item)}
             >
               <View className="h-24 bg-[#111827]">
-                <Image source={{ uri: cover }} className="h-full w-full opacity-90" resizeMode="cover" />
+                <Image source={{ uri: cover }} className="h-full w-full opacity-90" resizeMode="cover" fadeDuration={0} />
                 <View className="absolute bottom-[-22px] left-3 h-14 w-14 rounded-full border-4 border-white bg-white">
-                  <Image source={{ uri: avatar }} className="h-full w-full rounded-full" resizeMode="cover" />
+                  <Image source={{ uri: avatar }} className="h-full w-full rounded-full" resizeMode="cover" fadeDuration={0} />
                 </View>
               </View>
               <View className="px-3 pb-3 pt-8">
@@ -1379,7 +1650,11 @@ export function PhotoViewerModal({
                       activeOpacity={0.75}
                     >
                       {livePost.myReaction ? (
-                        <Text style={{ fontSize: 18 }}>{REACTION_EMOJI[livePost.myReaction]}</Text>
+                        <Image
+                          source={REACTION_IMAGES[livePost.myReaction]}
+                          style={{ width: 20, height: 20 }}
+                          resizeMode="contain"
+                        />
                       ) : (
                         <ThumbsUp size={20} color="#fff" />
                       )}
@@ -1417,16 +1692,18 @@ export function PhotoViewerModal({
                           key={type}
                           style={{
                             width: 22, height: 22, borderRadius: 11,
-                            backgroundColor: REACTION_BADGE_BG[type],
+                            backgroundColor: '#000000',
                             alignItems: 'center', justifyContent: 'center',
                             marginLeft: i > 0 ? -6 : 0,
                             zIndex: livePost.topReactions.length - i,
-                            borderWidth: 1.5, borderColor: '#000',
+                            borderWidth: 1.5, borderColor: '#000000',
                           }}
                         >
-                          {type === 'like'
-                            ? <ThumbsUp size={11} color="#fff" />
-                            : <Text style={{ fontSize: 11 }}>{REACTION_EMOJI[type]}</Text>}
+                          <Image
+                            source={REACTION_IMAGES[type]}
+                            style={{ width: 18, height: 18 }}
+                            resizeMode="contain"
+                          />
                         </View>
                       ))}
                     </View>
@@ -1434,9 +1711,9 @@ export function PhotoViewerModal({
                 </View>
               </View>
 
+            </Animated.View>
           </Animated.View>
-        </Animated.View>
-      </GestureDetector>
+        </GestureDetector>
       </GestureHandlerRootView>
     </Modal>
   );
@@ -1488,7 +1765,7 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
                     width: 20,
                     height: 20,
                     borderRadius: 10,
-                    backgroundColor: type === 'like' ? REACTION_BADGE_BG.like : REACTION_BADGE_BG[type],
+                    backgroundColor: '#FFFFFF',
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderWidth: 1.5,
@@ -1497,13 +1774,11 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
                     zIndex: topReactions.length - index,
                   }}
                 >
-                  {type === 'like' ? (
-                    <ThumbsUp size={10} color="#FFFFFF" />
-                  ) : (
-                    <Text style={{ fontSize: 10, lineHeight: 13 }}>
-                      {REACTION_EMOJI[type]}
-                    </Text>
-                  )}
+                  <Image
+                    source={REACTION_IMAGES[type]}
+                    style={{ width: 18, height: 18 }}
+                    resizeMode="contain"
+                  />
                 </View>
               ))}
             </View>
@@ -1544,6 +1819,9 @@ const VideoPostActions = React.memo(function VideoPostActions({
   gestureX,
   gestureY,
   gestureActive,
+  gestureStartX,
+  gestureStartY,
+  hasDragged,
 }: {
   myReaction: ReactionType | null;
   likeButtonRef: React.RefObject<View | null>;
@@ -1555,31 +1833,44 @@ const VideoPostActions = React.memo(function VideoPostActions({
   gestureX: any;
   gestureY: any;
   gestureActive: any;
+  gestureStartX: any;
+  gestureStartY: any;
+  hasDragged: any;
 }) {
   const label = myReaction ? REACTION_LABEL[myReaction] : 'Thích';
   const color = myReaction ? REACTION_COLOR[myReaction] : '#64748B';
 
-  const pan = useMemo(() => Gesture.Pan()
-    .activateAfterLongPress(250)
-    .onStart((e) => {
-      gestureActive.value = true;
-      gestureX.value = e.absoluteX;
-      gestureY.value = e.absoluteY;
-      runOnJS(onLikeLongPress)();
-    })
-    .onUpdate((e) => {
-      gestureX.value = e.absoluteX;
-      gestureY.value = e.absoluteY;
-    })
-    .onEnd(() => {
-      gestureActive.value = false;
-    }), [gestureActive, gestureX, gestureY, onLikeLongPress]);
+  const composedGesture = useMemo(() => {
+    const pan = Gesture.Pan()
+      .activateAfterLongPress(250)
+      .onStart((e) => {
+        gestureActive.value = true;
+        gestureStartX.value = e.absoluteX;
+        gestureStartY.value = e.absoluteY;
+        hasDragged.value = false;
+        gestureX.value = e.absoluteX;
+        gestureY.value = e.absoluteY;
+        runOnJS(onLikeLongPress)();
+      })
+      .onUpdate((e) => {
+        gestureX.value = e.absoluteX;
+        gestureY.value = e.absoluteY;
+        const dx = e.absoluteX - gestureStartX.value;
+        const dy = e.absoluteY - gestureStartY.value;
+        if (Math.sqrt(dx*dx + dy*dy) > 15) {
+          hasDragged.value = true;
+        }
+      })
+      .onEnd(() => {
+        gestureActive.value = false;
+      });
 
-  const tap = useMemo(() => Gesture.Tap().maxDuration(250).onEnd(() => {
-    runOnJS(onLikeTap)();
-  }), [onLikeTap]);
+    const tap = Gesture.Tap().maxDuration(250).onEnd(() => {
+      runOnJS(onLikeTap)();
+    });
 
-  const composedGesture = useMemo(() => Gesture.Exclusive(pan, tap), [pan, tap]);
+    return Gesture.Exclusive(pan, tap);
+  }, [gestureActive, gestureX, gestureY, gestureStartX, gestureStartY, hasDragged, onLikeLongPress, onLikeTap]);
 
   return (
     <View className="flex-row items-center justify-between border-t border-slate-200 pt-4">
@@ -1590,7 +1881,11 @@ const VideoPostActions = React.memo(function VideoPostActions({
           className="flex-row items-center"
         >
           {myReaction ? (
-            <Text style={{ fontSize: 18 }}>{REACTION_EMOJI[myReaction]}</Text>
+            <Image
+              source={REACTION_IMAGES[myReaction]}
+              style={{ width: 20, height: 20 }}
+              resizeMode="contain"
+            />
           ) : (
             <ThumbsUp size={19} color={color} />
           )}
@@ -1644,6 +1939,7 @@ export function ReactionPickerOverlay({
   gestureX,
   gestureY,
   gestureActive,
+  hasDragged,
 }: {
   anchor: { postId: string; x: number; y: number } | null;
   onPick: (reaction: ReactionType) => void;
@@ -1651,8 +1947,12 @@ export function ReactionPickerOverlay({
   gestureX: any;
   gestureY: any;
   gestureActive: any;
+  hasDragged?: any;
 }) {
   if (!anchor) return null;
+
+  const localDragged = useSharedValue(false);
+  const gDragged = hasDragged ?? localDragged;
 
   const screenWidth = Dimensions.get('window').width;
   const left = Math.max(
@@ -1661,11 +1961,31 @@ export function ReactionPickerOverlay({
   );
   const top = Math.max(40, anchor.y - PICKER_HEIGHT - PICKER_GAP);
 
+  // Clamp the arrow pointer's horizontal position so it stays within the rounded rectangle boundaries
+  const arrowLeft = Math.max(left + 20, Math.min(anchor.x - 8, left + PICKER_WIDTH - 20 - 16));
+
   return (
     <>
       <Pressable
         onPress={onDismiss}
         style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 99, backgroundColor: 'transparent' }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left: arrowLeft,
+          top: top + PICKER_HEIGHT - 8,
+          width: 16,
+          height: 16,
+          backgroundColor: '#FFFFFF',
+          transform: [{ rotate: '45deg' }],
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.18,
+          shadowRadius: 10,
+          elevation: 12,
+          zIndex: 99,
+        }}
       />
       <View
         style={{
@@ -1699,6 +2019,7 @@ export function ReactionPickerOverlay({
             gestureX={gestureX}
             gestureY={gestureY}
             gestureActive={gestureActive}
+            hasDragged={gDragged}
             onPick={onPick}
             onDismiss={onDismiss}
           />
@@ -1716,6 +2037,7 @@ function ReactionIcon({
   gestureX,
   gestureY,
   gestureActive,
+  hasDragged,
   onPick,
   onDismiss,
 }: {
@@ -1726,6 +2048,7 @@ function ReactionIcon({
   gestureX: any;
   gestureY: any;
   gestureActive: any;
+  hasDragged: any;
   onPick: (reaction: ReactionType) => void;
   onDismiss: () => void;
 }) {
@@ -1734,17 +2057,18 @@ function ReactionIcon({
   const iconCenterY = pickerTop + PICKER_HEIGHT / 2;
 
   useAnimatedReaction(
-    () => gestureActive.value,
-    (isActive, previous) => {
+    () => [gestureActive.value, hasDragged.value] as const,
+    (next, previous) => {
+      const [isActive, dragged] = next;
+      const prevActive = previous ? previous[0] : false;
       // Calculate which icon is hovered on release
-      if (previous && !isActive) {
+      if (prevActive && !isActive) {
         const dx = gestureX.value - iconCenterX;
         const dy = gestureY.value - iconCenterY;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < 40) {
           runOnJS(onPick)(type);
-        } else if (index === 0) { // Only dismiss once to avoid multiple dismiss calls
-          // If gesture was released outside any icon, dismiss (or we could just leave picker open if dist > some big number)
+        } else if (dragged && index === 0) { // Only dismiss if they dragged and released outside
           runOnJS(onDismiss)();
         }
       }
@@ -1772,7 +2096,11 @@ function ReactionIcon({
   return (
     <Animated.View style={[{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }, style]}>
       <TouchableOpacity onPress={() => onPick(type)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-        <Text style={{ fontSize: 28, lineHeight: 32 }}>{REACTION_EMOJI[type]}</Text>
+        <Image
+          source={REACTION_IMAGES[type]}
+          style={{ width: 36, height: 36 }}
+          resizeMode="contain"
+        />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -1797,9 +2125,9 @@ function PostSkeleton() {
   return (
     <Animated.View
       style={animatedStyle}
-      className="surface-card mx-4 mb-6 overflow-hidden"
+      className={FEED_CARD_CLASS}
     >
-      <View className="p-5">
+      <View className={FEED_CARD_PADDING_CLASS}>
         {/* Header: avatar + name + time */}
         <View className="mb-4 flex-row items-center">
           <View className="h-10 w-10 rounded-full bg-slate-200" />
@@ -1815,7 +2143,7 @@ function PostSkeleton() {
       {/* Media placeholder — random height giả lập photo / video */}
       <View className="h-56 w-full bg-slate-200" />
       {/* Action row */}
-      <View className="flex-row justify-between border-t border-slate-200 p-5">
+      <View className="flex-row justify-between border-t border-[#dddfe2] px-3 py-3">
         <View className="h-6 w-16 rounded bg-slate-200" />
         <View className="h-6 w-20 rounded bg-slate-200" />
         <View className="h-6 w-16 rounded bg-slate-200" />
@@ -1975,6 +2303,12 @@ const PostHeader = React.memo(function PostHeader({
   onMorePress?: (post: FeedPost) => void;
   post?: FeedPost;
 }) {
+  const handleMorePress = useCallback(() => {
+    if (post) {
+      onMorePress?.(post);
+    }
+  }, [onMorePress, post]);
+
   return (
     <View className="mb-4 flex-row items-center justify-between">
       <TouchableOpacity
@@ -2003,7 +2337,7 @@ const PostHeader = React.memo(function PostHeader({
         </View>
       </TouchableOpacity>
       {onMorePress && post && (
-        <TouchableOpacity onPress={() => post && onMorePress(post)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity onPress={handleMorePress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <MoreHorizontal size={22} color="#94A3B8" />
         </TouchableOpacity>
       )}
@@ -2025,6 +2359,9 @@ export const TextPostCard = React.memo(function TextPostCard({
   gestureX,
   gestureY,
   gestureActive,
+  gestureStartX,
+  gestureStartY,
+  hasDragged,
   navigateToProfile,
   onOpenPostMenu,
 }: {
@@ -2038,12 +2375,28 @@ export const TextPostCard = React.memo(function TextPostCard({
   // picker. Threaded through `VideoPostActions` so the long-press +
   // pan gesture can update them and `ReactionIcon` can react to the
   // movement. `any` typing matches Antigravity's existing convention.
-  gestureX: any;
-  gestureY: any;
-  gestureActive: any;
+  gestureX?: any;
+  gestureY?: any;
+  gestureActive?: any;
+  gestureStartX?: any;
+  gestureStartY?: any;
+  hasDragged?: any;
   navigateToProfile: (userId: string) => void;
   onOpenPostMenu?: (post: FeedPost) => void;
 }) {
+  const localX = useSharedValue(0);
+  const localY = useSharedValue(0);
+  const localActive = useSharedValue(false);
+  const localStartX = useSharedValue(0);
+  const localStartY = useSharedValue(0);
+  const localDragged = useSharedValue(false);
+
+  const gX = gestureX ?? localX;
+  const gY = gestureY ?? localY;
+  const gActive = gestureActive ?? localActive;
+  const gStartX = gestureStartX ?? localStartX;
+  const gStartY = gestureStartY ?? localStartY;
+  const gDragged = hasDragged ?? localDragged;
   const likeButtonRef = useRef<View>(null);
 
   // Profile tap handler
@@ -2057,6 +2410,10 @@ export const TextPostCard = React.memo(function TextPostCard({
     () => onReact(post.id, 'like'),
     [onReact, post.id],
   );
+  const handleCommentTap = useCallback(() => {
+    onCommentTap(post.id);
+  }, [onCommentTap, post.id]);
+
   const handleLikeLongPress = useCallback(() => {
     if (!likeButtonRef.current) {
       onOpenPicker(post.id, 100, 200);
@@ -2073,30 +2430,9 @@ export const TextPostCard = React.memo(function TextPostCard({
   const displayedPhotos = post.photos.slice(0, 4);
   const hasMorePhotos = totalPhotos > 4;
 
-  const { width: screenWidth } = Dimensions.get('window');
-  const cardWidth = screenWidth - 32; // mx-4 is 16px on each side
-  const gridWidth = cardWidth - 8;    // px-1 is 4px on each side
-
-  const getPhotoStyle = (index: number, total: number) => {
-    if (total === 1) {
-      return { width: cardWidth - 8, height: (cardWidth - 8) / 1.4 };
-    }
-    if (total === 2) {
-      return { width: gridWidth / 2, height: gridWidth / 2 };
-    }
-    if (total === 3) {
-      if (index === 0) {
-        return { width: cardWidth - 8, height: (cardWidth - 8) / 1.6 };
-      }
-      return { width: gridWidth / 2, height: gridWidth / 2 };
-    }
-    // total >= 4: always 2x2 grid
-    return { width: gridWidth / 2, height: gridWidth / 2 };
-  };
-
   return (
-    <View className="surface-card mx-4 mb-6 overflow-hidden">
-      <View className="p-5">
+    <View className={FEED_CARD_CLASS}>
+      <View className={FEED_CARD_PADDING_CLASS}>
         <PostHeader
           avatar={post.publisher.avatarUrl}
           name={post.publisher.name}
@@ -2126,12 +2462,9 @@ export const TextPostCard = React.memo(function TextPostCard({
                 key={url}
                 onPress={() => onPhotoPress(post, index)}
                 activeOpacity={0.95}
-                style={{
-                  ...getPhotoStyle(index, totalPhotos),
-                  padding: 2,
-                }}
+                style={[getPhotoLayout(index, totalPhotos), PHOTO_GRID_ITEM_PADDING]}
               >
-                <View style={{ flex: 1, borderRadius: 8, overflow: 'hidden' }}>
+                <View style={{ flex: 1, overflow: 'hidden' }}>
                   <Image
                     source={{ uri: url }}
                     style={{
@@ -2140,6 +2473,7 @@ export const TextPostCard = React.memo(function TextPostCard({
                       backgroundColor: '#F1F5F9',
                     }}
                     resizeMode="cover"
+                    fadeDuration={0}
                   />
                   {/* "+N" overlay on 4th photo when there are more photos */}
                   {isFourthPhotoWithMore && (
@@ -2171,11 +2505,11 @@ export const TextPostCard = React.memo(function TextPostCard({
         </View>
       ) : null}
       {post.audioUrl ? (
-        <View className="px-5 pb-1">
+        <View className="px-3 pb-1">
           <AudioPlayer uri={post.audioUrl} />
         </View>
       ) : null}
-      <View className="p-5">
+      <View className={FEED_CARD_PADDING_CLASS}>
         <VideoReactionSummary
           likeCount={post.likeCount}
           commentCount={post.commentCount}
@@ -2187,12 +2521,15 @@ export const TextPostCard = React.memo(function TextPostCard({
           likeButtonRef={likeButtonRef}
           onLikeTap={handleLikeTap}
           onLikeLongPress={handleLikeLongPress}
-          onCommentTap={() => onCommentTap(post.id)}
+          onCommentTap={handleCommentTap}
           onShare={onShare}
           post={post}
-          gestureX={gestureX}
-          gestureY={gestureY}
-          gestureActive={gestureActive}
+          gestureX={gX}
+          gestureY={gY}
+          gestureActive={gActive}
+          gestureStartX={gStartX}
+          gestureStartY={gStartY}
+          hasDragged={gDragged}
         />
       </View>
     </View>
@@ -2201,6 +2538,7 @@ export const TextPostCard = React.memo(function TextPostCard({
 
 type FeedListItem =
   | { type: 'post'; id: string; post: FeedPost }
+  | { type: 'live'; id: string; item: LiveStreamItem }
   | {
       type: 'groups-carousel';
       id: string;
@@ -2210,22 +2548,67 @@ type FeedListItem =
 
 // Section wrapper — header + empty/loading/error states + list of cards.
 
+function interleaveSupplementalPosts(
+  basePosts: FeedPost[],
+  productPosts: FeedProductPost[],
+  eventPosts: FeedEventPost[],
+  jobPosts: FeedJobPost[],
+): FeedPost[] {
+  const result: FeedPost[] = [];
+  let productIndex = 0;
+  let eventIndex = 0;
+  let jobIndex = 0;
+
+  basePosts.forEach((post, index) => {
+    result.push(post);
+    const slot = index + 1;
+
+    if (slot % 7 === 0 && productIndex < productPosts.length) {
+      result.push(productPosts[productIndex]);
+      productIndex += 1;
+    }
+
+    if (slot % 11 === 0 && eventIndex < eventPosts.length) {
+      result.push(eventPosts[eventIndex]);
+      eventIndex += 1;
+    }
+
+    if (slot % 13 === 0 && jobIndex < jobPosts.length) {
+      result.push(jobPosts[jobIndex]);
+      jobIndex += 1;
+    }
+  });
+
+  return result;
+}
 
 function FeedScreen() {
   const navigation = useNavigation<FeedNav>();
   const vm = useFeedViewModel();
   const userVm = useCurrentUserViewModel();
+  const feedPosts = vm.posts;
+  const prependFeedPost = vm.prependPost;
+  const toggleFeedReaction = vm.toggleReaction;
+  const voteFeedPoll = vm.votePoll;
+  const saveFeedPost = vm.savePost;
+  const reportFeedPost = vm.reportPost;
+  const reloadFeedPosts = vm.reloadPosts;
 
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
   const gestureActive = useSharedValue(false);
+  const gestureStartX = useSharedValue(0);
+  const gestureStartY = useSharedValue(0);
+  const hasDragged = useSharedValue(false);
 
   // Viewport tracking & Autoplay logic for video cards.
   const activeVideoIdRef = useRef<string | null>(feedActiveVideoIdSnapshot);
   const pendingActiveVideoIdRef = useRef<string | null>(null);
   const isScrollingRef = useRef(false);
-  const pendingLoadMoreRef = useRef(false);
-  const deferredLoadMoreRef = useRef<(() => void) | null>(null);
+  const lastLoadMoreRequestAtRef = useRef(0);
+  const supplementalLoadStartedRef = useRef(false);
+  const supplementalInteractionRef = useRef<ReturnType<typeof InteractionManager.runAfterInteractions> | null>(null);
+  const supplementalLoadTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // ── Scroll tracking for pausing videos while scrolling ───────────────
   const isMomentumScrollingRef = useRef(false);
@@ -2236,27 +2619,51 @@ function FeedScreen() {
     publishFeedActiveVideo(videoId);
   }, []);
 
+  // Lightweight scroll pause: only track scrolling state for video
+  // autoplay, do NOT null out activeVideoId (that causes expensive
+  // unmount/remount of the video player → jank).
   const beginScrollPause = useCallback(() => {
     isScrollingRef.current = true;
+    // Store the current video so onViewableItemsChanged can update
+    // pendingActiveVideoIdRef while we scroll.
     pendingActiveVideoIdRef.current = activeVideoIdRef.current;
-    if (activeVideoIdRef.current) {
-      setActiveFeedVideo(null);
-    }
-  }, [setActiveFeedVideo]);
+  }, []);
 
   const endScrollPause = useCallback(() => {
     isScrollingRef.current = false;
+    // Commit whichever video became visible during the scroll.
     const pendingVideoId = pendingActiveVideoIdRef.current;
     pendingActiveVideoIdRef.current = null;
-    setActiveFeedVideo(pendingVideoId);
-
-    if (pendingLoadMoreRef.current) {
-      pendingLoadMoreRef.current = false;
-      setTimeout(() => {
-        deferredLoadMoreRef.current?.();
-      }, 0);
+    if (pendingVideoId !== activeVideoIdRef.current) {
+      setActiveFeedVideo(pendingVideoId);
     }
   }, [setActiveFeedVideo]);
+
+  const lastScrollY = useRef(0);
+  const lastTabBarUpdateRef = useRef(0);
+
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const currentY = event.nativeEvent.contentOffset.y;
+    const diff = currentY - lastScrollY.current;
+
+    // Throttle tabBar updates to avoid re-render spam during fast scroll
+    const now = Date.now();
+    if (now - lastTabBarUpdateRef.current < 150) {
+      lastScrollY.current = currentY;
+      return;
+    }
+    lastTabBarUpdateRef.current = now;
+
+    if (currentY <= 50) {
+      tabBarVisibility.setVisible(true);
+    } else if (diff > 15) {
+      tabBarVisibility.setVisible(false);
+    } else if (diff < -15) {
+      tabBarVisibility.setVisible(true);
+    }
+
+    lastScrollY.current = currentY;
+  }, []);
 
   const handleScrollBeginDrag = useCallback(() => {
     beginScrollPause();
@@ -2301,6 +2708,9 @@ function FeedScreen() {
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
       }
+      supplementalInteractionRef.current?.cancel();
+      supplementalLoadTimersRef.current.forEach(timer => clearTimeout(timer));
+      supplementalLoadTimersRef.current = [];
       activeVideoIdRef.current = null;
       publishFeedActiveVideo(null);
     };
@@ -2312,10 +2722,10 @@ function FeedScreen() {
   // events never leak into stale listeners.
   useEffect(() => {
     const unsubscribe = postCreatedEvents.subscribe(post => {
-      vm.prependPost(post);
+      prependFeedPost(post);
     });
     return unsubscribe;
-  }, [vm]);
+  }, [prependFeedPost]);
 
   const goToCreatePost = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_POST);
@@ -2331,7 +2741,7 @@ function FeedScreen() {
   });
 
   // Products for feed (Facebook Marketplace style)
-  const productsVm = useProductsOnFeedViewModel();
+  const productsVm = useProductsOnFeedViewModel({ autoLoad: false });
 
   // Convert products to FeedProductPost format
   const feedProductPosts = useMemo<FeedProductPost[]>(() => {
@@ -2349,16 +2759,41 @@ function FeedScreen() {
     }));
   }, [productsVm.products]);
 
-  const handleProductPress = useCallback((product: any) => {
+  const handleProductPress = useCallback((_product: any) => {
     // Navigate to product detail screen
-    console.log('[FeedScreen] Product pressed:', product.id);
   }, []);
 
   // Events for feed
-  const eventsVm = useEventsOnFeedViewModel();
+  const eventsVm = useEventsOnFeedViewModel({ autoLoad: false });
   const { toggleInterested, toggleGoing } = eventsVm;
-  const jobsVm = useJobsOnFeedViewModel();
-  const groupsVm = useSuggestedGroupsOnFeedViewModel();
+  const jobsVm = useJobsOnFeedViewModel({ autoLoad: false });
+  const groupsVm = useSuggestedGroupsOnFeedViewModel({ autoLoad: false });
+  const liveVm = useLiveViewModel({ autoLoad: false });
+  const reloadProducts = productsVm.reloadProducts;
+  const reloadEvents = eventsVm.reloadEvents;
+  const reloadJobs = jobsVm.reloadJobs;
+  const reloadGroups = groupsVm.reloadGroups;
+  const reloadLive = liveVm.refresh;
+
+  useEffect(() => {
+    if (supplementalLoadStartedRef.current || !vm.hasLoadedOnce || feedPosts.length === 0) {
+      return;
+    }
+
+    supplementalLoadStartedRef.current = true;
+    // Delay supplemental loading to avoid blocking the main feed render
+    setTimeout(() => {
+      reloadProducts();
+    }, 1000);
+    setTimeout(() => {
+      reloadLive();
+    }, 1500);
+  }, [
+    feedPosts.length,
+    vm.hasLoadedOnce,
+    reloadProducts,
+    reloadLive,
+  ]);
 
   // Convert events to FeedEventPost format
   const feedEventPosts = useMemo<FeedEventPost[]>(() => {
@@ -2437,9 +2872,8 @@ function FeedScreen() {
     });
   }, [jobsVm.jobs]);
 
-  const handleEventPress = useCallback((event: any) => {
+  const handleEventPress = useCallback((_event: any) => {
     // Navigate to event details
-    console.log('[FeedScreen] Event pressed:', event.id);
   }, []);
 
   const handleJobPress = useCallback(
@@ -2470,16 +2904,23 @@ function FeedScreen() {
     [navigation],
   );
 
+  const handleOpenLive = useCallback(
+    (item: LiveStreamItem) => {
+      navigation.navigate(ROUTES.LIVE_ROOM, { postId: item.postId });
+    },
+    [navigation],
+  );
+
   // The comment sheet is shared by both video and text posts — look up
   // the active post in both lists so the comment count badge stays
   // accurate regardless of which type triggered it. Filter out product posts.
   const selectedCommentPost = useMemo(
-     () => vm.posts.find(
+     () => feedPosts.find(
        post =>
          (post.kind === 'text' || post.kind === 'video' || post.kind === 'poll') &&
          post.id === commentVm.selectedCommentPostId,
      ) as (FeedTextPost | FeedVideoPost | FeedPollPost) | null,
-     [vm.posts, commentVm.selectedCommentPostId],
+     [feedPosts, commentVm.selectedCommentPostId],
   );
 
   const handleRetryComments = useCallback(() => {
@@ -2529,7 +2970,7 @@ function FeedScreen() {
 
   const handleSavePost = useCallback(async (postId: string) => {
     try {
-      const result = await vm.savePost?.(postId);
+      const result = await saveFeedPost?.(postId);
       if (result?.saved) {
         Alert.alert('Đã lưu', 'Bài viết đã được lưu vào mục đã lưu.');
       } else {
@@ -2538,11 +2979,11 @@ function FeedScreen() {
     } catch {
       Alert.alert('Lỗi', 'Không thể lưu bài viết. Vui lòng thử lại.');
     }
-  }, [vm]);
+  }, [saveFeedPost]);
 
   const handleReportPost = useCallback(async (postId: string) => {
     try {
-      const result = await vm.reportPost?.(postId);
+      const result = await reportFeedPost?.(postId);
       if (result?.reported) {
         Alert.alert('Đã gửi báo cáo', 'Cảm ơn bạn đã báo cáo. Chúng tôi sẽ xem xét bài viết này.');
       } else {
@@ -2551,15 +2992,15 @@ function FeedScreen() {
     } catch {
       Alert.alert('Lỗi', 'Không thể gửi báo cáo. Vui lòng thử lại.');
     }
-  }, [vm]);
+  }, [reportFeedPost]);
 
   // Autoplay the first video on mount / load
   useEffect(() => {
-    const firstVideo = vm.posts.find(p => p.kind === 'video');
+    const firstVideo = feedPosts.find(p => p.kind === 'video');
     if (firstVideo && !activeVideoIdRef.current && !isScrollingRef.current) {
       setActiveFeedVideo(firstVideo.id);
     }
-  }, [vm.posts, setActiveFeedVideo]);
+  }, [feedPosts, setActiveFeedVideo]);
 
   // Infinite scroll pagination — calls loadMore directly.
   // Previous version wrapped in InteractionManager which caused stale
@@ -2578,22 +3019,27 @@ function FeedScreen() {
     loadMoreProducts,
   } = productsVm;
 
+  // Load-more is now allowed even during scroll — only throttled by
+  // LOAD_MORE_THROTTLE_MS to avoid request spam. This removes the
+  // previous isScrollingRef guard that caused the feed to stop loading.
   const handleLoadMore = useCallback(() => {
-    if (isScrollingRef.current) {
-      pendingLoadMoreRef.current = true;
-      return;
-    }
+    const now = Date.now();
+    const canRequestFeed =
+      !isFeedLoading &&
+      !isFeedLoadingMore &&
+      now - lastLoadMoreRequestAtRef.current > LOAD_MORE_THROTTLE_MS;
 
-    if (!isFeedLoading && !isFeedLoadingMore && !isFeedAllLoaded) {
+    if (canRequestFeed) {
+      lastLoadMoreRequestAtRef.current = now;
       loadMorePosts();
     }
+
     if (!isProductsLoading && !isProductsLoadingMore && !isProductsAllLoaded) {
       loadMoreProducts();
     }
   }, [
     isFeedLoading,
     isFeedLoadingMore,
-    isFeedAllLoaded,
     loadMorePosts,
     isProductsLoading,
     isProductsLoadingMore,
@@ -2601,25 +3047,45 @@ function FeedScreen() {
     loadMoreProducts,
   ]);
 
-  useEffect(() => {
-    deferredLoadMoreRef.current = handleLoadMore;
-    return () => {
-      if (deferredLoadMoreRef.current === handleLoadMore) {
-        deferredLoadMoreRef.current = null;
-      }
-    };
-  }, [handleLoadMore]);
+  const handleRefresh = useCallback(() => {
+    reloadFeedPosts(true);
+
+    supplementalInteractionRef.current?.cancel();
+    supplementalLoadTimersRef.current.forEach(timer => clearTimeout(timer));
+    supplementalLoadTimersRef.current = [];
+
+    supplementalInteractionRef.current = InteractionManager.runAfterInteractions(() => {
+      const timers = [
+        setTimeout(() => {
+          reloadLive();
+        }, 100),
+        setTimeout(() => {
+          reloadProducts(true);
+        }, 250),
+        setTimeout(() => {
+          reloadGroups(true);
+        }, 450),
+        setTimeout(() => {
+          reloadEvents(true);
+        }, 650),
+        setTimeout(() => {
+          reloadJobs(true);
+        }, 850),
+      ];
+      supplementalLoadTimersRef.current = timers;
+    });
+  }, [reloadEvents, reloadFeedPosts, reloadGroups, reloadJobs, reloadLive, reloadProducts]);
 
   const ListFooterComponent = useMemo(() => {
-    if (vm.isLoadingMore) {
+    if (isFeedLoadingMore) {
       return (
-        <View style={{ paddingVertical: 16, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ paddingVertical: 20, alignItems: 'center' }}>
           <ActivityIndicator size="small" color="#0866FF" />
         </View>
       );
     }
     return null;
-  }, [vm.isLoadingMore]);
+  }, [isFeedLoadingMore]);
 
   // ── Photo viewer state ───────────────────────────────────────────────
   // Set when the user taps a photo in a text post. Cleared by the modal's
@@ -2658,10 +3124,10 @@ function FeedScreen() {
   const handlePickReaction = useCallback(
     (reaction: ReactionType) => {
       if (!pickerAnchor) return;
-      vm.toggleReaction(pickerAnchor.postId, reaction);
+      toggleFeedReaction(pickerAnchor.postId, reaction);
       setPickerAnchor(null);
     },
-    [pickerAnchor, vm],
+    [pickerAnchor, toggleFeedReaction],
   );
 
   // Share handlers
@@ -2679,21 +3145,38 @@ function FeedScreen() {
   }, []);
 
   const handleShareCopied = useCallback(() => {
-    // Show toast or feedback when link is copied
-    console.log('[Feed] Link copied to clipboard');
+    // ShareActionSheet already gives the visible feedback.
   }, []);
 
   // ── FlatList: Virtualized feed with interleaved products ─────────────
 
   // Memoize merged posts to prevent unnecessary recalculations
   const mergedPosts = useMemo<FeedPost[]>(() => {
-    const posts = vm.posts.filter(
+    const posts = feedPosts.filter(
       p => p.kind !== 'product' && p.kind !== 'event' && p.kind !== 'job',
     );
-    return [...posts, ...feedProductPosts, ...feedEventPosts, ...feedJobPosts].sort(
-      (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
+    return interleaveSupplementalPosts(
+      posts,
+      feedProductPosts,
+      feedEventPosts,
+      feedJobPosts,
     );
-  }, [vm.posts, feedProductPosts, feedEventPosts, feedJobPosts]);
+  }, [feedPosts, feedProductPosts, feedEventPosts, feedJobPosts]);
+
+  const feedLiveItems = useMemo<LiveStreamItem[]>(() => {
+    const byPostId = new Map<number, LiveStreamItem>();
+    [...liveVm.friendsLive, ...liveVm.liveStreams].forEach(item => {
+      if (item.state === 'offline') return;
+      if (!byPostId.has(item.postId)) {
+        byPostId.set(item.postId, item);
+      }
+    });
+    return Array.from(byPostId.values()).sort((a, b) => {
+      const aTime = new Date(a.startedAt).getTime();
+      const bTime = new Date(b.startedAt).getTime();
+      return bTime - aTime;
+    });
+  }, [liveVm.friendsLive, liveVm.liveStreams]);
 
   const feedListItems = useMemo<FeedListItem[]>(() => {
     const items: FeedListItem[] = mergedPosts.map(post => ({
@@ -2701,6 +3184,15 @@ function FeedScreen() {
       id: `post-${post.id}`,
       post,
     }));
+
+    feedLiveItems.slice(0, 2).forEach((item, index) => {
+      const insertIndex = Math.min(index === 0 ? 2 : 8, items.length);
+      items.splice(insertIndex, 0, {
+        type: 'live',
+        id: `live-${item.postId}`,
+        item,
+      });
+    });
 
     if ((groupsVm.groups.length > 0 || groupsVm.isLoading) && items.length > 0) {
       const insertIndex = Math.min(10, items.length);
@@ -2713,21 +3205,62 @@ function FeedScreen() {
     }
 
     return items;
-  }, [mergedPosts, groupsVm.groups, groupsVm.isLoading]);
+  }, [feedLiveItems, mergedPosts, groupsVm.groups, groupsVm.isLoading]);
+
+  // DEBUG: detect duplicate IDs in feedListItems (post-type only).
+  // The signature ref keeps noise low — we only log when the actual
+  // duplicate set changes, not on every re-render of the same data.
+  const lastFeedIdsRef = useRef<string>('');
+  useEffect(() => {
+    const postItems = feedListItems.filter(i => i.type === 'post') as Array<{ type: 'post'; id: string; post: FeedPost }>;
+    const ids = postItems.map(i => i.post.id);
+    const uniqueIds = new Set(ids);
+    if (ids.length !== uniqueIds.size) {
+      const dupes: string[] = [];
+      const seen = new Set<string>();
+      ids.forEach(id => {
+        if (seen.has(id)) dupes.push(id);
+        seen.add(id);
+      });
+      const signature = JSON.stringify({
+        len: ids.length,
+        uniq: uniqueIds.size,
+        dupes: dupes.slice().sort(),
+      });
+      if (lastFeedIdsRef.current !== signature) {
+        lastFeedIdsRef.current = signature;
+        console.warn(
+          '[FEED DEBUG] feedListItems contains DUPLICATE post IDs!',
+          {
+            totalItems: ids.length,
+            uniqueIds: uniqueIds.size,
+            duplicateIds: Array.from(new Set(dupes)),
+            duplicatePositions: ids
+              .map((id, idx) => ({ id, idx }))
+              .filter(({ id }) => dupes.includes(id)),
+            timestamp: Date.now(),
+          },
+        );
+      }
+    }
+  }, [feedListItems]);
 
   // ── Smart image prefetch — only the next ~10 upcoming items ──────────
   // Instead of prefetching ALL images (which wastes bandwidth and CPU on
   // content the user may never scroll to), we track a "high-water mark"
   // and only prefetch images for the items just beyond what's been seen.
   const prefetchedCountRef = useRef(0);
+  const feedTopPostId = mergedPosts[0]?.id;
+
+  useEffect(() => {
+    prefetchedCountRef.current = 0;
+  }, [feedTopPostId]);
 
   useEffect(() => {
     if (mergedPosts.length === 0) return;
 
-    // How many items ahead of the "already prefetched" mark to warm up.
-    const LOOKAHEAD = 10;
     const start = prefetchedCountRef.current;
-    const end = Math.min(mergedPosts.length, start + LOOKAHEAD);
+    const end = Math.min(mergedPosts.length, start + IMAGE_PREFETCH_LOOKAHEAD);
     if (start >= end) return; // Nothing new to prefetch
 
     const urlsToPrefetch: string[] = [];
@@ -2741,7 +3274,7 @@ function FeedScreen() {
       }
       // Photos (text posts)
       if (post.kind === 'text') {
-        post.photos?.forEach(photo => {
+        post.photos?.slice(0, 4).forEach(photo => {
           if (photo?.startsWith('http')) urlsToPrefetch.push(photo);
         });
       }
@@ -2749,7 +3282,7 @@ function FeedScreen() {
       if (post.kind === 'product') {
         const prod = post.product;
         if (prod?.images) {
-          prod.images.forEach((imgObj: any) => {
+          prod.images.slice(0, 2).forEach((imgObj: any) => {
             if (imgObj?.image?.startsWith?.('http')) urlsToPrefetch.push(imgObj.image);
           });
         }
@@ -2776,12 +3309,11 @@ function FeedScreen() {
 
     prefetchedCountRef.current = end;
 
-    // Deduplicate and prefetch in idle time
-    const unique = Array.from(new Set(urlsToPrefetch));
-    InteractionManager.runAfterInteractions(() => {
-      unique.forEach(url => {
-        Image.prefetch(url).catch(() => {});
-      });
+    // Deduplicate and prefetch in idle time - limit to avoid network/CPU spikes
+    const unique = Array.from(new Set(urlsToPrefetch)).slice(0, MAX_IMAGE_PREFETCH_URLS);
+    // Prefetch fewer at a time to avoid overwhelming the device
+    unique.slice(0, 4).forEach((url) => {
+      Image.prefetch(url).catch(() => {});
     });
   }, [mergedPosts]);
 
@@ -2791,27 +3323,21 @@ function FeedScreen() {
       <HomeVideoPostCard
         key={item.id}
         post={item}
-        onReact={vm.toggleReaction}
+        onReact={toggleFeedReaction}
         onOpenPicker={handleOpenPicker}
         onCommentTap={commentVm.openComments}
         onShare={handleOpenSharePost}
-        gestureX={gestureX}
-        gestureY={gestureY}
-        gestureActive={gestureActive}
         navigateToProfile={navigateToProfile}
         onOpenPostMenu={handleOpenPostMenu}
       />
     ),
     [
       commentVm.openComments,
-      gestureActive,
-      gestureX,
-      gestureY,
       handleOpenPicker,
       handleOpenSharePost,
       navigateToProfile,
       handleOpenPostMenu,
-      vm.toggleReaction,
+      toggleFeedReaction,
     ],
   );
 
@@ -2820,40 +3346,34 @@ function FeedScreen() {
       <TextPostCard
         key={item.id}
         post={item}
-        onReact={vm.toggleReaction}
+        onReact={toggleFeedReaction}
         onOpenPicker={handleOpenPicker}
         onCommentTap={commentVm.openComments}
         onPhotoPress={handlePhotoPress}
         onShare={handleOpenSharePost}
-        gestureX={gestureX}
-        gestureY={gestureY}
-        gestureActive={gestureActive}
         navigateToProfile={navigateToProfile}
         onOpenPostMenu={handleOpenPostMenu}
       />
     ),
     [
       commentVm.openComments,
-      gestureActive,
-      gestureX,
-      gestureY,
       handleOpenPicker,
       handleOpenSharePost,
       handlePhotoPress,
       navigateToProfile,
       handleOpenPostMenu,
-      vm.toggleReaction,
+      toggleFeedReaction,
     ],
   );
 
   const renderProductPost = useCallback(
     ({ item }: { item: FeedProductPost }) => (
-      <ProductPostCard
+      <FeedProductPostCard
         key={item.id}
-        product={item.product}
+        post={item}
         onPress={handleProductPress}
         onProfilePress={navigateToProfile}
-        onShare={() => handleOpenSharePost(item)}
+        onSharePost={handleOpenSharePost}
       />
     ),
     [handleProductPress, navigateToProfile, handleOpenSharePost],
@@ -2861,16 +3381,16 @@ function FeedScreen() {
 
   const renderEventPost = useCallback(
     ({ item }: { item: FeedEventPost }) => (
-      <EventPostCard
+      <FeedEventPostCard
         key={item.id}
-        event={item.event}
+        post={item}
         onPress={handleEventPress}
         onProfilePress={navigateToProfile}
-        onShare={() => handleOpenSharePost(item)}
-        onInterestedPress={() => toggleInterested(item.event.id)}
-        onGoingPress={() => toggleGoing(item.event.id)}
+        onSharePost={handleOpenSharePost}
+        onToggleInterested={toggleInterested}
+        onToggleGoing={toggleGoing}
         onEditPress={(eventItem) => {
-          Alert.alert('Chỉnh sửa', `Tính năng chỉnh sửa sự kiện "${eventItem.event_name || eventItem.name}" đang được phát triển.`);
+    Alert.alert('Chỉnh sửa', `Tính năng chỉnh sửa sự kiện "${eventItem.event_name || eventItem.name}" đang được phát triển.`);
         }}
       />
     ),
@@ -2888,25 +3408,37 @@ function FeedScreen() {
       <PollPostCard
         key={item.id}
         post={item}
-        onVote={vm.votePoll}
-        onReact={vm.toggleReaction}
+        onVote={voteFeedPoll}
+        onReact={toggleFeedReaction}
         onOpenPicker={handleOpenPicker}
         onCommentTap={commentVm.openComments}
         onShare={handleOpenSharePost}
         onProfilePress={navigateToProfile}
         onMorePress={handleOpenPostMenu}
         currentUserAvatar={userVm.user?.avatar}
+        gestureX={gestureX}
+        gestureY={gestureY}
+        gestureActive={gestureActive}
+        gestureStartX={gestureStartX}
+        gestureStartY={gestureStartY}
+        hasDragged={hasDragged}
       />
     ),
     [
-      vm.votePoll,
-      vm.toggleReaction,
+      voteFeedPoll,
+      toggleFeedReaction,
       handleOpenPicker,
       commentVm.openComments,
       handleOpenSharePost,
       navigateToProfile,
       handleOpenPostMenu,
       userVm.user?.avatar,
+      gestureActive,
+      gestureX,
+      gestureY,
+      gestureStartX,
+      gestureStartY,
+      hasDragged,
     ],
   );
 
@@ -2934,10 +3466,21 @@ function FeedScreen() {
     [handleOpenGroup, handleOpenGroups],
   );
 
+  const renderLivePost = useCallback(
+    ({ item }: { item: Extract<FeedListItem, { type: 'live' }> }) => (
+      <FeedLivePostCard item={item.item} onPress={handleOpenLive} />
+    ),
+    [handleOpenLive],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: FeedListItem }) => {
       if (item.type === 'groups-carousel') {
         return renderGroupsCarousel({ item });
+      }
+
+      if (item.type === 'live') {
+        return renderLivePost({ item });
       }
 
       switch (item.post.kind) {
@@ -2951,16 +3494,11 @@ function FeedScreen() {
         default: return null;
       }
     },
-    [
-      renderGroupsCarousel,
-      renderVideoPost,
-      renderTextPost,
-      renderProductPost,
-      renderEventPost,
-      renderJobPost,
-      renderPollPost,
-      renderAdPost,
-    ],
+    // Render functions are memoized separately, so renderItem stays stable
+    // as long as the render functions themselves don't change. This prevents
+    // FlatList from re-rendering every item on every FeedScreen re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   const keyExtractor = useCallback((item: FeedListItem) => item.id, []);
@@ -2987,15 +3525,19 @@ function FeedScreen() {
             data={feedListItems}
             renderItem={renderItem}
             keyExtractor={keyExtractor}
+            extraData={`${isFeedLoadingMore}-${isFeedAllLoaded}-${vm.posts.length}`}
             ListHeaderComponent={ListHeaderComponent}
-            windowSize={5}
-            maxToRenderPerBatch={3}
-            updateCellsBatchingPeriod={80}
-            removeClippedSubviews={Platform.OS === 'android'}
-            initialNumToRender={4}
-            decelerationRate="fast"
+            // Optimized for fast scroll on low-end devices
+            windowSize={3}
+            maxToRenderPerBatch={2}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews={true}
+            initialNumToRender={2}
+            decelerationRate="normal"
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
+            scrollEventThrottle={32}
+            onScroll={handleScroll}
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={viewabilityConfigRef.current}
             onScrollBeginDrag={handleScrollBeginDrag}
@@ -3003,8 +3545,9 @@ function FeedScreen() {
             onMomentumScrollBegin={handleMomentumScrollBegin}
             onMomentumScrollEnd={handleMomentumScrollEnd}
             onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.8}
+            onEndReachedThreshold={1.5}
             ListFooterComponent={ListFooterComponent}
+            contentContainerStyle={FEED_LIST_CONTENT_STYLE}
             refreshControl={
               <RefreshControl
                 refreshing={
@@ -3012,15 +3555,10 @@ function FeedScreen() {
                   productsVm.isRefreshing ||
                   eventsVm.isRefreshing ||
                   jobsVm.isRefreshing ||
-                  groupsVm.isRefreshing
+                  groupsVm.isRefreshing ||
+                  liveVm.isRefreshing
                 }
-                onRefresh={() => {
-                  vm.reloadPosts(true);
-                  productsVm.reloadProducts(true);
-                  eventsVm.reloadEvents(true);
-                  jobsVm.reloadJobs(true);
-                  groupsVm.reloadGroups(true);
-                }}
+                onRefresh={handleRefresh}
                 tintColor="#0866FF"
               />
             }
@@ -3048,14 +3586,15 @@ function FeedScreen() {
         gestureX={gestureX}
         gestureY={gestureY}
         gestureActive={gestureActive}
+        hasDragged={hasDragged}
       />
       {/* ── Photo Viewer ── */}
       <PhotoViewerModal
         state={photoViewer}
         onClose={() => setPhotoViewer(null)}
-        onReact={vm.toggleReaction}
+        onReact={toggleFeedReaction}
         onCommentTap={commentVm.openComments}
-        posts={vm.posts}
+        posts={feedPosts}
       />
       <ReelCommentsSheet
         visible={commentVm.isCommentsOpen}

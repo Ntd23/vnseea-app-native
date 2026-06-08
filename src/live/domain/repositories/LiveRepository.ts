@@ -4,6 +4,7 @@
 import type {
   CreateLivePayload,
   LiveCommentsResult,
+  LiveSession,
   LiveStreamComment,
   LiveStreamItem,
 } from '../types/live.types';
@@ -12,7 +13,9 @@ export interface LiveRepository {
   getLiveStreams(): Promise<LiveStreamItem[]>;
   getLiveFriends(): Promise<LiveStreamItem[]>;
   getLivePost(postId: number): Promise<LiveStreamItem | null>;
-  createLive(payload: CreateLivePayload): Promise<{ postId: number; streamName: string }>;
+  getLiveViewerCounts(postIds: number[]): Promise<Record<number, number>>;
+  createLive(payload: CreateLivePayload): Promise<LiveSession>;
+  joinLive(postId: number, streamName?: string): Promise<LiveSession>;
   endLive(postId: number): Promise<void>;
   getComments(
     postId: number,

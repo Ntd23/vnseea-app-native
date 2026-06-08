@@ -6,7 +6,14 @@ import type { JobsItem } from '../../domain/types/jobs.types';
 const repository = createJobsRepository();
 const FEED_JOBS_LIMIT = 6;
 
-export function useJobsOnFeedViewModel() {
+type UseJobsOnFeedViewModelOptions = {
+  autoLoad?: boolean;
+};
+
+export function useJobsOnFeedViewModel(
+  options: UseJobsOnFeedViewModelOptions = {},
+) {
+  const { autoLoad = true } = options;
   const [jobs, setJobs] = useState<JobsItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -40,8 +47,9 @@ export function useJobsOnFeedViewModel() {
   }, []);
 
   useEffect(() => {
+    if (!autoLoad) return;
     reloadJobs();
-  }, [reloadJobs]);
+  }, [autoLoad, reloadJobs]);
 
   return {
     jobs,

@@ -1,6 +1,6 @@
 // Description: Poll post card component for the home feed.
 // Displays poll posts with voting options, results, and interaction actions.
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useMemo } from 'react';
 import {
   Image,
   Text,
@@ -18,6 +18,8 @@ import {
   Smile,
   ThumbsUp,
 } from 'lucide-react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useSharedValue } from 'react-native-reanimated';
 import type { FeedPollPost, PollOption } from '../../domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 
@@ -32,6 +34,12 @@ interface PollPostCardProps {
   onCommentTap: (postId: string) => void;
   onShare?: (post: FeedPollPost) => void;
   currentUserAvatar?: string;
+  gestureX?: any;
+  gestureY?: any;
+  gestureActive?: any;
+  gestureStartX?: any;
+  gestureStartY?: any;
+  hasDragged?: any;
 }
 
 const BRAND_BLUE = '#0866FF';
@@ -62,6 +70,15 @@ const REACTION_COLOR: Record<ReactionType, string> = {
   wow: '#f7b125',
   sad: '#f7b125',
   angry: '#e9710f',
+};
+
+const REACTION_IMAGES: Record<ReactionType, any> = {
+  like: require('../../../assets/reactions/reactions_like.png'),
+  love: require('../../../assets/reactions/reactions_love.png'),
+  haha: require('../../../assets/reactions/reactions_haha.png'),
+  wow: require('../../../assets/reactions/reactions_wow.png'),
+  sad: require('../../../assets/reactions/reactions_sad.png'),
+  angry: require('../../../assets/reactions/reactions_angry.png'),
 };
 
 function formatTimeAgo(timestamp?: number): string {
@@ -154,8 +171,28 @@ export const PollPostCard = React.memo(function PollPostCard({
   onCommentTap,
   onShare,
   currentUserAvatar,
+  gestureX,
+  gestureY,
+  gestureActive,
+  gestureStartX,
+  gestureStartY,
+  hasDragged,
 }: PollPostCardProps) {
   const likeButtonRef = useRef<View>(null);
+
+  const localX = useSharedValue(0);
+  const localY = useSharedValue(0);
+  const localActive = useSharedValue(false);
+  const localStartX = useSharedValue(0);
+  const localStartY = useSharedValue(0);
+  const localDragged = useSharedValue(false);
+
+  const gX = gestureX ?? localX;
+  const gY = gestureY ?? localY;
+  const gActive = gestureActive ?? localActive;
+  const gStartX = gestureStartX ?? localStartX;
+  const gStartY = gestureStartY ?? localStartY;
+  const gDragged = hasDragged ?? localDragged;
 
   const handleProfilePress = useCallback(() => {
     if (post.publisher?.id) {
@@ -185,6 +222,38 @@ export const PollPostCard = React.memo(function PollPostCard({
     });
   }, [onOpenPicker, post.id]);
 
+  const composedGesture = useMemo(() => {
+    const pan = Gesture.Pan()
+      .activateAfterLongPress(250)
+      .onStart((e) => {
+        gActive.value = true;
+        gStartX.value = e.absoluteX;
+        gStartY.value = e.absoluteY;
+        gDragged.value = false;
+        gX.value = e.absoluteX;
+        gY.value = e.absoluteY;
+        runOnJS(handleLikeLongPress)();
+      })
+      .onUpdate((e) => {
+        gX.value = e.absoluteX;
+        gY.value = e.absoluteY;
+        const dx = e.absoluteX - gStartX.value;
+        const dy = e.absoluteY - gStartY.value;
+        if (Math.sqrt(dx*dx + dy*dy) > 15) {
+          gDragged.value = true;
+        }
+      })
+      .onEnd(() => {
+        gActive.value = false;
+      });
+
+    const tap = Gesture.Tap().maxDuration(250).onEnd(() => {
+      runOnJS(handleLikeTap)();
+    });
+
+    return Gesture.Exclusive(pan, tap);
+  }, [gActive, gX, gY, gStartX, gStartY, gDragged, handleLikeLongPress, handleLikeTap]);
+
   const hasVoted = post.votedId !== null;
   const totalVotes = post.totalVotes;
 
@@ -192,9 +261,9 @@ export const PollPostCard = React.memo(function PollPostCard({
   const reactionColor = post.myReaction ? REACTION_COLOR[post.myReaction] : '#65676B';
 
   return (
-    <View className="surface-card mx-4 mb-6 overflow-hidden">
+    <View className="mb-2 border-y border-[#dddfe2] bg-white">
       {/* Publisher Header */}
-      <View className="flex-row items-center justify-between p-5 pb-3">
+      <View className="flex-row items-center justify-between px-3 py-3 pb-2">
         <TouchableOpacity
           className="flex-row items-center flex-1 mr-2"
           activeOpacity={0.8}
@@ -243,7 +312,7 @@ export const PollPostCard = React.memo(function PollPostCard({
         <TouchableOpacity 
           activeOpacity={0.95} 
           onPress={() => onPress?.(post)}
-          className="px-5 pb-3"
+          className="px-3 pb-3"
         >
           <Text className="text-body-primary font-medium text-[16px] text-[#050505]" numberOfLines={4}>
             {post.pollQuestion}
@@ -252,7 +321,7 @@ export const PollPostCard = React.memo(function PollPostCard({
       )}
 
       {/* Poll Options Container */}
-      <View className="px-5 pb-2">
+      <View className="px-3 pb-2">
         {post.options.map(option => (
           <PollOptionItem
             key={option.id}
@@ -282,27 +351,30 @@ export const PollPostCard = React.memo(function PollPostCard({
       </View>
 
       {/* Action buttons (Like / Comment / Share) */}
-      <View className="flex-row items-center justify-between px-5 py-2.5">
-        <TouchableOpacity
-          ref={likeButtonRef}
-          className="flex-1 flex-row items-center justify-center py-1"
-          activeOpacity={0.75}
-          onPress={handleLikeTap}
-          onLongPress={handleLikeLongPress}
-          delayLongPress={250}
-        >
-          {post.myReaction ? (
-            <Text style={{ fontSize: 18 }}>{REACTION_EMOJI[post.myReaction]}</Text>
-          ) : (
-            <ThumbsUp size={19} color={reactionColor} />
-          )}
-          <Text 
-            className="ml-2 text-[14px] font-semibold"
-            style={{ color: reactionColor }}
+      <View className="flex-row items-center justify-between px-3 py-2.5">
+        <GestureDetector gesture={composedGesture}>
+          <Animated.View
+            ref={likeButtonRef as any}
+            className="flex-1 flex-row items-center justify-center py-1"
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
-            {reactionLabel}
-          </Text>
-        </TouchableOpacity>
+            {post.myReaction ? (
+              <Image
+                source={REACTION_IMAGES[post.myReaction]}
+                style={{ width: 20, height: 20 }}
+                resizeMode="contain"
+              />
+            ) : (
+              <ThumbsUp size={19} color={reactionColor} />
+            )}
+            <Text 
+              className="ml-2 text-[14px] font-semibold"
+              style={{ color: reactionColor }}
+            >
+              {reactionLabel}
+            </Text>
+          </Animated.View>
+        </GestureDetector>
 
         <TouchableOpacity
           className="flex-1 flex-row items-center justify-center py-1"

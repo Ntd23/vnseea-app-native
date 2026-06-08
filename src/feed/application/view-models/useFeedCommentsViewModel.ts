@@ -124,7 +124,8 @@ export function useFeedCommentsViewModel({
     commentOffsetRef.current = 0;
 
     try {
-      const nextComments = await repository.getComments(postId, {
+      const cleanPostId = postId.replace(/_rc\d+_\d+$/, '');
+      const nextComments = await repository.getComments(cleanPostId, {
         limit: COMMENT_PAGE_SIZE,
         offset: 0,
       });
@@ -166,7 +167,8 @@ export function useFeedCommentsViewModel({
     setCommentError(null);
 
     try {
-      const nextComments = await repository.getComments(selectedCommentPostId, {
+      const cleanPostId = selectedCommentPostId.replace(/_rc\d+_\d+$/, '');
+      const nextComments = await repository.getComments(cleanPostId, {
         limit: COMMENT_PAGE_SIZE,
         offset: commentOffsetRef.current,
       });
@@ -231,8 +233,9 @@ export function useFeedCommentsViewModel({
       onCommentCountChange?.(selectedCommentPostId, 1);
 
       try {
+        const cleanPostId = selectedCommentPostId.replace(/_rc\d+_\d+$/, '');
         const createdComment = await repository.addComment(
-          selectedCommentPostId,
+          cleanPostId,
           trimmed,
           image,
           audio,

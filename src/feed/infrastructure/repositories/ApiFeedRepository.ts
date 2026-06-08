@@ -817,6 +817,9 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
 // `getAllPosts` sort by `postedAt` desc — the result is a chronological
 // merged feed that mixes own + follows + discovery content, just like
 // the FB / Twitter home tab.
+// Module-level cache for suggested users to ensure consistent pagination
+let cachedSuggestedUserIds: string[] = [];
+
 async function fetchRawFeedPosts(
   limit: number,
   afterPostId?: string,
@@ -829,7 +832,27 @@ async function fetchRawFeedPosts(
         api_status: number | string;
         data?: Array<Record<string, unknown>>;
       }>(apiRoutes.feed.posts, payload);
-      return response.data ?? [];
+
+      // DEBUG: log raw response from backend
+      const rawData = response.data ?? [];
+      const rawIds = rawData.map(p => String(
+        (p as { id?: unknown; post_id?: unknown }).id ??
+        (p as { id?: unknown; post_id?: unknown }).post_id ?? '',
+      ));
+      const uniqueRawIds = new Set(rawIds.filter(Boolean));
+      console.log('[FEED DEBUG] ApiFeedRepository:tryFetch', {
+        payload,
+        responseStatus: response.api_status,
+        rawCount: rawData.length,
+        uniqueIdsCount: uniqueRawIds.size,
+        hasInternalDuplicates: rawData.length !== uniqueRawIds.size,
+        duplicateIds: rawIds.filter((id, idx) => rawIds.indexOf(id) !== idx),
+        firstFewIds: rawIds.slice(0, 5),
+        firstFewTimes: rawData.slice(0, 5).map(p => (p as { time?: unknown }).time),
+        timestamp: Date.now(),
+      });
+
+      return rawData;
     } catch {
       // One stream failing should never blank the whole feed — return
       // empty and let the other streams populate the UI.
@@ -839,23 +862,6 @@ async function fetchRawFeedPosts(
 
   /**
    * Fetch posts from many users at once via a discovery chain.
-   *
-   * On installs where the admin enforces a follow-graph filter on
-   * `get_news_feed`, the only way to surface posts from people the
-   * viewer hasn't followed yet is to fan out per-user via
-   * `get_user_posts` (which has no follow filter — it only filters
-   * by privacy = public/friends/only_me where we explicitly target a
-   * publisher_id).
-   *
-   * We pull user_ids from THREE places to maximise hit rate:
-   *   - /api/get-user-suggestions  (12 random suggested users)
-   *   - /api/get-friends           (the viewer's actual following list)
-   *   - /api/get-nearby-users      (geo-proximity if enabled)
-   *
-   * Then we Promise.all over the merged unique user_id list, fetching
-   * each user's last few posts. Capped at 12 users × 5 posts = 60
-   * extra posts max — still well under 100 after dedup with the other
-   * streams.
    */
   const fetchDiscoveryPosts = async (
     afterPostId?: string,
@@ -877,86 +883,58 @@ async function fetchRawFeedPosts(
 
     const sessionUserIdLocal = sessionStorage.getSession()?.userId;
 
-    // Response shapes — each WoWonder endpoint puts its user list under
-    // a different key. We type them separately so the parsing is
-    // explicit and verified against the actual PHP returns:
-    //
-    //   /api/get-user-suggestions → { suggestions: [...] }       (top-level)
-    //   /api/get-friends          → { data: { following, followers } } (NESTED!)
-    //   /api/get-nearby-users     → { nearby_users: [...] }      (top-level)
-    type SuggestionsResponse = {
-      api_status: number | string;
-      suggestions?: Array<Record<string, unknown>>;
-    };
-    type FriendsResponse = {
-      api_status: number | string;
-      data?: {
-        following?: Array<Record<string, unknown>>;
-        followers?: Array<Record<string, unknown>>;
+    // Fresh load page 1, or cache was cleared / not yet populated
+    if (!afterPostId || cachedSuggestedUserIds.length === 0) {
+      type SuggestionsResponse = {
+        api_status: number | string;
+        suggestions?: Array<Record<string, unknown>>;
       };
-    };
-    type NearbyResponse = {
-      api_status: number | string;
-      nearby_users?: Array<Record<string, unknown>>;
-    };
+      type FriendsResponse = {
+        api_status: number | string;
+        data?: {
+          following?: Array<Record<string, unknown>>;
+          followers?: Array<Record<string, unknown>>;
+        };
+      };
+      type NearbyResponse = {
+        api_status: number | string;
+        nearby_users?: Array<Record<string, unknown>>;
+      };
 
-    const [sugRes, friendsRes, nearbyRes] = await Promise.all([
-      backendApi
-        .post<SuggestionsResponse>(apiRoutes.user.suggestions, { limit: 12 })
-        .catch(() => ({}) as SuggestionsResponse),
-      sessionUserIdLocal
-        ? backendApi
-            .post<FriendsResponse>(apiRoutes.social.friends, {
-              user_id: sessionUserIdLocal,
-              type: 'following,followers',
-              limit: 20,
-            })
-            .catch(() => ({}) as FriendsResponse)
-        : Promise.resolve({} as FriendsResponse),
-      backendApi
-        .post<NearbyResponse>(apiRoutes.user.nearby, { limit: 10 })
-        .catch(() => ({}) as NearbyResponse),
-    ]);
+      const [sugRes, friendsRes, nearbyRes] = await Promise.all([
+        backendApi
+          .post<SuggestionsResponse>(apiRoutes.user.suggestions, { limit: 12 })
+          .catch(() => ({}) as SuggestionsResponse),
+        sessionUserIdLocal
+          ? backendApi
+              .post<FriendsResponse>(apiRoutes.social.friends, {
+                user_id: sessionUserIdLocal,
+                type: 'following,followers',
+                limit: 20,
+              })
+              .catch(() => ({}) as FriendsResponse)
+          : Promise.resolve({} as FriendsResponse),
+        backendApi
+          .post<NearbyResponse>(apiRoutes.user.nearby, { limit: 10 })
+          .catch(() => ({}) as NearbyResponse),
+      ]);
 
-    const userIds = new Set<string>();
-    collectUserIds(sugRes.suggestions).forEach(id => userIds.add(id));
-    // `get-friends` nests its lists under `data` — this was the bug
-    // that hid admin's posts when the viewer followed admin. We now
-    // pull from BOTH following and followers so mutual connections
-    // surface even if the social graph is one-sided.
-    collectUserIds(friendsRes.data?.following).forEach(id => userIds.add(id));
-    collectUserIds(friendsRes.data?.followers).forEach(id => userIds.add(id));
-    collectUserIds(nearbyRes.nearby_users).forEach(id => userIds.add(id));
-    // Don't refetch our own posts here — the `ownRaw` stream handles that.
-    if (sessionUserIdLocal) userIds.delete(sessionUserIdLocal);
+      const userIds = new Set<string>();
+      collectUserIds(sugRes.suggestions).forEach(id => userIds.add(id));
+      collectUserIds(friendsRes.data?.following).forEach(id => userIds.add(id));
+      collectUserIds(friendsRes.data?.followers).forEach(id => userIds.add(id));
+      collectUserIds(nearbyRes.nearby_users).forEach(id => userIds.add(id));
+      if (sessionUserIdLocal) userIds.delete(sessionUserIdLocal);
 
-    // eslint-disable-next-line no-console
-    console.log(
-      '[feed] discovery sources →',
-      'suggestions:',
-      sugRes.suggestions?.length ?? 0,
-      'following:',
-      friendsRes.data?.following?.length ?? 0,
-      'followers:',
-      friendsRes.data?.followers?.length ?? 0,
-      'nearby:',
-      nearbyRes.nearby_users?.length ?? 0,
-    );
+      cachedSuggestedUserIds = Array.from(userIds);
+    }
 
-    if (userIds.size === 0) {
-      // eslint-disable-next-line no-console
-      console.log('[feed] discovery: no user ids found from any source');
+    if (cachedSuggestedUserIds.length === 0) {
       return [];
     }
 
-    const ids = Array.from(userIds).slice(0, 8);
-    // eslint-disable-next-line no-console
-    console.log(
-      '[feed] discovery: fetching posts for',
-      ids.length,
-      'users →',
-      ids,
-    );
+    // Slice up to 12 suggested users to expand the discovery pool size
+    const ids = cachedSuggestedUserIds.slice(0, 12);
 
     const perUser = await Promise.all(
       ids.map(id =>
@@ -970,8 +948,6 @@ async function fetchRawFeedPosts(
     );
 
     const flat = perUser.flat();
-    // eslint-disable-next-line no-console
-    console.log('[feed] discovery: total', flat.length, 'posts collected');
     return flat;
   };
 
@@ -985,43 +961,19 @@ async function fetchRawFeedPosts(
       : Promise.resolve<Array<Record<string, unknown>>>([]),
   ]);
 
-  // 2. Fetch discovery posts ONLY on the first page (no cursor).
-  // Page 2+ relies on the two primary streams above, which is much
-  // faster (2 API calls vs ~10+ fan-out). The initial load already
-  // seeds enough discovery content that pagination continues from the
-  // merged id-space naturally.
+  // 2. Fetch discovery posts if the primary followed/own streams don't return enough posts,
+  // or if we are paging but the followed/own streams are empty.
   let discoveryRaw: Array<Record<string, unknown>> = [];
-  if (!afterPostId) {
-    const localPostsCount = followedRaw.length + ownRaw.length;
-    if (localPostsCount < 8) {
-      // eslint-disable-next-line no-console
-      console.log('[feed] page-1 local posts low:', localPostsCount, '→ fetching discovery');
-      discoveryRaw = await fetchDiscoveryPosts();
-    }
-  } else {
-    // eslint-disable-next-line no-console
-    console.log('[feed] page 2+ → skipping discovery (afterPostId:', afterPostId, ')');
+  const localPostsCount = followedRaw.length + ownRaw.length;
+  if (localPostsCount < 8) {
+    discoveryRaw = await fetchDiscoveryPosts(afterPostId);
   }
 
-  // Diagnostics — kept until the "I only see my own posts" report
-  // stops coming in. Drop once we're confident the feed is healthy.
-  // eslint-disable-next-line no-console
-  console.log(
-    '[feed] sources →',
-    'news_feed:',
-    followedRaw.length,
-    'own:',
-    ownRaw.length,
-    'discovery:',
-    discoveryRaw.length,
-  );
-
-  // Merge + dedupe by post id. Order of source matters only when two
-  // posts have the same timestamp — `getAllPosts` re-sorts by time
-  // anyway, so the practical effect is just deduplication.
+  // Merge + dedupe by post id.
   const seen = new Set<string>();
   const merged: Array<Record<string, unknown>> = [];
   let pageAdIncluded = false;
+  const droppedByCrossStream: string[] = [];
   for (const list of [followedRaw, ownRaw, discoveryRaw]) {
     for (const post of list) {
       const isAd = looksLikeAd(post);
@@ -1033,15 +985,28 @@ async function fetchRawFeedPosts(
               (post as { id?: unknown; post_id?: unknown }).post_id ??
               '',
       );
-      if (!id || seen.has(id)) continue;
+      if (!id || seen.has(id)) {
+        if (id) droppedByCrossStream.push(id);
+        continue;
+      }
       seen.add(id);
       merged.push(post);
       if (isAd) pageAdIncluded = true;
     }
   }
 
-  // eslint-disable-next-line no-console
-  console.log('[feed] merged unique posts →', merged.length);
+  // DEBUG: log merge result across 3 streams
+  console.log('[FEED DEBUG] ApiFeedRepository:merge-streams', {
+    cursor: afterPostId,
+    followedCount: followedRaw.length,
+    ownCount: ownRaw.length,
+    discoveryCount: discoveryRaw.length,
+    totalRawSum: followedRaw.length + ownRaw.length + discoveryRaw.length,
+    afterMergeUnique: merged.length,
+    droppedByCrossStream: droppedByCrossStream.length,
+    crossStreamDupIds: Array.from(new Set(droppedByCrossStream)).slice(0, 20),
+    timestamp: Date.now(),
+  });
 
   return merged;
 }
@@ -1110,13 +1075,28 @@ export function createFeedRepository(): FeedRepository {
       return mixAdsIntoPosts(posts);
     },
 
-    async getVideoPosts(limit = 20) {
-      const raw = await fetchRawFeedPosts(limit);
-      return raw.filter(looksLikeVideo).map(mapVideoPost);
+    async getLightPosts(limit = 20, afterPostId?: string): Promise<FeedPost[]> {
+      const raw = await fetchRawFeedPosts(limit * 2, afterPostId);
+      const posts: FeedPost[] = [];
+      for (const item of raw) {
+        if (looksLikeAd(item)) {
+          posts.push(mapAdPost(item));
+        } else if (looksLikePoll(item)) {
+          posts.push(mapPollPost(item));
+        } else if (looksLikeTextOrPhoto(item)) {
+          posts.push(mapTextPost(item));
+        }
+      }
+      return mixAdsIntoPosts(posts).slice(0, limit);
     },
 
-    async getTextPosts(limit = 20) {
-      const raw = await fetchRawFeedPosts(limit);
+    async getVideoPosts(limit = 20, afterPostId?: string) {
+      const raw = await fetchRawFeedPosts(limit * 2, afterPostId);
+      return raw.filter(looksLikeVideo).map(mapVideoPost).slice(0, limit);
+    },
+
+    async getTextPosts(limit = 20, afterPostId?: string) {
+      const raw = await fetchRawFeedPosts(limit, afterPostId);
       return raw.filter(looksLikeTextOrPhoto).map(mapTextPost);
     },
 

@@ -45,7 +45,11 @@ export default function GoLiveScreen() {
 
     try {
       const live = await startLive();
-      navigation.replace(ROUTES.LIVE_ROOM, { postId: live.postId, isHost: true });
+      navigation.replace(ROUTES.LIVE_ROOM, {
+        postId: live.postId,
+        isHost: true,
+        liveSession: live,
+      });
     } catch (error) {
       console.error('[GoLive] create error:', error);
       Alert.alert('Lỗi', 'Không thể bắt đầu live. Vui lòng thử lại.');
