@@ -72,6 +72,11 @@ const JoinController = async (ctx, data, io,socket,callback) => {
   }
 
   socket.join(user_id);
+  console.log('[livekit_socket_join]', JSON.stringify({
+      user_id: String(user_id),
+      socket_id: socket.id,
+      tracked_sockets: ctx.userIdSocket[user_id] ? ctx.userIdSocket[user_id].length : 0
+  }));
   //subscribe to all groups
   let groupIds = await funcs.getAllGroupsForUser(ctx, user_id)
   for (let groupId of groupIds) {

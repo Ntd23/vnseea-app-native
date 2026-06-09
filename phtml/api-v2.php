@@ -1,4 +1,5 @@
 <?php
+// English description: Routes WoWonder v2 API requests to endpoint handlers with server and session validation.
 
 // English description: Dispatches v2 API endpoint requests with server-key and session validation.
 // API v2 is not yet finished, you have to use the old API version.
@@ -98,7 +99,12 @@ if (!file_exists($api)) {
     echo json_encode($response_data, JSON_PRETTY_PRINT);
     exit();
 }
-if (!in_array($type, $pages_without_access_token)) {
+$is_signed_livekit_native_action = (
+    ($type == 'livekit' || $type == 'group_call') &&
+    !empty($_POST['type']) &&
+    $_POST['type'] == 'native_action'
+);
+if (!in_array($type, $pages_without_access_token) && !$is_signed_livekit_native_action) {
     if (empty($_GET['access_token'])) {
         $error_code    = 1;
         $error_message = 'Error: access_token is missing';
@@ -116,7 +122,7 @@ if (!empty($_GET['access_token'])) {
         }
     }
 }
-if (!in_array($type, $pages_without_loggedin)) {
+if (!in_array($type, $pages_without_loggedin) && !$is_signed_livekit_native_action) {
     if ($wo['loggedin'] == false && !empty($_GET['access_token'])) {
         $error_code    = 2;
         $error_message = 'Invalid or expired access_token';

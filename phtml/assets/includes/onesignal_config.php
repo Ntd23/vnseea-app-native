@@ -1,4 +1,5 @@
 <?php
+// English description: Sends OneSignal push notifications for web and mobile clients.
 function Wo_SendPushNotification($data = array(), $push_type = 'chat') {
     global $sqlConnect, $wo;
     if (empty($data)) {
@@ -36,7 +37,6 @@ function Wo_SendPushNotification($data = array(), $push_type = 'chat') {
     $final_request_data                           = array(
         'app_id' => $app_id,
         'include_player_ids' => $data['send_to'],
-        'send_after' => new \DateTime('1 second'),
         'isChrome' => false,
         'contents' => array(
             'en' => $data['notification']['notification_content']
@@ -47,11 +47,19 @@ function Wo_SendPushNotification($data = array(), $push_type = 'chat') {
         'android_led_color' => 'FF0000FF',
         'priority' => 10
     );
+    if (empty($data['notification']['send_immediately'])) {
+        $final_request_data['send_after'] = new \DateTime('1 second');
+    }
     if (!empty($data['notification']['notification_data'])) {
         $final_request_data['data'] = $data['notification']['notification_data'];
     }
     if (!empty($data['notification']['notification_image'])) {
         $final_request_data['large_icon'] = $data['notification']['notification_image'];
+    }
+    if (!empty($data['notification']['request_data']) && is_array($data['notification']['request_data'])) {
+        foreach ($data['notification']['request_data'] as $key => $value) {
+            $final_request_data[$key] = $value;
+        }
     }
     $fields = json_encode($final_request_data);
     $ch     = curl_init();

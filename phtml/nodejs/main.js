@@ -1,8 +1,10 @@
+// Description: Boots the legacy WoWonder Socket.IO server used by mobile realtime features.
 const moment = require("moment");
 var fs = require('fs');
 var express = require('express');
 var app = express();
 const path = require('path');
+const crypto = require('crypto');
 
 let ctx = {};
 
@@ -14,10 +16,27 @@ const { Sequelize, Op, DataTypes } = require("sequelize");
 // const notificationTemplate = Handlebars.compile(notification.toString());
 
 const listeners = require('./listeners/listeners')
+const {
+  PublishLiveKitCallEventController,
+} = require('./controllers/LiveKitCallController')
 
 let serverPort
 let server
 let io
+
+app.use(express.json({ limit: '64kb' }))
+
+function liveKitInternalSecret(ctx) {
+  const secret =
+    (ctx.globalconfig && ctx.globalconfig.livekit_api_secret) ||
+    (ctx.globalconfig && ctx.globalconfig.widnows_app_api_key) ||
+    ''
+  if (!secret) return ''
+  return crypto
+    .createHmac('sha256', String(secret))
+    .update('vnseea-livekit-internal')
+    .digest('hex')
+}
 
 async function loadConfig(ctx) {
   let config = await ctx.wo_config.findAll({ raw: true })
@@ -61,7 +80,10 @@ async function loadConfig(ctx) {
 
 
 async function loadLangs(ctx) {
-  let langs = await ctx.wo_langs.findAll({ raw: true })
+  let langs = await ctx.wo_langs.findAll({
+    attributes: ["lang_key", "english"],
+    raw: true
+  })
   for (let c of langs) {
     ctx.globallangs[c.lang_key] = c.english
   }
@@ -143,6 +165,22 @@ async function main() {
   }
   io.on('connection', async (socket, query) => {
     await listeners.registerListeners(socket, io, ctx)
+  })
+
+  app.post('/internal/livekit-call/publish', async (req, res) => {
+    const expectedSecret = liveKitInternalSecret(ctx)
+    const providedSecret = String(req.get('X-Vnseea-Internal-Secret') || '')
+    if (!expectedSecret || providedSecret !== expectedSecret) {
+      res.status(403).json({ ok: false })
+      return
+    }
+    try {
+      await PublishLiveKitCallEventController(ctx, req.body || {}, io)
+      res.json({ ok: true })
+    } catch (error) {
+      console.error('internal livekit-call publish failed', error)
+      res.status(500).json({ ok: false })
+    }
   })
 
   server.listen(serverPort, function() {

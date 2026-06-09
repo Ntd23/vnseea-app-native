@@ -37,6 +37,7 @@ const MAX_DISCOVERY_CANDIDATES = 500;
 const DISCOVERY_BATCH_SIZE = 12;
 const CHAT_PAGE_SIZE = 50;
 const MAX_CACHED_CHAT_PAGES = 5;
+const RECALLED_MESSAGE_PREFIX = '__VNSEEA_MESSAGE_RECALLED__';
 let discoveryCache:
   | {
       sessionUserId: string;
@@ -90,6 +91,31 @@ function cleanText(value: string): string {
     .replace(/&#039;/g, "'")
     .replace(/&#x27;/gi, "'")
     .trim();
+}
+function isRecalledMessageText(value: string): boolean {
+  return cleanText(value).startsWith(RECALLED_MESSAGE_PREFIX);
+}
+function normalizeMessageText(value: string, hasMedia: boolean): string {
+  const text = cleanText(value);
+  if (!text) return '';
+  if (isRecalledMessageText(text)) {
+    return hasMedia ? '' : 'Tin nhắn đã thu hồi';
+  }
+  return text;
+}
+function readMessageMedia(raw: Record<string, unknown>): string {
+  return readString(
+    raw,
+    'media',
+    'mediaFile',
+    'media_file',
+    'mediaUrl',
+    'media_url',
+    'file_url',
+    'file',
+    'uri',
+    'url',
+  );
 }
 function getJsonTextCandidates(value: string): string[] {
   const candidates = new Set<string>();
@@ -245,7 +271,7 @@ function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
   if (readString(raw, 'stickers', 'gif')) {
     return { text: 'Đã gửi một nhãn dán', kind: 'sticker' };
   }
-  const media = readString(raw, 'media');
+  const media = readMessageMedia(raw);
   if (media) {
     const mediaType = readMediaType(raw);
     if (mediaType === 'image') {
@@ -264,7 +290,10 @@ function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
     readString(raw, 'text'),
     readNumber(raw, 'time'),
   );
-  const previewText = plainText ? cleanText(plainText) : decryptedText;
+  const previewText = normalizeMessageText(
+    plainText ? plainText : decryptedText,
+    false,
+  );
   const sessionUserId = sessionStorage.getSession()?.userId ?? '';
   const callEvent =
     parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
@@ -681,14 +710,15 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
   const fromId = String(raw.from_id ?? raw.fromId ?? '');
   const toId = String(raw.to_id ?? raw.toId ?? '');
   const sessionUserId = sessionStorage.getSession()?.userId ?? '';
-  const media = readString(raw, 'media', 'mediaFile');
+  const media = readMessageMedia(raw);
   const rawText = readString(raw, 'or_text');
-  const message = rawText
-    ? cleanText(rawText)
+  const decodedMessage = rawText
+    ? rawText
     : decryptMessageText(
         readString(raw, 'text', 'message'),
         readNumber(raw, 'time'),
       );
+  const message = normalizeMessageText(decodedMessage, Boolean(media));
   const callEvent =
     parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
     parseCallEvent(message, sessionUserId);
@@ -788,7 +818,13 @@ function mapSharedAssets(raw: RawRecord): GroupSharedAssets {
 function readMediaType(
   raw: Record<string, unknown>,
 ): 'image' | 'video' | 'audio' | 'file' | undefined {
-  const explicitType = readString(raw, 'type_two', 'message_type', 'mediaType')
+  const explicitType = readString(
+    raw,
+    'type_two',
+    'message_type',
+    'media_type',
+    'mediaType',
+  )
     .toLowerCase()
     .replace(/^(left|right)_/, '');
   const responseType = readString(raw, 'type')
@@ -799,6 +835,17 @@ function readMediaType(
     'extension',
     'media',
     'mediaFile',
+    'media_file',
+    'mediaUrl',
+    'media_url',
+    'file_url',
+    'file',
+    'uri',
+    'url',
+    'mediaFileName',
+    'file_name',
+    'filename',
+    'name',
   ).toLowerCase();
   // Android voice recordings are MPEG-4 containers (`.mp4`). WoWonder keeps
   // the semantic message kind in `type_two=audio`, so prefer it over the file

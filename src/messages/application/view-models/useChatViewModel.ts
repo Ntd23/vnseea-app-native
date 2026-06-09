@@ -48,10 +48,10 @@ function mergeMessages(...messageLists: MessageItem[][]) {
   }
 
   return [...messages.values()].sort((left, right) => {
-    const timeDifference = right.time - left.time;
+    const timeDifference = left.time - right.time;
     if (timeDifference !== 0) return timeDifference;
 
-    return Number(right.id) - Number(left.id);
+    return Number(left.id) - Number(right.id);
   });
 }
 
@@ -116,7 +116,7 @@ export function useChatViewModel(chat: ChatItem) {
       return;
     }
 
-    const oldestMessage = messages[messages.length - 1];
+    const oldestMessage = messages[0];
     setIsLoadingMore(true);
 
     try {
@@ -183,7 +183,7 @@ export function useChatViewModel(chat: ChatItem) {
         deliveryState: 'sending',
       };
 
-      setMessages(current => mergeMessages([optimisticMessage], current));
+      setMessages(current => mergeMessages(current, [optimisticMessage]));
       setPendingSendCount(current => current + 1);
       setError(null);
 
@@ -199,8 +199,8 @@ export function useChatViewModel(chat: ChatItem) {
 
         setMessages(current =>
           mergeMessages(
-            sentMessages,
             current.filter(item => item.id !== tempId),
+            sentMessages,
           ),
         );
         return true;
@@ -326,7 +326,7 @@ export function useChatViewModel(chat: ChatItem) {
   }, [loadInitial]);
 
   useEffect(() => {
-    latestMessageIdRef.current = messages[0]?.id;
+    latestMessageIdRef.current = messages[messages.length - 1]?.id;
     messageIdsRef.current = new Set(messages.map(message => message.id));
   }, [messages]);
 

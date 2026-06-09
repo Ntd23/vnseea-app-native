@@ -42,7 +42,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
     RNCallKeep.setup([
       "appName": "VNSEEA",
       "maximumCallGroups": "1",
-      "maximumCallsPerCallGroup": "1",
+      "maximumCallsPerCallGroup": "8",
       "supportsVideo": true,
       "includesCallsInRecents": false,
     ])
@@ -69,8 +69,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
     let data = payload.dictionaryPayload
     let uuid = nativeCallUuid(from: data)
     let callType = stringValue(data["call_type"])
-    let callerName = stringValue(data["name"]).isEmpty ? "VNSEEA" : stringValue(data["name"])
-    let handle = stringValue(data["from_id"]).isEmpty ? "livekit" : stringValue(data["from_id"])
+    let isGroupCall = stringValue(data["event_type"]) == "livekit_group_call" || stringValue(data["call_context"]) == "group"
+    let groupName = stringValue(data["group_name"])
+    let directName = stringValue(data["name"])
+    let callerName = isGroupCall
+      ? (groupName.isEmpty ? "VNSEEA" : groupName)
+      : (directName.isEmpty ? "VNSEEA" : directName)
+    let groupHandle = stringValue(data["group_id"])
+    let directHandle = stringValue(data["from_id"])
+    let handle = isGroupCall
+      ? (groupHandle.isEmpty ? "livekit-group" : groupHandle)
+      : (directHandle.isEmpty ? "livekit" : directHandle)
 
     RNVoipPushNotificationManager.addCompletionHandler(uuid, completionHandler: completion)
     RNVoipPushNotificationManager.didReceiveIncomingPushWithPayload(payload, forType: type.rawValue)

@@ -33,7 +33,10 @@ export type GroupLiveKitCallSummary = {
   roomName: string;
   status: GroupLiveKitCallStatus;
   startedAt: number;
+  startedAtMs: number;
   serverNow: number;
+  serverNowMs: number;
+  elapsedMs: number;
   participantCount: number;
 };
 
@@ -51,6 +54,7 @@ export type GroupLiveKitJoinPayload = {
   token: string;
   participants: GroupLiveKitParticipant[];
   elapsedSeconds: number;
+  elapsedMs: number;
 };
 
 export type GroupLiveKitSyncResult = {
@@ -58,6 +62,7 @@ export type GroupLiveKitSyncResult = {
   group: GroupLiveKitGroup;
   participants: GroupLiveKitParticipant[];
   elapsedSeconds: number;
+  elapsedMs: number;
 };
 
 export type IncomingGroupLiveKitCall = {
@@ -69,6 +74,10 @@ export type IncomingGroupLiveKitCall = {
   group: GroupLiveKitGroup;
   caller: GroupLiveKitPeer;
   participantCount: number;
+  actionToken?: string;
+  expiresAt?: number;
+  apiUrl?: string;
+  ringMode?: 'fullscreen' | 'passive';
 };
 
 export type GroupLiveKitCallRouteParams = {

@@ -1,13 +1,9 @@
 // Description: Coordinates CallKeep system call UI events for Messages LiveKit calls.
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import MD5 from 'crypto-js/md5';
 import { OneSignal } from 'react-native-onesignal';
-import RNCallKeep, {
-  AudioSessionCategoryOption,
-  AudioSessionMode,
-  CONSTANTS as CALLKEEP_CONSTANTS,
-} from 'react-native-callkeep';
-import RNVoipPushNotification from 'react-native-voip-push-notification';
+import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import type {
   IncomingLiveKitCall,
   LiveKitCallPeer,
@@ -22,6 +18,8 @@ type NativeCallListeners = {
   onAnswer?: (callUuid: string) => void;
   onEnd?: (callUuid: string) => void;
   onMute?: (muted: boolean) => void;
+  onIncoming?: (call: IncomingLiveKitCall) => void;
+  onIncomingGroup?: (call: IncomingGroupLiveKitCall) => void;
 };
 
 type ActiveNativeCall = {
@@ -38,8 +36,43 @@ const activeCalls = new Map<string, ActiveNativeCall>();
 
 let isConfigured = false;
 let listeners: NativeCallListeners = {};
+let cachedCallKeep: Record<string, any> | null | undefined;
+let cachedVoipPush: Record<string, any> | null | undefined;
+let cachedInitialNativeAction:
+  | Promise<Record<string, string> | null>
+  | null
+  | undefined;
 const pendingAnswerUuids: string[] = [];
 const pendingEndUuids: string[] = [];
+
+function loadCallKeep() {
+  if (Platform.OS === 'android') return null;
+  if (cachedCallKeep !== undefined) return cachedCallKeep;
+
+  try {
+    cachedCallKeep = require('react-native-callkeep') as Record<string, any>;
+  } catch (error) {
+    console.warn('[LiveKitCall] CallKeep unavailable', error);
+    cachedCallKeep = null;
+  }
+  return cachedCallKeep;
+}
+
+function loadVoipPushNotification() {
+  if (Platform.OS !== 'ios') return null;
+  if (cachedVoipPush !== undefined) return cachedVoipPush;
+
+  try {
+    cachedVoipPush = require('react-native-voip-push-notification') as Record<
+      string,
+      any
+    >;
+  } catch (error) {
+    console.warn('[LiveKitCall] VoIP push unavailable', error);
+    cachedVoipPush = null;
+  }
+  return cachedVoipPush;
+}
 
 function asPushRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -114,12 +147,27 @@ function readPushLiveKitCall(payload: unknown): IncomingLiveKitCall | null {
     callType,
     provider: 'livekit',
     roomName: readPushString(payload, 'room_name'),
+    actionToken: readPushString(payload, 'action_token') || undefined,
+    expiresAt: Number(readPushString(payload, 'expires_at')) || undefined,
+    apiUrl: readPushString(payload, 'api_url') || undefined,
     peer: {
       id: readPushString(payload, 'from_id'),
       name: readPushString(payload, 'name') || 'Người dùng',
       avatar: readPushString(payload, 'avatar'),
     },
   };
+}
+
+function syncVoipToken(token: string) {
+  if (!token) return;
+  apiBridge
+    .post(apiRoutes.messages.livekit, {
+      type: 'register_voip_token',
+      token,
+    })
+    .catch(error => {
+      console.warn('[LiveKitCall] Could not sync VoIP token', error);
+    });
 }
 
 function readPushLiveKitGroupCall(
@@ -158,6 +206,15 @@ function readPushLiveKitGroupCall(
         readPushString(payload, 'avatar'),
     },
     participantCount: 0,
+    actionToken: readPushString(payload, 'action_token') || undefined,
+    expiresAt: Number(readPushString(payload, 'expires_at')) || undefined,
+    apiUrl: readPushString(payload, 'api_url') || undefined,
+    ringMode:
+      readPushString(payload, 'ring_mode') === 'fullscreen'
+        ? 'fullscreen'
+        : readPushString(payload, 'ring_mode') === 'passive'
+          ? 'passive'
+          : undefined,
   };
 }
 
@@ -215,6 +272,52 @@ function flushPendingEvents() {
   }
 }
 
+function registerOneSignalCallListeners() {
+  OneSignal.Notifications.addEventListener(
+    'foregroundWillDisplay',
+    (event: {
+      getNotification(): { additionalData?: object };
+      preventDefault(): void;
+    }) => {
+      const incomingCall = readPushLiveKitCall(
+        event.getNotification().additionalData,
+      );
+      const incomingGroupCall = readPushLiveKitGroupCall(
+        event.getNotification().additionalData,
+      );
+      if (incomingGroupCall) {
+        event.preventDefault();
+        listeners.onIncomingGroup?.(incomingGroupCall);
+        return;
+      }
+      if (!incomingCall) return;
+
+      event.preventDefault();
+      listeners.onIncoming?.(incomingCall);
+    },
+  );
+  OneSignal.Notifications.addEventListener(
+    'click',
+    (event: { notification: { additionalData?: object } }) => {
+      const incomingCall = readPushLiveKitCall(
+        event.notification.additionalData,
+      );
+      const incomingGroupCall = readPushLiveKitGroupCall(
+        event.notification.additionalData,
+      );
+      if (incomingGroupCall) {
+        displayNativeIncomingGroupCall(incomingGroupCall).catch(
+          () => undefined,
+        );
+        return;
+      }
+      if (!incomingCall) return;
+
+      displayNativeIncomingCall(incomingCall).catch(() => undefined);
+    },
+  );
+}
+
 export function createNativeCallUuid(
   callId?: string,
   callType: LiveKitCallType = 'video',
@@ -245,148 +348,138 @@ export function createNativeGroupCallUuid(
 
 export async function configureNativeCallService() {
   if (isConfigured) return;
-
-  await RNCallKeep.setup({
-    ios: {
-      appName: 'VNSEEA',
-      supportsVideo: true,
-      maximumCallGroups: '1',
-      maximumCallsPerCallGroup: '1',
-      includesCallsInRecents: false,
-      audioSession: {
-        categoryOptions:
-          AudioSessionCategoryOption.allowBluetooth |
-          AudioSessionCategoryOption.allowBluetoothA2DP |
-          AudioSessionCategoryOption.defaultToSpeaker,
-        mode: AudioSessionMode.videoChat,
+  const RNCallKeep = loadCallKeep();
+  if (RNCallKeep?.default) {
+    const AudioSessionCategoryOption =
+      RNCallKeep.AudioSessionCategoryOption ?? {};
+    const AudioSessionMode = RNCallKeep.AudioSessionMode ?? {};
+    await RNCallKeep.default.setup({
+      ios: {
+        appName: 'VNSEEA',
+        supportsVideo: true,
+        maximumCallGroups: '1',
+        maximumCallsPerCallGroup: '1',
+        includesCallsInRecents: false,
+        audioSession: {
+          categoryOptions:
+            (AudioSessionCategoryOption.allowBluetooth ?? 0) |
+            (AudioSessionCategoryOption.allowBluetoothA2DP ?? 0) |
+            (AudioSessionCategoryOption.defaultToSpeaker ?? 0),
+          mode: AudioSessionMode.videoChat,
+        },
       },
-    },
-    android: {
-      selfManaged: true,
-      alertTitle: 'Cho phép cuộc gọi',
-      alertDescription:
-        'VNSEEA cần quyền tài khoản điện thoại để hiển thị cuộc gọi đến.',
-      cancelButton: 'Hủy',
-      okButton: 'Đồng ý',
-      additionalPermissions: [],
-      foregroundService: {
-        channelId: 'vnseea-livekit-calls',
-        channelName: 'VNSEEA Calls',
-        notificationTitle: 'VNSEEA đang xử lý cuộc gọi',
+      android: {
+        selfManaged: true,
+        alertTitle: 'Cho phép cuộc gọi',
+        alertDescription:
+          'VNSEEA cần quyền tài khoản điện thoại để hiển thị cuộc gọi đến.',
+        cancelButton: 'Hủy',
+        okButton: 'Đồng ý',
+        additionalPermissions: [],
+        foregroundService: {
+          channelId: 'vnseea-livekit-calls',
+          channelName: 'VNSEEA Calls',
+          notificationTitle: 'VNSEEA đang xử lý cuộc gọi',
+        },
       },
-    },
-  });
+    });
 
-  RNCallKeep.addEventListener('answerCall', ({ callUUID }) => {
-    emitAnswer(callUUID);
-  });
-  RNCallKeep.addEventListener('endCall', ({ callUUID }) => {
-    emitEnd(callUUID);
-  });
-  RNCallKeep.addEventListener('didPerformSetMutedCallAction', event => {
-    listeners.onMute?.(Boolean(event.muted));
-  });
-  RNCallKeep.addEventListener('didDisplayIncomingCall', event => {
-    rememberNativeCallFromPayload(event.callUUID, event.payload);
-  });
-  RNCallKeep.addEventListener('didLoadWithEvents', events => {
-    for (const event of events) {
-      if (event.name === 'RNCallKeepDidDisplayIncomingCall') {
-        rememberNativeCallFromPayload(event.data.callUUID, event.data.payload);
-      }
-    }
-    for (const event of events) {
-      if (event.name === 'RNCallKeepPerformAnswerCallAction') {
-        emitAnswer(event.data.callUUID);
-      }
-      if (event.name === 'RNCallKeepPerformEndCallAction') {
-        emitEnd(event.data.callUUID);
-      }
-    }
-  });
-
-  if (Platform.OS === 'android') {
-    RNCallKeep.registerAndroidEvents();
-    RNCallKeep.setAvailable(true);
+    RNCallKeep.default.addEventListener('answerCall', ({ callUUID }: any) => {
+      emitAnswer(callUUID);
+    });
+    RNCallKeep.default.addEventListener('endCall', ({ callUUID }: any) => {
+      emitEnd(callUUID);
+    });
+    RNCallKeep.default.addEventListener(
+      'didPerformSetMutedCallAction',
+      (event: any) => {
+        listeners.onMute?.(Boolean(event.muted));
+      },
+    );
+    RNCallKeep.default.addEventListener(
+      'didDisplayIncomingCall',
+      (event: any) => {
+        rememberNativeCallFromPayload(event.callUUID, event.payload);
+      },
+    );
+    RNCallKeep.default.addEventListener(
+      'didLoadWithEvents',
+      (events: any[]) => {
+        for (const event of events) {
+          if (event.name === 'RNCallKeepDidDisplayIncomingCall') {
+            rememberNativeCallFromPayload(
+              event.data.callUUID,
+              event.data.payload,
+            );
+          }
+        }
+        for (const event of events) {
+          if (event.name === 'RNCallKeepPerformAnswerCallAction') {
+            emitAnswer(event.data.callUUID);
+          }
+          if (event.name === 'RNCallKeepPerformEndCallAction') {
+            emitEnd(event.data.callUUID);
+          }
+        }
+      },
+    );
   }
   if (Platform.OS === 'ios') {
-    RNVoipPushNotification.addEventListener('register', token => {
-      console.log('[LiveKitCall] VoIP token registered:', token ? 'YES' : 'NO');
-    });
-    RNVoipPushNotification.addEventListener('notification', payload => {
-      const incomingGroupCall = readPushLiveKitGroupCall(payload);
-      if (incomingGroupCall) {
-        displayNativeIncomingGroupCall(incomingGroupCall)
+    const RNVoipPushNotification = loadVoipPushNotification();
+    RNVoipPushNotification?.default?.addEventListener(
+      'register',
+      (token: string) => {
+        console.log(
+          '[LiveKitCall] VoIP token registered:',
+          token ? 'YES' : 'NO',
+        );
+        syncVoipToken(token);
+      },
+    );
+    RNVoipPushNotification?.default?.addEventListener(
+      'notification',
+      (payload: unknown) => {
+        const incomingGroupCall = readPushLiveKitGroupCall(payload);
+        if (incomingGroupCall) {
+          displayNativeIncomingGroupCall(incomingGroupCall)
+            .then(callUuid =>
+              RNVoipPushNotification.default.onVoipNotificationCompleted(
+                callUuid,
+              ),
+            )
+            .catch(() => undefined);
+          return;
+        }
+
+        const incomingCall = readPushLiveKitCall(payload);
+        if (!incomingCall) return;
+
+        displayNativeIncomingCall(incomingCall)
           .then(callUuid =>
-            RNVoipPushNotification.onVoipNotificationCompleted(callUuid),
+            RNVoipPushNotification.default.onVoipNotificationCompleted(
+              callUuid,
+            ),
           )
           .catch(() => undefined);
-        return;
-      }
-
-      const incomingCall = readPushLiveKitCall(payload);
-      if (!incomingCall) return;
-
-      displayNativeIncomingCall(incomingCall)
-        .then(callUuid =>
-          RNVoipPushNotification.onVoipNotificationCompleted(callUuid),
-        )
-        .catch(() => undefined);
-    });
-    RNVoipPushNotification.addEventListener('didLoadWithEvents', events => {
-      for (const event of events) {
-        if (event.name !== 'RNVoipPushRemoteNotificationReceivedEvent') {
-          continue;
+      },
+    );
+    RNVoipPushNotification?.default?.addEventListener(
+      'didLoadWithEvents',
+      (events: Array<{ name: string; data: unknown }>) => {
+        for (const event of events) {
+          if (event.name !== 'RNVoipPushRemoteNotificationReceivedEvent') {
+            continue;
+          }
+          const callUuid = readPushString(event.data, 'uuid');
+          if (callUuid) {
+            rememberNativeCallFromPayload(callUuid, event.data);
+          }
         }
-        const callUuid = readPushString(event.data, 'uuid');
-        if (callUuid) {
-          rememberNativeCallFromPayload(callUuid, event.data);
-        }
-      }
-    });
-    RNVoipPushNotification.registerVoipToken();
+      },
+    );
+    RNVoipPushNotification?.default?.registerVoipToken();
   }
-  OneSignal.Notifications.addEventListener(
-    'foregroundWillDisplay',
-    (event: {
-      getNotification(): { additionalData?: object };
-      preventDefault(): void;
-    }) => {
-      const incomingCall = readPushLiveKitCall(
-        event.getNotification().additionalData,
-      );
-      const incomingGroupCall = readPushLiveKitGroupCall(
-        event.getNotification().additionalData,
-      );
-      if (incomingGroupCall) {
-        event.preventDefault();
-        return;
-      }
-      if (!incomingCall) return;
-
-      event.preventDefault();
-    },
-  );
-  OneSignal.Notifications.addEventListener(
-    'click',
-    (event: { notification: { additionalData?: object } }) => {
-      const incomingCall = readPushLiveKitCall(
-        event.notification.additionalData,
-      );
-      const incomingGroupCall = readPushLiveKitGroupCall(
-        event.notification.additionalData,
-      );
-      if (incomingGroupCall) {
-        displayNativeIncomingGroupCall(incomingGroupCall).catch(
-          () => undefined,
-        );
-        return;
-      }
-      if (!incomingCall) return;
-
-      displayNativeIncomingCall(incomingCall).catch(() => undefined);
-    },
-  );
+  registerOneSignalCallListeners();
 
   isConfigured = true;
 }
@@ -401,6 +494,45 @@ export function setNativeCallListeners(nextListeners: NativeCallListeners) {
 
 export function getNativeCall(callUuid: string) {
   return activeCalls.get(callUuid);
+}
+
+async function getInitialNativeActionPayload(): Promise<Record<string, string> | null> {
+  if (Platform.OS !== 'android') return null;
+  if (cachedInitialNativeAction !== undefined) {
+    return cachedInitialNativeAction;
+  }
+  const module = NativeModules.VnseeaCallIntent as
+    | { getInitialCallAction?: () => Promise<Record<string, string> | null> }
+    | undefined;
+  cachedInitialNativeAction = module?.getInitialCallAction?.() ?? null;
+  return cachedInitialNativeAction;
+}
+
+export async function getInitialNativeCallAction(): Promise<IncomingLiveKitCall | null> {
+  const payload = await getInitialNativeActionPayload();
+  if (!payload) return null;
+  if (
+    payload.event_type === 'livekit_group_call' ||
+    payload.call_context === 'group'
+  ) {
+    return null;
+  }
+  return readPushLiveKitCall({
+    provider: 'livekit',
+    event_type: 'livekit_call',
+    ...payload,
+  });
+}
+
+export async function getInitialNativeGroupCallAction(): Promise<IncomingGroupLiveKitCall | null> {
+  const payload = await getInitialNativeActionPayload();
+  if (!payload) return null;
+  return readPushLiveKitGroupCall({
+    provider: 'livekit_group',
+    event_type: 'livekit_group_call',
+    call_context: 'group',
+    ...payload,
+  });
 }
 
 export async function startNativeOutgoingCall(params: {
@@ -418,7 +550,9 @@ export async function startNativeOutgoingCall(params: {
   if (Platform.OS === 'android') {
     return;
   }
-  RNCallKeep.startCall(
+  const RNCallKeep = loadCallKeep();
+  if (!RNCallKeep?.default) return;
+  RNCallKeep.default.startCall(
     params.callUuid,
     params.peer?.id ?? 'unknown',
     params.peer?.name ?? 'Người dùng',
@@ -438,9 +572,11 @@ export async function displayNativeIncomingCall(call: IncomingLiveKitCall) {
     callId: call.callId,
     callType: call.callType,
     peer: call.peer,
-    usesNativeCallUi: true,
+    usesNativeCallUi: Boolean(loadCallKeep()?.default),
   });
-  RNCallKeep.displayIncomingCall(
+  const RNCallKeep = loadCallKeep();
+  if (!RNCallKeep?.default) return callUuid;
+  RNCallKeep.default.displayIncomingCall(
     callUuid,
     call.peer.id,
     call.peer.name,
@@ -474,9 +610,11 @@ export async function displayNativeIncomingGroupCall(
     callType: call.callType,
     peer: call.caller,
     group: call.group,
-    usesNativeCallUi: true,
+    usesNativeCallUi: Boolean(loadCallKeep()?.default),
   });
-  RNCallKeep.displayIncomingCall(
+  const RNCallKeep = loadCallKeep();
+  if (!RNCallKeep?.default) return callUuid;
+  RNCallKeep.default.displayIncomingCall(
     callUuid,
     call.groupId,
     call.group.name,
@@ -504,7 +642,7 @@ export function markNativeCallConnected(callUuid: string) {
   if (!nativeCall?.usesNativeCallUi) return;
 
   if (Platform.OS === 'ios') {
-    RNCallKeep.reportConnectedOutgoingCallWithUUID(callUuid);
+    loadCallKeep()?.default?.reportConnectedOutgoingCallWithUUID(callUuid);
   }
 }
 
@@ -514,9 +652,12 @@ export function endNativeCall(callUuid?: string, reason?: number) {
   activeCalls.delete(callUuid);
   if (!nativeCall?.usesNativeCallUi) return;
 
-  RNCallKeep.reportEndCallWithUUID(
+  const RNCallKeep = loadCallKeep();
+  if (!RNCallKeep?.default) return;
+  const endReasons = RNCallKeep.CONSTANTS?.END_CALL_REASONS ?? {};
+  RNCallKeep.default.reportEndCallWithUUID(
     callUuid,
-    reason ?? CALLKEEP_CONSTANTS.END_CALL_REASONS.REMOTE_ENDED,
+    reason ?? endReasons.REMOTE_ENDED ?? 2,
   );
-  RNCallKeep.endCall(callUuid);
+  RNCallKeep.default.endCall(callUuid);
 }

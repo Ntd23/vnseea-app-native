@@ -6,6 +6,10 @@ import {
   logoutPushUser,
 } from '../../../shared-kernel/infrastructure/push/oneSignalPush';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import {
+  connectLiveKitCallRealtime,
+  disconnectLiveKitCallRealtime,
+} from '../../../messages/infrastructure/realtime/liveKitCallRealtime';
 import type { AuthRepository } from '../../domain/repositories/AuthRepository';
 import type {
   AuthResult,
@@ -47,6 +51,7 @@ function mapAuthResponse(response: AuthResponse): AuthResult {
 
     sessionStorage.setSession(session);
     identifyPushUser(session.userId);
+    connectLiveKitCallRealtime();
 
     // Save user profile data
     if (response.user_data && typeof response.user_data === 'object') {
@@ -119,6 +124,7 @@ export function createAuthRepository(): AuthRepository {
           await apiBridge.post(apiRoutes.auth.logout);
         }
       } finally {
+        disconnectLiveKitCallRealtime();
         logoutPushUser();
         sessionStorage.clearSession();
       }
