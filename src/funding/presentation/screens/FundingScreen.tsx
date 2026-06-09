@@ -3,11 +3,11 @@ import React from 'react';
 import {
   ActivityIndicator,
   Image,
-  Pressable,
   RefreshControl,
   ScrollView,
   StatusBar,
   Text,
+  TouchableOpacity as Pressable,
   View,
 } from 'react-native';
 import {
@@ -255,7 +255,6 @@ function FundingScreen() {
         </View>
         <Pressable
           className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm"
-          activeOpacity={0.8}
           activeOpacity={0.8}
           style={{
             shadowColor: '#000',

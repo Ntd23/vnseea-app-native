@@ -11,6 +11,9 @@ export interface PagesItem {
   placeId?: string;
   lat?: number;
   lng?: number;
+  mapPinStatus?: 'none' | 'pending' | 'approved' | 'rejected' | string;
+  mapPinRequested?: boolean;
+  mapPinApproved?: boolean;
   avatar?: string;
   cover?: string;
   url?: string;
@@ -42,4 +45,6 @@ export interface CreatePageDraft {
   placeId?: string;
   lat?: number;
   lng?: number;
+  mapPinStatus?: 'none' | 'pending' | 'approved' | 'rejected' | string;
+  mapPinRequested?: boolean;
 }

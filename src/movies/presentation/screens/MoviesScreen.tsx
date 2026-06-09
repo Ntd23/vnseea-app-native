@@ -4,11 +4,11 @@ import {
   ActivityIndicator,
   Dimensions,
   Image,
-  Pressable,
   RefreshControl,
   ScrollView,
   StatusBar,
   Text,
+  TouchableOpacity as Pressable,
   View,
 } from 'react-native';
 import {
@@ -247,8 +247,8 @@ function MoviesScreen() {
         <ScrollView
           horizontal
           contentContainerClassName="gap-2 px-4"
+          contentContainerStyle={{ paddingBottom: 8 }}
           showsHorizontalScrollIndicator={false}
-          contentStyle={{ paddingBottom: 8 }}
         >
           {categories.map(cat => {
             const isActive = activeGenre === cat.key;

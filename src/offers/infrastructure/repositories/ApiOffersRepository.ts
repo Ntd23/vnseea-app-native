@@ -4,9 +4,14 @@
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import type { OffersRepository } from '../../domain/repositories/OffersRepository';
-import type { OfferItem, OffersResponse } from '../../domain/types/offers.types';
+import type { OfferItem } from '../../domain/types/offers.types';
 
 const siteRoot = 'https://v2.vnseea.vn';
+
+type OffersApiResponse = {
+  api_status: number;
+  data?: Record<string, unknown>[];
+};
 
 function normalizeUrl(url: string): string {
   if (!url) return '';
@@ -19,10 +24,11 @@ export function createOffersRepository(): OffersRepository {
     async getOffers(options = {}) {
       const { limit = 20, offset = 0 } = options;
 
-      const response = await apiBridge.post<OffersResponse>(
-        'offer',
-        { type: 'get', limit, offset },
-      );
+      const response = await apiBridge.post<OffersApiResponse>('offer', {
+        type: 'get',
+        limit,
+        offset,
+      });
 
       if (response.api_status !== 200) {
         console.warn('[ApiOffersRepository] getOffers failed:', response);
@@ -35,6 +41,8 @@ export function createOffersRepository(): OffersRepository {
 }
 
 function mapOfferItem(raw: Record<string, unknown>): OfferItem {
+  const page = asRecord(raw.page);
+
   return {
     id: Number(raw.id ?? 0),
     page_id: Number(raw.page_id ?? 0),
@@ -52,14 +60,20 @@ function mapOfferItem(raw: Record<string, unknown>): OfferItem {
     expire_time: String(raw.expire_time ?? ''),
     image: normalizeUrl(String(raw.image ?? '')),
     time: Number(raw.time ?? 0),
-    page: raw.page
+    page: page
       ? {
-          page_id: Number(raw.page.page_id ?? 0),
-          page_title: String(raw.page.page_title ?? ''),
-          page_name: String(raw.page.page_name ?? ''),
-          avatar: normalizeUrl(String(raw.page.avatar ?? '')),
-          cover: normalizeUrl(String(raw.page.cover ?? '')),
+          page_id: Number(page.page_id ?? 0),
+          page_title: String(page.page_title ?? ''),
+          page_name: String(page.page_name ?? ''),
+          avatar: normalizeUrl(String(page.avatar ?? '')),
+          cover: normalizeUrl(String(page.cover ?? '')),
         }
       : undefined,
   };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : undefined;
 }

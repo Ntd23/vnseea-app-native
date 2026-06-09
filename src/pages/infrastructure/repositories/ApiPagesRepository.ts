@@ -68,10 +68,56 @@ function readBoolean(
   return undefined;
 }
 
+function readMapPinStatus(raw: RawPage | undefined) {
+  return readString(raw, 'map_pin_status') || readString(raw, 'mapPinStatus');
+}
+
+function nextMapPinStatus(draft: {
+  mapPinRequested?: boolean;
+  mapPinStatus?: string;
+}) {
+  if (!draft.mapPinRequested) {
+    return 'none';
+  }
+  return draft.mapPinStatus === 'approved' ? 'approved' : 'pending';
+}
+
+function mapPinRequestPayload(draft: {
+  mapPinRequested?: boolean;
+  mapPinStatus?: string;
+}) {
+  const status = nextMapPinStatus(draft);
+
+  if (status === 'pending') {
+    return {
+      map_pin_requested: 1,
+      map_pin_status: status,
+      map_pin_requested_at: Math.floor(Date.now() / 1000),
+      map_pin_reviewed_at: 0,
+      map_pin_reviewed_by: 0,
+    };
+  }
+
+  if (status === 'none') {
+    return {
+      map_pin_requested: 0,
+      map_pin_status: status,
+      map_pin_requested_at: 0,
+      map_pin_reviewed_at: 0,
+      map_pin_reviewed_by: 0,
+    };
+  }
+
+  return {
+    map_pin_status: status,
+  };
+}
+
 function mapPage(raw: RawPage | undefined): PagesItem {
   const pageId = readString(raw, 'page_id') || readString(raw, 'id');
   const pageName = readString(raw, 'page_name') || readString(raw, 'username');
   const pageTitle = readString(raw, 'page_title') || readString(raw, 'name');
+  const mapPinStatus = readMapPinStatus(raw);
 
   return {
     id: pageId || pageName || pageTitle,
@@ -86,6 +132,9 @@ function mapPage(raw: RawPage | undefined): PagesItem {
     placeId: readString(raw, 'place_id') || readString(raw, 'placeId'),
     lat: readNumber(raw, 'lat'),
     lng: readNumber(raw, 'lng'),
+    mapPinStatus,
+    mapPinRequested: mapPinStatus === 'pending' || mapPinStatus === 'approved',
+    mapPinApproved: mapPinStatus === 'approved',
     avatar: normalizeUrl(readString(raw, 'avatar')),
     cover: normalizeUrl(readString(raw, 'cover')),
     url:
@@ -266,7 +315,7 @@ export function createPagesRepository(): PagesRepository {
 
       const page = mapPage(response.page_data);
 
-      if (draft.pageAddress.trim() && page.pageId) {
+      if ((draft.pageAddress.trim() || draft.mapPinRequested) && page.pageId) {
         try {
           const updateResponse = await apiBridge.post<UpdatePageResponse>(
             apiRoutes.pages.update,
@@ -276,20 +325,31 @@ export function createPagesRepository(): PagesRepository {
               place_id: draft.placeId,
               lat: draft.lat,
               lng: draft.lng,
+              ...mapPinRequestPayload(draft),
             },
           );
 
-          if (isSuccess(updateResponse.api_status)) {
-            page.address = draft.pageAddress;
-            page.placeId = draft.placeId;
-            page.lat = draft.lat;
-            page.lng = draft.lng;
+          if (!isSuccess(updateResponse.api_status)) {
+            throw new Error(
+              updateResponse.errors?.error_text ||
+                updateResponse.message ||
+                'KhÃ´ng thá»ƒ gá»­i yÃªu cáº§u ghim báº£n Ä‘á»“.',
+            );
           }
+
+          page.address = draft.pageAddress;
+          page.placeId = draft.placeId;
+          page.lat = draft.lat;
+          page.lng = draft.lng;
+          page.mapPinStatus = nextMapPinStatus(draft);
+          page.mapPinRequested = draft.mapPinRequested;
+          page.mapPinApproved = page.mapPinStatus === 'approved';
         } catch (error) {
           console.warn(
-            '[ApiPagesRepository] update page address failed',
+            '[ApiPagesRepository] update page address or map pin failed',
             error,
           );
+          throw new Error(mapCreatePageError(error));
         }
       }
 
@@ -314,6 +374,7 @@ export function createPagesRepository(): PagesRepository {
             place_id: draft.placeId,
             lat: draft.lat,
             lng: draft.lng,
+            ...mapPinRequestPayload(draft),
             page_category: draft.pageCategory,
             page_sub_category: draft.pageSubCategory,
           },
@@ -343,6 +404,9 @@ export function createPagesRepository(): PagesRepository {
           placeId: draft.placeId,
           lat: draft.lat,
           lng: draft.lng,
+          mapPinStatus: nextMapPinStatus(draft),
+          mapPinRequested: draft.mapPinRequested,
+          mapPinApproved: nextMapPinStatus(draft) === 'approved',
         },
         message: response.message,
       };

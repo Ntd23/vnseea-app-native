@@ -222,13 +222,10 @@ export function useMessagesViewModel() {
     }));
 
     try {
-      const result =
-        chat.chatType === 'group'
-          ? await repository.getGroupMessages(chat.userId)
-          : await repository.getMessages(chat.userId);
+      const result = await repository.getMessages(chat);
       setState(prev => ({
         ...prev,
-        messages: result.messages,
+        messages: result,
         isLoadingMessages: false,
       }));
     } catch (err) {
@@ -244,23 +241,13 @@ export function useMessagesViewModel() {
     setState(prev => ({ ...prev, isSending: true, error: null }));
 
     try {
-      if (state.selectedChat.chatType === 'group') {
-        await repository.sendGroupMessage(
-          state.selectedChat.userId,
-          message.trim(),
-        );
-      } else {
-        await repository.sendMessage(state.selectedChat.userId, message.trim());
-      }
+      await repository.sendMessage(state.selectedChat, message.trim());
 
       // Reload messages to get the new one
-      const result =
-        state.selectedChat.chatType === 'group'
-          ? await repository.getGroupMessages(state.selectedChat.userId)
-          : await repository.getMessages(state.selectedChat.userId);
+      const result = await repository.getMessages(state.selectedChat);
       setState(prev => ({
         ...prev,
-        messages: result.messages,
+        messages: result,
         isSending: false,
       }));
     } catch (err) {

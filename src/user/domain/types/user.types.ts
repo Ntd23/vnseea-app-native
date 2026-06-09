@@ -124,6 +124,9 @@ export type NearbyPlace = {
   location?: string;
   distance?: string | number;
   distanceMeters?: number;
+  mapPinStatus?: string;
+  mapPinApproved?: boolean;
+  isPinned?: boolean;
   coordinate?: {
     latitude: number;
     longitude: number;

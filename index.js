@@ -43,7 +43,8 @@ if (global.window) {
 }
 
 const { registerGlobals } = require('@livekit/react-native');
-const App = require('./App').default;
+const AppModule = require('./App');
+const App = AppModule?.default ?? AppModule;
 
 registerGlobals();
 

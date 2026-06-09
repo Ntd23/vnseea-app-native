@@ -10,6 +10,8 @@ export { useChatViewModel } from './application/view-models/useChatViewModel';
 export { useGroupChatViewModel } from './application/view-models/useGroupChatViewModel';
 export { default as MessageScreen } from './presentation/screens/MessageScreen';
 export { default as ChatScreen } from './presentation/screens/ChatScreen';
+export { default as CreateGroupChatScreen } from './presentation/screens/CreateGroupScreen';
+export { default as GroupInfoScreen } from './presentation/screens/GroupInfoScreen';
 export { default as CallScreen } from './presentation/screens/CallScreen';
 export { default as CallRoomScreen } from './presentation/screens/CallRoomScreen';
 export { default as GroupCallRoomScreen } from './presentation/screens/GroupCallRoomScreen';

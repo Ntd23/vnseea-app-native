@@ -6,6 +6,7 @@ import type { ChatItem } from '../messages/domain/types/messages.types';
 import type { LiveKitCallRouteParams } from '../messages/domain/types/call.types';
 import type { GroupLiveKitCallRouteParams } from '../messages/domain/types/groupCall.types';
 import type { PagesItem } from '../pages/domain/types/pages.types';
+import type { LiveSession } from '../live/domain/types/live.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -28,7 +29,12 @@ export type RootStackParamList = {
   [ROUTES.MESSAGES]: undefined;
   [ROUTES.CREATE_GROUP_CHAT]: undefined;
   [ROUTES.CHAT]: { chat: ChatItem };
-  [ROUTES.GROUP_INFO]: { groupId: number; groupName: string; avatar: string; memberCount: number };
+  [ROUTES.GROUP_INFO]: {
+    groupId: number;
+    groupName: string;
+    avatar: string;
+    memberCount: number;
+  };
   [ROUTES.CALLS]: undefined;
   [ROUTES.CALL_ROOM]: LiveKitCallRouteParams;
   [ROUTES.GROUP_CALL_ROOM]: GroupLiveKitCallRouteParams;
@@ -38,6 +44,7 @@ export type RootStackParamList = {
   [ROUTES.SAVED_POSTS]: undefined;
   [ROUTES.SEARCH_EMPTY]: undefined;
   [ROUTES.PAGES]: undefined;
+  [ROUTES.PAGE_DETAIL]: { page: PagesItem };
   [ROUTES.CREATE_PAGE]: undefined;
   [ROUTES.EDIT_PAGE]: { page: PagesItem };
   [ROUTES.MARKETPLACE]: undefined;
@@ -98,7 +105,11 @@ export type RootStackParamList = {
     userId?: string;
   };
   [ROUTES.LIVE]: undefined;
-  [ROUTES.LIVE_ROOM]: { postId: number; isHost?: boolean; liveSession?: LiveSession };
+  [ROUTES.LIVE_ROOM]: {
+    postId: number;
+    isHost?: boolean;
+    liveSession?: LiveSession;
+  };
   [ROUTES.GO_LIVE]: undefined;
 };
 

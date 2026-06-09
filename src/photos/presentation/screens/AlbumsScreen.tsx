@@ -146,10 +146,12 @@ function AlbumsScreen() {
         contentContainerClassName="px-4 pb-10 pt-4"
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={refresh} colors={[BRAND]} />
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refresh}
+            colors={[BRAND]}
+          />
         }
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.5}
       >
         {/* Info Card */}
         <View className="surface-card mb-5 flex-row items-center p-4">
@@ -217,7 +219,10 @@ function AlbumsScreen() {
                     className="h-36 w-full"
                     resizeMode="cover"
                     onError={() => {
-                      console.log('[AlbumsScreen] Image load error:', album.coverUrl);
+                      console.log(
+                        '[AlbumsScreen] Image load error:',
+                        album.coverUrl,
+                      );
                     }}
                   />
                   <View className="p-3">

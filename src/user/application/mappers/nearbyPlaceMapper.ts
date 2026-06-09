@@ -4,6 +4,7 @@ import { normalizeRawUrl } from '../../../foundation/application/normalizers/url
 import {
   asNumber,
   asRecord,
+  firstBoolean,
   firstEntityId,
   firstString,
 } from '../../../foundation/application/normalizers/resolveValue';
@@ -81,6 +82,18 @@ export function mapNearbyPage(
 ): NearbyPlace | null {
   const pageId = firstEntityId(record, ['id', 'page_id']);
   const name = firstString(record, ['title', 'page_title', 'name']);
+  const mapPinStatus = firstString(record, [
+    'map_pin_status',
+    'mapPinStatus',
+    'pin_status',
+  ]);
+  const pinnedFlag = firstBoolean(record, [
+    'pinned',
+    'is_pinned',
+    'isPinned',
+    'map_pin_approved',
+    'mapPinApproved',
+  ]);
 
   if (!name) {
     return null;
@@ -107,6 +120,9 @@ export function mapNearbyPage(
     location: firstString(record, ['location', 'address']),
     distance: distanceMeters === undefined ? undefined : distanceMeters / 1000,
     distanceMeters,
+    mapPinStatus,
+    mapPinApproved: mapPinStatus === 'approved' || pinnedFlag === true,
+    isPinned: mapPinStatus === 'approved' || pinnedFlag === true,
     coordinate: mapCoordinate(record),
   };
 }
