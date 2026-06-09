@@ -68,6 +68,8 @@ const INITIAL_DRAFT: CreatePageDraft = {
   pageDescription: '',
   pageAddress: '',
   pageCategory: PAGE_CATEGORIES[0].id,
+  mapPinRequested: false,
+  mapPinStatus: 'none',
 };
 
 const PAGE_URL_PREFIX = `${apiConfig.webBaseUrl.replace(/\/$/, '')}/`;
@@ -327,14 +329,19 @@ function StepTwo({
 function StepThree({
   descriptionValue,
   addressValue,
+  mapPinRequested,
+  mapPinStatus,
   error,
   onDescriptionChange,
   onAddressChange,
   onPlaceSelect,
+  onMapPinRequestedChange,
   onNext,
 }: {
   descriptionValue: string;
   addressValue: string;
+  mapPinRequested?: boolean;
+  mapPinStatus?: string;
   error?: string | null;
   onDescriptionChange: (value: string) => void;
   onAddressChange: (value: string) => void;
@@ -344,8 +351,18 @@ function StepThree({
     lat?: number;
     lng?: number;
   }) => void;
+  onMapPinRequestedChange: (value: boolean) => void;
   onNext: () => void;
 }) {
+  const pinStatusLabel =
+    mapPinStatus === 'approved'
+      ? 'Đã duyệt'
+      : mapPinStatus === 'pending'
+      ? 'Đang chờ duyệt'
+      : mapPinRequested
+      ? 'Sẽ gửi duyệt'
+      : 'Chưa yêu cầu ghim';
+
   return (
     <ScrollView
       className="flex-1"
@@ -396,6 +413,38 @@ function StepThree({
             onSelectPlace={onPlaceSelect}
           />
         </View>
+        <TouchableOpacity
+          activeOpacity={0.86}
+          className="mt-4 flex-row items-start rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4"
+          onPress={() => onMapPinRequestedChange(!mapPinRequested)}
+        >
+          <View
+            className={`mt-1 h-5 w-5 items-center justify-center rounded-md border ${
+              mapPinRequested
+                ? 'border-blue-600 bg-blue-600'
+                : 'border-slate-300 bg-white'
+            }`}
+          >
+            {mapPinRequested ? (
+              <CheckCircle2 size={14} color="#FFFFFF" />
+            ) : null}
+          </View>
+          <View className="ml-3 flex-1 pr-2">
+            <Text className="text-title-primary">Yêu cầu ghim trên bản đồ</Text>
+            <Text className="mt-1 text-body-secondary">
+              Admin sẽ duyệt trước khi tên trang hiển thị trực tiếp trên bản đồ
+              tìm kiếm gần đây.
+            </Text>
+          </View>
+          <View className="max-w-[118px] rounded-full bg-blue-50 px-3 py-2">
+            <Text
+              className="text-center text-xs font-extrabold text-blue-700"
+              numberOfLines={2}
+            >
+              {pinStatusLabel}
+            </Text>
+          </View>
+        </TouchableOpacity>
         <ErrorMessage message={error} />
       </View>
 
@@ -513,6 +562,11 @@ function CreatePageScreen() {
           placeId: editingPage.placeId,
           lat: editingPage.lat,
           lng: editingPage.lng,
+          mapPinStatus: editingPage.mapPinStatus || 'none',
+          mapPinRequested:
+            editingPage.mapPinRequested ||
+            editingPage.mapPinStatus === 'pending' ||
+            editingPage.mapPinStatus === 'approved',
         }
       : INITIAL_DRAFT,
   );
@@ -699,6 +753,8 @@ function CreatePageScreen() {
         <StepThree
           descriptionValue={draft.pageDescription}
           addressValue={draft.pageAddress}
+          mapPinRequested={draft.mapPinRequested}
+          mapPinStatus={draft.mapPinStatus}
           error={currentError}
           onDescriptionChange={value => updateDraft('pageDescription', value)}
           onAddressChange={handleAddressChange}
@@ -707,6 +763,17 @@ function CreatePageScreen() {
             updateDraft('placeId', place.placeId);
             updateDraft('lat', place.lat);
             updateDraft('lng', place.lng);
+          }}
+          onMapPinRequestedChange={value => {
+            updateDraft('mapPinRequested', value);
+            updateDraft(
+              'mapPinStatus',
+              value
+                ? draft.mapPinStatus === 'approved'
+                  ? 'approved'
+                  : 'pending'
+                : 'none',
+            );
           }}
           onNext={goNext}
         />
@@ -728,6 +795,8 @@ function CreatePageScreen() {
     draft.pageAddress,
     draft.pageCategory,
     draft.pageDescription,
+    draft.mapPinRequested,
+    draft.mapPinStatus,
     draft.pageName,
     draft.pageTitle,
     goNext,

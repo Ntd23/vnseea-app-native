@@ -1,4 +1,5 @@
 <?php
+// English description: Updates authenticated page profile data for mobile API requests.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -23,13 +24,39 @@ if (empty($error_code)) {
 		$error_code    = 2;
     	$error_message = 'Page not found';
 	} else {
+		if (function_exists('Wo_EnsurePageMapPinColumns')) {
+			Wo_EnsurePageMapPinColumns();
+		}
+
 		$page_data = array();
 		if (!empty($_POST)) {
 			$page_data = $_POST;
 		}
+		$map_pin_requested = false;
 		$escape = array('server_key');
 		if (isset($page_data['server_key'])) {
 			unset($page_data['server_key']);
+		}
+		if (isset($page_data['map_pin_requested'])) {
+			$map_pin_requested = ($page_data['map_pin_requested'] == '1' || $page_data['map_pin_requested'] === 1 || $page_data['map_pin_requested'] === true || $page_data['map_pin_requested'] === 'true');
+			unset($page_data['map_pin_requested']);
+		}
+		if (isset($page_data['request_map_pin'])) {
+			$map_pin_requested = ($page_data['request_map_pin'] == '1' || $page_data['request_map_pin'] === 1 || $page_data['request_map_pin'] === true || $page_data['request_map_pin'] === 'true');
+			unset($page_data['request_map_pin']);
+		}
+		if (isset($page_data['map_pin_status'])) {
+			$map_pin_requested = ($map_pin_requested || $page_data['map_pin_status'] === 'pending');
+			unset($page_data['map_pin_status']);
+		}
+		if (isset($page_data['map_pin_requested_at'])) {
+			unset($page_data['map_pin_requested_at']);
+		}
+		if (isset($page_data['map_pin_reviewed_at'])) {
+			unset($page_data['map_pin_reviewed_at']);
+		}
+		if (isset($page_data['map_pin_reviewed_by'])) {
+			unset($page_data['map_pin_reviewed_by']);
 		}
 		if (isset($page_data['page_place_id'])) {
 			$page_data['place_id'] = $page_data['page_place_id'];
@@ -82,6 +109,27 @@ if (empty($error_code)) {
 		        $error_code    = 5;
 		        $error_message = 'Page name must be between 5/32';
 		    }
+		}
+		if (empty($error_code)) {
+			$map_pin_update_data = array();
+			if (function_exists('Wo_GetPageMapPinRequestUpdateData')) {
+				$map_pin_update_data = Wo_GetPageMapPinRequestUpdateData($page, $page_data, $map_pin_requested);
+			}
+			else if ($map_pin_requested) {
+				$map_pin_update_data = array(
+					'map_pin_status' => 'pending',
+					'map_pin_requested_at' => time(),
+					'map_pin_reviewed_at' => 0,
+					'map_pin_reviewed_by' => 0
+				);
+			}
+
+			$page_data = array_merge($page_data, $map_pin_update_data);
+			foreach (array('map_pin_status', 'map_pin_requested_at', 'map_pin_reviewed_at', 'map_pin_reviewed_by') as $map_pin_key) {
+				if (isset($page_data[$map_pin_key]) && !isset($page[$map_pin_key])) {
+					$page[$map_pin_key] = '';
+				}
+			}
 		}
 		if (!empty($_FILES["avatar"]["tmp_name"])) {
 			$upload_image = Wo_UploadImage($_FILES["avatar"]["tmp_name"], $_FILES['avatar']['name'], 'avatar', $_FILES['avatar']['type'], $page['page_id'], 'page');

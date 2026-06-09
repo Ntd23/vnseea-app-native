@@ -62,7 +62,46 @@ if (!function_exists('Wo_EnsurePageMapPinColumns')) {
 		}
 	}
 }
+if (!function_exists('Wo_NormalizePageMapPinStatus')) {
+	function Wo_NormalizePageMapPinStatus($status = 'none')
+	{
+		$status = strtolower(trim((string) $status));
+		$allowed_statuses = array('none', 'pending', 'approved', 'rejected');
 
+		return in_array($status, $allowed_statuses, true) ? $status : 'none';
+	}
+}
+
+if (!function_exists('Wo_UpdatePageMapPinReview')) {
+	function Wo_UpdatePageMapPinReview($page_id = 0, $status = 'none')
+	{
+		global $db, $wo;
+
+		if (empty($page_id) || !is_numeric($page_id) || $page_id < 1) {
+			return false;
+		}
+
+		$status = Wo_NormalizePageMapPinStatus($status);
+		if (!in_array($status, array('approved', 'rejected'), true)) {
+			return false;
+		}
+
+		Wo_EnsurePageMapPinColumns();
+
+		$update_data = array(
+			'map_pin_status' => $status
+		);
+
+		if (Wo_PageMapPinColumnExists('map_pin_reviewed_at')) {
+			$update_data['map_pin_reviewed_at'] = time();
+		}
+		if (Wo_PageMapPinColumnExists('map_pin_reviewed_by')) {
+			$update_data['map_pin_reviewed_by'] = !empty($wo['user']['user_id']) ? $wo['user']['user_id'] : 0;
+		}
+
+		return $db->where('page_id', Wo_Secure($page_id))->update(T_PAGES, $update_data);
+	}
+}
 if (!function_exists('Wo_GetPageMapPinRequestUpdateData')) {
 	function Wo_GetPageMapPinRequestUpdateData($current_page = array(), $next_page = array(), $requested = false)
 	{

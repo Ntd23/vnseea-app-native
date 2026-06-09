@@ -2,12 +2,13 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
-  Pressable,
   ScrollView,
   Share,
   StatusBar,
   Text,
+  TouchableOpacity as Pressable,
   View,
 } from 'react-native';
 import {
@@ -155,7 +156,7 @@ function JobDetailScreen() {
     // TODO: Navigate to apply screen or show apply modal
     setTimeout(() => {
       setIsApplying(false);
-      alert('Đã ứng tuyển thành công!');
+      Alert.alert('Đã ứng tuyển thành công!');
     }, 500);
   };
 

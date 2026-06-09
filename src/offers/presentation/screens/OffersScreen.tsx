@@ -3,11 +3,11 @@ import React from 'react';
 import {
   ActivityIndicator,
   Image,
-  Pressable,
   RefreshControl,
   ScrollView,
   StatusBar,
   Text,
+  TouchableOpacity as Pressable,
   View,
 } from 'react-native';
 import {

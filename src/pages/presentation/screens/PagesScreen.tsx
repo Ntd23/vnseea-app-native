@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  Linking,
   RefreshControl,
   StatusBar,
   Text,
@@ -339,10 +338,12 @@ function PagesScreen() {
     navigation.navigate(ROUTES.CREATE_PAGE);
   }, [navigation]);
 
-  const handleOpenPage = useCallback((page: PagesItem) => {
-    if (!page.url) return;
-    void Linking.openURL(page.url);
-  }, []);
+  const handleOpenPage = useCallback(
+    (page: PagesItem) => {
+      navigation.navigate(ROUTES.PAGE_DETAIL, { page });
+    },
+    [navigation],
+  );
 
   const handleEditPage = useCallback(
     (page: PagesItem) => {

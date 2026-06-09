@@ -77,17 +77,13 @@ export function useChatViewModel(chat: ChatItem) {
   const isSending = pendingSendCount > 0;
   const getMessagesForChat = useCallback(
     (options?: Parameters<typeof repository.getMessages>[1]) =>
-      chat.chatType === 'group'
-        ? repository.getGroupMessages(chat.userId, options)
-        : repository.getMessages(chat.userId, options),
-    [chat.chatType, chat.userId],
+      repository.getMessages(chat, options),
+    [chat],
   );
   const sendMessageForChat = useCallback(
     (message: string, attachment?: MessageAttachment) =>
-      chat.chatType === 'group'
-        ? repository.sendGroupMessage(chat.userId, message, attachment)
-        : repository.sendMessage(chat.userId, message, attachment),
-    [chat.chatType, chat.userId],
+      repository.sendMessage(chat, message, attachment),
+    [chat],
   );
 
   const loadInitial = useCallback(async () => {
@@ -95,13 +91,13 @@ export function useChatViewModel(chat: ChatItem) {
     setError(null);
 
     try {
-      const page = await repository.getMessages(chat, {
+      const page = await getMessagesForChat({
         limit: PAGE_SIZE,
       });
-      setMessages(mergeMessages(result.messages));
-      setHasMore(result.messages.length >= PAGE_SIZE);
-      setIsTyping(Boolean(result.typing));
-      setIsRecording(Boolean(result.is_recording));
+      setMessages(mergeMessages(page));
+      setHasMore(page.length >= PAGE_SIZE);
+      setIsTyping(false);
+      setIsRecording(false);
       if (chat.chatType !== 'group') {
         repository
           .markAsSeen(chat.userId)
@@ -124,14 +120,14 @@ export function useChatViewModel(chat: ChatItem) {
     setIsLoadingMore(true);
 
     try {
-      const page = await repository.getMessages(chat, {
+      const page = await getMessagesForChat({
         limit: PAGE_SIZE,
         beforeMessageId: oldestMessage.id,
       });
-      setMessages(current => mergeMessages(current, result.messages));
-      setHasMore(result.messages.length >= PAGE_SIZE);
-      setIsTyping(Boolean(result.typing));
-      setIsRecording(Boolean(result.is_recording));
+      setMessages(current => mergeMessages(current, page));
+      setHasMore(page.length >= PAGE_SIZE);
+      setIsTyping(false);
+      setIsRecording(false);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Không tải thêm được tin nhắn',
@@ -149,7 +145,7 @@ export function useChatViewModel(chat: ChatItem) {
       if (showSpinner) setIsRefreshing(true);
 
       try {
-        const page = await repository.getMessages(chat, {
+        const page = await getMessagesForChat({
           limit: PAGE_SIZE,
         });
         setMessages(current => mergeMessages(current, page));
@@ -192,18 +188,13 @@ export function useChatViewModel(chat: ChatItem) {
       setError(null);
 
       try {
-        const response = await repository.sendMessage(
-          chat,
-          message,
-          attachment,
-        );
+        const response = await sendMessageForChat(message, attachment);
         let sentMessages = response.sentMessages ?? [];
 
         if (sentMessages.length === 0) {
-          sentMessages = await repository.getMessages(chat, {
+          sentMessages = await getMessagesForChat({
             limit: 1,
           });
-          sentMessages = result.messages;
         }
 
         setMessages(current =>
@@ -227,7 +218,7 @@ export function useChatViewModel(chat: ChatItem) {
         setPendingSendCount(current => Math.max(0, current - 1));
       }
     },
-    [chat],
+    [chat, getMessagesForChat, sendMessageForChat],
   );
 
   const loadGroupInfo = useCallback(async () => {

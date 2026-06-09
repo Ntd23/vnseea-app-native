@@ -33,14 +33,7 @@ import MapView, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import {
-  ArrowLeft,
-  ExternalLink,
-  LocateFixed,
-  MapPin,
-  Search,
-  X,
-} from 'lucide-react-native';
+import { ArrowLeft, LocateFixed, MapPin, Search, X } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useUserViewModel } from '../../application/view-models/useUserViewModel';
 import type {
@@ -59,6 +52,65 @@ const DEFAULT_REGION = {
   latitudeDelta: 0.009,
   longitudeDelta: 0.009,
 };
+const LIGHT_MAP_STYLE = [
+  {
+    elementType: 'geometry',
+    stylers: [{ color: '#F5F7FA' }],
+  },
+  {
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#475569' }],
+  },
+  {
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#FFFFFF' }],
+  },
+  {
+    featureType: 'administrative',
+    elementType: 'geometry.stroke',
+    stylers: [{ color: '#CBD5E1' }],
+  },
+  {
+    featureType: 'landscape.man_made',
+    elementType: 'geometry',
+    stylers: [{ color: '#F8FAFC' }],
+  },
+  {
+    featureType: 'poi',
+    elementType: 'geometry',
+    stylers: [{ color: '#E8F3EC' }],
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'geometry',
+    stylers: [{ color: '#CDEBD8' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry',
+    stylers: [{ color: '#FFFFFF' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry.stroke',
+    stylers: [{ color: '#CBD5E1' }],
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'geometry',
+    stylers: [{ color: '#FDE68A' }],
+  },
+  {
+    featureType: 'transit',
+    elementType: 'geometry',
+    stylers: [{ color: '#D8E4F2' }],
+  },
+  {
+    featureType: 'water',
+    elementType: 'geometry',
+    stylers: [{ color: '#BFE3F8' }],
+  },
+];
 
 type SuggestionItem =
   | { id: string; kind: 'page'; page: NearbyPlace }
@@ -126,6 +178,12 @@ function parseGeoInfo(value: unknown): LatLng | null {
   return { latitude, longitude };
 }
 
+function shouldShowPageNameBadge(place: NearbyPlace) {
+  return (
+    place.mapPinApproved || place.isPinned || place.mapPinStatus === 'approved'
+  );
+}
+
 function suggestionSubtitle(item: SuggestionItem) {
   if (item.kind === 'google') {
     return item.prediction.secondaryText || item.prediction.description;
@@ -151,9 +209,17 @@ function SearchSuggestionRow({
       className="flex-row items-center border-b border-slate-100 px-4 py-3"
       onPress={onPress}
     >
-      <View className="h-10 w-10 items-center justify-center rounded-full bg-slate-100">
-        <MapPin size={18} color={isGoogle ? '#64748B' : ACCENT} />
-      </View>
+      {isGoogle ? (
+        <View className="h-10 w-10 items-center justify-center rounded-full bg-slate-100">
+          <MapPin size={18} color="#64748B" />
+        </View>
+      ) : (
+        <Image
+          source={{ uri: item.page.avatarUrl || FALLBACK_AVATAR }}
+          className="h-10 w-10 rounded-full bg-slate-100"
+          resizeMode="cover"
+        />
+      )}
       <View className="ml-3 flex-1">
         <Text className="text-sm font-bold text-slate-900" numberOfLines={1}>
           {title}
@@ -601,6 +667,7 @@ export default function NearbyUsersScreen() {
         ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         initialRegion={DEFAULT_REGION}
+        customMapStyle={LIGHT_MAP_STYLE}
         loadingEnabled
         showsCompass
         showsMyLocationButton={false}
@@ -634,27 +701,41 @@ export default function NearbyUsersScreen() {
                 { transform: [{ rotate: `${currentHeading}deg` }] },
               ]}
             >
-              <View style={styles.currentUserArrow}>
+              <View style={styles.currentUserArrowOuter}>
                 <View style={styles.currentUserArrowInner} />
               </View>
             </View>
           </Marker>
         ) : null}
 
-        {pageMarkers.map(({ place, coordinate }) => (
-          <Marker
-            key={place.id}
-            coordinate={coordinate}
-            onPress={() => selectPage(place)}
-          >
-            <View style={styles.marker}>
-              <Image
-                source={{ uri: place.avatarUrl || FALLBACK_AVATAR }}
-                style={styles.markerImage}
-              />
-            </View>
-          </Marker>
-        ))}
+        {pageMarkers.map(({ place, coordinate }) => {
+          const showNameBadge = shouldShowPageNameBadge(place);
+
+          return (
+            <Marker
+              key={place.id}
+              anchor={{ x: 0.5, y: 1 }}
+              coordinate={coordinate}
+              onPress={() => selectPage(place)}
+            >
+              <View style={styles.pageMarker}>
+                {showNameBadge ? (
+                  <View style={styles.pageNameBadge}>
+                    <Text style={styles.pageNameBadgeText} numberOfLines={1}>
+                      {place.name}
+                    </Text>
+                  </View>
+                ) : null}
+                <View style={styles.pagePinWrapper}>
+                  <View style={styles.pagePinTail} />
+                  <View style={styles.pagePinHead}>
+                    <View style={styles.pagePinCore} />
+                  </View>
+                </View>
+              </View>
+            </Marker>
+          );
+        })}
 
         {selectedPoint ? (
           <Marker
@@ -668,11 +749,14 @@ export default function NearbyUsersScreen() {
           >
             <View
               style={[
-                styles.selectedMarker,
+                styles.selectedPin,
                 selectedPoint.source === 'google' && styles.googleMarker,
               ]}
             >
-              <MapPin size={22} color="#FFFFFF" fill="#FFFFFF" />
+              <View style={styles.selectedPinTail} />
+              <View style={styles.selectedPinHead}>
+                <View style={styles.selectedPinCore} />
+              </View>
             </View>
           </Marker>
         ) : null}
@@ -874,21 +958,6 @@ export default function NearbyUsersScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-
-          {selectedPoint.url ? (
-            <TouchableOpacity
-              activeOpacity={0.86}
-              className="mt-3 flex-row items-center justify-center rounded-xl border border-slate-200 px-4 py-3"
-              onPress={() =>
-                Linking.openURL(selectedPoint.url || '').catch(() => undefined)
-              }
-            >
-              <ExternalLink size={17} color={BRAND} />
-              <Text className="ml-2 text-sm font-bold text-blue-700">
-                Xem chi tiết
-              </Text>
-            </TouchableOpacity>
-          ) : null}
         </View>
       ) : null}
     </SafeAreaView>
@@ -908,18 +977,18 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   currentUserMarker: {
-    width: 64,
-    height: 64,
+    width: 50,
+    height: 50,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 8,
   },
-  currentUserArrow: {
+  currentUserArrowOuter: {
     width: 0,
     height: 0,
-    borderLeftWidth: 22,
-    borderRightWidth: 22,
-    borderBottomWidth: 54,
+    borderLeftWidth: 18,
+    borderRightWidth: 18,
+    borderBottomWidth: 42,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderBottomColor: '#FFFFFF',
@@ -931,13 +1000,13 @@ const styles = StyleSheet.create({
   },
   currentUserArrowInner: {
     position: 'absolute',
-    left: -16,
-    top: 8,
+    left: -13,
+    top: 7,
     width: 0,
     height: 0,
-    borderLeftWidth: 16,
-    borderRightWidth: 16,
-    borderBottomWidth: 40,
+    borderLeftWidth: 13,
+    borderRightWidth: 13,
+    borderBottomWidth: 31,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderBottomColor: BRAND,
@@ -970,7 +1039,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   googleMarker: {
-    backgroundColor: '#22C55E',
+    borderColor: '#16A34A',
   },
   locateButton: {
     position: 'absolute',
@@ -989,20 +1058,107 @@ const styles = StyleSheet.create({
   locateWithSheet: {
     bottom: 232,
   },
-  marker: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    backgroundColor: '#FFFFFF',
-    overflow: 'hidden',
-    elevation: 4,
+  pageMarker: {
+    width: 150,
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
-  markerImage: {
+  pageNameBadge: {
+    maxWidth: 140,
+    marginBottom: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#DDE7FF',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  pageNameBadgeText: {
+    color: '#0F172A',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  pagePinWrapper: {
+    width: 44,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  pagePinCore: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#FFFFFF',
+  },
+  pagePinHead: {
     width: 36,
     height: 36,
     borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: ACCENT,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  pagePinTail: {
+    position: 'absolute',
+    top: 25,
+    width: 18,
+    height: 18,
+    backgroundColor: ACCENT,
+    borderRightWidth: 3,
+    borderBottomWidth: 3,
+    borderColor: '#FFFFFF',
+    transform: [{ rotate: '45deg' }],
+  },
+  selectedPin: {
+    width: 50,
+    height: 58,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    elevation: 7,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.24,
+    shadowRadius: 5,
+  },
+  selectedPinCore: {
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
+    backgroundColor: '#FFFFFF',
+  },
+  selectedPinHead: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16A34A',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  selectedPinTail: {
+    position: 'absolute',
+    top: 29,
+    width: 20,
+    height: 20,
+    backgroundColor: '#16A34A',
+    borderRightWidth: 3,
+    borderBottomWidth: 3,
+    borderColor: '#FFFFFF',
+    transform: [{ rotate: '45deg' }],
   },
   permissionNotice: {
     position: 'absolute',
@@ -1038,17 +1194,6 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     fontSize: 15,
     fontWeight: '700',
-  },
-  selectedMarker: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: ACCENT,
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
-    elevation: 6,
   },
   sheet: {
     position: 'absolute',

@@ -278,6 +278,20 @@ function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
     kind: 'text',
   };
 }
+function readGroupUnreadCount(raw: RawRecord, groupId: string): number {
+  const directCount = readNumber(
+    raw,
+    'message_count',
+    'unread',
+    'unread_count',
+    'messages_count',
+  );
+  if (directCount > 0) return directCount;
+
+  const unreadByGroup = asRecord(raw.unread_by_group);
+  return groupId && unreadByGroup ? readNumber(unreadByGroup, groupId) : 0;
+}
+
 function mapChat(raw: Record<string, unknown>): ChatItem {
   const chatTypeValue = readString(raw, 'chat_type');
   const chatType: ChatItem['chatType'] =
@@ -311,6 +325,17 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
     groupId;
   const targetId =
     chatType === 'group' ? groupId || chatId : participantId || chatId;
+  const lastMessageTime =
+    readNumber(lastMessage, 'time') ||
+    readNumber(raw, 'last_message_time', 'time', 'chat_time', 'last_time');
+  const paginationCursorTime =
+    readNumber(
+      raw,
+      'pagination_cursor_time',
+      'cursor_time',
+      'chat_time',
+      'last_time',
+    ) || lastMessageTime;
   return {
     id: `${chatType}:${chatId}`,
     chatId,
@@ -510,6 +535,62 @@ async function fetchCachedChats() {
   );
   return mergeChats(initialChats, ...additionalChats);
 }
+async function fetchLatestCachedChats() {
+  const response = await apiBridge.post<GetChatsResponse>(
+    apiRoutes.messages.chats,
+    {
+      user_limit: 20,
+      group_limit: 20,
+      page_limit: 20,
+    },
+  );
+  return (response.data ?? []).map(item => mapChat(item as RawRecord));
+}
+
+async function fetchGroupChats() {
+  const response = await apiBridge.post<{
+    data?: unknown[];
+    groups?: unknown[];
+  }>(apiRoutes.messages.groupChat, {
+    type: 'get_list',
+    limit: 50,
+  });
+  const rawGroups = response.data ?? response.groups ?? [];
+  return rawGroups
+    .map(item => ({
+      ...(asRecord(item) ?? {}),
+      chat_type: 'group',
+    }))
+    .map(mapChat)
+    .filter(chat => chat.groupId || chat.userId);
+}
+
+async function createGroupChatRequest(input: CreateGroupChatInput) {
+  const response = await apiBridge.post<{
+    data?: unknown[] | RawRecord;
+    group?: RawRecord;
+    id?: string | number;
+    group_id?: string | number;
+  }>(apiRoutes.messages.groupChat, {
+    type: 'create',
+    group_name: input.groupName,
+    parts: input.memberUserIds.join(','),
+  });
+  const rawGroup =
+    (Array.isArray(response.data)
+      ? asRecord(response.data[0])
+      : asRecord(response.data)) ??
+    response.group ??
+    ({
+      group_id: response.group_id ?? response.id,
+      group_name: input.groupName,
+    } as RawRecord);
+  return mapChat({
+    ...rawGroup,
+    chat_type: 'group',
+  });
+}
+
 async function fetchUnreadUserChats() {
   const response = await apiBridge.post<GetChatsResponse>(
     apiRoutes.messages.chats,
@@ -571,7 +652,7 @@ async function fetchDiscoveredUserChats(): Promise<ChatItem[]> {
         const messages = await fetchRawUserMessages(userId, { limit: 1 }).catch(
           () => [],
         );
-        const lastMessage = result.messages[0];
+        const lastMessage = messages[0];
         if (!lastMessage) return null;
         const isUnread =
           readString(lastMessage, 'to_id') === sessionUserId &&
@@ -763,6 +844,31 @@ export function createMessagesRepository(): MessagesRepository {
           : await fetchRawUserMessages(target.id, options);
       return messages.map(item => mapMessage(item));
     },
+    async sendGroupMessage(
+      groupId: string,
+      message: string,
+      attachment?: MessageAttachment,
+    ) {
+      return this.sendMessage(
+        {
+          id: `group:${groupId}`,
+          chatId: groupId,
+          chatType: 'group',
+          groupId,
+          userId: groupId,
+          username: '',
+          name: '',
+          avatar: '',
+          lastMessage: '',
+          lastMessageTime: 0,
+          unreadCount: 0,
+          isOnline: false,
+          isVerified: false,
+        },
+        message,
+        attachment,
+      );
+    },
     async sendMessage(
       chat: ChatItem | string,
       message: string,
@@ -791,8 +897,8 @@ export function createMessagesRepository(): MessagesRepository {
       const response = attachment
         ? await apiBridge.multipart<SendMessageResponse>(route, {
             ...payload,
-            ...(attachment.mediaType === 'audio'
-              ? { message_type: 'audio' }
+            ...(attachment.mediaType
+              ? { message_type: attachment.mediaType }
               : {}),
             file: attachment,
           })

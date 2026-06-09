@@ -53,7 +53,6 @@ export interface MessageCallEvent {
   duration: number;
   initiatorId: string;
   receiverId: string;
-  groupId?: string;
   statusBy: string;
   isInitiator: boolean;
   isReceiver: boolean;
