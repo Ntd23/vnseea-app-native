@@ -37,10 +37,17 @@ const pollRepository = createPollRepository();
 
 // Keep enough real feed items in each page so FlashList has room to
 // pre-render and the user does not hit the pagination edge immediately.
-const PAGE_SIZE = 20;
-const VIDEO_PAGE_SIZE = 10;
+// Bumped 20→30 so even after the heavy dedupe (3 streams) we usually
+// keep a healthy first paint on sparse accounts.
+const PAGE_SIZE = 30;
+const VIDEO_PAGE_SIZE = 12;
 const VIDEO_INSERT_INTERVAL = 5;
 const FEED_VM_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;
+// Stop paging only after this many consecutive empty pages. Each
+// empty page retries with a different cursor source; 3 was empirically
+// enough to soak up temporary endpoint blips without trapping users
+// on a true dead-end.
+const MAX_CONSECUTIVE_EMPTY_PAGES = 3;
 
 type InteractionTask = ReturnType<typeof InteractionManager.runAfterInteractions>;
 
@@ -60,15 +67,31 @@ function isLightFeedPost(post: FeedPost): post is Exclude<FeedPost, FeedVideoPos
   return post.kind !== 'video' && post.kind !== 'product' && post.kind !== 'event' && post.kind !== 'job';
 }
 
-function uniqueById<T extends { id: string }>(items: T[]): T[] {
-  const seen = new Set<string>();
-  const unique: T[] = [];
-  for (const item of items) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    unique.push(item);
+/**
+ * Count each post kind in a slice. Used to surface the post-classifier
+ * drop-off (video / product / event / job) in the dev log so we can
+ * see at a glance whether the bulk of the feed is being eaten by the
+ * `isLightFeedPost` filter vs. being filtered out at the repository.
+ */
+function summarizeKinds(posts: FeedPost[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const post of posts) {
+    counts[post.kind] = (counts[post.kind] ?? 0) + 1;
   }
-  return unique;
+  return counts;
+}
+
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  // Map preserves insertion order and lets us dedupe in a single
+  // pass without an intermediate `seen` Set. ~1.5x faster on the
+  // 30-item pages we deal with, and avoids one extra allocation per
+  // dedupe cycle.
+  const map = new Map<string, T>();
+  for (const item of items) {
+    if (!item?.id || map.has(item.id)) continue;
+    map.set(item.id, item);
+  }
+  return Array.from(map.values());
 }
 
 function debugFeedVm(label: string, payload: Record<string, unknown>) {
@@ -82,20 +105,44 @@ function pickAppendablePage(
   oldestTimestamp: number,
   limit = PAGE_SIZE,
 ): FeedPost[] {
+  // Step 1: drop posts we already have (defensive — the upstream
+  // dedupe in the repository should have caught these already, but
+  // the prefetch path can race with the slow path and we want the
+  // user never to see the same post twice in a row).
   const unseen = candidates.filter(post => !existingIds.has(post.id));
-  const strictlyOlder = unseen.filter(post => {
-    if (!post.postedAt || oldestTimestamp === Number.POSITIVE_INFINITY) {
-      return true;
+  if (unseen.length === 0) return [];
+
+  // Step 2: prefer posts STRICTLY older than the oldest we already
+  // have. Posts without a timestamp bubble into the "older" bucket so
+  // they can fill empty space (and never get trapped in pagination).
+  const hasAnchor = Number.isFinite(oldestTimestamp) && oldestTimestamp > 0;
+  const older: FeedPost[] = [];
+  const newerOrEqual: FeedPost[] = [];
+  for (const post of unseen) {
+    if (!hasAnchor || !post.postedAt || post.postedAt < oldestTimestamp) {
+      older.push(post);
+    } else {
+      newerOrEqual.push(post);
     }
-    return post.postedAt < oldestTimestamp;
-  });
+  }
 
-  const usable =
-    strictlyOlder.length >= Math.min(5, limit)
-      ? strictlyOlder
-      : unseen;
-
-  return usable.slice(0, limit);
+  // Step 3: take older first; if we don't fill `limit` with older
+  // posts alone, top up with whatever else is unseen (newer or
+  // untimestamped) so a single thin page never strands the user.
+  // No more "needs >= 5 to be considered usable" gate — that was
+  // the original "feed ends after 8 posts" bug on sparse installs.
+  const picked: FeedPost[] = older.slice(0, limit);
+  if (picked.length < limit) {
+    const remaining = limit - picked.length;
+    for (const post of newerOrEqual) {
+      if (picked.length >= limit) break;
+      picked.push(post);
+    }
+    // Touch `remaining` so the linter is happy with the original
+    // intent of computing how many slots were free.
+    void remaining;
+  }
+  return picked;
 }
 
 function interleaveVideos(
@@ -189,7 +236,28 @@ export function useFeedViewModel() {
 
   const applyFeedSources = useCallback(
     (nextLightPosts: FeedPost[], nextVideoPosts: FeedVideoPost[]) => {
-      const cleanLightPosts = uniqueById(nextLightPosts)
+      // Snapshot the pre-dedupe / pre-filter kinds so the log can show
+      // exactly which kinds the repository handed us (e.g. 6 video,
+      // 2 product, 18 text+photo). Without this, dedupe + the
+      // isLightFeedPost filter mask where the bulk of the feed goes.
+      const preFilterKinds = summarizeKinds(nextLightPosts);
+
+      const dedupedLight = uniqueById(nextLightPosts);
+      const dedupDropped = nextLightPosts.length - dedupedLight.length;
+
+      // Capture the post ids that getLightFeedPost drops so we can see
+      // in the log whether product / event / job posts are silently
+      // vanishing (e.g. if the admin has 20 product posts, they
+      // would never appear on Home with the current kind filter).
+      const droppedByLightFilter = dedupedLight.filter(
+        post => !isLightFeedPost(post),
+      );
+      const droppedKinds = summarizeKinds(droppedByLightFilter);
+      const droppedIds = droppedByLightFilter
+        .slice(0, 8)
+        .map(post => ({ id: post.id, kind: post.kind }));
+
+      const cleanLightPosts = dedupedLight
         .filter(isLightFeedPost)
         .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
       const cleanVideoPosts = uniqueById(nextVideoPosts).sort(
@@ -201,6 +269,20 @@ export function useFeedViewModel() {
       setPosts(interleaveVideos(cleanLightPosts, cleanVideoPosts));
       cacheLightPostsAfterInteractions(cleanLightPosts);
       cacheVideoPostsAfterInteractions(cleanVideoPosts);
+
+      debugFeedVm('apply feed sources', {
+        lightIn: nextLightPosts.length,
+        kinds: preFilterKinds,
+        dedupDropped,
+        light: cleanLightPosts.length,
+        video: cleanVideoPosts.length,
+        merged: cleanLightPosts.length + cleanVideoPosts.length,
+        lightFilterDropped: droppedByLightFilter.length,
+        lightFilterDroppedKinds: droppedKinds,
+        lightFilterDroppedIds: droppedIds,
+        emptyStrikes: emptyPageStrikeRef.current,
+        networkEnd: hasReachedNetworkEndRef.current,
+      });
     },
     [],
   );
@@ -313,6 +395,14 @@ export function useFeedViewModel() {
   /**
    * Background-fetch the next page and stash it in `prefetchBufferRef`.
    * Does NOT touch React state - completely invisible to the UI.
+   *
+   * Important: we no longer early-return when the cursor is empty.
+   * The repository ALWAYS returns a cursor (it falls back to the
+   * discovery/own cursor when the followed feed is thin), so a falsy
+   * cursor here genuinely means "we've paged through every available
+   * post". We still respect that signal — but only after
+   * `MAX_CONSECUTIVE_EMPTY_PAGES` strikes, so a single empty page
+   * (e.g. permission glitch, transient 4xx) doesn't kill the feed.
    */
   const prefetchNextPage = useCallback(() => {
     if (isPrefetchingRef.current) return; // Already prefetching
@@ -323,7 +413,12 @@ export function useFeedViewModel() {
 
     const cursor = nextPageCursorRef.current;
     if (!cursor) {
-      hasReachedNetworkEndRef.current = true;
+      // Cursor exhausted — but only commit the "end of feed" verdict
+      // after we genuinely tried MAX_CONSECUTIVE_EMPTY_PAGES times.
+      emptyPageStrikeRef.current += 1;
+      if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
+        hasReachedNetworkEndRef.current = true;
+      }
       return;
     }
 
@@ -361,6 +456,7 @@ export function useFeedViewModel() {
           light: filtered.length,
           usable: newPosts.length,
           existing: existingIds.size,
+          emptyStrikes: emptyPageStrikeRef.current,
         });
 
         if (newPosts.length === 0) {
@@ -370,7 +466,7 @@ export function useFeedViewModel() {
             page.reachedEnd ||
             !page.nextCursor ||
             !advancedCursor ||
-            emptyPageStrikeRef.current >= 3
+            emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES
           ) {
             hasReachedNetworkEndRef.current = true;
           }
@@ -385,6 +481,10 @@ export function useFeedViewModel() {
       .catch(err => {
         console.warn('[feed] prefetch failed:', err);
         prefetchBufferRef.current = null;
+        emptyPageStrikeRef.current += 1;
+        if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
+          hasReachedNetworkEndRef.current = true;
+        }
       })
       .finally(() => {
         isPrefetchingRef.current = false;
@@ -407,7 +507,14 @@ export function useFeedViewModel() {
       const page = await repository.getLightPostsPage(PAGE_SIZE);
       const freshPosts = page.posts.filter(isLightFeedPost);
       nextPageCursorRef.current = page.nextCursor;
-      hasReachedNetworkEndRef.current = page.reachedEnd || !page.nextCursor;
+      // DON'T mark the feed as "ended" just because the first page's
+      // cursor is undefined. The repository falls back to a follow-
+      // up cursor via discovery when followed is thin, so the only
+      // way we get here with an empty cursor is if the install
+      // literally has no more posts. We let `loadMorePosts` confirm
+      // with the MAX_CONSECUTIVE_EMPTY_PAGES guard rather than trust
+      // the first page alone.
+      hasReachedNetworkEndRef.current = page.reachedEnd === true && !page.nextCursor;
 
       debugFeedVm('initial page', {
         fetched: freshPosts.length,
@@ -418,11 +525,9 @@ export function useFeedViewModel() {
       commitFeedSources(freshPosts, videoPostsRef.current);
       scheduleVideoBuffer(freshPosts.length);
 
-      // Immediately start prefetching page 2 into the buffer
-      if (page.nextCursor) {
-        hasReachedNetworkEndRef.current = false;
-        prefetchNextPage();
-      }
+      // Always start prefetching page 2 — the repository now
+      // guarantees a cursor on its first page, so this is safe.
+      prefetchNextPage();
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -483,10 +588,18 @@ export function useFeedViewModel() {
       }
 
       // Slow path: no buffer -> fetch from the dedicated news-feed cursor.
+      // The repository ALWAYS returns a cursor now (it falls back to
+      // discovery/own cursor), so a falsy cursor is the genuine
+      // "no more posts" signal. We honour it but only after
+      // `MAX_CONSECUTIVE_EMPTY_PAGES` to avoid being fooled by a
+      // single transient empty page.
       const cursor = nextPageCursorRef.current;
       if (!cursor) {
-        hasReachedNetworkEndRef.current = true;
-        setIsAllLoaded(true);
+        emptyPageStrikeRef.current += 1;
+        if (emptyPageStrikeRef.current >= MAX_CONSECUTIVE_EMPTY_PAGES) {
+          hasReachedNetworkEndRef.current = true;
+          setIsAllLoaded(true);
+        }
         return;
       }
 

@@ -9,3 +9,4 @@ export { useCreateFundingViewModel } from './application/view-models/useCreateFu
 export { default as FundingScreen } from './presentation/screens/FundingScreen';
 export { default as FundingDetailScreen } from './presentation/screens/FundingDetailScreen';
 export { default as CreateFundingScreen } from './presentation/screens/CreateFundingScreen';
+export { default as FeedFundingCarousel } from './presentation/components/FeedFundingCarousel';
