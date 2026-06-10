@@ -15,6 +15,16 @@ class MainActivity : ReactActivity() {
    */
   override fun getMainComponentName(): String = "VnseeaRn"
 
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    preferHighestRefreshRate()
+  }
+
+  override fun onResume() {
+    super.onResume()
+    preferHighestRefreshRate()
+  }
+
   /**
    * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
    * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
@@ -25,5 +35,36 @@ class MainActivity : ReactActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
+  private fun preferHighestRefreshRate() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+      return
+    }
+
+    val activeDisplay =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+          display
+        } else {
+          @Suppress("DEPRECATION")
+          windowManager.defaultDisplay
+        } ?: return
+
+    val currentMode = activeDisplay.mode ?: return
+    val bestMode =
+        activeDisplay.supportedModes
+            .filter {
+              it.physicalWidth == currentMode.physicalWidth &&
+                  it.physicalHeight == currentMode.physicalHeight
+            }
+            .maxByOrNull { it.refreshRate }
+            ?: return
+
+    if (bestMode.modeId == currentMode.modeId) {
+      return
+    }
+
+    window.attributes =
+        window.attributes.apply {
+          preferredDisplayModeId = bestMode.modeId
+        }
   }
 }

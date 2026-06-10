@@ -10,6 +10,12 @@ import type {
   FeedVideoPost,
 } from '../types/feed.types';
 
+export interface FeedPostsPage<TPost extends FeedPost = FeedPost> {
+  posts: TPost[];
+  nextCursor?: string;
+  reachedEnd: boolean;
+}
+
 export interface FeedRepository {
   /**
    * Fetch the unified home feed (videos + text/photo posts merged and
@@ -28,6 +34,16 @@ export interface FeedRepository {
    * first so the user sees content before heavier video/media pages finish.
    */
   getLightPosts(limit?: number, afterPostId?: string): Promise<FeedPost[]>;
+
+  /**
+   * Cursor-aware variant used by Home. The cursor is derived from the
+   * primary news-feed stream, not from the last rendered item, because
+   * Home mixes discovery/live/product/video cards into the visible list.
+   */
+  getLightPostsPage(
+    limit?: number,
+    afterPostId?: string,
+  ): Promise<FeedPostsPage>;
 
   getVideoPosts(limit?: number, afterPostId?: string): Promise<FeedVideoPost[]>;
 

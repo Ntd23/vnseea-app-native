@@ -38,6 +38,8 @@ export const ROUTES = {
   GROUP_DETAIL: 'GroupDetail',
   EVENTS: 'Events',
   FUNDING: 'Funding',
+  FUNDING_DETAIL: 'FundingDetail',
+  CREATE_FUNDING: 'CreateFunding',
   FOLLOWING: 'Following',
   BOOSTED: 'Boosted',
   POPULAR: 'Popular',

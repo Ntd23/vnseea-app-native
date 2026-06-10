@@ -6,11 +6,13 @@ import type {UserProfile} from '../../domain/types/settings.types';
 interface ProfileHeaderCardProps {
   profile: UserProfile | null;
   onPress?: () => void;
+  viewProfileLabel?: string;
 }
 
 export default function ProfileHeaderCard({
   profile,
   onPress,
+  viewProfileLabel = 'Xem hồ sơ',
 }: ProfileHeaderCardProps) {
   // Handle loading state - show skeleton or placeholder
   if (!profile) {
@@ -60,7 +62,9 @@ export default function ProfileHeaderCard({
       {/* Name + CTA */}
       <View className="flex-1">
         <Text className="text-heading">{profile.name}</Text>
-        <Text className="text-label-primary text-brand mt-1">Xem hồ sơ</Text>
+        <Text className="text-label-primary text-brand mt-1">
+          {viewProfileLabel}
+        </Text>
       </View>
 
       {/* Chevron */}

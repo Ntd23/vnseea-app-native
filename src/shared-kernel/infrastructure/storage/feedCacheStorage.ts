@@ -1,6 +1,8 @@
 import { createMMKV } from 'react-native-mmkv';
 import type { FeedPost, FeedVideoPost } from '../../../feed/domain/types/feed.types';
 import type { ProductItem } from '../../../product/domain/types/product.types';
+import type { PagesItem } from '../../../pages/domain/types/pages.types';
+import type { FundingItem } from '../../../funding/domain/types/funding.types';
 
 const storage = createMMKV({ id: 'vnseea-feed-cache' });
 
@@ -10,6 +12,8 @@ const POSTS_CACHE_KEY = 'feed.posts.page1';
 const VIDEOS_CACHE_KEY = 'feed.videos.page1';
 const PRODUCTS_CACHE_KEY = 'feed.products.page1';
 const EVENTS_CACHE_KEY = 'feed.events.page1';
+const PAGES_CACHE_KEY = 'feed.pages.page1';
+const FUNDING_CACHE_KEY = 'feed.funding.page1';
 
 export const feedCacheStorage = {
   getCachedPosts(): FeedPost[] {
@@ -92,10 +96,50 @@ export const feedCacheStorage = {
     }
   },
 
+  getCachedPages(): PagesItem[] {
+    try {
+      const json = storage.getString(PAGES_CACHE_KEY);
+      if (!json) return [];
+      return JSON.parse(json) as PagesItem[];
+    } catch (err) {
+      console.warn('Failed to parse cached pages:', err);
+      return [];
+    }
+  },
+
+  setCachedPages(pages: PagesItem[]) {
+    try {
+      storage.set(PAGES_CACHE_KEY, JSON.stringify(pages.slice(0, 12)));
+    } catch (err) {
+      console.warn('Failed to set cached pages:', err);
+    }
+  },
+
+  getCachedFunding(): FundingItem[] {
+    try {
+      const json = storage.getString(FUNDING_CACHE_KEY);
+      if (!json) return [];
+      return JSON.parse(json) as FundingItem[];
+    } catch (err) {
+      console.warn('Failed to parse cached funding:', err);
+      return [];
+    }
+  },
+
+  setCachedFunding(campaigns: FundingItem[]) {
+    try {
+      storage.set(FUNDING_CACHE_KEY, JSON.stringify(campaigns.slice(0, 10)));
+    } catch (err) {
+      console.warn('Failed to set cached funding:', err);
+    }
+  },
+
   clearAllCache() {
     storage.remove(POSTS_CACHE_KEY);
     storage.remove(VIDEOS_CACHE_KEY);
     storage.remove(PRODUCTS_CACHE_KEY);
     storage.remove(EVENTS_CACHE_KEY);
+    storage.remove(PAGES_CACHE_KEY);
+    storage.remove(FUNDING_CACHE_KEY);
   },
 };
