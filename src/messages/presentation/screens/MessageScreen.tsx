@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -18,19 +19,23 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
+  ChevronDown,
   Edit3,
   FileText,
   Film,
   ImageIcon,
   MessageCircle,
   Mic,
-  MoreVertical,
   Package,
   Phone,
   Search,
   Send,
+  Tag,
+  Trash2,
+  Upload,
   Users,
   Video,
+  X,
   Plus,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -43,6 +48,8 @@ import { useMessagesViewModel } from '../../application/view-models/useMessagesV
 import type {
   ChatItem,
   ChatPreviewKind,
+  MessageAttachment,
+  MessageLabel,
 } from '../../domain/types/messages.types';
 import { useStoriesViewModel } from '../../../stories';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -211,6 +218,27 @@ function UnreadBadge({ count }: { count: number }) {
   );
 }
 
+function ChatLabelBadges({ labels }: { labels?: MessageLabel[] }) {
+  if (!labels || labels.length === 0) return null;
+
+  return (
+    <View className="mt-1 flex-row items-center gap-1">
+      {labels.slice(0, 4).map(label => (
+        <View
+          key={label.id}
+          className="h-3 w-3 rounded border border-slate-200"
+          style={{ backgroundColor: label.color }}
+        />
+      ))}
+      {labels.length > 4 && (
+        <Text className="text-[10px] font-semibold text-slate-400">
+          +{labels.length - 4}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 function LastMessagePreviewIcon({ kind }: { kind?: ChatPreviewKind }) {
   if (kind === 'audio_call') return <Phone size={14} color="#2563EB" />;
   if (kind === 'video_call') return <Video size={14} color="#2563EB" />;
@@ -239,12 +267,14 @@ function ChatListItem({
   chat,
   onPress,
   onLongPress,
+  onOpenLabels,
   selectable = false,
   selected = false,
 }: {
   chat: ChatItem;
   onPress: (chat: ChatItem) => void;
   onLongPress?: (chat: ChatItem) => void;
+  onOpenLabels?: (chat: ChatItem) => void;
   selectable?: boolean;
   selected?: boolean;
 }) {
@@ -323,12 +353,19 @@ function ChatListItem({
           ) : (
             <View className="ml-2 flex-row items-center gap-2">
               <UnreadBadge count={chat.unreadCount} />
-              <TouchableOpacity className="p-1" activeOpacity={0.7}>
-                <MoreVertical size={18} color="#9ca3af" />
-              </TouchableOpacity>
+              {chat.chatType === 'user' && (
+                <TouchableOpacity
+                  className="rounded-full border border-slate-200 bg-white p-1"
+                  activeOpacity={0.7}
+                  onPress={() => onOpenLabels?.(chat)}
+                >
+                  <Tag size={15} color="#94a3b8" />
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </View>
+        <ChatLabelBadges labels={chat.labels} />
       </View>
     </TouchableOpacity>
   );
@@ -665,22 +702,268 @@ function StoriesBubbleRow() {
   );
 }
 
+type LabelSheetTab = 'assign' | 'manage';
+
+const DEFAULT_LABEL_COLOR = '#3b82f6';
+
+function hexOK(value: string) {
+  return /^#[0-9A-Fa-f]{6}$/.test(value || '');
+}
+
+function MessageLabelsModal({
+  visible,
+  chat,
+  labels,
+  isLoading,
+  onClose,
+  onCreate,
+  onDelete,
+  onAttach,
+  onDetach,
+}: {
+  visible: boolean;
+  chat: ChatItem | null;
+  labels: MessageLabel[];
+  isLoading: boolean;
+  onClose: () => void;
+  onCreate: (name: string, color: string) => Promise<boolean>;
+  onDelete: (labelId: string) => Promise<boolean>;
+  onAttach: (userId: string, labelId: string) => Promise<boolean>;
+  onDetach: (userId: string, labelId: string) => Promise<boolean>;
+}) {
+  const [activeTab, setActiveTab] = useState<LabelSheetTab>('assign');
+  const [labelName, setLabelName] = useState('');
+  const [labelColor, setLabelColor] = useState(DEFAULT_LABEL_COLOR);
+
+  const attachedLabelIds = useMemo(
+    () => new Set((chat?.labels ?? []).map(label => label.id)),
+    [chat?.labels],
+  );
+
+  const handleCreate = useCallback(async () => {
+    const color = hexOK(labelColor) ? labelColor : DEFAULT_LABEL_COLOR;
+    const created = await onCreate(labelName, color);
+    if (created) {
+      setLabelName('');
+      setLabelColor(DEFAULT_LABEL_COLOR);
+    }
+  }, [labelColor, labelName, onCreate]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View className="flex-1 justify-end bg-black/30">
+        <View className="max-h-[86%] rounded-t-3xl bg-white px-5 pb-6 pt-4">
+          <View className="mb-4 flex-row items-center justify-between">
+            <Text className="text-lg font-bold text-slate-900">
+              Message labels
+            </Text>
+            <TouchableOpacity
+              className="h-9 w-9 items-center justify-center rounded-full bg-slate-100"
+              onPress={onClose}
+            >
+              <X size={20} color="#334155" />
+            </TouchableOpacity>
+          </View>
+
+          <View className="mb-5 flex-row border-b border-slate-200">
+            {(
+              [
+                ['assign', 'Assign labels'],
+                ['manage', 'Manage labels'],
+              ] as const
+            ).map(([key, title]) => (
+              <TouchableOpacity
+                key={key}
+                className={`flex-1 items-center border-b-2 py-3 ${
+                  activeTab === key ? 'border-blue-500' : 'border-transparent'
+                }`}
+                onPress={() => setActiveTab(key)}
+              >
+                <Text
+                  className={`font-bold ${
+                    activeTab === key ? 'text-blue-600' : 'text-slate-500'
+                  }`}
+                >
+                  {title}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {activeTab === 'assign' ? (
+            <View>
+              <Text className="mb-3 text-base font-bold text-slate-900">
+                Your label list
+              </Text>
+              <View className="overflow-hidden rounded-xl border border-slate-200">
+                {labels.length === 0 ? (
+                  <Text className="px-4 py-5 text-center text-sm text-slate-500">
+                    No labels yet
+                  </Text>
+                ) : (
+                  labels.map(label => {
+                    const attached = attachedLabelIds.has(label.id);
+                    return (
+                      <View
+                        key={label.id}
+                        className="flex-row items-center border-b border-slate-100 px-4 py-3 last:border-b-0"
+                      >
+                        <View
+                          className="mr-3 h-4 w-4 rounded-full"
+                          style={{ backgroundColor: label.color }}
+                        />
+                        <Text className="flex-1 text-base font-semibold text-slate-700">
+                          {label.name}
+                        </Text>
+                        <TouchableOpacity
+                          className={`rounded-lg px-4 py-2 ${
+                            attached ? 'bg-slate-100' : 'bg-blue-500'
+                          }`}
+                          disabled={!chat || isLoading}
+                          onPress={() => {
+                            if (!chat) return;
+                            const action = attached ? onDetach : onAttach;
+                            action(chat.userId, label.id).catch(() => undefined);
+                          }}
+                        >
+                          <Text
+                            className={`font-bold ${
+                              attached ? 'text-slate-600' : 'text-white'
+                            }`}
+                          >
+                            {attached ? 'Remove' : 'Attach'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+              <Text className="mt-4 text-sm text-slate-500">
+                Tip: use Attach/Remove to apply labels to the current contact.
+              </Text>
+            </View>
+          ) : (
+            <View>
+              <Text className="mb-3 text-base font-bold text-slate-900">
+                Manage your labels
+              </Text>
+              <View className="mb-4 flex-row items-center gap-2">
+                <TextInput
+                  className="h-11 flex-1 rounded-lg border border-slate-300 px-3 text-base text-slate-900"
+                  placeholder="New label name"
+                  placeholderTextColor="#94a3b8"
+                  value={labelName}
+                  onChangeText={setLabelName}
+                />
+                <View
+                  className="h-11 w-12 rounded-lg border border-slate-300"
+                  style={{
+                    backgroundColor: hexOK(labelColor)
+                      ? labelColor
+                      : DEFAULT_LABEL_COLOR,
+                  }}
+                />
+                <TextInput
+                  className="h-11 w-28 rounded-lg border border-slate-300 px-3 text-base text-slate-900"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={7}
+                  placeholder="#RRGGBB"
+                  placeholderTextColor="#94a3b8"
+                  value={labelColor}
+                  onChangeText={setLabelColor}
+                />
+                <TouchableOpacity
+                  className={`h-11 justify-center rounded-lg px-4 ${
+                    labelName.trim() && !isLoading ? 'bg-blue-500' : 'bg-slate-300'
+                  }`}
+                  disabled={!labelName.trim() || isLoading}
+                  onPress={() => {
+                    handleCreate().catch(() => undefined);
+                  }}
+                >
+                  <Text className="font-bold text-white">Create</Text>
+                </TouchableOpacity>
+              </View>
+              <Text className="mb-4 text-xs text-slate-500">
+                Use a hex color like #3b82f6.
+              </Text>
+              <View className="overflow-hidden rounded-xl border border-slate-200">
+                {labels.length === 0 ? (
+                  <Text className="px-4 py-5 text-center text-sm text-slate-500">
+                    No labels yet
+                  </Text>
+                ) : (
+                  labels.map(label => (
+                    <View
+                      key={label.id}
+                      className="flex-row items-center border-b border-slate-100 px-4 py-3 last:border-b-0"
+                    >
+                      <View
+                        className="mr-3 h-4 w-4 rounded-full"
+                        style={{ backgroundColor: label.color }}
+                      />
+                      <Text className="flex-1 text-base font-semibold text-slate-700">
+                        {label.name}
+                      </Text>
+                      <TouchableOpacity
+                        className="rounded-lg bg-red-500 px-4 py-2"
+                        disabled={isLoading}
+                        onPress={() => {
+                          onDelete(label.id).catch(() => undefined);
+                        }}
+                      >
+                        <Text className="font-bold text-white">Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
+              </View>
+            </View>
+          )}
+
+          {isLoading && (
+            <View className="mt-4 flex-row justify-center">
+              <ActivityIndicator size="small" color="#2563eb" />
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // Main screen
 function MessageScreen() {
   const navigation = useNavigation<MessagesNav>();
   const {
     chats,
+    labels,
+    broadcastLabelId,
+    broadcastRecipients,
     isLoadingChats,
+    isLoadingLabels,
     error,
     loadChats,
     isSending,
     sendBulkMessages,
+    createLabel,
+    deleteLabel,
+    attachLabel,
+    detachLabel,
+    selectBroadcastLabel,
   } = useMessagesViewModel();
 
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<ChatFilter>('users');
   const [broadcastText, setBroadcastText] = useState('');
+  const [broadcastAttachment, setBroadcastAttachment] =
+    useState<MessageAttachment | null>(null);
+  const [showBroadcastLabelOptions, setShowBroadcastLabelOptions] =
+    useState(false);
+  const [labelTargetChat, setLabelTargetChat] = useState<ChatItem | null>(null);
   const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(
     new Set(),
   );
@@ -702,15 +985,40 @@ function MessageScreen() {
     }, [loadChats]),
   );
 
+  const broadcastRecipientChats = useMemo(
+    () =>
+      broadcastRecipients.map(recipient => ({
+        id: `user:${recipient.userId}`,
+        chatId: recipient.userId,
+        chatType: 'user' as const,
+        participantId: recipient.userId,
+        userId: recipient.userId,
+        username: recipient.username,
+        name: recipient.name || recipient.username || 'User',
+        avatar: recipient.avatar,
+        lastMessage: '',
+        lastMessageTime: 0,
+        unreadCount: 0,
+        isOnline: false,
+        isVerified: false,
+        labels: recipient.labels,
+      })),
+    [broadcastRecipients],
+  );
+
   const visibleChats = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('vi-VN');
+    const sourceChats =
+      activeFilter === 'broadcast' && broadcastLabelId
+        ? broadcastRecipientChats
+        : chats;
 
-    return chats.filter(chat => {
+    return sourceChats.filter(chat => {
       const matchesFilter =
         activeFilter === 'groups'
           ? chat.chatType === 'group'
           : activeFilter === 'broadcast'
-          ? chat.chatType === 'user'
+          ? Boolean(broadcastLabelId) && chat.chatType === 'user'
           : chat.chatType !== 'group';
       const matchesQuery =
         !normalizedQuery ||
@@ -720,7 +1028,22 @@ function MessageScreen() {
 
       return matchesFilter && matchesQuery;
     });
-  }, [activeFilter, chats, query]);
+  }, [activeFilter, broadcastLabelId, broadcastRecipientChats, chats, query]);
+
+  const selectedBroadcastLabel = useMemo(
+    () => labels.find(label => label.id === broadcastLabelId),
+    [broadcastLabelId, labels],
+  );
+
+  const currentLabelChat = useMemo(() => {
+    if (!labelTargetChat) return null;
+    return (
+      chats.find(
+        chat =>
+          chat.chatType === 'user' && chat.userId === labelTargetChat.userId,
+      ) ?? labelTargetChat
+    );
+  }, [chats, labelTargetChat]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -731,6 +1054,7 @@ function MessageScreen() {
   const handleChatPress = useCallback(
     (chat: ChatItem) => {
       if (activeFilter === 'broadcast') {
+        if (!broadcastLabelId) return;
         setSelectedRecipients(previous => {
           const next = new Set(previous);
 
@@ -747,17 +1071,62 @@ function MessageScreen() {
 
       navigation.navigate(ROUTES.CHAT, { chat });
     },
-    [activeFilter, navigation],
+    [activeFilter, broadcastLabelId, navigation],
   );
 
+  const handleSelectBroadcastLabel = useCallback(
+    async (labelId: string) => {
+      setShowBroadcastLabelOptions(false);
+      const recipients = await selectBroadcastLabel(labelId);
+      setSelectedRecipients(new Set(recipients.map(recipient => recipient.userId)));
+    },
+    [selectBroadcastLabel],
+  );
+
+  const handleToggleSelectAllRecipients = useCallback(() => {
+    const allIds = visibleChats.map(chat => chat.userId).filter(Boolean);
+    setSelectedRecipients(previous =>
+      previous.size === allIds.length ? new Set() : new Set(allIds),
+    );
+  }, [visibleChats]);
+
+  const handleChooseBroadcastImage = useCallback(async () => {
+    const mediaType: MediaType = 'photo';
+    const result = await launchImageLibrary({
+      mediaType,
+      selectionLimit: 1,
+      quality: 0.9,
+    });
+    const asset = result.assets?.[0];
+    if (!asset?.uri) return;
+
+    setBroadcastAttachment({
+      uri: asset.uri,
+      name: asset.fileName || `broadcast_${Date.now()}.jpg`,
+      type: asset.type || 'image/jpeg',
+      mediaType: 'image',
+    });
+  }, []);
+
   const handleSendBroadcast = useCallback(async () => {
-    const sent = await sendBulkMessages([...selectedRecipients], broadcastText);
+    const attachments = broadcastAttachment ? [broadcastAttachment] : [];
+    const sent = await sendBulkMessages(
+      [...selectedRecipients],
+      broadcastText,
+      attachments,
+    );
 
     if (sent) {
       setSelectedRecipients(new Set());
       setBroadcastText('');
+      setBroadcastAttachment(null);
     }
-  }, [broadcastText, selectedRecipients, sendBulkMessages]);
+  }, [broadcastAttachment, broadcastText, selectedRecipients, sendBulkMessages]);
+
+  const canSendBroadcast =
+    selectedRecipients.size > 0 &&
+    Boolean(broadcastText.trim() || broadcastAttachment) &&
+    !isSending;
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -783,32 +1152,143 @@ function MessageScreen() {
       <StoriesBubbleRow />
       <ChatFilters value={activeFilter} onChange={setActiveFilter} />
       {activeFilter === 'broadcast' && (
-        <View className="mx-4 mb-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
-          <Text className="mb-2 text-xs font-semibold text-gray-600">
-            Đã chọn {selectedRecipients.size} người
+        <View className="mx-4 mb-3 rounded-2xl border border-indigo-100 bg-white p-4">
+          <Text className="mb-2 text-xs font-bold uppercase text-slate-400">
+            Label
           </Text>
-          <View className="flex-row items-center">
-            <TextInput
-              className="mr-2 flex-1 rounded-lg bg-white px-3 py-2 text-sm text-gray-900"
-              placeholder="Nhập tin nhắn..."
-              placeholderTextColor="#9ca3af"
-              value={broadcastText}
-              onChangeText={setBroadcastText}
-            />
+          <TouchableOpacity
+            className="mb-2 flex-row items-center rounded-xl border border-indigo-200 px-3 py-3"
+            activeOpacity={0.8}
+            onPress={() => setShowBroadcastLabelOptions(previous => !previous)}
+          >
+            {selectedBroadcastLabel && (
+              <View
+                className="mr-2 h-3 w-3 rounded-full"
+                style={{ backgroundColor: selectedBroadcastLabel.color }}
+              />
+            )}
+            <Text className="flex-1 text-base text-slate-900">
+              {selectedBroadcastLabel?.name || 'Select label'}
+            </Text>
+            <ChevronDown size={18} color="#475569" />
+          </TouchableOpacity>
+
+          {showBroadcastLabelOptions && (
+            <View className="mb-3 overflow-hidden rounded-xl border border-slate-200">
+              {labels.length === 0 ? (
+                <Text className="px-3 py-3 text-sm text-slate-500">
+                  No labels yet
+                </Text>
+              ) : (
+                labels.map(label => (
+                  <TouchableOpacity
+                    key={label.id}
+                    className="flex-row items-center border-b border-slate-100 px-3 py-3 last:border-b-0"
+                    onPress={() => {
+                      handleSelectBroadcastLabel(label.id).catch(
+                        () => undefined,
+                      );
+                    }}
+                  >
+                    <View
+                      className="mr-2 h-3 w-3 rounded-full"
+                      style={{ backgroundColor: label.color }}
+                    />
+                    <Text className="flex-1 font-semibold text-slate-700">
+                      {label.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
+          )}
+
+          <View className="mb-2 flex-row items-center justify-between">
+            <Text className="text-xs font-bold uppercase text-slate-400">
+              Send to
+            </Text>
             <TouchableOpacity
-              className={`h-10 w-10 items-center justify-center rounded-full ${
-                selectedRecipients.size > 0 &&
-                broadcastText.trim() &&
-                !isSending
-                  ? 'bg-blue-600'
-                  : 'bg-gray-300'
+              className="flex-row items-center"
+              activeOpacity={0.8}
+              disabled={visibleChats.length === 0}
+              onPress={handleToggleSelectAllRecipients}
+            >
+              <View
+                className={`mr-2 h-5 w-5 items-center justify-center rounded ${
+                  visibleChats.length > 0 &&
+                  selectedRecipients.size === visibleChats.length
+                    ? 'bg-blue-600'
+                    : 'border border-slate-300 bg-white'
+                }`}
+              >
+                {visibleChats.length > 0 &&
+                  selectedRecipients.size === visibleChats.length && (
+                    <Check size={14} color="#ffffff" />
+                  )}
+              </View>
+              <Text className="text-xs font-bold text-slate-500">
+                Select all
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View className="mb-3 min-h-12 flex-row flex-wrap items-center gap-2 rounded-xl border border-indigo-100 px-3 py-2">
+            {visibleChats.length === 0 ? (
+              <Text className="text-sm text-slate-400">
+                Select a label to load recipients
+              </Text>
+            ) : (
+              visibleChats
+                .filter(chat => selectedRecipients.has(chat.userId))
+                .map(chat => (
+                  <TouchableOpacity
+                    key={chat.userId}
+                    className="flex-row items-center rounded-full bg-indigo-50 px-2 py-1"
+                    onPress={() => handleChatPress(chat)}
+                  >
+                    <UserAvatar uri={chat.avatar} name={chat.name} size={24} />
+                    <Text className="ml-1 max-w-[110px] text-xs font-semibold text-slate-600">
+                      {chat.name}
+                    </Text>
+                    <X size={13} color="#94a3b8" />
+                  </TouchableOpacity>
+                ))
+            )}
+          </View>
+
+          <TextInput
+            className="mb-3 min-h-20 border border-slate-300 px-3 py-2 text-base text-slate-900"
+            placeholder="Type your message"
+            placeholderTextColor="#94a3b8"
+            value={broadcastText}
+            multiline
+            textAlignVertical="top"
+            onChangeText={setBroadcastText}
+          />
+
+          <TouchableOpacity
+            className="mb-3 items-center justify-center rounded-2xl border border-indigo-100 py-3"
+            activeOpacity={0.8}
+            onPress={() => {
+              handleChooseBroadcastImage().catch(() => undefined);
+            }}
+          >
+            <View className="mb-2 h-9 w-9 items-center justify-center rounded-full bg-slate-100">
+              <Upload size={18} color="#64748b" />
+            </View>
+            <Text className="font-semibold text-slate-900">
+              {broadcastAttachment?.name || 'Choose file...'}
+            </Text>
+            <Text className="mt-1 text-sm text-slate-500">Optional</Text>
+          </TouchableOpacity>
+
+          <View className="items-end border-t border-slate-100 pt-3">
+            <TouchableOpacity
+              className={`flex-row items-center rounded-full px-5 py-3 ${
+                canSendBroadcast ? 'bg-blue-600' : 'bg-gray-300'
               }`}
               activeOpacity={0.8}
-              disabled={
-                selectedRecipients.size === 0 ||
-                !broadcastText.trim() ||
-                isSending
-              }
+              disabled={!canSendBroadcast}
               onPress={() => {
                 handleSendBroadcast().catch(() => undefined);
               }}
@@ -816,7 +1296,12 @@ function MessageScreen() {
               {isSending ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
-                <Send size={17} color="#ffffff" />
+                <>
+                  <Send size={17} color="#ffffff" />
+                  <Text className="ml-2 font-bold text-white">
+                    Send message
+                  </Text>
+                </>
               )}
             </TouchableOpacity>
           </View>
@@ -831,11 +1316,12 @@ function MessageScreen() {
         <FlatList
           data={visibleChats}
           keyExtractor={item => item.id}
-          extraData={`${activeFilter}:${selectedRecipients.size}:${query}`}
+          extraData={`${activeFilter}:${selectedRecipients.size}:${query}:${labels.length}:${broadcastLabelId}`}
           renderItem={({ item }) => (
             <ChatListItem
               chat={item}
               onPress={handleChatPress}
+              onOpenLabels={chat => setLabelTargetChat(chat)}
               selectable={activeFilter === 'broadcast'}
               selected={selectedRecipients.has(item.userId)}
             />
@@ -858,22 +1344,36 @@ function MessageScreen() {
         />
       )}
 
-      <View className="absolute bottom-6 right-6">
-        <TouchableOpacity
-          className="h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-lg"
-          activeOpacity={0.85}
-          onPress={() => navigation.navigate(ROUTES.CREATE_GROUP_CHAT)}
-          style={{
-            shadowColor: '#2563eb',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 8,
-          }}
-        >
-          <Users size={24} color="#ffffff" />
-        </TouchableOpacity>
-      </View>
+      {activeFilter !== 'broadcast' && (
+        <View className="absolute bottom-6 right-6">
+          <TouchableOpacity
+            className="h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-lg"
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate(ROUTES.CREATE_GROUP_CHAT)}
+            style={{
+              shadowColor: '#2563eb',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 8,
+            }}
+          >
+            <Users size={24} color="#ffffff" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <MessageLabelsModal
+        visible={Boolean(currentLabelChat)}
+        chat={currentLabelChat}
+        labels={labels}
+        isLoading={isLoadingLabels}
+        onClose={() => setLabelTargetChat(null)}
+        onCreate={createLabel}
+        onDelete={deleteLabel}
+        onAttach={attachLabel}
+        onDetach={detachLabel}
+      />
     </SafeAreaView>
   );
 }

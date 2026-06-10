@@ -1,20 +1,25 @@
 // Description: Builds high-priority Android call notifications with a full-screen intent.
 package com.vnseearn.call
 
+import android.app.KeyguardManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.vnseearn.MainActivity
 import com.vnseearn.R
 import org.json.JSONObject
 
 object LiveKitCallNotifier {
-  private const val CHANNEL_ID = "vnseea_calls"
+  private const val CHANNEL_ID = "vnseea_calls_fullscreen_v3"
 
   fun show(context: Context, data: JSONObject) {
+    Log.i("LiveKitCallPush", "build notification call_id=${data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)} event_type=${data.optString(LiveKitCallNativeActions.EXTRA_EVENT_TYPE)}")
     val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       manager.createNotificationChannel(
@@ -26,6 +31,14 @@ object LiveKitCallNotifier {
           description = "Incoming VNSEEA calls"
           lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
           enableVibration(true)
+          vibrationPattern = longArrayOf(0, 700, 350, 700)
+          setSound(
+            null,
+            AudioAttributes.Builder()
+              .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+              .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+              .build(),
+          )
         },
       )
     }
@@ -33,7 +46,10 @@ object LiveKitCallNotifier {
     val callId = data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)
     val notificationId = callId.hashCode()
     val fullScreenIntent = Intent(context, IncomingCallActivity::class.java).apply {
-      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+      flags =
+        Intent.FLAG_ACTIVITY_NEW_TASK or
+          Intent.FLAG_ACTIVITY_CLEAR_TOP or
+          Intent.FLAG_ACTIVITY_SINGLE_TOP
       copyCallExtras(data, this)
     }
     val fullScreenPendingIntent = PendingIntent.getActivity(
@@ -42,7 +58,11 @@ object LiveKitCallNotifier {
       fullScreenIntent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
-    val answerIntent = Intent(context, LiveKitCallActionReceiver::class.java).apply {
+    val answerActivityIntent = Intent(context, MainActivity::class.java).apply {
+      flags =
+        Intent.FLAG_ACTIVITY_NEW_TASK or
+          Intent.FLAG_ACTIVITY_CLEAR_TOP or
+          Intent.FLAG_ACTIVITY_SINGLE_TOP
       copyCallExtras(data, this)
       putExtra(LiveKitCallNativeActions.EXTRA_NATIVE_ACTION, "answer")
     }
@@ -73,7 +93,9 @@ object LiveKitCallNotifier {
       .setOngoing(true)
       .setAutoCancel(false)
       .setTimeoutAfter(43_000)
+      .setContentIntent(fullScreenPendingIntent)
       .setFullScreenIntent(fullScreenPendingIntent, true)
+      .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
       .addAction(
         0,
         "Decline",
@@ -87,16 +109,29 @@ object LiveKitCallNotifier {
       .addAction(
         0,
         "Answer",
-        PendingIntent.getBroadcast(
+        PendingIntent.getActivity(
           context,
           notificationId + 2,
-          answerIntent,
+          answerActivityIntent,
           PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         ),
       )
       .build()
 
     manager.notify(notificationId, notification)
+    Log.i("LiveKitCallPush", "notification posted id=$notificationId")
+    maybeLaunchFullScreen(context, fullScreenIntent)
+  }
+
+  private fun maybeLaunchFullScreen(context: Context, intent: Intent) {
+    val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+    val isLocked = keyguardManager?.isKeyguardLocked == true
+    try {
+      context.startActivity(intent)
+      Log.i("LiveKitCallPush", "activity launched directly locked=$isLocked sdk=${Build.VERSION.SDK_INT}")
+    } catch (error: Throwable) {
+      Log.w("LiveKitCallPush", "activity launch failed ${error.message}")
+    }
   }
 
   private fun copyCallExtras(data: JSONObject, intent: Intent) {
@@ -106,6 +141,8 @@ object LiveKitCallNotifier {
       LiveKitCallNativeActions.EXTRA_CALL_TYPE,
       LiveKitCallNativeActions.EXTRA_ROOM_NAME,
       LiveKitCallNativeActions.EXTRA_FROM_ID,
+      "initiator_id",
+      "receiver_id",
       LiveKitCallNativeActions.EXTRA_GROUP_ID,
       LiveKitCallNativeActions.EXTRA_GROUP_NAME,
       LiveKitCallNativeActions.EXTRA_GROUP_AVATAR,

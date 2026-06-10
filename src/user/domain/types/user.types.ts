@@ -50,6 +50,9 @@ export type UserProfile = UserSummary & {
   distance?: string | number;
   geoInfo?: unknown;
   notificationSettings?: Record<string, unknown>;
+  twoFactor?: boolean;
+  twoFactorVerified?: boolean;
+  twoFactorMethod?: string;
   privacy?: {
     message?: UserPrivacyValue;
     follow?: UserPrivacyValue;
@@ -64,6 +67,12 @@ export type UserProfile = UserSummary & {
     shareLocation?: UserPrivacyValue;
     shareData?: UserPrivacyValue;
   };
+};
+
+export type UserUploadFile = {
+  uri: string;
+  name: string;
+  type: string;
 };
 
 export type UserProfileFetch = {
@@ -196,7 +205,24 @@ export type UpdateCurrentUserInput = Partial<{
   workingLink: string;
   address: string;
   school: string;
+  schoolCompleted: boolean;
   relationshipId: string;
+  currentPassword: string;
+  newPassword: string;
+  avatar: UserUploadFile;
+  cover: UserUploadFile;
+  twoFactor: string;
+  emailLiked: boolean;
+  emailShared: boolean;
+  emailWondered: boolean;
+  emailCommented: boolean;
+  emailFollowed: boolean;
+  emailLikedPage: boolean;
+  emailVisited: boolean;
+  emailMentioned: boolean;
+  emailJoinedGroup: boolean;
+  emailAccepted: boolean;
+  emailProfileWallPost: boolean;
   messagePrivacy: UserPrivacyValue;
   followPrivacy: UserPrivacyValue;
   friendPrivacy: UserPrivacyValue;

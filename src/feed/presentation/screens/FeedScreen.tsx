@@ -129,6 +129,7 @@ import {
   useStoriesViewModel,
 } from '../../../stories';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
+import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
@@ -253,6 +254,7 @@ const Avatar = React.memo(function Avatar({ uri, size = 40 }: { uri: string; siz
 
 function FeedHeader() {
   const navigation = useNavigation<FeedNav>();
+  const { messageCount } = useUnreadBadgeCounts();
   const [sheetVisible, setSheetVisible] = useState(false);
   // Rotation animation for the + button (transforms to X when open)
   const [buttonRotation, setButtonRotation] = useState('0deg');
@@ -335,6 +337,13 @@ function FeedHeader() {
           </TouchableOpacity>
           <IconButton onPress={() => navigation.navigate(ROUTES.MESSAGES)}>
             <MessageCircle size={22} color="#0000FF" />
+            {messageCount > 0 && (
+              <View className="absolute -right-1 -top-1 min-h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1">
+                <Text className="text-[10px] font-bold text-white">
+                  {messageCount > 99 ? '99+' : messageCount}
+                </Text>
+              </View>
+            )}
           </IconButton>
         </View>
       </View>

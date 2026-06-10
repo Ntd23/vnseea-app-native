@@ -59,74 +59,83 @@ if ($is_status_request) {
         );
     }
 }
-elseif (empty($_POST['name'])) {
-    $error_code    = 3;
-    $error_message = 'name (POST) is missing';
-}
-elseif (empty($_POST['text'])) {
-    $error_code    = 4;
-    $error_message = 'text (POST) is missing';
-}
-elseif (empty($_FILES['passport'])) {
-    $error_code    = 5;
-    $error_message = 'passport (POST) is missing';
-}
-elseif (empty($_FILES['photo'])) {
-    $error_code    = 6;
-    $error_message = 'photo (POST) is missing';
-}
-elseif (strlen($_POST['name']) < 5 || strlen($_POST['name']) > 50) {
-    $error_code    = 7;
-    $error_message = 'name must be between 5 / 50';
-}
-elseif (!file_exists($_FILES['passport']['tmp_name']) || !file_exists($_FILES['photo']['tmp_name'])) {
-    $error_code    = 8;
-    $error_message = 'images can not be empty';
-}
 else {
-    if (file_exists($_FILES["passport"]["tmp_name"])) {
-        $image = getimagesize($_FILES["passport"]["tmp_name"]);
-        if (empty($image) || !in_array($image[2], $allowed_image_types)) {
-            $error_code    = 9;
-            $error_message = 'The passport/id picture must be an image';
+    $verification_type = (!empty($_POST['verification_type']) && $_POST['verification_type'] == 'shop') ? 'shop' : 'user';
+    $is_shop_request = ($verification_type == 'shop');
+    $request_name = !empty($_POST['name']) ? $_POST['name'] : (!empty($_POST['full_name']) ? $_POST['full_name'] : '');
+    $request_message = $is_shop_request ? (!empty($_POST['text_shop']) ? $_POST['text_shop'] : '') : (!empty($_POST['text']) ? $_POST['text'] : 'Verification request');
+    $required_files = $is_shop_request ? array('passport', 'photo', 'shop_image', 'license') : array('passport', 'photo');
+
+    if (empty($request_name)) {
+        $error_code    = 3;
+        $error_message = 'name (POST) is missing';
+    }
+    elseif (empty($request_message)) {
+        $error_code    = 4;
+        $error_message = $is_shop_request ? 'text_shop (POST) is missing' : 'text (POST) is missing';
+    }
+    elseif (strlen($request_name) < 5 || strlen($request_name) > 50) {
+        $error_code    = 7;
+        $error_message = 'name must be between 5 / 50';
+    }
+    else {
+        foreach ($required_files as $file_key) {
+            if (empty($_FILES[$file_key]) || !file_exists($_FILES[$file_key]['tmp_name'])) {
+                $error_code    = 8;
+                $error_message = $file_key . ' (POST) is missing or empty';
+                break;
+            }
         }
     }
 
-    if (file_exists($_FILES["photo"]["tmp_name"])) {
-        $image = getimagesize($_FILES["photo"]["tmp_name"]);
-        if (empty($image) || !in_array($image[2], $allowed_image_types)) {
-            $error_code    = 10;
-            $error_message = 'The user picture must be an image';
+    if (empty($error_code)) {
+        foreach ($required_files as $file_key) {
+            $file_type = !empty($_FILES[$file_key]['type']) ? $_FILES[$file_key]['type'] : '';
+            if ($file_key == 'license' && $file_type == 'application/pdf') {
+                continue;
+            }
+            $image = getimagesize($_FILES[$file_key]["tmp_name"]);
+            if (empty($image) || !in_array($image[2], $allowed_image_types)) {
+                $error_code    = ($file_key == 'passport') ? 9 : 10;
+                $error_message = ($file_key == 'passport') ? 'The passport/id picture must be an image' : 'The uploaded document must be an image';
+                break;
+            }
         }
     }
 
     if (empty($error_code)) {
         $registration_data = array(
             'user_id' => $wo['user']['id'],
-            'message' => Wo_Secure($_POST['text']),
-            'user_name' => Wo_Secure($_POST['name']),
+            'message' => Wo_Secure($request_message),
+            'user_name' => Wo_Secure($request_name),
             'passport' => '',
             'photo' => '',
-            'type' => 'User',
+            'type' => $is_shop_request ? 'Shop' : 'User',
             'seen' => 0
         );
+        if (!$is_shop_request) {
+            $registration_data['dob'] = !empty($_POST['dob']) ? Wo_Secure($_POST['dob']) : '';
+            $registration_data['cccd'] = !empty($_POST['cccd']) ? Wo_Secure($_POST['cccd']) : '';
+        }
+        if ($is_shop_request) {
+            $registration_data['shop_image'] = '';
+            $registration_data['license'] = '';
+        }
         $last_id = Wo_SendVerificationRequest($registration_data);
         if ($last_id && is_numeric($last_id)) {
-            $files = array(
-                'passport' => $_FILES,
-                'photo' => $_FILES
-            );
             $update_data = array();
-            foreach ($files as $key => $file) {
+            foreach ($required_files as $key) {
                 $fileInfo = array(
-                    'file' => $file[$key]["tmp_name"],
-                    'name' => $file[$key]['name'],
-                    'size' => $file[$key]["size"],
-                    'type' => $file[$key]["type"],
-                    'types' => 'jpg,jpeg,png,bmp,gif,webp'
+                    'file' => $_FILES[$key]["tmp_name"],
+                    'name' => $_FILES[$key]['name'],
+                    'size' => $_FILES[$key]["size"],
+                    'type' => $_FILES[$key]["type"],
+                    'types' => ($key == 'license' ? 'jpg,jpeg,png,bmp,gif,webp,pdf' : 'jpg,jpeg,png,bmp,gif,webp')
                 );
                 $media = Wo_ShareFile($fileInfo);
-                $update_data[$key] = $media['filename'];
+                if (!empty($media['filename'])) {
+                    $update_data[$key] = $media['filename'];
+                }
             }
             if (Wo_UpdateVerificationRequest($last_id, $update_data)) {
                 $response_data = array(

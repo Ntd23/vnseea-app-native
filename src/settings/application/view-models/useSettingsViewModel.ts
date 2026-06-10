@@ -191,7 +191,6 @@ const MOCK_SETTINGS: SettingsMenuItem[] = [
   { id: 'privacy', label: 'Quyền riêng tư', iconKey: 'Lock' },
   { id: 'notifications', label: 'Thông báo', iconKey: 'Bell' },
   { id: 'invite', label: 'Link mời', iconKey: 'Link' },
-  { id: 'my-info', label: 'Thông tin của tôi', iconKey: 'Info' },
   { id: 'address', label: 'Địa chỉ', iconKey: 'MapPin' },
   { id: 'earnings', label: 'Thu nhập', iconKey: 'Wallet' },
   { id: 'help', label: 'Hỗ trợ & Trợ giúp', iconKey: 'HelpCircle' },

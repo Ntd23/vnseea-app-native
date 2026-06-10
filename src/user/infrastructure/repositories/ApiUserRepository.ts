@@ -104,6 +104,10 @@ type FriendsResponse = ApiEnvelope & {
   };
 };
 
+function hasUploadFile(payload: Record<string, unknown>) {
+  return Boolean(payload.avatar || payload.cover);
+}
+
 function mapUserList(records: RawApiRecord[] | undefined): UserProfile[] {
   return (records ?? []).map(record =>
     mapUserProfile(record, apiConfig.webBaseUrl),
@@ -458,10 +462,16 @@ export function createUserRepository(): UserRepository {
     },
 
     async updateCurrentUser(input: UpdateCurrentUserInput) {
-      const response = await apiBridge.post<UpdateUserResponse>(
-        apiRoutes.user.update,
-        toUpdateCurrentUserPayload(input),
-      );
+      const payload = toUpdateCurrentUserPayload(input);
+      const response = hasUploadFile(payload)
+        ? await apiBridge.multipart<UpdateUserResponse>(
+            apiRoutes.user.update,
+            payload,
+          )
+        : await apiBridge.post<UpdateUserResponse>(
+            apiRoutes.user.update,
+            payload,
+          );
 
       return {
         message: response.message,

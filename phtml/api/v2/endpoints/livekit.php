@@ -393,7 +393,6 @@ function Wo_ApiLiveKitSendCallPush($recipient, $caller, $call_id, $call_type, $r
         'send_immediately' => true,
         'request_data' => array(
             'priority' => 10,
-            'android_channel_id' => 'vnseea_calls',
             'ttl' => 45,
             'collapse_id' => 'livekit_call_' . $call_type . '_' . $call_id
         )

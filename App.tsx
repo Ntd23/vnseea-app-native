@@ -9,6 +9,7 @@ import {
   LiveKitCallSessionProvider,
   LiveKitMiniCallBar,
 } from './src/messages';
+import { requestCallStartupPermissions } from './src/shared-kernel/application/permissions/callStartupPermissions';
 import { initializePushNotifications } from './src/shared-kernel/infrastructure/push/oneSignalPush';
 
 // GestureHandlerRootView must wrap the entire app tree for any
@@ -17,6 +18,7 @@ import { initializePushNotifications } from './src/shared-kernel/infrastructure/
 function App() {
   useEffect(() => {
     initializePushNotifications();
+    requestCallStartupPermissions();
   }, []);
 
   return (

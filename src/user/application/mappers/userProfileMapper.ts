@@ -126,6 +126,9 @@ export function mapUserProfile(
     distance: stringNumberOrNull(record.distance) ?? undefined,
     geoInfo: record.user_geoinfo,
     notificationSettings: mapNotificationSettings(record.notification_settings),
+    twoFactor: firstBoolean(record, ['two_factor']),
+    twoFactorVerified: firstBoolean(record, ['two_factor_verified']),
+    twoFactorMethod: firstString(record, ['two_factor_method']),
     privacy: mapPrivacy(record),
   };
 }
