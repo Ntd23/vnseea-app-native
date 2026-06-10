@@ -41,6 +41,7 @@ export interface FeatureGridItem {
 export interface SettingsMenuItem {
   id: string;
   label: string;
+  subtitle?: string;
   iconKey: string;
   isDestructive?: boolean;
 }

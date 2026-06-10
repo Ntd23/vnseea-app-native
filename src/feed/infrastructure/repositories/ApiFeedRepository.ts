@@ -25,7 +25,10 @@ import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { reelsReactionsStorage } from '../../../reels/infrastructure/storage/reelsReactionsStorage';
-import type { FeedRepository } from '../../domain/repositories/FeedRepository';
+import type {
+  FeedPostsPage,
+  FeedRepository,
+} from '../../domain/repositories/FeedRepository';
 import type {
   CreatePostDraft,
   CreatePostResult,
@@ -205,16 +208,6 @@ function looksLikePoll(raw: Record<string, unknown>): boolean {
   // Poll posts have poll_id = 1 and options array
   const pollId = readNumber(raw, 'poll_id');
   const hasOptions = Array.isArray(raw.options) && (raw.options as unknown[]).length > 0;
-
-  // Debug: log poll detection
-  if (pollId === 1 || hasOptions) {
-    console.log('[feed] Poll detected:', {
-      pollId,
-      hasOptions,
-      postId: readString(raw, 'id', 'post_id'),
-      optionsCount: Array.isArray(raw.options) ? (raw.options as unknown[]).length : 0,
-    });
-  }
 
   return pollId === 1 || hasOptions;
 }
@@ -820,10 +813,34 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
 // Module-level cache for suggested users to ensure consistent pagination
 let cachedSuggestedUserIds: string[] = [];
 
+const FEED_REPOSITORY_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;
+
+type RawFeedPostsPage = {
+  posts: Array<Record<string, unknown>>;
+  nextCursor?: string;
+  primaryCount: number;
+};
+
+function debugFeedRepository(
+  label: string,
+  payload: Record<string, unknown>,
+) {
+  if (!FEED_REPOSITORY_DEBUG) return;
+  console.log(`[feed.repository] ${label}`, payload);
+}
+
+function getOldestRawPostId(posts: Array<Record<string, unknown>>): string | undefined {
+  const ids = posts
+    .map(item => Number(readString(item, 'id', 'post_id')))
+    .filter(id => Number.isFinite(id) && id > 0);
+  if (ids.length === 0) return undefined;
+  return String(Math.min(...ids));
+}
+
 async function fetchRawFeedPosts(
   limit: number,
   afterPostId?: string,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<RawFeedPostsPage> {
   const tryFetch = async (
     payload: Record<string, unknown>,
   ): Promise<Array<Record<string, unknown>>> => {
@@ -833,26 +850,7 @@ async function fetchRawFeedPosts(
         data?: Array<Record<string, unknown>>;
       }>(apiRoutes.feed.posts, payload);
 
-      // DEBUG: log raw response from backend
-      const rawData = response.data ?? [];
-      const rawIds = rawData.map(p => String(
-        (p as { id?: unknown; post_id?: unknown }).id ??
-        (p as { id?: unknown; post_id?: unknown }).post_id ?? '',
-      ));
-      const uniqueRawIds = new Set(rawIds.filter(Boolean));
-      console.log('[FEED DEBUG] ApiFeedRepository:tryFetch', {
-        payload,
-        responseStatus: response.api_status,
-        rawCount: rawData.length,
-        uniqueIdsCount: uniqueRawIds.size,
-        hasInternalDuplicates: rawData.length !== uniqueRawIds.size,
-        duplicateIds: rawIds.filter((id, idx) => rawIds.indexOf(id) !== idx),
-        firstFewIds: rawIds.slice(0, 5),
-        firstFewTimes: rawData.slice(0, 5).map(p => (p as { time?: unknown }).time),
-        timestamp: Date.now(),
-      });
-
-      return rawData;
+      return response.data ?? [];
     } catch {
       // One stream failing should never blank the whole feed — return
       // empty and let the other streams populate the UI.
@@ -933,15 +931,16 @@ async function fetchRawFeedPosts(
       return [];
     }
 
-    // Slice up to 12 suggested users to expand the discovery pool size
-    const ids = cachedSuggestedUserIds.slice(0, 12);
+    // Keep discovery small enough for smooth scrolling while still adding
+    // non-local authors to accounts whose home feed is sparse.
+    const ids = cachedSuggestedUserIds.slice(0, 8);
 
     const perUser = await Promise.all(
       ids.map(id =>
         tryFetch({
           type: 'get_user_posts',
           id,
-          limit: 5,
+          limit: 3,
           after_post_id: afterPostId,
         }),
       ),
@@ -952,20 +951,34 @@ async function fetchRawFeedPosts(
   };
 
   const sessionUserId = sessionStorage.getSession()?.userId;
+  const ownPostsLimit = sessionUserId
+    ? afterPostId
+      ? Math.max(2, Math.min(4, Math.ceil(limit / 8)))
+      : Math.max(3, Math.min(6, Math.ceil(limit / 5)))
+    : 0;
 
-  // 1. Fetch followed feed and own feed in parallel first
+  // 1. Fetch followed feed and a small own-post fallback in parallel.
+  // Own posts must not dominate Home; discovery fills the social mix.
   const [followedRaw, ownRaw] = await Promise.all([
     tryFetch({ type: 'get_news_feed', limit, after_post_id: afterPostId }),
     sessionUserId
-      ? tryFetch({ type: 'get_user_posts', id: sessionUserId, limit, after_post_id: afterPostId })
+      ? tryFetch({
+          type: 'get_user_posts',
+          id: sessionUserId,
+          limit: ownPostsLimit,
+          after_post_id: afterPostId,
+        })
       : Promise.resolve<Array<Record<string, unknown>>>([]),
   ]);
 
-  // 2. Fetch discovery posts if the primary followed/own streams don't return enough posts,
-  // or if we are paging but the followed/own streams are empty.
+  // 2. Fetch discovery when followed feed is thin, when paging, or when the
+  // current user's posts would otherwise visually dominate the page.
   let discoveryRaw: Array<Record<string, unknown>> = [];
-  const localPostsCount = followedRaw.length + ownRaw.length;
-  if (localPostsCount < 8) {
+  const shouldFetchDiscovery = afterPostId
+    ? followedRaw.length < Math.ceil(limit * 0.35)
+    : followedRaw.length < Math.ceil(limit * 0.9) ||
+      ownRaw.length > followedRaw.length;
+  if (shouldFetchDiscovery) {
     discoveryRaw = await fetchDiscoveryPosts(afterPostId);
   }
 
@@ -973,11 +986,19 @@ async function fetchRawFeedPosts(
   const seen = new Set<string>();
   const merged: Array<Record<string, unknown>> = [];
   let pageAdIncluded = false;
-  const droppedByCrossStream: string[] = [];
-  for (const list of [followedRaw, ownRaw, discoveryRaw]) {
+  let ownPostsIncluded = 0;
+  for (const list of [followedRaw, discoveryRaw, ownRaw]) {
     for (const post of list) {
       const isAd = looksLikeAd(post);
       if (isAd && pageAdIncluded) continue;
+      const ownerId = readPostOwnerId(post);
+      if (
+        sessionUserId &&
+        ownerId === String(sessionUserId) &&
+        ownPostsIncluded >= ownPostsLimit
+      ) {
+        continue;
+      }
       const id = String(
         isAd
           ? rawPostKey(post)
@@ -985,30 +1006,33 @@ async function fetchRawFeedPosts(
               (post as { id?: unknown; post_id?: unknown }).post_id ??
               '',
       );
-      if (!id || seen.has(id)) {
-        if (id) droppedByCrossStream.push(id);
-        continue;
-      }
+      if (!id || seen.has(id)) continue;
       seen.add(id);
       merged.push(post);
       if (isAd) pageAdIncluded = true;
+      if (sessionUserId && ownerId === String(sessionUserId)) {
+        ownPostsIncluded += 1;
+      }
     }
   }
 
-  // DEBUG: log merge result across 3 streams
-  console.log('[FEED DEBUG] ApiFeedRepository:merge-streams', {
-    cursor: afterPostId,
-    followedCount: followedRaw.length,
-    ownCount: ownRaw.length,
-    discoveryCount: discoveryRaw.length,
-    totalRawSum: followedRaw.length + ownRaw.length + discoveryRaw.length,
-    afterMergeUnique: merged.length,
-    droppedByCrossStream: droppedByCrossStream.length,
-    crossStreamDupIds: Array.from(new Set(droppedByCrossStream)).slice(0, 20),
-    timestamp: Date.now(),
+  debugFeedRepository('raw streams merged', {
+    afterPostId: afterPostId ?? 'first',
+    requestedLimit: limit,
+    followed: followedRaw.length,
+    own: ownRaw.length,
+    ownLimit: ownPostsLimit,
+    discovery: discoveryRaw.length,
+    merged: merged.length,
   });
 
-  return merged;
+  return {
+    posts: merged,
+    nextCursor:
+      getOldestRawPostId(followedRaw) ??
+      getOldestRawPostId([...discoveryRaw, ...ownRaw]),
+    primaryCount: followedRaw.length,
+  };
 }
 
 function mixAdsIntoPosts(posts: FeedPost[]): FeedPost[] {
@@ -1040,6 +1064,20 @@ function mixAdsIntoPosts(posts: FeedPost[]): FeedPost[] {
   return mixed.sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
 }
 
+function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
+  const posts: FeedPost[] = [];
+  for (const item of raw) {
+    if (looksLikeAd(item)) {
+      posts.push(mapAdPost(item));
+    } else if (looksLikePoll(item)) {
+      posts.push(mapPollPost(item));
+    } else if (looksLikeTextOrPhoto(item)) {
+      posts.push(mapTextPost(item));
+    }
+  }
+  return posts;
+}
+
 export function createFeedRepository(): FeedRepository {
   return {
     /**
@@ -1056,9 +1094,9 @@ export function createFeedRepository(): FeedRepository {
      * ever changes (and so optimistic prepend stays consistent).
      */
     async getAllPosts(limit = 20, afterPostId?: string): Promise<FeedPost[]> {
-      const raw = await fetchRawFeedPosts(limit, afterPostId);
+      const page = await fetchRawFeedPosts(limit, afterPostId);
       const posts: FeedPost[] = [];
-      for (const item of raw) {
+      for (const item of page.posts) {
         if (looksLikeAd(item)) {
           posts.push(mapAdPost(item));
         } else if (looksLikeVideo(item)) {
@@ -1076,9 +1114,12 @@ export function createFeedRepository(): FeedRepository {
     },
 
     async getLightPosts(limit = 20, afterPostId?: string): Promise<FeedPost[]> {
-      const raw = await fetchRawFeedPosts(limit * 2, afterPostId);
+      const page = await fetchRawFeedPosts(
+        Math.max(limit, Math.ceil(limit * 1.5)),
+        afterPostId,
+      );
       const posts: FeedPost[] = [];
-      for (const item of raw) {
+      for (const item of page.posts) {
         if (looksLikeAd(item)) {
           posts.push(mapAdPost(item));
         } else if (looksLikePoll(item)) {
@@ -1090,14 +1131,33 @@ export function createFeedRepository(): FeedRepository {
       return mixAdsIntoPosts(posts).slice(0, limit);
     },
 
+    async getLightPostsPage(
+      limit = 20,
+      afterPostId?: string,
+    ): Promise<FeedPostsPage> {
+      const page = await fetchRawFeedPosts(
+        Math.max(limit, Math.ceil(limit * 1.5)),
+        afterPostId,
+      );
+      const posts = mixAdsIntoPosts(mapLightRawFeedPosts(page.posts)).slice(0, limit);
+      return {
+        posts,
+        nextCursor: page.nextCursor,
+        reachedEnd: page.primaryCount === 0 && posts.length === 0,
+      };
+    },
+
     async getVideoPosts(limit = 20, afterPostId?: string) {
-      const raw = await fetchRawFeedPosts(limit * 2, afterPostId);
-      return raw.filter(looksLikeVideo).map(mapVideoPost).slice(0, limit);
+      const page = await fetchRawFeedPosts(
+        Math.max(limit, Math.ceil(limit * 1.5)),
+        afterPostId,
+      );
+      return page.posts.filter(looksLikeVideo).map(mapVideoPost).slice(0, limit);
     },
 
     async getTextPosts(limit = 20, afterPostId?: string) {
-      const raw = await fetchRawFeedPosts(limit, afterPostId);
-      return raw.filter(looksLikeTextOrPhoto).map(mapTextPost);
+      const page = await fetchRawFeedPosts(limit, afterPostId);
+      return page.posts.filter(looksLikeTextOrPhoto).map(mapTextPost);
     },
 
     async createPost(draft: CreatePostDraft): Promise<CreatePostResult> {
@@ -1201,7 +1261,6 @@ export function createFeedRepository(): FeedRepository {
 
     async getUserPosts(userId, limit = 20, afterPostId) {
       try {
-        console.log('[ApiFeedRepository] getUserPosts called for userId:', userId);
         const response = await backendApi.post<{
           api_status: number | string;
           data?: Array<Record<string, unknown>>;
@@ -1212,9 +1271,7 @@ export function createFeedRepository(): FeedRepository {
           ...(afterPostId ? { after_post_id: afterPostId } : {}),
         });
 
-        console.log('[ApiFeedRepository] getUserPosts API response status:', response?.api_status);
         const ownRaw = response.data ?? [];
-        console.log('[ApiFeedRepository] getUserPosts raw posts count:', ownRaw.length);
         const oldestOwnPostId = Math.min(
           ...ownRaw
             .map(item => Number(readString(item, 'id', 'post_id')))
@@ -1249,7 +1306,6 @@ export function createFeedRepository(): FeedRepository {
 
         const posts = Array.from(rawMap.values()).map(mapProfilePost);
 
-        console.log('[ApiFeedRepository] getUserPosts mapped posts count:', posts.length);
         return posts.sort(
           (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
         );

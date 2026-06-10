@@ -22,6 +22,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useSharedValue } from 'react-native-reanimated';
 import type { FeedPollPost, PollOption } from '../../domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 
 interface PollPostCardProps {
   post: FeedPollPost;
@@ -33,6 +34,7 @@ interface PollPostCardProps {
   onOpenPicker?: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
   onShare?: (post: FeedPollPost) => void;
+  language?: AppLanguage;
   currentUserAvatar?: string;
   gestureX?: any;
   gestureY?: any;
@@ -54,15 +56,6 @@ const REACTION_EMOJI: Record<ReactionType, string> = {
   angry: '😡',
 };
 
-const REACTION_LABEL: Record<ReactionType, string> = {
-  like: 'Đã thích',
-  love: 'Yêu thích',
-  haha: 'Haha',
-  wow: 'Wow',
-  sad: 'Buồn',
-  angry: 'Phẫn nộ',
-};
-
 const REACTION_COLOR: Record<ReactionType, string> = {
   like: '#0866ff',
   love: '#f33e58',
@@ -81,15 +74,75 @@ const REACTION_IMAGES: Record<ReactionType, any> = {
   angry: require('../../../assets/reactions/reactions_angry.png'),
 };
 
-function formatTimeAgo(timestamp?: number): string {
+type PollCopy = {
+  reactionLabel: Record<ReactionType, string>;
+  like: string;
+  comment: string;
+  share: string;
+  userFallback: string;
+  publicLabel: string;
+  totalVotesLabel: (count: string) => string;
+  now: string;
+  minutesAgo: (count: number) => string;
+  hoursAgo: (count: number) => string;
+  daysAgo: (count: number) => string;
+  locale: string;
+};
+
+const POLL_COPY: Record<AppLanguage, PollCopy> = {
+  vi: {
+    reactionLabel: {
+      like: 'Đã thích',
+      love: 'Yêu thích',
+      haha: 'Haha',
+      wow: 'Wow',
+      sad: 'Buồn',
+      angry: 'Phẫn nộ',
+    },
+    like: 'Thích',
+    comment: 'Bình luận',
+    share: 'Chia sẻ',
+    userFallback: 'Người dùng',
+    publicLabel: 'Công khai',
+    totalVotesLabel: count => `${count} Tổng số phiếu bầu`,
+    now: 'Vừa xong',
+    minutesAgo: count => `${count} phút trước`,
+    hoursAgo: count => `${count} giờ trước`,
+    daysAgo: count => `${count} ngày trước`,
+    locale: 'vi-VN',
+  },
+  en: {
+    reactionLabel: {
+      like: 'Liked',
+      love: 'Love',
+      haha: 'Haha',
+      wow: 'Wow',
+      sad: 'Sad',
+      angry: 'Angry',
+    },
+    like: 'Like',
+    comment: 'Comment',
+    share: 'Share',
+    userFallback: 'User',
+    publicLabel: 'Public',
+    totalVotesLabel: count => `${count} total votes`,
+    now: 'Just now',
+    minutesAgo: count => `${count} min ago`,
+    hoursAgo: count => `${count} h ago`,
+    daysAgo: count => `${count} d ago`,
+    locale: 'en-US',
+  },
+};
+
+function formatTimeAgo(timestamp: number | undefined, copy: PollCopy): string {
   if (!timestamp) return '';
   const now = Math.floor(Date.now() / 1000);
   const diff = Math.max(0, now - timestamp);
-  if (diff < 60) return 'Vừa xong';
-  if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)} ngày trước`;
-  return new Date(timestamp * 1000).toLocaleDateString('vi-VN');
+  if (diff < 60) return copy.now;
+  if (diff < 3600) return copy.minutesAgo(Math.floor(diff / 60));
+  if (diff < 86400) return copy.hoursAgo(Math.floor(diff / 3600));
+  if (diff < 604800) return copy.daysAgo(Math.floor(diff / 86400));
+  return new Date(timestamp * 1000).toLocaleDateString(copy.locale);
 }
 
 function formatCount(count: number): string {
@@ -149,7 +202,7 @@ function PollOptionItem({
             {option.text}
           </Text>
         </View>
-        
+
         {hasVoted && (
           <Text className="text-[14px] font-bold text-[#050505] ml-2">
             {option.percentage}
@@ -170,6 +223,7 @@ export const PollPostCard = React.memo(function PollPostCard({
   onOpenPicker,
   onCommentTap,
   onShare,
+  language = 'vi',
   currentUserAvatar,
   gestureX,
   gestureY,
@@ -179,6 +233,7 @@ export const PollPostCard = React.memo(function PollPostCard({
   hasDragged,
 }: PollPostCardProps) {
   const likeButtonRef = useRef<View>(null);
+  const copy = POLL_COPY[language];
 
   const localX = useSharedValue(0);
   const localY = useSharedValue(0);
@@ -257,7 +312,7 @@ export const PollPostCard = React.memo(function PollPostCard({
   const hasVoted = post.votedId !== null;
   const totalVotes = post.totalVotes;
 
-  const reactionLabel = post.myReaction ? REACTION_LABEL[post.myReaction] : 'Thích';
+  const reactionLabel = post.myReaction ? copy.reactionLabel[post.myReaction] : copy.like;
   const reactionColor = post.myReaction ? REACTION_COLOR[post.myReaction] : '#65676B';
 
   return (
@@ -282,18 +337,18 @@ export const PollPostCard = React.memo(function PollPostCard({
           )}
           <View className="ml-3 flex-1">
             <Text className="text-title-primary font-bold text-[#050505]" numberOfLines={1}>
-              {post.publisher?.name || 'Người dùng'}
+              {post.publisher?.name || copy.userFallback}
             </Text>
             <View className="flex-row items-center mt-0.5">
               <Text className="text-caption-secondary text-[12px] text-[#65676B]">
-                {formatTimeAgo(post.postedAt)}
+                {formatTimeAgo(post.postedAt, copy)}
               </Text>
               <Text className="text-caption-secondary text-[12px] text-[#65676B]"> • </Text>
-              <Text className="text-caption-secondary text-[12px] text-[#65676B]">Công khai</Text>
+              <Text className="text-caption-secondary text-[12px] text-[#65676B]">{copy.publicLabel}</Text>
             </View>
           </View>
         </TouchableOpacity>
-        
+
         <View className="flex-row items-center gap-1">
           {onMorePress && (
             <TouchableOpacity
@@ -309,8 +364,8 @@ export const PollPostCard = React.memo(function PollPostCard({
 
       {/* Poll Question / Caption */}
       {post.pollQuestion && (
-        <TouchableOpacity 
-          activeOpacity={0.95} 
+        <TouchableOpacity
+          activeOpacity={0.95}
           onPress={() => onPress?.(post)}
           className="px-3 pb-3"
         >
@@ -337,7 +392,7 @@ export const PollPostCard = React.memo(function PollPostCard({
         <View className="flex-row items-center self-end bg-[#0866FF] px-4 py-1.5 rounded-full mt-2 mb-2 shadow-sm">
           <BarChart3 size={15} color="#FFFFFF" />
           <Text className="ml-1.5 text-[12px] font-bold text-white">
-            {formatCount(totalVotes)} Tổng số phiếu bầu
+            {copy.totalVotesLabel(formatCount(totalVotes))}
           </Text>
         </View>
 
@@ -367,7 +422,7 @@ export const PollPostCard = React.memo(function PollPostCard({
             ) : (
               <ThumbsUp size={19} color={reactionColor} />
             )}
-            <Text 
+            <Text
               className="ml-2 text-[14px] font-semibold"
               style={{ color: reactionColor }}
             >
@@ -383,7 +438,7 @@ export const PollPostCard = React.memo(function PollPostCard({
         >
           <MessageCircle size={19} color="#65676B" />
           <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
-            Bình luận
+            {copy.comment}
           </Text>
         </TouchableOpacity>
 
@@ -394,7 +449,7 @@ export const PollPostCard = React.memo(function PollPostCard({
         >
           <Share2 size={19} color="#65676B" />
           <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
-            Chia sẻ
+            {copy.share}
           </Text>
         </TouchableOpacity>
       </View>

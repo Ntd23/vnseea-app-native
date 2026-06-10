@@ -46,19 +46,127 @@ import type {
 } from '../../domain/types/messages.types';
 import { useStoriesViewModel } from '../../../stories';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 
 type MessagesNav = NativeStackNavigationProp<RootStackParamList>;
 
 type ChatFilter = 'broadcast' | 'users' | 'groups';
 
+const MESSAGE_COPY: Record<AppLanguage, {
+  title: string;
+  searchPlaceholder: string;
+  createStory: string;
+  retry: string;
+  errorTitle: string;
+  filters: Record<ChatFilter, string>;
+  selectedRecipients: (count: number) => string;
+  broadcastPlaceholder: string;
+  now: string;
+  minuteSuffix: string;
+  weekdays: string[];
+  noMessage: string;
+  startConversation: string;
+  sentImage: string;
+  sentImageMe: string;
+  sentVideo: string;
+  sentVideoMe: string;
+  sentAudio: string;
+  sentAudioMe: string;
+  audioCall: string;
+  groupAudioCall: string;
+  videoCall: string;
+  groupVideoCall: string;
+  sentFile: string;
+  sentFileMe: string;
+  sentProduct: string;
+  sentProductMe: string;
+  sentSticker: string;
+  sentStickerMe: string;
+  mePrefix: string;
+}> = {
+  vi: {
+    title: 'Tin nhắn',
+    searchPlaceholder: 'Tìm kiếm',
+    createStory: 'Tạo tin',
+    retry: 'Thử lại',
+    errorTitle: 'Đã xảy ra lỗi',
+    filters: {
+      broadcast: 'Gửi nhiều người',
+      users: 'Người dùng',
+      groups: 'Các nhóm',
+    },
+    selectedRecipients: count => `Đã chọn ${count} người`,
+    broadcastPlaceholder: 'Nhập tin nhắn...',
+    now: 'Vừa xong',
+    minuteSuffix: 'phút',
+    weekdays: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'],
+    noMessage: 'Chưa có tin nhắn',
+    startConversation: 'Bắt đầu trò chuyện',
+    sentImage: 'Đã gửi ảnh',
+    sentImageMe: 'Bạn đã gửi ảnh',
+    sentVideo: 'Đã gửi video',
+    sentVideoMe: 'Bạn đã gửi video',
+    sentAudio: 'Đã gửi đoạn ghi âm',
+    sentAudioMe: 'Bạn đã gửi đoạn ghi âm',
+    audioCall: 'Cuộc gọi thoại',
+    groupAudioCall: 'Cuộc gọi thoại nhóm',
+    videoCall: 'Cuộc gọi video',
+    groupVideoCall: 'Cuộc gọi video nhóm',
+    sentFile: 'Đã gửi file',
+    sentFileMe: 'Bạn đã gửi file',
+    sentProduct: 'Đã gửi sản phẩm',
+    sentProductMe: 'Bạn đã gửi sản phẩm',
+    sentSticker: 'Đã gửi nhãn dán',
+    sentStickerMe: 'Bạn đã gửi nhãn dán',
+    mePrefix: 'Bạn',
+  },
+  en: {
+    title: 'Messages',
+    searchPlaceholder: 'Search',
+    createStory: 'Create story',
+    retry: 'Try again',
+    errorTitle: 'Something went wrong',
+    filters: {
+      broadcast: 'Broadcast',
+      users: 'People',
+      groups: 'Groups',
+    },
+    selectedRecipients: count => `${count} selected`,
+    broadcastPlaceholder: 'Type a message...',
+    now: 'Just now',
+    minuteSuffix: 'min',
+    weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    noMessage: 'No messages yet',
+    startConversation: 'Start a conversation',
+    sentImage: 'Sent a photo',
+    sentImageMe: 'You sent a photo',
+    sentVideo: 'Sent a video',
+    sentVideoMe: 'You sent a video',
+    sentAudio: 'Sent a voice message',
+    sentAudioMe: 'You sent a voice message',
+    audioCall: 'Voice call',
+    groupAudioCall: 'Group voice call',
+    videoCall: 'Video call',
+    groupVideoCall: 'Group video call',
+    sentFile: 'Sent a file',
+    sentFileMe: 'You sent a file',
+    sentProduct: 'Sent a product',
+    sentProductMe: 'You sent a product',
+    sentSticker: 'Sent a sticker',
+    sentStickerMe: 'You sent a sticker',
+    mePrefix: 'You',
+  },
+};
+
 // Format time to Vietnamese style
-function formatTime(timestamp: number): string {
+function formatTime(timestamp: number, copy: typeof MESSAGE_COPY.vi): string {
   if (!timestamp) return '';
   const now = Date.now() / 1000;
   const diff = now - timestamp;
 
-  if (diff < 60) return 'Vừa xong';
-  if (diff < 3600) return `${Math.floor(diff / 60)} phút`;
+  if (diff < 60) return copy.now;
+  if (diff < 3600) return `${Math.floor(diff / 60)} ${copy.minuteSuffix}`;
   if (diff < 86400) {
     const date = new Date(timestamp * 1000);
     return date.toLocaleTimeString('vi-VN', {
@@ -68,8 +176,7 @@ function formatTime(timestamp: number): string {
   }
   if (diff < 604800) {
     const date = new Date(timestamp * 1000);
-    const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-    return days[date.getDay()];
+    return copy.weekdays[date.getDay()];
   }
   const date = new Date(timestamp * 1000);
   return `${date.getDate()}/${date.getMonth() + 1}`;
@@ -80,48 +187,49 @@ function getMessagePreview(
   lastMessage: string,
   messageKind?: ChatPreviewKind,
   isFromMe: boolean = false,
+  copy: typeof MESSAGE_COPY.vi = MESSAGE_COPY.vi,
 ): { icon: React.ReactNode; text: string } {
   // Based on ChatPreviewKind type
   switch (messageKind) {
     case 'image':
       return {
         icon: <ImageIcon size={14} color="#64748b" />,
-        text: isFromMe ? 'Bạn đã gửi ảnh' : 'Đã gửi ảnh',
+        text: isFromMe ? copy.sentImageMe : copy.sentImage,
       };
     case 'video':
       return {
         icon: <Video size={14} color="#64748b" />,
-        text: isFromMe ? 'Bạn đã gửi video' : 'Đã gửi video',
+        text: isFromMe ? copy.sentVideoMe : copy.sentVideo,
       };
     case 'audio':
       return {
         icon: <Mic size={14} color="#64748b" />,
-        text: isFromMe ? 'Bạn đã gửi đoạn ghi âm' : 'Đã gửi đoạn ghi âm',
+        text: isFromMe ? copy.sentAudioMe : copy.sentAudio,
       };
     case 'audio_call':
       return {
         icon: <Phone size={14} color="#22c55e" />,
-        text: isFromMe ? 'Cuộc gọi thoại' : 'Cuộc gọi thoại',
+        text: copy.audioCall,
       };
     case 'video_call':
       return {
         icon: <Video size={14} color="#3b82f6" />,
-        text: isFromMe ? 'Cuộc gọi video' : 'Cuộc gọi video',
+        text: copy.videoCall,
       };
     case 'file':
       return {
         icon: <Mic size={14} color="#64748b" />,
-        text: isFromMe ? 'Bạn đã gửi file' : 'Đã gửi file',
+        text: isFromMe ? copy.sentFileMe : copy.sentFile,
       };
     case 'product':
       return {
         icon: <MessageCircle size={14} color="#64748b" />,
-        text: isFromMe ? 'Bạn đã gửi sản phẩm' : 'Đã gửi sản phẩm',
+        text: isFromMe ? copy.sentProductMe : copy.sentProduct,
       };
     case 'sticker':
       return {
         icon: <MessageCircle size={14} color="#64748b" />,
-        text: isFromMe ? 'Bạn đã gửi nhãn dán' : 'Đã gửi nhãn dán',
+        text: isFromMe ? copy.sentStickerMe : copy.sentSticker,
       };
     case 'text':
     default:
@@ -133,13 +241,13 @@ function getMessagePreview(
             : lastMessage;
         return {
           icon: null,
-          text: isFromMe ? `Bạn: ${text}` : text,
+          text: isFromMe ? `${copy.mePrefix}: ${text}` : text,
         };
       }
       // No message - show placeholder
       return {
         icon: null,
-        text: 'Bắt đầu trò chuyện',
+        text: copy.startConversation,
       };
   }
 }
@@ -223,15 +331,15 @@ function LastMessagePreviewIcon({ kind }: { kind?: ChatPreviewKind }) {
   return null;
 }
 
-function getVisibleLastMessage(chat: ChatItem) {
+function getVisibleLastMessage(chat: ChatItem, copy: typeof MESSAGE_COPY.vi = MESSAGE_COPY.vi) {
   if (chat.lastMessageKind === 'audio_call') {
-    return chat.chatType === 'group' ? 'Cuộc gọi thoại nhóm' : 'Cuộc gọi thoại';
+    return chat.chatType === 'group' ? copy.groupAudioCall : copy.audioCall;
   }
   if (chat.lastMessageKind === 'video_call') {
-    return chat.chatType === 'group' ? 'Cuộc gọi video nhóm' : 'Cuộc gọi video';
+    return chat.chatType === 'group' ? copy.groupVideoCall : copy.videoCall;
   }
 
-  return chat.lastMessage || 'Chưa có tin nhắn';
+  return chat.lastMessage || copy.noMessage;
 }
 
 // Chat list item
@@ -241,12 +349,14 @@ function ChatListItem({
   onLongPress,
   selectable = false,
   selected = false,
+  copy,
 }: {
   chat: ChatItem;
   onPress: (chat: ChatItem) => void;
   onLongPress?: (chat: ChatItem) => void;
   selectable?: boolean;
   selected?: boolean;
+  copy: typeof MESSAGE_COPY.vi;
 }) {
   // Check if this is a group chat
   const isGroup = chat.chatType === 'group';
@@ -256,6 +366,7 @@ function ChatListItem({
     chat.lastMessage || '',
     chat.lastMessageKind,
     false, // isFromMe - we don't have this info from chat list
+    copy,
   );
 
   return (
@@ -289,7 +400,7 @@ function ChatListItem({
             )}
           </View>
           <Text className="ml-2 text-xs text-gray-500">
-            {formatTime(chat.lastMessageTime)}
+            {formatTime(chat.lastMessageTime, copy)}
           </Text>
         </View>
         <View className="flex-row items-center justify-between">
@@ -367,6 +478,7 @@ function TabButton({
 export function GroupListItem({
   group,
   onPress,
+  copy = MESSAGE_COPY.vi,
 }: {
   group: {
     id: string;
@@ -376,6 +488,7 @@ export function GroupListItem({
     unreadCount?: number;
   };
   onPress: () => void;
+  copy?: typeof MESSAGE_COPY.vi;
 }) {
   return (
     <TouchableOpacity
@@ -393,13 +506,15 @@ export function GroupListItem({
           </Text>
           {group.lastMessageTime && (
             <Text className="text-xs text-gray-500">
-              {formatTime(group.lastMessageTime)}
+              {formatTime(group.lastMessageTime, copy)}
             </Text>
           )}
         </View>
         {group.unreadCount !== undefined && group.unreadCount > 0 && (
           <View className="mt-1 flex-row items-center justify-between">
-            <Text className="flex-1 text-xs text-gray-500">Nhắn tin nhóm</Text>
+            <Text className="flex-1 text-xs text-gray-500">
+              {copy.filters.groups}
+            </Text>
             <UnreadBadge count={group.unreadCount} />
           </View>
         )}
@@ -456,9 +571,11 @@ function LoadingSkeleton() {
 function ErrorState({
   message,
   onRetry,
+  copy,
 }: {
   message: string;
   onRetry: () => void;
+  copy: typeof MESSAGE_COPY.vi;
 }) {
   return (
     <View className="flex-1 items-center justify-center px-8">
@@ -466,7 +583,7 @@ function ErrorState({
         <MessageCircle size={40} color="#ef4444" />
       </View>
       <Text className="mb-2 text-lg font-semibold text-gray-900">
-        Đã xảy ra lỗi
+        {copy.errorTitle}
       </Text>
       <Text className="mb-6 text-center text-sm text-gray-500">{message}</Text>
       <TouchableOpacity
@@ -474,7 +591,7 @@ function ErrorState({
         activeOpacity={0.8}
         onPress={onRetry}
       >
-        <Text className="font-semibold text-white">Thử lại</Text>
+        <Text className="font-semibold text-white">{copy.retry}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -484,16 +601,18 @@ function ErrorState({
 function SearchBar({
   value,
   onChangeText,
+  placeholder,
 }: {
   value: string;
   onChangeText: (value: string) => void;
+  placeholder: string;
 }) {
   return (
     <View className="mx-4 mb-3 flex-row items-center rounded-xl bg-gray-100 px-4 py-3">
       <Search size={18} color="#9ca3af" />
       <TextInput
         className="ml-3 flex-1 text-sm text-gray-900"
-        placeholder="Tìm kiếm"
+        placeholder={placeholder}
         placeholderTextColor="#9ca3af"
         value={value}
         onChangeText={onChangeText}
@@ -504,20 +623,21 @@ function SearchBar({
 
 const FILTERS: Array<{
   key: ChatFilter;
-  label: string;
   icon: typeof MessageCircle;
 }> = [
-  { key: 'broadcast', label: 'Gửi nhiều người', icon: Send },
-  { key: 'users', label: 'Người dùng', icon: MessageCircle },
-  { key: 'groups', label: 'Các nhóm', icon: Users },
+  { key: 'broadcast', icon: Send },
+  { key: 'users', icon: MessageCircle },
+  { key: 'groups', icon: Users },
 ];
 
 function ChatFilters({
   value,
   onChange,
+  labels,
 }: {
   value: ChatFilter;
   onChange: (value: ChatFilter) => void;
+  labels: Record<ChatFilter, string>;
 }) {
   return (
     <View className="mx-4 mb-2 flex-row gap-1">
@@ -541,7 +661,7 @@ function ChatFilters({
               }`}
               numberOfLines={1}
             >
-              {filter.label}
+              {labels[filter.key]}
             </Text>
           </TouchableOpacity>
         );
@@ -571,7 +691,7 @@ function HeaderActions() {
 }
 
 // Messenger-style Stories row below search bar
-function StoriesBubbleRow() {
+function StoriesBubbleRow({ createStoryLabel }: { createStoryLabel: string }) {
   const navigation = useNavigation<MessagesNav>();
   const storiesVm = useStoriesViewModel();
 
@@ -624,7 +744,7 @@ function StoriesBubbleRow() {
             className="mt-1.5 text-center text-xs font-semibold text-gray-500"
             numberOfLines={1}
           >
-            Tạo tin
+            {createStoryLabel}
           </Text>
         </TouchableOpacity>
 
@@ -668,6 +788,8 @@ function StoriesBubbleRow() {
 // Main screen
 function MessageScreen() {
   const navigation = useNavigation<MessagesNav>();
+  const language = useAppLanguage();
+  const copy = MESSAGE_COPY[language];
   const {
     chats,
     isLoadingChats,
@@ -714,13 +836,13 @@ function MessageScreen() {
           : chat.chatType !== 'group';
       const matchesQuery =
         !normalizedQuery ||
-        `${chat.name} ${chat.username} ${getVisibleLastMessage(chat)}`
+        `${chat.name} ${chat.username} ${getVisibleLastMessage(chat, copy)}`
           .toLocaleLowerCase('vi-VN')
           .includes(normalizedQuery);
 
       return matchesFilter && matchesQuery;
     });
-  }, [activeFilter, chats, query]);
+  }, [activeFilter, chats, copy, query]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -773,24 +895,32 @@ function MessageScreen() {
           >
             <ArrowLeft size={22} color="#1f2937" />
           </TouchableOpacity>
-          <Text className="text-lg font-bold text-gray-900">Tin nhắn</Text>
+          <Text className="text-lg font-bold text-gray-900">{copy.title}</Text>
         </View>
         <HeaderActions />
       </View>
 
       {/* Content */}
-      <SearchBar value={query} onChangeText={setQuery} />
-      <StoriesBubbleRow />
-      <ChatFilters value={activeFilter} onChange={setActiveFilter} />
+      <SearchBar
+        value={query}
+        onChangeText={setQuery}
+        placeholder={copy.searchPlaceholder}
+      />
+      <StoriesBubbleRow createStoryLabel={copy.createStory} />
+      <ChatFilters
+        value={activeFilter}
+        onChange={setActiveFilter}
+        labels={copy.filters}
+      />
       {activeFilter === 'broadcast' && (
         <View className="mx-4 mb-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
           <Text className="mb-2 text-xs font-semibold text-gray-600">
-            Đã chọn {selectedRecipients.size} người
+            {copy.selectedRecipients(selectedRecipients.size)}
           </Text>
           <View className="flex-row items-center">
             <TextInput
               className="mr-2 flex-1 rounded-lg bg-white px-3 py-2 text-sm text-gray-900"
-              placeholder="Nhập tin nhắn..."
+              placeholder={copy.broadcastPlaceholder}
               placeholderTextColor="#9ca3af"
               value={broadcastText}
               onChangeText={setBroadcastText}
@@ -826,7 +956,7 @@ function MessageScreen() {
       {isLoadingChats && !refreshing ? (
         <LoadingSkeleton />
       ) : error && visibleChats.length === 0 ? (
-        <ErrorState message={error} onRetry={() => loadChats()} />
+        <ErrorState message={error} onRetry={() => loadChats()} copy={copy} />
       ) : (
         <FlatList
           data={visibleChats}
@@ -838,6 +968,7 @@ function MessageScreen() {
               onPress={handleChatPress}
               selectable={activeFilter === 'broadcast'}
               selected={selectedRecipients.has(item.userId)}
+              copy={copy}
             />
           )}
           ListEmptyComponent={

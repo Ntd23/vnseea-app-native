@@ -1,13 +1,11 @@
 // Feed - useFeedViewModel ViewModel
 //
 // SINGLE-LIST FEED ARCHITECTURE
-// ─────────────────────────────
 // We hold ONE source of truth (`posts: FeedPost[]`) sorted by `postedAt`
 // descending. Both video and text/photo cards are rendered from this
-// merged list — Facebook-style.
+// merged list - Facebook-style.
 //
 // PREFETCH BUFFER (v2)
-// ────────────────────
 // After every page load we immediately fire a background fetch for the
 // NEXT page and store it in `prefetchBufferRef`. When the FlatList's
 // `onEndReached` triggers `loadMorePosts`, we:
@@ -37,11 +35,12 @@ import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/
 const repository = createFeedRepository();
 const pollRepository = createPollRepository();
 
-// Page size — bumped from 10 to 15 so a single network trip fills
+// Page size bumped from 10 to 15 so a single network trip fills
 // more than one screen worth of content.
 const PAGE_SIZE = 15;
 const VIDEO_PAGE_SIZE = 10;
 const VIDEO_INSERT_INTERVAL = 5;
+const FEED_VM_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;
 
 type InteractionTask = ReturnType<typeof InteractionManager.runAfterInteractions>;
 
@@ -51,7 +50,7 @@ let pendingVideoCacheTask: InteractionTask | null = null;
 /**
  * Re-sort by `postedAt` desc so optimistic prepends and updates keep
  * the merged feed in chronological order. Posts without a timestamp
- * (very rare — defensive) bubble to the bottom.
+ * (very rare, defensive) bubble to the bottom.
  */
 function sortByTime(posts: FeedPost[]): FeedPost[] {
   return [...posts].sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
@@ -70,6 +69,33 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
     unique.push(item);
   }
   return unique;
+}
+
+function debugFeedVm(label: string, payload: Record<string, unknown>) {
+  if (!FEED_VM_DEBUG) return;
+  console.log(`[feed.vm] ${label}`, payload);
+}
+
+function pickAppendablePage(
+  candidates: FeedPost[],
+  existingIds: Set<string>,
+  oldestTimestamp: number,
+  limit = PAGE_SIZE,
+): FeedPost[] {
+  const unseen = candidates.filter(post => !existingIds.has(post.id));
+  const strictlyOlder = unseen.filter(post => {
+    if (!post.postedAt || oldestTimestamp === Number.POSITIVE_INFINITY) {
+      return true;
+    }
+    return post.postedAt < oldestTimestamp;
+  });
+
+  const usable =
+    strictlyOlder.length >= Math.min(5, limit)
+      ? strictlyOlder
+      : unseen;
+
+  return usable.slice(0, limit);
 }
 
 function interleaveVideos(
@@ -143,43 +169,26 @@ export function useFeedViewModel() {
     feedCacheStorage.getCachedVideoPosts(),
   );
 
-  // ── Prefetch buffer ────────────────────────────────────────────────
+  // Prefetch buffer
   // Holds the pre-fetched next page so `loadMorePosts` can merge it
   // instantly without waiting for a network round-trip.
   const prefetchBufferRef = useRef<FeedPost[] | null>(null);
   const isPrefetchingRef = useRef(false);
   const isFetchingVideosRef = useRef(false);
   const videoBufferTaskRef = useRef<InteractionTask | null>(null);
+  const isScrollBusyRef = useRef(false);
+  const pendingCommitRef = useRef<{
+    lightPosts: FeedPost[];
+    videoPosts: FeedVideoPost[];
+  } | null>(null);
 
-  // ── Client-side Infinite Scroll Recycling ────────────────────────
+  // Network pagination guard
   const hasReachedNetworkEndRef = useRef(false);
+  const nextPageCursorRef = useRef<string | undefined>(undefined);
+  const emptyPageStrikeRef = useRef(0);
 
-  const commitFeedSources = useCallback(
+  const applyFeedSources = useCallback(
     (nextLightPosts: FeedPost[], nextVideoPosts: FeedVideoPost[]) => {
-      // DEBUG: Detect duplicates entering the commit
-      const lightIds = nextLightPosts.map(p => p.id);
-      const lightDupes = lightIds.filter((id, idx) => lightIds.indexOf(id) !== idx);
-      const videoIds = nextVideoPosts.map(p => p.id);
-      const videoDupes = videoIds.filter((id, idx) => videoIds.indexOf(id) !== idx);
-      // Cross-lane dupes: posts present in BOTH light and video arrays
-      const crossLaneDupes = nextVideoPosts
-        .filter(v => lightIds.includes(v.id))
-        .map(v => v.id);
-
-      if (lightDupes.length > 0 || videoDupes.length > 0 || crossLaneDupes.length > 0) {
-        console.warn(
-          '[FEED DEBUG] commitFeedSources — duplicates detected!',
-          {
-            inputLightCount: nextLightPosts.length,
-            inputVideoCount: nextVideoPosts.length,
-            intraLightDupes: Array.from(new Set(lightDupes)),
-            intraVideoDupes: Array.from(new Set(videoDupes)),
-            crossLaneDupes: Array.from(new Set(crossLaneDupes)),
-            timestamp: Date.now(),
-          },
-        );
-      }
-
       const cleanLightPosts = uniqueById(nextLightPosts)
         .filter(isLightFeedPost)
         .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
@@ -192,18 +201,43 @@ export function useFeedViewModel() {
       setPosts(interleaveVideos(cleanLightPosts, cleanVideoPosts));
       cacheLightPostsAfterInteractions(cleanLightPosts);
       cacheVideoPostsAfterInteractions(cleanVideoPosts);
-
-      // DEBUG: report final state
-      console.log('[FEED DEBUG] commitFeedSources — committed', {
-        lightCount: cleanLightPosts.length,
-        videoCount: cleanVideoPosts.length,
-        finalLightIds: cleanLightPosts.slice(0, 5).map(p => p.id),
-        finalVideoIds: cleanVideoPosts.slice(0, 3).map(p => p.id),
-        finalPostsCount: cleanLightPosts.length + cleanVideoPosts.length,
-        timestamp: Date.now(),
-      });
     },
     [],
+  );
+
+  const commitFeedSources = useCallback(
+    (
+      nextLightPosts: FeedPost[],
+      nextVideoPosts: FeedVideoPost[],
+      options?: { deferDuringScroll?: boolean },
+    ) => {
+      if (options?.deferDuringScroll && isScrollBusyRef.current) {
+        pendingCommitRef.current = {
+          lightPosts: nextLightPosts,
+          videoPosts: nextVideoPosts,
+        };
+        return;
+      }
+      applyFeedSources(nextLightPosts, nextVideoPosts);
+    },
+    [applyFeedSources],
+  );
+
+  const flushPendingCommit = useCallback(() => {
+    const pending = pendingCommitRef.current;
+    if (!pending) return;
+    pendingCommitRef.current = null;
+    applyFeedSources(pending.lightPosts, pending.videoPosts);
+  }, [applyFeedSources]);
+
+  const setScrollBusy = useCallback(
+    (busy: boolean) => {
+      isScrollBusyRef.current = busy;
+      if (!busy) {
+        flushPendingCommit();
+      }
+    },
+    [flushPendingCommit],
   );
 
   const updatePostEverywhere = useCallback((updater: (post: FeedPost) => FeedPost) => {
@@ -252,7 +286,7 @@ export function useFeedViewModel() {
           commitFeedSources(lightPostsRef.current, [
             ...videoPostsRef.current,
             ...freshVideos,
-          ]);
+          ], { deferDuringScroll: true });
         })
         .catch(err => {
           // Video is a secondary lane; a failure must not blank or block feed.
@@ -278,18 +312,20 @@ export function useFeedViewModel() {
 
   /**
    * Background-fetch the next page and stash it in `prefetchBufferRef`.
-   * Does NOT touch React state — completely invisible to the UI.
+   * Does NOT touch React state - completely invisible to the UI.
    */
-  const prefetchNextPage = useCallback((currentPosts: FeedPost[]) => {
+  const prefetchNextPage = useCallback(() => {
     if (isPrefetchingRef.current) return; // Already prefetching
 
     if (hasReachedNetworkEndRef.current) {
       return;
     }
 
-    // Find the last real post to use as the network fetch cursor
-    const lastRealPost = [...currentPosts].reverse().find(p => p.kind !== 'ad');
-    if (!lastRealPost) return;
+    const cursor = nextPageCursorRef.current;
+    if (!cursor) {
+      hasReachedNetworkEndRef.current = true;
+      return;
+    }
 
     isPrefetchingRef.current = true;
 
@@ -300,58 +336,50 @@ export function useFeedViewModel() {
       Number.POSITIVE_INFINITY,
     );
 
-    console.log('[FEED DEBUG] prefetchNextPage:start', {
-      cursor: lastRealPost.id,
-      cursorTimestamp: lastRealPost.postedAt,
-      existingCount: existingIds.size,
-      oldestKnownTs: oldestTimestamp,
-      timestamp: Date.now(),
-    });
 
     repository
-      .getLightPosts(PAGE_SIZE * 2, lastRealPost.id)
-      .then(nextPosts => {
-        const filtered = nextPosts.filter(isLightFeedPost);
+      .getLightPostsPage(PAGE_SIZE, cursor)
+      .then(page => {
+        const filtered = page.posts.filter(isLightFeedPost);
 
-        // DEBUG: log raw prefetch response
-        console.log('[FEED DEBUG] prefetchNextPage:api-response', {
-          receivedFromApi: filtered.length,
-          ids: filtered.map(p => p.id),
-          timestamps: filtered.map(p => p.postedAt),
-          hasInternalDuplicates:
-            filtered.length !== new Set(filtered.map(p => p.id)).size,
-        });
-
-        // Strict dedup: skip posts we already have OR that are not
-        // strictly older than what we already loaded. The backend's
-        // `after_post_id` is a soft cursor (it can return the same page
-        // if the page size is small or the server normalises results),
-        // so we enforce a hard "older than oldest known" filter here.
-        const newPosts = filtered.filter(post => {
-          if (existingIds.has(post.id)) return false;
-          if (post.postedAt && oldestTimestamp !== Number.POSITIVE_INFINITY) {
-            return post.postedAt < oldestTimestamp;
-          }
-          return true;
-        });
-
-        const droppedById = filtered.filter(p => existingIds.has(p.id));
-        const droppedByTime = filtered.filter(
-          p => !existingIds.has(p.id) && p.postedAt && oldestTimestamp !== Number.POSITIVE_INFINITY && p.postedAt >= oldestTimestamp,
+        const newPosts = pickAppendablePage(
+          filtered,
+          existingIds,
+          oldestTimestamp,
         );
-        console.log('[FEED DEBUG] prefetchNextPage:dedup', {
-          raw: filtered.length,
-          droppedById: droppedById.length,
-          droppedByTime: droppedByTime.length,
-          kept: newPosts.length,
-          newIds: newPosts.map(p => p.id),
+        const advancedCursor = Boolean(
+          page.nextCursor && page.nextCursor !== cursor,
+        );
+        if (advancedCursor) {
+          nextPageCursorRef.current = page.nextCursor;
+        }
+
+        debugFeedVm('prefetch page', {
+          cursor,
+          nextCursor: page.nextCursor ?? '(none)',
+          fetched: page.posts.length,
+          light: filtered.length,
+          usable: newPosts.length,
+          existing: existingIds.size,
         });
 
         if (newPosts.length === 0) {
-          hasReachedNetworkEndRef.current = true;
+          emptyPageStrikeRef.current += 1;
           prefetchBufferRef.current = null;
+          if (
+            page.reachedEnd ||
+            !page.nextCursor ||
+            !advancedCursor ||
+            emptyPageStrikeRef.current >= 3
+          ) {
+            hasReachedNetworkEndRef.current = true;
+          }
         } else {
+          emptyPageStrikeRef.current = 0;
           prefetchBufferRef.current = newPosts;
+          if (!page.nextCursor || !advancedCursor) {
+            hasReachedNetworkEndRef.current = page.reachedEnd || !page.nextCursor;
+          }
         }
       })
       .catch(err => {
@@ -373,28 +401,27 @@ export function useFeedViewModel() {
     setIsAllLoaded(false); // Reset pagination
     prefetchBufferRef.current = null; // Clear stale buffer
     hasReachedNetworkEndRef.current = false;
+    nextPageCursorRef.current = undefined;
+    emptyPageStrikeRef.current = 0;
     try {
-      const freshPosts = (await repository.getLightPosts(PAGE_SIZE)).filter(
-        isLightFeedPost,
-      );
+      const page = await repository.getLightPostsPage(PAGE_SIZE);
+      const freshPosts = page.posts.filter(isLightFeedPost);
+      nextPageCursorRef.current = page.nextCursor;
+      hasReachedNetworkEndRef.current = page.reachedEnd || !page.nextCursor;
 
-      // DEBUG: log initial page 1 result
-      console.log('[FEED DEBUG] loadPosts:page1', {
-        isPullToRefresh,
-        requested: PAGE_SIZE,
-        receivedFromApi: freshPosts.length,
-        ids: freshPosts.map(p => p.id),
-        timestamps: freshPosts.map(p => p.postedAt),
-        uniqueIds: new Set(freshPosts.map(p => p.id)).size,
-        timestamp: Date.now(),
+      debugFeedVm('initial page', {
+        fetched: freshPosts.length,
+        nextCursor: page.nextCursor ?? '(none)',
+        refresh: isPullToRefresh,
       });
 
       commitFeedSources(freshPosts, videoPostsRef.current);
       scheduleVideoBuffer(freshPosts.length);
 
       // Immediately start prefetching page 2 into the buffer
-      if (freshPosts.length >= PAGE_SIZE) {
-        prefetchNextPage(freshPosts);
+      if (page.nextCursor) {
+        hasReachedNetworkEndRef.current = false;
+        prefetchNextPage();
       }
     } catch (caught) {
       setError(
@@ -409,34 +436,16 @@ export function useFeedViewModel() {
     }
   }, [commitFeedSources, prefetchNextPage, scheduleVideoBuffer]);
 
-  // ── Auto-recycle guard ────────────────────────────────────────────
-  // When the server runs out of posts we reload from page 1 instead
-  // of permanently stopping. This flag prevents double-recycling.
-  const isRecyclingRef = useRef(false);
 
   const loadMorePosts = useCallback(async () => {
     const currentLightPosts = lightPostsRef.current;
-    if (isLoading || isLoadingMore || currentLightPosts.length === 0) {
+    if (isLoading || isLoadingMore || isAllLoaded || currentLightPosts.length === 0) {
       return;
     }
 
-    // DEBUG: snapshot current state when loadMore is called
-    console.log('[FEED DEBUG] loadMorePosts:enter', {
-      currentLightCount: currentLightPosts.length,
-      currentVideoCount: videoPostsRef.current.length,
-      bufferedLength: prefetchBufferRef.current?.length ?? 0,
-      hasReachedEnd: hasReachedNetworkEndRef.current,
-      oldestTimestamp: currentLightPosts.reduce<number>(
-        (min, post) => (post.postedAt ? Math.min(min, post.postedAt) : min),
-        Number.POSITIVE_INFINITY,
-      ),
-      firstLightId: currentLightPosts[0]?.id,
-      lastLightId: currentLightPosts[currentLightPosts.length - 1]?.id,
-      timestamp: Date.now(),
-    });
 
     try {
-      // ── Fast path: use prefetch buffer if available ──────────────
+      // Fast path: use prefetch buffer if available.
       const buffered = prefetchBufferRef.current;
       if (buffered && buffered.length > 0) {
         prefetchBufferRef.current = null; // Consume the buffer
@@ -444,17 +453,14 @@ export function useFeedViewModel() {
         const existingIds = new Set(currentLightPosts.map(p => p.id));
         const newPosts = buffered.filter(p => !existingIds.has(p.id));
 
-        // DEBUG: report buffer consumption
-        console.log('[FEED DEBUG] loadMorePosts:fast-path', {
-          bufferedCount: buffered.length,
-          afterDedup: newPosts.length,
-          droppedByIdFilter: buffered.length - newPosts.length,
-          newIds: newPosts.map(p => p.id),
-        });
 
         if (newPosts.length === 0) {
-          hasReachedNetworkEndRef.current = true;
-          // Don't set isAllLoaded — we'll auto-recycle below
+          if (hasReachedNetworkEndRef.current || !nextPageCursorRef.current) {
+            setIsAllLoaded(true);
+          } else {
+            setTimeout(() => prefetchNextPage(), 0);
+          }
+          return;
         } else {
           // Split newPosts into light and video posts
           const newLight = newPosts.filter(isLightFeedPost);
@@ -463,78 +469,33 @@ export function useFeedViewModel() {
           const mergedLight = [...currentLightPosts, ...newLight];
           const mergedVideo = [...videoPostsRef.current, ...newVideo];
 
-          // DEBUG: log merge sizes BEFORE dedup
-          console.log('[FEED DEBUG] loadMorePosts:fast-path-merge', {
-            mergedLightCount: mergedLight.length,
-            mergedVideoCount: mergedVideo.length,
-            addedLight: newLight.length,
-            addedVideo: newVideo.length,
-          });
 
-          commitFeedSources(mergedLight, mergedVideo);
+          commitFeedSources(mergedLight, mergedVideo, { deferDuringScroll: true });
           scheduleVideoBuffer(mergedLight.length);
-          setTimeout(() => prefetchNextPage(lightPostsRef.current), 0);
+          setTimeout(() => prefetchNextPage(), 0);
           return;
         }
       }
 
-      // ── Auto-recycle: server ran out → reload from page 1 ───────
       if (hasReachedNetworkEndRef.current) {
-        if (isRecyclingRef.current) return;
-        isRecyclingRef.current = true;
-
-        // Brief delay so we don't spam the API on fast scrolls
-        await new Promise<void>(resolve => setTimeout(resolve, 500));
-
-        // Reset state and reload fresh
-        hasReachedNetworkEndRef.current = false;
-        prefetchBufferRef.current = null;
-        isRecyclingRef.current = false;
-
-        setIsLoadingMore(true);
-        try {
-          const freshPosts = (await repository.getLightPosts(PAGE_SIZE)).filter(
-            isLightFeedPost,
-          );
-          if (freshPosts.length > 0) {
-            commitFeedSources(freshPosts, videoPostsRef.current);
-            scheduleVideoBuffer(freshPosts.length);
-            if (freshPosts.length >= PAGE_SIZE) {
-              prefetchNextPage(freshPosts);
-            }
-          }
-        } finally {
-          setIsLoadingMore(false);
-        }
+        setIsAllLoaded(true);
         return;
       }
 
-      // ── Slow path: no buffer → fetch from network ───────────────
-      const lastRealPost = [...currentLightPosts].reverse().find(p => p.kind !== 'ad');
-      if (!lastRealPost) {
+      // Slow path: no buffer -> fetch from the dedicated news-feed cursor.
+      const cursor = nextPageCursorRef.current;
+      if (!cursor) {
+        hasReachedNetworkEndRef.current = true;
+        setIsAllLoaded(true);
         return;
       }
 
       setIsLoadingMore(true);
       setError(null);
 
-      // Request 2x page size so we can still fill PAGE_SIZE posts after
-      // the strict "must be older than what we already have" filter.
-      const olderPosts = (await repository.getLightPosts(PAGE_SIZE * 2, lastRealPost.id)).filter(
-        isLightFeedPost,
-      );
+      const page = await repository.getLightPostsPage(PAGE_SIZE, cursor);
+      const olderPosts = page.posts.filter(isLightFeedPost);
 
-      // DEBUG: log raw API response BEFORE any dedup
-      console.log('[FEED DEBUG] loadMorePosts:slow-path:api-response', {
-        cursor: lastRealPost.id,
-        requested: PAGE_SIZE * 2,
-        receivedFromApi: olderPosts.length,
-        ids: olderPosts.map(p => p.id),
-        timestamps: olderPosts.map(p => p.postedAt),
-        uniqueIdsInResponse: new Set(olderPosts.map(p => p.id)).size,
-        anyDuplicatesInRawResponse:
-          olderPosts.length !== new Set(olderPosts.map(p => p.id)).size,
-      });
 
       const existingIds = new Set(currentLightPosts.map(p => p.id));
       const oldestTimestamp = currentLightPosts.reduce<number>(
@@ -542,43 +503,50 @@ export function useFeedViewModel() {
         Number.POSITIVE_INFINITY,
       );
 
-      // Strict dedup: drop posts we already have AND any post that
-      // isn't strictly older than our oldest loaded post. This prevents
-      // the server's "soft cursor" from returning overlapping pages.
-      const newPosts = olderPosts.filter(post => {
-        if (existingIds.has(post.id)) return false;
-        if (post.postedAt && oldestTimestamp !== Number.POSITIVE_INFINITY) {
-          return post.postedAt < oldestTimestamp;
-        }
-        return true;
-      }).slice(0, PAGE_SIZE);
-
-      // DEBUG: report dedup outcome
-      const droppedById = olderPosts.filter(p => existingIds.has(p.id));
-      const droppedByTime = olderPosts.filter(
-        p => !existingIds.has(p.id) && p.postedAt && oldestTimestamp !== Number.POSITIVE_INFINITY && p.postedAt >= oldestTimestamp,
+      const newPosts = pickAppendablePage(
+        olderPosts,
+        existingIds,
+        oldestTimestamp,
       );
-      console.log('[FEED DEBUG] loadMorePosts:slow-path:dedup', {
-        raw: olderPosts.length,
-        afterIdFilter: olderPosts.length - droppedById.length,
-        afterTimeFilter: olderPosts.length - droppedById.length - droppedByTime.length,
-        finalNewPosts: newPosts.length,
-        droppedById: droppedById.map(p => p.id),
-        droppedByTime: droppedByTime.map(p => ({ id: p.id, ts: p.postedAt, oldest: oldestTimestamp })),
-        oldestKnownTs: oldestTimestamp,
-        newIds: newPosts.map(p => p.id),
+      const advancedCursor = Boolean(
+        page.nextCursor && page.nextCursor !== cursor,
+      );
+      if (advancedCursor) {
+        nextPageCursorRef.current = page.nextCursor;
+      }
+
+      debugFeedVm('load more page', {
+        cursor,
+        nextCursor: page.nextCursor ?? '(none)',
+        fetched: olderPosts.length,
+        usable: newPosts.length,
+        existing: existingIds.size,
       });
 
       if (newPosts.length === 0) {
-        hasReachedNetworkEndRef.current = true;
-        // Don't set isAllLoaded — auto-recycle will handle it on next call
+        emptyPageStrikeRef.current += 1;
+        if (
+          page.reachedEnd ||
+          !page.nextCursor ||
+          !advancedCursor ||
+          emptyPageStrikeRef.current >= 3
+        ) {
+          hasReachedNetworkEndRef.current = true;
+          setIsAllLoaded(true);
+        } else {
+          setTimeout(() => prefetchNextPage(), 0);
+        }
       } else {
+        emptyPageStrikeRef.current = 0;
         const mergedLight = [...currentLightPosts, ...newPosts];
         const mergedVideo = videoPostsRef.current;
 
-        commitFeedSources(mergedLight, mergedVideo);
+        commitFeedSources(mergedLight, mergedVideo, { deferDuringScroll: true });
         scheduleVideoBuffer(mergedLight.length);
-        setTimeout(() => prefetchNextPage(lightPostsRef.current), 0);
+        if (!page.nextCursor || !advancedCursor) {
+          hasReachedNetworkEndRef.current = page.reachedEnd || !page.nextCursor;
+        }
+        setTimeout(() => prefetchNextPage(), 0);
       }
     } catch (caught) {
       setError(
@@ -593,6 +561,7 @@ export function useFeedViewModel() {
     commitFeedSources,
     isLoading,
     isLoadingMore,
+    isAllLoaded,
     prefetchNextPage,
     scheduleVideoBuffer,
   ]);
@@ -612,7 +581,7 @@ export function useFeedViewModel() {
     };
   }, []);
 
-  // ── Derived (backward-compat) slices ─────────────────────────────
+  // Derived (backward-compat) slices
   // Older UI code reads `vm.videoPosts` / `vm.textPosts`. We keep these
   // as memoised projections of the single source of truth so the home
   // screen can migrate to `vm.posts` at its own pace.
@@ -633,7 +602,7 @@ export function useFeedViewModel() {
    *
    * Dedupe by `id` so an accidental double-emit doesn't show the same
    * post twice. Then re-sort so the new post lands in its real
-   * chronological slot — usually the top, but defensive in case the
+   * chronological slot - usually the top, but defensive in case the
    * server returns an older `time` than we expect.
    */
   const prependPost = useCallback((post: FeedPost) => {
@@ -691,7 +660,7 @@ export function useFeedViewModel() {
           newTopReactions = [];
         }
 
-        // The spread preserves `kind` so the discriminator survives —
+        // The spread preserves `kind` so the discriminator survives -
         // TypeScript narrows correctly when consumers read the post.
         return {
           ...post,
@@ -717,7 +686,7 @@ export function useFeedViewModel() {
   /**
    * Increment / decrement a post's `commentCount` (used by the comments
    * sheet for optimistic +1 on send, -1 on delete). Works on any post
-   * kind — the unified posts array makes this trivial.
+   * kind - the unified posts array makes this trivial.
    */
   const updateCommentCount = useCallback(
     (postId: string, delta: number) => {
@@ -817,12 +786,13 @@ export function useFeedViewModel() {
     error,
     reloadPosts: loadPosts,
     loadMorePosts,
+    setScrollBusy,
     prependPost,
     toggleReaction,
     updateCommentCount,
     votePoll,
 
-    // ── Backward-compat aliases ──────────────────────────────────
+    // Backward-compat aliases
     // Older screen code reads these names. They are derived state
     // pointing at the same underlying `posts` array; deleting them is
     // safe once no consumer references them.
@@ -839,7 +809,7 @@ export function useFeedViewModel() {
     toggleTextPostReaction: toggleReaction,
 
     /**
-     * Toggle save/unsave a post. No optimistic update needed —
+     * Toggle save/unsave a post. No optimistic update needed -
      * the server confirms the state and the UI refreshes on next visit.
      */
     savePost: (postId: string) => repository.savePost(postId),

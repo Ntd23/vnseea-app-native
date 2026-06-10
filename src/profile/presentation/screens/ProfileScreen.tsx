@@ -56,6 +56,8 @@ import { createPollRepository } from '../../../poll/infrastructure/repositories/
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import type {
   FeedPollPost,
@@ -79,6 +81,149 @@ const FRIEND_ITEM_WIDTH = (SCREEN_WIDTH - 64 - 16) / 3;
 const PROFILE_POST_MEDIA_HEIGHT = Math.min(320, Math.round(SCREEN_WIDTH * 0.62));
 const PROFILE_STORY_MAX_AGE_SECONDS = 24 * 60 * 60;
 const PROFILE_POST_PAGE_SIZE = 20;
+
+const PROFILE_COPY: Record<AppLanguage, {
+  userFallback: string;
+  dashboard: string;
+  addToStory: string;
+  followed: string;
+  message: string;
+  poke: string;
+  requestSent: string;
+  sending: string;
+  follow: string;
+  stories: string;
+  storySegments: (count: number) => string;
+  viewStory: string;
+  createStory: string;
+  details: string;
+  member: string;
+  vipMember: string;
+  worksAt: (value: string) => string;
+  livesAt: (value: string) => string;
+  activeNow: string;
+  followersText: (count: number) => string;
+  followingText: (count: number) => string;
+  pointsText: (count: number) => string;
+  editPublicDetails: string;
+  friends: string;
+  findFriends: string;
+  friendFallback: string;
+  seeAll: string;
+  composerPlaceholder: string;
+  goLive: string;
+  photoVideo: string;
+  lifeEvent: string;
+  posts: string;
+  manage: string;
+  loadPostsError: string;
+  noPosts: string;
+  edit: string;
+  avatarOptionsTitle: string;
+  cancel: string;
+  errorTitle: string;
+  reactionError: string;
+  voteError: string;
+  connectError: string;
+  pokeSuccessTitle: string;
+  pokeSuccessMessage: (name: string) => string;
+  pokeError: string;
+}> = {
+  vi: {
+    userFallback: 'Người dùng',
+    dashboard: 'Bảng điều khiển',
+    addToStory: 'Thêm vào tin',
+    followed: 'Đã theo dõi',
+    message: 'Nhắn tin',
+    poke: 'Chọc',
+    requestSent: 'Đã gửi yêu cầu',
+    sending: 'Đang gửi...',
+    follow: 'Theo dõi',
+    stories: 'Tin',
+    storySegments: count => `${count} đoạn tin`,
+    viewStory: 'Xem tin',
+    createStory: 'Tạo tin',
+    details: 'Chi tiết',
+    member: 'Thành viên',
+    vipMember: 'Thành viên VIP Member',
+    worksAt: value => `Làm việc tại ${value}`,
+    livesAt: value => `Sống tại ${value}`,
+    activeNow: 'Đang hoạt động',
+    followersText: count => `Có ${count} người theo dõi`,
+    followingText: count => `Đang theo dõi ${count} người`,
+    pointsText: count => `Tích lũy ${count} điểm`,
+    editPublicDetails: 'Chỉnh sửa chi tiết công khai',
+    friends: 'Bạn bè',
+    findFriends: 'Tìm bạn bè',
+    friendFallback: 'Bạn bè',
+    seeAll: 'Xem tất cả',
+    composerPlaceholder: 'Bạn đang nghĩ gì?',
+    goLive: 'Phát trực tiếp',
+    photoVideo: 'Ảnh/video',
+    lifeEvent: 'Sự kiện trong đời',
+    posts: 'Bài viết',
+    manage: 'Quản lý',
+    loadPostsError: 'Lỗi tải bài viết',
+    noPosts: 'Chưa có bài viết nào',
+    edit: 'Chỉnh sửa',
+    avatarOptionsTitle: 'Tùy chọn ảnh đại diện',
+    cancel: 'Hủy',
+    errorTitle: 'Lỗi',
+    reactionError: 'Không thể cập nhật cảm xúc. Vui lòng thử lại.',
+    voteError: 'Không thể gửi phiếu bầu. Vui lòng thử lại.',
+    connectError: 'Không thể gửi lời mời kết bạn. Vui lòng thử lại.',
+    pokeSuccessTitle: 'Đã chọc',
+    pokeSuccessMessage: name => `Bạn đã chọc ${name}.`,
+    pokeError: 'Không thể chọc người dùng này lúc này.',
+  },
+  en: {
+    userFallback: 'User',
+    dashboard: 'Dashboard',
+    addToStory: 'Add to story',
+    followed: 'Following',
+    message: 'Message',
+    poke: 'Poke',
+    requestSent: 'Request sent',
+    sending: 'Sending...',
+    follow: 'Follow',
+    stories: 'Stories',
+    storySegments: count => `${count} stories`,
+    viewStory: 'View story',
+    createStory: 'Create story',
+    details: 'Details',
+    member: 'Member',
+    vipMember: 'VIP Member',
+    worksAt: value => `Works at ${value}`,
+    livesAt: value => `Lives in ${value}`,
+    activeNow: 'Active now',
+    followersText: count => `${count} followers`,
+    followingText: count => `Following ${count}`,
+    pointsText: count => `${count} points`,
+    editPublicDetails: 'Edit public details',
+    friends: 'Friends',
+    findFriends: 'Find friends',
+    friendFallback: 'Friend',
+    seeAll: 'See all',
+    composerPlaceholder: "What's on your mind?",
+    goLive: 'Live',
+    photoVideo: 'Photo/video',
+    lifeEvent: 'Life event',
+    posts: 'Posts',
+    manage: 'Manage',
+    loadPostsError: 'Could not load posts',
+    noPosts: 'No posts yet',
+    edit: 'Edit',
+    avatarOptionsTitle: 'Profile picture options',
+    cancel: 'Cancel',
+    errorTitle: 'Error',
+    reactionError: 'Could not update reaction. Please try again.',
+    voteError: 'Could not submit vote. Please try again.',
+    connectError: 'Could not send friend request. Please try again.',
+    pokeSuccessTitle: 'Poked',
+    pokeSuccessMessage: name => `You poked ${name}.`,
+    pokeError: 'Could not poke this user right now.',
+  },
+};
 
 const FALLBACK_COVER =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCNqLNeeWsi7Qk4abx08XCTrKI5CmUGgDCiX-kH7Y_8LIIX5Slo9GRgEra_4deGp5e9pYozUmQdYGZi1sNQSks0QtbNWgpmn5gJgrF62Z8I8UMQpqKiMHLQ8Rzd9oUUIITFJPuwExVflVdeB1fRKjSGDO7zAocaZElLgpqJr6Mjvoj2FKOUVfnTk8XxnkG5WNijLpmXavW9TFlNhtlfLYbSE2qofOA8or7d_AfsUWZV43ADdtVFNH7VwEEazqapaL-Vndqksu_vDnE';
@@ -716,6 +861,8 @@ function PostSkeletonCard() {
 }
 
 function ProfileScreen() {
+  const language = useAppLanguage();
+  const copy = PROFILE_COPY[language];
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<ProfileNav>();
   const route = useRoute<ProfileRoute>();
@@ -940,9 +1087,9 @@ function ProfileScreen() {
         const original = snapshot;
         setPosts(prev => prev.map(post => (post.id === postId ? original : post)));
       }
-      Alert.alert('Lỗi', 'Không thể cập nhật cảm xúc. Vui lòng thử lại.');
+      Alert.alert(copy.errorTitle, copy.reactionError);
     }
-  }, [feedRepo]);
+  }, [copy.errorTitle, copy.reactionError, feedRepo]);
 
   const handleOpenPicker = useCallback((postId: string, x: number, y: number) => {
     setPickerAnchor({ postId, x, y });
@@ -1026,9 +1173,9 @@ function ProfileScreen() {
         const original = snapshot;
         setPosts(prev => prev.map(post => (post.id === postId ? original : post)));
       }
-      Alert.alert('Lỗi', 'Không thể gửi phiếu bầu. Vui lòng thử lại.');
+      Alert.alert(copy.errorTitle, copy.voteError);
     }
-  }, [pollRepo]);
+  }, [copy.errorTitle, copy.voteError, pollRepo]);
 
   const selectedCommentPost = useMemo(
     () => posts.find(post => post.id === commentVm.selectedCommentPostId) ?? null,
@@ -1117,11 +1264,11 @@ function ProfileScreen() {
       });
     } else if (userStory) {
       Alert.alert(
-        'Tùy chọn ảnh đại diện',
+        copy.avatarOptionsTitle,
         '',
         [
           {
-            text: 'Xem tin',
+            text: copy.viewStory,
             onPress: () => {
               navigation.navigate(ROUTES.STORY_VIEWER, {
                 stories: [userStory],
@@ -1130,7 +1277,7 @@ function ProfileScreen() {
             },
           },
           {
-            text: 'Hủy',
+            text: copy.cancel,
             style: 'cancel',
           },
         ]
@@ -1174,7 +1321,7 @@ function ProfileScreen() {
       chatType: 'user',
       userId: String(targetUserId),
       username: profile?.username ?? '',
-      name: displayName || profile?.username || 'Người dùng',
+      name: displayName || profile?.username || copy.userFallback,
       avatar: avatarUrl,
       lastMessage: '',
       lastMessageTime: 0,
@@ -1196,7 +1343,7 @@ function ProfileScreen() {
       await toggleFollow(String(targetUserId));
     } catch (caughtError) {
       console.error('[ProfileScreen] Failed to connect user:', caughtError);
-      Alert.alert('Lỗi', 'Không thể gửi lời mời kết bạn. Vui lòng thử lại.');
+      Alert.alert(copy.errorTitle, copy.connectError);
     } finally {
       setIsConnectLoading(false);
     }
@@ -1210,10 +1357,13 @@ function ProfileScreen() {
     setIsPokeLoading(true);
     try {
       await pokeUser(String(targetUserId));
-      Alert.alert('Đã chọc', `Bạn đã chọc ${displayName || 'người dùng này'}.`);
+      Alert.alert(
+        copy.pokeSuccessTitle,
+        copy.pokeSuccessMessage(displayName || copy.userFallback),
+      );
     } catch (caughtError) {
       console.error('[ProfileScreen] Failed to poke user:', caughtError);
-      Alert.alert('Lỗi', 'Không thể chọc người dùng này lúc này.');
+      Alert.alert(copy.errorTitle, copy.pokeError);
     } finally {
       setIsPokeLoading(false);
     }
@@ -1321,7 +1471,7 @@ function ProfileScreen() {
               >
                 <Camera size={14} color="#FFFFFF" />
                 <Text className="ml-1.5 text-[11px] font-semibold text-white">
-                Chỉnh sửa
+                  {copy.edit}
                 </Text>
               </TouchableOpacity>
             )}
@@ -1366,7 +1516,7 @@ function ProfileScreen() {
                 className="text-center text-[24px] font-bold tracking-wide text-[#050505]"
                 numberOfLines={2}
               >
-                {displayName || 'Người dùng'}
+                {displayName || copy.userFallback}
               </Text>
               {profile?.verified && (
                 <View className="ml-2 mt-0.5">
@@ -1392,7 +1542,7 @@ function ProfileScreen() {
                 >
                   <Briefcase size={16} color="#FFFFFF" />
                   <Text className="ml-1.5 text-[14px] font-bold text-white">
-                    Bảng điều khiển
+                    {copy.dashboard}
                   </Text>
                 </TouchableOpacity>
 
@@ -1403,7 +1553,7 @@ function ProfileScreen() {
                 >
                   <PlusCircle size={16} color="#050505" />
                   <Text className="ml-1.5 text-[14px] font-bold text-[#050505]">
-                    Thêm vào tin
+                    {copy.addToStory}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -1415,7 +1565,7 @@ function ProfileScreen() {
                 >
                   <UserCheck size={16} color="#050505" />
                   <Text className="ml-1.5 text-[14px] font-bold text-[#050505]">
-                    Đã theo dõi
+                    {copy.followed}
                   </Text>
                 </TouchableOpacity>
 
@@ -1426,7 +1576,7 @@ function ProfileScreen() {
                 >
                   <MessageCircle size={16} color="#FFFFFF" />
                   <Text className="ml-1.5 text-[14px] font-bold text-white">
-                    Nhắn tin
+                    {copy.message}
                   </Text>
                 </TouchableOpacity>
 
@@ -1438,7 +1588,7 @@ function ProfileScreen() {
                 >
                   <Sparkles size={15} color="#050505" />
                   <Text className="ml-1 text-[13px] font-bold text-[#050505]">
-                    Chọc
+                    {copy.poke}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -1462,10 +1612,10 @@ function ProfileScreen() {
                     }`}
                   >
                     {isRequestedProfile
-                      ? 'Đã gửi yêu cầu'
+                      ? copy.requestSent
                       : isConnectLoading
-                        ? 'Đang gửi...'
-                        : 'Theo dõi'}
+                        ? copy.sending
+                        : copy.follow}
                   </Text>
                 </TouchableOpacity>
 
@@ -1476,7 +1626,7 @@ function ProfileScreen() {
                 >
                   <MessageCircle size={16} color="#050505" />
                   <Text className="ml-1.5 text-[14px] font-bold text-[#050505]">
-                    Nhắn tin
+                    {copy.message}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -1487,10 +1637,10 @@ function ProfileScreen() {
         {shouldShowStorySection && (
           <View style={profileStoryStyles.section}>
             <View style={profileStoryStyles.headerRow}>
-              <Text style={profileStoryStyles.title}>Tin</Text>
+              <Text style={profileStoryStyles.title}>{copy.stories}</Text>
               {!!userStory && (
                 <Text style={profileStoryStyles.countText}>
-                  {storySegmentCount} đoạn tin
+                  {copy.storySegments(storySegmentCount)}
                 </Text>
               )}
             </View>
@@ -1560,7 +1710,7 @@ function ProfileScreen() {
                       </View>
                     )}
                     <Text style={profileStoryStyles.label} numberOfLines={2}>
-                      Xem tin
+                      {copy.viewStory}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -1580,7 +1730,9 @@ function ProfileScreen() {
                       <View style={profileStoryStyles.createPlus}>
                         <PlusCircle size={18} color="#FFFFFF" />
                       </View>
-                      <Text style={profileStoryStyles.createText}>Tạo tin</Text>
+                      <Text style={profileStoryStyles.createText}>
+                        {copy.createStory}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 )}
@@ -1598,42 +1750,44 @@ function ProfileScreen() {
 
         {/* Details Card (Chi tiết) */}
         <View className="mx-4 mt-4 rounded-xl bg-white p-4 shadow-sm border border-[#E4E6EB]">
-          <Text className="text-[17px] font-bold text-[#050505] mb-4">Chi tiết</Text>
+          <Text className="text-[17px] font-bold text-[#050505] mb-4">
+            {copy.details}
+          </Text>
 
           <View className="mb-1">
             <DetailRow
               icon={<User size={18} color="#65676B" />}
-              text={profile?.pro ? 'Thành viên VIP Member' : 'Thành viên'}
+              text={profile?.pro ? copy.vipMember : copy.member}
             />
             {!!profile?.working && (
               <DetailRow
                 icon={<Briefcase size={18} color="#65676B" />}
-                text={`Làm việc tại ${profile.working}`}
+                text={copy.worksAt(profile.working)}
               />
             )}
             {!!profile?.address && (
               <DetailRow
                 icon={<MapPin size={18} color="#65676B" />}
-                text={`Sống tại ${profile.address}`}
+                text={copy.livesAt(profile.address)}
               />
             )}
             <DetailRow
               icon={<Clock size={18} color="#65676B" />}
-              text={profile?.lastSeenText ?? 'Đang hoạt động'}
+              text={profile?.lastSeenText ?? copy.activeNow}
             />
 
             {/* Followers, Following, and Points inside Details List */}
             <DetailRow
               icon={<Users size={18} color="#65676B" />}
-              text={`Có ${followerCount} người theo dõi`}
+              text={copy.followersText(followerCount)}
             />
             <DetailRow
               icon={<UserCheck size={18} color="#65676B" />}
-              text={`Đang theo dõi ${followingCount} người`}
+              text={copy.followingText(followingCount)}
             />
             <DetailRow
               icon={<Sparkles size={18} color="#65676B" />}
-              text={`Tích lũy ${profile?.points ?? 0} điểm`}
+              text={copy.pointsText(Number(profile?.points ?? 0))}
             />
             
             {!!profile?.about && (
@@ -1649,7 +1803,7 @@ function ProfileScreen() {
             activeOpacity={0.8}
           >
             <Text className="text-[14px] font-semibold text-[#050505]">
-              Chỉnh sửa chi tiết công khai
+              {copy.editPublicDetails}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1658,13 +1812,17 @@ function ProfileScreen() {
         <View className="mx-4 mt-4 rounded-xl bg-white p-4 shadow-sm border border-[#E4E6EB]">
           <View className="mb-4 flex-row items-center justify-between">
             <View>
-              <Text className="text-[17px] font-bold text-[#050505]">Bạn bè</Text>
+              <Text className="text-[17px] font-bold text-[#050505]">
+                {copy.friends}
+              </Text>
               <Text className="mt-0.5 text-[12px] text-[#65676B]">
-                {followerCount} người theo dõi
+                {copy.followersText(followerCount)}
               </Text>
             </View>
             <TouchableOpacity activeOpacity={0.8}>
-              <Text className="text-[14px] font-semibold text-[#1877F2]">Tìm bạn bè</Text>
+              <Text className="text-[14px] font-semibold text-[#1877F2]">
+                {copy.findFriends}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -1686,7 +1844,7 @@ function ProfileScreen() {
                 >
                   {followers[index]?.name ??
                     ['Trần Văn A', 'Lê Thị B', 'Nguyễn C', 'Phạm D', 'Hoàng E'][index] ??
-                    'Bạn bè'}
+                    copy.friendFallback}
                 </Text>
               </View>
             ))}
@@ -1701,7 +1859,7 @@ function ProfileScreen() {
                 +{Math.max(followerCount - friendAvatars.length, 0)}
               </Text>
               <Text className="mt-0.5 text-[10px] text-[#65676B] font-medium">
-                Xem tất cả
+                {copy.seeAll}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1719,7 +1877,9 @@ function ProfileScreen() {
                 activeOpacity={0.8}
                 onPress={() => navigation.navigate(ROUTES.CREATE_POST)}
               >
-                <Text className="text-[14px] text-[#65676B]">Bạn đang nghĩ gì?</Text>
+                <Text className="text-[14px] text-[#65676B]">
+                  {copy.composerPlaceholder}
+                </Text>
               </TouchableOpacity>
             </View>
             <View className="border-t border-[#F0F2F5] mt-3.5 pt-2.5 flex-row justify-between">
@@ -1730,7 +1890,9 @@ function ProfileScreen() {
                 <View className="h-4 w-4 bg-red-100 rounded-full items-center justify-center mr-2">
                   <Play size={10} color="#EF4444" fill="#EF4444" />
                 </View>
-                <Text className="text-[12px] font-semibold text-[#65676B]">Phát trực tiếp</Text>
+                <Text className="text-[12px] font-semibold text-[#65676B]">
+                  {copy.goLive}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 className="flex-row items-center py-1 px-2"
@@ -1739,7 +1901,9 @@ function ProfileScreen() {
                 <View className="h-4 w-4 bg-green-100 rounded-full items-center justify-center mr-2">
                   <PlusCircle size={10} color="#22C55E" />
                 </View>
-                <Text className="text-[12px] font-semibold text-[#65676B]">Ảnh/video</Text>
+                <Text className="text-[12px] font-semibold text-[#65676B]">
+                  {copy.photoVideo}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 className="flex-row items-center py-1 px-2"
@@ -1748,7 +1912,9 @@ function ProfileScreen() {
                 <View className="h-4 w-4 bg-blue-100 rounded-full items-center justify-center mr-2">
                   <Sparkles size={10} color="#1877F2" />
                 </View>
-                <Text className="text-[12px] font-semibold text-[#65676B]">Sự kiện trong đời</Text>
+                <Text className="text-[12px] font-semibold text-[#65676B]">
+                  {copy.lifeEvent}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1756,9 +1922,13 @@ function ProfileScreen() {
 
         {/* Posts Section Header */}
         <View className="mx-4 mt-4 mb-2 flex-row items-center justify-between px-1">
-          <Text className="text-[17px] font-bold text-[#050505]">Bài viết</Text>
+          <Text className="text-[17px] font-bold text-[#050505]">
+            {copy.posts}
+          </Text>
           <TouchableOpacity activeOpacity={0.8}>
-            <Text className="text-[14px] font-semibold text-[#1877F2]">Quản lý</Text>
+            <Text className="text-[14px] font-semibold text-[#1877F2]">
+              {copy.manage}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -1771,12 +1941,12 @@ function ProfileScreen() {
         ) : postsError ? (
           <View style={profilePostStyles.stateCard}>
             <Text style={[profilePostStyles.stateText, { color: '#EF4444' }]}>
-              Lỗi tải bài viết: {postsError}
+              {copy.loadPostsError}: {postsError}
             </Text>
           </View>
         ) : posts.length === 0 ? (
           <View style={profilePostStyles.stateCard}>
-            <Text style={profilePostStyles.stateText}>Chưa có bài viết nào</Text>
+            <Text style={profilePostStyles.stateText}>{copy.noPosts}</Text>
           </View>
         ) : (
           <View>

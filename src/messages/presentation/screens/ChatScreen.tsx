@@ -78,6 +78,8 @@ import type {
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { useAudioRecorder } from '../../../shared-kernel/application/hooks/useAudioRecorder';
 import { formatAudioDuration } from '../../../shared-kernel/application/utils/audioFiles';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 
 type ChatScreenProps = NativeStackScreenProps<
   RootStackParamList,
@@ -100,6 +102,122 @@ const IMAGE_GALLERY_WIDTH = 268;
 const IMAGE_GALLERY_GAP = 3;
 const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
 
+const CHAT_COPY: Record<AppLanguage, {
+  today: string;
+  yesterday: string;
+  loadingMessages: string;
+  hello: (name: string) => string;
+  emptyHint: string;
+  newMessages: string;
+  recording: (duration: string) => string;
+  inputPlaceholder: string;
+  retryHint: string;
+  clearHistory: string;
+  clearHistoryMessage: string;
+  cancel: string;
+  delete: string;
+  removeMember: string;
+  removeMemberMessage: (name: string) => string;
+  audioCallFailedTitle: string;
+  missingRecipient: string;
+  missingGroup: string;
+  recordFailed: string;
+  groupChat: string;
+  addMembers: string;
+  groupMembers: string;
+  sharedMedia: string;
+  emptySharedMedia: string;
+  leaveGroup: string;
+  leaveGroupMessage: string;
+  leaveGroupConfirm: string;
+  errorTitle: string;
+  cannotFindMember: string;
+  cannotAddMember: string;
+  cannotSaveGroup: string;
+  cannotClearHistory: string;
+  cannotLeaveGroup: string;
+  cannotRemoveMember: string;
+  missedCall: string;
+  noAnswer: string;
+}> = {
+  vi: {
+    today: 'Hôm nay',
+    yesterday: 'Hôm qua',
+    loadingMessages: 'Đang tải tin nhắn...',
+    hello: name => `Chào ${name}!`,
+    emptyHint: 'Gửi tin nhắn để bắt đầu cuộc trò chuyện',
+    newMessages: 'Tin nhắn mới',
+    recording: duration => `Đang ghi âm ${duration}`,
+    inputPlaceholder: 'Tin nhắn',
+    retryHint: 'Vui lòng thử lại.',
+    clearHistory: 'Xóa lịch sử trò chuyện',
+    clearHistoryMessage: 'Bạn muốn xóa lịch sử nhóm này?',
+    cancel: 'Hủy',
+    delete: 'Xóa',
+    removeMember: 'Xóa thành viên',
+    removeMemberMessage: name => `Xóa ${name} khỏi nhóm?`,
+    audioCallFailedTitle: 'Không gọi được',
+    missingRecipient: 'Thiếu mã người nhận cuộc gọi.',
+    missingGroup: 'Thiếu mã nhóm để bắt đầu cuộc gọi.',
+    recordFailed: 'Không ghi âm được',
+    groupChat: 'Nhắn tin nhóm',
+    addMembers: 'Thêm thành viên',
+    groupMembers: 'Thành viên nhóm',
+    sharedMedia: 'Ảnh/Video',
+    emptySharedMedia: 'Chưa có Ảnh/Video được chia sẻ trong hội thoại này',
+    leaveGroup: 'Rời nhóm',
+    leaveGroupMessage: 'Bạn sẽ không còn nhận tin nhắn từ nhóm này.',
+    leaveGroupConfirm: 'Rời nhóm',
+    errorTitle: 'Lỗi',
+    cannotFindMember: 'Không tìm được thành viên',
+    cannotAddMember: 'Không thêm được thành viên',
+    cannotSaveGroup: 'Không lưu được nhóm',
+    cannotClearHistory: 'Không xóa được lịch sử',
+    cannotLeaveGroup: 'Không rời được nhóm',
+    cannotRemoveMember: 'Không xóa được thành viên',
+    missedCall: 'Cuộc gọi nhỡ',
+    noAnswer: 'Không trả lời',
+  },
+  en: {
+    today: 'Today',
+    yesterday: 'Yesterday',
+    loadingMessages: 'Loading messages...',
+    hello: name => `Hi ${name}!`,
+    emptyHint: 'Send a message to start the conversation',
+    newMessages: 'New messages',
+    recording: duration => `Recording ${duration}`,
+    inputPlaceholder: 'Message',
+    retryHint: 'Please try again.',
+    clearHistory: 'Clear chat history',
+    clearHistoryMessage: 'Do you want to clear this group history?',
+    cancel: 'Cancel',
+    delete: 'Delete',
+    removeMember: 'Remove member',
+    removeMemberMessage: name => `Remove ${name} from the group?`,
+    audioCallFailedTitle: 'Cannot start call',
+    missingRecipient: 'Missing recipient ID.',
+    missingGroup: 'Missing group ID to start the call.',
+    recordFailed: 'Could not record audio',
+    groupChat: 'Group chat',
+    addMembers: 'Add members',
+    groupMembers: 'Group members',
+    sharedMedia: 'Photos/Videos',
+    emptySharedMedia: 'No photos or videos have been shared in this chat',
+    leaveGroup: 'Leave group',
+    leaveGroupMessage: 'You will no longer receive messages from this group.',
+    leaveGroupConfirm: 'Leave group',
+    errorTitle: 'Error',
+    cannotFindMember: 'Member not found',
+    cannotAddMember: 'Could not add member',
+    cannotSaveGroup: 'Could not save group',
+    cannotClearHistory: 'Could not clear history',
+    cannotLeaveGroup: 'Could not leave group',
+    cannotRemoveMember: 'Could not remove member',
+    missedCall: 'Missed call',
+    noAnswer: 'No answer',
+  },
+};
+
 if (
   Platform.OS === 'android' &&
   UIManager.setLayoutAnimationEnabledExperimental
@@ -117,7 +235,7 @@ function formatMessageTime(timestamp: number) {
 }
 
 // Format date separator
-function formatDateSeparator(timestamp: number): string {
+function formatDateSeparator(timestamp: number, copy: typeof CHAT_COPY.vi): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const messageDate = new Date(timestamp * 1000);
@@ -125,8 +243,8 @@ function formatDateSeparator(timestamp: number): string {
   const diffDays = Math.floor(
     (today.getTime() - messageDate.getTime()) / (1000 * 60 * 60 * 24),
   );
-  if (diffDays === 0) return 'Hôm nay';
-  if (diffDays === 1) return 'Hôm qua';
+  if (diffDays === 0) return copy.today;
+  if (diffDays === 1) return copy.yesterday;
   return messageDate.toLocaleDateString('vi-VN', {
     day: 'numeric',
     month: 'short',
@@ -712,6 +830,7 @@ function GroupInfoModal({
   onClearHistory,
   onLeaveGroup,
   onRemoveMember,
+  copy,
 }: {
   visible: boolean;
   groupInfo: GroupChatInfo | null;
@@ -735,6 +854,7 @@ function GroupInfoModal({
   onClearHistory: () => void;
   onLeaveGroup: () => void;
   onRemoveMember: (member: GroupChatMember) => void;
+  copy: typeof CHAT_COPY.vi;
 }) {
   const isMembersOpen = expandedSections.has('members');
   const isMediaOpen = expandedSections.has('media');
@@ -813,7 +933,7 @@ function GroupInfoModal({
                     <UserPlus size={20} color="#0000ff" />
                   </View>
                   <Text className="ml-3 text-base font-semibold text-gray-900">
-                    Thêm thành viên
+                    {copy.addMembers}
                   </Text>
                 </View>
                 <View className="mt-3 flex-row">
@@ -866,7 +986,7 @@ function GroupInfoModal({
             ) : null}
 
             <SectionHeader
-              title="Thành viên nhóm"
+              title={copy.groupMembers}
               isOpen={isMembersOpen}
               onPress={() => onToggleSection('members')}
             />
@@ -888,7 +1008,7 @@ function GroupInfoModal({
             ) : null}
 
             <SectionHeader
-              title="Ảnh/Video"
+              title={copy.sharedMedia}
               isOpen={isMediaOpen}
               onPress={() => onToggleSection('media')}
             />
@@ -896,7 +1016,7 @@ function GroupInfoModal({
               <View className="flex-row flex-wrap px-5 pb-4">
                 {(assets?.media ?? []).length === 0 ? (
                   <Text className="py-3 text-sm text-gray-500">
-                    Chưa có Ảnh/Video được chia sẻ trong hội thoại này
+                    {copy.emptySharedMedia}
                   </Text>
                 ) : (
                   assets!.media.map(item => (
@@ -989,7 +1109,9 @@ function GroupInfoModal({
                 onPress={onLeaveGroup}
               >
                 <LogOut size={19} color="#dc2626" />
-                <Text className="ml-3 text-base text-red-600">Rời nhóm</Text>
+                <Text className="ml-3 text-base text-red-600">
+                  {copy.leaveGroup}
+                </Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -1001,6 +1123,8 @@ function GroupInfoModal({
 
 function ChatScreen({ navigation, route }: ChatScreenProps) {
   const { chat } = route.params;
+  const language = useAppLanguage();
+  const copy = CHAT_COPY[language];
   const {
     messages,
     groupInfo,
@@ -1251,9 +1375,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       setAttachments([]);
       await recorder.startRecording();
     } catch {
-      Alert.alert('Lỗi', 'Không ghi âm được');
+      Alert.alert(copy.errorTitle, copy.recordFailed);
     }
-  }, [recorder]);
+  }, [copy.errorTitle, copy.recordFailed, recorder]);
 
   const { startOutgoingCall } = useLiveKitCallSession();
   const { startGroupCall } = useGroupLiveKitCallSession();
@@ -1278,7 +1402,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     (callType: 'audio' | 'video') => {
       const recipientId = chat.participantId || chat.userId || chat.chatId;
       if (!recipientId) {
-        Alert.alert('Không gọi được', 'Thiếu mã người nhận cuộc gọi.');
+        Alert.alert(copy.audioCallFailedTitle, copy.missingRecipient);
         return;
       }
 
@@ -1297,6 +1421,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       navigation.navigate(ROUTES.CALL_ROOM, callParams);
     },
     [
+      copy.audioCallFailedTitle,
+      copy.missingRecipient,
       chat.avatar,
       chat.chatId,
       chat.name,
@@ -1311,7 +1437,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const handleStartGroupCall = useCallback(
     (callType: 'audio' | 'video') => {
       if (!groupId) {
-        Alert.alert('Không gọi được', 'Thiếu mã nhóm để bắt đầu cuộc gọi.');
+        Alert.alert(copy.audioCallFailedTitle, copy.missingGroup);
         return;
       }
       const callParams = {
@@ -1324,7 +1450,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       startGroupCall(callParams);
       navigation.navigate(ROUTES.GROUP_CALL_ROOM, callParams);
     },
-    [chat.avatar, chat.name, groupId, navigation, startGroupCall],
+    [chat.avatar, chat.name, copy.audioCallFailedTitle, copy.missingGroup, groupId, navigation, startGroupCall],
   );
 
   const handleOpenGroupInfo = useCallback(() => {
@@ -1362,12 +1488,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   const handleSearchAddableUsers = useCallback(() => {
     searchAddableUsers(addableQuery).catch(caught => {
-      Alert.alert(
-        'Không tìm được thành viên',
-        caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
-      );
-    });
-  }, [addableQuery, searchAddableUsers]);
+        Alert.alert(
+          copy.cannotFindMember,
+          caught instanceof Error ? caught.message : copy.retryHint,
+        );
+      });
+  }, [addableQuery, copy.cannotFindMember, copy.retryHint, searchAddableUsers]);
 
   const handleToggleAddableUser = useCallback((user: GroupAddableUser) => {
     setSelectedAddableIds(current => {
@@ -1393,11 +1519,11 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       })
       .catch(caught => {
         Alert.alert(
-          'Không thêm được thành viên',
-          caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+          copy.cannotAddMember,
+          caught instanceof Error ? caught.message : copy.retryHint,
         );
       });
-  }, [addGroupUsers, searchAddableUsers, selectedAddableIds]);
+  }, [addGroupUsers, copy.cannotAddMember, copy.retryHint, searchAddableUsers, selectedAddableIds]);
 
   const handlePickGroupAvatar = useCallback(async () => {
     const result = await launchImageLibrary({
@@ -1426,17 +1552,17 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       })
       .catch(caught => {
         Alert.alert(
-          'Không lưu được nhóm',
-          caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+          copy.cannotSaveGroup,
+          caught instanceof Error ? caught.message : copy.retryHint,
         );
       });
-  }, [editGroup, editGroupAvatar, editGroupName, groupInfo?.name]);
+  }, [copy.cannotSaveGroup, copy.retryHint, editGroup, editGroupAvatar, editGroupName, groupInfo?.name]);
 
   const handleClearGroupHistory = useCallback(() => {
-    Alert.alert('Xóa lịch sử trò chuyện', 'Bạn muốn xóa lịch sử nhóm này?', [
-      { text: 'Hủy', style: 'cancel' },
+    Alert.alert(copy.clearHistory, copy.clearHistoryMessage, [
+      { text: copy.cancel, style: 'cancel' },
       {
-        text: 'Xóa',
+        text: copy.delete,
         style: 'destructive',
         onPress: () => {
           clearGroupHistory()
@@ -1448,20 +1574,20 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             })
             .catch(caught => {
               Alert.alert(
-                'Không xóa được lịch sử',
-                caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+                copy.cannotClearHistory,
+                caught instanceof Error ? caught.message : copy.retryHint,
               );
             });
         },
       },
     ]);
-  }, [clearGroupHistory, loadGroupInfo, loadInitial]);
+  }, [clearGroupHistory, copy.cancel, copy.cannotClearHistory, copy.clearHistory, copy.clearHistoryMessage, copy.delete, copy.retryHint, loadGroupInfo, loadInitial]);
 
   const handleLeaveGroup = useCallback(() => {
-    Alert.alert('Rời nhóm', 'Bạn sẽ không còn nhận tin nhắn từ nhóm này.', [
-      { text: 'Hủy', style: 'cancel' },
+    Alert.alert(copy.leaveGroup, copy.leaveGroupMessage, [
+      { text: copy.cancel, style: 'cancel' },
       {
-        text: 'Rời nhóm',
+        text: copy.leaveGroupConfirm,
         style: 'destructive',
         onPress: () => {
           leaveGroup()
@@ -1473,34 +1599,34 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             })
             .catch(caught => {
               Alert.alert(
-                'Không rời được nhóm',
-                caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+                copy.cannotLeaveGroup,
+                caught instanceof Error ? caught.message : copy.retryHint,
               );
             });
         },
       },
     ]);
-  }, [leaveGroup, navigation]);
+  }, [copy.cancel, copy.cannotLeaveGroup, copy.leaveGroup, copy.leaveGroupConfirm, copy.leaveGroupMessage, copy.retryHint, leaveGroup, navigation]);
 
   const handleRemoveGroupMember = useCallback(
     (member: GroupChatMember) => {
-      Alert.alert('Xóa thành viên', `Xóa ${member.name} khỏi nhóm?`, [
-        { text: 'Hủy', style: 'cancel' },
+      Alert.alert(copy.removeMember, copy.removeMemberMessage(member.name), [
+        { text: copy.cancel, style: 'cancel' },
         {
-          text: 'Xóa',
+          text: copy.delete,
           style: 'destructive',
           onPress: () => {
             removeGroupUser(member.id).catch(caught => {
               Alert.alert(
-                'Không xóa được thành viên',
-                caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+                copy.cannotRemoveMember,
+                caught instanceof Error ? caught.message : copy.retryHint,
               );
             });
           },
         },
       ]);
     },
-    [removeGroupUser],
+    [copy.cancel, copy.cannotRemoveMember, copy.delete, copy.removeMember, copy.removeMemberMessage, copy.retryHint, removeGroupUser],
   );
 
   return (
@@ -1543,9 +1669,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             </Text>
             <Text className="text-xs text-gray-500">
               {chat.chatType === 'group'
-                ? `${groupInfo?.memberCount ?? ''} thành viên`
+                ? `${groupInfo?.memberCount ?? ''} ${
+                    language === 'vi' ? 'thành viên' : 'members'
+                  }`
                 : chat.isOnline
-                ? 'Đang hoạt động'
+                ? language === 'vi'
+                  ? 'Đang hoạt động'
+                  : 'Active now'
                 : `@${chat.username}`}
             </Text>
           </View>
@@ -1607,7 +1737,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color="#2563eb" />
             <Text className="mt-3 text-sm text-gray-500">
-              Đang tải tin nhắn...
+              {copy.loadingMessages}
             </Text>
           </View>
         ) : (
@@ -1663,10 +1793,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   <MessageCircle size={48} color="#9DA9BE" />
                 </View>
                 <Text className="text-lg font-semibold text-gray-900">
-                  Chào {chat.name}!
+                  {copy.hello(chat.name)}
                 </Text>
                 <Text className="mt-2 text-center text-sm text-gray-500">
-                  Gửi tin nhắn để bắt đầu cuộc trò chuyện
+                  {copy.emptyHint}
                 </Text>
               </View>
             }
@@ -1691,7 +1821,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             }}
           >
             <Text className="text-xs font-semibold text-white">
-              Tin nháº¯n má»›i
+              {copy.newMessages}
             </Text>
           </TouchableOpacity>
         )}
@@ -1776,7 +1906,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             <View className="mr-2 h-10 flex-1 flex-row items-center rounded-full bg-red-50 px-4">
               <View className="mr-3 h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
               <Text className="mr-2 text-sm font-medium text-red-600">
-                Đang ghi âm {formatAudioDuration(recorder.durationMs)}
+                {copy.recording(formatAudioDuration(recorder.durationMs))}
               </Text>
               <TouchableOpacity onPress={() => recorder.cancelRecording()}>
                 <X size={20} color="#DC2626" />
@@ -1785,7 +1915,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           ) : (
             <TextInput
               className="mr-2 max-h-28 flex-1 rounded-full bg-gray-100 px-4 py-2.5 text-[15px] text-gray-900"
-              placeholder="Tin nhắn"
+              placeholder={copy.inputPlaceholder}
               placeholderTextColor="#9DA9BE"
               multiline
               value={text}
@@ -1844,6 +1974,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         onClearHistory={handleClearGroupHistory}
         onLeaveGroup={handleLeaveGroup}
         onRemoveMember={handleRemoveGroupMember}
+        copy={copy}
       />
       <Modal
         visible={Boolean(viewerMedia)}

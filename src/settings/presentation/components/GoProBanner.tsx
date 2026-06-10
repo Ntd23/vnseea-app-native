@@ -4,9 +4,15 @@ import {ArrowRight, Crown} from 'lucide-react-native';
 
 interface GoProBannerProps {
   onPress?: () => void;
+  title?: string;
+  subtitle?: string;
 }
 
-export default function GoProBanner({onPress}: GoProBannerProps) {
+export default function GoProBanner({
+  onPress,
+  title = 'Go Pro Account',
+  subtitle = 'Mở khóa tất cả tính năng cao cấp',
+}: GoProBannerProps) {
   return (
     <TouchableOpacity
       activeOpacity={0.9}
@@ -22,9 +28,9 @@ export default function GoProBanner({onPress}: GoProBannerProps) {
             <Crown size={24} color="#ffffff" />
           </View>
           <View>
-            <Text className="text-heading text-inverse">Go Pro Account</Text>
+            <Text className="text-heading text-inverse">{title}</Text>
             <Text className="text-body-secondary mt-0.5 text-white/80">
-              Mở khóa tất cả tính năng cao cấp
+              {subtitle}
             </Text>
           </View>
         </View>

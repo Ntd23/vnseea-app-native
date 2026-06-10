@@ -3,6 +3,7 @@ import {Text, TouchableOpacity, View} from 'react-native';
 import {
   Bell,
   ChevronRight,
+  Globe2,
   HelpCircle,
   Info,
   Link,
@@ -16,6 +17,7 @@ import type {SettingsMenuItem} from '../../domain/types/settings.types';
 
 const ICON_MAP: Record<string, React.ComponentType<{size: number; color: string}>> = {
   User,
+  Globe2,
   Lock,
   Bell,
   Link,
@@ -29,6 +31,7 @@ const ICON_MAP: Record<string, React.ComponentType<{size: number; color: string}
 interface SettingsMenuListProps {
   items: SettingsMenuItem[];
   onItemPress?: (id: string) => void;
+  sectionTitle?: string;
 }
 
 function SettingsMenuRow({
@@ -58,9 +61,16 @@ function SettingsMenuRow({
           <IconComponent size={22} color={iconColor} />
         ) : null}
       </View>
-      <Text className={`flex-1 text-[16px] leading-6 ${textColorClass}`}>
-        {item.label}
-      </Text>
+      <View className="flex-1">
+        <Text className={`text-[16px] leading-6 ${textColorClass}`}>
+          {item.label}
+        </Text>
+        {item.subtitle ? (
+          <Text className="mt-0.5 text-[13px] leading-5 text-[#64748b]">
+            {item.subtitle}
+          </Text>
+        ) : null}
+      </View>
       <ChevronRight
         size={18}
         color={item.isDestructive ? '#ef4444' : '#94a3b8'}
@@ -72,11 +82,12 @@ function SettingsMenuRow({
 export default function SettingsMenuList({
   items,
   onItemPress,
+  sectionTitle = 'OTHER SETTINGS',
 }: SettingsMenuListProps) {
   return (
     <View>
       {/* Section header */}
-      <Text className="text-label-secondary mb-3 px-2">OTHER SETTINGS</Text>
+      <Text className="text-label-secondary mb-3 px-2">{sectionTitle}</Text>
 
       {/* Menu card */}
       <View className="surface-card overflow-hidden">

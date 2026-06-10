@@ -2,6 +2,8 @@
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
+  Modal,
+  Pressable,
   ScrollView,
   StatusBar,
   Text,
@@ -9,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, Search } from 'lucide-react-native';
+import { Check, Plus, Search, X } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -30,7 +32,16 @@ type SettingsNav = NativeStackNavigationProp<RootStackParamList>;
 function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const [sheetVisible, setSheetVisible] = useState(false);
-  const { profile, features, settingsMenu } = useSettingsViewModel();
+  const [languageSheetVisible, setLanguageSheetVisible] = useState(false);
+  const {
+    profile,
+    features,
+    settingsMenu,
+    language,
+    setLanguage,
+    languageOptions,
+    copy,
+  } = useSettingsViewModel();
   const { logout } = useAuthViewModel();
 
   const handleCreateNavigate = useCallback(
@@ -76,6 +87,11 @@ function SettingsScreen() {
 
   const handleSettingsItemPress = useCallback(
     async (id: string) => {
+      if (id === 'general') {
+        setLanguageSheetVisible(true);
+        return;
+      }
+
       if (id === 'notifications') {
         navigation.navigate(ROUTES.MAIN_TABS, {
           screen: ROUTES.NOTIFICATIONS,
@@ -240,6 +256,7 @@ function SettingsScreen() {
         {profile ? (
           <ProfileHeaderCard
             profile={profile}
+            viewProfileLabel={copy.viewProfile}
             onPress={() => navigation.navigate(ROUTES.PROFILE)}
           />
         ) : (
@@ -263,17 +280,95 @@ function SettingsScreen() {
 
         {/* Go Pro Banner */}
         <View className="mt-5">
-          <GoProBanner />
+          <GoProBanner
+            title={copy.proTitle}
+            subtitle={copy.proSubtitle}
+          />
         </View>
 
         {/* Settings Menu List */}
         <View className="mt-6">
           <SettingsMenuList
             items={settingsMenu}
+            sectionTitle={copy.otherSettings}
             onItemPress={handleSettingsItemPress}
           />
         </View>
       </ScrollView>
+
+      <Modal
+        visible={languageSheetVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLanguageSheetVisible(false)}
+      >
+        <Pressable
+          className="flex-1 justify-end bg-black/35"
+          onPress={() => setLanguageSheetVisible(false)}
+        >
+          <Pressable
+            className="rounded-t-[28px] bg-white px-5 pb-8 pt-5"
+            onPress={event => event.stopPropagation()}
+          >
+            <View className="mb-5 flex-row items-start justify-between">
+              <View className="flex-1 pr-4">
+                <Text className="text-[24px] font-bold text-[#0f172a]">
+                  {copy.languageTitle}
+                </Text>
+                <Text className="mt-1 text-[15px] leading-6 text-[#64748b]">
+                  {copy.languageDescription}
+                </Text>
+              </View>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                className="h-11 w-11 items-center justify-center rounded-full bg-[#f1f5f9]"
+                onPress={() => setLanguageSheetVisible(false)}
+              >
+                <X size={22} color="#334155" />
+              </TouchableOpacity>
+            </View>
+
+            <View className="gap-3">
+              {languageOptions.map(option => {
+                const isSelected = option.code === language;
+                return (
+                  <TouchableOpacity
+                    key={option.code}
+                    activeOpacity={0.85}
+                    className={`flex-row items-center rounded-2xl border px-4 py-4 ${
+                      isSelected
+                        ? 'border-[#0000ff] bg-[#eef2ff]'
+                        : 'border-[#e2e8f0] bg-white'
+                    }`}
+                    onPress={() => {
+                      setLanguage(option.code);
+                      setLanguageSheetVisible(false);
+                    }}
+                  >
+                    <View className="flex-1">
+                      <Text
+                        className={`text-[17px] font-bold ${
+                          isSelected ? 'text-[#0000ff]' : 'text-[#0f172a]'
+                        }`}
+                      >
+                        {option.label}
+                      </Text>
+                      <Text className="mt-0.5 text-[13px] text-[#64748b]">
+                        {isSelected ? copy.selected : option.nativeLabel}
+                      </Text>
+                    </View>
+                    {isSelected ? (
+                      <View className="h-8 w-8 items-center justify-center rounded-full bg-[#0000ff]">
+                        <Check size={18} color="#ffffff" />
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <CreateActionSheet
         visible={sheetVisible}
