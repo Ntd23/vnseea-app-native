@@ -525,3 +525,39 @@
   background-color: var(--color-secondary-200);
   color: var(--color-secondary-600);
 }
+
+/* --- Explore Hashtags tokens (added for ExploreScreen) ---
+   Two utility primitives that didn't fit any existing bucket. Kept
+   here per the token-first rule (DESIGN.md: "If a repeated visual
+   primitive is missing, add it to tokens.css first"). */
+
+/* Stronger glass card used for the explore StatPill row and any
+   elevated content above the surface. Uses a translucent white wash
+   because backdrop-filter support is uneven in React Native. */
+.surface-glass-strong {
+  background-color: rgba(255, 255, 255, 0.72);
+  border-width: 1px;
+  border-color: rgba(255, 255, 255, 0.45);
+  border-radius: 24px;
+  shadow-color: rgba(0, 0, 255, 0.10);
+  shadow-offset: 0 8px;
+  shadow-opacity: 1;
+  shadow-radius: 24px;
+  elevation: 6;
+}
+
+/* Skeleton shimmer base. The actual `backgroundPosition` animation is
+   driven from JS via Reanimated's useAnimatedStyle (see
+   HashtagSkeleton.tsx) — the CSS only provides the gradient. */
+.bg-shimmer {
+  background-color: var(--color-primary-50);
+  background-image: linear-gradient(
+    90deg,
+    rgba(238, 240, 255, 0) 0%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(238, 240, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  background-position: 0% 0%;
+  background-repeat: no-repeat;
+}

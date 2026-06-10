@@ -38,7 +38,7 @@ export type RootStackParamList = {
   [ROUTES.CALLS]: undefined;
   [ROUTES.CALL_ROOM]: LiveKitCallRouteParams;
   [ROUTES.GROUP_CALL_ROOM]: GroupLiveKitCallRouteParams;
-  [ROUTES.SEARCH]: undefined;
+  [ROUTES.SEARCH]: { q?: string } | undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
   [ROUTES.NEARBY_USERS]: undefined;
   [ROUTES.SAVED_POSTS]: undefined;
@@ -56,6 +56,8 @@ export type RootStackParamList = {
   [ROUTES.GROUP_DETAIL]: undefined;
   [ROUTES.EVENTS]: undefined;
   [ROUTES.FUNDING]: undefined;
+  [ROUTES.FUNDING_DETAIL]: { fundId: string };
+  [ROUTES.CREATE_FUNDING]: undefined;
   [ROUTES.FOLLOWING]: undefined;
   [ROUTES.BOOSTED]: undefined;
   [ROUTES.POPULAR]: undefined;

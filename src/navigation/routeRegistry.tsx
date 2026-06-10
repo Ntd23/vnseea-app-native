@@ -35,7 +35,7 @@ import {
   FollowingScreen,
   GroupDetailScreen,
 } from '../community';
-import { FundingScreen } from '../funding';
+import { CreateFundingScreen, FundingDetailScreen, FundingScreen } from '../funding';
 import { MoviesScreen } from '../movies';
 import { CreateJobScreen, JobDetailScreen, JobsScreen } from '../jobs';
 import {
@@ -159,6 +159,8 @@ export function createStackRoutes(
     { name: ROUTES.GROUP_DETAIL, component: GroupDetailScreen },
     { name: ROUTES.EVENTS, component: EventsScreen },
     { name: ROUTES.FUNDING, component: FundingScreen },
+    { name: ROUTES.FUNDING_DETAIL, component: FundingDetailScreen },
+    { name: ROUTES.CREATE_FUNDING, component: CreateFundingScreen },
     { name: ROUTES.FOLLOWING, component: FollowingScreen },
     { name: ROUTES.BOOSTED, component: BoostedScreen },
     { name: ROUTES.POPULAR, component: PopularScreen },

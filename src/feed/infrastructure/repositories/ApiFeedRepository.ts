@@ -800,18 +800,45 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
 //                          fresh accounts see their own posts even
 //                          before they discover others.
 //
-//   3. Suggested users   — posts from `/api/get-user-suggestions`. This
-//                          fixes the "I only see my own posts" bug on
-//                          accounts that haven't followed anyone yet.
-//                          We pick the top 5 suggested users and pull
-//                          their recent posts in parallel.
+//   3. Suggested users   — posts from `/api/get-user-suggestions` +
+//                          `/api/get-friends` (following) +
+//                          `/api/nearby`. We pick the top 8 authors
+//                          and pull their recent posts in parallel.
+//                          This is the "discovery" lane and is what
+//                          keeps the feed full on sparse accounts.
 //
 // All three run in parallel. We dedupe by post id and let the downstream
 // `getAllPosts` sort by `postedAt` desc — the result is a chronological
 // merged feed that mixes own + follows + discovery content, just like
 // the FB / Twitter home tab.
-// Module-level cache for suggested users to ensure consistent pagination
-let cachedSuggestedUserIds: string[] = [];
+
+// Module-level cache for suggested user ids.
+// Keyed by the current viewer's userId so a logout/login cycle naturally
+// rehydrates with the new account's suggestions. Reset whenever the
+// cache TTL expires.
+const SUGGESTED_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+const suggestedUsersCache = new Map<
+  string,
+  { ids: string[]; expiresAt: number }
+>();
+
+function getCachedSuggestedIds(viewerId: string): string[] | null {
+  const entry = suggestedUsersCache.get(viewerId);
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    suggestedUsersCache.delete(viewerId);
+    return null;
+  }
+  return entry.ids;
+}
+
+function setCachedSuggestedIds(viewerId: string, ids: string[]): void {
+  suggestedUsersCache.set(viewerId, {
+    ids,
+    expiresAt: Date.now() + SUGGESTED_CACHE_TTL_MS,
+  });
+}
 
 const FEED_REPOSITORY_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;
 
@@ -826,12 +853,54 @@ function debugFeedRepository(
   payload: Record<string, unknown>,
 ) {
   if (!FEED_REPOSITORY_DEBUG) return;
-  console.log(`[feed.repository] ${label}`, payload);
+  // React Native dev console collapses nested objects to "Object"
+  // for any payload > ~2 levels deep or with arrays. We flatten the
+  // most useful diagnostic fields into a single line of key=value
+  // pairs so they survive the console renderer and we can read them
+  // from the log without expanding anything.
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(payload)) {
+    if (Array.isArray(value)) {
+      // For arrays, print count + first 3 entries (each as compact JSON).
+      const sample = value
+        .slice(0, 3)
+        .map(v => {
+          try {
+            return JSON.stringify(v);
+          } catch {
+            return String(v);
+          }
+        })
+        .join(', ');
+      parts.push(`${key}=[count=${value.length}, sample=[${sample}${
+        value.length > 3 ? ', ...' : ''
+      }]]`);
+    } else if (value && typeof value === 'object') {
+      // For nested objects, just stringify them so they don't
+      // collapse to "Object".
+      try {
+        parts.push(`${key}=${JSON.stringify(value)}`);
+      } catch {
+        parts.push(`${key}=${String(value)}`);
+      }
+    } else {
+      parts.push(`${key}=${String(value)}`);
+    }
+  }
+  console.log(`[feed.repository] ${label} | ${parts.join(' | ')}`);
 }
 
 function getOldestRawPostId(posts: Array<Record<string, unknown>>): string | undefined {
   const ids = posts
     .map(item => Number(readString(item, 'id', 'post_id')))
+    .filter(id => Number.isFinite(id) && id > 0);
+  if (ids.length === 0) return undefined;
+  return String(Math.min(...ids));
+}
+
+function getOldestFeedPostId(posts: FeedPost[]): string | undefined {
+  const ids = posts
+    .map(post => Number(post.id))
     .filter(id => Number.isFinite(id) && id > 0);
   if (ids.length === 0) return undefined;
   return String(Math.min(...ids));
@@ -844,14 +913,28 @@ async function fetchRawFeedPosts(
   const tryFetch = async (
     payload: Record<string, unknown>,
   ): Promise<Array<Record<string, unknown>>> => {
+    const streamTag = String(payload.type ?? 'unknown');
     try {
       const response = await backendApi.post<{
         api_status: number | string;
         data?: Array<Record<string, unknown>>;
       }>(apiRoutes.feed.posts, payload);
 
-      return response.data ?? [];
-    } catch {
+      const rows = response.data ?? [];
+      debugFeedRepository('tryFetch result', {
+        stream: streamTag,
+        id: payload.id,
+        limit: payload.limit,
+        afterPostId: payload.after_post_id ?? 'first',
+        rawRows: rows.length,
+      });
+      return rows;
+    } catch (err) {
+      debugFeedRepository('tryFetch error', {
+        stream: streamTag,
+        id: payload.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
       // One stream failing should never blank the whole feed — return
       // empty and let the other streams populate the UI.
       return [];
@@ -860,6 +943,8 @@ async function fetchRawFeedPosts(
 
   /**
    * Fetch posts from many users at once via a discovery chain.
+   * Pulls suggested users + viewer following + nearby, then asks each
+   * for their latest posts in parallel.
    */
   const fetchDiscoveryPosts = async (
     afterPostId?: string,
@@ -879,10 +964,12 @@ async function fetchRawFeedPosts(
         .filter(Boolean);
     };
 
-    const sessionUserIdLocal = sessionStorage.getSession()?.userId;
+    const sessionUserIdLocal = sessionStorage.getSession()?.userId ?? '';
+    const cacheKey = sessionUserIdLocal || 'guest';
+    const cachedIds = getCachedSuggestedIds(cacheKey);
 
     // Fresh load page 1, or cache was cleared / not yet populated
-    if (!afterPostId || cachedSuggestedUserIds.length === 0) {
+    if (!afterPostId || !cachedIds) {
       type SuggestionsResponse = {
         api_status: number | string;
         suggestions?: Array<Record<string, unknown>>;
@@ -900,20 +987,25 @@ async function fetchRawFeedPosts(
       };
 
       const [sugRes, friendsRes, nearbyRes] = await Promise.all([
+        // Pull a generous author pool so discovery has enough breadth
+        // to cover the install even when the user follows nobody. The
+        // previous 12 was too tight — once we filtered to 8 in
+        // `pickedIds` we often ended up with 2-3 real authors and
+        // their tiny post sets.
         backendApi
-          .post<SuggestionsResponse>(apiRoutes.user.suggestions, { limit: 12 })
+          .post<SuggestionsResponse>(apiRoutes.user.suggestions, { limit: 24 })
           .catch(() => ({}) as SuggestionsResponse),
         sessionUserIdLocal
           ? backendApi
               .post<FriendsResponse>(apiRoutes.social.friends, {
                 user_id: sessionUserIdLocal,
                 type: 'following,followers',
-                limit: 20,
+                limit: 30,
               })
               .catch(() => ({}) as FriendsResponse)
           : Promise.resolve({} as FriendsResponse),
         backendApi
-          .post<NearbyResponse>(apiRoutes.user.nearby, { limit: 10 })
+          .post<NearbyResponse>(apiRoutes.user.nearby, { limit: 15 })
           .catch(() => ({}) as NearbyResponse),
       ]);
 
@@ -924,97 +1016,279 @@ async function fetchRawFeedPosts(
       collectUserIds(nearbyRes.nearby_users).forEach(id => userIds.add(id));
       if (sessionUserIdLocal) userIds.delete(sessionUserIdLocal);
 
-      cachedSuggestedUserIds = Array.from(userIds);
+      setCachedSuggestedIds(cacheKey, Array.from(userIds));
     }
 
-    if (cachedSuggestedUserIds.length === 0) {
+    const ids = getCachedSuggestedIds(cacheKey);
+    if (!ids || ids.length === 0) {
       return [];
     }
 
-    // Keep discovery small enough for smooth scrolling while still adding
-    // non-local authors to accounts whose home feed is sparse.
-    const ids = cachedSuggestedUserIds.slice(0, 8);
+    // Keep discovery rich enough that a fresh account with no follows
+    // still sees a healthy mix of authors. The previous 8×3=24 cap
+    // meant the feed plateaued around 30-40 light posts even though
+    // the install had many more authors with active content. Bumping
+    // to 16×8=128 potential posts per page is safe because the
+    // server-side filter (`isLightFeedPost`) + dedupe + chronological
+    // sort keeps the actual rendered feed a comfortable size.
+    const pickedIds = ids.slice(0, 16);
+    // 8 posts per author is enough to surface their active content
+    // without flooding the feed. Combined with 16 authors that's
+    // 128 candidate posts per page, which the dedupe + sort shrink
+    // down to a manageable size.
+    const perUserLimit = 8;
 
     const perUser = await Promise.all(
-      ids.map(id =>
+      pickedIds.map(id =>
         tryFetch({
           type: 'get_user_posts',
           id,
-          limit: 3,
+          limit: perUserLimit,
+          // First page: no cursor → freshest posts. On paging: only
+          // fetch older-than-cursor so we don't re-emit the same
+          // posts the followed feed already gave us.
           after_post_id: afterPostId,
         }),
       ),
     );
 
-    const flat = perUser.flat();
-    return flat;
+    return perUser.flat();
+  };
+
+  /**
+   * Probe the server for total-available-post counts BEFORE we start
+   * the paginated fan-out. We do this on the first page only (no
+   * afterPostId) so we know exactly how much content exists across
+   * each source. The probe itself is cheap — it's just one
+   * max-limit call per source that we'd otherwise make anyway.
+   *
+   * This is purely diagnostic (debugFeedRepository only logs in
+   * __DEV__). The actual data still flows through the normal
+   * tryFetch path, so this is safe to leave in.
+   */
+  const probeTotal = async (
+    payload: Record<string, unknown>,
+  ): Promise<number> => {
+    const rows = await tryFetch({ ...payload, limit: 50 });
+    return rows.length;
   };
 
   const sessionUserId = sessionStorage.getSession()?.userId;
+  // The merge logic now caps own posts ONLY from the `ownRaw`
+  // stream (not from followed/discovery), so the cap's whole job is
+  // to keep the viewer's own posts from drowning the page. With
+  // that isolation we can safely fetch a larger window from the
+  // server and let the cap trim it down. `ownRawLimit=20` is the
+  // maximum number of the viewer's own posts we'll *consider* on a
+  // single page — the cap will reduce that to `ownPostsLimit` after
+  // dedupe so the page stays balanced.
   const ownPostsLimit = sessionUserId
     ? afterPostId
       ? Math.max(2, Math.min(4, Math.ceil(limit / 8)))
       : Math.max(3, Math.min(6, Math.ceil(limit / 5)))
     : 0;
+  const ownRawLimit = Math.max(ownPostsLimit, 20);
 
-  // 1. Fetch followed feed and a small own-post fallback in parallel.
-  // Own posts must not dominate Home; discovery fills the social mix.
+  // ── Diagnostic: log total raw posts available per source ──
+  //
+  // On the first page (no cursor) we fire three cheap "max-limit"
+  // probes in parallel to know the total pool of content the user
+  // could in principle see. This answers the "is the feed short
+  // because the install is empty, or because the dedupe / classifier
+  // is eating things?" question with hard numbers instead of guessing.
+  if (!afterPostId) {
+    const probedAuthorIds = (() => {
+      const ids = getCachedSuggestedIds(sessionUserId ?? 'guest') ?? [];
+      return ids.slice(0, 16);
+    })();
+
+    const probeTasks: Array<Promise<{ source: string; total: number }>> = [
+      probeTotal({ type: 'get_news_feed' }).then(total => ({
+        source: 'get_news_feed',
+        total,
+      })),
+    ];
+    if (sessionUserId) {
+      probeTasks.push(
+        probeTotal({
+          type: 'get_user_posts',
+          id: sessionUserId,
+        }).then(total => ({
+          source: `get_user_posts[viewer=${sessionUserId}]`,
+          total,
+        })),
+      );
+    }
+    for (const id of probedAuthorIds) {
+      probeTasks.push(
+        probeTotal({ type: 'get_user_posts', id }).then(total => ({
+          source: `get_user_posts[author=${id}]`,
+          total,
+        })),
+      );
+    }
+
+    Promise.all(probeTasks)
+      .then(results => {
+        const total = results.reduce((sum, r) => sum + r.total, 0);
+        const activeAuthors = results
+          .filter(r => r.total > 0)
+          .map(r => `${r.source}=${r.total}`)
+          .join(', ');
+        const emptyAuthors = results
+          .filter(r => r.total === 0)
+          .length;
+        // Print as flat key=value so console.log doesn't collapse to
+        // "Object". We deliberately avoid putting the per-source
+        // breakdown in an array since RN dev tools truncate arrays
+        // past their first few entries.
+        debugFeedRepository('probe totals (unfiltered max-limit page)', {
+          grandTotal: total,
+          sourceCount: results.length,
+          activeAuthors:
+            activeAuthors || '(none — every probed author is empty)',
+          emptyAuthorCount: emptyAuthors,
+        });
+      })
+      .catch(err => {
+        debugFeedRepository('probe totals error', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+  }
+
+  // 1. Fetch the follow-graph feed and the viewer's own posts in parallel.
+  //    `get_news_feed` may be follow-filtered on the WoWonder install, so we
+  //    pair it with discovery (suggestions + friends + nearby) below to keep
+  //    Home populated even when the viewer follows nobody yet.
+  //
+  //    The followed limit is bumped to `max(limit, 45)` so a viewer who
+  //    follows an active author (e.g. the admin) gets the full 20-30
+  //    posts from that author instead of just the first 30.
+  const followedLimit = Math.max(limit, 45);
   const [followedRaw, ownRaw] = await Promise.all([
-    tryFetch({ type: 'get_news_feed', limit, after_post_id: afterPostId }),
+    tryFetch({ type: 'get_news_feed', limit: followedLimit, after_post_id: afterPostId }),
     sessionUserId
       ? tryFetch({
           type: 'get_user_posts',
           id: sessionUserId,
-          limit: ownPostsLimit,
+          // Fetch up to ownRawLimit so we have a generous raw window
+          // for the cap to trim down. (The merge logic then keeps
+          // only the first ownPostsLimit posts of the viewer's own
+          // and dedupes any duplicates already present in followed.)
+          limit: ownRawLimit,
           after_post_id: afterPostId,
         })
       : Promise.resolve<Array<Record<string, unknown>>>([]),
   ]);
 
-  // 2. Fetch discovery when followed feed is thin, when paging, or when the
-  // current user's posts would otherwise visually dominate the page.
+  // 2. Pull discovery ALWAYS on the first page, and whenever the
+  //    followed feed looks thin on subsequent pages.
+  //
+  //    The previous logic only fetched discovery when followedRatio
+  //    < 0.9, which meant self-following accounts (where the user
+  //    follows themselves and `get_news_feed` returns their own
+  //    posts) never saw discovery content. Result: a self-following
+  //    viewer saw their own posts twice (once from followed, once
+  //    from own) with no outside authors mixed in.
+  //
+  //    First page is therefore ALWAYS a parallel discovery fan-out;
+  //    on subsequent pages we only skip discovery when followed is
+  //    already healthy so the user doesn't pay for unnecessary
+  //    network calls.
   let discoveryRaw: Array<Record<string, unknown>> = [];
+  const followedRatio = followedRaw.length / Math.max(1, followedLimit);
   const shouldFetchDiscovery = afterPostId
-    ? followedRaw.length < Math.ceil(limit * 0.35)
-    : followedRaw.length < Math.ceil(limit * 0.9) ||
-      ownRaw.length > followedRaw.length;
+    ? followedRatio < 0.35
+    : true;
   if (shouldFetchDiscovery) {
     discoveryRaw = await fetchDiscoveryPosts(afterPostId);
   }
 
-  // Merge + dedupe by post id.
-  const seen = new Set<string>();
-  const merged: Array<Record<string, unknown>> = [];
+  // Merge + dedupe by post id using a Map (O(1) lookup, no Set→Array churn).
+  //
+  // The old loop iterated all three streams together and applied the
+  // `ownCapped` cap whenever a post's owner was the viewer. That
+  // worked fine for normal users (where the viewer's own posts only
+  // appeared in `ownRaw`) but **silently dropped 30 admin posts** on
+  // self-following accounts, because the viewer's own posts also
+  // appear in `followedRaw` (via the follow-graph) and the cap
+  // counted them all together. With `ownPostsLimit=6` we only kept
+  // the first 6 admin posts and dropped the other 30 — even though
+  // those 30 were just as legitimate as the followed-graph feed.
+  //
+  // Fix: cap the `ownRaw` stream ONLY (it's the dedicated slot for
+  // the viewer's own posts), and let posts in `followedRaw` /
+  // `discoveryRaw` pass through unfiltered. Dedupe still runs across
+  // all three streams so the viewer never sees the same post twice.
+  const mergedMap = new Map<string, Record<string, unknown>>();
   let pageAdIncluded = false;
   let ownPostsIncluded = 0;
-  for (const list of [followedRaw, discoveryRaw, ownRaw]) {
-    for (const post of list) {
-      const isAd = looksLikeAd(post);
-      if (isAd && pageAdIncluded) continue;
-      const ownerId = readPostOwnerId(post);
-      if (
-        sessionUserId &&
-        ownerId === String(sessionUserId) &&
-        ownPostsIncluded >= ownPostsLimit
-      ) {
-        continue;
-      }
-      const id = String(
-        isAd
-          ? rawPostKey(post)
-          : (post as { id?: unknown; post_id?: unknown }).id ??
-              (post as { id?: unknown; post_id?: unknown }).post_id ??
-              '',
-      );
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      merged.push(post);
-      if (isAd) pageAdIncluded = true;
-      if (sessionUserId && ownerId === String(sessionUserId)) {
-        ownPostsIncluded += 1;
-      }
+  const dropCounters = {
+    adSkipped: 0,
+    ownCapped: 0,
+    noId: 0,
+    duplicate: 0,
+  };
+
+  const pushPost = (post: Record<string, unknown>, isFromOwnStream: boolean) => {
+    const isAd = looksLikeAd(post);
+    if (isAd && pageAdIncluded) {
+      dropCounters.adSkipped += 1;
+      return;
     }
+    const ownerId = readPostOwnerId(post);
+    // Only enforce the cap for posts that came from the dedicated
+    // `ownRaw` stream. Followed + discovery always pass through.
+    if (
+      isFromOwnStream &&
+      sessionUserId &&
+      ownerId === String(sessionUserId) &&
+      ownPostsIncluded >= ownPostsLimit
+    ) {
+      dropCounters.ownCapped += 1;
+      return;
+    }
+    const id = String(
+      isAd
+        ? rawPostKey(post)
+        : (post as { id?: unknown; post_id?: unknown }).id ??
+            (post as { id?: unknown; post_id?: unknown }).post_id ??
+            '',
+    );
+    if (!id) {
+      dropCounters.noId += 1;
+      return;
+    }
+    if (mergedMap.has(id)) {
+      dropCounters.duplicate += 1;
+      return;
+    }
+    mergedMap.set(id, post);
+    if (isAd) pageAdIncluded = true;
+    if (sessionUserId && ownerId === String(sessionUserId)) {
+      ownPostsIncluded += 1;
+    }
+  };
+
+  // Phase 1: ownRaw — apply the cap so the viewer's own posts
+  // don't drown the page.
+  for (const post of ownRaw) {
+    pushPost(post, true);
   }
+
+  // Phase 2: followed + discovery — no cap. The viewer's own posts
+  // that already landed in `ownRaw` will be deduped here, but
+  // additional ones (e.g. admin posts the user followed) are
+  // allowed through.
+  for (const post of followedRaw) {
+    pushPost(post, false);
+  }
+  for (const post of discoveryRaw) {
+    pushPost(post, false);
+  }
+
+  const merged = Array.from(mergedMap.values());
 
   debugFeedRepository('raw streams merged', {
     afterPostId: afterPostId ?? 'first',
@@ -1023,15 +1297,25 @@ async function fetchRawFeedPosts(
     own: ownRaw.length,
     ownLimit: ownPostsLimit,
     discovery: discoveryRaw.length,
+    rawTotal: followedRaw.length + discoveryRaw.length + ownRaw.length,
     merged: merged.length,
+    dropped: dropCounters,
   });
+
+  // The cursor only matters when the FOLLOWED feed still has older posts
+  // (i.e. it was healthy). When discovery carried the page, force a
+  // follow-up call by sending a zeroed cursor — the worst case is one
+  // extra network round-trip; the upside is no false "end of feed".
+  const followedCursor = getOldestRawPostId(followedRaw);
+  const discoveryCursor = getOldestRawPostId(discoveryRaw);
+  const ownCursor = getOldestRawPostId(ownRaw);
+  const nextCursor = followedCursor ?? discoveryCursor ?? ownCursor;
+  const primaryCount = followedRaw.length;
 
   return {
     posts: merged,
-    nextCursor:
-      getOldestRawPostId(followedRaw) ??
-      getOldestRawPostId([...discoveryRaw, ...ownRaw]),
-    primaryCount: followedRaw.length,
+    nextCursor,
+    primaryCount,
   };
 }
 
@@ -1066,15 +1350,37 @@ function mixAdsIntoPosts(posts: FeedPost[]): FeedPost[] {
 
 function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
   const posts: FeedPost[] = [];
+  // Per-classifier counters. Tells us which branch a row went down
+  // (ad / poll / text+photo / video / dropped-as-stub) so we can
+  // see exactly where raw posts get filtered out.
+  const buckets = { ad: 0, poll: 0, text: 0, video: 0, dropped: 0 };
   for (const item of raw) {
     if (looksLikeAd(item)) {
       posts.push(mapAdPost(item));
+      buckets.ad += 1;
     } else if (looksLikePoll(item)) {
       posts.push(mapPollPost(item));
+      buckets.poll += 1;
     } else if (looksLikeTextOrPhoto(item)) {
       posts.push(mapTextPost(item));
+      buckets.text += 1;
+    } else if (looksLikeVideo(item)) {
+      // Light feed ViewModel further filters videos via
+      // `isLightFeedPost`, so this branch is where they exit the
+      // light pipeline.
+      buckets.video += 1;
+    } else {
+      // Stub posts (system messages, fully-empty shell posts, etc.)
+      // that pass no classifier — these are the silent drops we
+      // want to surface in logs.
+      buckets.dropped += 1;
     }
   }
+  debugFeedRepository('mapLightRawFeedPosts classifier', {
+    raw: raw.length,
+    ...buckets,
+    mapped: posts.length,
+  });
   return posts;
 }
 
@@ -1135,15 +1441,25 @@ export function createFeedRepository(): FeedRepository {
       limit = 20,
       afterPostId?: string,
     ): Promise<FeedPostsPage> {
+      const rawLimit = Math.max(limit, Math.ceil(limit * 1.5));
       const page = await fetchRawFeedPosts(
-        Math.max(limit, Math.ceil(limit * 1.5)),
+        rawLimit,
         afterPostId,
       );
-      const posts = mixAdsIntoPosts(mapLightRawFeedPosts(page.posts)).slice(0, limit);
+      const mappedPosts = mixAdsIntoPosts(mapLightRawFeedPosts(page.posts));
+      const posts = mappedPosts.slice(0, limit);
+      const renderedCursor = getOldestFeedPostId(posts);
+      const scanningCursor = page.nextCursor;
       return {
         posts,
-        nextCursor: page.nextCursor,
-        reachedEnd: page.primaryCount === 0 && posts.length === 0,
+        // Use the oldest post that was actually returned to the UI. The raw
+        // API batch may be larger than the visible page so using its oldest
+        // id would skip renderable posts and make Home run out too early.
+        nextCursor: renderedCursor ?? scanningCursor,
+        reachedEnd:
+          posts.length === 0 &&
+          page.primaryCount === 0 &&
+          page.posts.length < rawLimit,
       };
     },
 
