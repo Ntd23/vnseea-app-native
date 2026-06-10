@@ -6,7 +6,7 @@ $response_data = array(
     'api_status' => 400
 );
 
-$valid_actions = array('create', 'payload', 'join', 'leave', 'sync', 'incoming', 'decline', 'candidates', 'add_members');
+$valid_actions = array('create', 'payload', 'join', 'leave', 'sync', 'incoming', 'decline', 'candidates', 'add_members', 'native_action');
 $action = !empty($_POST['type']) ? Wo_Secure($_POST['type']) : '';
 
 function Wo_ApiGroupCallError($error_id, $error_text, $api_status = 400) {
@@ -80,7 +80,84 @@ function Wo_ApiGroupCallParticipants($participants) {
     return $items;
 }
 
+function Wo_ApiGroupCallBase64UrlEncode($value) {
+    return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+}
+
+function Wo_ApiGroupCallBase64UrlDecode($value) {
+    $padding = strlen($value) % 4;
+    if ($padding > 0) {
+        $value .= str_repeat('=', 4 - $padding);
+    }
+    return base64_decode(strtr($value, '-_', '+/'));
+}
+
+function Wo_ApiGroupCallActionSecret() {
+    global $wo;
+    if (!empty($wo['config']['livekit_api_secret'])) {
+        return trim($wo['config']['livekit_api_secret']);
+    }
+    if (!empty($wo['config']['widnows_app_api_key'])) {
+        return trim($wo['config']['widnows_app_api_key']);
+    }
+    return '';
+}
+
+function Wo_ApiGroupCallSignActionToken($payload) {
+    $secret = Wo_ApiGroupCallActionSecret();
+    if ($secret === '') {
+        return '';
+    }
+    $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $body = Wo_ApiGroupCallBase64UrlEncode($json);
+    $signature = hash_hmac('sha256', $body, $secret);
+    return $body . '.' . $signature;
+}
+
+function Wo_ApiGroupCallVerifyActionToken($token) {
+    $secret = Wo_ApiGroupCallActionSecret();
+    if ($secret === '' || empty($token) || strpos($token, '.') === false) {
+        return false;
+    }
+    list($body, $signature) = explode('.', $token, 2);
+    $expected = hash_hmac('sha256', $body, $secret);
+    if (!hash_equals($expected, $signature)) {
+        return false;
+    }
+    $payload = json_decode(Wo_ApiGroupCallBase64UrlDecode($body), true);
+    if (empty($payload) || !is_array($payload)) {
+        return false;
+    }
+    if (!empty($payload['expires_at']) && intval($payload['expires_at']) < time()) {
+        return false;
+    }
+    return $payload;
+}
+
+function Wo_ApiGroupCallInternalSecret() {
+    $secret = Wo_ApiGroupCallActionSecret();
+    return $secret === '' ? '' : hash_hmac('sha256', 'vnseea-livekit-internal', $secret);
+}
+
+function Wo_ApiGroupCallTimingFields($group_call) {
+    $server_now = time();
+    $server_now_ms = (int) round(microtime(true) * 1000);
+    $started_at = intval(!empty($group_call['started_at']) ? $group_call['started_at'] : 0);
+    $started_at_ms = $started_at > 0 ? $started_at * 1000 : 0;
+    $elapsed = $started_at > 0 ? max(0, $server_now - $started_at) : 0;
+    $elapsed_ms = $started_at_ms > 0 ? max(0, $server_now_ms - $started_at_ms) : 0;
+    return array(
+        'started_at' => $started_at,
+        'started_at_ms' => $started_at_ms,
+        'server_now' => $server_now,
+        'server_now_ms' => $server_now_ms,
+        'elapsed' => $elapsed,
+        'elapsed_ms' => $elapsed_ms
+    );
+}
+
 function Wo_ApiGroupCallSummary($group_call) {
+    $timing = Wo_ApiGroupCallTimingFields($group_call);
     return array(
         'id' => (string) intval(!empty($group_call['id']) ? $group_call['id'] : 0),
         'group_id' => (string) intval(!empty($group_call['group_id']) ? $group_call['group_id'] : 0),
@@ -88,8 +165,12 @@ function Wo_ApiGroupCallSummary($group_call) {
         'provider' => !empty($group_call['provider']) ? $group_call['provider'] : 'livekit',
         'room_name' => !empty($group_call['room_name']) ? $group_call['room_name'] : '',
         'status' => !empty($group_call['status']) ? $group_call['status'] : 'ended',
-        'started_at' => intval(!empty($group_call['started_at']) ? $group_call['started_at'] : 0),
-        'server_now' => time(),
+        'started_at' => $timing['started_at'],
+        'started_at_ms' => $timing['started_at_ms'],
+        'server_now' => $timing['server_now'],
+        'server_now_ms' => $timing['server_now_ms'],
+        'elapsed' => $timing['elapsed'],
+        'elapsed_ms' => $timing['elapsed_ms'],
         'participant_count' => intval(!empty($group_call['participant_count']) ? $group_call['participant_count'] : 0)
     );
 }
@@ -103,6 +184,112 @@ function Wo_ApiGroupCallUuid($call_id, $call_type) {
         substr($hex, 20, 12);
 }
 
+function Wo_ApiGroupCallPublishRealtime($event, $group_call, $extra = array()) {
+    global $wo;
+    if (empty($group_call) || !is_array($group_call)) {
+        return;
+    }
+    $secret = Wo_ApiGroupCallInternalSecret();
+    if ($secret === '') {
+        return;
+    }
+    $port = !empty($wo['config']['nodejs_ssl']) && intval($wo['config']['nodejs_ssl']) === 1
+        ? (!empty($wo['config']['nodejs_ssl_port']) ? intval($wo['config']['nodejs_ssl_port']) : 0)
+        : (!empty($wo['config']['nodejs_port']) ? intval($wo['config']['nodejs_port']) : 0);
+    if ($port <= 0) {
+        return;
+    }
+    $endpoint = 'http://127.0.0.1:' . $port . '/internal/livekit-call/publish';
+    if (!empty($wo['config']['livekit_socket_internal_url'])) {
+        $endpoint = rtrim($wo['config']['livekit_socket_internal_url'], '/') . '/internal/livekit-call/publish';
+    }
+    $payload = array_merge(array(
+        'context' => 'group',
+        'event' => $event,
+        'call_id' => (string) intval(!empty($group_call['id']) ? $group_call['id'] : 0),
+        'group_id' => (string) intval(!empty($group_call['group_id']) ? $group_call['group_id'] : 0),
+        'call_type' => Wo_ApiGroupCallType(!empty($group_call['call_type']) ? $group_call['call_type'] : 'video'),
+        'status' => !empty($group_call['status']) ? $group_call['status'] : 'active'
+    ), Wo_ApiGroupCallTimingFields($group_call), $extra);
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $endpoint);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+        'Content-Type: application/json; charset=utf-8',
+        'X-Vnseea-Internal-Secret: ' . $secret
+    ));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+    $result = curl_exec($ch);
+    $error = curl_error($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    error_log('[group_call_publish] event=' . $event .
+        ' call_id=' . $payload['call_id'] .
+        ' group_id=' . $payload['group_id'] .
+        ' recipients=' . json_encode(!empty($payload['recipient_ids']) ? $payload['recipient_ids'] : array()) .
+        ' http=' . intval($status) .
+        ' error=' . ($error ? $error : '-') .
+        ' body=' . substr((string) $result, 0, 160));
+}
+
+function Wo_ApiGroupCallSendVoipPush($recipient, $notification_data, $display_name, $call_type) {
+    global $wo;
+    if (empty($recipient['ios_voip_token'])) {
+        return false;
+    }
+    $team_id = !empty($wo['config']['ios_voip_team_id']) ? trim($wo['config']['ios_voip_team_id']) : '';
+    $key_id = !empty($wo['config']['ios_voip_key_id']) ? trim($wo['config']['ios_voip_key_id']) : '';
+    $bundle_id = !empty($wo['config']['ios_voip_bundle_id']) ? trim($wo['config']['ios_voip_bundle_id']) : '';
+    $key_path = !empty($wo['config']['ios_voip_private_key_path']) ? trim($wo['config']['ios_voip_private_key_path']) : '';
+    if ($team_id === '' || $key_id === '' || $bundle_id === '' || $key_path === '' || !class_exists('\\Firebase\\JWT\\JWT')) {
+        return false;
+    }
+    if (!file_exists($key_path)) {
+        return false;
+    }
+    $private_key = file_get_contents($key_path);
+    if (empty($private_key)) {
+        return false;
+    }
+    $jwt = \Firebase\JWT\JWT::encode(array(
+        'iss' => $team_id,
+        'iat' => time()
+    ), $private_key, 'ES256', $key_id);
+    $payload = array_merge($notification_data, array(
+        'aps' => array(
+            'alert' => array(
+                'title' => $display_name,
+                'body' => ($call_type == 'video') ? 'Group video call' : 'Group audio call'
+            ),
+            'sound' => 'default',
+            'content-available' => 1
+        )
+    ));
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, 'https://api.push.apple.com/3/device/' . rawurlencode($recipient['ios_voip_token']));
+    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+        'authorization: bearer ' . $jwt,
+        'apns-topic: ' . $bundle_id . '.voip',
+        'apns-push-type: voip',
+        'apns-priority: 10',
+        'content-type: application/json'
+    ));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $status >= 200 && $status < 300;
+}
+
 function Wo_ApiGroupCallSendPush($user_ids, $group_call, $caller) {
     global $wo;
     $call_id = intval(!empty($group_call['id']) ? $group_call['id'] : 0);
@@ -113,7 +300,21 @@ function Wo_ApiGroupCallSendPush($user_ids, $group_call, $caller) {
     $group = Wo_GroupTabData($group_call['group_id'], false);
     $group_data = Wo_ApiGroupCallGroup($group);
     $caller_data = Wo_ApiGroupCallUser($caller);
+    $recipient_ids = array_values(array_unique(array_filter(array_map('intval', (array) $user_ids))));
+    $recipient_ids = array_values(array_filter($recipient_ids, function ($user_id) use ($caller_data) {
+        return $user_id > 0 && $user_id != intval($caller_data['id']);
+    }));
+    $ring_mode = count($recipient_ids) <= 8 ? 'fullscreen' : 'passive';
+    $expires_at = time() + 45;
+    $base_token_payload = array(
+        'call_id' => (string) $call_id,
+        'group_id' => (string) intval($group_call['group_id']),
+        'call_type' => $call_type,
+        'room_name' => !empty($group_call['room_name']) ? $group_call['room_name'] : '',
+        'expires_at' => $expires_at
+    );
     $notification_data = array(
+        'event_type' => 'livekit_group_call',
         'provider' => 'livekit_group',
         'call_context' => 'group',
         'uuid' => Wo_ApiGroupCallUuid($call_id, $call_type),
@@ -124,32 +325,70 @@ function Wo_ApiGroupCallSendPush($user_ids, $group_call, $caller) {
         'caller_id' => $caller_data['id'],
         'caller_name' => $caller_data['name'],
         'caller_avatar' => $caller_data['avatar'],
+        'from_id' => $caller_data['id'],
+        'name' => $group_data['name'],
+        'avatar' => $group_data['avatar'],
         'call_type' => $call_type,
-        'room_name' => !empty($group_call['room_name']) ? $group_call['room_name'] : ''
+        'room_name' => !empty($group_call['room_name']) ? $group_call['room_name'] : '',
+        'expires_at' => (string) $expires_at,
+        'api_url' => rtrim($wo['config']['site_url'], '/') . '/api/group_call',
+        'ring_mode' => $ring_mode
     );
-    foreach (array_unique(array_map('intval', (array) $user_ids)) as $user_id) {
-        if ($user_id <= 0 || $user_id == intval($caller_data['id'])) {
-            continue;
-        }
+    Wo_ApiGroupCallPublishRealtime('incoming', $group_call, array(
+        'recipient_ids' => array_map('strval', $recipient_ids),
+        'group' => $group_data,
+        'caller' => $caller_data,
+        'room_name' => !empty($group_call['room_name']) ? $group_call['room_name'] : '',
+        'participant_count' => intval(!empty($group_call['participant_count']) ? $group_call['participant_count'] : 0),
+        'ring_mode' => $ring_mode
+    ));
+    foreach ($recipient_ids as $user_id) {
         $recipient = Wo_UserData($user_id);
         if (empty($recipient)) {
             continue;
         }
+        $notification_data['to_id'] = (string) $user_id;
+        $notification_data['action_token'] = Wo_ApiGroupCallSignActionToken(array_merge($base_token_payload, array(
+            'user_id' => (string) $user_id
+        )));
         $notification = array(
             'notification_content' => ($call_type == 'video') ? 'started a group video call' : 'started a group audio call',
             'notification_title' => $group_data['name'] !== '' ? $group_data['name'] : 'VNSEEA',
             'notification_image' => $group_data['avatar'],
-            'notification_data' => $notification_data
+            'notification_data' => $notification_data,
+            'send_immediately' => true,
+            'request_data' => array(
+                'priority' => 10,
+                'android_channel_id' => 'vnseea_calls',
+                'ttl' => 45,
+                'collapse_id' => 'livekit_group_call_' . $call_id
+            )
         );
-        if (!empty($recipient['ios_m_device_id']) && $wo['config']['ios_push_messages'] == 1) {
+        $ios_device_ids = array_values(array_unique(array_filter(array(
+            !empty($recipient['ios_m_device_id']) ? $recipient['ios_m_device_id'] : '',
+            !empty($recipient['ios_n_device_id']) ? $recipient['ios_n_device_id'] : ''
+        ))));
+        $android_device_ids = array_values(array_unique(array_filter(array(
+            !empty($recipient['android_m_device_id']) ? $recipient['android_m_device_id'] : '',
+            !empty($recipient['android_n_device_id']) ? $recipient['android_n_device_id'] : ''
+        ))));
+        if (!empty($ios_device_ids) && $wo['config']['ios_push_messages'] == 1) {
             Wo_SendPushNotification(array(
-                'send_to' => array($recipient['ios_m_device_id']),
+                'send_to' => $ios_device_ids,
                 'notification' => $notification
             ), 'ios_messenger');
         }
-        if (!empty($recipient['android_m_device_id']) && $wo['config']['android_push_messages'] == 1) {
+        if ($ring_mode === 'fullscreen') {
+            Wo_ApiGroupCallSendVoipPush(
+                $recipient,
+                $notification_data,
+                $group_data['name'] !== '' ? $group_data['name'] : 'VNSEEA',
+                $call_type
+            );
+        }
+        if (!empty($android_device_ids) && $wo['config']['android_push_messages'] == 1) {
             Wo_SendPushNotification(array(
-                'send_to' => array($recipient['android_m_device_id']),
+                'send_to' => $android_device_ids,
                 'notification' => $notification
             ), 'android_messenger');
         }
@@ -247,6 +486,12 @@ else if ($action == 'payload') {
 else if ($action == 'join') {
     $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
     $group_call = Wo_JoinGroupCall($call_id, $wo['user']['user_id']);
+    if (!empty($group_call)) {
+        $sync_data = Wo_GetGroupCallSyncData($call_id, $wo['user']['user_id']);
+        Wo_ApiGroupCallPublishRealtime('sync', $group_call, array(
+            'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array())
+        ));
+    }
     $response_data = empty($group_call)
         ? Wo_ApiGroupCallError('join_failed', 'Could not join group call.', 404)
         : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call));
@@ -254,6 +499,13 @@ else if ($action == 'join') {
 else if ($action == 'leave') {
     $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
     $group_call = Wo_LeaveGroupCall($call_id, $wo['user']['user_id']);
+    if (!empty($group_call)) {
+        $sync_data = Wo_GetGroupCallSyncData($call_id, $wo['user']['user_id']);
+        Wo_ApiGroupCallPublishRealtime(!empty($group_call['status']) && $group_call['status'] === 'ended' ? 'closed' : 'sync', $group_call, array(
+            'participants' => !empty($sync_data['participants']) ? Wo_ApiGroupCallParticipants($sync_data['participants']) : array(),
+            'left_user_id' => (string) intval($wo['user']['user_id'])
+        ));
+    }
     $response_data = empty($group_call)
         ? Wo_ApiGroupCallError('leave_failed', 'Could not leave group call.', 404)
         : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call));
@@ -301,9 +553,66 @@ else if ($action == 'incoming') {
 else if ($action == 'decline') {
     $call_id = !empty($_POST['call_id']) ? intval($_POST['call_id']) : 0;
     $declined = Wo_DeclineGroupCallInvite($call_id, $wo['user']['user_id']);
+    $group_call = Wo_GetGroupCallById($call_id);
+    if (!empty($declined) && !empty($group_call)) {
+        Wo_ApiGroupCallPublishRealtime('sync', $group_call, array(
+            'declined_user_id' => (string) intval($wo['user']['user_id'])
+        ));
+    }
     $response_data = empty($declined)
         ? Wo_ApiGroupCallError('decline_failed', 'Could not decline group call invite.', 404)
         : array('api_status' => 200);
+}
+else if ($action == 'native_action') {
+    $payload = Wo_ApiGroupCallVerifyActionToken(!empty($_POST['action_token']) ? $_POST['action_token'] : '');
+    if (empty($payload) || !is_array($payload)) {
+        $response_data = Wo_ApiGroupCallError('invalid_action_token', 'Invalid group call action token.', 403);
+    }
+    else {
+        $call_id = !empty($payload['call_id']) ? intval($payload['call_id']) : 0;
+        $actor_id = !empty($payload['user_id']) ? intval($payload['user_id']) : 0;
+        $call_action = !empty($_POST['call_action']) ? Wo_Secure($_POST['call_action']) : '';
+        if ($call_action == 'answer') {
+            $group_call = Wo_JoinGroupCall($call_id, $actor_id);
+            if (!empty($group_call)) {
+                $sync_data = Wo_GetGroupCallSyncData($call_id, $actor_id);
+                Wo_ApiGroupCallPublishRealtime('sync', $group_call, array(
+                    'participants' => Wo_ApiGroupCallParticipants(!empty($sync_data['participants']) ? $sync_data['participants'] : array())
+                ));
+            }
+            $response_data = empty($group_call)
+                ? Wo_ApiGroupCallError('join_failed', 'Could not join group call.', 404)
+                : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call));
+        }
+        else if ($call_action == 'decline') {
+            $declined = Wo_DeclineGroupCallInvite($call_id, $actor_id);
+            $group_call = Wo_GetGroupCallById($call_id);
+            if (!empty($declined) && !empty($group_call)) {
+                Wo_ApiGroupCallPublishRealtime('sync', $group_call, array(
+                    'declined_user_id' => (string) $actor_id
+                ));
+            }
+            $response_data = empty($declined)
+                ? Wo_ApiGroupCallError('decline_failed', 'Could not decline group call invite.', 404)
+                : array('api_status' => 200);
+        }
+        else if ($call_action == 'leave') {
+            $group_call = Wo_LeaveGroupCall($call_id, $actor_id);
+            if (!empty($group_call)) {
+                $sync_data = Wo_GetGroupCallSyncData($call_id, $actor_id);
+                Wo_ApiGroupCallPublishRealtime(!empty($group_call['status']) && $group_call['status'] === 'ended' ? 'closed' : 'sync', $group_call, array(
+                    'participants' => !empty($sync_data['participants']) ? Wo_ApiGroupCallParticipants($sync_data['participants']) : array(),
+                    'left_user_id' => (string) $actor_id
+                ));
+            }
+            $response_data = empty($group_call)
+                ? Wo_ApiGroupCallError('leave_failed', 'Could not leave group call.', 404)
+                : array('api_status' => 200, 'call' => Wo_ApiGroupCallSummary($group_call));
+        }
+        else {
+            $response_data = Wo_ApiGroupCallError('invalid_call_action', 'Invalid group call action.', 400);
+        }
+    }
 }
 else if ($action == 'candidates') {
     $group_id = !empty($_POST['group_id']) ? intval($_POST['group_id']) : 0;

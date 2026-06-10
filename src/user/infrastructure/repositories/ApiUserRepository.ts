@@ -72,6 +72,10 @@ type NearbyPagesResponse = {
   items?: RawApiRecord[];
 };
 
+type PageDetailsResponse = ApiEnvelope & {
+  page_data?: RawApiRecord;
+};
+
 type PlaceAutocompleteResponse = ApiEnvelope & {
   predictions?: RawApiRecord[];
 };
@@ -100,6 +104,10 @@ type FriendsResponse = ApiEnvelope & {
   };
 };
 
+function hasUploadFile(payload: Record<string, unknown>) {
+  return Boolean(payload.avatar || payload.cover);
+}
+
 function mapUserList(records: RawApiRecord[] | undefined): UserProfile[] {
   return (records ?? []).map(record =>
     mapUserProfile(record, apiConfig.webBaseUrl),
@@ -113,6 +121,52 @@ function mapNearbyPlaces(
   return (records ?? [])
     .map(record => mapNearbyPlace(record, kind, apiConfig.webBaseUrl))
     .filter(Boolean) as NearbyPlace[];
+}
+
+function readMapPinStatus(record: RawApiRecord | undefined): string | undefined {
+  if (!record) return undefined;
+  const rawStatus =
+    record.map_pin_status ?? record.mapPinStatus ?? record.pin_status;
+  if (typeof rawStatus === 'string') {
+    return rawStatus.trim() || undefined;
+  }
+  if (typeof rawStatus === 'number' && Number.isFinite(rawStatus)) {
+    return String(rawStatus);
+  }
+  return undefined;
+}
+
+async function fetchPageMapPinStatus(pageId: string) {
+  if (!pageId) return undefined;
+  const response = await apiBridge
+    .post<PageDetailsResponse>(apiRoutes.pages.getById, { page_id: pageId })
+    .catch(() => undefined);
+  return readMapPinStatus(response?.page_data);
+}
+
+async function hydrateNearbyPageMapPinStatus(pages: NearbyPlace[]) {
+  const hydratedPages = await Promise.all(
+    pages.map(async page => {
+      if (!page.pageId || page.mapPinStatus) {
+        return page;
+      }
+
+      const mapPinStatus = await fetchPageMapPinStatus(page.pageId);
+      if (!mapPinStatus) {
+        return page;
+      }
+
+      const isApproved = mapPinStatus.trim().toLowerCase() === 'approved';
+      return {
+        ...page,
+        mapPinStatus,
+        mapPinApproved: isApproved,
+        isPinned: isApproved,
+      };
+    }),
+  );
+
+  return hydratedPages;
 }
 
 async function fetchNearbyPages(input?: NearbyPagesInput) {
@@ -129,9 +183,11 @@ async function fetchNearbyPages(input?: NearbyPagesInput) {
     },
   );
 
-  return (response.items ?? [])
+  const pages = (response.items ?? [])
     .map(record => mapNearbyPage(record, apiConfig.webBaseUrl))
     .filter(Boolean) as NearbyPlace[];
+
+  return hydrateNearbyPageMapPinStatus(pages);
 }
 
 function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
@@ -406,10 +462,16 @@ export function createUserRepository(): UserRepository {
     },
 
     async updateCurrentUser(input: UpdateCurrentUserInput) {
-      const response = await apiBridge.post<UpdateUserResponse>(
-        apiRoutes.user.update,
-        toUpdateCurrentUserPayload(input),
-      );
+      const payload = toUpdateCurrentUserPayload(input);
+      const response = hasUploadFile(payload)
+        ? await apiBridge.multipart<UpdateUserResponse>(
+            apiRoutes.user.update,
+            payload,
+          )
+        : await apiBridge.post<UpdateUserResponse>(
+            apiRoutes.user.update,
+            payload,
+          );
 
       return {
         message: response.message,

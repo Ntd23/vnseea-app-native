@@ -75,6 +75,8 @@ export function mapLiveKitPeer(value: unknown): LiveKitCallPeer {
 
 function mapCallSummary(value: unknown): LiveKitCallSummary {
   const raw = asRecord(value);
+  const startedAt = resolveNumber(raw.started_at);
+  const startedAtMs = resolveNumber(raw.started_at_ms, startedAt * 1000);
   return {
     id: resolveString(raw.id),
     type: normalizeLiveKitCallType(raw.type),
@@ -82,7 +84,8 @@ function mapCallSummary(value: unknown): LiveKitCallSummary {
     roomName: resolveString(raw.room_name),
     sourceRoomName: resolveString(raw.source_room_name ?? raw.room_name),
     status: normalizeLiveKitCallStatus(raw.status),
-    startedAt: resolveNumber(raw.started_at),
+    startedAt,
+    startedAtMs,
   };
 }
 
@@ -106,6 +109,9 @@ export function mapLiveKitCheckResponse(
 ): LiveKitCallCheckResult {
   const raw = asRecord(response);
   const status = normalizeLiveKitCallStatus(raw.call_status ?? raw.status);
+  const startedAt = resolveNumber(raw.started_at);
+  const serverNow = resolveNumber(raw.server_now);
+  const elapsedSeconds = resolveNumber(raw.elapsed);
   return {
     callId: resolveString(raw.id ?? raw.call_id),
     callType: normalizeLiveKitCallType(raw.call_type),
@@ -121,23 +127,30 @@ export function mapLiveKitCheckResponse(
         'ended',
         'finished',
       ].includes(status),
-    startedAt: resolveNumber(raw.started_at),
-    serverNow: resolveNumber(raw.server_now),
-    elapsedSeconds: resolveNumber(raw.elapsed),
+    startedAt,
+    startedAtMs: resolveNumber(raw.started_at_ms, startedAt * 1000),
+    serverNow,
+    serverNowMs: resolveNumber(raw.server_now_ms, serverNow * 1000),
+    elapsedSeconds,
+    elapsedMs: resolveNumber(raw.elapsed_ms, elapsedSeconds * 1000),
   };
 }
 
 export function mapLiveKitJoinPayload(response: unknown): LiveKitJoinPayload {
   const raw = asRecord(response);
   const livekit = asRecord(raw.livekit);
+  const serverNow = resolveNumber(raw.server_now);
+  const elapsedSeconds = resolveNumber(raw.elapsed);
   return {
     call: mapCallSummary(raw.call),
     currentUser: mapLiveKitPeer(raw.current_user),
     peer: mapLiveKitPeer(raw.peer),
     wsUrl: resolveString(livekit.ws_url),
     token: resolveString(livekit.token),
-    serverNow: resolveNumber(raw.server_now),
-    elapsedSeconds: resolveNumber(raw.elapsed),
+    serverNow,
+    serverNowMs: resolveNumber(raw.server_now_ms, serverNow * 1000),
+    elapsedSeconds,
+    elapsedMs: resolveNumber(raw.elapsed_ms, elapsedSeconds * 1000),
   };
 }
 
@@ -155,5 +168,8 @@ export function mapIncomingLiveKitCall(
     provider: 'livekit',
     roomName: resolveString(incoming.room_name),
     peer: mapLiveKitPeer(incoming.peer),
+    actionToken: resolveString(incoming.action_token) || undefined,
+    expiresAt: resolveNumber(incoming.expires_at) || undefined,
+    apiUrl: resolveString(incoming.api_url) || undefined,
   };
 }

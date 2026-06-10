@@ -1,4 +1,4 @@
-// Messages domain types
+// Description: Defines domain types for messages, chats, labels, and media.
 // Based on WoWonder API responses for get_chats and get_user_messages
 
 export interface ChatItem {
@@ -18,6 +18,25 @@ export interface ChatItem {
   unreadCount: number;
   isOnline: boolean;
   isVerified: boolean;
+  labels?: MessageLabel[];
+}
+
+export interface MessageLabel {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface MessageLabelAssignment extends MessageLabel {
+  targetUserId: string;
+}
+
+export interface LabelRecipient {
+  userId: string;
+  name: string;
+  username: string;
+  avatar: string;
+  labels: MessageLabel[];
 }
 
 export type ChatPreviewKind =

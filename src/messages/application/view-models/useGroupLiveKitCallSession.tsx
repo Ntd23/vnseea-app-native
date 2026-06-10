@@ -49,6 +49,11 @@ import {
   endNativeCall,
   markNativeCallConnected,
 } from '../../infrastructure/calls/nativeCallService';
+import {
+  onLiveKitGroupCallClosed,
+  onLiveKitGroupCallSync,
+  type GroupLiveKitCallRealtimeEvent,
+} from '../../infrastructure/realtime/liveKitCallRealtime';
 import { createGroupLiveKitCallRepository } from '../../infrastructure/repositories/ApiGroupLiveKitCallRepository';
 
 type GroupCallPhase =
@@ -152,6 +157,60 @@ function isFinalPhase(phase: GroupCallPhase) {
 
 function localStartedAtFromElapsed(elapsedSeconds: number) {
   return Date.now() - Math.max(0, elapsedSeconds) * 1000;
+}
+
+function resolveGroupElapsedSeconds(timing: {
+  elapsedSeconds?: number;
+  elapsedMs?: number;
+  serverNow?: number;
+  serverNowMs?: number;
+  startedAt?: number;
+  startedAtMs?: number;
+}) {
+  if (
+    typeof timing.elapsedMs === 'number' &&
+    Number.isFinite(timing.elapsedMs) &&
+    timing.elapsedMs >= 0
+  ) {
+    return Math.floor(timing.elapsedMs / 1000);
+  }
+  if (
+    typeof timing.startedAtMs === 'number' &&
+    timing.startedAtMs > 0 &&
+    typeof timing.serverNowMs === 'number' &&
+    timing.serverNowMs > 0
+  ) {
+    return Math.floor(
+      Math.max(0, timing.serverNowMs - timing.startedAtMs) / 1000,
+    );
+  }
+  if (
+    typeof timing.elapsedSeconds === 'number' &&
+    Number.isFinite(timing.elapsedSeconds) &&
+    timing.elapsedSeconds >= 0
+  ) {
+    return Math.floor(timing.elapsedSeconds);
+  }
+  if (
+    typeof timing.startedAt === 'number' &&
+    timing.startedAt > 0 &&
+    typeof timing.serverNow === 'number' &&
+    timing.serverNow > 0
+  ) {
+    return Math.max(0, Math.floor(timing.serverNow - timing.startedAt));
+  }
+  return 0;
+}
+
+function localStartedAtFromTiming(timing: {
+  elapsedSeconds?: number;
+  elapsedMs?: number;
+  serverNow?: number;
+  serverNowMs?: number;
+  startedAt?: number;
+  startedAtMs?: number;
+}) {
+  return Date.now() - resolveGroupElapsedSeconds(timing) * 1000;
 }
 
 function durationSeconds(startedAt: number) {
@@ -642,7 +701,14 @@ export function GroupLiveKitCallSessionProvider({
 
       activeRoomRef.current = nextRoom;
       setActiveRoom(nextRoom);
-      const elapsedSeconds = payload.elapsedSeconds;
+      const elapsedSeconds = resolveGroupElapsedSeconds({
+        elapsedSeconds: payload.elapsedSeconds,
+        elapsedMs: payload.elapsedMs,
+        serverNow: payload.call.serverNow,
+        serverNowMs: payload.call.serverNowMs,
+        startedAt: payload.call.startedAt,
+        startedAtMs: payload.call.startedAtMs,
+      });
       setSession(current => {
         const next: GroupLiveKitCallSession | null = current
           ? {
@@ -660,7 +726,14 @@ export function GroupLiveKitCallSessionProvider({
                   isLocal: true,
                 },
               ]),
-              startedAt: localStartedAtFromElapsed(elapsedSeconds),
+              startedAt: localStartedAtFromTiming({
+                elapsedSeconds,
+                elapsedMs: payload.elapsedMs,
+                serverNow: payload.call.serverNow,
+                serverNowMs: payload.call.serverNowMs,
+                startedAt: payload.call.startedAt,
+                startedAtMs: payload.call.startedAtMs,
+              }),
               elapsedSeconds,
               phase: 'connecting',
               isMinimized: false,
@@ -918,6 +991,38 @@ export function GroupLiveKitCallSessionProvider({
     },
     [repository],
   );
+
+  useEffect(() => {
+    const applyRealtimeSync = (event: GroupLiveKitCallRealtimeEvent) => {
+      const current = sessionRef.current;
+      if (!current || current.callId !== event.callId) return;
+      if (event.group) {
+        patchSession({ group: event.group });
+      }
+      if (event.participants.length > 0) {
+        replaceServerParticipants(event.participants);
+      }
+      const elapsedSeconds = resolveGroupElapsedSeconds(event);
+      if (elapsedSeconds >= 0) {
+        patchSession({
+          startedAt: localStartedAtFromTiming(event),
+          elapsedSeconds,
+        });
+      }
+    };
+
+    const cleanupSync = onLiveKitGroupCallSync(applyRealtimeSync);
+    const cleanupClosed = onLiveKitGroupCallClosed(event => {
+      const current = sessionRef.current;
+      if (!current || current.callId !== event.callId) return;
+      finishSession();
+    });
+
+    return () => {
+      cleanupSync();
+      cleanupClosed();
+    };
+  }, [finishSession, patchSession, replaceServerParticipants]);
 
   useEffect(() => {
     const interval = setInterval(() => {

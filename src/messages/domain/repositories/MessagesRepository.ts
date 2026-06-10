@@ -1,4 +1,4 @@
-// Messages Repository Interface
+// Description: Defines the messages repository contract for chats, groups, and labels.
 // Based on WoWonder API - get_chats, get_user_messages, send-message
 
 import type {
@@ -9,8 +9,10 @@ import type {
   GroupAddableUser,
   GroupChatInfo,
   GroupSharedAssets,
+  LabelRecipient,
   MessageAttachment,
   MessageItem,
+  MessageLabel,
   SendMessageResponse,
 } from '../types/messages.types';
 
@@ -109,4 +111,18 @@ export interface MessagesRepository {
   ): Promise<GroupChatInfo>;
 
   getGroupSharedAssets(groupId: string): Promise<GroupSharedAssets>;
+
+  listLabels(): Promise<MessageLabel[]>;
+
+  createLabel(name: string, color: string): Promise<void>;
+
+  deleteLabel(labelId: string): Promise<void>;
+
+  listTargetLabels(userId: string): Promise<MessageLabel[]>;
+
+  attachLabel(userId: string, labelId: string): Promise<void>;
+
+  detachLabel(userId: string, labelId: string): Promise<void>;
+
+  getUsersByLabel(labelId: string): Promise<LabelRecipient[]>;
 }

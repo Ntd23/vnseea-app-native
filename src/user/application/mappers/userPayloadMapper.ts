@@ -27,6 +27,16 @@ function putIfDefined(
   }
 }
 
+function putBooleanFlag(
+  payload: Record<string, unknown>,
+  key: string,
+  value: boolean | undefined,
+) {
+  if (value !== undefined) {
+    payload[key] = value ? '1' : '0';
+  }
+}
+
 export function toUserProfileFetchValue(fetch?: UserProfileFetch) {
   const resolvedFetch = {
     ...DEFAULT_PROFILE_FETCH,
@@ -105,7 +115,33 @@ export function toUpdateCurrentUserPayload(input: UpdateCurrentUserInput) {
   putIfDefined(payload, 'working_link', input.workingLink);
   putIfDefined(payload, 'address', input.address);
   putIfDefined(payload, 'school', input.school);
+  putIfDefined(
+    payload,
+    'school_completed',
+    input.schoolCompleted === undefined
+      ? undefined
+      : input.schoolCompleted
+        ? '1'
+        : '0',
+  );
   putIfDefined(payload, 'relationship', input.relationshipId);
+  putIfDefined(payload, 'relationship_id', input.relationshipId);
+  putIfDefined(payload, 'current_password', input.currentPassword);
+  putIfDefined(payload, 'new_password', input.newPassword);
+  putIfDefined(payload, 'avatar', input.avatar);
+  putIfDefined(payload, 'cover', input.cover);
+  putIfDefined(payload, 'two_factor', input.twoFactor);
+  putBooleanFlag(payload, 'e_liked', input.emailLiked);
+  putBooleanFlag(payload, 'e_shared', input.emailShared);
+  putBooleanFlag(payload, 'e_wondered', input.emailWondered);
+  putBooleanFlag(payload, 'e_commented', input.emailCommented);
+  putBooleanFlag(payload, 'e_followed', input.emailFollowed);
+  putBooleanFlag(payload, 'e_liked_page', input.emailLikedPage);
+  putBooleanFlag(payload, 'e_visited', input.emailVisited);
+  putBooleanFlag(payload, 'e_mentioned', input.emailMentioned);
+  putBooleanFlag(payload, 'e_joined_group', input.emailJoinedGroup);
+  putBooleanFlag(payload, 'e_accepted', input.emailAccepted);
+  putBooleanFlag(payload, 'e_profile_wall_post', input.emailProfileWallPost);
   putIfDefined(payload, 'message_privacy', input.messagePrivacy);
   putIfDefined(payload, 'follow_privacy', input.followPrivacy);
   putIfDefined(payload, 'friend_privacy', input.friendPrivacy);

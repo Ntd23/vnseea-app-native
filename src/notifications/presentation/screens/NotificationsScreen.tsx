@@ -64,26 +64,6 @@ function getNotificationIcon(type: string) {
   return NOTIFICATION_ICONS[type] ?? { Icon: Bell, iconColor: '#65676B' };
 }
 
-function formatMessageTime(timestamp: number): string {
-  if (!timestamp) return 'Vừa xong';
-
-  const now = Date.now() / 1000;
-  const diff = now - timestamp;
-  if (diff < 60) return 'Vừa xong';
-  if (diff < 3600) return `${Math.floor(diff / 60)} phút`;
-  if (diff < 86400) {
-    return new Date(timestamp * 1000).toLocaleTimeString('vi-VN', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-
-  return new Date(timestamp * 1000).toLocaleDateString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-  });
-}
-
 // Generate notification text from type and data
 function getNotificationText(item: NotificationsItem): string {
   const name = item.notifier?.name || 'Người dùng';
@@ -281,86 +261,10 @@ function NotificationCard({ item, onPress, onLongPress, onAcceptGroupChat, onRej
   );
 }
 
-function UnreadMessageCard({
-  chat,
-  onPress,
-}: {
-  chat: ChatItem;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      className="surface-card mb-3 flex-row items-center bg-[#E7F3FF] p-4"
-      activeOpacity={0.84}
-      onPress={onPress}
-    >
-      {chat.avatar ? (
-        <Image
-          source={{ uri: chat.avatar }}
-          className="h-14 w-14 rounded-full"
-          resizeMode="cover"
-        />
-      ) : (
-        <View className="h-14 w-14 items-center justify-center rounded-full bg-[#1877F2]">
-          <MessageCircle size={25} color="#FFFFFF" />
-        </View>
-      )}
-      <View className="ml-4 flex-1">
-        <View className="flex-row items-start justify-between">
-          <Text className="flex-1 text-body-primary font-semibold" numberOfLines={1}>
-            {chat.name}
-          </Text>
-          <Text className="ml-2 text-caption-secondary">
-            {formatMessageTime(chat.lastMessageTime)}
-          </Text>
-        </View>
-        <Text className="mt-1 text-body-secondary" numberOfLines={2}>
-          {chat.lastMessage || 'Đã gửi cho bạn một tin nhắn'}
-        </Text>
-      </View>
-      <View className="ml-3 min-h-6 min-w-6 items-center justify-center rounded-full bg-[#1877F2] px-2">
-        <Text className="text-xs font-bold text-white">
-          {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function UnreadMessagesFallbackCard({
-  count,
-  onPress,
-}: {
-  count: number;
-  onPress: () => void;
-}) {
-  if (count <= 0) return null;
-
-  return (
-    <TouchableOpacity
-      className="surface-card mb-3 flex-row items-center bg-[#E7F3FF] p-4"
-      activeOpacity={0.84}
-      onPress={onPress}
-    >
-      <View className="h-14 w-14 items-center justify-center rounded-full bg-[#1877F2]">
-        <MessageCircle size={25} color="#FFFFFF" />
-      </View>
-      <View className="ml-4 flex-1">
-        <Text className="text-body-primary font-semibold">
-          Bạn có {count > 99 ? '99+' : count} tin nhắn chưa đọc
-        </Text>
-        <Text className="mt-1 text-caption-secondary">Nhấn để mở hộp thư</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 function NotificationsScreen() {
   const navigation = useNavigation<NotificationsNav>();
   const {
     notifications,
-    unreadMessageCount,
-    unreadMessageChats,
     error,
     isLoading,
     isRefreshing,
@@ -376,12 +280,7 @@ function NotificationsScreen() {
     rejectGroupChatInvitation,
     pendingActions,
   } = useNotificationsViewModel();
-  const hasNotifications = notifications.length > 0 || unreadMessageCount > 0;
-  const remainingUnreadMessageCount = Math.max(
-    0,
-    unreadMessageCount -
-      unreadMessageChats.reduce((total, chat) => total + chat.unreadCount, 0),
-  );
+  const hasNotifications = notifications.length > 0;
 
   useFocusEffect(
     useCallback(() => {
@@ -445,17 +344,6 @@ function NotificationsScreen() {
     markAllAsSeen();
     Alert.alert('Thông báo', 'Đã đánh dấu tất cả là đã đọc');
   }, [markAllAsSeen]);
-
-  const handleOpenMessages = useCallback(() => {
-    navigation.navigate(ROUTES.MESSAGES);
-  }, [navigation]);
-
-  const handleOpenChat = useCallback(
-    (chat: ChatItem) => {
-      navigation.navigate(ROUTES.CHAT, { chat });
-    },
-    [navigation],
-  );
 
   const handleAcceptGroupChat = useCallback(
     async (groupChatId: string) => {
@@ -560,21 +448,6 @@ function NotificationsScreen() {
           }}
           scrollEventThrottle={400}
         >
-          {unreadMessageChats.map(chat => (
-            <UnreadMessageCard
-              key={`message-${chat.id}`}
-              chat={chat}
-              onPress={() => handleOpenChat(chat)}
-            />
-          ))}
-
-          {remainingUnreadMessageCount > 0 && (
-            <UnreadMessagesFallbackCard
-              count={remainingUnreadMessageCount}
-              onPress={handleOpenMessages}
-            />
-          )}
-
           {notifications.map(item => {
             const isGroupChatInvite = item.type === 'added_you_to_group';
             const isPending = isGroupChatInvite && item.groupChatId ? pendingActions.has(item.groupChatId) : false;

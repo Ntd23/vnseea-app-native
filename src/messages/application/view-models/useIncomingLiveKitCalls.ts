@@ -1,29 +1,30 @@
-// Description: Polls foreground incoming LiveKit calls and exposes accept/decline actions for Messages.
+// Description: Handles foreground LiveKit call ringing from push and socket signals for Messages.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigationRef } from '../../../navigation/navigationRef';
-import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { IncomingLiveKitCall } from '../../domain/types/call.types';
 import type { IncomingGroupLiveKitCall } from '../../domain/types/groupCall.types';
 import { useGroupLiveKitCallSession } from './useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from './useLiveKitCallSession';
 import {
-  configureNativeCallService,
-  displayNativeIncomingGroupCall,
-  displayNativeIncomingCall,
-  getNativeCall,
-  setNativeCallListeners,
-} from '../../infrastructure/calls/nativeCallService';
+  connectLiveKitCallRealtime,
+  emitLiveKitCallDeclined,
+  onLiveKitCallClosed,
+  onLiveKitCallDeclined,
+  onLiveKitCallIncoming,
+  onLiveKitGroupCallClosed,
+  onLiveKitGroupCallIncoming,
+} from '../../infrastructure/realtime/liveKitCallRealtime';
 import { createGroupLiveKitCallRepository } from '../../infrastructure/repositories/ApiGroupLiveKitCallRepository';
 import { createLiveKitCallRepository } from '../../infrastructure/repositories/ApiLiveKitCallRepository';
 
-const INCOMING_POLL_INTERVAL_MS = 3_000;
 const AUTH_ROUTE_NAMES = new Set<string>([
   ROUTES.LOGIN,
   ROUTES.REGISTER,
   ROUTES.FORGOT_PASSWORD,
 ]);
+const LIVEKIT_REALTIME_CONNECT_INTERVAL_MS = 1_500;
 
 function isActiveCallPhase(phase?: string) {
   return Boolean(phase && phase !== 'ended' && phase !== 'error');
@@ -34,6 +35,19 @@ function isAppForeground() {
     AppState.currentState !== 'background' &&
     AppState.currentState !== 'inactive'
   );
+}
+
+type NativeCallServiceModule = typeof import('../../infrastructure/calls/nativeCallService');
+
+function loadNativeCallService(): NativeCallServiceModule | null {
+  try {
+    return (require('../../infrastructure/calls/nativeCallService') as
+      | NativeCallServiceModule
+      | undefined) ?? null;
+  } catch (error) {
+    console.warn('[LiveKitIncoming] Native call service unavailable', error);
+    return null;
+  }
 }
 
 export function useIncomingLiveKitCalls() {
@@ -52,7 +66,6 @@ export function useIncomingLiveKitCalls() {
   const groupSessionRef = useRef(groupSession);
   const incomingCallRef = useRef<IncomingLiveKitCall | null>(null);
   const incomingGroupCallRef = useRef<IncomingGroupLiveKitCall | null>(null);
-  const isPollingRef = useRef(false);
   const [incomingCall, setIncomingCall] = useState<IncomingLiveKitCall | null>(
     null,
   );
@@ -85,25 +98,46 @@ export function useIncomingLiveKitCalls() {
     [],
   );
 
+  const openIncomingCallRoom = useCallback(
+    (call: IncomingLiveKitCall) => {
+      const open = () => {
+        if (!navigationRef.isReady()) return;
+        answerIncomingCall(call);
+        navigationRef.navigate(ROUTES.CALL_ROOM, {
+          callId: call.callId,
+          callType: call.callType,
+          direction: 'incoming',
+          peer: call.peer,
+        });
+      };
+      if (navigationRef.isReady()) {
+        open();
+        return;
+      }
+      setTimeout(open, 250);
+    },
+    [answerIncomingCall],
+  );
+
   const acceptIncomingCall = useCallback(() => {
     const call = incomingCallRef.current;
-    if (!call || !navigationRef.isReady()) return;
+    if (!call) return;
 
     setActiveIncomingCall(null);
-    answerIncomingCall(call);
-    navigationRef.navigate(ROUTES.CALL_ROOM, {
-      callId: call.callId,
-      callType: call.callType,
-      direction: 'incoming',
-      peer: call.peer,
-    });
-  }, [answerIncomingCall, setActiveIncomingCall]);
+    openIncomingCallRoom(call);
+  }, [openIncomingCallRoom, setActiveIncomingCall]);
 
   const declineIncomingCall = useCallback(() => {
     const call = incomingCallRef.current;
     setActiveIncomingCall(null);
     if (!call) return;
 
+    emitLiveKitCallDeclined({
+      callId: call.callId,
+      callType: call.callType,
+      recipientId: call.peer.id,
+      duration: 0,
+    });
     repository
       .closeCall({
         callId: call.callId,
@@ -137,10 +171,75 @@ export function useIncomingLiveKitCalls() {
     declineIncomingGroupCall(call).catch(() => undefined);
   }, [declineIncomingGroupCall, setActiveIncomingGroupCall]);
 
+  const shouldIgnoreIncomingSignal = useCallback(() => {
+    if (!navigationRef.isReady()) return true;
+    const currentRouteName = navigationRef.getCurrentRoute()?.name;
+    if (currentRouteName && AUTH_ROUTE_NAMES.has(String(currentRouteName))) {
+      return true;
+    }
+    return (
+      isActiveCallPhase(sessionRef.current?.phase) ||
+      isActiveCallPhase(groupSessionRef.current?.phase)
+    );
+  }, []);
+
+  const handleIncomingCallSignal = useCallback(
+    (call: IncomingLiveKitCall) => {
+      if (shouldIgnoreIncomingSignal()) return;
+      if (!isAppForeground()) return;
+      if (call.callId === activeCallIdRef.current && incomingCallRef.current) {
+        return;
+      }
+      setActiveIncomingCall(call);
+    },
+    [setActiveIncomingCall, shouldIgnoreIncomingSignal],
+  );
+
+  const handleIncomingGroupCallSignal = useCallback(
+    (call: IncomingGroupLiveKitCall) => {
+      if (shouldIgnoreIncomingSignal()) return;
+      if (!isAppForeground()) return;
+      if (
+        call.callId === activeGroupCallIdRef.current &&
+        incomingGroupCallRef.current
+      ) {
+        return;
+      }
+      setActiveIncomingGroupCall(call);
+    },
+    [setActiveIncomingGroupCall, shouldIgnoreIncomingSignal],
+  );
+
   useEffect(() => {
-    const cleanupListeners = setNativeCallListeners({
+    const nativeCallService = loadNativeCallService();
+    nativeCallService?.configureNativeCallService?.().catch(() => undefined);
+    connectLiveKitCallRealtime();
+    const cleanupIncomingSocket = onLiveKitCallIncoming(
+      handleIncomingCallSignal,
+    );
+    const cleanupIncomingGroupSocket = onLiveKitGroupCallIncoming(
+      handleIncomingGroupCallSignal,
+    );
+    const clearIncomingDirectCall = (callId: string) => {
+      if (incomingCallRef.current?.callId !== callId) return;
+      setActiveIncomingCall(null);
+    };
+    const cleanupDeclinedSocket = onLiveKitCallDeclined(event => {
+      clearIncomingDirectCall(event.callId);
+    });
+    const cleanupClosedSocket = onLiveKitCallClosed(event => {
+      clearIncomingDirectCall(event.callId);
+    });
+    const cleanupGroupClosedSocket = onLiveKitGroupCallClosed(event => {
+      if (incomingGroupCallRef.current?.callId !== event.callId) return;
+      setActiveIncomingGroupCall(null);
+    });
+    const cleanupListeners =
+      nativeCallService?.setNativeCallListeners?.({
+      onIncoming: handleIncomingCallSignal,
+      onIncomingGroup: handleIncomingGroupCallSignal,
       onAnswer(callUuid) {
-        const nativeCall = getNativeCall(callUuid);
+        const nativeCall = nativeCallService.getNativeCall(callUuid);
         if (!nativeCall?.callId || !navigationRef.isReady()) return;
         if (nativeCall.context === 'group') {
           const groupId = nativeCall.groupId ?? nativeCall.group?.id ?? '';
@@ -173,7 +272,7 @@ export function useIncomingLiveKitCalls() {
           });
           return;
         }
-        answerIncomingCall({
+        openIncomingCallRoom({
           callId: nativeCall.callId,
           callType: nativeCall.callType,
           provider: 'livekit',
@@ -184,15 +283,9 @@ export function useIncomingLiveKitCalls() {
             avatar: '',
           },
         });
-        navigationRef.navigate(ROUTES.CALL_ROOM, {
-          callId: nativeCall.callId,
-          callType: nativeCall.callType,
-          direction: 'incoming',
-          peer: nativeCall.peer,
-        });
       },
       onEnd(callUuid) {
-        const nativeCall = getNativeCall(callUuid);
+        const nativeCall = nativeCallService.getNativeCall(callUuid);
         if (nativeCall?.context === 'group') {
           const activeGroupSession = groupSessionRef.current;
           if (activeGroupSession?.callId === nativeCall.callId) {
@@ -217,6 +310,12 @@ export function useIncomingLiveKitCalls() {
           ).catch(() => undefined);
           return;
         }
+        emitLiveKitCallDeclined({
+          callId: nativeCall.callId,
+          callType: nativeCall.callType,
+          recipientId: nativeCall.peer?.id ?? '',
+          duration: 0,
+        });
         repository
           .closeCall({
             callId: nativeCall.callId,
@@ -226,110 +325,51 @@ export function useIncomingLiveKitCalls() {
           })
           .catch(() => undefined);
       },
-    });
+    }) ?? (() => undefined);
 
-    const pollIncomingCalls = async () => {
-      if (isPollingRef.current) return;
-      if (!sessionStorage.getAccessToken()) return;
-      if (!navigationRef.isReady()) return;
-      const currentRouteName = navigationRef.getCurrentRoute()?.name;
-      if (currentRouteName && AUTH_ROUTE_NAMES.has(String(currentRouteName))) {
-        return;
-      }
-      if (
-        isActiveCallPhase(sessionRef.current?.phase) ||
-        isActiveCallPhase(groupSessionRef.current?.phase)
-      ) {
-        return;
-      }
-
-      isPollingRef.current = true;
-      try {
-        configureNativeCallService().catch(() => undefined);
-
-        const incoming = await repository.getIncomingCall().catch(error => {
-          console.warn('[LiveKitIncoming] Direct incoming poll failed', error);
-          return undefined;
+    nativeCallService?.getInitialNativeGroupCallAction?.()
+      .then(call => {
+        if (!call || !navigationRef.isReady()) return;
+        answerIncomingGroupCall(call);
+        navigationRef.navigate(ROUTES.GROUP_CALL_ROOM, {
+          groupId: call.groupId,
+          callId: call.callId,
+          callType: call.callType,
+          direction: 'incoming',
+          groupName: call.group.name,
+          groupAvatar: call.group.avatar,
         });
-        if (incoming) {
-          const isForeground = isAppForeground();
-          const isNewIncoming = incoming.callId !== activeCallIdRef.current;
-          const shouldShowInApp =
-            isForeground && (!incomingCallRef.current || isNewIncoming);
+      })
+      .catch(() => undefined);
 
-          if (shouldShowInApp) {
-            setActiveIncomingCall(incoming);
-          }
+    nativeCallService?.getInitialNativeCallAction?.()
+      .then(call => {
+        if (!call) return;
+        openIncomingCallRoom(call);
+      })
+      .catch(() => undefined);
 
-          if (!isForeground && isNewIncoming) {
-            activeCallIdRef.current = incoming.callId;
-            await displayNativeIncomingCall(incoming).catch(() => {
-              if (Platform.OS === 'android') {
-                setActiveIncomingCall(incoming);
-              }
-            });
-          }
-        } else if (incoming === null) {
-          activeCallIdRef.current = '';
-          if (incomingCallRef.current) {
-            setActiveIncomingCall(null);
-          }
-        }
-
-        const incomingGroup = await groupRepository
-          .getIncomingCall()
-          .catch(error => {
-            console.warn('[LiveKitIncoming] Group incoming poll failed', error);
-            return undefined;
-          });
-        if (incomingGroup) {
-          const isForeground = isAppForeground();
-          const isNewIncomingGroup =
-            incomingGroup.callId !== activeGroupCallIdRef.current;
-          const shouldShowGroupInApp =
-            isForeground &&
-            (!incomingGroupCallRef.current || isNewIncomingGroup);
-
-          if (shouldShowGroupInApp) {
-            setActiveIncomingGroupCall(incomingGroup);
-          }
-
-          if (!isForeground && isNewIncomingGroup) {
-            activeGroupCallIdRef.current = incomingGroup.callId;
-            await displayNativeIncomingGroupCall(incomingGroup).catch(() => {
-              if (Platform.OS === 'android') {
-                setActiveIncomingGroupCall(incomingGroup);
-              }
-            });
-          }
-        } else if (incomingGroup === null) {
-          activeGroupCallIdRef.current = '';
-          if (incomingGroupCallRef.current) {
-            setActiveIncomingGroupCall(null);
-          }
-        }
-      } finally {
-        isPollingRef.current = false;
-      }
-    };
-
-    pollIncomingCalls().catch(() => undefined);
-
-    const interval = setInterval(() => {
-      pollIncomingCalls().catch(() => undefined);
-    }, INCOMING_POLL_INTERVAL_MS);
+    const realtimeConnectInterval = setInterval(() => {
+      if (!isAppForeground()) return;
+      connectLiveKitCallRealtime();
+    }, LIVEKIT_REALTIME_CONNECT_INTERVAL_MS);
 
     const appStateSubscription = AppState.addEventListener(
       'change',
       nextState => {
         if (nextState !== 'active') return;
-        pollIncomingCalls().catch(() => undefined);
+        connectLiveKitCallRealtime();
       },
     );
 
     return () => {
+      cleanupIncomingSocket();
+      cleanupIncomingGroupSocket();
+      cleanupDeclinedSocket();
+      cleanupClosedSocket();
+      cleanupGroupClosedSocket();
       cleanupListeners();
-      clearInterval(interval);
+      clearInterval(realtimeConnectInterval);
       appStateSubscription.remove();
     };
   }, [
@@ -337,10 +377,11 @@ export function useIncomingLiveKitCalls() {
     answerIncomingGroupCall,
     endCall,
     groupRepository,
+    handleIncomingCallSignal,
+    handleIncomingGroupCallSignal,
     leaveCall,
+    openIncomingCallRoom,
     repository,
-    setActiveIncomingCall,
-    setActiveIncomingGroupCall,
   ]);
 
   return {

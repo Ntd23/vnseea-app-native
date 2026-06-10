@@ -1,5 +1,7 @@
+// Description: Hosts the main React Native Android activity and preserves native call intents.
 package com.vnseearn
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import com.facebook.react.ReactActivity
@@ -23,6 +25,17 @@ class MainActivity : ReactActivity() {
   override fun onResume() {
     super.onResume()
     preferHighestRefreshRate()
+  }
+
+  /**
+   * Handle new intents (e.g. from the LiveKit call notification action
+   * receiver). Without this override a tapped notification wouldn't
+   * bring the existing task to the foreground with the new intent
+   * payload, breaking deep-linking into the call screen.
+   */
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
   }
 
   /**

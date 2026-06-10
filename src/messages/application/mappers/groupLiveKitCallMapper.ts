@@ -49,6 +49,7 @@ function normalizeStatus(value: unknown): GroupLiveKitCallStatus {
 }
 
 function elapsedFromCall(call: GroupLiveKitCallSummary) {
+  if (call.elapsedMs > 0) return Math.floor(call.elapsedMs / 1000);
   if (call.startedAt <= 0 || call.serverNow <= 0) return 0;
   return Math.max(0, call.serverNow - call.startedAt);
 }
@@ -94,7 +95,10 @@ function mapCall(value: unknown): GroupLiveKitCallSummary {
     roomName: resolveString(raw.room_name),
     status: normalizeStatus(raw.status ?? raw.call_status),
     startedAt: resolveNumber(raw.started_at),
+    startedAtMs: resolveNumber(raw.started_at_ms),
     serverNow: resolveNumber(raw.server_now),
+    serverNowMs: resolveNumber(raw.server_now_ms),
+    elapsedMs: resolveNumber(raw.elapsed_ms),
     participantCount: resolveNumber(raw.participant_count),
   };
 }
@@ -124,6 +128,7 @@ export function mapGroupLiveKitJoinPayload(
     token: resolveString(livekit.token),
     participants: mapParticipants(raw.participants),
     elapsedSeconds: elapsedFromCall(call),
+    elapsedMs: call.elapsedMs,
   };
 }
 
@@ -137,6 +142,7 @@ export function mapGroupLiveKitSyncResponse(
     group: mapGroup(raw.group),
     participants: mapParticipants(raw.participants),
     elapsedSeconds: elapsedFromCall(call),
+    elapsedMs: call.elapsedMs,
   };
 }
 
@@ -156,6 +162,15 @@ export function mapIncomingGroupLiveKitCall(
     group: mapGroup(incoming.group),
     caller: mapGroupLiveKitPeer(incoming.caller),
     participantCount: resolveNumber(incoming.participant_count),
+    actionToken: resolveString(incoming.action_token) || undefined,
+    expiresAt: resolveNumber(incoming.expires_at) || undefined,
+    apiUrl: resolveString(incoming.api_url) || undefined,
+    ringMode:
+      resolveString(incoming.ring_mode) === 'passive'
+        ? 'passive'
+        : resolveString(incoming.ring_mode) === 'fullscreen'
+          ? 'fullscreen'
+          : undefined,
   };
 }
 

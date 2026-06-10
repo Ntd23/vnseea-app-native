@@ -1,3 +1,4 @@
+// Description: Registers socket event handlers for WoWonder realtime features.
 const funcs = require('../functions/functions')
 const compiledTemplates = require('../compiledTemplates/compiledTemplates')
 const socketEvents = require('../events/events')
@@ -48,6 +49,11 @@ const { SeenMessagesController } = require('../controllers/SeenMessagesControlle
 const { DisconnectController } = require('../controllers/DisconnectController');
 const { NotificationsController } = require('../controllers/NotificationsController');
 const { ColorChangedController } = require('../controllers/ColorChangedController');
+const {
+    LiveKitCallCreatedController,
+    LiveKitCallAnsweredController,
+    LiveKitCallClosedController,
+} = require('../controllers/LiveKitCallController');
 
 
 
@@ -176,6 +182,30 @@ module.exports.registerListeners = async (socket, io, ctx) => {
 
     socket.on("decline_call", async (data) => {
         DeclineCallController(ctx, data, io,socket);
+    })
+
+    socket.on("livekit_call_created", async (data) => {
+        try {
+            await LiveKitCallCreatedController(ctx, data, io,socket);
+        } catch (error) {
+            console.error("livekit_call_created failed", error);
+        }
+    })
+
+    socket.on("livekit_call_answered", async (data) => {
+        try {
+            await LiveKitCallAnsweredController(ctx, data, io,socket);
+        } catch (error) {
+            console.error("livekit_call_answered failed", error);
+        }
+    })
+
+    socket.on("livekit_call_closed", async (data) => {
+        try {
+            await LiveKitCallClosedController(ctx, data, io,socket);
+        } catch (error) {
+            console.error("livekit_call_closed failed", error);
+        }
     })
 
     socket.on("user_notification", async (data) => {

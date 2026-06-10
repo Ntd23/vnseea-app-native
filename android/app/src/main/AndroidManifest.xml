@@ -41,6 +41,16 @@
       <meta-data
         android:name="com.google.android.geo.API_KEY"
         android:value="${GOOGLE_MAPS_API_KEY}" />
+      <meta-data
+        android:name="com.onesignal.NotificationServiceExtension"
+        android:value="com.vnseearn.call.LiveKitCallNotificationServiceExtension" />
+      <activity
+        android:name=".call.IncomingCallActivity"
+        android:excludeFromRecents="true"
+        android:exported="false"
+        android:launchMode="singleTask"
+        android:showOnLockScreen="true"
+        android:turnScreenOn="true" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
@@ -61,5 +71,8 @@
           <action android:name="android.telecom.ConnectionService" />
         </intent-filter>
       </service>
+      <receiver
+        android:name=".call.LiveKitCallActionReceiver"
+        android:exported="false" />
     </application>
 </manifest>
