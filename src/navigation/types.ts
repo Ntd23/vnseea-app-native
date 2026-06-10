@@ -56,6 +56,8 @@ export type RootStackParamList = {
   [ROUTES.GROUP_DETAIL]: undefined;
   [ROUTES.EVENTS]: undefined;
   [ROUTES.FUNDING]: undefined;
+  [ROUTES.FUNDING_DETAIL]: { fundId: string };
+  [ROUTES.CREATE_FUNDING]: undefined;
   [ROUTES.FOLLOWING]: undefined;
   [ROUTES.BOOSTED]: undefined;
   [ROUTES.POPULAR]: undefined;

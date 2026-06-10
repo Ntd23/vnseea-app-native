@@ -40,9 +40,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   Briefcase,
+  Building2,
   ChevronRight,
   Edit3,
   Globe,
+  HeartHandshake,
   ImageIcon,
   Lock,
   MapPin,
@@ -143,6 +145,10 @@ import { ToastContainer } from '../../../shared-kernel/presentation/components/T
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { useLiveViewModel } from '../../../live/application/view-models/useLiveViewModel';
 import type { LiveStreamItem } from '../../../live/domain/types/live.types';
+import { usePagesOnFeedViewModel } from '../../../pages';
+import type { PagesItem } from '../../../pages/domain/types/pages.types';
+import { useFundingOnFeedViewModel } from '../../../funding';
+import type { FundingItem } from '../../../funding/domain/types/funding.types';
 
 const PICKER_WIDTH = 282;
 const PICKER_HEIGHT = 52;
@@ -257,6 +263,16 @@ type FeedCopy = {
   groupFallback: string;
   privateLabel: string;
   viewGroup: string;
+  suggestedPagesTitle: string;
+  suggestedPagesSubtitle: string;
+  pageFallback: string;
+  viewPage: string;
+  fundingTitle: string;
+  fundingSubtitle: string;
+  fundingFallback: string;
+  fundingRaised: string;
+  fundingGoal: string;
+  viewFunding: string;
   productsTitle: string;
   savedTitle: string;
   savedMessage: string;
@@ -333,6 +349,16 @@ const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     groupFallback: 'Nhóm',
     privateLabel: 'Riêng tư',
     viewGroup: 'Xem nhóm',
+    suggestedPagesTitle: 'Trang gợi ý cho bạn',
+    suggestedPagesSubtitle: 'Theo dõi các trang phù hợp trên VNSEEA',
+    pageFallback: 'Trang',
+    viewPage: 'Xem trang',
+    fundingTitle: 'Gây quỹ nổi bật',
+    fundingSubtitle: 'Các chiến dịch cộng đồng đang cần được ủng hộ',
+    fundingFallback: 'Chiến dịch gây quỹ',
+    fundingRaised: 'Đã góp',
+    fundingGoal: 'Mục tiêu',
+    viewFunding: 'Ủng hộ',
     productsTitle: 'Sản phẩm',
     savedTitle: 'Đã lưu',
     savedMessage: 'Bài viết đã được lưu vào mục đã lưu.',
@@ -407,6 +433,16 @@ const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     groupFallback: 'Group',
     privateLabel: 'Private',
     viewGroup: 'View group',
+    suggestedPagesTitle: 'Suggested pages for you',
+    suggestedPagesSubtitle: 'Follow relevant pages on VNSEEA',
+    pageFallback: 'Page',
+    viewPage: 'View page',
+    fundingTitle: 'Featured fundraisers',
+    fundingSubtitle: 'Community campaigns that need support',
+    fundingFallback: 'Fundraising campaign',
+    fundingRaised: 'Raised',
+    fundingGoal: 'Goal',
+    viewFunding: 'Donate',
     productsTitle: 'Products',
     savedTitle: 'Saved',
     savedMessage: 'Post has been saved.',
@@ -1689,6 +1725,122 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
   );
 });
 
+const PAGE_SKELETONS = ['page-skeleton-1', 'page-skeleton-2', 'page-skeleton-3'];
+
+const SuggestedPagesCarousel = React.memo(function SuggestedPagesCarousel({
+  pages,
+  isLoading,
+  copy,
+  onOpenPages,
+  onOpenPage,
+}: {
+  pages: PagesItem[];
+  isLoading: boolean;
+  copy: FeedCopy;
+  onOpenPages: () => void;
+  onOpenPage: (page: PagesItem) => void;
+}) {
+  if (!isLoading && pages.length === 0) return null;
+
+  const data: Array<PagesItem | string> =
+    pages.length > 0 ? pages : PAGE_SKELETONS;
+
+  return (
+    <View className="mb-2 border-y border-[#e5e7eb] bg-white py-4">
+      <View className="mb-3 flex-row items-center justify-between px-4">
+        <View>
+          <Text className="text-[17px] font-extrabold text-[#111827]">
+            {copy.suggestedPagesTitle}
+          </Text>
+          <Text className="mt-0.5 text-xs font-semibold text-[#64748b]">
+            {copy.suggestedPagesSubtitle}
+          </Text>
+        </View>
+        <TouchableOpacity activeOpacity={0.75} onPress={onOpenPages}>
+          <Text className="text-sm font-bold text-[#0866ff]">{copy.seeAll}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <FlatList<PagesItem | string>
+        horizontal
+        data={data}
+        keyExtractor={item => (typeof item === 'string' ? item : String(item.id))}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16 }}
+        ItemSeparatorComponent={GroupCarouselSeparator}
+        nestedScrollEnabled
+        initialNumToRender={3}
+        maxToRenderPerBatch={3}
+        windowSize={3}
+        removeClippedSubviews={Platform.OS === 'android'}
+        renderItem={({ item }) => {
+          if (typeof item === 'string') {
+            return (
+              <View className="w-[220px] overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white">
+                <View className="h-24 bg-[#eef2f7]" />
+                <View className="p-3">
+                  <View className="h-5 w-36 rounded-full bg-[#eef2f7]" />
+                  <View className="mt-2 h-4 w-28 rounded-full bg-[#eef2f7]" />
+                  <View className="mt-4 h-9 rounded-xl bg-[#eef2f7]" />
+                </View>
+              </View>
+            );
+          }
+
+          const cover = item.cover || item.avatar || images.scenic;
+          const avatar = item.avatar || cover;
+          const title = item.pageTitle || item.pageName || copy.pageFallback;
+          const subtitle = item.pageCategory || item.pageDescription || copy.publicLabel;
+
+          return (
+            <TouchableOpacity
+              className="w-[220px] overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white"
+              activeOpacity={0.88}
+              onPress={() => onOpenPage(item)}
+            >
+              <View className="h-24 bg-[#111827]">
+                <FeedMediaImage uri={cover} className="h-full w-full opacity-90" resizeMode="cover" />
+                <View className="absolute bottom-[-22px] left-3 h-14 w-14 rounded-full border-4 border-white bg-white">
+                  <Image source={{ uri: avatar }} className="h-full w-full rounded-full" resizeMode="cover" fadeDuration={0} />
+                </View>
+              </View>
+              <View className="px-3 pb-3 pt-8">
+                <Text className="text-[15px] font-extrabold text-[#111827]" numberOfLines={2}>
+                  {title}
+                </Text>
+                <View className="mt-2 flex-row items-center">
+                  <Building2 size={13} color="#64748b" />
+                  <Text className="ml-1 flex-1 text-xs font-semibold text-[#64748b]" numberOfLines={1}>
+                    {subtitle}
+                  </Text>
+                </View>
+                <View className="mt-1 flex-row items-center">
+                  <ThumbsUp size={13} color="#64748b" />
+                  <Text className="ml-1 text-xs font-semibold text-[#64748b]">
+                    {formatCount(Number(item.likes) || 0)}
+                  </Text>
+                </View>
+                <View className="mt-4 flex-row items-center justify-center rounded-xl bg-[#e7f0ff] py-2.5">
+                  <Plus size={16} color="#0866ff" />
+                  <Text className="ml-1 text-sm font-extrabold text-[#0866ff]">
+                    {copy.viewPage}
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
+      />
+    </View>
+  );
+}, (prev, next) =>
+  prev.pages === next.pages &&
+  prev.isLoading === next.isLoading &&
+  prev.copy === next.copy &&
+  prev.onOpenPages === next.onOpenPages &&
+  prev.onOpenPage === next.onOpenPage
+);
+
 // Background colors for each reaction type's circular badge (FB-style)
 const REACTION_BADGE_BG: Record<ReactionType, string> = {
   like: '#0866FF',
@@ -2874,6 +3026,12 @@ type FeedListItem =
       id: string;
       groups: GroupItem[];
       isLoading: boolean;
+    }
+  | {
+      type: 'pages-carousel';
+      id: string;
+      pages: PagesItem[];
+      isLoading: boolean;
     };
 
 // Section wrapper — header + empty/loading/error states + list of cards.
@@ -3081,11 +3239,13 @@ function FeedScreen() {
   const { toggleInterested, toggleGoing } = eventsVm;
   const jobsVm = useJobsOnFeedViewModel({ autoLoad: false });
   const groupsVm = useSuggestedGroupsOnFeedViewModel({ autoLoad: false });
+  const pagesVm = usePagesOnFeedViewModel({ autoLoad: false });
   const liveVm = useLiveViewModel({ autoLoad: false });
   const reloadProducts = productsVm.reloadProducts;
   const reloadEvents = eventsVm.reloadEvents;
   const reloadJobs = jobsVm.reloadJobs;
   const reloadGroups = groupsVm.reloadGroups;
+  const reloadPages = pagesVm.reloadPages;
   const reloadLive = liveVm.refresh;
 
   useEffect(() => {
@@ -3110,10 +3270,33 @@ function FeedScreen() {
     const liveTimer = setTimeout(() => {
       runWhenScrollIdle(reloadLive);
     }, 1800);
-    supplementalLoadTimersRef.current.push(productsTimer, liveTimer);
+    const groupsTimer = setTimeout(() => {
+      runWhenScrollIdle(reloadGroups);
+    }, 2200);
+    const pagesTimer = setTimeout(() => {
+      runWhenScrollIdle(reloadPages);
+    }, 2600);
+    const eventsTimer = setTimeout(() => {
+      runWhenScrollIdle(reloadEvents);
+    }, 3000);
+    const jobsTimer = setTimeout(() => {
+      runWhenScrollIdle(reloadJobs);
+    }, 3400);
+    supplementalLoadTimersRef.current.push(
+      productsTimer,
+      liveTimer,
+      groupsTimer,
+      pagesTimer,
+      eventsTimer,
+      jobsTimer,
+    );
   }, [
     feedPosts.length,
     vm.hasLoadedOnce,
+    reloadEvents,
+    reloadGroups,
+    reloadJobs,
+    reloadPages,
     reloadProducts,
     reloadLive,
   ]);
@@ -3212,6 +3395,17 @@ function FeedScreen() {
   const handleOpenGroups = useCallback(() => {
     navigation.navigate(ROUTES.EXPLORE_GROUPS);
   }, [navigation]);
+
+  const handleOpenPages = useCallback(() => {
+    navigation.navigate(ROUTES.PAGES);
+  }, [navigation]);
+
+  const handleOpenPage = useCallback(
+    (page: PagesItem) => {
+      navigation.navigate(ROUTES.PAGE_DETAIL, { page });
+    },
+    [navigation],
+  );
 
   const handleOpenGroup = useCallback(
     (group: GroupItem) => {
@@ -3401,15 +3595,18 @@ function FeedScreen() {
           reloadGroups(true);
         }, 450),
         setTimeout(() => {
-          reloadEvents(true);
+          reloadPages(true);
         }, 650),
         setTimeout(() => {
-          reloadJobs(true);
+          reloadEvents(true);
         }, 850),
+        setTimeout(() => {
+          reloadJobs(true);
+        }, 1050),
       ];
       supplementalLoadTimersRef.current = timers;
     });
-  }, [reloadEvents, reloadFeedPosts, reloadGroups, reloadJobs, reloadLive, reloadProducts]);
+  }, [reloadEvents, reloadFeedPosts, reloadGroups, reloadJobs, reloadLive, reloadPages, reloadProducts]);
 
   const ListFooterComponent = useMemo(() => {
     if (isFeedLoadingMore) {
@@ -3539,8 +3736,25 @@ function FeedScreen() {
       });
     }
 
+    if ((pagesVm.pages.length > 0 || pagesVm.isLoading) && items.length > 0) {
+      const insertIndex = Math.min(5, items.length);
+      items.splice(insertIndex, 0, {
+        type: 'pages-carousel',
+        id: 'pages-carousel-main',
+        pages: pagesVm.pages,
+        isLoading: pagesVm.isLoading,
+      });
+    }
+
     return items;
-  }, [feedLiveItems, mergedPosts, groupsVm.groups, groupsVm.isLoading]);
+  }, [
+    feedLiveItems,
+    mergedPosts,
+    groupsVm.groups,
+    groupsVm.isLoading,
+    pagesVm.pages,
+    pagesVm.isLoading,
+  ]);
 
   // ── Smart image prefetch — only the next ~10 upcoming items ──────────
   // Instead of prefetching ALL images (which wastes bandwidth and CPU on
@@ -3772,6 +3986,19 @@ function FeedScreen() {
     [copy, handleOpenGroup, handleOpenGroups],
   );
 
+  const renderPagesCarousel = useCallback(
+    ({ item }: { item: Extract<FeedListItem, { type: 'pages-carousel' }> }) => (
+      <SuggestedPagesCarousel
+        pages={item.pages}
+        isLoading={item.isLoading}
+        copy={copy}
+        onOpenPages={handleOpenPages}
+        onOpenPage={handleOpenPage}
+      />
+    ),
+    [copy, handleOpenPage, handleOpenPages],
+  );
+
   const renderLivePost = useCallback(
     ({ item }: { item: Extract<FeedListItem, { type: 'live' }> }) => (
       <FeedLivePostCard item={item.item} copy={copy} onPress={handleOpenLive} />
@@ -3783,6 +4010,10 @@ function FeedScreen() {
     ({ item }: { item: FeedListItem }) => {
       if (item.type === 'groups-carousel') {
         return renderGroupsCarousel({ item });
+      }
+
+      if (item.type === 'pages-carousel') {
+        return renderPagesCarousel({ item });
       }
 
       if (item.type === 'live') {
@@ -3806,6 +4037,7 @@ function FeedScreen() {
       renderGroupsCarousel,
       renderJobPost,
       renderLivePost,
+      renderPagesCarousel,
       renderPollPost,
       renderProductPost,
       renderTextPost,
@@ -3871,6 +4103,7 @@ function FeedScreen() {
                   eventsVm.isRefreshing ||
                   jobsVm.isRefreshing ||
                   groupsVm.isRefreshing ||
+                  pagesVm.isRefreshing ||
                   liveVm.isRefreshing
                 }
                 onRefresh={handleRefresh}

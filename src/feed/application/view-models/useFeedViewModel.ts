@@ -35,9 +35,9 @@ import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/
 const repository = createFeedRepository();
 const pollRepository = createPollRepository();
 
-// Page size bumped from 10 to 15 so a single network trip fills
-// more than one screen worth of content.
-const PAGE_SIZE = 15;
+// Keep enough real feed items in each page so FlashList has room to
+// pre-render and the user does not hit the pagination edge immediately.
+const PAGE_SIZE = 20;
 const VIDEO_PAGE_SIZE = 10;
 const VIDEO_INSERT_INTERVAL = 5;
 const FEED_VM_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;

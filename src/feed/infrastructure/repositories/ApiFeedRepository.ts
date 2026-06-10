@@ -837,6 +837,14 @@ function getOldestRawPostId(posts: Array<Record<string, unknown>>): string | und
   return String(Math.min(...ids));
 }
 
+function getOldestFeedPostId(posts: FeedPost[]): string | undefined {
+  const ids = posts
+    .map(post => Number(post.id))
+    .filter(id => Number.isFinite(id) && id > 0);
+  if (ids.length === 0) return undefined;
+  return String(Math.min(...ids));
+}
+
 async function fetchRawFeedPosts(
   limit: number,
   afterPostId?: string,
@@ -957,10 +965,13 @@ async function fetchRawFeedPosts(
       : Math.max(3, Math.min(6, Math.ceil(limit / 5)))
     : 0;
 
-  // 1. Fetch followed feed and a small own-post fallback in parallel.
-  // Own posts must not dominate Home; discovery fills the social mix.
-  const [followedRaw, ownRaw] = await Promise.all([
+  // 1. Fetch followed feed, global public posts, and a small own-post
+  // fallback in parallel. `get_news_feed` is follow-graph filtered on many
+  // WoWonder installs, so the public stream is what keeps Home from ending
+  // after a handful of posts on sparse accounts.
+  const [followedRaw, publicRaw, ownRaw] = await Promise.all([
     tryFetch({ type: 'get_news_feed', limit, after_post_id: afterPostId }),
+    tryFetch({ type: 'get_public_posts', limit, after_post_id: afterPostId }),
     sessionUserId
       ? tryFetch({
           type: 'get_user_posts',
@@ -987,7 +998,7 @@ async function fetchRawFeedPosts(
   const merged: Array<Record<string, unknown>> = [];
   let pageAdIncluded = false;
   let ownPostsIncluded = 0;
-  for (const list of [followedRaw, discoveryRaw, ownRaw]) {
+  for (const list of [followedRaw, publicRaw, discoveryRaw, ownRaw]) {
     for (const post of list) {
       const isAd = looksLikeAd(post);
       if (isAd && pageAdIncluded) continue;
@@ -1020,6 +1031,7 @@ async function fetchRawFeedPosts(
     afterPostId: afterPostId ?? 'first',
     requestedLimit: limit,
     followed: followedRaw.length,
+    public: publicRaw.length,
     own: ownRaw.length,
     ownLimit: ownPostsLimit,
     discovery: discoveryRaw.length,
@@ -1030,8 +1042,9 @@ async function fetchRawFeedPosts(
     posts: merged,
     nextCursor:
       getOldestRawPostId(followedRaw) ??
+      getOldestRawPostId(publicRaw) ??
       getOldestRawPostId([...discoveryRaw, ...ownRaw]),
-    primaryCount: followedRaw.length,
+    primaryCount: Math.max(followedRaw.length, publicRaw.length),
   };
 }
 
@@ -1135,15 +1148,25 @@ export function createFeedRepository(): FeedRepository {
       limit = 20,
       afterPostId?: string,
     ): Promise<FeedPostsPage> {
+      const rawLimit = Math.max(limit, Math.ceil(limit * 1.5));
       const page = await fetchRawFeedPosts(
-        Math.max(limit, Math.ceil(limit * 1.5)),
+        rawLimit,
         afterPostId,
       );
-      const posts = mixAdsIntoPosts(mapLightRawFeedPosts(page.posts)).slice(0, limit);
+      const mappedPosts = mixAdsIntoPosts(mapLightRawFeedPosts(page.posts));
+      const posts = mappedPosts.slice(0, limit);
+      const renderedCursor = getOldestFeedPostId(posts);
+      const scanningCursor = page.nextCursor;
       return {
         posts,
-        nextCursor: page.nextCursor,
-        reachedEnd: page.primaryCount === 0 && posts.length === 0,
+        // Use the oldest post that was actually returned to the UI. The raw
+        // API batch may be larger than the visible page so using its oldest
+        // id would skip renderable posts and make Home run out too early.
+        nextCursor: renderedCursor ?? scanningCursor,
+        reachedEnd:
+          posts.length === 0 &&
+          page.primaryCount === 0 &&
+          page.posts.length < rawLimit,
       };
     },
 

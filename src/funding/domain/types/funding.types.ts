@@ -32,10 +32,50 @@ export interface FundingItem {
   percentage?: number;
 }
 
-export interface FundingResponse {
+export interface FundingListResponse {
   api_status: number;
   can_create: boolean;
   currency: string;
   currency_symbol: string;
   data: FundingItem[];
+}
+
+export interface FundingDetailResponse {
+  api_status: number;
+  currency: string;
+  currency_symbol: string;
+  data: FundingItem;
+}
+
+export interface FundingDonationsResponse {
+  api_status: number;
+  data: FundingDonation[];
+}
+
+export interface FundingMutationResponse {
+  api_status: number | string;
+  message?: string;
+  data?: FundingItem;
+  errors?: {
+    error_id?: number | string;
+    error_text?: string;
+  };
+}
+
+export interface CreateFundingInput {
+  title: string;
+  description: string;
+  amount: number;
+  image: {
+    uri: string;
+    name: string;
+    type: string;
+  };
+}
+
+export interface EditFundingInput {
+  id: number;
+  title: string;
+  description: string;
+  amount: number;
 }
