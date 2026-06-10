@@ -16,9 +16,11 @@ import type {
   GroupChatInfo,
   GroupChatMember,
   GroupSharedAssets,
+  LabelRecipient,
   MessageAttachment,
   MessageCallEvent,
   MessageItem,
+  MessageLabel,
   SendMessageResponse,
 } from '../../domain/types/messages.types';
 type RawRecord = Record<string, unknown>;
@@ -37,6 +39,7 @@ const MAX_DISCOVERY_CANDIDATES = 500;
 const DISCOVERY_BATCH_SIZE = 12;
 const CHAT_PAGE_SIZE = 50;
 const MAX_CACHED_CHAT_PAGES = 5;
+const RECALLED_MESSAGE_PREFIX = '__VNSEEA_MESSAGE_RECALLED__';
 let discoveryCache:
   | {
       sessionUserId: string;
@@ -90,6 +93,31 @@ function cleanText(value: string): string {
     .replace(/&#039;/g, "'")
     .replace(/&#x27;/gi, "'")
     .trim();
+}
+function isRecalledMessageText(value: string): boolean {
+  return cleanText(value).startsWith(RECALLED_MESSAGE_PREFIX);
+}
+function normalizeMessageText(value: string, hasMedia: boolean): string {
+  const text = cleanText(value);
+  if (!text) return '';
+  if (isRecalledMessageText(text)) {
+    return hasMedia ? '' : 'Tin nhắn đã thu hồi';
+  }
+  return text;
+}
+function readMessageMedia(raw: Record<string, unknown>): string {
+  return readString(
+    raw,
+    'media',
+    'mediaFile',
+    'media_file',
+    'mediaUrl',
+    'media_url',
+    'file_url',
+    'file',
+    'uri',
+    'url',
+  );
 }
 function getJsonTextCandidates(value: string): string[] {
   const candidates = new Set<string>();
@@ -245,7 +273,7 @@ function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
   if (readString(raw, 'stickers', 'gif')) {
     return { text: 'Đã gửi một nhãn dán', kind: 'sticker' };
   }
-  const media = readString(raw, 'media');
+  const media = readMessageMedia(raw);
   if (media) {
     const mediaType = readMediaType(raw);
     if (mediaType === 'image') {
@@ -264,7 +292,10 @@ function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
     readString(raw, 'text'),
     readNumber(raw, 'time'),
   );
-  const previewText = plainText ? cleanText(plainText) : decryptedText;
+  const previewText = normalizeMessageText(
+    plainText ? plainText : decryptedText,
+    false,
+  );
   const sessionUserId = sessionStorage.getSession()?.userId ?? '';
   const callEvent =
     parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
@@ -681,14 +712,15 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
   const fromId = String(raw.from_id ?? raw.fromId ?? '');
   const toId = String(raw.to_id ?? raw.toId ?? '');
   const sessionUserId = sessionStorage.getSession()?.userId ?? '';
-  const media = readString(raw, 'media', 'mediaFile');
+  const media = readMessageMedia(raw);
   const rawText = readString(raw, 'or_text');
-  const message = rawText
-    ? cleanText(rawText)
+  const decodedMessage = rawText
+    ? rawText
     : decryptMessageText(
         readString(raw, 'text', 'message'),
         readNumber(raw, 'time'),
       );
+  const message = normalizeMessageText(decodedMessage, Boolean(media));
   const callEvent =
     parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
     parseCallEvent(message, sessionUserId);
@@ -727,6 +759,53 @@ function mapAddableUser(raw: RawRecord): GroupAddableUser {
     avatar: readString(raw, 'avatar', 'profile_picture'),
     isOnline: readBool(raw, 'online'),
   };
+}
+
+function mapMessageLabel(raw: RawRecord): MessageLabel {
+  return {
+    id: readString(raw, 'id', 'label_id', 'tag_id'),
+    name: readString(raw, 'name', 'label_name') || 'Label',
+    color: readString(raw, 'color', 'label_color') || '#3B82F6',
+  };
+}
+
+function mapLabelRecipient(raw: RawRecord): LabelRecipient {
+  const label = mapMessageLabel(raw);
+  const userId = readString(raw, 'target_user_id', 'user_id', 'id');
+  return {
+    userId,
+    name: getRawUserName(raw),
+    username: readString(raw, 'username'),
+    avatar: readString(raw, 'avatar', 'profile_picture'),
+    labels: label.id ? [label] : [],
+  };
+}
+
+function mergeLabelRecipients(recipients: LabelRecipient[]) {
+  const byUserId = new Map<string, LabelRecipient>();
+
+  for (const recipient of recipients) {
+    if (!recipient.userId) continue;
+    const current = byUserId.get(recipient.userId);
+    if (!current) {
+      byUserId.set(recipient.userId, recipient);
+      continue;
+    }
+
+    const labels = new Map(current.labels.map(label => [label.id, label]));
+    for (const label of recipient.labels) {
+      if (label.id) labels.set(label.id, label);
+    }
+    byUserId.set(recipient.userId, {
+      ...current,
+      name: current.name || recipient.name,
+      username: current.username || recipient.username,
+      avatar: current.avatar || recipient.avatar,
+      labels: [...labels.values()],
+    });
+  }
+
+  return [...byUserId.values()];
 }
 function mapGroupInfo(raw: RawRecord): GroupChatInfo {
   const group = Array.isArray(raw.data) ? asRecord(raw.data[0]) ?? {} : raw;
@@ -788,7 +867,13 @@ function mapSharedAssets(raw: RawRecord): GroupSharedAssets {
 function readMediaType(
   raw: Record<string, unknown>,
 ): 'image' | 'video' | 'audio' | 'file' | undefined {
-  const explicitType = readString(raw, 'type_two', 'message_type', 'mediaType')
+  const explicitType = readString(
+    raw,
+    'type_two',
+    'message_type',
+    'media_type',
+    'mediaType',
+  )
     .toLowerCase()
     .replace(/^(left|right)_/, '');
   const responseType = readString(raw, 'type')
@@ -799,6 +884,17 @@ function readMediaType(
     'extension',
     'media',
     'mediaFile',
+    'media_file',
+    'mediaUrl',
+    'media_url',
+    'file_url',
+    'file',
+    'uri',
+    'url',
+    'mediaFileName',
+    'file_name',
+    'filename',
+    'name',
   ).toLowerCase();
   // Android voice recordings are MPEG-4 containers (`.mp4`). WoWonder keeps
   // the semantic message kind in `type_two=audio`, so prefer it over the file
@@ -815,6 +911,23 @@ function readMediaType(
   if (/\.(mp4|mov|avi|mkv)(\?|$)/i.test(media)) return 'video';
   return undefined;
 }
+
+type TagsApiResponse = {
+  status?: number | string;
+  message?: string;
+  data?: unknown[];
+  labels?: unknown[];
+  tags?: unknown[];
+  user_ids?: unknown[];
+};
+
+function assertTagsResponse(response: TagsApiResponse) {
+  const status = String(response.status ?? '200');
+  if (status !== '200') {
+    throw new Error(response.message || 'Khong xu ly duoc nhan tin nhan');
+  }
+}
+
 export function createMessagesRepository(): MessagesRepository {
   return {
     async getChats(options?: GetChatsOptions) {
@@ -995,6 +1108,96 @@ export function createMessagesRepository(): MessagesRepository {
         },
       );
       return mapSharedAssets(response as unknown as RawRecord);
+    },
+
+    async listLabels() {
+      const response = await apiBridge.post<TagsApiResponse>(
+        apiRoutes.messages.labels,
+        {
+          s: 'list_labels',
+        },
+      );
+      assertTagsResponse(response);
+      return (response.labels ?? response.data ?? [])
+        .map(item => mapMessageLabel(asRecord(item) ?? {}))
+        .filter(label => label.id);
+    },
+
+    async createLabel(name: string, color: string) {
+      const response = await apiBridge.post<TagsApiResponse>(
+        apiRoutes.messages.labels,
+        {
+          s: 'create_label',
+          label_name: name,
+          label_color: color,
+        },
+      );
+      assertTagsResponse(response);
+    },
+
+    async deleteLabel(labelId: string) {
+      const response = await apiBridge.post<TagsApiResponse>(
+        apiRoutes.messages.labels,
+        {
+          s: 'delete_label',
+          label_id: labelId,
+        },
+      );
+      assertTagsResponse(response);
+    },
+
+    async listTargetLabels(userId: string) {
+      const response = await apiBridge.post<TagsApiResponse>(
+        apiRoutes.messages.labels,
+        {
+          s: 'list_target_tags',
+          target_user_id: userId,
+        },
+      );
+      assertTagsResponse(response);
+      return (response.tags ?? response.labels ?? response.data ?? [])
+        .map(item => mapMessageLabel(asRecord(item) ?? {}))
+        .filter(label => label.id);
+    },
+
+    async attachLabel(userId: string, labelId: string) {
+      const response = await apiBridge.post<TagsApiResponse>(
+        apiRoutes.messages.labels,
+        {
+          s: 'attach_label',
+          target_user_id: userId,
+          label_id: labelId,
+        },
+      );
+      assertTagsResponse(response);
+    },
+
+    async detachLabel(userId: string, labelId: string) {
+      const response = await apiBridge.post<TagsApiResponse>(
+        apiRoutes.messages.labels,
+        {
+          s: 'detach',
+          target_user_id: userId,
+          label_id: labelId,
+        },
+      );
+      assertTagsResponse(response);
+    },
+
+    async getUsersByLabel(labelId: string) {
+      const response = await apiBridge.post<TagsApiResponse>(
+        apiRoutes.messages.labels,
+        {
+          s: 'selected_tags',
+          tag_id: labelId,
+        },
+      );
+      assertTagsResponse(response);
+      return mergeLabelRecipients(
+        (response.data ?? []).map(item =>
+          mapLabelRecipient(asRecord(item) ?? {}),
+        ),
+      );
     },
   };
 }

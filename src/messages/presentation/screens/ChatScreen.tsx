@@ -1178,6 +1178,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const recorder = useAudioRecorder();
   const flatListRef = useRef<FlatList<ChatMessageListItem>>(null);
   const previousLatestMessageIdRef = useRef<string | undefined>(undefined);
+  const didScrollInitialRef = useRef(false);
+  const pendingInitialScrollRef = useRef(false);
   const sendAnim = useRef(new Animated.Value(1)).current;
   const canSend =
     Boolean(text.trim()) || attachments.length > 0 || recorder.isRecording;
@@ -1186,16 +1188,25 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     [messages],
   );
   const viewerMedia = viewerMediaItems[viewerMediaIndex];
+  const scrollToLatest = useCallback((animated: boolean) => {
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+
+  useEffect(() => {
+    didScrollInitialRef.current = false;
+    pendingInitialScrollRef.current = false;
+    setIsAtBottom(true);
+    setShowJumpToLatest(false);
+  }, [chat.id]);
 
   // Keyboard listeners
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardWillShow', () => {
       setIsKeyboardVisible(true);
       // Only scroll if user was at bottom
-      setTimeout(
-        () => flatListRef.current?.scrollToEnd({ animated: true }),
-        100,
-      );
+      setTimeout(() => scrollToLatest(true), 100);
     });
     const hideSub = Keyboard.addListener('keyboardWillHide', () => {
       setIsKeyboardVisible(false);
@@ -1204,41 +1215,35 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       showSub.remove();
       hideSub.remove();
     };
-  }, []);
-
-  // Group messages by date (reversed for inverted FlatList)
-  const groupedData = useMemo(() => {
-    const items: (MessageItem | { type: 'date'; time: number })[] = [];
-    let lastDate = '';
-
-    // Sort messages oldest first, newest last
-    const sortedMessages = [...messages].sort((a, b) => a.time - b.time);
-
-    sortedMessages.forEach(msg => {
-      const msgDate = new Date(msg.time * 1000).toDateString();
-      if (msgDate !== lastDate) {
-        lastDate = msgDate;
-        items.push({ type: 'date', time: msg.time });
-      }
-      items.push(msg);
-    });
-
-    return items;
-  }, [messages]);
+  }, [scrollToLatest]);
 
   // Auto scroll to bottom when new messages arrive (only if at bottom or keyboard visible)
   useEffect(() => {
-    if (messages.length > 0 && (isAtBottom || isKeyboardVisible)) {
+    if (messages.length === 0) return;
+
+    if (!didScrollInitialRef.current) {
+      pendingInitialScrollRef.current = true;
+      const timer = setTimeout(() => scrollToLatest(false), 80);
+      return () => clearTimeout(timer);
+    }
+
+    if ((isAtBottom || isKeyboardVisible) && !isLoadingMore) {
       const timer = setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
+        scrollToLatest(true);
         setShowJumpToLatest(false);
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [messages.length, isAtBottom, isKeyboardVisible]);
+  }, [
+    messages.length,
+    isAtBottom,
+    isKeyboardVisible,
+    isLoadingMore,
+    scrollToLatest,
+  ]);
 
   useEffect(() => {
-    const latestMessageId = messages[0]?.id;
+    const latestMessageId = messages[messages.length - 1]?.id;
 
     if (
       previousLatestMessageIdRef.current &&
@@ -1256,6 +1261,27 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
     previousLatestMessageIdRef.current = latestMessageId;
   }, [isAtBottom, isKeyboardVisible, messages]);
+
+  const handleContentSizeChange = useCallback(() => {
+    if (messages.length === 0) return;
+
+    if (!didScrollInitialRef.current || pendingInitialScrollRef.current) {
+      didScrollInitialRef.current = true;
+      pendingInitialScrollRef.current = false;
+      scrollToLatest(false);
+      return;
+    }
+
+    if ((isAtBottom || isKeyboardVisible) && !isLoadingMore) {
+      scrollToLatest(true);
+    }
+  }, [
+    messages.length,
+    isAtBottom,
+    isKeyboardVisible,
+    isLoadingMore,
+    scrollToLatest,
+  ]);
 
   // Track scroll position
   const handleScroll = useCallback(
@@ -1766,6 +1792,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             contentContainerStyle={{ paddingVertical: 12, paddingBottom: 8 }}
             keyboardShouldPersistTaps="handled"
             onScroll={handleScroll}
+            onContentSizeChange={handleContentSizeChange}
             scrollEventThrottle={100}
             initialNumToRender={18}
             maxToRenderPerBatch={12}
@@ -1817,7 +1844,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             activeOpacity={0.85}
             onPress={() => {
               setShowJumpToLatest(false);
-              flatListRef.current?.scrollToEnd({ animated: true });
+              scrollToLatest(true);
             }}
           >
             <Text className="text-xs font-semibold text-white">

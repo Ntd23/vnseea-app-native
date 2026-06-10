@@ -30,4 +30,5 @@ export const apiConfig = {
   oneSignalAppId: Config.ONESIGNAL_APP_ID || '',
   googleMapsApiKey: Config.GOOGLE_MAPS_API_KEY || '',
   liveKitWsUrl: Config.LIVEKIT_WS_URL || '',
+  socketUrl: Config.SOCKET_URL || '',
 } as const;

@@ -32,6 +32,7 @@ export type LiveKitCallSummary = {
   sourceRoomName: string;
   status: LiveKitCallStatus;
   startedAt: number;
+  startedAtMs: number;
 };
 
 export type LiveKitJoinPayload = {
@@ -41,7 +42,9 @@ export type LiveKitJoinPayload = {
   wsUrl: string;
   token: string;
   serverNow: number;
+  serverNowMs: number;
   elapsedSeconds: number;
+  elapsedMs: number;
 };
 
 export type LiveKitCallCreateResult = {
@@ -61,8 +64,11 @@ export type LiveKitCallCheckResult = {
   active: boolean;
   finished: boolean;
   startedAt: number;
+  startedAtMs: number;
   serverNow: number;
+  serverNowMs: number;
   elapsedSeconds: number;
+  elapsedMs: number;
 };
 
 export type IncomingLiveKitCall = {
@@ -71,6 +77,9 @@ export type IncomingLiveKitCall = {
   provider: 'livekit';
   roomName: string;
   peer: LiveKitCallPeer;
+  actionToken?: string;
+  expiresAt?: number;
+  apiUrl?: string;
 };
 
 export type LiveKitCallRouteParams = {

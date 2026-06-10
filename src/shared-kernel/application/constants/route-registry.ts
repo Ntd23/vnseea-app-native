@@ -21,6 +21,7 @@ export const apiRoutes = {
     mapDiscovery: 'map_discovery',
     friends: 'get-friends', // GET following/followers
     updateCover: 'update-user-data', // POST multipart - uses v2 endpoint that handles both avatar and cover
+    verification: 'verification',
   },
   reels: {
     create: 'new_post',
@@ -70,6 +71,7 @@ export const apiRoutes = {
     delete: 'delete-conversation',
     livekit: 'livekit',
     groupCall: 'group_call',
+    labels: 'tags',
   },
   products: {
     get: 'get-products',

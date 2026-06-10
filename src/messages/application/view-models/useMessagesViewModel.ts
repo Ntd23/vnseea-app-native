@@ -1,12 +1,14 @@
-// Messages ViewModel - Handles message list and conversation state
+// Description: Handles message list, conversation state, labels, and bulk sending.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
 import type {
   ChatItem,
   CreateGroupChatInput,
   GetChatsOptions,
+  LabelRecipient,
   MessageAttachment,
   MessageItem,
+  MessageLabel,
 } from '../../domain/types/messages.types';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 
@@ -40,12 +42,67 @@ function syncUnreadBadgeCount(chats: ChatItem[]) {
   });
 }
 
+function mergeLabelRecipients(recipients: LabelRecipient[]) {
+  const byUserId = new Map<string, LabelRecipient>();
+
+  for (const recipient of recipients) {
+    if (!recipient.userId) continue;
+    const current = byUserId.get(recipient.userId);
+    if (!current) {
+      byUserId.set(recipient.userId, recipient);
+      continue;
+    }
+
+    const labels = new Map(current.labels.map(label => [label.id, label]));
+    for (const label of recipient.labels) {
+      if (label.id) labels.set(label.id, label);
+    }
+    byUserId.set(recipient.userId, {
+      ...current,
+      name: current.name || recipient.name,
+      username: current.username || recipient.username,
+      avatar: current.avatar || recipient.avatar,
+      labels: [...labels.values()],
+    });
+  }
+
+  return [...byUserId.values()];
+}
+
+function applyLabelsToChats(
+  chats: ChatItem[],
+  labelRecipients: LabelRecipient[],
+) {
+  const labelsByUserId = new Map(
+    labelRecipients.map(recipient => [recipient.userId, recipient.labels]),
+  );
+
+  return chats.map(chat => {
+    if (chat.chatType !== 'user') {
+      return {
+        ...chat,
+        labels: [],
+      };
+    }
+
+    return {
+      ...chat,
+      labels: labelsByUserId.get(chat.userId) ?? [],
+    };
+  });
+}
+
 export interface MessagesState {
   chats: ChatItem[];
   selectedChat: ChatItem | null;
   messages: MessageItem[];
+  labels: MessageLabel[];
+  labelRecipients: LabelRecipient[];
+  broadcastLabelId: string;
+  broadcastRecipients: LabelRecipient[];
   isLoadingChats: boolean;
   isLoadingMessages: boolean;
+  isLoadingLabels: boolean;
   isSending: boolean;
   isCreatingGroup: boolean;
   error: string | null;
@@ -60,8 +117,13 @@ export function useMessagesViewModel() {
     chats: [],
     selectedChat: null,
     messages: [],
+    labels: [],
+    labelRecipients: [],
+    broadcastLabelId: '',
+    broadcastRecipients: [],
     isLoadingChats: false,
     isLoadingMessages: false,
+    isLoadingLabels: false,
     isSending: false,
     isCreatingGroup: false,
     error: null,
@@ -69,6 +131,8 @@ export function useMessagesViewModel() {
   const isLoadingChatsRef = useRef(false);
   const isLoadingGroupChatsRef = useRef(false);
   const isSyncingLatestChatsRef = useRef(false);
+  const isLoadingLabelsRef = useRef(false);
+  const labelRecipientsRef = useRef<LabelRecipient[]>([]);
 
   // Load all chats
   const loadChats = useCallback(async (
@@ -94,11 +158,10 @@ export function useMessagesViewModel() {
           options.merge || prev.chats.length > 0
             ? mergeChatItems(prev.chats, chats)
             : chats;
-        syncUnreadBadgeCount(nextChats);
 
         return {
           ...prev,
-          chats: nextChats,
+          chats: applyLabelsToChats(nextChats, labelRecipientsRef.current),
           isLoadingChats: false,
         };
       });
@@ -123,11 +186,10 @@ export function useMessagesViewModel() {
 
       setState(prev => {
         const chats = mergeChatItems(prev.chats, latestChats);
-        syncUnreadBadgeCount(chats);
 
         return {
           ...prev,
-          chats,
+          chats: applyLabelsToChats(chats, labelRecipientsRef.current),
         };
       });
     } catch {
@@ -151,11 +213,10 @@ export function useMessagesViewModel() {
       const groupChats = await repository.getGroupChats();
       setState(prev => {
         const chats = mergeChatItems(prev.chats, groupChats);
-        syncUnreadBadgeCount(chats);
 
         return {
           ...prev,
-          chats,
+          chats: applyLabelsToChats(chats, labelRecipientsRef.current),
           isLoadingChats: false,
         };
       });
@@ -189,11 +250,10 @@ export function useMessagesViewModel() {
           .catch(() => [chat]);
         setState(prev => {
           const chats = mergeChatItems(prev.chats, [chat], groupChats);
-          syncUnreadBadgeCount(chats);
 
           return {
             ...prev,
-            chats,
+            chats: applyLabelsToChats(chats, labelRecipientsRef.current),
             isCreatingGroup: false,
           };
         });
@@ -211,6 +271,186 @@ export function useMessagesViewModel() {
     },
     [],
   );
+
+  const loadLabels = useCallback(async () => {
+    if (isLoadingLabelsRef.current) return;
+
+    isLoadingLabelsRef.current = true;
+    setState(prev => ({
+      ...prev,
+      isLoadingLabels: true,
+      error: null,
+    }));
+
+    try {
+      const labels = await repository.listLabels();
+      const recipientGroups = await Promise.all(
+        labels.map(label =>
+          repository.getUsersByLabel(label.id).catch(() => []),
+        ),
+      );
+      const labelRecipients = mergeLabelRecipients(recipientGroups.flat());
+      labelRecipientsRef.current = labelRecipients;
+
+      setState(prev => ({
+        ...prev,
+        labels,
+        labelRecipients,
+        broadcastRecipients: prev.broadcastLabelId
+          ? labelRecipients.filter(recipient =>
+              recipient.labels.some(label => label.id === prev.broadcastLabelId),
+            )
+          : [],
+        chats: applyLabelsToChats(prev.chats, labelRecipients),
+        isLoadingLabels: false,
+      }));
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Khong tai duoc danh sach nhan';
+      setState(prev => ({
+        ...prev,
+        error: errorMessage,
+        isLoadingLabels: false,
+      }));
+    } finally {
+      isLoadingLabelsRef.current = false;
+    }
+  }, []);
+
+  const createLabel = useCallback(
+    async (name: string, color: string) => {
+      const normalizedName = name.trim();
+      if (!normalizedName) return false;
+
+      setState(prev => ({ ...prev, isLoadingLabels: true, error: null }));
+
+      try {
+        await repository.createLabel(normalizedName, color);
+        await loadLabels();
+        return true;
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Khong tao duoc nhan';
+        setState(prev => ({
+          ...prev,
+          error: errorMessage,
+          isLoadingLabels: false,
+        }));
+        return false;
+      }
+    },
+    [loadLabels],
+  );
+
+  const deleteLabel = useCallback(
+    async (labelId: string) => {
+      if (!labelId) return false;
+
+      setState(prev => ({ ...prev, isLoadingLabels: true, error: null }));
+
+      try {
+        await repository.deleteLabel(labelId);
+        await loadLabels();
+        return true;
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Khong xoa duoc nhan';
+        setState(prev => ({
+          ...prev,
+          error: errorMessage,
+          isLoadingLabels: false,
+        }));
+        return false;
+      }
+    },
+    [loadLabels],
+  );
+
+  const attachLabel = useCallback(
+    async (userId: string, labelId: string) => {
+      if (!userId || !labelId) return false;
+
+      setState(prev => ({ ...prev, isLoadingLabels: true, error: null }));
+
+      try {
+        await repository.attachLabel(userId, labelId);
+        await loadLabels();
+        return true;
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Khong gan duoc nhan';
+        setState(prev => ({
+          ...prev,
+          error: errorMessage,
+          isLoadingLabels: false,
+        }));
+        return false;
+      }
+    },
+    [loadLabels],
+  );
+
+  const detachLabel = useCallback(
+    async (userId: string, labelId: string) => {
+      if (!userId || !labelId) return false;
+
+      setState(prev => ({ ...prev, isLoadingLabels: true, error: null }));
+
+      try {
+        await repository.detachLabel(userId, labelId);
+        await loadLabels();
+        return true;
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Khong go duoc nhan';
+        setState(prev => ({
+          ...prev,
+          error: errorMessage,
+          isLoadingLabels: false,
+        }));
+        return false;
+      }
+    },
+    [loadLabels],
+  );
+
+  const selectBroadcastLabel = useCallback(async (labelId: string) => {
+    if (!labelId) {
+      setState(prev => ({
+        ...prev,
+        broadcastLabelId: '',
+        broadcastRecipients: [],
+      }));
+      return [];
+    }
+
+    setState(prev => ({
+      ...prev,
+      broadcastLabelId: labelId,
+      isLoadingLabels: true,
+      error: null,
+    }));
+
+    try {
+      const recipients = await repository.getUsersByLabel(labelId);
+      setState(prev => ({
+        ...prev,
+        broadcastRecipients: recipients,
+        isLoadingLabels: false,
+      }));
+      return recipients;
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Khong tai duoc nguoi nhan';
+      setState(prev => ({
+        ...prev,
+        error: errorMessage,
+        broadcastRecipients: [],
+        isLoadingLabels: false,
+      }));
+      return [];
+    }
+  }, []);
 
   // Load messages for a specific chat
   const loadMessages = useCallback(async (chat: ChatItem) => {
@@ -289,11 +529,9 @@ export function useMessagesViewModel() {
 
         const chats = await repository.getChats({ includeDiscovery: false });
         setState(prev => {
-          syncUnreadBadgeCount(chats);
-
           return {
             ...prev,
-            chats,
+            chats: applyLabelsToChats(chats, labelRecipientsRef.current),
             isSending: false,
           };
         });
@@ -335,15 +573,25 @@ export function useMessagesViewModel() {
         }),
       )
       .catch(() => undefined);
-  }, [loadChats]);
+    loadLabels().catch(() => undefined);
+  }, [loadChats, loadLabels]);
+
+  useEffect(() => {
+    syncUnreadBadgeCount(state.chats);
+  }, [state.chats]);
 
   return {
     // State
     chats: state.chats,
     selectedChat: state.selectedChat,
     messages: state.messages,
+    labels: state.labels,
+    labelRecipients: state.labelRecipients,
+    broadcastLabelId: state.broadcastLabelId,
+    broadcastRecipients: state.broadcastRecipients,
     isLoadingChats: state.isLoadingChats,
     isLoadingMessages: state.isLoadingMessages,
+    isLoadingLabels: state.isLoadingLabels,
     isSending: state.isSending,
     isCreatingGroup: state.isCreatingGroup,
     error: state.error,
@@ -352,8 +600,14 @@ export function useMessagesViewModel() {
     loadChats,
     syncLatestChats,
     chatSyncIntervalMs: CHAT_SYNC_INTERVAL_MS,
+    loadLabels,
     loadGroupChats,
     createGroupChat,
+    createLabel,
+    deleteLabel,
+    attachLabel,
+    detachLabel,
+    selectBroadcastLabel,
     loadMessages,
     sendMessage,
     sendBulkMessages,

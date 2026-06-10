@@ -1,9 +1,6 @@
-// Notifications ViewModel
-// Port từ: client/src/notifications/application/view-models/
+// Description: Manages notification list state and unread badge counts.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
-import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
@@ -22,7 +19,6 @@ type GroupChatActionResponse = {
 
 export function useNotificationsViewModel() {
   const repository = useMemo(() => createNotificationsRepository(), []);
-  const messagesRepository = useMemo(() => createMessagesRepository(), []);
 
   // State
   const [notifications, setNotifications] = useState<NotificationsItem[]>([]);
@@ -34,7 +30,6 @@ export function useNotificationsViewModel() {
   const [error, setError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
-  const [unreadMessageChats, setUnreadMessageChats] = useState<ChatItem[]>([]);
 
   // Pending actions state (for accept/reject group chat)
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
@@ -57,17 +52,13 @@ export function useNotificationsViewModel() {
       setError(null);
 
       try {
-        const [result, unreadChats] = await Promise.all([
-          repository.getNotifications({ limit: PAGE_SIZE }),
-          messagesRepository.getUnreadChats().catch(() => []),
-        ]);
+        const result = await repository.getNotifications({ limit: PAGE_SIZE });
 
         setNotifications(result.items);
         setNextOffset(result.nextOffset);
         setHasMore(result.hasMore);
         setUnreadCount(result.unreadCount);
         setUnreadMessageCount(result.unreadMessageCount);
-        setUnreadMessageChats(unreadChats);
       } catch (err) {
         setError(
           err instanceof Error
@@ -79,7 +70,7 @@ export function useNotificationsViewModel() {
         setIsRefreshing(false);
       }
     },
-    [messagesRepository, repository],
+    [repository],
   );
 
   // Refresh
@@ -292,7 +283,6 @@ export function useNotificationsViewModel() {
     notifications,
     unreadCount,
     unreadMessageCount,
-    unreadMessageChats,
     error,
     isLoading,
     isRefreshing,

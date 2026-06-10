@@ -21,7 +21,7 @@ function CustomTabBar({
   navigation,
 }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const { totalUnreadCount: notificationBadgeCount } =
+  const { notificationCount: notificationBadgeCount } =
     useNotificationBadgeViewModel();
   const bottom = Math.max(insets.bottom, 10);
 

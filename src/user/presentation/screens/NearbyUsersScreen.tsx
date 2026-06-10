@@ -123,6 +123,7 @@ type SelectedPoint = {
   subtitle: string;
   avatarUrl?: string;
   url?: string;
+  showNameBadge?: boolean;
   coordinate: LatLng;
   distanceMeters?: number;
 };
@@ -176,12 +177,6 @@ function parseGeoInfo(value: unknown): LatLng | null {
   }
 
   return { latitude, longitude };
-}
-
-function shouldShowPageNameBadge(place: NearbyPlace) {
-  return (
-    place.mapPinApproved || place.isPinned || place.mapPinStatus === 'approved'
-  );
 }
 
 function suggestionSubtitle(item: SuggestionItem) {
@@ -411,6 +406,7 @@ export default function NearbyUsersScreen() {
         subtitle: page.username ? `@${page.username}` : page.location || 'Page',
         avatarUrl: page.avatarUrl,
         url: page.url,
+        showNameBadge: true,
         coordinate: page.coordinate,
         distanceMeters: page.distanceMeters,
       });
@@ -709,16 +705,33 @@ export default function NearbyUsersScreen() {
         ) : null}
 
         {pageMarkers.map(({ place, coordinate }) => {
-          const showNameBadge = shouldShowPageNameBadge(place);
+          if (selectedPoint?.source === 'page' && selectedPoint.id === place.id) {
+            return null;
+          }
+
+          const showNameBadge = true;
 
           return (
             <Marker
-              key={place.id}
-              anchor={{ x: 0.5, y: 1 }}
+              key={`${place.id}:badge`}
+              anchor={showNameBadge ? { x: 0.13, y: 1 } : { x: 0.5, y: 1 }}
               coordinate={coordinate}
               onPress={() => selectPage(place)}
+              tracksViewChanges={showNameBadge}
+              zIndex={showNameBadge ? 12 : 4}
             >
-              <View style={styles.pageMarker}>
+              <View
+                style={[
+                  styles.pageMarker,
+                  showNameBadge && styles.pageMarkerWithBadge,
+                ]}
+              >
+                <View style={styles.pagePinWrapper}>
+                  <View style={styles.pagePinTail} />
+                  <View style={styles.pagePinHead}>
+                    <View style={styles.pagePinCore} />
+                  </View>
+                </View>
                 {showNameBadge ? (
                   <View style={styles.pageNameBadge}>
                     <Text style={styles.pageNameBadgeText} numberOfLines={1}>
@@ -726,12 +739,6 @@ export default function NearbyUsersScreen() {
                     </Text>
                   </View>
                 ) : null}
-                <View style={styles.pagePinWrapper}>
-                  <View style={styles.pagePinTail} />
-                  <View style={styles.pagePinHead}>
-                    <View style={styles.pagePinCore} />
-                  </View>
-                </View>
               </View>
             </Marker>
           );
@@ -739,6 +746,12 @@ export default function NearbyUsersScreen() {
 
         {selectedPoint ? (
           <Marker
+            key={`selected:${selectedPoint.id}:${selectedPoint.title}`}
+            anchor={
+              selectedPoint.showNameBadge
+                ? { x: 0.13, y: 1 }
+                : { x: 0.5, y: 1 }
+            }
             coordinate={selectedPoint.coordinate}
             onPress={() => {
               setIsSheetCollapsed(false);
@@ -746,17 +759,36 @@ export default function NearbyUsersScreen() {
                 refreshRoute(selectedPoint.coordinate).catch(() => undefined);
               }
             }}
+            tracksViewChanges
+            zIndex={30}
           >
             <View
               style={[
-                styles.selectedPin,
-                selectedPoint.source === 'google' && styles.googleMarker,
+                styles.selectedMarker,
+                selectedPoint.showNameBadge && styles.pageMarkerWithBadge,
               ]}
             >
-              <View style={styles.selectedPinTail} />
-              <View style={styles.selectedPinHead}>
-                <View style={styles.selectedPinCore} />
+              <View
+                style={[
+                  styles.selectedPin,
+                  selectedPoint.source === 'google' && styles.googleMarker,
+                ]}
+              >
+                <View style={styles.selectedPinTail} />
+                <View style={styles.selectedPinHead}>
+                  <View style={styles.selectedPinCore} />
+                </View>
               </View>
+              {selectedPoint.showNameBadge ? (
+                <View
+                  key={`selected-badge:${selectedPoint.id}:${selectedPoint.title}`}
+                  style={styles.pageNameBadge}
+                >
+                  <Text style={styles.pageNameBadgeText} numberOfLines={1}>
+                    {selectedPoint.title}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </Marker>
         ) : null}
@@ -856,20 +888,6 @@ export default function NearbyUsersScreen() {
             đường.
           </Text>
         </View>
-      ) : null}
-
-      {selectedPoint && isSheetCollapsed ? (
-        <TouchableOpacity
-          activeOpacity={0.88}
-          style={styles.sheetPeek}
-          onPress={() => setIsSheetCollapsed(false)}
-        >
-          <MapPin size={17} color={BRAND} />
-          <Text style={styles.sheetPeekText} numberOfLines={1}>
-            {selectedPoint.title}
-          </Text>
-          <Text style={styles.sheetPeekAction}>Mở</Text>
-        </TouchableOpacity>
       ) : null}
 
       {selectedPoint && !isSheetCollapsed ? (
@@ -1059,20 +1077,25 @@ const styles = StyleSheet.create({
     bottom: 232,
   },
   pageMarker: {
-    width: 150,
-    minHeight: 52,
+    width: 44,
+    minHeight: 58,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
+  },
+  pageMarkerWithBadge: {
+    width: 190,
   },
   pageNameBadge: {
-    maxWidth: 140,
-    marginBottom: 5,
+    maxWidth: 132,
+    marginLeft: 4,
+    marginBottom: 16,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: '#DDE7FF',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.16,
@@ -1121,6 +1144,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderColor: '#FFFFFF',
     transform: [{ rotate: '45deg' }],
+  },
+  selectedMarker: {
+    width: 50,
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   selectedPin: {
     width: 50,
@@ -1218,33 +1248,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F1F5F9',
-  },
-  sheetPeek: {
-    position: 'absolute',
-    right: 14,
-    bottom: 18,
-    left: 14,
-    minHeight: 54,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    elevation: 8,
-  },
-  sheetPeekAction: {
-    color: BRAND,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  sheetPeekText: {
-    marginLeft: 8,
-    flex: 1,
-    color: '#0F172A',
-    fontSize: 14,
-    fontWeight: '800',
   },
   suggestionPanel: {
     position: 'absolute',
