@@ -125,6 +125,7 @@ import {
   useStoriesViewModel,
 } from '../../../stories';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
+import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
