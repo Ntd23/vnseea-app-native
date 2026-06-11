@@ -2435,69 +2435,106 @@ function SettingsScreen() {
           className="flex-1 justify-end bg-black/35"
           onPress={() => setLanguageSheetVisible(false)}
         >
-          <Pressable
-            className="rounded-t-[28px] bg-white px-5 pb-8 pt-5"
-            onPress={event => event.stopPropagation()}
-          >
-            <View className="mb-5 flex-row items-start justify-between">
-              <View className="flex-1 pr-4">
-                <Text className="text-[24px] font-bold text-[#0f172a]">
-                  {copy.languageTitle}
-                </Text>
-                <Text className="mt-1 text-[15px] leading-6 text-[#64748b]">
-                  {copy.languageDescription}
-                </Text>
+          {activePanel === 'general' ? (
+            <View className="surface-card overflow-hidden">
+              <GeneralSettingsMenuRow
+                label="Chung"
+                icon={<User size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-common')}
+              />
+              <GeneralSettingsMenuRow
+                label="Hồ sơ"
+                icon={<Pencil size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-profile')}
+              />
+              <GeneralSettingsMenuRow
+                label="Ảnh đại diện"
+                icon={<Camera size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-avatar')}
+              />
+              <GeneralSettingsMenuRow
+                label="Mật khẩu"
+                icon={<LockKeyhole size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-password')}
+              />
+              <GeneralSettingsMenuRow
+                label="Xác thực 2 yếu tố"
+                icon={<ShieldCheck size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-two-factor')}
+              />
+              <GeneralSettingsMenuRow
+                label="Xác thực tài khoản"
+                icon={<BadgeCheck size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-verification')}
+              />
+              <GeneralSettingsMenuRow
+                label="Thông báo"
+                icon={<Bell size={22} color="#0000ff" />}
+                isLast
+                onPress={() => setActivePanel('general-notifications')}
+              />
+            </View>
+          ) : activePanel === 'general-common' ? (
+            <AccountInformationCard />
+          ) : activePanel === 'general-profile' ? (
+            <ProfileInformationCard />
+          ) : activePanel === 'general-avatar' ? (
+            <AvatarCoverCard />
+          ) : activePanel === 'general-password' ? (
+            <PasswordSettingsCard />
+          ) : activePanel === 'general-two-factor' ? (
+            <TwoFactorSettingsCard />
+          ) : activePanel === 'general-verification' ? (
+            <AccountVerificationCard />
+          ) : (
+            <EmailNotificationsCard />
+          )}
+        </ScrollView>
+      ) : (
+        <ScrollView
+          className="flex-1"
+          contentContainerClassName="px-5 pb-28 pt-4"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Profile Header Card */}
+          {profile ? (
+            <ProfileHeaderCard
+              profile={profile}
+              onPress={() => navigation.navigate(ROUTES.PROFILE)}
+            />
+          ) : (
+            // Loading skeleton for profile card
+            <View className="surface-card flex-row items-center gap-4 px-5 py-4">
+              <View className="h-16 w-16 rounded-full bg-gray-200" />
+              <View className="flex-1">
+                <View className="h-5 w-32 rounded bg-gray-200 mb-2" />
+                <View className="h-4 w-24 rounded bg-gray-200" />
               </View>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                className="h-11 w-11 items-center justify-center rounded-full bg-[#f1f5f9]"
-                onPress={() => setLanguageSheetVisible(false)}
-              >
-                <X size={22} color="#334155" />
-              </TouchableOpacity>
             </View>
+          )}
 
-            <View className="gap-3">
-              {languageOptions.map(option => {
-                const isSelected = option.code === language;
-                return (
-                  <TouchableOpacity
-                    key={option.code}
-                    activeOpacity={0.85}
-                    className={`flex-row items-center rounded-2xl border px-4 py-4 ${
-                      isSelected
-                        ? 'border-[#0000ff] bg-[#eef2ff]'
-                        : 'border-[#e2e8f0] bg-white'
-                    }`}
-                    onPress={() => {
-                      setLanguage(option.code);
-                      setLanguageSheetVisible(false);
-                    }}
-                  >
-                    <View className="flex-1">
-                      <Text
-                        className={`text-[17px] font-bold ${
-                          isSelected ? 'text-[#0000ff]' : 'text-[#0f172a]'
-                        }`}
-                      >
-                        {option.label}
-                      </Text>
-                      <Text className="mt-0.5 text-[13px] text-[#64748b]">
-                        {isSelected ? copy.selected : option.nativeLabel}
-                      </Text>
-                    </View>
-                    {isSelected ? (
-                      <View className="h-8 w-8 items-center justify-center rounded-full bg-[#0000ff]">
-                        <Check size={18} color="#ffffff" />
-                      </View>
-                    ) : null}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          {/* Feature Grid */}
+          <View className="mt-5">
+            <FeatureGrid
+              features={features}
+              onFeaturePress={handleFeaturePress}
+            />
+          </View>
+
+          {/* Go Pro Banner */}
+          <View className="mt-5">
+            <GoProBanner />
+          </View>
+
+          {/* Settings Menu List */}
+          <View className="mt-6">
+            <SettingsMenuList
+              items={settingsMenu}
+              onItemPress={handleSettingsItemPress}
+            />
+          </View>
+        </ScrollView>
+      )}
 
       <CreateActionSheet
         visible={sheetVisible}

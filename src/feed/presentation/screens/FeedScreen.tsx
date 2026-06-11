@@ -128,6 +128,7 @@ import { useCurrentUserViewModel } from '../../../shared-kernel/application/view
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
