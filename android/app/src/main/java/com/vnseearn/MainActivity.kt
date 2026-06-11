@@ -45,6 +45,9 @@ class MainActivity : ReactActivity() {
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
   private fun preferHighestRefreshRate() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
       return

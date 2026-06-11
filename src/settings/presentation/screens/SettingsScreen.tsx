@@ -2138,6 +2138,7 @@ function SettingsScreen() {
       if (id === 'general') {
         setSheetVisible(false);
         setActivePanel('general');
+        setLanguageSheetVisible(true);
         return;
       }
 
@@ -2322,6 +2323,117 @@ function SettingsScreen() {
           className="flex-1"
           contentContainerClassName="px-5 pb-28 pt-4"
           showsVerticalScrollIndicator={false}
+        >
+          {activePanel === 'general' ? (
+            <View className="surface-card overflow-hidden">
+              <GeneralSettingsMenuRow
+                label="Chung"
+                icon={<User size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-common')}
+              />
+              <GeneralSettingsMenuRow
+                label="Hồ sơ"
+                icon={<Pencil size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-profile')}
+              />
+              <GeneralSettingsMenuRow
+                label="Ảnh đại diện"
+                icon={<Camera size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-avatar')}
+              />
+              <GeneralSettingsMenuRow
+                label="Mật khẩu"
+                icon={<LockKeyhole size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-password')}
+              />
+              <GeneralSettingsMenuRow
+                label="Xác thực 2 yếu tố"
+                icon={<ShieldCheck size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-two-factor')}
+              />
+              <GeneralSettingsMenuRow
+                label="Xác thực tài khoản"
+                icon={<BadgeCheck size={22} color="#0000ff" />}
+                onPress={() => setActivePanel('general-verification')}
+              />
+              <GeneralSettingsMenuRow
+                label="Thông báo"
+                icon={<Bell size={22} color="#0000ff" />}
+                isLast
+                onPress={() => setActivePanel('general-notifications')}
+              />
+            </View>
+          ) : activePanel === 'general-common' ? (
+            <AccountInformationCard />
+          ) : activePanel === 'general-profile' ? (
+            <ProfileInformationCard />
+          ) : activePanel === 'general-avatar' ? (
+            <AvatarCoverCard />
+          ) : activePanel === 'general-password' ? (
+            <PasswordSettingsCard />
+          ) : activePanel === 'general-two-factor' ? (
+            <TwoFactorSettingsCard />
+          ) : activePanel === 'general-verification' ? (
+            <AccountVerificationCard />
+          ) : (
+            <EmailNotificationsCard />
+          )}
+        </ScrollView>
+      ) : (
+        <ScrollView
+          className="flex-1"
+          contentContainerClassName="px-5 pb-28 pt-4"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Profile Header Card */}
+          {profile ? (
+            <ProfileHeaderCard
+              profile={profile}
+              onPress={() => navigation.navigate(ROUTES.PROFILE)}
+            />
+          ) : (
+            // Loading skeleton for profile card
+            <View className="surface-card flex-row items-center gap-4 px-5 py-4">
+              <View className="h-16 w-16 rounded-full bg-gray-200" />
+              <View className="flex-1">
+                <View className="h-5 w-32 rounded bg-gray-200 mb-2" />
+                <View className="h-4 w-24 rounded bg-gray-200" />
+              </View>
+            </View>
+          )}
+
+          {/* Feature Grid */}
+          <View className="mt-5">
+            <FeatureGrid
+              features={features}
+              onFeaturePress={handleFeaturePress}
+            />
+          </View>
+
+          {/* Go Pro Banner */}
+          <View className="mt-5">
+            <GoProBanner />
+          </View>
+
+          {/* Settings Menu List */}
+          <View className="mt-6">
+            <SettingsMenuList
+              items={settingsMenu}
+              onItemPress={handleSettingsItemPress}
+            />
+          </View>
+        </ScrollView>
+      )}
+
+      <Modal
+        visible={languageSheetVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLanguageSheetVisible(false)}
+      >
+        <Pressable
+          className="flex-1 justify-end bg-black/35"
+          onPress={() => setLanguageSheetVisible(false)}
         >
           {activePanel === 'general' ? (
             <View className="surface-card overflow-hidden">
