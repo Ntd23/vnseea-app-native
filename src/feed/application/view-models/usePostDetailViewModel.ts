@@ -1,0 +1,142 @@
+// Description: ViewModel for the PostDetail screen — loads a single
+// post by id (with comments), exposes the comment composer state, and
+// keeps the in-memory post in sync with the route param so the screen
+// can re-mount from a list push without re-fetching.
+import { useCallback, useEffect, useState } from 'react';
+import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedRepository';
+import { createReelsRepository } from '../../../reels/infrastructure/repositories/ApiReelsRepository';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import type { FeedPost } from '../../domain/types/feed.types';
+import type {
+  GetPostByIdResult,
+  PostComment,
+} from '../../domain/repositories/FeedRepository';
+
+const feedRepository = createFeedRepository();
+const reelsRepository = createReelsRepository();
+
+export interface UsePostDetailViewModelOptions {
+  /**
+   * The post object the screen already has from the route param. Used
+   * as the initial value so the screen renders instantly. May be
+   * undefined if the user landed here via deep link without a list
+   * cache — in that case the VM falls back to `getPostById`.
+   */
+  fallbackPost?: FeedPost;
+  /** Post id from the route. Always present. */
+  postId: string;
+}
+
+export function usePostDetailViewModel({
+  fallbackPost,
+  postId,
+}: UsePostDetailViewModelOptions) {
+  const [post, setPost] = useState<FeedPost | undefined>(fallbackPost);
+  const [comments, setComments] = useState<PostComment[]>([]);
+  const [isLoading, setIsLoading] = useState(fallbackPost === undefined);
+  const [isLoadingComments, setIsLoadingComments] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch the post + initial comments on mount if we don't already
+  // have the post from the route param. The result is also used to
+  // back-fill the post when the param was missing.
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+
+    const needsPostFetch = fallbackPost === undefined;
+
+    if (needsPostFetch) {
+      setIsLoading(true);
+    }
+    setIsLoadingComments(true);
+
+    feedRepository
+      .getPostById(postId, { fetchComments: true, addView: true })
+      .then((result: GetPostByIdResult) => {
+        if (cancelled) return;
+        setPost(prev => prev ?? result.post);
+        setComments(result.comments);
+      })
+      .catch(caught => {
+        if (cancelled) return;
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : 'Không tải được bài viết.',
+        );
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsLoading(false);
+        setIsLoadingComments(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackPost, postId]);
+
+  const submitComment = useCallback(
+    async (text: string) => {
+      if (!post) return;
+      setIsSubmitting(true);
+      try {
+        // The comments API lives in the reels domain because WoWonder
+        // uses the same endpoint for both. We route through reels here
+        // for consistency with the existing feed comments VM.
+        const newComment = await reelsRepository.addComment(post.id, text);
+        const session = sessionStorage.getSession();
+
+        // Optimistic shape — we don't get a full publisher object back
+        // from `addComment` so we fall back to the current user from
+        // session storage. The list re-renders instantly; if the API
+        // returns more, the user can pull-to-refresh in a follow-up.
+        const optimistic: PostComment = {
+          id: newComment.id,
+          text: newComment.text,
+          postedAt: newComment.postedAt,
+          publisher: {
+            id: session?.userId ?? '',
+            name: newComment.publisher.name,
+            username: newComment.publisher.username,
+            avatarUrl: newComment.publisher.avatarUrl,
+          },
+          likeCount: 0,
+          isLiked: false,
+        };
+        setComments(prev => [optimistic, ...prev]);
+        // Bump the post's comment count locally so the header reflects
+        // the new total without a refetch.
+        setPost(prev =>
+          prev
+            ? { ...prev, commentCount: prev.commentCount + 1 }
+            : prev,
+        );
+      } catch (caught) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : 'Không gửi được bình luận.',
+        );
+        // Re-throw so the composer can keep the draft text in place
+        // if the caller wants to surface the error inline.
+        throw caught;
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [post],
+  );
+
+  return {
+    post,
+    comments,
+    isLoading,
+    isLoadingComments,
+    error,
+    submitComment,
+    isSubmitting,
+  };
+}

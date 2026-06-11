@@ -6,3 +6,4 @@ export { useProductViewModel, useProductsViewModel } from './application/view-mo
 export { useMarketplaceViewModel } from './application/view-models/useMarketplaceViewModel';
 export { default as CreateProductScreen } from './presentation/screens/CreateProductScreen';
 export { default as MarketplaceScreen } from './presentation/screens/MarketplaceScreen';
+export { default as ProductDetailScreen } from './presentation/screens/ProductDetailScreen';

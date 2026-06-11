@@ -131,6 +131,7 @@ import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
+import type { ProductItem } from '../../../product/domain/types/product.types';
 import { PollPostCard } from '../components/PollPostCard';
 import { useEventsOnFeedViewModel, EventPostCard } from '../../../events';
 import {
@@ -2809,6 +2810,7 @@ const PostHeader = React.memo(function PostHeader({
   badge,
   onPress,
   onMorePress,
+  onDetailPress,
   post,
 }: {
   avatar?: string;
@@ -2818,6 +2820,7 @@ const PostHeader = React.memo(function PostHeader({
   badge?: string;
   onPress?: () => void;
   onMorePress?: (post: FeedPost) => void;
+  onDetailPress?: (post: FeedPost) => void;
   post?: FeedPost;
 }) {
   const handleMorePress = useCallback(() => {
@@ -2825,6 +2828,12 @@ const PostHeader = React.memo(function PostHeader({
       onMorePress?.(post);
     }
   }, [onMorePress, post]);
+
+  const handleDetailPress = useCallback(() => {
+    if (post) {
+      onDetailPress?.(post);
+    }
+  }, [onDetailPress, post]);
 
   return (
     <View className="mb-4 flex-row items-center justify-between">
@@ -2851,6 +2860,18 @@ const PostHeader = React.memo(function PostHeader({
             ) : null}
           </View>
           <Text className="text-caption-secondary">{time} • {copy.publicLabel}</Text>
+          {onDetailPress && post ? (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleDetailPress}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              className="mt-1 self-start"
+            >
+              <Text className="text-caption-primary text-brand">
+                Xem chi tiết
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </TouchableOpacity>
       {onMorePress && post && (
@@ -2882,6 +2903,7 @@ export const TextPostCard = React.memo(function TextPostCard({
   hasDragged,
   navigateToProfile,
   onOpenPostMenu,
+  onPostPress,
 }: {
   post: FeedTextPost;
   copy?: FeedCopy;
@@ -2902,6 +2924,13 @@ export const TextPostCard = React.memo(function TextPostCard({
   hasDragged?: any;
   navigateToProfile: (userId: string) => void;
   onOpenPostMenu?: (post: FeedPost) => void;
+  /**
+   * Tapping the post header / body opens the dedicated PostDetail
+   * screen. We intentionally keep this separate from `onCommentTap`
+   * (which only opens the comments sheet) so users can still peek
+   * at comments inline without leaving the feed.
+   */
+  onPostPress?: (post: FeedPost) => void;
 }) {
   const localX = useSharedValue(0);
   const localY = useSharedValue(0);
@@ -2959,6 +2988,7 @@ export const TextPostCard = React.memo(function TextPostCard({
           copy={copy}
           onPress={post.publisher.id ? handleProfilePress : undefined}
           onMorePress={onOpenPostMenu}
+          onDetailPress={onPostPress}
           post={post}
         />
         {post.caption ? (
@@ -3276,9 +3306,32 @@ function FeedScreen() {
     }));
   }, [copy.sellerFallback, productsVm.products]);
 
-  const handleProductPress = useCallback((_product: any) => {
-    // Navigate to product detail screen
-  }, []);
+  const handleProductPress = useCallback(
+    (product: ProductItem) => {
+      // Push the dedicated product detail screen. We pass the full
+      // object so the detail screen renders instantly with no extra
+      // fetch; `productId` is also passed as the route's canonical key.
+      navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+        productId: product.id,
+        product,
+      });
+    },
+    [navigation],
+  );
+
+  // Tap the "Xem chi tiết" affordance below a post header to open the
+  // dedicated PostDetail screen. The post object is passed so the
+  // detail screen renders instantly; if it's missing (deep-link), the
+  // detail screen's ViewModel falls back to `getPostById`.
+  const handlePostPress = useCallback(
+    (post: FeedPost) => {
+      navigation.navigate(ROUTES.POST_DETAIL, {
+        postId: post.id,
+        post,
+      });
+    },
+    [navigation],
+  );
 
   // Events for feed
   const eventsVm = useEventsOnFeedViewModel({ autoLoad: false });
@@ -3955,6 +4008,7 @@ function FeedScreen() {
         onShare={handleOpenSharePost}
         navigateToProfile={navigateToProfile}
         onOpenPostMenu={handleOpenPostMenu}
+        onPostPress={handlePostPress}
       />
     ),
     [
@@ -3965,6 +4019,7 @@ function FeedScreen() {
       handlePhotoPress,
       navigateToProfile,
       handleOpenPostMenu,
+      handlePostPress,
       toggleFeedReaction,
     ],
   );

@@ -7,6 +7,8 @@ import type { LiveKitCallRouteParams } from '../messages/domain/types/call.types
 import type { GroupLiveKitCallRouteParams } from '../messages/domain/types/groupCall.types';
 import type { PagesItem } from '../pages/domain/types/pages.types';
 import type { LiveSession } from '../live/domain/types/live.types';
+import type { ProductItem } from '../product/domain/types/product.types';
+import type { FeedPost } from '../feed/domain/types/feed.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -21,6 +23,10 @@ export type RootStackParamList = {
   [ROUTES.REGISTER]: undefined;
   [ROUTES.FORGOT_PASSWORD]: undefined;
   [ROUTES.MAIN_TABS]: NavigatorScreenParams<MainTabParamList> | undefined;
+  [ROUTES.POST_DETAIL]: {
+    postId: string;
+    post?: FeedPost;
+  };
   [ROUTES.PROFILE]: { userId?: string } | undefined;
   [ROUTES.MY_PHOTOS]: undefined;
   [ROUTES.ALBUMS]: undefined;
@@ -48,6 +54,10 @@ export type RootStackParamList = {
   [ROUTES.CREATE_PAGE]: undefined;
   [ROUTES.EDIT_PAGE]: { page: PagesItem };
   [ROUTES.MARKETPLACE]: undefined;
+  [ROUTES.PRODUCT_DETAIL]: {
+    productId: number;
+    product?: ProductItem;
+  };
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;
   [ROUTES.CREATE_POLL]: undefined;
