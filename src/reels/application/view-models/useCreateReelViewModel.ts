@@ -1,5 +1,5 @@
-// Description: Manages state for the Create Reel screen — draft, upload lifecycle, and result.
 import { useCallback, useEffect, useState } from 'react';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { createReelsRepository } from '../../infrastructure/repositories/ApiReelsRepository';
 import type {
   ReelCaptionSuggestion,
@@ -10,6 +10,21 @@ import type {
 } from '../../domain/types/reels.types';
 
 const repository = createReelsRepository();
+
+const VM_COPY = {
+  vi: {
+    selectVideoError: 'Vui lòng chọn hoặc quay một video trước khi đăng.',
+    timeoutError: 'Tải video quá lâu. Vui lòng kiểm tra kết nối hoặc chọn video nhẹ hơn rồi thử lại.',
+    networkError: 'Không kết nối được máy chủ. Vui lòng kiểm tra Wi-Fi/4G rồi thử lại.',
+    unknownError: 'Đã xảy ra lỗi không xác định.',
+  },
+  en: {
+    selectVideoError: 'Please choose or record a video before publishing.',
+    timeoutError: 'Video upload took too long. Please check your connection or choose a lighter video and try again.',
+    networkError: 'Cannot connect to the server. Please check your Wi-Fi/4G and try again.',
+    unknownError: 'An unknown error occurred.',
+  },
+};
 
 type UploadState =
   | { phase: 'idle' }
@@ -63,6 +78,9 @@ function serializeCaptionForBackend(
 }
 
 export function useCreateReelViewModel() {
+  const language = useAppLanguage();
+  const vmCopy = VM_COPY[language];
+
   const [draft, setDraftState] = useState<Partial<ReelDraft>>({
     privacy: 0,
   });
@@ -178,7 +196,7 @@ export function useCreateReelViewModel() {
 
   const submit = useCallback(async () => {
     if (!draft.videoUri || !draft.videoType || !draft.videoName) {
-      setUploadState({ phase: 'error', message: 'Vui lòng chọn hoặc quay một video trước khi đăng.' });
+      setUploadState({ phase: 'error', message: vmCopy.selectVideoError });
       return;
     }
 
@@ -198,22 +216,20 @@ export function useCreateReelViewModel() {
       const rawMessage =
         caughtError instanceof Error
           ? caughtError.message
-          : 'Đã xảy ra lỗi không xác định.';
+          : vmCopy.unknownError;
 
-      // Translate axios/network errors into friendly Vietnamese messages
+      // Translate axios/network errors into friendly messages
       let friendlyMessage = rawMessage;
       const lowered = rawMessage.toLowerCase();
       if (lowered.includes('timeout') || lowered.includes('econnaborted')) {
-        friendlyMessage =
-          'Tải video quá lâu. Vui lòng kiểm tra kết nối hoặc chọn video nhẹ hơn rồi thử lại.';
+        friendlyMessage = vmCopy.timeoutError;
       } else if (lowered.includes('network error')) {
-        friendlyMessage =
-          'Không kết nối được máy chủ. Vui lòng kiểm tra Wi-Fi/4G rồi thử lại.';
+        friendlyMessage = vmCopy.networkError;
       }
 
       setUploadState({ phase: 'error', message: friendlyMessage });
     }
-  }, [captionMentionReplacements, draft]);
+  }, [captionMentionReplacements, draft, vmCopy]);
 
   return {
     draft,

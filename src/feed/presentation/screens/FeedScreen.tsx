@@ -62,6 +62,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
+import { createProfileRepository } from '../../../profile/infrastructure/repositories/ApiProfileRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
 
@@ -99,11 +100,13 @@ const REACTION_IMAGES: Record<ReactionType, any> = {
 // Floating picker pill geometry — used to clamp X within the viewport.
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { RootStackRouteName } from '../../../navigation/types';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
+import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
 import type {
@@ -512,6 +515,7 @@ const Avatar = React.memo(function Avatar({ uri, size = 40 }: { uri: string; siz
 function FeedHeader() {
   const navigation = useNavigation<FeedNav>();
   const { messageCount } = useUnreadBadgeCounts();
+  const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
   const [sheetVisible, setSheetVisible] = useState(false);
   // Rotation animation for the + button (transforms to X when open)
   const [buttonRotation, setButtonRotation] = useState('0deg');
@@ -572,36 +576,131 @@ function FeedHeader() {
 
   return (
     <>
-      <View className="surface-topbar h-20 flex-row items-center justify-between px-4">
+      <View 
+        className="surface-topbar flex-row items-center justify-between px-4"
+        style={{
+          height: 64,
+          borderBottomWidth: 1,
+          borderBottomColor: '#f1f5f9',
+          backgroundColor: '#ffffff',
+        }}
+      >
         <View className="flex-row items-center">
-          <Text className="ml-1 text-display text-brand">VNSEEA</Text>
+          {logoUrl && imageErrorCount === 0 ? (
+            <View
+              style={{
+                backgroundColor: '#002fff',
+                borderRadius: 10,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                height: 36,
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <Image
+                source={{ uri: logoUrl }}
+                style={{
+                  width: 105,
+                  height: '100%',
+                }}
+                resizeMode="contain"
+                onError={notifyImageError}
+              />
+            </View>
+          ) : (
+            <Text
+              style={{
+                fontSize: 26,
+                fontWeight: '900',
+                color: '#002fff',
+                letterSpacing: 0.5,
+              }}
+            >
+              VNSEEA
+            </Text>
+          )}
         </View>
-        <View className="flex-row items-center">
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
             activeOpacity={0.75}
             onPress={() => navigation.navigate(ROUTES.SEARCH)}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: '#ffffff',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 4,
+              elevation: 2,
+            }}
           >
-            <Search size={22} color="#0000FF" />
+            <Search size={20} color="#002fff" strokeWidth={2.5} />
           </TouchableOpacity>
           <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
             activeOpacity={0.75}
             onPress={handleOpenSheet}
-            style={{ transform: [{ rotate: buttonRotation }] }}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: '#ffffff',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 4,
+              elevation: 2,
+              transform: [{ rotate: buttonRotation }],
+            }}
           >
-            <Plus size={24} color="#0000FF" />
+            <Plus size={22} color="#002fff" strokeWidth={2.5} />
           </TouchableOpacity>
-          <IconButton onPress={() => navigation.navigate(ROUTES.MESSAGES)}>
-            <MessageCircle size={22} color="#0000FF" />
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => navigation.navigate(ROUTES.MESSAGES)}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: '#ffffff',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 4,
+              elevation: 2,
+              position: 'relative',
+            }}
+          >
+            <MessageCircle size={20} color="#002fff" strokeWidth={2.5} />
             {messageCount > 0 && (
-              <View className="absolute -right-1 -top-1 min-h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1">
-                <Text className="text-[10px] font-bold text-white">
+              <View
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  backgroundColor: '#002fff',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 4,
+                }}
+              >
+                <Text style={{ fontSize: 10, fontWeight: '700', color: '#ffffff' }}>
                   {messageCount > 99 ? '99+' : messageCount}
                 </Text>
               </View>
             )}
-          </IconButton>
+          </TouchableOpacity>
         </View>
       </View>
       <CreateActionSheet
@@ -1969,7 +2068,7 @@ const PhotoViewerImage = React.memo(function PhotoViewerImage({
       ) : (
         <Image
           source={{ uri: url }}
-          style={{ width, height: height * PHOTO_VIEWER_IMAGE_HEIGHT_RATIO }}
+          style={{ width: '100%', height: '100%' }}
           resizeMode="contain"
           fadeDuration={0}
           resizeMethod="resize"
@@ -2000,28 +2099,76 @@ export function PhotoViewerModal({
   onCommentTap: (postId: string) => void;
   posts: FeedPost[];
 }) {
+  const insets = useSafeAreaInsets();
+  const language = useAppLanguage();
   const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
-  const translateY = useSharedValue(0);
-  const openProgress = useSharedValue(0);
+  const [pickerAnchor, setPickerAnchor] = useState<{ postId: string; x: number; y: number } | null>(null);
+  const [isFollowedLocally, setIsFollowedLocally] = useState<boolean | undefined>(undefined);
 
-  // Sync page and trigger fade-in and scale-up transition on mount / state change
+  const localGestureX = useSharedValue(0);
+  const localGestureY = useSharedValue(0);
+  const localGestureActive = useSharedValue(false);
+  const localHasDragged = useSharedValue(false);
+
+  const translateY = useSharedValue(0);
+
+  // Sync page on mount. Previously we also ran a 200ms fade-in + scale-up
+  // via `openProgress` Reanimated value — that delayed the FIRST FRAME
+  // the user saw the photo. v3: open instantly (opacity 1, scale 1) and
+  // only animate when the user actively drags the modal down to dismiss.
   useEffect(() => {
     if (state) {
       setCurrentIndex(state.initialIndex);
       translateY.value = 0;
-      openProgress.value = 0;
-      openProgress.value = withTiming(1, { duration: 200 });
     }
-  }, [state, translateY, openProgress]);
+  }, [state, translateY]);
+
+  const livePost = useMemo(() => {
+    if (!state) return null;
+    const { post } = state;
+    return (posts.find(p => p.id === post.id) as FeedTextPost) || post;
+  }, [state, posts]);
+
+  // Sync follow state locally
+  useEffect(() => {
+    if (livePost) {
+      setIsFollowedLocally(livePost.publisher.isFollowing);
+    }
+  }, [livePost?.publisher.isFollowing, livePost?.id]);
+
+  const handleLocalPickReaction = useCallback(
+    (reaction: ReactionType) => {
+      if (!livePost) return;
+      onReact(livePost.id, reaction);
+      setPickerAnchor(null);
+    },
+    [livePost, onReact],
+  );
+
+  const handleLikeLongPress = useCallback((isQuickLike: boolean) => {
+    if (!livePost) return;
+    const x = isQuickLike ? (SCREEN_W - 40) : 60;
+    const y = SCREEN_H - 110;
+    setPickerAnchor({ postId: livePost.id, x, y });
+  }, [livePost, SCREEN_W, SCREEN_H]);
+
+  const handleFollowPress = useCallback(async () => {
+    if (!livePost || isFollowedLocally) return;
+    setIsFollowedLocally(true);
+    try {
+      const profileRepo = createProfileRepository();
+      await profileRepo.toggleFollow(livePost.publisher.id);
+    } catch {
+      setIsFollowedLocally(false);
+    }
+  }, [livePost, isFollowedLocally]);
 
   const handleClose = useCallback(() => {
-    openProgress.value = withTiming(0, { duration: 180 }, () => {
-      runOnJS(onClose)();
-    });
-  }, [onClose, openProgress]);
+    onClose();
+  }, [onClose]);
 
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
@@ -2049,7 +2196,7 @@ export function PhotoViewerModal({
       Extrapolation.CLAMP
     );
     // Clamp to prevent floating-point underflow producing invalid rgba values
-    const finalOpacity = Math.max(0, Math.min(1, dragProgress * openProgress.value));
+    const finalOpacity = Math.max(0, Math.min(1, dragProgress));
     return {
       flex: 1,
       backgroundColor: `rgba(0, 0, 0, ${finalOpacity})`,
@@ -2063,28 +2210,19 @@ export function PhotoViewerModal({
       [1, 0.8],
       Extrapolation.CLAMP
     );
-    const openScale = interpolate(
-      openProgress.value,
-      [0, 1],
-      [0.85, 1],
-      Extrapolation.CLAMP
-    );
     return {
       flex: 1,
       transform: [
         { translateY: translateY.value },
-        { scale: dragScale * openScale }
+        { scale: dragScale },
       ],
-      opacity: openProgress.value,
+      opacity: 1,
     };
   });
 
-  if (!state) return null;
+  if (!state || !livePost) return null;
   const { post } = state;
   const total = post.photos.length;
-
-  // Resolve the live version of this post so reactions/counts update in real time.
-  const livePost = (posts.find(p => p.id === post.id) as FeedTextPost) || post;
 
   return (
     <Modal
@@ -2103,30 +2241,72 @@ export function PhotoViewerModal({
               {/* ── Top bar: page counter (left) + close button (right) ── */}
               <View
                 style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20,
-                  paddingTop: 48, paddingHorizontal: 16,
-                  flexDirection: 'row', alignItems: 'center',
-                  justifyContent: 'space-between',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  zIndex: 30,
+                  paddingTop: Math.max(insets.top, 16) + 6,
+                  paddingHorizontal: 16,
                 }}
               >
-                {total > 1 ? (
-                  <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
-                    {currentIndex + 1} / {total}
-                  </Text>
-                ) : (
-                  <View />
+                {/* 1. Progress line at top */}
+                {total > 1 && (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      marginBottom: 16,
+                    }}
+                  >
+                    {Array.from({ length: total }).map((_, i) => (
+                      <View
+                        key={`progress-segment-${i}`}
+                        style={{
+                          flex: 1,
+                          height: 3,
+                          borderRadius: 2.5,
+                          backgroundColor:
+                            i === currentIndex
+                              ? '#ffffff'
+                              : 'rgba(255, 255, 255, 0.25)',
+                          marginHorizontal: 2,
+                        }}
+                      />
+                    ))}
+                  </View>
                 )}
-                <GHTouchableOpacity
-                  onPress={handleClose}
-                  delayPressIn={0}
+
+                {/* 2. Counter & Close button row */}
+                <View
                   style={{
-                    width: 36, height: 36, borderRadius: 18,
-                    backgroundColor: 'rgba(0,0,0,0.3)',
-                    alignItems: 'center', justifyContent: 'center',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
                   }}
                 >
-                  <X size={20} color="#fff" />
-                </GHTouchableOpacity>
+                  <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>
+                    {total > 1 ? `${currentIndex + 1} / ${total}` : '1 / 1'}
+                  </Text>
+
+                  {/* Plain RN-core Pressable so the surrounding Pan gesture
+                      can never swallow the tap. */}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="close"
+                    onPress={handleClose}
+                    hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <X size={20} color="#ffffff" />
+                  </Pressable>
+                </View>
               </View>
 
               {/* ── Horizontally paginated photo list ── */}
@@ -2171,22 +2351,38 @@ export function PhotoViewerModal({
               {/* ── Bottom overlay: publisher + reaction counts ── */}
               <View
                 style={{
-                  position: 'absolute', bottom: 0, left: 0, right: 0,
-                  backgroundColor: 'rgba(0,0,0,0.6)',
-                  paddingHorizontal: 16, paddingTop: 20, paddingBottom: 40,
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  backgroundColor: '#1E1B1B',
+                  borderTopLeftRadius: 24,
+                  borderTopRightRadius: 24,
+                  paddingHorizontal: 16,
+                  paddingTop: 10,
+                  paddingBottom: Math.max(insets.bottom, 16) + 12,
                 }}
               >
+                {/* Grab handle */}
+                <View
+                  style={{
+                    width: 44,
+                    height: 5,
+                    borderRadius: 2.5,
+                    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                    alignSelf: 'center',
+                    marginBottom: 16,
+                  }}
+                />
+
                 {/* Caption text */}
                 {livePost.caption ? (
                   <Text
                     style={{
-                      color: '#fff',
+                      color: '#ffffff',
                       fontSize: 15,
-                      lineHeight: 20,
-                      marginBottom: 12,
-                      textShadowColor: 'rgba(0,0,0,0.8)',
-                      textShadowOffset: { width: 0, height: 1 },
-                      textShadowRadius: 3,
+                      lineHeight: 22,
+                      marginBottom: 16,
                     }}
                     numberOfLines={4}
                   >
@@ -2196,40 +2392,75 @@ export function PhotoViewerModal({
 
                 {/* Publisher row */}
                 <View
-                  style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 16,
+                  }}
                 >
-                  {livePost.publisher.avatarUrl ? (
-                    <Image
-                      source={{ uri: livePost.publisher.avatarUrl }}
-                      style={{
-                        width: 40, height: 40, borderRadius: 20,
-                        marginRight: 10,
-                        borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
-                      }}
-                    />
-                  ) : (
-                    <View
-                      style={{
-                        width: 40, height: 40, borderRadius: 20,
-                        backgroundColor: '#555', marginRight: 10,
-                      }}
-                    />
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
-                      {livePost.publisher.name}
-                    </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-                      <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '600' }}>
-                        {formatPostTime(livePost.postedAt, copy).toUpperCase()}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                    {livePost.publisher.avatarUrl ? (
+                      <Image
+                        source={{ uri: livePost.publisher.avatarUrl }}
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 21,
+                          marginRight: 10,
+                        }}
+                      />
+                    ) : (
+                      <View
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 21,
+                          backgroundColor: '#555',
+                          marginRight: 10,
+                        }}
+                      />
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 15 }} numberOfLines={1}>
+                        {livePost.publisher.name}
                       </Text>
-                      <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginHorizontal: 4 }}>•</Text>
-                      <Globe size={11} color="rgba(255,255,255,0.6)" />
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                        <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 12, fontWeight: '600' }}>
+                          {formatPostTime(livePost.postedAt, copy).toUpperCase()}
+                        </Text>
+                        <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 12, marginHorizontal: 4 }}>•</Text>
+                        <Globe size={11} color="rgba(255, 255, 255, 0.5)" />
+                      </View>
                     </View>
                   </View>
+
+                  {/* Follow button only shown when not own post and not followed yet */}
+                  {(() => {
+                    const currentUserId = sessionStorage.getSession()?.userId;
+                    const showFollowButton = livePost.publisher.id !== currentUserId && !isFollowedLocally;
+                    if (!showFollowButton) return null;
+                    return (
+                      <GHTouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={handleFollowPress}
+                        style={{
+                          borderWidth: 1,
+                          borderColor: 'rgba(255, 255, 255, 0.3)',
+                          borderRadius: 20,
+                          paddingHorizontal: 16,
+                          paddingVertical: 6,
+                        }}
+                      >
+                        <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '600' }}>
+                          {language === 'vi' ? 'Theo dõi' : 'Follow'}
+                        </Text>
+                      </GHTouchableOpacity>
+                    );
+                  })()}
                 </View>
 
-                {/* Actions and reactions row */}
+                {/* Actions row */}
                 <View
                   style={{
                     flexDirection: 'row',
@@ -2237,78 +2468,113 @@ export function PhotoViewerModal({
                     justifyContent: 'space-between',
                   }}
                 >
-                  {/* Left: Like, Comment, Share buttons */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 24 }}>
-                    {/* Like action button */}
+                  {/* Left: Like, Comment, Share capsules */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {/* Like Capsule */}
                     <GHTouchableOpacity
                       onPress={() => onReact(livePost.id, 'like')}
-                      delayPressIn={0}
-                      style={{ flexDirection: 'row', alignItems: 'center' }}
+                      onLongPress={() => handleLikeLongPress(false)}
+                      delayLongPress={400}
                       activeOpacity={0.75}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                        borderRadius: 20,
+                        paddingHorizontal: 14,
+                        paddingVertical: 9,
+                      }}
                     >
                       {livePost.myReaction ? (
                         <Image
                           source={REACTION_IMAGES[livePost.myReaction]}
-                          style={{ width: 20, height: 20 }}
+                          style={{ width: 18, height: 18 }}
                           resizeMode="contain"
                         />
                       ) : (
-                        <ThumbsUp size={20} color="#fff" />
+                        <ThumbsUp size={18} color="#ffffff" />
                       )}
-                      <Text style={{ color: '#fff', marginLeft: 8, fontSize: 14, fontWeight: '600' }}>
+                      <Text style={{ color: '#ffffff', marginLeft: 6, fontSize: 13, fontWeight: '600' }}>
                         {livePost.likeCount}
                       </Text>
                     </GHTouchableOpacity>
 
-                    {/* Comment action button */}
+                    {/* Comment Capsule */}
                     <GHTouchableOpacity
                       onPress={() => onCommentTap(livePost.id)}
-                      delayPressIn={0}
-                      style={{ flexDirection: 'row', alignItems: 'center' }}
                       activeOpacity={0.75}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                        borderRadius: 20,
+                        paddingHorizontal: 14,
+                        paddingVertical: 9,
+                      }}
                     >
-                      <MessageCircle size={20} color="#fff" />
-                      <Text style={{ color: '#fff', marginLeft: 8, fontSize: 14, fontWeight: '600' }}>
+                      <MessageCircle size={18} color="#ffffff" />
+                      <Text style={{ color: '#ffffff', marginLeft: 6, fontSize: 13, fontWeight: '600' }}>
                         {livePost.commentCount}
                       </Text>
                     </GHTouchableOpacity>
 
-                    {/* Share action button */}
+                    {/* Share Capsule */}
                     <GHTouchableOpacity
-                      style={{ flexDirection: 'row', alignItems: 'center' }}
-                      delayPressIn={0}
                       activeOpacity={0.75}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                        borderRadius: 20,
+                        paddingHorizontal: 14,
+                        paddingVertical: 9,
+                      }}
                     >
-                      <Share2 size={20} color="#fff" />
+                      <Share2 size={18} color="#ffffff" />
+                      <Text style={{ color: '#ffffff', marginLeft: 6, fontSize: 13, fontWeight: '600' }}>
+                        {language === 'vi' ? 'Chia sẻ' : 'Share'}
+                      </Text>
                     </GHTouchableOpacity>
                   </View>
 
-                  {/* Right: Stacked reactions badges */}
-                  {livePost.topReactions && livePost.topReactions.length > 0 ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      {livePost.topReactions.map((type, i) => (
-                        <View
-                          key={type}
-                          style={{
-                            width: 22, height: 22, borderRadius: 11,
-                            backgroundColor: '#000000',
-                            alignItems: 'center', justifyContent: 'center',
-                            marginLeft: i > 0 ? -6 : 0,
-                            zIndex: livePost.topReactions.length - i,
-                            borderWidth: 1.5, borderColor: '#000000',
-                          }}
-                        >
-                          <Image
-                            source={REACTION_IMAGES[type]}
-                            style={{ width: 18, height: 18 }}
-                            resizeMode="contain"
-                          />
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
+                  {/* Right: Quick React/Like blue circle button */}
+                  <GHTouchableOpacity
+                    onPress={() => onReact(livePost.id, 'like')}
+                    onLongPress={() => handleLikeLongPress(true)}
+                    delayLongPress={400}
+                    activeOpacity={0.75}
+                    style={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: 21,
+                      backgroundColor: livePost.myReaction ? 'rgba(255, 255, 255, 0.12)' : '#0866FF',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {livePost.myReaction ? (
+                      <Image
+                        source={REACTION_IMAGES[livePost.myReaction]}
+                        style={{ width: 24, height: 24 }}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <ThumbsUp size={18} color="#ffffff" fill="#ffffff" />
+                    )}
+                  </GHTouchableOpacity>
                 </View>
               </View>
+
+              {/* Reaction Picker Overlay inside Modal */}
+              <ReactionPickerOverlay
+                anchor={pickerAnchor}
+                onPick={handleLocalPickReaction}
+                onDismiss={() => setPickerAnchor(null)}
+                gestureX={localGestureX}
+                gestureY={localGestureY}
+                gestureActive={localGestureActive}
+                hasDragged={localHasDragged}
+              />
 
             </Animated.View>
           </Animated.View>
@@ -2443,46 +2709,37 @@ const VideoPostActions = React.memo(function VideoPostActions({
   const label = myReaction ? copy.reactionLabel[myReaction] : copy.like;
   const color = myReaction ? REACTION_COLOR[myReaction] : '#64748B';
 
-  const composedGesture = useMemo(() => {
-    const pan = Gesture.Pan()
-      .activateAfterLongPress(250)
-      .onStart((e) => {
-        gestureActive.value = true;
-        gestureStartX.value = e.absoluteX;
-        gestureStartY.value = e.absoluteY;
-        hasDragged.value = false;
-        gestureX.value = e.absoluteX;
-        gestureY.value = e.absoluteY;
-        runOnJS(onLikeLongPress)();
-      })
-      .onUpdate((e) => {
-        gestureX.value = e.absoluteX;
-        gestureY.value = e.absoluteY;
-        const dx = e.absoluteX - gestureStartX.value;
-        const dy = e.absoluteY - gestureStartY.value;
-        if (Math.sqrt(dx*dx + dy*dy) > 15) {
-          hasDragged.value = true;
-        }
-      })
-      .onEnd(() => {
-        gestureActive.value = false;
-      });
-
-    const tap = Gesture.Tap().maxDuration(250).onEnd(() => {
-      runOnJS(onLikeTap)();
-    });
-
-    return Gesture.Exclusive(pan, tap);
-  }, [gestureActive, gestureX, gestureY, gestureStartX, gestureStartY, hasDragged, onLikeLongPress, onLikeTap]);
-
+  // Like button: a plain TouchableOpacity with native `onPress` (fast tap
+  // → like) and `onLongPress` (≥400ms → opens the floating reaction
+  // picker). This is the SAME pattern Reels and Stories use (see
+  // `ReelItem.RailButton`) — it works because React Native's pressable
+  // system handles tap and long-press natively without the race
+  // conditions that plagued our earlier `GestureDetector` wraps.
+  //
+  // v4 history (do not revert): we previously tried
+  //   - Gesture.Exclusive(pan, tap)            — long-press won fast taps
+  //   - transparent overlay with pointerEvents — overlay swallowed taps
+  //   - GestureDetector wrap + delayPressIn    — Pan lost race with TO
+  //   - Gesture.LongPress wrap                 — still no claim win
+  // Native TouchableOpacity.onLongPress is the only reliable answer.
+  //
+  // We also call `setIsLikeLongPressing` so the parent can move the
+  // picker (FB-style drag-to-pick) while the finger is held. For
+  // the v4 minimal fix we just open the picker; the parent already
+  // drives the drag highlight via the same `onLikeLongPress` prop.
   return (
     <View className="flex-row items-center justify-between border-t border-slate-200 pt-4">
-      <GestureDetector gesture={composedGesture}>
-        <Animated.View
-          ref={likeButtonRef as any}
-          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          className="flex-row items-center"
-        >
+      <TouchableOpacity
+        ref={likeButtonRef as any}
+        accessibilityRole="button"
+        accessibilityLabel="like"
+        activeOpacity={0.6}
+        onPress={onLikeTap}
+        onLongPress={onLikeLongPress}
+        delayLongPress={400}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        className="flex-row items-center"
+      >
           {myReaction ? (
             <Image
               source={REACTION_IMAGES[myReaction]}
@@ -2502,8 +2759,7 @@ const VideoPostActions = React.memo(function VideoPostActions({
           >
             {label}
           </Text>
-        </Animated.View>
-      </GestureDetector>
+        </TouchableOpacity>
 
       <TouchableOpacity
         className="flex-row items-center"
@@ -3857,7 +4113,15 @@ function FeedScreen() {
   // ── Photo viewer state ───────────────────────────────────────────────
   // Set when the user taps a photo in a text post. Cleared by the modal's
   // close button or Android back press.
+  //
+  // v2: now we ALSO mirror the value into a ref so the handler can
+  // update the visible modal on the very next frame (no React render
+  // delay between tap and Modal mount). The React state still drives
+  // the Modal's `visible` prop and child re-renders, but the photo
+  // URI + index are read from the ref synchronously inside the modal
+  // so the user sees the photo the moment the modal appears.
   const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
+  const photoViewerRef = useRef<PhotoViewerState | null>(null);
   const openingPhotoViewerRef = useRef(false);
   const photoPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -3878,30 +4142,27 @@ function FeedScreen() {
       }
 
       const safeIndex = Math.min(Math.max(photoIndex, 0), total - 1);
+      const next: PhotoViewerState = { post, initialIndex: safeIndex };
+      // 1) Write to ref FIRST so the modal (if already mounted) sees
+      //    the new photo on its next render cycle without waiting for
+      //    React to commit a state update.
+      photoViewerRef.current = next;
+      // 2) Trigger Modal mount via React state.
       openingPhotoViewerRef.current = true;
-      setPhotoViewer({ post, initialIndex: safeIndex });
+      setPhotoViewer(next);
 
       // Reset safety flag after 400ms so it never gets stuck
       photoPressTimeoutRef.current = setTimeout(() => {
         openingPhotoViewerRef.current = false;
         photoPressTimeoutRef.current = null;
       }, 400);
-
-      // Prefetch nearby photos for extremely fast rendering
-      const nearbyPhotos = [
-        post.photos[safeIndex],
-        post.photos[safeIndex - 1],
-        post.photos[safeIndex + 1],
-      ].filter(Boolean);
-      nearbyPhotos.forEach(url => {
-        Image.prefetch(url).catch(() => undefined);
-      });
     },
     [],
   );
 
   const handleClosePhotoViewer = useCallback(() => {
     setPhotoViewer(null);
+    photoViewerRef.current = null;
     openingPhotoViewerRef.current = false;
     if (photoPressTimeoutRef.current) {
       clearTimeout(photoPressTimeoutRef.current);

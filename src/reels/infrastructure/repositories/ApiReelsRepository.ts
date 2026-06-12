@@ -98,6 +98,13 @@ function mapPublisher(raw: Record<string, unknown> | undefined | null): ReelPubl
     readString(safe, 'name', 'full_name') ||
     username;
 
+  const isAdmin =
+    readBool(safe, 'is_admin') ||
+    readString(safe, 'admin') === '1' ||
+    readString(safe, 'admin') === 'admin' ||
+    username.toLowerCase() === 'admin' ||
+    fullName === 'Quản trị viên';
+
   return {
     userId,
     username,
@@ -105,6 +112,7 @@ function mapPublisher(raw: Record<string, unknown> | undefined | null): ReelPubl
     avatarUrl: readString(safe, 'avatar', 'profile_picture') || undefined,
     isVerified: readBool(safe, 'verified'),
     isFollowing: readBool(safe, 'is_following', 'following') || undefined,
+    isAdmin,
   };
 }
 

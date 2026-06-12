@@ -35,6 +35,8 @@ import type {
   ReelCaptionSuggestionKind,
 } from '../../../reels/domain/types/reels.types';
 
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+
 const repository = createFeedRepository();
 const suggestionsRepo = createReelsRepository();
 
@@ -101,10 +103,19 @@ const DEFAULT_DRAFT: CreatePostDraft = {
 // installs vary — 10 photos is the practical UX cap regardless.
 const MAX_PHOTOS = 10;
 
-// Validation errors surfaced to the UI as Vietnamese-language strings.
-// Keep them human, not technical — the user sees these directly.
-const ERR_EMPTY = 'Hãy viết nội dung hoặc thêm ít nhất 1 ảnh hoặc âm thanh.';
-const ERR_TOO_MANY_PHOTOS = `Tối đa ${MAX_PHOTOS} ảnh mỗi bài.`;
+// Localized validation errors surfaced to the UI.
+const VIEW_MODEL_COPY = {
+  vi: {
+    errEmpty: 'Hãy viết nội dung hoặc thêm ít nhất 1 ảnh hoặc âm thanh.',
+    errTooManyPhotos: (max: number) => `Tối đa ${max} ảnh mỗi bài.`,
+    errSubmitFailed: 'Không đăng được bài. Vui lòng thử lại.',
+  },
+  en: {
+    errEmpty: 'Please enter content or add at least 1 image or audio.',
+    errTooManyPhotos: (max: number) => `Maximum of ${max} photos per post.`,
+    errSubmitFailed: 'Failed to create post. Please try again.',
+  },
+};
 
 export type UseCreatePostOptions = {
   /**
@@ -117,6 +128,8 @@ export type UseCreatePostOptions = {
 
 export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
   const { onCreated } = options;
+  const language = useAppLanguage();
+  const copy = useMemo(() => VIEW_MODEL_COPY[language], [language]);
 
   const [draft, setDraft] = useState<CreatePostDraft>(DEFAULT_DRAFT);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -174,12 +187,12 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
       if (merged.length > MAX_PHOTOS) {
         // Trim the overflow and surface a warning — preserve as many
         // as we can rather than rejecting the whole batch.
-        setError(ERR_TOO_MANY_PHOTOS);
+        setError(copy.errTooManyPhotos(MAX_PHOTOS));
         return { ...prev, audio: undefined, photos: merged.slice(0, MAX_PHOTOS) };
       }
       return { ...prev, audio: undefined, photos: merged };
     });
-  }, []);
+  }, [copy]);
 
   /** Remove a photo by its `uri` (the only stable key we have client-side). */
   const removePhoto = useCallback((uri: string) => {
@@ -283,13 +296,13 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
    */
   const validate = useCallback((d: CreatePostDraft): string | null => {
     if (d.text.trim().length === 0 && d.photos.length === 0 && !d.audio) {
-      return ERR_EMPTY;
+      return copy.errEmpty;
     }
     if (d.photos.length > MAX_PHOTOS) {
-      return ERR_TOO_MANY_PHOTOS;
+      return copy.errTooManyPhotos(MAX_PHOTOS);
     }
     return null;
-  }, []);
+  }, [copy]);
 
   /**
    * Whether the submit button should be enabled. Memoised so the
@@ -336,13 +349,13 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
       const message =
         caught instanceof Error
           ? caught.message
-          : 'Không đăng được bài. Vui lòng thử lại.';
+          : copy.errSubmitFailed;
       setError(message);
       return null;
     } finally {
       setIsSubmitting(false);
     }
-  }, [captionMentionReplacements, draft, onCreated, validate]);
+  }, [captionMentionReplacements, draft, onCreated, validate, copy]);
 
   return {
     // State
