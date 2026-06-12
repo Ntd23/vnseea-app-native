@@ -71,7 +71,10 @@ import type {
 } from '../../../navigation/types';
 import { useAuthViewModel } from '../../../auth/application/view-models/useAuthViewModel';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
-import { languageStorage, type AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -410,25 +413,29 @@ function uploadFileFromAsset(
   };
 }
 
-
 function settingsPanelTitle(panel: SettingsPanel, language: AppLanguage) {
-    const isVi = language === 'vi';
+  const isVi = language === 'vi';
   if (panel === 'earnings') return isVi ? 'Thu nhập' : 'Earnings';
   if (panel === 'general-common') return isVi ? 'Chung' : 'Common';
   if (panel === 'general-profile') return isVi ? 'Hồ sơ' : 'Profile';
-  if (panel === 'general-social-links') return isVi ? 'Liên kết mạng xã hội' : 'Socials link';
-  if (panel === 'general-address') return isVi ? 'Địa chỉ giao hàng' : 'Shipping address';
+  if (panel === 'general-social-links')
+    return isVi ? 'Liên kết mạng xã hội' : 'Socials link';
+  if (panel === 'general-address')
+    return isVi ? 'Địa chỉ giao hàng' : 'Shipping address';
   if (panel === 'general-privacy') return isVi ? 'Quyền riêng tư' : 'Privacy';
-  if (panel === 'general-blocked-users') return isVi ? 'Chặn người dùng' : 'Blocked Users';
+  if (panel === 'general-blocked-users')
+    return isVi ? 'Chặn người dùng' : 'Blocked Users';
   if (panel === 'general-sessions') return isVi ? 'Phiên đăng nhập' : 'Session';
   if (panel === 'general-avatar') return isVi ? 'Ảnh đại diện' : 'Avatar';
   if (panel === 'general-password') return isVi ? 'Mật khẩu' : 'Password';
-  if (panel === 'general-two-factor') return isVi ? 'Xác thực 2 yếu tố' : 'Two-Factor Auth';
-  if (panel === 'general-notifications') return isVi ? 'Thông báo' : 'Notifications';
-  if (panel === 'general-verification') return isVi ? 'Xác thực tài khoản' : 'Verification';
- return isVi ? 'Cài đặt chung' : 'General settings';
+  if (panel === 'general-two-factor')
+    return isVi ? 'Xác thực 2 yếu tố' : 'Two-Factor Auth';
+  if (panel === 'general-notifications')
+    return isVi ? 'Thông báo' : 'Notifications';
+  if (panel === 'general-verification')
+    return isVi ? 'Xác thực tài khoản' : 'Verification';
+  return isVi ? 'Cài đặt chung' : 'General settings';
 }
-
 
 function settingsPanelBackTarget(panel: SettingsPanel): SettingsPanel {
   if (panel === 'general' || panel === 'earnings') {
@@ -482,13 +489,17 @@ function padDatePart(value: number) {
 }
 
 function formatDateForApi(date: Date) {
-  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
+  return `${date.getFullYear()}-${padDatePart(
+    date.getMonth() + 1,
+  )}-${padDatePart(date.getDate())}`;
 }
 
 function formatDateForDisplay(value: string) {
   const date = parseBirthdayDate(value);
   if (!date) return '';
-  return `${padDatePart(date.getDate())}/${padDatePart(date.getMonth() + 1)}/${date.getFullYear()}`;
+  return `${padDatePart(date.getDate())}/${padDatePart(
+    date.getMonth() + 1,
+  )}/${date.getFullYear()}`;
 }
 
 function parseBirthdayDate(value: string) {
@@ -518,8 +529,8 @@ function parseBirthdayDate(value: string) {
 
 function countryNameFromId(countryId: string) {
   return (
-    COUNTRY_OPTIONS.find(country => country.id === fieldValue(countryId))?.name ||
-    ''
+    COUNTRY_OPTIONS.find(country => country.id === fieldValue(countryId))
+      ?.name || ''
   );
 }
 
@@ -590,7 +601,11 @@ function sessionPlatformLabel(platform: string) {
 
 function sessionPlatformIcon(platform: string) {
   const value = sessionPlatformLabel(platform).toLowerCase();
-  if (value.includes('android') || value.includes('ios') || value.includes('phone')) {
+  if (
+    value.includes('android') ||
+    value.includes('ios') ||
+    value.includes('phone')
+  ) {
     return <Smartphone size={28} color="#0000ff" />;
   }
   return <Monitor size={28} color="#111827" />;
@@ -746,7 +761,9 @@ function VerificationButton({
   return (
     <View
       className={`mr-3 h-11 flex-row items-center rounded-xl border px-5 ${
-        selected ? 'border-[#0000ff] bg-indigo-50' : 'border-slate-200 bg-slate-50'
+        selected
+          ? 'border-[#0000ff] bg-indigo-50'
+          : 'border-slate-200 bg-slate-50'
       }`}
     >
       <Circle size={16} color={selected ? '#0000ff' : '#94a3b8'} />
@@ -856,9 +873,7 @@ function CountryPickerModal({
                   >
                     {item.name}
                   </Text>
-                  <Text className="mr-3 text-xs text-slate-400">
-                    {item.id}
-                  </Text>
+                  <Text className="mr-3 text-xs text-slate-400">{item.id}</Text>
                   {selected ? <Check size={18} color="#0000ff" /> : null}
                 </TouchableOpacity>
               );
@@ -1117,7 +1132,8 @@ function AccountInformationCard() {
 
   const isVerified = Boolean(profile?.verified);
   const wallet = fieldValue(profile?.wallet);
-  const selectedBirthday = parseBirthdayDate(form.birthday) || new Date(2000, 0, 1);
+  const selectedBirthday =
+    parseBirthdayDate(form.birthday) || new Date(2000, 0, 1);
   const selectedCountryName = countryNameFromId(form.countryId);
 
   return (
@@ -1716,7 +1732,9 @@ function SocialLinksCard() {
       );
 
       if (!apiSucceeded(response.api_status)) {
-        throw new Error(response.message || 'Không thể lưu liên kết mạng xã hội.');
+        throw new Error(
+          response.message || 'Không thể lưu liên kết mạng xã hội.',
+        );
       }
 
       await refresh();
@@ -1799,31 +1817,31 @@ function AvatarCoverCard() {
   const avatarUri = avatarFile?.uri || profile?.avatarUrl || '';
   const coverUri = coverFile?.uri || profile?.coverUrl || '';
 
-  const pickImage = useCallback(
-    async (kind: 'avatar' | 'cover') => {
-      const result = await launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-        maxWidth: kind === 'avatar' ? 700 : 1400,
-        maxHeight: kind === 'avatar' ? 700 : 600,
-      });
-      const file = uploadFileFromAsset(
-        result.assets?.[0],
-        kind === 'avatar' ? 'avatar.jpg' : 'cover.jpg',
-      );
-      if (!file) return;
-      if (kind === 'avatar') {
-        setAvatarFile(file);
-      } else {
-        setCoverFile(file);
-      }
-    },
-    [],
-  );
+  const pickImage = useCallback(async (kind: 'avatar' | 'cover') => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+      maxWidth: kind === 'avatar' ? 700 : 1400,
+      maxHeight: kind === 'avatar' ? 700 : 600,
+    });
+    const file = uploadFileFromAsset(
+      result.assets?.[0],
+      kind === 'avatar' ? 'avatar.jpg' : 'cover.jpg',
+    );
+    if (!file) return;
+    if (kind === 'avatar') {
+      setAvatarFile(file);
+    } else {
+      setCoverFile(file);
+    }
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!avatarFile && !coverFile) {
-      Alert.alert('Ảnh đại diện', 'Chọn ảnh đại diện hoặc ảnh bìa trước khi lưu.');
+      Alert.alert(
+        'Ảnh đại diện',
+        'Chọn ảnh đại diện hoặc ảnh bìa trước khi lưu.',
+      );
       return;
     }
 
@@ -2031,8 +2049,8 @@ function TwoFactorSettingsCard() {
         profile.twoFactorMethod === 'google'
           ? 'google'
           : profile.twoFactorMethod === 'authy'
-            ? 'authy'
-            : 'email_sms',
+          ? 'authy'
+          : 'email_sms',
     }));
   }, [profile]);
 
@@ -2065,7 +2083,9 @@ function TwoFactorSettingsCard() {
           <GenderButton
             label="Enable"
             selected={form.enabled}
-            onPress={() => setForm(previous => ({ ...previous, enabled: true }))}
+            onPress={() =>
+              setForm(previous => ({ ...previous, enabled: true }))
+            }
           />
           <GenderButton
             label="Disable"
@@ -2486,7 +2506,10 @@ function LoginSessionsCard() {
     try {
       await logout();
     } catch (error) {
-      console.warn('Failed to clear remote logout after session deletion', error);
+      console.warn(
+        'Failed to clear remote logout after session deletion',
+        error,
+      );
     }
     navigation.reset({
       index: 0,
@@ -2531,7 +2554,9 @@ function LoginSessionsCard() {
         { type: 'delete_all' },
       );
       if (!apiSucceeded(response.api_status)) {
-        throw new Error(response.message || 'Không thể đăng xuất khỏi tất cả phiên.');
+        throw new Error(
+          response.message || 'Không thể đăng xuất khỏi tất cả phiên.',
+        );
       }
       await resetToLogin();
     } catch (error) {
@@ -2603,7 +2628,10 @@ function LoginSessionsCard() {
         const isDeleting = deletingId === id;
         const ipAddress = fieldValue(session.ip_address);
         return (
-          <View key={id || `${session.platform}-${session.unx_time}`} className="surface-card mb-4 px-4 py-4">
+          <View
+            key={id || `${session.platform}-${session.unx_time}`}
+            className="surface-card mb-4 px-4 py-4"
+          >
             <View className="flex-row items-start">
               <View className="mr-4 h-14 w-14 items-center justify-center rounded-full bg-slate-100">
                 {sessionPlatformIcon(fieldValue(session.platform))}
@@ -2814,7 +2842,9 @@ function AccountVerificationCard() {
       fullName:
         previous.fullName ||
         fieldValue(profile?.name) ||
-        `${fieldValue(profile?.firstName)} ${fieldValue(profile?.lastName)}`.trim(),
+        `${fieldValue(profile?.firstName)} ${fieldValue(
+          profile?.lastName,
+        )}`.trim(),
       dateOfBirth: previous.dateOfBirth || fieldValue(profile?.birthday),
     }));
   }, [profile]);
@@ -2908,7 +2938,10 @@ function AccountVerificationCard() {
       );
       return;
     }
-    if (status.isShop && (!form.shopDescription.trim() || !form.shopImage || !form.license)) {
+    if (
+      status.isShop &&
+      (!form.shopDescription.trim() || !form.shopImage || !form.license)
+    ) {
       Alert.alert(
         'Xác thực tài khoản',
         'Shop cần mô tả, ảnh shop và giấy phép.',
@@ -3022,192 +3055,192 @@ function AccountVerificationCard() {
               Tài khoản đã được xác thực
             </Text>
             <Text className="mt-2 text-center text-[15px] leading-5 text-slate-500">
-              Bạn không cần gửi thêm giấy tờ xác thực. Các tính năng yêu cầu
-              xác thực đã có thể sử dụng theo quyền tài khoản hiện tại.
+              Bạn không cần gửi thêm giấy tờ xác thực. Các tính năng yêu cầu xác
+              thực đã có thể sử dụng theo quyền tài khoản hiện tại.
             </Text>
           </View>
         </View>
       ) : (
-      <View className="surface-card px-4 py-4">
-        {loadingStatus ? (
-          <View className="items-center py-6">
-            <ActivityIndicator size="small" color="#0000ff" />
-          </View>
-        ) : null}
-
-        <View className="mb-5 flex-row rounded-none bg-amber-50 px-4 py-4">
-          <Clock3 size={20} color="#f59e0b" />
-          <View className="ml-3 flex-1">
-            <Text className="text-[15px] font-bold text-amber-500">
-              Verification required within 30 days
-            </Text>
-            <Text className="mt-2 text-[14px] leading-5 text-amber-500">
-              Please submit the required documents within 30 days so your
-              account or shop can continue using verification-gated features.
-            </Text>
-          </View>
-        </View>
-
-        <AccountTextField
-          label={status.isShop ? 'Shop name' : 'Full name'}
-          value={form.fullName}
-          icon={<User size={17} color="#111827" />}
-          onChangeText={value => updateField('fullName', value)}
-        />
-
-        {status.isShop ? (
-          <AccountTextField
-            label="Shop description"
-            value={form.shopDescription}
-            icon={<Store size={17} color="#111827" />}
-            multiline
-            onChangeText={value => updateField('shopDescription', value)}
-          />
-        ) : (
-          <>
-            <AccountSelectField
-              label="Date of birth"
-              value={formatDateForDisplay(form.dateOfBirth)}
-              placeholder="dd/mm/yyyy"
-              icon={<CalendarDays size={17} color="#111827" />}
-              rightIcon={<CalendarDays size={16} color="#111827" />}
-              onPress={() => setBirthdayPickerVisible(true)}
-            />
-            <AccountTextField
-              label="ID card number"
-              value={form.idCardNumber}
-              placeholder="9-12 digits"
-              icon={<IdCard size={17} color="#111827" />}
-              onChangeText={value => updateField('idCardNumber', value)}
-            />
-          </>
-        )}
-
-        <Text className="mb-2 mt-2 text-xl font-extrabold text-slate-950">
-          Upload documents
-        </Text>
-        <Text className="mb-4 text-[15px] font-medium leading-5 text-slate-500">
-          {status.isShop
-            ? 'Please upload owner identity documents, shop image, and business license.'
-            : 'Please upload your passport or identity document and a separate personal photo.'}
-        </Text>
-
-        <VerificationDocumentTile
-          title="ID card / Passport"
-          file={form.passport}
-          icon={<FileBadge size={28} color="#ffffff" />}
-          onPress={() => {
-            pickImage('passport', 'passport.jpg').catch(error =>
-              Alert.alert('Xác thực tài khoản', String(error)),
-            );
-          }}
-        />
-        <VerificationDocumentTile
-          title="Portrait photo"
-          file={form.photo}
-          icon={<Camera size={28} color="#ffffff" />}
-          onPress={() => {
-            pickImage('photo', 'portrait.jpg').catch(error =>
-              Alert.alert('Xác thực tài khoản', String(error)),
-            );
-          }}
-        />
-
-        {status.isShop ? (
-          <>
-            <VerificationDocumentTile
-              title="Shop image"
-              file={form.shopImage}
-              icon={<Store size={28} color="#ffffff" />}
-              onPress={() => {
-                pickImage('shopImage', 'shop.jpg', 1400, 900).catch(error =>
-                  Alert.alert('Xác thực tài khoản', String(error)),
-                );
-              }}
-            />
-            <VerificationDocumentTile
-              title="License"
-              file={form.license}
-              icon={<FileBadge size={28} color="#ffffff" />}
-              onPress={() => {
-                pickLicense().catch(error =>
-                  Alert.alert('Xác thực tài khoản', String(error)),
-                );
-              }}
-            />
-          </>
-        ) : null}
-
-        <TouchableOpacity
-          activeOpacity={0.86}
-          disabled={submitting}
-          onPress={() => {
-            handleSubmit().catch(() => undefined);
-          }}
-          className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
-            submitting ? 'bg-blue-300' : 'bg-blue-600'
-          }`}
-        >
-          {submitting ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : (
-            <Save size={17} color="#ffffff" />
-          )}
-          <Text className="ml-2 text-[16px] font-bold text-white">
-            Submit
-          </Text>
-        </TouchableOpacity>
-
-        {birthdayPickerVisible && Platform.OS === 'android' ? (
-          <DateTimePicker
-            value={selectedBirthday}
-            mode="date"
-            display="default"
-            maximumDate={new Date()}
-            onChange={handleBirthdayChange}
-          />
-        ) : null}
-
-        {birthdayPickerVisible && Platform.OS === 'ios' ? (
-          <Modal
-            transparent
-            visible={birthdayPickerVisible}
-            animationType="slide"
-            onRequestClose={() => setBirthdayPickerVisible(false)}
-          >
-            <View className="flex-1 justify-end bg-black/40">
-              <View className="rounded-t-3xl bg-white px-4 pb-6 pt-4">
-                <View className="mb-4 flex-row items-center justify-between">
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => setBirthdayPickerVisible(false)}
-                    className="rounded-full bg-slate-100 px-4 py-2"
-                  >
-                    <Text className="font-semibold text-slate-700">Hủy</Text>
-                  </TouchableOpacity>
-                  <Text className="text-lg font-extrabold text-slate-950">
-                    Chọn ngày sinh
-                  </Text>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => setBirthdayPickerVisible(false)}
-                    className="rounded-full bg-blue-600 px-4 py-2"
-                  >
-                    <Text className="font-semibold text-white">Xong</Text>
-                  </TouchableOpacity>
-                </View>
-                <DateTimePicker
-                  value={selectedBirthday}
-                  mode="date"
-                  display="spinner"
-                  maximumDate={new Date()}
-                  onChange={handleBirthdayChange}
-                />
-              </View>
+        <View className="surface-card px-4 py-4">
+          {loadingStatus ? (
+            <View className="items-center py-6">
+              <ActivityIndicator size="small" color="#0000ff" />
             </View>
-          </Modal>
-        ) : null}
-      </View>
+          ) : null}
+
+          <View className="mb-5 flex-row rounded-none bg-amber-50 px-4 py-4">
+            <Clock3 size={20} color="#f59e0b" />
+            <View className="ml-3 flex-1">
+              <Text className="text-[15px] font-bold text-amber-500">
+                Verification required within 30 days
+              </Text>
+              <Text className="mt-2 text-[14px] leading-5 text-amber-500">
+                Please submit the required documents within 30 days so your
+                account or shop can continue using verification-gated features.
+              </Text>
+            </View>
+          </View>
+
+          <AccountTextField
+            label={status.isShop ? 'Shop name' : 'Full name'}
+            value={form.fullName}
+            icon={<User size={17} color="#111827" />}
+            onChangeText={value => updateField('fullName', value)}
+          />
+
+          {status.isShop ? (
+            <AccountTextField
+              label="Shop description"
+              value={form.shopDescription}
+              icon={<Store size={17} color="#111827" />}
+              multiline
+              onChangeText={value => updateField('shopDescription', value)}
+            />
+          ) : (
+            <>
+              <AccountSelectField
+                label="Date of birth"
+                value={formatDateForDisplay(form.dateOfBirth)}
+                placeholder="dd/mm/yyyy"
+                icon={<CalendarDays size={17} color="#111827" />}
+                rightIcon={<CalendarDays size={16} color="#111827" />}
+                onPress={() => setBirthdayPickerVisible(true)}
+              />
+              <AccountTextField
+                label="ID card number"
+                value={form.idCardNumber}
+                placeholder="9-12 digits"
+                icon={<IdCard size={17} color="#111827" />}
+                onChangeText={value => updateField('idCardNumber', value)}
+              />
+            </>
+          )}
+
+          <Text className="mb-2 mt-2 text-xl font-extrabold text-slate-950">
+            Upload documents
+          </Text>
+          <Text className="mb-4 text-[15px] font-medium leading-5 text-slate-500">
+            {status.isShop
+              ? 'Please upload owner identity documents, shop image, and business license.'
+              : 'Please upload your passport or identity document and a separate personal photo.'}
+          </Text>
+
+          <VerificationDocumentTile
+            title="ID card / Passport"
+            file={form.passport}
+            icon={<FileBadge size={28} color="#ffffff" />}
+            onPress={() => {
+              pickImage('passport', 'passport.jpg').catch(error =>
+                Alert.alert('Xác thực tài khoản', String(error)),
+              );
+            }}
+          />
+          <VerificationDocumentTile
+            title="Portrait photo"
+            file={form.photo}
+            icon={<Camera size={28} color="#ffffff" />}
+            onPress={() => {
+              pickImage('photo', 'portrait.jpg').catch(error =>
+                Alert.alert('Xác thực tài khoản', String(error)),
+              );
+            }}
+          />
+
+          {status.isShop ? (
+            <>
+              <VerificationDocumentTile
+                title="Shop image"
+                file={form.shopImage}
+                icon={<Store size={28} color="#ffffff" />}
+                onPress={() => {
+                  pickImage('shopImage', 'shop.jpg', 1400, 900).catch(error =>
+                    Alert.alert('Xác thực tài khoản', String(error)),
+                  );
+                }}
+              />
+              <VerificationDocumentTile
+                title="License"
+                file={form.license}
+                icon={<FileBadge size={28} color="#ffffff" />}
+                onPress={() => {
+                  pickLicense().catch(error =>
+                    Alert.alert('Xác thực tài khoản', String(error)),
+                  );
+                }}
+              />
+            </>
+          ) : null}
+
+          <TouchableOpacity
+            activeOpacity={0.86}
+            disabled={submitting}
+            onPress={() => {
+              handleSubmit().catch(() => undefined);
+            }}
+            className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
+              submitting ? 'bg-blue-300' : 'bg-blue-600'
+            }`}
+          >
+            {submitting ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Save size={17} color="#ffffff" />
+            )}
+            <Text className="ml-2 text-[16px] font-bold text-white">
+              Submit
+            </Text>
+          </TouchableOpacity>
+
+          {birthdayPickerVisible && Platform.OS === 'android' ? (
+            <DateTimePicker
+              value={selectedBirthday}
+              mode="date"
+              display="default"
+              maximumDate={new Date()}
+              onChange={handleBirthdayChange}
+            />
+          ) : null}
+
+          {birthdayPickerVisible && Platform.OS === 'ios' ? (
+            <Modal
+              transparent
+              visible={birthdayPickerVisible}
+              animationType="slide"
+              onRequestClose={() => setBirthdayPickerVisible(false)}
+            >
+              <View className="flex-1 justify-end bg-black/40">
+                <View className="rounded-t-3xl bg-white px-4 pb-6 pt-4">
+                  <View className="mb-4 flex-row items-center justify-between">
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => setBirthdayPickerVisible(false)}
+                      className="rounded-full bg-slate-100 px-4 py-2"
+                    >
+                      <Text className="font-semibold text-slate-700">Hủy</Text>
+                    </TouchableOpacity>
+                    <Text className="text-lg font-extrabold text-slate-950">
+                      Chọn ngày sinh
+                    </Text>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => setBirthdayPickerVisible(false)}
+                      className="rounded-full bg-blue-600 px-4 py-2"
+                    >
+                      <Text className="font-semibold text-white">Xong</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <DateTimePicker
+                    value={selectedBirthday}
+                    mode="date"
+                    display="spinner"
+                    maximumDate={new Date()}
+                    onChange={handleBirthdayChange}
+                  />
+                </View>
+              </View>
+            </Modal>
+          ) : null}
+        </View>
       )}
     </View>
   );
@@ -3217,14 +3250,8 @@ function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<SettingsPanel>('main');
-  const {
-    profile,
-    features,
-    settingsMenu,
-    language,
-    setLanguage,
-    copy,
-  } = useSettingsViewModel();
+  const { profile, features, settingsMenu, language, setLanguage, copy } =
+    useSettingsViewModel();
   const { logout } = useAuthViewModel();
 
   useEffect(() => {
@@ -3236,13 +3263,16 @@ function SettingsScreen() {
       tabBarVisibility.setVisible(true);
     };
   }, []);
-  const handleDirectLanguageChange = useCallback((lang: AppLanguage) => {
-    setLanguage(lang);
-    Alert.alert(
-      'Ngôn ngữ / Language',
-      lang === 'vi' ? 'Đã đổi sang Tiếng Việt' : 'Changed to English',
-    );
-  }, [setLanguage]);
+  const handleDirectLanguageChange = useCallback(
+    (lang: AppLanguage) => {
+      setLanguage(lang);
+      Alert.alert(
+        'Ngôn ngữ / Language',
+        lang === 'vi' ? 'Đã đổi sang Tiếng Việt' : 'Changed to English',
+      );
+    },
+    [setLanguage],
+  );
 
   const handleCreateNavigate = useCallback(
     (route: RootStackRouteName) => {
@@ -3502,50 +3532,7 @@ function SettingsScreen() {
                   isLast
                   onPress={() => setActivePanel('general-avatar')}
                 />
-                <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
-                <View className="flex-row items-center">
-                  <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
-                    <Globe size={20} color="#0000ff" />
-                  </View>
-                  <Text className="text-[16px] font-semibold text-slate-800">{copy.languageTitle}</Text>
-                </View>
-                <View className="flex-row gap-2.5">
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => handleDirectLanguageChange('vi')}
-                    className={`h-9 w-14 items-center justify-center rounded-xl border-2 ${
-                      language === 'vi'
-                        ? 'border-[#0000ff]'
-                        : 'border-slate-200'
-                    }`}
-                  >
-                    <Text
-                      className={`text-sm font-bold ${
-                        language === 'vi' ? 'text-[#0000ff]' : 'text-slate-400'
-                      }`}
-                    >
-                      VI
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => handleDirectLanguageChange('en')}
-                    className={`h-9 w-14 items-center justify-center rounded-xl border-2 ${
-                      language === 'en'
-                        ? 'border-[#0000ff]'
-                        : 'border-slate-200'
-                    }`}
-                  >
-                    <Text
-                      className={`text-sm font-bold ${
-                        language === 'en' ? 'text-[#0000ff]' : 'text-slate-400'
-                      }`}
-                    >
-                      EN
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              
               </GeneralSettingsSection>
 
               <GeneralSettingsSection title="Địa chỉ và quyền riêng tư">
@@ -3598,6 +3585,56 @@ function SettingsScreen() {
                   isLast
                   onPress={() => setActivePanel('general-notifications')}
                 />
+                  <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
+                  <View className="flex-row items-center">
+                    <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
+                      <Globe size={20} color="#0000ff" />
+                    </View>
+                    <Text className="text-[16px] font-semibold text-slate-800">
+                      {copy.languageTitle}
+                    </Text>
+                  </View>
+                  <View className="flex-row gap-2.5">
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => handleDirectLanguageChange('vi')}
+                      className={`h-9 w-14 items-center justify-center rounded-xl border-2 ${
+                        language === 'vi'
+                          ? 'border-[#0000ff]'
+                          : 'border-slate-200'
+                      }`}
+                    >
+                      <Text
+                        className={`text-sm font-bold ${
+                          language === 'vi'
+                            ? 'text-[#0000ff]'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        VI
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => handleDirectLanguageChange('en')}
+                      className={`h-9 w-14 items-center justify-center rounded-xl border-2 ${
+                        language === 'en'
+                          ? 'border-[#0000ff]'
+                          : 'border-slate-200'
+                      }`}
+                    >
+                      <Text
+                        className={`text-sm font-bold ${
+                          language === 'en'
+                            ? 'text-[#0000ff]'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        EN
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </GeneralSettingsSection>
             </View>
           ) : activePanel === 'earnings' ? (

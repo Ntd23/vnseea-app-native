@@ -18,6 +18,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
+import type { GroupItem } from '../../../community/domain/types/community.types';
+import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import { useNotificationsViewModel } from '../../application/view-models/useNotificationsViewModel';
 import type { NotificationsItem } from '../../domain/types/notifications.types';
 import NotificationsHeader from '../components/NotificationsHeader';
@@ -29,9 +31,92 @@ import NotificationsSkeleton from '../components/NotificationsSkeleton';
 
 type NotificationsNav = NativeStackNavigationProp<RootStackParamList>;
 
+function includesAny(value: string, tokens: string[]) {
+  const normalized = value.toLowerCase();
+  return tokens.some(token => normalized.includes(token));
+}
+
+function toPositiveNumberId(value: string | undefined) {
+  const id = Number(value);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function toPageRouteItem(item: NotificationsItem): PagesItem {
+  const pageId = item.pageId ?? '';
+  return {
+    id: pageId,
+    pageId,
+    pageName: '',
+    pageTitle: item.text || 'Trang',
+    likes: 0,
+  };
+}
+
+function toGroupRouteItem(item: NotificationsItem): GroupItem {
+  const groupId = item.groupId ?? '';
+  return {
+    id: groupId,
+    groupId,
+    groupName: '',
+    groupTitle: item.text || 'Nhóm',
+    privacy: 'public',
+  };
+}
+
 function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
+  const type = item.type || '';
+
+  if (item.fundingId && includesAny(type, ['fund', 'funding'])) {
+    navigation.navigate(ROUTES.FUNDING_DETAIL, { fundId: item.fundingId });
+    return;
+  }
+
+  if (item.productId && includesAny(type, ['product', 'market', 'order'])) {
+    const productId = toPositiveNumberId(item.productId);
+    if (!productId) {
+      navigation.navigate(ROUTES.FEED as any);
+      return;
+    }
+    navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+      productId,
+    });
+    return;
+  }
+
+  if (item.jobId && includesAny(type, ['job', 'apply'])) {
+    navigation.navigate(ROUTES.JOB_DETAIL, { jobId: item.jobId });
+    return;
+  }
+
+  if (item.blogId && includesAny(type, ['blog', 'article'])) {
+    navigation.navigate(ROUTES.BLOG_DETAIL, { blogId: item.blogId });
+    return;
+  }
+
+  if (item.postId && includesAny(type, ['live_video'])) {
+    const postId = toPositiveNumberId(item.postId);
+    if (!postId) {
+      navigation.navigate(ROUTES.FEED as any);
+      return;
+    }
+    navigation.navigate(ROUTES.LIVE_ROOM, { postId });
+    return;
+  }
+
+  if (item.postId) {
+    const postId = toPositiveNumberId(item.postId);
+    if (!postId) {
+      navigation.navigate(ROUTES.FEED as any);
+      return;
+    }
+    navigation.navigate(ROUTES.POST_DETAIL, { postId: String(postId) });
+    return;
+  }
+
   switch (item.type) {
     case 'following':
+    case 'visited_profile':
+    case 'accepted_request':
       if (item.notifierId) {
         navigation.navigate(ROUTES.PROFILE, { userId: item.notifierId } as any);
       }
@@ -42,7 +127,10 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
     case 'comment':
     case 'comment_reply':
     case 'comment_mention':
+    case 'comment_reply_mention':
     case 'post_mention':
+    case 'liked_comment':
+    case 'wondered_comment':
     case 'profile_wall_post':
       navigation.navigate(ROUTES.FEED as any);
       break;
@@ -50,7 +138,7 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
     case 'requested_to_join_group':
     case 'accepted_join_request':
       if (item.groupId) {
-        navigation.navigate(ROUTES.GROUP_DETAIL as any, { groupId: item.groupId });
+        navigation.navigate(ROUTES.GROUP_DETAIL, { group: toGroupRouteItem(item) });
       }
       break;
     case 'interested_event':
@@ -59,7 +147,11 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
       navigation.navigate(ROUTES.EVENTS as any);
       break;
     case 'liked_page':
-      navigation.navigate(ROUTES.PAGES as any);
+      if (item.pageId) {
+        navigation.navigate(ROUTES.PAGE_DETAIL, { page: toPageRouteItem(item) });
+      } else {
+        navigation.navigate(ROUTES.PAGES as any);
+      }
       break;
     default:
       navigation.navigate(ROUTES.FEED as any);
@@ -350,7 +442,6 @@ function NotificationsScreen() {
           filterFollows: copy.filterFollows,
           filterGroups: copy.filterGroups,
           filterEvents: copy.filterEvents,
-          filterGroupChats: copy.filterGroupChats,
           close: language === 'vi' ? 'Đóng' : 'Close',
         }}
       />

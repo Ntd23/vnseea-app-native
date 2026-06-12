@@ -1,4 +1,4 @@
-// Feed - useFeedViewModel ViewModel
+// Description: Coordinates feed source tabs, pagination, caching, and post interaction state.
 //
 // SINGLE-LIST FEED ARCHITECTURE
 // We hold ONE source of truth (`posts: FeedPost[]`) sorted by `postedAt`
@@ -29,6 +29,7 @@ import type {
   FeedVideoPost,
   FeedPollPost,
 } from '../../domain/types/feed.types';
+import type { FeedSource } from '../../domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
 
@@ -195,6 +196,7 @@ function getPollTotalVotes(options: FeedPollPost['options']) {
 }
 
 export function useFeedViewModel() {
+  const [feedSource, setFeedSourceState] = useState<FeedSource>('all');
   const [posts, setPosts] = useState<FeedPost[]>(() => {
     const cachedLightPosts = feedCacheStorage
       .getCachedPosts()
@@ -228,6 +230,7 @@ export function useFeedViewModel() {
     lightPosts: FeedPost[];
     videoPosts: FeedVideoPost[];
   } | null>(null);
+  const feedSourceRef = useRef<FeedSource>('all');
 
   // Network pagination guard
   const hasReachedNetworkEndRef = useRef(false);
@@ -267,8 +270,10 @@ export function useFeedViewModel() {
       lightPostsRef.current = cleanLightPosts;
       videoPostsRef.current = cleanVideoPosts;
       setPosts(interleaveVideos(cleanLightPosts, cleanVideoPosts));
-      cacheLightPostsAfterInteractions(cleanLightPosts);
-      cacheVideoPostsAfterInteractions(cleanVideoPosts);
+      if (feedSourceRef.current === 'all') {
+        cacheLightPostsAfterInteractions(cleanLightPosts);
+        cacheVideoPostsAfterInteractions(cleanVideoPosts);
+      }
 
       debugFeedVm('apply feed sources', {
         lightIn: nextLightPosts.length,
@@ -330,8 +335,10 @@ export function useFeedViewModel() {
       .map(updater)
       .filter((post): post is FeedVideoPost => post.kind === 'video');
     setPosts(prev => prev.map(updater));
-    cacheLightPostsAfterInteractions(lightPostsRef.current);
-    cacheVideoPostsAfterInteractions(videoPostsRef.current);
+    if (feedSourceRef.current === 'all') {
+      cacheLightPostsAfterInteractions(lightPostsRef.current);
+      cacheVideoPostsAfterInteractions(videoPostsRef.current);
+    }
   }, []);
 
   const ensureVideoBuffer = useCallback(
@@ -351,7 +358,7 @@ export function useFeedViewModel() {
       );
 
       repository
-        .getVideoPosts(VIDEO_PAGE_SIZE * 2, lastVideo?.id)
+        .getVideoPosts(VIDEO_PAGE_SIZE * 2, lastVideo?.id, feedSourceRef.current)
         .then(nextVideos => {
           const freshVideos = nextVideos.filter(post => {
             if (existingVideoIds.has(post.id)) return false;
@@ -433,7 +440,7 @@ export function useFeedViewModel() {
 
 
     repository
-      .getLightPostsPage(PAGE_SIZE, cursor)
+      .getLightPostsPage(PAGE_SIZE, cursor, feedSourceRef.current)
       .then(page => {
         const filtered = page.posts.filter(isLightFeedPost);
 
@@ -504,7 +511,11 @@ export function useFeedViewModel() {
     nextPageCursorRef.current = undefined;
     emptyPageStrikeRef.current = 0;
     try {
-      const page = await repository.getLightPostsPage(PAGE_SIZE);
+      const page = await repository.getLightPostsPage(
+        PAGE_SIZE,
+        undefined,
+        feedSourceRef.current,
+      );
       const freshPosts = page.posts.filter(isLightFeedPost);
       nextPageCursorRef.current = page.nextCursor;
       // DON'T mark the feed as "ended" just because the first page's
@@ -541,6 +552,25 @@ export function useFeedViewModel() {
     }
   }, [commitFeedSources, prefetchNextPage, scheduleVideoBuffer]);
 
+  const selectFeedSource = useCallback(
+    (nextSource: FeedSource) => {
+      if (feedSourceRef.current === nextSource) return;
+
+      feedSourceRef.current = nextSource;
+      setFeedSourceState(nextSource);
+      lightPostsRef.current = [];
+      videoPostsRef.current = [];
+      prefetchBufferRef.current = null;
+      hasReachedNetworkEndRef.current = false;
+      nextPageCursorRef.current = undefined;
+      emptyPageStrikeRef.current = 0;
+      setPosts([]);
+      setIsAllLoaded(false);
+      setHasLoadedOnce(false);
+      loadPosts(false);
+    },
+    [loadPosts],
+  );
 
   const loadMorePosts = useCallback(async () => {
     const currentLightPosts = lightPostsRef.current;
@@ -606,7 +636,11 @@ export function useFeedViewModel() {
       setIsLoadingMore(true);
       setError(null);
 
-      const page = await repository.getLightPostsPage(PAGE_SIZE, cursor);
+      const page = await repository.getLightPostsPage(
+        PAGE_SIZE,
+        cursor,
+        feedSourceRef.current,
+      );
       const olderPosts = page.posts.filter(isLightFeedPost);
 
 
@@ -890,6 +924,8 @@ export function useFeedViewModel() {
   );
 
   return {
+    feedSource,
+    setFeedSource: selectFeedSource,
     posts,
     isLoading: isLoading || isRefreshing,
     isRefreshing,
