@@ -416,7 +416,7 @@ function settingsPanelTitle(panel: SettingsPanel, language: AppLanguage) {
   if (panel === 'earnings') return isVi ? 'Thu nhập' : 'Earnings';
   if (panel === 'general-common') return isVi ? 'Chung' : 'Common';
   if (panel === 'general-profile') return isVi ? 'Hồ sơ' : 'Profile';
-  if (panel === 'general-social-links') return isVi : 'Liên kết mạng xã hội' : 'Socials link';
+  if (panel === 'general-social-links') return isVi ? 'Liên kết mạng xã hội' : 'Socials link';
   if (panel === 'general-address') return isVi ? 'Địa chỉ giao hàng' : 'Shipping address';
   if (panel === 'general-privacy') return isVi ? 'Quyền riêng tư' : 'Privacy';
   if (panel === 'general-blocked-users') return isVi ? 'Chặn người dùng' : 'Blocked Users';
@@ -427,6 +427,7 @@ function settingsPanelTitle(panel: SettingsPanel, language: AppLanguage) {
   if (panel === 'general-notifications') return isVi ? 'Thông báo' : 'Notifications';
   if (panel === 'general-verification') return isVi ? 'Xác thực tài khoản' : 'Verification';
  return isVi ? 'Cài đặt chung' : 'General settings';
+}
 
 
 function settingsPanelBackTarget(panel: SettingsPanel): SettingsPanel {
@@ -3216,7 +3217,6 @@ function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<SettingsPanel>('main');
-  const [languageSheetVisible, setLanguageSheetVisible] = useState(false);
   const {
     profile,
     features,
@@ -3651,8 +3651,47 @@ function SettingsScreen() {
           ) : (
             <EmailNotificationsCard />
           )}
-        </Pressable>
-      </Modal>
+        </ScrollView>
+      ) : (
+        <ScrollView
+          className="flex-1"
+          contentContainerClassName="px-5 pb-28 pt-4"
+          showsVerticalScrollIndicator={false}
+        >
+          {profile ? (
+            <ProfileHeaderCard
+              profile={profile}
+              onPress={() => navigation.navigate(ROUTES.PROFILE)}
+            />
+          ) : (
+            <View className="surface-card flex-row items-center gap-4 px-5 py-4">
+              <View className="h-16 w-16 rounded-full bg-gray-200" />
+              <View className="flex-1">
+                <View className="h-5 w-32 rounded bg-gray-200 mb-2" />
+                <View className="h-4 w-24 rounded bg-gray-200" />
+              </View>
+            </View>
+          )}
+
+          <View className="mt-5">
+            <FeatureGrid
+              features={features}
+              onFeaturePress={handleFeaturePress}
+            />
+          </View>
+
+          <View className="mt-5">
+            <GoProBanner />
+          </View>
+
+          <View className="mt-6">
+            <SettingsMenuList
+              items={settingsMenu}
+              onItemPress={handleSettingsItemPress}
+            />
+          </View>
+        </ScrollView>
+      )}
 
       <CreateActionSheet
         visible={sheetVisible}
