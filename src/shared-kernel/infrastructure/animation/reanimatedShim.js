@@ -137,6 +137,33 @@ export const useAnimatedScrollHandler = (handler) => {
 export const useEvent = (callback) => callback;
 export const useAnimatedGestureHandler = (handler) => handler ?? {};
 
+const createNoopLayoutAnimationBuilder = () => {
+  const builder = {
+    delay: () => builder,
+    duration: () => builder,
+    easing: () => builder,
+    springify: () => builder,
+    damping: () => builder,
+    mass: () => builder,
+    stiffness: () => builder,
+    overshootClamping: () => builder,
+    restDisplacementThreshold: () => builder,
+    restSpeedThreshold: () => builder,
+    withCallback: () => builder,
+    randomDelay: () => builder,
+    reduceMotion: () => builder,
+    build: () => () => ({}),
+  };
+
+  return builder;
+};
+
+export const FadeIn = createNoopLayoutAnimationBuilder();
+export const FadeInDown = createNoopLayoutAnimationBuilder();
+export const FadeInUp = createNoopLayoutAnimationBuilder();
+export const FadeOut = createNoopLayoutAnimationBuilder();
+export const SlideOutRight = createNoopLayoutAnimationBuilder();
+
 export const createAnimatedComponent = ReactNativeAnimated.createAnimatedComponent;
 
 const Animated = {
