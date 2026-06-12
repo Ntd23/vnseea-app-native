@@ -1,4 +1,5 @@
 <?php
+// English description: Provides shared backend utility functions for rendering, media, request metadata, and general helpers.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -1287,15 +1288,41 @@ function Wo_CompressImage($source_url, $destination_url, $quality = 50) {
     return $destination_url;
 }
 function get_ip_address() {
-    if (!empty($_SERVER['HTTP_X_FORWARDED']) && validate_ip($_SERVER['HTTP_X_FORWARDED']))
-        return $_SERVER['HTTP_X_FORWARDED'];
-    if (!empty($_SERVER['HTTP_X_CLUSTER_CLIENT_IP']) && validate_ip($_SERVER['HTTP_X_CLUSTER_CLIENT_IP']))
-        return $_SERVER['HTTP_X_CLUSTER_CLIENT_IP'];
-    if (!empty($_SERVER['HTTP_FORWARDED_FOR']) && validate_ip($_SERVER['HTTP_FORWARDED_FOR']))
-        return $_SERVER['HTTP_FORWARDED_FOR'];
-    if (!empty($_SERVER['HTTP_FORWARDED']) && validate_ip($_SERVER['HTTP_FORWARDED']))
-        return $_SERVER['HTTP_FORWARDED'];
-    return $_SERVER['REMOTE_ADDR'];
+    $headers = array(
+        'HTTP_CF_CONNECTING_IP',
+        'HTTP_X_REAL_IP',
+        'HTTP_X_FORWARDED_FOR',
+        'HTTP_CLIENT_IP',
+        'HTTP_X_FORWARDED',
+        'HTTP_X_CLUSTER_CLIENT_IP',
+        'HTTP_FORWARDED_FOR',
+        'HTTP_FORWARDED'
+    );
+
+    foreach ($headers as $header) {
+        if (empty($_SERVER[$header])) {
+            continue;
+        }
+
+        $header_value = $_SERVER[$header];
+        if ($header == 'HTTP_FORWARDED' && preg_match('/for="?([^;,"]+)/i', $header_value, $matches)) {
+            $header_value = $matches[1];
+        }
+
+        foreach (explode(',', $header_value) as $ip) {
+            $ip = trim($ip);
+            $ip = trim($ip, '"[]');
+            if (validate_ip($ip)) {
+                return $ip;
+            }
+        }
+    }
+
+    if (!empty($_SERVER['REMOTE_ADDR']) && validate_ip($_SERVER['REMOTE_ADDR'])) {
+        return $_SERVER['REMOTE_ADDR'];
+    }
+
+    return '0.0.0.0';
 }
 function validate_ip($ip) {
     if (strtolower($ip) === 'unknown')

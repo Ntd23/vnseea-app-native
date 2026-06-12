@@ -192,12 +192,7 @@ const MOCK_FEATURES: FeatureGridItem[] = [
 
 const MOCK_SETTINGS: SettingsMenuItem[] = [
   { id: 'general', label: 'Cài đặt chung', iconKey: 'Globe2' },
-  { id: 'privacy', label: 'Quyền riêng tư', iconKey: 'Lock' },
-  { id: 'notifications', label: 'Thông báo', iconKey: 'Bell' },
-  { id: 'invite', label: 'Link mời', iconKey: 'Link' },
-  { id: 'address', label: 'Địa chỉ', iconKey: 'MapPin' },
   { id: 'earnings', label: 'Thu nhập', iconKey: 'Wallet' },
-  { id: 'help', label: 'Hỗ trợ & Trợ giúp', iconKey: 'HelpCircle' },
   { id: 'logout', label: 'Đăng xuất', iconKey: 'LogOut', isDestructive: true },
 ];
 

@@ -74,6 +74,7 @@ function mapPrivacy(record: RawRecord): UserProfile['privacy'] {
     showLastSeen: primitiveValue(record.showlastseen),
     confirmFollowers: primitiveValue(record.confirm_followers),
     showActivities: primitiveValue(record.show_activities_privacy),
+    onlineStatus: primitiveValue(record.status),
     shareLocation: primitiveValue(record.share_my_location),
     shareData: primitiveValue(record.share_my_data),
   };

@@ -1,4 +1,5 @@
 <?php
+// English description: Updates authenticated user settings and profile fields through the v2 API.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -173,51 +174,55 @@ if (!empty($user_data['gender'])) {
 	$user_data['gender'] = (in_array($user_data['gender'], $genders)) ? $user_data['gender'] : $wo['user']['gender'];
 }
 
-if (!empty($user_data['follow_privacy'])) {
+if (isset($user_data['follow_privacy'])) {
 	$user_data['follow_privacy'] = (in_array($user_data['follow_privacy'], array(0, 1))) ? $user_data['follow_privacy'] : $wo['user']['follow_privacy'];
 }
 
-if (!empty($user_data['message_privacy'])) {
-	$user_data['message_privacy'] = (in_array($user_data['message_privacy'], array(0, 1))) ? $user_data['message_privacy'] : $wo['user']['message_privacy'];
+if (isset($user_data['message_privacy'])) {
+	$user_data['message_privacy'] = (in_array($user_data['message_privacy'], array(0, 1, 2))) ? $user_data['message_privacy'] : $wo['user']['message_privacy'];
 }
 
-if (!empty($user_data['birth_privacy'])) {
+if (isset($user_data['birth_privacy'])) {
 	$user_data['birth_privacy'] = (in_array($user_data['birth_privacy'], array(0, 1, 2))) ? $user_data['birth_privacy'] : $wo['user']['birth_privacy'];
 }
 
-if (!empty($user_data['phone_privacy'])) {
+if (isset($user_data['phone_privacy'])) {
     $user_data['phone_privacy'] = (in_array($user_data['phone_privacy'], array(0, 1, 2))) ? $user_data['phone_privacy'] : $wo['user']['phone_privacy'];
 }
 
-if (!empty($user_data['friend_privacy'])) {
+if (isset($user_data['friend_privacy'])) {
 	$user_data['friend_privacy'] = (in_array($user_data['friend_privacy'], array(0, 1, 2, 3))) ? $user_data['friend_privacy'] : $wo['user']['friend_privacy'];
 }
 
-if (!empty($user_data['post_privacy'])) {
+if (isset($user_data['post_privacy'])) {
 	$user_data['post_privacy'] = (in_array($user_data['post_privacy'], array('everyone', 'ifollow', 'nobody'))) ? $user_data['post_privacy'] : $wo['user']['post_privacy'];
 }
 
-if (!empty($user_data['confirm_followers'])) {
+if (isset($user_data['confirm_followers'])) {
 	$user_data['confirm_followers'] = (in_array($user_data['confirm_followers'], array(0, 1))) ? $user_data['confirm_followers'] : $wo['user']['confirm_followers'];
 }
 
-if (!empty($user_data['visit_privacy'])) {
+if (isset($user_data['visit_privacy'])) {
 	$user_data['visit_privacy'] = (in_array($user_data['visit_privacy'], array(0, 1))) ? $user_data['visit_privacy'] : $wo['user']['visit_privacy'];
 }
 
-if (!empty($user_data['showlastseen'])) {
+if (isset($user_data['showlastseen'])) {
 	$user_data['showlastseen'] = (in_array($user_data['showlastseen'], array(0, 1))) ? $user_data['showlastseen'] : $wo['user']['showlastseen'];
 }
 
-if (!empty($user_data['show_activities_privacy'])) {
+if (isset($user_data['show_activities_privacy'])) {
 	$user_data['show_activities_privacy'] = (in_array($user_data['show_activities_privacy'], array(0, 1))) ? $user_data['show_activities_privacy'] : $wo['user']['show_activities_privacy'];
 }
 
-if (!empty($user_data['share_my_location'])) {
+if (isset($user_data['share_my_location'])) {
 	$user_data['share_my_location'] = (in_array($user_data['share_my_location'], array(0, 1))) ? $user_data['share_my_location'] : $wo['user']['share_my_location'];
 }
 
-if (!empty($user_data['status'])) {
+if (isset($user_data['share_my_data'])) {
+	$user_data['share_my_data'] = (in_array($user_data['share_my_data'], array(0, 1))) ? $user_data['share_my_data'] : $wo['user']['share_my_data'];
+}
+
+if (isset($user_data['status'])) {
 	$user_data['status'] = (in_array($user_data['status'], array(0, 1))) ? $user_data['status'] : $wo['user']['status'];
 }
 

@@ -1,6 +1,11 @@
-// Withdrawal Repository Interface
-// Port từ: client/src/withdrawal/domain/repositories/
+// Description: Declares repository operations for withdrawal overview and payout requests.
+
+import type {
+  WithdrawalOverview,
+  WithdrawalRequestInput,
+} from '../types/withdrawal.types';
 
 export interface WithdrawalRepository {
-  // TODO: định nghĩa các methods từ API docs
+  getOverview(): Promise<WithdrawalOverview>;
+  requestWithdrawal(input: WithdrawalRequestInput): Promise<string>;
 }

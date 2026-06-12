@@ -1,4 +1,5 @@
 <?php
+// English description: Lists and deletes authenticated user login sessions through the v2 API.
 
 $response_data = array(
     'api_status' => 400
@@ -6,7 +7,8 @@ $response_data = array(
 
 $required_fields =  array(
                         'get',
-                        'delete'
+                        'delete',
+                        'delete_all'
                     );
 
 $limit = (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limit'] > 0 && $_POST['limit'] <= 50 ? Wo_Secure($_POST['limit']) : 20);
@@ -23,7 +25,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     }
     if ($_POST['type'] == 'delete') {
         if (!empty($_POST['id']) && is_numeric($_POST['id']) && $_POST['id'] > 0) {
-            $delete_session = $db->where('id', Wo_Secure($_POST['id']))->delete(T_APP_SESSIONS);
+            $delete_session = $db->where('id', Wo_Secure($_POST['id']))->where('user_id', $wo['user']['user_id'])->delete(T_APP_SESSIONS);
             if ($delete_session) {
                 $response_data = array(
                                     'api_status' => 200,
@@ -34,6 +36,15 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
         else{
             $error_code    = 5;
             $error_message = 'id can not be empty';
+        }
+    }
+    if ($_POST['type'] == 'delete_all') {
+        $delete_session = $db->where('user_id', $wo['user']['user_id'])->delete(T_APP_SESSIONS);
+        if ($delete_session) {
+            $response_data = array(
+                                'api_status' => 200,
+                                'message' => 'sessions deleted'
+                            );
         }
     }
 }

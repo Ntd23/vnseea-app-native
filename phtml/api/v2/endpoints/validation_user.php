@@ -1,4 +1,5 @@
 <?php
+// English description: Validates API user accounts and creates login sessions with device metadata.
 if (!empty($_POST['code']) && !empty($_POST['email'])) {
 	$code   = Wo_Secure($_POST['code']);
 	$email   = Wo_Secure($_POST['email']);
@@ -40,10 +41,11 @@ if (!empty($_POST['code']) && !empty($_POST['email'])) {
         $access_token   = sha1(rand(111111111, 999999999)) . md5(microtime()) . rand(11111111, 99999999) . md5(rand(5555, 9999));
         $timezone       = 'UTC';
         $device_type = 'phone';
-        if (!empty($_POST['device_type']) && in_array($_POST['device_type'], array('phone','windows'))) {
-            $device_type = Wo_Secure($_POST['device_type']);
-        }
-        $create_session = mysqli_query($sqlConnect, "INSERT INTO " . T_APP_SESSIONS . " (`user_id`, `session_id`, `platform`, `time`) VALUES ('{$user_id}', '{$access_token}', '{$device_type}', '{$time}')");
+    if (!empty($_POST['device_type']) && in_array($_POST['device_type'], array('phone','windows'))) {
+        $device_type = Wo_Secure($_POST['device_type']);
+    }
+        $platform_details = Wo_Secure(json_encode(getBrowser(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $create_session = mysqli_query($sqlConnect, "INSERT INTO " . T_APP_SESSIONS . " (`user_id`, `session_id`, `platform`, `platform_details`, `time`) VALUES ('{$user_id}', '{$access_token}', '{$device_type}', '{$platform_details}', '{$time}')");
         if (!empty($_POST['timezone'])) {
             $timezone = Wo_Secure($_POST['timezone']);
         }

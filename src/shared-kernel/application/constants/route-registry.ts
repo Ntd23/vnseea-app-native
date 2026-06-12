@@ -22,6 +22,9 @@ export const apiRoutes = {
     friends: 'get-friends', // GET following/followers
     updateCover: 'update-user-data', // POST multipart - uses v2 endpoint that handles both avatar and cover
     verification: 'verification',
+    address: 'address',
+    sessions: 'sessions',
+    blockedUsers: 'get-blocked-users',
   },
   reels: {
     create: 'new_post',
@@ -116,6 +119,10 @@ export const apiRoutes = {
     overview: 'wallet-overview',
     stripe: 'stripe',
     sepay: 'sepay',
+  },
+  withdrawal: {
+    overview: 'withdrawal-overview',
+    request: 'withdraw',
   },
   funding: {
     list: 'funding',
