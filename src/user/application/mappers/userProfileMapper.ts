@@ -90,6 +90,7 @@ export function mapUserProfile(
     ...summary,
     id: summary.id ?? firstEntityId(record, ['user_id', 'id']),
     email: firstString(record, ['email']),
+    registered: firstString(record, ['registered']),
     phoneNumber: firstString(record, ['phone_number', 'phone']),
     gender: firstString(record, ['gender']),
     genderText: firstString(record, ['gender_text']),

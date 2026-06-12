@@ -130,6 +130,30 @@ export interface FeedTextPost {
     username: string;
     avatarUrl?: string;
   };
+
+  // ── PostDetail-only fields (populated when fetched via getPostById) ──
+  viewCount?: number;
+  shareCount?: number;
+  reactionBreakdown?: Partial<Record<ReactionType, number>>;
+  linkPreview?: {
+    url: string;
+    title?: string;
+    description?: string;
+    image?: string;
+  };
+  album?: {
+    name: string;
+    images: string[];
+  };
+  sharedFrom?: {
+    id: string;
+    caption?: string;
+    publisherName: string;
+    publisherAvatar?: string;
+    postedAt?: number;
+  };
+  shareUrl?: string;
+  isSaved?: boolean;
 }
 
 export interface FeedVideoPost {
@@ -169,6 +193,26 @@ export interface FeedVideoPost {
     username: string;
     avatarUrl?: string;
   };
+
+  // ── PostDetail-only fields (populated when fetched via getPostById) ──
+  viewCount?: number;
+  shareCount?: number;
+  reactionBreakdown?: Partial<Record<ReactionType, number>>;
+  linkPreview?: {
+    url: string;
+    title?: string;
+    description?: string;
+    image?: string;
+  };
+  sharedFrom?: {
+    id: string;
+    caption?: string;
+    publisherName: string;
+    publisherAvatar?: string;
+    postedAt?: number;
+  };
+  shareUrl?: string;
+  isSaved?: boolean;
 }
 
 /**

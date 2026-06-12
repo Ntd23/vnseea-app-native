@@ -1,10 +1,9 @@
-// Description: Renders the VNSEEA search screen with user search, suggestions, and follow actions.
-// Layout follows Facebook-style design with row-based suggestions and tab-based navigation.
-import React, { useCallback, useState } from 'react';
+// Description: Dedicated global search screen for users, pages, groups, jobs, and funding.
+import React, { useCallback, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Image,
+  ScrollView,
   StatusBar,
   Text,
   TextInput,
@@ -13,386 +12,627 @@ import {
 } from 'react-native';
 import {
   ArrowLeft,
-  MoreHorizontal,
+  BadgeCheck,
+  Briefcase,
+  ChevronRight,
+  Flag,
+  HeartHandshake,
+  MapPin,
   Search,
-  SearchX,
+  UserRound,
+  Users,
   X,
-  Verified,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useSearchViewModel } from '../../application/view-models/useSearchViewModel';
-import type { SearchResult, SuggestionResult } from '../../domain/types/search.types';
+import type {
+  GlobalSearchTab,
+  SearchResult,
+  SearchResponse,
+} from '../../domain/types/search.types';
+import type { GroupItem } from '../../../community/domain/types/community.types';
+import type { FundingItem } from '../../../funding/domain/types/funding.types';
+import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
+import type { PagesItem } from '../../../pages/domain/types/pages.types';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
 type SearchNav = NativeStackNavigationProp<RootStackParamList>;
+type SearchRoute = RouteProp<RootStackParamList, typeof ROUTES.SEARCH>;
 
+const BRAND = '#0000ff';
 const FALLBACK_AVATAR = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
 
-// User Row Component - Facebook style for friend suggestions
-function SuggestionRow({
-  user,
-  onFollow,
-  onPress,
-  onRemove,
-}: {
-  user: SuggestionResult;
-  onFollow: () => void;
-  onPress: () => void;
-  onRemove: () => void;
-}) {
-  const [isFollowing, setIsFollowing] = useState(user.isFollowing);
+const COPY = {
+  vi: {
+    title: 'Tìm kiếm',
+    placeholder: 'Tìm người, trang, nhóm, việc làm, gây quỹ...',
+    promptTitle: 'Bạn muốn tìm gì?',
+    promptBody: 'Nhập từ khóa để tìm người dùng, trang, nhóm, việc làm và chiến dịch gây quỹ.',
+    noResults: 'Không tìm thấy kết quả',
+    noResultsBody: 'Thử một từ khóa khác hoặc kiểm tra lại chính tả.',
+    all: 'Tất cả',
+    users: 'Người dùng',
+    pages: 'Trang',
+    groups: 'Nhóm',
+    jobs: 'Việc làm',
+    funding: 'Gây quỹ',
+    seeAll: 'Xem tất cả',
+    follow: 'Theo dõi',
+    following: 'Đang theo dõi',
+    pageFallback: 'Trang',
+    groupFallback: 'Nhóm',
+    jobFallback: 'Việc làm',
+    fundingFallback: 'Chiến dịch gây quỹ',
+    locationFallback: 'Không có địa điểm',
+    companyFallback: 'Công ty',
+    members: 'thành viên',
+    likes: 'lượt thích',
+    goal: 'Mục tiêu',
+    raised: 'Đã góp',
+  },
+  en: {
+    title: 'Search',
+    placeholder: 'Search people, pages, groups, jobs, funding...',
+    promptTitle: 'What are you looking for?',
+    promptBody: 'Type a keyword to search users, pages, groups, jobs, and funding campaigns.',
+    noResults: 'No results found',
+    noResultsBody: 'Try another keyword or check your spelling.',
+    all: 'All',
+    users: 'People',
+    pages: 'Pages',
+    groups: 'Groups',
+    jobs: 'Jobs',
+    funding: 'Funding',
+    seeAll: 'See all',
+    follow: 'Follow',
+    following: 'Following',
+    pageFallback: 'Page',
+    groupFallback: 'Group',
+    jobFallback: 'Job',
+    fundingFallback: 'Funding campaign',
+    locationFallback: 'No location',
+    companyFallback: 'Company',
+    members: 'members',
+    likes: 'likes',
+    goal: 'Goal',
+    raised: 'Raised',
+  },
+};
 
-  const handleFollow = () => {
-    setIsFollowing(!isFollowing);
-    onFollow();
-  };
+function formatCompact(value?: number | string | null) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return '0';
+  if (numeric >= 1000000) return `${(numeric / 1000000).toFixed(1)}M`;
+  if (numeric >= 1000) return `${(numeric / 1000).toFixed(1)}K`;
+  return String(Math.round(numeric));
+}
+
+function formatMoney(value?: number | string | null, symbol = '') {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return `0${symbol}`;
+  return `${numeric.toLocaleString('vi-VN')}${symbol}`;
+}
+
+function Avatar({
+  uri,
+  label,
+  fallback,
+}: {
+  uri?: string;
+  label: string;
+  fallback: React.ReactNode;
+}) {
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        className="h-14 w-14 rounded-full bg-slate-100"
+        resizeMode="cover"
+        accessibilityLabel={label}
+      />
+    );
+  }
 
   return (
-    <View className="flex-row items-center py-3.5 px-4 border-b border-[#F0F2F5] bg-white">
-      {/* Clickable Avatar */}
-      <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
-        <Image
-          source={{ uri: user.avatar || FALLBACK_AVATAR }}
-          className="h-[74px] w-[74px] rounded-full bg-slate-100"
-          resizeMode="cover"
-        />
-      </TouchableOpacity>
-
-      {/* Main Info */}
-      <View className="ml-3.5 flex-1 justify-center">
-        <TouchableOpacity activeOpacity={0.7} onPress={onPress}>
-          <Text className="text-[16px] font-bold text-[#050505]" numberOfLines={1}>
-            {user.name}
-          </Text>
-        </TouchableOpacity>
-
-        <Text className="text-[13px] text-[#65676B] mt-0.5" numberOfLines={1}>
-          {user.mutualFriends && user.mutualFriends > 0
-            ? `${user.mutualFriends} bạn chung`
-            : 'Gợi ý cho bạn'}
-        </Text>
-
-        {/* Buttons Row */}
-        <View className="flex-row mt-2.5 gap-2">
-          {/* Follow Button */}
-          <TouchableOpacity
-            className={`flex-1 h-9 rounded-lg justify-center items-center ${
-              isFollowing ? 'bg-[#E4E6EB]' : 'bg-[#1877F2]'
-            }`}
-            activeOpacity={0.85}
-            onPress={handleFollow}
-          >
-            <Text
-              className={`text-[14px] font-bold ${
-                isFollowing ? 'text-[#050505]' : 'text-white'
-              }`}
-            >
-              {isFollowing ? 'Đang theo dõi' : 'Thêm bạn bè'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Remove/Dismiss Button */}
-          <TouchableOpacity
-            className="flex-1 h-9 rounded-lg bg-[#E4E6EB] justify-center items-center"
-            activeOpacity={0.85}
-            onPress={onRemove}
-          >
-            <Text className="text-[14px] font-bold text-[#050505]">Gỡ</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+    <View className="h-14 w-14 items-center justify-center rounded-full bg-[#EEF2FF]">
+      {fallback}
     </View>
   );
 }
 
-// User List Card Component - Facebook style for search results
-function UserListCard({
+function SectionHeader({
+  title,
+  count,
+  onSeeAll,
+  copy,
+}: {
+  title: string;
+  count: number;
+  onSeeAll?: () => void;
+  copy: typeof COPY.vi;
+}) {
+  if (count === 0) return null;
+
+  return (
+    <View className="mt-5 mb-2 flex-row items-center justify-between px-4">
+      <Text className="text-[17px] font-extrabold text-slate-950">
+        {title} <Text className="text-slate-400">({count})</Text>
+      </Text>
+      {onSeeAll ? (
+        <TouchableOpacity className="flex-row items-center" onPress={onSeeAll}>
+          <Text className="text-[13px] font-bold text-[#0000ff]">{copy.seeAll}</Text>
+          <ChevronRight size={16} color={BRAND} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function UserRow({
   user,
-  onFollow,
   onPress,
+  onFollow,
+  copy,
 }: {
   user: SearchResult;
-  onFollow: () => void;
   onPress: () => void;
+  onFollow: () => void;
+  copy: typeof COPY.vi;
 }) {
-  const [isFollowing, setIsFollowing] = useState(user.isFollowing);
-
-  const handleFollow = () => {
-    setIsFollowing(!isFollowing);
-    onFollow();
-  };
-
   return (
-    <View className="flex-row items-center py-3.5 px-4 border-b border-[#F0F2F5] bg-white">
-      {/* Clickable Avatar */}
-      <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
-        <Image
-          source={{ uri: user.avatar || FALLBACK_AVATAR }}
-          className="h-14 w-14 rounded-full bg-slate-100"
-          resizeMode="cover"
-        />
-      </TouchableOpacity>
-
-      {/* Main Info */}
-      <View className="ml-3.5 flex-1 justify-center">
-        <TouchableOpacity activeOpacity={0.7} onPress={onPress}>
-          <View className="flex-row items-center">
-            <Text className="text-[15px] font-bold text-[#050505] mr-1" numberOfLines={1}>
-              {user.name}
-            </Text>
-            {user.verified && (
-              <Verified size={15} color="#1877F2" fill="#1877F2" />
-            )}
-          </View>
-        </TouchableOpacity>
-        
-        <Text className="text-[13px] text-[#65676B] mt-0.5">@{user.username}</Text>
-        
-        {user.mutualFriends && user.mutualFriends > 0 && (
-          <Text className="text-[13px] text-[#65676B] mt-0.5">
-            {user.mutualFriends} bạn chung
+    <TouchableOpacity
+      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
+      activeOpacity={0.86}
+      onPress={onPress}
+    >
+      <Avatar
+        uri={user.avatar || FALLBACK_AVATAR}
+        label={user.name}
+        fallback={<UserRound size={24} color={BRAND} />}
+      />
+      <View className="ml-3 flex-1">
+        <View className="flex-row items-center">
+          <Text className="mr-1 flex-1 text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
+            {user.name || user.username}
           </Text>
-        )}
+          {user.verified ? <BadgeCheck size={16} color={BRAND} fill={BRAND} /> : null}
+        </View>
+        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
+          @{user.username}
+        </Text>
       </View>
-
-      {/* Action Buttons */}
-      <View className="flex-row items-center gap-2">
-        <TouchableOpacity
-          className={`rounded-lg px-4 h-9 justify-center items-center ${
-            isFollowing ? 'bg-[#E4E6EB]' : 'bg-[#1877F2]'
+      <TouchableOpacity
+        className={`rounded-full px-3 py-2 ${
+          user.isFollowing ? 'bg-slate-100' : 'bg-[#0000ff]'
+        }`}
+        activeOpacity={0.85}
+        onPress={event => {
+          event.stopPropagation();
+          onFollow();
+        }}
+      >
+        <Text
+          className={`text-[12px] font-bold ${
+            user.isFollowing ? 'text-slate-700' : 'text-white'
           }`}
-          activeOpacity={0.85}
-          onPress={handleFollow}
         >
-          <Text
-            className={`text-[13px] font-bold ${
-              isFollowing ? 'text-[#050505]' : 'text-white'
-            }`}
-          >
-            {isFollowing ? 'Đang theo dõi' : 'Theo dõi'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          className="h-9 w-9 items-center justify-center rounded-full bg-[#E4E6EB]"
-          activeOpacity={0.85}
-        >
-          <MoreHorizontal size={16} color="#050505" />
-        </TouchableOpacity>
-      </View>
-    </View>
+          {user.isFollowing ? copy.following : copy.follow}
+        </Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
   );
 }
 
-// Empty State Component
-function EmptyState({ message, description }: { message?: string; description?: string }) {
+function PageRow({
+  page,
+  onPress,
+  copy,
+}: {
+  page: PagesItem;
+  onPress: () => void;
+  copy: typeof COPY.vi;
+}) {
   return (
-    <View className="flex-1 items-center justify-center py-20 px-6">
-      <SearchX size={64} color="#65676B" strokeWidth={1.5} />
-      <Text className="mt-4 text-[16px] font-bold text-[#050505]">{message || 'Không tìm thấy kết quả'}</Text>
-      <Text className="mt-2 text-[14px] text-center text-[#65676B] leading-relaxed">
-        {description || 'Thử thay đổi từ khóa hoặc kiểm tra lại chính tả'}
+    <TouchableOpacity
+      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
+      activeOpacity={0.86}
+      onPress={onPress}
+    >
+      <Avatar
+        uri={page.avatar}
+        label={page.pageTitle || copy.pageFallback}
+        fallback={<Flag size={24} color={BRAND} />}
+      />
+      <View className="ml-3 flex-1">
+        <Text className="text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
+          {page.pageTitle || page.pageName || copy.pageFallback}
+        </Text>
+        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
+          {page.pageName ? `@${page.pageName}` : page.pageDescription || copy.pageFallback}
+        </Text>
+      </View>
+      <Text className="text-[12px] font-semibold text-slate-500">
+        {page.likes ? `${formatCompact(page.likes)} ${copy.likes}` : ''}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function GroupRow({
+  group,
+  onPress,
+  copy,
+}: {
+  group: GroupItem;
+  onPress: () => void;
+  copy: typeof COPY.vi;
+}) {
+  return (
+    <TouchableOpacity
+      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
+      activeOpacity={0.86}
+      onPress={onPress}
+    >
+      <Avatar
+        uri={group.avatar}
+        label={group.groupTitle || copy.groupFallback}
+        fallback={<Users size={24} color={BRAND} />}
+      />
+      <View className="ml-3 flex-1">
+        <Text className="text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
+          {group.groupTitle || group.groupName || copy.groupFallback}
+        </Text>
+        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
+          {group.members ? `${formatCompact(group.members)} ${copy.members}` : group.about || copy.groupFallback}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function JobRow({
+  job,
+  onPress,
+  copy,
+}: {
+  job: JobsItem;
+  onPress: () => void;
+  copy: typeof COPY.vi;
+}) {
+  return (
+    <TouchableOpacity
+      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
+      activeOpacity={0.86}
+      onPress={onPress}
+    >
+      <Avatar
+        uri={job.image || job.page?.avatar}
+        label={job.title || copy.jobFallback}
+        fallback={<Briefcase size={24} color={BRAND} />}
+      />
+      <View className="ml-3 flex-1">
+        <Text className="text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
+          {job.title || copy.jobFallback}
+        </Text>
+        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
+          {job.page?.page_title || copy.companyFallback}
+        </Text>
+        <View className="mt-1 flex-row items-center">
+          <MapPin size={13} color="#64748b" />
+          <Text className="ml-1 flex-1 text-[12px] text-slate-500" numberOfLines={1}>
+            {job.location || copy.locationFallback}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function FundingRow({
+  campaign,
+  onPress,
+  copy,
+}: {
+  campaign: FundingItem;
+  onPress: () => void;
+  copy: typeof COPY.vi;
+}) {
+  const raised = Number(campaign.raised || 0);
+  const goal = Number(campaign.amount || 0);
+  const percent = goal > 0 ? Math.min(Math.round((raised / goal) * 100), 100) : 0;
+
+  return (
+    <TouchableOpacity
+      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
+      activeOpacity={0.86}
+      onPress={onPress}
+    >
+      <Avatar
+        uri={campaign.image}
+        label={campaign.title || copy.fundingFallback}
+        fallback={<HeartHandshake size={24} color={BRAND} />}
+      />
+      <View className="ml-3 flex-1">
+        <Text className="text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
+          {campaign.title || copy.fundingFallback}
+        </Text>
+        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
+          {copy.raised} {formatMoney(campaign.raised)} / {copy.goal} {formatMoney(campaign.amount)}
+        </Text>
+        <View className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+          <View className="h-full rounded-full bg-[#0000ff]" style={{ width: `${percent}%` }} />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function EmptyState({
+  title,
+  body,
+}: {
+  title: string;
+  body: string;
+}) {
+  return (
+    <View className="items-center px-8 py-20">
+      <View className="h-16 w-16 items-center justify-center rounded-full bg-[#EEF2FF]">
+        <Search size={28} color={BRAND} />
+      </View>
+      <Text className="mt-4 text-center text-[17px] font-extrabold text-slate-950">
+        {title}
+      </Text>
+      <Text className="mt-2 text-center text-[14px] leading-5 text-slate-500">
+        {body}
       </Text>
     </View>
   );
 }
 
+function getVisibleResults(results: SearchResponse, tab: GlobalSearchTab) {
+  if (tab === 'all') return results;
+  return {
+    users: tab === 'users' ? results.users : [],
+    pages: tab === 'pages' ? results.pages : [],
+    groups: tab === 'groups' ? results.groups : [],
+    jobs: tab === 'jobs' ? results.jobs : [],
+    funding: tab === 'funding' ? results.funding : [],
+  };
+}
+
 function SearchScreen() {
   const navigation = useNavigation<SearchNav>();
+  const route = useRoute<SearchRoute>();
+  const language = useAppLanguage();
+  const copy = COPY[language];
   const {
     searchQuery,
     setSearchQuery,
-    searchResults,
-    suggestions,
+    results,
+    totalResults,
+    activeTab,
+    setActiveTab,
     isLoading,
-    isLoadingSuggestions,
     error,
-    searchUsers,
+    searchAll,
     toggleFollow,
     clearSearch,
   } = useSearchViewModel();
 
-  const [activeTab, setActiveTab] = useState<'suggestions' | 'people'>('suggestions');
-  const [hiddenUserIds, setHiddenUserIds] = useState<string[]>([]);
-
-  const handleSearch = useCallback(() => {
-    if (searchQuery.trim()) {
-      searchUsers(searchQuery);
-      setActiveTab('people');
+  useEffect(() => {
+    const initialQuery = route.params?.q?.trim();
+    if (initialQuery) {
+      setSearchQuery(initialQuery);
+      void searchAll(initialQuery);
     }
-  }, [searchQuery, searchUsers]);
+  }, [route.params?.q, searchAll, setSearchQuery]);
 
-  const handleClear = useCallback(() => {
-    clearSearch();
-    setActiveTab('suggestions');
-  }, [clearSearch]);
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) return;
 
-  const handleFollow = useCallback(
-    (userId: string, isCurrentlyFollowing: boolean) => {
-      toggleFollow(userId, isCurrentlyFollowing);
-    },
-    [toggleFollow],
+    const timer = setTimeout(() => {
+      void searchAll(query);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [searchAll, searchQuery]);
+
+  const tabs = useMemo(
+    () => [
+      { id: 'all' as const, label: copy.all, count: totalResults },
+      { id: 'users' as const, label: copy.users, count: results.users.length },
+      { id: 'pages' as const, label: copy.pages, count: results.pages.length },
+      { id: 'groups' as const, label: copy.groups, count: results.groups.length },
+      { id: 'jobs' as const, label: copy.jobs, count: results.jobs.length },
+      { id: 'funding' as const, label: copy.funding, count: results.funding.length },
+    ],
+    [copy, results, totalResults],
   );
 
-  const handleUserPress = useCallback(
-    (userId: string) => {
-      navigation.navigate(ROUTES.PROFILE, { userId });
-    },
-    [navigation],
-  );
+  const visibleResults = getVisibleResults(results, activeTab);
+  const previewLimit = activeTab === 'all' ? 5 : Number.POSITIVE_INFINITY;
+  const hasQuery = searchQuery.trim().length > 0;
+  const isEmpty = hasQuery && !isLoading && totalResults === 0;
 
-  const handleRemoveSuggestion = useCallback((userId: string) => {
-    setHiddenUserIds(prev => [...prev, userId]);
-  }, []);
+  const renderSections = () => (
+    <>
+      <SectionHeader
+        title={copy.users}
+        count={visibleResults.users.length}
+        copy={copy}
+        onSeeAll={activeTab === 'all' && results.users.length > previewLimit ? () => setActiveTab('users') : undefined}
+      />
+      {visibleResults.users.slice(0, previewLimit).map(user => (
+        <UserRow
+          key={`user-${user.userId}`}
+          user={user}
+          copy={copy}
+          onPress={() => navigation.navigate(ROUTES.PROFILE, { userId: user.userId })}
+          onFollow={() => toggleFollow(user.userId, user.isFollowing)}
+        />
+      ))}
 
-  const visibleSuggestions = suggestions.filter(s => !hiddenUserIds.includes(s.userId));
+      <SectionHeader
+        title={copy.pages}
+        count={visibleResults.pages.length}
+        copy={copy}
+        onSeeAll={activeTab === 'all' && results.pages.length > previewLimit ? () => setActiveTab('pages') : undefined}
+      />
+      {visibleResults.pages.slice(0, previewLimit).map(page => (
+        <PageRow
+          key={`page-${page.id}`}
+          page={page}
+          copy={copy}
+          onPress={() => navigation.navigate(ROUTES.PAGE_DETAIL, { page })}
+        />
+      ))}
 
-  const renderSuggestionItem = ({ item }: { item: SuggestionResult }) => (
-    <SuggestionRow
-      user={item}
-      onFollow={() => handleFollow(item.userId, item.isFollowing)}
-      onPress={() => handleUserPress(item.userId)}
-      onRemove={() => handleRemoveSuggestion(item.userId)}
-    />
-  );
+      <SectionHeader
+        title={copy.groups}
+        count={visibleResults.groups.length}
+        copy={copy}
+        onSeeAll={activeTab === 'all' && results.groups.length > previewLimit ? () => setActiveTab('groups') : undefined}
+      />
+      {visibleResults.groups.slice(0, previewLimit).map(group => (
+        <GroupRow
+          key={`group-${group.id}`}
+          group={group}
+          copy={copy}
+          onPress={() => navigation.navigate(ROUTES.GROUP_DETAIL, { group })}
+        />
+      ))}
 
-  const renderUserItem = ({ item }: { item: SearchResult }) => (
-    <UserListCard
-      user={item}
-      onFollow={() => handleFollow(item.userId, item.isFollowing)}
-      onPress={() => handleUserPress(item.userId)}
-    />
+      <SectionHeader
+        title={copy.jobs}
+        count={visibleResults.jobs.length}
+        copy={copy}
+        onSeeAll={activeTab === 'all' && results.jobs.length > previewLimit ? () => setActiveTab('jobs') : undefined}
+      />
+      {visibleResults.jobs.slice(0, previewLimit).map(job => (
+        <JobRow
+          key={`job-${job.id}`}
+          job={job}
+          copy={copy}
+          onPress={() => navigation.navigate(ROUTES.JOB_DETAIL, { jobId: String(job.id), job })}
+        />
+      ))}
+
+      <SectionHeader
+        title={copy.funding}
+        count={visibleResults.funding.length}
+        copy={copy}
+        onSeeAll={activeTab === 'all' && results.funding.length > previewLimit ? () => setActiveTab('funding') : undefined}
+      />
+      {visibleResults.funding.slice(0, previewLimit).map(campaign => (
+        <FundingRow
+          key={`funding-${campaign.id}`}
+          campaign={campaign}
+          copy={copy}
+          onPress={() => navigation.navigate(ROUTES.FUNDING_DETAIL, { fundId: String(campaign.id) })}
+        />
+      ))}
+    </>
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top', 'left', 'right']}>
+    <SafeAreaView className="flex-1 bg-[#F0F2F5]" edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Combined Header & Search Bar (Facebook style) */}
-      <View className="flex-row items-center px-4 py-2 border-b border-[#F0F2F5]">
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full mr-1"
-          activeOpacity={0.8}
-          onPress={() => navigation.goBack()}
-        >
-          <ArrowLeft size={22} color="#050505" />
-        </TouchableOpacity>
+      <View className="bg-white px-4 pb-3 pt-2">
+        <View className="flex-row items-center">
+          <TouchableOpacity
+            className="mr-2 h-10 w-10 items-center justify-center rounded-full bg-slate-50"
+            activeOpacity={0.85}
+            onPress={() => navigation.goBack()}
+          >
+            <ArrowLeft size={23} color="#0f172a" />
+          </TouchableOpacity>
+          <Text className="flex-1 text-center text-[22px] font-extrabold text-slate-950">
+            {copy.title}
+          </Text>
+          <View className="h-10 w-10" />
+        </View>
 
-        <View className="flex-1 flex-row items-center rounded-full bg-[#F0F2F5] px-4 h-10">
-          <Search size={18} color="#65676B" />
+        <View className="mt-3 flex-row items-center rounded-full bg-slate-100 px-4 py-3">
+          <Search size={20} color="#64748b" />
           <TextInput
-            className="ml-2 flex-1 text-[15px] text-[#050505] p-0"
-            placeholder="Tìm kiếm mọi người..."
-            placeholderTextColor="#65676B"
+            className="ml-3 flex-1 p-0 text-[16px] font-medium text-slate-950"
+            placeholder={copy.placeholder}
+            placeholderTextColor="#94a3b8"
             value={searchQuery}
             onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
+            onSubmitEditing={() => searchAll(searchQuery)}
+            autoFocus
             returnKeyType="search"
           />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={handleClear} className="p-1">
-              <X size={18} color="#65676B" />
+          {searchQuery.length > 0 ? (
+            <TouchableOpacity onPress={clearSearch}>
+              <X size={19} color="#64748b" />
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
       </View>
 
-      {/* Tabs */}
-      <View className="flex-row border-b border-[#F0F2F5] px-4 bg-white">
-        <TouchableOpacity
-          className={`pb-3 pt-3 pr-4 flex-1 items-center ${
-            activeTab === 'suggestions'
-              ? 'border-b-2 border-[#1877F2]'
-              : ''
-          }`}
-          onPress={() => setActiveTab('suggestions')}
+      <View className="bg-white">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}
         >
-          <Text
-            className={`text-[14px] font-bold ${
-              activeTab === 'suggestions' ? 'text-[#1877F2]' : 'text-[#65676B]'
-            }`}
-          >
-            Gợi ý
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          className={`pb-3 pt-3 pl-4 flex-1 items-center ${
-            activeTab === 'people' ? 'border-b-2 border-[#1877F2]' : ''
-          }`}
-          onPress={() => setActiveTab('people')}
-        >
-          <Text
-            className={`text-[14px] font-bold ${
-              activeTab === 'people' ? 'text-[#1877F2]' : 'text-[#65676B]'
-            }`}
-          >
-            Mọi người {searchResults.length > 0 ? `(${searchResults.length})` : ''}
-          </Text>
-        </TouchableOpacity>
+          {tabs.map(tab => {
+            const isActive = tab.id === activeTab;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                className={`rounded-full px-4 py-2 ${
+                  isActive ? 'bg-[#0000ff]' : 'bg-slate-100'
+                }`}
+                activeOpacity={0.85}
+                onPress={() => setActiveTab(tab.id)}
+              >
+                <Text
+                  className={`text-[13px] font-bold ${
+                    isActive ? 'text-white' : 'text-slate-600'
+                  }`}
+                >
+                  {tab.label}
+                  {hasQuery && tab.count > 0 ? ` ${tab.count}` : ''}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
-      {/* Content */}
-      {activeTab === 'suggestions' ? (
-        <View className="flex-1 bg-[#F0F2F5]/30">
-          {/* Header Title */}
-          <View className="px-4 py-3 bg-[#F0F2F5]/20">
-            <Text className="text-[17px] font-bold text-[#050505]">Những người bạn có thể biết</Text>
+      <ScrollView
+        className="flex-1"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: 28 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {!hasQuery ? (
+          <EmptyState title={copy.promptTitle} body={copy.promptBody} />
+        ) : isLoading && totalResults === 0 ? (
+          <View className="items-center py-20">
+            <ActivityIndicator color={BRAND} />
           </View>
+        ) : isEmpty ? (
+          <EmptyState title={copy.noResults} body={copy.noResultsBody} />
+        ) : (
+          renderSections()
+        )}
 
-          {isLoadingSuggestions ? (
-            <View className="flex-1 items-center justify-center py-10">
-              <ActivityIndicator color="#1877F2" />
-            </View>
-          ) : visibleSuggestions.length > 0 ? (
-            <FlatList
-              data={visibleSuggestions}
-              renderItem={renderSuggestionItem}
-              keyExtractor={item => item.userId}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              showsVerticalScrollIndicator={false}
-            />
-          ) : (
-            <View className="flex-1 items-center justify-center py-10 px-6">
-              <Text className="text-[14px] text-[#65676B] text-center">
-                Không có gợi ý nào dành cho bạn vào lúc này.
-              </Text>
-            </View>
-          )}
-        </View>
-      ) : (
-        <FlatList
-          data={searchResults}
-          renderItem={renderUserItem}
-          keyExtractor={item => item.userId}
-          ListEmptyComponent={
-            isLoading || isLoadingSuggestions ? (
-              <View className="items-center py-12">
-                <ActivityIndicator color="#1877F2" />
-              </View>
-            ) : searchQuery.length > 0 ? (
-              <EmptyState 
-                message="Không tìm thấy kết quả" 
-                description="Không tìm thấy người dùng phù hợp với từ khóa của bạn." 
-              />
-            ) : (
-              <EmptyState 
-                message="Chưa có người dùng để hiển thị" 
-                description="Bạn vẫn có thể nhập tên hoặc tài khoản để tìm kiếm." 
-              />
-            )
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-
-      {/* Error Toast */}
-      {error && (
-        <View className="absolute bottom-6 left-4 right-4 rounded-xl bg-red-50 p-4 border border-red-200">
-          <Text className="text-[13px] text-red-600 font-semibold">{error}</Text>
-        </View>
-      )}
+        {error ? (
+          <View className="mx-4 mt-4 rounded-2xl border border-red-100 bg-red-50 p-4">
+            <Text className="text-[13px] font-semibold text-red-600">{error}</Text>
+          </View>
+        ) : null}
+      </ScrollView>
     </SafeAreaView>
   );
 }

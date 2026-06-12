@@ -54,9 +54,24 @@ import {
   Share2,
   Volume2,
   VolumeX,
+  Forward,
 } from 'lucide-react-native';
 import type { ReactionType, ReelsItem } from '../../domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../domain/types/reels.types';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+
+const REEL_ITEM_COPY = {
+  vi: {
+    save: 'Lưu',
+    share: 'Chia sẻ',
+    originalSound: 'Âm thanh gốc',
+  },
+  en: {
+    save: 'Save',
+    share: 'Share',
+    originalSound: 'Original sound',
+  },
+};
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 
@@ -107,6 +122,7 @@ interface Props {
   onOpenComments?: (postId: string) => void;
   onShare?: (item: ReelsItem) => void;
   onOpenProfile?: (userId: string) => void;
+  onFollow?: (userId: string) => void;
   /**
    * Fired the first time the underlying VideoPlayer reports an error
    * (404, decode failure, broken CDN url, …). The screen-level handler
@@ -138,10 +154,13 @@ function ReelItemBase({
   onShare,
   onOpenProfile,
   onUnavailable,
+  onFollow,
   scrollY,
   index,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const language = useAppLanguage();
+  const copy = REEL_ITEM_COPY[language];
   const [userPaused, setUserPaused] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -472,22 +491,29 @@ function ReelItemBase({
         pointerEvents="box-none"
       >
         {/* Avatar — tapping goes to profile */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={() =>
-            item.publisher.userId && onOpenProfile?.(item.publisher.userId)
-          }
-          style={styles.avatarWrap}
-        >
-          <Image
-            source={{ uri: item.publisher.avatarUrl || AVATAR_FALLBACK }}
-            style={styles.avatarImg}
-          />
-          {/* Follow (+) badge overlapping the bottom of the avatar */}
-          <View style={styles.followBadge}>
-            <Text style={styles.followPlus}>+</Text>
-          </View>
-        </TouchableOpacity>
+        <View style={styles.avatarWrap}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() =>
+              item.publisher.userId && onOpenProfile?.(item.publisher.userId)
+            }
+          >
+            <Image
+              source={{ uri: item.publisher.avatarUrl || AVATAR_FALLBACK }}
+              style={styles.avatarImg}
+            />
+          </TouchableOpacity>
+          {/* Follow (+) badge overlapping the bottom of the avatar, only shown if not followed */}
+          {!item.publisher.isFollowing && (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => item.publisher.userId && onFollow?.(item.publisher.userId)}
+              style={styles.followBadge}
+            >
+              <Text style={styles.followPlus}>+</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* Spacer between avatar and action buttons */}
         <View style={styles.railSpacer} />
@@ -511,12 +537,12 @@ function ReelItemBase({
               fill={item.isSaved ? '#ffd60a' : 'transparent'}
             />
           }
-          label="Lưu"
+          label={copy.save}
           onPress={() => onSave(item.id)}
         />
         <RailButton
-          icon={<Share2 size={26} color="#fff" />}
-          label="Chia sẻ"
+          icon={<Forward size={30} color="#fff" />}
+          label={copy.share}
           onPress={() => onShare?.(item)}
         />
         <MusicDisc

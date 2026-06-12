@@ -4,7 +4,7 @@ import { Bell, Hash, Home, PlaySquare, Settings } from 'lucide-react-native';
 import { ROUTES } from './constants/routes';
 import type { MainTabRouteName, RootStackRouteName } from './types';
 import { ForgotPasswordScreen, LoginScreen, RegisterScreen } from '../auth';
-import { CreatePostScreen, FeedScreen } from '../feed';
+import { CreatePostScreen, FeedScreen, PostDetailScreen } from '../feed';
 import { ExploreScreen } from '../explore';
 import { CreateReelScreen, ReelsScreen } from '../reels';
 import { CreateStoryScreen, StoryViewerScreen } from '../stories';
@@ -26,7 +26,7 @@ import {
 } from '../blogs';
 import { BoostedScreen } from '../boosted';
 import { CreatePageScreen, PageDetailScreen, PagesScreen } from '../pages';
-import { CreateProductScreen, MarketplaceScreen } from '../product';
+import { CreateProductScreen, MarketplaceScreen, ProductDetailScreen } from '../product';
 import { CreateEventScreen, EventsScreen } from '../events';
 import { CreatePollScreen } from '../poll';
 import {
@@ -131,6 +131,7 @@ export function createStackRoutes(
     { name: ROUTES.REGISTER, component: RegisterScreen },
     { name: ROUTES.FORGOT_PASSWORD, component: ForgotPasswordScreen },
     { name: ROUTES.MAIN_TABS, component: MainTabsComponent },
+    { name: ROUTES.POST_DETAIL, component: PostDetailScreen },
     { name: ROUTES.PROFILE, component: ProfileScreen },
     { name: ROUTES.MY_PHOTOS, component: MyPhotosScreen },
     { name: ROUTES.ALBUMS, component: AlbumsScreen },
@@ -151,6 +152,7 @@ export function createStackRoutes(
     { name: ROUTES.CREATE_PAGE, component: CreatePageScreen },
     { name: ROUTES.EDIT_PAGE, component: CreatePageScreen },
     { name: ROUTES.MARKETPLACE, component: MarketplaceScreen },
+    { name: ROUTES.PRODUCT_DETAIL, component: ProductDetailScreen },
     { name: ROUTES.CREATE_PRODUCT, component: CreateProductScreen },
     { name: ROUTES.CREATE_EVENT, component: CreateEventScreen },
     { name: ROUTES.CREATE_POLL, component: CreatePollScreen },

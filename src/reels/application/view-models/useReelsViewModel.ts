@@ -12,6 +12,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createReelsRepository } from '../../infrastructure/repositories/ApiReelsRepository';
 import { createAuthRepository } from '../../../auth/infrastructure/repositories/ApiAuthRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import type {
   CommentAudioAttachment,
   CommentImageAttachment,
@@ -1103,6 +1105,28 @@ export function useReelsViewModel() {
     });
   }, []);
 
+  const followPublisher = useCallback(async (publisherId: string) => {
+    setItems(prev =>
+      prev.map(item =>
+        item.publisher.userId === publisherId
+          ? { ...item, publisher: { ...item.publisher, isFollowing: true } }
+          : item,
+      ),
+    );
+    try {
+      await apiBridge.post(apiRoutes.social.follow, { user_id: publisherId });
+    } catch (err) {
+      console.error('[Reels] Failed to follow user:', err);
+      setItems(prev =>
+        prev.map(item =>
+          item.publisher.userId === publisherId
+            ? { ...item, publisher: { ...item.publisher, isFollowing: false } }
+            : item,
+        ),
+      );
+    }
+  }, []);
+
   // Initial load on mount
   useEffect(() => {
     loadInitial();
@@ -1155,5 +1179,6 @@ export function useReelsViewModel() {
     // Failed actions
     retryFailedComment,
     deleteFailedComment,
+    followPublisher,
   };
 }

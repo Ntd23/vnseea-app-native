@@ -101,4 +101,38 @@ export interface FeedRepository {
    * Returns { reported: true } when the post was reported, { reported: false } when unreported.
    */
   reportPost(postId: string): Promise<{ reported: boolean }>;
+
+  /**
+   * Fetch a single post by id with its comments, used by the PostDetail
+   * screen. Calls the public `get-post-data` endpoint, which the
+   * backend wires through `Wo_PostData($post_id)` — same shape the
+   * feed-list endpoint returns, so the existing mapper works as-is.
+   *
+   * Returns the post plus the freshly fetched comments. Comments are
+   * kept separate (not merged into the post) so the detail screen can
+   * paginate them independently of the post body.
+   */
+  getPostById(
+    postId: string,
+    options?: { fetchComments?: boolean; addView?: boolean },
+  ): Promise<GetPostByIdResult>;
+}
+
+export interface GetPostByIdResult {
+  post: FeedPost;
+  comments: PostComment[];
+}
+
+export interface PostComment {
+  id: string;
+  text: string;
+  postedAt?: number;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+  likeCount: number;
+  isLiked: boolean;
 }

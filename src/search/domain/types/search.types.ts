@@ -1,5 +1,10 @@
 // Search domain types
-// Based on WoWonder API responses
+// Global search covers users, pages, groups, jobs, and funding campaigns.
+
+import type { GroupItem } from '../../../community/domain/types/community.types';
+import type { FundingItem } from '../../../funding/domain/types/funding.types';
+import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
+import type { PagesItem } from '../../../pages/domain/types/pages.types';
 
 export type SearchFilter = {
   keyword?: string;
@@ -30,10 +35,20 @@ export type SearchResult = {
   distance?: number;
 };
 
+export type GlobalSearchTab =
+  | 'all'
+  | 'users'
+  | 'pages'
+  | 'groups'
+  | 'jobs'
+  | 'funding';
+
 export type SearchResponse = {
   users: SearchResult[];
-  pages?: unknown[];
-  groups?: unknown[];
+  pages: PagesItem[];
+  groups: GroupItem[];
+  jobs: JobsItem[];
+  funding: FundingItem[];
 };
 
 export type SuggestionResult = {
