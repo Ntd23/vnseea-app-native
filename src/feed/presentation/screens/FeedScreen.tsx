@@ -24,7 +24,6 @@ import {
   type ImageStyle,
   type StyleProp,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
 import VideoPlayer from 'react-native-video';
 import { Gesture, GestureDetector, GestureHandlerRootView, TouchableOpacity as GHTouchableOpacity } from 'react-native-gesture-handler';
 import Animated, {
@@ -4339,13 +4338,6 @@ function FeedScreen() {
 
   const keyExtractor = useCallback((item: FeedListItem) => item.id, []);
 
-  const getFeedListItemType = useCallback((item: FeedListItem) => {
-    if (item.type !== 'post') {
-      return item.type;
-    }
-    return item.post.kind;
-  }, []);
-
   const ListHeaderComponent = useMemo(
     () => (
       <View>
@@ -4364,15 +4356,12 @@ function FeedScreen() {
         <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
         <FeedHeader />
         <View className="flex-1">
-          <FlashList
+          <FlatList
             data={feedListItems}
             renderItem={renderItem}
             keyExtractor={keyExtractor}
-            getItemType={getFeedListItemType}
             extraData={language}
             ListHeaderComponent={ListHeaderComponent}
-            drawDistance={900}
-            maintainVisibleContentPosition={{ disabled: true }}
             decelerationRate="normal"
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled

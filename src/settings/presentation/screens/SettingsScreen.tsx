@@ -30,6 +30,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   BadgeCheck,
+  Ban,
   Bell,
   CalendarDays,
   Camera,
@@ -43,21 +44,27 @@ import {
   ImagePlus,
   Link,
   LockKeyhole,
+  LogOut,
+  MapPin,
   Mail,
+  Monitor,
   Pencil,
   Phone,
   Plus,
   Save,
   Search,
   ShieldCheck,
+  Smartphone,
   Store,
   User,
   Wallet,
+  X,
   Globe,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import type {
   RootStackParamList,
   RootStackRouteName,
@@ -107,11 +114,114 @@ type ProfileFormState = {
   schoolCompleted: boolean;
 };
 
+type SocialLinksFormState = {
+  facebook: string;
+  twitter: string;
+  linkedin: string;
+  instagram: string;
+  youtube: string;
+  vk: string;
+};
+
+type DeliveryAddressFormState = {
+  name: string;
+  phoneNumber: string;
+  countryId: string;
+  city: string;
+  postalCode: string;
+  address: string;
+};
+
+type DeliveryAddressRecord = {
+  id?: string | number;
+  name?: string;
+  phone?: string;
+  country?: string;
+  city?: string;
+  zip?: string;
+  address?: string;
+};
+
+type DeliveryAddressResponse = {
+  api_status?: string | number;
+  message?: string;
+  data?: DeliveryAddressRecord[] | DeliveryAddressRecord;
+};
+
+type LoginSessionRecord = {
+  id?: string | number;
+  platform?: string;
+  browser?: string;
+  time?: string;
+  unx_time?: string | number;
+  ip_address?: string;
+};
+
+type LoginSessionsResponse = {
+  api_status?: string | number;
+  message?: string;
+  data?: LoginSessionRecord[];
+};
+
+type SettingsUpdateResponse = {
+  api_status?: string | number;
+  message?: string;
+};
+
+type BlockedUserRecord = {
+  id?: string | number;
+  user_id?: string | number;
+  username?: string;
+  name?: string;
+  first_name?: string;
+  last_name?: string;
+  avatar?: string;
+};
+
+type BlockedUser = {
+  id: string;
+  name: string;
+  avatar: string;
+};
+
+type BlockedUsersResponse = {
+  api_status?: string | number;
+  message?: string;
+  blocked_users?: BlockedUserRecord[];
+};
+
+type BlockUserResponse = {
+  api_status?: string | number;
+  message?: string;
+  block_status?: string;
+};
+
+type PrivacyFormState = {
+  messagePrivacy: string;
+  followPrivacy: string;
+  friendPrivacy: string;
+  postPrivacy: string;
+  showLastSeen: string;
+  confirmFollowers: string;
+  showActivities: string;
+  visitPrivacy: string;
+  birthPrivacy: string;
+  onlineStatus: string;
+  shareLocation: string;
+  shareData: string;
+};
+
 type SettingsPanel =
   | 'main'
   | 'general'
+  | 'earnings'
   | 'general-common'
   | 'general-profile'
+  | 'general-social-links'
+  | 'general-address'
+  | 'general-privacy'
+  | 'general-blocked-users'
+  | 'general-sessions'
   | 'general-avatar'
   | 'general-password'
   | 'general-two-factor'
@@ -300,16 +410,31 @@ function uploadFileFromAsset(
   };
 }
 
+
 function settingsPanelTitle(panel: SettingsPanel, language: AppLanguage) {
-  const isVi = language === 'vi';
+    const isVi = language === 'vi';
+  if (panel === 'earnings') return isVi ? 'Thu nhập' : 'Earnings';
   if (panel === 'general-common') return isVi ? 'Chung' : 'Common';
   if (panel === 'general-profile') return isVi ? 'Hồ sơ' : 'Profile';
+  if (panel === 'general-social-links') return isVi : 'Liên kết mạng xã hội' : 'Socials link';
+  if (panel === 'general-address') return isVi ? 'Địa chỉ giao hàng' : 'Shipping address';
+  if (panel === 'general-privacy') return isVi ? 'Quyền riêng tư' : 'Privacy';
+  if (panel === 'general-blocked-users') return isVi ? 'Chặn người dùng' : 'Blocked Users';
+  if (panel === 'general-sessions') return isVi ? 'Phiên đăng nhập' : 'Session';
   if (panel === 'general-avatar') return isVi ? 'Ảnh đại diện' : 'Avatar';
   if (panel === 'general-password') return isVi ? 'Mật khẩu' : 'Password';
   if (panel === 'general-two-factor') return isVi ? 'Xác thực 2 yếu tố' : 'Two-Factor Auth';
   if (panel === 'general-notifications') return isVi ? 'Thông báo' : 'Notifications';
   if (panel === 'general-verification') return isVi ? 'Xác thực tài khoản' : 'Verification';
-  return isVi ? 'Cài đặt chung' : 'General settings';
+ return isVi ? 'Cài đặt chung' : 'General settings';
+
+
+function settingsPanelBackTarget(panel: SettingsPanel): SettingsPanel {
+  if (panel === 'general' || panel === 'earnings') {
+    return 'main';
+  }
+
+  return 'general';
 }
 
 function apiSucceeded(status: unknown) {
@@ -397,12 +522,96 @@ function countryNameFromId(countryId: string) {
   );
 }
 
+function countryIdFromAddressCountry(country: string) {
+  const value = fieldValue(country);
+  if (!value) return '';
+  if (COUNTRY_OPTIONS.some(option => option.id === value)) return value;
+
+  return (
+    COUNTRY_OPTIONS.find(
+      option => option.name.toLowerCase() === value.toLowerCase(),
+    )?.id || ''
+  );
+}
+
+function splitDisplayName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) {
+    return { firstName: parts[0] || '', lastName: '' };
+  }
+
+  return {
+    firstName: parts.slice(0, -1).join(' '),
+    lastName: parts[parts.length - 1],
+  };
+}
+
+function composeDeliveryAddress(form: DeliveryAddressFormState) {
+  const address = form.address.trim();
+  const suffix = [form.city, form.postalCode, countryNameFromId(form.countryId)]
+    .map(value => value.trim())
+    .filter(Boolean);
+
+  if (!address) {
+    return suffix.join(', ');
+  }
+
+  const normalizedAddress = address.toLowerCase();
+  const missingSuffix = suffix.filter(
+    value => !normalizedAddress.includes(value.toLowerCase()),
+  );
+
+  return [address, ...missingSuffix].join(', ');
+}
+
 function relationshipLabelFromId(relationshipId: string) {
   return (
     RELATIONSHIP_OPTIONS.find(
       relationship => relationship.id === fieldValue(relationshipId),
     )?.label || 'None'
   );
+}
+
+function privacyValue(value: unknown, fallback: string) {
+  const normalized = fieldValue(value);
+  return normalized === '' ? fallback : normalized;
+}
+
+function sessionPlatformLabel(platform: string) {
+  const value = fieldValue(platform).toLowerCase();
+  if (value.includes('android')) return 'Android';
+  if (value.includes('ios') || value.includes('iphone')) return 'iOS';
+  if (value.includes('windows')) return 'Windows';
+  if (value.includes('mac')) return 'Mac';
+  if (value.includes('phone')) return 'Phone';
+  return fieldValue(platform) || 'Unknown';
+}
+
+function sessionPlatformIcon(platform: string) {
+  const value = sessionPlatformLabel(platform).toLowerCase();
+  if (value.includes('android') || value.includes('ios') || value.includes('phone')) {
+    return <Smartphone size={28} color="#0000ff" />;
+  }
+  return <Monitor size={28} color="#111827" />;
+}
+
+function mapBlockedUser(record: BlockedUserRecord): BlockedUser | undefined {
+  const id = fieldValue(record.user_id) || fieldValue(record.id);
+  if (!id) return undefined;
+
+  const firstName = fieldValue(record.first_name);
+  const lastName = fieldValue(record.last_name);
+  const fullName = `${firstName} ${lastName}`.trim();
+
+  return {
+    id,
+    name:
+      fieldValue(record.name) ||
+      fullName ||
+      fieldValue(record.username) ||
+      'Unknown',
+    avatar: fieldValue(record.avatar),
+  };
 }
 
 function AccountTextField({
@@ -755,6 +964,86 @@ function GeneralSettingsMenuRow({
   );
 }
 
+function GeneralSettingsSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View className="mb-5">
+      <Text className="mb-2 px-1 text-[13px] font-extrabold uppercase text-slate-500">
+        {title}
+      </Text>
+      <View className="surface-card overflow-hidden">{children}</View>
+    </View>
+  );
+}
+
+function PrivacyOptionButton({
+  label,
+  value,
+  selectedValue,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  selectedValue: string;
+  onPress: (value: string) => void;
+}) {
+  const selected = value === selectedValue;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.82}
+      onPress={() => onPress(value)}
+      className={`mb-2 mr-2 min-h-11 justify-center rounded-xl border px-5 ${
+        selected ? 'border-[#0000ff] bg-indigo-50' : 'border-slate-200 bg-white'
+      }`}
+    >
+      <Text
+        className={`text-[15px] font-semibold ${
+          selected ? 'text-[#0000ff]' : 'text-slate-700'
+        }`}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function PrivacyChoiceGroup({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ label: string; value: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <View className="mb-5">
+      <Text className="mb-2 text-[16px] font-semibold text-slate-900">
+        {label}
+      </Text>
+      <View className="flex-row flex-wrap">
+        {options.map(option => (
+          <PrivacyOptionButton
+            key={option.value}
+            label={option.label}
+            value={option.value}
+            selectedValue={value}
+            onPress={onChange}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function AccountInformationCard() {
   const { profile, refresh } = useMyInfoViewModel();
   const { updateCurrentUser, isLoading } = useUserViewModel();
@@ -982,6 +1271,212 @@ function AccountInformationCard() {
   );
 }
 
+function DeliveryAddressCard() {
+  const { profile, refresh } = useMyInfoViewModel();
+  const { updateCurrentUser, isLoading } = useUserViewModel();
+  const [addressId, setAddressId] = useState<string | undefined>();
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [countryPickerVisible, setCountryPickerVisible] = useState(false);
+  const [form, setForm] = useState<DeliveryAddressFormState>({
+    name: '',
+    phoneNumber: '',
+    countryId: '233',
+    city: '',
+    postalCode: '',
+    address: '',
+  });
+
+  useEffect(() => {
+    if (!profile) return;
+    setForm(previous => ({
+      ...previous,
+      name: fieldValue(profile.name),
+      phoneNumber: fieldValue(profile.phoneNumber),
+      countryId: fieldValue(profile.countryId) || '233',
+      address: fieldValue(profile.address),
+    }));
+  }, [profile]);
+
+  const loadDeliveryAddress = useCallback(async () => {
+    try {
+      setAddressLoading(true);
+      const response = await apiBridge.post<DeliveryAddressResponse>(
+        apiRoutes.user.address,
+        {
+          type: 'get',
+          limit: '1',
+        },
+      );
+      const record = Array.isArray(response.data)
+        ? response.data[0]
+        : response.data;
+
+      if (!record) return;
+
+      setAddressId(record.id === undefined ? undefined : String(record.id));
+      setForm(previous => ({
+        ...previous,
+        name: fieldValue(record.name) || previous.name,
+        phoneNumber: fieldValue(record.phone) || previous.phoneNumber,
+        countryId:
+          countryIdFromAddressCountry(fieldValue(record.country)) ||
+          previous.countryId,
+        city: fieldValue(record.city),
+        postalCode: fieldValue(record.zip),
+        address: fieldValue(record.address),
+      }));
+    } catch (error) {
+      console.warn('Unable to load delivery address', error);
+    } finally {
+      setAddressLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDeliveryAddress().catch(() => undefined);
+  }, [loadDeliveryAddress]);
+
+  const updateField = useCallback(
+    <TKey extends keyof DeliveryAddressFormState>(
+      key: TKey,
+      value: DeliveryAddressFormState[TKey],
+    ) => {
+      setForm(previous => ({ ...previous, [key]: value }));
+    },
+    [],
+  );
+
+  const handleSave = useCallback(async () => {
+    const { firstName, lastName } = splitDisplayName(form.name);
+    const selectedCountryName = countryNameFromId(form.countryId) || 'Vietnam';
+
+    try {
+      setAddressLoading(true);
+      const addressPayload = {
+        type: addressId ? 'edit' : 'add',
+        id: addressId,
+        name: form.name.trim(),
+        phone: form.phoneNumber.trim(),
+        country: selectedCountryName,
+        city: form.city.trim(),
+        zip: form.postalCode.trim(),
+        address: form.address.trim(),
+      };
+      const addressResponse = await apiBridge.post<DeliveryAddressResponse>(
+        apiRoutes.user.address,
+        addressPayload,
+      );
+
+      if (!apiSucceeded(addressResponse.api_status)) {
+        throw new Error(
+          addressResponse.message || 'Không thể lưu địa chỉ giao hàng.',
+        );
+      }
+
+      await updateCurrentUser({
+        firstName,
+        lastName,
+        phoneNumber: form.phoneNumber,
+        countryId: form.countryId,
+        address: composeDeliveryAddress(form),
+      });
+      await refresh();
+      await loadDeliveryAddress();
+      Alert.alert('Địa chỉ giao hàng', 'Đã lưu địa chỉ giao hàng.');
+    } catch (error) {
+      Alert.alert(
+        'Địa chỉ giao hàng',
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setAddressLoading(false);
+    }
+  }, [addressId, form, loadDeliveryAddress, refresh, updateCurrentUser]);
+
+  const selectedCountryName = countryNameFromId(form.countryId) || 'Vietnam';
+  const isSavingAddress = isLoading || addressLoading;
+
+  return (
+    <View className="surface-card px-4 py-4">
+      <AccountTextField
+        label="Tên"
+        value={form.name}
+        icon={<User size={17} color="#111827" />}
+        onChangeText={value => updateField('name', value)}
+      />
+
+      <AccountTextField
+        label="Điện thoại"
+        value={form.phoneNumber}
+        icon={<Phone size={17} color="#111827" />}
+        onChangeText={value => updateField('phoneNumber', value)}
+      />
+
+      <AccountSelectField
+        label="Quốc gia"
+        value={selectedCountryName}
+        placeholder="Chọn quốc gia"
+        icon={<MapPin size={17} color="#111827" />}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setCountryPickerVisible(true)}
+      />
+
+      <AccountTextField
+        label="Thành phố"
+        value={form.city}
+        icon={<MapPin size={17} color="#111827" />}
+        onChangeText={value => updateField('city', value)}
+      />
+
+      <AccountTextField
+        label="Mã Bưu Chính"
+        value={form.postalCode}
+        icon={<Mail size={17} color="#111827" />}
+        onChangeText={value => updateField('postalCode', value)}
+      />
+
+      <View className="mb-4">
+        <Text className="mb-2 text-[15px] font-medium text-slate-900">
+          Địa chỉ
+        </Text>
+        <AddressAutocomplete
+          value={form.address}
+          placeholder="Tìm địa chỉ trên Google Maps"
+          onChangeText={value => updateField('address', value)}
+          onSelectPlace={place =>
+            updateField('address', place.description || place.mainText)
+          }
+        />
+      </View>
+
+      <TouchableOpacity
+        activeOpacity={0.86}
+        disabled={isSavingAddress}
+        onPress={() => {
+          handleSave().catch(() => undefined);
+        }}
+        className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
+          isSavingAddress ? 'bg-blue-300' : 'bg-blue-600'
+        }`}
+      >
+        {isSavingAddress ? (
+          <ActivityIndicator size="small" color="#ffffff" />
+        ) : (
+          <Save size={17} color="#ffffff" />
+        )}
+        <Text className="ml-2 text-[16px] font-bold text-white">Lưu</Text>
+      </TouchableOpacity>
+
+      <CountryPickerModal
+        visible={countryPickerVisible}
+        selectedCountryId={form.countryId}
+        onClose={() => setCountryPickerVisible(false)}
+        onSelect={country => updateField('countryId', country.id)}
+      />
+    </View>
+  );
+}
+
 function ProfileInformationCard() {
   const { profile, refresh } = useMyInfoViewModel();
   const { updateCurrentUser, isLoading } = useUserViewModel();
@@ -1166,6 +1661,131 @@ function ProfileInformationCard() {
           updateField('relationshipId', relationshipId)
         }
       />
+    </View>
+  );
+}
+
+function SocialLinksCard() {
+  const { profile, refresh } = useMyInfoViewModel();
+  const [isSaving, setIsSaving] = useState(false);
+  const [form, setForm] = useState<SocialLinksFormState>({
+    facebook: '',
+    twitter: '',
+    linkedin: '',
+    instagram: '',
+    youtube: '',
+    vk: '',
+  });
+
+  useEffect(() => {
+    if (!profile) return;
+    setForm({
+      facebook: fieldValue(profile.facebook),
+      twitter: fieldValue(profile.twitter),
+      linkedin: fieldValue(profile.linkedin),
+      instagram: fieldValue(profile.instagram),
+      youtube: fieldValue(profile.youtube),
+      vk: fieldValue(profile.vk),
+    });
+  }, [profile]);
+
+  const updateField = useCallback(
+    <TKey extends keyof SocialLinksFormState>(
+      key: TKey,
+      value: SocialLinksFormState[TKey],
+    ) => {
+      setForm(previous => ({ ...previous, [key]: value }));
+    },
+    [],
+  );
+
+  const handleSave = useCallback(async () => {
+    setIsSaving(true);
+    try {
+      const response = await apiBridge.post<SettingsUpdateResponse>(
+        apiRoutes.user.update,
+        {
+          facebook: form.facebook.trim(),
+          twitter: form.twitter.trim(),
+          linkedin: form.linkedin.trim(),
+          instagram: form.instagram.trim(),
+          youtube: form.youtube.trim(),
+          vk: form.vk.trim(),
+        },
+      );
+
+      if (!apiSucceeded(response.api_status)) {
+        throw new Error(response.message || 'Không thể lưu liên kết mạng xã hội.');
+      }
+
+      await refresh();
+      Alert.alert('Liên kết mạng xã hội', 'Đã lưu liên kết mạng xã hội.');
+    } catch (error) {
+      Alert.alert(
+        'Liên kết mạng xã hội',
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }, [form, refresh]);
+
+  return (
+    <View className="surface-card px-4 py-4">
+      <AccountTextField
+        label="Facebook"
+        value={form.facebook}
+        icon={<Link size={17} color="#111827" />}
+        onChangeText={value => updateField('facebook', value)}
+      />
+      <AccountTextField
+        label="Twitter"
+        value={form.twitter}
+        icon={<Link size={17} color="#111827" />}
+        onChangeText={value => updateField('twitter', value)}
+      />
+      <AccountTextField
+        label="LinkedIn"
+        value={form.linkedin}
+        icon={<Link size={17} color="#111827" />}
+        onChangeText={value => updateField('linkedin', value)}
+      />
+      <AccountTextField
+        label="Instagram"
+        value={form.instagram}
+        icon={<Link size={17} color="#111827" />}
+        onChangeText={value => updateField('instagram', value)}
+      />
+      <AccountTextField
+        label="YouTube"
+        value={form.youtube}
+        icon={<Link size={17} color="#111827" />}
+        onChangeText={value => updateField('youtube', value)}
+      />
+      <AccountTextField
+        label="VK"
+        value={form.vk}
+        icon={<Pencil size={17} color="#111827" />}
+        onChangeText={value => updateField('vk', value)}
+      />
+
+      <TouchableOpacity
+        activeOpacity={0.86}
+        disabled={isSaving}
+        onPress={() => {
+          handleSave().catch(() => undefined);
+        }}
+        className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
+          isSaving ? 'bg-blue-300' : 'bg-blue-600'
+        }`}
+      >
+        {isSaving ? (
+          <ActivityIndicator size="small" color="#ffffff" />
+        ) : (
+          <Save size={17} color="#ffffff" />
+        )}
+        <Text className="ml-2 text-[16px] font-bold text-white">Lưu</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1633,6 +2253,507 @@ function EmailNotificationsCard() {
         )}
         <Text className="ml-2 text-[16px] font-bold text-white">Save</Text>
       </TouchableOpacity>
+    </View>
+  );
+}
+
+const PRIVACY_AUDIENCE_OPTIONS = [
+  { label: 'Everyone', value: '0' },
+  { label: 'People I follow', value: '1' },
+  { label: 'Nobody', value: '2' },
+];
+
+const PRIVACY_ENABLED_OPTIONS = [
+  { label: 'Enabled', value: '1' },
+  { label: 'Disabled', value: '0' },
+];
+
+const PRIVACY_FRIEND_OPTIONS = [
+  { label: 'Everyone', value: '0' },
+  { label: 'People I follow', value: '1' },
+  { label: 'Nobody', value: '2' },
+  { label: 'People following me', value: '3' },
+];
+
+const PRIVACY_POST_OPTIONS = [
+  { label: 'Everyone', value: 'everyone' },
+  { label: 'People I follow', value: 'ifollow' },
+  { label: 'Nobody', value: 'nobody' },
+];
+
+function PrivacySettingsCard() {
+  const { profile, refresh } = useMyInfoViewModel();
+  const { updateCurrentUser, isLoading } = useUserViewModel();
+  const [form, setForm] = useState<PrivacyFormState>({
+    messagePrivacy: '0',
+    followPrivacy: '0',
+    friendPrivacy: '0',
+    postPrivacy: 'everyone',
+    showLastSeen: '1',
+    confirmFollowers: '0',
+    showActivities: '1',
+    visitPrivacy: '0',
+    birthPrivacy: '0',
+    onlineStatus: '1',
+    shareLocation: '1',
+    shareData: '1',
+  });
+
+  useEffect(() => {
+    const privacy = profile?.privacy;
+    if (!privacy) return;
+
+    setForm({
+      messagePrivacy: privacyValue(privacy.message, '0'),
+      followPrivacy: privacyValue(privacy.follow, '0'),
+      friendPrivacy: privacyValue(privacy.friend, '0'),
+      postPrivacy: privacyValue(privacy.post, 'everyone'),
+      showLastSeen: privacyValue(privacy.showLastSeen, '1'),
+      confirmFollowers: privacyValue(privacy.confirmFollowers, '0'),
+      showActivities: privacyValue(privacy.showActivities, '1'),
+      visitPrivacy: privacyValue(privacy.visit, '0'),
+      birthPrivacy: privacyValue(privacy.birth, '0'),
+      onlineStatus: privacyValue(privacy.onlineStatus, '1'),
+      shareLocation: privacyValue(privacy.shareLocation, '1'),
+      shareData: privacyValue(privacy.shareData, '1'),
+    });
+  }, [profile]);
+
+  const updateField = useCallback(
+    <TKey extends keyof PrivacyFormState>(
+      key: TKey,
+      value: PrivacyFormState[TKey],
+    ) => {
+      setForm(previous => ({ ...previous, [key]: value }));
+    },
+    [],
+  );
+
+  const handleSave = useCallback(async () => {
+    try {
+      await updateCurrentUser({
+        messagePrivacy: form.messagePrivacy,
+        followPrivacy: form.followPrivacy,
+        friendPrivacy: form.friendPrivacy,
+        postPrivacy: form.postPrivacy,
+        birthPrivacy: form.birthPrivacy,
+        visitPrivacy: form.visitPrivacy,
+        showLastSeen: form.showLastSeen,
+        confirmFollowers: form.confirmFollowers,
+        showActivities: form.showActivities,
+        onlineStatus: form.onlineStatus,
+        shareLocation: form.shareLocation,
+        shareData: form.shareData,
+      });
+      await refresh();
+      Alert.alert('Quyền riêng tư', 'Đã lưu cài đặt quyền riêng tư.');
+    } catch (error) {
+      Alert.alert(
+        'Quyền riêng tư',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }, [form, refresh, updateCurrentUser]);
+
+  return (
+    <View className="surface-card px-4 py-4">
+      <PrivacyChoiceGroup
+        label="Who can message me"
+        value={form.messagePrivacy}
+        options={PRIVACY_AUDIENCE_OPTIONS}
+        onChange={value => updateField('messagePrivacy', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Who can follow me"
+        value={form.followPrivacy}
+        options={PRIVACY_ENABLED_OPTIONS}
+        onChange={value => updateField('followPrivacy', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Who can see friends"
+        value={form.friendPrivacy}
+        options={PRIVACY_FRIEND_OPTIONS}
+        onChange={value => updateField('friendPrivacy', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Who can see posts"
+        value={form.postPrivacy}
+        options={PRIVACY_POST_OPTIONS}
+        onChange={value => updateField('postPrivacy', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Show last seen"
+        value={form.showLastSeen}
+        options={PRIVACY_ENABLED_OPTIONS}
+        onChange={value => updateField('showLastSeen', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Confirm followers"
+        value={form.confirmFollowers}
+        options={PRIVACY_ENABLED_OPTIONS}
+        onChange={value => updateField('confirmFollowers', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Show activities"
+        value={form.showActivities}
+        options={PRIVACY_ENABLED_OPTIONS}
+        onChange={value => updateField('showActivities', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Profile visits privacy"
+        value={form.visitPrivacy}
+        options={PRIVACY_ENABLED_OPTIONS}
+        onChange={value => updateField('visitPrivacy', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Birthday privacy"
+        value={form.birthPrivacy}
+        options={PRIVACY_AUDIENCE_OPTIONS}
+        onChange={value => updateField('birthPrivacy', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Online status"
+        value={form.onlineStatus}
+        options={PRIVACY_ENABLED_OPTIONS}
+        onChange={value => updateField('onlineStatus', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Share my location"
+        value={form.shareLocation}
+        options={PRIVACY_ENABLED_OPTIONS}
+        onChange={value => updateField('shareLocation', value)}
+      />
+      <PrivacyChoiceGroup
+        label="Share my data"
+        value={form.shareData}
+        options={PRIVACY_ENABLED_OPTIONS}
+        onChange={value => updateField('shareData', value)}
+      />
+
+      <TouchableOpacity
+        activeOpacity={0.86}
+        disabled={isLoading}
+        onPress={() => {
+          handleSave().catch(() => undefined);
+        }}
+        className={`mt-1 h-12 flex-row items-center justify-center rounded-xl ${
+          isLoading ? 'bg-blue-300' : 'bg-blue-600'
+        }`}
+      >
+        {isLoading ? (
+          <ActivityIndicator size="small" color="#ffffff" />
+        ) : (
+          <Save size={17} color="#ffffff" />
+        )}
+        <Text className="ml-2 text-[16px] font-bold text-white">Save</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function LoginSessionsCard() {
+  const navigation = useNavigation<SettingsNav>();
+  const { logout } = useAuthViewModel();
+  const [sessions, setSessions] = useState<LoginSessionRecord[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | undefined>();
+  const [deletingAll, setDeletingAll] = useState(false);
+
+  const loadSessions = useCallback(async () => {
+    setIsLoadingSessions(true);
+    try {
+      const response = await apiBridge.post<LoginSessionsResponse>(
+        apiRoutes.user.sessions,
+        { type: 'get' },
+      );
+      setSessions(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      Alert.alert(
+        'Phiên đăng nhập',
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSessions().catch(() => undefined);
+  }, [loadSessions]);
+
+  const resetToLogin = useCallback(async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.warn('Failed to clear remote logout after session deletion', error);
+    }
+    navigation.reset({
+      index: 0,
+      routes: [{ name: ROUTES.LOGIN }],
+    });
+  }, [logout, navigation]);
+
+  const deleteSession = useCallback(
+    async (sessionId: string | number | undefined) => {
+      if (sessionId === undefined) return;
+      const id = String(sessionId);
+      setDeletingId(id);
+      try {
+        const response = await apiBridge.post<LoginSessionsResponse>(
+          apiRoutes.user.sessions,
+          {
+            type: 'delete',
+            id,
+          },
+        );
+        if (!apiSucceeded(response.api_status)) {
+          throw new Error(response.message || 'Không thể xóa phiên đăng nhập.');
+        }
+        await resetToLogin();
+      } catch (error) {
+        Alert.alert(
+          'Phiên đăng nhập',
+          error instanceof Error ? error.message : String(error),
+        );
+      } finally {
+        setDeletingId(undefined);
+      }
+    },
+    [resetToLogin],
+  );
+
+  const deleteAllSessions = useCallback(async () => {
+    setDeletingAll(true);
+    try {
+      const response = await apiBridge.post<LoginSessionsResponse>(
+        apiRoutes.user.sessions,
+        { type: 'delete_all' },
+      );
+      if (!apiSucceeded(response.api_status)) {
+        throw new Error(response.message || 'Không thể đăng xuất khỏi tất cả phiên.');
+      }
+      await resetToLogin();
+    } catch (error) {
+      Alert.alert(
+        'Phiên đăng nhập',
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setDeletingAll(false);
+    }
+  }, [resetToLogin]);
+
+  return (
+    <View>
+      <View className="surface-card mb-5 overflow-hidden border border-violet-100 bg-violet-50 px-5 py-5">
+        <Text className="text-[24px] font-extrabold text-violet-600">
+          Quản lý phiên
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.86}
+          disabled={deletingAll}
+          onPress={() => {
+            Alert.alert(
+              'Đăng xuất tất cả',
+              'Bạn sẽ cần đăng nhập lại trên thiết bị này và các thiết bị khác.',
+              [
+                { text: 'Hủy', style: 'cancel' },
+                {
+                  text: 'Đăng xuất',
+                  style: 'destructive',
+                  onPress: () => {
+                    deleteAllSessions().catch(() => undefined);
+                  },
+                },
+              ],
+            );
+          }}
+          className={`mt-4 h-11 flex-row items-center justify-center rounded-full px-5 ${
+            deletingAll ? 'bg-red-300' : 'bg-red-500'
+          }`}
+        >
+          {deletingAll ? (
+            <ActivityIndicator size="small" color="#ffffff" />
+          ) : (
+            <LogOut size={17} color="#ffffff" />
+          )}
+          <Text className="ml-2 text-[15px] font-bold text-white">
+            Đăng xuất khỏi tất cả các phiên
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {isLoadingSessions ? (
+        <View className="surface-card items-center px-4 py-8">
+          <ActivityIndicator size="small" color="#0000ff" />
+        </View>
+      ) : null}
+
+      {!isLoadingSessions && sessions.length === 0 ? (
+        <View className="surface-card items-center px-4 py-8">
+          <Text className="text-[15px] font-semibold text-slate-600">
+            Chưa có phiên đăng nhập nào.
+          </Text>
+        </View>
+      ) : null}
+
+      {sessions.map(session => {
+        const id = session.id === undefined ? '' : String(session.id);
+        const isDeleting = deletingId === id;
+        const ipAddress = fieldValue(session.ip_address);
+        return (
+          <View key={id || `${session.platform}-${session.unx_time}`} className="surface-card mb-4 px-4 py-4">
+            <View className="flex-row items-start">
+              <View className="mr-4 h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+                {sessionPlatformIcon(fieldValue(session.platform))}
+              </View>
+              <View className="flex-1">
+                <Text className="text-[20px] font-extrabold text-slate-950">
+                  {sessionPlatformLabel(fieldValue(session.platform))}
+                </Text>
+                <Text className="mt-2 text-[15px] text-slate-800">
+                  {fieldValue(session.browser) || 'Unknown browser'}
+                </Text>
+                <Text className="mt-1 text-[15px] text-slate-800">
+                  {fieldValue(session.time) || ''}
+                </Text>
+                {ipAddress ? (
+                  <Text className="mt-1 text-[15px] text-slate-800">
+                    Địa chỉ IP: {ipAddress}
+                  </Text>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                disabled={isDeleting}
+                onPress={() => {
+                  deleteSession(session.id).catch(() => undefined);
+                }}
+                className="h-10 w-10 items-center justify-center rounded-full bg-red-50"
+              >
+                {isDeleting ? (
+                  <ActivityIndicator size="small" color="#ef4444" />
+                ) : (
+                  <X size={20} color="#ef4444" />
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function BlockedUsersCard() {
+  const [users, setUsers] = useState<BlockedUser[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [unblockingId, setUnblockingId] = useState<string | undefined>();
+
+  const loadBlockedUsers = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiBridge.post<BlockedUsersResponse>(
+        apiRoutes.user.blockedUsers,
+      );
+      const nextUsers = (response.blocked_users || [])
+        .map(mapBlockedUser)
+        .filter((user): user is BlockedUser => Boolean(user));
+      setUsers(nextUsers);
+    } catch (error) {
+      Alert.alert(
+        'Chặn người dùng',
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBlockedUsers().catch(() => undefined);
+  }, [loadBlockedUsers]);
+
+  const unblockUser = useCallback(async (userId: string) => {
+    setUnblockingId(userId);
+    try {
+      const response = await apiBridge.post<BlockUserResponse>(
+        apiRoutes.social.block,
+        {
+          user_id: userId,
+          block_action: 'un-block',
+        },
+      );
+
+      if (!apiSucceeded(response.api_status)) {
+        throw new Error(response.message || 'Không thể gỡ chặn người dùng.');
+      }
+
+      setUsers(previous => previous.filter(user => user.id !== userId));
+    } catch (error) {
+      Alert.alert(
+        'Chặn người dùng',
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setUnblockingId(undefined);
+    }
+  }, []);
+
+  if (isLoading) {
+    return (
+      <View className="surface-card items-center px-4 py-8">
+        <ActivityIndicator size="small" color="#0000ff" />
+      </View>
+    );
+  }
+
+  if (users.length === 0) {
+    return (
+      <View className="surface-card items-center px-4 py-8">
+        <Text className="text-center text-[15px] font-semibold text-slate-600">
+          Chưa chặn người dùng nào.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      {users.map(user => {
+        const isUnblocking = unblockingId === user.id;
+
+        return (
+          <View
+            key={user.id}
+            className="mb-4 flex-row items-center rounded-2xl border border-slate-200 bg-white px-5 py-5"
+          >
+            <Text className="flex-1 pr-4 text-[17px] font-extrabold text-slate-950">
+              {user.name}
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.84}
+              disabled={isUnblocking}
+              onPress={() => {
+                unblockUser(user.id).catch(() => undefined);
+              }}
+              className={`min-h-10 min-w-[88px] items-center justify-center border px-4 ${
+                isUnblocking
+                  ? 'border-blue-200 bg-blue-50'
+                  : 'border-blue-500 bg-white'
+              }`}
+            >
+              {isUnblocking ? (
+                <ActivityIndicator size="small" color="#0000ff" />
+              ) : (
+                <Text className="text-[15px] font-bold text-[#0000ff]">
+                  Unblock
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -2106,6 +3227,15 @@ function SettingsScreen() {
   } = useSettingsViewModel();
   const { logout } = useAuthViewModel();
 
+  useEffect(() => {
+    tabBarVisibility.setVisible(activePanel === 'main');
+  }, [activePanel]);
+
+  useEffect(() => {
+    return () => {
+      tabBarVisibility.setVisible(true);
+    };
+  }, []);
   const handleDirectLanguageChange = useCallback((lang: AppLanguage) => {
     setLanguage(lang);
     Alert.alert(
@@ -2160,7 +3290,12 @@ function SettingsScreen() {
       if (id === 'general') {
         setSheetVisible(false);
         setActivePanel('general');
-        setLanguageSheetVisible(true);
+        return;
+      }
+
+      if (id === 'earnings') {
+        setSheetVisible(false);
+        setActivePanel('earnings');
         return;
       }
 
@@ -2168,14 +3303,6 @@ function SettingsScreen() {
         navigation.navigate(ROUTES.MAIN_TABS, {
           screen: ROUTES.NOTIFICATIONS,
         });
-      }
-
-      if (id === 'earnings') {
-        navigation.navigate(ROUTES.EARNINGS);
-      }
-
-      if (id === 'address') {
-        navigation.navigate(ROUTES.SETTINGS_ADDRESS);
       }
 
       if (id === 'logout') {
@@ -2301,9 +3428,7 @@ function SettingsScreen() {
               activeOpacity={0.8}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               onPress={() =>
-                setActivePanel(
-                  activePanel === 'general' ? 'main' : 'general',
-                )
+                setActivePanel(settingsPanelBackTarget(activePanel))
               }
               className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm border border-slate-100/50"
               style={{
@@ -2354,22 +3479,30 @@ function SettingsScreen() {
           showsVerticalScrollIndicator={false}
         >
           {activePanel === 'general' ? (
-            <View
-              className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100/40"
-              style={{
-                shadowColor: '#000000',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.03,
-                shadowRadius: 24,
-                elevation: 3,
-              }}
-            >
-              <GeneralSettingsMenuRow
-                label={language === 'vi' ? 'Chung' : 'Common'}
-                icon={<User size={20} color="#0000ff" />}
-                onPress={() => setActivePanel('general-common')}
-              />
-              <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
+            <View>
+              <GeneralSettingsSection title="Thông tin">
+                <GeneralSettingsMenuRow
+                  label="Chung"
+                  icon={<User size={22} color="#0000ff" />}
+                  onPress={() => setActivePanel('general-common')}
+                />
+                <GeneralSettingsMenuRow
+                  label="Hồ sơ"
+                  icon={<Pencil size={22} color="#0000ff" />}
+                  onPress={() => setActivePanel('general-profile')}
+                />
+                <GeneralSettingsMenuRow
+                  label="Liên kết mạng xã hội"
+                  icon={<Link size={22} color="#0000ff" />}
+                  onPress={() => setActivePanel('general-social-links')}
+                />
+                <GeneralSettingsMenuRow
+                  label="Ảnh đại diện"
+                  icon={<Camera size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => setActivePanel('general-avatar')}
+                />
+                <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
                 <View className="flex-row items-center">
                   <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
                     <Globe size={20} color="#0000ff" />
@@ -2413,153 +3546,100 @@ function SettingsScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-              <GeneralSettingsMenuRow
-                label={language === 'vi' ? 'Hồ sơ' : 'Profile'}
-                icon={<Pencil size={20} color="#0000ff" />}
-                onPress={() => setActivePanel('general-profile')}
-              />
-              <GeneralSettingsMenuRow
-                label={language === 'vi' ? 'Ảnh đại diện' : 'Avatar'}
-                icon={<Camera size={20} color="#0000ff" />}
-                onPress={() => setActivePanel('general-avatar')}
-              />
-              <GeneralSettingsMenuRow
-                label={language === 'vi' ? 'Mật khẩu' : 'Password'}
-                icon={<LockKeyhole size={20} color="#0000ff" />}
-                onPress={() => setActivePanel('general-password')}
-              />
-              <GeneralSettingsMenuRow
-                label={language === 'vi' ? 'Xác thực 2 yếu tố' : 'Two-Factor Auth'}
-                icon={<ShieldCheck size={20} color="#0000ff" />}
-                onPress={() => setActivePanel('general-two-factor')}
-              />
-              <GeneralSettingsMenuRow
-                label={language === 'vi' ? 'Xác thực tài khoản' : 'Verification'}
-                icon={<BadgeCheck size={20} color="#0000ff" />}
-                onPress={() => setActivePanel('general-verification')}
-              />
-              <GeneralSettingsMenuRow
-                label={language === 'vi' ? 'Thông báo' : 'Notifications'}
-                icon={<Bell size={20} color="#0000ff" />}
-                isLast
-                onPress={() => setActivePanel('general-notifications')}
-              />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="Địa chỉ và quyền riêng tư">
+                <GeneralSettingsMenuRow
+                  label="Địa chỉ giao hàng"
+                  icon={<MapPin size={22} color="#0000ff" />}
+                  onPress={() => setActivePanel('general-address')}
+                />
+                <GeneralSettingsMenuRow
+                  label="Quyền riêng tư"
+                  icon={<LockKeyhole size={22} color="#0000ff" />}
+                  onPress={() => setActivePanel('general-privacy')}
+                />
+                <GeneralSettingsMenuRow
+                  label="Chặn người dùng"
+                  icon={<Ban size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => setActivePanel('general-blocked-users')}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="Bảo mật">
+                <GeneralSettingsMenuRow
+                  label="Phiên đăng nhập"
+                  icon={<Monitor size={22} color="#0000ff" />}
+                  onPress={() => setActivePanel('general-sessions')}
+                />
+                <GeneralSettingsMenuRow
+                  label="Mật khẩu"
+                  icon={<LockKeyhole size={22} color="#0000ff" />}
+                  onPress={() => setActivePanel('general-password')}
+                />
+                <GeneralSettingsMenuRow
+                  label="Xác thực 2 yếu tố"
+                  icon={<ShieldCheck size={22} color="#0000ff" />}
+                  onPress={() => setActivePanel('general-two-factor')}
+                />
+                <GeneralSettingsMenuRow
+                  label="Xác thực tài khoản"
+                  icon={<BadgeCheck size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => setActivePanel('general-verification')}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="Tùy chọn">
+                <GeneralSettingsMenuRow
+                  label="Thông báo"
+                  icon={<Bell size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => setActivePanel('general-notifications')}
+                />
+              </GeneralSettingsSection>
+            </View>
+          ) : activePanel === 'earnings' ? (
+            <View>
+              <GeneralSettingsSection title="Thu nhập">
+                <GeneralSettingsMenuRow
+                  label="Thu nhập của tôi"
+                  icon={<Wallet size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.WITHDRAWAL)}
+                />
+                <GeneralSettingsMenuRow
+                  label="Kiếm tiền"
+                  icon={<Store size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.AFFILIATES)}
+                />
+                <GeneralSettingsMenuRow
+                  label="Điểm của tôi"
+                  icon={<BadgeCheck size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.MY_POINTS)}
+                />
+                <GeneralSettingsMenuRow
+                  label="Ví & Tín dụng"
+                  icon={<Wallet size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.MY_BALANCE)}
+                />
+              </GeneralSettingsSection>
             </View>
           ) : activePanel === 'general-common' ? (
             <AccountInformationCard />
           ) : activePanel === 'general-profile' ? (
             <ProfileInformationCard />
-          ) : activePanel === 'general-avatar' ? (
-            <AvatarCoverCard />
-          ) : activePanel === 'general-password' ? (
-            <PasswordSettingsCard />
-          ) : activePanel === 'general-two-factor' ? (
-            <TwoFactorSettingsCard />
-          ) : activePanel === 'general-verification' ? (
-            <AccountVerificationCard />
-          ) : (
-            <EmailNotificationsCard />
-          )}
-        </ScrollView>
-      ) : (
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-5 pb-28 pt-4"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Profile Header Card */}
-          {profile ? (
-            <ProfileHeaderCard
-              profile={profile}
-              onPress={() => navigation.navigate(ROUTES.PROFILE)}
-            />
-          ) : (
-            // Loading skeleton for profile card
-            <View className="surface-card flex-row items-center gap-4 px-5 py-4">
-              <View className="h-16 w-16 rounded-full bg-gray-200" />
-              <View className="flex-1">
-                <View className="h-5 w-32 rounded bg-gray-200 mb-2" />
-                <View className="h-4 w-24 rounded bg-gray-200" />
-              </View>
-            </View>
-          )}
-
-          {/* Feature Grid */}
-          <View className="mt-5">
-            <FeatureGrid
-              features={features}
-              onFeaturePress={handleFeaturePress}
-            />
-          </View>
-
-          {/* Go Pro Banner */}
-          <View className="mt-5">
-            <GoProBanner />
-          </View>
-
-          {/* Settings Menu List */}
-          <View className="mt-6">
-            <SettingsMenuList
-              items={settingsMenu}
-              onItemPress={handleSettingsItemPress}
-            />
-          </View>
-        </ScrollView>
-      )}
-
-      <Modal
-        visible={languageSheetVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLanguageSheetVisible(false)}
-      >
-        <Pressable
-          className="flex-1 justify-end bg-black/35"
-          onPress={() => setLanguageSheetVisible(false)}
-        >
-          {activePanel === 'general' ? (
-            <View className="surface-card overflow-hidden">
-              <GeneralSettingsMenuRow
-                label="Chung"
-                icon={<User size={22} color="#0000ff" />}
-                onPress={() => setActivePanel('general-common')}
-              />
-              <GeneralSettingsMenuRow
-                label="Hồ sơ"
-                icon={<Pencil size={22} color="#0000ff" />}
-                onPress={() => setActivePanel('general-profile')}
-              />
-              <GeneralSettingsMenuRow
-                label="Ảnh đại diện"
-                icon={<Camera size={22} color="#0000ff" />}
-                onPress={() => setActivePanel('general-avatar')}
-              />
-              <GeneralSettingsMenuRow
-                label="Mật khẩu"
-                icon={<LockKeyhole size={22} color="#0000ff" />}
-                onPress={() => setActivePanel('general-password')}
-              />
-              <GeneralSettingsMenuRow
-                label="Xác thực 2 yếu tố"
-                icon={<ShieldCheck size={22} color="#0000ff" />}
-                onPress={() => setActivePanel('general-two-factor')}
-              />
-              <GeneralSettingsMenuRow
-                label="Xác thực tài khoản"
-                icon={<BadgeCheck size={22} color="#0000ff" />}
-                onPress={() => setActivePanel('general-verification')}
-              />
-              <GeneralSettingsMenuRow
-                label="Thông báo"
-                icon={<Bell size={22} color="#0000ff" />}
-                isLast
-                onPress={() => setActivePanel('general-notifications')}
-              />
-            </View>
-          ) : activePanel === 'general-common' ? (
-            <AccountInformationCard />
-          ) : activePanel === 'general-profile' ? (
-            <ProfileInformationCard />
+          ) : activePanel === 'general-social-links' ? (
+            <SocialLinksCard />
+          ) : activePanel === 'general-address' ? (
+            <DeliveryAddressCard />
+          ) : activePanel === 'general-privacy' ? (
+            <PrivacySettingsCard />
+          ) : activePanel === 'general-blocked-users' ? (
+            <BlockedUsersCard />
+          ) : activePanel === 'general-sessions' ? (
+            <LoginSessionsCard />
           ) : activePanel === 'general-avatar' ? (
             <AvatarCoverCard />
           ) : activePanel === 'general-password' ? (

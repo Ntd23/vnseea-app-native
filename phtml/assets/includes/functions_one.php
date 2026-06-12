@@ -1,4 +1,5 @@
 <?php
+// English description: Provides core user, session, and social helper functions.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -89,6 +90,61 @@ function Wo_GetSessionDataFromUserID($user_id = 0)
     return false;
 }
 
+function Wo_IsLocalSessionIp($ip_address = '')
+{
+    $ip_address = trim((string)$ip_address);
+    return in_array($ip_address, array('127.0.0.1', '::1', 'localhost'), true);
+}
+
+function Wo_NormalizeSessionDetails($platform = '', $platform_details = '')
+{
+    $raw_platform = strtolower(trim((string)$platform));
+    $session_platform = 'Unknown';
+    $session_browser = 'Unknown';
+    $ip_address = '';
+
+    if ($raw_platform == 'phone') {
+        $session_platform = 'Phone';
+        $session_browser = 'Mobile App';
+    }
+    else if ($raw_platform == 'windows') {
+        $session_platform = 'Windows';
+        $session_browser = 'Desktop Application';
+    }
+    else if ($raw_platform == 'web') {
+        $session_platform = 'Web';
+        $session_browser = 'Web Browser';
+    }
+    else if (!empty($raw_platform)) {
+        $session_platform = ucfirst($raw_platform);
+    }
+
+    if (!empty($platform_details)) {
+        $details = json_decode($platform_details, true);
+        if (is_array($details)) {
+            $details_name = !empty($details['name']) ? trim((string)$details['name']) : '';
+            $details_platform = !empty($details['platform']) ? trim((string)$details['platform']) : '';
+            $details_ip = !empty($details['ip_address']) ? trim((string)$details['ip_address']) : (!empty($details['ip']) ? trim((string)$details['ip']) : '');
+
+            if (!empty($details_name) && strtolower($details_name) != 'unknown') {
+                $session_browser = $details_name;
+            }
+            if (!empty($details_platform) && strtolower($details_platform) != 'unknown') {
+                $session_platform = ucfirst($details_platform);
+            }
+            if (!empty($details_ip) && validate_ip($details_ip) && !Wo_IsLocalSessionIp($details_ip)) {
+                $ip_address = $details_ip;
+            }
+        }
+    }
+
+    return array(
+        'platform' => $session_platform,
+        'browser' => $session_browser,
+        'ip_address' => $ip_address
+    );
+}
+
 function Wo_GetAllSessionsFromUserID($user_id = 0, $limit = 10, $offset = array())
 {
     global $sqlConnect;
@@ -105,26 +161,12 @@ function Wo_GetAllSessionsFromUserID($user_id = 0, $limit = 10, $offset = array(
     $data = array();
     if (mysqli_num_rows($query)) {
         while ($row = mysqli_fetch_assoc($query)) {
-            $row['browser'] = 'Unknown';
             $row['unx_time'] = $row['time'];
             $row['time'] = Wo_Time_Elapsed_String($row['time']);
-            $row['platform'] = ucfirst($row['platform']);
-            $row['ip_address'] = '';
-            if ($row['platform'] == 'web' || $row['platform'] == 'windows') {
-                $row['platform'] = 'Unknown';
-            }
-            if ($row['platform'] == 'Phone') {
-                $row['browser'] = 'Mobile';
-            }
-            if ($row['platform'] == 'Windows') {
-                $row['browser'] = 'Desktop Application';
-            }
-            if (!empty($row['platform_details'])) {
-                $uns = (array)json_decode($row['platform_details']);
-                $row['browser'] = $uns['name'];
-                $row['platform'] = ucfirst($uns['platform']);
-                $row['ip_address'] = $uns['ip_address'];
-            }
+            $session_details = Wo_NormalizeSessionDetails($row['platform'], $row['platform_details']);
+            $row['browser'] = $session_details['browser'];
+            $row['platform'] = $session_details['platform'];
+            $row['ip_address'] = $session_details['ip_address'];
             $data[] = $row;
         }
     }

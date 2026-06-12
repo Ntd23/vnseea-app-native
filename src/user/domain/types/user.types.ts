@@ -65,6 +65,7 @@ export type UserProfile = UserSummary & {
     showLastSeen?: UserPrivacyValue;
     confirmFollowers?: UserPrivacyValue;
     showActivities?: UserPrivacyValue;
+    onlineStatus?: UserPrivacyValue;
     shareLocation?: UserPrivacyValue;
     shareData?: UserPrivacyValue;
   };
@@ -233,7 +234,10 @@ export type UpdateCurrentUserInput = Partial<{
   visitPrivacy: UserPrivacyValue;
   showLastSeen: UserPrivacyValue;
   confirmFollowers: UserPrivacyValue;
+  showActivities: UserPrivacyValue;
+  onlineStatus: UserPrivacyValue;
   shareLocation: UserPrivacyValue;
+  shareData: UserPrivacyValue;
 }>;
 
 export type UpdateCurrentUserResult = {

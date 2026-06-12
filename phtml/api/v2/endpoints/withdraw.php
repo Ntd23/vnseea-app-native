@@ -1,4 +1,5 @@
 <?php
+// English description: Handles payout withdrawal requests for PayPal, bank, and SePay methods.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -14,7 +15,8 @@ $response_data = array(
 
 $required_fields =  array(
                         'paypal',
-                        'bank'
+                        'bank',
+                        'sepay'
                     );
 if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     if ($_POST['type'] == 'paypal') {
@@ -43,6 +45,10 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             $error_message = $wo['lang']['invalid_amount_value_withdrawal'] . ' '.Wo_GetCurrency($wo['config']['ads_currency']) . $wo['config']['m_withdrawal'];
         }
         else{
+            $insert_array = array(
+                'type' => 'paypal',
+                'transfer_info' => Wo_Secure($_POST['paypal_email'])
+            );
             $userU  = Wo_UpdateUserData($wo['user']['user_id'], array(
                         'paypal_email' => $_POST['paypal_email']
                     ));
@@ -80,7 +86,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             $error_message = $wo['lang']['invalid_amount_value_withdrawal'] . ' '.Wo_GetCurrency($wo['config']['ads_currency']) . $wo['config']['m_withdrawal'];
         }
         else{
-            $insert_array = array();
+            $insert_array = array(
+                'type' => 'bank'
+            );
             if ($wo['config']['bank_withdrawal_system'] == 1 && !empty($_POST['iban']) && !empty($_POST['country']) && !empty($_POST['full_name']) && !empty($_POST['swift_code']) && !empty($_POST['address'])) {
                 $insert_array['iban'] = Wo_Secure($_POST['iban']);
                 $insert_array['country'] = Wo_Secure($_POST['country']);
@@ -96,6 +104,55 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 $update_balance = Wo_UpdateBalance($wo['user']['user_id'], $_POST['amount'], '-');
                 $response_data['message'] = $wo['lang']['you_request_sent'];
                 $response_data['api_status'] = 200;
+            }
+        }
+    }
+    if ($_POST['type'] == 'sepay') {
+        $transfer_to = '';
+        if (!empty($_POST['transfer_to'])) {
+            $transfer_to = $_POST['transfer_to'];
+        }
+        else if (!empty($_POST['sepay_account'])) {
+            $transfer_to = $_POST['sepay_account'];
+        }
+
+        if (empty($transfer_to)) {
+            $error_code    = 5;
+            $error_message = 'transfer_to can not be empty';
+        }
+        elseif (empty($_POST['amount']) || !is_numeric($_POST['amount'])) {
+            $error_code    = 7;
+            $error_message = 'amount can not be empty';
+        }
+        elseif (Wo_IsUserPaymentRequested($wo['user']['user_id']) === true) {
+            $error_code    = 8;
+            $error_message = 'you have pending request';
+        }
+        elseif (($wo['user']['balance'] < $_POST['amount'])) {
+            $error_code    = 9;
+            $error_message = $wo['lang']['invalid_amount_value_your'] . ''.Wo_GetCurrency($wo['config']['ads_currency']) . $wo['user']['balance'];
+        }
+        elseif ($wo['config']['m_withdrawal'] > $_POST['amount']) {
+            $error_code    = 10;
+            $error_message = $wo['lang']['invalid_amount_value_withdrawal'] . ' '.Wo_GetCurrency($wo['config']['ads_currency']) . $wo['config']['m_withdrawal'];
+        }
+        else{
+            $insert_array = array(
+                'type' => 'sepay',
+                'transfer_info' => Wo_Secure($transfer_to)
+            );
+            $userU  = Wo_UpdateUserData($wo['user']['user_id'], array(
+                        'paypal_email' => ''
+                    ));
+            $insert_payment = Wo_RequestNewPayment($wo['user']['user_id'], $_POST['amount'],$insert_array);
+            if ($insert_payment) {
+                $update_balance = Wo_UpdateBalance($wo['user']['user_id'], $_POST['amount'], '-');
+                $response_data['message'] = $wo['lang']['you_request_sent'];
+                $response_data['api_status'] = 200;
+            }
+            else{
+                $error_code    = 11;
+                $error_message = 'something went wrong';
             }
         }
     }

@@ -1,4 +1,5 @@
 <?php
+// English description: Authenticates social API logins and creates login sessions with device metadata.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -106,7 +107,8 @@ if (empty($error_code)) {
             if (!empty($_POST['device_type']) && in_array($_POST['device_type'], array('phone','windows'))) {
                 $device_type = Wo_Secure($_POST['device_type']);
             }
-            $create_session = mysqli_query($sqlConnect, "INSERT INTO " . T_APP_SESSIONS . " (`user_id`, `session_id`, `platform`, `time`) VALUES ('{$user_id}', '{$access_token}', '{$device_type}', '{$time}')");
+            $platform_details = Wo_Secure(json_encode(getBrowser(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            $create_session = mysqli_query($sqlConnect, "INSERT INTO " . T_APP_SESSIONS . " (`user_id`, `session_id`, `platform`, `platform_details`, `time`) VALUES ('{$user_id}', '{$access_token}', '{$device_type}', '{$platform_details}', '{$time}')");
             $add_timezone = mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `timezone` = '{$timezone}' WHERE `user_id` = {$user_id}");
             
             if (!empty($_POST['android_m_device_id'])) {

@@ -151,6 +151,9 @@ export function toUpdateCurrentUserPayload(input: UpdateCurrentUserInput) {
   putIfDefined(payload, 'visit_privacy', input.visitPrivacy);
   putIfDefined(payload, 'showlastseen', input.showLastSeen);
   putIfDefined(payload, 'confirm_followers', input.confirmFollowers);
+  putIfDefined(payload, 'show_activities_privacy', input.showActivities);
+  putIfDefined(payload, 'status', input.onlineStatus);
   putIfDefined(payload, 'share_my_location', input.shareLocation);
+  putIfDefined(payload, 'share_my_data', input.shareData);
   return payload;
 }
