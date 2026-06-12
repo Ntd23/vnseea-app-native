@@ -109,11 +109,13 @@ export function usePostDetailViewModel({
         setComments(prev => [optimistic, ...prev]);
         // Bump the post's comment count locally so the header reflects
         // the new total without a refetch.
-        setPost(prev =>
-          prev
-            ? { ...prev, commentCount: prev.commentCount + 1 }
-            : prev,
-        );
+        setPost(prev => {
+          if (!prev) return prev;
+          if ('commentCount' in prev) {
+            return { ...prev, commentCount: (prev as any).commentCount + 1 } as FeedPost;
+          }
+          return prev;
+        });
       } catch (caught) {
         setError(
           caught instanceof Error

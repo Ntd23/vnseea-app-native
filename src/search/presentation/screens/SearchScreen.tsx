@@ -1,596 +1,640 @@
-// Description: Renders the VNSEEA search screen with user search, suggestions, and follow actions.
-// Layout follows Facebook-style design with row-based suggestions and tab-based navigation.
-import React, { useCallback, useState, useEffect } from 'react';
+// Description: Dedicated global search screen for users, pages, groups, jobs, and funding.
+import React, { useCallback, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Image,
+  ScrollView,
   StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  Pressable,
-  type LayoutChangeEvent,
 } from 'react-native';
 import {
   ArrowLeft,
-  MoreHorizontal,
+  BadgeCheck,
+  Briefcase,
+  ChevronRight,
+  Flag,
+  HeartHandshake,
+  MapPin,
   Search,
-  SearchX,
+  UserRound,
+  Users,
   X,
-  Verified,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  Easing,
-  FadeInDown,
-  FadeOutLeft,
-  LinearTransition,
-} from 'react-native-reanimated';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useSearchViewModel } from '../../application/view-models/useSearchViewModel';
-import type { SearchResult, SuggestionResult } from '../../domain/types/search.types';
+import type {
+  GlobalSearchTab,
+  SearchResult,
+  SearchResponse,
+} from '../../domain/types/search.types';
+import type { GroupItem } from '../../../community/domain/types/community.types';
+import type { FundingItem } from '../../../funding/domain/types/funding.types';
+import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
+import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
-const SEARCH_COPY = {
+type SearchNav = NativeStackNavigationProp<RootStackParamList>;
+type SearchRoute = RouteProp<RootStackParamList, typeof ROUTES.SEARCH>;
+
+const BRAND = '#0000ff';
+const FALLBACK_AVATAR = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
+
+const COPY = {
   vi: {
-    placeholder: 'Tìm kiếm mọi người...',
-    suggestionsTab: 'Gợi ý',
-    peopleTab: 'Mọi người',
-    suggestionsHeader: 'Những người bạn có thể biết',
-    mutualFriendsSuffix: 'bạn chung',
-    suggestedForYou: 'Gợi ý cho bạn',
-    following: 'Đang theo dõi',
-    addFriend: 'Thêm bạn bè',
-    follow: 'Theo dõi',
-    removeBtn: 'Gỡ',
-    noSuggestions: 'Không có gợi ý nào dành cho bạn vào lúc này.',
+    title: 'Tìm kiếm',
+    placeholder: 'Tìm người, trang, nhóm, việc làm, gây quỹ...',
+    promptTitle: 'Bạn muốn tìm gì?',
+    promptBody: 'Nhập từ khóa để tìm người dùng, trang, nhóm, việc làm và chiến dịch gây quỹ.',
     noResults: 'Không tìm thấy kết quả',
-    noResultsDesc: 'Không tìm thấy người dùng phù hợp với từ khóa của bạn.',
-    emptyState: 'Chưa có người dùng để hiển thị',
-    emptyStateDesc: 'Bạn vẫn có thể nhập tên hoặc tài khoản để tìm kiếm.',
+    noResultsBody: 'Thử một từ khóa khác hoặc kiểm tra lại chính tả.',
+    all: 'Tất cả',
+    users: 'Người dùng',
+    pages: 'Trang',
+    groups: 'Nhóm',
+    jobs: 'Việc làm',
+    funding: 'Gây quỹ',
+    seeAll: 'Xem tất cả',
+    follow: 'Theo dõi',
+    following: 'Đang theo dõi',
+    pageFallback: 'Trang',
+    groupFallback: 'Nhóm',
+    jobFallback: 'Việc làm',
+    fundingFallback: 'Chiến dịch gây quỹ',
+    locationFallback: 'Không có địa điểm',
+    companyFallback: 'Công ty',
+    members: 'thành viên',
+    likes: 'lượt thích',
+    goal: 'Mục tiêu',
+    raised: 'Đã góp',
   },
   en: {
-    placeholder: 'Search people...',
-    suggestionsTab: 'Suggestions',
-    peopleTab: 'People',
-    suggestionsHeader: 'People you may know',
-    mutualFriendsSuffix: 'mutual friends',
-    suggestedForYou: 'Suggested for you',
-    following: 'Following',
-    addFriend: 'Add Friend',
-    follow: 'Follow',
-    removeBtn: 'Remove',
-    noSuggestions: 'No suggestions available for you at this time.',
+    title: 'Search',
+    placeholder: 'Search people, pages, groups, jobs, funding...',
+    promptTitle: 'What are you looking for?',
+    promptBody: 'Type a keyword to search users, pages, groups, jobs, and funding campaigns.',
     noResults: 'No results found',
-    noResultsDesc: 'No users match your search keyword.',
-    emptyState: 'No users to display',
-    emptyStateDesc: 'You can type a name or username to search.',
+    noResultsBody: 'Try another keyword or check your spelling.',
+    all: 'All',
+    users: 'People',
+    pages: 'Pages',
+    groups: 'Groups',
+    jobs: 'Jobs',
+    funding: 'Funding',
+    seeAll: 'See all',
+    follow: 'Follow',
+    following: 'Following',
+    pageFallback: 'Page',
+    groupFallback: 'Group',
+    jobFallback: 'Job',
+    fundingFallback: 'Funding campaign',
+    locationFallback: 'No location',
+    companyFallback: 'Company',
+    members: 'members',
+    likes: 'likes',
+    goal: 'Goal',
+    raised: 'Raised',
   },
 };
 
-type SearchNav = NativeStackNavigationProp<RootStackParamList>;
-
-const FALLBACK_AVATAR = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-// Custom ScaleButton for spring pressing effects (2026 UX standard)
-interface ScaleButtonProps {
-  children: React.ReactNode;
-  onPress?: () => void;
-  className?: string;
-  style?: any;
-  disabled?: boolean;
+function formatCompact(value?: number | string | null) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return '0';
+  if (numeric >= 1000000) return `${(numeric / 1000000).toFixed(1)}M`;
+  if (numeric >= 1000) return `${(numeric / 1000).toFixed(1)}K`;
+  return String(Math.round(numeric));
 }
 
-function ScaleButton({
-  children,
-  onPress,
-  className,
-  style,
-  disabled = false,
-}: ScaleButtonProps) {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = useCallback(() => {
-    if (disabled) return;
-    scale.value = withSpring(0.95, { damping: 15, stiffness: 300 });
-  }, [disabled, scale]);
-
-  const handlePressOut = useCallback(() => {
-    if (disabled) return;
-    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
-  }, [disabled, scale]);
-
-  return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      disabled={disabled}
-      className={className}
-      style={[style, animatedStyle]}
-    >
-      {children}
-    </AnimatedPressable>
-  );
+function formatMoney(value?: number | string | null, symbol = '') {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return `0${symbol}`;
+  return `${numeric.toLocaleString('vi-VN')}${symbol}`;
 }
 
-// Sliding Indicator Segmented Tab Control using Reanimated
-function SegmentedTabBar({
-  tabs,
-  activeTab,
-  onChange,
+function Avatar({
+  uri,
+  label,
+  fallback,
 }: {
-  tabs: Array<{ id: 'suggestions' | 'people'; label: string }>;
-  activeTab: 'suggestions' | 'people';
-  onChange: (id: 'suggestions' | 'people') => void;
+  uri?: string;
+  label: string;
+  fallback: React.ReactNode;
 }) {
-  const [containerWidth, setContainerWidth] = useState(0);
-  const indicatorX = useSharedValue(0);
-
-  const tabWidth = containerWidth / 2;
-
-  useEffect(() => {
-    const index = tabs.findIndex(t => t.id === activeTab);
-    if (index !== -1 && containerWidth > 0) {
-      indicatorX.value = withTiming(index * tabWidth, {
-        duration: 250,
-        easing: Easing.out(Easing.cubic),
-      });
-    }
-  }, [activeTab, containerWidth, tabWidth, tabs, indicatorX]);
-
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: indicatorX.value }],
-    width: tabWidth - 8,
-  }));
-
-  const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
-    const { width } = event.nativeEvent.layout;
-    setContainerWidth(width);
-  }, []);
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        className="h-14 w-14 rounded-full bg-slate-100"
+        resizeMode="cover"
+        accessibilityLabel={label}
+      />
+    );
+  }
 
   return (
-    <View className="px-4 py-2 bg-white border-b border-slate-100">
-      <View
-        onLayout={handleContainerLayout}
-        className="relative flex-row rounded-2xl bg-slate-100/80 p-1 h-12 items-center"
-      >
-        {containerWidth > 0 && (
-          <Animated.View
-            pointerEvents="none"
-            className="absolute top-1 bottom-1 left-1 rounded-xl bg-white shadow-sm border border-slate-200/10"
-            style={[
-              {
-                shadowColor: '#000000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.05,
-                shadowRadius: 3,
-                elevation: 1,
-              },
-              indicatorStyle,
-            ]}
-          />
-        )}
-        {tabs.map(tab => {
-          const isActive = tab.id === activeTab;
-          return (
-            <TouchableOpacity
-              key={tab.id}
-              className="flex-1 items-center justify-center h-10"
-              onPress={() => onChange(tab.id)}
-              activeOpacity={0.8}
-            >
-              <Text
-                className={`text-[14px] font-bold ${
-                  isActive ? 'text-[#0000ff]' : 'text-slate-500'
-                }`}
-              >
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+    <View className="h-14 w-14 items-center justify-center rounded-full bg-[#EEF2FF]">
+      {fallback}
     </View>
   );
 }
 
-// User Row Component - Modern Floating Card Design
-function SuggestionRow({
-  user,
-  onFollow,
-  onPress,
-  onRemove,
+function SectionHeader({
+  title,
+  count,
+  onSeeAll,
   copy,
 }: {
-  user: SuggestionResult;
-  onFollow: () => void;
-  onPress: () => void;
-  onRemove: () => void;
-  copy: any;
+  title: string;
+  count: number;
+  onSeeAll?: () => void;
+  copy: typeof COPY.vi;
 }) {
-  const [isFollowing, setIsFollowing] = useState(user.isFollowing);
-
-  const handleFollow = () => {
-    setIsFollowing(!isFollowing);
-    onFollow();
-  };
+  if (count === 0) return null;
 
   return (
-    <View
-      className="mx-4 my-2 flex-row items-center rounded-3xl bg-white p-4 border border-blue-500/5"
-      style={{
-        shadowColor: '#0000ff',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.03,
-        shadowRadius: 16,
-        elevation: 2,
-      }}
-    >
-      {/* Clickable Avatar */}
-      <TouchableOpacity activeOpacity={0.8} onPress={onPress}>
-        <Image
-          source={{ uri: user.avatar || FALLBACK_AVATAR }}
-          className="h-[74px] w-[74px] rounded-full bg-slate-100"
-          resizeMode="cover"
-        />
-      </TouchableOpacity>
-
-      {/* Main Info */}
-      <View className="ml-3.5 flex-1 justify-center">
-        <TouchableOpacity activeOpacity={0.7} onPress={onPress}>
-          <Text className="text-[15px] font-bold text-slate-800" numberOfLines={1}>
-            {user.name}
-          </Text>
+    <View className="mt-5 mb-2 flex-row items-center justify-between px-4">
+      <Text className="text-[17px] font-extrabold text-slate-950">
+        {title} <Text className="text-slate-400">({count})</Text>
+      </Text>
+      {onSeeAll ? (
+        <TouchableOpacity className="flex-row items-center" onPress={onSeeAll}>
+          <Text className="text-[13px] font-bold text-[#0000ff]">{copy.seeAll}</Text>
+          <ChevronRight size={16} color={BRAND} />
         </TouchableOpacity>
-
-        <Text className="text-[13px] text-slate-500 mt-0.5" numberOfLines={1}>
-          {user.mutualFriends && user.mutualFriends > 0
-            ? `${user.mutualFriends} ${copy.mutualFriendsSuffix}`
-            : copy.suggestedForYou}
-        </Text>
-
-        {/* Buttons Row */}
-        <View className="flex-row mt-2.5 gap-2">
-          {/* Follow Button */}
-          <ScaleButton
-            className={`flex-1 h-9 rounded-xl justify-center items-center ${
-              isFollowing ? 'bg-slate-100' : 'bg-[#0000ff]'
-            }`}
-            onPress={handleFollow}
-          >
-            <Text
-              className={`text-[13px] font-bold ${
-                isFollowing ? 'text-slate-700' : 'text-white'
-              }`}
-            >
-              {isFollowing ? copy.following : copy.addFriend}
-            </Text>
-          </ScaleButton>
-
-          {/* Remove/Dismiss Button */}
-          <ScaleButton
-            className="flex-1 h-9 rounded-xl bg-slate-100 justify-center items-center"
-            onPress={onRemove}
-          >
-            <Text className="text-[13px] font-bold text-slate-600">{copy.removeBtn}</Text>
-          </ScaleButton>
-        </View>
-      </View>
+      ) : null}
     </View>
   );
 }
 
-// User List Card Component - Modern Flat Card Design
-function UserListCard({
+function UserRow({
   user,
-  onFollow,
   onPress,
+  onFollow,
   copy,
 }: {
   user: SearchResult;
-  onFollow: () => void;
   onPress: () => void;
-  copy: any;
+  onFollow: () => void;
+  copy: typeof COPY.vi;
 }) {
-  const [isFollowing, setIsFollowing] = useState(user.isFollowing);
+  return (
+    <TouchableOpacity
+      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
+      activeOpacity={0.86}
+      onPress={onPress}
+    >
+      <Avatar
+        uri={user.avatar || FALLBACK_AVATAR}
+        label={user.name}
+        fallback={<UserRound size={24} color={BRAND} />}
+      />
+      <View className="ml-3 flex-1">
+        <View className="flex-row items-center">
+          <Text className="mr-1 flex-1 text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
+            {user.name || user.username}
+          </Text>
+          {user.verified ? <BadgeCheck size={16} color={BRAND} fill={BRAND} /> : null}
+        </View>
+        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
+          @{user.username}
+        </Text>
+      </View>
+      <TouchableOpacity
+        className={`rounded-full px-3 py-2 ${
+          user.isFollowing ? 'bg-slate-100' : 'bg-[#0000ff]'
+        }`}
+        activeOpacity={0.85}
+        onPress={event => {
+          event.stopPropagation();
+          onFollow();
+        }}
+      >
+        <Text
+          className={`text-[12px] font-bold ${
+            user.isFollowing ? 'text-slate-700' : 'text-white'
+          }`}
+        >
+          {user.isFollowing ? copy.following : copy.follow}
+        </Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+}
 
-  const handleFollow = () => {
-    setIsFollowing(!isFollowing);
-    onFollow();
-  };
+function PageRow({
+  page,
+  onPress,
+  copy,
+}: {
+  page: PagesItem;
+  onPress: () => void;
+  copy: typeof COPY.vi;
+}) {
+  return (
+    <TouchableOpacity
+      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
+      activeOpacity={0.86}
+      onPress={onPress}
+    >
+      <Avatar
+        uri={page.avatar}
+        label={page.pageTitle || copy.pageFallback}
+        fallback={<Flag size={24} color={BRAND} />}
+      />
+      <View className="ml-3 flex-1">
+        <Text className="text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
+          {page.pageTitle || page.pageName || copy.pageFallback}
+        </Text>
+        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
+          {page.pageName ? `@${page.pageName}` : page.pageDescription || copy.pageFallback}
+        </Text>
+      </View>
+      <Text className="text-[12px] font-semibold text-slate-500">
+        {page.likes ? `${formatCompact(page.likes)} ${copy.likes}` : ''}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function GroupRow({
+  group,
+  onPress,
+  copy,
+}: {
+  group: GroupItem;
+  onPress: () => void;
+  copy: typeof COPY.vi;
+}) {
+  return (
+    <TouchableOpacity
+      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
+      activeOpacity={0.86}
+      onPress={onPress}
+    >
+      <Avatar
+        uri={group.avatar}
+        label={group.groupTitle || copy.groupFallback}
+        fallback={<Users size={24} color={BRAND} />}
+      />
+      <View className="ml-3 flex-1">
+        <Text className="text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
+          {group.groupTitle || group.groupName || copy.groupFallback}
+        </Text>
+        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
+          {group.members ? `${formatCompact(group.members)} ${copy.members}` : group.about || copy.groupFallback}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function JobRow({
+  job,
+  onPress,
+  copy,
+}: {
+  job: JobsItem;
+  onPress: () => void;
+  copy: typeof COPY.vi;
+}) {
+  return (
+    <TouchableOpacity
+      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
+      activeOpacity={0.86}
+      onPress={onPress}
+    >
+      <Avatar
+        uri={job.image || job.page?.avatar}
+        label={job.title || copy.jobFallback}
+        fallback={<Briefcase size={24} color={BRAND} />}
+      />
+      <View className="ml-3 flex-1">
+        <Text className="text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
+          {job.title || copy.jobFallback}
+        </Text>
+        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
+          {job.page?.page_title || copy.companyFallback}
+        </Text>
+        <View className="mt-1 flex-row items-center">
+          <MapPin size={13} color="#64748b" />
+          <Text className="ml-1 flex-1 text-[12px] text-slate-500" numberOfLines={1}>
+            {job.location || copy.locationFallback}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function FundingRow({
+  campaign,
+  onPress,
+  copy,
+}: {
+  campaign: FundingItem;
+  onPress: () => void;
+  copy: typeof COPY.vi;
+}) {
+  const raised = Number(campaign.raised || 0);
+  const goal = Number(campaign.amount || 0);
+  const percent = goal > 0 ? Math.min(Math.round((raised / goal) * 100), 100) : 0;
 
   return (
-    <View
-      className="mx-4 my-2 flex-row items-center rounded-3xl bg-white p-4 border border-blue-500/5"
-      style={{
-        shadowColor: '#0000ff',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.03,
-        shadowRadius: 16,
-        elevation: 2,
-      }}
+    <TouchableOpacity
+      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
+      activeOpacity={0.86}
+      onPress={onPress}
     >
-      {/* Clickable Avatar */}
-      <TouchableOpacity activeOpacity={0.8} onPress={onPress}>
-        <Image
-          source={{ uri: user.avatar || FALLBACK_AVATAR }}
-          className="h-14 w-14 rounded-full bg-slate-100"
-          resizeMode="cover"
-        />
-      </TouchableOpacity>
-
-      {/* Main Info */}
-      <View className="ml-3.5 flex-1 justify-center">
-        <TouchableOpacity activeOpacity={0.7} onPress={onPress}>
-          <View className="flex-row items-center">
-            <Text className="text-[15px] font-bold text-slate-800 mr-1" numberOfLines={1}>
-              {user.name}
-            </Text>
-            {user.verified && (
-              <Verified size={15} color="#0000ff" fill="#0000ff" />
-            )}
-          </View>
-        </TouchableOpacity>
-
-        <Text className="text-[13px] text-slate-400 mt-0.5">@{user.username}</Text>
-
-        {user.mutualFriends && user.mutualFriends > 0 && (
-          <Text className="text-[13px] text-slate-500 mt-0.5">
-            {user.mutualFriends} {copy.mutualFriendsSuffix}
-          </Text>
-        )}
+      <Avatar
+        uri={campaign.image}
+        label={campaign.title || copy.fundingFallback}
+        fallback={<HeartHandshake size={24} color={BRAND} />}
+      />
+      <View className="ml-3 flex-1">
+        <Text className="text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
+          {campaign.title || copy.fundingFallback}
+        </Text>
+        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
+          {copy.raised} {formatMoney(campaign.raised)} / {copy.goal} {formatMoney(campaign.amount)}
+        </Text>
+        <View className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+          <View className="h-full rounded-full bg-[#0000ff]" style={{ width: `${percent}%` }} />
+        </View>
       </View>
+    </TouchableOpacity>
+  );
+}
 
-      {/* Action Buttons */}
-      <View className="flex-row items-center gap-2">
-        <ScaleButton
-          className={`rounded-xl px-4 h-9 justify-center items-center ${
-            isFollowing ? 'bg-slate-100' : 'bg-[#0000ff]'
-          }`}
-          onPress={handleFollow}
-        >
-          <Text
-            className={`text-[13px] font-bold ${
-              isFollowing ? 'text-slate-700' : 'text-white'
-            }`}
-          >
-            {isFollowing ? copy.following : copy.follow}
-          </Text>
-        </ScaleButton>
-
-        <ScaleButton
-          className="h-9 w-9 items-center justify-center rounded-full bg-slate-100"
-        >
-          <MoreHorizontal size={16} color="#475569" />
-        </ScaleButton>
+function EmptyState({
+  title,
+  body,
+}: {
+  title: string;
+  body: string;
+}) {
+  return (
+    <View className="items-center px-8 py-20">
+      <View className="h-16 w-16 items-center justify-center rounded-full bg-[#EEF2FF]">
+        <Search size={28} color={BRAND} />
       </View>
+      <Text className="mt-4 text-center text-[17px] font-extrabold text-slate-950">
+        {title}
+      </Text>
+      <Text className="mt-2 text-center text-[14px] leading-5 text-slate-500">
+        {body}
+      </Text>
     </View>
   );
 }
 
-// Empty State Component with entry animation
-function EmptyState({ message, description }: { message?: string; description?: string }) {
-  return (
-    <Animated.View
-      entering={FadeInDown ? FadeInDown.duration(400).springify().damping(18) : undefined}
-      className="flex-1 items-center justify-center py-20 px-6"
-    >
-      <SearchX size={64} color="#94a3b8" strokeWidth={1.5} />
-      <Text className="mt-4 text-[16px] font-bold text-slate-800">{message}</Text>
-      <Text className="mt-2 text-[14px] text-center text-slate-500 leading-relaxed">
-        {description}
-      </Text>
-    </Animated.View>
-  );
+function getVisibleResults(results: SearchResponse, tab: GlobalSearchTab) {
+  if (tab === 'all') return results;
+  return {
+    users: tab === 'users' ? results.users : [],
+    pages: tab === 'pages' ? results.pages : [],
+    groups: tab === 'groups' ? results.groups : [],
+    jobs: tab === 'jobs' ? results.jobs : [],
+    funding: tab === 'funding' ? results.funding : [],
+  };
 }
 
 function SearchScreen() {
   const navigation = useNavigation<SearchNav>();
+  const route = useRoute<SearchRoute>();
   const language = useAppLanguage();
-  const copy = SEARCH_COPY[language];
+  const copy = COPY[language];
   const {
     searchQuery,
     setSearchQuery,
-    searchResults,
-    suggestions,
+    results,
+    totalResults,
+    activeTab,
+    setActiveTab,
     isLoading,
-    isLoadingSuggestions,
     error,
-    searchUsers,
+    searchAll,
     toggleFollow,
     clearSearch,
   } = useSearchViewModel();
 
-  const [activeTab, setActiveTab] = useState<'suggestions' | 'people'>('suggestions');
-  const [hiddenUserIds, setHiddenUserIds] = useState<string[]>([]);
-
-  const handleSearch = useCallback(() => {
-    if (searchQuery.trim()) {
-      searchUsers(searchQuery);
-      setActiveTab('people');
+  useEffect(() => {
+    const initialQuery = route.params?.q?.trim();
+    if (initialQuery) {
+      setSearchQuery(initialQuery);
+      void searchAll(initialQuery);
     }
-  }, [searchQuery, searchUsers]);
+  }, [route.params?.q, searchAll, setSearchQuery]);
 
-  const handleClear = useCallback(() => {
-    clearSearch();
-    setActiveTab('suggestions');
-  }, [clearSearch]);
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) return;
 
-  const handleFollow = useCallback(
-    (userId: string, isCurrentlyFollowing: boolean) => {
-      toggleFollow(userId, isCurrentlyFollowing);
-    },
-    [toggleFollow],
+    const timer = setTimeout(() => {
+      void searchAll(query);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [searchAll, searchQuery]);
+
+  const tabs = useMemo(
+    () => [
+      { id: 'all' as const, label: copy.all, count: totalResults },
+      { id: 'users' as const, label: copy.users, count: results.users.length },
+      { id: 'pages' as const, label: copy.pages, count: results.pages.length },
+      { id: 'groups' as const, label: copy.groups, count: results.groups.length },
+      { id: 'jobs' as const, label: copy.jobs, count: results.jobs.length },
+      { id: 'funding' as const, label: copy.funding, count: results.funding.length },
+    ],
+    [copy, results, totalResults],
   );
 
-  const handleUserPress = useCallback(
-    (userId: string) => {
-      navigation.navigate(ROUTES.PROFILE, { userId });
-    },
-    [navigation],
+  const visibleResults = getVisibleResults(results, activeTab);
+  const previewLimit = activeTab === 'all' ? 5 : Number.POSITIVE_INFINITY;
+  const hasQuery = searchQuery.trim().length > 0;
+  const isEmpty = hasQuery && !isLoading && totalResults === 0;
+
+  const renderSections = () => (
+    <>
+      <SectionHeader
+        title={copy.users}
+        count={visibleResults.users.length}
+        copy={copy}
+        onSeeAll={activeTab === 'all' && results.users.length > previewLimit ? () => setActiveTab('users') : undefined}
+      />
+      {visibleResults.users.slice(0, previewLimit).map(user => (
+        <UserRow
+          key={`user-${user.userId}`}
+          user={user}
+          copy={copy}
+          onPress={() => navigation.navigate(ROUTES.PROFILE, { userId: user.userId })}
+          onFollow={() => toggleFollow(user.userId, user.isFollowing)}
+        />
+      ))}
+
+      <SectionHeader
+        title={copy.pages}
+        count={visibleResults.pages.length}
+        copy={copy}
+        onSeeAll={activeTab === 'all' && results.pages.length > previewLimit ? () => setActiveTab('pages') : undefined}
+      />
+      {visibleResults.pages.slice(0, previewLimit).map(page => (
+        <PageRow
+          key={`page-${page.id}`}
+          page={page}
+          copy={copy}
+          onPress={() => navigation.navigate(ROUTES.PAGE_DETAIL, { page })}
+        />
+      ))}
+
+      <SectionHeader
+        title={copy.groups}
+        count={visibleResults.groups.length}
+        copy={copy}
+        onSeeAll={activeTab === 'all' && results.groups.length > previewLimit ? () => setActiveTab('groups') : undefined}
+      />
+      {visibleResults.groups.slice(0, previewLimit).map(group => (
+        <GroupRow
+          key={`group-${group.id}`}
+          group={group}
+          copy={copy}
+          onPress={() => navigation.navigate(ROUTES.GROUP_DETAIL, { group })}
+        />
+      ))}
+
+      <SectionHeader
+        title={copy.jobs}
+        count={visibleResults.jobs.length}
+        copy={copy}
+        onSeeAll={activeTab === 'all' && results.jobs.length > previewLimit ? () => setActiveTab('jobs') : undefined}
+      />
+      {visibleResults.jobs.slice(0, previewLimit).map(job => (
+        <JobRow
+          key={`job-${job.id}`}
+          job={job}
+          copy={copy}
+          onPress={() => navigation.navigate(ROUTES.JOB_DETAIL, { jobId: String(job.id), job })}
+        />
+      ))}
+
+      <SectionHeader
+        title={copy.funding}
+        count={visibleResults.funding.length}
+        copy={copy}
+        onSeeAll={activeTab === 'all' && results.funding.length > previewLimit ? () => setActiveTab('funding') : undefined}
+      />
+      {visibleResults.funding.slice(0, previewLimit).map(campaign => (
+        <FundingRow
+          key={`funding-${campaign.id}`}
+          campaign={campaign}
+          copy={copy}
+          onPress={() => navigation.navigate(ROUTES.FUNDING_DETAIL, { fundId: String(campaign.id) })}
+        />
+      ))}
+    </>
   );
-
-  const handleRemoveSuggestion = useCallback((userId: string) => {
-    setHiddenUserIds(prev => [...prev, userId]);
-  }, []);
-
-  const visibleSuggestions = suggestions.filter(s => !hiddenUserIds.includes(s.userId));
-
-  const renderSuggestionItem = useCallback(({ item, index }: { item: SuggestionResult; index: number }) => (
-    <Animated.View
-      entering={FadeInDown ? FadeInDown.delay(index * 50).springify().damping(15) : undefined}
-      exiting={FadeOutLeft ? FadeOutLeft.duration(200) : undefined}
-      layout={LinearTransition ? LinearTransition.springify().damping(15) : undefined}
-    >
-      <SuggestionRow
-        user={item}
-        onFollow={() => handleFollow(item.userId, item.isFollowing)}
-        onPress={() => handleUserPress(item.userId)}
-        onRemove={() => handleRemoveSuggestion(item.userId)}
-        copy={copy}
-      />
-    </Animated.View>
-  ), [copy, handleFollow, handleUserPress, handleRemoveSuggestion]);
-
-  const renderUserItem = useCallback(({ item, index }: { item: SearchResult; index: number }) => (
-    <Animated.View
-      entering={FadeInDown ? FadeInDown.delay(index * 40).springify().damping(15) : undefined}
-      layout={LinearTransition ? LinearTransition.springify().damping(15) : undefined}
-    >
-      <UserListCard
-        user={item}
-        onFollow={() => handleFollow(item.userId, item.isFollowing)}
-        onPress={() => handleUserPress(item.userId)}
-        copy={copy}
-      />
-    </Animated.View>
-  ), [copy, handleFollow, handleUserPress]);
-
-  const tabs = [
-    { id: 'suggestions' as const, label: copy.suggestionsTab },
-    { id: 'people' as const, label: copy.peopleTab + (searchResults.length > 0 ? ` (${searchResults.length})` : '') },
-  ];
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F8FAFC]" edges={['top', 'left', 'right']}>
+    <SafeAreaView className="flex-1 bg-[#F0F2F5]" edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Combined Header & Search Bar (Facebook style with ScaleButtons) */}
-      <View className="flex-row items-center px-4 py-3 border-b border-slate-100 bg-white">
-        <ScaleButton
-          className="h-10 w-10 items-center justify-center rounded-full mr-2 bg-slate-50 border border-slate-100/50"
-          onPress={() => navigation.goBack()}
-        >
-          <ArrowLeft size={22} color="#0000ff" />
-        </ScaleButton>
+      <View className="bg-white px-4 pb-3 pt-2">
+        <View className="flex-row items-center">
+          <TouchableOpacity
+            className="mr-2 h-10 w-10 items-center justify-center rounded-full bg-slate-50"
+            activeOpacity={0.85}
+            onPress={() => navigation.goBack()}
+          >
+            <ArrowLeft size={23} color="#0f172a" />
+          </TouchableOpacity>
+          <Text className="flex-1 text-center text-[22px] font-extrabold text-slate-950">
+            {copy.title}
+          </Text>
+          <View className="h-10 w-10" />
+        </View>
 
-        <View className="flex-1 flex-row items-center rounded-2xl bg-slate-100 px-4 h-11 border border-slate-200/20">
-          <Search size={18} color="#64748b" />
+        <View className="mt-3 flex-row items-center rounded-full bg-slate-100 px-4 py-3">
+          <Search size={20} color="#64748b" />
           <TextInput
-            className="ml-2 flex-1 text-[15px] text-slate-900 p-0 font-medium"
+            className="ml-3 flex-1 p-0 text-[16px] font-medium text-slate-950"
             placeholder={copy.placeholder}
             placeholderTextColor="#94a3b8"
             value={searchQuery}
             onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
+            onSubmitEditing={() => searchAll(searchQuery)}
+            autoFocus
             returnKeyType="search"
           />
-          {searchQuery.length > 0 && (
-            <ScaleButton onPress={handleClear} className="p-1">
-              <X size={18} color="#64748b" />
-            </ScaleButton>
-          )}
+          {searchQuery.length > 0 ? (
+            <TouchableOpacity onPress={clearSearch}>
+              <X size={19} color="#64748b" />
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
 
-      {/* Sliding Segmented Tab Control */}
-      <SegmentedTabBar
-        tabs={tabs}
-        activeTab={activeTab}
-        onChange={setActiveTab}
-      />
+      <View className="bg-white">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}
+        >
+          {tabs.map(tab => {
+            const isActive = tab.id === activeTab;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                className={`rounded-full px-4 py-2 ${
+                  isActive ? 'bg-[#0000ff]' : 'bg-slate-100'
+                }`}
+                activeOpacity={0.85}
+                onPress={() => setActiveTab(tab.id)}
+              >
+                <Text
+                  className={`text-[13px] font-bold ${
+                    isActive ? 'text-white' : 'text-slate-600'
+                  }`}
+                >
+                  {tab.label}
+                  {hasQuery && tab.count > 0 ? ` ${tab.count}` : ''}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-      {/* Content */}
-      {activeTab === 'suggestions' ? (
-        <View className="flex-1 bg-slate-50/30">
-          {/* Header Title */}
-          <View className="px-5 py-3.5 bg-slate-50/50">
-            <Text className="text-[13px] font-bold text-slate-400 uppercase tracking-wider">
-              {copy.suggestionsHeader}
-            </Text>
+      <ScrollView
+        className="flex-1"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: 28 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {!hasQuery ? (
+          <EmptyState title={copy.promptTitle} body={copy.promptBody} />
+        ) : isLoading && totalResults === 0 ? (
+          <View className="items-center py-20">
+            <ActivityIndicator color={BRAND} />
           </View>
+        ) : isEmpty ? (
+          <EmptyState title={copy.noResults} body={copy.noResultsBody} />
+        ) : (
+          renderSections()
+        )}
 
-          {isLoadingSuggestions ? (
-            <View className="flex-1 items-center justify-center py-10">
-              <ActivityIndicator color="#0000ff" />
-            </View>
-          ) : visibleSuggestions.length > 0 ? (
-            <FlatList
-              data={visibleSuggestions}
-              renderItem={renderSuggestionItem}
-              keyExtractor={item => item.userId}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              showsVerticalScrollIndicator={false}
-            />
-          ) : (
-            <View className="flex-1 items-center justify-center py-16 px-6">
-              <Text className="text-[14px] text-slate-500 text-center leading-relaxed">
-                {copy.noSuggestions}
-              </Text>
-            </View>
-          )}
-        </View>
-      ) : (
-        <FlatList
-          data={searchResults}
-          renderItem={renderUserItem}
-          keyExtractor={item => item.userId}
-          ListEmptyComponent={
-            isLoading || isLoadingSuggestions ? (
-              <View className="items-center py-16">
-                <ActivityIndicator color="#0000ff" />
-              </View>
-            ) : searchQuery.length > 0 ? (
-              <EmptyState
-                message={copy.noResults}
-                description={copy.noResultsDesc}
-              />
-            ) : (
-              <EmptyState
-                message={copy.emptyState}
-                description={copy.emptyStateDesc}
-              />
-            )
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-
-      {/* Error Toast */}
-      {error && (
-        <View className="absolute bottom-6 left-4 right-4 rounded-xl bg-red-50 p-4 border border-red-200">
-          <Text className="text-[13px] text-red-600 font-semibold">{error}</Text>
-        </View>
-      )}
+        {error ? (
+          <View className="mx-4 mt-4 rounded-2xl border border-red-100 bg-red-50 p-4">
+            <Text className="text-[13px] font-semibold text-red-600">{error}</Text>
+          </View>
+        ) : null}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 export default SearchScreen;
-

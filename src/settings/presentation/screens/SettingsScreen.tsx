@@ -13,6 +13,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   View,
 } from 'react-native';
 import DateTimePicker, {
@@ -2094,6 +2095,7 @@ function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<SettingsPanel>('main');
+  const [languageSheetVisible, setLanguageSheetVisible] = useState(false);
   const {
     profile,
     features,
@@ -2569,52 +2571,8 @@ function SettingsScreen() {
           ) : (
             <EmailNotificationsCard />
           )}
-        </ScrollView>
-      ) : (
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-5 pb-28 pt-4"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Profile Header Card */}
-          {profile ? (
-            <ProfileHeaderCard
-              profile={profile}
-              onPress={() => navigation.navigate(ROUTES.PROFILE)}
-            />
-          ) : (
-            // Loading skeleton for profile card
-            <View className="surface-card flex-row items-center gap-4 px-5 py-4">
-              <View className="h-16 w-16 rounded-full bg-gray-200" />
-              <View className="flex-1">
-                <View className="h-5 w-32 rounded bg-gray-200 mb-2" />
-                <View className="h-4 w-24 rounded bg-gray-200" />
-              </View>
-            </View>
-          )}
-
-          {/* Feature Grid */}
-          <View className="mt-5">
-            <FeatureGrid
-              features={features}
-              onFeaturePress={handleFeaturePress}
-            />
-          </View>
-
-          {/* Go Pro Banner */}
-          <View className="mt-5">
-            <GoProBanner />
-          </View>
-
-          {/* Settings Menu List */}
-          <View className="mt-6">
-            <SettingsMenuList
-              items={settingsMenu}
-              onItemPress={handleSettingsItemPress}
-            />
-          </View>
-        </ScrollView>
-      )}
+        </Pressable>
+      </Modal>
 
       <CreateActionSheet
         visible={sheetVisible}

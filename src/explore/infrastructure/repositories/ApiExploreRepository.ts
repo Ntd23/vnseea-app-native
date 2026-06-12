@@ -10,28 +10,22 @@ import type {
   TrendingHashtagPage,
 } from '../../domain/types/explore.types';
 
-// ────────────────────────────────────────────────────────────────────────
-// Wire format
-// ────────────────────────────────────────────────────────────────────────
-//
-// `POST /api/hashtag-suggestions` (PHP at phtml/api/v2/endpoints/hashtag-suggestions.php):
-//   request  : { query?: string, limit?: number }   — query empty → trending set
-//   response : { api_status: 200, hashtags: [
-//                 { id, tag, url, trend_use_num, last_trend_time }, …
-//               ] }
-//
-// The endpoint is PUBLIC — it does NOT require an `access_token`. No
-// sessionStorage guard needed at the call site.
-
 type HashtagSuggestionsResponse = {
   api_status: number | string;
-  hashtags?: Array<Record<string, unknown>>;
+  hashtags?: unknown;
 };
 
-// ────────────────────────────────────────────────────────────────────────
-// Mapping helpers — turn raw WoWonder JSON into clean domain objects.
-// (Pattern mirrored from ApiReelsRepository.ts:59-88.)
-// ────────────────────────────────────────────────────────────────────────
+type GeneralDataResponse = {
+  api_status?: number | string;
+  trending_hashtag?: unknown;
+  trending_hashtags?: unknown;
+  hashtags?: unknown;
+  data?: {
+    trending_hashtag?: unknown;
+    trending_hashtags?: unknown;
+    hashtags?: unknown;
+  };
+};
 
 function readString(raw: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
@@ -54,27 +48,97 @@ function readNumber(raw: Record<string, unknown>, ...keys: string[]): number {
   return 0;
 }
 
-function mapHashtag(raw: Record<string, unknown>): TrendingHashtag | null {
-  // WoWonder's PHP returns `tag` already without the leading `#` (see
-  // `hashtag-suggestions.php` line 9: `str_replace('#', '', …)`). We
-  // defensively strip it again so consumers can always assume no `#`.
-  const tag = readString(raw, 'tag', 'label').replace(/^#+/, '').trim();
-  if (!tag) {
-    return null;
-  }
+function mapHashtag(
+  rawInput: Record<string, unknown> | string,
+): TrendingHashtag | null {
+  const raw =
+    typeof rawInput === 'string'
+      ? ({ tag: rawInput } as Record<string, unknown>)
+      : rawInput;
 
-  // `last_trend_time` from PHP is either an ISO-ish string or an empty
-  // string. We normalize empty → null so the UI can hide that text line.
-  const rawTime = readString(raw, 'last_trend_time');
+  const tag = readString(raw, 'tag', 'label', 'hashtag', 'hash', 'name')
+    .replace(/^#+/, '')
+    .trim();
+
+  if (!tag) return null;
+
+  const rawTime = readString(raw, 'last_trend_time', 'time', 'created_at');
   const lastTrendTime = rawTime.length > 0 ? rawTime : null;
 
   return {
-    id: readString(raw, 'id') || tag,
+    id: readString(raw, 'id', 'hash_id', 'hashtag_id') || tag,
     tag,
     url: readString(raw, 'url'),
-    useCount: readNumber(raw, 'trend_use_num', 'use_count'),
+    useCount: readNumber(
+      raw,
+      'trend_use_num',
+      'use_count',
+      'post_count',
+      'posts_count',
+      'posts',
+      'count',
+      'total',
+    ),
     lastTrendTime,
   };
+}
+
+function toRawHashtagArray(input: unknown): Array<Record<string, unknown> | string> {
+  if (!input) return [];
+
+  if (Array.isArray(input)) {
+    return input.filter(
+      (item): item is Record<string, unknown> | string =>
+        typeof item === 'string' ||
+        (typeof item === 'object' && item !== null && !Array.isArray(item)),
+    );
+  }
+
+  if (typeof input === 'string') return [input];
+
+  if (typeof input === 'object') {
+    const raw = input as Record<string, unknown>;
+    if (
+      readString(raw, 'tag', 'label', 'hashtag', 'hash', 'name').length > 0
+    ) {
+      return [raw];
+    }
+
+    return Object.values(raw).filter(
+      (item): item is Record<string, unknown> | string =>
+        typeof item === 'string' ||
+        (typeof item === 'object' && item !== null && !Array.isArray(item)),
+    );
+  }
+
+  return [];
+}
+
+function extractGeneralHashtags(
+  response: GeneralDataResponse,
+): Array<Record<string, unknown> | string> {
+  return [
+    response.trending_hashtag,
+    response.trending_hashtags,
+    response.hashtags,
+    response.data?.trending_hashtag,
+    response.data?.trending_hashtags,
+    response.data?.hashtags,
+  ].flatMap(toRawHashtagArray);
+}
+
+function dedupeHashtags(items: TrendingHashtag[]): TrendingHashtag[] {
+  const byTag = new Map<string, TrendingHashtag>();
+
+  items.forEach(item => {
+    const key = item.tag.toLowerCase();
+    const existing = byTag.get(key);
+    if (!existing || item.useCount > existing.useCount) {
+      byTag.set(key, item);
+    }
+  });
+
+  return Array.from(byTag.values());
 }
 
 export function createExploreRepository(): ExploreRepository {
@@ -82,20 +146,41 @@ export function createExploreRepository(): ExploreRepository {
     async getTrendingHashtags(
       options: FetchTrendingHashtagsOptions = {},
     ): Promise<TrendingHashtagPage> {
-      // Backend clamps to [1, 20]. Default 8 mirrors the PHP default so
-      // we don't ask for a payload size we won't get anyway.
       const limit = options.limit ?? 8;
 
-      const response = await backendApi.post<HashtagSuggestionsResponse>(
-        apiRoutes.reels.hashtagSuggestions,
-        { limit },
+      const generalResponse = await backendApi.post<GeneralDataResponse>(
+        apiRoutes.feed.generalData,
+        { fetch: 'trending_hashtag' },
       );
 
-      const items = (response.hashtags ?? [])
+      const generalItems = extractGeneralHashtags(generalResponse)
         .map(mapHashtag)
         .filter((item): item is TrendingHashtag => Boolean(item));
 
-      return { items };
+      if (generalItems.length >= limit) {
+        return { items: dedupeHashtags(generalItems).slice(0, limit) };
+      }
+
+      try {
+        const fallbackResponse =
+          await backendApi.post<HashtagSuggestionsResponse>(
+            apiRoutes.reels.hashtagSuggestions,
+            { limit },
+          );
+
+        const fallbackItems = toRawHashtagArray(fallbackResponse.hashtags)
+          .map(mapHashtag)
+          .filter((item): item is TrendingHashtag => Boolean(item));
+
+        return {
+          items: dedupeHashtags([...generalItems, ...fallbackItems]).slice(
+            0,
+            limit,
+          ),
+        };
+      } catch {
+        return { items: dedupeHashtags(generalItems).slice(0, limit) };
+      }
     },
   };
 }

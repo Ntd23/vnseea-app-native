@@ -1,4 +1,4 @@
-// Description: Renders the VNSEEA group detail screen with cover, stats, tabs, and sample posts.
+// Description: Renders a group detail screen with real route data when available.
 import React from 'react';
 import {
   Image,
@@ -16,19 +16,39 @@ import {
   Send,
   Users,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 
 type GroupDetailNav = NativeStackNavigationProp<RootStackParamList>;
+type GroupDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.GROUP_DETAIL>;
 
 const BRAND = '#0000ff';
-const cover =
+const FALLBACK_COVER =
   'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?q=80&w=1400&auto=format&fit=crop';
+
+function formatCompact(value?: number) {
+  const safeValue = Number(value ?? 0);
+  if (safeValue >= 1000000) return `${(safeValue / 1000000).toFixed(1)}M`;
+  if (safeValue >= 1000) return `${(safeValue / 1000).toFixed(1)}K`;
+  return String(Math.round(safeValue));
+}
 
 function GroupDetailScreen() {
   const navigation = useNavigation<GroupDetailNav>();
+  const route = useRoute<GroupDetailRoute>();
+  const group = route.params?.group;
+  const groupTitle = group?.groupTitle || group?.groupName || 'VNSEEA Design Circle';
+  const groupCover = group?.cover || FALLBACK_COVER;
+  const groupAbout =
+    group?.about ||
+    'Không gian chia sẻ thiết kế, sản phẩm số và những ý tưởng cộng đồng dành cho thành viên VNSEEA.';
+  const privacyLabel = group?.privacy === 'private' ? 'Riêng tư' : 'Công khai';
+  const membersLabel = group?.members
+    ? `${formatCompact(group.members)} thành viên`
+    : '24,8K thành viên';
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
@@ -57,19 +77,16 @@ function GroupDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View className="bg-white">
-          <Image source={{ uri: cover }} className="h-48 w-full" />
+          <Image source={{ uri: groupCover }} className="h-48 w-full bg-slate-200" />
           <View className="px-4 pb-5 pt-4">
-            <Text className="text-heading">VNSEEA Design Circle</Text>
+            <Text className="text-heading">{groupTitle}</Text>
             <View className="mt-2 flex-row items-center">
               <Users size={17} color={BRAND} />
               <Text className="ml-2 text-caption-secondary">
-                Công khai · 24,8K thành viên · 126 bài viết hôm nay
+                {privacyLabel} · {membersLabel}
               </Text>
             </View>
-            <Text className="mt-3 text-body-secondary">
-              Không gian chia sẻ thiết kế, sản phẩm số và những ý tưởng cộng
-              đồng dành cho thành viên VNSEEA.
-            </Text>
+            <Text className="mt-3 text-body-secondary">{groupAbout}</Text>
 
             <View className="mt-4 flex-row gap-3">
               <TouchableOpacity
@@ -78,7 +95,7 @@ function GroupDetailScreen() {
               >
                 <Users size={18} color="#FFFFFF" />
                 <Text className="text-title-primary text-inverse">
-                  Đã tham gia
+                  {group?.isJoined ? 'Đã tham gia' : 'Tham gia nhóm'}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -114,7 +131,14 @@ function GroupDetailScreen() {
 
         <View className="surface-card mx-4 mt-4 p-4">
           <View className="flex-row items-center">
-            <View className="h-11 w-11 rounded-full bg-[#0000ff]/10" />
+            {group?.avatar ? (
+              <Image
+                source={{ uri: group.avatar }}
+                className="h-11 w-11 rounded-full bg-slate-100"
+              />
+            ) : (
+              <View className="h-11 w-11 rounded-full bg-[#0000ff]/10" />
+            )}
             <TouchableOpacity
               className="ml-3 flex-1 rounded-full bg-slate-100 px-4 py-3"
               activeOpacity={0.8}
@@ -130,11 +154,18 @@ function GroupDetailScreen() {
         <View className="surface-card mx-4 mt-4 p-4">
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center">
-              <View className="h-11 w-11 rounded-full bg-[#0000ff]/10" />
+              {group?.avatar ? (
+                <Image
+                  source={{ uri: group.avatar }}
+                  className="h-11 w-11 rounded-full bg-slate-100"
+                />
+              ) : (
+                <View className="h-11 w-11 rounded-full bg-[#0000ff]/10" />
+              )}
               <View className="ml-3">
-                <Text className="text-title-primary">Minh Anh</Text>
+                <Text className="text-title-primary">{groupTitle}</Text>
                 <Text className="text-caption-secondary">
-                  2 giờ trước · VNSEEA Design Circle
+                  2 giờ trước · {groupTitle}
                 </Text>
               </View>
             </View>

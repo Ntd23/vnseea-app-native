@@ -6,6 +6,7 @@ import type { ChatItem } from '../messages/domain/types/messages.types';
 import type { LiveKitCallRouteParams } from '../messages/domain/types/call.types';
 import type { GroupLiveKitCallRouteParams } from '../messages/domain/types/groupCall.types';
 import type { PagesItem } from '../pages/domain/types/pages.types';
+import type { GroupItem } from '../community/domain/types/community.types';
 import type { LiveSession } from '../live/domain/types/live.types';
 import type { ProductItem } from '../product/domain/types/product.types';
 import type { FeedPost } from '../feed/domain/types/feed.types';
@@ -63,7 +64,7 @@ export type RootStackParamList = {
   [ROUTES.CREATE_POLL]: undefined;
   [ROUTES.CREATE_GROUP]: undefined;
   [ROUTES.EXPLORE_GROUPS]: undefined;
-  [ROUTES.GROUP_DETAIL]: undefined;
+  [ROUTES.GROUP_DETAIL]: { group?: GroupItem } | undefined;
   [ROUTES.EVENTS]: undefined;
   [ROUTES.FUNDING]: undefined;
   [ROUTES.FUNDING_DETAIL]: { fundId: string };
