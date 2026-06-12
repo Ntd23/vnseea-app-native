@@ -1,3 +1,4 @@
+// Description: Polls unread notification counts without mixing message badges into notifications.
 import { useCallback, useEffect, useMemo } from 'react';
 import { AppState } from 'react-native';
 import {
@@ -15,7 +16,7 @@ export function useNotificationBadgeViewModel() {
   const refresh = useCallback(async () => {
     try {
       const counts = await repository.getUnreadCounts();
-      setUnreadBadgeCounts(counts);
+      setUnreadBadgeCounts({ notificationCount: counts.notificationCount });
     } catch (error) {
       console.warn('[useNotificationBadgeViewModel] refresh failed', error);
     }
@@ -42,7 +43,7 @@ export function useNotificationBadgeViewModel() {
   return {
     notificationCount,
     messageCount,
-    totalUnreadCount: notificationCount + messageCount,
+    totalUnreadCount: notificationCount,
     refresh,
   };
 }

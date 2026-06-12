@@ -1,4 +1,4 @@
-// Feed Repository Interface
+// Description: Declares feed repository contracts for source-filtered home feed loading and post actions.
 // Port from: client/src/feed/domain/repositories/
 
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
@@ -9,6 +9,8 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../types/feed.types';
+
+export type FeedSource = 'all' | 'following';
 
 export interface FeedPostsPage<TPost extends FeedPost = FeedPost> {
   posts: TPost[];
@@ -27,13 +29,21 @@ export interface FeedRepository {
    * the home feed should call `getAllPosts` so a single API round-trip
    * powers the whole screen.
    */
-  getAllPosts(limit?: number, afterPostId?: string): Promise<FeedPost[]>;
+  getAllPosts(
+    limit?: number,
+    afterPostId?: string,
+    source?: FeedSource,
+  ): Promise<FeedPost[]>;
 
   /**
    * Fetch only lightweight feed posts (text/photo/poll/ad). Home uses this
    * first so the user sees content before heavier video/media pages finish.
    */
-  getLightPosts(limit?: number, afterPostId?: string): Promise<FeedPost[]>;
+  getLightPosts(
+    limit?: number,
+    afterPostId?: string,
+    source?: FeedSource,
+  ): Promise<FeedPost[]>;
 
   /**
    * Cursor-aware variant used by Home. The cursor is derived from the
@@ -43,9 +53,14 @@ export interface FeedRepository {
   getLightPostsPage(
     limit?: number,
     afterPostId?: string,
+    source?: FeedSource,
   ): Promise<FeedPostsPage>;
 
-  getVideoPosts(limit?: number, afterPostId?: string): Promise<FeedVideoPost[]>;
+  getVideoPosts(
+    limit?: number,
+    afterPostId?: string,
+    source?: FeedSource,
+  ): Promise<FeedVideoPost[]>;
 
   /**
    * Add, swap, or clear the viewer's reaction on a video post.
@@ -68,7 +83,11 @@ export interface FeedRepository {
    * just filters the response on the client side. Falls back to the
    * viewer's own posts when the news-feed is empty (fresh accounts).
    */
-  getTextPosts(limit?: number, afterPostId?: string): Promise<FeedTextPost[]>;
+  getTextPosts(
+    limit?: number,
+    afterPostId?: string,
+    source?: FeedSource,
+  ): Promise<FeedTextPost[]>;
 
   /**
    * Create a new text / photo post via WoWonder's `/api/new_post`.

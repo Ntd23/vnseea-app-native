@@ -13,11 +13,45 @@ $response_data = array(
     'api_status' => 400
 );
 
+function Wo_WithdrawDebugLog($message, $context = array()) {
+    $safe_context = array();
+    foreach ($context as $key => $value) {
+        if (is_array($value)) {
+            $safe_context[$key] = array_values($value);
+        } elseif (is_bool($value)) {
+            $safe_context[$key] = $value ? 'true' : 'false';
+        } else {
+            $safe_context[$key] = (string)$value;
+        }
+    }
+    error_log('[withdraw-api] ' . $message . ' ' . json_encode($safe_context));
+}
+
+$raw_post_body = file_get_contents('php://input');
+if (empty($_POST) && !empty($raw_post_body)) {
+    $parsed_post_body = array();
+    parse_str($raw_post_body, $parsed_post_body);
+    if (!empty($parsed_post_body) && is_array($parsed_post_body)) {
+        $_POST = array_merge($parsed_post_body, $_POST);
+        Wo_WithdrawDebugLog('parsed_raw_body', array(
+            'parsed_keys' => array_keys($parsed_post_body),
+            'content_type' => !empty($_SERVER['CONTENT_TYPE']) ? $_SERVER['CONTENT_TYPE'] : '',
+            'raw_length' => strlen($raw_post_body)
+        ));
+    }
+}
 $required_fields =  array(
                         'paypal',
                         'bank',
                         'sepay'
                     );
+if (
+    (empty($_POST['type']) || !in_array($_POST['type'], $required_fields)) &&
+    !empty($_POST['withdraw_method']) &&
+    in_array($_POST['withdraw_method'], $required_fields)
+) {
+    $_POST['type'] = $_POST['withdraw_method'];
+}
 if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     if ($_POST['type'] == 'paypal') {
         if (empty($_POST['paypal_email'])) {
@@ -158,6 +192,19 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     }
 }
 else{
+    Wo_WithdrawDebugLog('missing_type', array(
+        'request_method' => !empty($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : '',
+        'route_type' => !empty($_GET['type']) ? $_GET['type'] : '',
+        'post_type' => !empty($_POST['type']) ? $_POST['type'] : '',
+        'post_withdraw_method' => !empty($_POST['withdraw_method']) ? $_POST['withdraw_method'] : '',
+        'post_keys' => array_keys($_POST),
+        'request_keys' => array_keys($_REQUEST),
+        'content_type' => !empty($_SERVER['CONTENT_TYPE']) ? $_SERVER['CONTENT_TYPE'] : '',
+        'content_length' => !empty($_SERVER['CONTENT_LENGTH']) ? $_SERVER['CONTENT_LENGTH'] : 0,
+        'raw_length' => strlen($raw_post_body),
+        'raw_has_type' => strpos($raw_post_body, 'type=') !== false,
+        'raw_has_withdraw_method' => strpos($raw_post_body, 'withdraw_method=') !== false
+    ));
     $error_code    = 4;
     $error_message = 'type can not be empty';
 }

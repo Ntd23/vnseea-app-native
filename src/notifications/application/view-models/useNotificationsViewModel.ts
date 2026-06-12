@@ -1,5 +1,4 @@
-// Description: Manages notification list state, unread badge counts,
-// active tab (all / unread), active type filter, and language.
+// Description: Manages non-message notification list state, unread badge counts, filters, and language.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
@@ -39,7 +38,6 @@ export function useNotificationsViewModel() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
   // Pending actions state (for accept/reject group chat)
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
@@ -81,9 +79,8 @@ export function useNotificationsViewModel() {
   useEffect(() => {
     setUnreadBadgeCounts({
       notificationCount: unreadCount,
-      messageCount: unreadMessageCount,
     });
-  }, [unreadCount, unreadMessageCount]);
+  }, [unreadCount]);
 
   // Load first page
   const loadFirstPage = useCallback(
@@ -106,7 +103,6 @@ export function useNotificationsViewModel() {
         setNextOffset(result.nextOffset);
         setHasMore(result.hasMore);
         setUnreadCount(result.unreadCount);
-        setUnreadMessageCount(result.unreadMessageCount);
       } catch (err) {
         if (epochAtCall !== reloadEpoch + 1) {
           return;
@@ -326,7 +322,6 @@ export function useNotificationsViewModel() {
     notifications,
     filteredNotifications,
     unreadCount,
-    unreadMessageCount,
     error,
     isLoading,
     isRefreshing,

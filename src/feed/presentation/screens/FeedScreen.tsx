@@ -116,6 +116,7 @@ import type {
   FeedPollPost,
   FeedAdPost,
 } from '../../domain/types/feed.types';
+import type { FeedSource } from '../../domain/repositories/FeedRepository';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
 import {
@@ -213,7 +214,7 @@ const images = {
 };
 
 type FeedCopy = {
-  filters: string[];
+  filters: Array<{ source: FeedSource; label: string }>;
   reactionLabel: Record<ReactionType, string>;
   like: string;
   comment: string;
@@ -292,7 +293,10 @@ type FeedCopy = {
 
 const FEED_COPY: Record<AppLanguage, FeedCopy> = {
   vi: {
-    filters: ['Mới nhất', 'Phổ biến', 'Yêu thích nhất'],
+    filters: [
+      { source: 'all', label: 'Tất cả bài viết' },
+      { source: 'following', label: 'Người theo dõi' },
+    ],
     reactionLabel: {
       like: 'Đã thích',
       love: 'Yêu thích',
@@ -376,7 +380,10 @@ const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     editEventMessage: name => `Tính năng chỉnh sửa sự kiện "${name}" đang được phát triển.`,
   },
   en: {
-    filters: ['Latest', 'Popular', 'Most loved'],
+    filters: [
+      { source: 'all', label: 'All posts' },
+      { source: 'following', label: 'Following' },
+    ],
     reactionLabel: {
       like: 'Liked',
       love: 'Love',
@@ -606,30 +613,42 @@ function FeedHeader() {
   );
 }
 
-function FilterTabs({ copy }: { copy: FeedCopy }) {
+function FilterTabs({
+  copy,
+  activeSource,
+  onChangeSource,
+}: {
+  copy: FeedCopy;
+  activeSource: FeedSource;
+  onChangeSource: (source: FeedSource) => void;
+}) {
   return (
     <View className="border-b border-[#dddfe2] bg-white px-4 pt-2.5">
       <View className="flex-row items-end justify-between">
-        {copy.filters.map((filter, index) => (
+        {copy.filters.map(filter => {
+          const active = filter.source === activeSource;
+          return (
           <TouchableOpacity
-            key={filter}
+            key={filter.source}
             className="min-h-[38px] flex-1 items-center justify-center"
             activeOpacity={0.8}
+            onPress={() => onChangeSource(filter.source)}
           >
             <Text
               className={`text-[15px] font-extrabold ${
-                index === 0 ? 'text-[#0000ff]' : 'text-title-secondary'
+                active ? 'text-[#0000ff]' : 'text-title-secondary'
               }`}
             >
-              {filter}
+              {filter.label}
             </Text>
             <View
               className={`mt-2.5 h-[3px] w-16 rounded-full ${
-                index === 0 ? 'bg-[#0000ff]' : 'bg-transparent'
+                active ? 'bg-[#0000ff]' : 'bg-transparent'
               }`}
             />
           </TouchableOpacity>
-        ))}
+          );
+        })}
       </View>
     </View>
   );
@@ -3234,6 +3253,8 @@ function FeedScreen() {
   const reportFeedPost = vm.reportPost;
   const reloadFeedPosts = vm.reloadPosts;
   const setFeedScrollBusy = vm.setScrollBusy;
+  const activeFeedSource = vm.feedSource;
+  const setActiveFeedSource = vm.setFeedSource;
 
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -3812,7 +3833,15 @@ function FeedScreen() {
       ];
       supplementalLoadTimersRef.current = timers;
     });
-  }, [reloadEvents, reloadFeedPosts, reloadGroups, reloadJobs, reloadLive, reloadPages, reloadProducts]);
+  }, [
+    reloadEvents,
+    reloadFeedPosts,
+    reloadGroups,
+    reloadJobs,
+    reloadLive,
+    reloadPages,
+    reloadProducts,
+  ]);
 
   const ListFooterComponent = useMemo(() => {
     if (isFeedLoadingMore) {
@@ -3942,7 +3971,12 @@ function FeedScreen() {
       feedEventPosts,
       feedJobPosts,
     );
-  }, [feedPosts, feedProductPosts, feedEventPosts, feedJobPosts]);
+  }, [
+    feedPosts,
+    feedProductPosts,
+    feedEventPosts,
+    feedJobPosts,
+  ]);
 
   const feedLiveItems = useMemo<LiveStreamItem[]>(() => {
     const byPostId = new Map<number, LiveStreamItem>();
@@ -4341,13 +4375,24 @@ function FeedScreen() {
   const ListHeaderComponent = useMemo(
     () => (
       <View>
-        <FilterTabs copy={copy} />
+        <FilterTabs
+          copy={copy}
+          activeSource={activeFeedSource}
+          onChangeSource={setActiveFeedSource}
+        />
         <ComposerCard onPress={goToCreatePost} avatarUrl={userVm.user?.avatar} copy={copy} />
         <StoriesRow avatarUrl={userVm.user?.avatar} copy={copy} />
         <GreetingCard userName={userVm.user?.name} copy={copy} />
       </View>
     ),
-    [copy, goToCreatePost, userVm.user?.avatar, userVm.user?.name],
+    [
+      activeFeedSource,
+      copy,
+      goToCreatePost,
+      setActiveFeedSource,
+      userVm.user?.avatar,
+      userVm.user?.name,
+    ],
   );
 
   return (

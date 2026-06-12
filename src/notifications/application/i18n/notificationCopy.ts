@@ -37,7 +37,6 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
     filterFollows: 'Lượt theo dõi',
     filterGroups: 'Nhóm',
     filterEvents: 'Sự kiện',
-    filterGroupChats: 'Lời mời nhóm chat',
     noUnread: 'Bạn đã đọc hết thông báo',
     noUnreadDescription: 'Quay lại sau nhé, chúng tôi sẽ thông báo khi có gì mới.',
   },
@@ -72,7 +71,6 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
     filterFollows: 'Follows',
     filterGroups: 'Groups',
     filterEvents: 'Events',
-    filterGroupChats: 'Group chat invites',
     noUnread: 'You are all caught up',
     noUnreadDescription: 'Come back later, we will let you know when something is new.',
   },
@@ -144,8 +142,7 @@ export type NotificationFilterType =
   | 'comments'
   | 'follows'
   | 'groups'
-  | 'events'
-  | 'groupChats';
+  | 'events';
 
 export const NOTIFICATION_FILTERS: ReadonlyArray<{
   id: NotificationFilterType;
@@ -157,7 +154,6 @@ export const NOTIFICATION_FILTERS: ReadonlyArray<{
   { id: 'follows', iconKey: 'UserPlus' },
   { id: 'groups', iconKey: 'Users' },
   { id: 'events', iconKey: 'CalendarDays' },
-  { id: 'groupChats', iconKey: 'MessageSquare' },
 ];
 
 export function filterLabelFor(
@@ -178,8 +174,6 @@ export function filterLabelFor(
       return copy.filterGroups;
     case 'events':
       return copy.filterEvents;
-    case 'groupChats':
-      return copy.filterGroupChats;
     default:
       return copy.filterAll;
   }
@@ -207,9 +201,6 @@ export function filterNotificationsByType(
       case 'groups':
         return (
           item.type === 'joined_group' ||
-          item.type === 'added_you_to_group' ||
-          item.type === 'accept_group_chat_request' ||
-          item.type === 'declined_group_chat_request' ||
           item.type === 'requested_to_join_group' ||
           item.type === 'accepted_join_request'
         );
@@ -218,12 +209,6 @@ export function filterNotificationsByType(
           item.type === 'interested_event' ||
           item.type === 'going_event' ||
           item.type === 'invited_event'
-        );
-      case 'groupChats':
-        return (
-          item.type === 'added_you_to_group' ||
-          item.type === 'accept_group_chat_request' ||
-          item.type === 'declined_group_chat_request'
         );
       default:
         return true;
@@ -274,6 +259,18 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
   },
 };
 
+function normalizeBackendNotificationText(text: string) {
+  return text
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function formatNotificationText(
   item: NotificationsItem,
   language: AppLanguage,
@@ -281,6 +278,15 @@ export function formatNotificationText(
   const templates = TEXT_TEMPLATES[language];
   const template = templates[item.type] ?? templates.default;
   const name = item.notifier?.name || item.notifier?.username;
+  const backendText = normalizeBackendNotificationText(item.text || '');
+
+  if (backendText) {
+    if (!name || backendText.toLowerCase().includes(name.toLowerCase())) {
+      return backendText;
+    }
+    return `${name} ${backendText}`;
+  }
+
   const fallbackName = language === 'vi' ? 'Người dùng' : 'Someone';
   return template.replace('{name}', name || fallbackName);
 }
