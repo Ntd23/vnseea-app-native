@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import VideoPlayer from 'react-native-video';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView, TouchableOpacity as GHTouchableOpacity } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -128,10 +128,10 @@ import { useCurrentUserViewModel } from '../../../shared-kernel/application/view
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
-import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
+import type { ProductItem } from '../../../product/domain/types/product.types';
 import { PollPostCard } from '../components/PollPostCard';
 import { useEventsOnFeedViewModel, EventPostCard } from '../../../events';
 import {
@@ -1900,6 +1900,73 @@ export type PhotoViewerState = {
   initialIndex: number;
 } | null;
 
+const PHOTO_VIEWER_IMAGE_HEIGHT_RATIO = 0.62;
+
+const PhotoViewerImage = React.memo(function PhotoViewerImage({
+  url,
+  width,
+  height,
+}: {
+  url: string;
+  width: number;
+  height: number;
+}) {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [showSpinner, setShowSpinner] = useState(false);
+
+  useEffect(() => {
+    setIsLoaded(false);
+    setHasError(false);
+    setShowSpinner(false);
+
+    // Only show spinner if the image takes longer than 150ms to load
+    const timer = setTimeout(() => {
+      setShowSpinner(true);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [url]);
+
+  return (
+    <View
+      style={{
+        width,
+        height,
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}
+    >
+      {!isLoaded && !hasError && showSpinner ? (
+        <ActivityIndicator
+          color="#FFFFFF"
+          size="small"
+          style={{ position: 'absolute' }}
+        />
+      ) : null}
+      {hasError ? (
+        <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>
+          Không tải được ảnh
+        </Text>
+      ) : (
+        <Image
+          source={{ uri: url }}
+          style={{ width, height: height * PHOTO_VIEWER_IMAGE_HEIGHT_RATIO }}
+          resizeMode="contain"
+          fadeDuration={0}
+          resizeMethod="resize"
+          progressiveRenderingEnabled
+          onLoad={() => setIsLoaded(true)}
+          onError={() => {
+            setHasError(true);
+            setIsLoaded(true);
+          }}
+        />
+      )}
+    </View>
+  );
+});
+
 export function PhotoViewerModal({
   state,
   copy = FEED_COPY.vi,
@@ -1917,6 +1984,7 @@ export function PhotoViewerModal({
 }) {
   const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
   const [currentIndex, setCurrentIndex] = useState(0);
+  const flatListRef = useRef<FlatList>(null);
 
   const translateY = useSharedValue(0);
   const openProgress = useSharedValue(0);
@@ -1932,10 +2000,8 @@ export function PhotoViewerModal({
   }, [state, translateY, openProgress]);
 
   const handleClose = useCallback(() => {
-    openProgress.value = withTiming(0, { duration: 180 }, (finished) => {
-      if (finished) {
-        runOnJS(onClose)();
-      }
+    openProgress.value = withTiming(0, { duration: 180 }, () => {
+      runOnJS(onClose)();
     });
   }, [onClose, openProgress]);
 
@@ -1948,10 +2014,8 @@ export function PhotoViewerModal({
     .onEnd((event) => {
       if (event.translationY > 100 || event.velocityY > 500) {
         // Slide off screen downwards
-        translateY.value = withTiming(SCREEN_H, { duration: 180 }, (finished) => {
-          if (finished) {
-            runOnJS(onClose)();
-          }
+        translateY.value = withTiming(SCREEN_H, { duration: 180 }, () => {
+          runOnJS(onClose)();
         });
       } else {
         // Snap back to center
@@ -2034,8 +2098,9 @@ export function PhotoViewerModal({
                 ) : (
                   <View />
                 )}
-                <TouchableOpacity
+                <GHTouchableOpacity
                   onPress={handleClose}
+                  delayPressIn={0}
                   style={{
                     width: 36, height: 36, borderRadius: 18,
                     backgroundColor: 'rgba(0,0,0,0.3)',
@@ -2043,12 +2108,13 @@ export function PhotoViewerModal({
                   }}
                 >
                   <X size={20} color="#fff" />
-                </TouchableOpacity>
+                </GHTouchableOpacity>
               </View>
 
               {/* ── Horizontally paginated photo list ── */}
               <FlatList
-                data={livePost.photos}
+                ref={flatListRef}
+                data={post.photos}
                 horizontal
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
@@ -2056,6 +2122,18 @@ export function PhotoViewerModal({
                 getItemLayout={(_, index) => ({
                   length: SCREEN_W, offset: SCREEN_W * index, index,
                 })}
+                windowSize={3}
+                initialNumToRender={1}
+                maxToRenderPerBatch={1}
+                removeClippedSubviews={Platform.OS === 'android'}
+                onScrollToIndexFailed={info => {
+                  setTimeout(() => {
+                    flatListRef.current?.scrollToIndex({
+                      index: info.index,
+                      animated: false,
+                    });
+                  }, 100);
+                }}
                 onMomentumScrollEnd={e => {
                   const idx = Math.round(
                     e.nativeEvent.contentOffset.x / SCREEN_W,
@@ -2064,18 +2142,11 @@ export function PhotoViewerModal({
                 }}
                 keyExtractor={(url, i) => `viewer-${i}-${url}`}
                 renderItem={({ item: url }) => (
-                  <View
-                    style={{
-                      width: SCREEN_W, height: SCREEN_H,
-                      justifyContent: 'center', alignItems: 'center',
-                    }}
-                  >
-                    <Image
-                      source={{ uri: url }}
-                      style={{ width: SCREEN_W, height: SCREEN_H * 0.62 }}
-                      resizeMode="contain"
-                    />
-                  </View>
+                  <PhotoViewerImage
+                    url={url}
+                    width={SCREEN_W}
+                    height={SCREEN_H}
+                  />
                 )}
               />
 
@@ -2151,8 +2222,9 @@ export function PhotoViewerModal({
                   {/* Left: Like, Comment, Share buttons */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 24 }}>
                     {/* Like action button */}
-                    <TouchableOpacity
+                    <GHTouchableOpacity
                       onPress={() => onReact(livePost.id, 'like')}
+                      delayPressIn={0}
                       style={{ flexDirection: 'row', alignItems: 'center' }}
                       activeOpacity={0.75}
                     >
@@ -2168,11 +2240,12 @@ export function PhotoViewerModal({
                       <Text style={{ color: '#fff', marginLeft: 8, fontSize: 14, fontWeight: '600' }}>
                         {livePost.likeCount}
                       </Text>
-                    </TouchableOpacity>
+                    </GHTouchableOpacity>
 
                     {/* Comment action button */}
-                    <TouchableOpacity
+                    <GHTouchableOpacity
                       onPress={() => onCommentTap(livePost.id)}
+                      delayPressIn={0}
                       style={{ flexDirection: 'row', alignItems: 'center' }}
                       activeOpacity={0.75}
                     >
@@ -2180,15 +2253,16 @@ export function PhotoViewerModal({
                       <Text style={{ color: '#fff', marginLeft: 8, fontSize: 14, fontWeight: '600' }}>
                         {livePost.commentCount}
                       </Text>
-                    </TouchableOpacity>
+                    </GHTouchableOpacity>
 
                     {/* Share action button */}
-                    <TouchableOpacity
+                    <GHTouchableOpacity
                       style={{ flexDirection: 'row', alignItems: 'center' }}
+                      delayPressIn={0}
                       activeOpacity={0.75}
                     >
                       <Share2 size={20} color="#fff" />
-                    </TouchableOpacity>
+                    </GHTouchableOpacity>
                   </View>
 
                   {/* Right: Stacked reactions badges */}
@@ -2810,6 +2884,7 @@ const PostHeader = React.memo(function PostHeader({
   badge,
   onPress,
   onMorePress,
+  onDetailPress,
   post,
 }: {
   avatar?: string;
@@ -2819,6 +2894,7 @@ const PostHeader = React.memo(function PostHeader({
   badge?: string;
   onPress?: () => void;
   onMorePress?: (post: FeedPost) => void;
+  onDetailPress?: (post: FeedPost) => void;
   post?: FeedPost;
 }) {
   const handleMorePress = useCallback(() => {
@@ -2826,6 +2902,12 @@ const PostHeader = React.memo(function PostHeader({
       onMorePress?.(post);
     }
   }, [onMorePress, post]);
+
+  const handleDetailPress = useCallback(() => {
+    if (post) {
+      onDetailPress?.(post);
+    }
+  }, [onDetailPress, post]);
 
   return (
     <View className="mb-4 flex-row items-center justify-between">
@@ -2852,6 +2934,18 @@ const PostHeader = React.memo(function PostHeader({
             ) : null}
           </View>
           <Text className="text-caption-secondary">{time} • {copy.publicLabel}</Text>
+          {onDetailPress && post ? (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleDetailPress}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              className="mt-1 self-start"
+            >
+              <Text className="text-caption-primary text-brand">
+                Xem chi tiết
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </TouchableOpacity>
       {onMorePress && post && (
@@ -2883,6 +2977,7 @@ export const TextPostCard = React.memo(function TextPostCard({
   hasDragged,
   navigateToProfile,
   onOpenPostMenu,
+  onPostPress,
 }: {
   post: FeedTextPost;
   copy?: FeedCopy;
@@ -2903,6 +2998,13 @@ export const TextPostCard = React.memo(function TextPostCard({
   hasDragged?: any;
   navigateToProfile: (userId: string) => void;
   onOpenPostMenu?: (post: FeedPost) => void;
+  /**
+   * Tapping the post header / body opens the dedicated PostDetail
+   * screen. We intentionally keep this separate from `onCommentTap`
+   * (which only opens the comments sheet) so users can still peek
+   * at comments inline without leaving the feed.
+   */
+  onPostPress?: (post: FeedPost) => void;
 }) {
   const localX = useSharedValue(0);
   const localY = useSharedValue(0);
@@ -2960,6 +3062,7 @@ export const TextPostCard = React.memo(function TextPostCard({
           copy={copy}
           onPress={post.publisher.id ? handleProfilePress : undefined}
           onMorePress={onOpenPostMenu}
+          onDetailPress={onPostPress}
           post={post}
         />
         {post.caption ? (
@@ -2983,6 +3086,7 @@ export const TextPostCard = React.memo(function TextPostCard({
                 key={url}
                 onPress={() => onPhotoPress(post, index)}
                 activeOpacity={0.95}
+                delayPressIn={0}
                 style={[getPhotoLayout(index, totalPhotos), PHOTO_GRID_ITEM_PADDING]}
               >
                 <View style={{ flex: 1, overflow: 'hidden' }}>
@@ -3258,6 +3362,19 @@ function FeedScreen() {
     onCommentCountChange: vm.updateCommentCount,
   });
 
+  // Stable ref-backed wrappers to prevent flatlist items re-rendering on feed action changes
+  const openCommentsRef = useRef(commentVm.openComments);
+  openCommentsRef.current = commentVm.openComments;
+  const handleCommentTapStable = useCallback((postId: string) => {
+    openCommentsRef.current(postId);
+  }, []);
+
+  const toggleReactionRef = useRef(vm.toggleReaction);
+  toggleReactionRef.current = vm.toggleReaction;
+  const handleToggleReactionStable = useCallback((postId: string, reaction: ReactionType) => {
+    toggleReactionRef.current(postId, reaction);
+  }, []);
+
   // Products for feed (Facebook Marketplace style)
   const productsVm = useProductsOnFeedViewModel({ autoLoad: false });
 
@@ -3277,9 +3394,32 @@ function FeedScreen() {
     }));
   }, [copy.sellerFallback, productsVm.products]);
 
-  const handleProductPress = useCallback((_product: any) => {
-    // Navigate to product detail screen
-  }, []);
+  const handleProductPress = useCallback(
+    (product: ProductItem) => {
+      // Push the dedicated product detail screen. We pass the full
+      // object so the detail screen renders instantly with no extra
+      // fetch; `productId` is also passed as the route's canonical key.
+      navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+        productId: product.id,
+        product,
+      });
+    },
+    [navigation],
+  );
+
+  // Tap the "Xem chi tiết" affordance below a post header to open the
+  // dedicated PostDetail screen. The post object is passed so the
+  // detail screen renders instantly; if it's missing (deep-link), the
+  // detail screen's ViewModel falls back to `getPostById`.
+  const handlePostPress = useCallback(
+    (post: FeedPost) => {
+      navigation.navigate(ROUTES.POST_DETAIL, {
+        postId: post.id,
+        post,
+      });
+    },
+    [navigation],
+  );
 
   // Events for feed
   const eventsVm = useEventsOnFeedViewModel({ autoLoad: false });
@@ -3690,13 +3830,56 @@ function FeedScreen() {
   // Set when the user taps a photo in a text post. Cleared by the modal's
   // close button or Android back press.
   const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
+  const openingPhotoViewerRef = useRef(false);
+  const photoPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handlePhotoPress = useCallback(
     (post: FeedTextPost, photoIndex: number) => {
-      setPhotoViewer({ post, initialIndex: photoIndex });
+      if (openingPhotoViewerRef.current) {
+        return;
+      }
+
+      const total = post.photos.length;
+      if (total === 0) {
+        return;
+      }
+
+      // Clear any pending timeout
+      if (photoPressTimeoutRef.current) {
+        clearTimeout(photoPressTimeoutRef.current);
+      }
+
+      const safeIndex = Math.min(Math.max(photoIndex, 0), total - 1);
+      openingPhotoViewerRef.current = true;
+      setPhotoViewer({ post, initialIndex: safeIndex });
+
+      // Reset safety flag after 400ms so it never gets stuck
+      photoPressTimeoutRef.current = setTimeout(() => {
+        openingPhotoViewerRef.current = false;
+        photoPressTimeoutRef.current = null;
+      }, 400);
+
+      // Prefetch nearby photos for extremely fast rendering
+      const nearbyPhotos = [
+        post.photos[safeIndex],
+        post.photos[safeIndex - 1],
+        post.photos[safeIndex + 1],
+      ].filter(Boolean);
+      nearbyPhotos.forEach(url => {
+        Image.prefetch(url).catch(() => undefined);
+      });
     },
     [],
   );
+
+  const handleClosePhotoViewer = useCallback(() => {
+    setPhotoViewer(null);
+    openingPhotoViewerRef.current = false;
+    if (photoPressTimeoutRef.current) {
+      clearTimeout(photoPressTimeoutRef.current);
+      photoPressTimeoutRef.current = null;
+    }
+  }, []);
 
   // Reaction picker state — anchored to whichever "Thích" button was
   // long-pressed. Stored at this level (not inside each card) so only one
@@ -3723,10 +3906,10 @@ function FeedScreen() {
   const handlePickReaction = useCallback(
     (reaction: ReactionType) => {
       if (!pickerAnchor) return;
-      toggleFeedReaction(pickerAnchor.postId, reaction);
+      handleToggleReactionStable(pickerAnchor.postId, reaction);
       setPickerAnchor(null);
     },
-    [pickerAnchor, toggleFeedReaction],
+    [pickerAnchor, handleToggleReactionStable],
   );
 
   // Share handlers
@@ -3924,22 +4107,22 @@ function FeedScreen() {
         key={item.id}
         post={item}
         copy={copy}
-        onReact={toggleFeedReaction}
+        onReact={handleToggleReactionStable}
         onOpenPicker={handleOpenPicker}
-        onCommentTap={commentVm.openComments}
+        onCommentTap={handleCommentTapStable}
         onShare={handleOpenSharePost}
         navigateToProfile={navigateToProfile}
         onOpenPostMenu={handleOpenPostMenu}
       />
     ),
     [
-      commentVm.openComments,
+      handleCommentTapStable,
       copy,
       handleOpenPicker,
       handleOpenSharePost,
       navigateToProfile,
       handleOpenPostMenu,
-      toggleFeedReaction,
+      handleToggleReactionStable,
     ],
   );
 
@@ -3949,24 +4132,26 @@ function FeedScreen() {
         key={item.id}
         post={item}
         copy={copy}
-        onReact={toggleFeedReaction}
+        onReact={handleToggleReactionStable}
         onOpenPicker={handleOpenPicker}
-        onCommentTap={commentVm.openComments}
+        onCommentTap={handleCommentTapStable}
         onPhotoPress={handlePhotoPress}
         onShare={handleOpenSharePost}
         navigateToProfile={navigateToProfile}
         onOpenPostMenu={handleOpenPostMenu}
+        onPostPress={handlePostPress}
       />
     ),
     [
-      commentVm.openComments,
+      handleCommentTapStable,
       copy,
       handleOpenPicker,
       handleOpenSharePost,
       handlePhotoPress,
       navigateToProfile,
       handleOpenPostMenu,
-      toggleFeedReaction,
+      handlePostPress,
+      handleToggleReactionStable,
     ],
   );
 
@@ -4247,9 +4432,9 @@ function FeedScreen() {
       <PhotoViewerModal
         state={photoViewer}
         copy={copy}
-        onClose={() => setPhotoViewer(null)}
-        onReact={toggleFeedReaction}
-        onCommentTap={commentVm.openComments}
+        onClose={handleClosePhotoViewer}
+        onReact={handleToggleReactionStable}
+        onCommentTap={handleCommentTapStable}
         posts={feedPosts}
       />
       <ReelCommentsSheet

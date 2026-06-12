@@ -1,12 +1,20 @@
-// Description: Manages notification list state and unread badge counts.
+// Description: Manages notification list state, unread badge counts,
+// active tab (all / unread), active type filter, and language.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
-import type {
-  NotificationsItem,
-} from '../../domain/types/notifications.types';
+import type { NotificationsItem } from '../../domain/types/notifications.types';
+import {
+  filterNotificationsByType,
+  getCopy,
+  type NotificationFilterType,
+} from '../../application/i18n/notificationCopy';
 
 const PAGE_SIZE = 100;
 
@@ -16,6 +24,8 @@ type GroupChatActionResponse = {
   message_data?: string;
   errors?: { error_text: string };
 };
+
+export type NotificationTab = 'all' | 'unread';
 
 export function useNotificationsViewModel() {
   const repository = useMemo(() => createNotificationsRepository(), []);
@@ -34,6 +44,40 @@ export function useNotificationsViewModel() {
   // Pending actions state (for accept/reject group chat)
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
 
+  // UI state — tabs, filter, language
+  const [activeTab, setActiveTabState] = useState<NotificationTab>('all');
+  const [activeFilter, setActiveFilterState] = useState<NotificationFilterType>('all');
+  const [language, setLanguageState] = useState<AppLanguage>(() =>
+    languageStorage.getLanguage(),
+  );
+
+  // Track the latest request id so stale responses don't overwrite fresh ones.
+  const [reloadEpoch, setReloadEpoch] = useState(0);
+
+  const setActiveTab = useCallback((tab: NotificationTab) => {
+    setActiveTabState(tab);
+  }, []);
+
+  const setActiveFilter = useCallback((filter: NotificationFilterType) => {
+    setActiveFilterState(filter);
+  }, []);
+
+  const setLanguage = useCallback((next: AppLanguage) => {
+    languageStorage.setLanguage(next);
+    setLanguageState(next);
+  }, []);
+
+  const copy = useMemo(() => getCopy(language), [language]);
+
+  // Tab-filtered + type-filtered list.
+  const filteredNotifications = useMemo(() => {
+    const typeFiltered = filterNotificationsByType(notifications, activeFilter);
+    if (activeTab === 'unread') {
+      return typeFiltered.filter(item => !item.seen);
+    }
+    return typeFiltered;
+  }, [activeFilter, activeTab, notifications]);
+
   useEffect(() => {
     setUnreadBadgeCounts({
       notificationCount: unreadCount,
@@ -44,6 +88,8 @@ export function useNotificationsViewModel() {
   // Load first page
   const loadFirstPage = useCallback(
     async (refreshing = false, silent = false) => {
+      const epochAtCall = reloadEpoch + 1;
+      setReloadEpoch(epochAtCall);
       if (refreshing) {
         setIsRefreshing(true);
       } else if (!silent) {
@@ -53,13 +99,18 @@ export function useNotificationsViewModel() {
 
       try {
         const result = await repository.getNotifications({ limit: PAGE_SIZE });
-
+        if (epochAtCall !== reloadEpoch + 1) {
+          return;
+        }
         setNotifications(result.items);
         setNextOffset(result.nextOffset);
         setHasMore(result.hasMore);
         setUnreadCount(result.unreadCount);
         setUnreadMessageCount(result.unreadMessageCount);
       } catch (err) {
+        if (epochAtCall !== reloadEpoch + 1) {
+          return;
+        }
         setError(
           err instanceof Error
             ? err.message
@@ -70,7 +121,7 @@ export function useNotificationsViewModel() {
         setIsRefreshing(false);
       }
     },
-    [repository],
+    [reloadEpoch, repository],
   );
 
   // Refresh
@@ -199,23 +250,19 @@ export function useNotificationsViewModel() {
       setPendingActions(prev => new Set(prev).add(groupChatId));
 
       try {
-        console.log('[useNotificationsViewModel] Accepting group chat invitation:', groupChatId);
         const response = await apiBridge.post<GroupChatActionResponse>(
           'group_chat',
           { type: 'accept', group_id: groupChatId },
         );
 
-        console.log('[useNotificationsViewModel] Accept response:', response);
-
         if (response.api_status === 200) {
-          // Update notification: remove the invite notification
           setNotifications(prev =>
             prev.filter(n => n.groupChatId !== groupChatId)
           );
           setUnreadCount(prev => Math.max(0, prev - 1));
           return true;
         } else {
-          const errorMsg = response.errors?.error_text || 'Không thể chấp nhận lời mời';
+          const errorMsg = response.errors?.error_text || copy.acceptFailed;
           console.warn('[useNotificationsViewModel] Accept failed:', errorMsg);
           return false;
         }
@@ -230,7 +277,7 @@ export function useNotificationsViewModel() {
         });
       }
     },
-    [pendingActions],
+    [copy.acceptFailed, pendingActions],
   );
 
   // Reject group chat invitation
@@ -244,23 +291,19 @@ export function useNotificationsViewModel() {
       setPendingActions(prev => new Set(prev).add(groupChatId));
 
       try {
-        console.log('[useNotificationsViewModel] Rejecting group chat invitation:', groupChatId);
         const response = await apiBridge.post<GroupChatActionResponse>(
           'group_chat',
           { type: 'reject', group_id: groupChatId },
         );
 
-        console.log('[useNotificationsViewModel] Reject response:', response);
-
         if (response.api_status === 200) {
-          // Update notification: remove the invite notification
           setNotifications(prev =>
             prev.filter(n => n.groupChatId !== groupChatId)
           );
           setUnreadCount(prev => Math.max(0, prev - 1));
           return true;
         } else {
-          const errorMsg = response.errors?.error_text || 'Không thể từ chối lời mời';
+          const errorMsg = response.errors?.error_text || copy.rejectFailed;
           console.warn('[useNotificationsViewModel] Reject failed:', errorMsg);
           return false;
         }
@@ -275,12 +318,13 @@ export function useNotificationsViewModel() {
         });
       }
     },
-    [pendingActions],
+    [copy.rejectFailed, pendingActions],
   );
 
   return {
     // State
     notifications,
+    filteredNotifications,
     unreadCount,
     unreadMessageCount,
     error,
@@ -289,6 +333,14 @@ export function useNotificationsViewModel() {
     isLoadingMore,
     hasMore,
     pendingActions,
+    // UI state
+    activeTab,
+    setActiveTab,
+    activeFilter,
+    setActiveFilter,
+    language,
+    setLanguage,
+    copy,
     // Actions
     loadFirstPage,
     refresh,

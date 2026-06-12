@@ -13,6 +13,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   View,
 } from 'react-native';
 import DateTimePicker, {
@@ -52,6 +53,7 @@ import {
   Store,
   User,
   Wallet,
+  Globe,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -62,6 +64,7 @@ import type {
 } from '../../../navigation/types';
 import { useAuthViewModel } from '../../../auth/application/view-models/useAuthViewModel';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
+import { languageStorage, type AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -297,15 +300,16 @@ function uploadFileFromAsset(
   };
 }
 
-function settingsPanelTitle(panel: SettingsPanel) {
-  if (panel === 'general-common') return 'Chung';
-  if (panel === 'general-profile') return 'Hồ sơ';
-  if (panel === 'general-avatar') return 'Ảnh đại diện';
-  if (panel === 'general-password') return 'Mật khẩu';
-  if (panel === 'general-two-factor') return 'Xác thực 2 yếu tố';
-  if (panel === 'general-notifications') return 'Thông báo';
-  if (panel === 'general-verification') return 'Xác thực tài khoản';
-  return 'Cài đặt chung';
+function settingsPanelTitle(panel: SettingsPanel, language: AppLanguage) {
+  const isVi = language === 'vi';
+  if (panel === 'general-common') return isVi ? 'Chung' : 'Common';
+  if (panel === 'general-profile') return isVi ? 'Hồ sơ' : 'Profile';
+  if (panel === 'general-avatar') return isVi ? 'Ảnh đại diện' : 'Avatar';
+  if (panel === 'general-password') return isVi ? 'Mật khẩu' : 'Password';
+  if (panel === 'general-two-factor') return isVi ? 'Xác thực 2 yếu tố' : 'Two-Factor Auth';
+  if (panel === 'general-notifications') return isVi ? 'Thông báo' : 'Notifications';
+  if (panel === 'general-verification') return isVi ? 'Xác thực tài khoản' : 'Verification';
+  return isVi ? 'Cài đặt chung' : 'General settings';
 }
 
 function apiSucceeded(status: unknown) {
@@ -734,14 +738,16 @@ function GeneralSettingsMenuRow({
 }) {
   return (
     <TouchableOpacity
-      activeOpacity={0.85}
+      activeOpacity={0.7}
       onPress={onPress}
       className={`flex-row items-center px-5 py-4 ${
-        !isLast ? 'border-b border-[rgba(0,0,255,0.08)]' : ''
+        !isLast ? 'border-b border-slate-100' : ''
       }`}
     >
-      <View className="mr-4">{icon}</View>
-      <Text className="flex-1 text-[16px] text-[#1a1c1e]">
+      <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
+        {icon}
+      </View>
+      <Text className="flex-1 text-[16px] font-semibold text-slate-800">
         {label}
       </Text>
       <ChevronRight size={18} color="#94a3b8" />
@@ -2089,8 +2095,24 @@ function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<SettingsPanel>('main');
-  const { profile, features, settingsMenu } = useSettingsViewModel();
+  const [languageSheetVisible, setLanguageSheetVisible] = useState(false);
+  const {
+    profile,
+    features,
+    settingsMenu,
+    language,
+    setLanguage,
+    copy,
+  } = useSettingsViewModel();
   const { logout } = useAuthViewModel();
+
+  const handleDirectLanguageChange = useCallback((lang: AppLanguage) => {
+    setLanguage(lang);
+    Alert.alert(
+      'Ngôn ngữ / Language',
+      lang === 'vi' ? 'Đã đổi sang Tiếng Việt' : 'Changed to English',
+    );
+  }, [setLanguage]);
 
   const handleCreateNavigate = useCallback(
     (route: RootStackRouteName) => {
@@ -2283,14 +2305,21 @@ function SettingsScreen() {
                   activePanel === 'general' ? 'main' : 'general',
                 )
               }
-              className="h-10 w-10 items-center justify-center rounded-full bg-blue-50"
+              className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm border border-slate-100/50"
+              style={{
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.05,
+                shadowRadius: 8,
+                elevation: 2,
+              }}
             >
               <ArrowLeft size={22} color="#0000ff" />
             </TouchableOpacity>
-            <Text className="flex-1 text-center text-[18px] font-extrabold text-slate-950">
-              {settingsPanelTitle(activePanel)}
+            <Text className="flex-1 text-center text-[20px] font-bold text-slate-900">
+              {settingsPanelTitle(activePanel, language)}
             </Text>
-            <View className="h-10 w-10" />
+            <View className="w-11" />
           </>
         ) : (
           <>
@@ -2325,40 +2354,93 @@ function SettingsScreen() {
           showsVerticalScrollIndicator={false}
         >
           {activePanel === 'general' ? (
-            <View className="surface-card overflow-hidden">
+            <View
+              className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100/40"
+              style={{
+                shadowColor: '#000000',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.03,
+                shadowRadius: 24,
+                elevation: 3,
+              }}
+            >
               <GeneralSettingsMenuRow
-                label="Chung"
-                icon={<User size={22} color="#0000ff" />}
+                label={language === 'vi' ? 'Chung' : 'Common'}
+                icon={<User size={20} color="#0000ff" />}
                 onPress={() => setActivePanel('general-common')}
               />
+              <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
+                <View className="flex-row items-center">
+                  <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
+                    <Globe size={20} color="#0000ff" />
+                  </View>
+                  <Text className="text-[16px] font-semibold text-slate-800">{copy.languageTitle}</Text>
+                </View>
+                <View className="flex-row gap-2.5">
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => handleDirectLanguageChange('vi')}
+                    className={`h-9 w-14 items-center justify-center rounded-xl border-2 ${
+                      language === 'vi'
+                        ? 'border-[#0000ff]'
+                        : 'border-slate-200'
+                    }`}
+                  >
+                    <Text
+                      className={`text-sm font-bold ${
+                        language === 'vi' ? 'text-[#0000ff]' : 'text-slate-400'
+                      }`}
+                    >
+                      VI
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => handleDirectLanguageChange('en')}
+                    className={`h-9 w-14 items-center justify-center rounded-xl border-2 ${
+                      language === 'en'
+                        ? 'border-[#0000ff]'
+                        : 'border-slate-200'
+                    }`}
+                  >
+                    <Text
+                      className={`text-sm font-bold ${
+                        language === 'en' ? 'text-[#0000ff]' : 'text-slate-400'
+                      }`}
+                    >
+                      EN
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
               <GeneralSettingsMenuRow
-                label="Hồ sơ"
-                icon={<Pencil size={22} color="#0000ff" />}
+                label={language === 'vi' ? 'Hồ sơ' : 'Profile'}
+                icon={<Pencil size={20} color="#0000ff" />}
                 onPress={() => setActivePanel('general-profile')}
               />
               <GeneralSettingsMenuRow
-                label="Ảnh đại diện"
-                icon={<Camera size={22} color="#0000ff" />}
+                label={language === 'vi' ? 'Ảnh đại diện' : 'Avatar'}
+                icon={<Camera size={20} color="#0000ff" />}
                 onPress={() => setActivePanel('general-avatar')}
               />
               <GeneralSettingsMenuRow
-                label="Mật khẩu"
-                icon={<LockKeyhole size={22} color="#0000ff" />}
+                label={language === 'vi' ? 'Mật khẩu' : 'Password'}
+                icon={<LockKeyhole size={20} color="#0000ff" />}
                 onPress={() => setActivePanel('general-password')}
               />
               <GeneralSettingsMenuRow
-                label="Xác thực 2 yếu tố"
-                icon={<ShieldCheck size={22} color="#0000ff" />}
+                label={language === 'vi' ? 'Xác thực 2 yếu tố' : 'Two-Factor Auth'}
+                icon={<ShieldCheck size={20} color="#0000ff" />}
                 onPress={() => setActivePanel('general-two-factor')}
               />
               <GeneralSettingsMenuRow
-                label="Xác thực tài khoản"
-                icon={<BadgeCheck size={22} color="#0000ff" />}
+                label={language === 'vi' ? 'Xác thực tài khoản' : 'Verification'}
+                icon={<BadgeCheck size={20} color="#0000ff" />}
                 onPress={() => setActivePanel('general-verification')}
               />
               <GeneralSettingsMenuRow
-                label="Thông báo"
-                icon={<Bell size={22} color="#0000ff" />}
+                label={language === 'vi' ? 'Thông báo' : 'Notifications'}
+                icon={<Bell size={20} color="#0000ff" />}
                 isLast
                 onPress={() => setActivePanel('general-notifications')}
               />
@@ -2489,52 +2571,8 @@ function SettingsScreen() {
           ) : (
             <EmailNotificationsCard />
           )}
-        </ScrollView>
-      ) : (
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-5 pb-28 pt-4"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Profile Header Card */}
-          {profile ? (
-            <ProfileHeaderCard
-              profile={profile}
-              onPress={() => navigation.navigate(ROUTES.PROFILE)}
-            />
-          ) : (
-            // Loading skeleton for profile card
-            <View className="surface-card flex-row items-center gap-4 px-5 py-4">
-              <View className="h-16 w-16 rounded-full bg-gray-200" />
-              <View className="flex-1">
-                <View className="h-5 w-32 rounded bg-gray-200 mb-2" />
-                <View className="h-4 w-24 rounded bg-gray-200" />
-              </View>
-            </View>
-          )}
-
-          {/* Feature Grid */}
-          <View className="mt-5">
-            <FeatureGrid
-              features={features}
-              onFeaturePress={handleFeaturePress}
-            />
-          </View>
-
-          {/* Go Pro Banner */}
-          <View className="mt-5">
-            <GoProBanner />
-          </View>
-
-          {/* Settings Menu List */}
-          <View className="mt-6">
-            <SettingsMenuList
-              items={settingsMenu}
-              onItemPress={handleSettingsItemPress}
-            />
-          </View>
-        </ScrollView>
-      )}
+        </Pressable>
+      </Modal>
 
       <CreateActionSheet
         visible={sheetVisible}

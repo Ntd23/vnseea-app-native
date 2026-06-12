@@ -13,6 +13,7 @@ export type UserPrivacyValue = string | number | boolean | undefined;
 
 export type UserProfile = UserSummary & {
   email?: string;
+  registered?: string;
   phoneNumber?: string;
   gender?: UserGender;
   genderText?: string;

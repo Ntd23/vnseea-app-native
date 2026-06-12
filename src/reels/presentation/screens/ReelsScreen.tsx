@@ -61,6 +61,7 @@ import type { ReelsItem } from '../../domain/types/reels.types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { ReelItem } from '../components/ReelItem';
 import { ReelCommentsSheet } from '../components/ReelCommentsSheet';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
 const VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 80,
@@ -75,12 +76,33 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as any;
 
+const REELS_COPY = {
+  vi: {
+    loading: 'Đang tải reels...',
+    failedLoad: 'Không tải được reels',
+    tryAgain: 'Thử lại',
+    noReels: 'Chưa có reel nào',
+    beFirst: 'Hãy là người đầu tiên đăng một video Reel!',
+    postReel: 'Đăng Reel',
+  },
+  en: {
+    loading: 'Loading reels...',
+    failedLoad: 'Failed to load reels',
+    tryAgain: 'Try again',
+    noReels: 'No reels yet',
+    beFirst: 'Be the first one to post a Reel!',
+    postReel: 'Post Reel',
+  },
+};
+
 export default function ReelsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const isFocusedScreen = useIsFocused();
   const insets = useSafeAreaInsets();
   const vm = useReelsViewModel();
+  const language = useAppLanguage();
+  const copy = REELS_COPY[language];
 
   const initialVideoId = route.params?.initialVideoId;
   const initialPost = route.params?.post;
@@ -115,7 +137,7 @@ export default function ReelsScreen() {
   );
   const itemHeight = viewportHeight;
 
-  const [isMuted, setIsMuted] = useState(true); // start muted (TikTok-style)
+  const [isMuted, setIsMuted] = useState(false); // start unmuted by default
   const [isFocused, setIsFocused] = useState(true);
   const [preloadRadius, setPreloadRadius] = useState(PRELOAD_RADIUS);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -238,6 +260,7 @@ export default function ReelsScreen() {
           onSave={vm.toggleSave}
           onOpenComments={vm.openComments}
           onUnavailable={vm.markUnavailable}
+          onFollow={vm.followPublisher}
           scrollY={scrollY}
           index={index}
         />
@@ -250,6 +273,7 @@ export default function ReelsScreen() {
       vm.toggleSave,
       vm.openComments,
       vm.markUnavailable,
+      vm.followPublisher,
       itemHeight,
       isMuted,
       isFocused,
@@ -363,7 +387,7 @@ export default function ReelsScreen() {
       <View style={styles.fullCenter}>
         <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
         <ActivityIndicator color="#fff" size="large" />
-        <Text style={styles.helperText}>Đang tải reels...</Text>
+        <Text style={styles.helperText}>{copy.loading}</Text>
       </View>
     );
   }
@@ -372,11 +396,11 @@ export default function ReelsScreen() {
     return (
       <View style={styles.fullCenter}>
         <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-        <Text style={styles.errorTitle}>Không tải được reels</Text>
+        <Text style={styles.errorTitle}>{copy.failedLoad}</Text>
         <Text style={styles.errorMsg}>{vm.error}</Text>
         <TouchableOpacity onPress={vm.retry} style={styles.retryButton}>
           <RotateCcw size={16} color="#fff" />
-          <Text style={styles.retryLabel}>Thử lại</Text>
+          <Text style={styles.retryLabel}>{copy.tryAgain}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -386,15 +410,15 @@ export default function ReelsScreen() {
     return (
       <View style={styles.fullCenter}>
         <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-        <Text style={styles.emptyTitle}>Chưa có reel nào</Text>
+        <Text style={styles.emptyTitle}>{copy.noReels}</Text>
         <Text style={styles.emptyMsg}>
-          Hãy là người đầu tiên đăng một video Reel!
+          {copy.beFirst}
         </Text>
         <TouchableOpacity
           onPress={() => navigation.navigate(ROUTES.CREATE_REEL)}
           style={styles.retryButton}
         >
-          <Text style={styles.retryLabel}>Đăng Reel</Text>
+          <Text style={styles.retryLabel}>{copy.postReel}</Text>
         </TouchableOpacity>
       </View>
     );

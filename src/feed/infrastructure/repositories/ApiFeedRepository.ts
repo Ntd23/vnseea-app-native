@@ -28,6 +28,8 @@ import { reelsReactionsStorage } from '../../../reels/infrastructure/storage/ree
 import type {
   FeedPostsPage,
   FeedRepository,
+  GetPostByIdResult,
+  PostComment,
 } from '../../domain/repositories/FeedRepository';
 import type {
   CreatePostDraft,
@@ -1668,5 +1670,106 @@ export function createFeedRepository(): FeedRepository {
 
       return { reported: ok };
     },
+
+    async getPostById(postId, options = {}) {
+      // The public `get-post-data` endpoint takes a comma-separated
+      // `fetch` list to opt into each bucket. We default to post + comments
+      // since the detail screen always shows both. `add_view=1` bumps the
+      // post view counter server-side (no-ops if the post has no view
+      // column, e.g. a text post).
+      const fetchList = options.fetchComments === false
+        ? 'post_data'
+        : 'post_data,post_comments';
+
+      const response = await backendApi.post<{
+        api_status: number | string;
+        post_data?: Record<string, unknown>;
+        post_comments?: Array<Record<string, unknown>>;
+      }>(apiRoutes.feed.getPost, {
+        post_id: postId,
+        fetch: fetchList,
+        ...(options.addView ? { add_view: 1 } : {}),
+      });
+
+      if (String(response.api_status) !== '200' || !response.post_data) {
+        throw new Error('Không tìm thấy bài viết hoặc bài viết đã bị gỡ.');
+      }
+
+      // The wire format is the same shape `Wo_PostData` returns — the
+      // same `mapTextPost` used by the feed list handles it. The
+      // branch is only on post type (text vs video), which `mapPost`
+      // already disambiguates via `looksLikeVideo`.
+      const post = mapPost(response.post_data);
+      const comments = (response.post_comments ?? []).map(mapPostComment);
+
+      return { post, comments };
+    },
+  };
+}
+
+// ── Helper: route a raw WoWonder post blob through the right mapper ────
+//
+// `Wo_PostData` returns a single post of any kind (text/photo/video/
+// product/event/...), but in practice the feed list mostly uses text
+// + video. We mirror the same dispatch the feed list does so the
+// detail screen's renderer (which is union-aware) sees the right
+// `kind` discriminator.
+function mapPost(raw: Record<string, unknown>): FeedTextPost | FeedVideoPost {
+  if (looksLikeVideo(raw)) {
+    return mapVideoPost(raw);
+  }
+  return mapTextPost(raw);
+}
+
+function mapPostComment(raw: Record<string, unknown>): {
+  id: string;
+  text: string;
+  postedAt?: number;
+  publisher: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl?: string;
+  };
+  likeCount: number;
+  isLiked: boolean;
+} {
+  const publisher =
+    (raw.publisher as Record<string, unknown> | undefined) ??
+    (raw.user_data as Record<string, unknown> | undefined) ??
+    {};
+  const firstName = readString(publisher, 'first_name');
+  const lastName = readString(publisher, 'last_name');
+  const username = readString(publisher, 'username', 'user_name');
+  const name =
+    [firstName, lastName].filter(Boolean).join(' ').trim() ||
+    readString(publisher, 'name', 'full_name') ||
+    username ||
+    'Người dùng';
+
+  // Mirror the same HTML-strip + WoWonder-token cleanup as posts so
+  // comment text renders cleanly.
+  const text = cleanCaption(readString(raw, 'text', 'comment_text'));
+
+  const sessionUserId = sessionStorage.getSession()?.userId;
+  const apiReaction = extractMyReaction(raw);
+  const cachedReaction = reelsReactionsStorage.getComment(
+    sessionUserId,
+    readString(raw, 'id', 'comment_id'),
+  );
+  const myReaction = apiReaction ?? cachedReaction;
+
+  return {
+    id: readString(raw, 'id', 'comment_id'),
+    text,
+    postedAt: readNumber(raw, 'time') || undefined,
+    publisher: {
+      id: readString(publisher, 'user_id', 'id'),
+      name,
+      username,
+      avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+    },
+    likeCount: readNumber(raw, 'comment_likes', 'likes'),
+    isLiked: myReaction !== null || readBool(raw, 'is_comment_liked', 'isLiked'),
   };
 }

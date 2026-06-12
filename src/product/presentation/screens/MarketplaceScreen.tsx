@@ -1,12 +1,9 @@
 // Description: Displays real Marketplace products from WoWonder inside Settings.
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
-  Modal,
   RefreshControl,
-  ScrollView,
   StatusBar,
   Text,
   TextInput,
@@ -19,7 +16,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
-  MapPin,
   Plus,
   RotateCw,
   Search,
@@ -37,17 +33,6 @@ type MarketplaceNav = NativeStackNavigationProp<RootStackParamList>;
 const MARKETPLACE_COLUMN_STYLE = {
   justifyContent: 'space-between',
 } as const;
-
-function formatPrice(product: ProductItem) {
-  const value = Number(product.price);
-  const formattedPrice = Number.isFinite(value)
-    ? value.toLocaleString('vi-VN')
-    : product.price;
-  const currency =
-    product.currency_symbol || product.currency_code || product.currency || 'đ';
-
-  return `${formattedPrice} ${currency}`;
-}
 
 function MarketplaceSkeleton() {
   return (
@@ -118,112 +103,26 @@ function EmptyState({
   );
 }
 
-function ProductDetailsModal({
-  product,
-  onClose,
-}: {
-  product?: ProductItem;
-  onClose: () => void;
-}) {
-  return (
-    <Modal
-      visible={Boolean(product)}
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <SafeAreaView className="flex-1 surface-base" edges={['top', 'bottom']}>
-        <View className="surface-topbar flex-row items-center px-4 py-3">
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-            hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
-            onPress={onClose}
-          >
-            <X size={22} color="#1E293B" />
-          </TouchableOpacity>
-          <Text className="ml-2 flex-1 text-heading">Chi tiết sản phẩm</Text>
-        </View>
-
-        {product ? (
-          <ScrollView
-            className="flex-1"
-            contentContainerClassName="pb-10"
-            showsVerticalScrollIndicator={false}
-          >
-            {product.images?.[0]?.image ? (
-              <Image
-                source={{ uri: product.images[0].image }}
-                className="aspect-square w-full bg-slate-200"
-                resizeMode="cover"
-              />
-            ) : (
-              <View className="aspect-square w-full items-center justify-center bg-slate-200">
-                <ShoppingBag size={64} color="#94A3B8" />
-              </View>
-            )}
-
-            <View className="px-5 py-5">
-              <Text className="text-display" numberOfLines={3}>
-                {product.name}
-              </Text>
-              <Text className="mt-2 text-heading text-brand">
-                {formatPrice(product)}
-              </Text>
-
-              {product.location ? (
-                <View className="mt-4 flex-row items-center">
-                  <MapPin size={17} color="#64748B" />
-                  <Text className="ml-2 flex-1 text-body-secondary">
-                    {product.location}
-                  </Text>
-                </View>
-              ) : null}
-
-              <View className="mt-6 border-t border-slate-200 pt-5">
-                <Text className="text-title-primary">Mô tả sản phẩm</Text>
-                <Text className="mt-2 text-body-secondary">
-                  {product.description || 'Người bán chưa thêm mô tả.'}
-                </Text>
-              </View>
-
-              <View className="mt-6 flex-row items-center border-t border-slate-200 pt-5">
-                {product.seller?.avatar ? (
-                  <Image
-                    source={{ uri: product.seller.avatar }}
-                    className="avatar-lg bg-slate-200"
-                  />
-                ) : (
-                  <View className="avatar-lg items-center justify-center bg-slate-100">
-                    <ShoppingBag size={22} color="#64748B" />
-                  </View>
-                )}
-                <View className="ml-3 flex-1">
-                  <Text className="text-title-primary">
-                    {product.seller?.name || 'Người bán'}
-                  </Text>
-                  {product.seller?.username ? (
-                    <Text className="mt-1 text-caption-secondary">
-                      @{product.seller.username}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-            </View>
-          </ScrollView>
-        ) : null}
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
 function MarketplaceScreen() {
   const navigation = useNavigation<MarketplaceNav>();
   const vm = useMarketplaceViewModel();
-  const [selectedProduct, setSelectedProduct] = useState<ProductItem>();
 
   const handleCreate = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_PRODUCT);
   }, [navigation]);
+
+  // Tap on a product card → push the detail screen. We pass the full
+  // object so the detail screen can render instantly with no extra fetch.
+  // (id is also passed so deep-link scenarios still have a key.)
+  const handleProductPress = useCallback(
+    (product: ProductItem) => {
+      navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+        productId: product.id,
+        product,
+      });
+    },
+    [navigation],
+  );
 
   const renderProduct = useCallback(
     ({ item }: ListRenderItemInfo<ProductItem>) => (
@@ -231,11 +130,11 @@ function MarketplaceScreen() {
         <ProductPostCard
           compact
           product={item}
-          onPress={setSelectedProduct}
+          onPress={handleProductPress}
         />
       </View>
     ),
-    [],
+    [handleProductPress],
   );
 
   return (
@@ -364,10 +263,6 @@ function MarketplaceScreen() {
         }
       />
 
-      <ProductDetailsModal
-        product={selectedProduct}
-        onClose={() => setSelectedProduct(undefined)}
-      />
     </SafeAreaView>
   );
 }

@@ -10,6 +10,9 @@ import type {
 } from '../types/search.types';
 
 export interface SearchRepository {
+  // Search users, pages, groups, jobs, and funding campaigns by keyword
+  searchAll(filter: SearchFilter): Promise<SearchResponse>;
+
   // Search users by keyword
   searchUsers(filter: SearchFilter): Promise<SearchResponse>;
 
