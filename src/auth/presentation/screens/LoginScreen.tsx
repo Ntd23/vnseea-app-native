@@ -2,10 +2,19 @@
 // real branding logo (or "V" fallback), animated card, focus rings,
 // inline error banner, and full i18n (vi / en).
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Alert,
+  Animated as RNAnimated,
   KeyboardAvoidingView,
+  Keyboard,
+  LayoutChangeEvent,
   Platform,
   ScrollView,
   StatusBar,
@@ -16,7 +25,6 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Lock, User } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { FadeInUp } from 'react-native-reanimated';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import {
@@ -38,10 +46,10 @@ import AuthErrorBanner from '../components/AuthErrorBanner';
 type LoginNav = NativeStackNavigationProp<RootStackParamList>;
 
 const BRAND = '#0000ff';
+type LoginFieldKey = 'username' | 'password';
 
 function LoginScreen() {
   const navigation = useNavigation<LoginNav>();
-  const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -53,6 +61,16 @@ function LoginScreen() {
   const { error, isLoading, login } = useAuthViewModel();
   const { logoUrl, siteName, notifyImageError } = useAuthBranding();
   const visibleError = validationError ?? error;
+  const scrollRef = useRef<ScrollView | null>(null);
+  const cardYRef = useRef(0);
+  const fieldYRef = useRef<Record<LoginFieldKey, number>>({
+    username: 0,
+    password: 0,
+  });
+  const focusedFieldRef = useRef<LoginFieldKey | null>(null);
+  const cardOpacity = useRef(new RNAnimated.Value(0)).current;
+  const cardTranslateY = useRef(new RNAnimated.Value(26)).current;
+  const heroScale = useRef(new RNAnimated.Value(0.96)).current;
 
   useEffect(() => {
     if (!sessionStorage.getAccessToken()) {
@@ -65,6 +83,30 @@ function LoginScreen() {
     });
   }, [navigation]);
 
+  useEffect(() => {
+    RNAnimated.parallel([
+      RNAnimated.timing(cardOpacity, {
+        toValue: 1,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+      RNAnimated.spring(cardTranslateY, {
+        toValue: 0,
+        damping: 18,
+        stiffness: 110,
+        mass: 0.9,
+        useNativeDriver: true,
+      }),
+      RNAnimated.spring(heroScale, {
+        toValue: 1,
+        damping: 18,
+        stiffness: 100,
+        mass: 0.9,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [cardOpacity, cardTranslateY, heroScale]);
+
   // Re-read language if the user changes it in Settings while the screen is mounted
   // (Settings updates MMKV and dispatches the new value through languageStorage).
   useEffect(() => {
@@ -74,6 +116,36 @@ function LoginScreen() {
     }, 800);
     return () => clearInterval(interval);
   }, []);
+
+  const scrollToField = useCallback((field: LoginFieldKey) => {
+    focusedFieldRef.current = field;
+    const targetY = Math.max(0, cardYRef.current + fieldYRef.current[field] - 24);
+
+    setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: targetY, animated: true });
+    }, 90);
+  }, []);
+
+  useEffect(() => {
+    const subscription = Keyboard.addListener('keyboardDidShow', () => {
+      if (focusedFieldRef.current) {
+        scrollToField(focusedFieldRef.current);
+      }
+    });
+
+    return () => subscription.remove();
+  }, [scrollToField]);
+
+  const handleCardLayout = useCallback((event: LayoutChangeEvent) => {
+    cardYRef.current = event.nativeEvent.layout.y;
+  }, []);
+
+  const handleFieldLayout = useCallback(
+    (field: LoginFieldKey) => (event: LayoutChangeEvent) => {
+      fieldYRef.current[field] = event.nativeEvent.layout.y;
+    },
+    [],
+  );
 
   const handleLogin = useCallback(async () => {
     const normalizedUsername = username.trim();
@@ -120,36 +192,49 @@ function LoginScreen() {
     navigation.navigate(ROUTES.REGISTER);
   }, [navigation]);
 
-  // We re-use the local showPassword flag only for backwards compat; the
-  // AuthTextField manages its own toggle internally. Suppress the unused var
-  // when minification-friendly code is added later.
-  void showPassword;
-  void setShowPassword;
-
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top', 'bottom']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+    <SafeAreaView className="flex-1 bg-[#F8FBFF]" edges={['top', 'bottom']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8FBFF" />
 
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
+          ref={scrollRef}
           className="flex-1"
-          contentContainerClassName="flex-grow"
+          contentContainerClassName="flex-grow bg-[#F8FBFF] pb-4"
+          automaticallyAdjustKeyboardInsets
+          contentInsetAdjustmentBehavior="never"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <LoginHero
-            siteName={siteName}
-            subtitle={copy.brandSubtitle}
-            logoUrl={logoUrl}
-            onLogoImageError={notifyImageError}
-          />
+          <RNAnimated.View
+            style={{
+              transform: [{ scale: heroScale }],
+              opacity: cardOpacity,
+            }}
+          >
+            <LoginHero
+              siteName={siteName}
+              subtitle={copy.brandSubtitle}
+              logoUrl={logoUrl}
+              onLogoImageError={notifyImageError}
+            />
+          </RNAnimated.View>
 
-          <Animated.View
-            entering={FadeInUp.delay(140).duration(420)}
-            className="surface-base -mt-8 flex-1 rounded-t-[32px] px-6 pb-10 pt-6"
+          <RNAnimated.View
+            onLayout={handleCardLayout}
+            className="mx-6 -mt-7 rounded-[32px] bg-white px-6 pb-6 pt-5"
+            style={{
+              opacity: cardOpacity,
+              transform: [{ translateY: cardTranslateY }],
+              shadowColor: '#0F172A',
+              shadowOffset: { width: 0, height: 18 },
+              shadowOpacity: 0.09,
+              shadowRadius: 34,
+              elevation: 8,
+            }}
           >
             <AuthTabs
               labels={{ active: copy.tabLogin, inactive: copy.tabRegister }}
@@ -158,7 +243,7 @@ function LoginScreen() {
               onPressRegister={handleRegister}
             />
 
-            <View className="mt-6 gap-4">
+            <View className="mt-5 gap-4">
               <AuthTextField
                 label={copy.usernameOrEmail}
                 placeholder={copy.usernamePlaceholder}
@@ -170,11 +255,16 @@ function LoginScreen() {
                 icon={<User size={18} color={BRAND} />}
                 returnKeyType="next"
                 keyboardType="email-address"
+                onFocus={() => scrollToField('username')}
+                onBlur={() => {
+                  focusedFieldRef.current = null;
+                }}
+                onContainerLayout={handleFieldLayout('username')}
               />
 
               <View>
                 <View className="mb-2 flex-row items-center justify-between">
-                  <Text className="text-[13px] font-semibold text-slate-800">
+                  <Text className="text-[14px] font-extrabold text-slate-900">
                     {copy.password}
                   </Text>
                   <Text
@@ -197,6 +287,11 @@ function LoginScreen() {
                   isPassword
                   returnKeyType="done"
                   onSubmitEditing={handleLogin}
+                  onFocus={() => scrollToField('password')}
+                  onBlur={() => {
+                    focusedFieldRef.current = null;
+                  }}
+                  onContainerLayout={handleFieldLayout('password')}
                 />
               </View>
             </View>
@@ -216,7 +311,7 @@ function LoginScreen() {
               action={copy.registerNow}
               onPress={handleRegister}
             />
-          </Animated.View>
+          </RNAnimated.View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

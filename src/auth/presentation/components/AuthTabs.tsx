@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
+import { LogIn, UserPlus } from 'lucide-react-native';
 
 interface AuthTabsProps {
   labels: { active: string; inactive: string };
@@ -19,23 +20,25 @@ export default function AuthTabs({
 }: AuthTabsProps) {
   return (
     <View
-      className="flex-row rounded-2xl bg-white p-1"
+      className="flex-row rounded-[20px] border border-slate-100 bg-white p-1.5"
       style={{
-        shadowColor: '#0000ff',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 6,
-        elevation: 1,
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.08,
+        shadowRadius: 22,
+        elevation: 3,
       }}
     >
       <TabPill
         label={labels.active}
         isActive={activeIsLogin}
+        Icon={LogIn}
         onPress={onPressLogin}
       />
       <TabPill
         label={labels.inactive}
         isActive={!activeIsLogin}
+        Icon={UserPlus}
         onPress={onPressRegister}
       />
     </View>
@@ -45,36 +48,41 @@ export default function AuthTabs({
 function TabPill({
   label,
   isActive,
+  Icon,
   onPress,
 }: {
   label: string;
   isActive: boolean;
+  Icon: React.ComponentType<{ size: number; color: string; strokeWidth?: number }>;
   onPress: () => void;
 }) {
+  const color = isActive ? '#0000ff' : '#8A91A3';
+
   return (
     <TouchableOpacity
       accessibilityRole="tab"
       accessibilityState={{ selected: isActive }}
       activeOpacity={0.85}
       onPress={onPress}
-      className={`flex-1 items-center justify-center rounded-xl py-3 ${
-        isActive ? 'bg-[#0000ff]' : 'bg-transparent'
+      className={`flex-1 flex-row items-center justify-center rounded-2xl py-3 ${
+        isActive ? 'bg-[#EEF4FF]' : 'bg-transparent'
       }`}
       style={
         isActive
           ? {
-              shadowColor: '#0000ff',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.28,
-              shadowRadius: 8,
-              elevation: 3,
+              shadowColor: '#1D4ED8',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.12,
+              shadowRadius: 18,
+              elevation: 2,
             }
           : undefined
       }
     >
+      <Icon size={19} color={color} strokeWidth={2.4} />
       <Text
-        className={`text-[14px] font-bold ${
-          isActive ? 'text-inverse' : 'text-slate-500'
+        className={`ml-2 text-[14px] font-extrabold ${
+          isActive ? 'text-[#0000ff]' : 'text-slate-400'
         }`}
       >
         {label}
