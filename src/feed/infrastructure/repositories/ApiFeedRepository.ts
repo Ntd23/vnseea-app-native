@@ -314,7 +314,7 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
       name,
       username,
       avatarUrl:
-        readString(publisher, 'avatar', 'profile_picture') || undefined
+        readString(publisher, 'avatar', 'profile_picture') || undefined,
       isFollowing:
         publisher['is_following'] === 1 ||
         publisher['is_following'] === 'yes' ||

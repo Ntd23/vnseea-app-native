@@ -1,5 +1,11 @@
 // Description: Renders the Stitch Facebook-style VNSEEA feed inside the main tab shell.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -14,6 +20,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   Alert,
@@ -25,7 +32,12 @@ import {
   type StyleProp,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
-import { Gesture, GestureDetector, GestureHandlerRootView, TouchableOpacity as GHTouchableOpacity } from 'react-native-gesture-handler';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+  TouchableOpacity as GHTouchableOpacity,
+} from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -53,6 +65,7 @@ import {
   Plus,
   Radio,
   Search,
+  Send,
   Share2,
   ShoppingBag,
   Smile,
@@ -63,7 +76,10 @@ import {
 } from 'lucide-react-native';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
 import { createProfileRepository } from '../../../profile/infrastructure/repositories/ApiProfileRepository';
-import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type {
+  ReactionType,
+  ReelComment,
+} from '../../../reels/domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
 
 // ── Facebook-style reaction lookup tables ─────────────────────────────────
@@ -100,7 +116,10 @@ const REACTION_IMAGES: Record<ReactionType, any> = {
 // Floating picker pill geometry — used to clamp X within the viewport.
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -120,10 +139,10 @@ import type {
   FeedAdPost,
 } from '../../domain/types/feed.types';
 import type {
+  FeedShareDestination,
   FeedSource,
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
-import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
 import {
   storyCreatedEvents,
@@ -134,7 +153,6 @@ import { useCurrentUserViewModel } from '../../../shared-kernel/application/view
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
-import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
 import type { ProductItem } from '../../../product/domain/types/product.types';
@@ -148,14 +166,18 @@ import {
 } from '../../../jobs/domain/types/jobs.types';
 import { useJobsOnFeedViewModel } from '../../../jobs/application/view-models/useJobsOnFeedViewModel';
 import type { GroupItem } from '../../../community/domain/types/community.types';
+import { useMyGroupsViewModel } from '../../../community';
 import { useSuggestedGroupsOnFeedViewModel } from '../../../community/application/view-models/useSuggestedGroupsOnFeedViewModel';
 import { ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { useLiveViewModel } from '../../../live/application/view-models/useLiveViewModel';
 import type { LiveStreamItem } from '../../../live/domain/types/live.types';
-import { usePagesOnFeedViewModel } from '../../../pages';
+import { useMyPagesViewModel, usePagesOnFeedViewModel } from '../../../pages';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
-import { useFundingOnFeedViewModel, FeedFundingCarousel } from '../../../funding';
+import {
+  useFundingOnFeedViewModel,
+  FeedFundingCarousel,
+} from '../../../funding';
 import type { FundingItem } from '../../../funding/domain/types/funding.types';
 
 const PICKER_WIDTH = 282;
@@ -184,17 +206,32 @@ const FEED_LIST_CONTENT_STYLE = { paddingBottom: 96 };
 // module level so TextPostCard never allocates new style objects per-render.
 const PHOTO_GRID_LAYOUTS = {
   single: { width: FEED_PHOTO_GRID_WIDTH, height: FEED_PHOTO_GRID_WIDTH / 1.4 },
-  duoItem: { width: FEED_PHOTO_GRID_WIDTH / 2, height: FEED_PHOTO_GRID_WIDTH / 2 },
-  triHero: { width: FEED_PHOTO_GRID_WIDTH, height: FEED_PHOTO_GRID_WIDTH / 1.6 },
-  triItem: { width: FEED_PHOTO_GRID_WIDTH / 2, height: FEED_PHOTO_GRID_WIDTH / 2 },
-  quadItem: { width: FEED_PHOTO_GRID_WIDTH / 2, height: FEED_PHOTO_GRID_WIDTH / 2 },
+  duoItem: {
+    width: FEED_PHOTO_GRID_WIDTH / 2,
+    height: FEED_PHOTO_GRID_WIDTH / 2,
+  },
+  triHero: {
+    width: FEED_PHOTO_GRID_WIDTH,
+    height: FEED_PHOTO_GRID_WIDTH / 1.6,
+  },
+  triItem: {
+    width: FEED_PHOTO_GRID_WIDTH / 2,
+    height: FEED_PHOTO_GRID_WIDTH / 2,
+  },
+  quadItem: {
+    width: FEED_PHOTO_GRID_WIDTH / 2,
+    height: FEED_PHOTO_GRID_WIDTH / 2,
+  },
 };
 const PHOTO_GRID_ITEM_PADDING = { padding: 2 };
 
 function getPhotoLayout(index: number, total: number) {
   if (total === 1) return PHOTO_GRID_LAYOUTS.single;
   if (total === 2) return PHOTO_GRID_LAYOUTS.duoItem;
-  if (total === 3) return index === 0 ? PHOTO_GRID_LAYOUTS.triHero : PHOTO_GRID_LAYOUTS.triItem;
+  if (total === 3)
+    return index === 0
+      ? PHOTO_GRID_LAYOUTS.triHero
+      : PHOTO_GRID_LAYOUTS.triItem;
   return PHOTO_GRID_LAYOUTS.quadItem;
 }
 
@@ -225,6 +262,7 @@ type FeedCopy = {
   like: string;
   comment: string;
   share: string;
+  sharedPostLabel: (name: string) => string;
   publicLabel: string;
   userFallback: string;
   composerPlaceholder: string;
@@ -314,6 +352,7 @@ const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     like: 'Thích',
     comment: 'Bình luận',
     share: 'Chia sẻ',
+    sharedPostLabel: name => `đã chia sẻ bài viết của ${name}`,
     publicLabel: 'Công khai',
     userFallback: 'Người dùng',
     composerPlaceholder: 'Bạn đang nghĩ gì?',
@@ -325,7 +364,8 @@ const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     createStory: 'Tạo tin',
     createStorySubtitle: 'Chia sẻ khoảnh khắc của bạn',
     greetingTitle: name => `Chào buổi tối, ${name}`,
-    greetingBody: 'Buổi tối là cách cuộc sống nói rằng bạn đang gần hơn với giấc mơ của mình.',
+    greetingBody:
+      'Buổi tối là cách cuộc sống nói rằng bạn đang gần hơn với giấc mơ của mình.',
     now: 'Vừa xong',
     minutesAgo: count => `${count} phút trước`,
     hoursAgo: count => `${count} giờ trước`,
@@ -378,12 +418,14 @@ const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     errorTitle: 'Lỗi',
     saveErrorMessage: 'Không thể lưu bài viết. Vui lòng thử lại.',
     reportSentTitle: 'Đã gửi báo cáo',
-    reportSentMessage: 'Cảm ơn bạn đã báo cáo. Chúng tôi sẽ xem xét bài viết này.',
+    reportSentMessage:
+      'Cảm ơn bạn đã báo cáo. Chúng tôi sẽ xem xét bài viết này.',
     reportCancelledTitle: 'Đã hủy báo cáo',
     reportCancelledMessage: 'Báo cáo đã được xóa.',
     reportErrorMessage: 'Không thể gửi báo cáo. Vui lòng thử lại.',
     editTitle: 'Chỉnh sửa',
-    editEventMessage: name => `Tính năng chỉnh sửa sự kiện "${name}" đang được phát triển.`,
+    editEventMessage: name =>
+      `Tính năng chỉnh sửa sự kiện "${name}" đang được phát triển.`,
   },
   en: {
     filters: [
@@ -401,6 +443,7 @@ const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     like: 'Like',
     comment: 'Comment',
     share: 'Share',
+    sharedPostLabel: name => `shared ${name}'s post`,
     publicLabel: 'Public',
     userFallback: 'User',
     composerPlaceholder: "What's on your mind?",
@@ -412,7 +455,8 @@ const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     createStory: 'Create story',
     createStorySubtitle: 'Share your moment',
     greetingTitle: name => `Good evening, ${name}`,
-    greetingBody: 'Evening is life saying you are getting closer to your dreams.',
+    greetingBody:
+      'Evening is life saying you are getting closer to your dreams.',
     now: 'Just now',
     minutesAgo: count => `${count} min ago`,
     hoursAgo: count => `${count} h ago`,
@@ -498,7 +542,13 @@ function IconButton({
   );
 }
 
-const Avatar = React.memo(function Avatar({ uri, size = 40 }: { uri: string; size?: number }) {
+const Avatar = React.memo(function Avatar({
+  uri,
+  size = 40,
+}: {
+  uri: string;
+  size?: number;
+}) {
   const source = useMemo(() => ({ uri }), [uri]);
   const style = useMemo(() => ({ height: size, width: size }), [size]);
 
@@ -512,8 +562,6 @@ const Avatar = React.memo(function Avatar({ uri, size = 40 }: { uri: string; siz
     />
   );
 });
-
-
 
 function FeedHeader() {
   const navigation = useNavigation<FeedNav>();
@@ -579,7 +627,7 @@ function FeedHeader() {
 
   return (
     <>
-      <View 
+      <View
         className="surface-topbar flex-row items-center justify-between px-4"
         style={{
           height: 64,
@@ -698,7 +746,9 @@ function FeedHeader() {
                   paddingHorizontal: 4,
                 }}
               >
-                <Text style={{ fontSize: 10, fontWeight: '700', color: '#ffffff' }}>
+                <Text
+                  style={{ fontSize: 10, fontWeight: '700', color: '#ffffff' }}
+                >
                   {messageCount > 99 ? '99+' : messageCount}
                 </Text>
               </View>
@@ -730,25 +780,25 @@ function FilterTabs({
         {copy.filters.map(filter => {
           const active = filter.source === activeSource;
           return (
-          <TouchableOpacity
-            key={filter.source}
-            className="min-h-[38px] flex-1 items-center justify-center"
-            activeOpacity={0.8}
-            onPress={() => onChangeSource(filter.source)}
-          >
-            <Text
-              className={`text-[15px] font-extrabold ${
-                active ? 'text-[#0000ff]' : 'text-title-secondary'
-              }`}
+            <TouchableOpacity
+              key={filter.source}
+              className="min-h-[38px] flex-1 items-center justify-center"
+              activeOpacity={0.8}
+              onPress={() => onChangeSource(filter.source)}
             >
-              {filter.label}
-            </Text>
-            <View
-              className={`mt-2.5 h-[3px] w-16 rounded-full ${
-                active ? 'bg-[#0000ff]' : 'bg-transparent'
-              }`}
-            />
-          </TouchableOpacity>
+              <Text
+                className={`text-[15px] font-extrabold ${
+                  active ? 'text-[#0000ff]' : 'text-title-secondary'
+                }`}
+              >
+                {filter.label}
+              </Text>
+              <View
+                className={`mt-2.5 h-[3px] w-16 rounded-full ${
+                  active ? 'bg-[#0000ff]' : 'bg-transparent'
+                }`}
+              />
+            </TouchableOpacity>
           );
         })}
       </View>
@@ -778,7 +828,9 @@ function ComposerCard({
           activeOpacity={0.8}
           onPress={onPress}
         >
-          <Text className="text-[14px] font-semibold text-[#667085]">{copy.composerPlaceholder}</Text>
+          <Text className="text-[14px] font-semibold text-[#667085]">
+            {copy.composerPlaceholder}
+          </Text>
           <ImageIcon size={20} color="#0866ff" />
         </TouchableOpacity>
       </View>
@@ -789,7 +841,9 @@ function ComposerCard({
           onPress={onPress}
         >
           <ImageIcon size={18} color="#22c55e" />
-          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">{copy.library}</Text>
+          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">
+            {copy.library}
+          </Text>
         </TouchableOpacity>
         <View className="h-6 w-px bg-[#dfe3eb]" />
         <TouchableOpacity
@@ -798,7 +852,9 @@ function ComposerCard({
           onPress={onPress}
         >
           <Tag size={18} color="#0000ff" />
-          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">{copy.tag}</Text>
+          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">
+            {copy.tag}
+          </Text>
         </TouchableOpacity>
         <View className="h-6 w-px bg-[#dfe3eb]" />
         <TouchableOpacity
@@ -807,7 +863,9 @@ function ComposerCard({
           onPress={onPress}
         >
           <Smile size={18} color="#f59e0b" />
-          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">{copy.feeling}</Text>
+          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">
+            {copy.feeling}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -816,7 +874,13 @@ function ComposerCard({
 
 // Open the full-screen viewer at a specific user index. We pass the
 // full stories array plus the index, so the viewer knows where to start.
-function StoriesRow({ avatarUrl, copy }: { avatarUrl?: string; copy: FeedCopy }) {
+function StoriesRow({
+  avatarUrl,
+  copy,
+}: {
+  avatarUrl?: string;
+  copy: FeedCopy;
+}) {
   const navigation = useNavigation<FeedNav>();
   const vm = useStoriesViewModel();
   const prependStory = vm.prependStory;
@@ -856,10 +920,14 @@ function StoriesRow({ avatarUrl, copy }: { avatarUrl?: string; copy: FeedCopy })
   return (
     <View className="mb-4 bg-white pb-1.5 pt-0.5">
       <View className="mb-2.5 flex-row items-center justify-between px-4">
-        <Text className="text-[18px] font-extrabold text-[#050505]">{copy.storiesTitle}</Text>
+        <Text className="text-[18px] font-extrabold text-[#050505]">
+          {copy.storiesTitle}
+        </Text>
         <TouchableOpacity activeOpacity={0.8}>
           <View className="flex-row items-center">
-            <Text className="text-[14px] font-extrabold text-[#0866ff]">{copy.seeAll}</Text>
+            <Text className="text-[14px] font-extrabold text-[#0866ff]">
+              {copy.seeAll}
+            </Text>
             <ChevronRight size={18} color="#0866ff" />
           </View>
         </TouchableOpacity>
@@ -889,7 +957,10 @@ function StoriesRow({ avatarUrl, copy }: { avatarUrl?: string; copy: FeedCopy })
             <Text className="mt-4 text-center text-[13px] font-extrabold text-[#050505]">
               {copy.createStory}
             </Text>
-            <Text className="mt-0.5 text-center text-[10px] font-semibold leading-4 text-[#667085]" numberOfLines={1}>
+            <Text
+              className="mt-0.5 text-center text-[10px] font-semibold leading-4 text-[#667085]"
+              numberOfLines={1}
+            >
               {copy.createStorySubtitle}
             </Text>
           </View>
@@ -960,8 +1031,13 @@ function StoriesRow({ avatarUrl, copy }: { avatarUrl?: string; copy: FeedCopy })
   );
 }
 
-
-function GreetingCard({ userName, copy }: { userName?: string; copy: FeedCopy }) {
+function GreetingCard({
+  userName,
+  copy,
+}: {
+  userName?: string;
+  copy: FeedCopy;
+}) {
   const displayName = userName || 'Nguyễn Dũng';
   const isVi = copy.createStory === 'Tạo tin';
 
@@ -973,23 +1049,29 @@ function GreetingCard({ userName, copy }: { userName?: string; copy: FeedCopy })
 
   if (hour >= 5 && hour < 12) {
     // Morning (5:00 - 11:59)
-    title = isVi ? `Chào buổi sáng, ${displayName}` : `Good morning, ${displayName}`;
-    body = isVi 
-      ? 'Chào ngày mới! Chúc bạn có một ngày tràn đầy năng lượng và làm việc hiệu quả.' 
+    title = isVi
+      ? `Chào buổi sáng, ${displayName}`
+      : `Good morning, ${displayName}`;
+    body = isVi
+      ? 'Chào ngày mới! Chúc bạn có một ngày tràn đầy năng lượng và làm việc hiệu quả.'
       : 'Good morning! Wishing you a day full of energy and great productivity.';
     emoji = '☀️';
   } else if (hour >= 12 && hour < 18) {
     // Afternoon (12:00 - 17:59)
-    title = isVi ? `Chào buổi chiều, ${displayName}` : `Good afternoon, ${displayName}`;
-    body = isVi 
-      ? 'Chúc bạn có một buổi chiều suôn sẻ, tràn ngập niềm vui và năng lượng.' 
+    title = isVi
+      ? `Chào buổi chiều, ${displayName}`
+      : `Good afternoon, ${displayName}`;
+    body = isVi
+      ? 'Chúc bạn có một buổi chiều suôn sẻ, tràn ngập niềm vui và năng lượng.'
       : 'Hope your afternoon is going productive, smooth, and full of joy!';
     emoji = '🌤️';
   } else {
     // Evening/Night (18:00 - 4:59)
-    title = isVi ? `Chào buổi tối, ${displayName}` : `Good evening, ${displayName}`;
-    body = isVi 
-      ? 'Buổi tối ấm áp! Hãy thư giãn và tận hưởng những phút giây bình yên của ngày.' 
+    title = isVi
+      ? `Chào buổi tối, ${displayName}`
+      : `Good evening, ${displayName}`;
+    body = isVi
+      ? 'Buổi tối ấm áp! Hãy thư giãn và tận hưởng những phút giây bình yên của ngày.'
       : 'Evening is life saying you are getting closer to your dreams.';
     emoji = '🌇';
   }
@@ -1027,8 +1109,938 @@ function formatPostTime(timestamp: number | undefined, copy: FeedCopy) {
   if (diff < 3600) return copy.minutesAgo(Math.floor(diff / 60));
   if (diff < 86400) return copy.hoursAgo(Math.floor(diff / 3600));
   if (diff < 604800) return copy.daysAgo(Math.floor(diff / 86400));
-  return new Date(timestamp * 1000).toLocaleDateString(copy === FEED_COPY.vi ? 'vi-VN' : 'en-US');
+  return new Date(timestamp * 1000).toLocaleDateString(
+    copy === FEED_COPY.vi ? 'vi-VN' : 'en-US',
+  );
 }
+
+type FeedShareTarget = FeedShareDestination | 'message';
+
+function FeedCommentRow({
+  comment,
+  copy,
+  replies,
+  isLoadingReplies,
+  onReply,
+  onLoadReplies,
+  depth = 0,
+}: {
+  comment: ReelComment;
+  copy: FeedCopy;
+  replies?: ReelComment[];
+  isLoadingReplies?: boolean;
+  onReply: (commentId: string, username: string) => void;
+  onLoadReplies: (commentId: string) => void;
+  depth?: number;
+}) {
+  return (
+    <View
+      style={{
+        marginBottom: depth > 0 ? 10 : 14,
+        marginLeft: depth > 0 ? 36 : 0,
+      }}
+    >
+      <View style={{ flexDirection: 'row' }}>
+        <Image
+          source={{ uri: comment.publisher.avatarUrl || images.me }}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            backgroundColor: '#e5e7eb',
+          }}
+        />
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <View
+            style={{
+              borderRadius: 16,
+              backgroundColor: '#f1f5f9',
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+            }}
+          >
+            <Text style={{ color: '#0f172a', fontSize: 13, fontWeight: '700' }}>
+              {comment.publisher.name ||
+                comment.publisher.username ||
+                copy.userFallback}
+            </Text>
+            {comment.text ? (
+              <Text
+                style={{
+                  marginTop: 4,
+                  color: '#111827',
+                  fontSize: 14,
+                  lineHeight: 20,
+                }}
+              >
+                {comment.text}
+              </Text>
+            ) : null}
+            {comment.isSending ? (
+              <Text style={{ marginTop: 4, color: '#64748b', fontSize: 12 }}>
+                Đang gửi...
+              </Text>
+            ) : null}
+            {comment.isFailed ? (
+              <Text style={{ marginTop: 4, color: '#ef4444', fontSize: 12 }}>
+                Không gửi được
+              </Text>
+            ) : null}
+          </View>
+          <View
+            style={{
+              marginTop: 4,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 14,
+              paddingHorizontal: 8,
+            }}
+          >
+            <Text style={{ color: '#64748b', fontSize: 12 }}>
+              {formatPostTime(comment.postedAt, copy)}
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() =>
+                onReply(
+                  comment.id,
+                  comment.publisher.username || comment.publisher.name || '',
+                )
+              }
+            >
+              <Text
+                style={{ color: '#64748b', fontSize: 12, fontWeight: '700' }}
+              >
+                Phản hồi
+              </Text>
+            </TouchableOpacity>
+            {comment.likeCount > 0 ? (
+              <Text style={{ color: '#64748b', fontSize: 12 }}>
+                {formatCount(comment.likeCount)} thích
+              </Text>
+            ) : null}
+          </View>
+
+          {comment.replyCount > 0 && !replies?.length ? (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => onLoadReplies(comment.id)}
+              style={{ marginTop: 8, paddingHorizontal: 8 }}
+            >
+              <Text
+                style={{ color: '#64748b', fontSize: 12, fontWeight: '700' }}
+              >
+                {isLoadingReplies
+                  ? 'Đang tải phản hồi...'
+                  : `Xem ${comment.replyCount} phản hồi`}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {replies?.map(reply => (
+            <FeedCommentRow
+              key={reply.id}
+              comment={reply}
+              copy={copy}
+              replies={undefined}
+              isLoadingReplies={false}
+              onReply={onReply}
+              onLoadReplies={onLoadReplies}
+              depth={depth + 1}
+            />
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function FeedCommentsOverlay({
+  visible,
+  comments,
+  commentCount,
+  isLoading,
+  isLoadingMore,
+  isSubmitting,
+  error,
+  repliesById,
+  loadingRepliesIds,
+  replyingTo,
+  copy,
+  onClose,
+  onEndReached,
+  onRetry,
+  onSubmit,
+  onSubmitReply,
+  onLoadReplies,
+  onStartReply,
+  onCancelReply,
+}: {
+  visible: boolean;
+  comments: ReelComment[];
+  commentCount: number;
+  isLoading: boolean;
+  isLoadingMore: boolean;
+  isSubmitting: boolean;
+  error: string | null;
+  repliesById: Record<string, ReelComment[]>;
+  loadingRepliesIds: string[];
+  replyingTo: { commentId: string; username: string } | null;
+  copy: FeedCopy;
+  onClose: () => void;
+  onEndReached: () => void;
+  onRetry: () => void;
+  onSubmit: (text: string) => Promise<ReelComment | null>;
+  onSubmitReply: (
+    commentId: string,
+    text: string,
+  ) => Promise<ReelComment | null>;
+  onLoadReplies: (commentId: string) => void;
+  onStartReply: (commentId: string, username: string) => void;
+  onCancelReply: () => void;
+}) {
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    if (!visible) setDraft('');
+  }, [visible]);
+
+  const handleSubmit = useCallback(async () => {
+    const text = draft.trim();
+    if (!text || isSubmitting) return;
+
+    const created = replyingTo
+      ? await onSubmitReply(replyingTo.commentId, text)
+      : await onSubmit(text);
+    if (created) {
+      setDraft('');
+      onCancelReply();
+    }
+  }, [draft, isSubmitting, onCancelReply, onSubmit, onSubmitReply, replyingTo]);
+
+  if (!visible) return null;
+
+  return (
+    <View style={feedOverlayStyles.root}>
+      <Pressable
+        accessibilityLabel="Đóng bình luận"
+        onPress={onClose}
+        style={feedOverlayStyles.backdrop}
+      />
+      <View style={feedOverlayStyles.commentSheet}>
+        <View style={feedOverlayStyles.grabber} />
+        <View style={feedOverlayStyles.header}>
+          <View style={feedOverlayStyles.headerSide} />
+          <Text style={feedOverlayStyles.title}>
+            {Math.max(commentCount, comments.length)} bình luận
+          </Text>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={onClose}
+            style={feedOverlayStyles.closeButton}
+          >
+            <X size={20} color="#111827" />
+          </TouchableOpacity>
+        </View>
+
+        {error ? (
+          <View style={feedOverlayStyles.errorBox}>
+            <Text style={feedOverlayStyles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={onRetry} activeOpacity={0.8}>
+              <Text style={feedOverlayStyles.retryText}>Thử lại</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {replyingTo ? (
+          <View style={feedOverlayStyles.replyBox}>
+            <Text style={feedOverlayStyles.replyText}>
+              Đang phản hồi @{replyingTo.username}
+            </Text>
+            <TouchableOpacity onPress={onCancelReply} activeOpacity={0.8}>
+              <X size={16} color="#1d4ed8" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        <FlatList
+          data={comments}
+          keyExtractor={item => item.id}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          onEndReached={onEndReached}
+          onEndReachedThreshold={0.45}
+          contentContainerStyle={[
+            feedOverlayStyles.commentList,
+            comments.length === 0 && feedOverlayStyles.emptyCommentList,
+          ]}
+          ListEmptyComponent={
+            isLoading ? (
+              <View style={feedOverlayStyles.stateBox}>
+                <ActivityIndicator color="#0866ff" />
+                <Text style={feedOverlayStyles.stateText}>
+                  Đang tải bình luận...
+                </Text>
+              </View>
+            ) : (
+              <View style={feedOverlayStyles.stateBox}>
+                <MessageCircle size={28} color="#94a3b8" />
+                <Text style={feedOverlayStyles.stateTitle}>
+                  Chưa có bình luận
+                </Text>
+                <Text style={feedOverlayStyles.stateText}>
+                  Hãy là người đầu tiên bình luận.
+                </Text>
+              </View>
+            )
+          }
+          ListFooterComponent={
+            isLoadingMore ? (
+              <View style={{ paddingVertical: 12 }}>
+                <ActivityIndicator color="#0866ff" />
+              </View>
+            ) : null
+          }
+          renderItem={({ item }) => (
+            <FeedCommentRow
+              comment={item}
+              copy={copy}
+              replies={repliesById[item.id]}
+              isLoadingReplies={loadingRepliesIds.includes(item.id)}
+              onReply={onStartReply}
+              onLoadReplies={onLoadReplies}
+            />
+          )}
+        />
+
+        <View style={feedOverlayStyles.inputRow}>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            placeholder={replyingTo ? 'Viết phản hồi...' : 'Thêm bình luận...'}
+            placeholderTextColor="#94a3b8"
+            multiline
+            textAlignVertical="top"
+            style={feedOverlayStyles.commentInput}
+          />
+          <TouchableOpacity
+            activeOpacity={0.85}
+            disabled={!draft.trim() || isSubmitting}
+            onPress={handleSubmit}
+            style={[
+              feedOverlayStyles.sendButton,
+              (!draft.trim() || isSubmitting) &&
+                feedOverlayStyles.sendButtonDisabled,
+            ]}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Send size={18} color="#fff" />
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function FeedShareOverlay({
+  visible,
+  post,
+  copy,
+  onClose,
+  onInternalShare,
+  onShared,
+}: {
+  visible: boolean;
+  post?: FeedPost;
+  copy: FeedCopy;
+  onClose: () => void;
+  onInternalShare: (input: SharePostInput) => Promise<FeedPost>;
+  onShared: (post: FeedPost) => void;
+}) {
+  const currentUserVm = useCurrentUserViewModel();
+  const pagesVm = useMyPagesViewModel();
+  const groupsVm = useMyGroupsViewModel();
+  const [note, setNote] = useState('');
+  const [destination, setDestination] = useState<FeedShareTarget>('timeline');
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible || !post) return;
+    setNote('');
+    setDestination('timeline');
+    setError(null);
+    pagesVm.setActiveFilter('mine');
+    groupsVm.setActiveFilter('mine');
+    void pagesVm.loadFirstPage(false);
+    void groupsVm.loadFirstPage(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, post?.id]);
+
+  useEffect(() => {
+    if (!selectedPageId && pagesVm.pages.length > 0) {
+      const first = pagesVm.pages[0] as any;
+      setSelectedPageId(String(first.pageId || first.id));
+    }
+  }, [pagesVm.pages, selectedPageId]);
+
+  useEffect(() => {
+    if (!selectedGroupId && groupsVm.groups.length > 0) {
+      const first = groupsVm.groups[0] as any;
+      setSelectedGroupId(String(first.groupId || first.id));
+    }
+  }, [groupsVm.groups, selectedGroupId]);
+
+  const handleShare = useCallback(async () => {
+    if (!post || isSharing) return;
+    setIsSharing(true);
+    setError(null);
+
+    try {
+      if (destination === 'message') {
+        throw new Error('Chia sẻ qua tin nhắn sẽ được bổ sung sau.');
+      }
+
+      const input: SharePostInput = {
+        postId: post.id,
+        destination,
+        text: note,
+      };
+
+      if (destination === 'timeline') {
+        const userId = currentUserVm.user?.userId;
+        if (!userId) throw new Error('Không tìm thấy tài khoản hiện tại.');
+        input.userId = userId;
+      } else if (destination === 'page') {
+        if (!selectedPageId) throw new Error('Bạn chưa có trang để chia sẻ.');
+        input.pageId = selectedPageId;
+      } else if (destination === 'group') {
+        if (!selectedGroupId) throw new Error('Bạn chưa có nhóm để chia sẻ.');
+        input.groupId = selectedGroupId;
+      }
+
+      const shared = await onInternalShare(input);
+      onShared(shared);
+      onClose();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Không thể chia sẻ bài viết.',
+      );
+    } finally {
+      setIsSharing(false);
+    }
+  }, [
+    currentUserVm.user?.userId,
+    destination,
+    isSharing,
+    note,
+    onClose,
+    onInternalShare,
+    onShared,
+    post,
+    selectedGroupId,
+    selectedPageId,
+  ]);
+
+  if (!visible || !post) return null;
+
+  const destinationItems: Array<{
+    id: FeedShareTarget;
+    label: string;
+    Icon: React.ComponentType<{ size?: number; color?: string }>;
+  }> = [
+    { id: 'timeline', label: 'Dòng thời gian', Icon: Share2 },
+    { id: 'page', label: 'Trang', Icon: Globe },
+    { id: 'group', label: 'Nhóm', Icon: Users },
+    { id: 'message', label: 'Tin nhắn', Icon: MessageCircle },
+  ];
+
+  return (
+    <View style={feedOverlayStyles.root}>
+      <Pressable
+        accessibilityLabel="Đóng chia sẻ"
+        onPress={onClose}
+        style={feedOverlayStyles.backdrop}
+      />
+      <View style={feedOverlayStyles.shareSheet}>
+        <View style={feedOverlayStyles.header}>
+          <Text style={feedOverlayStyles.title}>Chia sẻ bài viết</Text>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={onClose}
+            style={feedOverlayStyles.closeButton}
+          >
+            <X size={20} color="#111827" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={feedOverlayStyles.shareContent}
+        >
+          <Text style={feedOverlayStyles.sectionLabel}>hoặc chia sẻ lên</Text>
+          <TextInput
+            value={note}
+            onChangeText={setNote}
+            placeholder="Thêm ghi chú cho bài chia sẻ..."
+            placeholderTextColor="#94a3b8"
+            multiline
+            textAlignVertical="top"
+            style={feedOverlayStyles.shareInput}
+          />
+
+          <Text style={feedOverlayStyles.sectionLabel}>Đích chia sẻ</Text>
+          <View style={feedOverlayStyles.destinationGrid}>
+            {destinationItems.map(({ id, label, Icon }) => {
+              const active = destination === id;
+              return (
+                <TouchableOpacity
+                  key={id}
+                  activeOpacity={0.86}
+                  disabled={isSharing}
+                  onPress={() => {
+                    setDestination(id);
+                    setError(
+                      id === 'message'
+                        ? 'Chia sẻ qua tin nhắn sẽ được bổ sung sau.'
+                        : null,
+                    );
+                  }}
+                  style={[
+                    feedOverlayStyles.destinationCard,
+                    active && feedOverlayStyles.destinationCardActive,
+                  ]}
+                >
+                  <Icon size={17} color={active ? '#0000ff' : '#64748b'} />
+                  <Text
+                    style={[
+                      feedOverlayStyles.destinationText,
+                      active && feedOverlayStyles.destinationTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {destination === 'timeline' ? (
+            <View style={feedOverlayStyles.targetPanel}>
+              <Text style={feedOverlayStyles.targetTitle}>
+                Trang cá nhân của tôi
+              </Text>
+              <Text style={feedOverlayStyles.targetDescription}>
+                Bài chia sẻ sẽ xuất hiện trên dòng thời gian cá nhân.
+              </Text>
+              <View style={feedOverlayStyles.targetRowActive}>
+                <Image
+                  source={{ uri: currentUserVm.user?.avatar || images.me }}
+                  style={feedOverlayStyles.targetAvatar}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={feedOverlayStyles.targetName}>
+                    {currentUserVm.user?.name || copy.userFallback}
+                  </Text>
+                  <Text style={feedOverlayStyles.targetSubtitle}>
+                    @{currentUserVm.user?.username || 'me'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {destination === 'page' ? (
+            <View style={feedOverlayStyles.targetPanel}>
+              {pagesVm.isLoading ? (
+                <ActivityIndicator color="#0000ff" />
+              ) : pagesVm.pages.length > 0 ? (
+                pagesVm.pages.map(rawPage => {
+                  const page = rawPage as any;
+                  const id = String(page.pageId || page.id);
+                  const active = selectedPageId === id;
+                  return (
+                    <TouchableOpacity
+                      key={id}
+                      activeOpacity={0.86}
+                      onPress={() => setSelectedPageId(id)}
+                      style={[
+                        feedOverlayStyles.targetRow,
+                        active && feedOverlayStyles.targetRowActive,
+                      ]}
+                    >
+                      <Image
+                        source={{ uri: page.avatar || images.me }}
+                        style={feedOverlayStyles.targetAvatar}
+                      />
+                      <Text style={feedOverlayStyles.targetName}>
+                        {page.pageTitle || page.pageName || 'Trang'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <Text style={feedOverlayStyles.targetDescription}>
+                  Bạn chưa có trang để chia sẻ.
+                </Text>
+              )}
+            </View>
+          ) : null}
+
+          {destination === 'group' ? (
+            <View style={feedOverlayStyles.targetPanel}>
+              {groupsVm.isLoading ? (
+                <ActivityIndicator color="#0000ff" />
+              ) : groupsVm.groups.length > 0 ? (
+                groupsVm.groups.map(rawGroup => {
+                  const group = rawGroup as any;
+                  const id = String(group.groupId || group.id);
+                  const active = selectedGroupId === id;
+                  return (
+                    <TouchableOpacity
+                      key={id}
+                      activeOpacity={0.86}
+                      onPress={() => setSelectedGroupId(id)}
+                      style={[
+                        feedOverlayStyles.targetRow,
+                        active && feedOverlayStyles.targetRowActive,
+                      ]}
+                    >
+                      <Image
+                        source={{ uri: group.avatar || images.me }}
+                        style={feedOverlayStyles.targetAvatar}
+                      />
+                      <Text style={feedOverlayStyles.targetName}>
+                        {group.groupTitle || group.groupName || 'Nhóm'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <Text style={feedOverlayStyles.targetDescription}>
+                  Bạn chưa có nhóm để chia sẻ.
+                </Text>
+              )}
+            </View>
+          ) : null}
+
+          {error ? (
+            <Text style={feedOverlayStyles.errorText}>{error}</Text>
+          ) : null}
+
+          <TouchableOpacity
+            activeOpacity={0.88}
+            disabled={isSharing || destination === 'message'}
+            onPress={handleShare}
+            style={[
+              feedOverlayStyles.primaryButton,
+              (isSharing || destination === 'message') &&
+                feedOverlayStyles.primaryButtonDisabled,
+            ]}
+          >
+            {isSharing ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={feedOverlayStyles.primaryButtonText}>
+                Chia sẻ ngay
+              </Text>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+const feedOverlayStyles = StyleSheet.create({
+  root: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 1000,
+    elevation: 1000,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0,0,0,0.36)',
+  },
+  commentSheet: {
+    maxHeight: '78%',
+    minHeight: '48%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  shareSheet: {
+    maxHeight: '86%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  grabber: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#d1d5db',
+    marginTop: 8,
+  },
+  header: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#f1f5f9',
+    paddingHorizontal: 16,
+  },
+  headerSide: {
+    width: 36,
+  },
+  title: {
+    flex: 1,
+    color: '#111827',
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  closeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentList: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
+  emptyCommentList: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  stateBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 34,
+  },
+  stateTitle: {
+    marginTop: 8,
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  stateText: {
+    marginTop: 6,
+    color: '#64748b',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  errorBox: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 14,
+    backgroundColor: '#fef2f2',
+    padding: 12,
+  },
+  errorText: {
+    color: '#b91c1c',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  retryText: {
+    marginTop: 8,
+    color: '#b91c1c',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  replyBox: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    backgroundColor: '#eef2ff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  replyText: {
+    flex: 1,
+    color: '#1d4ed8',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  inputRow: {
+    marginHorizontal: 12,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#dbe3ef',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  commentInput: {
+    maxHeight: 96,
+    flex: 1,
+    paddingVertical: 2,
+    color: '#0f172a',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  sendButton: {
+    marginLeft: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0000ff',
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#cbd5e1',
+  },
+  shareContent: {
+    padding: 16,
+    paddingBottom: 22,
+  },
+  sectionLabel: {
+    marginBottom: 8,
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  shareInput: {
+    minHeight: 96,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#0f172a',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  destinationGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 12,
+  },
+  destinationCard: {
+    minHeight: 74,
+    flexBasis: '47%',
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 8,
+  },
+  destinationCardActive: {
+    borderColor: '#0000ff',
+    backgroundColor: '#eef2ff',
+  },
+  destinationText: {
+    marginTop: 7,
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  destinationTextActive: {
+    color: '#0000ff',
+  },
+  targetPanel: {
+    marginTop: 4,
+    marginBottom: 12,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+    padding: 12,
+  },
+  targetTitle: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  targetDescription: {
+    marginTop: 4,
+    color: '#64748b',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  targetRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    backgroundColor: '#fff',
+    padding: 8,
+  },
+  targetRowActive: {
+    borderColor: '#a5b4fc',
+    backgroundColor: '#fff',
+  },
+  targetAvatar: {
+    marginRight: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#e5e7eb',
+  },
+  targetName: {
+    flex: 1,
+    color: '#0f172a',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  targetSubtitle: {
+    marginTop: 2,
+    color: '#64748b',
+    fontSize: 12,
+  },
+  primaryButton: {
+    marginTop: 4,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0000ff',
+  },
+  primaryButtonDisabled: {
+    backgroundColor: '#94a3b8',
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+});
 
 type FeedActiveVideoListener = (activeVideoId: string | null) => void;
 type FeedScrollBusyListener = (isBusy: boolean) => void;
@@ -1258,6 +2270,11 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           onMorePress={onOpenPostMenu}
           post={post}
         />
+        {post.sharedFrom ? (
+          <Text className="-mt-3 mb-3 text-caption-secondary">
+            {copy.sharedPostLabel(post.sharedFrom.publisherName)}
+          </Text>
+        ) : null}
         {post.caption ? (
           <Text className="text-body-primary">{post.caption}</Text>
         ) : null}
@@ -1272,26 +2289,26 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           <View pointerEvents="none" style={{ width: '100%', height: '100%' }}>
             <VideoPlayer
               source={videoSource}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-            paused={!playing}
-            controls={false}
-            muted={muted}
-            repeat
-            ignoreSilentSwitch="ignore"
-            playInBackground={false}
-            playWhenInactive={false}
-            useTextureView={false}
-            bufferConfig={VIDEO_BUFFER_CONFIG}
-            onError={(error) => {
-              console.warn(
-                '[HomeVideoPostCard] video error',
-                post.id,
-                post.videoUrl,
-                error,
-              );
-            }}
-          />
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="cover"
+              paused={!playing}
+              controls={false}
+              muted={muted}
+              repeat
+              ignoreSilentSwitch="ignore"
+              playInBackground={false}
+              playWhenInactive={false}
+              useTextureView={false}
+              bufferConfig={VIDEO_BUFFER_CONFIG}
+              onError={error => {
+                console.warn(
+                  '[HomeVideoPostCard] video error',
+                  post.id,
+                  post.videoUrl,
+                  error,
+                );
+              }}
+            />
           </View>
         ) : post.thumbnailUrl ? (
           <FeedMediaImage
@@ -1407,11 +2424,16 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
         <View className="flex-row items-center">
           <Avatar uri={post.publisher.avatarUrl ?? images.me} size={42} />
           <View className="ml-3 flex-1">
-            <Text className="text-title-primary text-[#111827]" numberOfLines={1}>
+            <Text
+              className="text-title-primary text-[#111827]"
+              numberOfLines={1}
+            >
               {post.publisher.name}
             </Text>
             <View className="mt-0.5 flex-row items-center">
-              <Text className="text-xs font-semibold text-[#64748b]">{copy.sponsored}</Text>
+              <Text className="text-xs font-semibold text-[#64748b]">
+                {copy.sponsored}
+              </Text>
               <Text className="mx-1 text-xs text-[#94a3b8]">•</Text>
               <Globe size={12} color="#94a3b8" />
             </View>
@@ -1421,7 +2443,10 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
           </View>
         </View>
 
-        <Text className="mt-4 text-[15px] font-bold text-[#111827]" numberOfLines={2}>
+        <Text
+          className="mt-4 text-[15px] font-bold text-[#111827]"
+          numberOfLines={2}
+        >
           {post.title}
         </Text>
         {!!post.description && (
@@ -1442,10 +2467,16 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
               <View className="h-16 w-16 items-center justify-center rounded-full bg-white/15">
                 <Text className="ml-1 text-3xl text-white">▶</Text>
               </View>
-              <Text className="mt-3 text-sm font-semibold text-white">{copy.adVideo}</Text>
+              <Text className="mt-3 text-sm font-semibold text-white">
+                {copy.adVideo}
+              </Text>
             </View>
           ) : (
-            <FeedMediaImage uri={post.mediaUrl} className="h-full w-full" resizeMode="cover" />
+            <FeedMediaImage
+              uri={post.mediaUrl}
+              className="h-full w-full"
+              resizeMode="cover"
+            />
           )}
         </TouchableOpacity>
       )}
@@ -1466,112 +2497,130 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
           onPress={handlePress}
           className="rounded-lg bg-[#e7f0ff] px-4 py-2"
         >
-          <Text className="text-sm font-bold text-[#0866ff]">{copy.learnMore}</Text>
+          <Text className="text-sm font-bold text-[#0866ff]">
+            {copy.learnMore}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 });
 
-const FeedLivePostCard = React.memo(function FeedLivePostCard({
-  item,
-  copy,
-  onPress,
-}: {
-  item: LiveStreamItem;
-  copy: FeedCopy;
-  onPress: (item: LiveStreamItem) => void;
-}) {
-  const handlePress = useCallback(() => {
-    onPress(item);
-  }, [item, onPress]);
+const FeedLivePostCard = React.memo(
+  function FeedLivePostCard({
+    item,
+    copy,
+    onPress,
+  }: {
+    item: LiveStreamItem;
+    copy: FeedCopy;
+    onPress: (item: LiveStreamItem) => void;
+  }) {
+    const handlePress = useCallback(() => {
+      onPress(item);
+    }, [item, onPress]);
 
-  const startedAtSeconds = Math.floor(new Date(item.startedAt).getTime() / 1000);
-  const timeText = Number.isFinite(startedAtSeconds)
-    ? formatPostTime(startedAtSeconds, copy)
-    : copy.now;
-  const isStale = item.state === 'stale';
+    const startedAtSeconds = Math.floor(
+      new Date(item.startedAt).getTime() / 1000,
+    );
+    const timeText = Number.isFinite(startedAtSeconds)
+      ? formatPostTime(startedAtSeconds, copy)
+      : copy.now;
+    const isStale = item.state === 'stale';
 
-  return (
-    <TouchableOpacity
-      activeOpacity={0.88}
-      onPress={handlePress}
-      className={FEED_CARD_CLASS}
-    >
-      <View className={FEED_CARD_PADDING_CLASS}>
-        <View className="flex-row items-center">
-          <Avatar uri={item.publisher.avatarUrl || images.me} size={42} />
-          <View className="ml-3 flex-1">
-            <Text className="text-title-primary text-[#111827]" numberOfLines={1}>
-              {item.publisher.name}
-            </Text>
-            <View className="mt-0.5 flex-row items-center">
-              <View className={`h-2 w-2 rounded-full ${isStale ? 'bg-orange-500' : 'bg-red-500'}`} />
-              <Text className="ml-1 text-xs font-bold text-[#64748b]">
-                {isStale ? copy.livePending : copy.livePlaying}
+    return (
+      <TouchableOpacity
+        activeOpacity={0.88}
+        onPress={handlePress}
+        className={FEED_CARD_CLASS}
+      >
+        <View className={FEED_CARD_PADDING_CLASS}>
+          <View className="flex-row items-center">
+            <Avatar uri={item.publisher.avatarUrl || images.me} size={42} />
+            <View className="ml-3 flex-1">
+              <Text
+                className="text-title-primary text-[#111827]"
+                numberOfLines={1}
+              >
+                {item.publisher.name}
               </Text>
-              <Text className="mx-1 text-xs text-[#94a3b8]">•</Text>
-              <Text className="text-xs font-semibold text-[#64748b]">{timeText}</Text>
+              <View className="mt-0.5 flex-row items-center">
+                <View
+                  className={`h-2 w-2 rounded-full ${
+                    isStale ? 'bg-orange-500' : 'bg-red-500'
+                  }`}
+                />
+                <Text className="ml-1 text-xs font-bold text-[#64748b]">
+                  {isStale ? copy.livePending : copy.livePlaying}
+                </Text>
+                <Text className="mx-1 text-xs text-[#94a3b8]">•</Text>
+                <Text className="text-xs font-semibold text-[#64748b]">
+                  {timeText}
+                </Text>
+              </View>
+            </View>
+            <View className="h-9 w-9 items-center justify-center rounded-full bg-red-50">
+              <Radio size={18} color="#ef4444" />
             </View>
           </View>
-          <View className="h-9 w-9 items-center justify-center rounded-full bg-red-50">
-            <Radio size={18} color="#ef4444" />
-          </View>
         </View>
-      </View>
 
-      <View className="relative h-52 bg-[#0f172a]">
-        {item.thumbnailUrl ? (
-          <FeedMediaImage
-            uri={item.thumbnailUrl}
-            className="h-full w-full opacity-90"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="absolute inset-0 items-center justify-center">
-            <Radio size={44} color="#ffffff" />
-            <Text className="mt-2 text-sm font-bold text-white/80">
-              {copy.livePlaying}
+        <View className="relative h-52 bg-[#0f172a]">
+          {item.thumbnailUrl ? (
+            <FeedMediaImage
+              uri={item.thumbnailUrl}
+              className="h-full w-full opacity-90"
+              resizeMode="cover"
+            />
+          ) : (
+            <View className="absolute inset-0 items-center justify-center">
+              <Radio size={44} color="#ffffff" />
+              <Text className="mt-2 text-sm font-bold text-white/80">
+                {copy.livePlaying}
+              </Text>
+            </View>
+          )}
+          <View className="absolute right-3 top-3 flex-row items-center rounded-full bg-red-500 px-3 py-1">
+            <View className="h-2 w-2 rounded-full bg-white" />
+            <Text className="ml-1 text-xs font-extrabold text-white">LIVE</Text>
+          </View>
+          <View className="absolute bottom-3 left-3 flex-row items-center rounded-full bg-black/65 px-3 py-1.5">
+            <Users size={14} color="#ffffff" />
+            <Text className="ml-1 text-xs font-bold text-white">
+              {item.viewerCount}
             </Text>
           </View>
-        )}
-        <View className="absolute right-3 top-3 flex-row items-center rounded-full bg-red-500 px-3 py-1">
-          <View className="h-2 w-2 rounded-full bg-white" />
-          <Text className="ml-1 text-xs font-extrabold text-white">LIVE</Text>
         </View>
-        <View className="absolute bottom-3 left-3 flex-row items-center rounded-full bg-black/65 px-3 py-1.5">
-          <Users size={14} color="#ffffff" />
-          <Text className="ml-1 text-xs font-bold text-white">
-            {item.viewerCount}
-          </Text>
-        </View>
-      </View>
 
-      <View className={FEED_CARD_PADDING_CLASS}>
-        <Text className="text-[15px] font-extrabold text-[#111827]" numberOfLines={2}>
-          {item.title || copy.liveTitle(item.publisher.name)}
-        </Text>
-        {!!item.description && (
-          <Text className="mt-1 text-sm text-[#475569]" numberOfLines={2}>
-            {item.description}
+        <View className={FEED_CARD_PADDING_CLASS}>
+          <Text
+            className="text-[15px] font-extrabold text-[#111827]"
+            numberOfLines={2}
+          >
+            {item.title || copy.liveTitle(item.publisher.name)}
           </Text>
-        )}
-        <View className="mt-4 rounded-xl bg-[#eef2ff] px-4 py-3">
-          <Text className="text-center text-sm font-extrabold text-[#0000ff]">
-            {copy.watchLive}
-          </Text>
+          {!!item.description && (
+            <Text className="mt-1 text-sm text-[#475569]" numberOfLines={2}>
+              {item.description}
+            </Text>
+          )}
+          <View className="mt-4 rounded-xl bg-[#eef2ff] px-4 py-3">
+            <Text className="text-center text-sm font-extrabold text-[#0000ff]">
+              {copy.watchLive}
+            </Text>
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
-}, (prev, next) => (
-  prev.item.id === next.item.id &&
-  prev.item.viewerCount === next.item.viewerCount &&
-  prev.item.state === next.item.state &&
-  prev.item.thumbnailUrl === next.item.thumbnailUrl &&
-  prev.item.title === next.item.title &&
-  prev.copy === next.copy
-));
+      </TouchableOpacity>
+    );
+  },
+  (prev, next) =>
+    prev.item.id === next.item.id &&
+    prev.item.viewerCount === next.item.viewerCount &&
+    prev.item.state === next.item.state &&
+    prev.item.thumbnailUrl === next.item.thumbnailUrl &&
+    prev.item.title === next.item.title &&
+    prev.copy === next.copy,
+);
 
 const FeedProductPostCard = React.memo(function FeedProductPostCard({
   post,
@@ -1598,59 +2647,69 @@ const FeedProductPostCard = React.memo(function FeedProductPostCard({
   );
 });
 
-const FeedEventPostCard = React.memo(function FeedEventPostCard({
-  post,
-  copy,
-  onPress,
-  onProfilePress,
-  onSharePost,
-  onToggleInterested,
-  onToggleGoing,
-}: {
-  post: FeedEventPost;
-  copy: FeedCopy;
-  onPress: (event: FeedEventPost['event']) => void;
-  onProfilePress: (userId: string) => void;
-  onSharePost: (post: FeedPost) => void;
-  onToggleInterested: (eventId: string | number) => void;
-  onToggleGoing: (eventId: string | number) => void;
-  onEditPress?: (event: FeedEventPost['event']) => void;
-}) {
-  const handleShare = useCallback(() => {
-    onSharePost(post);
-  }, [onSharePost, post]);
+const FeedEventPostCard = React.memo(
+  function FeedEventPostCard({
+    post,
+    copy,
+    onPress,
+    onProfilePress,
+    onSharePost,
+    onToggleInterested,
+    onToggleGoing,
+  }: {
+    post: FeedEventPost;
+    copy: FeedCopy;
+    onPress: (event: FeedEventPost['event']) => void;
+    onProfilePress: (userId: string) => void;
+    onSharePost: (post: FeedPost) => void;
+    onToggleInterested: (eventId: string | number) => void;
+    onToggleGoing: (eventId: string | number) => void;
+    onEditPress?: (event: FeedEventPost['event']) => void;
+  }) {
+    const handleShare = useCallback(() => {
+      onSharePost(post);
+    }, [onSharePost, post]);
 
-  const handleInterested = useCallback(() => {
-    onToggleInterested(post.event.id);
-  }, [onToggleInterested, post.event.id]);
+    const handleInterested = useCallback(() => {
+      onToggleInterested(post.event.id);
+    }, [onToggleInterested, post.event.id]);
 
-  const handleGoing = useCallback(() => {
-    onToggleGoing(post.event.id);
-  }, [onToggleGoing, post.event.id]);
+    const handleGoing = useCallback(() => {
+      onToggleGoing(post.event.id);
+    }, [onToggleGoing, post.event.id]);
 
-  const handleEdit = useCallback((eventItem: FeedEventPost['event']) => {
-    Alert.alert(copy.editTitle, copy.editEventMessage(eventItem.event_name || eventItem.name || copy.eventFallback));
-  }, [copy]);
+    const handleEdit = useCallback(
+      (eventItem: FeedEventPost['event']) => {
+        Alert.alert(
+          copy.editTitle,
+          copy.editEventMessage(
+            eventItem.event_name || eventItem.name || copy.eventFallback,
+          ),
+        );
+      },
+      [copy],
+    );
 
-  return (
-    <EventPostCard
-      event={post.event}
-      onPress={onPress}
-      onProfilePress={onProfilePress}
-      onShare={handleShare}
-      onInterestedPress={handleInterested}
-      onGoingPress={handleGoing}
-      onEditPress={handleEdit}
-    />
-  );
-}, (prev, next) =>
-  prev.post === next.post &&
-  prev.onPress === next.onPress &&
-  prev.onProfilePress === next.onProfilePress &&
-  prev.onSharePost === next.onSharePost &&
-  prev.onToggleInterested === next.onToggleInterested &&
-  prev.onToggleGoing === next.onToggleGoing &&
-  prev.copy === next.copy
+    return (
+      <EventPostCard
+        event={post.event}
+        onPress={onPress}
+        onProfilePress={onProfilePress}
+        onShare={handleShare}
+        onInterestedPress={handleInterested}
+        onGoingPress={handleGoing}
+        onEditPress={handleEdit}
+      />
+    );
+  },
+  (prev, next) =>
+    prev.post === next.post &&
+    prev.onPress === next.onPress &&
+    prev.onProfilePress === next.onProfilePress &&
+    prev.onSharePost === next.onSharePost &&
+    prev.onToggleInterested === next.onToggleInterested &&
+    prev.onToggleGoing === next.onToggleGoing &&
+    prev.copy === next.copy,
 );
 
 function formatSalary(job: JobsItem, copy: FeedCopy) {
@@ -1669,11 +2728,15 @@ function formatSalary(job: JobsItem, copy: FeedCopy) {
       ? `${formatNumber(minimum)} - ${formatNumber(maximum)}`
       : formatNumber(minimum || maximum);
 
-  return `${range}${currency ? ` ${currency}` : ''}${salaryDate ? ` / ${salaryDate}` : ''}`;
+  return `${range}${currency ? ` ${currency}` : ''}${
+    salaryDate ? ` / ${salaryDate}` : ''
+  }`;
 }
 
 function getJobTypeLabel(jobType: string, copy: FeedCopy) {
-  return JOB_TYPE_VIETNAMESE[jobType as JobType] || jobType || copy.jobTypeFallback;
+  return (
+    JOB_TYPE_VIETNAMESE[jobType as JobType] || jobType || copy.jobTypeFallback
+  );
 }
 
 const FeedJobPostCard = React.memo(function FeedJobPostCard({
@@ -1688,7 +2751,8 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
   const job = post.job;
   const avatar = job.page?.avatar || post.publisher.avatarUrl || images.me;
   const cover = job.image || job.page?.cover;
-  const pageName = job.page?.page_title || post.publisher.name || copy.employerFallback;
+  const pageName =
+    job.page?.page_title || post.publisher.name || copy.employerFallback;
 
   const handlePress = useCallback(() => {
     onPress(job);
@@ -1704,7 +2768,10 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
         <View className="flex-row items-center">
           <Avatar uri={avatar} size={42} />
           <View className="ml-3 flex-1">
-            <Text className="text-title-primary text-[#111827]" numberOfLines={1}>
+            <Text
+              className="text-title-primary text-[#111827]"
+              numberOfLines={1}
+            >
               {pageName}
             </Text>
             <View className="mt-0.5 flex-row items-center">
@@ -1720,11 +2787,17 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
           </View>
         </View>
 
-        <Text className="mt-4 text-[17px] font-extrabold text-[#111827]" numberOfLines={2}>
+        <Text
+          className="mt-4 text-[17px] font-extrabold text-[#111827]"
+          numberOfLines={2}
+        >
           {job.title || copy.jobFallback}
         </Text>
         {!!job.description && (
-          <Text className="mt-2 text-sm leading-5 text-[#475569]" numberOfLines={3}>
+          <Text
+            className="mt-2 text-sm leading-5 text-[#475569]"
+            numberOfLines={3}
+          >
             {job.description}
           </Text>
         )}
@@ -1733,7 +2806,10 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
           {!!job.location && (
             <View className="flex-row items-center rounded-full bg-[#f1f5f9] px-3 py-2">
               <MapPin size={14} color="#64748b" />
-              <Text className="ml-1 max-w-[210px] text-xs font-bold text-[#475569]" numberOfLines={1}>
+              <Text
+                className="ml-1 max-w-[210px] text-xs font-bold text-[#475569]"
+                numberOfLines={1}
+              >
                 {job.location}
               </Text>
             </View>
@@ -1748,7 +2824,11 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
       </View>
 
       {!!cover && (
-        <FeedMediaImage uri={cover} className="h-44 w-full bg-slate-100" resizeMode="cover" />
+        <FeedMediaImage
+          uri={cover}
+          className="h-44 w-full bg-slate-100"
+          resizeMode="cover"
+        />
       )}
 
       <View className="flex-row items-center justify-between border-t border-[#dddfe2] px-3 py-3">
@@ -1756,20 +2836,29 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
           <Text className="text-xs font-semibold uppercase tracking-[0.4px] text-[#64748b]">
             {copy.salary}
           </Text>
-          <Text className="mt-0.5 text-sm font-bold text-[#111827]" numberOfLines={1}>
+          <Text
+            className="mt-0.5 text-sm font-bold text-[#111827]"
+            numberOfLines={1}
+          >
             {formatSalary(job, copy)}
           </Text>
         </View>
 
         <View className="rounded-lg bg-[#e7f0ff] px-4 py-2">
-          <Text className="text-sm font-bold text-[#0866ff]">{copy.viewJob}</Text>
+          <Text className="text-sm font-bold text-[#0866ff]">
+            {copy.viewJob}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
   );
 });
 
-const GROUP_SKELETONS = ['group-skeleton-1', 'group-skeleton-2', 'group-skeleton-3'];
+const GROUP_SKELETONS = [
+  'group-skeleton-1',
+  'group-skeleton-2',
+  'group-skeleton-3',
+];
 const GROUP_CAROUSEL_SEPARATOR_STYLE = { width: 12 };
 
 function GroupCarouselSeparator() {
@@ -1806,7 +2895,9 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
           </Text>
         </View>
         <TouchableOpacity activeOpacity={0.75} onPress={onOpenGroups}>
-          <Text className="text-sm font-bold text-[#0866ff]">{copy.seeAll}</Text>
+          <Text className="text-sm font-bold text-[#0866ff]">
+            {copy.seeAll}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -1846,13 +2937,25 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
               onPress={() => onOpenGroup(item)}
             >
               <View className="h-24 bg-[#111827]">
-                <FeedMediaImage uri={cover} className="h-full w-full opacity-90" resizeMode="cover" />
+                <FeedMediaImage
+                  uri={cover}
+                  className="h-full w-full opacity-90"
+                  resizeMode="cover"
+                />
                 <View className="absolute bottom-[-22px] left-3 h-14 w-14 rounded-full border-4 border-white bg-white">
-                  <Image source={{ uri: avatar }} className="h-full w-full rounded-full" resizeMode="cover" fadeDuration={0} />
+                  <Image
+                    source={{ uri: avatar }}
+                    className="h-full w-full rounded-full"
+                    resizeMode="cover"
+                    fadeDuration={0}
+                  />
                 </View>
               </View>
               <View className="px-3 pb-3 pt-8">
-                <Text className="text-[15px] font-extrabold text-[#111827]" numberOfLines={2}>
+                <Text
+                  className="text-[15px] font-extrabold text-[#111827]"
+                  numberOfLines={2}
+                >
                   {item.groupTitle || item.groupName || copy.groupFallback}
                 </Text>
                 <View className="mt-2 flex-row items-center">
@@ -1862,7 +2965,9 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
                     <Globe size={13} color="#64748b" />
                   )}
                   <Text className="ml-1 text-xs font-semibold text-[#64748b]">
-                    {item.privacy === 'private' ? copy.privateLabel : copy.publicLabel}
+                    {item.privacy === 'private'
+                      ? copy.privateLabel
+                      : copy.publicLabel}
                   </Text>
                   <Text className="mx-1 text-xs text-[#94a3b8]">•</Text>
                   <Users size={13} color="#64748b" />
@@ -1885,120 +2990,146 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
   );
 });
 
-const PAGE_SKELETONS = ['page-skeleton-1', 'page-skeleton-2', 'page-skeleton-3'];
+const PAGE_SKELETONS = [
+  'page-skeleton-1',
+  'page-skeleton-2',
+  'page-skeleton-3',
+];
 
-const SuggestedPagesCarousel = React.memo(function SuggestedPagesCarousel({
-  pages,
-  isLoading,
-  copy,
-  onOpenPages,
-  onOpenPage,
-}: {
-  pages: PagesItem[];
-  isLoading: boolean;
-  copy: FeedCopy;
-  onOpenPages: () => void;
-  onOpenPage: (page: PagesItem) => void;
-}) {
-  if (!isLoading && pages.length === 0) return null;
+const SuggestedPagesCarousel = React.memo(
+  function SuggestedPagesCarousel({
+    pages,
+    isLoading,
+    copy,
+    onOpenPages,
+    onOpenPage,
+  }: {
+    pages: PagesItem[];
+    isLoading: boolean;
+    copy: FeedCopy;
+    onOpenPages: () => void;
+    onOpenPage: (page: PagesItem) => void;
+  }) {
+    if (!isLoading && pages.length === 0) return null;
 
-  const data: Array<PagesItem | string> =
-    pages.length > 0 ? pages : PAGE_SKELETONS;
+    const data: Array<PagesItem | string> =
+      pages.length > 0 ? pages : PAGE_SKELETONS;
 
-  return (
-    <View className="mb-2 border-y border-[#e5e7eb] bg-white py-4">
-      <View className="mb-3 flex-row items-center justify-between px-4">
-        <View>
-          <Text className="text-[17px] font-extrabold text-[#111827]">
-            {copy.suggestedPagesTitle}
-          </Text>
-          <Text className="mt-0.5 text-xs font-semibold text-[#64748b]">
-            {copy.suggestedPagesSubtitle}
-          </Text>
+    return (
+      <View className="mb-2 border-y border-[#e5e7eb] bg-white py-4">
+        <View className="mb-3 flex-row items-center justify-between px-4">
+          <View>
+            <Text className="text-[17px] font-extrabold text-[#111827]">
+              {copy.suggestedPagesTitle}
+            </Text>
+            <Text className="mt-0.5 text-xs font-semibold text-[#64748b]">
+              {copy.suggestedPagesSubtitle}
+            </Text>
+          </View>
+          <TouchableOpacity activeOpacity={0.75} onPress={onOpenPages}>
+            <Text className="text-sm font-bold text-[#0866ff]">
+              {copy.seeAll}
+            </Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity activeOpacity={0.75} onPress={onOpenPages}>
-          <Text className="text-sm font-bold text-[#0866ff]">{copy.seeAll}</Text>
-        </TouchableOpacity>
-      </View>
 
-      <FlatList<PagesItem | string>
-        horizontal
-        data={data}
-        keyExtractor={item => (typeof item === 'string' ? item : String(item.id))}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16 }}
-        ItemSeparatorComponent={GroupCarouselSeparator}
-        nestedScrollEnabled
-        initialNumToRender={3}
-        maxToRenderPerBatch={3}
-        windowSize={3}
-        removeClippedSubviews={Platform.OS === 'android'}
-        renderItem={({ item }) => {
-          if (typeof item === 'string') {
-            return (
-              <View className="w-[220px] overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white">
-                <View className="h-24 bg-[#eef2f7]" />
-                <View className="p-3">
-                  <View className="h-5 w-36 rounded-full bg-[#eef2f7]" />
-                  <View className="mt-2 h-4 w-28 rounded-full bg-[#eef2f7]" />
-                  <View className="mt-4 h-9 rounded-xl bg-[#eef2f7]" />
-                </View>
-              </View>
-            );
+        <FlatList<PagesItem | string>
+          horizontal
+          data={data}
+          keyExtractor={item =>
+            typeof item === 'string' ? item : String(item.id)
           }
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16 }}
+          ItemSeparatorComponent={GroupCarouselSeparator}
+          nestedScrollEnabled
+          initialNumToRender={3}
+          maxToRenderPerBatch={3}
+          windowSize={3}
+          removeClippedSubviews={Platform.OS === 'android'}
+          renderItem={({ item }) => {
+            if (typeof item === 'string') {
+              return (
+                <View className="w-[220px] overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white">
+                  <View className="h-24 bg-[#eef2f7]" />
+                  <View className="p-3">
+                    <View className="h-5 w-36 rounded-full bg-[#eef2f7]" />
+                    <View className="mt-2 h-4 w-28 rounded-full bg-[#eef2f7]" />
+                    <View className="mt-4 h-9 rounded-xl bg-[#eef2f7]" />
+                  </View>
+                </View>
+              );
+            }
 
-          const cover = item.cover || item.avatar || images.scenic;
-          const avatar = item.avatar || cover;
-          const title = item.pageTitle || item.pageName || copy.pageFallback;
-          const subtitle = item.pageCategory || item.pageDescription || copy.publicLabel;
+            const cover = item.cover || item.avatar || images.scenic;
+            const avatar = item.avatar || cover;
+            const title = item.pageTitle || item.pageName || copy.pageFallback;
+            const subtitle =
+              item.pageCategory || item.pageDescription || copy.publicLabel;
 
-          return (
-            <TouchableOpacity
-              className="w-[220px] overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white"
-              activeOpacity={0.88}
-              onPress={() => onOpenPage(item)}
-            >
-              <View className="h-24 bg-[#111827]">
-                <FeedMediaImage uri={cover} className="h-full w-full opacity-90" resizeMode="cover" />
-                <View className="absolute bottom-[-22px] left-3 h-14 w-14 rounded-full border-4 border-white bg-white">
-                  <Image source={{ uri: avatar }} className="h-full w-full rounded-full" resizeMode="cover" fadeDuration={0} />
+            return (
+              <TouchableOpacity
+                className="w-[220px] overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white"
+                activeOpacity={0.88}
+                onPress={() => onOpenPage(item)}
+              >
+                <View className="h-24 bg-[#111827]">
+                  <FeedMediaImage
+                    uri={cover}
+                    className="h-full w-full opacity-90"
+                    resizeMode="cover"
+                  />
+                  <View className="absolute bottom-[-22px] left-3 h-14 w-14 rounded-full border-4 border-white bg-white">
+                    <Image
+                      source={{ uri: avatar }}
+                      className="h-full w-full rounded-full"
+                      resizeMode="cover"
+                      fadeDuration={0}
+                    />
+                  </View>
                 </View>
-              </View>
-              <View className="px-3 pb-3 pt-8">
-                <Text className="text-[15px] font-extrabold text-[#111827]" numberOfLines={2}>
-                  {title}
-                </Text>
-                <View className="mt-2 flex-row items-center">
-                  <Building2 size={13} color="#64748b" />
-                  <Text className="ml-1 flex-1 text-xs font-semibold text-[#64748b]" numberOfLines={1}>
-                    {subtitle}
+                <View className="px-3 pb-3 pt-8">
+                  <Text
+                    className="text-[15px] font-extrabold text-[#111827]"
+                    numberOfLines={2}
+                  >
+                    {title}
                   </Text>
+                  <View className="mt-2 flex-row items-center">
+                    <Building2 size={13} color="#64748b" />
+                    <Text
+                      className="ml-1 flex-1 text-xs font-semibold text-[#64748b]"
+                      numberOfLines={1}
+                    >
+                      {subtitle}
+                    </Text>
+                  </View>
+                  <View className="mt-1 flex-row items-center">
+                    <ThumbsUp size={13} color="#64748b" />
+                    <Text className="ml-1 text-xs font-semibold text-[#64748b]">
+                      {formatCount(Number(item.likes) || 0)}
+                    </Text>
+                  </View>
+                  <View className="mt-4 flex-row items-center justify-center rounded-xl bg-[#e7f0ff] py-2.5">
+                    <Plus size={16} color="#0866ff" />
+                    <Text className="ml-1 text-sm font-extrabold text-[#0866ff]">
+                      {copy.viewPage}
+                    </Text>
+                  </View>
                 </View>
-                <View className="mt-1 flex-row items-center">
-                  <ThumbsUp size={13} color="#64748b" />
-                  <Text className="ml-1 text-xs font-semibold text-[#64748b]">
-                    {formatCount(Number(item.likes) || 0)}
-                  </Text>
-                </View>
-                <View className="mt-4 flex-row items-center justify-center rounded-xl bg-[#e7f0ff] py-2.5">
-                  <Plus size={16} color="#0866ff" />
-                  <Text className="ml-1 text-sm font-extrabold text-[#0866ff]">
-                    {copy.viewPage}
-                  </Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          );
-        }}
-      />
-    </View>
-  );
-}, (prev, next) =>
-  prev.pages === next.pages &&
-  prev.isLoading === next.isLoading &&
-  prev.copy === next.copy &&
-  prev.onOpenPages === next.onOpenPages &&
-  prev.onOpenPage === next.onOpenPage
+              </TouchableOpacity>
+            );
+          }}
+        />
+      </View>
+    );
+  },
+  (prev, next) =>
+    prev.pages === next.pages &&
+    prev.isLoading === next.isLoading &&
+    prev.copy === next.copy &&
+    prev.onOpenPages === next.onOpenPages &&
+    prev.onOpenPage === next.onOpenPage,
 );
 
 // Background colors for each reaction type's circular badge (FB-style)
@@ -2108,8 +3239,14 @@ export function PhotoViewerModal({
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
-  const [pickerAnchor, setPickerAnchor] = useState<{ postId: string; x: number; y: number } | null>(null);
-  const [isFollowedLocally, setIsFollowedLocally] = useState<boolean | undefined>(undefined);
+  const [pickerAnchor, setPickerAnchor] = useState<{
+    postId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [isFollowedLocally, setIsFollowedLocally] = useState<
+    boolean | undefined
+  >(undefined);
 
   const localGestureX = useSharedValue(0);
   const localGestureY = useSharedValue(0);
@@ -2151,12 +3288,15 @@ export function PhotoViewerModal({
     [livePost, onReact],
   );
 
-  const handleLikeLongPress = useCallback((isQuickLike: boolean) => {
-    if (!livePost) return;
-    const x = isQuickLike ? (SCREEN_W - 40) : 60;
-    const y = SCREEN_H - 110;
-    setPickerAnchor({ postId: livePost.id, x, y });
-  }, [livePost, SCREEN_W, SCREEN_H]);
+  const handleLikeLongPress = useCallback(
+    (isQuickLike: boolean) => {
+      if (!livePost) return;
+      const x = isQuickLike ? SCREEN_W - 40 : 60;
+      const y = SCREEN_H - 110;
+      setPickerAnchor({ postId: livePost.id, x, y });
+    },
+    [livePost, SCREEN_W, SCREEN_H],
+  );
 
   const handleFollowPress = useCallback(async () => {
     if (!livePost || isFollowedLocally) return;
@@ -2176,10 +3316,10 @@ export function PhotoViewerModal({
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
     .failOffsetX([-10, 10])
-    .onUpdate((event) => {
+    .onUpdate(event => {
       translateY.value = event.translationY;
     })
-    .onEnd((event) => {
+    .onEnd(event => {
       if (event.translationY > 100 || event.velocityY > 500) {
         // Slide off screen downwards
         translateY.value = withTiming(SCREEN_H, { duration: 180 }, () => {
@@ -2196,7 +3336,7 @@ export function PhotoViewerModal({
       Math.abs(translateY.value),
       [0, SCREEN_H * 0.5],
       [1, 0],
-      Extrapolation.CLAMP
+      Extrapolation.CLAMP,
     );
     // Clamp to prevent floating-point underflow producing invalid rgba values
     const finalOpacity = Math.max(0, Math.min(1, dragProgress));
@@ -2211,14 +3351,11 @@ export function PhotoViewerModal({
       Math.abs(translateY.value),
       [0, SCREEN_H * 0.5],
       [1, 0.8],
-      Extrapolation.CLAMP
+      Extrapolation.CLAMP,
     );
     return {
       flex: 1,
-      transform: [
-        { translateY: translateY.value },
-        { scale: dragScale },
-      ],
+      transform: [{ translateY: translateY.value }, { scale: dragScale }],
       opacity: 1,
     };
   });
@@ -2240,7 +3377,6 @@ export function PhotoViewerModal({
         <GestureDetector gesture={panGesture}>
           <Animated.View style={containerStyle}>
             <Animated.View style={[contentStyle, { flex: 1 }]}>
-
               {/* ── Top bar: page counter (left) + close button (right) ── */}
               <View
                 style={{
@@ -2287,7 +3423,13 @@ export function PhotoViewerModal({
                     justifyContent: 'space-between',
                   }}
                 >
-                  <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>
+                  <Text
+                    style={{
+                      color: '#ffffff',
+                      fontSize: 16,
+                      fontWeight: '700',
+                    }}
+                  >
                     {total > 1 ? `${currentIndex + 1} / ${total}` : '1 / 1'}
                   </Text>
 
@@ -2321,7 +3463,9 @@ export function PhotoViewerModal({
                 showsHorizontalScrollIndicator={false}
                 initialScrollIndex={state.initialIndex}
                 getItemLayout={(_, index) => ({
-                  length: SCREEN_W, offset: SCREEN_W * index, index,
+                  length: SCREEN_W,
+                  offset: SCREEN_W * index,
+                  index,
                 })}
                 windowSize={3}
                 initialNumToRender={1}
@@ -2402,7 +3546,13 @@ export function PhotoViewerModal({
                     marginBottom: 16,
                   }}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      flex: 1,
+                    }}
+                  >
                     {livePost.publisher.avatarUrl ? (
                       <Image
                         source={{ uri: livePost.publisher.avatarUrl }}
@@ -2425,14 +3575,44 @@ export function PhotoViewerModal({
                       />
                     )}
                     <View style={{ flex: 1 }}>
-                      <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 15 }} numberOfLines={1}>
+                      <Text
+                        style={{
+                          color: '#ffffff',
+                          fontWeight: '700',
+                          fontSize: 15,
+                        }}
+                        numberOfLines={1}
+                      >
                         {livePost.publisher.name}
                       </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-                        <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 12, fontWeight: '600' }}>
-                          {formatPostTime(livePost.postedAt, copy).toUpperCase()}
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          marginTop: 2,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: 'rgba(255, 255, 255, 0.5)',
+                            fontSize: 12,
+                            fontWeight: '600',
+                          }}
+                        >
+                          {formatPostTime(
+                            livePost.postedAt,
+                            copy,
+                          ).toUpperCase()}
                         </Text>
-                        <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 12, marginHorizontal: 4 }}>•</Text>
+                        <Text
+                          style={{
+                            color: 'rgba(255, 255, 255, 0.5)',
+                            fontSize: 12,
+                            marginHorizontal: 4,
+                          }}
+                        >
+                          •
+                        </Text>
                         <Globe size={11} color="rgba(255, 255, 255, 0.5)" />
                       </View>
                     </View>
@@ -2441,7 +3621,9 @@ export function PhotoViewerModal({
                   {/* Follow button only shown when not own post and not followed yet */}
                   {(() => {
                     const currentUserId = sessionStorage.getSession()?.userId;
-                    const showFollowButton = livePost.publisher.id !== currentUserId && !isFollowedLocally;
+                    const showFollowButton =
+                      livePost.publisher.id !== currentUserId &&
+                      !isFollowedLocally;
                     if (!showFollowButton) return null;
                     return (
                       <GHTouchableOpacity
@@ -2455,7 +3637,13 @@ export function PhotoViewerModal({
                           paddingVertical: 6,
                         }}
                       >
-                        <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '600' }}>
+                        <Text
+                          style={{
+                            color: '#ffffff',
+                            fontSize: 13,
+                            fontWeight: '600',
+                          }}
+                        >
                           {language === 'vi' ? 'Theo dõi' : 'Follow'}
                         </Text>
                       </GHTouchableOpacity>
@@ -2472,7 +3660,13 @@ export function PhotoViewerModal({
                   }}
                 >
                   {/* Left: Like, Comment, Share capsules */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
                     {/* Like Capsule */}
                     <GHTouchableOpacity
                       onPress={() => onReact(livePost.id, 'like')}
@@ -2497,7 +3691,14 @@ export function PhotoViewerModal({
                       ) : (
                         <ThumbsUp size={18} color="#ffffff" />
                       )}
-                      <Text style={{ color: '#ffffff', marginLeft: 6, fontSize: 13, fontWeight: '600' }}>
+                      <Text
+                        style={{
+                          color: '#ffffff',
+                          marginLeft: 6,
+                          fontSize: 13,
+                          fontWeight: '600',
+                        }}
+                      >
                         {livePost.likeCount}
                       </Text>
                     </GHTouchableOpacity>
@@ -2516,7 +3717,14 @@ export function PhotoViewerModal({
                       }}
                     >
                       <MessageCircle size={18} color="#ffffff" />
-                      <Text style={{ color: '#ffffff', marginLeft: 6, fontSize: 13, fontWeight: '600' }}>
+                      <Text
+                        style={{
+                          color: '#ffffff',
+                          marginLeft: 6,
+                          fontSize: 13,
+                          fontWeight: '600',
+                        }}
+                      >
                         {livePost.commentCount}
                       </Text>
                     </GHTouchableOpacity>
@@ -2534,7 +3742,14 @@ export function PhotoViewerModal({
                       }}
                     >
                       <Share2 size={18} color="#ffffff" />
-                      <Text style={{ color: '#ffffff', marginLeft: 6, fontSize: 13, fontWeight: '600' }}>
+                      <Text
+                        style={{
+                          color: '#ffffff',
+                          marginLeft: 6,
+                          fontSize: 13,
+                          fontWeight: '600',
+                        }}
+                      >
                         {language === 'vi' ? 'Chia sẻ' : 'Share'}
                       </Text>
                     </GHTouchableOpacity>
@@ -2550,7 +3765,9 @@ export function PhotoViewerModal({
                       width: 42,
                       height: 42,
                       borderRadius: 21,
-                      backgroundColor: livePost.myReaction ? 'rgba(255, 255, 255, 0.12)' : '#0866FF',
+                      backgroundColor: livePost.myReaction
+                        ? 'rgba(255, 255, 255, 0.12)'
+                        : '#0866FF',
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
@@ -2578,7 +3795,6 @@ export function PhotoViewerModal({
                 gestureActive={localGestureActive}
                 hasDragged={localHasDragged}
               />
-
             </Animated.View>
           </Animated.View>
         </GestureDetector>
@@ -2743,26 +3959,26 @@ const VideoPostActions = React.memo(function VideoPostActions({
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         className="flex-row items-center"
       >
-          {myReaction ? (
-            <Image
-              source={REACTION_IMAGES[myReaction]}
-              style={{ width: 20, height: 20 }}
-              resizeMode="contain"
-            />
-          ) : (
-            <ThumbsUp size={19} color={color} />
-          )}
-          <Text
-            style={{
-              marginLeft: 6,
-              color,
-              fontWeight: myReaction ? '700' : '600',
-              fontSize: 14,
-            }}
-          >
-            {label}
-          </Text>
-        </TouchableOpacity>
+        {myReaction ? (
+          <Image
+            source={REACTION_IMAGES[myReaction]}
+            style={{ width: 20, height: 20 }}
+            resizeMode="contain"
+          />
+        ) : (
+          <ThumbsUp size={19} color={color} />
+        )}
+        <Text
+          style={{
+            marginLeft: 6,
+            color,
+            fontWeight: myReaction ? '700' : '600',
+            fontSize: 14,
+          }}
+        >
+          {label}
+        </Text>
+      </TouchableOpacity>
 
       <TouchableOpacity
         className="flex-row items-center"
@@ -2824,13 +4040,24 @@ export function ReactionPickerOverlay({
   const top = Math.max(40, anchor.y - PICKER_HEIGHT - PICKER_GAP);
 
   // Clamp the arrow pointer's horizontal position so it stays within the rounded rectangle boundaries
-  const arrowLeft = Math.max(left + 20, Math.min(anchor.x - 8, left + PICKER_WIDTH - 20 - 16));
+  const arrowLeft = Math.max(
+    left + 20,
+    Math.min(anchor.x - 8, left + PICKER_WIDTH - 20 - 16),
+  );
 
   return (
     <>
       <Pressable
         onPress={onDismiss}
-        style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 99, backgroundColor: 'transparent' }}
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 99,
+          backgroundColor: 'transparent',
+        }}
       />
       <View
         style={{
@@ -2930,34 +4157,59 @@ function ReactionIcon({
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < 40) {
           runOnJS(onPick)(type);
-        } else if (dragged && index === 0) { // Only dismiss if they dragged and released outside
+        } else if (dragged && index === 0) {
+          // Only dismiss if they dragged and released outside
           runOnJS(onDismiss)();
         }
       }
-    }
+    },
   );
 
   const style = useAnimatedStyle(() => {
-    if (!gestureActive.value) return { transform: [{ scale: 1 }, { translateY: 0 }] };
-    
+    if (!gestureActive.value)
+      return { transform: [{ scale: 1 }, { translateY: 0 }] };
+
     const dx = gestureX.value - iconCenterX;
     const dy = gestureY.value - iconCenterY;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    
-    const scale = interpolate(dist, [0, 40, 60], [1.5, 1.1, 1], Extrapolation.CLAMP);
-    const translateY = interpolate(dist, [0, 40, 60], [-15, -5, 0], Extrapolation.CLAMP);
-    
+
+    const scale = interpolate(
+      dist,
+      [0, 40, 60],
+      [1.5, 1.1, 1],
+      Extrapolation.CLAMP,
+    );
+    const translateY = interpolate(
+      dist,
+      [0, 40, 60],
+      [-15, -5, 0],
+      Extrapolation.CLAMP,
+    );
+
     return {
       transform: [
         { scale: withSpring(scale, { damping: 15 }) },
-        { translateY: withSpring(translateY, { damping: 15 }) }
-      ]
+        { translateY: withSpring(translateY, { damping: 15 }) },
+      ],
     };
   });
 
   return (
-    <Animated.View style={[{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }, style]}>
-      <TouchableOpacity onPress={() => onPick(type)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
+    <Animated.View
+      style={[
+        {
+          width: 40,
+          height: 40,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        style,
+      ]}
+    >
+      <TouchableOpacity
+        onPress={() => onPick(type)}
+        hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+      >
         <Image
           source={REACTION_IMAGES[type]}
           style={{ width: 36, height: 36 }}
@@ -2968,16 +4220,11 @@ function ReactionIcon({
   );
 }
 
-
 function PostSkeleton() {
   // Pulse animation: opacity oscillate 0.4 → 0.8 → 0.4 mỗi 1.5s
   const opacity = useSharedValue(0.4);
   useEffect(() => {
-    opacity.value = withRepeat(
-      withTiming(0.8, { duration: 750 }),
-      -1,
-      true,
-    );
+    opacity.value = withRepeat(withTiming(0.8, { duration: 750 }), -1, true);
   }, [opacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -2985,10 +4232,7 @@ function PostSkeleton() {
   }));
 
   return (
-    <Animated.View
-      style={animatedStyle}
-      className={FEED_CARD_CLASS}
-    >
+    <Animated.View style={animatedStyle} className={FEED_CARD_CLASS}>
       <View className={FEED_CARD_PADDING_CLASS}>
         {/* Header: avatar + name + time */}
         <View className="mb-4 flex-row items-center">
@@ -3070,7 +4314,7 @@ function MergedFeed({
 
   // ── Time-sorted render ──
   return (
-    <View onLayout={(e) => onReportSectionY(e.nativeEvent.layout.y)}>
+    <View onLayout={e => onReportSectionY(e.nativeEvent.layout.y)}>
       {posts.map(post => {
         if (post.kind === 'video') {
           return (
@@ -3130,7 +4374,11 @@ function MergedFeed({
       {products && products.length > 0 && (
         <View className="mt-2">
           <Text className="mx-4 mb-3 text-heading">{copy.productsTitle}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="px-4 gap-4">
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerClassName="px-4 gap-4"
+          >
             {products.map(productPost => (
               <View key={productPost.id} className="w-56">
                 <ProductPostCard
@@ -3210,7 +4458,9 @@ const PostHeader = React.memo(function PostHeader({
               </Text>
             ) : null}
           </View>
-          <Text className="text-caption-secondary">{time} • {copy.publicLabel}</Text>
+          <Text className="text-caption-secondary">
+            {time} • {copy.publicLabel}
+          </Text>
           {onDetailPress && post ? (
             <TouchableOpacity
               activeOpacity={0.7}
@@ -3226,7 +4476,10 @@ const PostHeader = React.memo(function PostHeader({
         </View>
       </TouchableOpacity>
       {onMorePress && post && (
-        <TouchableOpacity onPress={handleMorePress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity
+          onPress={handleMorePress}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
           <MoreHorizontal size={22} color="#94A3B8" />
         </TouchableOpacity>
       )}
@@ -3335,13 +4588,20 @@ export const TextPostCard = React.memo(function TextPostCard({
         <PostHeader
           avatar={post.publisher.avatarUrl}
           name={post.publisher.name}
-          time={`${formatPostTime(post.postedAt, copy)} (${copy.photoCount(totalPhotos)})`}
+          time={`${formatPostTime(post.postedAt, copy)} (${copy.photoCount(
+            totalPhotos,
+          )})`}
           copy={copy}
           onPress={post.publisher.id ? handleProfilePress : undefined}
           onMorePress={onOpenPostMenu}
           onDetailPress={onPostPress}
           post={post}
         />
+        {post.sharedFrom ? (
+          <Text className="-mt-3 mb-3 text-caption-secondary">
+            {copy.sharedPostLabel(post.sharedFrom.publisherName)}
+          </Text>
+        ) : null}
         {post.caption ? (
           <Text className="text-body-primary">{post.caption}</Text>
         ) : null}
@@ -3364,7 +4624,10 @@ export const TextPostCard = React.memo(function TextPostCard({
                 onPress={() => onPhotoPress(post, index)}
                 activeOpacity={0.95}
                 delayPressIn={0}
-                style={[getPhotoLayout(index, totalPhotos), PHOTO_GRID_ITEM_PADDING]}
+                style={[
+                  getPhotoLayout(index, totalPhotos),
+                  PHOTO_GRID_ITEM_PADDING,
+                ]}
               >
                 <View style={{ flex: 1, overflow: 'hidden' }}>
                   <FeedMediaImage
@@ -3530,12 +4793,16 @@ function FeedScreen() {
   const lastLoadMoreRequestAtRef = useRef(0);
   const lastSupplementalLoadMoreRequestAtRef = useRef(0);
   const supplementalLoadStartedRef = useRef(false);
-  const supplementalInteractionRef = useRef<ReturnType<typeof InteractionManager.runAfterInteractions> | null>(null);
+  const supplementalInteractionRef = useRef<ReturnType<
+    typeof InteractionManager.runAfterInteractions
+  > | null>(null);
   const supplementalLoadTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // ── Scroll tracking for pausing videos while scrolling ───────────────
   const isMomentumScrollingRef = useRef(false);
-  const scrollEndTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollEndTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const setActiveFeedVideo = useCallback((videoId: string | null) => {
     activeVideoIdRef.current = videoId;
@@ -3634,9 +4901,12 @@ function FeedScreen() {
   }, [navigation]);
 
   // Navigate to user profile
-  const navigateToProfile = useCallback((userId: string) => {
-    navigation.navigate(ROUTES.PROFILE, { userId });
-  }, [navigation]);
+  const navigateToProfile = useCallback(
+    (userId: string) => {
+      navigation.navigate(ROUTES.PROFILE, { userId });
+    },
+    [navigation],
+  );
 
   const commentVm = useFeedCommentsViewModel({
     onCommentCountChange: vm.updateCommentCount,
@@ -3651,9 +4921,12 @@ function FeedScreen() {
 
   const toggleReactionRef = useRef(vm.toggleReaction);
   toggleReactionRef.current = vm.toggleReaction;
-  const handleToggleReactionStable = useCallback((postId: string, reaction: ReactionType) => {
-    toggleReactionRef.current(postId, reaction);
-  }, []);
+  const handleToggleReactionStable = useCallback(
+    (postId: string, reaction: ReactionType) => {
+      toggleReactionRef.current(postId, reaction);
+    },
+    [],
+  );
 
   // Products for feed (Facebook Marketplace style)
   const productsVm = useProductsOnFeedViewModel({ autoLoad: false });
@@ -3718,7 +4991,11 @@ function FeedScreen() {
   const reloadFunding = fundingVm.reloadFunding;
 
   useEffect(() => {
-    if (supplementalLoadStartedRef.current || !vm.hasLoadedOnce || feedPosts.length === 0) {
+    if (
+      supplementalLoadStartedRef.current ||
+      !vm.hasLoadedOnce ||
+      feedPosts.length === 0
+    ) {
       return;
     }
 
@@ -3779,7 +5056,7 @@ function FeedScreen() {
   const feedEventPosts = useMemo<FeedEventPost[]>(() => {
     return eventsVm.events.map((event, index) => {
       let postTimestamp = Math.floor(Date.now() / 1000); // Default to current time so it doesn't get pushed to bottom
-      
+
       const timeVal = event.time;
       if (timeVal) {
         const parsed = parseInt(String(timeVal), 10);
@@ -3796,9 +5073,12 @@ function FeedScreen() {
               const year = parseInt(parts[0], 10);
               const month = parseInt(parts[1], 10) - 1;
               const day = parseInt(parts[2], 10);
-              const timeStr = event.event_start_time || event.start_time || '00:00:00';
+              const timeStr =
+                event.event_start_time || event.start_time || '00:00:00';
               const timeParts = timeStr.split(':');
-              let hour = 0, min = 0, sec = 0;
+              let hour = 0,
+                min = 0,
+                sec = 0;
               if (timeParts.length >= 2) {
                 hour = parseInt(timeParts[0], 10);
                 min = parseInt(timeParts[1], 10);
@@ -3822,7 +5102,10 @@ function FeedScreen() {
         postedAt: postTimestamp,
         publisher: {
           id: String(event.user_data?.user_id || ''),
-          name: event.user_data?.full_name || event.user_data?.name || copy.organizerFallback,
+          name:
+            event.user_data?.full_name ||
+            event.user_data?.name ||
+            copy.organizerFallback,
           username: event.user_data?.username || '',
           avatarUrl: event.user_data?.avatar,
         },
@@ -3919,12 +5202,15 @@ function FeedScreen() {
   // the active post in both lists so the comment count badge stays
   // accurate regardless of which type triggered it. Filter out product posts.
   const selectedCommentPost = useMemo(
-     () => feedPosts.find(
-       post =>
-         (post.kind === 'text' || post.kind === 'video' || post.kind === 'poll') &&
-         post.id === commentVm.selectedCommentPostId,
-     ) as (FeedTextPost | FeedVideoPost | FeedPollPost) | null,
-     [feedPosts, commentVm.selectedCommentPostId],
+    () =>
+      feedPosts.find(
+        post =>
+          (post.kind === 'text' ||
+            post.kind === 'video' ||
+            post.kind === 'poll') &&
+          post.id === commentVm.selectedCommentPostId,
+      ) as (FeedTextPost | FeedVideoPost | FeedPollPost) | null,
+    [feedPosts, commentVm.selectedCommentPostId],
   );
 
   const handleRetryComments = useCallback(() => {
@@ -3939,28 +5225,33 @@ function FeedScreen() {
     minimumViewTime: 150, // Must remain visible for 150ms before triggering to prevent spam during scroll
   });
 
-  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: any[] }) => {
-    const viewableVideo = viewableItems.find(
-      (item) =>
-        item.isViewable &&
-        item.item?.type === 'post' &&
-        item.item.post?.kind === 'video',
-    );
+  const onViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: any[] }) => {
+      const viewableVideo = viewableItems.find(
+        item =>
+          item.isViewable &&
+          item.item?.type === 'post' &&
+          item.item.post?.kind === 'video',
+      );
 
-    const nextVideoId = viewableVideo ? String(viewableVideo.item.post.id) : null;
+      const nextVideoId = viewableVideo
+        ? String(viewableVideo.item.post.id)
+        : null;
 
-    if (isScrollingRef.current) {
-      pendingActiveVideoIdRef.current = nextVideoId;
-      return;
-    }
+      if (isScrollingRef.current) {
+        pendingActiveVideoIdRef.current = nextVideoId;
+        return;
+      }
 
-    setActiveFeedVideo(nextVideoId);
-  }, [setActiveFeedVideo]);
-
+      setActiveFeedVideo(nextVideoId);
+    },
+    [setActiveFeedVideo],
+  );
 
   // ── Post menu state ──────────────────────────────────────────────────
   const [postMenuVisible, setPostMenuVisible] = useState(false);
-  const [selectedPostForMenu, setSelectedPostForMenu] = useState<FeedPost | null>(null);
+  const [selectedPostForMenu, setSelectedPostForMenu] =
+    useState<FeedPost | null>(null);
 
   const handleOpenPostMenu = useCallback((post: FeedPost) => {
     setSelectedPostForMenu(post);
@@ -3972,31 +5263,37 @@ function FeedScreen() {
     setSelectedPostForMenu(null);
   }, []);
 
-  const handleSavePost = useCallback(async (postId: string) => {
-    try {
-      const result = await saveFeedPost?.(postId);
-      if (result?.saved) {
-        Alert.alert(copy.savedTitle, copy.savedMessage);
-      } else {
-        Alert.alert(copy.unsavedTitle, copy.unsavedMessage);
+  const handleSavePost = useCallback(
+    async (postId: string) => {
+      try {
+        const result = await saveFeedPost?.(postId);
+        if (result?.saved) {
+          Alert.alert(copy.savedTitle, copy.savedMessage);
+        } else {
+          Alert.alert(copy.unsavedTitle, copy.unsavedMessage);
+        }
+      } catch {
+        Alert.alert(copy.errorTitle, copy.saveErrorMessage);
       }
-    } catch {
-      Alert.alert(copy.errorTitle, copy.saveErrorMessage);
-    }
-  }, [copy, saveFeedPost]);
+    },
+    [copy, saveFeedPost],
+  );
 
-  const handleReportPost = useCallback(async (postId: string) => {
-    try {
-      const result = await reportFeedPost?.(postId);
-      if (result?.reported) {
-        Alert.alert(copy.reportSentTitle, copy.reportSentMessage);
-      } else {
-        Alert.alert(copy.reportCancelledTitle, copy.reportCancelledMessage);
+  const handleReportPost = useCallback(
+    async (postId: string) => {
+      try {
+        const result = await reportFeedPost?.(postId);
+        if (result?.reported) {
+          Alert.alert(copy.reportSentTitle, copy.reportSentMessage);
+        } else {
+          Alert.alert(copy.reportCancelledTitle, copy.reportCancelledMessage);
+        }
+      } catch {
+        Alert.alert(copy.errorTitle, copy.reportErrorMessage);
       }
-    } catch {
-      Alert.alert(copy.errorTitle, copy.reportErrorMessage);
-    }
-  }, [copy, reportFeedPost]);
+    },
+    [copy, reportFeedPost],
+  );
 
   // Autoplay the first video on mount / load
   useEffect(() => {
@@ -4070,29 +5367,30 @@ function FeedScreen() {
     supplementalLoadTimersRef.current.forEach(timer => clearTimeout(timer));
     supplementalLoadTimersRef.current = [];
 
-    supplementalInteractionRef.current = InteractionManager.runAfterInteractions(() => {
-      const timers = [
-        setTimeout(() => {
-          reloadLive();
-        }, 100),
-        setTimeout(() => {
-          reloadProducts(true);
-        }, 250),
-        setTimeout(() => {
-          reloadGroups(true);
-        }, 450),
-        setTimeout(() => {
-          reloadPages(true);
-        }, 650),
-        setTimeout(() => {
-          reloadEvents(true);
-        }, 850),
-        setTimeout(() => {
-          reloadJobs(true);
-        }, 1050),
-      ];
-      supplementalLoadTimersRef.current = timers;
-    });
+    supplementalInteractionRef.current =
+      InteractionManager.runAfterInteractions(() => {
+        const timers = [
+          setTimeout(() => {
+            reloadLive();
+          }, 100),
+          setTimeout(() => {
+            reloadProducts(true);
+          }, 250),
+          setTimeout(() => {
+            reloadGroups(true);
+          }, 450),
+          setTimeout(() => {
+            reloadPages(true);
+          }, 650),
+          setTimeout(() => {
+            reloadEvents(true);
+          }, 850),
+          setTimeout(() => {
+            reloadJobs(true);
+          }, 1050),
+        ];
+        supplementalLoadTimersRef.current = timers;
+      });
   }, [
     reloadEvents,
     reloadFeedPosts,
@@ -4127,7 +5425,9 @@ function FeedScreen() {
   const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
   const photoViewerRef = useRef<PhotoViewerState | null>(null);
   const openingPhotoViewerRef = useRef(false);
-  const photoPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const photoPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const handlePhotoPress = useCallback(
     (post: FeedTextPost, photoIndex: number) => {
@@ -4186,7 +5486,9 @@ function FeedScreen() {
 
   // Share action sheet state
   const [shareModalVisible, setShareModalVisible] = useState(false);
-  const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(undefined);
+  const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(
+    undefined,
+  );
   const [, setSharingStory] = useState<any | undefined>(undefined);
 
   const handleOpenPicker = useCallback(
@@ -4219,10 +5521,6 @@ function FeedScreen() {
     }, 300); // Wait for animation
   }, []);
 
-  const handleShareCopied = useCallback(() => {
-    // ShareActionSheet already gives the visible feedback.
-  }, []);
-
   const handleInternalSharePost = useCallback(
     async (input: SharePostInput) => {
       return shareFeedPost(input);
@@ -4243,12 +5541,7 @@ function FeedScreen() {
       feedEventPosts,
       feedJobPosts,
     );
-  }, [
-    feedPosts,
-    feedProductPosts,
-    feedEventPosts,
-    feedJobPosts,
-  ]);
+  }, [feedPosts, feedProductPosts, feedEventPosts, feedJobPosts]);
 
   const feedLiveItems = useMemo<LiveStreamItem[]>(() => {
     const byPostId = new Map<number, LiveStreamItem>();
@@ -4281,7 +5574,10 @@ function FeedScreen() {
       });
     });
 
-    if ((groupsVm.groups.length > 0 || groupsVm.isLoading) && items.length > 0) {
+    if (
+      (groupsVm.groups.length > 0 || groupsVm.isLoading) &&
+      items.length > 0
+    ) {
       const insertIndex = Math.min(10, items.length);
       items.splice(insertIndex, 0, {
         type: 'groups-carousel',
@@ -4371,7 +5667,8 @@ function FeedScreen() {
         const prod = post.product;
         if (prod?.images) {
           prod.images.slice(0, 2).forEach((imgObj: any) => {
-            if (imgObj?.image?.startsWith?.('http')) urlsToPrefetch.push(imgObj.image);
+            if (imgObj?.image?.startsWith?.('http'))
+              urlsToPrefetch.push(imgObj.image);
           });
         }
       }
@@ -4385,22 +5682,30 @@ function FeedScreen() {
         if (cover?.startsWith('http')) urlsToPrefetch.push(cover);
       }
       if (post.kind === 'job') {
-        if (post.job.image?.startsWith('http')) urlsToPrefetch.push(post.job.image);
-        if (post.job.page?.avatar?.startsWith('http')) urlsToPrefetch.push(post.job.page.avatar);
-        if (post.job.page?.cover?.startsWith('http')) urlsToPrefetch.push(post.job.page.cover);
+        if (post.job.image?.startsWith('http'))
+          urlsToPrefetch.push(post.job.image);
+        if (post.job.page?.avatar?.startsWith('http'))
+          urlsToPrefetch.push(post.job.page.avatar);
+        if (post.job.page?.cover?.startsWith('http'))
+          urlsToPrefetch.push(post.job.page.cover);
       }
       if (post.kind === 'ad') {
-        if (post.mediaUrl?.startsWith('http')) urlsToPrefetch.push(post.mediaUrl);
-        if (post.publisher.avatarUrl?.startsWith('http')) urlsToPrefetch.push(post.publisher.avatarUrl);
+        if (post.mediaUrl?.startsWith('http'))
+          urlsToPrefetch.push(post.mediaUrl);
+        if (post.publisher.avatarUrl?.startsWith('http'))
+          urlsToPrefetch.push(post.publisher.avatarUrl);
       }
     }
 
     prefetchedCountRef.current = end;
 
     // Deduplicate and prefetch in idle time - limit to avoid network/CPU spikes
-    const unique = Array.from(new Set(urlsToPrefetch)).slice(0, MAX_IMAGE_PREFETCH_URLS);
+    const unique = Array.from(new Set(urlsToPrefetch)).slice(
+      0,
+      MAX_IMAGE_PREFETCH_URLS,
+    );
     // Prefetch fewer at a time to avoid overwhelming the device
-    unique.slice(0, 4).forEach((url) => {
+    unique.slice(0, 4).forEach(url => {
       Image.prefetch(url).catch(() => {});
     });
   }, [mergedPosts]);
@@ -4484,8 +5789,13 @@ function FeedScreen() {
         onSharePost={handleOpenSharePost}
         onToggleInterested={toggleInterested}
         onToggleGoing={toggleGoing}
-        onEditPress={(eventItem) => {
-          Alert.alert(copy.editTitle, copy.editEventMessage(eventItem.event_name || eventItem.name || copy.eventFallback));
+        onEditPress={eventItem => {
+          Alert.alert(
+            copy.editTitle,
+            copy.editEventMessage(
+              eventItem.event_name || eventItem.name || copy.eventFallback,
+            ),
+          );
         }}
       />
     ),
@@ -4541,19 +5851,30 @@ function FeedScreen() {
   );
 
   const renderAdPost = useCallback(
-    ({ item }: { item: FeedAdPost }) => <FeedAdPostCard key={item.id} post={item} copy={copy} />,
+    ({ item }: { item: FeedAdPost }) => (
+      <FeedAdPostCard key={item.id} post={item} copy={copy} />
+    ),
     [copy],
   );
 
   const renderJobPost = useCallback(
     ({ item }: { item: FeedJobPost }) => (
-      <FeedJobPostCard key={item.id} post={item} copy={copy} onPress={handleJobPress} />
+      <FeedJobPostCard
+        key={item.id}
+        post={item}
+        copy={copy}
+        onPress={handleJobPress}
+      />
     ),
     [copy, handleJobPress],
   );
 
   const renderGroupsCarousel = useCallback(
-    ({ item }: { item: Extract<FeedListItem, { type: 'groups-carousel' }> }) => (
+    ({
+      item,
+    }: {
+      item: Extract<FeedListItem, { type: 'groups-carousel' }>;
+    }) => (
       <SuggestedGroupsCarousel
         groups={item.groups}
         isLoading={item.isLoading}
@@ -4579,7 +5900,11 @@ function FeedScreen() {
   );
 
   const renderFundingCarousel = useCallback(
-    ({ item }: { item: Extract<FeedListItem, { type: 'funding-carousel' }> }) => (
+    ({
+      item,
+    }: {
+      item: Extract<FeedListItem, { type: 'funding-carousel' }>;
+    }) => (
       <FeedFundingCarousel
         campaigns={item.campaigns}
         isLoading={item.isLoading}
@@ -4618,14 +5943,22 @@ function FeedScreen() {
       }
 
       switch (item.post.kind) {
-        case 'video': return renderVideoPost({ item: item.post as FeedVideoPost });
-        case 'text': return renderTextPost({ item: item.post as FeedTextPost });
-        case 'product': return renderProductPost({ item: item.post as FeedProductPost });
-        case 'event': return renderEventPost({ item: item.post as FeedEventPost });
-        case 'job': return renderJobPost({ item: item.post as FeedJobPost });
-        case 'poll': return renderPollPost({ item: item.post as FeedPollPost });
-        case 'ad': return renderAdPost({ item: item.post as FeedAdPost });
-        default: return null;
+        case 'video':
+          return renderVideoPost({ item: item.post as FeedVideoPost });
+        case 'text':
+          return renderTextPost({ item: item.post as FeedTextPost });
+        case 'product':
+          return renderProductPost({ item: item.post as FeedProductPost });
+        case 'event':
+          return renderEventPost({ item: item.post as FeedEventPost });
+        case 'job':
+          return renderJobPost({ item: item.post as FeedJobPost });
+        case 'poll':
+          return renderPollPost({ item: item.post as FeedPollPost });
+        case 'ad':
+          return renderAdPost({ item: item.post as FeedAdPost });
+        default:
+          return null;
       }
     },
     [
@@ -4652,7 +5985,11 @@ function FeedScreen() {
           activeSource={activeFeedSource}
           onChangeSource={setActiveFeedSource}
         />
-        <ComposerCard onPress={goToCreatePost} avatarUrl={userVm.user?.avatar} copy={copy} />
+        <ComposerCard
+          onPress={goToCreatePost}
+          avatarUrl={userVm.user?.avatar}
+          copy={copy}
+        />
         <StoriesRow avatarUrl={userVm.user?.avatar} copy={copy} />
         <GreetingCard userName={userVm.user?.name} copy={copy} />
       </View>
@@ -4725,69 +6062,67 @@ function FeedScreen() {
             <Edit3 size={26} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
-      <ReactionPickerOverlay
-        anchor={pickerAnchor}
-        onPick={handlePickReaction}
-        onDismiss={() => setPickerAnchor(null)}
-        gestureX={gestureX}
-        gestureY={gestureY}
-        gestureActive={gestureActive}
-        hasDragged={hasDragged}
-      />
-      {/* ── Photo Viewer ── */}
-      <PhotoViewerModal
-        state={photoViewer}
-        copy={copy}
-        onClose={handleClosePhotoViewer}
-        onReact={handleToggleReactionStable}
-        onCommentTap={handleCommentTapStable}
-        posts={feedPosts}
-      />
-      <ReelCommentsSheet
-        visible={commentVm.isCommentsOpen}
-        comments={commentVm.comments}
-        commentCount={selectedCommentPost?.commentCount ?? commentVm.comments.length}
-        isLoading={commentVm.isCommentsLoading}
-        isLoadingMore={commentVm.isCommentsLoadingMore}
-        isSubmitting={commentVm.isSubmittingComment}
-        error={commentVm.commentError}
-        repliesById={commentVm.repliesById}
-        loadingRepliesIds={commentVm.loadingRepliesIds}
-        replyingTo={commentVm.replyingTo}
-        onClose={commentVm.closeComments}
-        onEndReached={commentVm.loadMoreComments}
-        onRetry={handleRetryComments}
-        onSubmit={commentVm.submitComment}
-        onSubmitReply={commentVm.submitReply}
-        onSetReaction={commentVm.setCommentReaction}
-        onDelete={commentVm.deleteComment}
-        onLoadReplies={commentVm.loadReplies}
-        onCollapseReplies={commentVm.collapseReplies}
-        onStartReply={commentVm.startReplyTo}
-        onCancelReply={commentVm.cancelReply}
-        onRetryFailedComment={commentVm.retryFailedComment}
-        onDeleteFailedComment={commentVm.deleteFailedComment}
-      />
-      {/* ── Share Action Sheet ── */}
-      <ShareActionSheet
-        visible={shareModalVisible}
-        onClose={handleCloseShareModal}
-        post={sharingPost}
-        onCopied={handleShareCopied}
-        onInternalShare={handleInternalSharePost}
-        onShared={prependFeedPost}
-      />
-      {/* ── Post Menu Action Sheet ── */}
-      <PostMenuActionSheet
-        visible={postMenuVisible}
-        onClose={handleClosePostMenu}
-        post={selectedPostForMenu}
-        onSave={handleSavePost}
-        onReport={handleReportPost}
-      />
-      {/* ── Toast Notification ── */}
-      <ToastContainer />
-    </SafeAreaView>
+        <ReactionPickerOverlay
+          anchor={pickerAnchor}
+          onPick={handlePickReaction}
+          onDismiss={() => setPickerAnchor(null)}
+          gestureX={gestureX}
+          gestureY={gestureY}
+          gestureActive={gestureActive}
+          hasDragged={hasDragged}
+        />
+        {/* ── Photo Viewer ── */}
+        <PhotoViewerModal
+          state={photoViewer}
+          copy={copy}
+          onClose={handleClosePhotoViewer}
+          onReact={handleToggleReactionStable}
+          onCommentTap={handleCommentTapStable}
+          posts={feedPosts}
+        />
+        <FeedCommentsOverlay
+          visible={commentVm.isCommentsOpen}
+          comments={commentVm.comments}
+          commentCount={
+            selectedCommentPost?.commentCount ?? commentVm.comments.length
+          }
+          isLoading={commentVm.isCommentsLoading}
+          isLoadingMore={commentVm.isCommentsLoadingMore}
+          isSubmitting={commentVm.isSubmittingComment}
+          error={commentVm.commentError}
+          repliesById={commentVm.repliesById}
+          loadingRepliesIds={commentVm.loadingRepliesIds}
+          replyingTo={commentVm.replyingTo}
+          copy={copy}
+          onClose={commentVm.closeComments}
+          onEndReached={commentVm.loadMoreComments}
+          onRetry={handleRetryComments}
+          onSubmit={commentVm.submitComment}
+          onSubmitReply={commentVm.submitReply}
+          onLoadReplies={commentVm.loadReplies}
+          onStartReply={commentVm.startReplyTo}
+          onCancelReply={commentVm.cancelReply}
+        />
+        {/* ── Share Action Sheet ── */}
+        <FeedShareOverlay
+          visible={shareModalVisible}
+          onClose={handleCloseShareModal}
+          post={sharingPost}
+          copy={copy}
+          onInternalShare={handleInternalSharePost}
+          onShared={prependFeedPost}
+        />
+        {/* ── Post Menu Action Sheet ── */}
+        <PostMenuActionSheet
+          visible={postMenuVisible}
+          onClose={handleClosePostMenu}
+          post={selectedPostForMenu}
+          onSave={handleSavePost}
+          onReport={handleReportPost}
+        />
+        {/* ── Toast Notification ── */}
+        <ToastContainer />
+      </SafeAreaView>
     </GestureHandlerRootView>
   );
 }
