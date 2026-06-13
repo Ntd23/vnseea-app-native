@@ -19,6 +19,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -31,12 +32,14 @@ import {
 } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AtSign,
   ChevronDown,
+  ChevronRight,
   Globe2,
   Hash,
+  Image as ImageIcon,
   ImagePlus,
   Lock,
   Music2,
@@ -56,6 +59,7 @@ import {
 import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/useWavAudioRecorder';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type {
   PostFeeling,
   PostPhotoAttachment,
@@ -64,50 +68,135 @@ import type {
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-// ── Lookup tables ─────────────────────────────────────────────────────
-// Hardcoded here (not in domain) because they're presentational —
-// emoji + Vietnamese label only the UI cares about. Maps 1:1 to
-// PostPrivacy and PostFeeling.value.
+// ── Translation copy dictionary ───────────────────────────────────────
+const CREATE_POST_COPY = {
+  vi: {
+    headerTitle: 'Tạo bài viết',
+    post: 'Đăng',
+    privacyTitle: 'Đối tượng',
+    placeholder: 'Bạn đang nghĩ gì?',
+    addPhoto: 'Thêm ảnh',
+    viewMore: 'Xem thêm',
+    discardTitle: 'Bỏ bài viết?',
+    discardMessage: 'Bạn sẽ mất nội dung đã soạn.',
+    discardCancel: 'Tiếp tục soạn',
+    discardConfirm: 'Bỏ',
+    feelingsTitle: 'Cảm xúc của bạn',
+    feelingsClear: 'Xoá',
+    recording: 'Đang ghi âm',
+    recordingTip: 'Nhấn nút dừng để dùng bản ghi này.',
+    audioError: 'Không chọn được âm thanh',
+    audioErrorTip: 'Vui lòng thử lại.',
+    audioAdd: 'Thêm âm thanh',
+    audioAddPrompt: 'Bạn muốn thêm âm thanh theo cách nào?',
+    audioRecord: 'Ghi âm trực tiếp',
+    audioPick: 'Chọn tệp MP3/WAV',
+    audioCancel: 'Hủy',
+    limitTitle: 'Đã đạt giới hạn',
+    limitMsg: 'Tối đa {max} ảnh.',
+    libraryError: 'Không mở được thư viện',
+    addPost: 'Thêm vào bài viết',
+    photo: 'Ảnh',
+    feeling: 'Cảm xúc',
+    audio: 'Âm thanh',
+    donation: 'Quyên góp',
+    donationTip: 'Tính năng quyên góp đang được phát triển.',
+    done: 'Hoàn tất',
+    privacyPublic: 'Công khai',
+    privacyFriends: 'Bạn bè',
+    privacyOnlyMe: 'Chỉ mình tôi',
+    privacyPublicDesc: 'Bất kỳ ai cũng có thể xem',
+    privacyFriendsDesc: 'Chỉ bạn bè của bạn',
+    privacyOnlyMeDesc: 'Chỉ mình bạn nhìn thấy',
+    feelingLabel: 'đang cảm thấy',
+    suggestionsLoading: 'Đang tìm gợi ý...',
+  },
+  en: {
+    headerTitle: 'Create Post',
+    post: 'Post',
+    privacyTitle: 'Audience',
+    placeholder: 'What is on your mind?',
+    addPhoto: 'Add photo',
+    viewMore: 'More',
+    discardTitle: 'Discard post?',
+    discardMessage: 'You will lose your drafted content.',
+    discardCancel: 'Keep writing',
+    discardConfirm: 'Discard',
+    feelingsTitle: 'Your feelings',
+    feelingsClear: 'Clear',
+    recording: 'Recording',
+    recordingTip: 'Press stop to use this recording.',
+    audioError: 'Could not select audio',
+    audioErrorTip: 'Please try again.',
+    audioAdd: 'Add Audio',
+    audioAddPrompt: 'How do you want to add audio?',
+    audioRecord: 'Record Audio',
+    audioPick: 'Pick MP3/WAV file',
+    audioCancel: 'Cancel',
+    limitTitle: 'Limit reached',
+    limitMsg: 'Maximum {max} photos.',
+    libraryError: 'Cannot open library',
+    addPost: 'Add to your post',
+    photo: 'Photo',
+    feeling: 'Feeling',
+    audio: 'Audio',
+    donation: 'Donation',
+    donationTip: 'Donation feature is under development.',
+    done: 'Done',
+    privacyPublic: 'Public',
+    privacyFriends: 'Friends',
+    privacyOnlyMe: 'Only me',
+    privacyPublicDesc: 'Anyone can see',
+    privacyFriendsDesc: 'Your friends only',
+    privacyOnlyMeDesc: 'Only you can see',
+    feelingLabel: 'is feeling',
+    suggestionsLoading: 'Finding suggestions...',
+  },
+};
 
-const PRIVACY_OPTIONS: Array<{
-  value: PostPrivacy;
-  label: string;
-  Icon: React.ComponentType<{ size: number; color: string }>;
-  description: string;
-}> = [
-  {
-    value: 'public',
-    label: 'Công khai',
-    Icon: Globe2,
-    description: 'Bất kỳ ai cũng có thể xem',
+const FEELING_LABELS: Record<string, Record<string, string>> = {
+  vi: {
+    happy: 'vui vẻ',
+    loved: 'được yêu',
+    lovely: 'yêu thương',
+    funny: 'vui nhộn',
+    cool: 'ngầu',
+    blessed: 'may mắn',
+    pretty: 'thư thái',
+    smirk: 'đắc ý',
+    sad: 'buồn',
+    so_sad: 'rất buồn',
+    angry: 'tức giận',
+    tired: 'mệt mỏi',
+    sleepy: 'buồn ngủ',
+    bored: 'chán',
+    confused: 'bối rối',
+    shocked: 'sốc',
+    broke: 'tan vỡ',
+    expressionless: 'vô cảm',
   },
-  {
-    value: 'friends',
-    label: 'Bạn bè',
-    Icon: Users,
-    description: 'Chỉ bạn bè của bạn',
-  },
-  {
-    value: 'only_me',
-    label: 'Chỉ mình tôi',
-    Icon: Lock,
-    description: 'Chỉ mình bạn nhìn thấy',
-  },
-];
+  en: {
+    happy: 'happy',
+    loved: 'loved',
+    lovely: 'lovely',
+    funny: 'funny',
+    cool: 'cool',
+    blessed: 'blessed',
+    pretty: 'pretty',
+    smirk: 'smirk',
+    sad: 'sad',
+    so_sad: 'very sad',
+    angry: 'angry',
+    tired: 'tired',
+    sleepy: 'sleepy',
+    bored: 'bored',
+    confused: 'confused',
+    shocked: 'shocked',
+    broke: 'brokenhearted',
+    expressionless: 'expressionless',
+  }
+};
 
-// Common Facebook feelings. WoWonder's `feeling_type='feelings'` only
-// accepts the 18 keys defined in `$wo['feelingIcons']`
-// (phtml/assets/includes/data.php) — anything else gets SILENTLY
-// REJECTED by `new_post.php` line 353:
-//
-//   if (array_key_exists($_POST['feeling'], $wo['feelingIcons'])) {
-//       $feeling = $_POST['feeling'];
-//   }
-//
-// That's why earlier values like 'excited' / 'grateful' / 'thoughtful'
-// looked fine in the app but never showed up on the post — the backend
-// dropped them and saved an empty `postFeeling`. Every value below is
-// guaranteed-valid against the current whitelist.
 const FEELING_OPTIONS: PostFeeling[] = [
   { type: 'feelings', value: 'happy', emoji: '😊', label: 'vui vẻ' },
   { type: 'feelings', value: 'loved', emoji: '🥰', label: 'được yêu' },
@@ -129,21 +218,12 @@ const FEELING_OPTIONS: PostFeeling[] = [
   { type: 'feelings', value: 'expressionless', emoji: '😑', label: 'vô cảm' },
 ];
 
-// ── Helpers ───────────────────────────────────────────────────────────
-
-/**
- * Convert react-native-image-picker `Asset` → our `PostPhotoAttachment`.
- * The picker sometimes omits `fileName` / `type` (especially on Android)
- * so we synthesise sensible defaults — WoWonder rejects uploads with
- * empty filename.
- */
 function assetToAttachment(asset: Asset): PostPhotoAttachment | null {
   if (!asset.uri) return null;
   const uri =
     Platform.OS === 'android' && !asset.uri.startsWith('file://')
       ? `file://${asset.uri}`
       : asset.uri;
-  // Pick a name + type, falling back to safe defaults.
   const name = asset.fileName ?? `photo-${Date.now()}.jpg`;
   const type = asset.type ?? 'image/jpeg';
   return {
@@ -155,22 +235,26 @@ function assetToAttachment(asset: Asset): PostPhotoAttachment | null {
   };
 }
 
-function findPrivacyLabel(value: PostPrivacy) {
-  return PRIVACY_OPTIONS.find(opt => opt.value === value) ?? PRIVACY_OPTIONS[0];
-}
-
 // ── Sub-components ────────────────────────────────────────────────────
-
 function PrivacyPickerSheet({
   visible,
   current,
   onClose,
   onPick,
+  options,
+  title,
 }: {
   visible: boolean;
   current: PostPrivacy;
   onClose: () => void;
   onPick: (p: PostPrivacy) => void;
+  options: Array<{
+    value: PostPrivacy;
+    label: string;
+    Icon: React.ComponentType<{ size: number; color: string }>;
+    description: string;
+  }>;
+  title: string;
 }) {
   return (
     <Modal
@@ -180,10 +264,10 @@ function PrivacyPickerSheet({
       onRequestClose={onClose}
     >
       <Pressable className="flex-1 bg-black/40" onPress={onClose}>
-        <Pressable onPress={() => {}} className="mt-auto bg-white pt-2 pb-6">
+        <Pressable onPress={() => {}} className="mt-auto bg-white pt-2 pb-6 rounded-t-[24px]">
           <View className="mb-2 self-center h-1 w-12 rounded-full bg-slate-300" />
-          <Text className="px-5 py-3 text-heading">Đối tượng</Text>
-          {PRIVACY_OPTIONS.map(({ value, label, Icon, description }) => {
+          <Text className="px-5 py-3 text-heading">{title}</Text>
+          {options.map(({ value, label, Icon, description }) => {
             const isActive = current === value;
             return (
               <TouchableOpacity
@@ -193,7 +277,7 @@ function PrivacyPickerSheet({
                   onClose();
                 }}
                 activeOpacity={0.7}
-                className="flex-row items-center px-5 py-3"
+                className="flex-row items-center px-5 py-3.5"
               >
                 <View
                   style={{
@@ -208,8 +292,8 @@ function PrivacyPickerSheet({
                   <Icon size={20} color="#0F172A" />
                 </View>
                 <View className="ml-3 flex-1">
-                  <Text className="text-title-primary">{label}</Text>
-                  <Text className="text-caption-secondary">{description}</Text>
+                  <Text className="text-title-primary font-bold text-slate-800">{label}</Text>
+                  <Text className="text-caption-secondary mt-0.5">{description}</Text>
                 </View>
                 {isActive ? (
                   <View
@@ -218,7 +302,7 @@ function PrivacyPickerSheet({
                       height: 22,
                       borderRadius: 11,
                       borderWidth: 6,
-                      borderColor: '#0866ff',
+                      borderColor: '#0000ff',
                     }}
                   />
                 ) : (
@@ -247,12 +331,18 @@ function FeelingPickerSheet({
   onClose,
   onPick,
   onClear,
+  options,
+  title,
+  clearLabel,
 }: {
   visible: boolean;
   current?: PostFeeling;
   onClose: () => void;
   onPick: (f: PostFeeling) => void;
   onClear: () => void;
+  options: PostFeeling[];
+  title: string;
+  clearLabel: string;
 }) {
   return (
     <Modal
@@ -262,10 +352,10 @@ function FeelingPickerSheet({
       onRequestClose={onClose}
     >
       <Pressable className="flex-1 bg-black/40" onPress={onClose}>
-        <Pressable onPress={() => {}} className="mt-auto bg-white pt-2 pb-6">
+        <Pressable onPress={() => {}} className="mt-auto bg-white pt-2 pb-6 rounded-t-[24px] max-h-[70%]">
           <View className="mb-2 self-center h-1 w-12 rounded-full bg-slate-300" />
           <View className="flex-row items-center justify-between px-5 py-3">
-            <Text className="text-heading">Cảm xúc của bạn</Text>
+            <Text className="text-heading">{title}</Text>
             {current ? (
               <TouchableOpacity
                 onPress={() => {
@@ -274,16 +364,16 @@ function FeelingPickerSheet({
                 }}
                 activeOpacity={0.7}
               >
-                <Text className="text-title-secondary text-brand">Xoá</Text>
+                <Text className="text-title-secondary text-brand font-bold text-[#0000ff]">{clearLabel}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
           <ScrollView
             horizontal={false}
-            contentContainerStyle={{ paddingHorizontal: 12 }}
+            contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 20 }}
           >
             <View className="flex-row flex-wrap">
-              {FEELING_OPTIONS.map(feeling => {
+              {options.map(feeling => {
                 const isActive =
                   current?.type === feeling.type &&
                   current?.value === feeling.value;
@@ -302,8 +392,8 @@ function FeelingPickerSheet({
                     <Text
                       className={
                         isActive
-                          ? 'ml-3 text-title-primary text-brand'
-                          : 'ml-3 text-title-primary'
+                          ? 'ml-3 text-title-primary font-bold text-[#0000ff]'
+                          : 'ml-3 text-title-primary text-slate-700'
                       }
                     >
                       {feeling.label}
@@ -319,99 +409,65 @@ function FeelingPickerSheet({
   );
 }
 
-function PhotoGrid({
-  photos,
-  onRemove,
-}: {
-  photos: PostPhotoAttachment[];
-  onRemove: (uri: string) => void;
-}) {
-  if (photos.length === 0) return null;
-  // Match Facebook's behaviour: 1 photo → big, 2 → side-by-side,
-  // 3+ → 2-column grid with same-size cells. Implementation just uses
-  // a 2-column flex-wrap for everything ≥ 2, which is good enough.
-  const single = photos.length === 1;
-  return (
-    <View className="mt-3 flex-row flex-wrap">
-      {photos.map(photo => (
-        <View
-          key={photo.uri}
-          style={{
-            width: single ? '100%' : '50%',
-            aspectRatio: single ? 1 : 1,
-            padding: 2,
-          }}
-        >
-          <View
-            style={{
-              flex: 1,
-              borderRadius: 12,
-              overflow: 'hidden',
-              backgroundColor: '#F1F5F9',
-            }}
-          >
-            <Image
-              source={{ uri: photo.uri }}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="cover"
-            />
-            <TouchableOpacity
-              onPress={() => onRemove(photo.uri)}
-              activeOpacity={0.8}
-              style={{
-                position: 'absolute',
-                top: 6,
-                right: 6,
-                width: 28,
-                height: 28,
-                borderRadius: 14,
-                backgroundColor: 'rgba(0,0,0,0.6)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <X size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 // ── Screen ────────────────────────────────────────────────────────────
-
 function CreatePostScreen() {
   const navigation = useNavigation<Nav>();
+  const language = useAppLanguage();
+  const copy = CREATE_POST_COPY[language];
+
   const vm = useCreatePostViewModel({
     onCreated: post => {
-      // Notify FeedScreen so it can optimistically prepend before we
-      // pop the stack — by the time the feed re-renders, the new post
-      // is already there.
       postCreatedEvents.emit(post);
     },
   });
   const wavRecorder = useWavAudioRecorder();
+  const insets = useSafeAreaInsets();
 
-  // Display name + avatar of the viewer, pulled from MMKV cache. We
-  // intentionally do NOT show a loading state here — falling back to
-  // "Bạn" + default avatar is fine, the composer must always render
-  // instantly.
   const profile = useMemo(() => sessionStorage.getUserProfile(), []);
-  const displayName = profile?.name?.trim() || 'Bạn';
+  const displayName = profile?.name?.trim() || (language === 'vi' ? 'Bạn' : 'You');
   const avatarUrl = profile?.avatarUrl;
 
   const [privacySheetVisible, setPrivacySheetVisible] = useState(false);
   const [feelingSheetVisible, setFeelingSheetVisible] = useState(false);
+  const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
 
-  const currentPrivacy = findPrivacyLabel(vm.draft.privacy);
+  const privacyOptions = useMemo(() => [
+    {
+      value: 'public' as PostPrivacy,
+      label: copy.privacyPublic,
+      Icon: Globe2,
+      description: copy.privacyPublicDesc,
+    },
+    {
+      value: 'friends' as PostPrivacy,
+      label: copy.privacyFriends,
+      Icon: Users,
+      description: copy.privacyFriendsDesc,
+    },
+    {
+      value: 'only_me' as PostPrivacy,
+      label: copy.privacyOnlyMe,
+      Icon: Lock,
+      description: copy.privacyOnlyMeDesc,
+    },
+  ], [copy]);
 
-  // ── Caption mention/hashtag plumbing ──────────────────────────────
-  // Refs + keyboard tracking so the floating suggestion bar can sit
-  // right above the keyboard like FB/TikTok do. Mirrors the working
-  // setup in `CreateReelScreen` so behaviour is identical between the
-  // two composers.
+  const currentPrivacy = useMemo(() => {
+    return privacyOptions.find(opt => opt.value === vm.draft.privacy) ?? privacyOptions[0];
+  }, [privacyOptions, vm.draft.privacy]);
+
+  const translatedFeelings = useMemo(() => {
+    return FEELING_OPTIONS.map(feeling => ({
+      ...feeling,
+      label: FEELING_LABELS[language]?.[feeling.value] ?? feeling.label,
+    }));
+  }, [language]);
+
+  const currentFeelingLabel = useMemo(() => {
+    if (!vm.draft.feeling) return null;
+    return FEELING_LABELS[language]?.[vm.draft.feeling.value] ?? vm.draft.feeling.label;
+  }, [vm.draft.feeling, language]);
+
   const textInputRef = useRef<TextInput | null>(null);
   const [isTextFocused, setIsTextFocused] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -433,19 +489,14 @@ function CreatePostScreen() {
     };
   }, []);
 
-  // Android with adjustResize already shrinks the view above the keyboard,
-  // so we anchor the bar at bottom=0. iOS overlays the keyboard, so we
-  // lift the bar by `keyboardHeight`.
   const suggestionBarBottom = Platform.OS === 'ios' ? keyboardHeight : 0;
   const isSuggestionBarVisible = isTextFocused && keyboardHeight > 0;
 
-  /** Insert `#` or `@` at the end of the text, with a leading space if needed. */
   const insertCaptionChar = useCallback(
     (char: '#' | '@') => {
       const current = vm.draft.text;
       const needsSpace = current.length > 0 && !/\s$/.test(current);
       vm.setText(`${current}${needsSpace ? ' ' : ''}${char}`);
-      // Keep focus so the suggestion fetcher actually runs.
       textInputRef.current?.focus();
     },
     [vm],
@@ -454,28 +505,35 @@ function CreatePostScreen() {
   const handlePickPhotos = useCallback(async () => {
     const remaining = vm.maxPhotos - vm.draft.photos.length;
     if (remaining <= 0) {
-      Alert.alert('Đã đạt giới hạn', `Tối đa ${vm.maxPhotos} ảnh.`);
+      Alert.alert(copy.limitTitle, copy.limitMsg.replace('{max}', String(vm.maxPhotos)));
       return;
     }
-    const result = await launchImageLibrary({
-      mediaType: 'photo' as MediaType,
-      selectionLimit: remaining,
-      quality: 0.8,
-      includeBase64: false,
-    });
-    if (result.didCancel) return;
-    if (result.errorCode) {
-      Alert.alert('Không mở được thư viện', result.errorMessage ?? '');
-      return;
+    setIsProcessingPhotos(true);
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo' as MediaType,
+        selectionLimit: remaining,
+        includeBase64: false,
+        maxWidth: 1080,
+        maxHeight: 1080,
+        quality: 0.8,
+      });
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        Alert.alert(copy.libraryError, result.errorMessage ?? '');
+        return;
+      }
+      const assets = result.assets ?? [];
+      const attachments = assets
+        .map(assetToAttachment)
+        .filter((a): a is PostPhotoAttachment => a !== null);
+      if (attachments.length > 0) {
+        vm.addPhotos(attachments);
+      }
+    } finally {
+      setIsProcessingPhotos(false);
     }
-    const assets = result.assets ?? [];
-    const attachments = assets
-      .map(assetToAttachment)
-      .filter((a): a is PostPhotoAttachment => a !== null);
-    if (attachments.length > 0) {
-      vm.addPhotos(attachments);
-    }
-  }, [vm]);
+  }, [vm, copy, language]);
 
   const handlePickAudio = useCallback(async () => {
     try {
@@ -483,11 +541,11 @@ function CreatePostScreen() {
       if (audio) vm.setAudio(audio);
     } catch (caught) {
       Alert.alert(
-        'Không chọn được âm thanh',
-        caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+        copy.audioError,
+        caught instanceof Error ? caught.message : copy.audioErrorTip,
       );
     }
-  }, [vm]);
+  }, [vm, copy]);
 
   const handleToggleAudioRecording = useCallback(async () => {
     try {
@@ -501,11 +559,11 @@ function CreatePostScreen() {
       await wavRecorder.startRecording();
     } catch (caught) {
       Alert.alert(
-        'Không ghi âm được',
-        caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+        copy.audioError,
+        caught instanceof Error ? caught.message : copy.audioErrorTip,
       );
     }
-  }, [vm, wavRecorder]);
+  }, [vm, wavRecorder, copy]);
 
   const handleAudioAction = useCallback(() => {
     if (wavRecorder.isRecording) {
@@ -513,28 +571,26 @@ function CreatePostScreen() {
       return;
     }
 
-    Alert.alert('Thêm âm thanh', 'Bạn muốn thêm âm thanh theo cách nào?', [
+    Alert.alert(copy.audioAdd, copy.audioAddPrompt, [
       {
-        text: 'Ghi âm trực tiếp',
+        text: copy.audioRecord,
         onPress: () => {
           handleToggleAudioRecording().catch(() => undefined);
         },
       },
       {
-        text: 'Chọn tệp MP3/WAV',
+        text: copy.audioPick,
         onPress: () => {
           handlePickAudio().catch(() => undefined);
         },
       },
-      { text: 'Hủy', style: 'cancel' },
+      { text: copy.audioCancel, style: 'cancel' },
     ]);
-  }, [handlePickAudio, handleToggleAudioRecording, wavRecorder.isRecording]);
+  }, [handlePickAudio, handleToggleAudioRecording, wavRecorder.isRecording, copy]);
 
   const handleSubmit = useCallback(async () => {
     const result = await vm.submit();
     if (result) {
-      // Tiny delay so the user sees the "Đang đăng..." state flicker —
-      // confirms the action took effect. Then pop back to the feed.
       navigation.goBack();
     }
   }, [navigation, vm]);
@@ -549,12 +605,12 @@ function CreatePostScreen() {
       return;
     }
     Alert.alert(
-      'Bỏ bài viết?',
-      'Bạn sẽ mất nội dung đã soạn.',
+      copy.discardTitle,
+      copy.discardMessage,
       [
-        { text: 'Tiếp tục soạn', style: 'cancel' },
+        { text: copy.discardCancel, style: 'cancel' },
         {
-          text: 'Bỏ',
+          text: copy.discardConfirm,
           style: 'destructive',
           onPress: () => {
             vm.reset();
@@ -564,91 +620,182 @@ function CreatePostScreen() {
       ],
       { cancelable: true },
     );
-  }, [navigation, vm]);
+  }, [navigation, vm, copy]);
 
-  // Reset error when text changes so the inline banner doesn't linger
-  // after the user starts addressing it.
-  useEffect(() => {
-    // intentionally empty — vm.setText already clears nothing; we keep
-    // this hook reserved for future "auto-save draft" wiring.
-  }, []);
+  const renderBottomActions = (isFloating: boolean) => {
+    if (isFloating) {
+      return (
+        <View
+          style={{
+            backgroundColor: '#ffffff',
+            borderTopWidth: 1,
+            borderTopColor: '#f1f5f9',
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flex: 1 }}>
+            {/* Photo */}
+            <TouchableOpacity onPress={handlePickPhotos} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center' }}>
+                <ImageIcon size={20} color="#22c55e" />
+              </View>
+            </TouchableOpacity>
 
-  const renderBottomActions = (isFloating: boolean) => (
-    <View className={`border-t border-slate-200 bg-white px-4 ${isFloating ? 'py-1' : 'py-3'}`}>
-      {!isFloating && <Text className="mb-2 text-caption-primary">Thêm vào bài viết</Text>}
-      <View className="flex-row items-center justify-around">
-        <TouchableOpacity
-          onPress={handlePickPhotos}
-          activeOpacity={0.7}
-          className="flex-1 flex-row items-center justify-center py-2"
-        >
-          <ImagePlus size={22} color="#22C55E" />
-          <Text className="ml-2 text-title-secondary">Ảnh</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setFeelingSheetVisible(true)}
-          activeOpacity={0.7}
-          className="flex-1 flex-row items-center justify-center py-2"
-        >
-          <Smile size={22} color="#F59E0B" />
-          <Text className="ml-2 text-title-secondary">Cảm xúc</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={handleAudioAction}
-          activeOpacity={0.7}
-          className="flex-1 flex-row items-center justify-center py-2"
-        >
-          {wavRecorder.isRecording ? (
-            <Square size={20} color="#DC2626" fill="#DC2626" />
-          ) : (
-            <Music2 size={22} color="#EC4899" />
-          )}
-          <Text className="ml-2 text-title-secondary">Âm thanh</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setPrivacySheetVisible(true)}
-          activeOpacity={0.7}
-          className="flex-1 flex-row items-center justify-center py-2"
-        >
-          <currentPrivacy.Icon size={22} color="#3B82F6" />
-          <Text className="ml-2 text-title-secondary">Quyền</Text>
-        </TouchableOpacity>
+            {/* Feeling */}
+            <TouchableOpacity onPress={() => setFeelingSheetVisible(true)} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#fef9c3', alignItems: 'center', justifyContent: 'center' }}>
+                <Smile size={20} color="#eab308" />
+              </View>
+            </TouchableOpacity>
+
+            {/* Audio */}
+            <TouchableOpacity onPress={handleAudioAction} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#fdf2f8', alignItems: 'center', justifyContent: 'center' }}>
+                {wavRecorder.isRecording ? (
+                  <Square size={14} color="#ec4899" fill="#ec4899" />
+                ) : (
+                  <Music2 size={20} color="#ec4899" />
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {/* Donation */}
+            <TouchableOpacity
+              onPress={() => {
+                Alert.alert(copy.donation, copy.donationTip);
+              }}
+              style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
+            >
+              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' }}>
+                <Globe2 size={20} color="#3b82f6" />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View
+        style={{
+          marginHorizontal: 16,
+          marginBottom: Math.max(insets.bottom, 16),
+          marginTop: 16,
+          backgroundColor: '#ffffff',
+          borderRadius: 20,
+          borderWidth: 1,
+          borderColor: '#f1f5f9',
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: 20,
+          shadowColor: '#94a3b8',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.08,
+          shadowRadius: 12,
+          elevation: 3,
+        }}
+      >
+        {/* Header Row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1e293b' }}>{copy.addPost}</Text>
+          <ChevronRight size={18} color="#94a3b8" />
+        </View>
+
+        {/* Buttons Row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Photo */}
+          <TouchableOpacity onPress={handlePickPhotos} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+              <ImageIcon size={22} color="#22c55e" />
+            </View>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.photo}</Text>
+          </TouchableOpacity>
+
+          {/* Feeling */}
+          <TouchableOpacity onPress={() => setFeelingSheetVisible(true)} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#fef9c3', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+              <Smile size={22} color="#eab308" />
+            </View>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.feeling}</Text>
+          </TouchableOpacity>
+
+          {/* Audio */}
+          <TouchableOpacity onPress={handleAudioAction} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#fdf2f8', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+              {wavRecorder.isRecording ? (
+                <Square size={16} color="#ec4899" fill="#ec4899" />
+              ) : (
+                <Music2 size={22} color="#ec4899" />
+              )}
+            </View>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.audio}</Text>
+          </TouchableOpacity>
+
+          {/* Donation */}
+          <TouchableOpacity
+            onPress={() => {
+              Alert.alert(copy.donation, copy.donationTip);
+            }}
+            style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
+          >
+            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+              <Globe2 size={22} color="#3b82f6" />
+            </View>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.donation}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+    <SafeAreaView style={{ backgroundColor: '#f4f7fa' }} className="flex-1" edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
+
       {/* ── Header ────────────────────────────────────────────────── */}
-      <View className="h-14 flex-row items-center justify-between border-b border-slate-200 px-3">
+      <View className="h-16 flex-row items-center justify-between px-4 bg-transparent">
         <TouchableOpacity
           onPress={handleDiscard}
           activeOpacity={0.7}
-          className="h-10 w-10 items-center justify-center rounded-full"
+          style={{
+            shadowColor: '#94a3b8',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 10,
+            elevation: 3,
+          }}
+          className="h-12 w-12 items-center justify-center rounded-full bg-white border border-slate-100"
         >
-          <X size={26} color="#0F172A" />
+          <X size={24} color="#0F172A" />
         </TouchableOpacity>
-        <Text className="text-heading">Tạo bài viết</Text>
+        
+        <Text className="text-[20px] font-bold text-slate-800">{copy.headerTitle}</Text>
+        
         <TouchableOpacity
           onPress={handleSubmit}
-          disabled={!vm.canSubmit}
+          disabled={!vm.canSubmit || isProcessingPhotos}
           activeOpacity={0.7}
           className={
-            vm.canSubmit
-              ? 'rounded-full bg-blue-600 px-4 py-2'
-              : 'rounded-full bg-slate-200 px-4 py-2'
+            vm.canSubmit && !isProcessingPhotos
+              ? 'rounded-full bg-[#0000ff] px-6 py-2.5'
+              : 'rounded-full bg-slate-200 px-6 py-2.5'
           }
         >
           {vm.isSubmitting ? (
-            <ActivityIndicator color={vm.canSubmit ? '#FFFFFF' : '#94A3B8'} />
+            <ActivityIndicator color={vm.canSubmit && !isProcessingPhotos ? '#FFFFFF' : '#94A3B8'} size="small" />
           ) : (
             <Text
               style={{
-                color: vm.canSubmit ? '#FFFFFF' : '#94A3B8',
+                color: vm.canSubmit && !isProcessingPhotos ? '#FFFFFF' : '#94A3B8',
                 fontWeight: '700',
+                fontSize: 15,
               }}
             >
-              Đăng
+              {copy.post}
             </Text>
           )}
         </TouchableOpacity>
@@ -657,53 +804,69 @@ function CreatePostScreen() {
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 24 }}
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
       >
-        {/* ── Viewer + privacy chip ──────────────────────────────── */}
-        <View className="flex-row items-center px-4 pt-4">
-          {avatarUrl ? (
-            <Image
-              source={{ uri: avatarUrl }}
-              style={{ height: 44, width: 44, borderRadius: 22 }}
-              resizeMode="cover"
-            />
-          ) : (
-            <View
-              style={{
-                height: 44,
-                width: 44,
-                borderRadius: 22,
-                backgroundColor: '#E2E8F0',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text style={{ fontSize: 18, color: '#64748B' }}>
-                {displayName.charAt(0).toUpperCase()}
-              </Text>
+        {/* ── Viewer + privacy chip card ──────────────────────────── */}
+        <View
+          style={{
+            shadowColor: '#94a3b8',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.05,
+            shadowRadius: 10,
+            elevation: 2,
+          }}
+          className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 flex-row items-center"
+        >
+          <View className="relative">
+            {avatarUrl ? (
+              <Image
+                source={{ uri: avatarUrl }}
+                style={{ height: 56, width: 56, borderRadius: 28 }}
+                resizeMode="cover"
+              />
+            ) : (
+              <View
+                style={{
+                  height: 56,
+                  width: 56,
+                  borderRadius: 28,
+                  backgroundColor: '#E2E8F0',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 22, color: '#64748B', fontWeight: 'bold' }}>
+                  {displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View className="absolute bottom-0 right-0 h-4.5 w-4.5 rounded-full bg-[#0000ff] border border-white items-center justify-center">
+              <Text className="text-white text-[10px] font-bold leading-none">+</Text>
             </View>
-          )}
-          <View className="ml-3 flex-1">
-            <View className="flex-row items-center">
-              <Text className="text-title-primary" numberOfLines={1}>
+          </View>
+          <View className="ml-4 flex-1">
+            <View className="flex-row items-center flex-wrap">
+              <Text className="text-[16px] font-bold text-slate-800" numberOfLines={1}>
                 {displayName}
               </Text>
               {vm.draft.feeling ? (
                 <Text
-                  className="ml-1 text-title-secondary"
+                  className="ml-1.5 text-[14px] text-slate-500 font-medium"
                   numberOfLines={1}
                 >
-                  đang cảm thấy {vm.draft.feeling.emoji}{' '}
-                  {vm.draft.feeling.label}
+                  {copy.feelingLabel} {vm.draft.feeling.emoji}{' '}
+                  {currentFeelingLabel}
                 </Text>
               ) : null}
             </View>
             <TouchableOpacity
               onPress={() => setPrivacySheetVisible(true)}
               activeOpacity={0.7}
-              className="mt-1 self-start flex-row items-center rounded-md bg-slate-100 px-2 py-1"
+              className="mt-1.5 self-start flex-row items-center rounded-full bg-slate-100 px-3 py-1"
             >
               <currentPrivacy.Icon size={12} color="#475569" />
-              <Text className="mx-1 text-caption-primary">
+              <Text className="mx-1.5 text-[12px] font-semibold text-slate-600">
                 {currentPrivacy.label}
               </Text>
               <ChevronDown size={12} color="#475569" />
@@ -711,40 +874,165 @@ function CreatePostScreen() {
           </View>
         </View>
 
-        {/* ── Text input ─────────────────────────────────────────── */}
-        <TextInput
-          ref={textInputRef}
-          value={vm.draft.text}
-          onChangeText={vm.setText}
-          onFocus={() => setIsTextFocused(true)}
-          onBlur={() => setIsTextFocused(false)}
-          placeholder="Bạn đang nghĩ gì?"
-          placeholderTextColor="#94A3B8"
-          multiline
-          autoFocus
-          textAlignVertical="top"
+        {/* ── Text input card ─────────────────────────────────────── */}
+        <View
           style={{
-            paddingHorizontal: 16,
-            paddingTop: 16,
-            paddingBottom: 8,
-            fontSize: 20,
-            lineHeight: 28,
-            color: '#0F172A',
-            minHeight: 120,
+            shadowColor: '#94a3b8',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.05,
+            shadowRadius: 10,
+            elevation: 2,
           }}
-        />
+          className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 min-h-[220px] justify-between"
+        >
+          <TextInput
+            ref={textInputRef}
+            value={vm.draft.text}
+            onChangeText={vm.setText}
+            onFocus={() => setIsTextFocused(true)}
+            onBlur={() => setIsTextFocused(false)}
+            placeholder={copy.placeholder}
+            placeholderTextColor="#94A3B8"
+            multiline
+            autoFocus
+            textAlignVertical="top"
+            style={{
+              fontSize: 18,
+              lineHeight: 26,
+              color: '#1e293b',
+              padding: 0,
+              minHeight: 120,
+            }}
+          />
 
-        {/* ── Photo grid ─────────────────────────────────────────── */}
-        <View className="px-3">
-          <PhotoGrid photos={vm.draft.photos} onRemove={vm.removePhoto} />
+          {/* Word counts & inline shortcuts */}
+          <View className="flex-row items-center justify-end mt-4 gap-3">
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => insertCaptionChar('#')}
+              className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
+            >
+              <Hash size={18} color="#64748b" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => insertCaptionChar('@')}
+              className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
+            >
+              <AtSign size={18} color="#64748b" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setFeelingSheetVisible(true)}
+              className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
+            >
+              <Smile size={18} color="#64748b" />
+            </TouchableOpacity>
+
+            <Text className="ml-2 text-[13px] text-slate-400 font-medium">
+              {vm.draft.text.length}/5000
+            </Text>
+          </View>
         </View>
 
+        {/* ── Photo grid picker row ───────────────────────────────── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
+          className="mt-4"
+        >
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={handlePickPhotos}
+            style={{
+              width: 100,
+              height: 100,
+              borderRadius: 16,
+              borderStyle: 'dashed',
+              borderWidth: 1.5,
+              borderColor: '#cbd5e1',
+              backgroundColor: '#ffffff',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 24, color: '#64748b', fontWeight: '300' }}>+</Text>
+            <Text style={{ fontSize: 10, color: '#64748b', marginTop: 4, fontWeight: '600' }}>{copy.addPhoto}</Text>
+          </TouchableOpacity>
+
+          {isProcessingPhotos && (
+            <View
+              style={{
+                width: 100,
+                height: 100,
+                borderRadius: 16,
+                backgroundColor: '#ffffff',
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <ActivityIndicator color="#0000ff" size="small" />
+              <Text style={{ fontSize: 9, color: '#64748b', marginTop: 6, fontWeight: '600', textAlign: 'center' }}>
+                {language === 'vi' ? 'Đang xử lý...' : 'Processing...'}
+              </Text>
+            </View>
+          )}
+
+          {vm.draft.photos.map(photo => (
+            <View key={photo.uri} style={{ width: 100, height: 100, position: 'relative' }}>
+              <Image
+                source={{ uri: photo.uri }}
+                style={{ width: '100%', height: '100%', borderRadius: 16 }}
+                resizeMode="cover"
+                resizeMethod="resize" // Scale down in-memory representation for instant render & scroll performance
+              />
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => vm.removePhoto(photo.uri)}
+                className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-white/90 items-center justify-center"
+              >
+                <X size={12} color="#000000" />
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          {vm.draft.photos.length > 0 && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handlePickPhotos}
+              style={{
+                width: 100,
+                height: 100,
+                borderRadius: 16,
+                backgroundColor: '#ffffff',
+                borderWidth: 1,
+                borderColor: '#f1f5f9',
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: '#94a3b8',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.05,
+                shadowRadius: 6,
+                elevation: 1,
+              }}
+            >
+              <Text style={{ fontSize: 20, color: '#64748b', fontWeight: 'bold' }}>...</Text>
+              <Text style={{ fontSize: 10, color: '#64748b', marginTop: 4, fontWeight: '600' }}>{copy.viewMore}</Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+
         {wavRecorder.isRecording ? (
-          <View className="mx-4 mt-3 flex-row items-center rounded-xl border border-red-100 bg-red-50 p-3">
+          <View className="mx-4 mt-4 flex-row items-center rounded-[20px] border border-red-100 bg-red-50 p-4">
             <View className="mr-3 h-3 w-3 rounded-full bg-red-500" />
             <View className="flex-1">
               <Text className="text-sm font-semibold text-red-700">
-                Đang ghi âm {formatAudioDuration(wavRecorder.durationMs)}
+                {copy.recording} {formatAudioDuration(wavRecorder.durationMs)}
               </Text>
               <View className="mt-2 h-5">
                 <AudioWaveform
@@ -756,7 +1044,7 @@ function CreatePostScreen() {
                 />
               </View>
               <Text className="mt-1 text-xs text-red-500">
-                Nhấn nút dừng để dùng bản ghi này.
+                {copy.recordingTip}
               </Text>
             </View>
             <TouchableOpacity
@@ -773,7 +1061,7 @@ function CreatePostScreen() {
             </TouchableOpacity>
           </View>
         ) : vm.draft.audio ? (
-          <View className="mx-4 mt-3 flex-row items-center rounded-xl border border-blue-100 bg-blue-50 p-3">
+          <View className="mx-4 mt-4 flex-row items-center rounded-[20px] border border-blue-100 bg-blue-50 p-4">
             <View className="flex-1">
               <Text className="mb-2 text-sm font-semibold text-slate-700" numberOfLines={1}>
                 {vm.draft.audio.name}
@@ -791,13 +1079,13 @@ function CreatePostScreen() {
 
         {/* ── Error banner ───────────────────────────────────────── */}
         {vm.error ? (
-          <View className="mx-4 mt-3 rounded-lg bg-red-50 px-3 py-2">
+          <View className="mx-4 mt-4 rounded-lg bg-red-50 px-3 py-2">
             <Text style={{ color: '#B91C1C', fontSize: 13 }}>{vm.error}</Text>
           </View>
         ) : null}
       </ScrollView>
 
-      {/* ── Bottom action row ────────────────────────────────────── */}
+      {/* ── Bottom action card ───────────────────────────────────── */}
       {!isSuggestionBarVisible && renderBottomActions(false)}
 
       <PrivacyPickerSheet
@@ -805,6 +1093,8 @@ function CreatePostScreen() {
         current={vm.draft.privacy}
         onClose={() => setPrivacySheetVisible(false)}
         onPick={vm.setPrivacy}
+        options={privacyOptions}
+        title={copy.privacyTitle}
       />
       <FeelingPickerSheet
         visible={feelingSheetVisible}
@@ -812,6 +1102,9 @@ function CreatePostScreen() {
         onClose={() => setFeelingSheetVisible(false)}
         onPick={vm.setFeeling}
         onClear={() => vm.setFeeling(undefined)}
+        options={translatedFeelings}
+        title={copy.feelingsTitle}
+        clearLabel={copy.feelingsClear}
       />
 
       {/* ── Floating mention / hashtag bar above the keyboard ── */}
@@ -832,9 +1125,9 @@ function CreatePostScreen() {
             elevation: 8,
           }}
         >
-          {/* Render the bottom actions shifted above the hashtag/mention selection when keyboard is open */}
           {renderBottomActions(true)}
-          {/* Row 1: Suggestion chips (only when there are matches or loading) */}
+          
+          {/* Row 1: Suggestion chips */}
           {(vm.isLoadingCaptionSuggestions ||
             vm.captionSuggestions.length > 0) && (
             <ScrollView
@@ -867,7 +1160,7 @@ function CreatePostScreen() {
                       fontWeight: '500',
                     }}
                   >
-                    Đang tìm gợi ý...
+                    {copy.suggestionsLoading}
                   </Text>
                 </View>
               ) : (
@@ -974,7 +1267,7 @@ function CreatePostScreen() {
                 paddingHorizontal: 16,
                 paddingVertical: 8,
                 borderRadius: 999,
-                backgroundColor: '#0866FF',
+                backgroundColor: '#0000ff',
               }}
             >
               <Text
@@ -984,7 +1277,7 @@ function CreatePostScreen() {
                   color: '#FFFFFF',
                 }}
               >
-                Hoàn tất
+                {copy.done}
               </Text>
             </TouchableOpacity>
           </View>

@@ -1,5 +1,5 @@
 // Description: Screen cho phép người dùng chọn hoặc quay video, xem trước, rồi đăng lên dưới dạng Reel.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -26,6 +26,8 @@ import VideoPlayer from 'react-native-video';
 import {
   AtSign,
   ChevronLeft,
+  ChevronRight,
+  CloudUpload,
   Film,
   Globe,
   Hash,
@@ -33,6 +35,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Smile,
   Users,
   Video,
   Volume2,
@@ -41,12 +44,9 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useCreateReelViewModel } from '../../application/view-models/useCreateReelViewModel';
 import type { ReelPrivacy } from '../../domain/types/reels.types';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
-const PRIVACY_OPTIONS = [
-  { label: 'Công khai', value: 0 as ReelPrivacy, icon: Globe },
-  { label: 'Bạn bè', value: 1 as ReelPrivacy, icon: Users },
-  { label: 'Chỉ mình tôi', value: 2 as ReelPrivacy, icon: Lock },
-];
+// Dynamic privacy options will be created inside the component using translations.
 
 // Library — keep original file, no re-encode
 const VIDEO_LIBRARY_OPTIONS = {
@@ -87,7 +87,7 @@ function buildVideoFileName(asset: Asset) {
 }
 
 /** Request CAMERA + RECORD_AUDIO runtime permissions on Android. */
-async function requestCameraPermissions(): Promise<boolean> {
+async function requestCameraPermissions(copy: any): Promise<boolean> {
   if (Platform.OS !== 'android') {
     return true;
   }
@@ -115,17 +115,17 @@ async function requestCameraPermissions(): Promise<boolean> {
 
       if (neverAskCamera || neverAskAudio) {
         Alert.alert(
-          'Cần cấp quyền',
-          'Bạn đã từ chối quyền Camera hoặc Microphone. Vui lòng vào Cài đặt để bật lại.',
+          copy.permissionTitle,
+          copy.permissionCameraMicMsg,
           [
-            { text: 'Huỷ', style: 'cancel' },
-            { text: 'Mở Cài đặt', onPress: () => Linking.openSettings() },
+            { text: copy.cancel, style: 'cancel' },
+            { text: copy.openSettings, onPress: () => Linking.openSettings() },
           ],
         );
       } else {
         Alert.alert(
-          'Cần cấp quyền',
-          'Vui lòng cấp quyền Camera và Microphone để quay video.',
+          copy.permissionTitle,
+          copy.permissionCameraMicBrief,
         );
       }
       return false;
@@ -196,18 +196,118 @@ function ScaleButton({
   );
 }
 
+const CREATE_REEL_COPY = {
+  vi: {
+    headerTitle: 'Đăng Reel Video',
+    cardTitle: 'Tải lên Reel Video của bạn',
+    cardDesc: 'Tạo thước phim ngắn tối đa 60 giây để chia sẻ những khoảnh khắc tuyệt vời.',
+    pickLibrary: 'Chọn từ thư viện máy',
+    recordLive: 'Quay video trực tiếp',
+    descriptionLabel: 'MÔ TẢ (TUỲ CHỌN)',
+    descriptionPlaceholder: 'Viết gì đó về video này...',
+    audienceLabel: 'ĐỐI TƯỢNG XEM',
+    privacyPublic: 'Công khai',
+    privacyFriends: 'Bạn bè',
+    privacyOnlyMe: 'Chỉ mình tôi',
+    publishButton: 'Đăng Reel Video',
+    publishingState: 'Đang đăng Reel...',
+    changeVideo: 'Chọn video khác',
+    recordAgain: 'Quay lại video',
+    previewLabel: 'Xem trước Reel',
+    loadingVideo: 'Đang tải video...',
+    findingSuggestions: 'Đang tìm gợi ý...',
+    doneLabel: 'Hoàn tất',
+    alertSuccessTitle: 'Thành công',
+    alertSuccessMsg: 'Video Reel đã được đăng lên!',
+    alertProcessingTitle: 'Đang xử lý',
+    alertProcessingMsg: 'Video đang được máy chủ xử lý, vui lòng chờ.',
+    alertReviewTitle: 'Chờ duyệt',
+    alertReviewMsg: 'Video của bạn đang chờ quản trị viên phê duyệt.',
+    alertErrorTitle: 'Lỗi',
+    errorVideoTitle: 'Không thể đọc video',
+    errorVideoMsg: 'Video đã chọn không có đường dẫn hợp lệ. Vui lòng chọn video khác.',
+    errorLengthTitle: 'Video quá dài',
+    errorLengthMsg: 'Reel chỉ hỗ trợ video tối đa 60 giây. Vui lòng chọn hoặc quay video ngắn hơn.',
+    errorSizeTitle: 'Video quá lớn',
+    errorSizeMsg: 'Video này quá nặng để xem trước ổn định trên thiết bị. Vui lòng chọn video nhẹ hơn.',
+    errorSelectTitle: 'Không thể chọn video',
+    errorRecordTitle: 'Không thể quay video',
+    errorRecordMsg: 'Vui lòng kiểm tra quyền Camera và thử lại.',
+    permissionTitle: 'Cần cấp quyền',
+    permissionCameraMicMsg: 'Bạn đã từ chối quyền Camera hoặc Microphone. Vui lòng vào Cài đặt để bật lại.',
+    permissionCameraMicBrief: 'Vui lòng cấp quyền Camera và Microphone để quay video.',
+    openSettings: 'Mở Cài đặt',
+    cancel: 'Huỷ',
+  },
+  en: {
+    headerTitle: 'Publish Reel Video',
+    cardTitle: 'Upload your Reel Video',
+    cardDesc: 'Create a short film up to 60 seconds to share wonderful moments.',
+    pickLibrary: 'Choose from library',
+    recordLive: 'Record live video',
+    descriptionLabel: 'DESCRIPTION (OPTIONAL)',
+    descriptionPlaceholder: 'Write something about this video...',
+    audienceLabel: 'AUDIENCE',
+    privacyPublic: 'Public',
+    privacyFriends: 'Friends',
+    privacyOnlyMe: 'Only me',
+    publishButton: 'Publish Reel Video',
+    publishingState: 'Publishing Reel...',
+    changeVideo: 'Choose another video',
+    recordAgain: 'Record again',
+    previewLabel: 'Preview Reel',
+    loadingVideo: 'Loading video...',
+    findingSuggestions: 'Finding suggestions...',
+    doneLabel: 'Done',
+    alertSuccessTitle: 'Success',
+    alertSuccessMsg: 'Reel Video has been published!',
+    alertProcessingTitle: 'Processing',
+    alertProcessingMsg: 'Video is being processed by the server, please wait.',
+    alertReviewTitle: 'Pending approval',
+    alertReviewMsg: 'Your video is pending administrator approval.',
+    alertErrorTitle: 'Error',
+    errorVideoTitle: 'Cannot read video',
+    errorVideoMsg: 'The selected video has no valid path. Please choose another video.',
+    errorLengthTitle: 'Video too long',
+    errorLengthMsg: 'Reel only supports video up to 60 seconds. Please select or record a shorter video.',
+    errorSizeTitle: 'Video too large',
+    errorSizeMsg: 'This video is too heavy for stable preview. Please select a lighter video.',
+    errorSelectTitle: 'Cannot select video',
+    errorRecordTitle: 'Cannot record video',
+    errorRecordMsg: 'Please check Camera permissions and try again.',
+    permissionTitle: 'Permission required',
+    permissionCameraMicMsg: 'You have denied Camera or Microphone permission. Please go to Settings to enable it.',
+    permissionCameraMicBrief: 'Please grant Camera and Microphone permission to record video.',
+    openSettings: 'Open Settings',
+    cancel: 'Cancel',
+  },
+};
+
 export default function CreateReelScreen() {
   const navigation = useNavigation();
+  const language = useAppLanguage();
+  const copy = CREATE_REEL_COPY[language];
+
   const vm = useCreateReelViewModel();
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
+  // ScrollView ref for keyboard avoidance
+  const scrollRef = useRef<ScrollView | null>(null);
+
   // Caption input ref + keyboard tracking for the floating suggestion bar
   const captionInputRef = useRef<TextInput | null>(null);
   const [isCaptionFocused, setIsCaptionFocused] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Dynamic privacy options
+  const privacyOptions = useMemo(() => [
+    { label: copy.privacyPublic, value: 0 as ReelPrivacy, icon: Globe },
+    { label: copy.privacyFriends, value: 1 as ReelPrivacy, icon: Users },
+    { label: copy.privacyOnlyMe, value: 2 as ReelPrivacy, icon: Lock },
+  ], [copy]);
 
   useEffect(() => {
     const showEvent =
@@ -224,6 +324,14 @@ export default function CreateReelScreen() {
       showSub.remove();
       hideSub.remove();
     };
+  }, []);
+
+  // Keyboard avoidance focus scroll trigger
+  const handleInputFocus = useCallback(() => {
+    setIsCaptionFocused(true);
+    setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 150);
   }, []);
 
   // On Android with windowSoftInputMode=adjustResize the view already shrinks
@@ -281,24 +389,24 @@ export default function CreateReelScreen() {
 
       if (!asset.uri) {
         Alert.alert(
-          'Không thể đọc video',
-          'Video đã chọn không có đường dẫn hợp lệ. Vui lòng chọn video khác.',
+          copy.errorVideoTitle,
+          copy.errorVideoMsg,
         );
         return;
       }
 
       if (asset.duration && asset.duration > MAX_REEL_DURATION_SECONDS + 1) {
         Alert.alert(
-          'Video quá dài',
-          'Reel chỉ hỗ trợ video tối đa 60 giây. Vui lòng chọn hoặc quay video ngắn hơn.',
+          copy.errorLengthTitle,
+          copy.errorLengthMsg,
         );
         return;
       }
 
       if (asset.fileSize && asset.fileSize > MAX_REEL_FILE_SIZE_BYTES) {
         Alert.alert(
-          'Video quá lớn',
-          'Video này quá nặng để xem trước ổn định trên thiết bị. Vui lòng chọn video nhẹ hơn.',
+          copy.errorSizeTitle,
+          copy.errorSizeMsg,
         );
         return;
       }
@@ -313,24 +421,24 @@ export default function CreateReelScreen() {
       setPreviewError(null);
       setIsVideoLoading(true);
     },
-    [vm],
+    [vm, copy],
   );
 
   const handlePickFromLibrary = useCallback(async () => {
     const response = await launchImageLibrary(VIDEO_LIBRARY_OPTIONS);
     if (response.errorCode) {
       Alert.alert(
-        'Không thể chọn video',
-        response.errorMessage ?? 'Vui lòng thử lại hoặc chọn video khác.',
+        copy.errorSelectTitle,
+        response.errorMessage ?? copy.cancel,
       );
       return;
     }
 
     selectVideo(getVideoAsset(response));
-  }, [selectVideo]);
+  }, [selectVideo, copy]);
 
   const handleRecordVideo = useCallback(async () => {
-    const hasPermission = await requestCameraPermissions();
+    const hasPermission = await requestCameraPermissions(copy);
     if (!hasPermission) {
       return;
     }
@@ -338,14 +446,14 @@ export default function CreateReelScreen() {
     const response = await launchCamera(VIDEO_CAMERA_OPTIONS);
     if (response.errorCode) {
       Alert.alert(
-        'Không thể quay video',
-        response.errorMessage ?? 'Vui lòng kiểm tra quyền Camera và thử lại.',
+        copy.errorRecordTitle,
+        response.errorMessage ?? copy.errorRecordMsg,
       );
       return;
     }
 
     selectVideo(getVideoAsset(response));
-  }, [selectVideo]);
+  }, [selectVideo, copy]);
 
   const handleSubmit = useCallback(async () => {
     await vm.submit();
@@ -364,45 +472,49 @@ export default function CreateReelScreen() {
     if (vm.uploadState.phase === 'success') {
       const { result } = vm.uploadState;
       if (result.status === 'created') {
-        Alert.alert('Thành công', 'Video Reel đã được đăng lên!', [
+        Alert.alert(copy.alertSuccessTitle, copy.alertSuccessMsg, [
           { text: 'OK', onPress: () => { vm.reset(); navigation.goBack(); } },
         ]);
       } else if (result.status === 'processing') {
-        Alert.alert('Đang xử lý', result.message ?? 'Video đang được máy chủ xử lý, vui lòng chờ.', [
+        Alert.alert(copy.alertProcessingTitle, result.message ?? copy.alertProcessingMsg, [
           { text: 'OK', onPress: () => { vm.reset(); navigation.goBack(); } },
         ]);
       } else if (result.status === 'review') {
-        Alert.alert('Chờ duyệt', 'Video của bạn đang chờ quản trị viên phê duyệt.', [
+        Alert.alert(copy.alertReviewTitle, copy.alertReviewMsg, [
           { text: 'OK', onPress: () => { vm.reset(); navigation.goBack(); } },
         ]);
       }
     }
-  }, [vm.uploadState.phase, navigation, vm]);
+  }, [vm.uploadState.phase, navigation, vm, copy]);
 
   return (
-    <SafeAreaView className="flex-1 surface-base">
+    <SafeAreaView className="flex-1" style={{ backgroundColor: '#f8fafc' }}>
       <StatusBar barStyle="dark-content" />
 
       {/* App bar */}
       <View 
-        className="surface-topbar h-14 flex-row items-center px-4 border-b border-slate-100 bg-white"
+        className="surface-topbar h-14 flex-row items-center px-4 border-b border-slate-100"
         style={{
+          backgroundColor: '#ffffff',
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 1 },
           shadowOpacity: 0.05,
           shadowRadius: 2,
           elevation: 1,
+          justifyContent: 'center',
+          position: 'relative',
         }}
       >
         <ScaleButton
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          className="h-10 w-10 items-center justify-center rounded-full bg-slate-50 border border-slate-100"
+          className="h-10 w-10 items-center justify-center rounded-full border border-slate-200"
+          style={{ position: 'absolute', left: 16, backgroundColor: '#f1f5f9' }}
         >
           <ChevronLeft size={20} color="#334155" strokeWidth={2.5} />
         </ScaleButton>
-        <Text className="text-heading flex-1 text-center font-bold text-slate-800 mr-10">
-          Đăng Reel Video
+        <Text className="text-heading font-bold text-slate-850 text-lg">
+          {copy.headerTitle}
         </Text>
       </View>
 
@@ -411,6 +523,7 @@ export default function CreateReelScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
+          ref={scrollRef}
           className="flex-1"
           contentContainerClassName="px-4 py-5"
           keyboardShouldPersistTaps="handled"
@@ -419,32 +532,47 @@ export default function CreateReelScreen() {
           {!vm.hasVideo ? (
             /* Empty state — pick or record */
             <View 
-              className="surface-card mb-5 items-center px-6 py-12 border border-dashed border-blue-200"
-              style={{ backgroundColor: 'rgba(239, 246, 255, 0.05)' }}
+              className="surface-card mb-5 items-center px-6 py-10 border"
+              style={{
+                backgroundColor: '#ffffff',
+                borderStyle: 'dashed',
+                borderWidth: 1.5,
+                borderColor: '#bfdbfe',
+                borderRadius: 24,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.02,
+                shadowRadius: 4,
+                elevation: 1,
+              }}
             >
               <View 
-                className="mb-5 h-20 w-20 items-center justify-center rounded-full bg-blue-50 border border-blue-100"
+                className="mb-5 h-20 w-20 items-center justify-center rounded-full"
                 style={{
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.05,
-                  shadowRadius: 2,
-                  elevation: 1,
+                  backgroundColor: '#eff6ff',
+                  shadowColor: '#1d4ed8',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 4,
+                  elevation: 2,
                 }}
               >
-                <Film size={32} color="#0000FF" strokeWidth={2} />
+                <Film size={32} color="#1d4ed8" strokeWidth={2} />
               </View>
-              <Text className="text-lg font-bold text-slate-850 mb-1 text-center">
-                Tải lên Reel Video của bạn
+              <Text className="text-lg font-bold text-slate-800 mb-1.5 text-center">
+                {copy.cardTitle}
               </Text>
-              <Text className="text-body-secondary mb-8 text-center max-w-[245px]">
-                Tạo thước phim ngắn tối đa 60 giây để chia sẻ những khoảnh khắc tuyệt vời.
+              <Text className="text-sm text-slate-500 mb-8 text-center max-w-[260px] leading-5">
+                {copy.cardDesc}
               </Text>
 
               <ScaleButton
-                className="w-full flex-row items-center justify-center py-4 bg-[#0000ff] rounded-full mb-3"
+                className="w-full flex-row items-center rounded-2xl mb-3"
                 style={{
-                  shadowColor: '#0000ff',
+                  backgroundColor: '#1d4ed8',
+                  paddingHorizontal: 20,
+                  paddingVertical: 16,
+                  shadowColor: '#1d4ed8',
                   shadowOffset: { width: 0, height: 4 },
                   shadowOpacity: 0.2,
                   shadowRadius: 8,
@@ -452,27 +580,34 @@ export default function CreateReelScreen() {
                 }}
                 onPress={handlePickFromLibrary}
               >
-                <Film size={18} color="#fff" strokeWidth={2.2} />
-                <Text className="ml-2 text-base font-semibold text-white">
-                  Chọn từ thư viện máy
+                <Film size={20} color="#fff" strokeWidth={2} />
+                <Text className="ml-3 text-base font-semibold text-white flex-1 text-left">
+                  {copy.pickLibrary}
                 </Text>
+                <ChevronRight size={18} color="#fff" strokeWidth={2.5} />
               </ScaleButton>
 
               <ScaleButton
-                className="w-full flex-row items-center justify-center py-4 bg-white border border-slate-200 rounded-full"
+                className="w-full flex-row items-center rounded-2xl"
                 style={{
+                  backgroundColor: '#ffffff',
+                  borderWidth: 1,
+                  borderColor: '#e2e8f0',
+                  paddingHorizontal: 20,
+                  paddingVertical: 16,
                   shadowColor: '#000',
                   shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.05,
+                  shadowOpacity: 0.04,
                   shadowRadius: 2,
                   elevation: 1,
                 }}
                 onPress={handleRecordVideo}
               >
-                <Video size={18} color="#0000FF" strokeWidth={2.2} />
-                <Text className="ml-2 text-base font-semibold text-brand">
-                  Quay video trực tiếp
+                <Video size={20} color="#1d4ed8" strokeWidth={2} />
+                <Text className="ml-3 text-base font-semibold text-slate-700 flex-1 text-left">
+                  {copy.recordLive}
                 </Text>
+                <ChevronRight size={18} color="#94a3b8" strokeWidth={2.5} />
               </ScaleButton>
             </View>
           ) : (
@@ -480,11 +615,13 @@ export default function CreateReelScreen() {
             <View 
               className="surface-card mb-5 overflow-hidden border border-slate-100"
               style={{
+                backgroundColor: '#ffffff',
                 shadowColor: '#000',
                 shadowOffset: { width: 0, height: 2 },
                 shadowOpacity: 0.04,
                 shadowRadius: 4,
                 elevation: 2,
+                borderRadius: 24,
               }}
             >
               {/* ── Dark video stage ──────────────────────────────────────────
@@ -506,7 +643,7 @@ export default function CreateReelScreen() {
                     setIsVideoLoading(false);
                     setPaused(true);
                     setPreviewError(
-                      'Không thể xem trước video này. Vui lòng chọn video khác.',
+                      copy.errorVideoMsg,
                     );
                   }}
                 />
@@ -560,7 +697,7 @@ export default function CreateReelScreen() {
                         letterSpacing: 0.2,
                       }}
                     >
-                      Đang tải video...
+                      {copy.loadingVideo}
                     </Text>
                   </View>
                 )}
@@ -603,7 +740,7 @@ export default function CreateReelScreen() {
                       )}
                     </View>
                     <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
-                      Xem trước Reel
+                      {copy.previewLabel}
                     </Text>
                   </TouchableOpacity>
 
@@ -649,23 +786,25 @@ export default function CreateReelScreen() {
               </View>
 
               {/* Change video buttons */}
-              <View className="flex-row gap-3 px-4 py-3">
+              <View className="flex-row gap-3 px-4 py-3" style={{ backgroundColor: '#ffffff' }}>
                 <ScaleButton
-                  className="flex-1 flex-row items-center justify-center rounded-full border border-slate-200 bg-slate-50 py-2.5"
+                  className="flex-1 flex-row items-center justify-center rounded-full border border-slate-200 py-2.5"
+                  style={{ backgroundColor: '#f8fafc' }}
                   onPress={handlePickFromLibrary}
                 >
                   <RotateCcw size={15} color="#475569" strokeWidth={2.2} />
                   <Text className="ml-2 text-xs font-semibold text-slate-600">
-                    Chọn video khác
+                    {copy.changeVideo}
                   </Text>
                 </ScaleButton>
                 <ScaleButton
-                  className="flex-1 flex-row items-center justify-center rounded-full border border-slate-200 bg-slate-50 py-2.5"
+                  className="flex-1 flex-row items-center justify-center rounded-full border border-slate-200 py-2.5"
+                  style={{ backgroundColor: '#f8fafc' }}
                   onPress={handleRecordVideo}
                 >
                   <Video size={15} color="#475569" strokeWidth={2.2} />
                   <Text className="ml-2 text-xs font-semibold text-slate-600">
-                    Quay lại video
+                    {copy.recordAgain}
                   </Text>
                 </ScaleButton>
               </View>
@@ -676,21 +815,23 @@ export default function CreateReelScreen() {
           <View 
             className="surface-card mb-5 p-5 border border-slate-100"
             style={{
+              backgroundColor: '#ffffff',
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.04,
               shadowRadius: 4,
               elevation: 2,
+              borderRadius: 20,
             }}
           >
             <View className="mb-3 flex-row items-center justify-between gap-3">
               <Text
-                className="text-caption-primary flex-1 text-slate-500 font-semibold uppercase"
+                className="text-xs text-slate-500 font-bold uppercase tracking-wider"
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 style={{ lineHeight: 18 }}
               >
-                MÔ TẢ (tuỳ chọn)
+                {copy.descriptionLabel}
               </Text>
               <Text
                 className="text-xs font-medium text-slate-400"
@@ -700,63 +841,94 @@ export default function CreateReelScreen() {
                 {(vm.draft.caption ?? '').length}/500
               </Text>
             </View>
-            <TextInput
-              ref={captionInputRef}
-              className="input-shell min-h-[112px] px-4 py-3 text-body-primary border border-slate-200"
-              placeholder="Viết gì đó về video này..."
-              placeholderTextColor="#94a3b8"
-              multiline
-              maxLength={500}
-              value={vm.draft.caption ?? ''}
-              onChangeText={vm.setCaption}
-              onFocus={() => setIsCaptionFocused(true)}
-              onBlur={() => setIsCaptionFocused(false)}
-              textAlignVertical="top"
-              style={{ lineHeight: 20 }}
-            />
+            <View style={{ position: 'relative' }}>
+              <TextInput
+                ref={captionInputRef}
+                className="input-shell min-h-[120px] pl-4 pr-12 py-3 text-body-primary"
+                style={{
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: '#e2e8f0',
+                  lineHeight: 20,
+                  backgroundColor: '#f8fafc',
+                  textAlignVertical: 'top',
+                }}
+                placeholder={copy.descriptionPlaceholder}
+                placeholderTextColor="#94a3b8"
+                multiline
+                maxLength={500}
+                value={vm.draft.caption ?? ''}
+                onChangeText={vm.setCaption}
+                onFocus={handleInputFocus}
+                onBlur={() => setIsCaptionFocused(false)}
+              />
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={{
+                  position: 'absolute',
+                  right: 14,
+                  bottom: 14,
+                  width: 32,
+                  height: 32,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onPress={() => {
+                  captionInputRef.current?.focus();
+                  handleInputFocus();
+                }}
+              >
+                <Smile size={22} color="#64748b" strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Privacy selector */}
           <View 
             className="surface-card mb-6 p-5 border border-slate-100"
             style={{
+              backgroundColor: '#ffffff',
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.04,
               shadowRadius: 4,
               elevation: 2,
+              borderRadius: 20,
             }}
           >
             <Text
-              className="text-caption-primary mb-3 text-slate-500 font-semibold uppercase"
+              className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-3"
               numberOfLines={1}
               style={{ lineHeight: 18 }}
             >
-              ĐỐI TƯỢNG XEM
+              {copy.audienceLabel}
             </Text>
-            <View className="flex-row flex-wrap gap-2">
-              {PRIVACY_OPTIONS.map(opt => {
+            <View className="flex-row flex-wrap gap-2.5">
+              {privacyOptions.map(opt => {
                 const isSelected = (vm.draft.privacy ?? 0) === opt.value;
                 const IconComponent = opt.icon;
                 return (
                   <ScaleButton
                     key={opt.value}
                     onPress={() => vm.setPrivacy(opt.value)}
-                    className={`flex-row items-center rounded-full px-4 py-2.5 border ${
-                      isSelected
-                        ? 'bg-[#0000ff] border-[#0000ff]'
-                        : 'bg-white border-slate-200'
-                    }`}
+                    className="flex-row items-center rounded-full border"
+                    style={{
+                      backgroundColor: isSelected ? '#1d4ed8' : '#f1f5f9',
+                      borderColor: isSelected ? '#1d4ed8' : '#e2e8f0',
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                    }}
                   >
                     <IconComponent
-                      size={15}
+                      size={16}
                       color={isSelected ? '#ffffff' : '#64748b'}
-                      strokeWidth={2.2}
+                      strokeWidth={2}
                     />
                     <Text
-                      className={`ml-2 text-xs font-semibold ${
-                        isSelected ? 'text-white' : 'text-slate-700'
-                      }`}
+                      className="ml-2 text-sm font-semibold"
+                      style={{
+                        color: isSelected ? '#ffffff' : '#475569',
+                      }}
                     >
                       {opt.label}
                     </Text>
@@ -777,15 +949,15 @@ export default function CreateReelScreen() {
 
           {/* Submit button */}
           <ScaleButton
-            className={`flex-row items-center justify-center py-4 rounded-full bg-[#0000ff] ${
-              !vm.hasVideo || vm.isUploading ? 'opacity-50' : ''
-            }`}
+            className="flex-row items-center justify-center py-4 rounded-full"
             style={{
-              shadowColor: '#0000ff',
+              backgroundColor: !vm.hasVideo || vm.isUploading ? '#8da2f2' : '#1d4ed8',
+              shadowColor: '#1d4ed8',
               shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.2,
+              shadowOpacity: !vm.hasVideo || vm.isUploading ? 0 : 0.25,
               shadowRadius: 8,
-              elevation: 4,
+              elevation: !vm.hasVideo || vm.isUploading ? 0 : 4,
+              marginBottom: 24,
             }}
             onPress={handleSubmit}
             disabled={!vm.hasVideo || vm.isUploading}
@@ -794,14 +966,14 @@ export default function CreateReelScreen() {
               <>
                 <ActivityIndicator color="#fff" size="small" />
                 <Text className="ml-2 text-base font-semibold text-white">
-                  Đang đăng Reel...
+                  {copy.publishingState}
                 </Text>
               </>
             ) : (
               <>
-                <Film size={18} color="#fff" strokeWidth={2.2} className="mr-2" />
+                <CloudUpload size={20} color="#fff" strokeWidth={2} />
                 <Text className="ml-2 text-base font-semibold text-white">
-                  Đăng Reel Video
+                  {copy.publishButton}
                 </Text>
               </>
             )}
@@ -859,7 +1031,7 @@ export default function CreateReelScreen() {
                       fontWeight: '500',
                     }}
                   >
-                    Đang tìm gợi ý...
+                    {copy.findingSuggestions}
                   </Text>
                 </View>
               ) : (
@@ -965,7 +1137,7 @@ export default function CreateReelScreen() {
                 paddingHorizontal: 16,
                 paddingVertical: 8,
                 borderRadius: 999,
-                backgroundColor: '#0000FF',
+                backgroundColor: '#1d4ed8',
               }}
             >
               <Text
@@ -975,7 +1147,7 @@ export default function CreateReelScreen() {
                   color: '#ffffff',
                 }}
               >
-                Hoàn tất
+                {copy.doneLabel}
               </Text>
             </TouchableOpacity>
           </View>

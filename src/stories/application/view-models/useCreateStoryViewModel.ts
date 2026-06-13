@@ -17,6 +17,7 @@
 // states without juggling its own loading bool.
 
 import { useCallback, useMemo, useState } from 'react';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
 import type {
   CreateStoryDraft,
@@ -27,16 +28,33 @@ import type {
 const repository = createStoriesRepository();
 
 // ── Validation limits (mirror create_story.php) ─────────────────────────
-// PHP enforces these server-side too, but we want to surface the error
-// BEFORE the upload starts so the user doesn't waste 30s on a 60MB video
-// that's about to be rejected for a title-too-long.
 const MAX_TITLE_LENGTH = 100;
 const MIN_DESCRIPTION_LENGTH = 10;
 const MAX_DESCRIPTION_LENGTH = 300;
-// Story videos are loosely capped at 60s in the official WoWonder client.
-// We enforce the same here so the upload UI doesn't accept clips the
-// viewer will skip past anyway.
 const MAX_VIDEO_DURATION_SECONDS = 60;
+
+const VM_COPY = {
+  vi: {
+    selectMediaError: 'Hãy chọn 1 ảnh hoặc 1 video.',
+    videoDurationError: (max: number) => `Video tối đa ${max} giây.`,
+    titleLengthError: (max: number) => `Tiêu đề tối đa ${max} ký tự.`,
+    descMinLengthError: (min: number) => `Mô tả phải có ít nhất ${min} ký tự (hoặc để trống).`,
+    descMaxLengthError: (max: number) => `Mô tả tối đa ${max} ký tự.`,
+    unknownError: 'Đã xảy ra lỗi không xác định.',
+    timeoutError: 'Tải lên quá lâu. Vui lòng kiểm tra kết nối hoặc chọn tệp nhẹ hơn.',
+    networkError: 'Không kết nối được máy chủ. Vui lòng kiểm tra Wi-Fi/4G.',
+  },
+  en: {
+    selectMediaError: 'Please choose 1 photo or 1 video.',
+    videoDurationError: (max: number) => `Video can be at most ${max} seconds.`,
+    titleLengthError: (max: number) => `Title can be at most ${max} characters.`,
+    descMinLengthError: (min: number) => `Description must be at least ${min} characters (or empty).`,
+    descMaxLengthError: (max: number) => `Description can be at most ${max} characters.`,
+    unknownError: 'An unknown error occurred.',
+    timeoutError: 'Upload took too long. Please check your connection or choose a lighter file.',
+    networkError: 'Cannot connect to the server. Please check your Wi-Fi/4G.',
+  },
+};
 
 type Phase =
   | { type: 'idle' }
@@ -56,6 +74,8 @@ export interface UseCreateStoryOptions {
 }
 
 export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
+  const language = useAppLanguage();
+  const vmCopy = VM_COPY[language];
   const { onCreated } = options;
 
   const [media, setMediaState] = useState<StoryMediaUpload | null>(null);
@@ -94,19 +114,19 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
   // guard before hitting the network).
 
   const validate = useCallback((): string | null => {
-    if (!media) return 'Hãy chọn 1 ảnh hoặc 1 video.';
+    if (!media) return vmCopy.selectMediaError;
 
     if (
       media.fileType === 'video' &&
       typeof media.durationSeconds === 'number' &&
       media.durationSeconds > MAX_VIDEO_DURATION_SECONDS
     ) {
-      return `Video tối đa ${MAX_VIDEO_DURATION_SECONDS} giây.`;
+      return vmCopy.videoDurationError(MAX_VIDEO_DURATION_SECONDS);
     }
 
     const trimmedTitle = title.trim();
     if (trimmedTitle.length > MAX_TITLE_LENGTH) {
-      return `Tiêu đề tối đa ${MAX_TITLE_LENGTH} ký tự.`;
+      return vmCopy.titleLengthError(MAX_TITLE_LENGTH);
     }
 
     const trimmedDescription = description.trim();
@@ -115,15 +135,15 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
       // create_story.php). Anything shorter just gets silently dropped,
       // so we WARN here rather than wasting an upload.
       if (trimmedDescription.length < MIN_DESCRIPTION_LENGTH) {
-        return `Mô tả phải có ít nhất ${MIN_DESCRIPTION_LENGTH} ký tự (hoặc để trống).`;
+        return vmCopy.descMinLengthError(MIN_DESCRIPTION_LENGTH);
       }
       if (trimmedDescription.length > MAX_DESCRIPTION_LENGTH) {
-        return `Mô tả tối đa ${MAX_DESCRIPTION_LENGTH} ký tự.`;
+        return vmCopy.descMaxLengthError(MAX_DESCRIPTION_LENGTH);
       }
     }
 
     return null;
-  }, [media, title, description]);
+  }, [media, title, description, vmCopy]);
 
   const canSubmit = useMemo(() => {
     if (phase.type === 'uploading') return false;
@@ -163,17 +183,16 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
       const rawMessage =
         caught instanceof Error
           ? caught.message
-          : 'Đã xảy ra lỗi không xác định.';
+          : vmCopy.unknownError;
 
-      // Friendly Vietnamese rewrites for common network failures, same
+      // Friendly rewrites for common network failures, same
       // strategy as the reel composer.
       let friendly = rawMessage;
       const lowered = rawMessage.toLowerCase();
       if (lowered.includes('timeout') || lowered.includes('econnaborted')) {
-        friendly =
-          'Tải lên quá lâu. Vui lòng kiểm tra kết nối hoặc chọn tệp nhẹ hơn.';
+        friendly = vmCopy.timeoutError;
       } else if (lowered.includes('network error')) {
-        friendly = 'Không kết nối được máy chủ. Vui lòng kiểm tra Wi-Fi/4G.';
+        friendly = vmCopy.networkError;
       }
 
       setPhase({ type: 'error', message: friendly });

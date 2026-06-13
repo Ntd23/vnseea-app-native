@@ -166,45 +166,10 @@ function ReelItemBase({
   const [hasError, setHasError] = useState(false);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
 
+  // Removed scale/opacity/translateY parallax — it was causing items to
+  // appear misaligned ("lệch") during and after scrolling.
   const animatedStyle = useAnimatedStyle(() => {
-    if (scrollY === undefined || index === undefined) {
-      return {};
-    }
-
-    const inputRange = [
-      (index - 1) * height,
-      index * height,
-      (index + 1) * height,
-    ];
-
-    const scale = interpolate(
-      scrollY.value,
-      inputRange,
-      [0.92, 1, 0.92],
-      'clamp'
-    );
-
-    const opacity = interpolate(
-      scrollY.value,
-      inputRange,
-      [0.6, 1, 0.6],
-      'clamp'
-    );
-
-    const translateY = interpolate(
-      scrollY.value,
-      inputRange,
-      [-height * 0.05, 0, height * 0.05],
-      'clamp'
-    );
-
-    return {
-      opacity,
-      transform: [
-        { scale },
-        { translateY },
-      ],
-    };
+    return {};
   });
 
   // The video plays iff: active + not manually paused + no decode error.
@@ -363,7 +328,7 @@ function ReelItemBase({
         <VideoPlayer
           source={{ uri: item.videoUrl }}
           style={StyleSheet.absoluteFill}
-          resizeMode="cover"
+          resizeMode="contain"
           repeat
           paused={!playing}
           muted={isMuted || !isActive}
@@ -390,23 +355,22 @@ function ReelItemBase({
         <View style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
 
-      {/* ── Bottom gradient overlay — makes text/icons legible ──────── */}
-      {/* react-native-svg LinearGradient — no extra package needed.    */}
+      {/* ── Bottom gradient overlay — only covers the lower portion where
+           text/icons sit, so the video itself stays clean. */}
       <Svg
         width={SCREEN_W}
-        height={height}
-        style={StyleSheet.absoluteFill}
+        height={height * 0.35}
+        style={{ position: 'absolute', bottom: 0, left: 0 }}
         pointerEvents="none"
       >
         <Defs>
           <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#000" stopOpacity="0.24" />
-            <Stop offset="0.2" stopColor="#000" stopOpacity="0" />
-            <Stop offset="0.52" stopColor="#000" stopOpacity="0" />
-            <Stop offset="1" stopColor="#000" stopOpacity="0.88" />
+            <Stop offset="0" stopColor="#000" stopOpacity="0" />
+            <Stop offset="0.4" stopColor="#000" stopOpacity="0.3" />
+            <Stop offset="1" stopColor="#000" stopOpacity="0.7" />
           </LinearGradient>
         </Defs>
-        <Rect width={SCREEN_W} height={height} fill={`url(#${gradId})`} />
+        <Rect width={SCREEN_W} height={height * 0.35} fill={`url(#${gradId})`} />
       </Svg>
 
       {/* ── Center play overlay (only when user explicitly paused) ──── */}

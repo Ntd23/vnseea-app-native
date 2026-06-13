@@ -12,6 +12,14 @@ export interface FeedItem {
   // TODO: add fields from API response
 }
 
+export interface FeedPublisher {
+  id: string;
+  name: string;
+  username: string;
+  avatarUrl?: string;
+  isFollowing?: boolean;
+}
+
 // ── Create-post types (Facebook-style composer) ─────────────────────────
 //
 // WoWonder's `/api/new_post` accepts MANY fields, but for the MVP composer
@@ -124,12 +132,7 @@ export interface FeedTextPost {
   topReactions: ReactionType[];
   feeling?: PostFeeling;
   privacy: PostPrivacy;
-  publisher: {
-    id: string;
-    name: string;
-    username: string;
-    avatarUrl?: string;
-  };
+  publisher: FeedPublisher;
 
   // ── PostDetail-only fields (populated when fetched via getPostById) ──
   viewCount?: number;
@@ -188,12 +191,7 @@ export interface FeedVideoPost {
    * Same as `FeedTextPost.topReactions` — see its JSDoc.
    */
   topReactions: ReactionType[];
-  publisher: {
-    id: string;
-    name: string;
-    username: string;
-    avatarUrl?: string;
-  };
+  publisher: FeedPublisher;
 
   // ── PostDetail-only fields (populated when fetched via getPostById) ──
   viewCount?: number;
@@ -227,12 +225,7 @@ export interface FeedProductPost {
   id: string;
   product: ProductItem;
   postedAt?: number;
-  publisher: {
-    id: string;
-    name: string;
-    username: string;
-    avatarUrl?: string;
-  };
+  publisher: FeedPublisher;
 }
 
 export interface FeedEventPost {
@@ -240,12 +233,7 @@ export interface FeedEventPost {
   id: string;
   event: EventsItem;
   postedAt?: number;
-  publisher: {
-    id: string;
-    name: string;
-    username: string;
-    avatarUrl?: string;
-  };
+  publisher: FeedPublisher;
 }
 
 export interface FeedJobPost {
@@ -253,12 +241,7 @@ export interface FeedJobPost {
   id: string;
   job: JobsItem;
   postedAt?: number;
-  publisher: {
-    id: string;
-    name: string;
-    username: string;
-    avatarUrl?: string;
-  };
+  publisher: FeedPublisher;
 }
 
 export interface FeedAdPost {
@@ -272,12 +255,7 @@ export interface FeedAdPost {
   targetUrl?: string;
   appears?: string;
   postedAt?: number;
-  publisher: {
-    id: string;
-    name: string;
-    username: string;
-    avatarUrl?: string;
-  };
+  publisher: FeedPublisher;
 }
 
 /**
@@ -310,12 +288,7 @@ export interface FeedPollPost {
   isLiked: boolean;
   myReaction: ReactionType | null;
   topReactions: ReactionType[];
-  publisher: {
-    id: string;
-    name: string;
-    username: string;
-    avatarUrl?: string;
-  };
+  publisher: FeedPublisher;
 }
 
 /**

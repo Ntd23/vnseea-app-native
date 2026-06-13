@@ -1,7 +1,6 @@
-// Description: Animated notification card.
-// Uses Reanimated FadeInDown + SlideOutRight for smooth insert / delete,
-// icon-chip badge for the notification type, optional accept/reject row
-// for group-chat invites.
+// Description: Animated notification card matching the screenshot design.
+// Uses white card background, rounded-[20px] corners, left blue border for unread,
+// absolute date formatting (DD.MM.YY), and right-aligned unread dot + action menu.
 
 import React, { memo, useMemo } from 'react';
 import {
@@ -23,8 +22,8 @@ import {
   Heart,
   Image as ImageIcon,
   MessageCircle,
+  MoreHorizontal,
   Share2,
-  ThumbsUp,
   UserCheck,
   UserPlus,
   Users,
@@ -52,25 +51,25 @@ interface NotificationCardProps {
 type IconComponent = React.ComponentType<{ size: number; color: string }>;
 
 const ICON_BY_TYPE: Record<string, { Icon: IconComponent; iconColor: string }> = {
-  following: { Icon: UserPlus, iconColor: '#1877F2' },
+  following: { Icon: UserPlus, iconColor: '#94a3b8' }, // grey person silhouette
   liked_post: { Icon: Heart, iconColor: '#F33E58' },
   wondered_post: { Icon: Heart, iconColor: '#F7B125' },
   shared_post: { Icon: Share2, iconColor: '#65676B' },
-  comment: { Icon: MessageCircle, iconColor: '#1877F2' },
-  comment_reply: { Icon: MessageCircle, iconColor: '#1877F2' },
+  comment: { Icon: MessageCircle, iconColor: '#3b82f6' }, // blue message bubble
+  comment_reply: { Icon: MessageCircle, iconColor: '#3b82f6' },
   profile_wall_post: { Icon: ImageIcon, iconColor: '#1877F2' },
-  visited_profile: { Icon: UserCheck, iconColor: '#65676B' },
+  visited_profile: { Icon: UserCheck, iconColor: '#94a3b8' }, // grey person icon
   joined_group: { Icon: UserCheck, iconColor: '#1877F2' },
-  accepted_request: { Icon: UserCheck, iconColor: '#34A853' },
+  accepted_request: { Icon: UserCheck, iconColor: '#22c55e' }, // green group/person
   interested_event: { Icon: CalendarDays, iconColor: '#EA4335' },
-  going_event: { Icon: CalendarDays, iconColor: '#34A853' },
-  added_you_to_group: { Icon: Users, iconColor: '#0000FF' },
-  accept_group_chat_request: { Icon: Users, iconColor: '#34A853' },
+  going_event: { Icon: CalendarDays, iconColor: '#22c55e' },
+  added_you_to_group: { Icon: Users, iconColor: '#22c55e' }, // green group icon
+  accept_group_chat_request: { Icon: Users, iconColor: '#22c55e' }, // green group icon
   declined_group_chat_request: { Icon: Users, iconColor: '#DC2626' },
 };
 
 function getNotificationIcon(type: string) {
-  return ICON_BY_TYPE[type] ?? { Icon: Bell, iconColor: '#65676B' };
+  return ICON_BY_TYPE[type] ?? { Icon: Bell, iconColor: '#94a3b8' };
 }
 
 const ENTER_BASE = FadeInDown.duration(280).easing(Easing.out(Easing.cubic));
@@ -87,10 +86,25 @@ function NotificationCard({
   labels,
 }: NotificationCardProps) {
   const { Icon, iconColor } = getNotificationIcon(item.type);
+  
   const text = useMemo(
     () => formatNotificationText(item, language),
     [item, language],
   );
+
+  const formattedTime = useMemo(() => {
+    if (!item.createdAt) return item.timeText;
+    try {
+      const date = new Date(item.createdAt);
+      const dd = String(date.getDate()).padStart(2, '0');
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const yy = String(date.getFullYear()).slice(-2);
+      return `${dd}.${mm}.${yy}`;
+    } catch {
+      return item.timeText;
+    }
+  }, [item.createdAt, item.timeText]);
+
   const isGroupChatInvite = item.type === 'added_you_to_group';
   const avatar = item.notifier?.avatarUrl;
   const hasAvatar = Boolean(avatar);
@@ -105,56 +119,57 @@ function NotificationCard({
         activeOpacity={0.85}
         onPress={() => onPress(item)}
         onLongPress={onLongPress ? () => onLongPress(item) : undefined}
-        className={`surface-card mb-3 px-4 py-3.5 ${
-          !item.seen ? 'border-[#0000ff]/15' : ''
-        }`}
-        style={
+        style={[
+          {
+            backgroundColor: '#ffffff',
+            shadowColor: '#94a3b8',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.06,
+            shadowRadius: 10,
+            elevation: 2,
+          },
           !item.seen
-            ? {
-                backgroundColor: '#F5F8FF',
-                borderColor: 'rgba(0, 0, 255, 0.18)',
-              }
-            : undefined
-        }
+            ? { borderLeftWidth: 4, borderLeftColor: '#0000ff' }
+            : { borderLeftWidth: 0 },
+        ]}
+        className="mb-3 px-4 py-4 rounded-[20px] border border-slate-100/70"
       >
-        <View className="flex-row">
+        <View className="flex-row items-center">
+          {/* Avatar Container */}
           <View className="relative">
             {hasAvatar ? (
               <Image
                 source={{ uri: avatar }}
-                className="h-12 w-12 rounded-full bg-slate-100"
+                className="h-14 w-14 rounded-full bg-slate-100"
                 resizeMode="cover"
               />
             ) : (
               <View
-                className="h-12 w-12 items-center justify-center rounded-full"
-                style={{ backgroundColor: `${iconColor}22` }}
+                className="h-14 w-14 items-center justify-center rounded-full bg-slate-50"
               >
-                <Icon size={20} color={iconColor} />
+                <Icon size={24} color={iconColor} />
               </View>
             )}
+            
+            {/* Overlapping Action Badge at bottom-right of avatar */}
             <View
-              className="absolute -bottom-1 -right-1 h-6 w-6 items-center justify-center rounded-full border-2 border-white"
+              className="absolute -bottom-1 -right-1 h-6 w-6 items-center justify-center rounded-full border border-white"
               style={{ backgroundColor: iconColor }}
             >
               <Icon size={12} color="#FFFFFF" />
             </View>
           </View>
 
-          <View className="ml-3.5 flex-1">
-            <View className="flex-row items-start justify-between">
-              <Text
-                className="flex-1 text-body-primary leading-snug"
-                numberOfLines={3}
-              >
-                {text}
-              </Text>
-              {!item.seen ? (
-                <View className="ml-2 mt-1 h-2 w-2 rounded-full bg-[#0000ff]" />
-              ) : null}
-            </View>
-            <Text className="mt-1 text-caption-secondary">
-              {item.timeText || (language === 'vi' ? 'Vừa xong' : 'Just now')}
+          {/* Text Content */}
+          <View className="ml-4 flex-1 pr-2">
+            <Text
+              className="text-[15px] font-semibold text-slate-800 leading-snug"
+              numberOfLines={3}
+            >
+              {text}
+            </Text>
+            <Text className="mt-1.5 text-[13px] text-slate-400">
+              {formattedTime || (language === 'vi' ? 'Vừa xong' : 'Just now')}
             </Text>
 
             {isGroupChatInvite && onAcceptGroupChat && onRejectGroupChat ? (
@@ -201,6 +216,25 @@ function NotificationCard({
                 </TouchableOpacity>
               </View>
             ) : null}
+          </View>
+
+          {/* Right Action/Indicator side */}
+          <View className="h-12 justify-between items-end">
+            {/* Unread blue dot */}
+            {!item.seen ? (
+              <View className="h-2.5 w-2.5 rounded-full bg-[#0000ff]" />
+            ) : (
+              <View className="h-2.5 w-2.5 bg-transparent" />
+            )}
+
+            {/* Menu options trigger */}
+            <TouchableOpacity
+              onPress={() => onLongPress?.(item)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              className="mt-auto"
+            >
+              <MoreHorizontal size={20} color="#94a3b8" />
+            </TouchableOpacity>
           </View>
         </View>
       </TouchableOpacity>

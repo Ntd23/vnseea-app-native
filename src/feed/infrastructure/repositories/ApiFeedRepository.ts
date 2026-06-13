@@ -314,7 +314,16 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
       name,
       username,
       avatarUrl:
-        readString(publisher, 'avatar', 'profile_picture') || undefined,
+        readString(publisher, 'avatar', 'profile_picture') || undefined
+      isFollowing:
+        publisher['is_following'] === 1 ||
+        publisher['is_following'] === 'yes' ||
+        publisher['is_following'] === '1' ||
+        publisher['is_following'] === true ||
+        raw['is_following'] === 1 ||
+        raw['is_following'] === 'yes' ||
+        raw['is_following'] === '1' ||
+        raw['is_following'] === true,
     },
   };
 }
@@ -444,8 +453,16 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
       id: readString(publisher, 'user_id', 'id'),
       name,
       username,
-      avatarUrl:
-        readString(publisher, 'avatar', 'profile_picture') || undefined,
+      avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+      isFollowing:
+        publisher['is_following'] === 1 ||
+        publisher['is_following'] === 'yes' ||
+        publisher['is_following'] === '1' ||
+        publisher['is_following'] === true ||
+        raw['is_following'] === 1 ||
+        raw['is_following'] === 'yes' ||
+        raw['is_following'] === '1' ||
+        raw['is_following'] === true,
     },
   };
 }

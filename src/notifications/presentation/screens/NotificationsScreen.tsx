@@ -15,6 +15,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import { Check } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
@@ -30,6 +32,53 @@ import NotificationsEmptyState from '../components/NotificationsEmptyState';
 import NotificationsSkeleton from '../components/NotificationsSkeleton';
 
 type NotificationsNav = NativeStackNavigationProp<RootStackParamList>;
+
+function BeautifulBellIllustration() {
+  return (
+    <View className="items-center justify-center mb-6 mt-8 relative">
+      {/* Plus sign left */}
+      <Text className="absolute left-[28%] top-[10%] text-slate-300 font-bold text-lg">+</Text>
+      {/* Plus sign right */}
+      <Text className="absolute right-[26%] top-[55%] text-slate-300 font-bold text-lg">+</Text>
+      {/* Bubble left */}
+      <View className="absolute left-[30%] top-[48%] h-3.5 w-3.5 rounded-full border-2 border-slate-200 bg-transparent" />
+      {/* Bubble right */}
+      <View className="absolute right-[28%] top-[18%] h-3 w-3 rounded-full border border-slate-200 bg-transparent" />
+      {/* Small sparkles */}
+      <Text className="absolute left-[38%] top-[2%] text-slate-200 text-[10px]">✦</Text>
+      <Text className="absolute right-[42%] top-[0%] text-slate-200 text-[10px]">✦</Text>
+
+      {/* Bell body (tilted) */}
+      <View style={{ transform: [{ rotate: '-15deg' }] }}>
+        <Svg width={110} height={110} viewBox="0 0 100 100">
+          <Defs>
+            <SvgLinearGradient id="bellGrad" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor="#e8f0fe" />
+              <Stop offset="100%" stopColor="#c5daf8" />
+            </SvgLinearGradient>
+          </Defs>
+          {/* Bell body */}
+          <Path
+            d="M50 15c-15.5 0-22 12-22 28v18c0 5-4.5 9.5-9.5 9.5h63c-5 0-9.5-4.5-9.5-9.5V43c0-16-6.5-28-22-28z"
+            fill="url(#bellGrad)"
+          />
+          {/* Bell clapper (bottom dot) */}
+          <Circle cx="50" cy="78" r="8" fill="#a4c2f4" />
+          {/* Bell rim */}
+          <Path
+            d="M17 70.5c0-1.4 1.1-2.5 2.5-2.5h61c1.4 0 2.5 1.1 2.5 2.5s-1.1 2.5-2.5 2.5H19.5c-1.4 0-2.5-1.1-2.5-2.5z"
+            fill="#b9d3f9"
+          />
+        </Svg>
+      </View>
+
+      {/* Overlapping blue check badge at bottom right */}
+      <View className="absolute bottom-[2px] right-[38%] h-6 w-6 items-center justify-center rounded-full bg-[#0000ff] border-2 border-white">
+        <Check size={12} color="#ffffff" strokeWidth={3} />
+      </View>
+    </View>
+  );
+}
 
 function includesAny(value: string, tokens: string[]) {
   const normalized = value.toLowerCase();
@@ -295,8 +344,8 @@ function NotificationsScreen() {
   );
 
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+    <SafeAreaView style={{ backgroundColor: '#f4f7fa' }} className="flex-1" edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
 
       <NotificationsHeader
         title={copy.headerTitle}
@@ -421,9 +470,17 @@ function NotificationsScreen() {
             ) : null}
 
             {!hasMore && filteredNotifications.length > 0 ? (
-              <Text className="py-4 text-center text-caption-secondary">
-                {copy.allLoaded}
-              </Text>
+              <View className="items-center justify-center pt-8 pb-10">
+                <BeautifulBellIllustration />
+                <Text className="text-[16px] font-bold text-slate-800 text-center">
+                  {copy.allLoaded}
+                </Text>
+                <Text className="text-[13px] text-slate-400 text-center mt-1.5 px-6">
+                  {language === 'vi' 
+                    ? 'Bạn sẽ nhận được thông báo mới khi có hoạt động'
+                    : 'You will receive new notifications when there is activity'}
+                </Text>
+              </View>
             ) : null}
           </ScrollView>
         )}

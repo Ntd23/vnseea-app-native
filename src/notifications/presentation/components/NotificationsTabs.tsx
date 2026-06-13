@@ -1,14 +1,8 @@
-// Description: Two-tab segmented control (All / Unread) with an animated
-// blue underline that slides between tabs using Reanimated shared values.
+// Description: Pill-style segmented control (All / Unread) matching the screenshot.
+// No slider underline, instead using active/inactive background and border styles.
 
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
 
 export type NotificationTabKey = 'all' | 'unread';
 
@@ -19,109 +13,86 @@ interface NotificationsTabsProps {
   unreadCount: number;
 }
 
-const TAB_WIDTH = 96;
-const INDICATOR_WIDTH = 36;
-const UNDERLINE_HEIGHT = 3;
-
 export default function NotificationsTabs({
   labels,
   active,
   onChange,
   unreadCount,
 }: NotificationsTabsProps) {
-  const containerWidth = TAB_WIDTH * 2;
-  const activeIndex = active === 'all' ? 0 : 1;
-  const centerX = TAB_WIDTH * activeIndex + TAB_WIDTH / 2;
-  const underlineLeft = useSharedValue(centerX - INDICATOR_WIDTH / 2);
-  const previousActive = useRef(active);
-
-  useEffect(() => {
-    if (previousActive.current === active) {
-      return;
-    }
-    previousActive.current = active;
-    underlineLeft.value = withTiming(centerX - INDICATOR_WIDTH / 2, {
-      duration: 240,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [active, centerX, underlineLeft]);
-
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: underlineLeft.value }],
-  }));
-
   return (
-    <View
-      className="bg-white px-5"
-      style={{ width: containerWidth + 40, alignSelf: 'flex-start' }}
-    >
-      <View className="flex-row border-b border-slate-200/70">
-        <TabButton
-          label={labels.all}
-          isActive={active === 'all'}
-          onPress={() => onChange('all')}
-        />
-        <TabButton
-          label={labels.unread}
-          isActive={active === 'unread'}
-          onPress={() => onChange('unread')}
-          badge={unreadCount > 0 ? unreadCount : undefined}
-        />
-      </View>
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          {
-            position: 'absolute',
-            bottom: 0,
-            left: 20,
-            width: INDICATOR_WIDTH,
-            height: UNDERLINE_HEIGHT,
-            borderRadius: 4,
-            backgroundColor: '#0000ff',
-          },
-          indicatorStyle,
-        ]}
-      />
-    </View>
-  );
-}
-
-function TabButton({
-  label,
-  isActive,
-  onPress,
-  badge,
-}: {
-  label: string;
-  isActive: boolean;
-  onPress: () => void;
-  badge?: number;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityState={{ selected: isActive }}
-      onPress={onPress}
-      style={{ width: TAB_WIDTH }}
-      className="items-center justify-center py-3"
-    >
-      <View className="flex-row items-center">
+    <View className="flex-row items-center px-5 py-2.5 gap-4">
+      {/* Tab: All */}
+      <Pressable
+        accessibilityRole="tab"
+        accessibilityState={{ selected: active === 'all' }}
+        onPress={() => onChange('all')}
+        style={
+          active === 'all'
+            ? {
+                backgroundColor: '#edf4ff',
+              }
+            : {
+                backgroundColor: '#ffffff',
+                shadowColor: '#94a3b8',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.08,
+                shadowRadius: 8,
+                elevation: 1.5,
+              }
+        }
+        className={`flex-1 items-center justify-center py-3.5 rounded-[16px] border ${
+          active === 'all' ? 'border-[#0000ff]/10' : 'border-slate-100'
+        }`}
+      >
         <Text
-          className={`text-[15px] font-semibold ${
-            isActive ? 'text-[#0000ff]' : 'text-slate-500'
+          className={`text-[15px] font-bold ${
+            active === 'all' ? 'text-[#0000ff]' : 'text-slate-500'
           }`}
         >
-          {label}
+          {labels.all}
         </Text>
-        {typeof badge === 'number' && badge > 0 ? (
-          <View className="ml-1.5 min-w-[20px] items-center justify-center rounded-full bg-[#0000ff] px-1.5 py-0.5">
-            <Text className="text-[10px] font-bold text-white">
-              {badge > 99 ? '99+' : String(badge)}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    </Pressable>
+      </Pressable>
+
+      {/* Tab: Unread */}
+      <Pressable
+        accessibilityRole="tab"
+        accessibilityState={{ selected: active === 'unread' }}
+        onPress={() => onChange('unread')}
+        style={
+          active === 'unread'
+            ? {
+                backgroundColor: '#edf4ff',
+              }
+            : {
+                backgroundColor: '#ffffff',
+                shadowColor: '#94a3b8',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.08,
+                shadowRadius: 8,
+                elevation: 1.5,
+              }
+        }
+        className={`flex-1 items-center justify-center py-3.5 rounded-[16px] border ${
+          active === 'unread' ? 'border-[#0000ff]/10' : 'border-slate-100'
+        }`}
+      >
+        <View className="flex-row items-center justify-center">
+          <Text
+            className={`text-[15px] font-bold ${
+              active === 'unread' ? 'text-[#0000ff]' : 'text-slate-500'
+            }`}
+          >
+            {labels.unread}
+          </Text>
+          {active !== 'unread' && unreadCount > 0 ? (
+            <View className="ml-2 min-w-[20px] h-5 items-center justify-center rounded-full bg-[#0000ff] px-1.5">
+              <Text className="text-[10px] font-bold text-white leading-none">
+                {unreadCount > 99 ? '99+' : String(unreadCount)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </Pressable>
+    </View>
   );
 }

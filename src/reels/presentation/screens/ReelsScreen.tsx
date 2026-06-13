@@ -139,41 +139,12 @@ export default function ReelsScreen() {
 
   const [isMuted, setIsMuted] = useState(false); // start unmuted by default
   const [isFocused, setIsFocused] = useState(true);
-  const [preloadRadius, setPreloadRadius] = useState(PRELOAD_RADIUS);
-  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  React.useEffect(() => {
-    return () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const handleScrollBeginDrag = useCallback(() => {
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = null;
-    }
-    setPreloadRadius(0); // Disable preloading during scroll to make swipe 100% lag-free
-  }, []);
-
-  const handleScrollEnd = useCallback(() => {
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-    }
-    scrollTimeoutRef.current = setTimeout(() => {
-      setPreloadRadius(1);
-    }, 250);
-  }, []);
-
-  const handleScrollEndDrag = useCallback(() => {
-    handleScrollEnd();
-  }, [handleScrollEnd]);
-
-  const handleMomentumScrollEnd = useCallback(() => {
-    handleScrollEnd();
-  }, [handleScrollEnd]);
+  // Keep preloadRadius constant at 1 so the ±1 neighbor videos stay mounted
+  // and buffered at all times. Previously we dropped to 0 during scroll to
+  // reduce lag, but that caused a black-screen flash because the next video
+  // had to rebuffer from scratch after being unmounted.
+  const preloadRadius = PRELOAD_RADIUS;
 
   // Drives the swipe-back gesture's transform. Declared up here (not down
   // by the gesture definition) so the focus effect below can reset it —
@@ -184,7 +155,9 @@ export default function ReelsScreen() {
 
   const handleScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
+      if (event && event.contentOffset) {
+        scrollY.value = event.contentOffset.y;
+      }
     },
   });
 
@@ -449,9 +422,6 @@ export default function ReelsScreen() {
           style={styles.list}
           onScroll={handleScroll}
           scrollEventThrottle={16}
-          onScrollBeginDrag={handleScrollBeginDrag}
-          onScrollEndDrag={handleScrollEndDrag}
-          onMomentumScrollEnd={handleMomentumScrollEnd}
           // ── Virtualization tuning ───────────────────────────────────
           // windowSize=3 means: keep ~1 screen above + current + ~1 screen
           // below in the tree. Combined with our per-item mount gate this

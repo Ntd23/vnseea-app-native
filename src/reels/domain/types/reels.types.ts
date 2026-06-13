@@ -10,6 +10,7 @@ export interface ReelPublisher {
   avatarUrl?: string;
   isVerified: boolean;
   isFollowing?: boolean;
+  isAdmin?: boolean;
 }
 
 /**
