@@ -33,8 +33,16 @@ import MapView, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ArrowLeft, LocateFixed, MapPin, Search, X } from 'lucide-react-native';
+import {
+  ArrowLeft,
+  Compass,
+  LocateFixed,
+  MapPin,
+  Search,
+  X,
+} from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
+import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { useUserViewModel } from '../../application/view-models/useUserViewModel';
 import type {
   MapPlacePrediction,
@@ -46,71 +54,17 @@ type NearbyNav = NativeStackNavigationProp<RootStackParamList>;
 const BRAND = '#0000FF';
 const ACCENT = '#EF4444';
 const FALLBACK_AVATAR = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
+const NAVIGATION_CAMERA_PITCH = 60;
+const NAVIGATION_CAMERA_ZOOM = 19.25;
+const ROUTE_CONNECTOR_MIN_METERS = 5;
+const ROUTE_LOOKAHEAD_MIN_METERS = 14;
+const ROUTE_LOOKAHEAD_MAX_METERS = 58;
 const DEFAULT_REGION = {
   latitude: 16.047079,
   longitude: 108.20623,
   latitudeDelta: 0.009,
   longitudeDelta: 0.009,
 };
-const LIGHT_MAP_STYLE = [
-  {
-    elementType: 'geometry',
-    stylers: [{ color: '#F5F7FA' }],
-  },
-  {
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#475569' }],
-  },
-  {
-    elementType: 'labels.text.stroke',
-    stylers: [{ color: '#FFFFFF' }],
-  },
-  {
-    featureType: 'administrative',
-    elementType: 'geometry.stroke',
-    stylers: [{ color: '#CBD5E1' }],
-  },
-  {
-    featureType: 'landscape.man_made',
-    elementType: 'geometry',
-    stylers: [{ color: '#F8FAFC' }],
-  },
-  {
-    featureType: 'poi',
-    elementType: 'geometry',
-    stylers: [{ color: '#E8F3EC' }],
-  },
-  {
-    featureType: 'poi.park',
-    elementType: 'geometry',
-    stylers: [{ color: '#CDEBD8' }],
-  },
-  {
-    featureType: 'road',
-    elementType: 'geometry',
-    stylers: [{ color: '#FFFFFF' }],
-  },
-  {
-    featureType: 'road',
-    elementType: 'geometry.stroke',
-    stylers: [{ color: '#CBD5E1' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'geometry',
-    stylers: [{ color: '#FDE68A' }],
-  },
-  {
-    featureType: 'transit',
-    elementType: 'geometry',
-    stylers: [{ color: '#D8E4F2' }],
-  },
-  {
-    featureType: 'water',
-    elementType: 'geometry',
-    stylers: [{ color: '#BFE3F8' }],
-  },
-];
 
 type SuggestionItem =
   | { id: string; kind: 'page'; page: NearbyPlace }
@@ -157,6 +111,128 @@ function formatCoordinate(coordinate: LatLng) {
   return `${coordinate.latitude.toFixed(14)},${coordinate.longitude.toFixed(
     14,
   )}`;
+}
+
+function bearingBetween(origin: LatLng, destination: LatLng) {
+  const originLat = (origin.latitude * Math.PI) / 180;
+  const destinationLat = (destination.latitude * Math.PI) / 180;
+  const longitudeDelta =
+    ((destination.longitude - origin.longitude) * Math.PI) / 180;
+  const y = Math.sin(longitudeDelta) * Math.cos(destinationLat);
+  const x =
+    Math.cos(originLat) * Math.sin(destinationLat) -
+    Math.sin(originLat) * Math.cos(destinationLat) * Math.cos(longitudeDelta);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+function normalizeRoutePath(
+  path: LatLng[],
+  origin: LatLng,
+  destination: LatLng,
+) {
+  const normalized = path.filter(
+    point =>
+      Number.isFinite(point.latitude) && Number.isFinite(point.longitude),
+  );
+
+  if (normalized.length < 2) {
+    return normalized;
+  }
+
+  const start = normalized[0];
+  const end = normalized[normalized.length - 1];
+  const startsNearDestination =
+    distanceMeters(start, destination) < distanceMeters(start, origin);
+  const endsNearOrigin =
+    distanceMeters(end, origin) < distanceMeters(start, origin);
+
+  return startsNearDestination || endsNearOrigin
+    ? [...normalized].reverse()
+    : normalized;
+}
+
+function buildNavigationPath(origin: LatLng, routePath: LatLng[]) {
+  if (routePath.length === 0) {
+    return [origin];
+  }
+
+  const firstPoint = routePath[0];
+  if (distanceMeters(origin, firstPoint) <= ROUTE_CONNECTOR_MIN_METERS) {
+    return routePath;
+  }
+
+  return [origin, ...routePath];
+}
+
+function routeDistance(path: LatLng[]) {
+  let total = 0;
+  for (let index = 1; index < path.length; index += 1) {
+    total += distanceMeters(path[index - 1], path[index]);
+  }
+  return total;
+}
+
+function interpolatePoint(start: LatLng, end: LatLng, fraction: number) {
+  return {
+    latitude: start.latitude + (end.latitude - start.latitude) * fraction,
+    longitude: start.longitude + (end.longitude - start.longitude) * fraction,
+  };
+}
+
+function pointAlongRoute(path: LatLng[], targetDistance: number) {
+  if (path.length === 0) return null;
+  if (path.length === 1 || targetDistance <= 0) return path[0];
+
+  let traveled = 0;
+  for (let index = 1; index < path.length; index += 1) {
+    const start = path[index - 1];
+    const end = path[index];
+    const segmentDistance = distanceMeters(start, end);
+
+    if (segmentDistance <= 0) {
+      continue;
+    }
+
+    if (traveled + segmentDistance >= targetDistance) {
+      return interpolatePoint(
+        start,
+        end,
+        (targetDistance - traveled) / segmentDistance,
+      );
+    }
+
+    traveled += segmentDistance;
+  }
+
+  return path[path.length - 1];
+}
+
+function initialRouteHeading(
+  path: LatLng[],
+  origin: LatLng,
+  destination: LatLng,
+) {
+  if (path.length < 2) {
+    return bearingBetween(origin, destination);
+  }
+
+  let startIndex = 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  path.forEach((point, index) => {
+    const distance = distanceMeters(point, origin);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      startIndex = index;
+    }
+  });
+
+  for (let index = startIndex; index < path.length - 1; index += 1) {
+    if (distanceMeters(path[index], path[index + 1]) > 2) {
+      return bearingBetween(path[index], path[index + 1]);
+    }
+  }
+
+  return bearingBetween(origin, destination);
 }
 
 function parseGeoInfo(value: unknown): LatLng | null {
@@ -258,10 +334,16 @@ export default function NearbyUsersScreen() {
   const [activeDestination, setActiveDestination] = useState<LatLng | null>(
     null,
   );
+  const [activeRouteConnector, setActiveRouteConnector] = useState<LatLng[]>(
+    [],
+  );
   const [activeRoute, setActiveRoute] = useState<LatLng[]>([]);
+  const [routeHeading, setRouteHeading] = useState<number | null>(null);
   const [hasCenteredOnUser, setHasCenteredOnUser] = useState(false);
   const [hasLoadedNearbyPages, setHasLoadedNearbyPages] = useState(false);
   const [searchMessage, setSearchMessage] = useState('');
+  const googleMapId = apiConfig.googleMapsMapId.trim();
+  const hasGoogleMapId = googleMapId.length > 0;
 
   const suggestions = useMemo<SuggestionItem[]>(() => {
     if (query.trim().length < 3) return [];
@@ -316,6 +398,10 @@ export default function NearbyUsersScreen() {
     }
     return selectedPoint.distanceMeters;
   }, [currentLocation, selectedPoint]);
+  const currentUserMarkerHeading =
+    activeRoute.length > 1 && routeHeading !== null
+      ? routeHeading
+      : currentHeading;
 
   const centerOnUser = useCallback(() => {
     const location = currentLocationRef.current;
@@ -330,6 +416,16 @@ export default function NearbyUsersScreen() {
       450,
     );
   }, []);
+
+  const resetMapHeading = useCallback(() => {
+    mapRef.current?.animateCamera(
+      {
+        heading: 0,
+        pitch: activeRoute.length > 1 ? NAVIGATION_CAMERA_PITCH : 0,
+      },
+      { duration: 320 },
+    );
+  }, [activeRoute.length]);
 
   const loadPagesAroundUser = useCallback(
     async (location: LatLng) => {
@@ -353,16 +449,53 @@ export default function NearbyUsersScreen() {
           originLng: origin.longitude,
           destinationLat: destination.latitude,
           destinationLng: destination.longitude,
+          mode: 'walking',
         });
-        setActiveRoute(route.path);
+        const routePath = normalizeRoutePath(route.path, origin, destination);
+        const navigationPath = buildNavigationPath(origin, routePath);
+        const routeConnector =
+          navigationPath.length > routePath.length
+            ? [navigationPath[0], navigationPath[1]]
+            : [];
+
+        setActiveRoute(routePath);
+        setActiveRouteConnector(routeConnector);
         setActiveDestination(destination);
         lastRoutedOriginRef.current = origin;
 
-        if (route.path.length > 1) {
-          mapRef.current?.fitToCoordinates(route.path, {
-            animated: true,
-            edgePadding: { top: 120, right: 60, bottom: 270, left: 60 },
-          });
+        if (navigationPath.length > 1) {
+          const distance = routeDistance(navigationPath);
+          const routeBearing = initialRouteHeading(
+            navigationPath,
+            origin,
+            destination,
+          );
+          const cameraCenter =
+            pointAlongRoute(
+              navigationPath,
+              Math.min(
+                ROUTE_LOOKAHEAD_MAX_METERS,
+                Math.max(ROUTE_LOOKAHEAD_MIN_METERS, distance * 0.22),
+              ),
+            ) || origin;
+          const navigationCamera = {
+            center: cameraCenter,
+            heading: routeBearing,
+            pitch: NAVIGATION_CAMERA_PITCH,
+            zoom: NAVIGATION_CAMERA_ZOOM,
+          };
+
+          setRouteHeading(routeBearing);
+          mapRef.current?.animateCamera(
+            navigationCamera,
+            { duration: 650 },
+          );
+          setTimeout(() => {
+            mapRef.current?.animateCamera(navigationCamera, { duration: 220 });
+          }, 700);
+        } else {
+          setActiveRouteConnector([]);
+          setRouteHeading(null);
         }
       } catch {
         const url = `https://www.google.com/maps/dir/?api=1&destination=${destination.latitude},${destination.longitude}`;
@@ -438,7 +571,9 @@ export default function NearbyUsersScreen() {
     if (!location) return;
 
     setActiveRoute([]);
+    setActiveRouteConnector([]);
     setActiveDestination(null);
+    setRouteHeading(null);
     lastRoutedOriginRef.current = null;
     selectPoint(
       {
@@ -663,12 +798,19 @@ export default function NearbyUsersScreen() {
         ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         initialRegion={DEFAULT_REGION}
-        customMapStyle={LIGHT_MAP_STYLE}
+        googleMapId={hasGoogleMapId ? googleMapId : undefined}
         loadingEnabled
+        mapType="standard"
+        pitchEnabled
+        rotateEnabled
+        showsBuildings={false}
         showsCompass
+        showsIndoorLevelPicker={false}
+        showsIndoors={false}
         showsMyLocationButton={false}
         showsUserLocation={locationAllowed && !currentLocation}
         toolbarEnabled={false}
+        userInterfaceStyle="light"
         onPoiClick={handlePoiPress}
         onUserLocationChange={handleUserLocationChange}
         style={StyleSheet.absoluteFill}
@@ -688,24 +830,26 @@ export default function NearbyUsersScreen() {
             anchor={{ x: 0.5, y: 0.5 }}
             coordinate={currentLocation}
             flat
+            rotation={currentUserMarkerHeading}
             zIndex={20}
             onPress={selectCurrentUser}
           >
-            <View
-              style={[
-                styles.currentUserMarker,
-                { transform: [{ rotate: `${currentHeading}deg` }] },
-              ]}
-            >
-              <View style={styles.currentUserArrowOuter}>
-                <View style={styles.currentUserArrowInner} />
+            <View style={styles.currentUserMarker}>
+              <View style={styles.currentUserPuck}>
+                <View style={styles.currentUserArrow}>
+                  <View style={styles.currentUserArrowTail} />
+                  <View style={styles.currentUserArrowHead} />
+                </View>
               </View>
             </View>
           </Marker>
         ) : null}
 
         {pageMarkers.map(({ place, coordinate }) => {
-          if (selectedPoint?.source === 'page' && selectedPoint.id === place.id) {
+          if (
+            selectedPoint?.source === 'page' &&
+            selectedPoint.id === place.id
+          ) {
             return null;
           }
 
@@ -748,9 +892,7 @@ export default function NearbyUsersScreen() {
           <Marker
             key={`selected:${selectedPoint.id}:${selectedPoint.title}`}
             anchor={
-              selectedPoint.showNameBadge
-                ? { x: 0.13, y: 1 }
-                : { x: 0.5, y: 1 }
+              selectedPoint.showNameBadge ? { x: 0.13, y: 1 } : { x: 0.5, y: 1 }
             }
             coordinate={selectedPoint.coordinate}
             onPress={() => {
@@ -794,11 +936,44 @@ export default function NearbyUsersScreen() {
         ) : null}
 
         {activeRoute.length > 1 ? (
-          <Polyline
-            coordinates={activeRoute}
-            strokeColor={BRAND}
-            strokeWidth={5}
-          />
+          <>
+            {activeRouteConnector.length > 1 ? (
+              <>
+                <Polyline
+                  coordinates={activeRouteConnector}
+                  lineCap="round"
+                  lineDashPattern={[2, 8]}
+                  strokeColor="rgba(255, 255, 255, 0.95)"
+                  strokeWidth={8}
+                  zIndex={15}
+                />
+                <Polyline
+                  coordinates={activeRouteConnector}
+                  lineCap="round"
+                  lineDashPattern={[2, 8]}
+                  strokeColor="#6B7280"
+                  strokeWidth={4}
+                  zIndex={16}
+                />
+              </>
+            ) : null}
+            <Polyline
+              coordinates={activeRoute}
+              lineCap="round"
+              lineJoin="round"
+              strokeColor="rgba(255, 255, 255, 0.92)"
+              strokeWidth={9}
+              zIndex={16}
+            />
+            <Polyline
+              coordinates={activeRoute}
+              lineCap="round"
+              lineJoin="round"
+              strokeColor="#1A73E8"
+              strokeWidth={6}
+              zIndex={17}
+            />
+          </>
         ) : null}
       </MapView>
 
@@ -815,7 +990,7 @@ export default function NearbyUsersScreen() {
           <Search size={18} color="#64748B" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Tìm Page hoặc địa chỉ Google..."
+            placeholder="Tìm kiếm quanh đây..."
             placeholderTextColor="#94A3B8"
             value={query}
             onBlur={() => {
@@ -846,6 +1021,18 @@ export default function NearbyUsersScreen() {
           ) : null}
         </View>
       </View>
+
+      {!hasGoogleMapId ? (
+        <View style={styles.mapConfigNotice}>
+          <Text style={styles.mapConfigTitle}>
+            Google Map ID chưa được cấu hình
+          </Text>
+          <Text style={styles.mapConfigText}>
+            Thêm GOOGLE_MAPS_MAP_ID vào .env và rebuild app để dùng style chỉ
+            đường.
+          </Text>
+        </View>
+      ) : null}
 
       {shouldShowSuggestionPanel ? (
         <View style={styles.suggestionPanel}>
@@ -878,6 +1065,17 @@ export default function NearbyUsersScreen() {
         onPress={centerOnUser}
       >
         <LocateFixed size={21} color={BRAND} />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        activeOpacity={0.86}
+        style={[
+          styles.compassButton,
+          selectedPoint && !isSheetCollapsed && styles.compassWithSheet,
+        ]}
+        onPress={resetMapHeading}
+      >
+        <Compass size={21} color={BRAND} />
       </TouchableOpacity>
 
       {!locationAllowed ? (
@@ -984,9 +1182,9 @@ export default function NearbyUsersScreen() {
 
 const styles = StyleSheet.create({
   backButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
@@ -995,39 +1193,68 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   currentUserMarker: {
-    width: 50,
-    height: 50,
+    width: 54,
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 8,
   },
-  currentUserArrowOuter: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 18,
-    borderRightWidth: 18,
-    borderBottomWidth: 42,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: '#FFFFFF',
+  currentUserPuck: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.22,
-    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 7,
     elevation: 8,
   },
-  currentUserArrowInner: {
+  currentUserArrow: {
+    width: 31,
+    height: 22,
+    transform: [{ rotate: '-90deg' }],
+  },
+  currentUserArrowTail: {
     position: 'absolute',
-    left: -13,
+    left: 3,
     top: 7,
+    width: 16,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: BRAND,
+  },
+  currentUserArrowHead: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
     width: 0,
     height: 0,
-    borderLeftWidth: 13,
-    borderRightWidth: 13,
-    borderBottomWidth: 31,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: BRAND,
+    borderTopWidth: 11,
+    borderBottomWidth: 11,
+    borderLeftWidth: 18,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: BRAND,
+  },
+  compassButton: {
+    position: 'absolute',
+    right: 18,
+    bottom: 94,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    elevation: 6,
+  },
+  compassWithSheet: {
+    bottom: 292,
   },
   coordinateBadge: {
     maxWidth: '72%',
@@ -1075,6 +1302,32 @@ const styles = StyleSheet.create({
   },
   locateWithSheet: {
     bottom: 232,
+  },
+  mapConfigNotice: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? 92 : 68,
+    right: 14,
+    left: 14,
+    zIndex: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    backgroundColor: 'rgba(255, 241, 242, 0.96)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    elevation: 5,
+  },
+  mapConfigText: {
+    marginTop: 3,
+    color: '#9F1239',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  mapConfigTitle: {
+    color: '#9F1239',
+    fontSize: 13,
+    fontWeight: '900',
   },
   pageMarker: {
     width: 44,
@@ -1206,11 +1459,11 @@ const styles = StyleSheet.create({
   },
   searchBox: {
     marginLeft: 10,
-    minHeight: 48,
+    minHeight: 42,
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
@@ -1219,7 +1472,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     marginLeft: 10,
-    minHeight: 46,
+    minHeight: 40,
     flex: 1,
     color: '#0F172A',
     fontSize: 15,
@@ -1251,7 +1504,7 @@ const styles = StyleSheet.create({
   },
   suggestionPanel: {
     position: 'absolute',
-    top: 72,
+    top: Platform.OS === 'android' ? 96 : 72,
     right: 14,
     left: 14,
     zIndex: 30,
@@ -1265,7 +1518,7 @@ const styles = StyleSheet.create({
   },
   topControls: {
     position: 'absolute',
-    top: 12,
+    top: Platform.OS === 'android' ? 30 : 8,
     right: 14,
     left: 14,
     zIndex: 30,
