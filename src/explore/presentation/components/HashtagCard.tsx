@@ -93,8 +93,8 @@ function HashtagCard({
   maxStaggerIndex = 8,
   onPress,
 }: HashtagCardProps) {
-  const opacity = useSharedValue(0);
-  const translateY = useSharedValue(12);
+  const opacity = useSharedValue(1);
+  const translateY = useSharedValue(0);
 
   useEffect(() => {
     const effectiveIndex = Math.min(index, maxStaggerIndex);

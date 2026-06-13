@@ -116,7 +116,10 @@ import type {
   FeedPollPost,
   FeedAdPost,
 } from '../../domain/types/feed.types';
-import type { FeedSource } from '../../domain/repositories/FeedRepository';
+import type {
+  FeedSource,
+  SharePostInput,
+} from '../../domain/repositories/FeedRepository';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
 import {
@@ -3251,6 +3254,7 @@ function FeedScreen() {
   const voteFeedPoll = vm.votePoll;
   const saveFeedPost = vm.savePost;
   const reportFeedPost = vm.reportPost;
+  const shareFeedPost = vm.sharePost;
   const reloadFeedPosts = vm.reloadPosts;
   const setFeedScrollBusy = vm.setScrollBusy;
   const activeFeedSource = vm.feedSource;
@@ -3958,6 +3962,13 @@ function FeedScreen() {
     // ShareActionSheet already gives the visible feedback.
   }, []);
 
+  const handleInternalSharePost = useCallback(
+    async (input: SharePostInput) => {
+      return shareFeedPost(input);
+    },
+    [shareFeedPost],
+  );
+
   // ── FlatList: Virtualized feed with interleaved products ─────────────
 
   // Memoize merged posts to prevent unnecessary recalculations
@@ -4502,6 +4513,8 @@ function FeedScreen() {
         onClose={handleCloseShareModal}
         post={sharingPost}
         onCopied={handleShareCopied}
+        onInternalShare={handleInternalSharePost}
+        onShared={prependFeedPost}
       />
       {/* ── Post Menu Action Sheet ── */}
       <PostMenuActionSheet

@@ -167,6 +167,7 @@ export type MapRouteInput = {
   originLng: number;
   destinationLat: number;
   destinationLng: number;
+  mode?: 'walking' | 'driving' | 'bicycling' | 'transit';
 };
 
 export type MapRoute = {

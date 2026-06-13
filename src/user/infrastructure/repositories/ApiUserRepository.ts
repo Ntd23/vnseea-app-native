@@ -123,7 +123,9 @@ function mapNearbyPlaces(
     .filter(Boolean) as NearbyPlace[];
 }
 
-function readMapPinStatus(record: RawApiRecord | undefined): string | undefined {
+function readMapPinStatus(
+  record: RawApiRecord | undefined,
+): string | undefined {
   if (!record) return undefined;
   const rawStatus =
     record.map_pin_status ?? record.mapPinStatus ?? record.pin_status;
@@ -428,6 +430,7 @@ export function createUserRepository(): UserRepository {
           origin_lng: input.originLng,
           destination_lat: input.destinationLat,
           destination_lng: input.destinationLng,
+          mode: input.mode ?? 'walking',
         },
       );
 

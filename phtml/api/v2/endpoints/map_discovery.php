@@ -25,6 +25,12 @@ function Wo_ApiMapDiscoveryNumber($key) {
     return (float) $_POST[$key];
 }
 
+function Wo_ApiMapDiscoveryRouteMode() {
+    $mode = !empty($_POST['mode']) ? strtolower(Wo_Secure($_POST['mode'])) : 'walking';
+    $allowed_modes = array('walking', 'driving', 'bicycling', 'transit');
+    return in_array($mode, $allowed_modes) ? $mode : 'walking';
+}
+
 function Wo_ApiMapDiscoveryGoogleKey() {
     global $wo;
     if (!empty($wo['config']['google_server_map_api'])) {
@@ -359,6 +365,7 @@ function Wo_ApiMapDiscoveryRoute() {
     $origin_lng = Wo_ApiMapDiscoveryNumber('origin_lng');
     $destination_lat = Wo_ApiMapDiscoveryNumber('destination_lat');
     $destination_lng = Wo_ApiMapDiscoveryNumber('destination_lng');
+    $mode = Wo_ApiMapDiscoveryRouteMode();
     if ($origin_lat === null || $origin_lng === null || $destination_lat === null || $destination_lng === null) {
         return Wo_ApiMapDiscoveryError('coordinates_missing', 'Route coordinates are required.');
     }
@@ -366,11 +373,11 @@ function Wo_ApiMapDiscoveryRoute() {
     $google = Wo_ApiMapDiscoveryGoogleGet('directions/json', array(
         'origin' => number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', ''),
         'destination' => number_format($destination_lat, 6, '.', '') . ',' . number_format($destination_lng, 6, '.', ''),
-        'mode' => 'driving',
+        'mode' => $mode,
         'language' => 'vi',
         'region' => 'vn',
         'units' => 'metric',
-        'alternatives' => 'false'
+        'alternatives' => 'true'
     ));
     if (!empty($google['errors'])) {
         return $google;
@@ -380,6 +387,13 @@ function Wo_ApiMapDiscoveryRoute() {
     }
 
     $route = $google['routes'][0];
+    foreach ($google['routes'] as $candidate_route) {
+        $candidate_distance = !empty($candidate_route['legs'][0]['distance']['value']) ? (float) $candidate_route['legs'][0]['distance']['value'] : null;
+        $current_distance = !empty($route['legs'][0]['distance']['value']) ? (float) $route['legs'][0]['distance']['value'] : null;
+        if ($candidate_distance !== null && ($current_distance === null || $candidate_distance < $current_distance)) {
+            $route = $candidate_route;
+        }
+    }
     $leg = $route['legs'][0];
     return array(
         'api_status' => 200,
@@ -387,6 +401,7 @@ function Wo_ApiMapDiscoveryRoute() {
             'path' => Wo_ApiMapDiscoveryDecodePolyline(!empty($route['overview_polyline']['points']) ? $route['overview_polyline']['points'] : ''),
             'distanceMeters' => !empty($leg['distance']['value']) ? (float) $leg['distance']['value'] : 0,
             'durationSeconds' => !empty($leg['duration']['value']) ? (float) $leg['duration']['value'] : 0,
+            'mode' => $mode,
             'provider' => 'google'
         )
     );

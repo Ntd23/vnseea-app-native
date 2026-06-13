@@ -1,4 +1,4 @@
-// Feed domain types
+// Description: Defines feed domain models for posts, media attachments, and feed-specific entities.
 // Port from: client/src/feed/domain/types/
 
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
@@ -151,6 +151,7 @@ export interface FeedTextPost {
     publisherName: string;
     publisherAvatar?: string;
     postedAt?: number;
+    photos?: string[];
   };
   shareUrl?: string;
   isSaved?: boolean;
@@ -210,6 +211,7 @@ export interface FeedVideoPost {
     publisherName: string;
     publisherAvatar?: string;
     postedAt?: number;
+    photos?: string[];
   };
   shareUrl?: string;
   isSaved?: boolean;

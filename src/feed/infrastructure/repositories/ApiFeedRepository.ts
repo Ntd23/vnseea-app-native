@@ -31,6 +31,7 @@ import type {
   FeedRepository,
   GetPostByIdResult,
   PostComment,
+  SharePostInput,
 } from '../../domain/repositories/FeedRepository';
 import type {
   CreatePostDraft,
@@ -159,11 +160,7 @@ function extractTopReactions(
     if (seen.has(type)) continue;
     const val = obj[key];
     const count =
-      typeof val === 'number'
-        ? val
-        : typeof val === 'string'
-          ? Number(val)
-          : 0;
+      typeof val === 'number' ? val : typeof val === 'string' ? Number(val) : 0;
     if (Number.isFinite(count) && count > 0) {
       counts.push({ type, count });
       seen.add(type);
@@ -179,7 +176,9 @@ function extractTopReactions(
   return counts.slice(0, 3).map(c => c.type);
 }
 
-function buildFallbackTopReactions(myReaction: ReactionType | null): ReactionType[] {
+function buildFallbackTopReactions(
+  myReaction: ReactionType | null,
+): ReactionType[] {
   if (!myReaction) return ['like'];
   if (myReaction === 'like') return ['like'];
   // Viewer has a non-like reaction → show both like + theirs
@@ -203,14 +202,18 @@ const VIDEO_URL_PATTERN = /\.(mp4|mov|webm|m3u8|mkv|avi)(?:[?#/]|$)/i;
 const AUDIO_URL_PATTERN = /\.(mp3|wav)(?:[?#/]|$)/i;
 
 function looksLikeAd(raw: Record<string, unknown>): boolean {
-  return readString(raw, 'postType').toLowerCase() === 'ad' || Boolean(readString(raw, 'ad_media'));
+  return (
+    readString(raw, 'postType').toLowerCase() === 'ad' ||
+    Boolean(readString(raw, 'ad_media'))
+  );
 }
 
 // ── Poll post detection and mapping ───────────────────────────────────────
 function looksLikePoll(raw: Record<string, unknown>): boolean {
   // Poll posts have poll_id = 1 and options array
   const pollId = readNumber(raw, 'poll_id');
-  const hasOptions = Array.isArray(raw.options) && (raw.options as unknown[]).length > 0;
+  const hasOptions =
+    Array.isArray(raw.options) && (raw.options as unknown[]).length > 0;
 
   return pollId === 1 || hasOptions;
 }
@@ -237,7 +240,9 @@ function mapPollOption(raw: RawPollOption) {
   };
 }
 
-function getPollTotalVotes(options: Array<{ optionVotes: number; all: number }>) {
+function getPollTotalVotes(
+  options: Array<{ optionVotes: number; all: number }>,
+) {
   const apiTotal = Math.max(0, ...options.map(option => option.all));
   if (apiTotal > 0) return apiTotal;
   return options.reduce((sum, option) => sum + option.optionVotes, 0);
@@ -308,7 +313,8 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
       id: readString(publisher, 'user_id', 'id'),
       name,
       username,
-      avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+      avatarUrl:
+        readString(publisher, 'avatar', 'profile_picture') || undefined,
     },
   };
 }
@@ -438,7 +444,8 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
       id: readString(publisher, 'user_id', 'id'),
       name,
       username,
-      avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+      avatarUrl:
+        readString(publisher, 'avatar', 'profile_picture') || undefined,
     },
   };
 }
@@ -480,7 +487,8 @@ function mapAdPost(raw: Record<string, unknown>): FeedAdPost {
       id: readString(publisher, 'user_id', 'id') || readString(raw, 'user_id'),
       name,
       username,
-      avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+      avatarUrl:
+        readString(publisher, 'avatar', 'profile_picture') || undefined,
     },
   };
 }
@@ -574,7 +582,15 @@ function extractPhotoUrls(raw: Record<string, unknown>): string[] {
         // so installs that surface the photo under a different name
         // still work.
         tryPush(
-          readString(obj, 'image_org', 'image', 'url', 'source', 'src', 'photo'),
+          readString(
+            obj,
+            'image_org',
+            'image',
+            'url',
+            'source',
+            'src',
+            'photo',
+          ),
         );
       }
     }
@@ -621,7 +637,11 @@ function looksLikeTextOrPhoto(raw: Record<string, unknown>): boolean {
   const text = readString(raw, 'postText').trim();
   const hasPhoto = extractPhotoUrls(raw).length > 0;
   const hasAudio = AUDIO_URL_PATTERN.test(readString(raw, 'postFile'));
-  return Boolean(text) || hasPhoto || hasAudio;
+  const shared = readSharedInfo(raw);
+  const hasSharedContent = shared
+    ? looksLikeVideo(shared) || looksLikePoll(shared) || looksLikeTextOrPhoto(shared)
+    : false;
+  return Boolean(text) || hasPhoto || hasAudio || hasSharedContent;
 }
 
 function readSharedInfo(
@@ -633,21 +653,48 @@ function readSharedInfo(
     : null;
 }
 
+function mapSharedFrom(raw: Record<string, unknown>) {
+  const shared = readSharedInfo(raw);
+  if (!shared) return undefined;
+
+  const publisher =
+    (shared.publisher as Record<string, unknown> | undefined) ??
+    (shared.user_data as Record<string, unknown> | undefined) ??
+    {};
+  const firstName = readString(publisher, 'first_name');
+  const lastName = readString(publisher, 'last_name');
+  const username = readString(publisher, 'username', 'user_name');
+  const publisherName =
+    [firstName, lastName].filter(Boolean).join(' ').trim() ||
+    readString(publisher, 'name', 'full_name') ||
+    username ||
+    'Người dùng';
+
+  return {
+    id: readString(shared, 'id', 'post_id'),
+    caption: cleanCaption(readString(shared, 'postText')) || undefined,
+    publisherName,
+    publisherAvatar:
+      readString(publisher, 'avatar', 'profile_picture') || undefined,
+    postedAt: readNumber(shared, 'time') || undefined,
+    photos: extractPhotoUrls(shared),
+  };
+}
+
 function readPostOwnerId(raw: Record<string, unknown>): string {
   const publisher =
     (raw.publisher as Record<string, unknown> | undefined) ??
     (raw.user_data as Record<string, unknown> | undefined) ??
     {};
 
-  return (
-    readString(raw, 'user_id') ||
-    readString(publisher, 'user_id', 'id')
-  );
+  return readString(raw, 'user_id') || readString(publisher, 'user_id', 'id');
 }
 
 function rawPostKey(raw: Record<string, unknown>): string {
   if (looksLikeAd(raw)) {
-    return `ad:${readString(raw, 'id', 'ad_id') || JSON.stringify(raw).slice(0, 80)}`;
+    return `ad:${
+      readString(raw, 'id', 'ad_id') || JSON.stringify(raw).slice(0, 80)
+    }`;
   }
   return readString(raw, 'id', 'post_id') || JSON.stringify(raw).slice(0, 80);
 }
@@ -691,7 +738,8 @@ function mapProfilePost(
     return {
       ...sharedPoll,
       id: base.id,
-      caption: base.caption ?? sharedPoll.caption ?? 'Đã chia sẻ một cuộc thăm dò',
+      caption:
+        base.caption ?? sharedPoll.caption ?? 'Đã chia sẻ một cuộc thăm dò',
       postedAt: base.postedAt,
       likeCount: base.likeCount,
       commentCount: base.commentCount,
@@ -757,12 +805,17 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
 
   const rawPrivacy = readString(raw, 'postPrivacy');
   const privacy: PostPrivacy = WIRE_TO_PRIVACY[rawPrivacy] ?? 'public';
+  const sharedFrom = mapSharedFrom(raw);
+  const photos = extractPhotoUrls(raw);
+  const sharedPhotos = sharedFrom?.photos ?? [];
+  const caption =
+    cleanCaption(readString(raw, 'postText')) || sharedFrom?.caption || undefined;
 
   return {
     kind: 'text',
     id: postId,
-    caption: cleanCaption(readString(raw, 'postText')) || undefined,
-    photos: extractPhotoUrls(raw),
+    caption,
+    photos: photos.length > 0 ? photos : sharedPhotos,
     audioUrl: AUDIO_URL_PATTERN.test(readString(raw, 'postFile'))
       ? readString(raw, 'postFile')
       : undefined,
@@ -780,8 +833,10 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
       username,
       // Avatar is pre-normalized by Wo_GetMedia in posts.php — full URL
       // already. Don't double-prepend the host here.
-      avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+      avatarUrl:
+        readString(publisher, 'avatar', 'profile_picture') || undefined,
     },
+    sharedFrom,
   };
 }
 
@@ -851,10 +906,7 @@ type RawFeedPostsPage = {
   primaryCount: number;
 };
 
-function debugFeedRepository(
-  label: string,
-  payload: Record<string, unknown>,
-) {
+function debugFeedRepository(label: string, payload: Record<string, unknown>) {
   if (!FEED_REPOSITORY_DEBUG) return;
   // React Native dev console collapses nested objects to "Object"
   // for any payload > ~2 levels deep or with arrays. We flatten the
@@ -875,9 +927,11 @@ function debugFeedRepository(
           }
         })
         .join(', ');
-      parts.push(`${key}=[count=${value.length}, sample=[${sample}${
-        value.length > 3 ? ', ...' : ''
-      }]]`);
+      parts.push(
+        `${key}=[count=${value.length}, sample=[${sample}${
+          value.length > 3 ? ', ...' : ''
+        }]]`,
+      );
     } else if (value && typeof value === 'object') {
       // For nested objects, just stringify them so they don't
       // collapse to "Object".
@@ -893,7 +947,9 @@ function debugFeedRepository(
   console.log(`[feed.repository] ${label} | ${parts.join(' | ')}`);
 }
 
-function getOldestRawPostId(posts: Array<Record<string, unknown>>): string | undefined {
+function getOldestRawPostId(
+  posts: Array<Record<string, unknown>>,
+): string | undefined {
   const ids = posts
     .map(item => Number(readString(item, 'id', 'post_id')))
     .filter(id => Number.isFinite(id) && id > 0);
@@ -998,7 +1054,7 @@ async function fetchRawFeedPosts(
         // their tiny post sets.
         backendApi
           .post<SuggestionsResponse>(apiRoutes.user.suggestions, { limit: 24 })
-          .catch(() => ({}) as SuggestionsResponse),
+          .catch(() => ({} as SuggestionsResponse)),
         sessionUserIdLocal
           ? backendApi
               .post<FriendsResponse>(apiRoutes.social.friends, {
@@ -1006,11 +1062,11 @@ async function fetchRawFeedPosts(
                 type: 'following,followers',
                 limit: 30,
               })
-              .catch(() => ({}) as FriendsResponse)
+              .catch(() => ({} as FriendsResponse))
           : Promise.resolve({} as FriendsResponse),
         backendApi
           .post<NearbyResponse>(apiRoutes.user.nearby, { limit: 15 })
-          .catch(() => ({}) as NearbyResponse),
+          .catch(() => ({} as NearbyResponse)),
       ]);
 
       const userIds = new Set<string>();
@@ -1160,9 +1216,7 @@ async function fetchRawFeedPosts(
           .filter(r => r.total > 0)
           .map(r => `${r.source}=${r.total}`)
           .join(', ');
-        const emptyAuthors = results
-          .filter(r => r.total === 0)
-          .length;
+        const emptyAuthors = results.filter(r => r.total === 0).length;
         // Print as flat key=value so console.log doesn't collapse to
         // "Object". We deliberately avoid putting the per-source
         // breakdown in an array since RN dev tools truncate arrays
@@ -1192,7 +1246,11 @@ async function fetchRawFeedPosts(
   //    posts from that author instead of just the first 30.
   const followedLimit = Math.max(limit, 45);
   const [followedRaw, ownRaw] = await Promise.all([
-    tryFetch({ type: 'get_news_feed', limit: followedLimit, after_post_id: afterPostId }),
+    tryFetch({
+      type: 'get_news_feed',
+      limit: followedLimit,
+      after_post_id: afterPostId,
+    }),
     sessionUserId
       ? tryFetch({
           type: 'get_user_posts',
@@ -1223,9 +1281,7 @@ async function fetchRawFeedPosts(
   //    network calls.
   let discoveryRaw: Array<Record<string, unknown>> = [];
   const followedRatio = followedRaw.length / Math.max(1, followedLimit);
-  const shouldFetchDiscovery = afterPostId
-    ? followedRatio < 0.35
-    : true;
+  const shouldFetchDiscovery = afterPostId ? followedRatio < 0.35 : true;
   if (shouldFetchDiscovery) {
     discoveryRaw = await fetchDiscoveryPosts(afterPostId);
   }
@@ -1256,7 +1312,10 @@ async function fetchRawFeedPosts(
     duplicate: 0,
   };
 
-  const pushPost = (post: Record<string, unknown>, isFromOwnStream: boolean) => {
+  const pushPost = (
+    post: Record<string, unknown>,
+    isFromOwnStream: boolean,
+  ) => {
     const isAd = looksLikeAd(post);
     if (isAd && pageAdIncluded) {
       dropCounters.adSkipped += 1;
@@ -1366,7 +1425,10 @@ function mixAdsIntoPosts(posts: FeedPost[]): FeedPost[] {
     const next = mixed[insertAt];
     const previousTime = previous?.postedAt ?? Math.floor(Date.now() / 1000);
     const nextTime = next?.postedAt ?? previousTime - 2;
-    const adTime = previousTime > nextTime ? (previousTime + nextTime) / 2 : previousTime - 1;
+    const adTime =
+      previousTime > nextTime
+        ? (previousTime + nextTime) / 2
+        : previousTime - 1;
     mixed.splice(insertAt, 0, { ...ad, postedAt: adTime });
   });
 
@@ -1477,11 +1539,7 @@ export function createFeedRepository(): FeedRepository {
       source: FeedSource = 'all',
     ): Promise<FeedPostsPage> {
       const rawLimit = Math.max(limit, Math.ceil(limit * 1.5));
-      const page = await fetchRawFeedPosts(
-        rawLimit,
-        afterPostId,
-        source,
-      );
+      const page = await fetchRawFeedPosts(rawLimit, afterPostId, source);
       const mappedPosts = mixAdsIntoPosts(mapLightRawFeedPosts(page.posts));
       const posts = mappedPosts.slice(0, limit);
       const renderedCursor = getOldestFeedPostId(posts);
@@ -1509,7 +1567,10 @@ export function createFeedRepository(): FeedRepository {
         afterPostId,
         source,
       );
-      return page.posts.filter(looksLikeVideo).map(mapVideoPost).slice(0, limit);
+      return page.posts
+        .filter(looksLikeVideo)
+        .map(mapVideoPost)
+        .slice(0, limit);
     },
 
     async getTextPosts(
@@ -1519,6 +1580,30 @@ export function createFeedRepository(): FeedRepository {
     ) {
       const page = await fetchRawFeedPosts(limit, afterPostId, source);
       return page.posts.filter(looksLikeTextOrPhoto).map(mapTextPost);
+    },
+
+    async getHashtagPosts(tag: string, limit = 20, afterPostId?: string) {
+      const normalizedTag = tag.replace(/^#+/, '').trim();
+      if (!normalizedTag) return [];
+
+      const payload: Record<string, unknown> = {
+        type: 'hashtag',
+        hash: normalizedTag,
+        limit,
+      };
+
+      if (afterPostId) {
+        payload.after_post_id = afterPostId;
+      }
+
+      const response = await backendApi.post<{
+        api_status: number | string;
+        data?: Array<Record<string, unknown>>;
+      }>(apiRoutes.feed.posts, payload);
+
+      return (response.data ?? [])
+        .filter(looksLikeTextOrPhoto)
+        .map(mapTextPost);
     },
 
     async createPost(draft: CreatePostDraft): Promise<CreatePostResult> {
@@ -1642,22 +1727,22 @@ export function createFeedRepository(): FeedRepository {
         const publicVideoRaw = afterPostId
           ? []
           : (
-            await backendApi.post<{
-              api_status: number | string;
-              data?: Array<Record<string, unknown>>;
-            }>(apiRoutes.feed.posts, {
-              type: 'get_random_videos',
-              limit: 50,
-            }).catch(() => ({ data: [] as Array<Record<string, unknown>> }))
-          ).data?.filter(
-            item => {
+              await backendApi
+                .post<{
+                  api_status: number | string;
+                  data?: Array<Record<string, unknown>>;
+                }>(apiRoutes.feed.posts, {
+                  type: 'get_random_videos',
+                  limit: 50,
+                })
+                .catch(() => ({ data: [] as Array<Record<string, unknown>> }))
+            ).data?.filter(item => {
               const postId = Number(readString(item, 'id', 'post_id'));
               return (
                 String(readPostOwnerId(item)) === String(userId) &&
                 (!Number.isFinite(oldestOwnPostId) || postId >= oldestOwnPostId)
               );
-            },
-          ) ?? [];
+            }) ?? [];
 
         const rawMap = new Map<string, Record<string, unknown>>();
         for (const item of [...ownRaw, ...publicVideoRaw]) {
@@ -1667,9 +1752,7 @@ export function createFeedRepository(): FeedRepository {
 
         const posts = Array.from(rawMap.values()).map(mapProfilePost);
 
-        return posts.sort(
-          (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
-        );
+        return posts.sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
       } catch (err) {
         console.error('[ApiFeedRepository] getUserPosts error:', err);
         throw err;
@@ -1714,15 +1797,54 @@ export function createFeedRepository(): FeedRepository {
       return { reported: ok };
     },
 
+    async sharePost(input: SharePostInput): Promise<FeedPost> {
+      const payload: Record<string, unknown> = {
+        id: input.postId,
+      };
+
+      if (input.text?.trim()) {
+        payload.text = input.text.trim();
+      }
+
+      if (input.destination === 'timeline') {
+        payload.type = 'share_post_on_timeline';
+        payload.user_id = input.userId;
+      } else if (input.destination === 'page') {
+        payload.type = 'share_post_on_page';
+        payload.page_id = input.pageId;
+      } else {
+        payload.type = 'share_post_on_group';
+        payload.group_id = input.groupId;
+      }
+
+      const response = await backendApi.post<{
+        api_status: number | string;
+        data?: Record<string, unknown>;
+        errors?: { error_text?: string };
+        message?: string;
+      }>(apiRoutes.feed.posts, payload);
+
+      if (String(response.api_status) !== '200' || !response.data) {
+        throw new Error(
+          response.errors?.error_text ||
+            response.message ||
+            'Không thể chia sẻ bài viết. Vui lòng thử lại.',
+        );
+      }
+
+      return mapPost(response.data);
+    },
+
     async getPostById(postId, options = {}) {
       // The public `get-post-data` endpoint takes a comma-separated
       // `fetch` list to opt into each bucket. We default to post + comments
       // since the detail screen always shows both. `add_view=1` bumps the
       // post view counter server-side (no-ops if the post has no view
       // column, e.g. a text post).
-      const fetchList = options.fetchComments === false
-        ? 'post_data'
-        : 'post_data,post_comments';
+      const fetchList =
+        options.fetchComments === false
+          ? 'post_data'
+          : 'post_data,post_comments';
 
       const response = await backendApi.post<{
         api_status: number | string;
@@ -1810,9 +1932,11 @@ function mapPostComment(raw: Record<string, unknown>): {
       id: readString(publisher, 'user_id', 'id'),
       name,
       username,
-      avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+      avatarUrl:
+        readString(publisher, 'avatar', 'profile_picture') || undefined,
     },
     likeCount: readNumber(raw, 'comment_likes', 'likes'),
-    isLiked: myReaction !== null || readBool(raw, 'is_comment_liked', 'isLiked'),
+    isLiked:
+      myReaction !== null || readBool(raw, 'is_comment_liked', 'isLiked'),
   };
 }

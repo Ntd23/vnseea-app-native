@@ -967,5 +967,7 @@ export function useFeedViewModel() {
      * Toggle report/unreport a post. No optimistic update needed.
      */
     reportPost: (postId: string) => repository.reportPost(postId),
+
+    sharePost: repository.sharePost,
   };
 }

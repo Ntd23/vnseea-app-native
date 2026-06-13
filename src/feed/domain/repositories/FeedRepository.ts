@@ -11,6 +11,16 @@ import type {
 } from '../types/feed.types';
 
 export type FeedSource = 'all' | 'following';
+export type FeedShareDestination = 'timeline' | 'page' | 'group';
+
+export interface SharePostInput {
+  postId: string;
+  destination: FeedShareDestination;
+  text?: string;
+  userId?: string;
+  pageId?: string;
+  groupId?: string;
+}
 
 export interface FeedPostsPage<TPost extends FeedPost = FeedPost> {
   posts: TPost[];
@@ -110,6 +120,16 @@ export interface FeedRepository {
   ): Promise<FeedPost[]>;
 
   /**
+   * Fetch text/photo posts that contain a hashtag. Uses WoWonder's
+   * `/api/posts` endpoint with `type=hashtag` and `hash=<tag>`.
+   */
+  getHashtagPosts(
+    tag: string,
+    limit?: number,
+    afterPostId?: string,
+  ): Promise<FeedTextPost[]>;
+
+  /**
    * Toggle save/unsave a post via WoWonder's post-actions endpoint.
    * Returns { saved: true } when the post was saved, { saved: false } when it was unsaved.
    */
@@ -120,6 +140,12 @@ export interface FeedRepository {
    * Returns { reported: true } when the post was reported, { reported: false } when unreported.
    */
   reportPost(postId: string): Promise<{ reported: boolean }>;
+
+  /**
+   * Share an existing post internally to timeline, an owned page, or an owned group.
+   * Uses WoWonder's `/api/posts` share_post_on_* actions.
+   */
+  sharePost(input: SharePostInput): Promise<FeedPost>;
 
   /**
    * Fetch a single post by id with its comments, used by the PostDetail
