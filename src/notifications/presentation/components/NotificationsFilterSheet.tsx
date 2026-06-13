@@ -1,5 +1,4 @@
-// Description: Bottom-sheet style modal that lets the user filter the
-// notifications list by type (All, Likes, Comments, Follows, Groups, Events, Group chats).
+// Description: Bottom-sheet style modal that lets the user filter non-message notifications by type.
 
 import React from 'react';
 import {
@@ -16,7 +15,6 @@ import {
   Heart,
   Inbox,
   MessageCircle,
-  MessageSquare,
   UserPlus,
   Users,
 } from 'lucide-react-native';
@@ -35,7 +33,6 @@ interface NotificationsFilterSheetProps {
     filterFollows: string;
     filterGroups: string;
     filterEvents: string;
-    filterGroupChats: string;
     close: string;
   };
 }
@@ -47,7 +44,6 @@ const ICON_MAP: Record<NotificationFilterType, React.ComponentType<{ size: numbe
   follows: UserPlus,
   groups: Users,
   events: CalendarDays,
-  groupChats: MessageSquare,
 };
 
 const COLOR_MAP: Record<NotificationFilterType, string> = {
@@ -57,7 +53,6 @@ const COLOR_MAP: Record<NotificationFilterType, string> = {
   follows: '#65676B',
   groups: '#0000ff',
   events: '#EA4335',
-  groupChats: '#0000ff',
 };
 
 const ORDER: NotificationFilterType[] = [
@@ -67,7 +62,6 @@ const ORDER: NotificationFilterType[] = [
   'follows',
   'groups',
   'events',
-  'groupChats',
 ];
 
 const LABEL_KEY: Record<NotificationFilterType, keyof NotificationsFilterSheetProps['labels']> = {
@@ -77,7 +71,6 @@ const LABEL_KEY: Record<NotificationFilterType, keyof NotificationsFilterSheetPr
   follows: 'filterFollows',
   groups: 'filterGroups',
   events: 'filterEvents',
-  groupChats: 'filterGroupChats',
 };
 
 export default function NotificationsFilterSheet({

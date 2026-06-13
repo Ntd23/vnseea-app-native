@@ -47,6 +47,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronDown,
+  Heart,
   ImagePlus,
   Mic,
   Music2,
@@ -74,8 +75,88 @@ import {
 import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/useWavAudioRecorder';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
+
+const COMMENTS_COPY = {
+  vi: {
+    commentsLabel: 'bình luận',
+    commentsTitle: 'Bình luận',
+    loadingComments: 'Đang tải bình luận...',
+    noCommentsTitle: 'Chưa có bình luận',
+    noCommentsDesc: 'Hãy là người đầu tiên bình luận video này.',
+    addCommentPlaceholder: 'Thêm bình luận...',
+    replyingPlaceholder: 'Trả lời @{username}…',
+    replyingBanner: 'Đang phản hồi',
+    hideReplies: 'Ẩn phản hồi',
+    showReplies: 'Xem {count} phản hồi',
+    failedCommentTitle: 'Không gửi được bình luận',
+    failedCommentMsg: 'Bạn có muốn thử lại hoặc xóa bình luận này không?',
+    yourCommentTitle: 'Bình luận của bạn',
+    cancel: 'Hủy',
+    delete: 'Xóa',
+    retry: 'Thử lại',
+    errorTitle: 'Lỗi',
+    errorActionMsg: 'Không thực hiện được thao tác.',
+    pickPhotoTitle: 'Chọn ảnh bình luận',
+    pickPhotoMsg: 'Bạn muốn chụp ảnh mới hay chọn ảnh từ thư viện?',
+    takePhoto: 'Chụp ảnh',
+    chooseFromLibrary: 'Chọn từ thư viện',
+    audioPickErrorTitle: 'Không chọn được âm thanh',
+    audioRecordErrorTitle: 'Không ghi âm được',
+    pleaseTryAgain: 'Vui lòng thử lại.',
+    recordingText: 'Đang ghi âm {duration}',
+    failedSendRetry: 'Không gửi được. Nhấn để thử lại.',
+    otherAction: 'Khác',
+    replyAction: 'Phản hồi',
+    sending: 'Đang gửi...',
+    likeReaction: 'Thích',
+    loveReaction: 'Yêu thích',
+    hahaReaction: 'Haha',
+    wowReaction: 'Wow',
+    sadReaction: 'Buồn',
+    angryReaction: 'Phẫn nộ',
+  },
+  en: {
+    commentsLabel: 'comments',
+    commentsTitle: 'Comments',
+    loadingComments: 'Loading comments...',
+    noCommentsTitle: 'No comments yet',
+    noCommentsDesc: 'Be the first to comment on this video.',
+    addCommentPlaceholder: 'Add a comment...',
+    replyingPlaceholder: 'Reply to @{username}…',
+    replyingBanner: 'Replying to',
+    hideReplies: 'Hide replies',
+    showReplies: 'View {count} replies',
+    failedCommentTitle: 'Failed to send comment',
+    failedCommentMsg: 'Do you want to retry or delete this comment?',
+    yourCommentTitle: 'Your comment',
+    cancel: 'Cancel',
+    delete: 'Delete',
+    retry: 'Retry',
+    errorTitle: 'Error',
+    errorActionMsg: 'Cannot perform operation.',
+    pickPhotoTitle: 'Select comment photo',
+    pickPhotoMsg: 'Do you want to take a new photo or select from the library?',
+    takePhoto: 'Take photo',
+    chooseFromLibrary: 'Choose from library',
+    audioPickErrorTitle: 'Cannot select audio',
+    audioRecordErrorTitle: 'Cannot record audio',
+    pleaseTryAgain: 'Please try again.',
+    recordingText: 'Recording {duration}',
+    failedSendRetry: 'Failed to send. Tap to retry.',
+    otherAction: 'More',
+    replyAction: 'Reply',
+    sending: 'Sending...',
+    likeReaction: 'Like',
+    loveReaction: 'Love',
+    hahaReaction: 'Haha',
+    wowReaction: 'Wow',
+    sadReaction: 'Sad',
+    angryReaction: 'Angry',
+  },
+};
 
 // ── Reaction lookup tables ───────────────────────────────────────────────
 // The picker shows all 6 emojis. Each reaction also has a label (shown on
@@ -160,21 +241,32 @@ function formatCount(count: number) {
   return String(count);
 }
 
-function formatRelativeTime(timestamp?: number) {
+function formatRelativeTime(timestamp?: number, language: 'vi' | 'en' = 'vi') {
   if (!timestamp) return '';
   const now = Math.floor(Date.now() / 1000);
   const diff = Math.max(0, now - timestamp);
 
-  if (diff < 60) return 'Vừa xong';
-  if (diff < 3600) return `${Math.floor(diff / 60)} phút`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)} ngày`;
-
-  return new Date(timestamp * 1000).toLocaleDateString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  if (language === 'en') {
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
+    return new Date(timestamp * 1000).toLocaleDateString('en-US', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  } else {
+    if (diff < 60) return 'Vừa xong';
+    if (diff < 3600) return `${Math.floor(diff / 60)} phút`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} giờ`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)} ngày`;
+    return new Date(timestamp * 1000).toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  }
 }
 
 function ReelCommentsSheetBase({
@@ -202,6 +294,8 @@ function ReelCommentsSheetBase({
   onRetryFailedComment,
   onDeleteFailedComment,
 }: Props) {
+  const language = useAppLanguage();
+  const copy = COMMENTS_COPY[language];
   const insets = useSafeAreaInsets();
   const wavRecorder = useWavAudioRecorder();
   const {
@@ -212,6 +306,15 @@ function ReelCommentsSheetBase({
     cancelRecording: cancelWavRecording,
   } = wavRecorder;
   const [draft, setDraft] = useState('');
+  const inputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (replyingTo && inputRef.current) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+    }
+  }, [replyingTo]);
   // Image picked by the user for the next comment / reply. Local file://
   // URI; uploaded via multipart when `onSubmit` fires. Cleared after
   // submit or by tapping the X on the preview thumbnail.
@@ -287,8 +390,8 @@ function ReelCommentsSheetBase({
 
   const title = useMemo(() => {
     const count = Math.max(commentCount, comments.length);
-    return count > 0 ? `${formatCount(count)} bình luận` : 'Bình luận';
-  }, [commentCount, comments.length]);
+    return count > 0 ? `${formatCount(count)} ${copy.commentsLabel}` : copy.commentsTitle;
+  }, [commentCount, comments.length, copy]);
 
   const handleSubmit = useCallback(() => {
     const trimmed = draft.trim();
@@ -331,11 +434,11 @@ function ReelCommentsSheetBase({
       }
     } catch (caught) {
       Alert.alert(
-        'Không chọn được âm thanh',
-        caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+        copy.audioPickErrorTitle,
+        caught instanceof Error ? caught.message : copy.pleaseTryAgain,
       );
     }
-  }, []);
+  }, [copy]);
 
   const handleToggleAudioRecording = useCallback(async () => {
     try {
@@ -353,11 +456,11 @@ function ReelCommentsSheetBase({
       await startWavRecording();
     } catch (caught) {
       Alert.alert(
-        'Không ghi âm được',
-        caught instanceof Error ? caught.message : 'Vui lòng thử lại.',
+        copy.audioRecordErrorTitle,
+        caught instanceof Error ? caught.message : copy.pleaseTryAgain,
       );
     }
-  }, [isWavRecording, startWavRecording, stopWavRecording]);
+  }, [isWavRecording, startWavRecording, stopWavRecording, copy]);
 
   /**
    * Open the gallery picker and stash the first selected image in
@@ -369,7 +472,7 @@ function ReelCommentsSheetBase({
   const handleImagePickerResult = useCallback((result: any) => {
     if (result.didCancel) return;
     if (result.errorCode) {
-      Alert.alert('Lỗi', result.errorMessage ?? 'Không thực hiện được thao tác.');
+      Alert.alert(copy.errorTitle, result.errorMessage ?? copy.errorActionMsg);
       return;
     }
     const asset = result.assets?.[0];
@@ -403,11 +506,11 @@ function ReelCommentsSheetBase({
    */
   const handlePickImage = useCallback(async () => {
     Alert.alert(
-      'Chọn ảnh bình luận',
-      'Bạn muốn chụp ảnh mới hay chọn ảnh từ thư viện?',
+      copy.pickPhotoTitle,
+      copy.pickPhotoMsg,
       [
         {
-          text: 'Chụp ảnh',
+          text: copy.takePhoto,
           onPress: async () => {
             const result = await launchCamera({
               mediaType: 'photo' as MediaType,
@@ -419,7 +522,7 @@ function ReelCommentsSheetBase({
           },
         },
         {
-          text: 'Chọn từ thư viện',
+          text: copy.chooseFromLibrary,
           onPress: async () => {
             const result = await launchImageLibrary({
               mediaType: 'photo' as MediaType,
@@ -430,28 +533,28 @@ function ReelCommentsSheetBase({
             handleImagePickerResult(result);
           },
         },
-        { text: 'Hủy', style: 'cancel' },
+        { text: copy.cancel, style: 'cancel' },
       ],
       { cancelable: true },
     );
-  }, [handleImagePickerResult]);
+  }, [handleImagePickerResult, copy]);
 
   const handleLongPressRow = useCallback(
     (comment: ReelComment) => {
       if (comment.isSending) return;
       if (comment.isFailed) {
         Alert.alert(
-          'Không gửi được bình luận',
-          'Bạn có muốn thử lại hoặc xóa bình luận này không?',
+          copy.failedCommentTitle,
+          copy.failedCommentMsg,
           [
-            { text: 'Hủy', style: 'cancel' },
+            { text: copy.cancel, style: 'cancel' },
             {
-              text: 'Xóa',
+              text: copy.delete,
               style: 'destructive',
               onPress: () => onDeleteFailedComment(comment),
             },
             {
-              text: 'Thử lại',
+              text: copy.retry,
               onPress: () => onRetryFailedComment(comment),
             },
           ],
@@ -460,21 +563,21 @@ function ReelCommentsSheetBase({
       }
       if (!comment.owner) return;
       Alert.alert(
-        'Bình luận của bạn',
+        copy.yourCommentTitle,
         comment.text.length > 60
           ? comment.text.slice(0, 60) + '…'
           : comment.text,
         [
-          { text: 'Hủy', style: 'cancel' },
+          { text: copy.cancel, style: 'cancel' },
           {
-            text: 'Xóa',
+            text: copy.delete,
             style: 'destructive',
             onPress: () => onDelete(comment.id),
           },
         ],
       );
     },
-    [onDelete, onDeleteFailedComment, onRetryFailedComment],
+    [onDelete, onDeleteFailedComment, onRetryFailedComment, copy],
   );
 
   // Called from the "Thích" button on every comment row when long-pressed.
@@ -526,6 +629,7 @@ function ReelCommentsSheetBase({
           onCollapseReplies={onCollapseReplies}
           onStartReply={onStartReply}
           onOpenImage={handleOpenImage}
+          replyingToCommentId={replyingTo?.commentId}
         />
       );
     },
@@ -539,10 +643,26 @@ function ReelCommentsSheetBase({
       onSetReaction,
       onStartReply,
       repliesById,
+      replyingTo,
     ],
   );
 
   const keyExtractor = useCallback((item: ReelComment) => item.id, []);
+
+  const replyingSnippet = useMemo(() => {
+    if (!replyingTo) return '';
+    let found = comments.find(c => c.id === replyingTo.commentId);
+    if (!found) {
+      for (const key in repliesById) {
+        const match = repliesById[key]?.find(c => c.id === replyingTo.commentId);
+        if (match) {
+          found = match;
+          break;
+        }
+      }
+    }
+    return found?.text || '';
+  }, [replyingTo, comments, repliesById]);
 
   return (
     <Modal
@@ -591,7 +711,7 @@ function ReelCommentsSheetBase({
           {isLoading ? (
             <View style={styles.stateBox}>
               <ActivityIndicator color="#0866ff" size="small" />
-              <Text style={styles.stateText}>Đang tải bình luận...</Text>
+              <Text style={styles.stateText}>{copy.loadingComments}</Text>
             </View>
           ) : error && comments.length === 0 ? (
             <View style={styles.stateBox}>
@@ -601,7 +721,7 @@ function ReelCommentsSheetBase({
                 onPress={onRetry}
                 style={styles.retryButton}
               >
-                <Text style={styles.retryText}>Thử lại</Text>
+                <Text style={styles.retryText}>{copy.retry}</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -619,9 +739,9 @@ function ReelCommentsSheetBase({
               onEndReachedThreshold={0.6}
               ListEmptyComponent={
                 <View style={styles.emptyBox}>
-                  <Text style={styles.emptyTitle}>Chưa có bình luận</Text>
+                  <Text style={styles.emptyTitle}>{copy.noCommentsTitle}</Text>
                   <Text style={styles.emptyText}>
-                    Hãy là người đầu tiên bình luận video này.
+                    {copy.noCommentsDesc}
                   </Text>
                 </View>
               }
@@ -637,23 +757,11 @@ function ReelCommentsSheetBase({
             />
           )}
 
-          {replyingTo ? (
-            <View style={styles.replyBar}>
-              <Text style={styles.replyBarText} numberOfLines={1}>
-                Trả lời{' '}
-                <Text style={styles.replyBarMention}>
-                  @{replyingTo.username}
-                </Text>
-              </Text>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={onCancelReply}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <X size={16} color="#64748b" />
-              </TouchableOpacity>
-            </View>
-          ) : null}
+          <ReplyBanner
+            replyingTo={replyingTo}
+            snippet={replyingSnippet}
+            onCancelReply={onCancelReply}
+          />
 
           {/* ── Pending image preview (above the input row) ─────────────
               Rendered only while the user has an image queued. FB-style:
@@ -701,7 +809,7 @@ function ReelCommentsSheetBase({
               <View style={styles.recordingDot} />
               <View style={styles.recordingBody}>
                 <Text style={styles.recordingText}>
-                  Đang ghi âm {formatAudioDuration(wavDurationMs)}
+                  {copy.recordingText.replace('{duration}', formatAudioDuration(wavDurationMs))}
                 </Text>
                 <AudioWaveform
                   animated
@@ -736,43 +844,44 @@ function ReelCommentsSheetBase({
               style={styles.imageButton}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
             >
-              <ImagePlus size={22} color="#0866ff" />
+              <ImagePlus size={22} color="#1877f2" />
             </TouchableOpacity>
-            {!replyingTo ? (
-              <>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={handlePickAudio}
-                  disabled={isWavRecording}
-                  style={styles.imageButton}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                >
-                  <Music2
-                    size={21}
-                    color={isWavRecording ? '#cbd5e1' : '#ec4899'}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={handleToggleAudioRecording}
-                  style={styles.imageButton}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                >
-                  {isWavRecording ? (
-                    <Square size={17} color="#dc2626" fill="#dc2626" />
-                  ) : (
-                    <Mic size={21} color="#dc2626" />
-                  )}
-                </TouchableOpacity>
-              </>
-            ) : null}
+            
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handlePickAudio}
+              disabled={Boolean(replyingTo || isWavRecording)}
+              style={styles.imageButton}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            >
+              <Music2
+                size={21}
+                color={replyingTo || isWavRecording ? '#cbd5e1' : '#ec4899'}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handleToggleAudioRecording}
+              disabled={Boolean(replyingTo || isWavRecording)}
+              style={styles.imageButton}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            >
+              {isWavRecording ? (
+                <Square size={17} color="#dc2626" fill="#dc2626" />
+              ) : (
+                <Mic size={21} color={replyingTo || isWavRecording ? '#cbd5e1' : '#dc2626'} />
+              )}
+            </TouchableOpacity>
+
             <TextInput
+              ref={inputRef}
               value={draft}
               onChangeText={setDraft}
               placeholder={
                 replyingTo
-                  ? `Trả lời @${replyingTo.username}…`
-                  : 'Thêm bình luận...'
+                  ? copy.replyingPlaceholder.replace('{username}', replyingTo.username)
+                  : copy.addCommentPlaceholder
               }
               placeholderTextColor="#94a3b8"
               style={styles.input}
@@ -822,6 +931,108 @@ function ReelCommentsSheetBase({
         onClose={() => setImageViewerUri(null)}
       />
     </Modal>
+  );
+}
+
+interface ReplyBannerProps {
+  replyingTo: { commentId: string; username: string } | null;
+  snippet: string;
+  onCancelReply: () => void;
+}
+
+function ReplyBanner({ replyingTo, snippet, onCancelReply }: ReplyBannerProps) {
+  const language = useAppLanguage();
+  const copy = COMMENTS_COPY[language];
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (replyingTo) {
+      Animated.spring(slideAnim, {
+        toValue: 1,
+        tension: 60,
+        friction: 9,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [replyingTo, slideAnim]);
+
+  if (!replyingTo) return null;
+
+  const translateY = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [50, 0],
+  });
+
+  const opacity = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.replyBar,
+        {
+          transform: [{ translateY }],
+          opacity,
+        },
+      ]}
+    >
+      <View style={styles.replyBarContent}>
+        <View style={styles.replyBarIndicator} />
+        <View style={styles.replyBarTextWrap}>
+          <Text style={styles.replyBarText}>
+            {copy.replyingBanner} <Text style={styles.replyBarMention}>@{replyingTo.username}</Text>
+          </Text>
+          {snippet ? (
+            <Text style={styles.replyBarSnippet} numberOfLines={1}>
+              {snippet}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={onCancelReply}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        style={styles.replyBarClose}
+      >
+        <X size={16} color="#64748b" />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+function renderReactionIcon(reaction: ReactionType) {
+  let bgColor = '#0866ff';
+  if (reaction === 'love') {
+    bgColor = '#f33e58';
+  } else if (reaction === 'haha') {
+    bgColor = '#f7b125';
+  } else if (reaction === 'wow') {
+    bgColor = '#f7b125';
+  } else if (reaction === 'sad') {
+    bgColor = '#f7b125';
+  } else if (reaction === 'angry') {
+    bgColor = '#e9710f';
+  }
+
+  return (
+    <View style={[styles.reactionCircle, { backgroundColor: bgColor }]}>
+      {reaction === 'like' ? (
+        <ThumbsUp size={8} color="#fff" fill="#fff" />
+      ) : reaction === 'love' ? (
+        <Heart size={8} color="#fff" fill="#fff" />
+      ) : (
+        <Text style={styles.reactionEmojiText}>{REACTION_EMOJI[reaction]}</Text>
+      )}
+    </View>
   );
 }
 
@@ -925,6 +1136,7 @@ interface ThreadProps {
   onStartReply: (commentId: string, username: string) => void;
   /** Threaded through to each row so taps on comment images open the viewer. */
   onOpenImage: (uri: string) => void;
+  replyingToCommentId?: string | null;
 }
 
 function CommentThreadBase({
@@ -939,7 +1151,10 @@ function CommentThreadBase({
   onCollapseReplies,
   onStartReply,
   onOpenImage,
+  replyingToCommentId,
 }: ThreadProps) {
+  const language = useAppLanguage();
+  const copy = COMMENTS_COPY[language];
   const username =
     comment.publisher.username || comment.publisher.name || 'unknown';
 
@@ -967,6 +1182,7 @@ function CommentThreadBase({
         onLongPressRow={onLongPressRow}
         onReply={handleReply}
         onOpenImage={onOpenImage}
+        isReplyingToThis={replyingToCommentId === comment.id}
       />
 
       {comment.replyCount > 0 || isExpanded ? (
@@ -978,8 +1194,8 @@ function CommentThreadBase({
           <View style={styles.repliesToggleLine} />
           <Text style={styles.repliesToggleText}>
             {isExpanded
-              ? 'Ẩn phản hồi'
-              : `Xem ${formatCount(visibleReplyCount)} phản hồi`}
+              ? copy.hideReplies
+              : copy.showReplies.replace('{count}', formatCount(visibleReplyCount))}
           </Text>
           {isLoadingReplies ? (
             <ActivityIndicator
@@ -1010,6 +1226,7 @@ function CommentThreadBase({
                 )
               }
               onOpenImage={onOpenImage}
+              isReplyingToThis={replyingToCommentId === reply.id}
             />
           ))}
         </View>
@@ -1039,6 +1256,7 @@ interface RowProps {
   onReply: () => void;
   /** Called when the user taps the comment's image — opens the viewer. */
   onOpenImage: (uri: string) => void;
+  isReplyingToThis?: boolean;
 }
 
 function CommentRow({
@@ -1049,10 +1267,13 @@ function CommentRow({
   onLongPressRow,
   onReply,
   onOpenImage,
+  isReplyingToThis,
 }: RowProps) {
+  const language = useAppLanguage();
+  const copy = COMMENTS_COPY[language];
   const displayName =
-    comment.publisher.name || comment.publisher.username || 'Người dùng';
-  const timeText = formatRelativeTime(comment.postedAt);
+    comment.publisher.name || comment.publisher.username || (language === 'en' ? 'User' : 'Người dùng');
+  const timeText = formatRelativeTime(comment.postedAt, language);
   const isReply = depth === 'reply';
   const isSending = comment.isSending;
   const isFailed = comment.isFailed;
@@ -1090,11 +1311,41 @@ function CommentRow({
   // Pick the label / colour for the "Thích" button based on the viewer's
   // current reaction. Defaults to gray "Thích" with a thumbs-up icon.
   const myReaction = comment.myReaction;
-  const likeLabel = myReaction ? REACTION_LABEL[myReaction] : 'Thích';
+  const likeLabel = myReaction ? copy[`${myReaction}Reaction` as keyof typeof copy] : copy.likeReaction;
   const likeColor = myReaction ? REACTION_COLOR[myReaction] : '#64748b';
+
+  // Pulse highlight animation when this comment is being replied to
+  const highlightAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isReplyingToThis) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(highlightAnim, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: false,
+          }),
+          Animated.timing(highlightAnim, {
+            toValue: 0.3,
+            duration: 1000,
+            useNativeDriver: false,
+          }),
+        ])
+      ).start();
+    } else {
+      highlightAnim.setValue(0);
+    }
+  }, [isReplyingToThis, highlightAnim]);
+
+  const bubbleBg = highlightAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#f0f2f5', '#e0f2fe'],
+  });
 
   return (
     <View style={[styles.commentRow, isReply && styles.commentRowReply]}>
+      {isReply ? <View style={styles.branchLine} pointerEvents="none" /> : null}
       <Image
         source={{ uri: comment.publisher.avatarUrl || AVATAR_FALLBACK }}
         style={isReply ? styles.commentAvatarSmall : styles.commentAvatar}
@@ -1110,10 +1361,17 @@ function CommentRow({
             (isSending || isFailed) && { opacity: 0.6 },
           ]}
         >
-          <View style={styles.bubble}>
-            <Text style={styles.commentName} numberOfLines={1}>
-              {displayName}
-            </Text>
+          <Animated.View style={[styles.bubble, { backgroundColor: bubbleBg }]}>
+            <View style={styles.nameRow}>
+              <Text style={styles.commentName} numberOfLines={1}>
+                {displayName}
+              </Text>
+              {comment.publisher.isAdmin ? (
+                <View style={styles.adminBadge}>
+                  <Text style={styles.adminBadgeText}>Admin</Text>
+                </View>
+              ) : null}
+            </View>
             {comment.text ? (
               <Text style={styles.commentText}>{comment.text}</Text>
             ) : null}
@@ -1154,77 +1412,78 @@ function CommentRow({
                 />
               </View>
             ) : null}
-          </View>
-
-          {/* Reaction count overlay — sits half-outside the bottom-right
-              of the bubble, FB-style. Only renders when there's at least
-              one reaction. */}
-          {comment.likeCount > 0 ? (
-            <View style={styles.reactionBadge}>
-              <Text style={styles.reactionBadgeEmoji}>
-                {myReaction
-                  ? REACTION_EMOJI[myReaction]
-                  : REACTION_EMOJI.like}
-              </Text>
-              <Text style={styles.reactionBadgeCount}>
-                {formatCount(comment.likeCount)}
-              </Text>
-            </View>
-          ) : null}
+          </Animated.View>
         </Pressable>
 
-        {/* Action row under the bubble: 👍 Thích · Phản hồi · 6 phút */}
+        {/* Action row under the bubble: 1 ngày · Thích · Phản hồi · Khác */}
         {isSending ? (
           <View style={styles.actionRow}>
-            <Text style={styles.sendingText}>Đang gửi...</Text>
+            <Text style={styles.sendingText}>{copy.sending}</Text>
           </View>
         ) : isFailed ? (
           <View style={styles.actionRow}>
             <TouchableOpacity onPress={handleRowLongPress} activeOpacity={0.7}>
-              <Text style={styles.failedText}>Không gửi được. Nhấn để thử lại.</Text>
+              <Text style={styles.failedText}>{copy.failedSendRetry}</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.actionRow}>
-            <Pressable
-              ref={likeButtonRef}
-              onPress={handleLikeTap}
-              onLongPress={handleLikeLongPress}
-              delayLongPress={280}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              style={styles.actionButton}
-            >
-              {myReaction ? (
-                <Text style={styles.actionEmoji}>{REACTION_EMOJI[myReaction]}</Text>
-              ) : (
-                <ThumbsUp size={14} color={likeColor} />
-              )}
-              <Text
-                style={[
-                  styles.actionText,
-                  { color: likeColor },
-                  myReaction ? styles.actionTextActive : null,
-                ]}
+            <View style={styles.actionLeft}>
+              {timeText ? (
+                <>
+                  <Text style={styles.actionTime}>{timeText}</Text>
+                  <Text style={styles.actionDot}>·</Text>
+                </>
+              ) : null}
+
+              <Pressable
+                ref={likeButtonRef}
+                onPress={handleLikeTap}
+                onLongPress={handleLikeLongPress}
+                delayLongPress={280}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                style={styles.actionButton}
               >
-                {likeLabel}
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.actionText,
+                    { color: likeColor },
+                    myReaction ? styles.actionTextActive : null,
+                  ]}
+                >
+                  {likeLabel}
+                </Text>
+              </Pressable>
 
-            <Text style={styles.actionDot}>·</Text>
+              <Text style={styles.actionDot}>·</Text>
 
-            <Pressable
-              onPress={onReply}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              style={styles.actionButton}
-            >
-              <Text style={styles.actionText}>Phản hồi</Text>
-            </Pressable>
+              <Pressable
+                onPress={onReply}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                style={styles.actionButton}
+              >
+                <Text style={styles.actionText}>{copy.replyAction}</Text>
+              </Pressable>
 
-            {timeText ? (
-              <>
-                <Text style={styles.actionDot}>·</Text>
-                <Text style={styles.actionTime}>{timeText}</Text>
-              </>
+              <Text style={styles.actionDot}>·</Text>
+
+              <Pressable
+                onPress={handleRowLongPress}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                style={styles.actionButton}
+              >
+                <Text style={styles.actionText}>{copy.otherAction}</Text>
+              </Pressable>
+            </View>
+
+            {/* Reaction count overlay aligned on the far right end of the action row */}
+            {comment.likeCount > 0 ? (
+              <View style={styles.reactionBadge}>
+                <Text style={styles.reactionBadgeCount}>
+                  {formatCount(comment.likeCount)}
+                </Text>
+                {renderReactionIcon(comment.myReaction || 'like')}
+              </View>
             ) : null}
           </View>
         )}
@@ -1267,12 +1526,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   header: {
-    height: 48,
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
-    paddingHorizontal: 12,
+    borderBottomColor: '#f1f5f9',
+    paddingHorizontal: 16,
   },
   headerSide: {
     width: 36,
@@ -1281,13 +1540,14 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     color: '#111827',
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 17,
+    fontWeight: '700',
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f3f4f6',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1364,6 +1624,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingVertical: 6,
+    position: 'relative',
   },
   // Replies indent right + use a smaller avatar
   commentRowReply: {
@@ -1389,9 +1650,20 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
+  // Curved reply branch line
+  branchLine: {
+    position: 'absolute',
+    left: -22,
+    top: -16,
+    bottom: '50%',
+    width: 18,
+    borderLeftWidth: 1.5,
+    borderBottomWidth: 1.5,
+    borderBottomLeftRadius: 10,
+    borderColor: '#cbd5e1',
+  },
+
   // ── Bubble ──────────────────────────────────────────────────────────
-  // The grey rounded rectangle the comment text lives in. Has positioned
-  // bottom-right children (the reaction count badge).
   bubbleWrap: {
     alignSelf: 'flex-start',
     maxWidth: '100%',
@@ -1400,26 +1672,38 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   bubble: {
-    backgroundColor: '#f0f2f5',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    paddingBottom: 10, // a touch more space so the reaction badge doesn't crowd
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   commentName: {
     color: '#050505',
     fontSize: 13,
     fontWeight: '700',
-    marginBottom: 2,
+  },
+  adminBadge: {
+    backgroundColor: '#e7f3ff',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 8,
+    marginLeft: 6,
+    alignSelf: 'center',
+  },
+  adminBadgeText: {
+    color: '#1877f2',
+    fontSize: 10,
+    fontWeight: '700',
   },
   commentText: {
     color: '#050505',
     fontSize: 14,
     lineHeight: 19,
   },
-  // Wrapper for tappable comment image — opens full-screen viewer.
-  // We split the wrap/image so the Pressable can hold the overlay and
-  // the inner Image renders crisply at cover-mode.
   commentImageWrap: {
     marginTop: 6,
     width: 220,
@@ -1447,43 +1731,51 @@ const styles = StyleSheet.create({
     minWidth: 210,
   },
 
-  // Reaction count badge — anchored to the bottom-right of the bubble
+  // Reaction count badge - positioned in action row
   reactionBadge: {
-    position: 'absolute',
-    bottom: -6,
-    right: -6,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
     borderRadius: 999,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#e5e7eb',
-    // soft drop shadow so it lifts off the bubble
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 2,
     elevation: 2,
   },
-  reactionBadgeEmoji: {
-    fontSize: 11,
-    marginRight: 2,
-  },
   reactionBadgeCount: {
     color: '#65676b',
     fontSize: 11,
     fontWeight: '700',
   },
+  reactionCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  reactionEmojiText: {
+    fontSize: 9,
+    lineHeight: 11,
+  },
 
   // ── Action row ──────────────────────────────────────────────────────
-  // The "👍 Thích · Phản hồi · 6 phút" row underneath the bubble
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: 6,
     paddingLeft: 12,
+  },
+  actionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   actionButton: {
     flexDirection: 'row',
@@ -1548,8 +1840,6 @@ const styles = StyleSheet.create({
   },
 
   repliesList: {
-    // empty — each reply row handles its own indentation via
-    // `commentRowReply`
   },
 
   // ── Reply mode banner ───────────────────────────────────────────────
@@ -1557,20 +1847,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#f8fafc',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: '#e2e8f0',
+  },
+  replyBarContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  replyBarIndicator: {
+    width: 3,
+    height: 24,
+    backgroundColor: '#0866ff',
+    borderRadius: 1.5,
+    marginRight: 10,
+  },
+  replyBarTextWrap: {
+    flex: 1,
   },
   replyBarText: {
-    flex: 1,
-    color: '#64748b',
+    color: '#475569',
     fontSize: 12,
+    fontWeight: '500',
   },
   replyBarMention: {
     color: '#0866ff',
     fontWeight: '700',
+  },
+  replyBarSnippet: {
+    color: '#94a3b8',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  replyBarClose: {
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+    marginLeft: 8,
   },
 
   // ── Input bar ───────────────────────────────────────────────────────

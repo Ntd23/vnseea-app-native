@@ -122,16 +122,27 @@ export function createWithdrawalRepository(): WithdrawalRepository {
     },
 
     async requestWithdrawal(input: WithdrawalRequestInput): Promise<string> {
-      const payload: Record<string, string | number> = {
+      const payload: Record<string, string> = {
         type: input.method.id,
-        amount: input.amount,
+        withdraw_method: input.method.id,
+        amount: String(input.amount),
       };
 
       if (input.method.id === 'paypal') {
         payload.paypal_email = input.accountValue;
       } else {
         payload.transfer_to = input.accountValue;
+        payload.sepay_account = input.accountValue;
       }
+
+      console.log('[withdrawal] submitting request', {
+        endpoint: apiRoutes.withdrawal.request,
+        method: input.method.id,
+        amount: input.amount,
+        payloadKeys: Object.keys(payload),
+        hasAccountValue: Boolean(input.accountValue.trim()),
+        transport: 'urlencoded',
+      });
 
       const response = await apiBridge.post<BackendWithdrawalResponse>(
         apiRoutes.withdrawal.request,

@@ -1,4 +1,4 @@
-// Feed API Repository (Infrastructure)
+// Description: Implements feed repository calls against WoWonder APIs for all-post and following streams.
 //
 // Pulls video posts for the home feed via WoWonder's `/api/posts`. Key
 // gotchas this file handles:
@@ -26,6 +26,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { reelsReactionsStorage } from '../../../reels/infrastructure/storage/reelsReactionsStorage';
 import type {
+  FeedSource,
   FeedPostsPage,
   FeedRepository,
   GetPostByIdResult,
@@ -308,6 +309,15 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
       name,
       username,
       avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+      isFollowing:
+        publisher['is_following'] === 1 ||
+        publisher['is_following'] === 'yes' ||
+        publisher['is_following'] === '1' ||
+        publisher['is_following'] === true ||
+        raw['is_following'] === 1 ||
+        raw['is_following'] === 'yes' ||
+        raw['is_following'] === '1' ||
+        raw['is_following'] === true,
     },
   };
 }
@@ -438,6 +448,15 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
       name,
       username,
       avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+      isFollowing:
+        publisher['is_following'] === 1 ||
+        publisher['is_following'] === 'yes' ||
+        publisher['is_following'] === '1' ||
+        publisher['is_following'] === true ||
+        raw['is_following'] === 1 ||
+        raw['is_following'] === 'yes' ||
+        raw['is_following'] === '1' ||
+        raw['is_following'] === true,
     },
   };
 }
@@ -911,6 +930,7 @@ function getOldestFeedPostId(posts: FeedPost[]): string | undefined {
 async function fetchRawFeedPosts(
   limit: number,
   afterPostId?: string,
+  source: FeedSource = 'all',
 ): Promise<RawFeedPostsPage> {
   const tryFetch = async (
     payload: Record<string, unknown>,
@@ -1076,6 +1096,27 @@ async function fetchRawFeedPosts(
   };
 
   const sessionUserId = sessionStorage.getSession()?.userId;
+
+  if (source === 'following') {
+    const followedRaw = await tryFetch({
+      type: 'get_news_feed',
+      limit: Math.max(limit, 45),
+      after_post_id: afterPostId,
+    });
+
+    debugFeedRepository('following stream', {
+      afterPostId: afterPostId ?? 'first',
+      requestedLimit: limit,
+      followed: followedRaw.length,
+    });
+
+    return {
+      posts: followedRaw,
+      nextCursor: getOldestRawPostId(followedRaw),
+      primaryCount: followedRaw.length,
+    };
+  }
+
   // The merge logic now caps own posts ONLY from the `ownRaw`
   // stream (not from followed/discovery), so the cap's whole job is
   // to keep the viewer's own posts from drowning the page. With
@@ -1401,8 +1442,12 @@ export function createFeedRepository(): FeedRepository {
      * we sort defensively after merging in case the server-side order
      * ever changes (and so optimistic prepend stays consistent).
      */
-    async getAllPosts(limit = 20, afterPostId?: string): Promise<FeedPost[]> {
-      const page = await fetchRawFeedPosts(limit, afterPostId);
+    async getAllPosts(
+      limit = 20,
+      afterPostId?: string,
+      source: FeedSource = 'all',
+    ): Promise<FeedPost[]> {
+      const page = await fetchRawFeedPosts(limit, afterPostId, source);
       const posts: FeedPost[] = [];
       for (const item of page.posts) {
         if (looksLikeAd(item)) {
@@ -1421,10 +1466,15 @@ export function createFeedRepository(): FeedRepository {
       return mixAdsIntoPosts(posts);
     },
 
-    async getLightPosts(limit = 20, afterPostId?: string): Promise<FeedPost[]> {
+    async getLightPosts(
+      limit = 20,
+      afterPostId?: string,
+      source: FeedSource = 'all',
+    ): Promise<FeedPost[]> {
       const page = await fetchRawFeedPosts(
         Math.max(limit, Math.ceil(limit * 1.5)),
         afterPostId,
+        source,
       );
       const posts: FeedPost[] = [];
       for (const item of page.posts) {
@@ -1442,11 +1492,13 @@ export function createFeedRepository(): FeedRepository {
     async getLightPostsPage(
       limit = 20,
       afterPostId?: string,
+      source: FeedSource = 'all',
     ): Promise<FeedPostsPage> {
       const rawLimit = Math.max(limit, Math.ceil(limit * 1.5));
       const page = await fetchRawFeedPosts(
         rawLimit,
         afterPostId,
+        source,
       );
       const mappedPosts = mixAdsIntoPosts(mapLightRawFeedPosts(page.posts));
       const posts = mappedPosts.slice(0, limit);
@@ -1465,16 +1517,25 @@ export function createFeedRepository(): FeedRepository {
       };
     },
 
-    async getVideoPosts(limit = 20, afterPostId?: string) {
+    async getVideoPosts(
+      limit = 20,
+      afterPostId?: string,
+      source: FeedSource = 'all',
+    ) {
       const page = await fetchRawFeedPosts(
         Math.max(limit, Math.ceil(limit * 1.5)),
         afterPostId,
+        source,
       );
       return page.posts.filter(looksLikeVideo).map(mapVideoPost).slice(0, limit);
     },
 
-    async getTextPosts(limit = 20, afterPostId?: string) {
-      const page = await fetchRawFeedPosts(limit, afterPostId);
+    async getTextPosts(
+      limit = 20,
+      afterPostId?: string,
+      source: FeedSource = 'all',
+    ) {
+      const page = await fetchRawFeedPosts(limit, afterPostId, source);
       return page.posts.filter(looksLikeTextOrPhoto).map(mapTextPost);
     },
 

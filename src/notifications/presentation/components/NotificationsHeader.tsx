@@ -1,15 +1,9 @@
 // Description: Top app bar for the notifications tab.
-// White surface, brand-blue icons, animated filter button (rotates 45° when active).
+// Matches the updated layout: Bell icon on the left, Title in the center, and Checkmark icon on the right.
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Pressable, Text, View } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
-import { CheckCheck, SlidersHorizontal } from 'lucide-react-native';
+import { Bell, CheckSquare } from 'lucide-react-native';
 
 interface NotificationsHeaderProps {
   title: string;
@@ -24,47 +18,44 @@ export default function NotificationsHeader({
   onFilterPress,
   filterActive,
 }: NotificationsHeaderProps) {
-  const filterRotation = useSharedValue(0);
-
-  useEffect(() => {
-    filterRotation.value = withTiming(filterActive ? 90 : 0, {
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [filterActive, filterRotation]);
-
-  const filterAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${filterRotation.value}deg` }],
-  }));
-
   return (
-    <View className="surface-topbar flex-row items-center justify-between px-5 py-3">
-      <Text className="text-heading">{title}</Text>
-      <View className="flex-row items-center gap-2">
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="filter"
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          onPress={onFilterPress}
-          className="h-10 w-10 items-center justify-center rounded-full"
-        >
-          <Animated.View style={filterAnimatedStyle}>
-            <SlidersHorizontal
-              size={22}
-              color={filterActive ? '#0000ff' : '#1e293b'}
-            />
-          </Animated.View>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="mark-all-read"
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          onPress={onMarkAllRead}
-          className="h-10 w-10 items-center justify-center rounded-full"
-        >
-          <CheckCheck size={22} color="#0000ff" />
-        </Pressable>
+    <View className="flex-row items-center justify-between px-5 py-4 bg-transparent">
+      {/* Left Bell Icon inside a white rounded-2xl card */}
+      <View 
+        style={{
+          shadowColor: '#94a3b8',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.15,
+          shadowRadius: 10,
+          elevation: 3,
+        }}
+        className="h-12 w-12 items-center justify-center rounded-[16px] bg-white border border-slate-100"
+      >
+        <Bell size={22} color="#000000" />
       </View>
+
+      {/* Center Title */}
+      <Text className="text-[20px] font-bold text-[#1e293b]">{title}</Text>
+
+      {/* Right Mark All Read Check Square Icon inside a white rounded-2xl card */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="mark-all-read"
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        onPress={onMarkAllRead}
+        style={{
+          shadowColor: '#94a3b8',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.15,
+          shadowRadius: 10,
+          elevation: 3,
+        }}
+        className="h-12 w-12 items-center justify-center rounded-[16px] bg-white border border-slate-100 relative"
+      >
+        <CheckSquare size={22} color="#000000" />
+        {/* Tiny blue notification dot */}
+        <View className="absolute right-3.5 top-3.5 h-2 w-2 rounded-full bg-[#0000ff]" />
+      </Pressable>
     </View>
   );
 }

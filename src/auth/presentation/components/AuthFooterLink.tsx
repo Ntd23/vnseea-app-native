@@ -16,7 +16,7 @@ export default function AuthFooterLink({
   onPress,
 }: AuthFooterLinkProps) {
   return (
-    <View className="mt-7 flex-row items-center justify-center">
+    <View className="mt-2 flex-row items-center justify-center">
       <Text className="text-[14px] text-slate-500">{prompt}</Text>
       <TouchableOpacity
         accessibilityRole="link"

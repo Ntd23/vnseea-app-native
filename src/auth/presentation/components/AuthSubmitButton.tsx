@@ -14,7 +14,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { ChevronRight } from 'lucide-react-native';
+import { ArrowRight } from 'lucide-react-native';
 
 interface AuthSubmitButtonProps {
   label: string;
@@ -54,15 +54,15 @@ export default function AuthSubmitButton({
           });
         }}
         onPress={onPress}
-        className={`mt-6 h-[52px] flex-row items-center justify-center rounded-2xl ${
+        className={`mt-5 h-14 flex-row items-center justify-center rounded-[18px] ${
           disabled || isLoading ? 'bg-blue-400' : 'bg-[#0000ff]'
         }`}
         style={{
           shadowColor: '#0000ff',
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: disabled || isLoading ? 0.12 : 0.32,
-          shadowRadius: 12,
-          elevation: 4,
+          shadowOffset: { width: 0, height: 12 },
+          shadowOpacity: disabled || isLoading ? 0.12 : 0.26,
+          shadowRadius: 22,
+          elevation: 5,
         }}
       >
         {isLoading ? (
@@ -70,8 +70,8 @@ export default function AuthSubmitButton({
         ) : (
           <View className="flex-row items-center">
             <Text className="text-[16px] font-bold text-inverse">{label}</Text>
-            <View className="ml-2">
-              <ChevronRight size={20} color="#FFFFFF" strokeWidth={2.6} />
+            <View className="ml-5">
+              <ArrowRight size={24} color="#FFFFFF" strokeWidth={2.4} />
             </View>
           </View>
         )}

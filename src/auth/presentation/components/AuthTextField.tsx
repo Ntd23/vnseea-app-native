@@ -1,20 +1,15 @@
 // Description: Branded text input with a leading icon chip, optional trailing
-// password toggle, and an animated focus ring using Reanimated.
+// password toggle, and a clean border transition for focus state.
 
 import React, { useState } from 'react';
 import {
   KeyboardTypeOptions,
+  LayoutChangeEvent,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
 import { Eye, EyeOff } from 'lucide-react-native';
 
 interface AuthTextFieldProps {
@@ -29,6 +24,9 @@ interface AuthTextFieldProps {
   onSubmitEditing?: () => void;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   autoCorrect?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  onContainerLayout?: (event: LayoutChangeEvent) => void;
 }
 
 export default function AuthTextField({
@@ -43,64 +41,51 @@ export default function AuthTextField({
   onSubmitEditing,
   autoCapitalize = 'none',
   autoCorrect = false,
+  onFocus,
+  onBlur,
+  onContainerLayout,
 }: AuthTextFieldProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const focusProgress = useSharedValue(0);
 
   const handleFocus = () => {
     setIsFocused(true);
-    focusProgress.value = withTiming(1, {
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
-    });
+    onFocus?.();
   };
 
   const handleBlur = () => {
     setIsFocused(false);
-    focusProgress.value = withTiming(0, {
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
-    });
+    onBlur?.();
   };
-
-  const ringStyle = useAnimatedStyle(() => ({
-    opacity: focusProgress.value,
-    transform: [{ scale: 0.98 + focusProgress.value * 0.02 }],
-  }));
 
   const borderColor = isFocused ? '#0000ff' : 'rgba(0, 0, 255, 0.12)';
 
   return (
-    <View className="w-full">
-      <Text className="mb-2 text-[13px] font-semibold text-slate-800">
-        {label}
-      </Text>
+    <View className="w-full" onLayout={onContainerLayout}>
+      {label ? (
+        <Text className="mb-2 text-[14px] font-extrabold text-slate-900">
+          {label}
+        </Text>
+      ) : null}
       <View className="relative">
-        <Animated.View
-          pointerEvents="none"
-          className="absolute inset-0 rounded-2xl"
-          style={[
-            {
-              borderWidth: 1.5,
-              borderColor: '#0000ff',
-            },
-            ringStyle,
-          ]}
-        />
         <View
-          className="flex-row items-center rounded-2xl bg-white px-3"
+          className="flex-row items-center rounded-[20px] bg-white px-3.5"
           style={{
-            height: 52,
-            borderWidth: 1,
+            height: 56,
+            borderWidth: isFocused ? 1.5 : 1,
             borderColor,
+            shadowColor: '#0000ff',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: isFocused ? 0.1 : 0,
+            shadowRadius: 12,
+            elevation: isFocused ? 2 : 0,
           }}
         >
-          <View className="mr-2.5 h-9 w-9 items-center justify-center rounded-[10px] bg-[rgba(0,0,255,0.08)]">
+          <View className="mr-3 h-10 w-10 items-center justify-center rounded-2xl bg-[#EEF4FF]">
             {icon}
           </View>
           <TextInput
-            className="flex-1 text-[14px] text-slate-900"
+            className="flex-1 text-[15px] font-medium text-slate-900"
             placeholder={placeholder}
             placeholderTextColor="#9AA0A6"
             value={value}

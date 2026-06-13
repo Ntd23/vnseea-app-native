@@ -26,7 +26,7 @@
 // On submit success we emit through `storyCreatedEvents` so the FeedScreen
 // can prepend the new story to its rail (Phase 3 wires that listener).
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +37,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Animated,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -47,7 +48,7 @@ import {
 } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ImagePlus, Trash2, Video as VideoIcon, X } from 'lucide-react-native';
+import { ChevronRight, ImagePlus, ShieldCheck, Trash2, Video as VideoIcon, X } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useCreateStoryViewModel } from '../../application/view-models/useCreateStoryViewModel';
 import { storyCreatedEvents } from '../../application/events/storyCreatedEvents';
@@ -56,6 +57,7 @@ import type {
   StoryMediaUpload,
   StoryItem,
 } from '../../domain/types/stories.types';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -83,8 +85,106 @@ function assetToUpload(
   };
 }
 
+const CREATE_STORY_COPY = {
+  vi: {
+    headerTitle: 'Tạo tin',
+    publishButton: 'Đăng',
+    illustrationTitle: 'Chia sẻ khoảnh khắc của bạn',
+    illustrationDesc: 'Tạo tin ảnh hoặc video.\nTin sẽ tự động biến mất sau 24 giờ.',
+    selectPhoto: 'Chọn ảnh',
+    selectPhotoDesc: 'Từ thư viện ảnh\ncủa bạn',
+    selectVideo: 'Chọn video',
+    selectVideoDesc: 'Tối đa {duration} giây',
+    securityBanner: 'Tin của bạn được bảo mật và chỉ hiển thị trong 24 giờ.',
+    discardTitle: 'Bỏ tin?',
+    discardMsg: 'Bạn sẽ mất nội dung đã chọn.',
+    continue: 'Tiếp tục',
+    discard: 'Bỏ',
+    publishedMsg: 'Đã đăng tin',
+    libraryError: 'Không mở được thư viện',
+    titlePlaceholder: 'Tiêu đề (tuỳ chọn)',
+    descPlaceholder: 'Mô tả (tuỳ chọn, {min}–{max} ký tự)',
+  },
+  en: {
+    headerTitle: 'Create Story',
+    publishButton: 'Publish',
+    illustrationTitle: 'Share your moments',
+    illustrationDesc: 'Create a photo or video story.\nStory will automatically disappear after 24 hours.',
+    selectPhoto: 'Select photo',
+    selectPhotoDesc: 'From your photo\nlibrary',
+    selectVideo: 'Select video',
+    selectVideoDesc: 'Up to {duration} seconds',
+    securityBanner: 'Your story is secure and only visible for 24 hours.',
+    discardTitle: 'Discard story?',
+    discardMsg: 'You will lose the selected content.',
+    continue: 'Continue',
+    discard: 'Discard',
+    publishedMsg: 'Story published',
+    libraryError: 'Cannot open library',
+    titlePlaceholder: 'Title (optional)',
+    descPlaceholder: 'Description (optional, {min}–{max} characters)',
+  },
+};
+
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+
+interface ScaleButtonProps {
+  children: React.ReactNode;
+  onPress?: () => void;
+  style?: any;
+  disabled?: boolean;
+  activeOpacity?: number;
+  className?: string;
+}
+
+function ScaleButton({
+  children,
+  onPress,
+  style,
+  disabled,
+  activeOpacity = 0.8,
+  ...props
+}: ScaleButtonProps) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = useCallback(() => {
+    Animated.spring(scale, {
+      toValue: 0.96,
+      useNativeDriver: true,
+      tension: 150,
+      friction: 12,
+    }).start();
+  }, [scale]);
+
+  const handlePressOut = useCallback(() => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 150,
+      friction: 12,
+    }).start();
+  }, [scale]);
+
+  return (
+    <AnimatedTouchableOpacity
+      activeOpacity={activeOpacity}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={onPress}
+      disabled={disabled}
+      style={[style, { transform: [{ scale }] }]}
+      {...props}
+    >
+      {children}
+    </AnimatedTouchableOpacity>
+  );
+}
+
 function CreateStoryScreen() {
   const navigation = useNavigation<Nav>();
+  const language = useAppLanguage();
+  const copy = useMemo(() => CREATE_STORY_COPY[language], [language]);
+
   const vm = useCreateStoryViewModel({
     onCreated: result => {
       // Build an optimistic `StoryItem` so the home rail can prepend
@@ -127,9 +227,23 @@ function CreateStoryScreen() {
     },
   });
 
+  // Animation for mounting empty state layout elements
+  const animValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!vm.media) {
+      animValue.setValue(0);
+      Animated.spring(animValue, {
+        toValue: 1,
+        tension: 60,
+        friction: 10,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [vm.media, animValue]);
+
   // Local picker — we DON'T need camera here; the library picker covers
-  // both image and video selection. (Camera launch was a planned Phase 2
-  // extension but the WoWonder web composer also doesn't have it.)
+  // both image and video selection.
   const handlePickImage = useCallback(async () => {
     const result = await launchImageLibrary({
       mediaType: 'photo' as MediaType,
@@ -139,19 +253,16 @@ function CreateStoryScreen() {
     });
     if (result.didCancel) return;
     if (result.errorCode) {
-      Alert.alert('Không mở được thư viện', result.errorMessage ?? '');
+      Alert.alert(copy.libraryError, result.errorMessage ?? '');
       return;
     }
     const asset = result.assets?.[0];
     if (!asset) return;
     const upload = assetToUpload(asset, 'image');
     if (upload) vm.setMedia(upload);
-  }, [vm]);
+  }, [vm, copy]);
 
   const handlePickVideo = useCallback(async () => {
-    // Note: `durationLimit` only applies to the CAMERA picker on Android.
-    // For library picks we rely on the view-model's validate() to reject
-    // videos longer than `maxVideoDurationSeconds` after the user picks.
     const result = await launchImageLibrary({
       mediaType: 'video' as MediaType,
       selectionLimit: 1,
@@ -159,24 +270,22 @@ function CreateStoryScreen() {
     });
     if (result.didCancel) return;
     if (result.errorCode) {
-      Alert.alert('Không mở được thư viện', result.errorMessage ?? '');
+      Alert.alert(copy.libraryError, result.errorMessage ?? '');
       return;
     }
     const asset = result.assets?.[0];
     if (!asset) return;
     const upload = assetToUpload(asset, 'video');
     if (upload) vm.setMedia(upload);
-  }, [vm]);
+  }, [vm, copy]);
 
   const handleSubmit = useCallback(async () => {
     const result = await vm.submit();
     if (result) {
-      // Tiny success toast then dismiss. Using Alert is cheap and
-      // consistent with the rest of the create-* screens.
-      Alert.alert('Đã đăng tin', result.message);
+      Alert.alert(copy.publishedMsg, result.message);
       navigation.goBack();
     }
-  }, [navigation, vm]);
+  }, [navigation, vm, copy]);
 
   const handleDiscard = useCallback(() => {
     const hasContent =
@@ -186,12 +295,12 @@ function CreateStoryScreen() {
       return;
     }
     Alert.alert(
-      'Bỏ tin?',
-      'Bạn sẽ mất nội dung đã chọn.',
+      copy.discardTitle,
+      copy.discardMsg,
       [
-        { text: 'Tiếp tục', style: 'cancel' },
+        { text: copy.continue, style: 'cancel' },
         {
-          text: 'Bỏ',
+          text: copy.discard,
           style: 'destructive',
           onPress: () => {
             vm.reset();
@@ -201,200 +310,443 @@ function CreateStoryScreen() {
       ],
       { cancelable: true },
     );
-  }, [navigation, vm]);
+  }, [navigation, vm, copy]);
+
+  const introTranslateY = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [30, 0],
+  });
+
+  const introOpacity = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+
+  const cardsScale = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.94, 1],
+  });
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+    <SafeAreaView className="flex-1" style={{ backgroundColor: '#ffffff' }} edges={['top']}>
       {/* ── Header ───────────────────────────────────────────────── */}
-      <View className="h-14 flex-row items-center justify-between border-b border-slate-200 px-3">
-        <TouchableOpacity
+      <View 
+        className="h-14 flex-row items-center justify-between border-b px-4"
+        style={{
+          backgroundColor: '#ffffff',
+          borderColor: '#f1f5f9',
+          position: 'relative',
+        }}
+      >
+        <ScaleButton
           onPress={handleDiscard}
           activeOpacity={0.7}
-          className="h-10 w-10 items-center justify-center rounded-full"
+          className="h-10 w-10 items-center justify-center rounded-full border border-slate-200"
+          style={{ backgroundColor: '#f1f5f9' }}
         >
-          <X size={26} color="#0F172A" />
-        </TouchableOpacity>
-        <Text className="text-heading">Tạo tin</Text>
-        <TouchableOpacity
+          <X size={20} color="#334155" strokeWidth={2.5} />
+        </ScaleButton>
+        <Text style={{ fontSize: 18, fontWeight: '700', color: '#0f172a' }}>
+          {copy.headerTitle}
+        </Text>
+        <ScaleButton
           onPress={handleSubmit}
           disabled={!vm.canSubmit}
-          activeOpacity={0.7}
-          className={
-            vm.canSubmit
-              ? 'rounded-full bg-blue-600 px-4 py-2'
-              : 'rounded-full bg-slate-200 px-4 py-2'
-          }
+          activeOpacity={0.8}
+          className="rounded-full px-5 py-2"
+          style={{
+            backgroundColor: vm.canSubmit ? '#1d4ed8' : '#eff6ff',
+          }}
         >
           {vm.isUploading ? (
-            <ActivityIndicator color={vm.canSubmit ? '#FFFFFF' : '#94A3B8'} />
+            <ActivityIndicator color={vm.canSubmit ? '#FFFFFF' : '#93c5fd'} size="small" />
           ) : (
             <Text
               style={{
-                color: vm.canSubmit ? '#FFFFFF' : '#94A3B8',
+                color: vm.canSubmit ? '#FFFFFF' : '#93c5fd',
                 fontWeight: '700',
+                fontSize: 14,
               }}
             >
-              Đăng
+              {copy.publishButton}
             </Text>
           )}
-        </TouchableOpacity>
+        </ScaleButton>
       </View>
 
       <ScrollView
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
       >
         {/* ── Media area ─────────────────────────────────────────── */}
         {vm.media ? (
-          <View style={{ position: 'relative' }}>
-            {vm.media.fileType === 'image' ? (
-              <Image
-                source={{ uri: vm.media.uri }}
-                style={{
-                  width: '100%',
-                  height: 480,
-                  backgroundColor: '#0F172A',
-                }}
-                resizeMode="contain"
-              />
-            ) : (
-              <View
-                style={{
-                  width: '100%',
-                  height: 480,
-                  backgroundColor: '#000',
-                }}
-              >
-                <VideoPlayer
-                  source={{ uri: vm.media.uri }}
-                  style={{ width: '100%', height: '100%' }}
-                  controls
-                  paused={false}
-                  resizeMode="contain"
-                  repeat
-                />
-              </View>
-            )}
-
-            {/* Floating delete button to clear the picked media and pick again */}
-            <TouchableOpacity
-              onPress={() => vm.setMedia(null)}
-              activeOpacity={0.85}
+          /* Preview state */
+          <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+            <View
               style={{
-                position: 'absolute',
-                top: 12,
-                right: 12,
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: 'rgba(0,0,0,0.55)',
-                alignItems: 'center',
-                justifyContent: 'center',
+                position: 'relative',
+                borderRadius: 24,
+                overflow: 'hidden',
+                backgroundColor: '#0f172a',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.15,
+                shadowRadius: 12,
+                elevation: 6,
               }}
             >
-              <Trash2 size={18} color="#fff" />
-            </TouchableOpacity>
+              {vm.media.fileType === 'image' ? (
+                <Image
+                  source={{ uri: vm.media.uri }}
+                  style={{
+                    width: '100%',
+                    height: 440,
+                  }}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View
+                  style={{
+                    width: '100%',
+                    height: 440,
+                  }}
+                >
+                  <VideoPlayer
+                    source={{ uri: vm.media.uri }}
+                    style={{ width: '100%', height: '100%' }}
+                    controls
+                    paused={false}
+                    resizeMode="contain"
+                    repeat
+                  />
+                </View>
+              )}
+
+              {/* Floating delete button to clear the picked media and pick again */}
+              <TouchableOpacity
+                onPress={() => vm.setMedia(null)}
+                activeOpacity={0.85}
+                style={{
+                  position: 'absolute',
+                  top: 16,
+                  right: 16,
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: 'rgba(0,0,0,0.6)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Trash2 size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
-          // Empty state — two big tappable cards for image vs video.
-          // Mirrors the FB Stories first-time UX: explicit choice, no
-          // hidden camera button to discover.
-          <View className="px-5 pt-8">
-            <Text className="mb-1 text-center text-heading">
-              Chia sẻ khoảnh khắc của bạn
-            </Text>
-            <Text className="mb-6 text-center text-caption-secondary">
-              Tin sẽ tự động ẩn sau 24 giờ
-            </Text>
-
-            <TouchableOpacity
-              onPress={handlePickImage}
-              activeOpacity={0.85}
-              className="mb-3 flex-row items-center rounded-2xl bg-blue-50 p-5"
+          /* Empty state - styled precisely like the mockup */
+          <View style={{ paddingTop: 10 }}>
+            {/* Overlapping cards illustration */}
+            <Animated.View 
+              style={{ 
+                height: 160, 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                marginTop: 24, 
+                marginBottom: 24, 
+                position: 'relative',
+                opacity: introOpacity,
+                transform: [{ scale: cardsScale }]
+              }}
             >
+              {/* Purple video card (back right, tilted) */}
               <View
                 style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 24,
-                  backgroundColor: '#3B82F6',
+                  width: 100,
+                  height: 130,
+                  borderRadius: 16,
+                  backgroundColor: '#f3e8ff',
+                  borderWidth: 2,
+                  borderColor: '#e9d5ff',
+                  position: 'absolute',
+                  transform: [{ rotate: '15deg' }, { translateX: 20 }, { translateY: -5 }],
                   alignItems: 'center',
                   justifyContent: 'center',
+                  shadowColor: '#8b5cf6',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 6,
+                  elevation: 2,
                 }}
               >
-                <ImagePlus size={22} color="#fff" />
+                <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#c084fc', alignItems: 'center', justifyContent: 'center' }}>
+                  <VideoIcon size={16} color="#ffffff" fill="#ffffff" />
+                </View>
               </View>
-              <View className="ml-4 flex-1">
-                <Text className="text-title-primary">Chọn ảnh</Text>
-                <Text className="text-caption-secondary">
-                  Từ thư viện của bạn
-                </Text>
-              </View>
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={handlePickVideo}
-              activeOpacity={0.85}
-              className="flex-row items-center rounded-2xl bg-purple-50 p-5"
-            >
+              {/* Blue photo card (front left, tilted) */}
               <View
                 style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 24,
-                  backgroundColor: '#8B5CF6',
+                  width: 100,
+                  height: 130,
+                  borderRadius: 16,
+                  backgroundColor: '#eff6ff',
+                  borderWidth: 2,
+                  borderColor: '#bfdbfe',
+                  position: 'absolute',
+                  transform: [{ rotate: '-12deg' }, { translateX: -22 }, { translateY: 5 }],
                   alignItems: 'center',
                   justifyContent: 'center',
+                  shadowColor: '#3b82f6',
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.12,
+                  shadowRadius: 8,
+                  elevation: 3,
                 }}
               >
-                <VideoIcon size={22} color="#fff" />
+                <ImagePlus size={36} color="#3b82f6" strokeWidth={1.8} />
               </View>
-              <View className="ml-4 flex-1">
-                <Text className="text-title-primary">Chọn video</Text>
-                <Text className="text-caption-secondary">
-                  Tối đa {vm.maxVideoDurationSeconds} giây
+
+              {/* Tiny sparkles/stars around */}
+              {/* Top-left Sparkle */}
+              <View style={{ position: 'absolute', top: 12, left: '30%' }}>
+                <Text style={{ fontSize: 16, color: '#93c5fd' }}>✦</Text>
+              </View>
+              {/* Top-right Sparkle */}
+              <View style={{ position: 'absolute', top: 20, right: '32%' }}>
+                <Text style={{ fontSize: 20, color: '#c7d2fe' }}>✦</Text>
+              </View>
+              {/* Bottom-left Sparkle */}
+              <View style={{ position: 'absolute', bottom: 18, left: '26%' }}>
+                <Text style={{ fontSize: 18, color: '#bfdbfe' }}>✦</Text>
+              </View>
+              {/* Far Right tiny Sparkle */}
+              <View style={{ position: 'absolute', bottom: 35, right: '28%' }}>
+                <Text style={{ fontSize: 12, color: '#e0e7ff' }}>✦</Text>
+              </View>
+            </Animated.View>
+
+            {/* Intro text */}
+            <Animated.View style={{ opacity: introOpacity, transform: [{ translateY: introTranslateY }], paddingHorizontal: 20, marginBottom: 32 }}>
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#0f172a', marginBottom: 10, textAlign: 'center' }}>
+                {copy.illustrationTitle}
+              </Text>
+              <Text style={{ fontSize: 14.5, color: '#64748b', textAlign: 'center', lineHeight: 22 }}>
+                {copy.illustrationDesc}
+              </Text>
+            </Animated.View>
+
+            {/* Two Side-by-Side Choose Media Cards */}
+            <Animated.View 
+              style={{ 
+                flexDirection: 'row', 
+                gap: 16, 
+                paddingHorizontal: 20, 
+                marginBottom: 32,
+                opacity: introOpacity,
+                transform: [{ scale: cardsScale }]
+              }}
+            >
+              {/* Choose Photo Card */}
+              <TouchableOpacity
+                onPress={handlePickImage}
+                activeOpacity={0.9}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#ffffff',
+                  borderRadius: 24,
+                  padding: 20,
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  minHeight: 220,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.04,
+                  shadowRadius: 10,
+                  elevation: 3,
+                  borderWidth: 1,
+                  borderColor: '#f1f5f9',
+                }}
+              >
+                <View
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 32,
+                    backgroundColor: '#eff6ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 16,
+                  }}
+                >
+                  <ImagePlus size={28} color="#1d4ed8" strokeWidth={2} />
+                </View>
+                <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center', marginBottom: 16 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 6, textAlign: 'center' }}>
+                    {copy.selectPhoto}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center', lineHeight: 16 }}>
+                    {copy.selectPhotoDesc}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: '#eff6ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <ChevronRight size={16} color="#1d4ed8" strokeWidth={2.5} />
+                </View>
+              </TouchableOpacity>
+
+              {/* Choose Video Card */}
+              <TouchableOpacity
+                onPress={handlePickVideo}
+                activeOpacity={0.9}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#ffffff',
+                  borderRadius: 24,
+                  padding: 20,
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  minHeight: 220,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.04,
+                  shadowRadius: 10,
+                  elevation: 3,
+                  borderWidth: 1,
+                  borderColor: '#f1f5f9',
+                }}
+              >
+                <View
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 32,
+                    backgroundColor: '#faf5ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 16,
+                  }}
+                >
+                  <VideoIcon size={28} color="#7c3aed" strokeWidth={2} />
+                </View>
+                <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center', marginBottom: 16 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 6, textAlign: 'center' }}>
+                    {copy.selectVideo}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center', lineHeight: 16 }}>
+                    {copy.selectVideoDesc.replace('{duration}', String(vm.maxVideoDurationSeconds))}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: '#faf5ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <ChevronRight size={16} color="#7c3aed" strokeWidth={2.5} />
+                </View>
+              </TouchableOpacity>
+            </Animated.View>
+
+            {/* Security Banner */}
+            <Animated.View style={{ opacity: introOpacity, paddingHorizontal: 20, marginBottom: 20 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#f8fafc',
+                  borderRadius: 20,
+                  paddingHorizontal: 16,
+                  paddingVertical: 14,
+                  borderWidth: 1,
+                  borderColor: '#f1f5f9',
+                }}
+              >
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#eff6ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 12,
+                  }}
+                >
+                  <ShieldCheck size={20} color="#1d4ed8" strokeWidth={2} />
+                </View>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 12.5,
+                    fontWeight: '500',
+                    color: '#475569',
+                    lineHeight: 17,
+                  }}
+                >
+                  {copy.securityBanner}
                 </Text>
+                <ChevronRight size={16} color="#94a3b8" strokeWidth={2} />
               </View>
-            </TouchableOpacity>
+            </Animated.View>
           </View>
         )}
 
         {/* ── Caption inputs (only when media is picked) ─────────── */}
         {vm.media ? (
-          <View className="px-4 pt-4">
+          <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
             <TextInput
               value={vm.title}
               onChangeText={vm.setTitle}
-              placeholder="Tiêu đề (tuỳ chọn)"
-              placeholderTextColor="#94A3B8"
+              placeholder={copy.titlePlaceholder}
+              placeholderTextColor="#94a3b8"
               maxLength={vm.maxTitleLength}
               style={{
-                paddingHorizontal: 14,
-                paddingVertical: 12,
-                borderRadius: 12,
-                backgroundColor: '#F1F5F9',
+                paddingHorizontal: 16,
+                paddingVertical: 14,
+                borderRadius: 16,
+                backgroundColor: '#ffffff',
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
                 fontSize: 15,
-                color: '#0F172A',
-                marginBottom: 10,
+                color: '#0f172a',
+                marginBottom: 12,
               }}
             />
             <TextInput
               value={vm.description}
               onChangeText={vm.setDescription}
-              placeholder={`Mô tả (tuỳ chọn, ${vm.minDescriptionLength}–${vm.maxDescriptionLength} ký tự)`}
-              placeholderTextColor="#94A3B8"
+              placeholder={copy.descPlaceholder
+                .replace('{min}', String(vm.minDescriptionLength))
+                .replace('{max}', String(vm.maxDescriptionLength))}
+              placeholderTextColor="#94a3b8"
               maxLength={vm.maxDescriptionLength}
               multiline
               textAlignVertical="top"
               style={{
-                paddingHorizontal: 14,
-                paddingTop: 12,
-                paddingBottom: 12,
-                borderRadius: 12,
-                backgroundColor: '#F1F5F9',
+                paddingHorizontal: 16,
+                paddingTop: 14,
+                paddingBottom: 14,
+                borderRadius: 16,
+                backgroundColor: '#ffffff',
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
                 fontSize: 15,
-                color: '#0F172A',
-                minHeight: 80,
+                color: '#0f172a',
+                minHeight: 100,
+                lineHeight: 20,
               }}
             />
           </View>

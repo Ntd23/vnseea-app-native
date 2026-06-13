@@ -10,9 +10,9 @@ interface AuthDividerProps {
 
 export default function AuthDivider({ label }: AuthDividerProps) {
   return (
-    <View className="my-5 flex-row items-center">
+    <View className="my-4 flex-row items-center">
       <View className="h-px flex-1 bg-slate-200" />
-      <Text className="mx-4 text-[12px] font-semibold uppercase tracking-wider text-slate-400">
+      <Text className="mx-4 text-[14px] font-semibold text-slate-400">
         {label}
       </Text>
       <View className="h-px flex-1 bg-slate-200" />

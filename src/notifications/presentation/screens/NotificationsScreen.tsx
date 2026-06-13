@@ -15,9 +15,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import { Check } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
+import type { GroupItem } from '../../../community/domain/types/community.types';
+import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import { useNotificationsViewModel } from '../../application/view-models/useNotificationsViewModel';
 import type { NotificationsItem } from '../../domain/types/notifications.types';
 import NotificationsHeader from '../components/NotificationsHeader';
@@ -29,9 +33,139 @@ import NotificationsSkeleton from '../components/NotificationsSkeleton';
 
 type NotificationsNav = NativeStackNavigationProp<RootStackParamList>;
 
+function BeautifulBellIllustration() {
+  return (
+    <View className="items-center justify-center mb-6 mt-8 relative">
+      {/* Plus sign left */}
+      <Text className="absolute left-[28%] top-[10%] text-slate-300 font-bold text-lg">+</Text>
+      {/* Plus sign right */}
+      <Text className="absolute right-[26%] top-[55%] text-slate-300 font-bold text-lg">+</Text>
+      {/* Bubble left */}
+      <View className="absolute left-[30%] top-[48%] h-3.5 w-3.5 rounded-full border-2 border-slate-200 bg-transparent" />
+      {/* Bubble right */}
+      <View className="absolute right-[28%] top-[18%] h-3 w-3 rounded-full border border-slate-200 bg-transparent" />
+      {/* Small sparkles */}
+      <Text className="absolute left-[38%] top-[2%] text-slate-200 text-[10px]">✦</Text>
+      <Text className="absolute right-[42%] top-[0%] text-slate-200 text-[10px]">✦</Text>
+
+      {/* Bell body (tilted) */}
+      <View style={{ transform: [{ rotate: '-15deg' }] }}>
+        <Svg width={110} height={110} viewBox="0 0 100 100">
+          <Defs>
+            <SvgLinearGradient id="bellGrad" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor="#e8f0fe" />
+              <Stop offset="100%" stopColor="#c5daf8" />
+            </SvgLinearGradient>
+          </Defs>
+          {/* Bell body */}
+          <Path
+            d="M50 15c-15.5 0-22 12-22 28v18c0 5-4.5 9.5-9.5 9.5h63c-5 0-9.5-4.5-9.5-9.5V43c0-16-6.5-28-22-28z"
+            fill="url(#bellGrad)"
+          />
+          {/* Bell clapper (bottom dot) */}
+          <Circle cx="50" cy="78" r="8" fill="#a4c2f4" />
+          {/* Bell rim */}
+          <Path
+            d="M17 70.5c0-1.4 1.1-2.5 2.5-2.5h61c1.4 0 2.5 1.1 2.5 2.5s-1.1 2.5-2.5 2.5H19.5c-1.4 0-2.5-1.1-2.5-2.5z"
+            fill="#b9d3f9"
+          />
+        </Svg>
+      </View>
+
+      {/* Overlapping blue check badge at bottom right */}
+      <View className="absolute bottom-[2px] right-[38%] h-6 w-6 items-center justify-center rounded-full bg-[#0000ff] border-2 border-white">
+        <Check size={12} color="#ffffff" strokeWidth={3} />
+      </View>
+    </View>
+  );
+}
+
+function includesAny(value: string, tokens: string[]) {
+  const normalized = value.toLowerCase();
+  return tokens.some(token => normalized.includes(token));
+}
+
+function toPositiveNumberId(value: string | undefined) {
+  const id = Number(value);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function toPageRouteItem(item: NotificationsItem): PagesItem {
+  const pageId = item.pageId ?? '';
+  return {
+    id: pageId,
+    pageId,
+    pageName: '',
+    pageTitle: item.text || 'Trang',
+    likes: 0,
+  };
+}
+
+function toGroupRouteItem(item: NotificationsItem): GroupItem {
+  const groupId = item.groupId ?? '';
+  return {
+    id: groupId,
+    groupId,
+    groupName: '',
+    groupTitle: item.text || 'Nhóm',
+    privacy: 'public',
+  };
+}
+
 function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
+  const type = item.type || '';
+
+  if (item.fundingId && includesAny(type, ['fund', 'funding'])) {
+    navigation.navigate(ROUTES.FUNDING_DETAIL, { fundId: item.fundingId });
+    return;
+  }
+
+  if (item.productId && includesAny(type, ['product', 'market', 'order'])) {
+    const productId = toPositiveNumberId(item.productId);
+    if (!productId) {
+      navigation.navigate(ROUTES.FEED as any);
+      return;
+    }
+    navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+      productId,
+    });
+    return;
+  }
+
+  if (item.jobId && includesAny(type, ['job', 'apply'])) {
+    navigation.navigate(ROUTES.JOB_DETAIL, { jobId: item.jobId });
+    return;
+  }
+
+  if (item.blogId && includesAny(type, ['blog', 'article'])) {
+    navigation.navigate(ROUTES.BLOG_DETAIL, { blogId: item.blogId });
+    return;
+  }
+
+  if (item.postId && includesAny(type, ['live_video'])) {
+    const postId = toPositiveNumberId(item.postId);
+    if (!postId) {
+      navigation.navigate(ROUTES.FEED as any);
+      return;
+    }
+    navigation.navigate(ROUTES.LIVE_ROOM, { postId });
+    return;
+  }
+
+  if (item.postId) {
+    const postId = toPositiveNumberId(item.postId);
+    if (!postId) {
+      navigation.navigate(ROUTES.FEED as any);
+      return;
+    }
+    navigation.navigate(ROUTES.POST_DETAIL, { postId: String(postId) });
+    return;
+  }
+
   switch (item.type) {
     case 'following':
+    case 'visited_profile':
+    case 'accepted_request':
       if (item.notifierId) {
         navigation.navigate(ROUTES.PROFILE, { userId: item.notifierId } as any);
       }
@@ -42,7 +176,10 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
     case 'comment':
     case 'comment_reply':
     case 'comment_mention':
+    case 'comment_reply_mention':
     case 'post_mention':
+    case 'liked_comment':
+    case 'wondered_comment':
     case 'profile_wall_post':
       navigation.navigate(ROUTES.FEED as any);
       break;
@@ -50,7 +187,7 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
     case 'requested_to_join_group':
     case 'accepted_join_request':
       if (item.groupId) {
-        navigation.navigate(ROUTES.GROUP_DETAIL as any, { groupId: item.groupId });
+        navigation.navigate(ROUTES.GROUP_DETAIL, { group: toGroupRouteItem(item) });
       }
       break;
     case 'interested_event':
@@ -59,7 +196,11 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
       navigation.navigate(ROUTES.EVENTS as any);
       break;
     case 'liked_page':
-      navigation.navigate(ROUTES.PAGES as any);
+      if (item.pageId) {
+        navigation.navigate(ROUTES.PAGE_DETAIL, { page: toPageRouteItem(item) });
+      } else {
+        navigation.navigate(ROUTES.PAGES as any);
+      }
       break;
     default:
       navigation.navigate(ROUTES.FEED as any);
@@ -203,8 +344,8 @@ function NotificationsScreen() {
   );
 
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+    <SafeAreaView style={{ backgroundColor: '#f4f7fa' }} className="flex-1" edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
 
       <NotificationsHeader
         title={copy.headerTitle}
@@ -329,9 +470,17 @@ function NotificationsScreen() {
             ) : null}
 
             {!hasMore && filteredNotifications.length > 0 ? (
-              <Text className="py-4 text-center text-caption-secondary">
-                {copy.allLoaded}
-              </Text>
+              <View className="items-center justify-center pt-8 pb-10">
+                <BeautifulBellIllustration />
+                <Text className="text-[16px] font-bold text-slate-800 text-center">
+                  {copy.allLoaded}
+                </Text>
+                <Text className="text-[13px] text-slate-400 text-center mt-1.5 px-6">
+                  {language === 'vi' 
+                    ? 'Bạn sẽ nhận được thông báo mới khi có hoạt động'
+                    : 'You will receive new notifications when there is activity'}
+                </Text>
+              </View>
             ) : null}
           </ScrollView>
         )}
@@ -350,7 +499,6 @@ function NotificationsScreen() {
           filterFollows: copy.filterFollows,
           filterGroups: copy.filterGroups,
           filterEvents: copy.filterEvents,
-          filterGroupChats: copy.filterGroupChats,
           close: language === 'vi' ? 'Đóng' : 'Close',
         }}
       />

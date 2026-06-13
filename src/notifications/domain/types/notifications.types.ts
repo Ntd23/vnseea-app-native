@@ -1,3 +1,4 @@
+// Description: Defines notification domain models and target identifiers for in-app navigation.
 // Notifications domain types
 // Port từ: client/src/notifications/domain/types/
 
@@ -43,6 +44,10 @@ export interface NotificationsItem {
   pageId?: string;
   groupId?: string;
   eventId?: string;
+  productId?: string;
+  fundingId?: string;
+  blogId?: string;
+  jobId?: string;
   groupChatId?: string;  // ID của nhóm chat khi có lời mời tham gia
   seen: boolean;
   seenAt?: number;
