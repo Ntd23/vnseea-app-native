@@ -289,7 +289,7 @@ $db->where('recipient_id',0)->where('admin',1)->where('seen',0)->where('type','w
                    <div class="clearfix"></div>
                    <br>
                    <div class="table-responsive1">
-                        <table class="table table-bordered table-striped table-hover">
+                        <table class="table table-bordered table-striped table-hover payment-requests-table">
                             <thead>
                                 <tr>
                                   <th><input type="checkbox" id="check-all" class="filled-in check-all" ><label for="check-all"></label></th>
@@ -307,7 +307,7 @@ $db->where('recipient_id',0)->where('admin',1)->where('seen',0)->where('type','w
                                         <?php }else{ ?>
                                             <svg onclick="location.href = '<?php echo(Wo_LoadAdminLinkSettings('payment-reqeuests?page-id=1').$sort_link."&sort=DESC_a") ?>'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#000000" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-down cursor-p"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
                                         <?php } ?></th>
-					                  <th>Giới thiệu</th>
+					                  <th>Mã thanh toán</th>
 					                  <th>Trạng thái 
                                         <?php if (!empty($_GET['sort']) && $_GET['sort'] == 'DESC_s') { ?>
                                             <svg onclick="location.href = '<?php echo(Wo_LoadAdminLinkSettings('payment-reqeuests?page-id=1').$sort_link."&sort=ASC_s") ?>'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#000000" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up cursor-p"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
@@ -584,9 +584,6 @@ function Wo_DeclinePayment(id,type = 'show') {
   $('#UserID_' + id).fadeOut(300, function() {
     $(this).remove();
   });
-  $('#review-verif-request-info-' + id).fadeOut(300, function() {
-    $(this).remove();
-  });
   $.get(Wo_Ajax_Requests_File(),{f:'admin_setting', s:'decline_payment', id: id, hash_id: hash_id});
 }
 function Wo_MarkPaid(id,type = 'show') {
@@ -598,28 +595,9 @@ function Wo_MarkPaid(id,type = 'show') {
   $('#UserID_' + id).fadeOut(300, function() {
     $(this).remove();
   });
-  $('#review-verif-request-info-' + id).fadeOut(300, function() {
-    $(this).remove();
-  });
   hash_id = $('#hash_id').val();
   $.get(Wo_Ajax_Requests_File(),{f:'admin_setting', s:'mark_as_paid', id: id, hash_id: hash_id});
 }
-
-function Wo_ToggleVerfRequest(id,self){
-  if (!id || !self) {
-    return false;
-  }
-  $(self).find('i').toggleClass('rotate-90d');
-  $("#review-verif-request-info-"+id).slideToggle();
-
-}
-
-jQuery(document).ready(function($) {
-  $(document).on('click', '.toggle-verification-request', function(event) {
-    event.preventDefault();
-    $(this).find('i').toggleClass('rotate-90d');
-  });
-});
 </script>
 <style>
   .review-verif-request-cont{
@@ -642,7 +620,47 @@ jQuery(document).ready(function($) {
     font-weight: 600;
   }
 
-  .toggle-verification-request{
-    padding: 3px 5px;
+  .payment-requests-table th:nth-child(1),
+  .payment-requests-table td:nth-child(1) {
+    width: 36px;
+    min-width: 36px;
+  }
+  .payment-requests-table th:nth-child(2),
+  .payment-requests-table td:nth-child(2) {
+    width: 58px;
+    min-width: 58px;
+    max-width: 58px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .payment-requests-table th:nth-child(6),
+  .payment-requests-table td:nth-child(6) {
+    width: 230px;
+    min-width: 230px;
+  }
+  .withdrawal-payment-qr {
+    display: grid;
+    gap: 6px;
+    min-width: 160px;
+    max-width: 190px;
+  }
+  .withdrawal-payment-qr img {
+    width: 205px;
+    height: 205px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    object-fit: contain;
+  }
+  .withdrawal-payment-qr__code {
+    font-weight: 700;
+    color: #111827;
+  }
+  .withdrawal-payment-qr__meta {
+    margin: 0;
+    color: #4b5563;
+    font-size: 12px;
+    line-height: 1.4;
+    word-break: break-word;
   }
 </style>
