@@ -31,6 +31,11 @@ if ($f == 'request_payment') {
                 $errors[] = $error_icon . $wo['lang']['email_invalid_characters'];
             }
         }
+        elseif ($_POST['withdraw_method'] == 'sepay') {
+            if (empty($_POST['bank_code']) || empty($_POST['bank_name']) || empty($_POST['account_number']) || empty($_POST['beneficiary_name'])) {
+                $errors[] = $error_icon . $wo['lang']['please_check_details'];
+            }
+        }
         else {
             if (empty($_POST['transfer_to'])) {
                 $errors[] = $error_icon . $wo['lang']['please_check_details'];
@@ -66,6 +71,17 @@ if ($f == 'request_payment') {
                         $insert_array['swift_code'] = Wo_Secure($_POST['swift_code']);
                         $insert_array['address']    = Wo_Secure($_POST['address']);
                         $userU                      = Wo_UpdateUserData($wo['user']['user_id'], array(
+                            'paypal_email' => ''
+                        ));
+                    }
+                    else if ($_POST['withdraw_method'] == 'sepay' && !empty($_POST['bank_code']) && !empty($_POST['bank_name']) && !empty($_POST['account_number']) && !empty($_POST['beneficiary_name'])) {
+                        $insert_array['transfer_info'] = Wo_Secure(json_encode(array(
+                            'bank_code' => Wo_Secure($_POST['bank_code']),
+                            'bank_name' => Wo_Secure($_POST['bank_name']),
+                            'account_number' => Wo_Secure($_POST['account_number']),
+                            'beneficiary_name' => Wo_Secure($_POST['beneficiary_name'])
+                        ), JSON_UNESCAPED_UNICODE));
+                        $userU = Wo_UpdateUserData($wo['user']['user_id'], array(
                             'paypal_email' => ''
                         ));
                     }
