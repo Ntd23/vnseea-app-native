@@ -1,4 +1,4 @@
-// Description: ViewModel for offers with mock data.
+// Description: ViewModel for offers.
 import { useState, useCallback, useMemo } from 'react';
 import type {
   Offer,
@@ -6,6 +6,7 @@ import type {
   DiscountType,
   CreateOfferInput,
 } from '../../domain/types/offer.types';
+import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 
 const MOCK_OFFERS: Offer[] = [
   {
@@ -40,7 +41,7 @@ const MOCK_OFFERS: Offer[] = [
     get: 1,
     spend: 0,
     amountOff: 0,
-    description: 'Mua 2 tặng 1 giảm thêm 30%. Cơ hội tuyệt vời cho tín đồ mua sắm.',
+    description: 'Mua 2 tặng 1 giảm thêm 30%. Cơ hội tốt cho tín đồ mua sắm.',
     discountedItems: 'Áo thun, Quần jean',
     image: 'https://picsum.photos/seed/offer2/400/200',
     currency: 'VND',
@@ -103,9 +104,50 @@ const DISCOUNT_LABELS: Record<DiscountType, string> = {
 };
 
 const CURRENCY_OPTIONS = [
-  { value: 'VND', label: 'VNĐ' },
+  { value: 'VND', label: 'VND' },
   { value: 'USD', label: 'USD' },
 ];
+
+const CREATE_OFFER_COPY: Record<AppLanguage, {
+  validation: {
+    descriptionMin: string;
+    expiryRequired: string;
+    itemsMax: string;
+    percentRange: string;
+    amountPositive: string;
+    buyPositive: string;
+    getPositive: string;
+    spendPositive: string;
+    submitFailed: string;
+  };
+}> = {
+  vi: {
+    validation: {
+      descriptionMin: 'Mô tả phải có ít nhất 32 ký tự',
+      expiryRequired: 'Vui lòng chọn ngày và giờ hết hạn',
+      itemsMax: 'Sản phẩm áp dụng phải ít hơn 100 ký tự',
+      percentRange: 'Phần trăm giảm phải từ 1-99',
+      amountPositive: 'Số tiền giảm phải lớn hơn 0',
+      buyPositive: 'Số lượng mua phải lớn hơn 0',
+      getPositive: 'Số lượng tặng phải lớn hơn 0',
+      spendPositive: 'Số tiền chi tiêu phải lớn hơn 0',
+      submitFailed: 'Đăng ưu đãi thất bại',
+    },
+  },
+  en: {
+    validation: {
+      descriptionMin: 'Description must be at least 32 characters',
+      expiryRequired: 'Please choose an expiry date and time',
+      itemsMax: 'Applied products must be under 100 characters',
+      percentRange: 'Discount percentage must be between 1 and 99',
+      amountPositive: 'Discount amount must be greater than 0',
+      buyPositive: 'Buy quantity must be greater than 0',
+      getPositive: 'Gift quantity must be greater than 0',
+      spendPositive: 'Minimum spend must be greater than 0',
+      submitFailed: 'Could not create offer',
+    },
+  },
+};
 
 function getDiscountText(offer: Offer): string {
   switch (offer.discountType) {
@@ -144,7 +186,6 @@ function enrichOffer(offer: Offer): OfferWithDisplay {
   };
 }
 
-// List offers
 export function useOffersViewModel(pageId?: number) {
   const [offers] = useState<OfferWithDisplay[]>(
     MOCK_OFFERS.filter(o => !pageId || o.pageId === pageId).map(enrichOffer),
@@ -169,8 +210,8 @@ export function useOffersViewModel(pageId?: number) {
   };
 }
 
-// Create offer
-export function useCreateOfferViewModel(pageId: number) {
+export function useCreateOfferViewModel(pageId: number, language: AppLanguage = 'vi') {
+  const copy = CREATE_OFFER_COPY[language] ?? CREATE_OFFER_COPY.vi;
   const [discountType, setDiscountType] = useState<DiscountType>('discount_percent');
   const [discountPercent, setDiscountPercent] = useState('10');
   const [discountAmount, setDiscountAmount] = useState('');
@@ -187,6 +228,7 @@ export function useCreateOfferViewModel(pageId: number) {
   });
   const [expireTime, setExpireTime] = useState('23:59');
   const [currency, setCurrency] = useState('VND');
+  const [thumbnailBase64, setThumbnailBase64] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,47 +247,50 @@ export function useCreateOfferViewModel(pageId: number) {
     setAmountOff('');
     setDescription('');
     setDiscountedItems('');
+    setThumbnailBase64(undefined);
     setIsLoading(false);
     setError(null);
   }, []);
 
   const validate = useCallback((): string | null => {
     if (description.trim().length < 32) {
-      return 'Mô tả phải có ít nhất 32 ký tự';
+      return copy.validation.descriptionMin;
     }
     if (!expireDate || !expireTime) {
-      return 'Vui lòng chọn ngày và giờ hết hạn';
+      return copy.validation.expiryRequired;
     }
     if (discountedItems && discountedItems.length > 100) {
-      return 'Sản phẩm áp dụng phải ít hơn 100 ký tự';
+      return copy.validation.itemsMax;
     }
     switch (discountType) {
       case 'discount_percent': {
         const pct = Number(discountPercent);
-        if (!pct || pct < 1 || pct > 99) return 'Phần trăm giảm phải từ 1-99';
+        if (!pct || pct < 1 || pct > 99) return copy.validation.percentRange;
         break;
       }
       case 'discount_amount': {
         const amt = Number(discountAmount);
-        if (!amt || amt < 1) return 'Số tiền giảm phải lớn hơn 0';
+        if (!amt || amt < 1) return copy.validation.amountPositive;
         break;
       }
       case 'buy_get_discount': {
         const pct = Number(discountPercent);
         const b = Number(buy);
         const g = Number(get);
-        if (!b || b < 1) return 'Số lượng mua phải lớn hơn 0';
-        if (!g || g < 1) return 'Số lượng tặng phải lớn hơn 0';
-        if (!pct || pct < 1 || pct > 99) return 'Phần trăm giảm phải từ 1-99';
+        if (!b || b < 1) return copy.validation.buyPositive;
+        if (!g || g < 1) return copy.validation.getPositive;
+        if (!pct || pct < 1 || pct > 99) return copy.validation.percentRange;
         break;
       }
       case 'spend_get_off': {
         const s = Number(spend);
         const a = Number(amountOff);
-        if (!s || s < 1) return 'Số tiền chi tiêu phải lớn hơn 0';
-        if (!a || a < 1) return 'Số tiền giảm phải lớn hơn 0';
+        if (!s || s < 1) return copy.validation.spendPositive;
+        if (!a || a < 1) return copy.validation.amountPositive;
         break;
       }
+      default:
+        break;
     }
     return null;
   }, [
@@ -260,6 +305,7 @@ export function useCreateOfferViewModel(pageId: number) {
     get,
     spend,
     amountOff,
+    copy,
   ]);
 
   const submit = useCallback(async () => {
@@ -279,6 +325,7 @@ export function useCreateOfferViewModel(pageId: number) {
         expireDate,
         expireTime,
         currency,
+        thumbnailBase64,
         ...(discountType === 'discount_percent' && { discountPercent: Number(discountPercent) }),
         ...(discountType === 'discount_amount' && { discountAmount: Number(discountAmount) }),
         ...(discountType === 'buy_get_discount' && {
@@ -296,7 +343,7 @@ export function useCreateOfferViewModel(pageId: number) {
       setIsLoading(false);
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Đăng ưu đãi thất bại');
+      setError(err instanceof Error ? err.message : copy.validation.submitFailed);
       setIsLoading(false);
       return false;
     }
@@ -309,16 +356,17 @@ export function useCreateOfferViewModel(pageId: number) {
     expireDate,
     expireTime,
     currency,
+    thumbnailBase64,
     discountPercent,
     discountAmount,
     buy,
     get,
     spend,
     amountOff,
+    copy,
   ]);
 
   return {
-    // State
     discountType,
     discountPercent,
     discountAmount,
@@ -331,11 +379,11 @@ export function useCreateOfferViewModel(pageId: number) {
     expireDate,
     expireTime,
     currency,
+    thumbnailBase64,
     isLoading,
     error,
     discountTypeOptions,
     currencyOptions: CURRENCY_OPTIONS,
-    // Actions
     setDiscountType,
     setDiscountPercent,
     setDiscountAmount,
@@ -348,6 +396,7 @@ export function useCreateOfferViewModel(pageId: number) {
     setExpireDate,
     setExpireTime,
     setCurrency,
+    setThumbnailBase64,
     setError,
     submit,
     reset,
