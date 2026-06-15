@@ -135,6 +135,8 @@ export const apiRoutes = {
   },
   wallet: {
     overview: 'wallet-overview',
+    affiliates: 'settings-affiliates',
+    pointsExchange: 'points-exchange',
     stripe: 'stripe',
     sepay: 'sepay',
   },

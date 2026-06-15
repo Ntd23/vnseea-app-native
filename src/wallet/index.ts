@@ -1,7 +1,9 @@
 // Description: Exposes the public Wallet context API and route screens.
 export * from './domain/types/wallet.types';
 export * from './domain/repositories/WalletRepository';
+export * from './domain/repositories/MyPointsRepository';
 export { createWalletRepository } from './infrastructure/repositories/ApiWalletRepository';
+export { createMyPointsRepository } from './infrastructure/repositories/ApiMyPointsRepository';
 export { useWalletViewModel } from './application/view-models/useWalletViewModel';
 export { useEarningsViewModel } from './application/view-models/useEarningsViewModel';
 export { useAffiliatesViewModel } from './application/view-models/useAffiliatesViewModel';

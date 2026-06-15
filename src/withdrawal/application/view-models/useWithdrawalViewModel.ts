@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createWithdrawalRepository } from '../../infrastructure/repositories/ApiWithdrawalRepository';
 import type {
+  SepayBank,
+  SepayWithdrawalDetails,
   WithdrawalHistoryItem,
   WithdrawalMethod,
   WithdrawalOverview,
@@ -11,6 +13,12 @@ import type {
 const repository = createWithdrawalRepository();
 
 const DEFAULT_SEPAY_METHOD: WithdrawalMethod = { id: 'sepay', label: 'SePay' };
+const EMPTY_SEPAY_DETAILS: SepayWithdrawalDetails = {
+  bankCode: '',
+  bankName: '',
+  accountNumber: '',
+  beneficiaryName: '',
+};
 
 function parseAmount(value: string) {
   return Number(value.replace(/[^\d.]/g, '')) || 0;
@@ -25,6 +33,10 @@ export function useWithdrawalViewModel() {
     useState<WithdrawalMethod>(DEFAULT_SEPAY_METHOD);
   const [amount, setAmount] = useState('0');
   const [accountValue, setAccountValue] = useState('');
+  const [sepayDetails, setSepayDetails] =
+    useState<SepayWithdrawalDetails>(EMPTY_SEPAY_DETAILS);
+  const [sepayBanks, setSepayBanks] = useState<SepayBank[]>([]);
+  const [isBanksLoading, setIsBanksLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +70,37 @@ export function useWithdrawalViewModel() {
     loadOverview().catch(() => undefined);
   }, [loadOverview]);
 
+  const loadSepayBanks = useCallback(async () => {
+    setIsBanksLoading(true);
+    try {
+      const banks = await repository.getSepayBanks();
+      setSepayBanks(banks);
+      setSepayDetails(current => {
+        if (current.bankCode || banks.length === 0) {
+          return current;
+        }
+        const firstBank = banks[0];
+        return {
+          ...current,
+          bankCode: firstBank.code,
+          bankName: firstBank.shortName,
+        };
+      });
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Không thể tải danh sách ngân hàng SePay.',
+      );
+    } finally {
+      setIsBanksLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSepayBanks().catch(() => undefined);
+  }, [loadSepayBanks]);
+
   const numericAmount = useMemo(() => parseAmount(amount), [amount]);
   const balance = overview?.balance ?? 0;
   const walletBalance = overview?.walletBalance ?? 0;
@@ -83,6 +126,24 @@ export function useWithdrawalViewModel() {
 
   const accountKeyboardType =
     selectedMethod.id === 'paypal' ? 'email-address' : 'default';
+
+  const updateSepayDetails = useCallback(
+    (field: keyof SepayWithdrawalDetails, value: string) => {
+      setSepayDetails(current => ({
+        ...current,
+        [field]: value,
+      }));
+    },
+    [],
+  );
+
+  const selectSepayBank = useCallback((bank: SepayBank) => {
+    setSepayDetails(current => ({
+      ...current,
+      bankCode: bank.code,
+      bankName: bank.shortName,
+    }));
+  }, []);
 
   const validate = useCallback(() => {
     if (!selectedMethod) {
@@ -110,14 +171,28 @@ export function useWithdrawalViewModel() {
       return false;
     }
 
-    if (!accountValue.trim()) {
-      setError(`Vui lòng nhập ${accountFieldLabel.toLowerCase()}.`);
-      return false;
-    }
+    if (selectedMethod.id === 'sepay') {
+      if (
+        !sepayDetails.bankCode.trim() ||
+        !sepayDetails.bankName.trim() ||
+        !sepayDetails.accountNumber.trim() ||
+        !sepayDetails.beneficiaryName.trim()
+      ) {
+        setError(
+          'Vui lòng chọn ngân hàng, nhập số tài khoản và tên người thụ hưởng.',
+        );
+        return false;
+      }
+    } else {
+      if (!accountValue.trim()) {
+        setError(`Vui lòng nhập ${accountFieldLabel.toLowerCase()}.`);
+        return false;
+      }
 
-    if (selectedMethod.id === 'paypal' && !accountValue.includes('@')) {
-      setError('Email PayPal không hợp lệ.');
-      return false;
+      if (selectedMethod.id === 'paypal' && !accountValue.includes('@')) {
+        setError('Email PayPal không hợp lệ.');
+        return false;
+      }
     }
 
     return true;
@@ -129,6 +204,7 @@ export function useWithdrawalViewModel() {
     hasPendingRequest,
     minimumAmount,
     numericAmount,
+    sepayDetails,
     selectedMethod,
   ]);
 
@@ -144,6 +220,12 @@ export function useWithdrawalViewModel() {
         method: selectedMethod,
         amount: numericAmount,
         accountValue: accountValue.trim(),
+        sepayDetails: {
+          bankCode: sepayDetails.bankCode.trim(),
+          bankName: sepayDetails.bankName.trim(),
+          accountNumber: sepayDetails.accountNumber.trim(),
+          beneficiaryName: sepayDetails.beneficiaryName.trim(),
+        },
       });
       setSuccessMessage(message);
       setAmount('0');
@@ -161,6 +243,7 @@ export function useWithdrawalViewModel() {
     accountValue,
     loadOverview,
     numericAmount,
+    sepayDetails,
     selectedMethod,
     validate,
   ]);
@@ -178,6 +261,11 @@ export function useWithdrawalViewModel() {
     setAmount,
     accountValue,
     setAccountValue,
+    sepayDetails,
+    updateSepayDetails,
+    sepayBanks,
+    selectSepayBank,
+    isBanksLoading,
     accountFieldLabel,
     accountFieldPlaceholder,
     accountKeyboardType,
