@@ -9,6 +9,7 @@ export function useAdsViewModel() {
   const [ads, setAds] = useState<AdItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchMyAds = useCallback(async () => {
@@ -24,19 +25,38 @@ export function useAdsViewModel() {
     }
   }, []);
 
-  const createAd = useCallback(async (data: AdFormData): Promise<boolean> => {
+  const createAd = useCallback(async (data: AdFormData): Promise<{ success: boolean; error?: string }> => {
     setIsCreating(true);
     setError(null);
     try {
       const result = await repository.createAd(data);
       setAds(prev => [result.ad, ...prev]);
-      return true;
+      return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
-      return false;
+      return { success: false, error: errorMessage };
     } finally {
       setIsCreating(false);
+    }
+  }, []);
+
+  const updateAd = useCallback(async (id: number, data: Partial<AdFormData>): Promise<{ success: boolean; error?: string }> => {
+    setIsUpdating(true);
+    setError(null);
+    try {
+      const success = await repository.updateAd(id, data);
+      if (success) {
+        setAds(prev => prev.map(ad => ad.id === id ? { ...ad, ...data } as AdItem : ad));
+        return { success: true };
+      }
+      return { success: false, error: 'Cập nhật quảng cáo thất bại.' };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setIsUpdating(false);
     }
   }, []);
 
@@ -57,9 +77,11 @@ export function useAdsViewModel() {
     ads,
     isLoading,
     isCreating,
+    isUpdating,
     error,
     fetchMyAds,
     createAd,
+    updateAd,
     deleteAd,
   };
 }

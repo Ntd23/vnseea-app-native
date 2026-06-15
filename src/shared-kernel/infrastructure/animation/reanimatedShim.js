@@ -50,6 +50,8 @@ export const withTiming = (toValue, _config, callback) => {
 export const withDelay = (_delayMs, animation) => animation;
 export const withRepeat = (animation) => animation;
 export const cancelAnimation = () => {};
+export const makeMutable = (initialValue) => ({ value: initialValue });
+export const withSequence = (...animations) => animations[animations.length - 1] ?? 0;
 
 export const interpolate = (
   rawValue,

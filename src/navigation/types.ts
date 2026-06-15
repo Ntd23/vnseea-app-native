@@ -10,6 +10,7 @@ import type { GroupItem } from '../community/domain/types/community.types';
 import type { LiveSession } from '../live/domain/types/live.types';
 import type { ProductItem } from '../product/domain/types/product.types';
 import type { FeedPost } from '../feed/domain/types/feed.types';
+import type { AdItem } from '../advertising/domain/types/ads.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -93,7 +94,7 @@ export type RootStackParamList = {
   [ROUTES.EDIT_PROFILE]: undefined;
   [ROUTES.SETTINGS_MESSAGES]: undefined;
   [ROUTES.ADVERTISING]: undefined;
-  [ROUTES.CREATE_AD]: undefined;
+  [ROUTES.CREATE_AD]: { ad?: AdItem } | undefined;
   [ROUTES.CREATE_REEL]: undefined;
   [ROUTES.CREATE_POST]: undefined;
   [ROUTES.CREATE_STORY]: undefined;

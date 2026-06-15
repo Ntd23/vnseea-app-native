@@ -2,6 +2,7 @@
 import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   RefreshControl,
   ScrollView,
@@ -16,10 +17,12 @@ import {
   ArrowLeft,
   BarChart3,
   CalendarDays,
+  Edit,
   Eye,
   Megaphone,
   MousePointerClick,
   Plus,
+  Trash2,
   Video,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -72,14 +75,22 @@ function isVideoMedia(url?: string) {
   return /\.(mp4|mov|m4v|avi|webm)(\?|$)/i.test(url ?? '');
 }
 
-function AdCampaignCard({ ad }: { ad: AdItem }) {
+function AdCampaignCard({
+  ad,
+  onEdit,
+  onDelete,
+}: {
+  ad: AdItem;
+  onEdit: (ad: AdItem) => void;
+  onDelete: (ad: AdItem) => void;
+}) {
   const status = getStatus(ad);
   const title = ad.headline || ad.name || 'Quảng cáo';
   const mediaUrl = ad.ad_media;
   const hasImage = Boolean(mediaUrl && !isVideoMedia(mediaUrl));
 
   return (
-    <TouchableOpacity activeOpacity={0.86} className="surface-card mb-3 overflow-hidden">
+    <View className="surface-card mb-3 overflow-hidden">
       {hasImage ? (
         <Image source={{ uri: mediaUrl }} className="h-40 w-full bg-slate-100" resizeMode="cover" />
       ) : mediaUrl ? (
@@ -131,46 +142,99 @@ function AdCampaignCard({ ad }: { ad: AdItem }) {
 
         <View className="mt-4 h-px bg-[#e2e8f0]" />
 
+        {/* Metrics Section: 3 columns */}
         <View className="mt-4 flex-row items-center">
-          <View className="w-1/4 items-center px-1">
+          <View className="w-1/3 items-center px-1">
             <Eye size={18} color="#64748b" />
             <Text className="mt-1 text-xs text-[#64748b]" numberOfLines={1}>
               {formatNumber(ad.views)} xem
             </Text>
           </View>
-          <View className="w-1/4 items-center px-1">
+          <View className="w-1/3 items-center px-1">
             <MousePointerClick size={18} color="#64748b" />
             <Text className="mt-1 text-xs text-[#64748b]" numberOfLines={1}>
               {formatNumber(ad.clicks)} nhấp
             </Text>
           </View>
-          <View className="w-1/4 items-center px-1">
+          <View className="w-1/3 items-center px-1">
             <BarChart3 size={18} color="#64748b" />
             <Text className="mt-1 text-xs text-[#64748b]" numberOfLines={1}>
-              Đã chi {formatNumber(ad.spent)}
-            </Text>
-          </View>
-          <View className="w-1/4 items-center px-1">
-            <CalendarDays size={18} color="#64748b" />
-            <Text className="mt-1 text-xs text-[#64748b]" numberOfLines={1}>
-              {ad.start || ad.end ? `${ad.start || '...'} - ${ad.end || '...'}` : 'Không giới hạn'}
+              Đã chi {formatNumber(ad.spent)}đ
             </Text>
           </View>
         </View>
+
+        <View className="mt-4 h-px bg-[#e2e8f0]" />
+
+        {/* Actions Row */}
+        <View className="mt-4 flex-row items-center justify-between">
+          <View className="flex-row items-center flex-1 pr-2">
+            <CalendarDays size={14} color="#64748b" />
+            <Text className="ml-1 text-[11px] text-[#64748b]" numberOfLines={1}>
+              {ad.start || ad.end ? `${ad.start || '...'} - ${ad.end || '...'}` : 'Không giới hạn'}
+            </Text>
+          </View>
+
+          <View className="flex-row gap-2">
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => onEdit(ad)}
+              className="flex-row items-center rounded-lg border border-slate-200 px-3 py-1.5 bg-slate-50"
+            >
+              <Edit size={14} color="#475569" />
+              <Text className="ml-1.5 text-xs font-semibold text-slate-700">Sửa</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => onDelete(ad)}
+              className="flex-row items-center rounded-lg border border-red-200 px-3 py-1.5 bg-red-50"
+            >
+              <Trash2 size={14} color="#ef4444" />
+              <Text className="ml-1.5 text-xs font-semibold text-red-600">Xóa</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
 function AdvertisingScreen() {
   const navigation = useNavigation<any>();
-  const { ads, isLoading, isRefreshing, error, fetchAds, refresh } = useAdvertisingViewModel();
+  const { ads, isLoading, isRefreshing, isDeleting, error, fetchAds, refresh, deleteAd } = useAdvertisingViewModel();
 
   useFocusEffect(
     useCallback(() => {
       fetchAds();
     }, [fetchAds]),
   );
+
+  const handleEdit = useCallback((ad: AdItem) => {
+    navigation.navigate(ROUTES.CREATE_AD, { ad });
+  }, [navigation]);
+
+  const handleDelete = useCallback((ad: AdItem) => {
+    Alert.alert(
+      'Xóa quảng cáo',
+      `Bạn có chắc chắn muốn xóa chiến dịch "${ad.headline || ad.name}" không? Hành động này không thể hoàn tác.`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await deleteAd(ad.id);
+            if (res.success) {
+              Alert.alert('Thành công', 'Đã xóa quảng cáo thành công.');
+            } else {
+              Alert.alert('Thất bại', res.error || 'Xóa quảng cáo thất bại.');
+            }
+          },
+        },
+      ]
+    );
+  }, [deleteAd]);
 
   const isEmpty = !isLoading && ads.length === 0;
 
@@ -242,7 +306,12 @@ function AdvertisingScreen() {
             )}
 
             {ads.map(ad => (
-              <AdCampaignCard key={String(ad.id)} ad={ad} />
+              <AdCampaignCard
+                key={String(ad.id)}
+                ad={ad}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
             ))}
           </View>
         )}

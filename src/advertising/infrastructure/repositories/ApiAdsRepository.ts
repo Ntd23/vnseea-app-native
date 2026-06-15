@@ -113,7 +113,26 @@ export function createAdsRepository(): AdsRepository {
         if (data.endDate) payload.end = data.endDate;
         if (data.budget) payload.budget = data.budget;
 
-        const response = await apiBridge.post<AdsResponse>(ADS_ROUTE, payload);
+        // Check if media is a new local file to upload
+        const isLocalFile = data.media && (
+          data.media.startsWith('file://') ||
+          data.media.startsWith('content://') ||
+          !data.media.startsWith('http')
+        );
+
+        let response;
+        if (isLocalFile) {
+          response = await apiBridge.multipart<AdsResponse>(ADS_ROUTE, {
+            ...payload,
+            media: {
+              uri: data.media,
+              name: data.mediaName ?? `ad_media_${Date.now()}.jpg`,
+              type: data.mediaType ?? 'image/jpeg',
+            },
+          });
+        } else {
+          response = await apiBridge.post<AdsResponse>(ADS_ROUTE, payload);
+        }
 
         return response.api_status === 200 || response.api_status === '200';
       } catch (error) {
