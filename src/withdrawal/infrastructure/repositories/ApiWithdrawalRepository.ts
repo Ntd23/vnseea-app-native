@@ -4,6 +4,7 @@ import { apiRoutes } from '../../../shared-kernel/application/constants/route-re
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import type { WithdrawalRepository } from '../../domain/repositories/WithdrawalRepository';
 import type {
+  SepayBank,
   WithdrawalHistoryItem,
   WithdrawalMethod,
   WithdrawalMethodId,
@@ -47,6 +48,20 @@ type BackendWithdrawalResponse = {
   message?: string;
 };
 
+type SepayBankRecord = {
+  code?: string;
+  name?: string;
+  short_name?: string;
+  bin?: string | number;
+  supported?: boolean;
+};
+
+type SepayBanksResponse = {
+  data?: SepayBankRecord[];
+};
+
+const SEPAY_BANKS_URL = 'https://qr.sepay.vn/banks.json';
+
 function apiSucceeded(status: unknown) {
   return status === 200 || status === '200';
 }
@@ -77,6 +92,24 @@ function mapHistory(item: BackendHistoryItem): WithdrawalHistoryItem {
     requestedAt: Number(item.requested_at || 0),
     status: Number(item.status || 0),
     transferInfo: String(item.transfer_info || ''),
+  };
+}
+
+function mapSepayBank(bank: SepayBankRecord): SepayBank | undefined {
+  const code = String(bank.code || '').trim();
+  const shortName = String(bank.short_name || '').trim();
+  const name = String(bank.name || '').trim();
+
+  if (!code || (!shortName && !name)) {
+    return undefined;
+  }
+
+  return {
+    code,
+    name,
+    shortName: shortName || name,
+    bin: String(bank.bin || '').trim(),
+    supported: bank.supported !== false,
   };
 }
 
@@ -121,6 +154,19 @@ export function createWithdrawalRepository(): WithdrawalRepository {
       };
     },
 
+    async getSepayBanks(): Promise<SepayBank[]> {
+      const response = await fetch(SEPAY_BANKS_URL);
+      if (!response.ok) {
+        throw new Error('Không thể tải danh sách ngân hàng SePay.');
+      }
+
+      const data = (await response.json()) as SepayBanksResponse;
+      return (data.data || [])
+        .map(mapSepayBank)
+        .filter((bank): bank is SepayBank => Boolean(bank?.supported))
+        .sort((a, b) => a.shortName.localeCompare(b.shortName, 'vi'));
+    },
+
     async requestWithdrawal(input: WithdrawalRequestInput): Promise<string> {
       const payload: Record<string, string> = {
         type: input.method.id,
@@ -130,9 +176,13 @@ export function createWithdrawalRepository(): WithdrawalRepository {
 
       if (input.method.id === 'paypal') {
         payload.paypal_email = input.accountValue;
+      } else if (input.method.id === 'sepay') {
+        payload.bank_code = input.sepayDetails?.bankCode ?? '';
+        payload.bank_name = input.sepayDetails?.bankName ?? '';
+        payload.account_number = input.sepayDetails?.accountNumber ?? '';
+        payload.beneficiary_name = input.sepayDetails?.beneficiaryName ?? '';
       } else {
         payload.transfer_to = input.accountValue;
-        payload.sepay_account = input.accountValue;
       }
 
       console.log('[withdrawal] submitting request', {
@@ -141,6 +191,15 @@ export function createWithdrawalRepository(): WithdrawalRepository {
         amount: input.amount,
         payloadKeys: Object.keys(payload),
         hasAccountValue: Boolean(input.accountValue.trim()),
+        hasSepayDetails:
+          input.method.id === 'sepay'
+            ? Boolean(
+                input.sepayDetails?.bankCode.trim() &&
+                  input.sepayDetails?.bankName.trim() &&
+                  input.sepayDetails?.accountNumber.trim() &&
+                  input.sepayDetails?.beneficiaryName.trim(),
+              )
+            : undefined,
         transport: 'urlencoded',
       });
 

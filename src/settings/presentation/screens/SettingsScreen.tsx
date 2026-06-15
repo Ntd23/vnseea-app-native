@@ -37,6 +37,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  CircleDollarSign,
   Circle,
   Clock3,
   FileBadge,
@@ -169,6 +170,28 @@ type LoginSessionsResponse = {
 type SettingsUpdateResponse = {
   api_status?: string | number;
   message?: string;
+};
+
+type CurrencySettingsState = {
+  displayCurrency: string;
+  displayCurrencySymbol: string;
+  walletCurrency: string;
+  walletCurrencySymbol: string;
+  exchangeRate: number;
+};
+
+type CurrentUserCurrencyResponse = {
+  api_status?: string | number;
+  user_data?: {
+    points_config?: {
+      display_currency?: string;
+      display_currency_symbol?: string;
+      display_exchange_rate?: number | string;
+      wallet_currency?: string;
+      currency_symbol?: string;
+      wallet_exchange_rate?: number | string;
+    };
+  };
 };
 
 type BlockedUserRecord = {
@@ -447,6 +470,22 @@ function settingsPanelBackTarget(panel: SettingsPanel): SettingsPanel {
 
 function apiSucceeded(status: unknown) {
   return status === 200 || status === '200';
+}
+
+function numberFromApi(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function currencyLabel(currency: CurrencySettingsState | null) {
+  if (!currency) return 'Đang tải';
+
+  const symbol = currency.displayCurrencySymbol.trim();
+  if (symbol && symbol !== currency.displayCurrency) {
+    return `${currency.displayCurrency} (${symbol})`;
+  }
+
+  return currency.displayCurrency || 'Không xác định';
 }
 
 function verificationErrorMessage(response: VerificationSubmitResponse) {
@@ -3250,13 +3289,49 @@ function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<SettingsPanel>('main');
+  const [currencySettings, setCurrencySettings] =
+    useState<CurrencySettingsState | null>(null);
+  const [currencyLoading, setCurrencyLoading] = useState(false);
   const { profile, features, settingsMenu, language, setLanguage, copy } =
     useSettingsViewModel();
   const { logout } = useAuthViewModel();
 
+  const loadCurrencySettings = useCallback(async () => {
+    setCurrencyLoading(true);
+    try {
+      const response = await apiBridge.post<CurrentUserCurrencyResponse>(
+        apiRoutes.auth.me,
+      );
+      const pointsConfig = response.user_data?.points_config;
+
+      if (pointsConfig) {
+        setCurrencySettings({
+          displayCurrency: fieldValue(pointsConfig.display_currency),
+          displayCurrencySymbol: fieldValue(
+            pointsConfig.display_currency_symbol,
+          ),
+          walletCurrency: fieldValue(pointsConfig.wallet_currency),
+          walletCurrencySymbol: fieldValue(pointsConfig.currency_symbol),
+          exchangeRate: numberFromApi(
+            pointsConfig.display_exchange_rate ||
+              pointsConfig.wallet_exchange_rate,
+          ),
+        });
+      }
+    } catch {
+      setCurrencySettings(null);
+    } finally {
+      setCurrencyLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     tabBarVisibility.setVisible(activePanel === 'main');
   }, [activePanel]);
+
+  useEffect(() => {
+    loadCurrencySettings().catch(() => undefined);
+  }, [loadCurrencySettings]);
 
   useEffect(() => {
     return () => {
@@ -3273,6 +3348,38 @@ function SettingsScreen() {
     },
     [setLanguage],
   );
+
+  const handleCurrencyPress = useCallback(() => {
+    if (currencyLoading) return;
+
+    if (!currencySettings) {
+      loadCurrencySettings().catch(() => undefined);
+      return;
+    }
+
+    Alert.alert(
+      'Tiền tệ',
+      [
+        `Hiển thị: ${currencyLabel(currencySettings)}`,
+        currencySettings.walletCurrency
+          ? `Ví: ${currencySettings.walletCurrency}${
+              currencySettings.walletCurrencySymbol
+                ? ` (${currencySettings.walletCurrencySymbol})`
+                : ''
+            }`
+          : '',
+        currencySettings.exchangeRate > 0
+          ? `Tỷ giá: ${currencySettings.exchangeRate.toLocaleString('vi-VN')}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    );
+  }, [
+    currencyLoading,
+    currencySettings,
+    loadCurrencySettings,
+  ]);
 
   const handleCreateNavigate = useCallback(
     (route: RootStackRouteName) => {
@@ -3532,7 +3639,6 @@ function SettingsScreen() {
                   isLast
                   onPress={() => setActivePanel('general-avatar')}
                 />
-              
               </GeneralSettingsSection>
 
               <GeneralSettingsSection title="Địa chỉ và quyền riêng tư">
@@ -3582,10 +3688,35 @@ function SettingsScreen() {
                 <GeneralSettingsMenuRow
                   label="Thông báo"
                   icon={<Bell size={22} color="#0000ff" />}
-                  isLast
                   onPress={() => setActivePanel('general-notifications')}
                 />
-                  <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  onPress={handleCurrencyPress}
+                  className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white"
+                >
+                  <View className="flex-row items-center">
+                    <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
+                      <CircleDollarSign size={20} color="#0000ff" />
+                    </View>
+                    <View>
+                      <Text className="text-[16px] font-semibold text-slate-800">
+                        {'Ti\u1ec1n t\u1ec7'}
+                      </Text>
+                      <Text className="mt-0.5 text-[12px] font-semibold text-slate-500">
+                        {currencyLoading
+                          ? '\u0110ang t\u1ea3i'
+                          : currencyLabel(currencySettings)}
+                      </Text>
+                    </View>
+                  </View>
+                  {currencyLoading ? (
+                    <ActivityIndicator size="small" color="#0000ff" />
+                  ) : (
+                    <ChevronRight size={18} color="#94a3b8" />
+                  )}
+                </TouchableOpacity>
+                <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
                   <View className="flex-row items-center">
                     <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
                       <Globe size={20} color="#0000ff" />
@@ -3646,7 +3777,7 @@ function SettingsScreen() {
                   onPress={() => navigation.navigate(ROUTES.WITHDRAWAL)}
                 />
                 <GeneralSettingsMenuRow
-                  label="Kiếm tiền"
+                  label="Giới thiệu và nhận thưởng"
                   icon={<Store size={22} color="#0000ff" />}
                   onPress={() => navigation.navigate(ROUTES.AFFILIATES)}
                 />

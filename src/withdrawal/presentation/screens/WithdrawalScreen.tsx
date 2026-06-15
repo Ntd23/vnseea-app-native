@@ -1,6 +1,12 @@
 // Description: Renders the withdrawal screen with SePay payout form and payment history.
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -30,33 +36,15 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../../navigation/types';
+import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
 import { useWithdrawalViewModel } from '../../application/view-models/useWithdrawalViewModel';
 import type {
+  SepayBank,
   WithdrawalHistoryItem,
   WithdrawalMethod,
 } from '../../domain/types/withdrawal.types';
 
 type WithdrawalNav = NativeStackNavigationProp<RootStackParamList>;
-
-function formatCurrency(
-  amount: number,
-  currency: string,
-  currencySymbol: string,
-  compact = false,
-) {
-  const normalizedCurrency = currency.toUpperCase();
-  const safeAmount = Number.isFinite(amount) ? amount : 0;
-
-  if (normalizedCurrency === 'VND' || currencySymbol.toUpperCase() === 'VND') {
-    const value = Math.round(safeAmount).toLocaleString('vi-VN');
-    return compact ? `VND${value}` : `VND ${value}`;
-  }
-
-  return `${currencySymbol}${safeAmount.toLocaleString('en-US', {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-  })}`;
-}
 
 function methodLabel(method: string) {
   if (method === 'sepay') return 'SePay';
@@ -128,17 +116,29 @@ function MethodPickerModal({
   if (!mounted) return null;
 
   return (
-    <Modal transparent visible={mounted} animationType="none" onRequestClose={onClose}>
+    <Modal
+      transparent
+      visible={mounted}
+      animationType="none"
+      onRequestClose={onClose}
+    >
       <Animated.View
         pointerEvents="box-none"
         style={[StyleSheet.absoluteFill, { opacity: backdropOpacity }]}
       >
         <TouchableWithoutFeedback onPress={onClose}>
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.42)' }]} />
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: 'rgba(0,0,0,0.42)' },
+            ]}
+          />
         </TouchableWithoutFeedback>
       </Animated.View>
 
-      <Animated.View style={[pickerStyles.sheet, { transform: [{ translateY }] }]}>
+      <Animated.View
+        style={[pickerStyles.sheet, { transform: [{ translateY }] }]}
+      >
         <View style={pickerStyles.handle} />
         <Text style={pickerStyles.sheetTitle}>Phương thức rút tiền</Text>
         {methods.map((method, index) => {
@@ -153,13 +153,134 @@ function MethodPickerModal({
                 index < methods.length - 1 && pickerStyles.rowDivider,
               ]}
             >
-              <Text style={[pickerStyles.rowLabel, active && pickerStyles.rowLabelActive]}>
+              <Text
+                style={[
+                  pickerStyles.rowLabel,
+                  active && pickerStyles.rowLabelActive,
+                ]}
+              >
                 {method.label}
               </Text>
               {active ? <Check size={18} color="#0000ff" /> : null}
             </TouchableOpacity>
           );
         })}
+      </Animated.View>
+    </Modal>
+  );
+}
+
+function BankPickerModal({
+  visible,
+  banks,
+  selectedCode,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  banks: SepayBank[];
+  selectedCode: string;
+  onSelect: (bank: SepayBank) => void;
+  onClose: () => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+  const translateY = useRef(new Animated.Value(620)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      translateY.setValue(620);
+      Animated.parallel([
+        Animated.spring(translateY, {
+          toValue: 0,
+          damping: 22,
+          stiffness: 210,
+          mass: 0.9,
+          useNativeDriver: true,
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 210,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      return;
+    }
+
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: 620,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(backdropOpacity, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) setMounted(false);
+    });
+  }, [backdropOpacity, translateY, visible]);
+
+  if (!mounted) return null;
+
+  return (
+    <Modal
+      transparent
+      visible={mounted}
+      animationType="none"
+      onRequestClose={onClose}
+    >
+      <Animated.View
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, { opacity: backdropOpacity }]}
+      >
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: 'rgba(0,0,0,0.42)' },
+            ]}
+          />
+        </TouchableWithoutFeedback>
+      </Animated.View>
+
+      <Animated.View
+        style={[pickerStyles.sheet, { transform: [{ translateY }] }]}
+      >
+        <View style={pickerStyles.handle} />
+        <Text style={pickerStyles.sheetTitle}>Ngân hàng</Text>
+        <ScrollView style={pickerStyles.bankList}>
+          {banks.map((bank, index) => {
+            const active = selectedCode === bank.code;
+            return (
+              <TouchableOpacity
+                key={`${bank.code}-${bank.bin}`}
+                activeOpacity={0.78}
+                onPress={() => onSelect(bank)}
+                style={[
+                  pickerStyles.bankRow,
+                  index < banks.length - 1 && pickerStyles.rowDivider,
+                ]}
+              >
+                <View className="flex-1">
+                  <Text
+                    style={[
+                      pickerStyles.rowLabel,
+                      active && pickerStyles.rowLabelActive,
+                    ]}
+                  >
+                    {bank.shortName}
+                  </Text>
+                  <Text style={pickerStyles.bankSubLabel}>{bank.name}</Text>
+                </View>
+                {active ? <Check size={18} color="#0000ff" /> : null}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </Animated.View>
     </Modal>
   );
@@ -210,6 +331,11 @@ function WithdrawalScreen() {
     setAmount,
     accountValue,
     setAccountValue,
+    sepayDetails,
+    updateSepayDetails,
+    sepayBanks,
+    selectSepayBank,
+    isBanksLoading,
     accountFieldLabel,
     accountFieldPlaceholder,
     accountKeyboardType,
@@ -223,6 +349,11 @@ function WithdrawalScreen() {
   } = useWithdrawalViewModel();
 
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [bankPickerVisible, setBankPickerVisible] = useState(false);
+  const selectedSepayBank = useMemo(
+    () => sepayBanks.find(bank => bank.code === sepayDetails.bankCode),
+    [sepayBanks, sepayDetails.bankCode],
+  );
 
   const handleSelectMethod = useCallback(
     (method: WithdrawalMethod) => {
@@ -230,6 +361,14 @@ function WithdrawalScreen() {
       setPickerVisible(false);
     },
     [setSelectedMethod],
+  );
+
+  const handleSelectBank = useCallback(
+    (bank: SepayBank) => {
+      selectSepayBank(bank);
+      setBankPickerVisible(false);
+    },
+    [selectSepayBank],
   );
 
   useEffect(() => {
@@ -250,7 +389,9 @@ function WithdrawalScreen() {
         >
           <ArrowLeft size={22} color="#ffffff" />
         </TouchableOpacity>
-        <Text className="text-xl font-extrabold text-white">Thu nhập của tôi</Text>
+        <Text className="text-xl font-extrabold text-white">
+          Thu nhập của tôi
+        </Text>
       </View>
 
       <KeyboardAvoidingView
@@ -274,7 +415,7 @@ function WithdrawalScreen() {
               <Text style={heroStyles.role}>Quản trị viên</Text>
               <Text style={heroStyles.title}>
                 Thu nhập của tôi{' '}
-                {formatCurrency(balance, currency, currencySymbol, true)}
+                {formatCurrency(balance, currency, currencySymbol)}
               </Text>
             </View>
           </View>
@@ -283,16 +424,16 @@ function WithdrawalScreen() {
             <AlertTriangle size={18} color="#ff3333" />
             <Text style={noticeStyles.dangerText}>
               Số tiền có sẵn để rút:{' '}
-              {formatCurrency(balance, currency, currencySymbol)}, yêu cầu rút tiền
-              tối thiểu là{' '}
+              {formatCurrency(balance, currency, currencySymbol)}, yêu cầu rút
+              tiền tối thiểu là{' '}
               {formatCurrency(minimumAmount, currency, currencySymbol)}
             </Text>
           </View>
 
           <View style={noticeStyles.warning}>
             <Text style={noticeStyles.warningText}>
-              Xin lưu ý rằng bạn chỉ có thể rút Tiền kiếm được của mình, không thể
-              rút tiền nạp vào ví.
+              Xin lưu ý rằng bạn chỉ có thể rút Tiền kiếm được của mình, không
+              thể rút tiền nạp vào ví.
             </Text>
           </View>
 
@@ -315,23 +456,81 @@ function WithdrawalScreen() {
               </TouchableOpacity>
             </View>
 
-            <View className="flex-row gap-4">
-              <View className="flex-1" style={{ marginBottom: 18 }}>
-                <FieldLabel label={accountFieldLabel} />
-                <TextInput
-                  style={[formStyles.inputRow, formStyles.textInput]}
-                  placeholder={accountFieldPlaceholder}
-                  placeholderTextColor="#94a3b8"
-                  keyboardType={accountKeyboardType as any}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={accountValue}
-                  onChangeText={setAccountValue}
-                />
-              </View>
+            {selectedMethod.id === 'sepay' ? (
+              <>
+                <View style={{ marginBottom: 18 }}>
+                  <FieldLabel label="Ngân hàng" />
+                  <TouchableOpacity
+                    activeOpacity={0.84}
+                    disabled={isBanksLoading || sepayBanks.length === 0}
+                    onPress={() => setBankPickerVisible(true)}
+                    style={formStyles.inputRow}
+                  >
+                    <Text style={formStyles.inputText}>
+                      {selectedSepayBank?.shortName ||
+                        sepayDetails.bankName ||
+                        'Chọn ngân hàng'}
+                    </Text>
+                    {isBanksLoading ? (
+                      <ActivityIndicator size="small" color="#0000ff" />
+                    ) : (
+                      <ChevronDown size={18} color="#64748b" />
+                    )}
+                  </TouchableOpacity>
+                </View>
 
-              <View className="flex-1" style={{ marginBottom: 18 }}>
-                <FieldLabel label="Số lượng" />
+                <View style={{ marginBottom: 18 }}>
+                  <FieldLabel label="Số tài khoản" />
+                  <TextInput
+                    style={[formStyles.inputRow, formStyles.textInput]}
+                    placeholder="Nhập số tài khoản"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="number-pad"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={sepayDetails.accountNumber}
+                    onChangeText={value =>
+                      updateSepayDetails('accountNumber', value)
+                    }
+                  />
+                </View>
+
+                <View style={{ marginBottom: 18 }}>
+                  <FieldLabel label="Tên người thụ hưởng" />
+                  <TextInput
+                    style={[formStyles.inputRow, formStyles.textInput]}
+                    placeholder="Nhập tên chủ tài khoản"
+                    placeholderTextColor="#94a3b8"
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    value={sepayDetails.beneficiaryName}
+                    onChangeText={value =>
+                      updateSepayDetails('beneficiaryName', value)
+                    }
+                  />
+                </View>
+              </>
+            ) : null}
+
+            <View>
+              {selectedMethod.id !== 'sepay' ? (
+                <View style={{ marginBottom: 18 }}>
+                  <FieldLabel label={accountFieldLabel} />
+                  <TextInput
+                    style={[formStyles.inputRow, formStyles.textInput]}
+                    placeholder={accountFieldPlaceholder}
+                    placeholderTextColor="#94a3b8"
+                    keyboardType={accountKeyboardType as any}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={accountValue}
+                    onChangeText={setAccountValue}
+                  />
+                </View>
+              ) : null}
+
+              <View style={{ marginBottom: 18 }}>
+                <FieldLabel label="Số tiền" />
                 <TextInput
                   style={[formStyles.inputRow, formStyles.textInput]}
                   placeholder="0"
@@ -391,7 +590,9 @@ function WithdrawalScreen() {
               <Text style={historyStyles.columnText}>Trạng thái</Text>
             </View>
             {history.length === 0 ? (
-              <Text style={historyStyles.empty}>Chưa có yêu cầu rút tiền nào.</Text>
+              <Text style={historyStyles.empty}>
+                Chưa có yêu cầu rút tiền nào.
+              </Text>
             ) : (
               history.map(item => (
                 <HistoryRow
@@ -412,6 +613,13 @@ function WithdrawalScreen() {
         selectedMethod={selectedMethod}
         onSelect={handleSelectMethod}
         onClose={() => setPickerVisible(false)}
+      />
+      <BankPickerModal
+        visible={bankPickerVisible}
+        banks={sepayBanks}
+        selectedCode={sepayDetails.bankCode}
+        onSelect={handleSelectBank}
+        onClose={() => setBankPickerVisible(false)}
       />
     </SafeAreaView>
   );
@@ -461,6 +669,22 @@ const pickerStyles = StyleSheet.create({
   rowLabelActive: {
     color: '#0000ff',
     fontWeight: '800',
+  },
+  bankList: {
+    maxHeight: 460,
+  },
+  bankRow: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  bankSubLabel: {
+    marginTop: 3,
+    fontSize: 12,
+    color: '#64748b',
   },
 });
 

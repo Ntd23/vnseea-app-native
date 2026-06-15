@@ -8,24 +8,22 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useEarningsViewModel} from '../../application/view-models/useEarningsViewModel';
 import {ROUTES} from '../../../navigation/constants/routes';
 import type {RootStackParamList} from '../../../navigation/types';
+import {formatCurrency} from '../../../shared-kernel/application/utils/formatCurrency';
 
 type BalanceNav = NativeStackNavigationProp<RootStackParamList>;
-
-function formatCurrency(amount: number, symbol: string): string {
-  const formatted = new Intl.NumberFormat('vi-VN').format(amount);
-  return `${formatted} ${symbol}`;
-}
 
 /* ── Balance Card ── */
 function BalanceCard({
   title,
   amount,
+  currency,
   symbol,
   icon: IconComponent,
   cardBg,
 }: {
   title: string;
   amount: number;
+  currency: string;
   symbol: string;
   icon: React.ComponentType<{size: number; color: string}>;
   cardBg: string;
@@ -39,7 +37,7 @@ function BalanceCard({
         </View>
       </View>
       <Text className="text-display font-bold text-primary">
-        {formatCurrency(amount, symbol)}
+        {formatCurrency(amount, currency, symbol)}
       </Text>
     </View>
   );
@@ -106,6 +104,7 @@ function MyBalanceScreen() {
     );
   }
 
+  const currency = walletOverview?.currency ?? 'VND';
   const currencySymbol = walletOverview?.currencySymbol ?? '₫';
   const balance = walletOverview?.balance ?? 0;
   const withdrawableBalance = walletOverview?.withdrawableBalance ?? 0;
@@ -141,6 +140,7 @@ function MyBalanceScreen() {
         <BalanceCard
           title="Số dư ví"
           amount={balance}
+          currency={currency}
           symbol={currencySymbol}
           icon={Wallet}
           cardBg="bg-[#d3e4fe]"
@@ -151,6 +151,7 @@ function MyBalanceScreen() {
           <BalanceCard
             title="Số dư khả dụng"
             amount={withdrawableBalance}
+            currency={currency}
             symbol={currencySymbol}
             icon={CreditCard}
             cardBg="bg-[#eef0ff]"

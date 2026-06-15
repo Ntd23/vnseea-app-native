@@ -29,8 +29,24 @@ export interface WithdrawalOverview {
   history: WithdrawalHistoryItem[];
 }
 
+export interface SepayWithdrawalDetails {
+  bankCode: string;
+  bankName: string;
+  accountNumber: string;
+  beneficiaryName: string;
+}
+
+export interface SepayBank {
+  code: string;
+  name: string;
+  shortName: string;
+  bin: string;
+  supported: boolean;
+}
+
 export interface WithdrawalRequestInput {
   method: WithdrawalMethod;
   amount: number;
   accountValue: string;
+  sepayDetails?: SepayWithdrawalDetails;
 }

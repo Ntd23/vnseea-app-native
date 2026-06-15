@@ -18,12 +18,33 @@ export interface PointActivity {
   chipBg: string;
 }
 
+export interface PointHistoryItem {
+  id: string;
+  title: string;
+  meta: string;
+  points: number;
+}
+
 export interface UserPoints {
-  total: number;
-  goal: number;
-  level: string;
-  initials: string;
-  activities: PointActivity[];
+  pointsBalance: number;
+  walletBalance: number;
+  exchangeStepPoints: number;
+  maxExchangePoints: number;
+  maxExchangeAmount: number;
+  exchangeRateLabel: string;
+  walletCurrency: string;
+  walletCurrencySymbol: string;
+  displayCurrency: string;
+  displayCurrencySymbol: string;
+  history: PointHistoryItem[];
+}
+
+export interface PointsExchangeResult {
+  message: string;
+  exchangedPoints: number;
+  amount: number;
+  points: number;
+  wallet: number;
 }
 
 export interface Contact {
@@ -75,4 +96,40 @@ export interface WalletOverview {
   topupMethods: TopupMethod[];
   canWithdraw: boolean;
   currentUser: CurrentUser;
+}
+
+export interface AffiliateRequirement {
+  id: 'profile' | 'verified' | 'milestone';
+  label: string;
+  completed: boolean;
+}
+
+export interface AffiliateReferralUser {
+  id: number;
+  name: string;
+  username: string;
+  avatar: string;
+  joined: string;
+  verified: boolean;
+  profileComplete: boolean;
+  qualified: boolean;
+  rewardPaid: boolean;
+  progressPercent: number;
+  status: 'paid' | 'qualified' | 'pending' | string;
+}
+
+export interface AffiliateOverview {
+  referralLink: string;
+  earningPerUser: number;
+  availableReward: number;
+  currency: string;
+  currencySymbol: string;
+  qualifiedUsers: number;
+  requiredQualifiedReferrals: number;
+  progressPercent: number;
+  profileComplete: boolean;
+  verified: boolean;
+  eligibleForPayout: boolean;
+  requirements: AffiliateRequirement[];
+  referredUsers: AffiliateReferralUser[];
 }
