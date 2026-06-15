@@ -231,6 +231,12 @@ export function useFeedViewModel() {
     videoPosts: FeedVideoPost[];
   } | null>(null);
   const feedSourceRef = useRef<FeedSource>('all');
+  const trackedImpressionIdsRef = useRef<Set<string>>(new Set());
+  const pendingImpressionIdsRef = useRef<Set<string>>(new Set());
+  const impressionFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const impressionFlushTaskRef = useRef<InteractionTask | null>(null);
 
   // Network pagination guard
   const hasReachedNetworkEndRef = useRef(false);
@@ -317,14 +323,45 @@ export function useFeedViewModel() {
     applyFeedSources(pending.lightPosts, pending.videoPosts);
   }, [applyFeedSources]);
 
+  const scheduleImpressionFlush = useCallback((delayMs = 900) => {
+    if (impressionFlushTimerRef.current) return;
+
+    impressionFlushTimerRef.current = setTimeout(() => {
+      impressionFlushTimerRef.current = null;
+
+      if (isScrollBusyRef.current) {
+        scheduleImpressionFlush(delayMs);
+        return;
+      }
+
+      const postIds = Array.from(pendingImpressionIdsRef.current);
+      if (postIds.length === 0) return;
+
+      pendingImpressionIdsRef.current.clear();
+      impressionFlushTaskRef.current?.cancel();
+      impressionFlushTaskRef.current = InteractionManager.runAfterInteractions(
+        () => {
+          impressionFlushTaskRef.current = null;
+          for (const postId of postIds) {
+            void repository.recordRecommendationEvent({
+              event: 'impression',
+              postId,
+            });
+          }
+        },
+      );
+    }, delayMs);
+  }, []);
+
   const setScrollBusy = useCallback(
     (busy: boolean) => {
       isScrollBusyRef.current = busy;
       if (!busy) {
         flushPendingCommit();
+        scheduleImpressionFlush(150);
       }
     },
-    [flushPendingCommit],
+    [flushPendingCommit, scheduleImpressionFlush],
   );
 
   const updatePostEverywhere = useCallback((updater: (post: FeedPost) => FeedPost) => {
@@ -510,6 +547,10 @@ export function useFeedViewModel() {
     hasReachedNetworkEndRef.current = false;
     nextPageCursorRef.current = undefined;
     emptyPageStrikeRef.current = 0;
+    if (isPullToRefresh) {
+      trackedImpressionIdsRef.current = new Set();
+      pendingImpressionIdsRef.current.clear();
+    }
     try {
       const page = await repository.getLightPostsPage(
         PAGE_SIZE,
@@ -564,6 +605,8 @@ export function useFeedViewModel() {
       hasReachedNetworkEndRef.current = false;
       nextPageCursorRef.current = undefined;
       emptyPageStrikeRef.current = 0;
+      trackedImpressionIdsRef.current = new Set();
+      pendingImpressionIdsRef.current.clear();
       setPosts([]);
       setIsAllLoaded(false);
       setHasLoadedOnce(false);
@@ -725,6 +768,11 @@ export function useFeedViewModel() {
   useEffect(() => {
     return () => {
       videoBufferTaskRef.current?.cancel();
+      impressionFlushTaskRef.current?.cancel();
+      if (impressionFlushTimerRef.current) {
+        clearTimeout(impressionFlushTimerRef.current);
+        impressionFlushTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -923,6 +971,16 @@ export function useFeedViewModel() {
     [updatePostEverywhere],
   );
 
+  const trackPostImpression = useCallback((postId: string) => {
+    if (!postId || trackedImpressionIdsRef.current.has(postId)) {
+      return;
+    }
+
+    trackedImpressionIdsRef.current.add(postId);
+    pendingImpressionIdsRef.current.add(postId);
+    scheduleImpressionFlush();
+  }, [scheduleImpressionFlush]);
+
   return {
     feedSource,
     setFeedSource: selectFeedSource,
@@ -940,6 +998,7 @@ export function useFeedViewModel() {
     toggleReaction,
     updateCommentCount,
     votePoll,
+    trackPostImpression,
 
     // Backward-compat aliases
     // Older screen code reads these names. They are derived state

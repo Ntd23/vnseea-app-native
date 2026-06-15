@@ -10,7 +10,7 @@ import { CreateReelScreen, ReelsScreen } from '../reels';
 import { CreateStoryScreen, StoryViewerScreen } from '../stories';
 import { NotificationsScreen } from '../notifications';
 import { MemoriesScreen } from '../memories';
-import { OffersScreen } from '../offers';
+import { OffersScreen, PageOffersScreen, CreateOfferScreen } from '../offers';
 import {
   AddressScreen,
   AdvertisingScreen,
@@ -131,6 +131,7 @@ export function createStackRoutes(
     { name: ROUTES.REGISTER, component: RegisterScreen },
     { name: ROUTES.FORGOT_PASSWORD, component: ForgotPasswordScreen },
     { name: ROUTES.MAIN_TABS, component: MainTabsComponent },
+    { name: ROUTES.REELS, component: ReelsScreen },
     { name: ROUTES.POST_DETAIL, component: PostDetailScreen },
     { name: ROUTES.PROFILE, component: ProfileScreen },
     { name: ROUTES.MY_PHOTOS, component: MyPhotosScreen },
@@ -181,6 +182,8 @@ export function createStackRoutes(
     { name: ROUTES.DEPOSIT, component: DepositScreen },
     { name: ROUTES.MEMORIES, component: MemoriesScreen },
     { name: ROUTES.OFFERS, component: OffersScreen },
+    { name: ROUTES.PAGE_OFFERS, component: PageOffersScreen },
+    { name: ROUTES.CREATE_OFFER, component: CreateOfferScreen },
     { name: ROUTES.SETTINGS_MY_INFO, component: MyInfoScreen },
     { name: ROUTES.SETTINGS_ADDRESS, component: AddressScreen },
     { name: ROUTES.EDIT_PROFILE, component: EditProfileScreen },

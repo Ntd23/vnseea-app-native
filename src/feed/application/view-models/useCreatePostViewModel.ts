@@ -23,6 +23,7 @@ import type {
   PostFeeling,
   PostPhotoAttachment,
   PostPrivacy,
+  PostVideoAttachment,
 } from '../../domain/types/feed.types';
 // Reuse the reel composer's caption suggestion plumbing — same backend
 // endpoints (`apiRoutes.user.suggestions` / `apiRoutes.search.all` /
@@ -124,14 +125,18 @@ export type UseCreatePostOptions = {
    * post to the home feed without a full refetch.
    */
   onCreated?: (post: FeedTextPost) => void;
+  pageId?: string;
 };
 
 export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
-  const { onCreated } = options;
+  const { onCreated, pageId } = options;
   const language = useAppLanguage();
   const copy = useMemo(() => VIEW_MODEL_COPY[language], [language]);
 
-  const [draft, setDraft] = useState<CreatePostDraft>(DEFAULT_DRAFT);
+  const [draft, setDraft] = useState<CreatePostDraft>({
+    ...DEFAULT_DRAFT,
+    pageId,
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -169,7 +174,15 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
 
   const setAudio = useCallback((audio: PostAudioAttachment | undefined) => {
     setError(null);
-    setDraft(prev => ({ ...prev, audio, photos: audio ? [] : prev.photos }));
+    setDraft(prev => ({
+      ...prev,
+      audio,
+      // WoWonder only accepts ONE primary media per post. Clear the
+      // others so a user switching from audio to photos/video doesn't
+      // accidentally upload three media types at once.
+      photos: audio ? [] : prev.photos,
+      video: audio ? undefined : prev.video,
+    }));
   }, []);
 
   /**
@@ -177,6 +190,9 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
    * double-pick from the gallery doesn't add the same photo twice, and
    * caps total photos at MAX_PHOTOS so the user gets feedback BEFORE
    * the server rejects the upload.
+   *
+   * Also clears any previously selected video — WoWonder's `new_post`
+   * accepts only one media type per post.
    */
   const addPhotos = useCallback((photos: PostPhotoAttachment[]) => {
     setError(null);
@@ -188,9 +204,14 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
         // Trim the overflow and surface a warning — preserve as many
         // as we can rather than rejecting the whole batch.
         setError(copy.errTooManyPhotos(MAX_PHOTOS));
-        return { ...prev, audio: undefined, photos: merged.slice(0, MAX_PHOTOS) };
+        return {
+          ...prev,
+          audio: undefined,
+          video: undefined,
+          photos: merged.slice(0, MAX_PHOTOS),
+        };
       }
-      return { ...prev, audio: undefined, photos: merged };
+      return { ...prev, audio: undefined, video: undefined, photos: merged };
     });
   }, [copy]);
 
@@ -199,6 +220,21 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     setDraft(prev => ({
       ...prev,
       photos: prev.photos.filter(p => p.uri !== uri),
+    }));
+  }, []);
+
+  /**
+   * Replace the draft's video attachment. Clears photos + audio because
+   * WoWonder accepts only one media type per post. Passing `undefined`
+   * removes the video (used by the X button on the preview card).
+   */
+  const setVideo = useCallback((video: PostVideoAttachment | undefined) => {
+    setError(null);
+    setDraft(prev => ({
+      ...prev,
+      video,
+      photos: video ? [] : prev.photos,
+      audio: video ? undefined : prev.audio,
     }));
   }, []);
 
@@ -244,13 +280,13 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
   /** Wipe everything back to the default draft. Called after a successful
    * submit and when the user explicitly discards. */
   const reset = useCallback(() => {
-    setDraft(DEFAULT_DRAFT);
+    setDraft({ ...DEFAULT_DRAFT, pageId });
     setError(null);
     setIsSubmitting(false);
     setCaptionSuggestions([]);
     setIsCaptionSuggestionActive(false);
     setCaptionMentionReplacements([]);
-  }, []);
+  }, [pageId]);
 
   // ── Debounced suggestion fetcher ──────────────────────────────────
   // Watches `draft.text` and pulls suggestions whenever the trailing
@@ -295,7 +331,12 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
    * non-empty. Returns the error message or null when valid.
    */
   const validate = useCallback((d: CreatePostDraft): string | null => {
-    if (d.text.trim().length === 0 && d.photos.length === 0 && !d.audio) {
+    if (
+      d.text.trim().length === 0 &&
+      d.photos.length === 0 &&
+      !d.audio &&
+      !d.video
+    ) {
       return copy.errEmpty;
     }
     if (d.photos.length > MAX_PHOTOS) {
@@ -343,7 +384,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
       // cleared anything it depended on. (Currently irrelevant since
       // result lives outside the draft, but defensive anyway.)
       onCreated?.(result.post);
-      setDraft(DEFAULT_DRAFT);
+      setDraft({ ...DEFAULT_DRAFT, pageId });
       return result;
     } catch (caught) {
       const message =
@@ -355,7 +396,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [captionMentionReplacements, draft, onCreated, validate, copy]);
+  }, [captionMentionReplacements, draft, onCreated, pageId, validate, copy]);
 
   return {
     // State
@@ -372,6 +413,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     setPrivacy,
     setFeeling,
     setAudio,
+    setVideo,
     addPhotos,
     removePhoto,
     applyCaptionSuggestion,

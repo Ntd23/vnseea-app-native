@@ -9,4 +9,6 @@ export interface SavedItem {
   imageUrl?: string;
   kind: SavedItemKind;
   postUrl?: string;
+  videoUrl?: string;
+  rawPost?: Record<string, unknown>;
 }

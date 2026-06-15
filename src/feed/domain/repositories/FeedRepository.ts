@@ -5,13 +5,24 @@ import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type {
   CreatePostDraft,
   CreatePostResult,
+  FeedPollPost,
   FeedPost,
   FeedTextPost,
   FeedVideoPost,
 } from '../types/feed.types';
 
 export type FeedSource = 'all' | 'following';
-export type FeedShareDestination = 'timeline' | 'page' | 'group';
+export type FeedShareDestination = 'timeline' | 'page' | 'group' | 'message';
+export type FeedRecommendationEvent =
+  | 'impression'
+  | 'click'
+  | 'reaction'
+  | 'comment'
+  | 'share'
+  | 'video_watch'
+  | 'hide'
+  | 'report'
+  | 'hashtag';
 
 export interface SharePostInput {
   postId: string;
@@ -20,6 +31,21 @@ export interface SharePostInput {
   userId?: string;
   pageId?: string;
   groupId?: string;
+  /**
+   * For `destination: 'message'` — the user the post will be sent
+   * to as a chat message. We pass this through to the chat
+   * `send-message` endpoint as `user_id` (or as `id` for group
+   * chats). The wire format is the same as the existing
+   * `sendMessage` call in `ApiMessagesRepository`.
+   */
+  recipientUserId?: string;
+}
+
+export interface FeedRecommendationEventInput {
+  event: FeedRecommendationEvent;
+  postId?: string;
+  value?: string;
+  durationMs?: number;
 }
 
 export interface FeedPostsPage<TPost extends FeedPost = FeedPost> {
@@ -119,6 +145,12 @@ export interface FeedRepository {
     afterPostId?: string,
   ): Promise<FeedPost[]>;
 
+  getPagePosts(
+    pageId: string,
+    limit?: number,
+    afterPostId?: string,
+  ): Promise<FeedPostsPage<FeedTextPost | FeedVideoPost | FeedPollPost>>;
+
   /**
    * Fetch text/photo posts that contain a hashtag. Uses WoWonder's
    * `/api/posts` endpoint with `type=hashtag` and `hash=<tag>`.
@@ -128,6 +160,12 @@ export interface FeedRepository {
     limit?: number,
     afterPostId?: string,
   ): Promise<FeedTextPost[]>;
+
+  /**
+   * Best-effort event tracking for the recommendation ranker. This must never
+   * block or break feed rendering; implementations should swallow API errors.
+   */
+  recordRecommendationEvent(input: FeedRecommendationEventInput): Promise<void>;
 
   /**
    * Toggle save/unsave a post via WoWonder's post-actions endpoint.

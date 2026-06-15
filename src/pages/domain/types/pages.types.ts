@@ -18,7 +18,16 @@ export interface PagesItem {
   cover?: string;
   url?: string;
   likes?: number;
+  followersCount?: number;
+  postCount?: number;
+  ratingCount?: number;
+  ratingAverage?: number;
+  isFollowing?: boolean;
   isLiked?: boolean;
+  isRated?: boolean;
+  ownerId?: string;
+  owner?: PageUser;
+  adminInfo?: unknown;
   raw?: unknown;
 }
 
@@ -31,6 +40,33 @@ export interface PagesListOptions {
 
 export interface PagesListPage {
   items: PagesItem[];
+  nextOffset: string | null;
+  hasMore: boolean;
+}
+
+export interface PageUser {
+  id: string;
+  name: string;
+  username: string;
+  avatarUrl?: string;
+  isFriend?: boolean;
+  isRequested?: boolean;
+  isInvited?: boolean;
+  role?: 'owner' | 'admin' | string;
+  raw?: unknown;
+}
+
+export interface PageReview {
+  id: string;
+  text: string;
+  rating: number;
+  postedAt?: number;
+  user: PageUser | null;
+  raw?: unknown;
+}
+
+export interface PageReviewsPage {
+  items: PageReview[];
   nextOffset: string | null;
   hasMore: boolean;
 }

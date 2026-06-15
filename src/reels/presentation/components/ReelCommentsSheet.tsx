@@ -43,6 +43,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -232,6 +233,7 @@ interface Props {
   onCancelReply: () => void;
   onRetryFailedComment: (comment: ReelComment) => void;
   onDeleteFailedComment: (comment: ReelComment) => void;
+  sheetHeight?: string | number;
 }
 
 function formatCount(count: number) {
@@ -293,6 +295,7 @@ function ReelCommentsSheetBase({
   onCancelReply,
   onRetryFailedComment,
   onDeleteFailedComment,
+  sheetHeight = '72%',
 }: Props) {
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
@@ -685,6 +688,7 @@ function ReelCommentsSheetBase({
           style={[
             styles.sheet,
             {
+              height: sheetHeight as ViewStyle['height'],
               paddingBottom: Math.max(insets.bottom, 10),
               transform: [
                 { translateY: sheetTranslateY },

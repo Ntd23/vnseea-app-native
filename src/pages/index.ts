@@ -5,6 +5,7 @@ export { createPagesRepository } from './infrastructure/repositories/ApiPagesRep
 export { usePagesViewModel } from './application/view-models/usePagesViewModel';
 export { useMyPagesViewModel } from './application/view-models/useMyPagesViewModel';
 export { usePagesOnFeedViewModel } from './application/view-models/usePagesOnFeedViewModel';
+export { usePageDetailViewModel } from './application/view-models/usePageDetailViewModel';
 export { default as CreatePageScreen } from './presentation/screens/CreatePageScreen';
 export { default as PageDetailScreen } from './presentation/screens/PageDetailScreen';
 export { default as PagesScreen } from './presentation/screens/PagesScreen';

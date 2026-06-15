@@ -15,6 +15,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  KeyboardAvoidingView,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -75,6 +76,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
+import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { createProfileRepository } from '../../../profile/infrastructure/repositories/ApiProfileRepository';
 import type {
   ReactionType,
@@ -333,6 +335,20 @@ type FeedCopy = {
   reportErrorMessage: string;
   editTitle: string;
   editEventMessage: (name: string) => string;
+  commentSending: string;
+  commentFailed: string;
+  commentReply: string;
+  commentLikesCount: (count: number) => string;
+  loadingReplies: string;
+  viewRepliesCount: (count: number) => string;
+  commentRetry: string;
+  replyingToText: (username: string) => string;
+  loadingComments: string;
+  noComments: string;
+  beTheFirstComment: string;
+  addCommentPlaceholder: string;
+  writeReplyPlaceholder: string;
+  closeCommentsAccessibility: string;
 };
 
 const FEED_COPY: Record<AppLanguage, FeedCopy> = {
@@ -426,6 +442,20 @@ const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     editTitle: 'Chỉnh sửa',
     editEventMessage: name =>
       `Tính năng chỉnh sửa sự kiện "${name}" đang được phát triển.`,
+    commentSending: 'Đang gửi...',
+    commentFailed: 'Không gửi được',
+    commentReply: 'Phản hồi',
+    commentLikesCount: count => `${formatCount(count)} thích`,
+    loadingReplies: 'Đang tải phản hồi...',
+    viewRepliesCount: count => `Xem ${formatCount(count)} phản hồi`,
+    commentRetry: 'Thử lại',
+    replyingToText: username => `Đang phản hồi @${username}`,
+    loadingComments: 'Đang tải bình luận...',
+    noComments: 'Chưa có bình luận',
+    beTheFirstComment: 'Hãy là người đầu tiên bình luận.',
+    addCommentPlaceholder: 'Thêm bình luận...',
+    writeReplyPlaceholder: 'Viết phản hồi...',
+    closeCommentsAccessibility: 'Đóng bình luận',
   },
   en: {
     filters: [
@@ -515,6 +545,20 @@ const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     reportErrorMessage: 'Could not send report. Please try again.',
     editTitle: 'Edit',
     editEventMessage: name => `Editing event "${name}" is under development.`,
+    commentSending: 'Sending...',
+    commentFailed: 'Failed to send',
+    commentReply: 'Reply',
+    commentLikesCount: count => `${formatCount(count)} likes`,
+    loadingReplies: 'Loading replies...',
+    viewRepliesCount: count => `View ${formatCount(count)} replies`,
+    commentRetry: 'Retry',
+    replyingToText: username => `Replying to @${username}`,
+    loadingComments: 'Loading comments...',
+    noComments: 'No comments yet',
+    beTheFirstComment: 'Be the first to comment.',
+    addCommentPlaceholder: 'Add a comment...',
+    writeReplyPlaceholder: 'Write a reply...',
+    closeCommentsAccessibility: 'Close comments',
   },
 };
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1116,334 +1160,7 @@ function formatPostTime(timestamp: number | undefined, copy: FeedCopy) {
 
 type FeedShareTarget = FeedShareDestination | 'message';
 
-function FeedCommentRow({
-  comment,
-  copy,
-  replies,
-  isLoadingReplies,
-  onReply,
-  onLoadReplies,
-  depth = 0,
-}: {
-  comment: ReelComment;
-  copy: FeedCopy;
-  replies?: ReelComment[];
-  isLoadingReplies?: boolean;
-  onReply: (commentId: string, username: string) => void;
-  onLoadReplies: (commentId: string) => void;
-  depth?: number;
-}) {
-  return (
-    <View
-      style={{
-        marginBottom: depth > 0 ? 10 : 14,
-        marginLeft: depth > 0 ? 36 : 0,
-      }}
-    >
-      <View style={{ flexDirection: 'row' }}>
-        <Image
-          source={{ uri: comment.publisher.avatarUrl || images.me }}
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 18,
-            backgroundColor: '#e5e7eb',
-          }}
-        />
-        <View style={{ flex: 1, marginLeft: 10 }}>
-          <View
-            style={{
-              borderRadius: 16,
-              backgroundColor: '#f1f5f9',
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-            }}
-          >
-            <Text style={{ color: '#0f172a', fontSize: 13, fontWeight: '700' }}>
-              {comment.publisher.name ||
-                comment.publisher.username ||
-                copy.userFallback}
-            </Text>
-            {comment.text ? (
-              <Text
-                style={{
-                  marginTop: 4,
-                  color: '#111827',
-                  fontSize: 14,
-                  lineHeight: 20,
-                }}
-              >
-                {comment.text}
-              </Text>
-            ) : null}
-            {comment.isSending ? (
-              <Text style={{ marginTop: 4, color: '#64748b', fontSize: 12 }}>
-                Đang gửi...
-              </Text>
-            ) : null}
-            {comment.isFailed ? (
-              <Text style={{ marginTop: 4, color: '#ef4444', fontSize: 12 }}>
-                Không gửi được
-              </Text>
-            ) : null}
-          </View>
-          <View
-            style={{
-              marginTop: 4,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
-              paddingHorizontal: 8,
-            }}
-          >
-            <Text style={{ color: '#64748b', fontSize: 12 }}>
-              {formatPostTime(comment.postedAt, copy)}
-            </Text>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() =>
-                onReply(
-                  comment.id,
-                  comment.publisher.username || comment.publisher.name || '',
-                )
-              }
-            >
-              <Text
-                style={{ color: '#64748b', fontSize: 12, fontWeight: '700' }}
-              >
-                Phản hồi
-              </Text>
-            </TouchableOpacity>
-            {comment.likeCount > 0 ? (
-              <Text style={{ color: '#64748b', fontSize: 12 }}>
-                {formatCount(comment.likeCount)} thích
-              </Text>
-            ) : null}
-          </View>
 
-          {comment.replyCount > 0 && !replies?.length ? (
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => onLoadReplies(comment.id)}
-              style={{ marginTop: 8, paddingHorizontal: 8 }}
-            >
-              <Text
-                style={{ color: '#64748b', fontSize: 12, fontWeight: '700' }}
-              >
-                {isLoadingReplies
-                  ? 'Đang tải phản hồi...'
-                  : `Xem ${comment.replyCount} phản hồi`}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-
-          {replies?.map(reply => (
-            <FeedCommentRow
-              key={reply.id}
-              comment={reply}
-              copy={copy}
-              replies={undefined}
-              isLoadingReplies={false}
-              onReply={onReply}
-              onLoadReplies={onLoadReplies}
-              depth={depth + 1}
-            />
-          ))}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function FeedCommentsOverlay({
-  visible,
-  comments,
-  commentCount,
-  isLoading,
-  isLoadingMore,
-  isSubmitting,
-  error,
-  repliesById,
-  loadingRepliesIds,
-  replyingTo,
-  copy,
-  onClose,
-  onEndReached,
-  onRetry,
-  onSubmit,
-  onSubmitReply,
-  onLoadReplies,
-  onStartReply,
-  onCancelReply,
-}: {
-  visible: boolean;
-  comments: ReelComment[];
-  commentCount: number;
-  isLoading: boolean;
-  isLoadingMore: boolean;
-  isSubmitting: boolean;
-  error: string | null;
-  repliesById: Record<string, ReelComment[]>;
-  loadingRepliesIds: string[];
-  replyingTo: { commentId: string; username: string } | null;
-  copy: FeedCopy;
-  onClose: () => void;
-  onEndReached: () => void;
-  onRetry: () => void;
-  onSubmit: (text: string) => Promise<ReelComment | null>;
-  onSubmitReply: (
-    commentId: string,
-    text: string,
-  ) => Promise<ReelComment | null>;
-  onLoadReplies: (commentId: string) => void;
-  onStartReply: (commentId: string, username: string) => void;
-  onCancelReply: () => void;
-}) {
-  const [draft, setDraft] = useState('');
-
-  useEffect(() => {
-    if (!visible) setDraft('');
-  }, [visible]);
-
-  const handleSubmit = useCallback(async () => {
-    const text = draft.trim();
-    if (!text || isSubmitting) return;
-
-    const created = replyingTo
-      ? await onSubmitReply(replyingTo.commentId, text)
-      : await onSubmit(text);
-    if (created) {
-      setDraft('');
-      onCancelReply();
-    }
-  }, [draft, isSubmitting, onCancelReply, onSubmit, onSubmitReply, replyingTo]);
-
-  if (!visible) return null;
-
-  return (
-    <View style={feedOverlayStyles.root}>
-      <Pressable
-        accessibilityLabel="Đóng bình luận"
-        onPress={onClose}
-        style={feedOverlayStyles.backdrop}
-      />
-      <View style={feedOverlayStyles.commentSheet}>
-        <View style={feedOverlayStyles.grabber} />
-        <View style={feedOverlayStyles.header}>
-          <View style={feedOverlayStyles.headerSide} />
-          <Text style={feedOverlayStyles.title}>
-            {Math.max(commentCount, comments.length)} bình luận
-          </Text>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={onClose}
-            style={feedOverlayStyles.closeButton}
-          >
-            <X size={20} color="#111827" />
-          </TouchableOpacity>
-        </View>
-
-        {error ? (
-          <View style={feedOverlayStyles.errorBox}>
-            <Text style={feedOverlayStyles.errorText}>{error}</Text>
-            <TouchableOpacity onPress={onRetry} activeOpacity={0.8}>
-              <Text style={feedOverlayStyles.retryText}>Thử lại</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        {replyingTo ? (
-          <View style={feedOverlayStyles.replyBox}>
-            <Text style={feedOverlayStyles.replyText}>
-              Đang phản hồi @{replyingTo.username}
-            </Text>
-            <TouchableOpacity onPress={onCancelReply} activeOpacity={0.8}>
-              <X size={16} color="#1d4ed8" />
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        <FlatList
-          data={comments}
-          keyExtractor={item => item.id}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          onEndReached={onEndReached}
-          onEndReachedThreshold={0.45}
-          contentContainerStyle={[
-            feedOverlayStyles.commentList,
-            comments.length === 0 && feedOverlayStyles.emptyCommentList,
-          ]}
-          ListEmptyComponent={
-            isLoading ? (
-              <View style={feedOverlayStyles.stateBox}>
-                <ActivityIndicator color="#0866ff" />
-                <Text style={feedOverlayStyles.stateText}>
-                  Đang tải bình luận...
-                </Text>
-              </View>
-            ) : (
-              <View style={feedOverlayStyles.stateBox}>
-                <MessageCircle size={28} color="#94a3b8" />
-                <Text style={feedOverlayStyles.stateTitle}>
-                  Chưa có bình luận
-                </Text>
-                <Text style={feedOverlayStyles.stateText}>
-                  Hãy là người đầu tiên bình luận.
-                </Text>
-              </View>
-            )
-          }
-          ListFooterComponent={
-            isLoadingMore ? (
-              <View style={{ paddingVertical: 12 }}>
-                <ActivityIndicator color="#0866ff" />
-              </View>
-            ) : null
-          }
-          renderItem={({ item }) => (
-            <FeedCommentRow
-              comment={item}
-              copy={copy}
-              replies={repliesById[item.id]}
-              isLoadingReplies={loadingRepliesIds.includes(item.id)}
-              onReply={onStartReply}
-              onLoadReplies={onLoadReplies}
-            />
-          )}
-        />
-
-        <View style={feedOverlayStyles.inputRow}>
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={replyingTo ? 'Viết phản hồi...' : 'Thêm bình luận...'}
-            placeholderTextColor="#94a3b8"
-            multiline
-            textAlignVertical="top"
-            style={feedOverlayStyles.commentInput}
-          />
-          <TouchableOpacity
-            activeOpacity={0.85}
-            disabled={!draft.trim() || isSubmitting}
-            onPress={handleSubmit}
-            style={[
-              feedOverlayStyles.sendButton,
-              (!draft.trim() || isSubmitting) &&
-                feedOverlayStyles.sendButtonDisabled,
-            ]}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Send size={18} color="#fff" />
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
 
 function FeedShareOverlay({
   visible,
@@ -1771,6 +1488,11 @@ const feedOverlayStyles = StyleSheet.create({
     elevation: 1000,
     justifyContent: 'flex-end',
   },
+  modalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'transparent',
+  },
   backdrop: {
     position: 'absolute',
     top: 0,
@@ -1780,8 +1502,7 @@ const feedOverlayStyles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.36)',
   },
   commentSheet: {
-    maxHeight: '78%',
-    minHeight: '48%',
+    height: '90%',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     backgroundColor: '#fff',
@@ -6080,7 +5801,7 @@ function FeedScreen() {
           onCommentTap={handleCommentTapStable}
           posts={feedPosts}
         />
-        <FeedCommentsOverlay
+        <ReelCommentsSheet
           visible={commentVm.isCommentsOpen}
           comments={commentVm.comments}
           commentCount={
@@ -6093,15 +5814,20 @@ function FeedScreen() {
           repliesById={commentVm.repliesById}
           loadingRepliesIds={commentVm.loadingRepliesIds}
           replyingTo={commentVm.replyingTo}
-          copy={copy}
           onClose={commentVm.closeComments}
           onEndReached={commentVm.loadMoreComments}
           onRetry={handleRetryComments}
           onSubmit={commentVm.submitComment}
           onSubmitReply={commentVm.submitReply}
+          onSetReaction={commentVm.setCommentReaction}
+          onDelete={commentVm.deleteComment}
           onLoadReplies={commentVm.loadReplies}
+          onCollapseReplies={commentVm.collapseReplies}
           onStartReply={commentVm.startReplyTo}
           onCancelReply={commentVm.cancelReply}
+          onRetryFailedComment={commentVm.retryFailedComment}
+          onDeleteFailedComment={commentVm.deleteFailedComment}
+          sheetHeight="90%"
         />
         {/* ── Share Action Sheet ── */}
         <FeedShareOverlay
