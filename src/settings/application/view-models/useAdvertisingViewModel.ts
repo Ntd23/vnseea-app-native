@@ -9,6 +9,7 @@ export function useAdvertisingViewModel() {
   const [ads, setAds] = useState<AdItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAds = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
@@ -32,12 +33,33 @@ export function useAdvertisingViewModel() {
 
   const refresh = useCallback(() => fetchAds('refresh'), [fetchAds]);
 
+  const deleteAd = useCallback(async (id: number): Promise<{ success: boolean; error?: string }> => {
+    setIsDeleting(true);
+    setError(null);
+    try {
+      const success = await repository.deleteAd(id);
+      if (success) {
+        setAds(prev => prev.filter(ad => ad.id !== id));
+        return { success: true };
+      }
+      return { success: false, error: 'Xóa quảng cáo thất bại.' };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setIsDeleting(false);
+    }
+  }, []);
+
   return {
     ads,
     isLoading,
     isRefreshing,
+    isDeleting,
     error,
     fetchAds,
     refresh,
+    deleteAd,
   };
 }
