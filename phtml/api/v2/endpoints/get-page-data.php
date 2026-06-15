@@ -36,6 +36,21 @@ if (empty($error_code)) {
         $page_data['post_count'] = Wo_CountPagePosts($page_data['page_id']);
         $page_data['is_liked'] = Wo_IsPageLiked($page_data['page_id'], $wo['user']['user_id']);
         $page_data['likes_count'] = Wo_CountPageLikes($page_data['page_id']);
+        $page_data['is_following'] = false;
+        $logged_user_id = !empty($wo['user']['user_id']) ? $wo['user']['user_id'] : (!empty($wo['user']['id']) ? $wo['user']['id'] : 0);
+        if (!empty($logged_user_id)) {
+            $user_id = Wo_Secure($logged_user_id);
+            $page_id = Wo_Secure($page_data['page_id']);
+            $is_following_query = mysqli_query($sqlConnect, "SELECT `id` FROM `Wo_pages_follow` WHERE `user_id` = {$user_id} AND `page_id` = {$page_id} AND `active` = 1 LIMIT 1");
+            if ($is_following_query && mysqli_num_rows($is_following_query) > 0) {
+                $page_data['is_following'] = true;
+            }
+        }
+        $page_data['followers_count'] = 0;
+        $followers_count_query = mysqli_query($sqlConnect, "SELECT COUNT(`id`) as `count` FROM `Wo_pages_follow` WHERE `page_id` = " . Wo_Secure($page_data['page_id']) . " AND `active` = 1");
+        if ($followers_count_query && $row = mysqli_fetch_assoc($followers_count_query)) {
+            $page_data['followers_count'] = (int) $row['count'];
+        }
         $page_data['call_action_type_text'] = '';
         if (!empty($page_data['call_action_type'])) {
             $page_data['call_action_type_text'] = $wo['call_action'][$page_data['call_action_type']];

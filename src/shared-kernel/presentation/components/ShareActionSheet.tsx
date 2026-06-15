@@ -31,6 +31,10 @@ import type {
 } from '../../../feed/domain/repositories/FeedRepository';
 import { useMyGroupsViewModel } from '../../../community';
 import { useMyPagesViewModel } from '../../../pages';
+// `useMessagesViewModel` powers the 'message' destination —
+// we surface the user's recent chat list so they can pick a
+// recipient without leaving the share sheet.
+import { useMessagesViewModel } from '../../../messages';
 import type { StoryItem } from '../../../stories/domain/types/stories.types';
 import { useShareViewModel } from '../../application/view-models/useShareViewModel';
 import { useCurrentUserViewModel } from '../../application/view-models/useCurrentUserViewModel';
@@ -73,22 +77,35 @@ export function ShareActionSheet({
   const currentUserVm = useCurrentUserViewModel();
   const pagesVm = useMyPagesViewModel();
   const groupsVm = useMyGroupsViewModel();
+  // Recent chats — used to populate the recipient picker when
+  // `destination === 'message'`. We lazy-load on first open so
+  // the chat endpoint doesn't fire on every Feed mount.
+  const messagesVm = useMessagesViewModel();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [destination, setDestination] = useState<Destination>('timeline');
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  // Selected chat recipient for the 'message' destination. We
+  // store the user id (not the chat id) because the wire endpoint
+  // is keyed by user.
+  const [selectedChatUserId, setSelectedChatUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible || !post) return;
     setError(null);
     setNote('');
     setDestination('timeline');
+    setSelectedChatUserId(null);
     pagesVm.setActiveFilter('mine');
     groupsVm.setActiveFilter('mine');
     void pagesVm.loadFirstPage(false);
     void groupsVm.loadFirstPage(false);
+    // Load recent chats the first time the modal opens so the
+    // 'message' target list is ready when the user picks it. The
+    // view-model short-circuits if the chats are already loaded.
+    messagesVm.loadChats(true).catch(() => undefined);
     // The view-model functions are stable enough for modal open; including
     // every method would reload while typing in the composer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -106,6 +123,24 @@ export function ShareActionSheet({
     }
   }, [groupsVm.groups, selectedGroupId]);
 
+  // Auto-pick the most recent user chat when the user opens the
+  // 'message' destination. Skip group chats — those still need
+  // a separate wire endpoint and aren't part of this iteration.
+  useEffect(() => {
+    if (
+      destination === 'message' &&
+      !selectedChatUserId &&
+      messagesVm.chats.length > 0
+    ) {
+      const firstUserChat = messagesVm.chats.find(
+        chat => chat.chatType === 'user',
+      );
+      if (firstUserChat) {
+        setSelectedChatUserId(String(firstUserChat.userId));
+      }
+    }
+  }, [destination, messagesVm.chats, selectedChatUserId]);
+
   const selectedPage = useMemo(
     () =>
       pagesVm.pages.find(
@@ -119,6 +154,20 @@ export function ShareActionSheet({
         group => String(group.groupId || group.id) === String(selectedGroupId),
       ),
     [groupsVm.groups, selectedGroupId],
+  );
+  // Filter to user-only chats — the share-to-message wire
+  // endpoint accepts `user_id` only. Group chat shares still
+  // route through the 'group' destination.
+  const availableChatsForShare = useMemo(
+    () => messagesVm.chats.filter(chat => chat.chatType === 'user'),
+    [messagesVm.chats],
+  );
+  const selectedChat = useMemo(
+    () =>
+      availableChatsForShare.find(
+        chat => String(chat.userId) === String(selectedChatUserId),
+      ),
+    [availableChatsForShare, selectedChatUserId],
   );
 
   const handleCopyLink = useCallback(async () => {
@@ -175,9 +224,6 @@ export function ShareActionSheet({
       if (!onInternalShare) {
         throw new Error('Chưa cấu hình chia sẻ nội bộ.');
       }
-      if (destination === 'message') {
-        throw new Error('Chia sẻ qua tin nhắn sẽ được bổ sung sau.');
-      }
 
       const input: SharePostInput = {
         postId: post.id,
@@ -203,6 +249,17 @@ export function ShareActionSheet({
           throw new Error('Bạn chưa có nhóm để chia sẻ.');
         }
         input.groupId = String(groupId);
+      } else if (destination === 'message') {
+        // Backend doesn't expose a wire-level "share post to chat"
+        // endpoint; the repo synthesises a text message containing
+        // the shareable URL. So all we need here is the recipient
+        // id.
+        const recipientId =
+          selectedChat?.userId ?? selectedChatUserId;
+        if (!recipientId) {
+          throw new Error('Bạn chưa có cuộc trò chuyện để chia sẻ.');
+        }
+        input.recipientUserId = String(recipientId);
       }
 
       const sharedPost = await onInternalShare(input);
@@ -265,7 +322,11 @@ export function ShareActionSheet({
                 {DESTINATIONS.map(option => {
                   const Icon = option.icon;
                   const active = destination === option.id;
-                  const disabled = option.id === 'message';
+                  // 'message' was previously disabled because the
+                  // backend had no wire endpoint. We've now added
+                  // a fallback path that sends the post URL as a
+                  // chat message — so the destination is live.
+                  const disabled = false;
                   return (
                     <TouchableOpacity
                       key={option.id}
@@ -273,7 +334,7 @@ export function ShareActionSheet({
                       disabled={isLoading}
                       onPress={() => {
                         setDestination(option.id);
-                        setError(disabled ? 'Chia sẻ qua tin nhắn sẽ được bổ sung sau.' : null);
+                        setError(null);
                       }}
                       style={[
                         styles.destinationCard,
@@ -324,6 +385,25 @@ export function ShareActionSheet({
                   getAvatar={item => item.avatar}
                 />
               ) : null}
+              {destination === 'message' ? (
+                <EntityTargetList
+                  title="Gửi tới bạn bè"
+                  emptyText={
+                    messagesVm.isLoadingChats
+                      ? 'Đang tải cuộc trò chuyện...'
+                      : 'Bạn chưa có cuộc trò chuyện nào để chia sẻ.'
+                  }
+                  items={availableChatsForShare}
+                  selectedId={selectedChatUserId}
+                  onSelect={id => setSelectedChatUserId(id)}
+                  getId={item => String(item.userId)}
+                  getTitle={item => item.name}
+                  getSubtitle={item =>
+                    item.username ? `@${item.username}` : item.lastMessage
+                  }
+                  getAvatar={item => item.avatar}
+                />
+              ) : null}
             </>
           ) : null}
 
@@ -337,10 +417,10 @@ export function ShareActionSheet({
           {canInternalShare ? (
             <TouchableOpacity
               activeOpacity={0.88}
-              disabled={isLoading || destination === 'message'}
+              disabled={isLoading}
               style={[
                 styles.primaryButton,
-                (isLoading || destination === 'message') && styles.primaryButtonDisabled,
+                isLoading && styles.primaryButtonDisabled,
               ]}
               onPress={handleInternalShare}
             >

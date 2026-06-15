@@ -147,6 +147,8 @@ function mapSavedPost(raw: Record<string, unknown>): SavedItem {
     imageUrl: getImageUrl(raw, kind),
     kind,
     postUrl: `${apiConfig.webBaseUrl.replace(/\/+$/, '')}/index.php?link1=post&id=${id}`,
+    videoUrl: kind === 'video' ? normalizeMediaUrl(readString(raw, 'postFile')) : undefined,
+    rawPost: raw,
   };
 }
 

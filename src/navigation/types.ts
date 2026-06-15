@@ -15,7 +15,12 @@ import type { AdItem } from '../advertising/domain/types/ads.types';
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
   [ROUTES.EXPLORE]: undefined;
-  [ROUTES.REELS]: undefined;
+  [ROUTES.REELS]:
+    | {
+        initialVideoId?: string;
+        post?: FeedPost;
+      }
+    | undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
   [ROUTES.SETTINGS]: undefined;
 };
@@ -25,6 +30,12 @@ export type RootStackParamList = {
   [ROUTES.REGISTER]: undefined;
   [ROUTES.FORGOT_PASSWORD]: undefined;
   [ROUTES.MAIN_TABS]: NavigatorScreenParams<MainTabParamList> | undefined;
+  [ROUTES.REELS]:
+    | {
+        initialVideoId?: string;
+        post?: FeedPost;
+      }
+    | undefined;
   [ROUTES.POST_DETAIL]: {
     postId: string;
     post?: FeedPost;
@@ -89,6 +100,8 @@ export type RootStackParamList = {
   [ROUTES.WITHDRAWAL]: undefined;
   [ROUTES.MEMORIES]: undefined;
   [ROUTES.OFFERS]: undefined;
+  [ROUTES.PAGE_OFFERS]: { pageId: number; pageName?: string; isOwner?: boolean };
+  [ROUTES.CREATE_OFFER]: { pageId: number; pageName?: string };
   [ROUTES.SETTINGS_MY_INFO]: undefined;
   [ROUTES.SETTINGS_ADDRESS]: undefined;
   [ROUTES.EDIT_PROFILE]: undefined;
@@ -96,7 +109,7 @@ export type RootStackParamList = {
   [ROUTES.ADVERTISING]: undefined;
   [ROUTES.CREATE_AD]: { ad?: AdItem } | undefined;
   [ROUTES.CREATE_REEL]: undefined;
-  [ROUTES.CREATE_POST]: undefined;
+  [ROUTES.CREATE_POST]: { page?: PagesItem } | undefined;
   [ROUTES.CREATE_STORY]: undefined;
   /**
    * Pass the full stories list + the user-index to open at. The viewer

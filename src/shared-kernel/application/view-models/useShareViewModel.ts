@@ -146,11 +146,17 @@ export function useShareViewModel() {
   };
 
   /**
-   * Copy shareable URL to clipboard
+   * Copy shareable URL to clipboard. Accepts a free-form URL so
+   * `PageShareActionSheet` can pass `vm.page.url` directly (the page
+   * already exposes a public URL on the wire) instead of building a
+   * deep link from an id.
    */
-  const copyToClipboard = async (postId: string, type: 'post' | 'story'): Promise<boolean> => {
+  const copyToClipboard = async (
+    idOrUrl: string,
+    type: 'post' | 'story' | 'page',
+  ): Promise<boolean> => {
     try {
-      const url = await getShareableUrl(postId, type);
+      const url = await getShareableUrl(idOrUrl, type);
 
       // Use platform-specific clipboard
       const { Clipboard } = require('react-native');
@@ -166,22 +172,39 @@ export function useShareViewModel() {
   };
 
   /**
-   * Generate a shareable URL for post or story
-   * In production, this would be a real deep link or web URL
+   * Generate a shareable URL for post / story / page.
+   *
+   * For 'page' the `id` argument is treated as a full URL (the page
+   * record already ships a public `url` on the wire — building a
+   * deep link from the page id would not work because the page id
+   * is meaningless outside the app's internal router). Callers that
+   * want a deep link for a page can pass `''` and we fall back to
+   * a `vnseea://page/<id>` scheme.
+   *
+   * Exported so other repositories (e.g. `ApiFeedRepository.sharePost`
+   * for the 'message' destination) can build the same URL the
+   * share sheet does — keeping a single source of truth for the
+   * scheme.
    */
-  const getShareableUrl = async (id: string, type: 'post' | 'story'): Promise<string> => {
+  const getShareableUrl = async (
+    id: string,
+    type: 'post' | 'story' | 'page',
+  ): Promise<string> => {
     // Current app URL scheme (adjust based on your app configuration)
     const appScheme = 'vnseea://';
 
-    // For web fallback, you can provide an actual website URL
-    // const baseUrl = 'https://vnseea.vn';
-
     if (type === 'post') {
       return `${appScheme}post/${id}`;
-      // Or for web: `${baseUrl}/post/${id}`;
     } else if (type === 'story') {
       return `${appScheme}story/${id}`;
-      // Or for web: `${baseUrl}/story/${id}`;
+    } else if (type === 'page') {
+      // If the caller already has a fully-formed public URL
+      // (e.g. from `PagesItem.url`), use it verbatim. Otherwise
+      // synthesise a deep link.
+      if (/^https?:\/\//i.test(id)) {
+        return id;
+      }
+      return `${appScheme}page/${id}`;
     }
 
     return `${appScheme}${type}/${id}`;
@@ -212,3 +235,31 @@ export function useShareViewModel() {
     copyToClipboard,
   };
 }
+
+/**
+ * Stand-alone helper — same logic the in-hook `getShareableUrl`
+ * uses, but exposed at module scope so other modules (notably
+ * `ApiFeedRepository.sharePost` for the 'message' destination)
+ * can build shareable URLs without going through the React hook.
+ * Keeping this in lockstep with the in-hook version is important
+ * — both should produce identical deep-link shapes.
+ */
+export const getShareableUrl = async (
+  id: string,
+  type: 'post' | 'story' | 'page',
+): Promise<string> => {
+  const appScheme = 'vnseea://';
+
+  if (type === 'post') {
+    return `${appScheme}post/${id}`;
+  } else if (type === 'story') {
+    return `${appScheme}story/${id}`;
+  } else if (type === 'page') {
+    if (/^https?:\/\//i.test(id)) {
+      return id;
+    }
+    return `${appScheme}page/${id}`;
+  }
+
+  return `${appScheme}${type}/${id}`;
+};

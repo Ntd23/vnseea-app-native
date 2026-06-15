@@ -13,9 +13,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { MapPin, X } from 'lucide-react-native';
+import { MapPin, X, ChevronRight } from 'lucide-react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { apiRoutes } from '../../application/constants/route-registry';
 import { apiBridge } from '../../infrastructure/api/apiBridge';
+import { useAppLanguage } from '../../application/hooks/useAppLanguage';
 
 interface PlacePrediction {
   place_id?: string;
@@ -58,13 +60,32 @@ interface AddressAutocompleteProps {
   debounceMs?: number;
 }
 
+const AUTOCOMPLETE_COPY = {
+  vi: {
+    title: 'Tìm địa điểm',
+    placeholder: 'Nhập địa điểm cần tìm...',
+    minChars: 'Nhập ít nhất 3 ký tự để tìm địa điểm.',
+    empty: 'Không có gợi ý địa chỉ phù hợp.',
+    error: 'Không tải được gợi ý địa chỉ.',
+  },
+  en: {
+    title: 'Search Location',
+    placeholder: 'Enter location to search...',
+    minChars: 'Enter at least 3 characters to search.',
+    empty: 'No matching address suggestions.',
+    error: 'Failed to load address suggestions.',
+  },
+};
+
 export function AddressAutocomplete({
   value,
   onChangeText,
   onSelectPlace,
-  placeholder = 'Nhập địa chỉ...',
+  placeholder,
   debounceMs = 300,
 }: AddressAutocompleteProps) {
+  const language = useAppLanguage();
+  const copy = AUTOCOMPLETE_COPY[language] || AUTOCOMPLETE_COPY.vi;
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -78,8 +99,8 @@ export function AddressAutocomplete({
     if (error instanceof Error && error.message) {
       return error.message;
     }
-    return 'Không tải được gợi ý địa chỉ.';
-  }, []);
+    return copy.error;
+  }, [copy.error]);
 
   const fetchPredictions = useCallback(
     async (input: string) => {
@@ -104,12 +125,12 @@ export function AddressAutocomplete({
           setPredictions(data.predictions);
           setErrorMessage(
             data.predictions.length === 0
-              ? 'Không có gợi ý địa chỉ phù hợp.'
+              ? copy.empty
               : '',
           );
         } else {
           setPredictions([]);
-          setErrorMessage('Không có gợi ý địa chỉ phù hợp.');
+          setErrorMessage(copy.empty);
         }
       } catch (error) {
         setPredictions([]);
@@ -118,7 +139,7 @@ export function AddressAutocomplete({
         setIsLoading(false);
       }
     },
-    [getErrorMessage],
+    [getErrorMessage, copy.empty],
   );
 
   const openModal = useCallback(() => {
@@ -220,7 +241,9 @@ export function AddressAutocomplete({
         onPress={openModal}
         activeOpacity={0.85}
       >
-        <MapPin size={20} color="#94A3B8" style={styles.inputIcon} />
+        <View style={styles.iconWrapper}>
+          <MapPin size={18} color="#002fff" />
+        </View>
         <Text
           style={[styles.input, !value ? styles.placeholderText : null]}
           numberOfLines={1}
@@ -230,7 +253,7 @@ export function AddressAutocomplete({
         {isLoading ? (
           <ActivityIndicator
             size="small"
-            color="#0000FF"
+            color="#002fff"
             style={styles.clearIcon}
           />
         ) : value ? (
@@ -247,34 +270,42 @@ export function AddressAutocomplete({
         onRequestClose={closeModal}
       >
         <SafeAreaView style={styles.modalRoot}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Tìm địa điểm</Text>
-            <TouchableOpacity onPress={closeModal} style={styles.modalClose}>
-              <X size={22} color="#0F172A" />
-            </TouchableOpacity>
-          </View>
+          {/* Top Sheet Handle Indicator */}
+          <View style={styles.modalHandle} />
 
-          <View style={styles.modalSearchContainer}>
-            <MapPin size={20} color="#64748B" style={styles.inputIcon} />
-            <TextInput
-              style={styles.modalInput}
-              value={modalQuery}
-              onChangeText={handleModalTextChange}
-              placeholder={placeholder}
-              placeholderTextColor="#94A3B8"
-              autoFocus
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-            />
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#0000FF" />
-            ) : null}
+          {/* White Header & Search Field wrapper */}
+          <View style={{ backgroundColor: '#ffffff', paddingBottom: 16 }}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{copy.title}</Text>
+              <TouchableOpacity onPress={closeModal} style={styles.modalClose}>
+                <X size={20} color="#0f172a" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalSearchContainer}>
+              <View style={styles.modalIconWrapper}>
+                <MapPin size={18} color="#002fff" />
+              </View>
+              <TextInput
+                style={styles.modalInput}
+                value={modalQuery}
+                onChangeText={handleModalTextChange}
+                placeholder={placeholder || copy.placeholder}
+                placeholderTextColor="#94A3B8"
+                autoFocus
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#002fff" />
+              ) : null}
+            </View>
           </View>
 
           {modalQuery.trim().length > 0 && modalQuery.trim().length < 3 ? (
             <Text style={styles.helperText}>
-              Nhập ít nhất 3 ký tự để tìm địa điểm.
+              {copy.minChars}
             </Text>
           ) : null}
 
@@ -283,24 +314,29 @@ export function AddressAutocomplete({
             keyExtractor={(item, index) =>
               item.place_id || item.placeId || `${item.description}-${index}`
             }
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.predictionItem}
-                onPress={() => handleSelectPrediction(item)}
-                activeOpacity={0.7}
-              >
-                <MapPin size={18} color="#64748B" />
-                <View style={styles.predictionTextContainer}>
-                  <Text style={styles.mainText} numberOfLines={2}>
-                    {item.main_text || item.mainText || item.description}
-                  </Text>
-                  <Text style={styles.secondaryText} numberOfLines={2}>
-                    {item.secondary_text ||
-                      item.secondaryText ||
-                      item.description}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+            renderItem={({ item, index }) => (
+              <Animated.View entering={FadeInDown.delay(index * 60).springify().damping(18)}>
+                <TouchableOpacity
+                  style={styles.predictionItem}
+                  onPress={() => handleSelectPrediction(item)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.predictionIconWrapper}>
+                    <MapPin size={18} color="#002fff" />
+                  </View>
+                  <View style={styles.predictionTextContainer}>
+                    <Text style={styles.mainText} numberOfLines={1}>
+                      {item.main_text || item.mainText || item.description}
+                    </Text>
+                    <Text style={styles.secondaryText} numberOfLines={1}>
+                      {item.secondary_text ||
+                        item.secondaryText ||
+                        item.description}
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color="#94a3b8" />
+                </TouchableOpacity>
+              </Animated.View>
             )}
             ListEmptyComponent={
               !isLoading && errorMessage ? (
@@ -326,18 +362,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    minHeight: 54,
+    paddingVertical: Platform.OS === 'ios' ? 8 : 6,
   },
-  inputIcon: {
-    marginRight: 8,
+  iconWrapper: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f0f3ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
   },
   input: {
     flex: 1,
     fontSize: 15,
     color: '#0F172A',
+    fontWeight: '600',
     padding: 0,
   },
   placeholderText: {
@@ -351,7 +395,16 @@ const styles = StyleSheet.create({
   },
   modalRoot: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#f8fafc',
+  },
+  modalHandle: {
+    width: 40,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#cbd5e1',
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 8,
   },
   modalHeader: {
     minHeight: 56,
@@ -359,74 +412,106 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0f172a',
   },
   modalClose: {
-    padding: 8,
-    marginRight: -8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalSearchContainer: {
-    marginHorizontal: 16,
-    marginTop: 16,
+    marginHorizontal: 20,
+    marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1.5,
+    borderColor: '#e0e7ff',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    minHeight: 54,
+  },
+  modalIconWrapper: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f0f3ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
   },
   modalInput: {
     flex: 1,
-    fontSize: 16,
-    color: '#0F172A',
+    fontSize: 15,
+    color: '#0f172a',
+    fontWeight: '600',
     padding: 0,
   },
   helperText: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     paddingTop: 12,
     fontSize: 13,
-    color: '#64748B',
+    fontWeight: '500',
+    color: '#64748b',
   },
   modalListContent: {
-    paddingTop: 8,
+    paddingTop: 12,
     paddingBottom: 28,
   },
   predictionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    borderRadius: 16,
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    paddingVertical: 14,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  predictionIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f0f3ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   predictionTextContainer: {
     flex: 1,
-    marginLeft: 12,
+    marginRight: 8,
   },
   mainText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
   },
   secondaryText: {
     fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+    fontWeight: '500',
+    color: '#64748b',
+    marginTop: 4,
   },
   errorText: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 24,
     paddingVertical: 12,
     fontSize: 13,
     fontWeight: '600',
-    color: '#B91C1C',
+    color: '#dc2626',
   },
 });
 

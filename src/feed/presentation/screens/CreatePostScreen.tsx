@@ -25,12 +25,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import VideoPlayer from 'react-native-video';
 import {
   launchImageLibrary,
   type Asset,
   type MediaType,
 } from 'react-native-image-picker';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -46,9 +47,11 @@ import {
   Smile,
   Square,
   Users,
+  Video as VideoIcon,
   X,
 } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROUTES } from '../../../navigation/constants/routes';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useCreatePostViewModel } from '../../application/view-models/useCreatePostViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
@@ -64,9 +67,11 @@ import type {
   PostFeeling,
   PostPhotoAttachment,
   PostPrivacy,
+  PostVideoAttachment,
 } from '../../domain/types/feed.types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+type CreatePostRoute = RouteProp<RootStackParamList, typeof ROUTES.CREATE_POST>;
 
 // ── Translation copy dictionary ───────────────────────────────────────
 const CREATE_POST_COPY = {
@@ -99,8 +104,10 @@ const CREATE_POST_COPY = {
     photo: 'Ảnh',
     feeling: 'Cảm xúc',
     audio: 'Âm thanh',
-    donation: 'Quyên góp',
-    donationTip: 'Tính năng quyên góp đang được phát triển.',
+    video: 'Video',
+    videoError: 'Không chọn được video',
+    videoErrorTip: 'Vui lòng thử lại.',
+    addVideo: 'Thêm video',
     done: 'Hoàn tất',
     privacyPublic: 'Công khai',
     privacyFriends: 'Bạn bè',
@@ -140,8 +147,10 @@ const CREATE_POST_COPY = {
     photo: 'Photo',
     feeling: 'Feeling',
     audio: 'Audio',
-    donation: 'Donation',
-    donationTip: 'Donation feature is under development.',
+    video: 'Video',
+    videoError: 'Could not select video',
+    videoErrorTip: 'Please try again.',
+    addVideo: 'Add video',
     done: 'Done',
     privacyPublic: 'Public',
     privacyFriends: 'Friends',
@@ -233,6 +242,26 @@ function assetToAttachment(asset: Asset): PostPhotoAttachment | null {
     width: asset.width,
     height: asset.height,
   };
+}
+
+/**
+ * Convert an image-picker Asset (with `mediaType: 'video'`) into a
+ * `PostVideoAttachment` ready for multipart upload. The picker gives us
+ * the same shape as photos — we just synthesise a stable name when
+ * the device didn't surface one.
+ */
+function assetToVideoAttachment(asset: Asset): PostVideoAttachment | null {
+  if (!asset.uri) return null;
+  const uri =
+    Platform.OS === 'android' && !asset.uri.startsWith('file://')
+      ? `file://${asset.uri}`
+      : asset.uri;
+  // RN's image picker reports the duration in seconds under
+  // `duration` (only for video picks). The composer doesn't
+  // display it yet but the server may want it as a hint.
+  const name = asset.fileName ?? `video-${Date.now()}.mp4`;
+  const type = asset.type ?? 'video/mp4';
+  return { uri, name, type };
 }
 
 // ── Sub-components ────────────────────────────────────────────────────
@@ -412,10 +441,13 @@ function FeelingPickerSheet({
 // ── Screen ────────────────────────────────────────────────────────────
 function CreatePostScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<CreatePostRoute>();
   const language = useAppLanguage();
   const copy = CREATE_POST_COPY[language];
+  const targetPage = route.params?.page;
 
   const vm = useCreatePostViewModel({
+    pageId: targetPage?.pageId,
     onCreated: post => {
       postCreatedEvents.emit(post);
     },
@@ -424,8 +456,11 @@ function CreatePostScreen() {
   const insets = useSafeAreaInsets();
 
   const profile = useMemo(() => sessionStorage.getUserProfile(), []);
-  const displayName = profile?.name?.trim() || (language === 'vi' ? 'Bạn' : 'You');
-  const avatarUrl = profile?.avatarUrl;
+  const displayName =
+    targetPage?.pageTitle ||
+    profile?.name?.trim() ||
+    (language === 'vi' ? 'Bạn' : 'You');
+  const avatarUrl = targetPage?.avatar || profile?.avatarUrl;
 
   const [privacySheetVisible, setPrivacySheetVisible] = useState(false);
   const [feelingSheetVisible, setFeelingSheetVisible] = useState(false);
@@ -547,6 +582,37 @@ function CreatePostScreen() {
     }
   }, [vm, copy]);
 
+  /**
+   * Open the gallery in video mode. The view-model clears any
+   * previously selected photos / audio so the resulting draft is
+   * guaranteed to be a single-media post (WoWonder's `new_post`
+   * accepts only one media type per submission).
+   */
+  const handlePickVideo = useCallback(async () => {
+    setIsProcessingPhotos(true);
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'video' as MediaType,
+        selectionLimit: 1,
+        videoQuality: 'high',
+        includeBase64: false,
+      });
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        Alert.alert(copy.videoError, result.errorMessage ?? copy.videoErrorTip);
+        return;
+      }
+      const asset = result.assets?.[0];
+      if (!asset) return;
+      const attachment = assetToVideoAttachment(asset);
+      if (attachment) {
+        vm.setVideo(attachment);
+      }
+    } finally {
+      setIsProcessingPhotos(false);
+    }
+  }, [vm, copy]);
+
   const handleToggleAudioRecording = useCallback(async () => {
     try {
       if (wavRecorder.isRecording) {
@@ -599,7 +665,8 @@ function CreatePostScreen() {
     const hasContent =
       vm.draft.text.trim().length > 0 ||
       vm.draft.photos.length > 0 ||
-      Boolean(vm.draft.audio);
+      Boolean(vm.draft.audio) ||
+      Boolean(vm.draft.video);
     if (!hasContent) {
       navigation.goBack();
       return;
@@ -663,15 +730,10 @@ function CreatePostScreen() {
               </View>
             </TouchableOpacity>
 
-            {/* Donation */}
-            <TouchableOpacity
-              onPress={() => {
-                Alert.alert(copy.donation, copy.donationTip);
-              }}
-              style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
-            >
+            {/* Video */}
+            <TouchableOpacity onPress={handlePickVideo} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
               <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' }}>
-                <Globe2 size={20} color="#3b82f6" />
+                <VideoIcon size={20} color="#3b82f6" />
               </View>
             </TouchableOpacity>
           </View>
@@ -735,17 +797,12 @@ function CreatePostScreen() {
             <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.audio}</Text>
           </TouchableOpacity>
 
-          {/* Donation */}
-          <TouchableOpacity
-            onPress={() => {
-              Alert.alert(copy.donation, copy.donationTip);
-            }}
-            style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}
-          >
+          {/* Video */}
+          <TouchableOpacity onPress={handlePickVideo} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
             <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-              <Globe2 size={22} color="#3b82f6" />
+              <VideoIcon size={22} color="#3b82f6" />
             </View>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.donation}</Text>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.video}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -860,6 +917,11 @@ function CreatePostScreen() {
                 </Text>
               ) : null}
             </View>
+            {targetPage ? (
+              <Text className="mt-1 text-[12px] font-semibold text-[#0000ff]">
+                Đăng với tư cách Trang
+              </Text>
+            ) : null}
             <TouchableOpacity
               onPress={() => setPrivacySheetVisible(true)}
               activeOpacity={0.7}
@@ -1074,6 +1136,52 @@ function CreatePostScreen() {
             >
               <X size={16} color="#64748B" />
             </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* ── Video preview card (uses local file uri) ─────────────── */}
+        {vm.draft.video ? (
+          <View className="mx-4 mt-4 overflow-hidden rounded-[20px] border border-blue-100 bg-blue-50">
+            <View className="flex-row items-center px-4 pt-3">
+              <View className="h-8 w-8 items-center justify-center rounded-full bg-blue-100">
+                <VideoIcon size={16} color="#3b82f6" />
+              </View>
+              <Text
+                className="ml-2 flex-1 text-sm font-semibold text-slate-700"
+                numberOfLines={1}
+              >
+                {vm.draft.video.name}
+              </Text>
+              <TouchableOpacity
+                onPress={() => vm.setVideo(undefined)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                className="h-8 w-8 items-center justify-center rounded-full bg-white"
+              >
+                <X size={16} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+            <Text
+              className="mt-2 px-4 text-[11px] font-medium uppercase tracking-wider text-blue-700"
+            >
+              {copy.addVideo}
+            </Text>
+            <View
+              style={{
+                margin: 12,
+                height: 220,
+                borderRadius: 16,
+                overflow: 'hidden',
+                backgroundColor: '#0F172A',
+              }}
+            >
+              <VideoPlayer
+                source={{ uri: vm.draft.video.uri }}
+                style={{ width: '100%', height: '100%' }}
+                controls
+                paused
+                resizeMode="cover"
+              />
+            </View>
           </View>
         ) : null}
 

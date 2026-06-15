@@ -57,6 +57,12 @@ export interface PostPhotoAttachment {
   height?: number;
 }
 
+export interface PostVideoAttachment {
+  uri: string;
+  name: string;
+  type: string; // MIME, e.g. 'video/mp4'
+}
+
 export type PostAudioAttachment = AudioAttachment;
 
 /**
@@ -89,10 +95,12 @@ export interface CreatePostDraft {
   text: string;
   photos: PostPhotoAttachment[];
   audio?: PostAudioAttachment;
+  video?: PostVideoAttachment;
   privacy: PostPrivacy;
   feeling?: PostFeeling;
+  pageId?: string;
+  groupId?: string;
 }
-
 /**
  * What the repository returns after a successful create. We always get
  * back the new post itself so the feed can optimistically prepend it —

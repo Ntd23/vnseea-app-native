@@ -23,12 +23,14 @@ import { apiRoutes } from '../../../shared-kernel/application/constants/route-re
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { getShareableUrl } from '../../../shared-kernel/application/view-models/useShareViewModel';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { reelsReactionsStorage } from '../../../reels/infrastructure/storage/reelsReactionsStorage';
 import type {
   FeedSource,
   FeedPostsPage,
   FeedRepository,
+  FeedRecommendationEventInput,
   GetPostByIdResult,
   PostComment,
   SharePostInput,
@@ -921,6 +923,8 @@ type RawFeedPostsPage = {
   posts: Array<Record<string, unknown>>;
   nextCursor?: string;
   primaryCount: number;
+  reachedEnd?: boolean;
+  sourceKind?: 'recommended' | 'legacy';
 };
 
 function debugFeedRepository(label: string, payload: Record<string, unknown>) {
@@ -980,6 +984,73 @@ function getOldestFeedPostId(posts: FeedPost[]): string | undefined {
     .filter(id => Number.isFinite(id) && id > 0);
   if (ids.length === 0) return undefined;
   return String(Math.min(...ids));
+}
+
+async function fetchRecommendedRawFeedPosts(
+  limit: number,
+  afterPostId?: string,
+  source: FeedSource = 'all',
+): Promise<RawFeedPostsPage> {
+  const payload: Record<string, unknown> = {
+    limit,
+    candidate_limit: limit,
+    strict_pagination: 1,
+    source,
+  };
+
+  if (afterPostId) {
+    payload.after_post_id = afterPostId;
+  }
+
+  const response = await backendApi.post<{
+    api_status: number | string;
+    data?: Array<Record<string, unknown>>;
+    next_cursor?: string | number | null;
+    reached_end?: boolean;
+  }>(apiRoutes.feed.recommended, payload);
+
+  const rows = response.data ?? [];
+  const nextCursor =
+    response.next_cursor !== null && response.next_cursor !== undefined
+      ? String(response.next_cursor)
+      : getOldestRawPostId(rows);
+
+  debugFeedRepository('recommended-feed result', {
+    limit,
+    source,
+    afterPostId: afterPostId ?? 'first',
+    rows: rows.length,
+    nextCursor: nextCursor ?? '(none)',
+    reachedEnd: response.reached_end === true,
+  });
+
+  return {
+    posts: rows,
+    nextCursor,
+    primaryCount: rows.length,
+    reachedEnd: response.reached_end === true,
+    sourceKind: 'recommended',
+  };
+}
+
+async function fetchRecommendedRawFeedPostsWithFallback(
+  limit: number,
+  afterPostId?: string,
+  source: FeedSource = 'all',
+): Promise<RawFeedPostsPage> {
+  try {
+    const page = await fetchRecommendedRawFeedPosts(limit, afterPostId, source);
+    if (page.posts.length > 0 || page.reachedEnd) {
+      return page;
+    }
+  } catch (err) {
+    debugFeedRepository('recommended-feed fallback', {
+      afterPostId: afterPostId ?? 'first',
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  return fetchRawFeedPosts(limit, afterPostId, source);
 }
 
 async function fetchRawFeedPosts(
@@ -1508,7 +1579,11 @@ export function createFeedRepository(): FeedRepository {
       afterPostId?: string,
       source: FeedSource = 'all',
     ): Promise<FeedPost[]> {
-      const page = await fetchRawFeedPosts(limit, afterPostId, source);
+      const page = await fetchRecommendedRawFeedPostsWithFallback(
+        limit,
+        afterPostId,
+        source,
+      );
       const posts: FeedPost[] = [];
       for (const item of page.posts) {
         if (looksLikeAd(item)) {
@@ -1532,7 +1607,7 @@ export function createFeedRepository(): FeedRepository {
       afterPostId?: string,
       source: FeedSource = 'all',
     ): Promise<FeedPost[]> {
-      const page = await fetchRawFeedPosts(
+      const page = await fetchRecommendedRawFeedPostsWithFallback(
         Math.max(limit, Math.ceil(limit * 1.5)),
         afterPostId,
         source,
@@ -1556,21 +1631,30 @@ export function createFeedRepository(): FeedRepository {
       source: FeedSource = 'all',
     ): Promise<FeedPostsPage> {
       const rawLimit = Math.max(limit, Math.ceil(limit * 1.5));
-      const page = await fetchRawFeedPosts(rawLimit, afterPostId, source);
+      const page = await fetchRecommendedRawFeedPostsWithFallback(
+        rawLimit,
+        afterPostId,
+        source,
+      );
       const mappedPosts = mixAdsIntoPosts(mapLightRawFeedPosts(page.posts));
       const posts = mappedPosts.slice(0, limit);
       const renderedCursor = getOldestFeedPostId(posts);
       const scanningCursor = page.nextCursor;
+      const nextCursor =
+        page.sourceKind === 'recommended'
+          ? scanningCursor ?? renderedCursor
+          : renderedCursor ?? scanningCursor;
       return {
         posts,
         // Use the oldest post that was actually returned to the UI. The raw
         // API batch may be larger than the visible page so using its oldest
         // id would skip renderable posts and make Home run out too early.
-        nextCursor: renderedCursor ?? scanningCursor,
+        nextCursor,
         reachedEnd:
-          posts.length === 0 &&
-          page.primaryCount === 0 &&
-          page.posts.length < rawLimit,
+          page.reachedEnd === true ||
+          (posts.length === 0 &&
+            page.primaryCount === 0 &&
+            page.posts.length < rawLimit),
       };
     },
 
@@ -1579,7 +1663,7 @@ export function createFeedRepository(): FeedRepository {
       afterPostId?: string,
       source: FeedSource = 'all',
     ) {
-      const page = await fetchRawFeedPosts(
+      const page = await fetchRecommendedRawFeedPostsWithFallback(
         Math.max(limit, Math.ceil(limit * 1.5)),
         afterPostId,
         source,
@@ -1623,6 +1707,34 @@ export function createFeedRepository(): FeedRepository {
         .map(mapTextPost);
     },
 
+    async recordRecommendationEvent(
+      input: FeedRecommendationEventInput,
+    ): Promise<void> {
+      const payload: Record<string, unknown> = {
+        event: input.event,
+      };
+
+      if (input.postId) {
+        payload.post_id = input.postId;
+      }
+      if (input.value) {
+        payload.value = input.value;
+      }
+      if (typeof input.durationMs === 'number') {
+        payload.duration_ms = Math.max(0, Math.floor(input.durationMs));
+      }
+
+      try {
+        await backendApi.post(apiRoutes.feed.recommendationEvents, payload);
+      } catch (err) {
+        debugFeedRepository('recommendation event ignored', {
+          event: input.event,
+          postId: input.postId ?? '(none)',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+
     async createPost(draft: CreatePostDraft): Promise<CreatePostResult> {
       // Build the multipart payload. Keys MUST match WoWonder's expected
       // POST fields (see phtml/api/phone/new_post.php). Empty optional
@@ -1630,6 +1742,14 @@ export function createFeedRepository(): FeedRepository {
       const payload: Record<string, unknown> = {
         postPrivacy: PRIVACY_TO_WIRE[draft.privacy] ?? '0',
       };
+
+      if (draft.pageId) {
+        payload.page_id = draft.pageId;
+      }
+
+      if (draft.groupId) {
+        payload.group_id = draft.groupId;
+      }
 
       // Text — only send if non-empty after trim. WoWonder treats
       // whitespace-only `postText` as "no text" so we mirror that.
@@ -1662,6 +1782,25 @@ export function createFeedRepository(): FeedRepository {
           name: draft.audio.name,
           type: draft.audio.type,
         };
+      }
+
+      // Video — single only. WoWonder's `new_post` accepts at most
+      // one primary media type per post (photos / video / audio) —
+      // the view-model guarantees the draft only contains one of
+      // those buckets at a time, so we just add `postVideo` here.
+      //
+      // The multipart helper appends it under `postVideo` (not
+      // `postVideo[]`) since WoWonder expects a single file under
+      // that key.
+      if (draft.video) {
+        payload.postVideo = {
+          uri: draft.video.uri,
+          name: draft.video.name,
+          type: draft.video.type,
+        };
+        // Mark this as a video post so the feed mapper and the
+        // homepage's `looksLikeVideo` classifier both pick it up.
+        payload.postType = 'video';
       }
 
       // Feeling — two-field combo. `feeling_type` selects the bucket,
@@ -1776,6 +1915,45 @@ export function createFeedRepository(): FeedRepository {
       }
     },
 
+    async getPagePosts(pageId, limit = 20, afterPostId) {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        data?: Array<Record<string, unknown>>;
+      }>(apiRoutes.feed.posts, {
+        type: 'get_page_posts',
+        id: pageId,
+        limit,
+        ...(afterPostId ? { after_post_id: afterPostId } : {}),
+      });
+
+      const rawItems = response.data ?? [];
+      const posts = rawItems
+        .filter(item => !looksLikeAd(item))
+        .map(item => {
+          try {
+            return mapProfilePost(item);
+          } catch (err) {
+            console.warn('[ApiFeedRepository] skip page post', {
+              pageId,
+              postId: readString(item, 'id', 'post_id'),
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return null;
+          }
+        })
+        .filter(
+          (post): post is FeedTextPost | FeedVideoPost | FeedPollPost =>
+            post !== null,
+        )
+        .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+
+      return {
+        posts,
+        nextCursor: getOldestFeedPostId(posts),
+        reachedEnd: rawItems.length < limit,
+      };
+    },
+
     async savePost(postId: string): Promise<{ saved: boolean }> {
       const response = await backendApi.post<{
         api_status: number | string;
@@ -1815,6 +1993,68 @@ export function createFeedRepository(): FeedRepository {
     },
 
     async sharePost(input: SharePostInput): Promise<FeedPost> {
+      // `message` destination doesn't go through the `/api/posts` wire
+      // format — WoWonder has no dedicated endpoint for "share post
+      // to chat". Instead, we send a text-only message containing
+      // the post's shareable URL. The recipient sees a normal text
+      // message with a link back to the post — same behaviour the
+      // web client's UI surfaces. We synthesise a stable URL via
+      // `getShareableUrl` so the link is real and openable.
+      if (input.destination === 'message') {
+        if (!input.recipientUserId) {
+          throw new Error('Thiếu người nhận để chia sẻ qua tin nhắn.');
+        }
+
+        const shareUrl = await getShareableUrl(input.postId, 'post');
+        const note = input.text?.trim();
+        const messageBody = note
+          ? `${note}\n\n${shareUrl}`
+          : shareUrl;
+
+        // The text-only path is fine for the no-attachment case.
+        // For richer sharing we'd need a wire-level `post_id`
+        // parameter on `send-message`, which WoWonder does not
+        // support today.
+        const sendResponse = await backendApi.post<{
+          api_status: number | string;
+          message_data?: Record<string, unknown>;
+          errors?: { error_text?: string };
+          message?: string;
+        }>(apiRoutes.messages.send, {
+          user_id: input.recipientUserId,
+          text: messageBody,
+          message_type: 'share_post',
+        });
+
+        const ok = String(sendResponse.api_status) === '200';
+        if (!ok) {
+          throw new Error(
+            sendResponse.errors?.error_text ||
+              sendResponse.message ||
+              'Không gửi được tin nhắn chia sẻ. Vui lòng thử lại.',
+          );
+        }
+
+        // We don't have a fresh FeedPost to return for this path
+        // (the wire response is a message envelope, not a post).
+        // Caller handles the success path via `onShared?.()`; the
+        // returned object is a minimal stand-in so the type
+        // contract holds.
+        return {
+          kind: 'text',
+          id: input.postId,
+          likeCount: 0,
+          commentCount: 0,
+          isLiked: false,
+          myReaction: null,
+          topReactions: [],
+          photos: [],
+          privacy: 'public',
+          publisher: { id: '', name: '', username: '' },
+          caption: note,
+        } as FeedTextPost;
+      }
+
       const payload: Record<string, unknown> = {
         id: input.postId,
       };
@@ -1829,7 +2069,7 @@ export function createFeedRepository(): FeedRepository {
       } else if (input.destination === 'page') {
         payload.type = 'share_post_on_page';
         payload.page_id = input.pageId;
-      } else {
+      } else if (input.destination === 'group') {
         payload.type = 'share_post_on_group';
         payload.group_id = input.groupId;
       }

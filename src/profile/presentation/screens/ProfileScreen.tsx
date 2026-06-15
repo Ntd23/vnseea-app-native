@@ -234,21 +234,6 @@ const FALLBACK_COVER =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCNqLNeeWsi7Qk4abx08XCTrKI5CmUGgDCiX-kH7Y_8LIIX5Slo9GRgEra_4deGp5e9pYozUmQdYGZi1sNQSks0QtbNWgpmn5gJgrF62Z8I8UMQpqKiMHLQ8Rzd9oUUIITFJPuwExVflVdeB1fRKjSGDO7zAocaZElLgpqJr6Mjvoj2FKOUVfnTk8XxnkG5WNijLpmXavW9TFlNhtlfLYbSE2qofOA8or7d_AfsUWZV43ADdtVFNH7VwEEazqapaL-Vndqksu_vDnE';
 const FALLBACK_AVATAR =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuBg12HbWQ9COz6EW-AyHRwh6TTRPdTun5HWxmzi1GHtkTwHjsF2VhXQV6yg-mCV0YYTXBDcEOCpZdcTGiCK1PpdUNPDQs6XTApo0nb_7Vi7IJPOfkXwbA1cq6d18Fft2V5ELBI4ZKLT6lvpj4O-9EBj3u3QfGt-Dzy_wf-DNRLwVAEeuaiEJ4B2Fvch4B0S9tk5tMCvbYQwuzGl0ttLC2hVIJh1Oj6Dn4dp6ueFANa1Yxy__ZIQLHKmtsMh2U8NBz0DLPHRlOZOzF4';
-const FALLBACK_FRIENDS = [
-  'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=200', // cat
-  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200', // man glasses
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200', // young man
-  'https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?w=200', // scenic/park
-  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200', // man glasses 2
-];
-const MOCK_FRIEND_NAMES = [
-  'đẹp zai người',
-  'Hưng Duy',
-  'Long Nguyễn T...',
-  'gupta084',
-  'anh thanh niên',
-];
-
 const profilePostStyles = StyleSheet.create({
   stateCard: {
     marginHorizontal: 16,
@@ -1088,21 +1073,10 @@ function ProfileScreen() {
   const avatarUrl = profile?.avatarUrl ?? FALLBACK_AVATAR;
   const followerCount = followers.length;
   const followingCount = following.length;
-  const friendAvatars = useMemo(() => {
-    const list = [...followers.slice(0, 5).map(f => f.avatarUrl ?? FALLBACK_AVATAR)];
-    while (list.length < 5) {
-      list.push(FALLBACK_FRIENDS[list.length]);
-    }
-    return list;
-  }, [followers]);
-
-  const friendNames = useMemo(() => {
-    const list = [...followers.slice(0, 5).map(f => f.name ?? copy.friendFallback)];
-    while (list.length < 5) {
-      list.push(MOCK_FRIEND_NAMES[list.length]);
-    }
-    return list;
-  }, [followers, copy.friendFallback]);
+  const profileFriends = useMemo(
+    () => followers.filter(friend => friend.id).slice(0, 5),
+    [followers],
+  );
   const storyPreviewUrl = getStoryPreviewUrl(userStory, avatarUrl);
   const storySegmentCount = userStory?.media.length ?? 0;
   const storyHasVideo = hasVideoStory(userStory);
@@ -1994,7 +1968,11 @@ function ProfileScreen() {
                 </Text>
               </View>
             </View>
-            <TouchableOpacity activeOpacity={0.8} className="flex-row items-center">
+            <TouchableOpacity
+              activeOpacity={0.8}
+              className="flex-row items-center"
+              onPress={() => navigation.navigate(ROUTES.INVITE_FRIENDS)}
+            >
               <Text className="text-[14px] font-semibold text-[#4f46e5]">
                 {copy.findFriends}
               </Text>
@@ -2002,50 +1980,62 @@ function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          <View className="flex-row flex-wrap gap-2">
-            {friendAvatars.map((friend, index) => (
-              <View
-                key={`${friend}-${index}`}
-                style={{ width: FRIEND_ITEM_WIDTH, marginBottom: 12 }}
-              >
-                <View style={{ width: FRIEND_ITEM_WIDTH, height: FRIEND_ITEM_WIDTH }} className="relative">
-                  <Image
-                    source={{ uri: friend }}
-                    className="rounded-2xl bg-slate-100"
-                    style={{ width: FRIEND_ITEM_WIDTH, height: FRIEND_ITEM_WIDTH }}
-                    resizeMode="cover"
-                  />
-                  {/* Status dot overlay */}
-                  <View 
-                    className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border border-white bg-[#22C55E]"
-                  />
-                </View>
-                <Text
-                  className="mt-2 text-[12px] font-semibold text-[#050505]"
-                  numberOfLines={1}
+          {profileFriends.length > 0 ? (
+            <View className="flex-row flex-wrap gap-2">
+              {profileFriends.map(friend => (
+                <TouchableOpacity
+                  key={String(friend.id)}
+                  style={{ width: FRIEND_ITEM_WIDTH, marginBottom: 12 }}
+                  activeOpacity={0.85}
+                  onPress={() => handleNavigateToProfile(String(friend.id))}
                 >
-                  {friendNames[index]}
-                </Text>
-              </View>
-            ))}
+                  <View style={{ width: FRIEND_ITEM_WIDTH, height: FRIEND_ITEM_WIDTH }} className="relative">
+                    <Image
+                      source={{ uri: friend.avatarUrl ?? FALLBACK_AVATAR }}
+                      className="rounded-2xl bg-slate-100"
+                      style={{ width: FRIEND_ITEM_WIDTH, height: FRIEND_ITEM_WIDTH }}
+                      resizeMode="cover"
+                    />
+                    <View
+                      className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border border-white bg-[#22C55E]"
+                    />
+                  </View>
+                  <Text
+                    className="mt-2 text-[12px] font-semibold text-[#050505]"
+                    numberOfLines={1}
+                  >
+                    {friend.name || friend.username || copy.friendFallback}
+                  </Text>
+                </TouchableOpacity>
+              ))}
 
-            {/* "See All" grid item block */}
-            <TouchableOpacity
-              className="items-center justify-center rounded-2xl bg-[#f0effb]"
-              style={{ width: FRIEND_ITEM_WIDTH, height: FRIEND_ITEM_WIDTH }}
-              activeOpacity={0.8}
-            >
-              <View className="h-10 w-10 items-center justify-center rounded-full bg-white mb-1.5 shadow-sm">
-                <Users size={18} color="#4f46e5" />
-              </View>
-              <Text className="text-[14px] font-bold text-[#4f46e5]">
-                +{followerCount > 5 ? followerCount - 5 : 4}
+              {followerCount > profileFriends.length ? (
+                <TouchableOpacity
+                  className="items-center justify-center rounded-2xl bg-[#f0effb]"
+                  style={{ width: FRIEND_ITEM_WIDTH, height: FRIEND_ITEM_WIDTH }}
+                  activeOpacity={0.8}
+                >
+                  <View className="h-10 w-10 items-center justify-center rounded-full bg-white mb-1.5 shadow-sm">
+                    <Users size={18} color="#4f46e5" />
+                  </View>
+                  <Text className="text-[14px] font-bold text-[#4f46e5]">
+                    +{followerCount - profileFriends.length}
+                  </Text>
+                  <Text className="mt-0.5 text-[10px] text-[#65676b] font-medium">
+                    {copy.seeAll}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : (
+            <View className="rounded-2xl bg-[#F8FAFC] px-4 py-6">
+              <Text className="text-center text-[13px] font-medium text-[#65676B]">
+                {language === 'vi'
+                  ? 'Chưa có dữ liệu bạn bè.'
+                  : 'No friends to show yet.'}
               </Text>
-              <Text className="mt-0.5 text-[10px] text-[#65676b] font-medium">
-                {copy.seeAll}
-              </Text>
-            </TouchableOpacity>
-          </View>
+            </View>
+          )}
 
           {/* Pager indicator dots */}
           <View className="flex-row justify-center items-center mt-3">

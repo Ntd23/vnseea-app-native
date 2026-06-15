@@ -66,6 +66,8 @@ export const ROUTES = {
   WITHDRAWAL: 'Withdrawal',
   MEMORIES: 'Memories',
   OFFERS: 'Offers',
+  PAGE_OFFERS: 'PageOffers',
+  CREATE_OFFER: 'CreateOffer',
   ADVERTISING: 'Advertising',
   CREATE_AD: 'CreateAd',
   CREATE_REEL: 'CreateReel',
