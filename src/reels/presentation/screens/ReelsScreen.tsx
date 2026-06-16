@@ -288,18 +288,34 @@ export default function ReelsScreen() {
   //     dismiss gesture; don't double-handle.
   // (dragX is declared above the focus effect — see comment there for why)
 
+  // ReelsScreen is mounted in two places (see routeRegistry):
+  //   1. Inside MainTabs (the default tab experience)
+  //   2. As a top-level Root Stack screen (when launched from a
+  //      share / deep-link from PostDetail)
+  // `navigation` therefore points at *whichever* navigator mounted
+  // us. `getParent()` walks up to the RootStack, and only the
+  // RootStack knows about `MAIN_TABS` — that's the only place a
+  // nested `{ screen: FEED }` payload is valid, so we always
+  // dispatch from there. This avoids the "Feed was not handled
+  // by any navigator" warning that hits when ReelsScreen is
+  // mounted directly under RootStack and we call
+  // `navigation.navigate(FEED)` locally.
+  const navigateToFeed = useCallback(() => {
+    const rootNavigator = navigation.getParent() ?? navigation;
+    rootNavigator.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
+  }, [navigation]);
+
   const goBackToFeed = useCallback(() => {
     // Prefer goBack when this screen sits on top of a stack — it POPS
     // the screen entirely, so the next visit re-mounts with fresh state
     // and we never have to worry about leftover transforms. Falls back
-    // to navigate(FEED) for tab-based navigators where there's nothing
-    // to pop.
+    // to a tab-switch when there is nothing to pop.
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      navigation.navigate(ROUTES.FEED);
+      navigateToFeed();
     }
-  }, [navigation]);
+  }, [navigation, navigateToFeed]);
 
   const swipeBackGesture = useMemo(
     () =>
@@ -455,9 +471,11 @@ export default function ReelsScreen() {
         />
 
         {/* Floating back button. Lives outside the list so it stays put while
-            the user swipes through reels. */}
+            the user swipes through reels. Routes through the root navigator
+            so it works whether ReelsScreen is mounted inside MainTabs or
+            directly under the Root Stack. */}
         <TouchableOpacity
-          onPress={() => navigation.navigate(ROUTES.FEED)}
+          onPress={navigateToFeed}
           style={[styles.backFab, { top: Math.max(insets.top, 12) }]}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >

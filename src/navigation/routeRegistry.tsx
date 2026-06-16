@@ -25,7 +25,7 @@ import {
   BlogsScreen,
 } from '../blogs';
 import { BoostedScreen } from '../boosted';
-import { CreatePageScreen, PageDetailScreen, PagesScreen } from '../pages';
+import { CreatePageScreen, PageDetailScreen, PageSettingsScreen, PagesScreen } from '../pages';
 import { CreateProductScreen, MarketplaceScreen, ProductDetailScreen } from '../product';
 import { CreateEventScreen, EventsScreen } from '../events';
 import { CreatePollScreen } from '../poll';
@@ -150,6 +150,7 @@ export function createStackRoutes(
     { name: ROUTES.SEARCH_EMPTY, component: SearchEmptyScreen },
     { name: ROUTES.PAGES, component: PagesScreen },
     { name: ROUTES.PAGE_DETAIL, component: PageDetailScreen },
+    { name: ROUTES.PAGE_SETTINGS, component: PageSettingsScreen },
     { name: ROUTES.CREATE_PAGE, component: CreatePageScreen },
     { name: ROUTES.EDIT_PAGE, component: CreatePageScreen },
     { name: ROUTES.MARKETPLACE, component: MarketplaceScreen },

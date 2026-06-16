@@ -25,6 +25,7 @@ export interface PagesItem {
   isFollowing?: boolean;
   isLiked?: boolean;
   isRated?: boolean;
+  verified?: boolean;
   ownerId?: string;
   owner?: PageUser;
   adminInfo?: unknown;

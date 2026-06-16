@@ -62,10 +62,12 @@ import type {
   SharePostInput,
 } from '../../../feed/domain/repositories/FeedRepository';
 import {
+  FEED_COPY as POST_CARD_COPY,
   ReactionPickerOverlay,
   TextPostCard,
-} from '../../../feed/presentation/screens/FeedScreen';
+} from '../../../feed/presentation/components/PostCards';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { useMyGroupsViewModel } from '../../../community';
 import { useMyPagesViewModel } from '../../../pages';
 import HashtagCard from '../components/HashtagCard';
@@ -725,6 +727,8 @@ function HashtagShareOverlay({
 
 function ExploreScreen() {
   const navigation = useNavigation<ExploreNav>();
+  const language = useAppLanguage();
+  const postCardCopy = POST_CARD_COPY[language];
   const {
     tags,
     isLoading,
@@ -1016,6 +1020,7 @@ function ExploreScreen() {
     ({ item }) => (
       <TextPostCard
         post={item}
+        copy={postCardCopy}
         onReact={handleHashtagReaction}
         onOpenPicker={handleOpenReactionPicker}
         onCommentTap={handleCommentTap}
@@ -1036,6 +1041,7 @@ function ExploreScreen() {
       handleOpenSharePost,
       handlePhotoPress,
       handlePostPress,
+      postCardCopy,
       gestureActive,
       gestureX,
       gestureY,

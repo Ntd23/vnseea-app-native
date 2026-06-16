@@ -64,6 +64,7 @@ export type RootStackParamList = {
   [ROUTES.SEARCH_EMPTY]: undefined;
   [ROUTES.PAGES]: undefined;
   [ROUTES.PAGE_DETAIL]: { page: PagesItem };
+  [ROUTES.PAGE_SETTINGS]: { pageId: string; page?: PagesItem };
   [ROUTES.CREATE_PAGE]: undefined;
   [ROUTES.EDIT_PAGE]: { page: PagesItem };
   [ROUTES.MARKETPLACE]: undefined;

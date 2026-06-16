@@ -65,10 +65,11 @@ import type {
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import {
+  FEED_COPY as POST_CARD_COPY,
   HomeVideoPostCard,
   ReactionPickerOverlay,
   TextPostCard,
-} from '../../../feed/presentation/screens/FeedScreen';
+} from '../../../feed/presentation/components/PostCards';
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
@@ -1296,6 +1297,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
 
   const language = useAppLanguage();
   const copy = PAGE_DETAIL_COPY[language] || PAGE_DETAIL_COPY.vi;
+  const postCardCopy = POST_CARD_COPY[language];
   const insets = useSafeAreaInsets();
 
   const tabs = useMemo(() => [
@@ -1529,6 +1531,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         return (
           <TextPostCard
             post={item}
+            copy={postCardCopy}
             onReact={vm.togglePostReaction}
             onOpenPicker={handleOpenReactionPicker}
             onCommentTap={handleOpenComments}
@@ -1550,6 +1553,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         return (
           <HomeVideoPostCard
             post={item}
+            copy={postCardCopy}
             isActive={activeVideoPostId === item.id}
             onReact={vm.togglePostReaction}
             onOpenPicker={handleOpenReactionPicker}
@@ -1605,6 +1609,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
       handlePhotoPress,
       hasDragged,
       language,
+      postCardCopy,
       vm.togglePostReaction,
       vm.votePoll,
     ],
