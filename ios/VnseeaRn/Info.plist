@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Description: Configures iOS app metadata and runtime permissions for VNSEEA. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -8,11 +7,13 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>VnseeaRn</string>
+	<string>Vnseea</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -29,18 +30,23 @@
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-	  <!-- Do not change NSAllowsArbitraryLoads to true, or you will risk app rejection! -->
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>VNSEEA cần quyền truy cập vị trí để hiển thị người dùng ở gần bạn.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>VNSEEA cần quyền truy cập camera để gọi video.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>VNSEEA cần quyền truy cập vị trí để hiển thị người dùng ở gần bạn.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VNSEEA cần quyền truy cập mic để ghi âm tin nhắn thoại.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>VNSEEA cần quyền lưu ảnh và video bạn tạo trong ứng dụng vào thư viện ảnh.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>VNSEEA cần quyền truy cập thư viện ảnh để bạn chọn ảnh và video khi đăng bài, cập nhật hồ sơ, nhắn tin và tạo nội dung.</string>
+	<key>RCTNewArchEnabled</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>voip</string>
