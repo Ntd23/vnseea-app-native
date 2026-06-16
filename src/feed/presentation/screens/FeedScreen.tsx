@@ -3038,9 +3038,11 @@ export function PhotoViewerModal({
     .activeOffsetY([-10, 10])
     .failOffsetX([-10, 10])
     .onUpdate(event => {
+      'worklet';
       translateY.value = event.translationY;
     })
     .onEnd(event => {
+      'worklet';
       if (event.translationY > 100 || event.velocityY > 500) {
         // Slide off screen downwards
         translateY.value = withTiming(SCREEN_H, { duration: 180 }, () => {

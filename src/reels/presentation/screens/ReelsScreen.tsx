@@ -457,7 +457,7 @@ export default function ReelsScreen() {
         {/* Floating back button. Lives outside the list so it stays put while
             the user swipes through reels. */}
         <TouchableOpacity
-          onPress={() => navigation.navigate(ROUTES.FEED)}
+          onPress={goBackToFeed}
           style={[styles.backFab, { top: Math.max(insets.top, 12) }]}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
