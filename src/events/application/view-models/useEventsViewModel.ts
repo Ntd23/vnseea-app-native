@@ -12,6 +12,8 @@ export function useEventsViewModel() {
   const [events, setEvents] = useState<EventsItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchEvents = useCallback(async () => {
@@ -110,10 +112,53 @@ export function useEventsViewModel() {
     }
   }, []);
 
+  const updateEvent = useCallback(async (
+    id: string | number,
+    data: EventFormData,
+  ): Promise<{ success: boolean; error?: string }> => {
+    setIsUpdating(true);
+    setError(null);
+    try {
+      const updatedEvent = await repository.updateEvent(id, data);
+      setEvents(prev => prev.map(event => (
+        String(event.id) === String(id)
+          ? { ...event, ...updatedEvent, id }
+          : event
+      )));
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setIsUpdating(false);
+    }
+  }, []);
+
+  const deleteEvent = useCallback(async (
+    id: string | number,
+  ): Promise<{ success: boolean; error?: string }> => {
+    setIsDeleting(true);
+    setError(null);
+    try {
+      await repository.deleteEvent(id);
+      setEvents(prev => prev.filter(event => String(event.id) !== String(id)));
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setIsDeleting(false);
+    }
+  }, []);
+
   return {
     events,
     isLoading,
     isCreating,
+    isUpdating,
+    isDeleting,
     error,
     fetchEvents,
     fetchMyEvents,
@@ -122,5 +167,7 @@ export function useEventsViewModel() {
     fetchInvitedEvents,
     fetchPastEvents,
     createEvent,
+    updateEvent,
+    deleteEvent,
   };
 }

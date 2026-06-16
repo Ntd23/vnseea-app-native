@@ -82,7 +82,9 @@ function toNumber(value: unknown) {
 }
 
 function normalizeCurrency(value: unknown, fallback: string) {
-  const normalized = String(value || '').trim().toUpperCase();
+  const normalized = String(value || '')
+    .trim()
+    .toUpperCase();
   return normalized || fallback;
 }
 

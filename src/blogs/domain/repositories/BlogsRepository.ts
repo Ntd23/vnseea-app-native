@@ -7,7 +7,28 @@ import type {
   BlogsListPage,
 } from '../types/blogs.types';
 
+export interface BlogCreateData {
+  title: string;
+  content: string;
+  description: string;
+  category: string;
+  tags: string;
+  status: 'draft' | 'publish';
+  thumbnailFile?: {
+    filename?: string;
+    type?: string;
+    uri: string;
+  } | null;
+}
+
+export interface BlogCreateResult {
+  id: number;
+  status: string;
+  url: string;
+}
+
 export interface BlogsRepository {
   getArticles(options?: BlogsListOptions): Promise<BlogsListPage>;
   getArticleById(blogId: string | number): Promise<BlogsItem>;
+  createBlog(data: BlogCreateData): Promise<BlogCreateResult>;
 }

@@ -28,4 +28,6 @@ export interface EventsRepository {
   getPastEvents(): Promise<EventsItem[]>;
   getById(id: string | number): Promise<EventsItem | null>;
   createEvent(data: EventFormData): Promise<CreateEventResult>;
+  updateEvent(id: string | number, data: EventFormData): Promise<EventsItem>;
+  deleteEvent(id: string | number): Promise<boolean>;
 }

@@ -1,38 +1,32 @@
-// Description: Renders the Stitch VNSEEA-style register screen using the real auth API.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// Description: Renders the backend-backed register screen with Nuxt-aligned field labels and order.
+
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  Image,
+  Keyboard,
   KeyboardAvoidingView,
+  Linking,
   LayoutChangeEvent,
+  Modal,
   Platform,
   ScrollView,
   StatusBar,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  Eye,
-  EyeOff,
-  Lock,
-  Mail,
-  User,
-} from 'lucide-react-native';
+import { CalendarDays, Lock, User } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -43,117 +37,112 @@ import {
 import { getAuthCopy } from '../../application/i18n/authCopy';
 import { useAuthViewModel } from '../../application/view-models/useAuthViewModel';
 import { useAuthBranding } from '../../application/view-models/useAuthBranding';
+import LoginHero from '../components/LoginHero';
+import AuthTabs from '../components/AuthTabs';
+import AuthTextField from '../components/AuthTextField';
+import AuthSubmitButton from '../components/AuthSubmitButton';
+import AuthFooterLink from '../components/AuthFooterLink';
+import AuthErrorBanner from '../components/AuthErrorBanner';
 
 type RegisterNav = NativeStackNavigationProp<RootStackParamList>;
+type RegisterFieldKey =
+  | 'username'
+  | 'email'
+  | 'birthDate'
+  | 'gender'
+  | 'password'
+  | 'confirmPassword'
+  | 'terms';
 
+const BRAND = '#0000ff';
+const TERMS_URL = 'https://v2.vnseea.vn/terms/terms';
+const PRIVACY_URL = 'https://v2.vnseea.vn/terms/privacy-policy';
 
-type RegisterTextFieldProps = {
-  label: string;
-  placeholder: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  icon: React.ReactNode;
-  isPassword?: boolean;
-  keyboardType?: 'default' | 'email-address';
-  showCheckIcon?: boolean;
-  onFocus?: () => void;
-  onBlur?: () => void;
-  onLayout?: (event: LayoutChangeEvent) => void;
-};
+function padDatePart(value: number) {
+  return String(value).padStart(2, '0');
+}
 
-function RegisterTextField({
-  label,
-  placeholder,
-  value,
-  onChangeText,
-  icon,
-  isPassword = false,
-  keyboardType = 'default',
-  showCheckIcon = false,
-  onFocus,
-  onBlur,
-  onLayout,
-}: RegisterTextFieldProps) {
-  const [showPassword, setShowPassword] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
+function formatDateForApi(date: Date) {
+  return `${date.getFullYear()}-${padDatePart(
+    date.getMonth() + 1,
+  )}-${padDatePart(date.getDate())}`;
+}
 
-  return (
-    <View className="w-full" onLayout={onLayout}>
-      <View className="mb-1 flex-row items-center gap-1.5 px-0.5">
-        {icon}
-        <Text className="text-[12px] font-semibold text-slate-500">{label}</Text>
-      </View>
-      <View
-        className="flex-row items-center rounded-xl bg-white px-3"
-        style={{
-          height: 44,
-          borderWidth: isFocused ? 1.5 : 1,
-          borderColor: isFocused ? '#0000ff' : 'rgba(0, 0, 255, 0.08)',
-          shadowColor: '#0000ff',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: isFocused ? 0.08 : 0,
-          shadowRadius: 10,
-          elevation: isFocused ? 2 : 0,
-        }}
-      >
-        <TextInput
-          className="flex-1 text-[14px] font-medium text-slate-900"
-          placeholder={placeholder}
-          placeholderTextColor="#9AA0A6"
-          value={value}
-          onChangeText={onChangeText}
-          onFocus={() => {
-            setIsFocused(true);
-            onFocus?.();
-          }}
-          onBlur={() => {
-            setIsFocused(false);
-            onBlur?.();
-          }}
-          secureTextEntry={isPassword && !showPassword}
-          keyboardType={keyboardType}
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={{ paddingVertical: 0 }}
-        />
-        {isPassword ? (
-          <TouchableOpacity
-            activeOpacity={0.7}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            onPress={() => setShowPassword(v => !v)}
-            className="pl-2"
-          >
-            {showPassword ? (
-              <EyeOff size={18} color="#8A8D91" />
-            ) : (
-              <Eye size={18} color="#8A8D91" />
-            )}
-          </TouchableOpacity>
-        ) : showCheckIcon ? (
-          <CheckCircle2 size={18} color="#10B981" />
-        ) : null}
-      </View>
-    </View>
-  );
+function parseBirthdayDate(value: string) {
+  const normalized = value.trim();
+  if (!normalized || normalized === '0000-00-00') return null;
+
+  const apiMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (apiMatch) {
+    const year = Number(apiMatch[1]);
+    const month = Number(apiMatch[2]);
+    const day = Number(apiMatch[3]);
+    const date = new Date(year, month - 1, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const displayMatch = normalized.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (displayMatch) {
+    const day = Number(displayMatch[1]);
+    const month = Number(displayMatch[2]);
+    const year = Number(displayMatch[3]);
+    const date = new Date(year, month - 1, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  return null;
+}
+
+function formatDateForDisplay(value: string) {
+  const date = parseBirthdayDate(value);
+  if (!date) return '';
+  return `${padDatePart(date.getDate())}/${padDatePart(
+    date.getMonth() + 1,
+  )}/${date.getFullYear()}`;
+}
+
+function isValidLoginIdentity(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return false;
+  if (normalized.includes('@')) {
+    return normalized.includes('.') && normalized.length >= 5;
+  }
+  return normalized.replace(/\D/g, '').length >= 8;
 }
 
 function RegisterScreen() {
   const navigation = useNavigation<RegisterNav>();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [birthDate, setBirthDate] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [gender, setGender] = useState<'male' | 'female'>('male');
+  const [hasExistingStorefront, setHasExistingStorefront] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const { error, isLoading, register } = useAuthViewModel();
-  const { logoUrl, siteName, notifyImageError } = useAuthBranding();
+  const [birthdayPickerVisible, setBirthdayPickerVisible] = useState(false);
   const [language, setLanguage] = useState<AppLanguage>(() =>
     languageStorage.getLanguage(),
   );
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const copy = useMemo(() => getAuthCopy(language), [language]);
+  const { error, isLoading, register } = useAuthViewModel();
+  const { logoUrl, siteName, notifyImageError } = useAuthBranding();
+  const visibleError = validationError ?? error;
+
+  const scrollRef = useRef<ScrollView | null>(null);
+  const cardYRef = useRef(0);
+  const fieldYRef = useRef<Record<RegisterFieldKey, number>>({
+    username: 0,
+    email: 0,
+    birthDate: 0,
+    gender: 0,
+    password: 0,
+    confirmPassword: 0,
+    terms: 0,
+  });
+  const focusedFieldRef = useRef<RegisterFieldKey | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -163,70 +152,95 @@ function RegisterScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  const scrollRef = useRef<ScrollView | null>(null);
-  const fieldYOffsets = useRef<Record<string, number>>({});
-  const cardYOffset = useRef(0);
-
-  const circleRotation = useSharedValue(0);
-  const floatProgress = useSharedValue(0);
-
-  useEffect(() => {
-    circleRotation.value = withRepeat(
-      withTiming(360, { duration: 60000, easing: Easing.linear }),
-      -1,
-      false,
+  const scrollToField = useCallback((field: RegisterFieldKey) => {
+    focusedFieldRef.current = field;
+    const targetY = Math.max(
+      0,
+      cardYRef.current + fieldYRef.current[field] - 24,
     );
-    floatProgress.value = withRepeat(
-      withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.cubic) }),
-      -1,
-      true,
-    );
-  }, [circleRotation, floatProgress]);
-
-  const circle1Style = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${circleRotation.value}deg` }],
-  }));
-  const circle2Style = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${-circleRotation.value * 0.6}deg` }],
-  }));
-  const circle3Style = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${circleRotation.value * 0.4}deg` }],
-  }));
-  const logoFloatStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -4 + floatProgress.value * 8 }],
-  }));
-
-  const handleFieldLayout = (field: string) => (event: LayoutChangeEvent) => {
-    fieldYOffsets.current[field] = event.nativeEvent.layout.y;
-  };
-
-  const handleCardLayout = (event: LayoutChangeEvent) => {
-    cardYOffset.current = event.nativeEvent.layout.y;
-  };
-
-  const scrollToField = useCallback((field: string) => {
-    const fieldY = fieldYOffsets.current[field] || 0;
-    const targetY = Math.max(0, cardYOffset.current + fieldY - 20);
     setTimeout(() => {
       scrollRef.current?.scrollTo({ y: targetY, animated: true });
-    }, 100);
+    }, 90);
   }, []);
 
-  async function handleRegister() {
+  useEffect(() => {
+    const subscription = Keyboard.addListener('keyboardDidShow', () => {
+      if (focusedFieldRef.current) {
+        scrollToField(focusedFieldRef.current);
+      }
+    });
+
+    return () => subscription.remove();
+  }, [scrollToField]);
+
+  const handleCardLayout = useCallback((event: LayoutChangeEvent) => {
+    cardYRef.current = event.nativeEvent.layout.y;
+  }, []);
+
+  const handleFieldLayout = useCallback(
+    (field: RegisterFieldKey) => (event: LayoutChangeEvent) => {
+      fieldYRef.current[field] = event.nativeEvent.layout.y;
+    },
+    [],
+  );
+
+  const selectedBirthday = parseBirthdayDate(birthDate) || new Date(2000, 0, 1);
+  const birthDateDisplay = formatDateForDisplay(birthDate);
+
+  const openBirthdayPicker = useCallback(() => {
+    Keyboard.dismiss();
+    scrollToField('birthDate');
+    setBirthdayPickerVisible(true);
+  }, [scrollToField]);
+
+  const handleBirthdayChange = useCallback(
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (Platform.OS === 'android') {
+        setBirthdayPickerVisible(false);
+      }
+      if (event.type === 'dismissed' || !selectedDate) return;
+      setBirthDate(formatDateForApi(selectedDate));
+      setValidationError(null);
+    },
+    [],
+  );
+
+  const handleRegister = useCallback(async () => {
+    if (!username.trim()) {
+      setValidationError('Nhập tên người dùng.');
+      return;
+    }
+    if (!isValidLoginIdentity(email)) {
+      setValidationError(copy.validationUsername);
+      return;
+    }
+    if (!password) {
+      setValidationError(copy.validationPassword);
+      return;
+    }
+    if (password !== confirmPassword) {
+      setValidationError('Mật khẩu xác nhận không khớp.');
+      return;
+    }
     if (!acceptedTerms) {
       Alert.alert(copy.termsAlertTitle, copy.termsAlertMessage);
       return;
     }
 
+    setValidationError(null);
+    const displayName = username.trim() || email.trim();
+
     try {
       const result = await register({
-        firstName,
-        lastName,
+        firstName: displayName,
+        lastName: '',
         username,
         email,
         password,
         confirmPassword,
+        birthday: birthDate,
         gender,
+        hasExistingStorefront,
       });
 
       if (result.status === 'authenticated') {
@@ -241,10 +255,31 @@ function RegisterScreen() {
     } catch {
       // The view model exposes the message for inline rendering.
     }
-  }
+  }, [
+    acceptedTerms,
+    birthDate,
+    confirmPassword,
+    copy.termsAlertMessage,
+    copy.termsAlertTitle,
+    copy.validationPassword,
+    copy.validationUsername,
+    copy.verificationTitle,
+    email,
+    gender,
+    hasExistingStorefront,
+    navigation,
+    password,
+    register,
+    username,
+  ]);
 
-  const isUsernameValid = username.trim().length >= 3;
-  const isEmailValid = email.trim().includes('@') && email.trim().includes('.');
+  const handleLoginPress = useCallback(() => {
+    navigation.navigate(ROUTES.LOGIN);
+  }, [navigation]);
+
+  const openExternalLink = useCallback((url: string) => {
+    Linking.openURL(url).catch(() => undefined);
+  }, []);
 
   return (
     <SafeAreaView className="flex-1 bg-[#F8FBFF]" edges={['top', 'bottom']}>
@@ -252,338 +287,313 @@ function RegisterScreen() {
 
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
           ref={scrollRef}
           className="flex-1"
           contentContainerClassName="flex-grow bg-[#F8FBFF] pb-4"
+          automaticallyAdjustKeyboardInsets
+          contentInsetAdjustmentBehavior="never"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Hero section */}
-          <View className="relative h-[180px] items-center justify-center overflow-hidden">
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              className="absolute left-4 top-4 z-10 h-10 w-10 items-center justify-center rounded-full bg-white"
-              style={{
-                shadowColor: '#000000',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.1,
-                shadowRadius: 10,
-                elevation: 4,
-              }}
-              activeOpacity={0.8}
-            >
-              <ArrowLeft size={20} color="#334155" />
-            </TouchableOpacity>
-            <Animated.View
-              pointerEvents="none"
-              className="absolute -right-14 -top-14 h-36 w-36 rounded-full"
-              style={[{ backgroundColor: 'rgba(0,0,255,0.04)' }, circle1Style]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              className="absolute -bottom-12 -left-16 h-36 w-36 rounded-full"
-              style={[{ backgroundColor: 'rgba(0,0,255,0.035)' }, circle2Style]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              className="absolute right-24 top-28 h-11 w-11 rounded-full"
-              style={[{ backgroundColor: 'rgba(0,0,255,0.05)' }, circle3Style]}
-            />
-            <View pointerEvents="none" className="absolute left-7 top-10">
-              {Array.from({ length: 12 }).map((_, index) => (
-                <View
-                  key={`left-dot-${index}`}
-                  className="absolute h-1 w-1 rounded-full bg-[#D8E5FF]"
-                  style={{
-                    left: (index % 4) * 16,
-                    top: Math.floor(index / 4) * 16,
-                    opacity: 0.8,
-                  }}
-                />
-              ))}
-            </View>
-            <View pointerEvents="none" className="absolute right-8 top-24">
-              {Array.from({ length: 9 }).map((_, index) => (
-                <View
-                  key={`right-dot-${index}`}
-                  className="absolute h-1 w-1 rounded-full bg-[#DDE8FF]"
-                  style={{
-                    left: (index % 3) * 16,
-                    top: Math.floor(index / 3) * 16,
-                    opacity: 0.75,
-                  }}
-                />
-              ))}
-            </View>
+          <LoginHero
+            siteName={siteName}
+            subtitle={copy.brandSubtitle}
+            logoUrl={logoUrl}
+            onLogoImageError={notifyImageError}
+          />
 
-            <View className="items-center justify-center px-8 pt-4">
-              <Animated.View
-                className="mb-3 h-16 w-44 items-center justify-center overflow-hidden rounded-[16px] border-[3px] border-white bg-[#0000ff]"
-                style={[
-                  {
-                    shadowColor: '#0000ff',
-                    shadowOffset: { width: 0, height: 10 },
-                    shadowOpacity: 0.12,
-                    shadowRadius: 20,
-                    elevation: 6,
-                  },
-                  logoFloatStyle,
-                ]}
-              >
-                {logoUrl ? (
-                  <Image
-                    source={{ uri: logoUrl }}
-                    className="h-10 w-36 rounded-lg"
-                    resizeMode="contain"
-                    onError={notifyImageError}
-                  />
-                ) : null}
-              </Animated.View>
-              <Text className="text-[15px] font-bold text-slate-800">
-                {copy.createAccountTitle}
-              </Text>
-
-              {/* Step indicator */}
-              <View className="mt-2.5 flex-row items-center gap-1 justify-center">
-                <View className="h-1 w-1 rounded-full bg-[#D8E5FF]" />
-                <View className="h-1 w-6 rounded-full bg-[#0000ff]" />
-                <View className="h-1 w-1 rounded-full bg-[#D8E5FF]" />
-              </View>
-            </View>
-          </View>
-
-          {/* Form card */}
           <View
             onLayout={handleCardLayout}
-            className="mx-5 rounded-[24px] bg-white px-5 pb-5 pt-4"
+            className="mx-6 -mt-7 rounded-[32px] bg-white px-6 pb-6 pt-5"
             style={{
               shadowColor: '#0F172A',
-              shadowOffset: { width: 0, height: 12 },
-              shadowOpacity: 0.07,
-              shadowRadius: 24,
-              elevation: 6,
+              shadowOffset: { width: 0, height: 18 },
+              shadowOpacity: 0.09,
+              shadowRadius: 34,
+              elevation: 8,
             }}
           >
-            <View className="gap-2.5">
-              {/* Họ & Tên row */}
-              <View className="flex-row gap-3">
-                <View className="flex-1" onLayout={handleFieldLayout('firstName')}>
-                  <RegisterTextField
-                    label={copy.firstName}
-                    placeholder={copy.firstNamePlaceholder}
-                    value={firstName}
-                    onChangeText={setFirstName}
-                    icon={<User size={14} color="#0000ff" />}
-                    onFocus={() => scrollToField('firstName')}
-                  />
-                </View>
-                <View className="flex-1" onLayout={handleFieldLayout('lastName')}>
-                  <RegisterTextField
-                    label={copy.lastName}
-                    placeholder={copy.lastNamePlaceholder}
-                    value={lastName}
-                    onChangeText={setLastName}
-                    icon={<User size={14} color="#0000ff" />}
-                    onFocus={() => scrollToField('lastName')}
-                  />
-                </View>
-              </View>
+            <AuthTabs
+              labels={{ active: copy.tabLogin, inactive: copy.tabRegister }}
+              activeIsLogin={false}
+              onPressLogin={handleLoginPress}
+              onPressRegister={() => undefined}
+            />
 
-              {/* Tên đăng nhập */}
-              <View onLayout={handleFieldLayout('username')}>
-                <RegisterTextField
-                  label={copy.username}
-                  placeholder={copy.registerUsernamePlaceholder}
-                  value={username}
-                  onChangeText={setUsername}
-                  icon={<User size={14} color="#0000ff" />}
-                  showCheckIcon={isUsernameValid}
-                  onFocus={() => scrollToField('username')}
-                />
-              </View>
+            <View className="mt-5 gap-4">
+              <AuthTextField
+                label={copy.username}
+                placeholder={copy.registerUsernamePlaceholder}
+                value={username}
+                onChangeText={value => {
+                  setUsername(value);
+                  setValidationError(null);
+                }}
+                icon={<User size={18} color={BRAND} />}
+                returnKeyType="next"
+                onFocus={() => scrollToField('username')}
+                onBlur={() => {
+                  focusedFieldRef.current = null;
+                }}
+                onContainerLayout={handleFieldLayout('username')}
+              />
 
-              {/* Email */}
-              <View onLayout={handleFieldLayout('email')}>
-                <RegisterTextField
-                  label={copy.email}
-                  placeholder={copy.emailPlaceholder}
-                  keyboardType="email-address"
-                  value={email}
-                  onChangeText={setEmail}
-                  icon={<Mail size={14} color="#0000ff" />}
-                  showCheckIcon={isEmailValid}
-                  onFocus={() => scrollToField('email')}
-                />
-              </View>
+              <AuthTextField
+                label={copy.email}
+                placeholder={copy.emailPlaceholder}
+                value={email}
+                onChangeText={value => {
+                  setEmail(value);
+                  setValidationError(null);
+                }}
+                icon={<User size={18} color={BRAND} />}
+                keyboardType="email-address"
+                returnKeyType="next"
+                onFocus={() => scrollToField('email')}
+                onBlur={() => {
+                  focusedFieldRef.current = null;
+                }}
+                onContainerLayout={handleFieldLayout('email')}
+              />
 
-              {/* Mật khẩu */}
-              <View onLayout={handleFieldLayout('password')}>
-                <RegisterTextField
-                  label={copy.password}
-                  placeholder={copy.passwordPlaceholder}
-                  isPassword
-                  value={password}
-                  onChangeText={setPassword}
-                  icon={<Lock size={14} color="#0000ff" />}
-                  onFocus={() => scrollToField('password')}
-                />
-              </View>
-
-              {/* Xác nhận mật khẩu */}
-              <View onLayout={handleFieldLayout('confirmPassword')}>
-                <RegisterTextField
-                  label={copy.confirmPassword}
-                  placeholder={copy.confirmPasswordPlaceholder}
-                  isPassword
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  icon={<Lock size={14} color="#0000ff" />}
-                  onFocus={() => scrollToField('confirmPassword')}
-                />
-              </View>
-
-              {/* Giới tính */}
-              <View className="pt-1 px-0.5" onLayout={handleFieldLayout('gender')}>
-                <View className="mb-2 flex-row items-center gap-1.5">
-                  <User size={14} color="#0000ff" />
-                  <Text className="text-[12px] font-semibold text-slate-500">
-                    {copy.gender}
-                  </Text>
-                </View>
-                <View className="flex-row gap-3">
-                  <TouchableOpacity
-                    className="flex-1 flex-row items-center justify-center rounded-xl"
-                    style={{
-                      height: 40,
-                      borderWidth: 1.5,
-                      borderColor: gender === 'male' ? '#0000ff' : 'rgba(0,0,0,0.06)',
-                      backgroundColor: gender === 'male' ? '#EEF4FF' : '#FFFFFF',
-                    }}
-                    activeOpacity={0.8}
-                    onPress={() => setGender('male')}
-                  >
-                    <Text
-                      className="text-[13px] font-bold"
-                      style={{
-                        color: gender === 'male' ? '#0000ff' : '#475569',
-                      }}
-                    >
-                      {copy.genderMale}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    className="flex-1 flex-row items-center justify-center rounded-xl"
-                    style={{
-                      height: 40,
-                      borderWidth: 1.5,
-                      borderColor: gender === 'female' ? '#0000ff' : 'rgba(0,0,0,0.06)',
-                      backgroundColor: gender === 'female' ? '#EEF4FF' : '#FFFFFF',
-                    }}
-                    activeOpacity={0.8}
-                    onPress={() => setGender('female')}
-                  >
-                    <Text
-                      className="text-[13px] font-bold"
-                      style={{
-                        color: gender === 'female' ? '#0000ff' : '#475569',
-                      }}
-                    >
-                      {copy.genderFemale}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Đồng ý điều khoản */}
-              <View className="pt-1" onLayout={handleFieldLayout('terms')}>
+              <View
+                className="w-full"
+                onLayout={handleFieldLayout('birthDate')}
+              >
+                <Text className="mb-2 text-[14px] font-extrabold text-slate-900">
+                  {copy.birthDate}
+                </Text>
                 <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => setAcceptedTerms(v => !v)}
-                  className="flex-row items-start"
+                  activeOpacity={0.82}
+                  onPress={openBirthdayPicker}
+                  className="flex-row items-center rounded-[20px] bg-white px-3.5"
+                  style={{
+                    height: 56,
+                    borderWidth: birthdayPickerVisible ? 1.5 : 1,
+                    borderColor: birthdayPickerVisible
+                      ? BRAND
+                      : 'rgba(0, 0, 255, 0.12)',
+                    shadowColor: BRAND,
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: birthdayPickerVisible ? 0.1 : 0,
+                    shadowRadius: 12,
+                    elevation: birthdayPickerVisible ? 2 : 0,
+                  }}
                 >
-                  <View
-                    className={`h-4.5 w-4.5 rounded-md border items-center justify-center mt-0.5 ${
-                      acceptedTerms
-                        ? 'border-[#0000ff] bg-[#0000ff]'
-                        : 'border-slate-300 bg-white'
+                  <View className="mr-3 h-10 w-10 items-center justify-center rounded-2xl bg-[#EEF4FF]">
+                    <CalendarDays size={18} color={BRAND} />
+                  </View>
+                  <Text
+                    className={`flex-1 text-[15px] font-medium ${
+                      birthDateDisplay ? 'text-slate-900' : 'text-[#9AA0A6]'
                     }`}
                   >
-                    {acceptedTerms && (
-                      <View className="h-1.5 w-1.5 rounded-[2px] bg-white" />
-                    )}
-                  </View>
-                  <Text className="ml-2.5 flex-1 text-[12px] leading-5 text-slate-500">
-                    {copy.termsPrefix}
-                    <Text className="font-semibold text-[#0000ff]">
-                      {copy.termsService}
-                    </Text>
-                    {copy.termsAnd}
-                    <Text className="font-semibold text-[#0000ff]">
-                      {copy.privacyPolicy}
-                    </Text>
-                    {copy.termsSuffix}
+                    {birthDateDisplay || copy.birthDatePlaceholder}
                   </Text>
+                  <CalendarDays size={18} color="#8A8D91" />
                 </TouchableOpacity>
               </View>
 
-              {/* Submit Button */}
-              <TouchableOpacity
-                className="mt-2 flex-row items-center justify-center rounded-full bg-[#0000ff]"
-                style={{
-                  height: 46,
-                  shadowColor: '#0000ff',
-                  shadowOffset: { width: 0, height: 6 },
-                  shadowOpacity: 0.12,
-                  shadowRadius: 12,
-                  elevation: 3,
+              <View onLayout={handleFieldLayout('gender')}>
+                <Text className="mb-2 text-[14px] font-extrabold text-slate-900">
+                  {copy.gender}
+                </Text>
+                <View className="flex-row gap-3">
+                  {(['male', 'female'] as const).map(value => {
+                    const active = gender === value;
+                    return (
+                      <TouchableOpacity
+                        key={value}
+                        activeOpacity={0.82}
+                        onPress={() => setGender(value)}
+                        className="flex-1 items-center justify-center rounded-[20px]"
+                        style={{
+                          height: 50,
+                          borderWidth: active ? 1.5 : 1,
+                          borderColor: active ? BRAND : 'rgba(0,0,255,0.12)',
+                          backgroundColor: active ? '#EEF4FF' : '#ffffff',
+                        }}
+                      >
+                        <Text
+                          className="text-[14px] font-extrabold"
+                          style={{ color: active ? BRAND : '#475569' }}
+                        >
+                          {value === 'male'
+                            ? copy.genderMale
+                            : copy.genderFemale}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <AuthTextField
+                label={copy.password}
+                placeholder={copy.passwordPlaceholder}
+                value={password}
+                onChangeText={value => {
+                  setPassword(value);
+                  setValidationError(null);
                 }}
-                activeOpacity={0.9}
-                disabled={isLoading}
-                onPress={handleRegister}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <View className="flex-row items-center justify-center gap-2">
-                    <Text className="text-[15px] font-extrabold text-white">
-                      {copy.tabRegister}
-                    </Text>
-                    <ArrowRight size={18} color="#FFFFFF" />
-                  </View>
-                )}
-              </TouchableOpacity>
+                icon={<Lock size={18} color={BRAND} />}
+                isPassword
+                returnKeyType="next"
+                onFocus={() => scrollToField('password')}
+                onBlur={() => {
+                  focusedFieldRef.current = null;
+                }}
+                onContainerLayout={handleFieldLayout('password')}
+              />
 
-              {error ? (
-                <Text className="text-center text-[12px] font-semibold text-red-500 mt-1">
-                  {error}
-                </Text>
-              ) : null}
-            </View>
+              <AuthTextField
+                label={copy.confirmPassword}
+                placeholder={copy.confirmPasswordPlaceholder}
+                value={confirmPassword}
+                onChangeText={value => {
+                  setConfirmPassword(value);
+                  setValidationError(null);
+                }}
+                icon={<Lock size={18} color={BRAND} />}
+                isPassword
+                returnKeyType="done"
+                onSubmitEditing={handleRegister}
+                onFocus={() => scrollToField('confirmPassword')}
+                onBlur={() => {
+                  focusedFieldRef.current = null;
+                }}
+                onContainerLayout={handleFieldLayout('confirmPassword')}
+              />
 
-            {/* Switch to login */}
-            <View className="mt-4 flex-row items-center justify-center">
-              <Text className="text-[13px] font-medium text-slate-500">
-                {copy.alreadyHaveAccount}
-              </Text>
               <TouchableOpacity
-                className="ml-1.5"
                 activeOpacity={0.8}
-                onPress={() => navigation.navigate(ROUTES.LOGIN)}
+                onPress={() => setHasExistingStorefront(value => !value)}
+                className="flex-row items-start"
               >
-                <Text className="text-[13px] font-extrabold text-[#0000ff]">
-                  {copy.tabLogin}
+                <View
+                  className={`mt-0.5 h-[18px] w-[18px] items-center justify-center rounded-md border ${
+                    hasExistingStorefront
+                      ? 'border-[#0000ff] bg-[#0000ff]'
+                      : 'border-slate-300 bg-white'
+                  }`}
+                >
+                  {hasExistingStorefront ? (
+                    <View className="h-2 w-2 rounded-[2px] bg-white" />
+                  ) : null}
+                </View>
+                <Text className="ml-2.5 flex-1 text-[12px] leading-5 text-slate-500">
+                  {copy.storefrontQuestion}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setAcceptedTerms(value => !value)}
+                className="flex-row items-start"
+                onLayout={handleFieldLayout('terms')}
+              >
+                <View
+                  className={`mt-0.5 h-[18px] w-[18px] items-center justify-center rounded-md border ${
+                    acceptedTerms
+                      ? 'border-[#0000ff] bg-[#0000ff]'
+                      : 'border-slate-300 bg-white'
+                  }`}
+                >
+                  {acceptedTerms ? (
+                    <View className="h-2 w-2 rounded-[2px] bg-white" />
+                  ) : null}
+                </View>
+                <Text className="ml-2.5 flex-1 text-[12px] leading-5 text-slate-500">
+                  {copy.termsPrefix}
+                  <Text
+                    className="font-semibold text-[#0000ff]"
+                    onPress={() => openExternalLink(TERMS_URL)}
+                  >
+                    {copy.termsService}
+                  </Text>
+                  {copy.termsAnd}
+                  <Text
+                    className="font-semibold text-[#0000ff]"
+                    onPress={() => openExternalLink(PRIVACY_URL)}
+                  >
+                    {copy.privacyPolicy}
+                  </Text>
+                  {copy.termsSuffix}
                 </Text>
               </TouchableOpacity>
             </View>
+
+            <AuthErrorBanner message={visibleError} />
+
+            <AuthSubmitButton
+              label={copy.tabRegister}
+              onPress={handleRegister}
+              isLoading={isLoading}
+            />
+
+            <AuthFooterLink
+              prompt={copy.alreadyHaveAccount}
+              action={copy.tabLogin}
+              onPress={handleLoginPress}
+            />
           </View>
         </ScrollView>
+
+        {birthdayPickerVisible && Platform.OS === 'android' ? (
+          <DateTimePicker
+            value={selectedBirthday}
+            mode="date"
+            display="default"
+            maximumDate={new Date()}
+            onChange={handleBirthdayChange}
+          />
+        ) : null}
+
+        {birthdayPickerVisible && Platform.OS === 'ios' ? (
+          <Modal
+            transparent
+            visible={birthdayPickerVisible}
+            animationType="slide"
+            onRequestClose={() => setBirthdayPickerVisible(false)}
+          >
+            <View className="flex-1 justify-end bg-black/40">
+              <View className="rounded-t-3xl bg-white px-4 pb-6 pt-4">
+                <View className="mb-4 flex-row items-center justify-between">
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => setBirthdayPickerVisible(false)}
+                    className="rounded-full bg-slate-100 px-4 py-2"
+                  >
+                    <Text className="font-semibold text-slate-700">Hủy</Text>
+                  </TouchableOpacity>
+                  <Text className="text-lg font-extrabold text-slate-950">
+                    {copy.birthDate}
+                  </Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => setBirthdayPickerVisible(false)}
+                    className="rounded-full bg-blue-600 px-4 py-2"
+                  >
+                    <Text className="font-semibold text-white">Xong</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={selectedBirthday}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={new Date()}
+                  onChange={handleBirthdayChange}
+                />
+              </View>
+            </View>
+          </Modal>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 export default RegisterScreen;
-

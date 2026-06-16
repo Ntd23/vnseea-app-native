@@ -10,12 +10,16 @@ export function useBlogDetailViewModel(blogId: string) {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    console.log('[useBlogDetailViewModel] Loading article:', blogId);
     setIsLoading(true);
     setError(null);
 
     try {
-      setArticle(await repository.getArticleById(blogId));
+      const result = await repository.getArticleById(blogId);
+      console.log('[useBlogDetailViewModel] Article loaded:', result);
+      setArticle(result);
     } catch (err) {
+      console.log('[useBlogDetailViewModel] Error loading article:', err);
       setArticle(null);
       setError(
         err instanceof Error ? err.message : 'Không thể tải bài viết.',

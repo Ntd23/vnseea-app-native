@@ -7,3 +7,4 @@ export { useBlogDetailViewModel } from './application/view-models/useBlogDetailV
 export { default as BlogsScreen } from './presentation/screens/BlogsScreen';
 export { default as BlogFilterCategoryScreen } from './presentation/screens/BlogFilterCategoryScreen';
 export { default as BlogDetailScreen } from './presentation/screens/BlogDetailScreen';
+export { default as CreateBlogScreen } from './presentation/screens/CreateBlogScreen';

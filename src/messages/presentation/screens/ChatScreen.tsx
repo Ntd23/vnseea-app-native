@@ -1143,6 +1143,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     loadOlder,
     refreshLatest,
     sendMessage,
+    notifyTyping,
+    stopTyping,
     loadGroupInfo,
     searchAddableUsers,
     addGroupUsers,
@@ -1317,6 +1319,14 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     setViewerMediaIndex(0);
   }, []);
 
+  const handleChangeText = useCallback(
+    (nextText: string) => {
+      setText(nextText);
+      notifyTyping(nextText);
+    },
+    [notifyTyping],
+  );
+
   const handleSend = useCallback(async () => {
     const recordedAudio = recorder.isRecording
       ? await recorder.stopRecording()
@@ -1344,6 +1354,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     const nextText = text;
     const nextAttachments = pendingAttachments;
     setText('');
+    stopTyping();
     setAttachments([]);
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
@@ -1354,7 +1365,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         await sendMessage(index === 0 ? nextText : '', attachment);
       }
     }
-  }, [attachments, recorder, sendMessage, text, sendAnim]);
+  }, [attachments, recorder, sendMessage, stopTyping, text, sendAnim]);
 
   const handlePickMedia = useCallback(async () => {
     const result = await launchImageLibrary({
@@ -1946,7 +1957,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               placeholderTextColor="#9DA9BE"
               multiline
               value={text}
-              onChangeText={setText}
+              onChangeText={handleChangeText}
             />
           )}
 

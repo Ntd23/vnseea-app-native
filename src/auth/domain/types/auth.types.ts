@@ -26,7 +26,9 @@ export type RegisterInput = {
   email: string;
   password: string;
   confirmPassword: string;
+  birthday?: string;
   gender: 'male' | 'female';
+  hasExistingStorefront?: boolean;
 };
 
 export type ForgotPasswordInput = {

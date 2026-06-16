@@ -1,5 +1,5 @@
 // Description: Renders real WoWonder articles with pagination and detail navigation.
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -7,19 +7,23 @@ import {
   RefreshControl,
   StatusBar,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   type ListRenderItemInfo,
 } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   ArrowLeft,
   Clock3,
   Eye,
   FileText,
+  Filter,
+  Plus,
   RotateCw,
   Search,
+  X,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -59,9 +63,11 @@ function ArticlesSkeleton() {
 function EmptyState({
   error,
   onRetry,
+  onCreate,
 }: {
   error: string | null;
   onRetry: () => void;
+  onCreate: () => void;
 }) {
   return (
     <View className="items-center px-6 py-16">
@@ -81,10 +87,16 @@ function EmptyState({
       <TouchableOpacity
         className="btn-primary mt-6 min-h-[46px] rounded-xl px-6"
         activeOpacity={0.85}
-        onPress={onRetry}
+        onPress={error ? onRetry : onCreate}
       >
-        <RotateCw size={18} color="#FFFFFF" />
-        <Text className="text-title-primary text-inverse">Thử lại</Text>
+        {error ? (
+          <RotateCw size={18} color="#FFFFFF" />
+        ) : (
+          <Plus size={18} color="#FFFFFF" />
+        )}
+        <Text className="text-title-primary text-inverse">
+          {error ? 'Thử lại' : 'Tạo bài viết'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -157,21 +169,88 @@ function ArticleCard({
 
 function BlogsScreen() {
   const navigation = useNavigation<BlogsNav>();
+  const route = useRoute();
   const vm = useBlogsViewModel();
+  const [searchText, setSearchText] = useState('');
+  const previousParams = useRef<{ category?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined>(undefined);
 
   useFocusEffect(
     useCallback(() => {
-      void vm.loadFirstPage(false);
-    }, [vm.loadFirstPage]),
+      const params = route.params as { category?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined;
+      console.log('[BlogsScreen] Route params:', params);
+      
+      // Kiểm tra xem params có thực sự thay đổi không
+      const paramsChanged = 
+        params?.category !== previousParams.current?.category ||
+        params?.searchQuery !== previousParams.current?.searchQuery ||
+        params?.sortBy !== previousParams.current?.sortBy ||
+        params?.myPostsOnly !== previousParams.current?.myPostsOnly;
+      
+      // Chỉ gọi loadFirstPage khi có params thay đổi
+      let shouldLoad = false;
+      
+      if (params?.category !== undefined) {
+        console.log('[BlogsScreen] Setting category:', params.category === 'all' ? null : params.category);
+        vm.handleCategoryChange(params.category === 'all' ? null : params.category);
+        shouldLoad = true;
+      }
+      if (params?.searchQuery !== undefined) {
+        console.log('[BlogsScreen] Setting search query:', params.searchQuery);
+        vm.handleSearchChange(params.searchQuery);
+        setSearchText(params.searchQuery);
+        shouldLoad = true;
+      }
+      if (params?.sortBy) {
+        console.log('[BlogsScreen] Setting sort by:', params.sortBy);
+        vm.handleSortChange(params.sortBy);
+        shouldLoad = true;
+      }
+      if (params?.myPostsOnly !== undefined) {
+        console.log('[BlogsScreen] Setting my posts only:', params.myPostsOnly);
+        vm.handleMyPostsOnlyChange(params.myPostsOnly);
+        shouldLoad = true;
+      }
+      
+      if (shouldLoad && paramsChanged) {
+        console.log('[BlogsScreen] Loading first page');
+        void vm.loadFirstPage(false);
+      }
+      
+      previousParams.current = params;
+    }, [route.params]),
   );
+
+  const handleSearchChange = useCallback((text: string) => {
+    setSearchText(text);
+    vm.handleSearchChange(text);
+  }, [vm]);
+
+  const clearSearch = useCallback(() => {
+    setSearchText('');
+    vm.handleSearchChange('');
+  }, [vm]);
+
+  const openFilter = useCallback(() => {
+    navigation.navigate(ROUTES.BLOG_FILTER_CATEGORY, {
+      currentCategory: vm.selectedCategory,
+      searchQuery: vm.searchQuery,
+      sortBy: vm.sortBy,
+      myPostsOnly: vm.myPostsOnly,
+    });
+  }, [navigation, vm.selectedCategory, vm.searchQuery, vm.sortBy, vm.myPostsOnly]);
+
+  const openCreateBlog = useCallback(() => {
+    navigation.navigate(ROUTES.CREATE_BLOG);
+  }, [navigation]);
 
   const renderArticle = useCallback(
     ({ item }: ListRenderItemInfo<BlogsItem>) => (
       <ArticleCard
         article={item}
-        onOpen={() =>
-          navigation.navigate(ROUTES.BLOG_DETAIL, { blogId: item.id })
-        }
+        onOpen={() => {
+          console.log('[BlogsScreen] Opening blog detail:', { blogId: item.id, id: item.id });
+          navigation.navigate(ROUTES.BLOG_DETAIL, { blogId: item.id });
+        }}
       />
     ),
     [navigation],
@@ -181,25 +260,56 @@ function BlogsScreen() {
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
-      <View className="surface-topbar h-16 flex-row items-center justify-between px-4">
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-            onPress={() => navigation.goBack()}
-          >
-            <ArrowLeft size={22} color="#0F172A" />
-          </TouchableOpacity>
-          <Text className="ml-3 text-heading">Bài viết</Text>
+      <View className="surface-topbar px-4 pb-3 pt-2">
+        <View className="mb-3 flex-row items-center justify-between">
+          <View className="flex-row items-center">
+            <TouchableOpacity
+              className="h-10 w-10 items-center justify-center rounded-full"
+              activeOpacity={0.8}
+              onPress={() => navigation.goBack()}
+            >
+              <ArrowLeft size={22} color="#0F172A" />
+            </TouchableOpacity>
+            <Text className="ml-3 text-heading">Bài viết</Text>
+          </View>
+
+          <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              className="h-10 w-10 items-center justify-center rounded-full"
+              activeOpacity={0.8}
+              onPress={openCreateBlog}
+            >
+              <Plus size={20} color={BRAND} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="h-10 w-10 items-center justify-center rounded-full"
+              activeOpacity={0.8}
+              onPress={openFilter}
+            >
+              <Filter size={20} color={BRAND} />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          activeOpacity={0.8}
-          onPress={() => navigation.navigate(ROUTES.SEARCH)}
-        >
-          <Search size={21} color={BRAND} />
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-2 rounded-xl bg-slate-100 px-3 py-2">
+          <Search size={18} color="#64748B" />
+          <TextInput
+            className="flex-1 text-body-primary"
+            placeholder="Tìm kiếm bài viết..."
+            placeholderTextColor="#94A3B8"
+            value={searchText}
+            onChangeText={handleSearchChange}
+          />
+          {searchText.length > 0 && (
+            <TouchableOpacity
+              className="h-6 w-6 items-center justify-center rounded-full"
+              activeOpacity={0.7}
+              onPress={clearSearch}
+            >
+              <X size={16} color="#64748B" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <FlatList
@@ -235,9 +345,13 @@ function BlogsScreen() {
         ListEmptyComponent={
           vm.isLoading ? (
             <ArticlesSkeleton />
-          ) : (
-            <EmptyState error={vm.error} onRetry={vm.retry} />
-          )
+          ) : vm.articles.length === 0 ? (
+            <EmptyState
+              error={vm.error}
+              onRetry={vm.retry}
+              onCreate={openCreateBlog}
+            />
+          ) : null
         }
         ListFooterComponent={
           vm.isLoadingMore ? (
