@@ -47,7 +47,7 @@ export const apiRoutes = {
     followRequest: 'follow-request-action',
     block: 'block-user',
     friends: 'get-friends',
-    friendsList: 'get-friends',  // v2 - supports following/followers
+    friendsList: 'get-friends', // v2 - supports following/followers
     poke: 'poke',
   },
   search: {

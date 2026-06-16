@@ -1,14 +1,21 @@
 // Description: My Balance screen showing wallet overview data
 import React from 'react';
-import {ActivityIndicator, ScrollView, StatusBar, Text, TouchableOpacity, View} from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
-import {ArrowLeft, CreditCard, RefreshCw, Wallet} from 'lucide-react-native';
-import {useNavigation} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {useEarningsViewModel} from '../../application/view-models/useEarningsViewModel';
-import {ROUTES} from '../../../navigation/constants/routes';
-import type {RootStackParamList} from '../../../navigation/types';
-import {formatCurrency} from '../../../shared-kernel/application/utils/formatCurrency';
+import {
+  ActivityIndicator,
+  ScrollView,
+  StatusBar,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ArrowLeft, CreditCard, RefreshCw, Wallet } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useEarningsViewModel } from '../../application/view-models/useEarningsViewModel';
+import { ROUTES } from '../../../navigation/constants/routes';
+import type { RootStackParamList } from '../../../navigation/types';
+import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
 
 type BalanceNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -25,7 +32,7 @@ function BalanceCard({
   amount: number;
   currency: string;
   symbol: string;
-  icon: React.ComponentType<{size: number; color: string}>;
+  icon: React.ComponentType<{ size: number; color: string }>;
   cardBg: string;
 }) {
   return (
@@ -46,7 +53,7 @@ function BalanceCard({
 /* ── Main screen ── */
 function MyBalanceScreen() {
   const navigation = useNavigation<BalanceNav>();
-  const {walletOverview, isLoading, error, reload} = useEarningsViewModel();
+  const { walletOverview, isLoading, error, reload } = useEarningsViewModel();
 
   if (isLoading) {
     return (
@@ -56,7 +63,8 @@ function MyBalanceScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => navigation.goBack()}
-            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <ArrowLeft size={24} color="#ffffff" />
           </TouchableOpacity>
           <Text className="flex-1 text-center text-heading text-inverse">
@@ -80,7 +88,8 @@ function MyBalanceScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => navigation.goBack()}
-            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <ArrowLeft size={24} color="#ffffff" />
           </TouchableOpacity>
           <Text className="flex-1 text-center text-heading text-inverse">
@@ -95,7 +104,8 @@ function MyBalanceScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => void reload()}
-            className="flex-row items-center gap-2 rounded-full bg-[#eef0ff] px-6 py-3">
+            className="flex-row items-center gap-2 rounded-full bg-[#eef0ff] px-6 py-3"
+          >
             <RefreshCw size={18} color="#0000ff" />
             <Text className="text-body font-semibold text-brand">Thử lại</Text>
           </TouchableOpacity>
@@ -118,7 +128,8 @@ function MyBalanceScreen() {
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => navigation.goBack()}
-          hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
           <ArrowLeft size={24} color="#ffffff" />
         </TouchableOpacity>
         <Text className="flex-1 text-center text-heading text-inverse">
@@ -127,7 +138,8 @@ function MyBalanceScreen() {
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => void reload()}
-          hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
           <RefreshCw size={22} color="#ffffff" />
         </TouchableOpacity>
       </View>
@@ -135,7 +147,8 @@ function MyBalanceScreen() {
       <ScrollView
         className="flex-1"
         contentContainerClassName="px-4 pb-12 pt-6"
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+      >
         {/* Main Wallet Balance Card */}
         <BalanceCard
           title="Số dư ví"
@@ -161,8 +174,8 @@ function MyBalanceScreen() {
         {/* Info Text */}
         <View className="mt-6 rounded-xl bg-white/50 p-4">
           <Text className="text-caption-secondary">
-            Số dư khả dụng là số tiền bạn có thể rút về tài khoản. Số dư ví
-            bao gồm cả các khoản đang xử lý.
+            Số dư khả dụng là số tiền bạn có thể rút về tài khoản. Số dư ví bao
+            gồm cả các khoản đang xử lý.
           </Text>
         </View>
 
@@ -170,8 +183,11 @@ function MyBalanceScreen() {
         {walletOverview?.canWithdraw && withdrawableBalance > 0 && (
           <TouchableOpacity
             activeOpacity={0.8}
-            className="mt-4 items-center rounded-full bg-brand py-4 shadow-brand">
-            <Text className="text-body font-semibold text-inverse">Rút tiền ngay</Text>
+            className="mt-4 items-center rounded-full bg-brand py-4 shadow-brand"
+          >
+            <Text className="text-body font-semibold text-inverse">
+              Rút tiền ngay
+            </Text>
           </TouchableOpacity>
         )}
 
@@ -179,7 +195,8 @@ function MyBalanceScreen() {
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => navigation.navigate(ROUTES.DEPOSIT, {})}
-          className="mt-3 items-center rounded-full border-2 border-brand bg-transparent py-4">
+          className="mt-3 items-center rounded-full border-2 border-brand bg-transparent py-4"
+        >
           <Text className="text-body font-semibold text-brand">Nạp tiền</Text>
         </TouchableOpacity>
       </ScrollView>
