@@ -68,6 +68,40 @@ function readBool(raw: Record<string, unknown>, ...keys: string[]): boolean {
   return false;
 }
 
+function readUserOnline(raw: Record<string, unknown>): boolean {
+  const onlineValue = raw.online ?? raw.is_online ?? raw.isOnline;
+  if (
+    onlineValue === true ||
+    onlineValue === 'true' ||
+    onlineValue === '1' ||
+    onlineValue === 1
+  ) {
+    return true;
+  }
+
+  const status = readString(
+    raw,
+    'lastseen_status',
+    'last_seen_status',
+    'online_status',
+  ).toLowerCase();
+  if (status === 'online' || status === 'on') return true;
+  if (status === 'offline' || status === 'off') return false;
+
+  const lastseenText = readString(raw, 'lastseen').toLowerCase();
+  if (lastseenText === 'online' || lastseenText === 'on') return true;
+  if (lastseenText === 'offline' || lastseenText === 'off') return false;
+
+  const lastseen = readNumber(
+    raw,
+    'lastseen',
+    'last_seen',
+    'lastseen_unix_time',
+    'last_seen_unix_time',
+  );
+  return lastseen > 0 && lastseen > Math.floor(Date.now() / 1000) - 60;
+}
+
 // ── Reaction wire format ──────────────────────────────────────────────────
 //
 // Stories use the same `T_REACTIONS.reaction` column as posts: numeric
@@ -163,6 +197,7 @@ function mapPublisher(
     name,
     avatarUrl: readString(safe, 'avatar', 'profile_picture') || undefined,
     isVerified: readBool(safe, 'verified'),
+    isOnline: readUserOnline(safe),
   };
 }
 

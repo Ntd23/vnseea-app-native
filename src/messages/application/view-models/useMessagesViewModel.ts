@@ -1,6 +1,7 @@
 // Description: Handles message list, conversation state, labels, and bulk sending.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
+import { onUserOnlineStatus } from '../../infrastructure/realtime/liveKitCallRealtime';
 import type {
   ChatItem,
   CreateGroupChatInput,
@@ -23,8 +24,18 @@ function mergeChatItems(...chatLists: ChatItem[][]) {
       chat.chatType === 'user' ? `${chat.chatType}:${chat.userId}` : chat.id;
     const current = chats.get(key);
 
-    if (!current || chat.lastMessageTime >= current.lastMessageTime) {
+    if (!current) {
       chats.set(key, chat);
+    } else if (chat.lastMessageTime >= current.lastMessageTime) {
+      chats.set(key, {
+        ...chat,
+        isOnline: chat.isOnline,
+      });
+    } else {
+      chats.set(key, {
+        ...current,
+        isOnline: chat.isOnline,
+      });
     }
   }
 
@@ -579,6 +590,24 @@ export function useMessagesViewModel() {
   useEffect(() => {
     syncUnreadBadgeCount(state.chats);
   }, [state.chats]);
+
+  useEffect(() => {
+    return onUserOnlineStatus(event => {
+      setState(prev => ({
+        ...prev,
+        chats: prev.chats.map(chat => {
+          if (chat.chatType !== 'user' || chat.userId !== event.userId) {
+            return chat;
+          }
+
+          return {
+            ...chat,
+            isOnline: event.isOnline,
+          };
+        }),
+      }));
+    });
+  }, []);
 
   return {
     // State
