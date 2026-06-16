@@ -28,6 +28,7 @@ export const ROUTES = {
   SEARCH_EMPTY: 'SearchEmpty',
   PAGES: 'Pages',
   PAGE_DETAIL: 'PageDetail',
+  PAGE_SETTINGS: 'PageSettings',
   CREATE_PAGE: 'CreatePage',
   EDIT_PAGE: 'EditPage',
   MARKETPLACE: 'Marketplace',

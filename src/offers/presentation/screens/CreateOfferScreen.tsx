@@ -51,11 +51,11 @@ import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/
 import { useCreateOfferViewModel } from '../../application/view-models/useOfferViewModel';
 import type { DiscountType } from '../../domain/types/offer.types';
 
-const BRAND = '#0000FF';
+const BRAND = '#3435F7';
 const TEXT = '#0F172A';
 const MUTED = '#64748B';
-const BORDER = '#E2E8F0';
-const SOFT_BLUE = '#EFF6FF';
+const BORDER = '#E4E8F4';
+const SOFT_BLUE = '#EEF4FF';
 
 type CreateOfferRouteParams = {
   pageId: number;
@@ -185,12 +185,14 @@ function PressScale({
   disabled,
   style,
   activeOpacity = 0.92,
+  contentStyle,
 }: {
   children: React.ReactNode;
   onPress?: () => void;
   disabled?: boolean;
   style?: any;
   activeOpacity?: number;
+  contentStyle?: any;
 }) {
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
@@ -209,7 +211,7 @@ function PressScale({
         onPressOut={() => {
           scale.value = withSpring(1, { damping: 15, stiffness: 250 });
         }}
-        style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
+        style={contentStyle}
       >
         {children}
       </TouchableOpacity>
@@ -516,7 +518,11 @@ export default function CreateOfferScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={styles.header}>
-        <PressScale onPress={handleBack} style={styles.backButtonWrap}>
+        <PressScale
+          onPress={handleBack}
+          style={styles.backButtonWrap}
+          contentStyle={{ flex: 1, width: '100%', height: '100%' }}
+        >
           <View style={styles.backButton}>
             <ChevronLeft size={27} color={TEXT} strokeWidth={2.5} />
           </View>
@@ -559,8 +565,16 @@ export default function CreateOfferScreen() {
                   </>
                 ) : (
                   <View style={styles.coverPlaceholder}>
+                    <View style={styles.coverSparkles}>
+                      <Text style={styles.sparkleOne}>✦</Text>
+                      <Text style={styles.sparkleTwo}>✧</Text>
+                      <Text style={styles.sparkleThree}>•</Text>
+                    </View>
                     <View style={styles.coverIconLarge}>
-                      <Camera size={26} color={BRAND} />
+                      <ImageIcon size={42} color="#FFFFFF" fill="#FFFFFF" />
+                      <View style={styles.coverCameraBadge}>
+                        <Camera size={16} color="#FFFFFF" />
+                      </View>
                     </View>
                     <Text style={styles.coverTitle}>{copy.uploadTitle}</Text>
                     <Text style={styles.coverHint}>{copy.uploadHint}</Text>
@@ -577,11 +591,7 @@ export default function CreateOfferScreen() {
 
           <Animated.View entering={FadeInDown.delay(140).duration(380)} style={styles.section}>
             <Text style={styles.inputLabel}>{copy.typeLabel}</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 10, paddingVertical: 4 }}
-            >
+            <View style={styles.offerTypeGrid}>
               {OFFER_TYPE_META.map(({ value, Icon }) => {
                 const isActive = vm.discountType === value;
                 return (
@@ -589,22 +599,26 @@ export default function CreateOfferScreen() {
                     key={value}
                     onPress={() => vm.setDiscountType(value)}
                     style={[
-                      styles.offerTypePill,
-                      isActive ? styles.offerTypePillActive : undefined,
+                      styles.offerTypeItem,
+                      isActive ? styles.offerTypeItemActive : undefined,
+                      (value === 'spend_get_off' || value === 'free_shipping') && styles.offerTypeWide,
                     ]}
+                    contentStyle={{ flex: 1, width: '100%', height: '100%' }}
                   >
-                    <View style={styles.offerTypePillInner}>
+                    <View style={styles.offerTypeInner}>
                       <Icon size={18} color={isActive ? '#FFFFFF' : BRAND} strokeWidth={2.2} />
                       <Text
-                        style={[styles.offerTypePillText, isActive && styles.offerTypePillTextActive]}
+                        style={[styles.offerTypeText, isActive && styles.offerTypeTextActive]}
+                        numberOfLines={1}
                       >
                         {copy.typeNames[value]}
                       </Text>
+                      {isActive ? <CheckCircle2 size={16} color="#FFFFFF" fill="rgba(255, 255, 255, 0.2)" /> : null}
                     </View>
                   </PressScale>
                 );
               })}
-            </ScrollView>
+            </View>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(180).duration(380)}>
@@ -700,6 +714,7 @@ export default function CreateOfferScreen() {
                     key={opt.value}
                     onPress={() => vm.setCurrency(opt.value)}
                     style={[styles.currencyItem, active ? styles.currencyItemActive : undefined]}
+                    contentStyle={{ flex: 1, width: '100%', height: '100%' }}
                   >
                     <View style={styles.currencyInner}>
                       <View style={[styles.currencyIcon, active && styles.currencyIconActive]}>
@@ -734,6 +749,7 @@ export default function CreateOfferScreen() {
             onPress={handleSubmit}
             disabled={vm.isLoading}
             style={[styles.submitBtn, vm.isLoading && styles.submitBtnLoading]}
+            contentStyle={{ flex: 1, width: '100%', height: '100%' }}
           >
             <View style={styles.submitInner}>
               <Megaphone size={22} color="#FFFFFF" fill="#FFFFFF30" />
@@ -891,28 +907,76 @@ const styles = StyleSheet.create({
   coverUpload: {
     height: 164,
     overflow: 'hidden',
-    borderRadius: 24,
+    borderRadius: 22,
     borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    borderColor: '#A8AEFF',
     borderStyle: 'dashed',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F7F8FF',
   },
   coverPlaceholder: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  coverSparkles: {
+    position: 'absolute',
+    top: 15,
+    width: 100,
+    height: 50,
+  },
+  sparkleOne: {
+    position: 'absolute',
+    top: 4,
+    left: 8,
+    color: '#3435F7',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  sparkleTwo: {
+    position: 'absolute',
+    top: 0,
+    right: 16,
+    color: '#FACC15',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  sparkleThree: {
+    position: 'absolute',
+    bottom: 4,
+    left: 35,
+    color: '#8EA0FF',
+    fontSize: 10,
+    fontWeight: '900',
+  },
   coverIconLarge: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 64,
+    height: 64,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EEF2F6',
-    marginBottom: 10,
+    backgroundColor: '#7B73FF',
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  coverCameraBadge: {
+    position: 'absolute',
+    right: -10,
+    bottom: -5,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BRAND,
+    borderWidth: 3.5,
+    borderColor: '#F7F8FF',
   },
   coverTitle: {
-    fontSize: 17,
+    marginTop: 14,
+    fontSize: 18,
     fontWeight: '800',
     color: TEXT,
   },
@@ -1050,39 +1114,50 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
   },
-  offerTypePill: {
-    height: 48,
-    borderRadius: 24,
+  offerTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  offerTypeItem: {
+    width: '31.5%',
+    minHeight: 63,
+    borderRadius: 18,
     borderWidth: 1.2,
     borderColor: BORDER,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
     shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
     elevation: 1,
   },
-  offerTypePillActive: {
+  offerTypeWide: {
+    width: '48.5%',
+  },
+  offerTypeItemActive: {
     borderColor: BRAND,
     backgroundColor: BRAND,
     shadowColor: BRAND,
-    shadowOpacity: 0.18,
-    elevation: 3,
+    shadowOpacity: 0.24,
+    elevation: 5,
   },
-  offerTypePillInner: {
+  offerTypeInner: {
     flex: 1,
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
+    paddingHorizontal: 8,
   },
-  offerTypePillText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#475569',
+  offerTypeText: {
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#26324A',
   },
-  offerTypePillTextActive: {
+  offerTypeTextActive: {
     color: '#FFFFFF',
   },
   infoBox: {
@@ -1108,60 +1183,59 @@ const styles = StyleSheet.create({
   },
   currencyRow: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 18,
-    padding: 4,
-    gap: 0,
+    gap: 14,
   },
   currencyItem: {
     flex: 1,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: 'transparent',
+    height: 62,
+    borderRadius: 18,
+    borderWidth: 1.2,
+    borderColor: BORDER,
+    backgroundColor: '#FFFFFF',
   },
   currencyItemActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
+    borderColor: BRAND,
+    backgroundColor: BRAND,
+    shadowColor: BRAND,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 5,
   },
   currencyInner: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 11,
   },
   currencyIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.2,
-    borderColor: '#475569',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.4,
+    borderColor: '#26324A',
     alignItems: 'center',
     justifyContent: 'center',
   },
   currencyIconActive: {
-    borderColor: BRAND,
-    backgroundColor: BRAND + '15',
+    borderColor: '#FFFFFF',
   },
   currencyIconText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '800',
+    fontSize: 15,
+    color: '#26324A',
+    fontWeight: '900',
   },
   currencyIconTextActive: {
-    color: BRAND,
+    color: '#FFFFFF',
   },
   currencyText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#475569',
+    fontSize: 16,
+    fontWeight: '800',
+    color: TEXT,
   },
   currencyTextActive: {
-    color: TEXT,
+    color: '#FFFFFF',
   },
   errorBox: {
     borderRadius: 16,

@@ -55,9 +55,18 @@ const COMMENT_PAGE_SIZE = 20;
 type LoadPhase = 'idle' | 'initial' | 'refreshing' | 'loading-more';
 type CommentPhase = 'idle' | 'loading' | 'loading-more' | 'submitting';
 
-export function useReelsViewModel() {
+export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPost }) {
   const [items, setItems] = useState<ReelsItem[]>([]);
-  const initialVideoInfoRef = useRef<{ id: string; post: FeedVideoPost } | null>(null);
+  // Seed the ref synchronously from the constructor argument so the
+  // initial-load `loadInitial()` (which fires in a useEffect on mount)
+  // can see the deeplinked / clicked video BEFORE the network round-trip
+  // completes. Without this seed, `setInitialVideo()` in the screen
+  // races with `loadInitial()`: the latter overwrites `items` with the
+  // latest feed and resets `activeIndex` back to 0, so the user lands
+  // on the newest reel instead of the one they tapped.
+  const initialVideoInfoRef = useRef<{ id: string; post: FeedVideoPost } | null>(
+    initialVideo ?? null,
+  );
   const [phase, setPhase] = useState<LoadPhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);

@@ -156,6 +156,28 @@ function mapNotification(raw: NotificationRecord): NotificationsItem {
       /[?&]type=job_apply[^#]*[?&]id=([^&#]+)/i,
       /\/jobs?\/([^/?#]+)/i,
     ]);
+  const pageId =
+    readTargetString(raw, 'page_id') ||
+    readTargetString(notifierRaw, 'page_id') ||
+    readAnyUrlTargetId(targetUrls, [
+      /[?&]page_id=([^&#]+)/i,
+      /[?&]link1=page[^#]*[?&]id=([^&#]+)/i,
+    ]);
+  const pageName =
+    readTargetString(notifierRaw, 'page_name', 'name') ||
+    readAnyUrlTargetId(targetUrls, [
+      /[?&]link1=timeline[^#]*[?&]u=([^&#]+)/i,
+      /[?&]link1=page[^#]*[?&]page_name=([^&#]+)/i,
+    ]) ||
+    (() => {
+      // SEO-formatted url ends in /<page_name>
+      if (!normalizedUrl) return '';
+      const stripped = normalizedUrl.replace(/^https?:\/\/[^/]+\//i, '');
+      const last = stripped.split('/').filter(Boolean).pop() ?? '';
+      const decoded = decodeURIComponent(last).trim();
+      if (!decoded || decoded === 'index.php' || decoded.includes('?')) return '';
+      return decoded;
+    })();
 
   return {
     id: readString(raw, 'id', 'notification_id', 'notif_id'),
@@ -166,7 +188,8 @@ function mapNotification(raw: NotificationRecord): NotificationsItem {
     text: readString(raw, 'type_text', 'text', 'description'),
     url: normalizedUrl,
     postId,
-    pageId: readTargetString(raw, 'page_id'),
+    pageId,
+    pageName,
     groupId: readTargetString(raw, 'group_id', 'groupId'),
     eventId: readTargetString(raw, 'event_id', 'eventId'),
     productId,

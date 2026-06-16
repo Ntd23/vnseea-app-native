@@ -1,8 +1,9 @@
-// Description: Renders the Facebook-style profile screen with user-backed API data.
+﻿// Description: Renders the Facebook-style profile screen with user-backed API data.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
+  FlatList,
   Image,
   ScrollView,
   StyleSheet,
@@ -36,6 +37,14 @@ import {
   Video,
   Image as ImageIcon,
   Calendar,
+
+  Copy,
+
+  Edit,
+
+  SlidersHorizontal as Sliders,
+
+  Star,
 } from 'lucide-react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -50,12 +59,16 @@ import { useProfileViewModel } from '../../application/view-models/useProfileVie
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import {
-  HomeVideoPostCard,
   PhotoViewerModal,
-  ReactionPickerOverlay,
-  TextPostCard,
   type PhotoViewerState,
 } from '../../../feed/presentation/screens/FeedScreen';
+import {
+  FEED_COPY as POST_CARD_COPY,
+  HomeVideoPostCard,
+  ReactionPickerOverlay,
+  TextPostCard,
+} from '../../../feed/presentation/components/PostCards';
+import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
 import { createPollRepository } from '../../../poll/infrastructure/repositories/ApiPollRepository';
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
@@ -84,9 +97,41 @@ type ProfileRoute = RouteProp<RootStackParamList, typeof ROUTES.PROFILE>;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const FRIEND_ITEM_WIDTH = (SCREEN_WIDTH - 64 - 16) / 3;
 const PROFILE_POST_MEDIA_HEIGHT = Math.min(320, Math.round(SCREEN_WIDTH * 0.62));
+// 4 friends in the right column of the Details+Friends row
+const PROFILE_FRIENDS_PAGE_WIDTH = Math.floor((SCREEN_WIDTH / 2 - 32 - 12) / 4);
 const PROFILE_STORY_MAX_AGE_SECONDS = 24 * 60 * 60;
 const PROFILE_POST_PAGE_SIZE = 20;
 
+function getActiveTimeValue(lastSeenText?: string | null): string {
+  const value = String(lastSeenText ?? '').trim();
+  if (!value) return '--';
+  return value.replace(/^active\s+/i, '').replace(/^hoạt động\s+/i, '');
+}
+
+function getStoryTimeText(story: StoryItem | null | undefined, lang: AppLanguage): string {
+  const rawStory = story as any;
+  const rawTime = Number(
+    rawStory?.time ??
+      rawStory?.createdAt ??
+      rawStory?.created_at ??
+      rawStory?.postedAt ??
+      rawStory?.posted_at ??
+      0,
+  );
+  if (!Number.isFinite(rawTime) || rawTime <= 0) {
+    return lang === 'vi' ? 'Vừa xong' : 'Just now';
+  }
+
+  const timestamp = rawTime > 1_000_000_000_000 ? rawTime / 1000 : rawTime;
+  const diff = Math.max(0, Math.floor(Date.now() / 1000) - timestamp);
+  if (diff < 60) return lang === 'vi' ? 'Vừa xong' : 'Just now';
+  if (diff < 3600) {
+    const minutes = Math.floor(diff / 60);
+    return lang === 'vi' ? `${minutes} phút trước` : `${minutes}m ago`;
+  }
+  const hours = Math.floor(diff / 3600);
+  return lang === 'vi' ? `${hours} giờ trước` : `${hours}h ago`;
+}
 const PROFILE_COPY: Record<AppLanguage, {
   userFallback: string;
   dashboard: string;
@@ -135,51 +180,51 @@ const PROFILE_COPY: Record<AppLanguage, {
   pokeError: string;
 }> = {
   vi: {
-    userFallback: 'Người dùng',
-    dashboard: 'Bảng điều khiển',
+    userFallback: 'NgÆ°á»i dùng',
+    dashboard: 'Báº£ng Ä‘iá»u khiá»ƒn',
     addToStory: 'Thêm vào tin',
     followed: 'Đã theo dõi',
-    message: 'Nhắn tin',
-    poke: 'Chọc',
-    requestSent: 'Đã gửi yêu cầu',
-    sending: 'Đang gửi...',
+    message: 'Nháº¯n tin',
+    poke: 'Chá»c',
+    requestSent: 'Đã gá»­i yêu cáº§u',
+    sending: 'Đang gá»­i...',
     follow: 'Theo dõi',
     stories: 'Tin',
-    storySegments: count => `${count} đoạn tin`,
+    storySegments: count => `${count} Ä‘oáº¡n tin`,
     viewStory: 'Xem tin',
-    createStory: 'Tạo tin',
-    details: 'Chi tiết',
+    createStory: 'Táº¡o tin',
+    details: 'Chi tiáº¿t',
     member: 'Thành viên',
     vipMember: 'Thành viên VIP Member',
-    worksAt: value => `Làm việc tại ${value}`,
-    livesAt: value => `Sống tại ${value}`,
-    activeNow: 'Đang hoạt động',
-    followersText: count => `Có ${count} người theo dõi`,
-    followingText: count => `Đang theo dõi ${count} người`,
-    pointsText: count => `Tích lũy ${count} điểm`,
-    editPublicDetails: 'Chỉnh sửa chi tiết công khai',
-    friends: 'Bạn bè',
-    findFriends: 'Tìm bạn bè',
-    friendFallback: 'Bạn bè',
-    seeAll: 'Xem tất cả',
-    composerPlaceholder: 'Bạn đang nghĩ gì?',
-    goLive: 'Phát trực tiếp',
-    photoVideo: 'Ảnh/video',
-    lifeEvent: 'Sự kiện trong đời',
-    posts: 'Bài viết',
-    manage: 'Quản lý',
-    loadPostsError: 'Lỗi tải bài viết',
-    noPosts: 'Chưa có bài viết nào',
-    edit: 'Chỉnh sửa',
-    avatarOptionsTitle: 'Tùy chọn ảnh đại diện',
-    cancel: 'Hủy',
-    errorTitle: 'Lỗi',
-    reactionError: 'Không thể cập nhật cảm xúc. Vui lòng thử lại.',
-    voteError: 'Không thể gửi phiếu bầu. Vui lòng thử lại.',
-    connectError: 'Không thể gửi lời mời kết bạn. Vui lòng thử lại.',
-    pokeSuccessTitle: 'Đã chọc',
-    pokeSuccessMessage: name => `Bạn đã chọc ${name}.`,
-    pokeError: 'Không thể chọc người dùng này lúc này.',
+    worksAt: value => `Làm viá»‡c táº¡i ${value}`,
+    livesAt: value => `Sá»‘ng táº¡i ${value}`,
+    activeNow: 'Đang hoáº¡t Ä‘á»™ng',
+    followersText: count => `Có ${count} ngÆ°á»i theo dõi`,
+    followingText: count => `Đang theo dõi ${count} ngÆ°á»i`,
+    pointsText: count => `Tích lÅ©y ${count} Ä‘iá»ƒm`,
+    editPublicDetails: 'Chá»‰nh sá»­a chi tiáº¿t công khai',
+    friends: 'Báº¡n bè',
+    findFriends: 'Tìm báº¡n bè',
+    friendFallback: 'Báº¡n bè',
+    seeAll: 'Xem táº¥t cáº£',
+    composerPlaceholder: 'Báº¡n Ä‘ang nghĩ gì?',
+    goLive: 'Phát trá»±c tiáº¿p',
+    photoVideo: 'áº¢nh/video',
+    lifeEvent: 'Sá»± kiá»‡n trong Ä‘á»i',
+    posts: 'Bài viáº¿t',
+    manage: 'Quáº£n lý',
+    loadPostsError: 'Lá»—i táº£i bài viáº¿t',
+    noPosts: 'ChÆ°a có bài viáº¿t nào',
+    edit: 'Chá»‰nh sá»­a',
+    avatarOptionsTitle: 'Tùy chá»n áº£nh Ä‘áº¡i diá»‡n',
+    cancel: 'Há»§y',
+    errorTitle: 'Lá»—i',
+    reactionError: 'Không thá»ƒ cáº­p nháº­t cáº£m xúc. Vui lòng thá»­ láº¡i.',
+    voteError: 'Không thá»ƒ gá»­i phiáº¿u báº§u. Vui lòng thá»­ láº¡i.',
+    connectError: 'Không thá»ƒ gá»­i lá»i má»i káº¿t báº¡n. Vui lòng thá»­ láº¡i.',
+    pokeSuccessTitle: 'Đã chá»c',
+    pokeSuccessMessage: name => `Báº¡n Ä‘ã chá»c ${name}.`,
+    pokeError: 'Không thá»ƒ chá»c ngÆ°á»i dùng này lúc này.',
   },
   en: {
     userFallback: 'User',
@@ -897,6 +942,7 @@ function PostSkeletonCard() {
 function ProfileScreen() {
   const language = useAppLanguage();
   const copy = PROFILE_COPY[language];
+  const postCardCopy = POST_CARD_COPY[language];
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<ProfileNav>();
   const route = useRoute<ProfileRoute>();
@@ -934,6 +980,7 @@ function ProfileScreen() {
   const isLoadingMorePostsRef = React.useRef(false);
   const [postsError, setPostsError] = useState<string | null>(null);
   const [userStory, setUserStory] = useState<StoryItem | null>(null);
+  const [allStories, setAllStories] = useState<StoryItem[]>([]);
   const [isStoryLoading, setIsStoryLoading] = useState(false);
   const [isConnectLoading, setIsConnectLoading] = useState(false);
   const [isPokeLoading, setIsPokeLoading] = useState(false);
@@ -1010,7 +1057,7 @@ function ProfileScreen() {
       .catch(err => {
         if (cancelled) return;
         console.error('[ProfileScreen] Error loading posts:', err);
-        setPostsError(err instanceof Error ? err.message : 'Không tải được bài viết.');
+        setPostsError(err instanceof Error ? err.message : 'Không táº£i Ä‘Æ°á»£c bài viáº¿t.');
       })
       .finally(() => {
         if (!cancelled) {
@@ -1027,12 +1074,14 @@ function ProfileScreen() {
   useEffect(() => {
     if (!targetUserId) {
       setUserStory(null);
+      setAllStories([]);
       setIsStoryLoading(false);
       return;
     }
 
     let cancelled = false;
     setUserStory(null);
+    setAllStories([]);
     setIsStoryLoading(true);
 
     Promise.all([
@@ -1050,10 +1099,25 @@ function ProfileScreen() {
         setUserStory(
           mergeStoriesForProfile(Array.from(storyMap.values()), targetUserId),
         );
+
+        // Filter other users' stories to show in the tray
+        const otherStories = feedStories.filter(
+          story => String(story.publisher.userId) !== String(targetUserId)
+        );
+        // Deduplicate other stories by publisher.userId to keep one per user
+        const dedupedOthersMap = new Map<string, StoryItem>();
+        for (const story of otherStories) {
+          const existing = dedupedOthersMap.get(String(story.publisher.userId));
+          if (!existing || (story.postedAt ?? 0) > (existing.postedAt ?? 0)) {
+            dedupedOthersMap.set(String(story.publisher.userId), story);
+          }
+        }
+        setAllStories(Array.from(dedupedOthersMap.values()));
       })
       .catch(() => {
         if (!cancelled) {
           setUserStory(null);
+          setAllStories([]);
         }
       })
       .finally(() => {
@@ -1392,7 +1456,7 @@ function ProfileScreen() {
         // Reload profile to reflect changes
         await loadProfile({ userId: targetUserId });
       } else {
-        Alert.alert(copy.errorTitle, 'Không thể cập nhật ảnh đại diện.');
+        Alert.alert(copy.errorTitle, 'Không thá»ƒ cáº­p nháº­t áº£nh Ä‘áº¡i diá»‡n.');
       }
     } catch (err) {
       console.error(err);
@@ -1423,7 +1487,7 @@ function ProfileScreen() {
         // Reload profile to reflect changes
         await loadProfile({ userId: targetUserId });
       } else {
-        Alert.alert(copy.errorTitle, 'Không thể cập nhật ảnh bìa.');
+        Alert.alert(copy.errorTitle, 'Không thá»ƒ cáº­p nháº­t áº£nh bìa.');
       }
     } catch (err) {
       console.error(err);
@@ -1507,26 +1571,67 @@ function ProfileScreen() {
     }
   };
 
+  const handleCopyUsername = useCallback(async () => {
+    if (!profile?.username) return;
+    try {
+      const { Clipboard } = require('react-native');
+      await Clipboard.setString(profile.username);
+      Alert.alert(
+        language === 'vi' ? 'Thành công' : 'Success',
+        language === 'vi' ? 'Đã sao chép tên ngÆ°á»i dùng vào khay nhá»› táº¡m.' : 'Username copied to clipboard.',
+      );
+    } catch (err) {
+      console.error(err);
+    }
+  }, [profile?.username, language]);
+
+  const handleEditProfilePress = useCallback(() => {
+    if (!isOwnProfile) return;
+    Alert.alert(
+      language === 'vi' ? 'Chá»‰nh sá»­a há»“ sÆ¡' : 'Edit Profile',
+      language === 'vi' ? 'Chá»n tác vá»¥ báº¡n muá»‘n thá»±c hiá»‡n' : 'Select what you want to do',
+      [
+        {
+          text: language === 'vi' ? 'Thay Ä‘á»•i áº£nh bìa' : 'Change Cover Photo',
+          onPress: handleChangeCover,
+        },
+        {
+          text: language === 'vi' ? 'Chá»‰nh sá»­a thông tin chi tiáº¿t' : 'Edit Public Details',
+          onPress: () => navigation.navigate(ROUTES.EDIT_PROFILE),
+        },
+        {
+          text: language === 'vi' ? 'Há»§y' : 'Cancel',
+          style: 'cancel',
+        },
+      ],
+    );
+  }, [isOwnProfile, language, handleChangeCover, navigation]);
+
+  const handleOpenFriendStory = useCallback((story: StoryItem) => {
+    navigation.navigate(ROUTES.STORY_VIEWER, {
+      stories: [story],
+      initialUserIndex: 0,
+    });
+  }, [navigation]);
+
   if (isLoading && !profile) {
     return <FullProfileSkeleton />;
   }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View className="flex-1 bg-[#F0F2F5]">
-        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <View style={profileMainStyles.container}>
+        <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
-      <ScrollView
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        onScroll={handleProfileScroll}
-        scrollEventThrottle={240}
-      >
-        {/* Profile Header Area (Cover Image, Avatar, Profile Info, Buttons) */}
-        <View className="bg-white pb-5 shadow-sm">
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          onScroll={handleProfileScroll}
+          scrollEventThrottle={240}
+        >
           {/* Cover Photo */}
-          <View className="relative w-full" style={{ height: 210 }}>
+          <View style={profileMainStyles.coverContainer}>
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={handleCoverPress}
@@ -1534,8 +1639,7 @@ function ProfileScreen() {
             >
               <Image
                 source={{ uri: coverUrl }}
-                className="h-full w-full"
-                style={{ width: SCREEN_WIDTH }}
+                style={{ width: SCREEN_WIDTH, height: 210 }}
                 resizeMode="cover"
               />
             </TouchableOpacity>
@@ -1546,644 +1650,733 @@ function ProfileScreen() {
               </View>
             )}
 
-            {/* Floating Header Inside Cover Photo so it scrolls with it */}
+            {/* Floating Header Inside Cover Photo */}
             <View
-              className="absolute top-0 left-0 right-0 z-20 flex-row items-center justify-between px-4"
-              style={{ paddingTop: insets.top + 8, height: insets.top + 48 }}
+              style={[profileMainStyles.headerOverlay, { paddingTop: insets.top + 8, height: insets.top + 48 }]}
               pointerEvents="box-none"
             >
               <TouchableOpacity
-                className="h-9 w-9 items-center justify-center rounded-full bg-black/40"
+                style={profileMainStyles.circleButton}
                 activeOpacity={0.8}
                 onPress={() => navigation.goBack()}
               >
-                <ArrowLeft size={18} color="#FFFFFF" />
+                <ArrowLeft size={18} color="#050505" />
               </TouchableOpacity>
 
               <View className="flex-row items-center gap-2">
                 <TouchableOpacity
-                  className="h-9 w-9 items-center justify-center rounded-full bg-black/40"
+                  style={profileMainStyles.circleButton}
                   activeOpacity={0.8}
                   onPress={() => navigation.navigate(ROUTES.SEARCH)}
                 >
-                  <Search size={18} color="#FFFFFF" />
+                  <Search size={18} color="#050505" />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className="h-9 w-9 items-center justify-center rounded-full bg-black/40"
+                  style={profileMainStyles.circleButton}
                   activeOpacity={0.8}
                 >
-                  <MoreHorizontal size={18} color="#FFFFFF" />
+                  <MoreHorizontal size={18} color="#050505" />
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* Role Badge ("Marketing Staff") */}
-            <View
-              className="absolute left-4 rounded-xl border border-white/20 bg-red-600/90 px-3.5 py-1.5 backdrop-blur-sm"
-              style={{ top: insets.top + 50 }}
-            >
-              <View className="flex-row items-center">
-                <Verified size={13} color="#FFFFFF" fill="#FFFFFF" />
-                <Text className="ml-1.5 text-[11px] font-semibold text-white">
-                  Marketing Staff
-                </Text>
-              </View>
-            </View>
-
-            {/* Edit Cover Photo Button */}
+            {/* Edit Profile Button overlapping cover photo bottom right */}
             {isOwnProfile && (
               <TouchableOpacity
-                className="absolute bottom-3.5 right-3.5 flex-row items-center rounded-full bg-white border border-slate-200 px-3.5 py-1.5 shadow-sm"
-                style={{ zIndex: 999 }}
-                activeOpacity={0.8}
-                onPress={handleChangeCover}
+                style={profileMainStyles.editCoverButton}
+                activeOpacity={0.85}
+                onPress={handleEditProfilePress}
               >
-                {isLoadingCover ? (
-                  <ActivityIndicator size="small" color="#050505" className="mr-1" />
-                ) : (
-                  <Camera size={14} color="#050505" className="mr-1.5" />
-                )}
-                <Text className="text-[12px] font-bold text-[#050505]">
-                  Edit profile
+                <Edit size={14} color="#050505" />
+                <Text style={profileMainStyles.editCoverText}>
+                  {language === 'vi' ? 'Chá»‰nh sá»­a há»“ sÆ¡' : 'Edit profile'}
                 </Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Avatar Section (Overlapping Cover Photo + Story active Ring) */}
-          <View className="items-center -mt-[60px] relative z-10">
-            <View className="relative">
-              <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.85}>
-                <View
-                  className="h-[126px] w-[126px] rounded-full justify-center items-center"
-                  style={{
-                    borderWidth: userStory ? 3.5 : 0,
-                    borderColor: userStory ? (userStory.hasUnseen ? '#1877F2' : '#CBD5E1') : 'transparent',
-                    padding: userStory ? 2.5 : 0,
-                  }}
-                >
-                  <View className="h-full w-full overflow-hidden rounded-full border-4 border-white bg-slate-100 shadow-md relative">
-                    <Image
-                      source={{ uri: avatarUrl }}
-                      className="h-full w-full"
-                      resizeMode="cover"
-                    />
-                    {isLoadingAvatar && (
-                      <View className="absolute inset-0 bg-black/30 items-center justify-center rounded-full" style={{ zIndex: 998 }}>
-                        <ActivityIndicator size="small" color="#ffffff" />
-                      </View>
-                    )}
-                  </View>
-                </View>
-              </TouchableOpacity>
-              {/* Edit Avatar Badge */}
-              {isOwnProfile && (
-                <TouchableOpacity
-                  className="absolute bottom-0 right-0 h-9 w-9 items-center justify-center rounded-full border border-slate-100 bg-white shadow-md"
-                  activeOpacity={0.8}
-                  onPress={handleChangeAvatar}
-                >
-                  {isLoadingAvatar ? (
-                    <ActivityIndicator size="small" color="#050505" />
-                  ) : (
-                    <Camera size={16} color="#050505" />
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          {/* Profile Name & Username */}
-          <View className="mt-3.5 items-center px-4">
-            <View className="flex-row items-center">
-              <Text
-                allowFontScaling={false}
-                className="text-center text-[24px] font-bold tracking-wide text-[#050505]"
-                numberOfLines={2}
-              >
-                {displayName || copy.userFallback}
-              </Text>
-              {profile?.verified && (
-                <View className="ml-2 mt-0.5">
-                  <Verified size={18} color="#FFFFFF" fill="#1877F2" />
-                </View>
-              )}
-            </View>
-            {!!username && (
-              <Text className="mt-1 text-[13px] text-[#65676B]">
-                {username}
-              </Text>
-            )}
-          </View>
-
-          {/* Facebook-style Action Buttons Row */}
-          <View className="mt-5 flex-row px-4 gap-2">
-            {isOwnProfile ? (
-              <>
-                <TouchableOpacity
-                  className="h-10 flex-1 flex-row items-center justify-center rounded-full bg-[#312e81] px-4 shadow-sm"
-                  activeOpacity={0.85}
-                  onPress={handleOpenDashboard}
-                >
-                  <Briefcase size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text className="text-[14px] font-bold text-white">
-                    {copy.dashboard}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="h-10 flex-1 flex-row items-center justify-center rounded-full bg-[#eef2ff] px-4 border border-[#e0e7ff] shadow-sm"
-                  activeOpacity={0.85}
-                  onPress={handleCreateStory}
-                >
-                  <PlusCircle size={16} color="#4f46e5" style={{ marginRight: 6 }} />
-                  <Text className="text-[14px] font-bold text-[#4f46e5]">
-                    {copy.addToStory}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : isFriendProfile ? (
-              <>
-                <TouchableOpacity
-                  className="h-[38px] flex-1 flex-row items-center justify-center rounded-lg bg-[#E4E6EB] px-4"
-                  activeOpacity={0.8}
-                >
-                  <UserCheck size={16} color="#050505" />
-                  <Text className="ml-1.5 text-[14px] font-bold text-[#050505]">
-                    {copy.followed}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="h-[38px] flex-1 flex-row items-center justify-center rounded-lg bg-[#1877F2] px-4"
-                  activeOpacity={0.8}
-                  onPress={handleOpenMessages}
-                >
-                  <MessageCircle size={16} color="#FFFFFF" />
-                  <Text className="ml-1.5 text-[14px] font-bold text-white">
-                    {copy.message}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="h-[38px] w-[82px] flex-row items-center justify-center rounded-lg bg-[#E4E6EB]"
-                  activeOpacity={0.8}
-                  disabled={isPokeLoading}
-                  onPress={handlePokeUser}
-                >
-                  <Sparkles size={15} color="#050505" />
-                  <Text className="ml-1 text-[13px] font-bold text-[#050505]">
-                    {copy.poke}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity
-                  className={`h-[38px] flex-1 flex-row items-center justify-center rounded-lg px-4 ${
-                    isRequestedProfile ? 'bg-[#E4E6EB]' : 'bg-[#1877F2]'
-                  }`}
-                  activeOpacity={0.8}
-                  disabled={isRequestedProfile || isConnectLoading}
-                  onPress={handleConnectUser}
-                >
-                  <UserPlus
-                    size={16}
-                    color={isRequestedProfile ? '#050505' : '#FFFFFF'}
-                  />
-                  <Text
-                    className={`ml-1.5 text-[14px] font-bold ${
-                      isRequestedProfile ? 'text-[#050505]' : 'text-white'
-                    }`}
+          {/* Profile Details Card (White Container) */}
+          <View style={profileMainStyles.profileInfoCard}>
+            {/* Avatar Section */}
+            <View style={profileMainStyles.avatarRow}>
+              <View style={profileMainStyles.avatarContainer}>
+                <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.85}>
+                  <View
+                    style={[
+                      profileMainStyles.avatarBorder,
+                      {
+                        borderWidth: userStory ? 3.5 : 0,
+                        borderColor: userStory ? (userStory.hasUnseen ? '#1877F2' : '#CBD5E1') : 'transparent',
+                        padding: userStory ? 2.5 : 0,
+                      }
+                    ]}
                   >
-                    {isRequestedProfile
-                      ? copy.requestSent
-                      : isConnectLoading
-                        ? copy.sending
-                        : copy.follow}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className="h-[38px] flex-1 flex-row items-center justify-center rounded-lg bg-[#E4E6EB] px-4"
-                  activeOpacity={0.8}
-                  onPress={handleOpenMessages}
-                >
-                  <MessageCircle size={16} color="#050505" />
-                  <Text className="ml-1.5 text-[14px] font-bold text-[#050505]">
-                    {copy.message}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </View>
-
-        {shouldShowStorySection && (
-          <View style={profileStoryStyles.section}>
-            <View style={profileStoryStyles.headerRow}>
-              <Text style={profileStoryStyles.title}>{copy.stories}</Text>
-              {!!userStory && (
-                <Text style={profileStoryStyles.countText}>
-                  {copy.storySegments(storySegmentCount)}
-                </Text>
-              )}
-            </View>
-
-            {isStoryLoading && !userStory ? (
-              <View style={profileStoryStyles.skeletonRow}>
-                {[0, 1].map(item => (
-                  <View key={`story-skeleton-${item}`} style={profileStoryStyles.skeletonCard}>
-                    <SkeletonBlock height={116} width={112} borderRadius={0} />
-                    <View style={profileStoryStyles.skeletonFooter}>
-                      <SkeletonBlock height={10} width={68} borderRadius={5} />
-                      <View style={{ marginTop: 7 }}>
-                        <SkeletonBlock height={10} width={48} borderRadius={5} />
-                      </View>
-                    </View>
-                    <View style={profileStoryStyles.skeletonAvatar}>
-                      <SkeletonBlock height={32} width={32} borderRadius={16} />
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={profileStoryStyles.row}
-              >
-                {!!userStory && (
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={profileStoryStyles.card}
-                    onPress={handleOpenStory}
-                  >
-                    <Image
-                      source={{ uri: storyPreviewUrl }}
-                      style={profileStoryStyles.cover}
-                      resizeMode="cover"
-                    />
-                    <View style={profileStoryStyles.overlay} />
-                    <View
-                      style={[
-                        profileStoryStyles.ring,
-                        {
-                          borderColor:
-                            userStory.hasUnseen && !userStory.isViewed
-                              ? '#1877F2'
-                              : '#CBD5E1',
-                        },
-                      ]}
-                    >
+                    <View style={{ width: 100, height: 100, borderRadius: 50, overflow: 'hidden', borderWidth: 4, borderColor: '#FFFFFF', backgroundColor: '#CBD5E1', position: 'relative' }}>
                       <Image
-                        source={{ uri: userStory.publisher.avatarUrl || avatarUrl }}
-                        style={profileStoryStyles.avatar}
+                        source={{ uri: avatarUrl }}
+                        style={{ width: '100%', height: '100%' }}
                         resizeMode="cover"
                       />
+                      {isLoadingAvatar && (
+                        <View className="absolute inset-0 bg-black/30 items-center justify-center rounded-full" style={{ zIndex: 998 }}>
+                          <ActivityIndicator size="small" color="#ffffff" />
+                        </View>
+                      )}
                     </View>
-                    {storySegmentCount > 1 && (
-                      <View style={profileStoryStyles.badge}>
-                        <Text style={profileStoryStyles.badgeText}>
-                          {storySegmentCount}
-                        </Text>
-                      </View>
-                    )}
-                    {storyHasVideo && (
-                      <View style={profileStoryStyles.playBadge}>
-                        <Play size={14} color="#FFFFFF" fill="#FFFFFF" />
-                      </View>
-                    )}
-                    <Text style={profileStoryStyles.label} numberOfLines={2}>
-                      {copy.viewStory}
-                    </Text>
-                  </TouchableOpacity>
-                )}
+                  </View>
+                </TouchableOpacity>
 
+                {/* Edit Avatar Badge */}
                 {isOwnProfile && (
                   <TouchableOpacity
-                    activeOpacity={0.85}
-                    style={profileStoryStyles.createCard}
-                    onPress={handleCreateStory}
+                    style={profileMainStyles.avatarCameraBadge}
+                    activeOpacity={0.8}
+                    onPress={handleChangeAvatar}
                   >
-                    <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-50 mb-2 border border-blue-100/50">
-                      <PlusCircle size={22} color="#1877F2" />
-                    </View>
-                    <Text className="text-[12px] font-bold text-[#1877F2] text-center px-1">
-                      {copy.createStory}
-                    </Text>
+                    {isLoadingAvatar ? (
+                      <ActivityIndicator size="small" color="#050505" />
+                    ) : (
+                      <Camera size={14} color="#050505" />
+                    )}
                   </TouchableOpacity>
                 )}
-              </ScrollView>
-            )}
-          </View>
-        )}
-
-        {/* Error State Banner */}
-        {!!error && (
-          <View className="mx-4 mt-4 flex-row items-center justify-center rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-            <Text className="text-[12px] text-red-600">{error}</Text>
-          </View>
-        )}
-
-        {/* Details Card (Chi tiết) */}
-        <View className="mx-4 mt-4 rounded-xl bg-white p-4 shadow-sm border border-[#E4E6EB]">
-          <Text className="text-[17px] font-bold text-[#050505] mb-4">
-            {copy.details}
-          </Text>
-
-          <View className="mb-1">
-            <DetailRow
-              icon={<User size={18} color="#65676B" />}
-              text={profile?.pro ? copy.vipMember : copy.member}
-            />
-            {!!profile?.working && (
-              <DetailRow
-                icon={<Briefcase size={18} color="#65676B" />}
-                text={copy.worksAt(profile.working)}
-              />
-            )}
-            {!!profile?.address && (
-              <DetailRow
-                icon={<MapPin size={18} color="#65676B" />}
-                text={copy.livesAt(profile.address)}
-              />
-            )}
-            <DetailRow
-              icon={<Clock size={18} color="#65676B" />}
-              text={profile?.lastSeenText ?? copy.activeNow}
-            />
-            {!!profile?.registered && (
-              <DetailRow
-                icon={<Calendar size={18} color="#65676B" />}
-                text={formatJoinedDate(profile.registered, language)}
-              />
-            )}
-
-            {/* Followers, Following, and Points inside Details List */}
-            <DetailRow
-              icon={<Users size={18} color="#65676B" />}
-              text={copy.followersText(followerCount)}
-            />
-            <DetailRow
-              icon={<UserCheck size={18} color="#65676B" />}
-              text={copy.followingText(followingCount)}
-            />
-            <DetailRow
-              icon={<Sparkles size={18} color="#65676B" />}
-              text={copy.pointsText(Number(profile?.points ?? 0))}
-            />
-            
-            {!!profile?.about && (
-              <Text className="mt-2 border-t border-[#F0F2F5] pt-3 text-[14px] text-[#65676B] leading-relaxed">
-                {profile.about}
-              </Text>
-            )}
-          </View>
-
-          {/* Facebook-style Edit Details Button */}
-          <TouchableOpacity
-            className="w-full h-9 bg-[#E4E6EB] rounded-lg justify-center items-center mt-3"
-            activeOpacity={0.8}
-          >
-            <Text className="text-[14px] font-semibold text-[#050505]">
-              {copy.editPublicDetails}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Friends Card (Bạn bè) */}
-        <View className="mx-4 mt-4 rounded-xl bg-white p-4 shadow-sm border border-[#E4E6EB]">
-          <View className="mb-4 flex-row items-center justify-between">
-            <View className="flex-row items-center">
-              <View className="h-10 w-10 items-center justify-center rounded-full bg-[#f3f0fd] mr-3">
-                <Users size={20} color="#4f46e5" />
               </View>
-              <View>
-                <Text className="text-[17px] font-bold text-[#050505]">
-                  {copy.friends}
+            </View>
+
+            {/* Profile Name & Username left-aligned */}
+            <View style={profileMainStyles.nameBlock}>
+              <View style={profileMainStyles.nameRow}>
+                <Text
+                  allowFontScaling={false}
+                  style={profileMainStyles.displayNameText}
+                  numberOfLines={2}
+                >
+                  {displayName || copy.userFallback}
                 </Text>
-                <Text className="mt-0.5 text-[12px] text-[#65676B]">
-                  {followerCount} {language === 'vi' ? 'người theo dõi' : 'followers'}
+                {profile?.verified && (
+                  <View className="ml-2 mt-0.5">
+                    <Verified size={18} color="#FFFFFF" fill="#1877F2" />
+                  </View>
+                )}
+              </View>
+              {!!username && (
+                <View style={profileMainStyles.usernameRow}>
+                  <Text style={profileMainStyles.usernameText}>
+                    {username}
+                  </Text>
+                  <TouchableOpacity
+                    style={profileMainStyles.copyButton}
+                    onPress={handleCopyUsername}
+                    activeOpacity={0.7}
+                  >
+                    <Copy size={13} color="#65676B" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            {/* Stats Grid */}
+            <View style={profileMainStyles.statsContainer}>
+              <View style={profileMainStyles.statItem}>
+                <View style={[profileMainStyles.statIconContainer, { backgroundColor: '#E7F3FF' }]}>
+                  <Users size={15} color="#1877F2" />
+                </View>
+                <Text style={profileMainStyles.statNumber}>{followerCount}</Text>
+                <Text style={profileMainStyles.statLabel}>
+                  {language === 'vi' ? 'Báº¡n bè' : 'Friends'}
+                </Text>
+              </View>
+
+              <View style={profileMainStyles.statItem}>
+                <View style={[profileMainStyles.statIconContainer, { backgroundColor: '#F0F9FF' }]}>
+                  <Clock size={15} color="#0EA5E9" />
+                </View>
+                <Text style={profileMainStyles.statNumber}>
+                  {getActiveTimeValue(profile?.lastSeenText)}
+                </Text>
+                <Text style={profileMainStyles.statLabel}>
+                  {language === 'vi' ? 'Thá»i gian' : 'Time'}
+                </Text>
+              </View>
+
+              <View style={profileMainStyles.statItem}>
+                <View style={[profileMainStyles.statIconContainer, { backgroundColor: '#ECFDF5' }]}>
+                  <Users size={15} color="#10B981" />
+                </View>
+                <Text style={profileMainStyles.statNumber}>{followerCount}</Text>
+                <Text style={profileMainStyles.statLabel}>
+                  {language === 'vi' ? 'NgÆ°á»i theo dõi' : 'Followers'}
+                </Text>
+              </View>
+
+              <View style={profileMainStyles.statItem}>
+                <View style={[profileMainStyles.statIconContainer, { backgroundColor: '#FFF7ED' }]}>
+                  <UserCheck size={15} color="#F59E0B" />
+                </View>
+                <Text style={profileMainStyles.statNumber}>{followingCount}</Text>
+                <Text style={profileMainStyles.statLabel}>
+                  {language === 'vi' ? 'Đang theo dõi' : 'Following'}
+                </Text>
+              </View>
+
+              <View style={profileMainStyles.statItem}>
+                <View style={[profileMainStyles.statIconContainer, { backgroundColor: '#F5F3FF' }]}>
+                  <Star size={15} color="#8B5CF6" />
+                </View>
+                <Text style={profileMainStyles.statNumber}>
+                  {Number(profile?.points ?? 0)}
+                </Text>
+                <Text style={profileMainStyles.statLabel}>
+                  {language === 'vi' ? 'Điá»ƒm' : 'Points'}
                 </Text>
               </View>
             </View>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              className="flex-row items-center"
-              onPress={() => navigation.navigate(ROUTES.INVITE_FRIENDS)}
-            >
-              <Text className="text-[14px] font-semibold text-[#4f46e5]">
-                {copy.findFriends}
+
+            {/* Action Buttons Row */}
+            <View style={profileMainStyles.primaryButtonsRow}>
+              {isOwnProfile ? (
+                <>
+                  <TouchableOpacity
+                    style={profileMainStyles.dashboardButton}
+                    activeOpacity={0.85}
+                    onPress={handleOpenDashboard}
+                  >
+                    <Briefcase size={16} color="#FFFFFF" />
+                    <Text style={profileMainStyles.dashboardButtonText}>
+                      Dashboard
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={profileMainStyles.storyAddButton}
+                    activeOpacity={0.85}
+                    onPress={handleCreateStory}
+                  >
+                    <PlusCircle size={16} color="#1877F2" />
+                    <Text style={profileMainStyles.storyAddButtonText}>
+                      {language === 'vi' ? 'Thêm vào tin' : 'Add to story'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : isFriendProfile ? (
+                <>
+                  <TouchableOpacity
+                    className="h-10 flex-1 flex-row items-center justify-center rounded-full bg-[#E4E6EB] px-4"
+                    activeOpacity={0.8}
+                  >
+                    <UserCheck size={16} color="#050505" />
+                    <Text className="ml-1.5 text-[14px] font-bold text-[#050505]">
+                      {copy.followed}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className="h-10 flex-1 flex-row items-center justify-center rounded-full bg-[#1877F2] px-4"
+                    activeOpacity={0.8}
+                    onPress={handleOpenMessages}
+                  >
+                    <MessageCircle size={16} color="#FFFFFF" />
+                    <Text className="ml-1.5 text-[14px] font-bold text-white">
+                      {copy.message}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className="h-10 w-[82px] flex-row items-center justify-center rounded-full bg-[#E4E6EB]"
+                    activeOpacity={0.8}
+                    disabled={isPokeLoading}
+                    onPress={handlePokeUser}
+                  >
+                    <Sparkles size={15} color="#050505" />
+                    <Text className="ml-1 text-[13px] font-bold text-[#050505]">
+                      {copy.poke}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    className={`h-10 flex-1 flex-row items-center justify-center rounded-full px-4 ${
+                      isRequestedProfile ? 'bg-[#E4E6EB]' : 'bg-[#1877F2]'
+                    }`}
+                    activeOpacity={0.8}
+                    disabled={isRequestedProfile || isConnectLoading}
+                    onPress={handleConnectUser}
+                  >
+                    <UserPlus
+                      size={16}
+                      color={isRequestedProfile ? '#050505' : '#FFFFFF'}
+                    />
+                    <Text
+                      className={`ml-1.5 text-[14px] font-bold ${
+                        isRequestedProfile ? 'text-[#050505]' : 'text-white'
+                      }`}
+                    >
+                      {isRequestedProfile
+                        ? copy.requestSent
+                        : isConnectLoading
+                          ? copy.sending
+                          : copy.follow}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className="h-10 flex-1 flex-row items-center justify-center rounded-full bg-[#E4E6EB] px-4"
+                    activeOpacity={0.8}
+                    onPress={handleOpenMessages}
+                  >
+                    <MessageCircle size={16} color="#050505" />
+                    <Text className="ml-1.5 text-[14px] font-bold text-[#050505]">
+                      {copy.message}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+            <View className="h-px bg-[#E4E6EB] mx-4" />
+          </View>
+
+          {/* Stories (Tin) Section */}
+          {shouldShowStorySection && (
+            <View style={[{ borderWidth: 0, borderRadius: 0, padding: 14 }, profileMainStyles.halfCard]}>
+              <View style={profileMainStyles.cardHeader}>
+                <Text style={profileMainStyles.cardTitle}>{copy.stories}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                >
+                  <Text style={profileMainStyles.cardHeaderAction}>
+                    {language === 'vi' ? 'Xem tất cả >' : 'See all >'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {isStoryLoading && !userStory ? (
+                <View style={profileStoryStyles.skeletonRow}>
+                  {[0, 1].map(item => (
+                    <View key={`story-skeleton-${item}`} style={profileStoryStyles.skeletonCard}>
+                      <SkeletonBlock height={100} width={95} borderRadius={12} />
+                      <View style={{ marginTop: 6 }}>
+                        <SkeletonBlock height={10} width={68} borderRadius={5} />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 10 }}
+                >
+                  {isOwnProfile && (
+                    <View style={{ width: 95 }}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={{
+                          height: 100,
+                          width: 95,
+                          borderRadius: 12,
+                          borderWidth: 1.5,
+                          borderStyle: 'dashed',
+                          borderColor: '#CBD5E1',
+                          backgroundColor: '#FFFFFF',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                        onPress={handleCreateStory}
+                      >
+                        <PlusCircle size={22} color="#1877F2" />
+                      </TouchableOpacity>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '700',
+                          color: '#1877F2',
+                          textAlign: 'center',
+                          marginTop: 6,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {language === 'vi' ? 'Tạo tin mới' : 'Create story'}
+                      </Text>
+                    </View>
+                  )}
+
+                  {!!userStory && (
+                    <View style={{ width: 95 }}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={{
+                          height: 100,
+                          width: 95,
+                          borderRadius: 12,
+                          overflow: 'hidden',
+                          position: 'relative',
+                        }}
+                        onPress={handleOpenStory}
+                      >
+                        <Image
+                          source={{ uri: storyPreviewUrl }}
+                          style={{ width: '100%', height: '100%' }}
+                          resizeMode="cover"
+                        />
+                        <View style={profileStoryStyles.overlay} />
+                        {userStory.hasUnseen && (
+                          <View style={profileMainStyles.friendOnlineDot} />
+                        )}
+                        <View
+                          style={{
+                            position: 'absolute',
+                            bottom: 6,
+                            left: 6,
+                            width: 24,
+                            height: 24,
+                            borderRadius: 12,
+                            borderWidth: 1.5,
+                            borderColor: '#FFFFFF',
+                            backgroundColor: '#FFFFFF',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <Image
+                            source={{ uri: avatarUrl }}
+                            style={{ width: '100%', height: '100%' }}
+                          />
+                        </View>
+                      </TouchableOpacity>
+                      <Text style={profileMainStyles.friendName} numberOfLines={1}>
+                        {language === 'vi' ? 'Tin của bạn' : 'Your story'}
+                      </Text>
+                      <Text style={{ fontSize: 9, color: '#65676B', textAlign: 'center', marginTop: 1 }} numberOfLines={1}>
+                        {getStoryTimeText(userStory, language)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {allStories.map(story => (
+                    <View key={`friend-story-${story.id}`} style={{ width: 95 }}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={{
+                          height: 100,
+                          width: 95,
+                          borderRadius: 12,
+                          overflow: 'hidden',
+                          position: 'relative',
+                        }}
+                        onPress={() => handleOpenFriendStory(story)}
+                      >
+                        <Image
+                          source={{ uri: getStoryPreviewUrl(story, story.publisher.avatarUrl || FALLBACK_AVATAR) }}
+                          style={{ width: '100%', height: '100%' }}
+                          resizeMode="cover"
+                        />
+                        <View style={profileStoryStyles.overlay} />
+                        {story.hasUnseen && (
+                          <View style={profileMainStyles.friendOnlineDot} />
+                        )}
+                        <View
+                          style={{
+                            position: 'absolute',
+                            bottom: 6,
+                            left: 6,
+                            width: 24,
+                            height: 24,
+                            borderRadius: 12,
+                            borderWidth: 1.5,
+                            borderColor: '#FFFFFF',
+                            backgroundColor: '#FFFFFF',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <Image
+                            source={{ uri: story.publisher.avatarUrl || FALLBACK_AVATAR }}
+                            style={{ width: '100%', height: '100%' }}
+                          />
+                          <View
+                            style={{
+                              position: 'absolute',
+                              bottom: 0,
+                              right: 0,
+                              width: 6,
+                              height: 6,
+                              borderRadius: 3,
+                              backgroundColor: '#22C55E',
+                              borderWidth: 1,
+                              borderColor: '#FFFFFF',
+                            }}
+                          />
+                        </View>
+                      </TouchableOpacity>
+                      <Text style={profileMainStyles.friendName} numberOfLines={1}>
+                        {story.publisher.name || story.publisher.username}
+                      </Text>
+                      <Text style={{ fontSize: 9, color: '#65676B', textAlign: 'center', marginTop: 1 }} numberOfLines={1}>
+                        {getStoryTimeText(story, language)}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+          )}
+          <View className="h-px bg-[#E4E6EB]" />
+
+          {/* Details & Friends — single row, no card chrome, just 2 columns split by vertical line */}
+          <View
+            className="bg-white"
+            style={{ marginHorizontal: 0, marginTop: 0 }}
+          >
+            <View className="flex-row">
+              {/* Details — left column */}
+              <View className="flex-1 px-4 py-3" style={{ borderRightWidth: 1, borderRightColor: '#E4E6EB' }}>
+                <View className="mb-2 flex-row items-center justify-between">
+                  <Text className="text-[15px] font-bold text-[#050505]">{copy.details}</Text>
+                  <TouchableOpacity activeOpacity={0.8} onPress={handleEditProfilePress}>
+                    <Text className="text-[12px] font-bold text-[#1877F2]">
+                      {language === 'vi' ? 'Chỉnh sữa' : 'Edit'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View className="flex-row items-center mb-1.5">
+                  <User size={13} color="#65676B" />
+                  <Text className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]" numberOfLines={1}>
+                    {profile?.pro ? copy.vipMember : copy.member}
+                  </Text>
+                </View>
+                <View className="flex-row items-center mb-1.5">
+                  <Clock size={13} color="#65676B" />
+                  <Text className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]" numberOfLines={1}>
+                    {profile?.lastSeenText ?? copy.activeNow}
+                  </Text>
+                </View>
+                <View className="flex-row items-center mb-1.5">
+                  <Users size={13} color="#65676B" />
+                  <Text className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]" numberOfLines={1}>
+                    {followerCount} {language === 'vi' ? 'người theo dõi' : 'followers'}
+                  </Text>
+                </View>
+                <View className="flex-row items-center mb-1.5">
+                  <UserCheck size={13} color="#65676B" />
+                  <Text className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]" numberOfLines={1}>
+                    Đang theo {followingCount} người
+                  </Text>
+                </View>
+                <View className="flex-row items-center mb-1.5">
+                  <Star size={13} color="#65676B" />
+                  <Text className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]" numberOfLines={1}>
+                    {Number(profile?.points ?? 0)} điểm thưởng
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  className="mt-1 h-7 items-center justify-center rounded-md bg-[#E7F3FF]"
+                  activeOpacity={0.8}
+                  onPress={() => isOwnProfile && navigation.navigate(ROUTES.EDIT_PROFILE)}
+                >
+                  <Text className="text-[12px] font-bold text-[#1877F2]" numberOfLines={1}>
+                    Chỉnh sữa chi tiết
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Friends — right column */}
+              <View className="flex-1 px-4 py-3">
+                <View className="mb-2 flex-row items-center justify-between">
+                  <Text className="text-[15px] font-bold text-[#050505]">{copy.friends}</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => navigation.navigate(ROUTES.INVITE_FRIENDS)}
+                  >
+                    <Text className="text-[12px] font-bold text-[#1877F2]">
+                      {language === 'vi' ? 'Xem tất cả >' : 'See all >'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <Text className="mb-2 text-[11px] text-[#65676B]">
+                  {followerCount} {language === 'vi' ? 'người bạn' : 'friends'}
+                </Text>
+
+                {profileFriends.length > 0 ? (
+                  profileFriends.length <= 4 ? (
+                    // 4 or fewer friends: show all in a 2x2 grid
+                    <View className="flex-row flex-wrap" style={{ rowGap: 6, columnGap: 6 }}>
+                      {profileFriends.map(friend => (
+                        <TouchableOpacity
+                          key={String(friend.id)}
+                          style={{ width: '48%' }}
+                          activeOpacity={0.85}
+                          onPress={() => handleNavigateToProfile(String(friend.id))}
+                        >
+                          <View style={{ width: '100%', aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9', position: 'relative' }}>
+                            <Image
+                              source={{ uri: friend.avatarUrl ?? FALLBACK_AVATAR }}
+                              style={{ width: '100%', height: '100%' }}
+                              resizeMode="cover"
+                            />
+                            <View style={{ position: 'absolute', bottom: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E', borderWidth: 1.5, borderColor: '#FFFFFF' }} />
+                          </View>
+                          <Text className="mt-0.5 text-center text-[10px] font-bold text-[#050505]" numberOfLines={1}>
+                            {friend.name || friend.username || copy.friendFallback}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : (
+                    // 5+ friends: horizontal FlatList, 4 visible at a time, swipe to next page
+                    <FlatList
+                      data={profileFriends}
+                      keyExtractor={(item) => String(item.id)}
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      decelerationRate="fast"
+                      snapToInterval={PROFILE_FRIENDS_PAGE_WIDTH}
+                      contentContainerStyle={{ gap: 4 }}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          key={String(item.id)}
+                          style={{ width: PROFILE_FRIENDS_PAGE_WIDTH }}
+                          activeOpacity={0.85}
+                          onPress={() => handleNavigateToProfile(String(item.id))}
+                        >
+                          <View style={{ width: '100%', aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9', position: 'relative' }}>
+                            <Image
+                              source={{ uri: item.avatarUrl ?? FALLBACK_AVATAR }}
+                              style={{ width: '100%', height: '100%' }}
+                              resizeMode="cover"
+                            />
+                            <View style={{ position: 'absolute', bottom: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E', borderWidth: 1.5, borderColor: '#FFFFFF' }} />
+                          </View>
+                          <Text className="mt-0.5 text-center text-[10px] font-bold text-[#050505]" numberOfLines={1}>
+                            {item.name || item.username || copy.friendFallback}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    />
+                  )
+                ) : (
+                  <View className="rounded-md bg-[#F8FAFC] px-2 py-3 items-center justify-center">
+                    <Text className="text-[10px] text-[#65676B] text-center">
+                      {language === 'vi' ? 'Chưa có bạn bè' : 'No friends'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+
+          {/* Composer — shared with Home feed */}
+          {isOwnProfile && (
+            <ComposerCard
+              onPress={() => navigation.navigate(ROUTES.CREATE_POST)}
+              avatarUrl={avatarUrl}
+              copy={{
+                composerPlaceholder: copy.composerPlaceholder,
+                library: copy.photoVideo,
+                tag: language === 'vi' ? 'Gắn thẻ' : 'Tag',
+                feeling: copy.lifeEvent,
+              }}
+            />
+          )}
+
+          {/* Posts Section Header */}
+          <View style={profileMainStyles.postsHeader}>
+            <View>
+              <Text style={profileMainStyles.postsTabTitle}>
+                {copy.posts}
               </Text>
-              <ChevronRight size={14} color="#4f46e5" className="ml-0.5" />
+              <View style={profileMainStyles.postsTabUnderline} />
+            </View>
+            <TouchableOpacity
+              style={profileMainStyles.managePostsButton}
+              activeOpacity={0.8}
+            >
+              <Sliders size={12} color="#1877F2" />
+              <Text style={profileMainStyles.managePostsText}>
+                {language === 'vi' ? 'Quáº£n lý bài viáº¿t' : 'Manage posts'}
+              </Text>
             </TouchableOpacity>
           </View>
 
-          {profileFriends.length > 0 ? (
-            <View className="flex-row flex-wrap gap-2">
-              {profileFriends.map(friend => (
-                <TouchableOpacity
-                  key={String(friend.id)}
-                  style={{ width: FRIEND_ITEM_WIDTH, marginBottom: 12 }}
-                  activeOpacity={0.85}
-                  onPress={() => handleNavigateToProfile(String(friend.id))}
-                >
-                  <View style={{ width: FRIEND_ITEM_WIDTH, height: FRIEND_ITEM_WIDTH }} className="relative">
-                    <Image
-                      source={{ uri: friend.avatarUrl ?? FALLBACK_AVATAR }}
-                      className="rounded-2xl bg-slate-100"
-                      style={{ width: FRIEND_ITEM_WIDTH, height: FRIEND_ITEM_WIDTH }}
-                      resizeMode="cover"
-                    />
-                    <View
-                      className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border border-white bg-[#22C55E]"
-                    />
-                  </View>
-                  <Text
-                    className="mt-2 text-[12px] font-semibold text-[#050505]"
-                    numberOfLines={1}
-                  >
-                    {friend.name || friend.username || copy.friendFallback}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-
-              {followerCount > profileFriends.length ? (
-                <TouchableOpacity
-                  className="items-center justify-center rounded-2xl bg-[#f0effb]"
-                  style={{ width: FRIEND_ITEM_WIDTH, height: FRIEND_ITEM_WIDTH }}
-                  activeOpacity={0.8}
-                >
-                  <View className="h-10 w-10 items-center justify-center rounded-full bg-white mb-1.5 shadow-sm">
-                    <Users size={18} color="#4f46e5" />
-                  </View>
-                  <Text className="text-[14px] font-bold text-[#4f46e5]">
-                    +{followerCount - profileFriends.length}
-                  </Text>
-                  <Text className="mt-0.5 text-[10px] text-[#65676b] font-medium">
-                    {copy.seeAll}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
+          {/* Posts List */}
+          {isPostsLoading && posts.length === 0 ? (
+            <View>
+              <PostSkeletonCard />
+              <PostSkeletonCard />
             </View>
-          ) : (
-            <View className="rounded-2xl bg-[#F8FAFC] px-4 py-6">
-              <Text className="text-center text-[13px] font-medium text-[#65676B]">
-                {language === 'vi'
-                  ? 'Chưa có dữ liệu bạn bè.'
-                  : 'No friends to show yet.'}
+          ) : postsError ? (
+            <View style={profilePostStyles.stateCard}>
+              <Text style={[profilePostStyles.stateText, { color: '#EF4444' }]}>
+                {copy.loadPostsError}: {postsError}
               </Text>
             </View>
-          )}
-
-          {/* Pager indicator dots */}
-          <View className="flex-row justify-center items-center mt-3">
-            <View className="h-2 w-2 rounded-full bg-[#4f46e5] mx-1" />
-            <View className="h-2 w-2 rounded-full bg-[#cbd5e1] mx-1 opacity-50" />
-          </View>
-        </View>
-
-        {/* Facebook-style Composer Card ("Bạn đang nghĩ gì?") - Only for Own Profile */}
-        {isOwnProfile && (
-          <View className="mx-4 mt-4 rounded-xl bg-white p-4 shadow-sm border border-[#E4E6EB]">
-            <View className="flex-row items-center">
-              <View className="h-10 w-10 overflow-hidden rounded-full bg-slate-100 mr-3 border border-slate-200">
-                <Image source={{ uri: avatarUrl }} className="h-full w-full" />
-              </View>
-              <TouchableOpacity
-                className="flex-1 h-10 rounded-full border border-[#e2e8f0] justify-center px-4 bg-[#f8fafc]"
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate(ROUTES.CREATE_POST)}
-              >
-                <Text className="text-[14px] text-[#64748b]">
-                  {copy.composerPlaceholder}
-                </Text>
-              </TouchableOpacity>
+          ) : posts.length === 0 ? (
+            <View style={profilePostStyles.stateCard}>
+              <Text style={profilePostStyles.stateText}>{copy.noPosts}</Text>
             </View>
-            <View className="border-t border-[#f1f5f9] mt-3.5 pt-3.5 flex-row justify-between">
-              <TouchableOpacity
-                className="flex-row items-center bg-[#fff1f2] rounded-full px-3 py-2 flex-1 justify-center mx-1"
-                activeOpacity={0.8}
-                onPress={() => navigation.navigate(ROUTES.CREATE_POST)}
-              >
-                <Video size={16} color="#e11d48" fill="#e11d48" className="mr-1.5" />
-                <Text className="text-[12px] font-bold text-[#1e293b]">
-                  {copy.goLive}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="flex-row items-center bg-[#f0fdf4] rounded-full px-3 py-2 flex-1 justify-center mx-1"
-                activeOpacity={0.8}
-                onPress={() => navigation.navigate(ROUTES.CREATE_POST)}
-              >
-                <ImageIcon size={16} color="#16a34a" className="mr-1.5" />
-                <Text className="text-[12px] font-bold text-[#1e293b]">
-                  {copy.photoVideo}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="flex-row items-center bg-[#eff6ff] rounded-full px-3 py-2 flex-1 justify-center mx-1"
-                activeOpacity={0.8}
-                onPress={() => navigation.navigate(ROUTES.CREATE_POST)}
-              >
-                <Calendar size={16} color="#2563eb" className="mr-1.5" />
-                <Text className="text-[12px] font-bold text-[#1e293b]">
-                  {copy.lifeEvent}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+          ) : (
+            <View>
+              {posts.map(post => {
+                if (post.kind === 'video') {
+                  return (
+                    <HomeVideoPostCard
+                      key={`video-${post.id}`}
+                      post={post}
+                      copy={postCardCopy}
+                      onReact={handleSetPostReaction}
+                      onOpenPicker={handleOpenPicker}
+                      onCommentTap={commentVm.openComments}
+                      onShare={handleOpenSharePost}
+                      isActive={false}
+                      gestureX={gestureX}
+                      gestureY={gestureY}
+                      gestureActive={gestureActive}
+                      navigateToProfile={handleNavigateToProfile}
+                    />
+                  );
+                }
 
-        {/* Posts Section Header */}
-        <View className="mx-4 mt-4 mb-2 flex-row items-center justify-between px-1">
-          <Text className="text-[17px] font-bold text-[#050505]">
-            {copy.posts}
-          </Text>
-          <TouchableOpacity activeOpacity={0.8}>
-            <Text className="text-[14px] font-semibold text-[#1877F2]">
-              {copy.manage}
-            </Text>
-          </TouchableOpacity>
-        </View>
+                if (post.kind === 'poll') {
+                  return (
+                    <PollPostCard
+                      key={`poll-${post.id}`}
+                      post={post}
+                      onVote={handleVotePoll}
+                      onReact={handleSetPostReaction}
+                      onOpenPicker={handleOpenPicker}
+                      onCommentTap={commentVm.openComments}
+                      onShare={handleOpenSharePost}
+                      onProfilePress={handleNavigateToProfile}
+                      currentUserAvatar={avatarUrl}
+                    />
+                  );
+                }
 
-        {/* Posts List */}
-        {isPostsLoading && posts.length === 0 ? (
-          <View>
-            <PostSkeletonCard />
-            <PostSkeletonCard />
-          </View>
-        ) : postsError ? (
-          <View style={profilePostStyles.stateCard}>
-            <Text style={[profilePostStyles.stateText, { color: '#EF4444' }]}>
-              {copy.loadPostsError}: {postsError}
-            </Text>
-          </View>
-        ) : posts.length === 0 ? (
-          <View style={profilePostStyles.stateCard}>
-            <Text style={profilePostStyles.stateText}>{copy.noPosts}</Text>
-          </View>
-        ) : (
-          <View>
-            {posts.map(post => {
-              if (post.kind === 'video') {
                 return (
-                  <HomeVideoPostCard
-                    key={`video-${post.id}`}
+                  <TextPostCard
+                    key={`text-${post.id}`}
                     post={post}
+                    copy={postCardCopy}
                     onReact={handleSetPostReaction}
                     onOpenPicker={handleOpenPicker}
                     onCommentTap={commentVm.openComments}
+                    onPhotoPress={handlePhotoPress}
                     onShare={handleOpenSharePost}
-                    isActive={false}
                     gestureX={gestureX}
                     gestureY={gestureY}
                     gestureActive={gestureActive}
                     navigateToProfile={handleNavigateToProfile}
                   />
                 );
-              }
-
-              if (post.kind === 'poll') {
-                return (
-                  <PollPostCard
-                    key={`poll-${post.id}`}
-                    post={post}
-                    onVote={handleVotePoll}
-                    onReact={handleSetPostReaction}
-                    onOpenPicker={handleOpenPicker}
-                    onCommentTap={commentVm.openComments}
-                    onShare={handleOpenSharePost}
-                    onProfilePress={handleNavigateToProfile}
-                    currentUserAvatar={avatarUrl}
-                  />
-                );
-              }
-
-              return (
-                <TextPostCard
-                  key={`text-${post.id}`}
-                  post={post}
-                  onReact={handleSetPostReaction}
-                  onOpenPicker={handleOpenPicker}
-                  onCommentTap={commentVm.openComments}
-                  onPhotoPress={handlePhotoPress}
-                  onShare={handleOpenSharePost}
-                  gestureX={gestureX}
-                  gestureY={gestureY}
-                  gestureActive={gestureActive}
-                  navigateToProfile={handleNavigateToProfile}
-                />
-              );
-            })}
-          </View>
-        )}
-        {isLoadingMorePosts ? (
-          <View className="items-center py-4">
-            <ActivityIndicator size="small" color="#1877F2" />
-          </View>
-        ) : null}
+              })}
+            </View>
+          )}
+          {isLoadingMorePosts ? (
+            <View className="items-center py-4">
+              <ActivityIndicator size="small" color="#1877F2" />
+            </View>
+          ) : null}
         </ScrollView>
         <ReactionPickerOverlay
           anchor={pickerAnchor}
@@ -2235,4 +2428,365 @@ function ProfileScreen() {
   );
 }
 
+const profileMainStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F0F2F5',
+  },
+  coverContainer: {
+    position: 'relative',
+    width: SCREEN_WIDTH,
+    height: 210,
+    backgroundColor: '#E4E6EB',
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+  },
+  circleButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  editCoverButton: {
+    position: 'absolute',
+    bottom: -16,
+    right: 16,
+    zIndex: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#E4E6EB',
+  },
+  editCoverText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#050505',
+    marginLeft: 6,
+  },
+  profileInfoCard: {
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    zIndex: 10,
+  },
+  avatarRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginTop: -50,
+  },
+  avatarContainer: {
+    position: 'relative',
+  },
+  avatarBorder: {
+    borderRadius: 54,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarCameraBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#E4E6EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  nameBlock: {
+    marginTop: 12,
+    alignItems: 'flex-start',
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  displayNameText: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#050505',
+  },
+  usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  usernameText: {
+    fontSize: 13,
+    color: '#65676B',
+    fontWeight: '500',
+  },
+  copyButton: {
+    marginLeft: 6,
+    padding: 2,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 18,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#F0F2F5',
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  statNumber: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#050505',
+  },
+  statLabel: {
+    fontSize: 10,
+    color: '#65676B',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  primaryButtonsRow: {
+    flexDirection: 'row',
+    marginTop: 16,
+    gap: 8,
+  },
+  dashboardButton: {
+    flex: 1,
+    height: 40,
+    borderRadius: 0,
+    backgroundColor: '#1877F2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1877F2',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dashboardButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  storyAddButton: {
+    flex: 1,
+    height: 40,
+    borderRadius: 0,
+    backgroundColor: '#E7F3FF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#D0E8FF',
+  },
+  storyAddButtonText: {
+    color: '#1877F2',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 14,
+    gap: 12,
+  },
+  halfCard: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E4E6EB',
+    backgroundColor: '#FFFFFF',
+    padding: 14,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#050505',
+  },
+  cardHeaderAction: {
+    fontSize: 12,
+    color: '#1877F2',
+    fontWeight: '700',
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
+  },
+  detailText: {
+    fontSize: 12,
+    color: '#1E293B',
+    fontWeight: '500',
+    flex: 1,
+  },
+  cardButton: {
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#E7F3FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  cardButtonText: {
+    fontSize: 12,
+    color: '#1877F2',
+    fontWeight: '700',
+  },
+  friendsSubtitle: {
+    fontSize: 11,
+    color: '#65676B',
+    marginTop: -8,
+    marginBottom: 10,
+  },
+  friendsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  friendThumb: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  friendImageContainer: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    position: 'relative',
+    backgroundColor: '#F1F5F9',
+  },
+  friendImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+  },
+  friendOnlineDot: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#22C55E',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  friendName: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#050505',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  dotsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+    gap: 4,
+  },
+  dotActive: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#1877F2',
+  },
+  dotInactive: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#CBD5E1',
+    opacity: 0.5,
+  },
+  postsHeader: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#E4E6EB',
+    marginTop: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  postsTabTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#050505',
+    paddingBottom: 4,
+  },
+  postsTabUnderline: {
+    height: 3,
+    backgroundColor: '#1877F2',
+    width: 32,
+    borderRadius: 1.5,
+  },
+  managePostsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E7F3FF',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  managePostsText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1877F2',
+  },
+});
+
 export default ProfileScreen;
+
+

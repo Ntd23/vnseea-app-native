@@ -561,3 +561,14 @@
   background-position: 0% 0%;
   background-repeat: no-repeat;
 }
+
+/* --- Page Card v2 (PagesScreen) --- */
+.surface-info-cell {
+  background-color: var(--bg-muted);
+  border-radius: 16px;
+  padding: 10px 12px;
+}
+.surface-info-icon-chip {
+  background-color: var(--bg-surface);
+  border-radius: 9999px;
+}

@@ -100,7 +100,6 @@ export default function ReelsScreen() {
   const route = useRoute<any>();
   const isFocusedScreen = useIsFocused();
   const insets = useSafeAreaInsets();
-  const vm = useReelsViewModel();
   const language = useAppLanguage();
   const copy = REELS_COPY[language];
 
@@ -108,28 +107,96 @@ export default function ReelsScreen() {
   const initialPost = route.params?.post;
   const flatListRef = useRef<FlatList>(null);
   const entryProgress = useSharedValue(1);
+  // Index for the FlatList's `initialScrollIndex` prop. We set this
+  // exactly ONCE — after the ViewModel finishes merging the deeplinked
+  // video into the first reels page — and never touch it again. Using
+  // a prop (instead of `scrollToIndex`) means FlatList renders the
+  // correct item on its very first paint, so `onViewableItemsChanged`
+  // cannot fire a stray `setActiveIndex(0)` and snap the user back to
+  // the newest reel. A value of `null` means "no deeplink, scroll to
+  // top like normal".
+  const [initialScrollIndexValue, setInitialScrollIndexValue] = useState<
+    number | null
+  >(null);
 
+  // Seed the ViewModel with the deeplinked/clicked video on FIRST
+  // mount. Passing it through the constructor (not the effect below)
+  // is important: `useReelsViewModel` fires its own `loadInitial()`
+  // in a useEffect, and the constructor argument is read SYNCHRONOUSLY
+  // by the ref. This means `loadInitial()` already has the initial
+  // video before the network call returns, so the merged `items` list
+  // keeps the deeplinked reel and `activeIndex` lands on it. Without
+  // this seed, the screen-level `setInitialVideo()` call below races
+  // with `loadInitial()` and the user ends up on the newest reel
+  // instead of the one they tapped.
+  const seededInitial = useMemo(
+    () =>
+      initialVideoId && initialPost
+        ? { id: String(initialVideoId), post: initialPost }
+        : undefined,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [], // intentional: only seed once on first mount
+  );
+  const vm = useReelsViewModel(seededInitial);
+
+  // Tracks which `initialVideoId` we've already handled, so a new
+  // tap on a different video (from Home feed, Page detail, etc.)
+  // re-runs the scroll logic. Without this, the effect would skip
+  // on the second tap because `initialScrollIndexValue` is already
+  // non-null, and the user would land on the previous reel.
+  const consumedInitialVideoIdRef = useRef<string | null>(null);
+
+  // After loadInitial resolves (items array is populated AND the
+  // deeplinked reel is merged in), record the index of that reel so
+  // the FlatList can use it as `initialScrollIndex`. We watch
+  // `vm.items.length` transitioning from 0 → N as the signal that
+  // loadInitial finished — the deeplinked reel sits at index 0
+  // (prepended) or at its natural position in the feed.
   useEffect(() => {
-    if (isFocusedScreen && initialVideoId && initialPost) {
-      // Trigger cinematic scale + slide + fade entry animation
-      entryProgress.value = 0;
-      entryProgress.value = withTiming(1, { duration: 350 });
-
-      const index = vm.items.findIndex(item => String(item.id) === String(initialVideoId));
-      
-      vm.setInitialVideo(initialVideoId, initialPost);
-      
-      const targetIndex = index !== -1 ? index : 0;
-      if (targetIndex > 0) {
-        setTimeout(() => {
-          flatListRef.current?.scrollToIndex({ index: targetIndex, animated: false });
-        }, 150);
-      }
-      
-      // Clear navigation params so we don't trigger repeatedly
-      navigation.setParams({ initialVideoId: undefined, post: undefined });
+    if (!isFocusedScreen) return;
+    if (!initialVideoId || !initialPost) return;
+    if (vm.items.length === 0) return; // wait for loadInitial
+    // Skip if we already consumed this exact `initialVideoId` — that
+    // covers both the no-deeplink case (param was cleared) and the
+    // case where the user has not yet tapped a *new* video.
+    if (consumedInitialVideoIdRef.current === String(initialVideoId)) {
+      return;
     }
-  }, [isFocusedScreen, initialVideoId, initialPost, vm, navigation, entryProgress]);
+
+    const index = vm.items.findIndex(
+      item => String(item.id) === String(initialVideoId),
+    );
+    if (index >= 0) {
+      setInitialScrollIndexValue(index);
+    } else {
+      // The deeplinked reel wasn't found in the first page (e.g. it's
+      // older than PAGE_SIZE items). Fall back to merging it back in
+      // via `setInitialVideo` — that prepends it at index 0.
+      vm.setInitialVideo(String(initialVideoId), initialPost);
+      setInitialScrollIndexValue(0);
+    }
+
+    // Mark this id as consumed BEFORE clearing the route param so we
+    // don't loop on the next render.
+    consumedInitialVideoIdRef.current = String(initialVideoId);
+
+    // Trigger cinematic entry animation when landing on the deeplinked reel.
+    entryProgress.value = 0;
+    entryProgress.value = withTiming(1, { duration: 350 });
+
+    // Clear navigation params so the deep-link doesn't re-trigger on
+    // subsequent renders / focus changes.
+    navigation.setParams({ initialVideoId: undefined, post: undefined });
+  }, [
+    isFocusedScreen,
+    initialVideoId,
+    initialPost,
+    vm.items,
+    vm.setInitialVideo,
+    vm,
+    navigation,
+    entryProgress,
+  ]);
 
   // Use the full screen height — the feed is meant to be edge-to-edge.
   const [viewportHeight, setViewportHeight] = useState(
@@ -288,18 +355,34 @@ export default function ReelsScreen() {
   //     dismiss gesture; don't double-handle.
   // (dragX is declared above the focus effect — see comment there for why)
 
+  // ReelsScreen is mounted in two places (see routeRegistry):
+  //   1. Inside MainTabs (the default tab experience)
+  //   2. As a top-level Root Stack screen (when launched from a
+  //      share / deep-link from PostDetail)
+  // `navigation` therefore points at *whichever* navigator mounted
+  // us. `getParent()` walks up to the RootStack, and only the
+  // RootStack knows about `MAIN_TABS` — that's the only place a
+  // nested `{ screen: FEED }` payload is valid, so we always
+  // dispatch from there. This avoids the "Feed was not handled
+  // by any navigator" warning that hits when ReelsScreen is
+  // mounted directly under RootStack and we call
+  // `navigation.navigate(FEED)` locally.
+  const navigateToFeed = useCallback(() => {
+    const rootNavigator = navigation.getParent() ?? navigation;
+    rootNavigator.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
+  }, [navigation]);
+
   const goBackToFeed = useCallback(() => {
     // Prefer goBack when this screen sits on top of a stack — it POPS
     // the screen entirely, so the next visit re-mounts with fresh state
     // and we never have to worry about leftover transforms. Falls back
-    // to navigate(FEED) for tab-based navigators where there's nothing
-    // to pop.
+    // to a tab-switch when there is nothing to pop.
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      navigation.navigate(ROUTES.FEED);
+      navigateToFeed();
     }
-  }, [navigation]);
+  }, [navigation, navigateToFeed]);
 
   const swipeBackGesture = useMemo(
     () =>
@@ -411,6 +494,13 @@ export default function ReelsScreen() {
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           getItemLayout={getItemLayout}
+          // Only supply `initialScrollIndex` when we have a real
+          // deeplink — leaving it `undefined` for normal visits keeps
+          // RN's default behaviour (scroll to top). The `??` form
+          // makes sure we never accidentally pass `null`, which
+          // FlatList treats as "0" and would snap the user to the
+          // newest reel on every cold start.
+          initialScrollIndex={initialScrollIndexValue ?? undefined}
           pagingEnabled
           showsVerticalScrollIndicator={false}
           snapToInterval={itemHeight}
@@ -454,10 +544,15 @@ export default function ReelsScreen() {
           }
         />
 
-        {/* Floating back button. Lives outside the list so it stays put while
-            the user swipes through reels. */}
+        {/* Floating back button. Lives outside the list so it stays put
+            while the user swipes through reels. Uses `goBackToFeed` —
+            NOT `navigateToFeed` — so it pops the Reels screen off the
+            stack and returns to wherever the user came from (Home,
+            Page Detail, Profile, Saved, My Videos…). Only falls back
+            to a Home tab-switch when there's nothing to pop (e.g.
+            Reels was launched as the very first tab). */}
         <TouchableOpacity
-          onPress={() => navigation.navigate(ROUTES.FEED)}
+          onPress={goBackToFeed}
           style={[styles.backFab, { top: Math.max(insets.top, 12) }]}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >

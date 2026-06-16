@@ -8,4 +8,5 @@ export { usePagesOnFeedViewModel } from './application/view-models/usePagesOnFee
 export { usePageDetailViewModel } from './application/view-models/usePageDetailViewModel';
 export { default as CreatePageScreen } from './presentation/screens/CreatePageScreen';
 export { default as PageDetailScreen } from './presentation/screens/PageDetailScreen';
+export { default as PageSettingsScreen } from './presentation/screens/PageSettingsScreen';
 export { default as PagesScreen } from './presentation/screens/PagesScreen';

@@ -42,6 +42,7 @@ export interface NotificationsItem {
   url: string;
   postId?: string;
   pageId?: string;
+  pageName?: string;
   groupId?: string;
   eventId?: string;
   productId?: string;

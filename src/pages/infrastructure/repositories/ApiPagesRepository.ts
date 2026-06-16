@@ -217,6 +217,7 @@ function mapPage(raw: RawPage | undefined): PagesItem {
     isFollowing: readBoolean(raw, 'is_following', 'following'),
     isLiked: readBoolean(raw, 'is_liked'),
     isRated: readBoolean(raw, 'is_rated'),
+    verified: readBoolean(raw, 'verified') || readString(raw, 'verified') === '1',
     ownerId,
     owner:
       mapPageUser(ownerRaw) ??
