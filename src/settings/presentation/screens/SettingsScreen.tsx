@@ -3538,10 +3538,6 @@ function SettingsScreen() {
         navigation.navigate(ROUTES.ADVERTISING);
       }
 
-      if (id === 'find-friends') {
-        navigation.navigate(ROUTES.SEARCH);
-      }
-
       if (id === 'nearby') {
         navigation.navigate(ROUTES.NEARBY_USERS);
       }

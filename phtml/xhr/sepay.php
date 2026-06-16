@@ -31,6 +31,17 @@ if (!function_exists('Wo_SepayRequestToken')) {
         );
     }
 }
+if (!function_exists('Wo_SepayMaskSecret')) {
+    function Wo_SepayMaskSecret($value)
+    {
+        $value = (string)$value;
+        if ($value === '') {
+            return '';
+        }
+
+        return strlen($value) <= 6 ? '***' : substr($value, 0, 3) . '***' . substr($value, -3);
+    }
+}
 if ($f == 'sepay') {
     header('Content-Type: application/json; charset=utf-8');
     $enabled       = in_array((string)($wo['config']['sepay'] ?? '0'), array('1', 'yes', 'true', 'on'), true);
@@ -69,8 +80,30 @@ if ($f == 'sepay') {
     // NHỚ: chỉ bỏ qua CSRF cho webhook. Các endpoint khác (kể cả check) vẫn kiểm CSRF như bạn đã làm.
     if ($s === 'webhook') {
         // 1) Xác thực token
+        $rawWebhookBody = file_get_contents('php://input');
+        $webhookQuery = $_GET;
+        if (isset($webhookQuery['token'])) {
+            $webhookQuery['token'] = Wo_SepayMaskSecret($webhookQuery['token']);
+        }
+        $webhookHeaders = function_exists('getallheaders') ? getallheaders() : [];
+        foreach (array('Authorization', 'authorization', 'X-SePay-Token', 'X-Webhook-Token') as $secretHeader) {
+            if (isset($webhookHeaders[$secretHeader])) {
+                $webhookHeaders[$secretHeader] = Wo_SepayMaskSecret($webhookHeaders[$secretHeader]);
+            }
+        }
+        @file_put_contents(__DIR__ . '/logs/sepay_webhook.log', print_r([
+            'time' => date('c'),
+            'method' => $_SERVER['REQUEST_METHOD'] ?? '',
+            'uri' => $_SERVER['REQUEST_URI'] ?? '',
+            'query' => $webhookQuery,
+            'headers' => $webhookHeaders,
+            'raw' => $rawWebhookBody,
+            'post' => $_POST,
+            'remote' => $_SERVER['REMOTE_ADDR'] ?? '',
+        ], true) . "\n----\n", FILE_APPEND);
+
         $requestToken = Wo_SepayRequestToken();
-        $resp = Wo_SepayReturnWebhook($wo, $sqlConnect, $requestToken);
+        $resp = Wo_SepayReturnWebhook($wo, $sqlConnect, $requestToken, $rawWebhookBody);
         @file_put_contents(__DIR__ . '/logs/sepay_webhook_result.log', '[' . date('c') . '] ' . json_encode([
             'http' => $resp['http'] ?? 200,
             'body' => $resp['body'] ?? 'ok',

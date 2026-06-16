@@ -9,12 +9,53 @@ import type {
   MessageItem,
 } from '../../domain/types/messages.types';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
+import {
+  emitChatTyping,
+  emitChatTypingDone,
+  getWebTypingState,
+  onChatTyping,
+  updateWebTypingState,
+} from '../../infrastructure/realtime/liveKitCallRealtime';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 
 const PAGE_SIZE = 30;
 const POLL_INTERVAL_MS = 7000; // Poll every 7 seconds to reduce network/CPU load
+const TYPING_EMIT_THROTTLE_MS = 1200;
+const TYPING_IDLE_DONE_MS = 1800;
+const TYPING_REMOTE_IDLE_MS = 2600;
+const WEB_GROUP_TYPING_STATUS_SYNC_MS = 2000;
 const repository = createMessagesRepository();
+
+function getGroupRoomId(chat: ChatItem) {
+  const groupId =
+    chat.groupId || chat.chatId || chat.userId || chat.id.replace(/^group:/, '');
+  return groupId ? `group${groupId}` : '';
+}
+
+function getTypingRecipientId(chat: ChatItem) {
+  return chat.chatType === 'group' ? getGroupRoomId(chat) : chat.userId;
+}
+
+function isTypingEventForChat(
+  chat: ChatItem,
+  recipientId: string,
+  senderId: string,
+  currentUserId: string,
+) {
+  if (!senderId || senderId === currentUserId) return false;
+
+  if (chat.chatType === 'group') {
+    const groupId =
+      chat.groupId ||
+      chat.chatId ||
+      chat.userId ||
+      chat.id.replace(/^group:/, '');
+    return recipientId === `group${groupId}` || recipientId === groupId;
+  }
+
+  return senderId === chat.userId;
+}
 
 function mergeMessages(...messageLists: MessageItem[][]) {
   const messages = new Map<string, MessageItem>();
@@ -72,6 +113,13 @@ export function useChatViewModel(chat: ChatItem) {
   const [isTyping, setIsTyping] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const isRefreshingRef = useRef(false);
+  const remoteTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const localTypingDoneTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const lastTypingEmitRef = useRef(0);
   const latestMessageIdRef = useRef<string | undefined>(undefined);
   const messageIdsRef = useRef<Set<string>>(new Set());
   const isSending = pendingSendCount > 0;
@@ -84,6 +132,46 @@ export function useChatViewModel(chat: ChatItem) {
     (message: string, attachment?: MessageAttachment) =>
       repository.sendMessage(chat, message, attachment),
     [chat],
+  );
+  const typingRecipientId = getTypingRecipientId(chat);
+
+  const stopTyping = useCallback(() => {
+    if (!typingRecipientId) return;
+    if (localTypingDoneTimeoutRef.current) {
+      clearTimeout(localTypingDoneTimeoutRef.current);
+      localTypingDoneTimeoutRef.current = null;
+    }
+    lastTypingEmitRef.current = 0;
+    emitChatTypingDone(typingRecipientId);
+    updateWebTypingState(typingRecipientId, false);
+  }, [typingRecipientId]);
+
+  const notifyTyping = useCallback(
+    (nextText: string) => {
+      if (!typingRecipientId) return;
+      if (!nextText.trim()) {
+        stopTyping();
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastTypingEmitRef.current >= TYPING_EMIT_THROTTLE_MS) {
+        emitChatTyping(typingRecipientId);
+        updateWebTypingState(typingRecipientId, true);
+        lastTypingEmitRef.current = now;
+      }
+
+      if (localTypingDoneTimeoutRef.current) {
+        clearTimeout(localTypingDoneTimeoutRef.current);
+      }
+      localTypingDoneTimeoutRef.current = setTimeout(() => {
+        emitChatTypingDone(typingRecipientId);
+        updateWebTypingState(typingRecipientId, false);
+        localTypingDoneTimeoutRef.current = null;
+        lastTypingEmitRef.current = 0;
+      }, TYPING_IDLE_DONE_MS);
+    },
+    [stopTyping, typingRecipientId],
   );
 
   const loadInitial = useCallback(async () => {
@@ -165,6 +253,7 @@ export function useChatViewModel(chat: ChatItem) {
     async (text: string, attachment?: MessageAttachment) => {
       const message = text.trim();
       if (!message && !attachment) return false;
+      stopTyping();
 
       const tempId = `pending-${Date.now()}-${Math.random()
         .toString(36)
@@ -218,7 +307,7 @@ export function useChatViewModel(chat: ChatItem) {
         setPendingSendCount(current => Math.max(0, current - 1));
       }
     },
-    [chat, getMessagesForChat, sendMessageForChat],
+    [chat, getMessagesForChat, sendMessageForChat, stopTyping],
   );
 
   const loadGroupInfo = useCallback(async () => {
@@ -326,6 +415,79 @@ export function useChatViewModel(chat: ChatItem) {
   }, [loadInitial]);
 
   useEffect(() => {
+    const currentUserId = sessionStorage.getSession()?.userId ?? '';
+    const unsubscribe = onChatTyping(event => {
+      if (
+        !isTypingEventForChat(
+          chat,
+          event.recipientId,
+          event.senderId,
+          currentUserId,
+        )
+      ) {
+        return;
+      }
+
+      if (remoteTypingTimeoutRef.current) {
+        clearTimeout(remoteTypingTimeoutRef.current);
+        remoteTypingTimeoutRef.current = null;
+      }
+
+      if (!event.isTyping) {
+        setIsTyping(false);
+        return;
+      }
+
+      setIsTyping(true);
+      remoteTypingTimeoutRef.current = setTimeout(() => {
+        setIsTyping(false);
+        remoteTypingTimeoutRef.current = null;
+      }, TYPING_REMOTE_IDLE_MS);
+    });
+
+    return () => {
+      unsubscribe();
+      if (remoteTypingTimeoutRef.current) {
+        clearTimeout(remoteTypingTimeoutRef.current);
+        remoteTypingTimeoutRef.current = null;
+      }
+      stopTyping();
+    };
+  }, [chat, stopTyping]);
+
+  useEffect(() => {
+    if (chat.chatType !== 'group' || !typingRecipientId) return undefined;
+
+    let isMounted = true;
+    const syncWebGroupTypingState = async () => {
+      const status = await getWebTypingState(typingRecipientId).catch(
+        () => null,
+      );
+      if (!isMounted || !status?.enabled || !status.typing) return;
+
+      setIsTyping(true);
+      if (remoteTypingTimeoutRef.current) {
+        clearTimeout(remoteTypingTimeoutRef.current);
+      }
+      remoteTypingTimeoutRef.current = setTimeout(() => {
+        setIsTyping(false);
+        remoteTypingTimeoutRef.current = null;
+      }, TYPING_REMOTE_IDLE_MS);
+    };
+
+    syncWebGroupTypingState().catch(() => undefined);
+    const interval = setInterval(
+      () => syncWebGroupTypingState().catch(() => undefined),
+      WEB_GROUP_TYPING_STATUS_SYNC_MS,
+    );
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [chat.chatType, typingRecipientId]);
+
+  useEffect(() => {
     latestMessageIdRef.current = messages[messages.length - 1]?.id;
     messageIdsRef.current = new Set(messages.map(message => message.id));
   }, [messages]);
@@ -357,6 +519,8 @@ export function useChatViewModel(chat: ChatItem) {
     loadOlder,
     refreshLatest,
     sendMessage,
+    notifyTyping,
+    stopTyping,
     loadGroupInfo,
     searchAddableUsers,
     addGroupUsers,

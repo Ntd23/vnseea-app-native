@@ -1,4 +1,4 @@
-// Description: Provides foreground socket signaling for direct and group LiveKit call state.
+// Description: Provides foreground socket signaling for chat typing and LiveKit call state.
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
@@ -78,8 +78,18 @@ export type LiveKitCallClosedPayload = {
   duration: number;
 };
 
+export type ChatTypingRealtimeEvent = {
+  recipientId: string;
+  senderId: string;
+  isTyping: boolean;
+  rawStatus?: number;
+  image?: string;
+  typingAsset?: string;
+};
+
 type Listener<T> = (event: T) => void;
 type EventName =
+  | 'typing'
   | 'incoming'
   | 'answered'
   | 'declined'
@@ -91,11 +101,22 @@ type SocketIoClient = (
   uri: string,
   options: Record<string, unknown>,
 ) => SocketLike;
+type WebRealtimeTokenResponse = {
+  token?: string;
+  enabled?: boolean;
+  url?: string;
+};
+type WebTypingStateResponse = {
+  enabled?: boolean;
+  typing?: boolean;
+  activeUserIds?: Array<number | string>;
+};
 
 const SOCKET_PATH = '/mobile-socket/socket.io';
 const socketIoClient = require('socket.io-client') as SocketIoClient;
 
 const listeners = {
+  typing: new Set<Listener<ChatTypingRealtimeEvent>>(),
   incoming: new Set<Listener<IncomingLiveKitCall>>(),
   answered: new Set<Listener<LiveKitCallRealtimeEvent>>(),
   declined: new Set<Listener<LiveKitCallRealtimeEvent>>(),
@@ -110,6 +131,13 @@ let socketToken = '';
 let joinedToken = '';
 let pendingEmits: Array<{ event: string; payload: Record<string, unknown> }> =
   [];
+let webTypingSocket: SocketLike | null = null;
+let webTypingAccessToken = '';
+let webTypingConnecting = false;
+let pendingWebTypingEmits: Array<{
+  event: 'message:typing' | 'message:typing-stop';
+  payload: Record<string, unknown>;
+}> = [];
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -263,6 +291,25 @@ function mapGroupRealtimeEvent(
   };
 }
 
+function mapTypingEvent(value: unknown): ChatTypingRealtimeEvent | null {
+  const raw = asRecord(value);
+  const senderId = readString(raw.sender_id ?? raw.senderId);
+  const recipientId = readString(
+    raw.recipient_id ?? raw.recipientId ?? raw.group_id ?? raw.groupId,
+  );
+  if (!senderId || !recipientId) return null;
+
+  const rawStatus = readNumber(raw.is_typing ?? raw.isTyping);
+  return {
+    recipientId,
+    senderId,
+    rawStatus,
+    isTyping: rawStatus === 200,
+    image: readString(raw.img ?? raw.image) || undefined,
+    typingAsset: readString(raw.typing) || undefined,
+  };
+}
+
 function removeSocketListener(
   target: SocketLike | null,
   event: string,
@@ -284,6 +331,21 @@ function dispatch<T>(eventName: EventName, payload: T) {
 
 function socketUrl() {
   return (apiConfig.socketUrl || apiConfig.webBaseUrl).replace(/\/+$/, '');
+}
+
+function nuxtApiUrl(path: string) {
+  return `${apiConfig.webBaseUrl.replace(/\/+$/, '')}/_api/${path.replace(
+    /^\/+/,
+    '',
+  )}`;
+}
+
+function isGroupRecipientId(recipientId: string) {
+  return /^group\d+$/i.test(recipientId);
+}
+
+function groupIdFromRecipientId(recipientId: string) {
+  return recipientId.replace(/^group/i, '');
 }
 
 function describeSocketError(value: unknown) {
@@ -348,6 +410,10 @@ function bindSocketEvents(nextSocket: SocketLike) {
   nextSocket.on('disconnect', payload => {
     console.warn('[LiveKitRealtime] socket disconnected', payload);
   });
+  nextSocket.on('typing', payload => {
+    const event = mapTypingEvent(payload);
+    if (event) dispatch('typing', event);
+  });
   nextSocket.on('livekit_call_incoming', payload => {
     console.log('[LiveKitRealtime] incoming event received');
     const call = mapIncomingCall(payload);
@@ -383,6 +449,112 @@ function bindSocketEvents(nextSocket: SocketLike) {
     const event = mapGroupRealtimeEvent(payload);
     if (event) dispatch('groupClosed', event);
   });
+}
+
+function dispatchWebTypingPayload(payload: unknown, isTyping: boolean) {
+  const raw = asRecord(payload);
+  const senderId = readString(raw.senderId ?? raw.userId);
+  const groupId = readString(raw.groupId);
+
+  if (groupId) {
+    dispatch('typing', {
+      recipientId: `group${groupId}`,
+      senderId,
+      isTyping,
+    });
+    return;
+  }
+
+  if (!senderId) return;
+  dispatch('typing', {
+    recipientId: senderId,
+    senderId,
+    isTyping,
+  });
+}
+
+function flushPendingWebTypingEmits() {
+  const currentSocket = webTypingSocket;
+  if (!currentSocket?.connected) return;
+
+  const nextPending = pendingWebTypingEmits;
+  pendingWebTypingEmits = [];
+  for (const item of nextPending) {
+    currentSocket.emit(item.event, item.payload);
+  }
+}
+
+function bindWebTypingSocketEvents(nextSocket: SocketLike) {
+  nextSocket.on('connect', () => {
+    flushPendingWebTypingEmits();
+  });
+  nextSocket.on('disconnect', () => {
+    webTypingSocket = null;
+  });
+  nextSocket.on('connect_error', payload => {
+    console.warn(
+      '[LiveKitRealtime] web typing socket connect_error',
+      describeSocketError(payload),
+    );
+    webTypingSocket = null;
+  });
+  nextSocket.on('message:typing', payload => {
+    dispatchWebTypingPayload(payload, true);
+  });
+  nextSocket.on('message:typing-stop', payload => {
+    dispatchWebTypingPayload(payload, false);
+  });
+}
+
+async function requestWebRealtimeToken(accessToken: string) {
+  const response = await fetch(nuxtApiUrl('realtime/token'), {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) return null;
+  const data = (await response.json()) as WebRealtimeTokenResponse;
+  if (!data.enabled || !data.token || !data.url) return null;
+  return {
+    token: data.token,
+    url: data.url.replace(/\/+$/, ''),
+  };
+}
+
+async function connectWebMessageTypingRealtime() {
+  const accessToken = sessionStorage.getAccessToken();
+  if (!accessToken || webTypingConnecting) return;
+
+  if (webTypingSocket && webTypingAccessToken === accessToken) {
+    if (!webTypingSocket.connected) webTypingSocket.connect();
+    return;
+  }
+
+  webTypingConnecting = true;
+  try {
+    const auth = await requestWebRealtimeToken(accessToken);
+    if (!auth) return;
+
+    webTypingSocket?.disconnect();
+    webTypingAccessToken = accessToken;
+    webTypingSocket = socketIoClient(auth.url, {
+      auth: {
+        token: auth.token,
+      },
+      transports: ['websocket'],
+      timeout: 5000,
+      reconnection: true,
+    });
+    bindWebTypingSocketEvents(webTypingSocket);
+  } catch (error) {
+    console.warn('[LiveKitRealtime] web typing socket create failed', error);
+    webTypingSocket = null;
+  } finally {
+    webTypingConnecting = false;
+  }
 }
 
 export function connectLiveKitCallRealtime() {
@@ -425,10 +597,28 @@ export function connectLiveKitCallRealtime() {
 
 export function disconnectLiveKitCallRealtime() {
   socket?.disconnect();
+  webTypingSocket?.disconnect();
   socket = null;
+  webTypingSocket = null;
   socketToken = '';
   joinedToken = '';
+  webTypingAccessToken = '';
   pendingEmits = [];
+  pendingWebTypingEmits = [];
+}
+
+function emitChatRealtimeEvent(event: string, recipientId: string) {
+  if (!recipientId) return;
+  emitLiveKitCallRealtimeEvent(event, {
+    recipient_id: recipientId,
+  });
+
+  if (!isGroupRecipientId(recipientId)) {
+    emitWebMessageTypingEvent(
+      event === 'typing' ? 'message:typing' : 'message:typing-stop',
+      { recipientId },
+    );
+  }
 }
 
 function emitLiveKitCallRealtimeEvent(
@@ -450,6 +640,101 @@ function emitLiveKitCallRealtimeEvent(
   }
 
   pendingEmits.push({ event, payload: nextPayload });
+}
+
+function emitWebMessageTypingEvent(
+  event: 'message:typing' | 'message:typing-stop',
+  payload: Record<string, unknown>,
+) {
+  const currentSocket = webTypingSocket;
+  if (currentSocket?.connected) {
+    currentSocket.emit(event, payload);
+    return;
+  }
+
+  pendingWebTypingEmits.push({ event, payload });
+  connectWebMessageTypingRealtime().catch(() => undefined);
+}
+
+async function postNuxtTypingApi(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<WebTypingStateResponse | null> {
+  const accessToken = sessionStorage.getAccessToken();
+  if (!accessToken) return null;
+
+  const response = await fetch(nuxtApiUrl(path), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) return null;
+  return (await response.json()) as WebTypingStateResponse;
+}
+
+export function updateWebTypingState(recipientId: string, isTyping: boolean) {
+  if (!recipientId) return;
+
+  if (isGroupRecipientId(recipientId)) {
+    const groupId = Number(groupIdFromRecipientId(recipientId));
+    if (Number.isFinite(groupId) && groupId > 0) {
+      postNuxtTypingApi('messages/group/typing', {
+        action: isTyping ? 'start' : 'stop',
+        groupId,
+      }).catch(() => undefined);
+    }
+    return;
+  }
+
+  const userId = Number(recipientId);
+  if (Number.isFinite(userId) && userId > 0) {
+    postNuxtTypingApi('messages/typing', {
+      action: isTyping ? 'start' : 'stop',
+      userId,
+    }).catch(() => undefined);
+  }
+}
+
+export async function getWebTypingState(recipientId: string) {
+  if (!recipientId) return null;
+
+  if (isGroupRecipientId(recipientId)) {
+    const groupId = Number(groupIdFromRecipientId(recipientId));
+    if (!Number.isFinite(groupId) || groupId <= 0) return null;
+    return postNuxtTypingApi('messages/group/typing', {
+      action: 'status',
+      groupId,
+    });
+  }
+
+  const userId = Number(recipientId);
+  if (!Number.isFinite(userId) || userId <= 0) return null;
+  return postNuxtTypingApi('messages/typing', {
+    action: 'status',
+    userId,
+  });
+}
+
+export function onChatTyping(listener: Listener<ChatTypingRealtimeEvent>) {
+  listeners.typing.add(listener);
+  connectLiveKitCallRealtime();
+  connectWebMessageTypingRealtime().catch(() => undefined);
+  return () => {
+    listeners.typing.delete(listener);
+  };
+}
+
+export function emitChatTyping(recipientId: string) {
+  emitChatRealtimeEvent('typing', recipientId);
+}
+
+export function emitChatTypingDone(recipientId: string) {
+  emitChatRealtimeEvent('typing_done', recipientId);
 }
 
 export function onLiveKitCallIncoming(

@@ -19,19 +19,78 @@ function Wo_SepayPaymentHasMatchedTransaction($paymentId, $sqlConnect)
     return ($q && mysqli_num_rows($q) > 0);
 }
 
+function Wo_SepayNormalizeAmount($value)
+{
+    if (is_int($value) || is_float($value)) {
+        return (int)round((float)$value);
+    }
+
+    $raw = trim((string)$value);
+    if ($raw === '') {
+        return 0;
+    }
+
+    $normalized = preg_replace('/[^\d.,-]/', '', $raw);
+    $normalized = preg_replace('/([.,])0{1,2}$/', '', $normalized);
+    $digits = preg_replace('/\D/', '', $normalized);
+
+    return $digits !== '' ? (int)$digits : 0;
+}
+
+function Wo_SepayExtractOrderCode($value, $descPrefix)
+{
+    $content = strtoupper(trim((string)$value));
+    $prefix = strtoupper(trim((string)$descPrefix));
+
+    if ($content === '' || $prefix === '') {
+        return '';
+    }
+
+    $prefixPattern = preg_quote($prefix, '/');
+    $patterns = array(
+        '/\b' . $prefixPattern . '\d+-[A-Z0-9]{5,12}\b/i',
+        '/\b' . $prefixPattern . '[A-F0-9]{6}\b/i',
+        '/\b' . $prefixPattern . '[A-Z0-9-]{5,32}\b/i',
+    );
+
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $content, $m)) {
+            return strtoupper($m[0]);
+        }
+    }
+
+    return '';
+}
+
+function Wo_SepayTransactionOrderWhere($orderCode, $sqlConnect)
+{
+    $orderCodeSql = mysqli_real_escape_string($sqlConnect, strtoupper((string)$orderCode));
+    $orderCodeLikeSql = mysqli_real_escape_string($sqlConnect, '%' . strtoupper((string)$orderCode) . '%');
+
+    return "(UPPER(reference_code)=UPPER('{$orderCodeSql}') OR UPPER(content) LIKE UPPER('{$orderCodeLikeSql}'))";
+}
+
+function Wo_SepayWebhookBody($success = true, $message = 'ok')
+{
+    return json_encode(
+        array('success' => (bool)$success, 'message' => (string)$message),
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    );
+}
+
 function Wo_SepayMarkMatchedTransaction($paymentId, $userId, $orderCode, $amount, $sqlConnect)
 {
     $paymentId = (int)$paymentId;
     $userId = (int)$userId;
     $amount = (int)$amount;
-    $orderCodeSql = mysqli_real_escape_string($sqlConnect, strtoupper((string)$orderCode));
+    $orderWhere = Wo_SepayTransactionOrderWhere($orderCode, $sqlConnect);
 
     mysqli_query(
         $sqlConnect,
         "UPDATE " . SEPAY_TRANSACTION . "
             SET matched_payment_id={$paymentId},
                 matched_user_id={$userId}
-            WHERE UPPER(reference_code)=UPPER('{$orderCodeSql}')
+            WHERE {$orderWhere}
                 AND transfer_amount={$amount}
                 AND (matched_payment_id IS NULL OR matched_payment_id=0 OR matched_payment_id={$paymentId})"
     );
@@ -55,11 +114,11 @@ function Wo_SepayCreditWallet($payment, $sqlConnect)
         return true;
     }
 
-    $orderCodeSql = mysqli_real_escape_string($sqlConnect, strtoupper($orderCode));
+    $orderWhere = Wo_SepayTransactionOrderWhere($orderCode, $sqlConnect);
     $incoming = mysqli_query(
         $sqlConnect,
         "SELECT sepay_id FROM " . SEPAY_TRANSACTION . "
-            WHERE UPPER(reference_code)=UPPER('{$orderCodeSql}')
+            WHERE {$orderWhere}
                 AND transfer_amount={$amount}
                 AND (matched_payment_id IS NULL OR matched_payment_id=0 OR matched_payment_id={$paymentId})
             LIMIT 1"
@@ -104,8 +163,9 @@ function Wo_SepayCreateOrderQr($userId, $amount, $wo, $sqlConnect)
     $bankAcc = trim($wo['config']['sepay_bank_acc'] ?? '');
     $bankCode = trim($wo['config']['sepay_bank_code'] ?? '');
     if (!$bankAcc || !$bankCode) return ['error' => 'SePay not configured (bank_code/account).'];
-    $descPrefix = (string)($wo['config']['sepay_desc_prefix'] ?? 'SE');
-    $order_code = ($wo['config']['sepay_desc_prefix'] ?? 'SE') . substr(sha1(uniqid('', true)), 0, 6);
+    $descPrefix = strtoupper(trim((string)($wo['config']['sepay_desc_prefix'] ?? 'SE')));
+    $orderPrefix = $descPrefix !== '' ? $descPrefix : 'SE';
+    $order_code = $orderPrefix . (int)$userId . '-' . strtoupper(substr(sha1(uniqid('', true)), 0, 5));
     $accountName = trim((string)($wo['config']['sepay_account_name'] ?? ''));
     $order_code = mysqli_real_escape_string($sqlConnect, $order_code);
     $bankCodeSql = mysqli_real_escape_string($sqlConnect, $bankCode);
@@ -113,7 +173,7 @@ function Wo_SepayCreateOrderQr($userId, $amount, $wo, $sqlConnect)
     $accountNameSql = mysqli_real_escape_string($sqlConnect, $accountName);
     $dup = mysqli_query($sqlConnect, "SELECT id FROM " . PAYMENT . " WHERE order_code='{$order_code}' AND method='sepay' LIMIT 1");
     if ($dup && mysqli_num_rows($dup) > 0) {
-        $order_code = ($wo['config']['sepay_desc_prefix'] ?? 'SE') . substr(sha1(uniqid('', true)), 0, 6);
+        $order_code = $orderPrefix . (int)$userId . '-' . strtoupper(substr(sha1(uniqid('', true)), 0, 5));
         $order_code = mysqli_real_escape_string($sqlConnect, $order_code);
     }
     $sql = mysqli_query($sqlConnect, "INSERT INTO " . PAYMENT . " (`order_code`,`customer_id`,`amount`,`bank_code`,`account_number`,`account_name`,`method`,`status`,`created_at`)
@@ -150,20 +210,20 @@ function Wo_SepayCheck(string $order_code_raw, int $userId, $sqlConnect)
 {
     $order_code_sql = Wo_Secure(trim($order_code_raw));
     $q = mysqli_query($sqlConnect, "SELECT  * FROM " . PAYMENT . " WHERE
-     order_code='{$order_code_sql}' AND method='sepay' LIMIT 1");
+     UPPER(order_code)=UPPER('{$order_code_sql}') AND method='sepay' LIMIT 1");
     if (!$q || !mysqli_num_rows($q)) return ['error' => 'Not found', 'code' => 404];
 
     $p = mysqli_fetch_assoc($q);                  // $row: array<string,mixed>|null
 
     if ((int)$p['customer_id'] !== (int)$userId) return ['error' => 'Forbidden', 'code' => 403];
     if (strtolower((string)$p['status']) !== 'paid') {
-        $order_code_upper_sql = mysqli_real_escape_string($sqlConnect, strtoupper((string)$p['order_code']));
+        $orderWhere = Wo_SepayTransactionOrderWhere($p['order_code'], $sqlConnect);
         $amount = (int)$p['amount'];
         $tq = mysqli_query(
             $sqlConnect,
             "SELECT sepay_id
                 FROM " . SEPAY_TRANSACTION . "
-                WHERE UPPER(reference_code)=UPPER('{$order_code_upper_sql}')
+                WHERE {$orderWhere}
                     AND transfer_amount={$amount}
                     AND (matched_payment_id IS NULL OR matched_payment_id=0 OR matched_payment_id=" . (int)$p['id'] . ")
                 ORDER BY created_at DESC
@@ -213,33 +273,36 @@ function Wo_SepayCheck(string $order_code_raw, int $userId, $sqlConnect)
         'server_time' => date('c'),
     ];
 }
-function Wo_SepayReturnWebhook($wo, $sqlConnect, $givenToken)
+function Wo_SepayReturnWebhook($wo, $sqlConnect, $givenToken, $rawBody = null)
 {
     if ($givenToken !== ($wo['config']['sepay_webhook_token'] ?? '')) {
-        return ['http' => 403, 'body' => 'invalid token'];
+        return ['http' => 403, 'body' => Wo_SepayWebhookBody(false, 'invalid token')];
     }
-    $raw = file_get_contents('php://input');
+    $raw = $rawBody !== null ? (string)$rawBody : file_get_contents('php://input');
     $is_json = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
     $data = $is_json ? (json_decode($raw, true) ?: []) : ($_POST ?: []);
     $descPrefix = (string)($wo['config']['sepay_desc_prefix'] ?? 'SE');
-    $content = (string)($data['order_code'] ?? $data['description'] ?? $data['content'] ?? $data['note'] ?? $data['code'] ?? '');
+    $content = (string)($data['content'] ?? $data['description'] ?? $data['order_code'] ?? $data['note'] ?? $data['code'] ?? '');
     $order_code = '';
-    if (preg_match('/\b' . preg_quote($descPrefix, '/') . '[A-Fa-f0-9]{6}\b/i', $content, $m)) {
-        $order_code = strtoupper($m[0]);
+    foreach (array($data['order_code'] ?? '', $data['code'] ?? '', $data['content'] ?? '', $data['description'] ?? '', $data['note'] ?? '') as $candidate) {
+        $order_code = Wo_SepayExtractOrderCode($candidate, $descPrefix);
+        if ($order_code !== '') {
+            break;
+        }
     }
-    $amount = (int)($data['amount'] ?? $data['money'] ?? $data['transactionAmount'] ?? $data['transferAmount'] ?? 0);
+    $amount = Wo_SepayNormalizeAmount($data['amount'] ?? $data['money'] ?? $data['transactionAmount'] ?? $data['transferAmount'] ?? 0);
     $direction = strtoupper((string)($data['type'] ?? $data['direction'] ?? $data['transferType'] ?? 'IN'));
     if (!$order_code || $amount <= 0 || !in_array($direction, ['IN', 'CREDIT'])) {
-        return ['http' => 200, 'body' => 'ignore'];
+        return ['http' => 200, 'body' => Wo_SepayWebhookBody(true, 'ignore')];
     }
     $toAcc = strtoupper((string)($data['account_number'] ?? $data['accountNumber'] ?? $data['toAccount'] ?? ''));
     $cfgAcc = strtoupper(trim($wo['config']['sepay_bank_acc'] ?? ''));
     if ($toAcc && $cfgAcc && $toAcc !== $cfgAcc) {
-        return ['http' => 200, 'body' => 'ignore bank'];
+        return ['http' => 200, 'body' => Wo_SepayWebhookBody(true, 'ignore bank')];
     }
     $sepayId       = (string)($data['id'] ?? $data['sepay_id'] ?? $data['transaction_id'] ?? '');
     if ($sepayId === '') { // fallback để vẫn idempotent khi provider ko trả id
-        $sepayId = 'hash_' . substr(sha1($raw ?: ($content . $amount . $toAcc)), 0, 24);
+        $sepayId = 'hash_' . substr(sha1($raw ?: ($order_code . $content . $amount . $toAcc)), 0, 24);
     }
     $bankCode      = strtoupper((string)($data['bankCode'] ?? $data['bank_code'] ?? $data['gateway'] ?? $data['toBank'] ?? $wo['config']['sepay_bank_code'] ?? ''));
 
@@ -260,7 +323,8 @@ function Wo_SepayReturnWebhook($wo, $sqlConnect, $givenToken)
     $content_sql       = mysqli_real_escape_string($sqlConnect, $content);
     $reference_sql     = mysqli_real_escape_string($sqlConnect, $referenceCode);
     $txAt_sql          = $txAt ? ("'" . mysqli_real_escape_string($sqlConnect, $txAt) . "'") : "NULL";
-    $raw_json_sql      = mysqli_real_escape_string($sqlConnect, $is_json ? json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $raw);
+    $rawPayload = $is_json || $raw === '' ? json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $raw;
+    $raw_json_sql      = mysqli_real_escape_string($sqlConnect, $rawPayload);
 
     // UPSERT: lần đầu INSERT, nếu webhook gọi lại thì UPDATE các trường
     $upsertLogSql = "
@@ -288,25 +352,25 @@ function Wo_SepayReturnWebhook($wo, $sqlConnect, $givenToken)
             LIMIT 1"
     );
 
-    if (!$q || !mysqli_num_rows($q)) return ['http' => 200, 'body' => 'not found'];
+    if (!$q || !mysqli_num_rows($q)) return ['http' => 200, 'body' => Wo_SepayWebhookBody(true, 'not found')];
     $p = mysqli_fetch_assoc($q);
     if (strtolower($p['status']) === 'paid') {
         if (!Wo_SepayPaymentHasMatchedTransaction((int)$p['id'], $sqlConnect)) {
             mysqli_begin_transaction($sqlConnect);
             if (Wo_SepayCreditWallet($p, $sqlConnect)) {
                 mysqli_commit($sqlConnect);
-                return ['http' => 200, 'body' => 'repaired'];
+                return ['http' => 200, 'body' => Wo_SepayWebhookBody(true, 'repaired')];
             }
             mysqli_rollback($sqlConnect);
-            return ['http' => 500, 'body' => 'user update fail'];
+            return ['http' => 500, 'body' => Wo_SepayWebhookBody(false, 'user update fail')];
         }
 
         if (function_exists('cache')) {
             cache((int)$p['customer_id'], 'users', 'delete');
         }
-        return ['http' => 200, 'body' => 'already'];
+        return ['http' => 200, 'body' => Wo_SepayWebhookBody(true, 'already')];
     }
-    if ((int)$p['amount'] !== (int)$amount) return ['http' => 200, 'body' => 'amount mismatch'];
+    if ((int)$p['amount'] !== (int)$amount) return ['http' => 200, 'body' => Wo_SepayWebhookBody(true, 'amount mismatch')];
     mysqli_begin_transaction($sqlConnect);
     $ok1 = mysqli_query(
         $sqlConnect,
@@ -315,13 +379,13 @@ function Wo_SepayReturnWebhook($wo, $sqlConnect, $givenToken)
     );
     if (!$ok1 || mysqli_affected_rows($sqlConnect) !== 1) {
         mysqli_rollback($sqlConnect);
-        return ['http' => 200, 'body' => 'no update'];
+        return ['http' => 200, 'body' => Wo_SepayWebhookBody(true, 'no update')];
     }
 
     $ok2 = Wo_SepayCreditWallet($p, $sqlConnect);
     if (!$ok2) {
         mysqli_rollback($sqlConnect);
-        return ['http' => 500, 'body' => 'user update fail'];
+        return ['http' => 500, 'body' => Wo_SepayWebhookBody(false, 'user update fail')];
     }
     mysqli_commit($sqlConnect);
     Wo_RegisterNotification([
@@ -330,5 +394,5 @@ function Wo_SepayReturnWebhook($wo, $sqlConnect, $givenToken)
         'type'         => 'wallet_topup',
         'text'         => 'Nạp ví thành công: ' . Wo_GetCurrency($wo['config']['currency']) . $p['amount'] . ' (' . $order_code . ')',
     ]);
-    return ['http' => 200, 'body' => 'ok'];
+    return ['http' => 200, 'body' => Wo_SepayWebhookBody(true, 'ok')];
 }

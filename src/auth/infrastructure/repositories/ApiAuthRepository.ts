@@ -39,7 +39,10 @@ type CurrentUserResponse = {
 const AUTH_DEVICE_TYPE = 'phone';
 
 function mapAuthResponse(response: AuthResponse): AuthResult {
-  console.log('[ApiAuthRepository] Login response:', JSON.stringify(response, null, 2));
+  console.log(
+    '[ApiAuthRepository] Login response:',
+    JSON.stringify(response, null, 2),
+  );
 
   if (response.access_token && response.user_id) {
     const session: AuthSession = {
@@ -67,13 +70,19 @@ function mapAuthResponse(response: AuthResponse): AuthResult {
   }
 
   if (response.user_id && response.message) {
-    return { status: 'verification_required', userId: String(response.user_id), message: response.message };
+    return {
+      status: 'verification_required',
+      userId: String(response.user_id),
+      message: response.message,
+    };
   }
 
   throw new Error(response.message || 'Authentication failed');
 }
 
-function mapCurrentUser(response: CurrentUserResponse): CurrentUserResult | null {
+function mapCurrentUser(
+  response: CurrentUserResponse,
+): CurrentUserResult | null {
   const userData = response.user_data;
   if (!userData) return null;
 
@@ -90,32 +99,46 @@ function mapCurrentUser(response: CurrentUserResponse): CurrentUserResult | null
 export function createAuthRepository(): AuthRepository {
   return {
     async login(credentials: LoginCredentials) {
-      const response = await apiBridge.post<AuthResponse>(apiRoutes.auth.login, {
-        username: credentials.username.trim(),
-        password: credentials.password,
-        device_type: AUTH_DEVICE_TYPE,
-      });
-      console.log('[Auth] API login response:', JSON.stringify(response, null, 2));
+      const response = await apiBridge.post<AuthResponse>(
+        apiRoutes.auth.login,
+        {
+          username: credentials.username.trim(),
+          password: credentials.password,
+          device_type: AUTH_DEVICE_TYPE,
+        },
+      );
+      console.log(
+        '[Auth] API login response:',
+        JSON.stringify(response, null, 2),
+      );
       return mapAuthResponse(response);
     },
 
     async register(input: RegisterInput) {
-      const response = await apiBridge.post<AuthResponse>(apiRoutes.auth.register, {
-        first_name: input.firstName.trim(),
-        last_name: input.lastName.trim(),
-        username: input.username.trim(),
-        email: input.email.trim(),
-        password: input.password.trim(),
-        confirm_password: input.confirmPassword.trim(),
-        gender: input.gender || 'male',
-        device_type: AUTH_DEVICE_TYPE,
-      });
+      const response = await apiBridge.post<AuthResponse>(
+        apiRoutes.auth.register,
+        {
+          first_name: input.firstName.trim(),
+          last_name: input.lastName.trim(),
+          username: input.username.trim(),
+          email: input.email.trim(),
+          password: input.password.trim(),
+          confirm_password: input.confirmPassword.trim(),
+          birthday: input.birthday?.trim() || '',
+          gender: input.gender || 'male',
+          has_existing_storefront: input.hasExistingStorefront ? '1' : '0',
+          hasExistingStorefront: input.hasExistingStorefront ? '1' : '0',
+          device_type: AUTH_DEVICE_TYPE,
+        },
+      );
       console.log('[ApiAuthRepository] Register response:', response);
       return mapAuthResponse(response);
     },
 
     async forgotPassword(input) {
-      await apiBridge.post(apiRoutes.auth.forgotPassword, { email: input.email.trim() });
+      await apiBridge.post(apiRoutes.auth.forgotPassword, {
+        email: input.email.trim(),
+      });
     },
 
     async logout() {
@@ -132,14 +155,19 @@ export function createAuthRepository(): AuthRepository {
 
     async getCurrentUser() {
       if (!sessionStorage.getAccessToken()) return null;
-      const response = await apiBridge.post<CurrentUserResponse>(apiRoutes.auth.me);
+      const response = await apiBridge.post<CurrentUserResponse>(
+        apiRoutes.auth.me,
+      );
       console.log('[ApiAuthRepository] getCurrentUser response:', response);
       return mapCurrentUser(response);
     },
 
     async fetchUserById(userId: string) {
       if (!userId || !sessionStorage.getAccessToken()) return null;
-      const response = await apiBridge.post<CurrentUserResponse>(apiRoutes.user.get, { user_id: userId, fetch: 'user_data' });
+      const response = await apiBridge.post<CurrentUserResponse>(
+        apiRoutes.user.get,
+        { user_id: userId, fetch: 'user_data' },
+      );
       return mapCurrentUser(response);
     },
   };
