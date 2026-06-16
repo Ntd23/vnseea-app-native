@@ -15,6 +15,7 @@ import {
   CalendarDays,
   CircleDot,
   FilePlus2,
+  FileText,
   ImagePlus,
   Images,
   PackagePlus,
@@ -38,7 +39,8 @@ type CreateActionKey =
   | 'product'
   | 'page'
   | 'group'
-  | 'reel';
+  | 'reel'
+  | 'blog';
 
 type CreateAction = {
   key: CreateActionKey;
@@ -63,6 +65,7 @@ const actions: CreateAction[] = [
   { key: 'page', Icon: FilePlus2, iconColor: '#0ea5e9', iconBg: '#f0f9ff', route: ROUTES.CREATE_PAGE },
   { key: 'group', Icon: Users, iconColor: '#ec4899', iconBg: '#fdf2f8', route: ROUTES.CREATE_GROUP },
   { key: 'reel', Icon: PlaySquare, iconColor: '#9333ea', iconBg: '#faf5ff', route: ROUTES.CREATE_REEL },
+  { key: 'blog', Icon: FileText, iconColor: '#2563eb', iconBg: '#eff6ff', route: ROUTES.CREATE_BLOG },
 ];
 
 const SHEET_COPY = {
@@ -79,6 +82,7 @@ const SHEET_COPY = {
       page: { label: 'Tạo trang mới', subtitle: 'Bắt đầu trang của bạn' },
       group: { label: 'Tạo nhóm mới', subtitle: 'Kết nối với nhiều người hơn' },
       reel: { label: 'Tạo video', subtitle: 'Chia sẻ video với mọi người' },
+      blog: { label: 'Tạo blog', subtitle: 'Viết bài chia sẻ kiến thức' },
     },
   },
   en: {
@@ -94,6 +98,7 @@ const SHEET_COPY = {
       page: { label: 'Create new page', subtitle: 'Start your page' },
       group: { label: 'Create new group', subtitle: 'Connect with more people' },
       reel: { label: 'Create video', subtitle: 'Share video with everyone' },
+      blog: { label: 'Create blog', subtitle: 'Write and share knowledge' },
     },
   },
 };

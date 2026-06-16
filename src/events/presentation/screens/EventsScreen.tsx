@@ -1,5 +1,5 @@
 // Description: Renders the VNSEEA events list with event discovery and app-bar create navigation.
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -13,11 +13,12 @@ import {
 import {
   ArrowLeft,
   CalendarDays,
+  Edit3,
   MapPin,
   Plus,
   Users,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -33,7 +34,13 @@ const BRAND = '#0000ff';
 function formatEventDate(dateStr: string | null | undefined): { day: string; month: string } {
   if (!dateStr) return { day: '--', month: 'N/A' };
   try {
-    const date = new Date(dateStr);
+    const parts = dateStr.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    const date = parts
+      ? new Date(Number(parts[3]), Number(parts[2]) - 1, Number(parts[1]))
+      : new Date(dateStr);
+    if (Number.isNaN(date.getTime())) {
+      return { day: '--', month: 'N/A' };
+    }
     return {
       day: String(date.getDate()).padStart(2, '0'),
       month: date.toLocaleDateString('vi-VN', { month: 'short' }),
@@ -44,10 +51,22 @@ function formatEventDate(dateStr: string | null | undefined): { day: string; mon
 }
 
 // Event Card Component
-function EventCard({ event, onPress }: { event: EventsItem; onPress?: () => void }) {
-  const { day, month } = formatEventDate(event.start_date);
+function EventCard({
+  event,
+  onPress,
+  onEditPress,
+}: {
+  event: EventsItem;
+  onPress?: () => void;
+  onEditPress?: () => void;
+}) {
+  const { day, month } = formatEventDate(event.start_date ?? event.event_start_date);
   // Check if current user is the owner of this event (poster_id matches current user)
   const isOwner = event.is_owner === true;
+  const title = event.name ?? event.event_name ?? 'Sự kiện';
+  const location = event.location ?? event.event_location;
+  const startTime = event.start_time ?? event.event_start_time;
+  const cover = event.cover ?? event.event_cover;
   console.log('[EventCard] Event ID:', event.id, 'is_owner:', isOwner);
 
   return (
@@ -56,9 +75,9 @@ function EventCard({ event, onPress }: { event: EventsItem; onPress?: () => void
       activeOpacity={0.9}
       onPress={onPress}
     >
-      {event.cover && (
+      {cover && (
         <Image
-          source={{ uri: event.cover }}
+          source={{ uri: cover }}
           className="h-40 w-full"
           resizeMode="cover"
         />
@@ -70,18 +89,18 @@ function EventCard({ event, onPress }: { event: EventsItem; onPress?: () => void
             <Text className="text-center text-[12px] text-brand">{month}</Text>
           </View>
           <View className="ml-4 flex-1">
-            <Text className="text-title-primary" numberOfLines={2}>{event.name}</Text>
+            <Text className="text-title-primary" numberOfLines={2}>{title}</Text>
             <View className="mt-2 flex-row items-center">
               <CalendarDays size={15} color={BRAND} />
               <Text className="ml-2 text-caption-secondary">
-                {event.start_time || 'N/A'}
+                {startTime || 'N/A'}
               </Text>
             </View>
-            {event.location && (
+            {location && (
               <View className="mt-1 flex-row items-center">
                 <MapPin size={15} color={BRAND} />
                 <Text className="ml-2 text-caption-secondary" numberOfLines={1}>
-                  {event.location}
+                  {location}
                 </Text>
               </View>
             )}
@@ -99,14 +118,12 @@ function EventCard({ event, onPress }: { event: EventsItem; onPress?: () => void
           {/* Buttons based on ownership */}
           {isOwner ? (
             <TouchableOpacity
-              className="rounded-full bg-green-500 px-4 py-2"
+              className="flex-row items-center rounded-full bg-green-500 px-4 py-2"
               activeOpacity={0.8}
-              onPress={() => {
-                console.log('[EventCard] Edit event:', event.id);
-                // Navigate to edit event screen
-              }}
+              onPress={onEditPress}
             >
-              <Text className="text-caption-primary text-white font-semibold">Sửa</Text>
+              <Edit3 size={14} color="#FFFFFF" />
+              <Text className="ml-1 text-caption-primary text-white font-semibold">Sửa</Text>
             </TouchableOpacity>
           ) : (
             <View className="flex-row gap-2">
@@ -145,14 +162,14 @@ function EventsScreen() {
   const { events, isLoading, fetchEvents, fetchMyEvents } = useEventsViewModel();
   const [activeTab, setActiveTab] = useState<'all' | 'my'>('all');
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     // Load events based on active tab
     if (activeTab === 'my') {
       fetchMyEvents();
     } else {
       fetchEvents();
     }
-  }, [activeTab, fetchEvents, fetchMyEvents]);
+  }, [activeTab, fetchEvents, fetchMyEvents]));
 
   const handleTabPress = (tab: 'all' | 'my') => {
     setActiveTab(tab);
@@ -253,8 +270,10 @@ function EventsScreen() {
             key={event.id}
             event={event}
             onPress={() => {
-              // Navigate to event detail if needed
-              console.log('[EventsScreen] Event pressed:', event.id);
+              navigation.navigate(ROUTES.EVENT_DETAIL, { event });
+            }}
+            onEditPress={() => {
+              navigation.navigate(ROUTES.EDIT_EVENT, { event });
             }}
           />
         ))}

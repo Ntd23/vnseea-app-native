@@ -15,6 +15,7 @@ type EventResponse = {
   event_id?: number;
   data?: EventsItem | EventsItem[];
   message?: string;
+  message_data?: string;
 };
 
 type EventsListResponse = {
@@ -29,6 +30,34 @@ function extractEventsList(response: any, optionKey: string): EventsItem[] {
   return response.events || response[optionKey] || response.data || [];
 }
 
+function isSuccess(response: { api_status: number | string }) {
+  return response.api_status === 200 || response.api_status === '200';
+}
+
+function formatDateForApi(dateStr: string): string {
+  return dateStr || '';
+}
+
+function formatTimeForApi(timeStr: string): string {
+  if (!timeStr) return '';
+  if (timeStr.length === 5) {
+    return `${timeStr}:00`;
+  }
+  return timeStr;
+}
+
+function toEventPayload(data: EventFormData) {
+  return {
+    event_name: data.name,
+    event_location: data.location,
+    event_description: data.description,
+    event_start_date: formatDateForApi(data.startDate),
+    event_start_time: formatTimeForApi(data.startTime),
+    event_end_date: formatDateForApi(data.endDate),
+    event_end_time: formatTimeForApi(data.endTime),
+  };
+}
+
 export function createEventsRepository(): EventsRepository {
   return {
     async getAll(): Promise<EventsItem[]> {
@@ -39,13 +68,13 @@ export function createEventsRepository(): EventsRepository {
           { fetch: 'events,my_events' },  // Get both to know which are owned
         );
 
-        if (response.api_status === 200 || response.api_status === '200') {
-          const myEventIds = new Set((response.my_events || []).map((e: EventsItem) => e.id));
+        if (isSuccess(response)) {
+          const myEventIds = new Set((response.my_events || []).map((e: EventsItem) => String(e.id)));
           const events = response.events || [];
           // Mark owned events
           return events.map((event: EventsItem) => ({
             ...event,
-            is_owner: myEventIds.has(event.id),
+            is_owner: myEventIds.has(String(event.id)),
           }));
         }
         return [];
@@ -66,7 +95,7 @@ export function createEventsRepository(): EventsRepository {
 
         console.log('[ApiEventsRepository] getMyEvents raw response:', JSON.stringify(response, null, 2));
 
-        if (response.api_status === 200 || response.api_status === '200') {
+        if (isSuccess(response)) {
           // For my_events, events are in response.my_events
           const events = response.my_events || [];
           console.log('[ApiEventsRepository] getMyEvents parsed events:', events.length);
@@ -90,7 +119,7 @@ export function createEventsRepository(): EventsRepository {
           { fetch: 'going' },
         );
 
-        if (response.api_status === 200 || response.api_status === '200') {
+        if (isSuccess(response)) {
           return extractEventsList(response, 'events'); // WoWonder typically returns under 'events' or 'going'
         }
         return [];
@@ -107,7 +136,7 @@ export function createEventsRepository(): EventsRepository {
           { fetch: 'interested' },
         );
 
-        if (response.api_status === 200 || response.api_status === '200') {
+        if (isSuccess(response)) {
           return extractEventsList(response, 'events');
         }
         return [];
@@ -124,7 +153,7 @@ export function createEventsRepository(): EventsRepository {
           { fetch: 'invited' },
         );
 
-        if (response.api_status === 200 || response.api_status === '200') {
+        if (isSuccess(response)) {
           return extractEventsList(response, 'events');
         }
         return [];
@@ -141,7 +170,7 @@ export function createEventsRepository(): EventsRepository {
           { fetch: 'past' },
         );
 
-        if (response.api_status === 200 || response.api_status === '200') {
+        if (isSuccess(response)) {
           return extractEventsList(response, 'events');
         }
         return [];
@@ -153,12 +182,13 @@ export function createEventsRepository(): EventsRepository {
 
     async getById(id: string | number): Promise<EventsItem | null> {
       try {
-        const response = await apiBridge.post<EventResponse>(
-          apiRoutes.events.getById,
-          { event_id: id },
-        );
-        if (response.data && !Array.isArray(response.data)) {
-          return response.data as EventsItem;
+        const [events, myEvents] = await Promise.all([
+          this.getAll(),
+          this.getMyEvents(),
+        ]);
+        const event = [...myEvents, ...events].find(item => String(item.id) === String(id));
+        if (event) {
+          return event;
         }
         return null;
       } catch (error) {
@@ -168,34 +198,7 @@ export function createEventsRepository(): EventsRepository {
     },
 
     async createEvent(data: EventFormData): Promise<CreateEventResult> {
-      // Format date/time for WoWonder API
-      // Input is already string like "2024-01-15" or "14:30"
-      const formatDateForApi = (dateStr: string): string => {
-        if (!dateStr) return '';
-        // Already in YYYY-MM-DD format from CreateEventScreen
-        return dateStr;
-      };
-
-      const formatTimeForApi = (timeStr: string): string => {
-        if (!timeStr) return '';
-        // Already in HH:MM format from CreateEventScreen
-        // Ensure format is HH:MM:SS
-        if (timeStr.length === 5) {
-          return `${timeStr}:00`;
-        }
-        return timeStr;
-      }
-
-      // Prepare form data with correct field names as expected by backend
-      const eventData = {
-        event_name: data.name,
-        event_location: data.location,
-        event_description: data.description,
-        event_start_date: formatDateForApi(data.startDate),
-        event_start_time: formatTimeForApi(data.startTime),
-        event_end_date: formatDateForApi(data.endDate),
-        event_end_time: formatTimeForApi(data.endTime),
-      };
+      const eventData = toEventPayload(data);
 
       if (data.image) {
         // Upload with image using multipart
@@ -215,7 +218,7 @@ export function createEventsRepository(): EventsRepository {
 
         console.log('[ApiEventsRepository] Response:', response);
 
-        if (response.api_status === 200 || response.api_status === '200') {
+        if (isSuccess(response)) {
           return {
             eventId: response.event_id ?? 0,
             event: response.data as EventsItem,
@@ -234,7 +237,7 @@ export function createEventsRepository(): EventsRepository {
 
         console.log('[ApiEventsRepository] Response:', response);
 
-        if (response.api_status === 200 || response.api_status === '200') {
+        if (isSuccess(response)) {
           return {
             eventId: response.event_id ?? 0,
             event: response.data as EventsItem,
@@ -243,6 +246,61 @@ export function createEventsRepository(): EventsRepository {
         console.error('[ApiEventsRepository] API error:', response);
         throw new Error(response.message ?? `API error: ${response.api_status}`);
       }
+    },
+
+    async updateEvent(id: string | number, data: EventFormData): Promise<EventsItem> {
+      const eventData = {
+        type: 'edit',
+        event_id: id,
+        ...toEventPayload(data),
+      };
+
+      const isLocalFile = data.image && (
+        data.image.startsWith('file://') ||
+        data.image.startsWith('content://') ||
+        !data.image.startsWith('http')
+      );
+
+      const response = isLocalFile
+        ? await apiBridge.multipart<EventResponse>(apiRoutes.events.actions, {
+            ...eventData,
+            'event-cover': {
+              uri: data.image,
+              name: 'event_cover.jpg',
+              type: 'image/jpeg',
+            },
+          })
+        : await apiBridge.post<EventResponse>(apiRoutes.events.actions, eventData);
+
+      if (isSuccess(response)) {
+        return {
+          id,
+          name: data.name,
+          location: data.location,
+          description: data.description,
+          start_date: data.startDate,
+          start_time: data.startTime,
+          end_date: data.endDate,
+          end_time: data.endTime,
+          cover: data.image,
+          is_owner: true,
+        };
+      }
+
+      throw new Error(response.message ?? response.message_data ?? 'Không cập nhật được sự kiện.');
+    },
+
+    async deleteEvent(id: string | number): Promise<boolean> {
+      const response = await apiBridge.post<EventResponse>(apiRoutes.events.actions, {
+        type: 'delete',
+        event_id: id,
+      });
+
+      if (isSuccess(response)) {
+        return true;
+      }
+
+      throw new Error(response.message ?? response.message_data ?? 'Không xóa được sự kiện.');
     },
   };
 }

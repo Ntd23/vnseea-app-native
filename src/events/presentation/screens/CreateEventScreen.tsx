@@ -25,14 +25,20 @@ import {
   X,
 } from 'lucide-react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 
 type CreateEventNav = NativeStackNavigationProp<RootStackParamList>;
+type CreateEventRoute = RouteProp<
+  RootStackParamList,
+  typeof ROUTES.CREATE_EVENT | typeof ROUTES.EDIT_EVENT
+>;
 
 interface EventFormData {
   name: string;
@@ -47,17 +53,40 @@ interface EventFormData {
 
 function CreateEventScreen() {
   const navigation = useNavigation<CreateEventNav>();
-  const { isCreating, createEvent } = useEventsViewModel();
+  const route = useRoute<CreateEventRoute>();
+  const editingEvent = 'event' in (route.params ?? {}) ? route.params?.event : undefined;
+  const isEditing = Boolean(editingEvent?.id);
+  const { isCreating, isUpdating, createEvent, updateEvent } = useEventsViewModel();
+
+  const parseDate = (value?: string): Date | null => {
+    if (!value) return null;
+    const nativeDate = new Date(value);
+    if (!Number.isNaN(nativeDate.getTime())) return nativeDate;
+
+    const parts = value.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (!parts) return null;
+    return new Date(Number(parts[3]), Number(parts[2]) - 1, Number(parts[1]));
+  };
+
+  const parseTime = (value?: string): Date | null => {
+    if (!value) return null;
+    const parts = value.match(/^(\d{1,2}):(\d{2})/);
+    if (!parts) return null;
+    const date = new Date();
+    date.setHours(Number(parts[1]), Number(parts[2]), 0, 0);
+    return date;
+  };
+
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<EventFormData>({
-    name: '',
-    startDate: null,
-    startTime: null,
-    endDate: null,
-    endTime: null,
-    image: null,
-    location: '',
-    description: '',
+    name: editingEvent?.name ?? editingEvent?.event_name ?? '',
+    startDate: parseDate(editingEvent?.start_date ?? editingEvent?.event_start_date),
+    startTime: parseTime(editingEvent?.start_time ?? editingEvent?.event_start_time),
+    endDate: parseDate(editingEvent?.end_date ?? editingEvent?.event_end_date),
+    endTime: parseTime(editingEvent?.end_time ?? editingEvent?.event_end_time),
+    image: editingEvent?.cover ?? editingEvent?.event_cover ?? null,
+    location: editingEvent?.location ?? editingEvent?.event_location ?? '',
+    description: editingEvent?.description ?? editingEvent?.event_description ?? '',
   });
 
   // Date/Time picker state
@@ -67,7 +96,9 @@ function CreateEventScreen() {
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
 
   // Image state
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(
+    editingEvent?.cover ?? editingEvent?.event_cover ?? null,
+  );
 
   const progressValue = Math.round(((step + 1) / 6) * 100);
   const progress = `${progressValue}%`;
@@ -195,15 +226,25 @@ function CreateEventScreen() {
 
     console.log('[CreateEventScreen] Submitting event:', eventData);
 
-    createEvent(eventData).then(success => {
-      console.log('[CreateEventScreen] Create event result:', success);
-      if (success) {
-        showToast({ message: 'Tạo sự kiện thành công!', type: 'success' });
+    const submitAction: Promise<{ success: boolean; error?: string }> = isEditing && editingEvent?.id
+      ? updateEvent(editingEvent.id, eventData)
+      : createEvent(eventData).then(success => ({ success }));
+
+    submitAction.then(result => {
+      console.log('[CreateEventScreen] Submit event result:', result.success);
+      if (result.success) {
+        showToast({
+          message: isEditing ? 'Cập nhật sự kiện thành công!' : 'Tạo sự kiện thành công!',
+          type: 'success',
+        });
         setTimeout(() => {
-          navigation.goBack();
+          navigation.navigate(ROUTES.EVENTS);
         }, 1500);
       } else {
-        showToast({ message: 'Không thể tạo sự kiện. Vui lòng thử lại.', type: 'error' });
+        showToast({
+          message: result.error ?? 'Không thể lưu sự kiện. Vui lòng thử lại.',
+          type: 'error',
+        });
       }
     });
   }
@@ -495,7 +536,9 @@ function CreateEventScreen() {
         >
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text className="text-heading text-inverse">Tạo sự kiện</Text>
+        <Text className="text-heading text-inverse">
+          {isEditing ? 'Sửa sự kiện' : 'Tạo sự kiện'}
+        </Text>
         <Text className="text-title-primary text-inverse">{`Bước ${step + 1}/6`}</Text>
       </View>
 
@@ -541,13 +584,13 @@ function CreateEventScreen() {
           className="btn-primary min-h-[54px]"
           activeOpacity={0.9}
           onPress={next}
-          disabled={isCreating}
+          disabled={isCreating || isUpdating}
         >
-          {isCreating ? (
+          {isCreating || isUpdating ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text className="text-title-primary text-inverse">
-              {step === 5 ? 'Hoàn tất' : 'Tiếp tức'}
+              {step === 5 ? (isEditing ? 'Lưu thay đổi' : 'Hoàn tất') : 'Tiếp tục'}
             </Text>
           )}
         </TouchableOpacity>

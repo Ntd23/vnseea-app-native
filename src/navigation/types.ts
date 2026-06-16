@@ -11,6 +11,7 @@ import type { LiveSession } from '../live/domain/types/live.types';
 import type { ProductItem } from '../product/domain/types/product.types';
 import type { FeedPost } from '../feed/domain/types/feed.types';
 import type { AdItem } from '../advertising/domain/types/ads.types';
+import type { EventsItem } from '../events/domain/types/events.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -73,6 +74,8 @@ export type RootStackParamList = {
   };
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;
+  [ROUTES.EDIT_EVENT]: { event: EventsItem };
+  [ROUTES.EVENT_DETAIL]: { event: EventsItem };
   [ROUTES.CREATE_POLL]: undefined;
   [ROUTES.CREATE_GROUP]: undefined;
   [ROUTES.EXPLORE_GROUPS]: undefined;
@@ -84,9 +87,10 @@ export type RootStackParamList = {
   [ROUTES.FOLLOWING]: undefined;
   [ROUTES.BOOSTED]: undefined;
   [ROUTES.POPULAR]: undefined;
-  [ROUTES.BLOGS]: undefined;
-  [ROUTES.BLOG_FILTER_CATEGORY]: undefined;
+  [ROUTES.BLOGS]: { category?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined;
+  [ROUTES.BLOG_FILTER_CATEGORY]: { currentCategory?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined;
   [ROUTES.BLOG_DETAIL]: { blogId: string };
+  [ROUTES.CREATE_BLOG]: undefined;
   [ROUTES.MOVIES]: undefined;
   [ROUTES.JOBS]: undefined;
   [ROUTES.JOB_DETAIL]: { jobId?: string; job?: any };
