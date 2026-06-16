@@ -92,10 +92,11 @@ function toPositiveNumberId(value: string | undefined) {
 
 function toPageRouteItem(item: NotificationsItem): PagesItem {
   const pageId = item.pageId ?? '';
+  const pageName = item.pageName ?? '';
   return {
-    id: pageId,
+    id: pageId || pageName,
     pageId,
-    pageName: '',
+    pageName,
     pageTitle: item.text || 'Trang',
     likes: 0,
   };
@@ -196,7 +197,7 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
       navigation.navigate(ROUTES.EVENTS as any);
       break;
     case 'liked_page':
-      if (item.pageId) {
+      if (item.pageId || item.pageName) {
         navigation.navigate(ROUTES.PAGE_DETAIL, { page: toPageRouteItem(item) });
       } else {
         navigation.navigate(ROUTES.PAGES as any);

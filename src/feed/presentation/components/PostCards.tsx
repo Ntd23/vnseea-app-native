@@ -1080,9 +1080,17 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [navigateToProfile, post.publisher.id]);
 
   const handleVideoPress = useCallback(() => {
+    // `source: 'home'` tells ReelsScreen where the user came from so
+    // the back button can return to this exact list (instead of
+    // jumping to the Feed tab). HomeVideoPostCard is also reused
+    // inside PageDetailScreen, but the back FAB on Reels already
+    // does a `goBack()` first which pops the actual stack — so
+    // 'home' is a safe default even when the card is rendered inside
+    // a different surface.
     navigation.navigate(ROUTES.REELS, {
       initialVideoId: post.id,
       post,
+      source: 'home',
     });
   }, [navigation, post]);
 

@@ -188,7 +188,11 @@ export function filterNotificationsByType(
   return items.filter(item => {
     switch (filter) {
       case 'likes':
-        return item.type === 'liked_post' || item.type === 'wondered_post';
+        return (
+          item.type === 'liked_post' ||
+          item.type === 'wondered_post' ||
+          item.type === 'liked_page'
+        );
       case 'comments':
         return (
           item.type === 'comment' ||
@@ -228,6 +232,7 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
     post_mention: '{name} đã nhắc đến bạn trong bài viết',
     profile_wall_post: '{name} đã đăng lên trang cá nhân của bạn',
     visited_profile: '{name} đã xem trang cá nhân của bạn',
+    liked_page: '{name} đã thích trang của bạn',
     joined_group: '{name} đã tham gia nhóm của bạn',
     added_you_to_group: '{name} đã mời bạn vào nhóm chat',
     accept_group_chat_request: '{name} đã chấp nhận lời mời tham gia nhóm chat',
@@ -248,6 +253,7 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
     post_mention: '{name} mentioned you in a post',
     profile_wall_post: '{name} posted on your timeline',
     visited_profile: '{name} visited your profile',
+    liked_page: '{name} liked your page',
     joined_group: '{name} joined your group',
     added_you_to_group: '{name} invited you to a group chat',
     accept_group_chat_request: '{name} accepted your group chat invite',

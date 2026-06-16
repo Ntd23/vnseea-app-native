@@ -19,6 +19,7 @@ import {
   Bell,
   CalendarDays,
   Check,
+  Flag,
   Heart,
   Image as ImageIcon,
   MessageCircle,
@@ -55,6 +56,7 @@ const ICON_BY_TYPE: Record<string, { Icon: IconComponent; iconColor: string }> =
   liked_post: { Icon: Heart, iconColor: '#F33E58' },
   wondered_post: { Icon: Heart, iconColor: '#F7B125' },
   shared_post: { Icon: Share2, iconColor: '#65676B' },
+  liked_page: { Icon: Flag, iconColor: '#1877F2' },
   comment: { Icon: MessageCircle, iconColor: '#3b82f6' }, // blue message bubble
   comment_reply: { Icon: MessageCircle, iconColor: '#3b82f6' },
   profile_wall_post: { Icon: ImageIcon, iconColor: '#1877F2' },

@@ -169,7 +169,7 @@ function MyVideosScreen() {
     (post: FeedVideoPost) => {
       navigation.navigate(ROUTES.MAIN_TABS, {
         screen: ROUTES.REELS,
-        params: { initialVideoId: post.id, post },
+        params: { initialVideoId: post.id, post, source: 'myVideos' },
       });
     },
     [navigation],

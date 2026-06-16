@@ -27,6 +27,7 @@ import {
   ThumbsUp,
   BadgeCheck,
   MoreHorizontal,
+  ChevronRight,
 } from 'lucide-react-native';
 import Animated, {
   FadeInDown,
@@ -65,6 +66,8 @@ const COPY: Record<
     viewPage: string;
     likesSuffix: string;
     likedText: string;
+    likesCardLabel: string;
+    addressCardLabel: string;
     noSuggestedTitle: string;
     noSuggestedSubtitle: string;
     noLikedTitle: string;
@@ -90,6 +93,8 @@ const COPY: Record<
     viewPage: 'Xem trang',
     likesSuffix: 'lượt thích',
     likedText: 'Đã thích',
+    likesCardLabel: 'Lượt thích',
+    addressCardLabel: 'Địa chỉ',
     noSuggestedTitle: 'Chưa có trang đề xuất',
     noSuggestedSubtitle: 'Hiện chưa có trang phù hợp để đề xuất cho bạn.',
     noLikedTitle: 'Chưa có trang đã yêu thích',
@@ -114,6 +119,8 @@ const COPY: Record<
     viewPage: 'View Page',
     likesSuffix: 'likes',
     likedText: 'Liked',
+    likesCardLabel: 'Likes',
+    addressCardLabel: 'Address',
     noSuggestedTitle: 'No suggested pages',
     noSuggestedSubtitle: 'Currently, there are no pages to suggest to you.',
     noLikedTitle: 'No liked pages',
@@ -182,13 +189,13 @@ function PagesSkeleton() {
         <View key={index} style={styles.skeletonCard}>
           <View style={styles.skeletonCover} />
           <View style={styles.skeletonContent}>
-            <View style={styles.skeletonAvatarRow}>
-              <View style={styles.skeletonAvatar} />
-              <View style={styles.skeletonActionBtn} />
-            </View>
             <View style={styles.skeletonTitle} />
             <View style={styles.skeletonSubtitle} />
             <View style={styles.skeletonDesc} />
+            <View style={styles.skeletonInfoRow}>
+              <View style={styles.skeletonInfoCell} />
+              <View style={styles.skeletonInfoCell} />
+            </View>
           </View>
         </View>
       ))}
@@ -324,7 +331,7 @@ function PageAvatar({ page }: { page: PagesItem }) {
 
   return (
     <View style={styles.avatarPlaceholder}>
-      <Flag size={26} color={BRAND} />
+      <Flag size={28} color={BRAND} />
     </View>
   );
 }
@@ -347,69 +354,133 @@ function PageCover({ page }: { page: PagesItem }) {
   );
 }
 
+function PageInfoRow({
+  icon,
+  label,
+  value,
+  onPress,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  onPress?: () => void;
+}) {
+  const content = (
+    <View style={styles.infoCell}>
+      <View style={styles.infoCellIcon}>{icon}</View>
+      <View style={styles.infoCellTextWrap}>
+        <Text style={styles.infoCellLabel} numberOfLines={1}>
+          {label}
+        </Text>
+        <Text style={styles.infoCellValue} numberOfLines={1}>
+          {value}
+        </Text>
+      </View>
+      {onPress ? (
+        <ChevronRight size={16} color={MUTED} />
+      ) : null}
+    </View>
+  );
+
+  if (!onPress) {
+    return content;
+  }
+
+  return (
+    <PressScale onPress={onPress} contentStyle={styles.infoCellPressable}>
+      {content}
+    </PressScale>
+  );
+}
+
+// TODO: extract to src/pages/presentation/components/PageCard.tsx if reused
 function PageCard({
   page,
   onEdit,
   onOpen,
+  onMore,
+  onPressLikes,
+  onPressAddress,
   index,
 }: {
   page: PagesItem;
   onEdit?: () => void;
   onOpen: () => void;
+  onMore?: () => void;
+  onPressLikes?: () => void;
+  onPressAddress?: () => void;
   index: number;
 }) {
   const language = useAppLanguage();
   const copy = COPY[language] ?? COPY.vi;
   const showActiveBadge = Number(page.pageId) % 2 === 0;
+  const overlayText = (page.pageTitle || '').trim();
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(100 + index * 50).duration(400)}
+      entering={FadeInDown.delay(80 + index * 60).duration(420)}
       style={styles.cardContainer}
     >
+      {/* Cover with action buttons + optional text overlay */}
       <View style={styles.coverWrapper}>
         <PageCover page={page} />
-      </View>
 
-      <View style={styles.cardHeaderRow}>
-        <View style={styles.avatarContainer}>
-          <PageAvatar page={page} />
-          {showActiveBadge && <View style={styles.activeBadge} />}
-        </View>
+        {overlayText ? (
+          <View pointerEvents="none" style={styles.coverOverlay}>
+            <Text
+              style={styles.coverOverlayText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              allowFontScaling={false}
+            >
+              {overlayText.toUpperCase()}
+            </Text>
+          </View>
+        ) : null}
 
-        <View style={styles.actionButtons}>
+        {/* Top-right: edit + view page */}
+        <View style={styles.coverActions}>
           {onEdit ? (
-            <PressScale onPress={onEdit} style={styles.editBtn}>
-              <Edit3 size={17} color={TEXT} />
+            <PressScale onPress={onEdit} contentStyle={styles.editBtn}>
+              <Edit3 size={18} color={TEXT} />
             </PressScale>
           ) : null}
-          <PressScale onPress={onOpen} style={styles.viewPageBtn}>
+          <PressScale onPress={onOpen} contentStyle={styles.viewPageBtn}>
             <ExternalLink size={16} color="#FFFFFF" />
-            <Text style={styles.viewPageText}>{copy.viewPage}</Text>
+            <Text style={styles.viewPageText} numberOfLines={1}>
+              {copy.viewPage}
+            </Text>
           </PressScale>
+        </View>
+
+        {/* Top-left: more menu (optional) */}
+        {onMore ? (
+          <PressScale onPress={onMore} contentStyle={styles.coverMoreBtn}>
+            <MoreHorizontal size={20} color="#FFFFFF" />
+          </PressScale>
+        ) : null}
+
+        {/* Avatar overlap bottom-left */}
+        <View style={styles.avatarWrap}>
+          <PageAvatar page={page} />
+          {showActiveBadge ? <View style={styles.activeBadge} /> : null}
         </View>
       </View>
 
+      {/* Info section */}
       <View style={styles.infoContainer}>
-        <View style={styles.titleRow}>
-          <View style={styles.titleInfo}>
-            <View style={styles.titleTextRow}>
-              <Text style={styles.titleText} numberOfLines={1}>
-                {page.pageTitle || page.pageName || 'Trang'}
-              </Text>
-              {page.verified ? (
-                <BadgeCheck size={18} color="#3435F7" fill="#3435F7" />
-              ) : null}
-            </View>
-            {page.pageName ? (
-              <Text style={styles.handleText}>@{page.pageName}</Text>
-            ) : null}
-          </View>
-
-          <TouchableOpacity style={styles.moreBtn} activeOpacity={0.75}>
-            <MoreHorizontal size={22} color={MUTED} />
-          </TouchableOpacity>
+        <View style={styles.titleTextRow}>
+          <Text style={styles.titleText} numberOfLines={1}>
+            {page.pageTitle || page.pageName || 'Trang'}
+          </Text>
+          {page.verified ? (
+            <BadgeCheck size={18} color="#0000FF" fill="#0000FF" />
+          ) : null}
         </View>
+
+        {page.pageName ? (
+          <Text style={styles.handleText}>@{page.pageName}</Text>
+        ) : null}
 
         {page.pageDescription ? (
           <Text style={styles.descriptionText} numberOfLines={2}>
@@ -417,22 +488,20 @@ function PageCard({
           </Text>
         ) : null}
 
-        <View style={styles.pillsRow}>
-          <PressScale style={styles.likesPill}>
-            <ThumbsUp size={14} color={BRAND} fill={BRAND + '20'} />
-            <Text style={styles.likesPillText}>
-              {formatCount(page.likes)} {copy.likesSuffix}
-            </Text>
-          </PressScale>
-
-          {page.address ? (
-            <PressScale style={styles.locPill}>
-              <MapPin size={14} color={MUTED} />
-              <Text style={styles.locPillText} numberOfLines={1}>
-                {page.address}
-              </Text>
-            </PressScale>
-          ) : null}
+        {/* Info grid: 2 cells with chevron */}
+        <View style={styles.infoGrid}>
+          <PageInfoRow
+            icon={<ThumbsUp size={16} color={BRAND} fill={BRAND + '20'} />}
+            label={copy.likesCardLabel}
+            value={`${formatCount(page.likes)} ${copy.likesSuffix}`}
+            onPress={onPressLikes}
+          />
+          <PageInfoRow
+            icon={<MapPin size={16} color={MUTED} />}
+            label={copy.addressCardLabel}
+            value={page.address?.trim() || '—'}
+            onPress={page.address ? onPressAddress : undefined}
+          />
         </View>
       </View>
     </Animated.View>
@@ -488,6 +557,11 @@ function PagesScreen() {
     [navigation],
   );
 
+  const handleMorePage = useCallback((_page: PagesItem) => {
+    // TODO: wire to PageDetailMenuActionSheet / PageShareActionSheet
+    // For now, no-op (button is hidden for non-'mine' filters in renderPage).
+  }, []);
+
   const renderPage = useCallback(
     ({ item, index }: ListRenderItemInfo<PagesItem> & { index: number }) => (
       <PageCard
@@ -497,9 +571,12 @@ function PagesScreen() {
           vm.activeFilter === 'mine' ? () => handleEditPage(item) : undefined
         }
         onOpen={() => handleOpenPage(item)}
+        onMore={vm.activeFilter === 'mine' ? () => handleMorePage(item) : undefined}
+        onPressLikes={undefined}
+        onPressAddress={undefined}
       />
     ),
-    [handleEditPage, handleOpenPage, vm.activeFilter],
+    [handleEditPage, handleOpenPage, handleMorePage, vm.activeFilter],
   );
 
   return (
@@ -745,7 +822,7 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
+    borderRadius: 24,
     marginBottom: 18,
     overflow: 'hidden',
     shadowColor: '#64748B',
@@ -755,10 +832,11 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   coverWrapper: {
-    height: 142,
+    height: 180,
     width: '100%',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#0F172A',
     overflow: 'hidden',
+    position: 'relative',
   },
   coverImage: {
     width: '100%',
@@ -768,32 +846,98 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EFF2FE',
+    backgroundColor: '#1E293B',
   },
-  cardHeaderRow: {
+  coverOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 18,
+    alignItems: 'center',
+  },
+  coverOverlayText: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: 2,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+    paddingHorizontal: 16,
+  },
+  coverActions: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    marginTop: -38,
-    paddingHorizontal: 18,
+    alignItems: 'center',
+    gap: 8,
   },
-  avatarContainer: {
-    position: 'relative',
-    width: 76,
-    height: 76,
+  coverMoreBtn: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(15,23,42,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  viewPageBtn: {
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#0000FF',
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+    shadowColor: '#0000FF',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  viewPageText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  avatarWrap: {
+    position: 'absolute',
+    left: 16,
+    top: 180 - 80,
+    width: 80,
+    height: 80,
   },
   avatarImage: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     borderWidth: 4,
     borderColor: '#FFFFFF',
     backgroundColor: '#F1F5F9',
   },
   avatarPlaceholder: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     borderWidth: 4,
     borderColor: '#FFFFFF',
     backgroundColor: '#EEF2FF',
@@ -802,174 +946,110 @@ const styles = StyleSheet.create({
   },
   activeBadge: {
     position: 'absolute',
-    right: 2,
-    bottom: 2,
-    width: 15,
-    height: 15,
-    borderRadius: 7.5,
+    right: -2,
+    bottom: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: GREEN_STATUS,
     borderWidth: 2.5,
     borderColor: '#FFFFFF',
   },
-  actionButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingBottom: 4,
-  },
-  editBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  viewPageBtn: {
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: BRAND,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    shadowColor: BRAND,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  viewPageText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '900',
-  },
   infoContainer: {
-    padding: 18,
+    paddingHorizontal: 16,
     paddingTop: 12,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  titleInfo: {
-    flex: 1,
-    marginRight: 12,
+    paddingBottom: 18,
   },
   titleTextRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
   },
   titleText: {
     fontSize: 19,
     fontWeight: '900',
     color: TEXT,
-    maxWidth: '85%',
+    flexShrink: 1,
   },
   handleText: {
     fontSize: 14,
-    color: MUTED,
     fontWeight: '700',
+    color: MUTED,
     marginTop: 2,
-  },
-  moreBtn: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   descriptionText: {
     fontSize: 14,
+    fontWeight: '500',
     color: '#475569',
     lineHeight: 20,
-    fontWeight: '500',
-    marginTop: 10,
+    marginTop: 8,
   },
-  pillsRow: {
+  infoGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
     marginTop: 14,
   },
-  likesPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 100,
-    gap: 6,
+  infoCellPressable: {
+    flex: 1,
   },
-  likesPillText: {
-    color: BRAND,
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  locPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  infoCell: {
+    flex: 1,
+    minHeight: 60,
     backgroundColor: '#F1F5F9',
+    borderRadius: 16,
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 100,
-    gap: 6,
-    flexShrink: 1,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  locPillText: {
-    color: '#475569',
-    fontSize: 13,
+  infoCellIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoCellTextWrap: {
+    flex: 1,
+  },
+  infoCellLabel: {
+    fontSize: 11,
     fontWeight: '700',
-    flexShrink: 1,
+    color: MUTED,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  infoCellValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: TEXT,
+    marginTop: 2,
   },
   skeletonContainer: {
     gap: 16,
   },
   skeletonCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
+    borderRadius: 24,
     overflow: 'hidden',
-    height: 250,
+    height: 300,
   },
   skeletonCover: {
-    height: 142,
+    height: 180,
     backgroundColor: '#E2E8F0',
   },
   skeletonContent: {
-    padding: 18,
-  },
-  skeletonAvatarRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginTop: -38,
-  },
-  skeletonAvatar: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: '#CBD5E1',
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
-  },
-  skeletonActionBtn: {
-    width: 100,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#E2E8F0',
+    padding: 16,
+    paddingTop: 12,
   },
   skeletonTitle: {
     width: '50%',
     height: 18,
     backgroundColor: '#E2E8F0',
     borderRadius: 9,
-    marginTop: 12,
+    marginTop: 16,
   },
   skeletonSubtitle: {
     width: '30%',
@@ -983,7 +1063,18 @@ const styles = StyleSheet.create({
     height: 14,
     backgroundColor: '#F1F5F9',
     borderRadius: 7,
+    marginTop: 10,
+  },
+  skeletonInfoRow: {
+    flexDirection: 'row',
+    gap: 10,
     marginTop: 14,
+  },
+  skeletonInfoCell: {
+    flex: 1,
+    height: 60,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 16,
   },
   emptyContainer: {
     alignItems: 'center',

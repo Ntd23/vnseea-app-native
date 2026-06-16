@@ -329,7 +329,7 @@ function SavedPostsScreen() {
         const post = buildFeedVideoPost(item);
         (navigation as any).navigate(ROUTES.MAIN_TABS, {
           screen: ROUTES.REELS,
-          params: { initialVideoId: item.id, post },
+          params: { initialVideoId: item.id, post, source: 'saved' },
         });
       } else {
         navigation.navigate(ROUTES.POST_DETAIL, {

@@ -19,11 +19,22 @@ export type MainTabParamList = {
     | {
         initialVideoId?: string;
         post?: FeedPost;
+        source?: ReelSource;
       }
     | undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
   [ROUTES.SETTINGS]: undefined;
 };
+
+/**
+ * Where a Reels screen was opened from. Used by the back FAB to
+ * restore the user's previous surface (Page Detail, Profile, Saved,
+ * My Videos, or the Home feed) instead of always jumping to the
+ * Feed tab. Optional — when absent, the back button does a plain
+ * `goBack()` and falls back to the Feed tab only if there's
+ * nothing to pop.
+ */
+export type ReelSource = 'home' | 'profile' | 'page' | 'saved' | 'myVideos';
 
 export type RootStackParamList = {
   [ROUTES.LOGIN]: undefined;
@@ -34,6 +45,7 @@ export type RootStackParamList = {
     | {
         initialVideoId?: string;
         post?: FeedPost;
+        source?: ReelSource;
       }
     | undefined;
   [ROUTES.POST_DETAIL]: {

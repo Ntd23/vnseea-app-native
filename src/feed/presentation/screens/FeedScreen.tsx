@@ -57,7 +57,6 @@ import {
   Edit3,
   Globe,
   HeartHandshake,
-  ImageIcon,
   Lock,
   MapPin,
   MessageCircle,
@@ -69,8 +68,6 @@ import {
   Send,
   Share2,
   ShoppingBag,
-  Smile,
-  Tag,
   ThumbsUp,
   Users,
   X,
@@ -158,6 +155,7 @@ import { ProductPostCard } from '../../../product/presentation/components/Produc
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
 import type { ProductItem } from '../../../product/domain/types/product.types';
 import { PollPostCard } from '../components/PollPostCard';
+import { ComposerCard } from '../components/ComposerCard';
 import {
   feedActiveVideoIdSnapshot,
   FEED_COPY,
@@ -469,68 +467,6 @@ function FilterTabs({
             </TouchableOpacity>
           );
         })}
-      </View>
-    </View>
-  );
-}
-
-function ComposerCard({
-  onPress,
-  avatarUrl,
-  copy,
-}: {
-  onPress: () => void;
-  avatarUrl?: string;
-  copy: FeedCopy;
-}) {
-  return (
-    <View className="bg-white px-4 pb-3.5 pt-3">
-      <View className="mb-3 flex-row items-center">
-        <Avatar uri={avatarUrl ?? images.me} size={44} />
-        <TouchableOpacity
-          className="ml-3 min-h-[46px] flex-1 flex-row items-center justify-between rounded-xl border border-[#dfe3eb] bg-white px-4"
-          activeOpacity={0.8}
-          onPress={onPress}
-        >
-          <Text className="text-[14px] font-semibold text-[#667085]">
-            {copy.composerPlaceholder}
-          </Text>
-          <ImageIcon size={20} color="#0866ff" />
-        </TouchableOpacity>
-      </View>
-      <View className="flex-row items-center justify-between rounded-xl border border-[#edf0f5] bg-white px-3 py-2.5 shadow-sm">
-        <TouchableOpacity
-          className="flex-1 flex-row items-center justify-center"
-          activeOpacity={0.75}
-          onPress={onPress}
-        >
-          <ImageIcon size={18} color="#22c55e" />
-          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">
-            {copy.library}
-          </Text>
-        </TouchableOpacity>
-        <View className="h-6 w-px bg-[#dfe3eb]" />
-        <TouchableOpacity
-          className="flex-1 flex-row items-center justify-center"
-          activeOpacity={0.75}
-          onPress={onPress}
-        >
-          <Tag size={18} color="#0000ff" />
-          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">
-            {copy.tag}
-          </Text>
-        </TouchableOpacity>
-        <View className="h-6 w-px bg-[#dfe3eb]" />
-        <TouchableOpacity
-          className="flex-1 flex-row items-center justify-center"
-          activeOpacity={0.75}
-          onPress={onPress}
-        >
-          <Smile size={18} color="#f59e0b" />
-          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">
-            {copy.feeling}
-          </Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
