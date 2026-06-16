@@ -35,6 +35,7 @@ const BRAND = '#0000FF';
 function BlogDetailScreen() {
   const navigation = useNavigation<BlogDetailNav>();
   const route = useRoute<BlogDetailRoute>();
+  console.log('[BlogDetailScreen] Route params:', route.params);
   const vm = useBlogDetailViewModel(route.params.blogId);
 
   const handleShare = useCallback(async () => {

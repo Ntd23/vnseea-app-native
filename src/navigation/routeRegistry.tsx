@@ -23,11 +23,12 @@ import {
   BlogDetailScreen,
   BlogFilterCategoryScreen,
   BlogsScreen,
+  CreateBlogScreen,
 } from '../blogs';
 import { BoostedScreen } from '../boosted';
 import { CreatePageScreen, PageDetailScreen, PagesScreen } from '../pages';
 import { CreateProductScreen, MarketplaceScreen, ProductDetailScreen } from '../product';
-import { CreateEventScreen, EventsScreen } from '../events';
+import { CreateEventScreen, EventDetailScreen, EventsScreen } from '../events';
 import { CreatePollScreen } from '../poll';
 import {
   CreateGroupScreen,
@@ -156,6 +157,8 @@ export function createStackRoutes(
     { name: ROUTES.PRODUCT_DETAIL, component: ProductDetailScreen },
     { name: ROUTES.CREATE_PRODUCT, component: CreateProductScreen },
     { name: ROUTES.CREATE_EVENT, component: CreateEventScreen },
+    { name: ROUTES.EDIT_EVENT, component: CreateEventScreen },
+    { name: ROUTES.EVENT_DETAIL, component: EventDetailScreen },
     { name: ROUTES.CREATE_POLL, component: CreatePollScreen },
     { name: ROUTES.CREATE_GROUP, component: CreateGroupScreen },
     { name: ROUTES.EXPLORE_GROUPS, component: ExploreGroupsScreen },
@@ -170,6 +173,7 @@ export function createStackRoutes(
     { name: ROUTES.BLOGS, component: BlogsScreen },
     { name: ROUTES.BLOG_FILTER_CATEGORY, component: BlogFilterCategoryScreen },
     { name: ROUTES.BLOG_DETAIL, component: BlogDetailScreen },
+    { name: ROUTES.CREATE_BLOG, component: CreateBlogScreen },
     { name: ROUTES.MOVIES, component: MoviesScreen },
     { name: ROUTES.JOBS, component: JobsScreen },
     { name: ROUTES.JOB_DETAIL, component: JobDetailScreen },

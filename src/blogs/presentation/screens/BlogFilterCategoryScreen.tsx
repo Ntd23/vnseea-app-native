@@ -4,38 +4,110 @@ import {
   ScrollView,
   StatusBar,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import {
   ArrowLeft,
-  Briefcase,
+  Car,
   CheckCircle2,
-  Code2,
-  Palette,
-  Sprout,
+  Clock,
+  Eye,
+  GraduationCap,
+  Globe,
+  House,
+  Landmark,
+  Microscope,
+  PawPrint,
+  Plane,
+  Search,
+  Star,
+  Timer,
+  TrendingUp,
   Users,
+  Gamepad2,
+  Film,
+  MoreHorizontal,
+  Grid3x3,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 
 type BlogFilterNav = NativeStackNavigationProp<RootStackParamList>;
 
 const BRAND = '#0000ff';
 
+// Mapping giữa category ID và category name từ API
+const categoryMapping: Record<string, string> = {
+  vehicles: 'Xe cộ',
+  business: 'Kinh tế và Thương mại',
+  education: 'Giáo dục',
+  movies: 'Phim ảnh',
+  gaming: 'Gaming',
+  history: 'Lịch sử',
+  lifestyle: 'Cách sống',
+  pets: 'Thú cưng',
+  science: 'Khoa học',
+  sports: 'Thể thao',
+  travel: 'Du lịch',
+  people: 'Con người',
+  other: 'Khác',
+};
+
 const categories = [
-  { id: 'design', label: 'Thiết kế', count: '128 bài', Icon: Palette },
-  { id: 'tech', label: 'Công nghệ', count: '96 bài', Icon: Code2 },
-  { id: 'community', label: 'Cộng đồng', count: '74 bài', Icon: Users },
-  { id: 'business', label: 'Kinh doanh', count: '52 bài', Icon: Briefcase },
-  { id: 'growth', label: 'Phát triển', count: '38 bài', Icon: Sprout },
+  { id: 'all', label: 'Tất cả', Icon: Grid3x3 },
+  { id: 'vehicles', label: 'Xe cộ', Icon: Car },
+  { id: 'business', label: 'Kinh doanh', Icon: TrendingUp },
+  { id: 'education', label: 'Giáo dục', Icon: GraduationCap },
+  { id: 'movies', label: 'Phim ảnh', Icon: Film },
+  { id: 'gaming', label: 'Gaming', Icon: Gamepad2 },
+  { id: 'history', label: 'Lịch sử', Icon: Landmark },
+  { id: 'lifestyle', label: 'Đời sống', Icon: House },
+  { id: 'pets', label: 'Thú cưng', Icon: PawPrint },
+  { id: 'science', label: 'Khoa học', Icon: Microscope },
+  { id: 'sports', label: 'Thể thao', Icon: Users },
+  { id: 'travel', label: 'Du lịch', Icon: Plane },
+  { id: 'people', label: 'Con người', Icon: Globe },
+  { id: 'other', label: 'Khác', Icon: MoreHorizontal },
+];
+
+const sortOptions = [
+  { id: 'latest', label: 'Mới nhất', Icon: Clock },
+  { id: 'popular', label: 'Phổ biến', Icon: Star },
+  { id: 'most_viewed', label: 'Nhiều lượt xem', Icon: Eye },
+  { id: 'quick_read', label: 'Đọc nhanh', Icon: Timer },
 ];
 
 function BlogFilterCategoryScreen() {
   const navigation = useNavigation<BlogFilterNav>();
-  const [selected, setSelected] = useState('design');
+  const route = useRoute();
+  const params = route.params as { currentCategory?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined;
+  const currentCategory = params?.currentCategory;
+  const searchQuery = params?.searchQuery || '';
+  const sortBy = params?.sortBy || 'latest';
+  const myPostsOnly = params?.myPostsOnly || false;
+
+  const [selectedCategory, setSelectedCategory] = useState(currentCategory || 'all');
+  const [searchText, setSearchText] = useState(searchQuery);
+  const [selectedSort, setSelectedSort] = useState(sortBy);
+  const [showMyPostsOnly, setShowMyPostsOnly] = useState(myPostsOnly);
+
+  const handleApply = () => {
+    // Map category ID to category name for API filtering
+    const categoryToSend = selectedCategory === 'all' ? 'all' : (categoryMapping[selectedCategory] || selectedCategory);
+    navigation.replace(ROUTES.BLOGS, {
+      category: categoryToSend,
+      searchQuery: searchText,
+      sortBy: selectedSort,
+      myPostsOnly: showMyPostsOnly,
+    });
+  };
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
@@ -49,8 +121,15 @@ function BlogFilterCategoryScreen() {
         >
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text className="text-title-primary text-inverse">Danh mục</Text>
-        <View className="h-10 w-10" />
+        <Text className="text-title-primary text-inverse">Bộ lọc</Text>
+        <TouchableOpacity
+          className="flex-row items-center gap-1.5 rounded-md bg-white/20 px-2.5 py-1.5"
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate(ROUTES.CREATE_BLOG)}
+        >
+          <Grid3x3 size={16} color="#FFFFFF" />
+          <Text className="text-sm font-medium text-white">Tạo bài viết</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -58,35 +137,96 @@ function BlogFilterCategoryScreen() {
         contentContainerClassName="px-4 pb-28 pt-5"
         showsVerticalScrollIndicator={false}
       >
-        <Text className="text-heading">Lọc article theo danh mục</Text>
-        <Text className="mt-2 text-body-secondary">
-          Chọn danh mục để thu hẹp danh sách bài viết phù hợp với nội dung bạn
-          muốn đọc.
-        </Text>
+        <Text className="text-heading">Khám phá chủ đề phù hợp</Text>
 
-        <View className="mt-5 gap-3">
-          {categories.map(({ Icon, count, id, label }) => {
-            const isSelected = id === selected;
-            return (
-              <TouchableOpacity
-                key={id}
-                className={`surface-card flex-row items-center border p-4 ${
-                  isSelected ? 'border-[#0000ff]' : 'border-transparent'
-                }`}
-                activeOpacity={0.84}
-                onPress={() => setSelected(id)}
-              >
-                <View className="h-12 w-12 items-center justify-center rounded-full bg-[#0000ff]/10">
-                  <Icon size={24} color={BRAND} />
-                </View>
-                <View className="ml-4 flex-1">
-                  <Text className="text-title-primary">{label}</Text>
-                  <Text className="mt-1 text-caption-secondary">{count}</Text>
-                </View>
-                {isSelected && <CheckCircle2 size={22} color={BRAND} />}
-              </TouchableOpacity>
-            );
-          })}
+        {/* Search Input */}
+        <View className="mt-4">
+          <View className="relative">
+            <Search size={18} color="#94A3B8" className="absolute left-3 top-1/2 -translate-y-1/2" />
+            <TextInput
+              className="surface-card min-h-[44] rounded-lg border border-slate-200 px-10 text-base"
+              placeholder="Tìm tiêu đề, tác giả hoặc chủ đề"
+              placeholderTextColor="#94A3B8"
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+          </View>
+        </View>
+
+        {/* Categories */}
+        <View className="mt-6">
+          <Text className="text-body-secondary mb-3">Chủ đề</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {categories.map(({ Icon, id, label }) => {
+              const isSelected = id === selectedCategory;
+              return (
+                <TouchableOpacity
+                  key={id}
+                  className={`flex-row items-center gap-1.5 rounded-full px-3 py-2 ${
+                    isSelected ? 'bg-[#0000ff]' : 'bg-slate-100'
+                  }`}
+                  activeOpacity={0.8}
+                  onPress={() => setSelectedCategory(id)}
+                >
+                  <Icon size={14} color={isSelected ? '#FFFFFF' : '#64748B'} />
+                  <Text className={`text-sm ${isSelected ? 'text-white' : 'text-slate-700'}`}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Sort Options */}
+        <View className="mt-6">
+          <Text className="text-body-secondary mb-3">Sắp xếp</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {sortOptions.map(({ Icon, id, label }) => {
+              const isSelected = id === selectedSort;
+              return (
+                <TouchableOpacity
+                  key={id}
+                  className={`flex-row items-center gap-1.5 rounded-full px-3 py-2 ${
+                    isSelected ? 'bg-[#0000ff]' : 'bg-slate-100'
+                  }`}
+                  activeOpacity={0.8}
+                  onPress={() => setSelectedSort(id)}
+                >
+                  <Icon size={14} color={isSelected ? '#FFFFFF' : '#64748B'} />
+                  <Text className={`text-sm ${isSelected ? 'text-white' : 'text-slate-700'}`}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* My Posts Toggle */}
+        <View className="mt-6">
+          <TouchableOpacity
+            className="flex-row items-center gap-2 rounded-lg border border-slate-200 bg-white p-3"
+            activeOpacity={0.8}
+            onPress={() => setShowMyPostsOnly(!showMyPostsOnly)}
+          >
+            {showMyPostsOnly ? (
+              <ToggleRight size={20} color={BRAND} />
+            ) : (
+              <ToggleLeft size={20} color="#94A3B8" />
+            )}
+            <Text className={`text-base ${showMyPostsOnly ? 'text-[#0000ff]' : 'text-slate-700'}`}>
+              Bài viết của tôi
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Summary */}
+        <View className="mt-6 flex-row items-center gap-2 rounded-lg bg-slate-50 p-3">
+          <Search size={14} color="#94A3B8" />
+          <Text className="text-caption-secondary">
+            Đang lọc theo: {categories.find(c => c.id === selectedCategory)?.label || 'Tất cả'} / {sortOptions.find(s => s.id === selectedSort)?.label || 'Mới nhất'} {showMyPostsOnly ? '/ Bài viết của tôi' : '/ Tất cả tác giả'}
+          </Text>
         </View>
       </ScrollView>
 
@@ -94,7 +234,7 @@ function BlogFilterCategoryScreen() {
         <TouchableOpacity
           className="btn-primary min-h-[52px]"
           activeOpacity={0.86}
-          onPress={() => navigation.goBack()}
+          onPress={handleApply}
         >
           <Text className="text-title-primary text-inverse">Áp dụng</Text>
         </TouchableOpacity>

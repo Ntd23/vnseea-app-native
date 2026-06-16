@@ -2,7 +2,7 @@
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
-import type { BlogsRepository } from '../../domain/repositories/BlogsRepository';
+import type { BlogsRepository, BlogCreateData, BlogCreateResult } from '../../domain/repositories/BlogsRepository';
 import type { BlogsItem } from '../../domain/types/blogs.types';
 
 type RawRecord = Record<string, unknown>;
@@ -114,6 +114,7 @@ export function createBlogsRepository(): BlogsRepository {
       const limit = options.limit ?? 20;
 
       try {
+        console.log('[ApiBlogsRepository] getArticles called with:', options);
         const response = await apiBridge.post<ArticlesResponse>(
           apiRoutes.blogs.get,
           {
@@ -125,6 +126,7 @@ export function createBlogsRepository(): BlogsRepository {
             user_id: options.userId ? String(options.userId) : undefined,
           },
         );
+        console.log('[ApiBlogsRepository] getArticles response:', response);
 
         if (!isSuccess(response.api_status)) {
           throw new Error(
@@ -153,12 +155,15 @@ export function createBlogsRepository(): BlogsRepository {
 
     async getArticleById(blogId) {
       try {
+        console.log('[ApiBlogsRepository] getArticleById called with:', blogId);
         const response = await apiBridge.post<ArticleDetailResponse>(
           apiRoutes.blogs.getById,
           {
             blog_id: String(blogId),
           },
         );
+
+        console.log('[ApiBlogsRepository] getArticleById response:', response);
 
         if (!isSuccess(response.api_status) || !response.data) {
           throw new Error(
@@ -172,6 +177,83 @@ export function createBlogsRepository(): BlogsRepository {
       } catch (error) {
         console.warn('[ApiBlogsRepository] get article failed', error);
         throw new Error(mapError(error));
+      }
+    },
+
+    async createBlog(data: BlogCreateData): Promise<BlogCreateResult> {
+      try {
+        let response;
+        
+        if (data.thumbnailFile && data.thumbnailFile.uri) {
+          // Use multipart for file upload
+          const multipartBody: Record<string, unknown> = {
+            blog_title: data.title,
+            blog_content: data.content,
+            blog_description: data.description,
+            blog_category: data.category,
+            blog_tags: data.tags,
+            status: data.status,
+          };
+
+          // Add thumbnail file if available
+          multipartBody.thumbnail = {
+            uri: data.thumbnailFile.uri,
+            name: data.thumbnailFile.filename || `thumbnail_${Date.now()}.jpg`,
+            type: data.thumbnailFile.type || 'image/jpeg',
+          };
+
+          response = await apiBridge.multipart<{
+            api_status: number | string;
+            blog_id?: number | string;
+            status?: string;
+            url?: string;
+            errors?: {
+              error_text?: string;
+            };
+          }>(
+            apiRoutes.blogs.create || 'create-blog',
+            multipartBody,
+          );
+        } else {
+          // Use regular POST for no file
+          response = await apiBridge.post<{
+            api_status: number | string;
+            blog_id?: number | string;
+            status?: string;
+            url?: string;
+            errors?: {
+              error_text?: string;
+            };
+          }>(
+            apiRoutes.blogs.create || 'create-blog',
+            {
+              blog_title: data.title,
+              blog_content: data.content,
+              blog_description: data.description,
+              blog_category: data.category,
+              blog_tags: data.tags,
+              status: data.status,
+            },
+          );
+        }
+
+        if (!isSuccess(response.api_status)) {
+          throw new Error(
+            response.errors?.error_text ||
+              'Không thể tạo bài viết. Vui lòng thử lại.',
+          );
+        }
+
+        return {
+          id: Number(response.blog_id ?? 0),
+          status: response.status ?? 'published',
+          url: response.url ?? '',
+        };
+      } catch (error) {
+        console.warn('[ApiBlogsRepository] create blog failed', error);
+        throw new Error(
+          error instanceof Error ? error.message : 'Không thể tạo bài viết.',
+        );
       }
     },
   };

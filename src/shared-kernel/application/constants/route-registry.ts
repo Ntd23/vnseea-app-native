@@ -88,7 +88,7 @@ export const apiRoutes = {
   events: {
     get: 'get-events',
     create: 'create-event',
-    getById: 'get_event_by_id',
+    actions: 'events',
   },
   ads: {
     main: 'ads',
@@ -123,6 +123,7 @@ export const apiRoutes = {
   blogs: {
     get: 'get-articles',
     getById: 'get-blog-by-id',
+    create: 'create-blog',
   },
   photos: {
     getUserAlbums: 'get-user-albums',

@@ -665,6 +665,10 @@ function FeedHeader() {
       if (route === ROUTES.CREATE_AD) {
         navigation.navigate(ROUTES.CREATE_AD);
       }
+
+      if (route === ROUTES.CREATE_BLOG) {
+        navigation.navigate(ROUTES.CREATE_BLOG);
+      }
     },
     [navigation],
   );
