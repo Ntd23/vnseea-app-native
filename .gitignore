@@ -85,3 +85,7 @@ yarn-error.log
 .env
 .env.*
 !.env.example
+
+
+tmp/*
+duong/*
