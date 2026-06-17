@@ -1,0 +1,375 @@
+// Description: Modern bottom-sheet action menu for editing the profile —
+// "Change Cover Photo" + "Edit Public Details" + "Cancel". Uses Reanimated 3
+// for the slide-up + fade backdrop and per-row press-scale feedback.
+import React, { useEffect } from 'react';
+import {
+  Dimensions,
+  Image,
+  Modal,
+  Pressable,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Camera, ChevronRight, Edit3, X } from 'lucide-react-native';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const SPRING_CONFIG = { damping: 20, stiffness: 200, mass: 0.9 } as const;
+
+export type EditProfileActionSheetCopy = {
+  title: string;
+  subtitle: string;
+  changeCoverLabel: string;
+  changeCoverHint: string;
+  editDetailsLabel: string;
+  editDetailsHint: string;
+  cancel: string;
+};
+
+export type EditProfileActionSheetProps = {
+  visible: boolean;
+  onClose: () => void;
+  language: 'vi' | 'en';
+  avatarUrl?: string;
+  onChangeCover: () => void;
+  onEditDetails: () => void;
+  copy: EditProfileActionSheetCopy;
+};
+
+export function EditProfileActionSheet({
+  visible,
+  onClose,
+  language: _language,
+  avatarUrl,
+  onChangeCover,
+  onEditDetails,
+  copy,
+}: EditProfileActionSheetProps) {
+  const insets = useSafeAreaInsets();
+
+  // 0 = closed (hidden off-screen, backdrop transparent), 1 = open.
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    if (visible) {
+      progress.value = withSpring(1, SPRING_CONFIG);
+    } else {
+      progress.value = withTiming(0, {
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+      });
+    }
+  }, [visible, progress]);
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: progress.value * 0.5,
+  }));
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: (1 - progress.value) * SCREEN_HEIGHT }],
+  }));
+
+  if (!visible) {
+    // Returning null short-circuits the Modal + animations once dismissed.
+    return null;
+  }
+
+  const avatarInitial =
+    copy.title && copy.title.trim().length > 0
+      ? copy.title.trim().charAt(0).toUpperCase()
+      : 'U';
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Animated.View
+          pointerEvents="auto"
+          style={[
+            {
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              backgroundColor: '#000000',
+            },
+            backdropStyle,
+          ]}
+        >
+          <Pressable
+            style={{ flex: 1 }}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel={copy.cancel}
+          />
+        </Animated.View>
+
+        <Animated.View
+          style={[
+            {
+              backgroundColor: '#FFFFFF',
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              paddingTop: 8,
+              paddingBottom: insets.bottom + 16,
+              shadowColor: '#000000',
+              shadowOffset: { width: 0, height: -6 },
+              shadowOpacity: 0.18,
+              shadowRadius: 18,
+              elevation: 16,
+            },
+            sheetStyle,
+          ]}
+        >
+          {/* Grabber */}
+          <View className="items-center" style={{ paddingTop: 8 }}>
+            <View
+              style={{
+                width: 40,
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: '#E2E8F0',
+              }}
+            />
+          </View>
+
+          {/* Header */}
+          <View className="flex-row items-center justify-between px-5 pt-4 pb-3">
+            <View className="flex-row items-center flex-1" style={{ minWidth: 0 }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  overflow: 'hidden',
+                  backgroundColor: '#0000FF',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 12,
+                }}
+              >
+                {avatarUrl ? (
+                  <Image
+                    source={{ uri: avatarUrl }}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Text
+                    style={{
+                      color: '#FFFFFF',
+                      fontSize: 16,
+                      fontWeight: '800',
+                    }}
+                  >
+                    {avatarInitial}
+                  </Text>
+                )}
+              </View>
+              <View className="flex-1" style={{ minWidth: 0 }}>
+                <Text
+                  numberOfLines={2}
+                  className="text-[17px] font-extrabold text-[#050505]"
+                >
+                  {copy.title}
+                </Text>
+                <Text
+                  numberOfLines={2}
+                  className="mt-0.5 text-[12px] font-medium text-[#65676B]"
+                >
+                  {copy.subtitle}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={onClose}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={copy.cancel}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: '#F1F5F9',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginLeft: 8,
+              }}
+            >
+              <X size={16} color="#475569" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Action: Change Cover Photo */}
+          <View className="px-3">
+            <ActionRow
+              label={copy.changeCoverLabel}
+              hint={copy.changeCoverHint}
+              iconBg="#EEF0FF"
+              iconColor="#0000FF"
+              Icon={Camera}
+              onPress={onChangeCover}
+            />
+
+            <View style={{ height: 8 }} />
+
+            {/* Action: Edit Public Details */}
+            <ActionRow
+              label={copy.editDetailsLabel}
+              hint={copy.editDetailsHint}
+              iconBg="#F0F9FF"
+              iconColor="#0EA5E9"
+              Icon={Edit3}
+              onPress={onEditDetails}
+            />
+          </View>
+
+          {/* Cancel button */}
+          <View className="px-5" style={{ marginTop: 18 }}>
+            <ScalePressable
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel={copy.cancel}
+              style={{
+                height: 48,
+                borderRadius: 9999,
+                backgroundColor: '#F1F5F9',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text className="text-[15px] font-extrabold text-[#0F172A]">
+                {copy.cancel}
+              </Text>
+            </ScalePressable>
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
+type ActionRowProps = {
+  label: string;
+  hint: string;
+  iconBg: string;
+  iconColor: string;
+  Icon: React.ComponentType<{ size?: number; color?: string }>;
+  onPress: () => void;
+};
+
+function ActionRow({
+  label,
+  hint,
+  iconBg,
+  iconColor,
+  Icon,
+  onPress,
+}: ActionRowProps) {
+  return (
+    <ScalePressable
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 14,
+        borderRadius: 16,
+        backgroundColor: '#F8FAFC',
+      }}
+    >
+      <View
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 12,
+          backgroundColor: iconBg,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: 12,
+        }}
+      >
+        <Icon size={20} color={iconColor} />
+      </View>
+
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text
+          numberOfLines={2}
+          className="text-[15px] font-extrabold text-[#050505]"
+        >
+          {label}
+        </Text>
+        <Text
+          numberOfLines={2}
+          className="mt-0.5 text-[12px] font-medium text-[#65676B]"
+        >
+          {hint}
+        </Text>
+      </View>
+
+      <ChevronRight size={18} color="#94A3B8" />
+    </ScalePressable>
+  );
+}
+
+type ScalePressableProps = {
+  onPress: () => void;
+  activeOpacity?: number;
+  style?: any;
+  children: React.ReactNode;
+  accessibilityRole?: 'button';
+  accessibilityLabel?: string;
+};
+
+// Wraps any TouchableOpacity with a 1.0 → 0.97 spring press feedback.
+function ScalePressable({
+  onPress,
+  activeOpacity = 0.7,
+  style,
+  children,
+  accessibilityRole,
+  accessibilityLabel,
+}: ScalePressableProps) {
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      onPressIn={() => {
+        scale.value = withSpring(0.97, { damping: 18, stiffness: 260 });
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, { damping: 18, stiffness: 260 });
+      }}
+      activeOpacity={activeOpacity}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
+      style={style}
+    >
+      <Animated.View style={animatedStyle}>{children}</Animated.View>
+    </TouchableOpacity>
+  );
+}
