@@ -27,12 +27,13 @@ import {
   Users,
   X,
 } from 'lucide-react-native';
-import { useTranslation } from 'react-i18next';
 import { useMyPagesViewModel } from '../../../pages';
 import { useMyGroupsViewModel } from '../../../community';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useShareViewModel } from '../../../shared-kernel/application/view-models/useShareViewModel';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { getShareCopy } from '../../application/i18n/shareCopy';
 import type {
   FeedPost,
 } from '../../domain/types/feed.types';
@@ -78,7 +79,11 @@ export function FeedShareBottomSheet({
   onInternalShare,
   onShared,
 }: FeedShareBottomSheetProps) {
-  const { t } = useTranslation();
+  // Mirror the bilingual pattern used by comment / notification surfaces:
+  // useAppLanguage subscribes to the MMKV-backed language setting so the
+  // sheet re-renders the moment the user switches language in Settings.
+  const language = useAppLanguage();
+  const copy = getShareCopy(language);
   const insets = useSafeAreaInsets();
   const currentUserVm = useCurrentUserViewModel();
   const pagesVm = useMyPagesViewModel();
@@ -180,11 +185,11 @@ export function FeedShareBottomSheet({
       await copyToClipboard(post.id, 'post');
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('common.copyFailed'));
+      setError(err instanceof Error ? err.message : copy.copyFailed);
     } finally {
       setIsSharing(false);
     }
-  }, [copyToClipboard, onClose, post, t]);
+  }, [copyToClipboard, onClose, post, copy]);
 
   const handleExternalShare = useCallback(async () => {
     if (!post) return;
@@ -192,16 +197,16 @@ export function FeedShareBottomSheet({
     setError(null);
     try {
       await sharePost(post, {
-        title: t('share.sharePostTitle'),
-        subject: t('share.sharePostSubject'),
+        title: copy.sharePostTitle,
+        subject: copy.sharePostSubject,
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('common.shareFailed'));
+      setError(err instanceof Error ? err.message : copy.shareFailed);
     } finally {
       setIsSharing(false);
     }
-  }, [onClose, post, sharePost, t]);
+  }, [copy, onClose, post, sharePost]);
 
   const handleShare = useCallback(async () => {
     if (!post || isSharing) return;
@@ -209,7 +214,7 @@ export function FeedShareBottomSheet({
     setError(null);
     try {
       if (destination === 'message') {
-        throw new Error(t('share.messageUnavailable'));
+        throw new Error(copy.messageUnavailable);
       }
 
       const input: SharePostInput = {
@@ -220,13 +225,13 @@ export function FeedShareBottomSheet({
 
       if (destination === 'timeline') {
         const userId = currentUserVm.user?.userId;
-        if (!userId) throw new Error(t('share.noAccount'));
+        if (!userId) throw new Error(copy.noAccount);
         input.userId = userId;
       } else if (destination === 'page') {
-        if (!selectedPageId) throw new Error(t('share.noPages'));
+        if (!selectedPageId) throw new Error(copy.noPages);
         input.pageId = selectedPageId;
       } else if (destination === 'group') {
-        if (!selectedGroupId) throw new Error(t('share.noGroups'));
+        if (!selectedGroupId) throw new Error(copy.noGroups);
         input.groupId = selectedGroupId;
       }
 
@@ -235,12 +240,13 @@ export function FeedShareBottomSheet({
       onClose();
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : t('share.shareError'),
+        caught instanceof Error ? caught.message : copy.shareError,
       );
     } finally {
       setIsSharing(false);
     }
   }, [
+    copy,
     currentUserVm.user?.userId,
     destination,
     isSharing,
@@ -251,7 +257,6 @@ export function FeedShareBottomSheet({
     post,
     selectedGroupId,
     selectedPageId,
-    t,
   ]);
 
   if (!mounted || !post) return null;
@@ -264,7 +269,7 @@ export function FeedShareBottomSheet({
         className="absolute inset-0"
       >
         <Pressable
-          accessibilityLabel={t('share.closeAria')}
+          accessibilityLabel={copy.closeAria}
           onPress={handleClose}
           className="flex-1"
         />
@@ -284,7 +289,7 @@ export function FeedShareBottomSheet({
         <View className="flex-row items-center justify-between px-4 min-h-[52px] border-b border-slate-100">
           <View className="w-9" />
           <Text className="flex-1 text-center text-[17px] font-extrabold text-slate-900">
-            {t('share.title')}
+            {copy.title}
           </Text>
           <TouchableOpacity
             activeOpacity={0.85}
@@ -301,12 +306,12 @@ export function FeedShareBottomSheet({
           contentContainerStyle={{ padding: 16, paddingBottom: 22 }}
         >
           <Text className="mb-2 text-[14px] font-extrabold text-slate-900">
-            {t('share.orShareTo')}
+            {copy.orShareTo}
           </Text>
           <TextInput
             value={note}
             onChangeText={setNote}
-            placeholder={t('share.addNote')}
+            placeholder={copy.addNotePlaceholder}
             placeholderTextColor="#94a3b8"
             multiline
             textAlignVertical="top"
@@ -314,7 +319,7 @@ export function FeedShareBottomSheet({
           />
 
           <Text className="mb-2 text-[14px] font-extrabold text-slate-900">
-            {t('share.destination')}
+            {copy.destinationLabel}
           </Text>
           <View className="flex-row gap-2.5 mb-3">
             {DESTINATION_ITEMS.map(({ id, key, Icon }) => {
@@ -327,7 +332,7 @@ export function FeedShareBottomSheet({
                   onPress={() => {
                     setDestination(id);
                     setError(
-                      id === 'message' ? t('share.messageUnavailable') : null,
+                      id === 'message' ? copy.messageUnavailable : null,
                     );
                   }}
                   className={`flex-1 min-h-[74px] items-center justify-center rounded-2xl border px-1.5 ${
@@ -345,7 +350,7 @@ export function FeedShareBottomSheet({
                       active ? 'text-brand' : 'text-slate-500'
                     }`}
                   >
-                    {t(`share.${key}`)}
+                    {copy[key]}
                   </Text>
                 </TouchableOpacity>
               );
@@ -355,10 +360,10 @@ export function FeedShareBottomSheet({
           {destination === 'timeline' ? (
             <View className="mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3.5">
               <Text className="text-[15px] font-extrabold text-slate-900">
-                {t('share.myProfile')}
+                {copy.myProfile}
               </Text>
               <Text className="mt-1 text-[13px] font-semibold text-slate-500">
-                {t('share.myProfileDesc')}
+                {copy.myProfileDesc}
               </Text>
               <View className="mt-3 flex-row items-center rounded-[14px] border border-indigo-300 bg-indigo-50 p-2.5">
                 <Image
@@ -367,7 +372,7 @@ export function FeedShareBottomSheet({
                 />
                 <View className="ml-2.5 flex-1">
                   <Text className="text-[14px] font-extrabold text-slate-900">
-                    {currentUserVm.user?.name || t('share.myProfile')}
+                    {currentUserVm.user?.name || copy.myProfile}
                   </Text>
                   <Text className="mt-0.5 text-[12px] font-bold text-slate-500">
                     @{currentUserVm.user?.username || 'me'}
@@ -380,7 +385,7 @@ export function FeedShareBottomSheet({
           {destination === 'page' ? (
             <View className="mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3.5">
               <Text className="mb-2 text-[15px] font-extrabold text-slate-900">
-                {t('share.myPages')}
+                {copy.myPages}
               </Text>
               {pagesVm.isLoading ? (
                 <ActivityIndicator color="#0000ff" />
@@ -405,14 +410,14 @@ export function FeedShareBottomSheet({
                         className="w-[42px] h-[42px] rounded-full bg-slate-200"
                       />
                       <Text className="ml-2.5 text-[14px] font-extrabold text-slate-900">
-                        {page.pageTitle || page.pageName || t('share.destPage')}
+                        {page.pageTitle || page.pageName || copy.destPage}
                       </Text>
                     </TouchableOpacity>
                   );
                 })
               ) : (
                 <Text className="text-[13px] font-semibold text-slate-500">
-                  {pagesVm.isLoading ? t('share.loadingPages') : t('share.noPages')}
+                  {pagesVm.isLoading ? copy.loadingPages : copy.noPages}
                 </Text>
               )}
             </View>
@@ -421,7 +426,7 @@ export function FeedShareBottomSheet({
           {destination === 'group' ? (
             <View className="mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3.5">
               <Text className="mb-2 text-[15px] font-extrabold text-slate-900">
-                {t('share.myGroups')}
+                {copy.myGroups}
               </Text>
               {groupsVm.isLoading ? (
                 <ActivityIndicator color="#0000ff" />
@@ -446,14 +451,14 @@ export function FeedShareBottomSheet({
                         className="w-[42px] h-[42px] rounded-full bg-slate-200"
                       />
                       <Text className="ml-2.5 text-[14px] font-extrabold text-slate-900">
-                        {group.groupTitle || group.groupName || t('share.destGroup')}
+                        {group.groupTitle || group.groupName || copy.destGroup}
                       </Text>
                     </TouchableOpacity>
                   );
                 })
               ) : (
                 <Text className="text-[13px] font-semibold text-slate-500">
-                  {groupsVm.isLoading ? t('share.loadingGroups') : t('share.noGroups')}
+                  {groupsVm.isLoading ? copy.loadingGroups : copy.noGroups}
                 </Text>
               )}
             </View>
@@ -481,14 +486,14 @@ export function FeedShareBottomSheet({
               <View className="flex-row items-center gap-2">
                 <Share2 size={16} color="#fff" />
                 <Text className="text-[14px] font-extrabold text-white">
-                  {t('common.shareNow')}
+                  {copy.shareNow}
                 </Text>
               </View>
             )}
           </TouchableOpacity>
 
           <Text className="mb-2 text-[14px] font-extrabold text-slate-900">
-            {t('share.shareOutside')}
+            {copy.shareOutside}
           </Text>
           <View className="flex-row gap-2.5">
             <TouchableOpacity
@@ -498,7 +503,7 @@ export function FeedShareBottomSheet({
               className="flex-1 min-h-[48px] flex-row items-center justify-center rounded-[14px] border border-slate-200 bg-white"
             >
               <Text className="text-[13px] font-extrabold text-slate-600">
-                {t('common.copy')}
+                {copy.copyLink}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -508,7 +513,7 @@ export function FeedShareBottomSheet({
               className="flex-1 min-h-[48px] flex-row items-center justify-center rounded-[14px] border border-slate-200 bg-white"
             >
               <Text className="text-[13px] font-extrabold text-slate-600">
-                {t('common.more')}
+                {copy.more}
               </Text>
             </TouchableOpacity>
           </View>

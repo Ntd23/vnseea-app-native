@@ -46,3 +46,14 @@
 | `FEED-SHARE-005`      | `[ ]`  | Share outside                         | Open sheet, tap "Thêm"                              | `useShareViewModel.sharePost` invokes the native share sheet with the post title/subject; on success the bottom sheet closes and tab bar reappears.                                                         |
 | `FEED-SHARE-006`      | `[ ]`  | Internal share to timeline            | Open sheet, keep default "Chia sẻ lên dòng thời gian", tap "Chia sẻ ngay" | `onInternalShare` is called with `{ postId, destination: 'timeline', text, userId }`; on success the sheet closes, tab bar reappears, and `prependFeedPost` adds the returned post to the feed.            |
 | `FEED-SHARE-007`      | `[ ]`  | Destination disabled state            | Open sheet, tap "Nhắn tin" (message)                 | The primary action button is disabled (`opacity-40`) and `share.messageUnavailable` is shown inline.                                                                                                       |
+| `FEED-SHARE-008` (a)  | `[ ]`  | Sheet re-renders when language changes | Open sheet in `vi`, then go to Settings and switch to `en`, then return and open the sheet again | Every visible label inside `FeedShareBottomSheet` (`share.title`, `share.orShareTo`, `share.destTimeline/Page/Group/Message`, `share.myProfile`, `share.myPages`, `share.myGroups`, `share.shareOutside`, `common.shareNow`, `common.copy`, `common.more`, errors, placeholders, accessibility labels) is now rendered in English. This mirrors the bilingual behaviour of the comment / notification sheets. |
+| `FEED-SHARE-008` (b)  | `[ ]`  | Sheet re-renders on language switch back to `vi` | Switch back to `vi` in Settings and reopen the sheet | All labels return to Vietnamese in the same session without restarting the app. Confirms `useAppLanguage` subscription is wired correctly inside the sheet.                                                |
+| `FEED-SHARE-008` (c)  | `[ ]`  | Sheet language persists across restart | Set language to `en`, kill and reopen the app, then open the share sheet | Share sheet labels render in English on first paint (no Vietnamese flash), confirming `languageStorage.getLanguage()` is read by `useAppLanguage` on mount.                                                |
+
+## Share Copy (i18n source of truth)
+
+The share sheet reads its bilingual text from `src/feed/application/i18n/shareCopy.ts`. Adding a new visible string to the sheet requires:
+
+1. Add the key to the `ShareCopy` interface and both `vi` + `en` records in `shareCopy.ts`.
+2. Reference it as `copy.<key>` (not `t('share.<key>')`) inside `FeedShareBottomSheet.tsx`.
+3. Update `FEED-SHARE-008` if the new key is user-visible while the sheet is open.

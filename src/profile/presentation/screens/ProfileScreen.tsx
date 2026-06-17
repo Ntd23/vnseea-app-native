@@ -74,6 +74,7 @@ import { createPollRepository } from '../../../poll/infrastructure/repositories/
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
+import { ToastContainer, showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
 import { EditProfileActionSheet } from '../../../shared-kernel/presentation/components/EditProfileActionSheet';
 import { StoryOptionsSheet } from '../../../shared-kernel/presentation/components/StoryOptionsSheet';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -102,8 +103,10 @@ type ProfileRoute = RouteProp<RootStackParamList, typeof ROUTES.PROFILE>;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const FRIEND_ITEM_WIDTH = (SCREEN_WIDTH - 64 - 16) / 3;
 const PROFILE_POST_MEDIA_HEIGHT = Math.min(320, Math.round(SCREEN_WIDTH * 0.62));
-// 4 friends in the right column of the Details+Friends row
-const PROFILE_FRIENDS_PAGE_WIDTH = Math.floor((SCREEN_WIDTH / 2 - 32 - 12) / 4);
+// One friend tile width in a 2-col grid inside the right column of the Details+Friends row.
+// PROFILE_FRIENDS_PAGE_WIDTH = width of one "page" (2 columns) = 2 tiles + 1 gap.
+const FRIEND_TILE_WIDTH = Math.floor((SCREEN_WIDTH / 2 - 32 - 6) / 2);
+const PROFILE_FRIENDS_PAGE_WIDTH = FRIEND_TILE_WIDTH * 2 + 6;
 const PROFILE_STORY_MAX_AGE_SECONDS = 24 * 60 * 60;
 const PROFILE_POST_PAGE_SIZE = 20;
 
@@ -2340,35 +2343,49 @@ function ProfileScreen() {
                       ))}
                     </View>
                   ) : (
-                    // 5+ friends: horizontal FlatList, 4 visible at a time, swipe to next page
+                    // 5+ friends: group into pages of 4 (2 rows x 2 cols), swipe horizontally between pages
                     <FlatList
-                      data={profileFriends}
-                      keyExtractor={(item) => String(item.id)}
+                      data={Array.from({ length: Math.ceil(profileFriends.length / 4) }, (_, i) =>
+                        profileFriends.slice(i * 4, (i + 1) * 4)
+                      )}
+                      keyExtractor={(_, index) => `friends-page-${index}`}
                       horizontal
                       pagingEnabled
                       showsHorizontalScrollIndicator={false}
                       decelerationRate="fast"
                       snapToInterval={PROFILE_FRIENDS_PAGE_WIDTH}
-                      contentContainerStyle={{ gap: 4 }}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          key={String(item.id)}
-                          style={{ width: PROFILE_FRIENDS_PAGE_WIDTH }}
-                          activeOpacity={0.85}
-                          onPress={() => handleNavigateToProfile(String(item.id))}
+                      contentContainerStyle={{ gap: 0 }}
+                      renderItem={({ item: pageFriends }) => (
+                        <View
+                          style={{
+                            width: PROFILE_FRIENDS_PAGE_WIDTH,
+                            flexDirection: 'row',
+                            flexWrap: 'wrap',
+                            rowGap: 6,
+                            columnGap: 6,
+                          }}
                         >
-                          <View style={{ width: '100%', aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9', position: 'relative' }}>
-                            <Image
-                              source={{ uri: item.avatarUrl ?? FALLBACK_AVATAR }}
-                              style={{ width: '100%', height: '100%' }}
-                              resizeMode="cover"
-                            />
-                            <View style={{ position: 'absolute', bottom: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E', borderWidth: 1.5, borderColor: '#FFFFFF' }} />
-                          </View>
-                          <Text className="mt-0.5 text-center text-[10px] font-bold text-[#050505]" numberOfLines={1}>
-                            {item.name || item.username || copy.friendFallback}
-                          </Text>
-                        </TouchableOpacity>
+                          {pageFriends.map(friend => (
+                            <TouchableOpacity
+                              key={String(friend.id)}
+                              style={{ width: '48%' }}
+                              activeOpacity={0.85}
+                              onPress={() => handleNavigateToProfile(String(friend.id))}
+                            >
+                              <View style={{ width: '100%', aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F1F5F9', position: 'relative' }}>
+                                <Image
+                                  source={{ uri: friend.avatarUrl ?? FALLBACK_AVATAR }}
+                                  style={{ width: '100%', height: '100%' }}
+                                  resizeMode="cover"
+                                />
+                                <View style={{ position: 'absolute', bottom: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E', borderWidth: 1.5, borderColor: '#FFFFFF' }} />
+                              </View>
+                              <Text className="mt-0.5 text-center text-[10px] font-bold text-[#050505]" numberOfLines={1}>
+                                {friend.name || friend.username || copy.friendFallback}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
                       )}
                     />
                   )

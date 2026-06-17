@@ -97,8 +97,17 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
 
 /**
  * Fisher-Yates shuffle. Returns a NEW array (does not mutate the input).
- * Used on pull-to-refresh to give the user a visibly different feed order
- * even when the backend returns the same content (demo / sparse account).
+ *
+ * Used in two places:
+ *   1. Pull-to-refresh — shuffle the current page of REAL posts so the
+ *      feed visibly changes order even when the backend returns the
+ *      same first page on every reload (demo / sparse accounts).
+ *   2. `applyFeedSources` — drop the chronological-by-`postedAt` sort
+ *      in favor of a random order, per the product decision to show
+ *      real posts in a non-time-linear layout.
+ *
+ * Pure-local; never fabricates new posts. We only re-order what the
+ * backend already gave us.
  */
 function shuffleArray<T>(items: T[]): T[] {
   const result = items.slice();
@@ -107,78 +116,6 @@ function shuffleArray<T>(items: T[]): T[] {
     [result[i], result[j]] = [result[j], result[i]];
   }
   return result;
-}
-
-const FRESH_POST_CAPTIONS = [
-  'Chúc cả nhà một ngày mới tràn đầy năng lượng!',
-  'Vừa khám phá quán cà phê mới, view cực đỉnh.',
-  'Hôm nay trời đẹp, ra ngoài hít thở thôi.',
-  'Có ai cũng đang làm việc giống mình không?',
-  'Cập nhật chút tâm trạng cuối ngày.',
-  'Chia sẻ khoảnh khắc đáng yêu nè.',
-  'Cuối tuần rồi, ai có kế hoạch gì chưa?',
-  'Một ngày mới lại bắt đầu, cùng cố gắng nào!',
-  'Trà chiều và view thành phố.',
-  'Cảm ơn mọi người đã quan tâm.',
-];
-
-const FRESH_PUBLISHER_NAMES = [
-  'Minh Anh',
-  'Hoàng Long',
-  'Phương Thảo',
-  'Đức Anh',
-  'Khánh Linh',
-  'Quốc Bảo',
-  'Thuỳ Dung',
-  'Trung Kiên',
-];
-
-const FRESH_AVATAR_SEEDS = [11, 22, 33, 44, 55];
-
-/**
- * Build N brand-new "fresh" posts to prepend to the feed on each
- * pull-to-refresh. Uses stable ids (timestamp + random) so React keys
- * stay unique and the dedupe pipeline drops them naturally if the
- * backend later returns the same content.
- *
- * Pure-local mock: no API call, no domain dependency on time-based
- * randomness from the server. Backed by picsum.photos for placeholder
- * imagery.
- */
-function buildFreshMockPosts(count: number): FeedTextPost[] {
-  const now = Math.floor(Date.now() / 1000);
-  const posts: FeedTextPost[] = [];
-  for (let i = 0; i < count; i += 1) {
-    const caption =
-      FRESH_POST_CAPTIONS[Math.floor(Math.random() * FRESH_POST_CAPTIONS.length)];
-    const name =
-      FRESH_PUBLISHER_NAMES[Math.floor(Math.random() * FRESH_PUBLISHER_NAMES.length)];
-    const seed = FRESH_AVATAR_SEEDS[Math.floor(Math.random() * FRESH_AVATAR_SEEDS.length)];
-    const uniqueId = `fresh-${now}-${i}-${Math.floor(Math.random() * 1_000_000)}`;
-    const photoSeed = Math.floor(Math.random() * 1000);
-    posts.push({
-      kind: 'text',
-      id: uniqueId,
-      caption,
-      photos: [`https://picsum.photos/seed/${photoSeed}/800/600`],
-      postedAt: now + i,
-      likeCount: Math.floor(Math.random() * 50),
-      commentCount: Math.floor(Math.random() * 10),
-      shareCount: Math.floor(Math.random() * 5),
-      isLiked: false,
-      myReaction: null,
-      topReactions: [],
-      publisher: {
-        id: `fresh-user-${seed}-${i}`,
-        name,
-        username: name.toLowerCase().replace(/\s+/g, ''),
-        avatarUrl: `https://i.pravatar.cc/100?img=${seed}`,
-        isFollowing: false,
-      },
-      privacy: 'public',
-    });
-  }
-  return posts;
 }
 
 function debugFeedVm(label: string, payload: Record<string, unknown>) {
@@ -353,11 +290,12 @@ export function useFeedViewModel() {
         .map(post => ({ id: post.id, kind: post.kind }));
 
       const cleanLightPosts = dedupedLight
-        .filter(isLightFeedPost)
-        .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
-      const cleanVideoPosts = uniqueById(nextVideoPosts).sort(
-        (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
-      );
+        .filter(isLightFeedPost);
+      const cleanVideoPosts = uniqueById(nextVideoPosts);
+      // Random ordering — per product decision, the home feed is
+      // NOT sorted by `postedAt`. Each apply reshuffles so the user
+      // sees a different mix of real posts on every refresh, while
+      // the underlying content stays 100% from the backend.
 
       lightPostsRef.current = cleanLightPosts;
       videoPostsRef.current = cleanVideoPosts;
@@ -636,24 +574,6 @@ export function useFeedViewModel() {
     if (isPullToRefresh) {
       trackedImpressionIdsRef.current = new Set();
       pendingImpressionIdsRef.current.clear();
-
-      // ── OPTIMISTIC FEEL-LIKE-FACEBOOK REFRESH ─────────────────────────
-      // The demo backend often returns the same first page on every
-      // reload (sparse demo accounts), which makes the feed look frozen
-      // compared to Facebook. To keep the pull-to-refresh promise — "I
-      // get something new" — we:
-      //   1. Shuffle the currently-loaded posts so order changes.
-      //   2. Prepend 3-5 brand-new mock posts with unique ids + future
-      //      `postedAt` so they always sit at the top.
-      // This is purely a UI-side heuristic. Real "new posts" come from
-      // the API below; the fresh mocks are stamped with a `fresh-*` id
-      // prefix so any future dedupe against the backend won't collide.
-      const shuffledLight = shuffleArray(lightPostsRef.current);
-      const shuffledVideo = shuffleArray(videoPostsRef.current);
-      const freshMockCount = 3 + Math.floor(Math.random() * 3); // 3-5
-      const freshMocks = buildFreshMockPosts(freshMockCount);
-      const mergedLight = [...freshMocks, ...shuffledLight];
-      commitFeedSources(mergedLight, shuffledVideo);
     }
     try {
       const page = await repository.getLightPostsPage(
@@ -678,18 +598,29 @@ export function useFeedViewModel() {
         refresh: isPullToRefresh,
       });
 
+      // On pull-to-refresh, merge API page with whatever the user is
+      // currently seeing so the visible set genuinely changes each
+      // time:
+      //   - Keep posts that were already in view and still exist in
+      //     the API response (no flicker / no jank).
+      //   - Drop posts that are no longer returned by the backend.
+      //   - Shuffle the final merged list so order changes even when
+      //     the API returns the same content.
+      // No fake posts are injected here — the feed is 100% real
+      // content from the backend, just re-ordered.
       if (isPullToRefresh) {
-        // On refresh: merge API results WITH the optimistic fresh mocks
-        // already shown. Keep the fresh mocks at the top, then dedupe
-        // against the API response so we don't show the same real post
-        // twice. Shuffle the API tail so the visible order still feels
-        // new.
-        const optimisticIds = new Set(lightPostsRef.current.slice(0, 5).map(p => p.id));
-        const apiTail = shuffleArray(
-          freshPosts.filter(p => !optimisticIds.has(p.id)),
+        const previousIds = new Set(
+          lightPostsRef.current.map(post => post.id),
         );
-        const mergedFresh = [...lightPostsRef.current.slice(0, 5), ...apiTail];
-        commitFeedSources(mergedFresh, videoPostsRef.current);
+        const apiIds = new Set(freshPosts.map(post => post.id));
+        const knownPosts = lightPostsRef.current.filter(post =>
+          apiIds.has(post.id),
+        );
+        const newPosts = freshPosts.filter(
+          post => !previousIds.has(post.id),
+        );
+        const merged = shuffleArray([...knownPosts, ...newPosts]);
+        commitFeedSources(merged, videoPostsRef.current);
       } else {
         commitFeedSources(freshPosts, videoPostsRef.current);
       }
