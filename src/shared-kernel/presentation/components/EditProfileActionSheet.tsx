@@ -25,6 +25,8 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const SPRING_CONFIG = { damping: 20, stiffness: 200, mass: 0.9 } as const;
 
+const FONT_PRIMARY = 'Inter';
+
 export type EditProfileActionSheetCopy = {
   title: string;
   subtitle: string;
@@ -137,7 +139,7 @@ export function EditProfileActionSheet({
           ]}
         >
           {/* Grabber */}
-          <View className="items-center" style={{ paddingTop: 8 }}>
+          <View style={{ alignItems: 'center', paddingTop: 8 }}>
             <View
               style={{
                 width: 40,
@@ -149,8 +151,24 @@ export function EditProfileActionSheet({
           </View>
 
           {/* Header */}
-          <View className="flex-row items-center justify-between px-5 pt-4 pb-3">
-            <View className="flex-row items-center flex-1" style={{ minWidth: 0 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 20,
+              paddingTop: 16,
+              paddingBottom: 12,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                flex: 1,
+                minWidth: 0,
+              }}
+            >
               <View
                 style={{
                   width: 40,
@@ -181,16 +199,29 @@ export function EditProfileActionSheet({
                   </Text>
                 )}
               </View>
-              <View className="flex-1" style={{ minWidth: 0 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text
                   numberOfLines={2}
-                  className="text-[17px] font-extrabold text-[#050505]"
+                  style={{
+                    fontFamily: FONT_PRIMARY,
+                    fontSize: 17,
+                    fontWeight: '800',
+                    color: '#050505',
+                    includeFontPadding: false,
+                  }}
                 >
                   {copy.title}
                 </Text>
                 <Text
                   numberOfLines={2}
-                  className="mt-0.5 text-[12px] font-medium text-[#65676B]"
+                  style={{
+                    fontFamily: FONT_PRIMARY,
+                    fontSize: 12,
+                    fontWeight: '500',
+                    color: '#65676B',
+                    marginTop: 2,
+                    includeFontPadding: false,
+                  }}
                 >
                   {copy.subtitle}
                 </Text>
@@ -217,7 +248,7 @@ export function EditProfileActionSheet({
           </View>
 
           {/* Action: Change Cover Photo */}
-          <View className="px-3">
+          <View style={{ paddingHorizontal: 12 }}>
             <ActionRow
               label={copy.changeCoverLabel}
               hint={copy.changeCoverHint}
@@ -241,7 +272,7 @@ export function EditProfileActionSheet({
           </View>
 
           {/* Cancel button */}
-          <View className="px-5" style={{ marginTop: 18 }}>
+          <View style={{ paddingHorizontal: 20, marginTop: 18 }}>
             <ScalePressable
               onPress={onClose}
               accessibilityRole="button"
@@ -254,7 +285,15 @@ export function EditProfileActionSheet({
                 justifyContent: 'center',
               }}
             >
-              <Text className="text-[15px] font-extrabold text-[#0F172A]">
+              <Text
+                style={{
+                  fontFamily: FONT_PRIMARY,
+                  fontSize: 15,
+                  fontWeight: '800',
+                  color: '#0F172A',
+                  includeFontPadding: false,
+                }}
+              >
                 {copy.cancel}
               </Text>
             </ScalePressable>
@@ -314,13 +353,26 @@ function ActionRow({
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text
           numberOfLines={2}
-          className="text-[15px] font-extrabold text-[#050505]"
+          style={{
+            fontFamily: FONT_PRIMARY,
+            fontSize: 15,
+            fontWeight: '800',
+            color: '#050505',
+            includeFontPadding: false,
+          }}
         >
           {label}
         </Text>
         <Text
           numberOfLines={2}
-          className="mt-0.5 text-[12px] font-medium text-[#65676B]"
+          style={{
+            fontFamily: FONT_PRIMARY,
+            fontSize: 12,
+            fontWeight: '500',
+            color: '#65676B',
+            marginTop: 2,
+            includeFontPadding: false,
+          }}
         >
           {hint}
         </Text>
