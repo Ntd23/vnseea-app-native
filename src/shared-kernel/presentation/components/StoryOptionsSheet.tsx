@@ -1,6 +1,6 @@
-// Description: Modern bottom-sheet action menu for editing the profile —
-// "Change Cover Photo" + "Edit Public Details" + "Cancel". Uses Reanimated 3
-// for the slide-up + fade backdrop and per-row press-scale feedback.
+// Description: Bottom-sheet action menu shown when tapping a friend's story on
+// the profile screen — "View story" / "View profile" / "Cancel". Modeled after
+// EditProfileActionSheet.tsx (Reanimated 3, Modal, spring/timing, ScalePressable).
 import React, { useEffect } from 'react';
 import {
   Dimensions,
@@ -18,7 +18,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, ChevronRight, Edit3, X } from 'lucide-react-native';
+import { ChevronRight, Play, User, X } from 'lucide-react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -26,35 +26,35 @@ const SPRING_CONFIG = { damping: 20, stiffness: 200, mass: 0.9 } as const;
 
 const FONT_PRIMARY = 'Inter';
 
-export type EditProfileActionSheetCopy = {
+export type StoryOptionsSheetCopy = {
   title: string;
   subtitle: string;
-  changeCoverLabel: string;
-  changeCoverHint: string;
-  editDetailsLabel: string;
-  editDetailsHint: string;
+  viewStoryLabel: string;
+  viewStoryHint: string;
+  viewProfileLabel: string;
+  viewProfileHint: string;
   cancel: string;
 };
 
-export type EditProfileActionSheetProps = {
+export type StoryOptionsSheetProps = {
   visible: boolean;
+  story: { publisher?: { id?: string | number; name?: string; avatar?: string } } | null;
   onClose: () => void;
   language: 'vi' | 'en';
-  avatarUrl?: string;
-  onChangeCover: () => void;
-  onEditDetails: () => void;
-  copy: EditProfileActionSheetCopy;
+  onViewStory: () => void;
+  onViewProfile: () => void;
+  copy: StoryOptionsSheetCopy;
 };
 
-export function EditProfileActionSheet({
+export function StoryOptionsSheet({
   visible,
+  story,
   onClose,
   language: _language,
-  avatarUrl,
-  onChangeCover,
-  onEditDetails,
+  onViewStory,
+  onViewProfile,
   copy,
-}: EditProfileActionSheetProps) {
+}: StoryOptionsSheetProps) {
   const insets = useSafeAreaInsets();
 
   // 0 = closed (hidden off-screen, backdrop transparent), 1 = open.
@@ -84,9 +84,11 @@ export function EditProfileActionSheet({
     return null;
   }
 
+  const publisherName = story?.publisher?.name?.trim() || copy.title;
+  const avatarUri = story?.publisher?.avatar || undefined;
   const avatarInitial =
-    copy.title && copy.title.trim().length > 0
-      ? copy.title.trim().charAt(0).toUpperCase()
+    publisherName && publisherName.length > 0
+      ? publisherName.charAt(0).toUpperCase()
       : 'U';
 
   return (
@@ -174,15 +176,15 @@ export function EditProfileActionSheet({
                   height: 40,
                   borderRadius: 20,
                   overflow: 'hidden',
-                  backgroundColor: '#0000FF',
+                  backgroundColor: '#A855F7',
                   alignItems: 'center',
                   justifyContent: 'center',
                   marginRight: 12,
                 }}
               >
-                {avatarUrl ? (
+                {avatarUri ? (
                   <Image
-                    source={{ uri: avatarUrl }}
+                    source={{ uri: avatarUri }}
                     style={{ width: '100%', height: '100%' }}
                     resizeMode="cover"
                   />
@@ -247,27 +249,28 @@ export function EditProfileActionSheet({
             </Pressable>
           </View>
 
-          {/* Action: Change Cover Photo */}
+          {/* Actions */}
           <View style={{ paddingHorizontal: 12 }}>
+            {/* Action: View Story */}
             <ActionRow
-              label={copy.changeCoverLabel}
-              hint={copy.changeCoverHint}
-              iconBg="#EEF0FF"
-              iconColor="#0000FF"
-              Icon={Camera}
-              onPress={onChangeCover}
+              label={copy.viewStoryLabel}
+              hint={copy.viewStoryHint}
+              iconBg="#F0F9FF"
+              iconColor="#0EA5E9"
+              Icon={Play}
+              onPress={onViewStory}
             />
 
             <View style={{ height: 8 }} />
 
-            {/* Action: Edit Public Details */}
+            {/* Action: View Profile */}
             <ActionRow
-              label={copy.editDetailsLabel}
-              hint={copy.editDetailsHint}
-              iconBg="#F0F9FF"
-              iconColor="#0EA5E9"
-              Icon={Edit3}
-              onPress={onEditDetails}
+              label={copy.viewProfileLabel}
+              hint={copy.viewProfileHint}
+              iconBg="#F5F3FF"
+              iconColor="#A855F7"
+              Icon={User}
+              onPress={onViewProfile}
             />
           </View>
 
@@ -402,10 +405,6 @@ function ScalePressable({
     transform: [{ scale: scale.value }],
   }));
 
-  // IMPORTANT: Pressable here, NOT TouchableOpacity. Animated.View as a direct
-  // child of Pressable ensures the scale animation only affects the wrapper
-  // without re-mounting the Text children, which can cause them to render
-  // with width=0 on some Android RN versions.
   return (
     <Animated.View style={[style, animatedStyle]}>
       <Pressable

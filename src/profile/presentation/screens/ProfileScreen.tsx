@@ -52,6 +52,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -75,9 +76,11 @@ import { createStoriesRepository } from '../../../stories/infrastructure/reposit
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { EditProfileActionSheet } from '../../../shared-kernel/presentation/components/EditProfileActionSheet';
+import { StoryOptionsSheet } from '../../../shared-kernel/presentation/components/StoryOptionsSheet';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
+import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import type {
   FeedPollPost,
   FeedPost,
@@ -164,6 +167,12 @@ const PROFILE_COPY: Record<AppLanguage, {
   editDetailsLabel: string;
   editDetailsHint: string;
   sheetCancel: string;
+  viewStoryAction: string;
+  viewStoryHint: string;
+  viewProfileAction: string;
+  viewProfileHint: string;
+  storySheetTitle: (name: string) => string;
+  storySheetSubtitle: string;
   friends: string;
   findFriends: string;
   friendFallback: string;
@@ -218,6 +227,12 @@ const PROFILE_COPY: Record<AppLanguage, {
     editDetailsLabel: 'Chỉnh sữa thông tin',
     editDetailsHint: 'Tên, tiểu sử, công việc...',
     sheetCancel: 'Hủy',
+    viewStoryAction: 'Xem tin',
+    viewStoryHint: 'Xem tin của họ',
+    viewProfileAction: 'Xem trang cá nhân',
+    viewProfileHint: 'Mở hồ sơ của họ',
+    storySheetTitle: name => `Tin của ${name}`,
+    storySheetSubtitle: 'Bạn muốn làm gì?',
     friends: 'Bạn bè',
     findFriends: 'Tìm bạn bè',
     friendFallback: 'Bạn bè',
@@ -271,6 +286,12 @@ const PROFILE_COPY: Record<AppLanguage, {
     editDetailsLabel: 'Edit Details',
     editDetailsHint: 'Name, bio, work...',
     sheetCancel: 'Cancel',
+    viewStoryAction: 'View story',
+    viewStoryHint: 'Watch their story',
+    viewProfileAction: 'View profile',
+    viewProfileHint: 'Open their profile',
+    storySheetTitle: name => `${name}'s Story`,
+    storySheetSubtitle: 'What would you like to do?',
     friends: 'Friends',
     findFriends: 'Find friends',
     friendFallback: 'Friend',
@@ -1015,6 +1036,9 @@ function ProfileScreen() {
   } | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [editSheetVisible, setEditSheetVisible] = useState(false);
+
+  // Note: tab bar is hidden via direct tabBarVisibility calls in each handler below.
+  const [storyOptionsSheet, setStoryOptionsSheet] = useState<StoryItem | null>(null);
   const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(undefined);
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -1610,6 +1634,7 @@ function ProfileScreen() {
   const handleEditProfilePress = useCallback(() => {
     if (!isOwnProfile) return;
     setEditSheetVisible(true);
+    tabBarVisibility.setVisible(false);
   }, [isOwnProfile]);
 
   const handleEditCover = useCallback(() => {
@@ -1620,15 +1645,39 @@ function ProfileScreen() {
 
   const handleEditDetails = useCallback(() => {
     setEditSheetVisible(false);
+    tabBarVisibility.setVisible(true);
     setTimeout(() => navigation.navigate(ROUTES.EDIT_PROFILE), 250);
   }, [navigation]);
 
   const handleOpenFriendStory = useCallback((story: StoryItem) => {
-    navigation.navigate(ROUTES.STORY_VIEWER, {
-      stories: [story],
-      initialUserIndex: 0,
-    });
-  }, [navigation]);
+    setStoryOptionsSheet(story);
+    tabBarVisibility.setVisible(false);
+  }, []);
+
+  const handleConfirmViewStory = useCallback(() => {
+    const story = storyOptionsSheet;
+    setStoryOptionsSheet(null);
+    tabBarVisibility.setVisible(true);
+    if (story) {
+      setTimeout(() => {
+        navigation.navigate(ROUTES.STORY_VIEWER, {
+          stories: [story],
+          initialUserIndex: 0,
+        });
+      }, 250);
+    }
+  }, [storyOptionsSheet, navigation]);
+
+  const handleViewProfileFromStory = useCallback(() => {
+    const story = storyOptionsSheet;
+    setStoryOptionsSheet(null);
+    tabBarVisibility.setVisible(true);
+    if (story?.publisher?.userId) {
+      setTimeout(() => {
+        handleNavigateToProfile(String(story.publisher.userId));
+      }, 250);
+    }
+  }, [storyOptionsSheet, handleNavigateToProfile]);
 
   if (isLoading && !profile) {
     return <FullProfileSkeleton />;
@@ -1717,29 +1766,76 @@ function ProfileScreen() {
             <View style={profileMainStyles.avatarRow}>
               <View style={profileMainStyles.avatarContainer}>
                 <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.85}>
-                  <View
-                    style={[
-                      profileMainStyles.avatarBorder,
-                      {
-                        borderWidth: userStory ? 3.5 : 0,
-                        borderColor: userStory ? (userStory.hasUnseen ? '#1877F2' : '#CBD5E1') : 'transparent',
-                        padding: userStory ? 2.5 : 0,
-                      }
-                    ]}
-                  >
-                    <View style={{ width: 100, height: 100, borderRadius: 50, overflow: 'hidden', borderWidth: 4, borderColor: '#FFFFFF', backgroundColor: '#CBD5E1', position: 'relative' }}>
-                      <Image
-                        source={{ uri: avatarUrl }}
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode="cover"
-                      />
-                      {isLoadingAvatar && (
-                        <View className="absolute inset-0 bg-black/30 items-center justify-center rounded-full" style={{ zIndex: 998 }}>
-                          <ActivityIndicator size="small" color="#ffffff" />
-                        </View>
-                      )}
+                  {userStory ? (
+                    // Gradient ring avatar (sky blue → purple, or gray gradient if viewed)
+                    <View style={{ width: 110, height: 110, position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+                      <Svg width={110} height={110} style={{ position: 'absolute', top: 0, left: 0 }}>
+                        <Defs>
+                          <SvgLinearGradient
+                            id="storyRingGrad"
+                            x1="0"
+                            y1="0"
+                            x2="1"
+                            y2="1"
+                          >
+                            {userStory.hasUnseen
+                              ? [
+                                  <Stop key="s1" offset="0%" stopColor="#0EA5E9" />,
+                                  <Stop key="s2" offset="100%" stopColor="#A855F7" />,
+                                ]
+                              : [
+                                  <Stop key="s1" offset="0%" stopColor="#CBD5E1" />,
+                                  <Stop key="s2" offset="100%" stopColor="#94A3B8" />,
+                                ]}
+                          </SvgLinearGradient>
+                        </Defs>
+                        <Circle
+                          cx={55}
+                          cy={55}
+                          r={52}
+                          stroke="url(#storyRingGrad)"
+                          strokeWidth={4}
+                          fill="none"
+                        />
+                      </Svg>
+                      <View style={{ width: 96, height: 96, borderRadius: 48, overflow: 'hidden', borderWidth: 4, borderColor: '#FFFFFF', backgroundColor: '#CBD5E1', position: 'relative' }}>
+                        <Image
+                          source={{ uri: avatarUrl }}
+                          style={{ width: '100%', height: '100%' }}
+                          resizeMode="cover"
+                        />
+                        {isLoadingAvatar && (
+                          <View className="absolute inset-0 bg-black/30 items-center justify-center rounded-full" style={{ zIndex: 998 }}>
+                            <ActivityIndicator size="small" color="#ffffff" />
+                          </View>
+                        )}
+                      </View>
                     </View>
-                  </View>
+                  ) : (
+                    <View
+                      style={[
+                        profileMainStyles.avatarBorder,
+                        {
+                          borderWidth: 0,
+                          borderColor: 'transparent',
+                          padding: 0,
+                        }
+                      ]}
+                    >
+                      <View style={{ width: 100, height: 100, borderRadius: 50, overflow: 'hidden', borderWidth: 4, borderColor: '#FFFFFF', backgroundColor: '#CBD5E1', position: 'relative' }}>
+                        <Image
+                          source={{ uri: avatarUrl }}
+                          style={{ width: '100%', height: '100%' }}
+                          resizeMode="cover"
+                        />
+                        {isLoadingAvatar && (
+                          <View className="absolute inset-0 bg-black/30 items-center justify-center rounded-full" style={{ zIndex: 998 }}>
+                            <ActivityIndicator size="small" color="#ffffff" />
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
                 </TouchableOpacity>
 
                 {/* Edit Avatar Badge */}
@@ -2395,7 +2491,10 @@ function ProfileScreen() {
         </ScrollView>
         <EditProfileActionSheet
           visible={editSheetVisible}
-          onClose={() => setEditSheetVisible(false)}
+          onClose={() => {
+              setEditSheetVisible(false);
+              tabBarVisibility.setVisible(true);
+            }}
           language={language}
           avatarUrl={avatarUrl}
           onChangeCover={handleEditCover}
@@ -2407,6 +2506,28 @@ function ProfileScreen() {
             changeCoverHint: copy.changeCoverHint,
             editDetailsLabel: copy.editDetailsLabel,
             editDetailsHint: copy.editDetailsHint,
+            cancel: copy.sheetCancel,
+          }}
+        />
+        <StoryOptionsSheet
+          visible={!!storyOptionsSheet}
+          story={storyOptionsSheet ? { publisher: storyOptionsSheet.publisher } : null}
+          onClose={() => {
+              setStoryOptionsSheet(null);
+              tabBarVisibility.setVisible(true);
+            }}
+          language={language}
+          onViewStory={handleConfirmViewStory}
+          onViewProfile={handleViewProfileFromStory}
+          copy={{
+            title: copy.storySheetTitle(
+              storyOptionsSheet?.publisher?.name?.trim() || (language === 'vi' ? 'người dùng' : 'user')
+            ),
+            subtitle: copy.storySheetSubtitle,
+            viewStoryLabel: copy.viewStoryAction,
+            viewStoryHint: copy.viewStoryHint,
+            viewProfileLabel: copy.viewProfileAction,
+            viewProfileHint: copy.viewProfileHint,
             cancel: copy.sheetCancel,
           }}
         />

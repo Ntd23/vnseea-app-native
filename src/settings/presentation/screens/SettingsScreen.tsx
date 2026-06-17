@@ -76,6 +76,7 @@ import {
   languageStorage,
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -3341,6 +3342,9 @@ function SettingsScreen() {
   const handleDirectLanguageChange = useCallback(
     (lang: AppLanguage) => {
       setLanguage(lang);
+      // Keep the new i18next instance in sync with the legacy MMKV store
+      // so consumers that use `useTranslation` re-render immediately.
+      changeLocale(lang);
       Alert.alert(
         'Ngôn ngữ / Language',
         lang === 'vi' ? 'Đã đổi sang Tiếng Việt' : 'Changed to English',

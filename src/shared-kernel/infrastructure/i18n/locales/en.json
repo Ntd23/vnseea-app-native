@@ -1,0 +1,87 @@
+{
+  "common": {
+    "close": "Close",
+    "cancel": "Cancel",
+    "save": "Save",
+    "loading": "Loading...",
+    "retry": "Retry",
+    "error": "Error",
+    "share": "Share",
+    "shareNow": "Share now",
+    "sharePost": "Share post",
+    "copy": "Copy",
+    "more": "More",
+    "copied": "Link copied",
+    "copyFailed": "Could not copy link",
+    "shareFailed": "Could not share this post"
+  },
+  "feed": {
+    "like": "Like",
+    "comment": "Comment",
+    "shareAction": "Share",
+    "allPosts": "All posts",
+    "following": "Following",
+    "public": "Public",
+    "private": "Private",
+    "commentsCount": "{{count}} comments"
+  },
+  "share": {
+    "title": "Share post",
+    "closeAria": "Close share",
+    "orShareTo": "or share to",
+    "addNote": "Add a note to this share...",
+    "destination": "Share destination",
+    "destTimeline": "Timeline",
+    "destPage": "Page",
+    "destGroup": "Group",
+    "destMessage": "Message",
+    "myProfile": "My profile",
+    "myProfileDesc": "The shared post will appear on your profile timeline.",
+    "myPages": "My pages",
+    "myGroups": "My groups",
+    "sendToFriends": "Send to friends",
+    "noPages": "You do not have a page to share to.",
+    "noGroups": "You do not have a group to share to.",
+    "noChats": "You do not have any chats to share to.",
+    "loadingPages": "Loading pages...",
+    "loadingGroups": "Loading groups...",
+    "loadingChats": "Loading chats...",
+    "messageUnavailable": "Sharing to messages will be added later.",
+    "noAccount": "Could not find the current account.",
+    "shareOutside": "Share outside the app",
+    "sharePostTitle": "Share post",
+    "sharePostSubject": "Check out this post on VNSEEA",
+    "shareStoryTitle": "Share story",
+    "shareStorySubject": "Check out this story on VNSEEA",
+    "noShareTarget": "Nothing to share.",
+    "shareError": "Could not share this post."
+  },
+  "auth": {
+    "login": "Log in",
+    "register": "Sign up",
+    "forgotPassword": "Forgot password",
+    "username": "Username",
+    "password": "Password",
+    "email": "Email",
+    "submit": "Submit",
+    "back": "Back"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languageVietnamese": "Tiếng Việt",
+    "languageEnglish": "English",
+    "logout": "Log out"
+  },
+  "tabs": {
+    "feed": "Home",
+    "explore": "Explore",
+    "reels": "Reels",
+    "notifications": "Notifications",
+    "settings": "Settings"
+  },
+  "notifications": {
+    "empty": "No notifications yet",
+    "emptyDesc": "New activity will show up here"
+  }
+}

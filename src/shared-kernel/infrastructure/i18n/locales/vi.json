@@ -1,0 +1,87 @@
+{
+  "common": {
+    "close": "Đóng",
+    "cancel": "Huỷ",
+    "save": "Lưu",
+    "loading": "Đang tải...",
+    "retry": "Thử lại",
+    "error": "Lỗi",
+    "share": "Chia sẻ",
+    "shareNow": "Chia sẻ ngay",
+    "sharePost": "Chia sẻ bài viết",
+    "copy": "Sao chép",
+    "more": "Khác",
+    "copied": "Đã sao chép liên kết",
+    "copyFailed": "Không thể sao chép liên kết",
+    "shareFailed": "Không thể chia sẻ bài viết"
+  },
+  "feed": {
+    "like": "Thích",
+    "comment": "Bình luận",
+    "shareAction": "Chia sẻ",
+    "allPosts": "Tất cả bài viết",
+    "following": "Người theo dõi",
+    "public": "Công khai",
+    "private": "Riêng tư",
+    "commentsCount": "{{count}} bình luận"
+  },
+  "share": {
+    "title": "Chia sẻ bài viết",
+    "closeAria": "Đóng chia sẻ",
+    "orShareTo": "hoặc chia sẻ lên",
+    "addNote": "Thêm ghi chú cho bài chia sẻ...",
+    "destination": "Đích chia sẻ",
+    "destTimeline": "Dòng thời gian",
+    "destPage": "Trang",
+    "destGroup": "Nhóm",
+    "destMessage": "Tin nhắn",
+    "myProfile": "Trang cá nhân của tôi",
+    "myProfileDesc": "Bài chia sẻ sẽ xuất hiện trên dòng thời gian cá nhân.",
+    "myPages": "Trang của tôi",
+    "myGroups": "Nhóm của tôi",
+    "sendToFriends": "Gửi tới bạn bè",
+    "noPages": "Bạn chưa có trang để chia sẻ.",
+    "noGroups": "Bạn chưa có nhóm để chia sẻ.",
+    "noChats": "Bạn chưa có cuộc trò chuyện nào để chia sẻ.",
+    "loadingPages": "Đang tải trang...",
+    "loadingGroups": "Đang tải nhóm...",
+    "loadingChats": "Đang tải cuộc trò chuyện...",
+    "messageUnavailable": "Chia sẻ qua tin nhắn sẽ được bổ sung sau.",
+    "noAccount": "Không tìm thấy tài khoản hiện tại.",
+    "shareOutside": "Chia sẻ ngoài ứng dụng",
+    "sharePostTitle": "Chia sẻ bài viết",
+    "sharePostSubject": "Xem bài viết này từ VNSEEA",
+    "shareStoryTitle": "Chia sẻ tin",
+    "shareStorySubject": "Xem tin mới từ VNSEEA",
+    "noShareTarget": "Không có nội dung để chia sẻ.",
+    "shareError": "Không thể chia sẻ bài viết."
+  },
+  "auth": {
+    "login": "Đăng nhập",
+    "register": "Đăng ký",
+    "forgotPassword": "Quên mật khẩu",
+    "username": "Tên đăng nhập",
+    "password": "Mật khẩu",
+    "email": "Email",
+    "submit": "Gửi",
+    "back": "Quay lại"
+  },
+  "settings": {
+    "title": "Cài đặt",
+    "language": "Ngôn ngữ",
+    "languageVietnamese": "Tiếng Việt",
+    "languageEnglish": "English",
+    "logout": "Đăng xuất"
+  },
+  "tabs": {
+    "feed": "Trang chủ",
+    "explore": "Khám phá",
+    "reels": "Reels",
+    "notifications": "Thông báo",
+    "settings": "Cài đặt"
+  },
+  "notifications": {
+    "empty": "Chưa có thông báo nào",
+    "emptyDesc": "Hoạt động mới sẽ xuất hiện tại đây"
+  }
+}
