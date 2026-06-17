@@ -8,7 +8,6 @@ import {
   Modal,
   Platform,
   ScrollView,
-  StatusBar,
   Switch,
   Text,
   TextInput,
@@ -72,6 +71,7 @@ import type {
 } from '../../../navigation/types';
 import { useAuthViewModel } from '../../../auth/application/view-models/useAuthViewModel';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
   languageStorage,
   type AppLanguage,
@@ -3559,7 +3559,7 @@ function SettingsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Top App Bar */}
       <View className="surface-topbar flex-row items-center justify-between px-5 py-3">
