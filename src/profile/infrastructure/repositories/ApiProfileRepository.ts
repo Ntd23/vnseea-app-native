@@ -2,6 +2,9 @@
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { languageStorage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { getPokeCopy } from '../../../poke/application/i18n/pokeCopy';
 import { createUserRepository } from '../../../user/infrastructure/repositories/ApiUserRepository';
 import type { FollowState } from '../../../user/domain/types/user.types';
 import type { ProfileRepository } from '../../domain/repositories/ProfileRepository';
@@ -12,6 +15,17 @@ function toFollowState(status: string | undefined): FollowState {
   if (status === 'followed') return 'following';
   if (status === 'requested') return 'requested';
   return 'none';
+}
+
+function mapPokeError(error: unknown, language: AppLanguage) {
+  const message = error instanceof Error ? error.message : String(error);
+  const copy = getPokeCopy(language);
+
+  if (message.toLowerCase().includes('you can not poke your self')) return String(copy.cannotPokeSelf);
+  if (message.toLowerCase().includes('this user is poked')) return String(copy.alreadyPoked);
+  if (message.toLowerCase().includes('poke not found')) return String(copy.pokeNotFound);
+  if (message.toLowerCase().includes('you are not the poke owner')) return String(copy.notPokeOwner);
+  return message || String(copy.genericError);
 }
 
 export function createProfileRepository(): ProfileRepository {
@@ -69,13 +83,22 @@ export function createProfileRepository(): ProfileRepository {
     },
 
     async pokeUser(userId) {
-      await apiBridge.post<{
+      const response = await apiBridge.post<{
         api_status: number | string;
         message_data?: string;
+        errors?: {
+          error_text?: string;
+        };
       }>(apiRoutes.social.poke, {
         type: 'create',
         user_id: userId,
       });
+
+      if (response.api_status !== 200 && response.api_status !== '200') {
+        const errorMessage = response.errors?.error_text || response.message_data || 'Không thể poke người dùng.';
+        const language = languageStorage.getLanguage();
+        throw new Error(mapPokeError(errorMessage, language));
+      }
     },
   };
 }

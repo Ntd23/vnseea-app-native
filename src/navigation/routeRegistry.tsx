@@ -18,7 +18,7 @@ import {
   MyInfoScreen,
   SettingsScreen,
 } from '../settings';
-import { CreateAdScreen } from '../advertising';
+import { CreateAdScreen, AdDetailsScreen } from '../advertising';
 import {
   BlogDetailScreen,
   BlogFilterCategoryScreen,
@@ -69,6 +69,7 @@ import { PopularScreen } from '../popular';
 import { WithdrawalScreen } from '../withdrawal';
 import { NearbyUsersScreen } from '../user';
 import { LiveScreen, LiveRoomScreen, GoLiveScreen } from '../live';
+import { PokeScreen } from '../poke';
 
 type ScreenComponent = React.ComponentType<any>;
 type TabIconComponent = React.ComponentType<{
@@ -195,6 +196,7 @@ export function createStackRoutes(
     { name: ROUTES.SETTINGS_MESSAGES, component: MessageScreen },
     { name: ROUTES.WITHDRAWAL, component: WithdrawalScreen },
     { name: ROUTES.ADVERTISING, component: AdvertisingScreen },
+    { name: ROUTES.AD_DETAILS, component: AdDetailsScreen },
     { name: ROUTES.CREATE_AD, component: CreateAdScreen },
     { name: ROUTES.CREATE_REEL, component: CreateReelScreen },
     { name: ROUTES.CREATE_POST, component: CreatePostScreen },
@@ -207,5 +209,6 @@ export function createStackRoutes(
     { name: ROUTES.LIVE, component: LiveScreen },
     { name: ROUTES.LIVE_ROOM, component: LiveRoomScreen },
     { name: ROUTES.GO_LIVE, component: GoLiveScreen },
+    { name: ROUTES.POKE, component: PokeScreen },
   ];
 }

@@ -30,6 +30,7 @@ export type NotificationType =
   | 'accepted_request'
   | 'accept_group_chat_request'  // Người khác chấp nhận lời mời nhóm chat
   | 'declined_group_chat_request' // Người khác từ chối lời mời nhóm chat
+  | 'poked' // Người khác chọc bạn
   | string;
 
 export interface NotificationsItem {

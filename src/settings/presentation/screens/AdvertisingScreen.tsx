@@ -1,5 +1,5 @@
 // Description: Advertising screen showing the current user's real ad campaigns.
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -28,6 +28,11 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useAdvertisingViewModel } from '../../application/view-models/useAdvertisingViewModel';
 import type { AdItem } from '../../../advertising/domain/types/ads.types';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { getAdvertisingCopy } from '../../../advertising/application/i18n/advertisingCopy';
 
 const BRAND = '#0000ff';
 
@@ -39,53 +44,57 @@ function formatNumber(value: number | string | undefined) {
   return numeric.toLocaleString('vi-VN');
 }
 
-function getStatus(ad: AdItem) {
-  const status = String(ad.status ?? '');
-  if (status === '1') {
-    return { label: 'Đang chạy', color: '#16a34a', bg: '#dcfce7' };
-  }
-  if (status === '2') {
-    return { label: 'Tạm dừng', color: '#ca8a04', bg: '#fef9c3' };
-  }
-  return { label: 'Đang chờ', color: '#64748b', bg: '#f1f5f9' };
-}
-
-function getAppearsLabel(value: string) {
-  switch (value) {
-    case 'post':
-      return 'Bài viết';
-    case 'sidebar':
-      return 'Thanh bên';
-    case 'video':
-      return 'Video';
-    case 'story':
-      return 'Tin';
-    case 'entire':
-      return 'Toàn trang';
-    default:
-      return value || 'Quảng cáo';
-  }
-}
-
-function getBiddingLabel(value: string) {
-  return value === 'views' ? 'Lượt xem' : 'Lượt nhấp';
-}
-
 function isVideoMedia(url?: string) {
   return /\.(mp4|mov|m4v|avi|webm)(\?|$)/i.test(url ?? '');
+}
+
+function getStatus(ad: AdItem, copy: Record<string, string>) {
+  const status = String(ad.status ?? '');
+  if (status === '1') {
+    return { label: copy.statusRunning, color: '#16a34a', bg: '#dcfce7' };
+  }
+  if (status === '2') {
+    return { label: copy.statusPaused, color: '#ca8a04', bg: '#fef9c3' };
+  }
+  return { label: copy.statusPending, color: '#64748b', bg: '#f1f5f9' };
+}
+
+function getAppearsLabel(value: string, copy: Record<string, string>) {
+  switch (value) {
+    case 'post':
+      return copy.positionLabelPostShort;
+    case 'sidebar':
+      return copy.positionLabelSidebarShort;
+    case 'video':
+      return copy.positionLabelVideoShort;
+    case 'story':
+      return copy.positionLabelStoryShort;
+    case 'entire':
+      return copy.positionLabelEntire;
+    default:
+      return value || copy.advertisingTitle;
+  }
+}
+
+function getBiddingLabel(value: string, copy: Record<string, string>) {
+  return value === 'views' ? copy.biddingViews : copy.biddingClicks;
 }
 
 function AdCampaignCard({
   ad,
   onEdit,
   onDelete,
+  onViewDetails,
+  copy,
 }: {
   ad: AdItem;
   onEdit: (ad: AdItem) => void;
   onDelete: (ad: AdItem) => void;
+  onViewDetails: (ad: AdItem) => void;
+  copy: Record<string, string>;
 }) {
-  const status = getStatus(ad);
-  const title = ad.headline || ad.name || 'Quảng cáo';
+  const status = getStatus(ad, copy);
+  const title = ad.headline || ad.name || copy.advertisingTitle;
   const mediaUrl = ad.ad_media;
   const hasImage = Boolean(mediaUrl && !isVideoMedia(mediaUrl));
 
@@ -123,18 +132,18 @@ function AdCampaignCard({
         <View className="mt-4 flex-row flex-wrap gap-2">
           <View className="rounded-full bg-[#eef2ff] px-3 py-1">
             <Text className="text-xs font-semibold text-[#3730a3]">
-              {getAppearsLabel(ad.appears)}
+              {getAppearsLabel(ad.appears, copy)}
             </Text>
           </View>
           <View className="rounded-full bg-[#f1f5f9] px-3 py-1">
             <Text className="text-xs font-semibold text-[#475569]">
-              {getBiddingLabel(ad.bidding)}
+              {getBiddingLabel(ad.bidding, copy)}
             </Text>
           </View>
           {!!ad.budget && Number(ad.budget) > 0 && (
             <View className="rounded-full bg-[#ecfeff] px-3 py-1">
               <Text className="text-xs font-semibold text-[#0891b2]">
-                Ngân sách {formatNumber(ad.budget)}
+                {copy.budgetTag} {formatNumber(ad.budget)}
               </Text>
             </View>
           )}
@@ -147,19 +156,19 @@ function AdCampaignCard({
           <View className="w-1/3 items-center px-1">
             <Eye size={18} color="#64748b" />
             <Text className="mt-1 text-xs text-[#64748b]" numberOfLines={1}>
-              {formatNumber(ad.views)} xem
+              {formatNumber(ad.views)} {copy.views}
             </Text>
           </View>
           <View className="w-1/3 items-center px-1">
             <MousePointerClick size={18} color="#64748b" />
             <Text className="mt-1 text-xs text-[#64748b]" numberOfLines={1}>
-              {formatNumber(ad.clicks)} nhấp
+              {formatNumber(ad.clicks)} {copy.clicks}
             </Text>
           </View>
           <View className="w-1/3 items-center px-1">
             <BarChart3 size={18} color="#64748b" />
             <Text className="mt-1 text-xs text-[#64748b]" numberOfLines={1}>
-              Đã chi {formatNumber(ad.spent)}đ
+              {copy.spent} {formatNumber(ad.spent)}đ
             </Text>
           </View>
         </View>
@@ -171,18 +180,27 @@ function AdCampaignCard({
           <View className="flex-row items-center flex-1 pr-2">
             <CalendarDays size={14} color="#64748b" />
             <Text className="ml-1 text-[11px] text-[#64748b]" numberOfLines={1}>
-              {ad.start || ad.end ? `${ad.start || '...'} - ${ad.end || '...'}` : 'Không giới hạn'}
+              {ad.start || ad.end ? `${ad.start || '...'} - ${ad.end || '...'}` : copy.unlimited}
             </Text>
           </View>
 
           <View className="flex-row gap-2">
             <TouchableOpacity
               activeOpacity={0.7}
+              onPress={() => onViewDetails(ad)}
+              className="flex-row items-center rounded-lg border border-blue-200 px-3 py-1.5 bg-blue-50"
+            >
+              <BarChart3 size={14} color="#2563eb" />
+              <Text className="ml-1.5 text-xs font-semibold text-blue-600">{copy.details}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
               onPress={() => onEdit(ad)}
               className="flex-row items-center rounded-lg border border-slate-200 px-3 py-1.5 bg-slate-50"
             >
               <Edit size={14} color="#475569" />
-              <Text className="ml-1.5 text-xs font-semibold text-slate-700">Sửa</Text>
+              <Text className="ml-1.5 text-xs font-semibold text-slate-700">{copy.edit}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -191,7 +209,7 @@ function AdCampaignCard({
               className="flex-row items-center rounded-lg border border-red-200 px-3 py-1.5 bg-red-50"
             >
               <Trash2 size={14} color="#ef4444" />
-              <Text className="ml-1.5 text-xs font-semibold text-red-600">Xóa</Text>
+              <Text className="ml-1.5 text-xs font-semibold text-red-600">{copy.delete}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -203,6 +221,8 @@ function AdCampaignCard({
 function AdvertisingScreen() {
   const navigation = useNavigation<any>();
   const { ads, isLoading, isRefreshing, isDeleting, error, fetchAds, refresh, deleteAd } = useAdvertisingViewModel();
+  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const copy = getAdvertisingCopy(language);
 
   useFocusEffect(
     useCallback(() => {
@@ -212,6 +232,10 @@ function AdvertisingScreen() {
 
   const handleEdit = useCallback((ad: AdItem) => {
     navigation.navigate(ROUTES.CREATE_AD, { ad });
+  }, [navigation]);
+
+  const handleViewDetails = useCallback((ad: AdItem) => {
+    navigation.navigate(ROUTES.AD_DETAILS, { ad });
   }, [navigation]);
 
   const handleDelete = useCallback((ad: AdItem) => {
@@ -226,9 +250,9 @@ function AdvertisingScreen() {
           onPress: async () => {
             const res = await deleteAd(ad.id);
             if (res.success) {
-              Alert.alert('Thành công', 'Đã xóa quảng cáo thành công.');
+              Alert.alert('Thành công', copy.deleteSuccess);
             } else {
-              Alert.alert('Thất bại', res.error || 'Xóa quảng cáo thất bại.');
+              Alert.alert('Thất bại', res.error || copy.deleteFailed);
             }
           },
         },
@@ -250,13 +274,13 @@ function AdvertisingScreen() {
           <ArrowLeft size={22} color={BRAND} />
         </TouchableOpacity>
 
-        <Text className="text-title-primary text-[#1a1c1e]">Quảng cáo</Text>
+        <Text className="text-title-primary text-[#1a1c1e]">{copy.advertisingTitle}</Text>
 
         <TouchableOpacity
           activeOpacity={0.8}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={() => navigation.navigate(ROUTES.CREATE_AD)}>
-          <Text className="text-body-primary font-semibold text-[#0000e6]">Tạo</Text>
+          <Text className="text-body-primary font-semibold text-[#0000e6]">{copy.createAd}</Text>
         </TouchableOpacity>
       </View>
 
@@ -270,7 +294,7 @@ function AdvertisingScreen() {
         {isLoading && ads.length === 0 ? (
           <View className="flex-1 items-center justify-center px-8 py-20">
             <ActivityIndicator size="large" color={BRAND} />
-            <Text className="mt-4 text-sm text-[#64748b]">Đang tải quảng cáo...</Text>
+            <Text className="mt-4 text-sm text-[#64748b]">{copy.loadingAds}</Text>
           </View>
         ) : isEmpty ? (
           <View className="flex-1 items-center justify-center px-8 py-20">
@@ -279,12 +303,11 @@ function AdvertisingScreen() {
             </View>
 
             <Text className="text-heading mb-3 text-center text-[#1a1c1e]">
-              Chưa có quảng cáo
+              {copy.noAds}
             </Text>
 
             <Text className="text-body-secondary mb-8 text-center leading-6 text-[#64748b]">
-              {error ||
-                'Bạn chưa tạo chiến dịch quảng cáo nào. Bắt đầu tạo quảng cáo để tiếp cận thêm khách hàng.'}
+              {error || copy.noAdsDesc}
             </Text>
 
             <TouchableOpacity
@@ -293,7 +316,7 @@ function AdvertisingScreen() {
               className="btn-primary flex-row items-center gap-2 px-8 py-4">
               <Plus size={18} color="#ffffff" />
               <Text className="text-body-primary font-semibold text-white">
-                Tạo quảng cáo mới
+                {copy.createNewAd}
               </Text>
             </TouchableOpacity>
           </View>
@@ -311,6 +334,8 @@ function AdvertisingScreen() {
                 ad={ad}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                onViewDetails={handleViewDetails}
+                copy={copy}
               />
             ))}
           </View>

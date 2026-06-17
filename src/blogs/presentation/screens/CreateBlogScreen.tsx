@@ -22,6 +22,11 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { createBlogsRepository } from '../../infrastructure/repositories/ApiBlogsRepository';
 import type { BlogCreateData } from '../../domain/repositories/BlogsRepository';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { getBlogsCopy } from '../../application/i18n/blogsCopy';
 
 type CreateBlogNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -46,6 +51,8 @@ const categories = [
 function CreateBlogScreen() {
   const navigation = useNavigation<CreateBlogNav>();
   const repository = createBlogsRepository();
+  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const copy = getBlogsCopy(language);
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -97,17 +104,17 @@ function CreateBlogScreen() {
 
   const handleCreate = async () => {
     if (!title.trim() || title.length < 10) {
-      Alert.alert('Lỗi', 'Tiêu đề phải có ít nhất 10 ký tự.');
+      Alert.alert(copy.errorTitle, copy.errorTitle);
       return;
     }
 
     if (!content.trim() || content.length < 80) {
-      Alert.alert('Lỗi', 'Nội dung phải có ít nhất 80 ký tự.');
+      Alert.alert(copy.errorTitle, copy.errorContent);
       return;
     }
 
     if (!tags.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập tags cho bài viết.');
+      Alert.alert(copy.errorTitle, copy.errorCategory);
       return;
     }
 
@@ -137,7 +144,7 @@ function CreateBlogScreen() {
       const result = await repository.createBlog(data);
       Alert.alert(
         'Thành công',
-        'Bài viết đã được tạo thành công!',
+        copy.successCreate,
         [
           {
             text: 'OK',
@@ -148,7 +155,7 @@ function CreateBlogScreen() {
     } catch (error) {
       Alert.alert(
         'Lỗi',
-        error instanceof Error ? error.message : 'Không thể tạo bài viết.',
+        error instanceof Error ? error.message : copy.errorCreate,
       );
     } finally {
       setIsLoading(false);
@@ -168,7 +175,7 @@ function CreateBlogScreen() {
           >
             <ArrowLeft size={22} color="#0F172A" />
           </TouchableOpacity>
-          <Text className="ml-3 text-heading">Tạo bài viết</Text>
+          <Text className="ml-3 text-heading">{copy.createBlogTitle}</Text>
         </View>
       </View>
 
@@ -182,10 +189,10 @@ function CreateBlogScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View className="mb-6">
-            <Text className="mb-2 text-title-primary">Tiêu đề *</Text>
+            <Text className="mb-2 text-title-primary">{copy.title} *</Text>
             <TextInput
               className="surface-card min-h-[52] rounded-xl px-4 text-body-primary"
-              placeholder="Nhập tiêu đề bài viết..."
+              placeholder={copy.titlePlaceholder}
               placeholderTextColor="#94A3B8"
               value={title}
               onChangeText={setTitle}
@@ -197,7 +204,7 @@ function CreateBlogScreen() {
           </View>
 
           <View className="mb-6">
-            <Text className="mb-2 text-title-primary">Danh mục</Text>
+            <Text className="mb-2 text-title-primary">{copy.categoryLabel}</Text>
             <View className="flex-row flex-wrap gap-2">
               {categories.map((cat) => (
                 <TouchableOpacity
@@ -223,10 +230,10 @@ function CreateBlogScreen() {
           </View>
 
           <View className="mb-6">
-            <Text className="mb-2 text-title-primary">Mô tả ngắn</Text>
+            <Text className="mb-2 text-title-primary">{copy.description}</Text>
             <TextInput
               className="surface-card min-h-[52] rounded-xl px-4 text-body-primary"
-              placeholder="Mô tả ngắn về bài viết..."
+              placeholder={copy.descriptionPlaceholder}
               placeholderTextColor="#94A3B8"
               value={description}
               onChangeText={setDescription}
@@ -236,10 +243,10 @@ function CreateBlogScreen() {
           </View>
 
           <View className="mb-6">
-            <Text className="mb-2 text-title-primary">Nội dung *</Text>
+            <Text className="mb-2 text-title-primary">{copy.content} *</Text>
             <TextInput
               className="surface-card min-h-[180] rounded-xl px-4 text-body-primary"
-              placeholder="Viết nội dung bài viết tại đây..."
+              placeholder={copy.contentPlaceholder}
               placeholderTextColor="#94A3B8"
               value={content}
               onChangeText={setContent}
@@ -309,7 +316,7 @@ function CreateBlogScreen() {
             {isLoading ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text className="text-title-primary text-inverse">Đăng bài viết</Text>
+              <Text className="text-title-primary text-inverse">{copy.publish}</Text>
             )}
           </TouchableOpacity>
         </ScrollView>

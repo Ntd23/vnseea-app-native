@@ -124,6 +124,7 @@ export type RootStackParamList = {
   [ROUTES.EDIT_PROFILE]: undefined;
   [ROUTES.SETTINGS_MESSAGES]: undefined;
   [ROUTES.ADVERTISING]: undefined;
+  [ROUTES.AD_DETAILS]: { ad: AdItem };
   [ROUTES.CREATE_AD]: { ad?: AdItem } | undefined;
   [ROUTES.CREATE_REEL]: undefined;
   [ROUTES.CREATE_POST]: { page?: PagesItem } | undefined;
@@ -155,6 +156,7 @@ export type RootStackParamList = {
     liveSession?: LiveSession;
   };
   [ROUTES.GO_LIVE]: undefined;
+  [ROUTES.POKE]: undefined;
 };
 
 export type MainTabRouteName = keyof MainTabParamList;

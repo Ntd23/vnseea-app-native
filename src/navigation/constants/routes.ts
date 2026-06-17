@@ -73,6 +73,7 @@ export const ROUTES = {
   PAGE_OFFERS: 'PageOffers',
   CREATE_OFFER: 'CreateOffer',
   ADVERTISING: 'Advertising',
+  AD_DETAILS: 'AdDetails',
   CREATE_AD: 'CreateAd',
   CREATE_REEL: 'CreateReel',
   CREATE_POST: 'CreatePost',
@@ -83,6 +84,7 @@ export const ROUTES = {
   LIVE: 'Live',
   LIVE_ROOM: 'LiveRoom',
   GO_LIVE: 'GoLive',
+  POKE: 'Poke',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];

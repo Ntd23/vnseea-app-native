@@ -74,7 +74,9 @@ import { createPollRepository } from '../../../poll/infrastructure/repositories/
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
+import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { getPokeCopy } from '../../../poke/application/i18n/pokeCopy';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import type {
@@ -943,6 +945,7 @@ function ProfileScreen() {
   const language = useAppLanguage();
   const copy = PROFILE_COPY[language];
   const postCardCopy = POST_CARD_COPY[language];
+  const pokeCopy = getPokeCopy(language);
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<ProfileNav>();
   const route = useRoute<ProfileRoute>();
@@ -1559,13 +1562,17 @@ function ProfileScreen() {
     setIsPokeLoading(true);
     try {
       await pokeUser(String(targetUserId));
-      Alert.alert(
-        copy.pokeSuccessTitle,
-        copy.pokeSuccessMessage(displayName || copy.userFallback),
-      );
+      const successMsg = pokeCopy.pokeSuccessMessage;
+      const message = typeof successMsg === 'function' 
+        ? successMsg(displayName || copy.userFallback) 
+        : String(successMsg);
+      showToast({
+        message,
+        type: 'success',
+      });
     } catch (caughtError) {
-      console.error('[ProfileScreen] Failed to poke user:', caughtError);
-      Alert.alert(copy.errorTitle, copy.pokeError);
+      const errorMessage = caughtError instanceof Error ? caughtError.message : String(pokeCopy.profilePokeError);
+      showToast({ message: errorMessage, type: 'warning' });
     } finally {
       setIsPokeLoading(false);
     }
@@ -2423,6 +2430,7 @@ function ProfileScreen() {
           onClose={handleCloseShareModal}
           post={sharingPost}
         />
+        <ToastContainer />
       </View>
     </GestureHandlerRootView>
   );

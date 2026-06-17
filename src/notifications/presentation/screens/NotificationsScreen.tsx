@@ -116,6 +116,14 @@ function toGroupRouteItem(item: NotificationsItem): GroupItem {
 function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
   const type = item.type || '';
 
+  // Handle poke notifications first - navigate to profile
+  if (includesAny(type, ['poke', 'poked'])) {
+    if (item.notifierId) {
+      navigation.navigate(ROUTES.PROFILE, { userId: item.notifierId } as any);
+    }
+    return;
+  }
+
   if (item.fundingId && includesAny(type, ['fund', 'funding'])) {
     navigation.navigate(ROUTES.FUNDING_DETAIL, { fundId: item.fundingId });
     return;
