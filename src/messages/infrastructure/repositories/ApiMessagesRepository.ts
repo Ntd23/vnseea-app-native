@@ -75,6 +75,39 @@ function readBool(raw: Record<string, unknown>, ...keys: string[]): boolean {
   }
   return false;
 }
+function readUserOnline(raw: Record<string, unknown>): boolean {
+  const onlineValue = raw.online ?? raw.is_online ?? raw.isOnline;
+  if (
+    onlineValue === true ||
+    onlineValue === 'true' ||
+    onlineValue === '1' ||
+    onlineValue === 1
+  ) {
+    return true;
+  }
+
+  const status = readString(
+    raw,
+    'lastseen_status',
+    'last_seen_status',
+    'online_status',
+  ).toLowerCase();
+  if (status === 'online' || status === 'on') return true;
+  if (status === 'offline' || status === 'off') return false;
+
+  const lastseenText = readString(raw, 'lastseen').toLowerCase();
+  if (lastseenText === 'online' || lastseenText === 'on') return true;
+  if (lastseenText === 'offline' || lastseenText === 'off') return false;
+
+  const lastseen = readNumber(
+    raw,
+    'lastseen',
+    'last_seen',
+    'lastseen_unix_time',
+    'last_seen_unix_time',
+  );
+  return lastseen > 0 && lastseen > Math.floor(Date.now() / 1000) - 60;
+}
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
@@ -323,6 +356,19 @@ function readGroupUnreadCount(raw: RawRecord, groupId: string): number {
   return groupId && unreadByGroup ? readNumber(unreadByGroup, groupId) : 0;
 }
 
+function readGroupOnline(raw: RawRecord): boolean {
+  const sessionUserId = sessionStorage.getSession()?.userId ?? '';
+  const parts = Array.isArray(raw.parts) ? raw.parts : [];
+
+  return parts.some(part => {
+    const member = asRecord(part);
+    if (!member) return false;
+    const memberId = readString(member, 'user_id', 'id');
+    if (!memberId || memberId === sessionUserId) return false;
+    return readUserOnline(member);
+  });
+}
+
 function mapChat(raw: Record<string, unknown>): ChatItem {
   const chatTypeValue = readString(raw, 'chat_type');
   const chatType: ChatItem['chatType'] =
@@ -387,7 +433,10 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
       chatType === 'group'
         ? readGroupUnreadCount(raw, chatId)
         : readNumber(raw, 'message_count', 'unread', 'messages_count'),
-    isOnline: readBool(userData, 'online'),
+    isOnline:
+      chatType === 'group'
+        ? readGroupOnline(raw)
+        : readUserOnline(userData),
     isVerified: readBool(userData, 'verified'),
   };
 }
@@ -477,8 +526,15 @@ function mergeChats(...chatLists: ChatItem[][]): ChatItem[] {
     const key =
       chat.chatType === 'user' ? `${chat.chatType}:${chat.userId}` : chat.id;
     const current = chats.get(key);
-    if (!current || chat.lastMessageTime >= current.lastMessageTime) {
+    if (!current) {
       chats.set(key, chat);
+    } else if (chat.lastMessageTime >= current.lastMessageTime) {
+      chats.set(key, chat);
+    } else {
+      chats.set(key, {
+        ...current,
+        isOnline: chat.isOnline,
+      });
     }
   }
   return [...chats.values()].sort(
@@ -533,6 +589,7 @@ async function fetchAdditionalCachedChats(
     const response = await apiBridge.post<GetChatsResponse>(
       apiRoutes.messages.chats,
       {
+        SetOnline: 1,
         data_type: config.dataType,
         [config.limitKey]: CHAT_PAGE_SIZE,
         [config.offsetKey]: offset,
@@ -551,6 +608,7 @@ async function fetchCachedChats() {
   const response = await apiBridge.post<GetChatsResponse>(
     apiRoutes.messages.chats,
     {
+      SetOnline: 1,
       user_limit: CHAT_PAGE_SIZE,
       group_limit: CHAT_PAGE_SIZE,
       page_limit: CHAT_PAGE_SIZE,
@@ -570,6 +628,7 @@ async function fetchLatestCachedChats() {
   const response = await apiBridge.post<GetChatsResponse>(
     apiRoutes.messages.chats,
     {
+      SetOnline: 1,
       user_limit: 20,
       group_limit: 20,
       page_limit: 20,
@@ -626,6 +685,7 @@ async function fetchUnreadUserChats() {
   const response = await apiBridge.post<GetChatsResponse>(
     apiRoutes.messages.chats,
     {
+      SetOnline: 1,
       data_type: 'users',
       user_limit: CHAT_PAGE_SIZE,
     },
@@ -748,7 +808,7 @@ function mapGroupMember(raw: RawRecord, ownerId: string): GroupChatMember {
     avatar: readString(raw, 'avatar', 'profile_picture'),
     isOwner: userId === ownerId,
     isAdmin: readBool(raw, 'is_admin') || userId === ownerId,
-    isOnline: readBool(raw, 'online'),
+    isOnline: readUserOnline(raw),
   };
 }
 function mapAddableUser(raw: RawRecord): GroupAddableUser {
@@ -757,7 +817,7 @@ function mapAddableUser(raw: RawRecord): GroupAddableUser {
     name: getRawUserName(raw),
     username: readString(raw, 'username'),
     avatar: readString(raw, 'avatar', 'profile_picture'),
-    isOnline: readBool(raw, 'online'),
+    isOnline: readUserOnline(raw),
   };
 }
 

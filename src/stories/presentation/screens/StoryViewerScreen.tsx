@@ -637,7 +637,9 @@ function StoryViewerScreen({ route }: Props) {
                 </Text>
               </View>
             )}
-            <View style={styles.onlineDot} />
+            {currentStory.publisher.isOnline ? (
+              <View style={styles.onlineDot} />
+            ) : null}
           </View>
           <View style={styles.headerText}>
             <Text style={styles.headerName} numberOfLines={1}>

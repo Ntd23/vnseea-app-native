@@ -51,6 +51,7 @@ import type {
   MessageLabel,
 } from '../../domain/types/messages.types';
 import { useStoriesViewModel } from '../../../stories';
+import type { StoryItem } from '../../../stories';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
@@ -259,11 +260,32 @@ function getMessagePreview(
   }
 }
 
-// Online indicator dot
-function OnlineDot({ isOnline }: { isOnline: boolean }) {
-  if (!isOnline) return null;
+type PresenceStatus = 'online' | 'offline' | 'hidden';
+
+// Presence indicator dot
+function PresenceDot({
+  status,
+  size = 14,
+}: {
+  status: PresenceStatus;
+  size?: number;
+}) {
+  if (status === 'hidden') return null;
+
+  const borderWidth = Math.max(2, Math.round(size * 0.15));
+
   return (
-    <View className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
+    <View
+      className="absolute bottom-0 right-0"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth,
+        borderColor: '#ffffff',
+        backgroundColor: status === 'online' ? '#22c55e' : '#94a3b8',
+      }}
+    />
   );
 }
 
@@ -408,7 +430,7 @@ function ChatListItem({
     >
       <View className="relative">
         <UserAvatar uri={chat.avatar} name={chat.name} size={56} />
-        <OnlineDot isOnline={chat.isOnline} />
+        <PresenceDot status={chat.isOnline ? 'online' : 'offline'} />
       </View>
 
       <View className="ml-3 flex-1 border-b border-gray-100 py-2">
@@ -728,7 +750,13 @@ function HeaderActions() {
 }
 
 // Messenger-style Stories row below search bar
-function StoriesBubbleRow({ createStoryLabel }: { createStoryLabel: string }) {
+function StoriesBubbleRow({
+  chats,
+  createStoryLabel,
+}: {
+  chats: ChatItem[];
+  createStoryLabel: string;
+}) {
   const navigation = useNavigation<MessagesNav>();
   const storiesVm = useStoriesViewModel();
 
@@ -739,14 +767,41 @@ function StoriesBubbleRow({ createStoryLabel }: { createStoryLabel: string }) {
     navigation.navigate(ROUTES.CREATE_STORY);
   }, [navigation]);
 
+  const onlineByUserId = useMemo(() => {
+    const statuses = new Map<string, boolean>();
+    for (const chat of chats) {
+      if (chat.chatType === 'user' && chat.userId) {
+        statuses.set(chat.userId, chat.isOnline);
+      }
+    }
+    return statuses;
+  }, [chats]);
+
+  const stories = useMemo<StoryItem[]>(
+    () =>
+      storiesVm.stories.map(story => {
+        const knownOnline = onlineByUserId.get(story.publisher.userId);
+        if (knownOnline === undefined) return story;
+
+        return {
+          ...story,
+          publisher: {
+            ...story.publisher,
+            isOnline: knownOnline,
+          },
+        };
+      }),
+    [onlineByUserId, storiesVm.stories],
+  );
+
   const goToViewerForGroup = useCallback(
     (index: number) => {
       navigation.navigate(ROUTES.STORY_VIEWER, {
-        stories: storiesVm.stories,
+        stories,
         initialUserIndex: index,
       });
     },
-    [navigation, storiesVm.stories],
+    [navigation, stories],
   );
 
   return (
@@ -786,7 +841,7 @@ function StoriesBubbleRow({ createStoryLabel }: { createStoryLabel: string }) {
         </TouchableOpacity>
 
         {/* Stories from Friends */}
-        {storiesVm.stories.map((story, index) => {
+        {stories.map((story, index) => {
           const hasUnseen = story.hasUnseen && !story.isViewed;
 
           return (
@@ -798,7 +853,7 @@ function StoriesBubbleRow({ createStoryLabel }: { createStoryLabel: string }) {
               style={{ width: 68 }}
             >
               <View
-                className={`h-[60px] w-[60px] items-center justify-center rounded-full border-2 ${
+                className={`relative h-[60px] w-[60px] items-center justify-center rounded-full border-2 ${
                   hasUnseen ? 'border-blue-500' : 'border-gray-200'
                 } p-[2px]`}
               >
@@ -806,6 +861,10 @@ function StoriesBubbleRow({ createStoryLabel }: { createStoryLabel: string }) {
                   source={{ uri: story.publisher.avatarUrl }}
                   className="h-full w-full rounded-full"
                   resizeMode="cover"
+                />
+                <PresenceDot
+                  status={story.publisher.isOnline ? 'online' : 'hidden'}
+                  size={13}
                 />
               </View>
               <Text
@@ -1275,7 +1334,7 @@ function MessageScreen() {
         onChangeText={setQuery}
         placeholder={copy.searchPlaceholder}
       />
-      <StoriesBubbleRow createStoryLabel={copy.createStory} />
+      <StoriesBubbleRow chats={chats} createStoryLabel={copy.createStory} />
       <ChatFilters
         value={activeFilter}
         onChange={setActiveFilter}
