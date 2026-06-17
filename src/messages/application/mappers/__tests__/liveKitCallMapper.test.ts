@@ -56,8 +56,11 @@ describe('liveKitCallMapper', () => {
       active: false,
       finished: true,
       startedAt: 1700000000,
+      startedAtMs: 1700000000000,
       serverNow: 1700000042,
+      serverNowMs: 1700000042000,
       elapsedSeconds: 42,
+      elapsedMs: 42000,
     });
   });
 

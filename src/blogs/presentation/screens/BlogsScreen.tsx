@@ -30,6 +30,11 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { useBlogsViewModel } from '../../application/view-models/useBlogsViewModel';
 import type { BlogsItem } from '../../domain/types/blogs.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { getBlogsCopy } from '../../application/i18n/blogsCopy';
 
 type BlogsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -64,10 +69,12 @@ function EmptyState({
   error,
   onRetry,
   onCreate,
+  copy,
 }: {
   error: string | null;
   onRetry: () => void;
   onCreate: () => void;
+  copy: Record<string, string>;
 }) {
   return (
     <View className="items-center px-6 py-16">
@@ -79,10 +86,10 @@ function EmptyState({
         )}
       </View>
       <Text className="mt-5 text-center text-heading">
-        {error ? 'Không tải được bài viết' : 'Chưa có bài viết'}
+        {error ? copy.error : copy.noBlogs}
       </Text>
       <Text className="mt-2 text-center text-body-secondary">
-        {error ?? 'Các bài viết mới sẽ xuất hiện tại đây.'}
+        {error ?? copy.noBlogsDesc}
       </Text>
       <TouchableOpacity
         className="btn-primary mt-6 min-h-[46px] rounded-xl px-6"
@@ -95,7 +102,7 @@ function EmptyState({
           <Plus size={18} color="#FFFFFF" />
         )}
         <Text className="text-title-primary text-inverse">
-          {error ? 'Thử lại' : 'Tạo bài viết'}
+          {error ? 'Thử lại' : copy.createBlog}
         </Text>
       </TouchableOpacity>
     </View>
@@ -105,9 +112,11 @@ function EmptyState({
 function ArticleCard({
   article,
   onOpen,
+  copy,
 }: {
   article: BlogsItem;
   onOpen: () => void;
+  copy: Record<string, string>;
 }) {
   return (
     <TouchableOpacity
@@ -152,13 +161,13 @@ function ArticleCard({
           <View className="flex-row items-center">
             <Clock3 size={15} color={BRAND} />
             <Text className="ml-2 text-caption-secondary">
-              {article.postedLabel || 'Mới đăng'}
+              {article.postedLabel || copy.date}
             </Text>
           </View>
           <View className="flex-row items-center">
             <Eye size={15} color={BRAND} />
             <Text className="ml-2 text-caption-secondary">
-              {formatCount(article.views)} lượt xem
+              {formatCount(article.views)} {copy.views}
             </Text>
           </View>
         </View>
@@ -172,7 +181,16 @@ function BlogsScreen() {
   const route = useRoute();
   const vm = useBlogsViewModel();
   const [searchText, setSearchText] = useState('');
+  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const copy = getBlogsCopy(language);
   const previousParams = useRef<{ category?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined>(undefined);
+  const {
+    handleCategoryChange,
+    handleSearchChange: handleViewModelSearchChange,
+    handleSortChange,
+    handleMyPostsOnlyChange,
+    loadFirstPage,
+  } = vm;
 
   useFocusEffect(
     useCallback(() => {
@@ -186,38 +204,50 @@ function BlogsScreen() {
         params?.sortBy !== previousParams.current?.sortBy ||
         params?.myPostsOnly !== previousParams.current?.myPostsOnly;
       
-      // Chỉ gọi loadFirstPage khi có params thay đổi
+      // Chỉ gọi loadFirstPage khi có params thay đổi hoặc lần đầu tiên load
       let shouldLoad = false;
       
       if (params?.category !== undefined) {
         console.log('[BlogsScreen] Setting category:', params.category === 'all' ? null : params.category);
-        vm.handleCategoryChange(params.category === 'all' ? null : params.category);
+        handleCategoryChange(params.category === 'all' ? null : params.category);
         shouldLoad = true;
       }
       if (params?.searchQuery !== undefined) {
         console.log('[BlogsScreen] Setting search query:', params.searchQuery);
-        vm.handleSearchChange(params.searchQuery);
+        handleViewModelSearchChange(params.searchQuery);
         setSearchText(params.searchQuery);
         shouldLoad = true;
       }
       if (params?.sortBy) {
         console.log('[BlogsScreen] Setting sort by:', params.sortBy);
-        vm.handleSortChange(params.sortBy);
+        handleSortChange(params.sortBy);
         shouldLoad = true;
       }
       if (params?.myPostsOnly !== undefined) {
         console.log('[BlogsScreen] Setting my posts only:', params.myPostsOnly);
-        vm.handleMyPostsOnlyChange(params.myPostsOnly);
+        handleMyPostsOnlyChange(params.myPostsOnly);
         shouldLoad = true;
       }
       
+      // Load data on first focus or when params change
       if (shouldLoad && paramsChanged) {
-        console.log('[BlogsScreen] Loading first page');
-        void vm.loadFirstPage(false);
+        console.log('[BlogsScreen] Loading first page due to params change');
+        void loadFirstPage(false);
+      } else if (previousParams.current === undefined) {
+        // Initial load when no params exist
+        console.log('[BlogsScreen] Initial load - loading first page');
+        void loadFirstPage(false);
       }
       
       previousParams.current = params;
-    }, [route.params]),
+    }, [
+      route.params,
+      handleCategoryChange,
+      handleViewModelSearchChange,
+      handleSortChange,
+      handleMyPostsOnlyChange,
+      loadFirstPage,
+    ]),
   );
 
   const handleSearchChange = useCallback((text: string) => {
@@ -233,7 +263,7 @@ function BlogsScreen() {
   const openFilter = useCallback(() => {
     navigation.navigate(ROUTES.BLOG_FILTER_CATEGORY, {
       currentCategory: vm.selectedCategory,
-      searchQuery: vm.searchQuery,
+      searchQuery: vm.searchQuery || undefined,
       sortBy: vm.sortBy,
       myPostsOnly: vm.myPostsOnly,
     });
@@ -251,9 +281,10 @@ function BlogsScreen() {
           console.log('[BlogsScreen] Opening blog detail:', { blogId: item.id, id: item.id });
           navigation.navigate(ROUTES.BLOG_DETAIL, { blogId: item.id });
         }}
+        copy={copy}
       />
     ),
-    [navigation],
+    [navigation, copy],
   );
 
   return (
@@ -270,7 +301,7 @@ function BlogsScreen() {
             >
               <ArrowLeft size={22} color="#0F172A" />
             </TouchableOpacity>
-            <Text className="ml-3 text-heading">Bài viết</Text>
+            <Text className="ml-3 text-heading">{copy.blogsTitle}</Text>
           </View>
 
           <View className="flex-row items-center gap-2">
@@ -350,6 +381,7 @@ function BlogsScreen() {
               error={vm.error}
               onRetry={vm.retry}
               onCreate={openCreateBlog}
+              copy={copy}
             />
           ) : null
         }

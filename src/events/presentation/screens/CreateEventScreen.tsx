@@ -33,6 +33,11 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { getEventsCopy } from '../../application/i18n/eventsCopy';
 
 type CreateEventNav = NativeStackNavigationProp<RootStackParamList>;
 type CreateEventRoute = RouteProp<
@@ -57,6 +62,8 @@ function CreateEventScreen() {
   const editingEvent = 'event' in (route.params ?? {}) ? route.params?.event : undefined;
   const isEditing = Boolean(editingEvent?.id);
   const { isCreating, isUpdating, createEvent, updateEvent } = useEventsViewModel();
+  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const copy = getEventsCopy(language);
 
   const parseDate = (value?: string): Date | null => {
     if (!value) return null;
@@ -234,7 +241,7 @@ function CreateEventScreen() {
       console.log('[CreateEventScreen] Submit event result:', result.success);
       if (result.success) {
         showToast({
-          message: isEditing ? 'Cập nhật sự kiện thành công!' : 'Tạo sự kiện thành công!',
+          message: isEditing ? copy.updateSuccess : copy.createSuccess,
           type: 'success',
         });
         setTimeout(() => {
@@ -242,7 +249,7 @@ function CreateEventScreen() {
         }, 1500);
       } else {
         showToast({
-          message: result.error ?? 'Không thể lưu sự kiện. Vui lòng thử lại.',
+          message: result.error ?? copy.errorSave,
           type: 'error',
         });
       }
@@ -257,13 +264,13 @@ function CreateEventScreen() {
           <View className="gap-5">
             <View>
               <Text className="mb-2 text-label-primary text-slate-500">
-                Tên sự kiện
+                {copy.eventName}
               </Text>
               <View className="input-shell flex-row px-4 min-h-[54px] items-center">
                 <PartyPopper size={20} color="#64748B" />
                 <TextInput
                   className="ml-3 flex-1 text-body-primary"
-                  placeholder="Nhập tên sự kiện"
+                  placeholder={copy.eventNamePlaceholder}
                   placeholderTextColor="#94A3B8"
                   value={formData.name}
                   onChangeText={(text: string) => setFormData(prev => ({ ...prev, name: text }))}
@@ -281,7 +288,7 @@ function CreateEventScreen() {
             {/* Start Date */}
             <View>
               <Text className="mb-2 text-label-primary text-slate-500">
-                Ngày bắt đầu
+                {copy.startDate}
               </Text>
               <TouchableOpacity
                 className="input-shell flex-row px-4 min-h-[54px] items-center"
@@ -294,7 +301,7 @@ function CreateEventScreen() {
                     formData.startDate ? 'text-[#050505]' : 'text-[#94A3B8]'
                   }`}
                 >
-                  {formData.startDate ? formatDate(formData.startDate) : 'Chọn ngày'}
+                  {formData.startDate ? formatDate(formData.startDate) : copy.selectDate}
                 </Text>
                 {formData.startDate && (
                   <TouchableOpacity
@@ -309,7 +316,7 @@ function CreateEventScreen() {
             {/* Start Time */}
             <View>
               <Text className="mb-2 text-label-primary text-slate-500">
-                Giờ bắt đầu
+                {copy.startTime}
               </Text>
               <TouchableOpacity
                 className="input-shell flex-row px-4 min-h-[54px] items-center"
@@ -322,7 +329,7 @@ function CreateEventScreen() {
                     formData.startTime ? 'text-[#050505]' : 'text-[#94A3B8]'
                   }`}
                 >
-                  {formData.startTime ? formatTime(formData.startTime) : 'Chọn giờ'}
+                  {formData.startTime ? formatTime(formData.startTime) : copy.selectTime}
                 </Text>
                 {formData.startTime && (
                   <TouchableOpacity
@@ -343,7 +350,7 @@ function CreateEventScreen() {
             {/* End Date */}
             <View>
               <Text className="mb-2 text-label-primary text-slate-500">
-                Ngày kết thúc
+                {copy.endDate}
               </Text>
               <TouchableOpacity
                 className="input-shell flex-row px-4 min-h-[54px] items-center"
@@ -356,7 +363,7 @@ function CreateEventScreen() {
                     formData.endDate ? 'text-[#050505]' : 'text-[#94A3B8]'
                   }`}
                 >
-                  {formData.endDate ? formatDate(formData.endDate) : 'Chọn ngày'}
+                  {formData.endDate ? formatDate(formData.endDate) : copy.selectDate}
                 </Text>
                 {formData.endDate && (
                   <TouchableOpacity
@@ -371,7 +378,7 @@ function CreateEventScreen() {
             {/* End Time */}
             <View>
               <Text className="mb-2 text-label-primary text-slate-500">
-                Giờ kết thúc
+                {copy.endTime}
               </Text>
               <TouchableOpacity
                 className="input-shell flex-row px-4 min-h-[54px] items-center"
@@ -384,7 +391,7 @@ function CreateEventScreen() {
                     formData.endTime ? 'text-[#050505]' : 'text-[#94A3B8]'
                   }`}
                 >
-                  {formData.endTime ? formatTime(formData.endTime) : 'Chọn giờ'}
+                  {formData.endTime ? formatTime(formData.endTime) : copy.selectTime}
                 </Text>
                 {formData.endTime && (
                   <TouchableOpacity
@@ -425,14 +432,14 @@ function CreateEventScreen() {
                   </TouchableOpacity>
                 </View>
                 <Text className="mt-3 text-center text-title-primary text-brand">
-                  Đổi ảnh khác
+                  {copy.changeImage}
                 </Text>
               </View>
             ) : (
               <>
                 <ImagePlus size={48} color="#0000FF" />
                 <Text className="mt-4 text-title-primary text-brand">
-                  Chọn ảnh từ thư viện
+                  {copy.selectImage}
                 </Text>
               </>
             )}
@@ -445,13 +452,13 @@ function CreateEventScreen() {
           <View className="gap-5">
             <View>
               <Text className="mb-2 text-label-primary text-slate-500">
-                Vị trí sự kiện
+                {copy.eventLocation}
               </Text>
               <View className="input-shell flex-row px-4 min-h-[54px] items-center">
                 <MapPin size={20} color="#64748B" />
                 <TextInput
                   className="ml-3 flex-1 text-body-primary"
-                  placeholder="Chọn vị trí"
+                  placeholder={copy.selectLocation}
                   placeholderTextColor="#94A3B8"
                   value={formData.location}
                   onChangeText={(text: string) => setFormData(prev => ({ ...prev, location: text }))}
@@ -467,12 +474,12 @@ function CreateEventScreen() {
           <View className="gap-5">
             <View>
               <Text className="mb-2 text-label-primary text-slate-500">
-                Mô tả sự kiện
+                {copy.eventDescription}
               </Text>
               <View className="input-shell min-h-[190px] items-start py-3 px-4">
                 <TextInput
                   className="flex-1 w-full text-body-primary"
-                  placeholder="Nhập mô tả tại đây"
+                  placeholder={copy.descriptionPlaceholder}
                   placeholderTextColor="#94A3B8"
                   multiline
                   textAlignVertical="top"
@@ -491,24 +498,24 @@ function CreateEventScreen() {
 
   function getStepTitle(): string {
     switch (step) {
-      case 0: return 'Tên sự kiện';
-      case 1: return 'Thời gian bắt đầu';
-      case 2: return 'Thời gian kết thúc';
-      case 3: return 'Ảnh sự kiện';
-      case 4: return 'Vị trí';
-      case 5: return 'Mô tả sự kiện';
+      case 0: return copy.eventName;
+      case 1: return copy.startTimeTitle;
+      case 2: return copy.endTimeTitle;
+      case 3: return copy.eventImage;
+      case 4: return copy.locationTitle;
+      case 5: return copy.eventDescription;
       default: return '';
     }
   }
 
   function getStepHelper(): string {
     switch (step) {
-      case 0: return 'Đặt tên ngắn gọn, rõ ràng cho sự kiện của bạn.';
-      case 1: return 'Chọn ngày và giờ bắt đầu cho sự kiện.';
-      case 2: return 'Chọn thời điểm kết thúc để khách mời nắm lịch.';
-      case 3: return 'Chọn ảnh nổi bật để sự kiện hấp dẫn hơn.';
-      case 4: return 'Thêm địa điểm hoặc nơi tổ chức sự kiện.';
-      case 5: return 'Mô tả nội dung, agenda hoặc thông tin cần biết.';
+      case 0: return copy.step0Helper;
+      case 1: return copy.step1Helper;
+      case 2: return copy.step2Helper;
+      case 3: return copy.step3Helper;
+      case 4: return copy.step4Helper;
+      case 5: return copy.step5Helper;
       default: return '';
     }
   }
@@ -537,9 +544,9 @@ function CreateEventScreen() {
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
         <Text className="text-heading text-inverse">
-          {isEditing ? 'Sửa sự kiện' : 'Tạo sự kiện'}
+          {isEditing ? copy.editEvent : copy.createEvent}
         </Text>
-        <Text className="text-title-primary text-inverse">{`Bước ${step + 1}/6`}</Text>
+        <Text className="text-title-primary text-inverse">{`${copy.step} ${step + 1}/6`}</Text>
       </View>
 
       <ScrollView
@@ -552,7 +559,7 @@ function CreateEventScreen() {
             <View className="progress-fill" style={{ width: progress as any }} />
           </View>
           <Text className="mt-2 text-right text-caption-secondary">
-            {progress} hoàn thành
+            {progress} {copy.completed}
           </Text>
         </View>
 
@@ -572,8 +579,7 @@ function CreateEventScreen() {
           <View className="form-note-panel mt-6 flex-row items-start p-4">
             <Info size={20} color="#64748B" />
             <Text className="ml-3 flex-1 text-caption-secondary">
-              Sau khi hoàn tất, sự kiện sẽ hiển thị trên feed và trang sự kiện
-              của bạn.
+              {copy.infoNote}
             </Text>
           </View>
         </View>
@@ -590,7 +596,7 @@ function CreateEventScreen() {
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text className="text-title-primary text-inverse">
-              {step === 5 ? (isEditing ? 'Lưu thay đổi' : 'Hoàn tất') : 'Tiếp tục'}
+              {step === 5 ? (isEditing ? copy.saveChanges : copy.complete) : copy.next}
             </Text>
           )}
         </TouchableOpacity>
@@ -603,9 +609,9 @@ function CreateEventScreen() {
             <View className="bg-white rounded-t-2xl p-4">
               <View className="flex-row justify-between items-center mb-4">
                 <TouchableOpacity onPress={() => setShowStartDatePicker(false)}>
-                  <Text className="text-[#65676B]">Hủy</Text>
+                  <Text className="text-[#65676B]">{copy.cancel}</Text>
                 </TouchableOpacity>
-                <Text className="text-title-primary font-semibold">Chọn ngày bắt đầu</Text>
+                <Text className="text-title-primary font-semibold">{copy.selectStartDate}</Text>
                 <TouchableOpacity onPress={() => setShowStartDatePicker(false)}>
                   <Check size={24} color="#0000FF" />
                 </TouchableOpacity>
@@ -640,9 +646,9 @@ function CreateEventScreen() {
             <View className="bg-white rounded-t-2xl p-4">
               <View className="flex-row justify-between items-center mb-4">
                 <TouchableOpacity onPress={() => setShowStartTimePicker(false)}>
-                  <Text className="text-[#65676B]">Hủy</Text>
+                  <Text className="text-[#65676B]">{copy.cancel}</Text>
                 </TouchableOpacity>
-                <Text className="text-title-primary font-semibold">Chọn giờ bắt đầu</Text>
+                <Text className="text-title-primary font-semibold">{copy.selectStartTime}</Text>
                 <TouchableOpacity onPress={() => setShowStartTimePicker(false)}>
                   <Check size={24} color="#0000FF" />
                 </TouchableOpacity>
@@ -675,9 +681,9 @@ function CreateEventScreen() {
             <View className="bg-white rounded-t-2xl p-4">
               <View className="flex-row justify-between items-center mb-4">
                 <TouchableOpacity onPress={() => setShowEndDatePicker(false)}>
-                  <Text className="text-[#65676B]">Hủy</Text>
+                  <Text className="text-[#65676B]">{copy.cancel}</Text>
                 </TouchableOpacity>
-                <Text className="text-title-primary font-semibold">Chọn ngày kết thúc</Text>
+                <Text className="text-title-primary font-semibold">{copy.selectEndDate}</Text>
                 <TouchableOpacity onPress={() => setShowEndDatePicker(false)}>
                   <Check size={24} color="#0000FF" />
                 </TouchableOpacity>
@@ -712,9 +718,9 @@ function CreateEventScreen() {
             <View className="bg-white rounded-t-2xl p-4">
               <View className="flex-row justify-between items-center mb-4">
                 <TouchableOpacity onPress={() => setShowEndTimePicker(false)}>
-                  <Text className="text-[#65676B]">Hủy</Text>
+                  <Text className="text-[#65676B]">{copy.cancel}</Text>
                 </TouchableOpacity>
-                <Text className="text-title-primary font-semibold">Chọn giờ kết thúc</Text>
+                <Text className="text-title-primary font-semibold">{copy.selectEndTime}</Text>
                 <TouchableOpacity onPress={() => setShowEndTimePicker(false)}>
                   <Check size={24} color="#0000FF" />
                 </TouchableOpacity>

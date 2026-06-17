@@ -81,10 +81,16 @@ export type RootStackParamList = {
   [ROUTES.CREATE_PAGE]: undefined;
   [ROUTES.EDIT_PAGE]: { page: PagesItem };
   [ROUTES.MARKETPLACE]: undefined;
+  [ROUTES.MY_PRODUCTS]:
+    | {
+        initialTab?: 'products' | 'purchased' | 'orders';
+      }
+    | undefined;
   [ROUTES.PRODUCT_DETAIL]: {
     productId: number;
     product?: ProductItem;
   };
+  [ROUTES.CHECKOUT]: undefined;
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;
   [ROUTES.EDIT_EVENT]: { event: EventsItem };
@@ -124,6 +130,7 @@ export type RootStackParamList = {
   [ROUTES.EDIT_PROFILE]: undefined;
   [ROUTES.SETTINGS_MESSAGES]: undefined;
   [ROUTES.ADVERTISING]: undefined;
+  [ROUTES.AD_DETAILS]: { ad: AdItem };
   [ROUTES.CREATE_AD]: { ad?: AdItem } | undefined;
   [ROUTES.CREATE_REEL]: undefined;
   [ROUTES.CREATE_POST]: { page?: PagesItem } | undefined;
@@ -155,6 +162,7 @@ export type RootStackParamList = {
     liveSession?: LiveSession;
   };
   [ROUTES.GO_LIVE]: undefined;
+  [ROUTES.POKE]: undefined;
 };
 
 export type MainTabRouteName = keyof MainTabParamList;

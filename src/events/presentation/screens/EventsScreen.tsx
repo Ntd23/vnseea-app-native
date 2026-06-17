@@ -25,6 +25,11 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
 import type { EventsItem } from '../../domain/types/events.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { getEventsCopy } from '../../application/i18n/eventsCopy';
 
 type EventsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -55,15 +60,17 @@ function EventCard({
   event,
   onPress,
   onEditPress,
+  copy,
 }: {
   event: EventsItem;
   onPress?: () => void;
   onEditPress?: () => void;
+  copy: Record<string, string>;
 }) {
   const { day, month } = formatEventDate(event.start_date ?? event.event_start_date);
   // Check if current user is the owner of this event (poster_id matches current user)
   const isOwner = event.is_owner === true;
-  const title = event.name ?? event.event_name ?? 'Sự kiện';
+  const title = event.name ?? event.event_name ?? copy.eventTitle;
   const location = event.location ?? event.event_location;
   const startTime = event.start_time ?? event.event_start_time;
   const cover = event.cover ?? event.event_cover;
@@ -123,7 +130,7 @@ function EventCard({
               onPress={onEditPress}
             >
               <Edit3 size={14} color="#FFFFFF" />
-              <Text className="ml-1 text-caption-primary text-white font-semibold">Sửa</Text>
+              <Text className="ml-1 text-caption-primary text-white font-semibold">{copy.edit}</Text>
             </TouchableOpacity>
           ) : (
             <View className="flex-row gap-2">
@@ -135,7 +142,7 @@ function EventCard({
                 }}
               >
                 <Text className="text-caption-primary text-brand font-semibold">
-                  {event.is_going ? 'Đã tham gia' : 'Tham gia'}
+                  {event.is_going ? copy.joined : copy.join}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -146,7 +153,7 @@ function EventCard({
                 }}
               >
                 <Text className="text-caption-primary text-[#f59e0b] font-semibold">
-                  {event.is_interested ? 'Đã quan tâm' : 'Quan tâm'}
+                  {event.is_interested ? copy.interested : copy.interest}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -161,6 +168,8 @@ function EventsScreen() {
   const navigation = useNavigation<EventsNav>();
   const { events, isLoading, fetchEvents, fetchMyEvents } = useEventsViewModel();
   const [activeTab, setActiveTab] = useState<'all' | 'my'>('all');
+  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const copy = getEventsCopy(language);
 
   useFocusEffect(useCallback(() => {
     // Load events based on active tab
@@ -188,7 +197,7 @@ function EventsScreen() {
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
         <Text className="text-title-primary text-inverse">
-          {activeTab === 'my' ? 'Sự kiện của tôi' : 'Sự kiện'}
+          {activeTab === 'my' ? copy.myEvents : copy.eventsTitle}
         </Text>
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"
@@ -224,7 +233,7 @@ function EventsScreen() {
             onPress={() => handleTabPress('all')}
           >
             <Text className={activeTab === 'all' ? 'text-caption-primary text-inverse' : 'text-caption-secondary'}>
-              Tất cả
+              {copy.all}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -232,7 +241,7 @@ function EventsScreen() {
             onPress={() => handleTabPress('my')}
           >
             <Text className={activeTab === 'my' ? 'text-caption-primary text-inverse' : 'text-caption-secondary'}>
-              Của tôi
+              {copy.my}
             </Text>
           </TouchableOpacity>
         </View>
@@ -241,7 +250,7 @@ function EventsScreen() {
         {isLoading && events.length === 0 && (
           <View className="items-center justify-center py-20">
             <ActivityIndicator size="large" color={BRAND} />
-            <Text className="mt-4 text-body-secondary">Đang tải sự kiện...</Text>
+            <Text className="mt-4 text-body-secondary">{copy.loading}</Text>
           </View>
         )}
 
@@ -249,9 +258,9 @@ function EventsScreen() {
         {!isLoading && events.length === 0 && (
           <View className="items-center justify-center py-20">
             <CalendarDays size={64} color="#CBD5E1" />
-            <Text className="mt-4 text-title-primary">Chưa có sự kiện nào</Text>
+            <Text className="mt-4 text-title-primary">{copy.noEvents}</Text>
             <Text className="mt-2 text-center text-body-secondary">
-              Tạo sự kiện mới để bắt đầu
+              {copy.noEventsDesc}
             </Text>
             <TouchableOpacity
               className="btn-primary mt-6 min-h-[48px] px-8"
@@ -259,7 +268,7 @@ function EventsScreen() {
               onPress={() => navigation.navigate(ROUTES.CREATE_EVENT)}
             >
               <Plus size={20} color="#FFFFFF" />
-              <Text className="ml-2 text-title-primary text-inverse">Tạo sự kiện</Text>
+              <Text className="ml-2 text-title-primary text-inverse">{copy.createEvent}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -275,6 +284,7 @@ function EventsScreen() {
             onEditPress={() => {
               navigation.navigate(ROUTES.EDIT_EVENT, { event });
             }}
+            copy={copy}
           />
         ))}
       </ScrollView>
