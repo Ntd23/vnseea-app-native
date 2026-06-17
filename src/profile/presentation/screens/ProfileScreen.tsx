@@ -74,7 +74,7 @@ import { createPollRepository } from '../../../poll/infrastructure/repositories/
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
-import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { EditProfileActionSheet } from '../../../shared-kernel/presentation/components/EditProfileActionSheet';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getPokeCopy } from '../../../poke/application/i18n/pokeCopy';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
@@ -158,6 +158,13 @@ const PROFILE_COPY: Record<AppLanguage, {
   followingText: (count: number) => string;
   pointsText: (count: number) => string;
   editPublicDetails: string;
+  editProfileSheetTitle: string;
+  editProfileSheetSubtitle: string;
+  changeCoverLabel: string;
+  changeCoverHint: string;
+  editDetailsLabel: string;
+  editDetailsHint: string;
+  sheetCancel: string;
   friends: string;
   findFriends: string;
   friendFallback: string;
@@ -182,53 +189,59 @@ const PROFILE_COPY: Record<AppLanguage, {
   pokeError: string;
 }> = {
   vi: {
-    userFallback: 'NgÆ°á»i dùng',
-    dashboard: 'Báº£ng Ä‘iá»u khiá»ƒn',
+    userFallback: 'Người dùng',
+    dashboard: 'Bảng điều khiển',
     addToStory: 'Thêm vào tin',
     followed: 'Đã theo dõi',
-    message: 'Nháº¯n tin',
-    poke: 'Chá»c',
-    requestSent: 'Đã gá»­i yêu cáº§u',
-    sending: 'Đang gá»­i...',
+    message: 'Nhắn tin',
+    poke: 'Chọc',
+    requestSent: 'Đã gửi yêu cầu',
+    sending: 'Đang gửi...',
     follow: 'Theo dõi',
     stories: 'Tin',
-    storySegments: count => `${count} Ä‘oáº¡n tin`,
+    storySegments: count => `${count} đoạn tin`,
     viewStory: 'Xem tin',
-    createStory: 'Táº¡o tin',
-    details: 'Chi tiáº¿t',
+    createStory: 'Tạo tin',
+    details: 'Chi tiết',
     member: 'Thành viên',
     vipMember: 'Thành viên VIP Member',
-    worksAt: value => `Làm viá»‡c táº¡i ${value}`,
-    livesAt: value => `Sá»‘ng táº¡i ${value}`,
-    activeNow: 'Đang hoáº¡t Ä‘á»™ng',
-    followersText: count => `Có ${count} ngÆ°á»i theo dõi`,
-    followingText: count => `Đang theo dõi ${count} ngÆ°á»i`,
-    pointsText: count => `Tích lÅ©y ${count} Ä‘iá»ƒm`,
-    editPublicDetails: 'Chá»‰nh sá»­a chi tiáº¿t công khai',
-    friends: 'Báº¡n bè',
-    findFriends: 'Tìm báº¡n bè',
-    friendFallback: 'Báº¡n bè',
-    seeAll: 'Xem táº¥t cáº£',
-    composerPlaceholder: 'Báº¡n Ä‘ang nghĩ gì?',
-    goLive: 'Phát trá»±c tiáº¿p',
-    photoVideo: 'áº¢nh/video',
-    lifeEvent: 'Sá»± kiá»‡n trong Ä‘á»i',
-    posts: 'Bài viáº¿t',
-    manage: 'Quáº£n lý',
-    loadPostsError: 'Lá»—i táº£i bài viáº¿t',
-    noPosts: 'ChÆ°a có bài viáº¿t nào',
-    edit: 'Chá»‰nh sá»­a',
-    avatarOptionsTitle: 'Tùy chá»n áº£nh Ä‘áº¡i diá»‡n',
-    cancel: 'Há»§y',
-    errorTitle: 'Lá»—i',
-    reactionError: 'Không thá»ƒ cáº­p nháº­t cáº£m xúc. Vui lòng thá»­ láº¡i.',
-    voteError: 'Không thá»ƒ gá»­i phiáº¿u báº§u. Vui lòng thá»­ láº¡i.',
-    connectError: 'Không thá»ƒ gá»­i lá»i má»i káº¿t báº¡n. Vui lòng thá»­ láº¡i.',
-    pokeSuccessTitle: 'Đã chá»c',
-    pokeSuccessMessage: name => `Báº¡n Ä‘ã chá»c ${name}.`,
-    pokeError: 'Không thá»ƒ chá»c ngÆ°á»i dùng này lúc này.',
-  },
-  en: {
+    worksAt: value => `Làm việc tại ${value}`,
+    livesAt: value => `Sống tại ${value}`,
+    activeNow: 'Đang hoạt động',
+    followersText: count => `Có ${count} người theo dõi`,
+    followingText: count => `Đang theo dõi ${count} người`,
+    pointsText: count => `Tích lũy ${count} điểm`,
+    editPublicDetails: 'Chỉnh sữa chi tiết công khai',
+    editProfileSheetTitle: 'Chỉnh sữa hồ sơ',
+    editProfileSheetSubtitle: 'Bạn muốn thay đổi điều gì?',
+    changeCoverLabel: 'Thay đổi ảnh bìa',
+    changeCoverHint: 'Cập nhật ảnh nền của bạn',
+    editDetailsLabel: 'Chỉnh sữa thông tin',
+    editDetailsHint: 'Tên, tiểu sử, công việc...',
+    sheetCancel: 'Hủy',
+    friends: 'Bạn bè',
+    findFriends: 'Tìm bạn bè',
+    friendFallback: 'Bạn bè',
+    seeAll: 'Xem tất cả',
+    composerPlaceholder: 'Bạn đang nghĩ gì?',
+    goLive: 'Phát trực tiếp',
+    photoVideo: 'ảnh/video',
+    lifeEvent: 'Sự kiện trong đời',
+    posts: 'Bài viết',
+    manage: 'Quản lý',
+    loadPostsError: 'Lỗi tải bài viết',
+    noPosts: 'Chưa có bài viết nào',
+    edit: 'Chỉnh sữa',
+    avatarOptionsTitle: 'Tùy chọn ảnh đại diện',
+    cancel: 'Hủy',
+    errorTitle: 'Lỗi',
+    reactionError: 'Không thể cập nhật cảm xúc. Vui lòng thử lại.',
+    voteError: 'Không thể gửi phiếu bầu. Vui lòng thử lại.',
+    connectError: 'Không thể gửi lời mời kết bạn. Vui lòng thử lại.',
+    pokeSuccessTitle: 'Đã chọc',
+    pokeSuccessMessage: name => `Bạn đã chọc ${name}.`,
+    pokeError: 'Không thể chọc người dùng này lúc này.',
+  },en: {
     userFallback: 'User',
     dashboard: 'Dashboard',
     addToStory: 'Add to story',
@@ -252,6 +265,13 @@ const PROFILE_COPY: Record<AppLanguage, {
     followingText: count => `Following ${count}`,
     pointsText: count => `${count} points`,
     editPublicDetails: 'Edit public details',
+    editProfileSheetTitle: 'Edit Profile',
+    editProfileSheetSubtitle: 'What would you like to change?',
+    changeCoverLabel: 'Change Cover Photo',
+    changeCoverHint: 'Update your background image',
+    editDetailsLabel: 'Edit Details',
+    editDetailsHint: 'Name, bio, work...',
+    sheetCancel: 'Cancel',
     friends: 'Friends',
     findFriends: 'Find friends',
     friendFallback: 'Friend',
@@ -501,7 +521,7 @@ const profileStoryStyles = StyleSheet.create({
   section: {
     marginHorizontal: 16,
     marginTop: 14,
-    borderRadius: 14,
+    borderRadius: 0,
     borderWidth: 1,
     borderColor: '#E4E6EB',
     backgroundColor: '#FFFFFF',
@@ -531,7 +551,7 @@ const profileStoryStyles = StyleSheet.create({
     width: 112,
     height: 170,
     overflow: 'hidden',
-    borderRadius: 14,
+    borderRadius: 0,
     backgroundColor: '#E4E6EB',
   },
   cover: {
@@ -552,7 +572,7 @@ const profileStoryStyles = StyleSheet.create({
     left: 8,
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 0,
     borderWidth: 2,
     borderColor: '#1877F2',
     backgroundColor: '#FFFFFF',
@@ -603,7 +623,7 @@ const profileStoryStyles = StyleSheet.create({
   createCard: {
     width: 112,
     height: 170,
-    borderRadius: 14,
+    borderRadius: 0,
     borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: '#cbd5e1',
@@ -648,7 +668,7 @@ const profileStoryStyles = StyleSheet.create({
     width: 112,
     height: 170,
     overflow: 'hidden',
-    borderRadius: 14,
+    borderRadius: 0,
     backgroundColor: '#F0F2F5',
   },
   skeletonFooter: {
@@ -663,7 +683,7 @@ const profileStoryStyles = StyleSheet.create({
     left: 8,
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 0,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     backgroundColor: '#FFFFFF',
@@ -996,6 +1016,7 @@ function ProfileScreen() {
     y: number;
   } | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [editSheetVisible, setEditSheetVisible] = useState(false);
   const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(undefined);
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -1060,7 +1081,7 @@ function ProfileScreen() {
       .catch(err => {
         if (cancelled) return;
         console.error('[ProfileScreen] Error loading posts:', err);
-        setPostsError(err instanceof Error ? err.message : 'Không táº£i Ä‘Æ°á»£c bài viáº¿t.');
+        setPostsError(err instanceof Error ? err.message : 'Không tải được bài viết.');
       })
       .finally(() => {
         if (!cancelled) {
@@ -1459,7 +1480,7 @@ function ProfileScreen() {
         // Reload profile to reflect changes
         await loadProfile({ userId: targetUserId });
       } else {
-        Alert.alert(copy.errorTitle, 'Không thá»ƒ cáº­p nháº­t áº£nh Ä‘áº¡i diá»‡n.');
+        Alert.alert(copy.errorTitle, 'Không thể cập nhật ảnh đại diện.');
       }
     } catch (err) {
       console.error(err);
@@ -1490,7 +1511,7 @@ function ProfileScreen() {
         // Reload profile to reflect changes
         await loadProfile({ userId: targetUserId });
       } else {
-        Alert.alert(copy.errorTitle, 'Không thá»ƒ cáº­p nháº­t áº£nh bìa.');
+        Alert.alert(copy.errorTitle, 'Không thể cập nhật ảnh bìa.');
       }
     } catch (err) {
       console.error(err);
@@ -1585,7 +1606,7 @@ function ProfileScreen() {
       await Clipboard.setString(profile.username);
       Alert.alert(
         language === 'vi' ? 'Thành công' : 'Success',
-        language === 'vi' ? 'Đã sao chép tên ngÆ°á»i dùng vào khay nhá»› táº¡m.' : 'Username copied to clipboard.',
+        language === 'vi' ? 'Đã sao chép tên người dùng vào khay nhớ tạm.' : 'Username copied to clipboard.',
       );
     } catch (err) {
       console.error(err);
@@ -1594,25 +1615,19 @@ function ProfileScreen() {
 
   const handleEditProfilePress = useCallback(() => {
     if (!isOwnProfile) return;
-    Alert.alert(
-      language === 'vi' ? 'Chá»‰nh sá»­a há»“ sÆ¡' : 'Edit Profile',
-      language === 'vi' ? 'Chá»n tác vá»¥ báº¡n muá»‘n thá»±c hiá»‡n' : 'Select what you want to do',
-      [
-        {
-          text: language === 'vi' ? 'Thay Ä‘á»•i áº£nh bìa' : 'Change Cover Photo',
-          onPress: handleChangeCover,
-        },
-        {
-          text: language === 'vi' ? 'Chá»‰nh sá»­a thông tin chi tiáº¿t' : 'Edit Public Details',
-          onPress: () => navigation.navigate(ROUTES.EDIT_PROFILE),
-        },
-        {
-          text: language === 'vi' ? 'Há»§y' : 'Cancel',
-          style: 'cancel',
-        },
-      ],
-    );
-  }, [isOwnProfile, language, handleChangeCover, navigation]);
+    setEditSheetVisible(true);
+  }, [isOwnProfile]);
+
+  const handleEditCover = useCallback(() => {
+    setEditSheetVisible(false);
+    // Delay to let the close animation play before launching the picker.
+    setTimeout(() => handleChangeCover(), 250);
+  }, [handleChangeCover]);
+
+  const handleEditDetails = useCallback(() => {
+    setEditSheetVisible(false);
+    setTimeout(() => navigation.navigate(ROUTES.EDIT_PROFILE), 250);
+  }, [navigation]);
 
   const handleOpenFriendStory = useCallback((story: StoryItem) => {
     navigation.navigate(ROUTES.STORY_VIEWER, {
@@ -1696,7 +1711,7 @@ function ProfileScreen() {
               >
                 <Edit size={14} color="#050505" />
                 <Text style={profileMainStyles.editCoverText}>
-                  {language === 'vi' ? 'Chá»‰nh sá»­a há»“ sÆ¡' : 'Edit profile'}
+                  {language === 'vi' ? 'Chỉnh sữa hồ sơ' : 'Edit profile'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -1790,7 +1805,7 @@ function ProfileScreen() {
                 </View>
                 <Text style={profileMainStyles.statNumber}>{followerCount}</Text>
                 <Text style={profileMainStyles.statLabel}>
-                  {language === 'vi' ? 'Báº¡n bè' : 'Friends'}
+                  {language === 'vi' ? 'Bạn bè' : 'Friends'}
                 </Text>
               </View>
 
@@ -1802,7 +1817,7 @@ function ProfileScreen() {
                   {getActiveTimeValue(profile?.lastSeenText)}
                 </Text>
                 <Text style={profileMainStyles.statLabel}>
-                  {language === 'vi' ? 'Thá»i gian' : 'Time'}
+                  {language === 'vi' ? 'Thời gian' : 'Time'}
                 </Text>
               </View>
 
@@ -1812,7 +1827,7 @@ function ProfileScreen() {
                 </View>
                 <Text style={profileMainStyles.statNumber}>{followerCount}</Text>
                 <Text style={profileMainStyles.statLabel}>
-                  {language === 'vi' ? 'NgÆ°á»i theo dõi' : 'Followers'}
+                  {language === 'vi' ? 'Người theo dõi' : 'Followers'}
                 </Text>
               </View>
 
@@ -1834,7 +1849,7 @@ function ProfileScreen() {
                   {Number(profile?.points ?? 0)}
                 </Text>
                 <Text style={profileMainStyles.statLabel}>
-                  {language === 'vi' ? 'Điá»ƒm' : 'Points'}
+                  {language === 'vi' ? 'Điểm' : 'Points'}
                 </Text>
               </View>
             </View>
@@ -1940,7 +1955,6 @@ function ProfileScreen() {
                 </>
               )}
             </View>
-            <View className="h-px bg-[#E4E6EB] mx-4" />
           </View>
 
           {/* Stories (Tin) Section */}
@@ -2301,7 +2315,7 @@ function ProfileScreen() {
             >
               <Sliders size={12} color="#1877F2" />
               <Text style={profileMainStyles.managePostsText}>
-                {language === 'vi' ? 'Quáº£n lý bài viáº¿t' : 'Manage posts'}
+                {language === 'vi' ? 'Quản lý bài viết' : 'Manage posts'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -2385,6 +2399,23 @@ function ProfileScreen() {
             </View>
           ) : null}
         </ScrollView>
+        <EditProfileActionSheet
+          visible={editSheetVisible}
+          onClose={() => setEditSheetVisible(false)}
+          language={language}
+          avatarUrl={avatarUrl}
+          onChangeCover={handleEditCover}
+          onEditDetails={handleEditDetails}
+          copy={{
+            title: copy.editProfileSheetTitle,
+            subtitle: copy.editProfileSheetSubtitle,
+            changeCoverLabel: copy.changeCoverLabel,
+            changeCoverHint: copy.changeCoverHint,
+            editDetailsLabel: copy.editDetailsLabel,
+            editDetailsHint: copy.editDetailsHint,
+            cancel: copy.sheetCancel,
+          }}
+        />
         <ReactionPickerOverlay
           anchor={pickerAnchor}
           onPick={handlePickReaction}
@@ -2473,22 +2504,17 @@ const profileMainStyles = StyleSheet.create({
   },
   editCoverButton: {
     position: 'absolute',
-    bottom: -16,
     right: 16,
-    zIndex: 30,
+    bottom: 12,
+    height: 32,
+    borderRadius: 9999,
+    backgroundColor: '#E4E6EB',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: '#E4E6EB',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    gap: 4,
+    zIndex: 5,
   },
   editCoverText: {
     fontSize: 13,
@@ -2498,8 +2524,7 @@ const profileMainStyles = StyleSheet.create({
   },
   profileInfoCard: {
     backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    borderRadius: 0,
     paddingHorizontal: 16,
     paddingBottom: 20,
     shadowColor: '#000000',
@@ -2601,17 +2626,12 @@ const profileMainStyles = StyleSheet.create({
   },
   dashboardButton: {
     flex: 1,
-    height: 40,
-    borderRadius: 0,
+    height: 36,
+    borderRadius: 9999,
     backgroundColor: '#1877F2',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#1877F2',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
   dashboardButtonText: {
     color: '#FFFFFF',
@@ -2621,8 +2641,8 @@ const profileMainStyles = StyleSheet.create({
   },
   storyAddButton: {
     flex: 1,
-    height: 40,
-    borderRadius: 0,
+    height: 36,
+    borderRadius: 9999,
     backgroundColor: '#E7F3FF',
     flexDirection: 'row',
     alignItems: 'center',
@@ -2644,7 +2664,7 @@ const profileMainStyles = StyleSheet.create({
   },
   halfCard: {
     flex: 1,
-    borderRadius: 14,
+    borderRadius: 0,
     borderWidth: 1,
     borderColor: '#E4E6EB',
     backgroundColor: '#FFFFFF',

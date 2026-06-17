@@ -6,9 +6,53 @@ import type { ProductRepository } from '../../domain/repositories/ProductReposit
 import type {
   CreateProductInput,
   CreateProductResponse,
-  GetProductsInput,
+  AddToCartResponse,
   ProductsResponse,
 } from '../../domain/types/product.types';
+
+type RawCartProduct = {
+  id?: unknown;
+  product_id?: unknown;
+  units?: unknown;
+};
+
+type CartCheckoutResponse = {
+  api_status: number | string;
+  data?: RawCartProduct[];
+};
+
+function numberValue(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function getCartProducts() {
+  const response = await apiBridge.post<CartCheckoutResponse>(
+    apiRoutes.products.market,
+    { type: 'checkout' },
+  );
+  return response.data ?? [];
+}
+
+function isAlreadyInCartError(error: unknown) {
+  return error instanceof Error &&
+    error.message.toLowerCase().includes('already in cart');
+}
+
+async function increaseExistingCartQuantity(productId: number, qty: number) {
+  const cartProducts = await getCartProducts();
+  const cartProduct = cartProducts.find(product => {
+    const id = numberValue(product.product_id) || numberValue(product.id);
+    return id === productId;
+  });
+  const currentQuantity = Math.max(1, numberValue(cartProduct?.units) || 1);
+
+  return apiBridge.post<AddToCartResponse>(apiRoutes.products.market, {
+    type: 'change_qty',
+    product_id: productId,
+    qty: currentQuantity + qty,
+  });
+}
 
 export function createProductRepository(): ProductRepository {
   return {
@@ -35,6 +79,32 @@ export function createProductRepository(): ProductRepository {
         products: ProductsResponse['products'];
       }>(apiRoutes.products.get, {});
       return { products: response.products };
+    },
+
+    async addToCart(productId, qty = 1) {
+      try {
+        return await apiBridge.post<AddToCartResponse>(
+          apiRoutes.products.market,
+          {
+            type: 'add_cart',
+            product_id: productId,
+            qty,
+          },
+        );
+      } catch (error) {
+        if (isAlreadyInCartError(error)) {
+          return increaseExistingCartQuantity(productId, qty);
+        }
+        throw error;
+      }
+    },
+
+    async getCartCount() {
+      const cartProducts = await getCartProducts();
+      return cartProducts.reduce(
+        (count, product) => count + Math.max(1, numberValue(product.units) || 1),
+        0,
+      );
     },
 
     async createProduct(input: CreateProductInput) {

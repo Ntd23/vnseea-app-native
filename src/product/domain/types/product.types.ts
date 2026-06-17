@@ -55,7 +55,7 @@ export interface ProductsResponse {
   api_status: number;
   products: ProductItem[];
   products_categories: Record<string, ProductSubCategory[]>;
-  distance_filter_available: boolean;
+  distance_filter_available: boolean | number;
 }
 
 export interface CreateProductResponse {
@@ -66,6 +66,13 @@ export interface CreateProductResponse {
     error_id: number;
     error_text: string;
   };
+}
+
+export interface AddToCartResponse {
+  api_status: number | string;
+  type?: string;
+  count?: number;
+  message?: string;
 }
 
 export interface CreateProductInput {

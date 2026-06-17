@@ -2,6 +2,7 @@
 import type {
   CreateProductInput,
   CreateProductResponse,
+  AddToCartResponse,
   GetProductsInput,
   ProductCategory,
   ProductItem,
@@ -11,6 +12,8 @@ import type {
 export interface ProductRepository {
   getProducts(input?: GetProductsInput): Promise<ProductsResponse>;
   getMyProducts(): Promise<{ products: ProductItem[] }>;
+  addToCart(productId: number, qty?: number): Promise<AddToCartResponse>;
+  getCartCount(): Promise<number>;
   createProduct(input: CreateProductInput): Promise<CreateProductResponse>;
   getCategories(): Promise<{ categories: ProductCategory[] }>;
 }

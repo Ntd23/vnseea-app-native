@@ -81,10 +81,16 @@ export type RootStackParamList = {
   [ROUTES.CREATE_PAGE]: undefined;
   [ROUTES.EDIT_PAGE]: { page: PagesItem };
   [ROUTES.MARKETPLACE]: undefined;
+  [ROUTES.MY_PRODUCTS]:
+    | {
+        initialTab?: 'products' | 'purchased' | 'orders';
+      }
+    | undefined;
   [ROUTES.PRODUCT_DETAIL]: {
     productId: number;
     product?: ProductItem;
   };
+  [ROUTES.CHECKOUT]: undefined;
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;
   [ROUTES.EDIT_EVENT]: { event: EventsItem };
