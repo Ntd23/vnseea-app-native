@@ -165,6 +165,7 @@ describe('userPayloadMapper', () => {
       first_name: 'Admin',
       last_name: 'User',
       relationship: '1',
+      relationship_id: '1',
       message_privacy: 0,
       showlastseen: 1,
       share_my_location: false,
@@ -204,6 +205,9 @@ describe('nearbyPlaceMapper', () => {
       location: 'Hà Nội',
       distance: 1.25,
       distanceMeters: 1250,
+      mapPinStatus: undefined,
+      mapPinApproved: false,
+      isPinned: false,
       coordinate: {
         latitude: 21.0285,
         longitude: 105.8542,

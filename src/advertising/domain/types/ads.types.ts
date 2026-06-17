@@ -2,7 +2,7 @@
 // Based on WoWonder ads.php API
 
 export type AdBiddingType = 'clicks' | 'views';
-export type AdAppearsType = 'post' | 'sidebar' | 'video';
+export type AdAppearsType = 'post' | 'sidebar' | 'video' | 'story' | 'timeline' | 'groups' | 'pages' | 'messages';
 export type AdGender = 'male' | 'female' | 'all';
 
 export interface AdFormData {

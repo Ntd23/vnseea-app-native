@@ -1,10 +1,14 @@
 // Poke Repository Interface
 // Port từ: client/src/poke/domain/repositories/
 
-import type { PokeItem } from '../types/poke.types';
+import type { PokeItem, PokeListOptions, PokeListPage } from '../types/poke.types';
+
+export interface PokeCreateData {
+  userId: string | number;
+}
 
 export interface PokeRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<PokeItem[]>;
-  // getById(id: string | number): Promise<PokeItem | null>;
+  getPokes(options?: PokeListOptions): Promise<PokeListPage>;
+  createPoke(data: PokeCreateData): Promise<PokeItem>;
+  removePoke(pokeId: string | number): Promise<void>;
 }

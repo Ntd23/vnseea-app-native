@@ -7,7 +7,6 @@ import {
   Platform,
   RefreshControl,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -31,6 +30,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { useFundingViewModel } from '../../application/view-models/useFundingViewModel';
 import type { FundingItem } from '../../domain/types/funding.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type FundingNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -372,7 +372,7 @@ function FundingScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-[#F8FAFC]" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       {/* Top App Bar */}
       <View className="flex-row items-center justify-between px-4 py-3 bg-[#F8FAFC]">

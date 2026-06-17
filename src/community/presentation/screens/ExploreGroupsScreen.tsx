@@ -6,7 +6,6 @@ import {
   Image,
   Linking,
   RefreshControl,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -27,6 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useMyGroupsViewModel } from '../../application/view-models/useMyGroupsViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import type {
   GroupItem,
   GroupsFilter,
@@ -346,7 +346,7 @@ function ExploreGroupsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       <View className="surface-topbar h-16 flex-row items-center justify-between px-4">
         <View className="flex-row items-center">

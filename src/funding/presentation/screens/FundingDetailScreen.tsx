@@ -9,7 +9,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -34,6 +33,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import type { RootStackParamList } from '../../../navigation/types';
 import type { FundingDonation } from '../../domain/types/funding.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type DetailNav = NativeStackNavigationProp<RootStackParamList>;
 type DetailRoute = RouteProp<RootStackParamList, 'FundingDetail'>;
@@ -372,7 +372,7 @@ function FundingDetailScreen() {
   if (isLoading && !campaign) {
     return (
       <SafeAreaView className="flex-1 bg-[#F8FAFC]" edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="small" color={BRAND_COLOR} />
           <Text className="mt-3 text-[13px] font-semibold text-[#64748B]">{copy.loading}</Text>
@@ -384,7 +384,7 @@ function FundingDetailScreen() {
   if (error && !campaign) {
     return (
       <SafeAreaView className="flex-1 bg-[#F8FAFC]" edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-[18px] font-bold text-[#0F172A]">{copy.errorTitle}</Text>
           <Text className="mt-2 text-center text-[13px] font-semibold text-[#64748B] leading-5">
@@ -408,7 +408,7 @@ function FundingDetailScreen() {
   if (!campaign) {
     return (
       <SafeAreaView className="flex-1 bg-[#F8FAFC]" edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-[18px] font-bold text-[#0F172A]">{copy.notFound}</Text>
           <TouchableOpacity
@@ -437,7 +437,7 @@ function FundingDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-[#F8FAFC]" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* App Bar Header */}
       <View className="flex-row items-center justify-between px-4 py-3 bg-white border-b border-[#F1F5F9]">

@@ -79,6 +79,7 @@ import { AudioPlayer } from '../../../shared-kernel/presentation/components/Audi
 import { useAudioRecorder } from '../../../shared-kernel/application/hooks/useAudioRecorder';
 import { formatAudioDuration } from '../../../shared-kernel/application/utils/audioFiles';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 
 type ChatScreenProps = NativeStackScreenProps<
@@ -863,7 +864,7 @@ function GroupInfoModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
+      <SafeAreaView className="flex-1 bg-white" edges={ROOT_SAFE_AREA_EDGES}>
         <View className="flex-row items-center justify-between border-b border-gray-100 px-5 py-4">
           <Text className="text-lg font-bold text-gray-950">Thông tin</Text>
           <TouchableOpacity
@@ -1667,7 +1668,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
+    <SafeAreaView className="flex-1 bg-white" edges={ROOT_SAFE_AREA_EDGES}>
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -2020,7 +2021,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         statusBarTranslucent
         onRequestClose={handleCloseMedia}
       >
-        <SafeAreaView className="flex-1 bg-black" edges={['top', 'bottom']}>
+        <SafeAreaView className="flex-1 bg-black" edges={ROOT_SAFE_AREA_EDGES}>
           <TouchableOpacity
             className="absolute right-4 top-4 z-10 h-11 w-11 items-center justify-center rounded-full bg-black/60"
             activeOpacity={0.8}

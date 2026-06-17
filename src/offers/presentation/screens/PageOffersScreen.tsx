@@ -2,7 +2,6 @@
 import React, { useCallback } from 'react';
 import {
   FlatList,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -15,6 +14,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { useOffersViewModel } from '../../application/view-models/useOfferViewModel';
 import OfferCard from '../components/OfferCard';
 import type { OfferWithDisplay } from '../../domain/types/offer.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type PageOffersRouteParams = {
   pageId: number;
@@ -75,7 +75,7 @@ export default function PageOffersScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Top bar */}
       <View className="surface-topbar flex-row items-center justify-between px-4 py-3">

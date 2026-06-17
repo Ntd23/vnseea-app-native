@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Image,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -26,6 +25,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAffiliatesViewModel } from '../../application/view-models/useAffiliatesViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type AffiliatesNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -87,7 +87,7 @@ function AffiliatesScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f3f6fb" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f3f6fb" />
 
       <View style={styles.header}>
         <TouchableOpacity

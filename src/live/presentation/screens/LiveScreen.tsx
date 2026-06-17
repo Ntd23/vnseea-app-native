@@ -5,7 +5,6 @@ import {
   FlatList,
   Image,
   RefreshControl,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -17,6 +16,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useLiveViewModel } from '../../application/view-models/useLiveViewModel';
 import type { LiveStreamItem } from '../../domain/types/live.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type LiveNav = NativeStackNavigationProp<any>;
 
@@ -137,7 +137,7 @@ export default function LiveScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       <View className="surface-topbar flex-row items-center justify-between px-5 py-3">
         <View className="flex-row items-center gap-2">

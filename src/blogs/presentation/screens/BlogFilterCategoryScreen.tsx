@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import {
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -11,7 +10,6 @@ import {
 import {
   ArrowLeft,
   Car,
-  CheckCircle2,
   Clock,
   Eye,
   GraduationCap,
@@ -38,6 +36,12 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { getBlogsCopy } from '../../application/i18n/blogsCopy';
 
 type BlogFilterNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -92,6 +96,8 @@ function BlogFilterCategoryScreen() {
   const searchQuery = params?.searchQuery || '';
   const sortBy = params?.sortBy || 'latest';
   const myPostsOnly = params?.myPostsOnly || false;
+  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const copy = getBlogsCopy(language);
 
   const [selectedCategory, setSelectedCategory] = useState(currentCategory || 'all');
   const [searchText, setSearchText] = useState(searchQuery);
@@ -111,7 +117,7 @@ function BlogFilterCategoryScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
 
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">
         <TouchableOpacity
@@ -121,14 +127,14 @@ function BlogFilterCategoryScreen() {
         >
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text className="text-title-primary text-inverse">Bộ lọc</Text>
+        <Text className="text-title-primary text-inverse">{copy.filterTitle}</Text>
         <TouchableOpacity
           className="flex-row items-center gap-1.5 rounded-md bg-white/20 px-2.5 py-1.5"
           activeOpacity={0.8}
           onPress={() => navigation.navigate(ROUTES.CREATE_BLOG)}
         >
           <Grid3x3 size={16} color="#FFFFFF" />
-          <Text className="text-sm font-medium text-white">Tạo bài viết</Text>
+          <Text className="text-sm font-medium text-white">{copy.createBlog}</Text>
         </TouchableOpacity>
       </View>
 
@@ -145,7 +151,7 @@ function BlogFilterCategoryScreen() {
             <Search size={18} color="#94A3B8" className="absolute left-3 top-1/2 -translate-y-1/2" />
             <TextInput
               className="surface-card min-h-[44] rounded-lg border border-slate-200 px-10 text-base"
-              placeholder="Tìm tiêu đề, tác giả hoặc chủ đề"
+              placeholder={copy.searchPlaceholder}
               placeholderTextColor="#94A3B8"
               value={searchText}
               onChangeText={setSearchText}
@@ -155,7 +161,7 @@ function BlogFilterCategoryScreen() {
 
         {/* Categories */}
         <View className="mt-6">
-          <Text className="text-body-secondary mb-3">Chủ đề</Text>
+          <Text className="text-body-secondary mb-3">{copy.category}</Text>
           <View className="flex-row flex-wrap gap-2">
             {categories.map(({ Icon, id, label }) => {
               const isSelected = id === selectedCategory;
@@ -180,7 +186,7 @@ function BlogFilterCategoryScreen() {
 
         {/* Sort Options */}
         <View className="mt-6">
-          <Text className="text-body-secondary mb-3">Sắp xếp</Text>
+          <Text className="text-body-secondary mb-3">{copy.sort}</Text>
           <View className="flex-row flex-wrap gap-2">
             {sortOptions.map(({ Icon, id, label }) => {
               const isSelected = id === selectedSort;
@@ -216,7 +222,7 @@ function BlogFilterCategoryScreen() {
               <ToggleLeft size={20} color="#94A3B8" />
             )}
             <Text className={`text-base ${showMyPostsOnly ? 'text-[#0000ff]' : 'text-slate-700'}`}>
-              Bài viết của tôi
+              {copy.myPosts}
             </Text>
           </TouchableOpacity>
         </View>
@@ -225,7 +231,7 @@ function BlogFilterCategoryScreen() {
         <View className="mt-6 flex-row items-center gap-2 rounded-lg bg-slate-50 p-3">
           <Search size={14} color="#94A3B8" />
           <Text className="text-caption-secondary">
-            Đang lọc theo: {categories.find(c => c.id === selectedCategory)?.label || 'Tất cả'} / {sortOptions.find(s => s.id === selectedSort)?.label || 'Mới nhất'} {showMyPostsOnly ? '/ Bài viết của tôi' : '/ Tất cả tác giả'}
+            {copy.filtering}: {categories.find(c => c.id === selectedCategory)?.label || copy.all} / {sortOptions.find(s => s.id === selectedSort)?.label || copy.latest} {showMyPostsOnly ? `/ ${copy.myPosts}` : `/ ${copy.allAuthors}`}
           </Text>
         </View>
       </ScrollView>
@@ -236,7 +242,7 @@ function BlogFilterCategoryScreen() {
           activeOpacity={0.86}
           onPress={handleApply}
         >
-          <Text className="text-title-primary text-inverse">Áp dụng</Text>
+          <Text className="text-title-primary text-inverse">{copy.apply}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

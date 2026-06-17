@@ -5,7 +5,6 @@ import {
   FlatList,
   Image,
   RefreshControl,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -27,6 +26,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useJobsViewModel } from '../../application/view-models/useJobsViewModel';
 import type { JobsItem, JobType, JOB_TYPE_VIETNAMESE } from '../../domain/types/jobs.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type JobsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -212,7 +212,7 @@ function JobsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0000FF" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
 
       {/* Header */}
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">

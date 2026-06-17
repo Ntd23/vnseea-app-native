@@ -1,11 +1,10 @@
 // Description: Shows an event detail page with owner edit and delete actions.
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -26,24 +25,32 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { getEventsCopy } from '../../application/i18n/eventsCopy';
 
 type EventDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type EventDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.EVENT_DETAIL>;
 
 const BRAND = '#0000ff';
 
-function readEventText(value?: string | number | null, fallback = 'Chưa cập nhật') {
-  if (value === undefined || value === null || value === '') return fallback;
-  return String(value);
-}
-
 function EventDetailScreen() {
   const navigation = useNavigation<EventDetailNav>();
   const route = useRoute<EventDetailRoute>();
   const { event } = route.params;
   const { isDeleting, deleteEvent } = useEventsViewModel();
+  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const copy = getEventsCopy(language);
 
-  const title = event.name ?? event.event_name ?? 'Sự kiện';
+  const readEventText = (value?: string | number | null, fallback = copy.notUpdated) => {
+    if (value === undefined || value === null || value === '') return fallback;
+    return String(value);
+  };
+
+  const title = event.name ?? event.event_name ?? copy.eventTitle;
   const description = event.description ?? event.event_description;
   const location = event.location ?? event.event_location;
   const startDate = event.start_date ?? event.event_start_date;
@@ -55,21 +62,21 @@ function EventDetailScreen() {
 
   const confirmDelete = () => {
     Alert.alert(
-      'Xóa sự kiện',
-      'Bạn có chắc muốn xóa sự kiện này? Hành động này không thể hoàn tác.',
+      copy.deleteEvent,
+      copy.deleteConfirm,
       [
-        { text: 'Hủy', style: 'cancel' },
+        { text: copy.cancel, style: 'cancel' },
         {
-          text: 'Xóa',
+          text: copy.delete,
           style: 'destructive',
           onPress: async () => {
             const result = await deleteEvent(event.id);
             if (result.success) {
-              showToast({ message: 'Đã xóa sự kiện.', type: 'success' });
+              showToast({ message: copy.deleteSuccess, type: 'success' });
               setTimeout(() => navigation.navigate(ROUTES.EVENTS), 800);
             } else {
               showToast({
-                message: result.error ?? 'Không xóa được sự kiện.',
+                message: result.error ?? copy.deleteError,
                 type: 'error',
               });
             }
@@ -81,7 +88,7 @@ function EventDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
 
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">
         <TouchableOpacity
@@ -91,7 +98,7 @@ function EventDetailScreen() {
         >
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text className="text-title-primary text-inverse">Chi tiết sự kiện</Text>
+        <Text className="text-title-primary text-inverse">{copy.eventDetail}</Text>
         <View className="h-10 w-10" />
       </View>
 
@@ -116,12 +123,12 @@ function EventDetailScreen() {
               <View className="flex-row items-start">
                 <CalendarDays size={20} color={BRAND} />
                 <View className="ml-3 flex-1">
-                  <Text className="text-title-secondary">Thời gian</Text>
+                  <Text className="text-title-secondary">{copy.time}</Text>
                   <Text className="mt-1 text-body-primary">
                     {readEventText(startDate)} {readEventText(startTime, '')}
                   </Text>
                   <Text className="text-caption-secondary">
-                    Kết thúc: {readEventText(endDate)} {readEventText(endTime, '')}
+                    {copy.end}: {readEventText(endDate)} {readEventText(endTime, '')}
                   </Text>
                 </View>
               </View>
@@ -129,7 +136,7 @@ function EventDetailScreen() {
               <View className="flex-row items-start">
                 <MapPin size={20} color={BRAND} />
                 <View className="ml-3 flex-1">
-                  <Text className="text-title-secondary">Địa điểm</Text>
+                  <Text className="text-title-secondary">{copy.location}</Text>
                   <Text className="mt-1 text-body-primary">{readEventText(location)}</Text>
                 </View>
               </View>
@@ -137,9 +144,9 @@ function EventDetailScreen() {
               <View className="flex-row items-start">
                 <Users size={20} color={BRAND} />
                 <View className="ml-3 flex-1">
-                  <Text className="text-title-secondary">Người tham gia</Text>
+                  <Text className="text-title-secondary">{copy.participants}</Text>
                   <Text className="mt-1 text-body-primary">
-                    {readEventText(event.going_count, '0')} người tham gia
+                    {readEventText(event.going_count, '0')} {copy.participantsLabel}
                   </Text>
                 </View>
               </View>
@@ -147,7 +154,7 @@ function EventDetailScreen() {
           </View>
 
           <View className="surface-card mt-4 p-5">
-            <Text className="text-title-primary">Mô tả</Text>
+            <Text className="text-title-primary">{copy.description}</Text>
             <Text className="mt-3 text-body-primary">{readEventText(description)}</Text>
           </View>
 
@@ -159,7 +166,7 @@ function EventDetailScreen() {
                 onPress={() => navigation.navigate(ROUTES.EDIT_EVENT, { event })}
               >
                 <Edit3 size={18} color="#FFFFFF" />
-                <Text className="text-title-primary text-inverse">Sửa</Text>
+                <Text className="text-title-primary text-inverse">{copy.edit}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -173,7 +180,7 @@ function EventDetailScreen() {
                 ) : (
                   <>
                     <Trash2 size={18} color="#FFFFFF" />
-                    <Text className="ml-2 text-title-primary text-inverse">Xóa</Text>
+                    <Text className="ml-2 text-title-primary text-inverse">{copy.delete}</Text>
                   </>
                 )}
               </TouchableOpacity>

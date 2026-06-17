@@ -1,13 +1,12 @@
 // Description: Renders the VNSEEA notifications tab with section grouping,
 // tabs (All / Unread), filter sheet, animated cards, and i18n.
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   RefreshControl,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -30,6 +29,7 @@ import NotificationsFilterSheet from '../components/NotificationsFilterSheet';
 import NotificationSectionList from '../components/NotificationSectionList';
 import NotificationsEmptyState from '../components/NotificationsEmptyState';
 import NotificationsSkeleton from '../components/NotificationsSkeleton';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type NotificationsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -115,6 +115,14 @@ function toGroupRouteItem(item: NotificationsItem): GroupItem {
 
 function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
   const type = item.type || '';
+
+  // Handle poke notifications first - navigate to profile
+  if (includesAny(type, ['poke', 'poked'])) {
+    if (item.notifierId) {
+      navigation.navigate(ROUTES.PROFILE, { userId: item.notifierId } as any);
+    }
+    return;
+  }
 
   if (item.fundingId && includesAny(type, ['fund', 'funding'])) {
     navigation.navigate(ROUTES.FUNDING_DETAIL, { fundId: item.fundingId });
@@ -239,16 +247,21 @@ function NotificationsScreen() {
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   const hasNotifications = notifications.length > 0;
   const hasFiltered = filteredNotifications.length > 0;
+  const hasNotificationsRef = useRef(hasNotifications);
+
+  useEffect(() => {
+    hasNotificationsRef.current = hasNotifications;
+  }, [hasNotifications]);
 
   useFocusEffect(
     useCallback(() => {
-      loadFirstPage(false, hasNotifications);
+      loadFirstPage(false, hasNotificationsRef.current);
       const interval = setInterval(() => {
         loadFirstPage(false, true);
       }, 10000);
 
       return () => clearInterval(interval);
-    }, [hasNotifications, loadFirstPage]),
+    }, [loadFirstPage]),
   );
 
   const handlePress = useCallback(
@@ -346,7 +359,7 @@ function NotificationsScreen() {
 
   return (
     <SafeAreaView style={{ backgroundColor: '#f4f7fa' }} className="flex-1" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
 
       <NotificationsHeader
         title={copy.headerTitle}

@@ -39,7 +39,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -62,6 +61,8 @@ import { storyDeletedEvents } from '../../application/events/storyDeletedEvents'
 import { storyReactedEvents } from '../../application/events/storyReactedEvents';
 import type { StoryItem } from '../../domain/types/stories.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Props = NativeStackScreenProps<RootStackParamList, 'StoryViewer'>;
@@ -512,8 +513,8 @@ function StoryViewerScreen({ route }: Props) {
   // ── Early-out when no stories ───────────────────────────────────────
   if (!currentStory || !currentSegment) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <SafeAreaView style={styles.container} edges={ROOT_SAFE_AREA_EDGES}>
+        <FocusAwareStatusBar barStyle="light-content" backgroundColor="#000" />
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>Không có tin để xem.</Text>
           <TouchableOpacity onPress={close} style={styles.closeBtnEmpty}>
@@ -526,7 +527,7 @@ function StoryViewerScreen({ route }: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#000" />
 
       {/* ── Media (renders BEHIND the controls) ────────────────────── */}
       <View style={styles.mediaWrap}>

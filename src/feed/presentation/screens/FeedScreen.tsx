@@ -18,7 +18,6 @@ import {
   KeyboardAvoidingView,
   RefreshControl,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -54,7 +53,6 @@ import {
   Briefcase,
   Building2,
   ChevronRight,
-  Edit3,
   Globe,
   HeartHandshake,
   Lock,
@@ -191,6 +189,8 @@ import {
   FeedFundingCarousel,
 } from '../../../funding';
 import type { FundingItem } from '../../../funding/domain/types/funding.types';
+import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const PICKER_WIDTH = 282;
 const PICKER_HEIGHT = 52;
@@ -211,7 +211,9 @@ const FEED_PHOTO_GRID_WIDTH = FEED_CARD_WIDTH - 8;
 const FEED_CARD_CLASS = 'mb-2 border-y border-[#dddfe2] bg-white';
 const FEED_CARD_PADDING_CLASS = 'px-3 py-3';
 const FEED_MEDIA_CLASS = 'w-full bg-black';
-const FEED_LIST_CONTENT_STYLE = { paddingBottom: 96 };
+const FEED_LIST_CONTENT_STYLE = {
+  paddingBottom: Platform.OS === 'ios' ? 24 : 96,
+};
 
 // â”€â”€ Pre-computed photo grid layouts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Static layout objects for the Facebook-style photo grid. Computed once at
@@ -1722,7 +1724,7 @@ export function PhotoViewerModal({
       onRequestClose={handleClose}
       statusBarTranslucent
     >
-      <StatusBar barStyle="light-content" backgroundColor="#000" translucent />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#000" translucent />
       <GestureHandlerRootView style={{ flex: 1 }}>
         <GestureDetector gesture={panGesture}>
           <Animated.View style={containerStyle}>
@@ -3497,8 +3499,8 @@ function FeedScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView className="flex-1 surface-base">
-        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <SafeAreaView className="flex-1 surface-base" edges={ROOT_SAFE_AREA_EDGES}>
+        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
         <FeedHeader />
         <View className="flex-1">
           <FlatList
@@ -3546,12 +3548,6 @@ function FeedScreen() {
               ) : null
             }
           />
-          <TouchableOpacity
-            className="surface-brand absolute bottom-6 right-5 h-14 w-14 items-center justify-center rounded-full"
-            activeOpacity={0.9}
-          >
-            <Edit3 size={26} color="#FFFFFF" />
-          </TouchableOpacity>
         </View>
         <ReactionPickerOverlay
           anchor={pickerAnchor}
@@ -3623,8 +3619,3 @@ function FeedScreen() {
 }
 
 export default FeedScreen;
-
-
-
-
-

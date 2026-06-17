@@ -3,7 +3,6 @@ import React, { useEffect } from 'react';
 import {
   Image,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -18,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAlbumsViewModel } from '../../application/view-models/useAlbumsViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type AlbumsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -60,7 +60,7 @@ function AlbumsScreen() {
   if (!isLoading && !error && albums.length === 0) {
     return (
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-        <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+        <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
 
         <View className="surface-brand h-14 flex-row items-center justify-between px-4">
           <TouchableOpacity
@@ -112,7 +112,7 @@ function AlbumsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
 
       {/* Header */}
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">

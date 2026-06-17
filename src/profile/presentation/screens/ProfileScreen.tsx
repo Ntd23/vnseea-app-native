@@ -7,7 +7,6 @@ import {
   Image,
   ScrollView,
   StyleSheet,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -78,6 +77,7 @@ import { ShareActionSheet } from '../../../shared-kernel/presentation/components
 import { EditProfileActionSheet } from '../../../shared-kernel/presentation/components/EditProfileActionSheet';
 import { StoryOptionsSheet } from '../../../shared-kernel/presentation/components/StoryOptionsSheet';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { getPokeCopy } from '../../../poke/application/i18n/pokeCopy';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
@@ -93,6 +93,7 @@ import type {
   StoryMedia,
 } from '../../../stories/domain/types/stories.types';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
 type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
@@ -985,6 +986,7 @@ function ProfileScreen() {
   const language = useAppLanguage();
   const copy = PROFILE_COPY[language];
   const postCardCopy = POST_CARD_COPY[language];
+  const pokeCopy = getPokeCopy(language);
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<ProfileNav>();
   const route = useRoute<ProfileRoute>();
@@ -1605,13 +1607,17 @@ function ProfileScreen() {
     setIsPokeLoading(true);
     try {
       await pokeUser(String(targetUserId));
-      Alert.alert(
-        copy.pokeSuccessTitle,
-        copy.pokeSuccessMessage(displayName || copy.userFallback),
-      );
+      const successMsg = pokeCopy.pokeSuccessMessage;
+      const message = typeof successMsg === 'function' 
+        ? successMsg(displayName || copy.userFallback) 
+        : String(successMsg);
+      showToast({
+        message,
+        type: 'success',
+      });
     } catch (caughtError) {
-      console.error('[ProfileScreen] Failed to poke user:', caughtError);
-      Alert.alert(copy.errorTitle, copy.pokeError);
+      const errorMessage = caughtError instanceof Error ? caughtError.message : String(pokeCopy.profilePokeError);
+      showToast({ message: errorMessage, type: 'warning' });
     } finally {
       setIsPokeLoading(false);
     }
@@ -1686,7 +1692,7 @@ function ProfileScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={profileMainStyles.container}>
-        <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+        <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
         <ScrollView
           className="flex-1"
@@ -2576,6 +2582,7 @@ function ProfileScreen() {
           onClose={handleCloseShareModal}
           post={sharingPost}
         />
+        <ToastContainer />
       </View>
     </GestureHandlerRootView>
   );

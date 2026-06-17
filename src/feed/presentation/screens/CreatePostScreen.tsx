@@ -19,7 +19,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -63,6 +62,7 @@ import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/us
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import type {
   PostFeeling,
   PostPhotoAttachment,
@@ -811,7 +811,7 @@ function CreatePostScreen() {
 
   return (
     <SafeAreaView style={{ backgroundColor: '#f4f7fa' }} className="flex-1" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
 
       {/* ── Header ────────────────────────────────────────────────── */}
       <View className="h-16 flex-row items-center justify-between px-4 bg-transparent">

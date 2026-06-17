@@ -4,7 +4,6 @@ import {
   Alert,
   Image,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -33,6 +32,7 @@ import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CreateAlbumNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -335,7 +335,7 @@ function CreateAlbumScreen() {
 
   return (
     <SafeAreaView className="flex-1" style={{ backgroundColor: '#f8fafc' }} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
 
       {/* Header */}
       <View

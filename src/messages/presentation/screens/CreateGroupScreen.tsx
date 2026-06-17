@@ -12,7 +12,6 @@ import {
   Platform,
   Modal,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -38,6 +37,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useGroupChatViewModel } from '../../application/view-models/useGroupChatViewModel';
 import type { GroupChatUser } from '../../domain/types/groupChat.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CreateGroupNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -446,7 +446,7 @@ export default function CreateGroupScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Header */}
       <Animated.View

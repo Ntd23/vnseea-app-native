@@ -5,6 +5,7 @@ import {
   BottomTabBarProps,
   createBottomTabNavigator,
 } from '@react-navigation/bottom-tabs';
+import { createNativeBottomTabNavigator } from '@react-navigation/bottom-tabs/unstable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from '@react-native-community/blur';
 import { ROUTES } from './constants/routes';
@@ -12,6 +13,11 @@ import { TAB_ROUTES } from './routeRegistry';
 import type { MainTabParamList } from './types';
 import { useNotificationBadgeViewModel } from '../notifications';
 import { tabBarVisibility } from './tabBarVisibility';
+import {
+  createIosNativeTabOptions,
+  getCustomTabRoutes,
+  getIosNativeTabRoutes,
+} from './mainTabConfig';
 
 const BRAND_COLOR = '#2563FF';
 const BRAND_LIGHT_BG = 'rgba(37, 99, 255, 0.08)';
@@ -181,24 +187,60 @@ function CustomTabBar({
   );
 }
 
-const Tab = createBottomTabNavigator<MainTabParamList>();
+const CustomTab = createBottomTabNavigator<MainTabParamList>();
+const NativeTab = createNativeBottomTabNavigator<MainTabParamList>();
 
 function renderCustomTabBar(props: BottomTabBarProps) {
   return <CustomTabBar {...props} />;
 }
 
-function MainTabNavigator() {
+function CustomMainTabNavigator() {
   return (
-    <Tab.Navigator
+    <CustomTab.Navigator
       initialRouteName={ROUTES.FEED}
       tabBar={renderCustomTabBar}
       screenOptions={{ headerShown: false }}
     >
-      {TAB_ROUTES.map(({ name, component }) => (
-        <Tab.Screen key={name} name={name} component={component} />
+      {getCustomTabRoutes(TAB_ROUTES).map(({ name, component }) => (
+        <CustomTab.Screen key={name} name={name} component={component} />
       ))}
-    </Tab.Navigator>
+    </CustomTab.Navigator>
   );
+}
+
+function NativeIosTabNavigator() {
+  const { notificationCount: notificationBadgeCount } =
+    useNotificationBadgeViewModel();
+
+  return (
+    <NativeTab.Navigator
+      initialRouteName={ROUTES.FEED}
+      screenOptions={{
+        headerShown: false,
+        tabBarControllerMode: 'tabBar',
+        tabBarMinimizeBehavior: 'onScrollDown',
+        tabBarBlurEffect: 'systemDefault',
+        overrideScrollViewContentInsetAdjustmentBehavior: false,
+      }}
+    >
+      {getIosNativeTabRoutes(TAB_ROUTES).map(({ name, component }) => (
+        <NativeTab.Screen
+          key={name}
+          name={name}
+          component={component}
+          options={createIosNativeTabOptions(name, notificationBadgeCount)}
+        />
+      ))}
+    </NativeTab.Navigator>
+  );
+}
+
+function MainTabNavigator() {
+  if (Platform.OS === 'ios') {
+    return <NativeIosTabNavigator />;
+  }
+
+  return <CustomMainTabNavigator />;
 }
 
 const styles = StyleSheet.create({

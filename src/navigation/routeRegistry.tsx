@@ -18,7 +18,7 @@ import {
   MyInfoScreen,
   SettingsScreen,
 } from '../settings';
-import { CreateAdScreen } from '../advertising';
+import { CreateAdScreen, AdDetailsScreen } from '../advertising';
 import {
   BlogDetailScreen,
   BlogFilterCategoryScreen,
@@ -27,7 +27,13 @@ import {
 } from '../blogs';
 import { BoostedScreen } from '../boosted';
 import { CreatePageScreen, PageDetailScreen, PageSettingsScreen, PagesScreen } from '../pages';
-import { CreateProductScreen, MarketplaceScreen, ProductDetailScreen } from '../product';
+import {
+  CreateProductScreen,
+  MarketplaceScreen,
+  MyProductsScreen,
+  ProductDetailScreen,
+} from '../product';
+import { CheckoutScreen } from '../checkout';
 import { CreateEventScreen, EventDetailScreen, EventsScreen } from '../events';
 import { CreatePollScreen } from '../poll';
 import {
@@ -69,6 +75,7 @@ import { PopularScreen } from '../popular';
 import { WithdrawalScreen } from '../withdrawal';
 import { NearbyUsersScreen } from '../user';
 import { LiveScreen, LiveRoomScreen, GoLiveScreen } from '../live';
+import { PokeScreen } from '../poke';
 
 type ScreenComponent = React.ComponentType<any>;
 type TabIconComponent = React.ComponentType<{
@@ -155,7 +162,9 @@ export function createStackRoutes(
     { name: ROUTES.CREATE_PAGE, component: CreatePageScreen },
     { name: ROUTES.EDIT_PAGE, component: CreatePageScreen },
     { name: ROUTES.MARKETPLACE, component: MarketplaceScreen },
+    { name: ROUTES.MY_PRODUCTS, component: MyProductsScreen },
     { name: ROUTES.PRODUCT_DETAIL, component: ProductDetailScreen },
+    { name: ROUTES.CHECKOUT, component: CheckoutScreen },
     { name: ROUTES.CREATE_PRODUCT, component: CreateProductScreen },
     { name: ROUTES.CREATE_EVENT, component: CreateEventScreen },
     { name: ROUTES.EDIT_EVENT, component: CreateEventScreen },
@@ -195,6 +204,7 @@ export function createStackRoutes(
     { name: ROUTES.SETTINGS_MESSAGES, component: MessageScreen },
     { name: ROUTES.WITHDRAWAL, component: WithdrawalScreen },
     { name: ROUTES.ADVERTISING, component: AdvertisingScreen },
+    { name: ROUTES.AD_DETAILS, component: AdDetailsScreen },
     { name: ROUTES.CREATE_AD, component: CreateAdScreen },
     { name: ROUTES.CREATE_REEL, component: CreateReelScreen },
     { name: ROUTES.CREATE_POST, component: CreatePostScreen },
@@ -207,5 +217,6 @@ export function createStackRoutes(
     { name: ROUTES.LIVE, component: LiveScreen },
     { name: ROUTES.LIVE_ROOM, component: LiveRoomScreen },
     { name: ROUTES.GO_LIVE, component: GoLiveScreen },
+    { name: ROUTES.POKE, component: PokeScreen },
   ];
 }

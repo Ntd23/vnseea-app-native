@@ -1,6 +1,6 @@
 // Description: Manages non-message notification list state, unread badge counts, filters, and language.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import {
@@ -14,6 +14,7 @@ import {
   getCopy,
   type NotificationFilterType,
 } from '../../application/i18n/notificationCopy';
+import { createLatestRequestGuard } from './notificationRequestGuard';
 
 const PAGE_SIZE = 100;
 
@@ -49,8 +50,7 @@ export function useNotificationsViewModel() {
     languageStorage.getLanguage(),
   );
 
-  // Track the latest request id so stale responses don't overwrite fresh ones.
-  const [reloadEpoch, setReloadEpoch] = useState(0);
+  const latestRequestGuardRef = useRef(createLatestRequestGuard());
 
   const setActiveTab = useCallback((tab: NotificationTab) => {
     setActiveTabState(tab);
@@ -85,8 +85,7 @@ export function useNotificationsViewModel() {
   // Load first page
   const loadFirstPage = useCallback(
     async (refreshing = false, silent = false) => {
-      const epochAtCall = reloadEpoch + 1;
-      setReloadEpoch(epochAtCall);
+      const requestId = latestRequestGuardRef.current.begin();
       if (refreshing) {
         setIsRefreshing(true);
       } else if (!silent) {
@@ -96,7 +95,7 @@ export function useNotificationsViewModel() {
 
       try {
         const result = await repository.getNotifications({ limit: PAGE_SIZE });
-        if (epochAtCall !== reloadEpoch + 1) {
+        if (!latestRequestGuardRef.current.isCurrent(requestId)) {
           return;
         }
         setNotifications(result.items);
@@ -104,7 +103,7 @@ export function useNotificationsViewModel() {
         setHasMore(result.hasMore);
         setUnreadCount(result.unreadCount);
       } catch (err) {
-        if (epochAtCall !== reloadEpoch + 1) {
+        if (!latestRequestGuardRef.current.isCurrent(requestId)) {
           return;
         }
         setError(
@@ -113,11 +112,13 @@ export function useNotificationsViewModel() {
             : 'Không thể tải thông báo.',
         );
       } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
+        if (latestRequestGuardRef.current.isCurrent(requestId)) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
     },
-    [reloadEpoch, repository],
+    [repository],
   );
 
   // Refresh

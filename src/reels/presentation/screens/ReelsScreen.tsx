@@ -24,9 +24,9 @@
 //     stays via FlatList virtualization).
 //
 //   Pause-on-blur
-//     When the user switches tabs we flip an `isFocused` flag, which
-//     forces every reel to compute isActive=false — pauses all decoders
-//     without losing the scroll position.
+//     When the user switches tabs we derive playback from React
+//     Navigation focus. Native iOS tabs may mount Video in the background,
+//     so a reel must never auto-play unless the Video tab is actually focused.
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -34,8 +34,8 @@ import {
   Dimensions,
   FlatList,
   LayoutChangeEvent,
+  Platform,
   RefreshControl,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -62,6 +62,8 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { ReelItem } from '../components/ReelItem';
 import { ReelCommentsSheet } from '../components/ReelCommentsSheet';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { isReelItemActive } from './reelsPlayback';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 80,
@@ -102,6 +104,8 @@ export default function ReelsScreen() {
   const insets = useSafeAreaInsets();
   const language = useAppLanguage();
   const copy = REELS_COPY[language];
+  const isIosTabRoute =
+    Platform.OS === 'ios' && navigation.getState?.().type === 'tab';
 
   const initialVideoId = route.params?.initialVideoId;
   const initialPost = route.params?.post;
@@ -205,8 +209,6 @@ export default function ReelsScreen() {
   const itemHeight = viewportHeight;
 
   const [isMuted, setIsMuted] = useState(false); // start unmuted by default
-  const [isFocused, setIsFocused] = useState(true);
-
   // Keep preloadRadius constant at 1 so the ±1 neighbor videos stay mounted
   // and buffered at all times. Previously we dropped to 0 during scroll to
   // reduce lag, but that caused a black-screen flash because the next video
@@ -228,10 +230,6 @@ export default function ReelsScreen() {
     },
   });
 
-  // Pause everything when the user navigates away from the tab — by toggling
-  // a focus flag rather than resetting activeIndex. This way the user's
-  // scroll position is preserved across tab switches.
-  //
   // Also resets the swipe-back transform to 0. Without this, the second
   // visit to Reels renders blank: a successful dismiss leaves dragX at
   // SCREEN_WIDTH, so when the screen regains focus the whole content is
@@ -239,9 +237,7 @@ export default function ReelsScreen() {
   // background.
   useFocusEffect(
     useCallback(() => {
-      setIsFocused(true);
       dragX.value = 0;
-      return () => setIsFocused(false);
     }, [dragX]),
   );
 
@@ -286,7 +282,12 @@ export default function ReelsScreen() {
       const shouldMount = distance <= preloadRadius;
       // A reel only counts as "active" when this screen has focus —
       // when the user switches tabs, every reel becomes inactive (paused).
-      const isActive = isFocused && !vm.isCommentsOpen && index === vm.activeIndex;
+      const isActive = isReelItemActive({
+        isScreenFocused: isFocusedScreen,
+        isCommentsOpen: vm.isCommentsOpen,
+        index,
+        activeIndex: vm.activeIndex,
+      });
 
       return (
         <ReelItem
@@ -316,7 +317,7 @@ export default function ReelsScreen() {
       vm.followPublisher,
       itemHeight,
       isMuted,
-      isFocused,
+      isFocusedScreen,
       handleToggleMute,
       scrollY,
       preloadRadius,
@@ -390,7 +391,7 @@ export default function ReelsScreen() {
         .hitSlop({ left: 0, width: 70 })
         .activeOffsetX([15, 999])
         .failOffsetY([-15, 15])
-        .enabled(!vm.isCommentsOpen)
+        .enabled(!isIosTabRoute && !vm.isCommentsOpen)
         .onUpdate(event => {
           'worklet';
           // Clamp to ≥ 0 so leftward overshoot doesn't push the screen
@@ -418,7 +419,7 @@ export default function ReelsScreen() {
             dragX.value = withSpring(0, { damping: 18, stiffness: 220 });
           }
         }),
-    [dragX, goBackToFeed, vm.isCommentsOpen],
+    [dragX, goBackToFeed, isIosTabRoute, vm.isCommentsOpen],
   );
 
   const screenAnimatedStyle = useAnimatedStyle(() => {
@@ -441,7 +442,7 @@ export default function ReelsScreen() {
   if (vm.isInitialLoading) {
     return (
       <View style={styles.fullCenter}>
-        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+        <FocusAwareStatusBar barStyle="light-content" translucent backgroundColor="transparent" />
         <ActivityIndicator color="#fff" size="large" />
         <Text style={styles.helperText}>{copy.loading}</Text>
       </View>
@@ -451,7 +452,7 @@ export default function ReelsScreen() {
   if (vm.error && vm.items.length === 0) {
     return (
       <View style={styles.fullCenter}>
-        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+        <FocusAwareStatusBar barStyle="light-content" translucent backgroundColor="transparent" />
         <Text style={styles.errorTitle}>{copy.failedLoad}</Text>
         <Text style={styles.errorMsg}>{vm.error}</Text>
         <TouchableOpacity onPress={vm.retry} style={styles.retryButton}>
@@ -465,7 +466,7 @@ export default function ReelsScreen() {
   if (vm.items.length === 0) {
     return (
       <View style={styles.fullCenter}>
-        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+        <FocusAwareStatusBar barStyle="light-content" translucent backgroundColor="transparent" />
         <Text style={styles.emptyTitle}>{copy.noReels}</Text>
         <Text style={styles.emptyMsg}>
           {copy.beFirst}
@@ -486,7 +487,7 @@ export default function ReelsScreen() {
         style={[styles.container, screenAnimatedStyle]}
         onLayout={handleContainerLayout}
       >
-        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+        <FocusAwareStatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
         <AnimatedFlatList
           ref={flatListRef as any}
@@ -551,13 +552,15 @@ export default function ReelsScreen() {
             Page Detail, Profile, Saved, My Videos…). Only falls back
             to a Home tab-switch when there's nothing to pop (e.g.
             Reels was launched as the very first tab). */}
-        <TouchableOpacity
-          onPress={goBackToFeed}
-          style={[styles.backFab, { top: Math.max(insets.top, 12) }]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <ChevronLeft size={26} color="#fff" />
-        </TouchableOpacity>
+        {!isIosTabRoute ? (
+          <TouchableOpacity
+            onPress={goBackToFeed}
+            style={[styles.backFab, { top: Math.max(insets.top, 12) }]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ChevronLeft size={26} color="#fff" />
+          </TouchableOpacity>
+        ) : null}
 
         <ReelCommentsSheet
           visible={vm.isCommentsOpen}
