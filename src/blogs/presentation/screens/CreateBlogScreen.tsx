@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -22,6 +21,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { createBlogsRepository } from '../../infrastructure/repositories/ApiBlogsRepository';
 import type { BlogCreateData } from '../../domain/repositories/BlogsRepository';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CreateBlogNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -157,7 +157,7 @@ function CreateBlogScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       <View className="surface-topbar h-16 flex-row items-center justify-between px-4">
         <View className="flex-row items-center">

@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Image,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -28,6 +27,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { useAdsViewModel } from '../../application/view-models/useAdsViewModel';
 import type { AdBiddingType, AdGender, AdAppearsType, AdItem } from '../../domain/types/ads.types';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CreateAdNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -552,7 +552,7 @@ function CreateAdScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
       <View className="h-14 flex-row items-center justify-between bg-blue-700 px-4">
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"

@@ -7,7 +7,6 @@ import {
   LayoutChangeEvent,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -30,6 +29,7 @@ import {
   RefreshCcw,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAuthViewModel } from '../../application/view-models/useAuthViewModel';
@@ -39,6 +39,7 @@ import {
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getAuthCopy } from '../../application/i18n/authCopy';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type ForgotPasswordNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -122,8 +123,8 @@ function ForgotPasswordScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F8FBFF]" edges={['top', 'bottom']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FBFF" />
+    <SafeAreaView className="flex-1 bg-[#F8FBFF]" edges={ROOT_SAFE_AREA_EDGES}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FBFF" />
 
       <KeyboardAvoidingView
         className="flex-1"

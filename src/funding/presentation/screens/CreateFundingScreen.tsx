@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -36,6 +35,7 @@ import { useCreateFundingViewModel } from '../../application/view-models/useCrea
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CreateFundingNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -252,7 +252,7 @@ function CreateFundingScreen() {
   if (submitSuccess) {
     return (
       <SafeAreaView className="flex-1 bg-[#F8FAFC]" edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
         <View className="flex-1 items-center justify-center px-6">
           <View className="h-20 w-20 items-center justify-center rounded-full bg-green-50 border border-green-100">
             <CheckCircle2 size={44} color="#22c55e" />
@@ -294,7 +294,7 @@ function CreateFundingScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-[#F8FAFC]" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       {/* App Bar Header */}
       <View className="flex-row items-center justify-between px-4 py-3 bg-[#F8FAFC]">

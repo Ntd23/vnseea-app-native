@@ -26,6 +26,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 
 type CallRoomScreenProps = NativeStackScreenProps<
@@ -186,7 +187,7 @@ function WaitingRoom({
       : statusText;
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-950" edges={['top', 'bottom']}>
+    <SafeAreaView className="flex-1 bg-slate-950" edges={ROOT_SAFE_AREA_EDGES}>
       <FloatingBackButton />
       <View className="flex-1 items-center justify-center px-8">
         {peerAvatar ? (

@@ -6,7 +6,6 @@ import {
   Image,
   Modal,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -18,6 +17,7 @@ import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../../../navigation/types';
 import {useDepositViewModel} from '../../application/view-models/useDepositViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type DepositNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -236,7 +236,7 @@ export default function DepositScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       <View className="flex-row items-center border-b border-slate-200 bg-white px-4 py-3">
         <TouchableOpacity

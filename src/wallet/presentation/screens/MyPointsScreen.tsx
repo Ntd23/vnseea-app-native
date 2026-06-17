@@ -6,7 +6,6 @@ import {
   Alert,
   Modal,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -28,6 +27,7 @@ import { useNavigation } from '@react-navigation/native';
 import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
 import { useMyPointsViewModel } from '../../application/view-models/useMyPointsViewModel';
 import type { PointHistoryItem } from '../../domain/types/wallet.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 function formatNumber(value: number) {
   return Math.round(value).toLocaleString('vi-VN');
@@ -114,7 +114,7 @@ function MyPointsScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f3f6fb" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f3f6fb" />
 
       <View style={styles.header}>
         <TouchableOpacity

@@ -3,7 +3,6 @@ import React from 'react';
 import {
   ActivityIndicator,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -16,6 +15,7 @@ import { useEarningsViewModel } from '../../application/view-models/useEarningsV
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type BalanceNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -58,7 +58,7 @@ function MyBalanceScreen() {
   if (isLoading) {
     return (
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-        <StatusBar barStyle="light-content" />
+        <FocusAwareStatusBar barStyle="light-content" />
         <View className="surface-brand flex-row items-center px-4 py-3">
           <TouchableOpacity
             activeOpacity={0.8}
@@ -83,7 +83,7 @@ function MyBalanceScreen() {
   if (error) {
     return (
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-        <StatusBar barStyle="light-content" />
+        <FocusAwareStatusBar barStyle="light-content" />
         <View className="surface-brand flex-row items-center px-4 py-3">
           <TouchableOpacity
             activeOpacity={0.8}
@@ -121,7 +121,7 @@ function MyBalanceScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" />
+      <FocusAwareStatusBar barStyle="light-content" />
 
       {/* Top App Bar */}
       <View className="surface-brand flex-row items-center px-4 py-3">

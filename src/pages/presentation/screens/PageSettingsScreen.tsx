@@ -36,6 +36,7 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { usePageSettingsViewModel } from '../../application/view-models/usePageSettingsViewModel';
 import { usePagesCopy } from '../../application/i18n/pagesCopy';
 import { ctaRequiresPhone, ctaRequiresUrl } from '../../application/mappers/pageSettingsMapper';
@@ -146,7 +147,7 @@ function PageSettingsScreen({ navigation, route }: PageSettingsProps) {
 
   return (
     <SafeAreaView
-      edges={['top']}
+      edges={ROOT_SAFE_AREA_EDGES}
       className="flex-1 bg-[#f1f4fb]"
     >
       {/* Header */}

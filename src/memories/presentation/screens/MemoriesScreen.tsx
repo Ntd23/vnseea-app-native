@@ -1,15 +1,21 @@
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, StatusBar } from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+} from 'react-native';
 import { ArrowLeft } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 export default function MemoriesScreen() {
   const navigation = useNavigation();
 
   return (
     <SafeAreaView className="flex-1 bg-[#f9f9fc]" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0000ff" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000ff" />
       
       {/* TopAppBar */}
       <View className="h-16 flex-row items-center justify-between px-6 bg-[#0000ff] z-50 relative">

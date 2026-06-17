@@ -3,7 +3,6 @@ import React, { useCallback } from 'react';
 import {
   Alert,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -22,6 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useGoLiveViewModel } from '../../application/view-models/useLiveViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 export default function GoLiveScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -69,7 +69,7 @@ export default function GoLiveScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       <View className="surface-topbar flex-row items-center justify-between px-4 py-3">
         <TouchableOpacity

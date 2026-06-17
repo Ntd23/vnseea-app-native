@@ -6,7 +6,6 @@ import {
   Image,
   RefreshControl,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -28,6 +27,7 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useAdvertisingViewModel } from '../../application/view-models/useAdvertisingViewModel';
 import type { AdItem } from '../../../advertising/domain/types/ads.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const BRAND = '#0000ff';
 
@@ -240,7 +240,7 @@ function AdvertisingScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       <View className="surface-topbar flex-row items-center justify-between px-4 py-3">
         <TouchableOpacity

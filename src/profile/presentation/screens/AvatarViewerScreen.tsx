@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -22,6 +21,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import type { RouteProp } from '@react-navigation/native';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type AvatarViewerNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -120,7 +120,7 @@ export default function AvatarViewerScreen() {
 
   return (
     <View className="flex-1 bg-black">
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <FocusAwareStatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       {/* Header */}
       <SafeAreaView className="absolute top-0 left-0 right-0 z-10" edges={['top']}>

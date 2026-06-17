@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -29,6 +28,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { useCommunityViewModel } from '../../application/view-models/useCommunityViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import type {
   CreateGroupDraft,
   GroupPrivacy,
@@ -255,7 +255,7 @@ function CreateGroupScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
 
       <View className="surface-brand h-16 flex-row items-center px-4">
         <TouchableOpacity

@@ -8,7 +8,6 @@ import {
   Platform,
   RefreshControl,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -55,6 +54,7 @@ import { useStoriesViewModel } from '../../../stories';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type MessagesNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -1252,7 +1252,7 @@ function MessageScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Header */}
       <View className="flex-row items-center justify-between border-b border-gray-100 px-4 py-3">

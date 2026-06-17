@@ -10,7 +10,6 @@ import {
   PermissionsAndroid,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -45,6 +44,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useCreateReelViewModel } from '../../application/view-models/useCreateReelViewModel';
 import type { ReelPrivacy } from '../../domain/types/reels.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 // Dynamic privacy options will be created inside the component using translations.
 
@@ -488,8 +489,12 @@ export default function CreateReelScreen() {
   }, [vm.uploadState.phase, navigation, vm, copy]);
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: '#f8fafc' }}>
-      <StatusBar barStyle="dark-content" />
+    <SafeAreaView
+      className="flex-1"
+      edges={ROOT_SAFE_AREA_EDGES}
+      style={{ backgroundColor: '#f8fafc' }}
+    >
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* App bar */}
       <View 

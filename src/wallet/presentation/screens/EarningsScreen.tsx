@@ -1,5 +1,10 @@
 import React, {useCallback} from 'react';
-import {ScrollView, StatusBar, Text, TouchableOpacity, View} from 'react-native';
+import {
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {
   ArrowLeft,
@@ -17,6 +22,7 @@ import {ROUTES} from '../../../navigation/constants/routes';
 import type {RootStackParamList} from '../../../navigation/types';
 import {useEarningsViewModel} from '../../application/view-models/useEarningsViewModel';
 import type {EarningsMenuItem} from '../../domain/types/wallet.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type EarningsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -118,7 +124,7 @@ function EarningsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" />
+      <FocusAwareStatusBar barStyle="light-content" />
 
       {/* Top App Bar — brand blue */}
       <View className="surface-brand flex-row items-center px-4 py-3">

@@ -3,7 +3,6 @@ import React from 'react';
 import {
   Image,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -21,6 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type BoostedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -67,7 +67,7 @@ function BoostedScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
 
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">
         <TouchableOpacity

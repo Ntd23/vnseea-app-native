@@ -20,7 +20,6 @@ import {
   RefreshControl,
   ScrollView,
   Share,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -55,6 +54,7 @@ import type {
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { PostComment } from '../../domain/repositories/FeedRepository';
 import { usePostDetailViewModel } from '../../application/view-models/usePostDetailViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -849,7 +849,7 @@ function PostDetailScreen() {
   if (isLoading && !activePost) {
     return (
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-        <StatusBar barStyle="dark-content" />
+        <FocusAwareStatusBar barStyle="dark-content" />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator color="#0000ff" />
           <Text className="mt-3 text-caption-secondary">
@@ -864,7 +864,7 @@ function PostDetailScreen() {
   if (!activePost) {
     return (
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-        <StatusBar barStyle="dark-content" />
+        <FocusAwareStatusBar barStyle="dark-content" />
         <View className="surface-topbar flex-row items-center px-4 py-3">
           <TouchableOpacity
             activeOpacity={0.8}
@@ -904,7 +904,7 @@ function PostDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       <PostHeader
         post={activePost}

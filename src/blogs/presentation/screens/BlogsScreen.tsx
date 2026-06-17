@@ -5,7 +5,6 @@ import {
   FlatList,
   Image,
   RefreshControl,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -30,6 +29,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useBlogsViewModel } from '../../application/view-models/useBlogsViewModel';
 import type { BlogsItem } from '../../domain/types/blogs.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type BlogsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -258,7 +258,7 @@ function BlogsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       <View className="surface-topbar px-4 pb-3 pt-2">
         <View className="mb-3 flex-row items-center justify-between">

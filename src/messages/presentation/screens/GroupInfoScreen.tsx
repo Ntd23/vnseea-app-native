@@ -11,7 +11,6 @@ import {
   Platform,
   RefreshControl,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -41,6 +40,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type GroupInfoScreenProps = NativeStackScreenProps<RootStackParamList, 'GroupInfo'>;
 
@@ -472,7 +472,7 @@ export default function GroupInfoScreen({ navigation, route }: GroupInfoScreenPr
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Header with gradient effect */}
       <Animated.View

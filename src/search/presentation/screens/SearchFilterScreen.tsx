@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import {
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -21,6 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type SearchFilterNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -65,7 +65,7 @@ function SearchFilterScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0000FF" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
 
       <View className="surface-brand h-16 flex-row items-center justify-center px-4">
         <TouchableOpacity

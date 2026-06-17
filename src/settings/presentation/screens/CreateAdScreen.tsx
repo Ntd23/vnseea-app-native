@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -30,6 +29,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useCreateAdViewModel } from '../../application/view-models/useCreateAdViewModel';
 import type { AdGender } from '../../application/view-models/useCreateAdViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const { width } = Dimensions.get('window');
 
@@ -545,7 +545,7 @@ function CreateAdScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }} edges={['top']}>
-      <StatusBar barStyle="light-content" />
+      <FocusAwareStatusBar barStyle="light-content" />
 
       {/* Animated header */}
       <View style={{ backgroundColor: '#4f46e5', paddingBottom: 20 }}>

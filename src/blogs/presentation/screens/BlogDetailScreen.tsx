@@ -6,7 +6,6 @@ import {
   Linking,
   ScrollView,
   Share,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -25,7 +24,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { useBlogDetailViewModel } from '../../application/view-models/useBlogDetailViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type BlogDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type BlogDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.BLOG_DETAIL>;
@@ -49,7 +50,10 @@ function BlogDetailScreen() {
 
   if (vm.isLoading) {
     return (
-      <SafeAreaView className="flex-1 items-center justify-center surface-base">
+      <SafeAreaView
+        className="flex-1 items-center justify-center surface-base"
+        edges={ROOT_SAFE_AREA_EDGES}
+      >
         <ActivityIndicator color={BRAND} size="large" />
         <Text className="mt-4 text-body-secondary">Đang tải bài viết...</Text>
       </SafeAreaView>
@@ -59,7 +63,7 @@ function BlogDetailScreen() {
   if (!vm.article) {
     return (
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
         <View className="surface-topbar h-16 flex-row items-center px-4">
           <TouchableOpacity
             className="h-10 w-10 items-center justify-center rounded-full"
@@ -95,7 +99,7 @@ function BlogDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       <View className="surface-topbar h-16 flex-row items-center justify-between px-4">
         <View className="flex-row items-center">

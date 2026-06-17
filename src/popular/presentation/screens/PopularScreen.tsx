@@ -5,7 +5,6 @@ import {
   FlatList,
   Image,
   RefreshControl,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -26,6 +25,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { usePopularViewModel } from '../../application/view-models/usePopularViewModel';
 import type { PopularPost } from '../../domain/types/popular.types';
 import type { RootStackParamList } from '../../../navigation/types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type PopularNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -340,7 +340,7 @@ function PopularScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" />
+      <FocusAwareStatusBar barStyle="light-content" />
 
       {/* Top App Bar */}
       <View className="surface-brand flex-row items-center px-4 py-3">

@@ -15,7 +15,6 @@ import {
   Modal,
   Platform,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -38,6 +37,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../../navigation/types';
 import { formatCurrency } from '../../../shared-kernel/application/utils/formatCurrency';
 import { useWithdrawalViewModel } from '../../application/view-models/useWithdrawalViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import type {
   SepayBank,
   WithdrawalHistoryItem,
@@ -379,7 +379,7 @@ function WithdrawalScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" />
+      <FocusAwareStatusBar barStyle="light-content" />
 
       <View className="surface-brand flex-row items-center px-4 py-3">
         <TouchableOpacity

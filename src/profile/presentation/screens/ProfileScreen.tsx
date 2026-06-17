@@ -7,7 +7,6 @@ import {
   Image,
   ScrollView,
   StyleSheet,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -89,6 +88,7 @@ import type {
   StoryMedia,
 } from '../../../stories/domain/types/stories.types';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
 type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
@@ -1621,7 +1621,7 @@ function ProfileScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={profileMainStyles.container}>
-        <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+        <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
         <ScrollView
           className="flex-1"

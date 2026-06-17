@@ -17,7 +17,6 @@ import {
   LayoutChangeEvent,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   View,
 } from 'react-native';
@@ -25,6 +24,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Lock, User } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import {
@@ -42,6 +42,7 @@ import AuthSubmitButton from '../components/AuthSubmitButton';
 import AuthDivider from '../components/AuthDivider';
 import AuthFooterLink from '../components/AuthFooterLink';
 import AuthErrorBanner from '../components/AuthErrorBanner';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type LoginNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -193,8 +194,8 @@ function LoginScreen() {
   }, [navigation]);
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F8FBFF]" edges={['top', 'bottom']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FBFF" />
+    <SafeAreaView className="flex-1 bg-[#F8FBFF]" edges={ROOT_SAFE_AREA_EDGES}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FBFF" />
 
       <KeyboardAvoidingView
         className="flex-1"
