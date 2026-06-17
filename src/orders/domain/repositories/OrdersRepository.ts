@@ -1,10 +1,11 @@
-// Orders Repository Interface
-// Port từ: client/src/orders/domain/repositories/
+// Description: Repository contract for marketplace purchased and seller orders.
 
-import type { OrdersItem } from '../types/orders.types';
+import type { OrdersPage } from '../types/orders.types';
 
 export interface OrdersRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<OrdersItem[]>;
-  // getById(id: string | number): Promise<OrdersItem | null>;
+  getPurchasedOrders(input?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<OrdersPage>;
+  getSellerOrders(input?: { limit?: number; offset?: number }): Promise<OrdersPage>;
 }
