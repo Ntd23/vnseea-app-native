@@ -1,10 +1,19 @@
-// Checkout Repository Interface
-// Port từ: client/src/checkout/domain/repositories/
+// Description: Repository contract for marketplace checkout.
 
-import type { CheckoutItem } from '../types/checkout.types';
+import type {
+  CheckoutResult,
+  CheckoutSummary,
+  DeliveryAddress,
+  DeliveryAddressInput,
+  WalletCheckoutBalance,
+} from '../types/checkout.types';
 
 export interface CheckoutRepository {
-  // TODO: định nghĩa các methods từ API docs
-  // getAll(): Promise<CheckoutItem[]>;
-  // getById(id: string | number): Promise<CheckoutItem | null>;
+  getSummary(): Promise<CheckoutSummary>;
+  getWalletBalance(): Promise<WalletCheckoutBalance>;
+  getAddresses(): Promise<DeliveryAddress[]>;
+  saveAddress(input: DeliveryAddressInput): Promise<DeliveryAddress[]>;
+  changeQuantity(productId: number, quantity: number): Promise<CheckoutSummary>;
+  removeItem(productId: number): Promise<CheckoutSummary>;
+  buy(addressId: string): Promise<CheckoutResult>;
 }

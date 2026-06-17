@@ -1,11 +1,235 @@
-// Checkout API Repository (Infrastructure)
-// Port từ: client/src/checkout/infrastructure/repositories/
-
+// Description: Implements marketplace checkout through WoWonder v2 endpoints.
+import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import type { CheckoutRepository } from '../../domain/repositories/CheckoutRepository';
-import apiClient from '../../../shared-kernel/infrastructure/api/client';
+import type {
+  CheckoutItem,
+  CheckoutResult,
+  CheckoutSummary,
+  DeliveryAddress,
+  DeliveryAddressInput,
+  WalletCheckoutBalance,
+} from '../../domain/types/checkout.types';
+
+type RawProduct = {
+  id?: unknown;
+  product_id?: unknown;
+  name?: unknown;
+  price?: unknown;
+  units?: unknown;
+  currency_symbol?: unknown;
+  currency_code?: unknown;
+  images?: Array<{ image?: unknown }>;
+};
+
+type CheckoutResponse = {
+  api_status: number | string;
+  data?: RawProduct[];
+  total?: unknown;
+};
+
+type RawAddress = {
+  id?: unknown;
+  name?: unknown;
+  phone?: unknown;
+  country?: unknown;
+  city?: unknown;
+  zip?: unknown;
+  address?: unknown;
+};
+
+type AddressResponse = {
+  api_status: number | string;
+  data?: RawAddress[] | RawAddress;
+  message?: string;
+};
+
+type BuyResponse = {
+  api_status: number | string;
+  message?: string;
+  data?: string;
+};
+
+type CurrentUserResponse = {
+  api_status: number | string;
+  user_data?: {
+    wallet?: unknown;
+    points_config?: {
+      display_currency_symbol?: unknown;
+      currency_symbol?: unknown;
+    };
+  };
+};
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value)
+    : '';
+}
+
+function numberValue(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function mapAddress(raw: RawAddress): DeliveryAddress {
+  return {
+    id: stringValue(raw.id),
+    name: stringValue(raw.name),
+    phone: stringValue(raw.phone),
+    country: stringValue(raw.country),
+    city: stringValue(raw.city),
+    zip: stringValue(raw.zip),
+    address: stringValue(raw.address),
+  };
+}
+
+function mapCheckoutItem(raw: RawProduct): CheckoutItem {
+  const quantity = Math.max(1, numberValue(raw.units) || 1);
+  const price = numberValue(raw.price);
+  const productId = numberValue(raw.product_id) || numberValue(raw.id);
+
+  return {
+    id: String(productId),
+    productId,
+    name: stringValue(raw.name) || 'Sản phẩm',
+    image: stringValue(raw.images?.[0]?.image),
+    price,
+    quantity,
+    total: price * quantity,
+    currencySymbol:
+      stringValue(raw.currency_symbol) || stringValue(raw.currency_code) || 'đ',
+  };
+}
+
+function normalizeSummaryCurrency(
+  items: CheckoutItem[],
+  convertedTotal: number,
+) {
+  const rawTotal = items.reduce((sum, item) => sum + item.total, 0);
+  const shouldConvert = convertedTotal > 0 && rawTotal > 0;
+  const ratio = shouldConvert ? convertedTotal / rawTotal : 1;
+  const currencySymbol = shouldConvert ? 'đ' : items[0]?.currencySymbol || 'đ';
+
+  return items.map(item => {
+    const price = item.price * ratio;
+    return {
+      ...item,
+      price,
+      total: price * item.quantity,
+      currencySymbol,
+    };
+  });
+}
+
+async function getAddresses() {
+  const response = await apiBridge.post<AddressResponse>(apiRoutes.user.address, {
+    type: 'get',
+    limit: 20,
+  });
+  const data = Array.isArray(response.data) ? response.data : [];
+  return data.map(mapAddress);
+}
+
+async function getSummary(): Promise<CheckoutSummary> {
+  const response = await apiBridge.post<CheckoutResponse>(
+    apiRoutes.products.market,
+    { type: 'checkout' },
+  );
+  const convertedTotal = numberValue(response.total);
+  const items = normalizeSummaryCurrency(
+    (response.data ?? []).map(mapCheckoutItem),
+    convertedTotal,
+  );
+  const subtotal =
+    convertedTotal || items.reduce((sum, item) => sum + item.total, 0);
+  const currencySymbol = items[0]?.currencySymbol || 'đ';
+
+  return {
+    items,
+    subtotal,
+    shipping: 0,
+    total: subtotal,
+    currencySymbol,
+  };
+}
+
+async function removeItem(productId: number): Promise<CheckoutSummary> {
+  await apiBridge.post(apiRoutes.products.market, {
+    type: 'remove_cart',
+    product_id: productId,
+  });
+  return getSummary();
+}
 
 export function createCheckoutRepository(): CheckoutRepository {
   return {
-    // TODO: implement methods
+    getSummary,
+
+    async getWalletBalance(): Promise<WalletCheckoutBalance> {
+      const response = await apiBridge.post<CurrentUserResponse>(
+        apiRoutes.auth.me,
+      );
+
+      return {
+        wallet: numberValue(response.user_data?.wallet),
+        currencySymbol:
+          stringValue(response.user_data?.points_config?.display_currency_symbol) ||
+          stringValue(response.user_data?.points_config?.currency_symbol) ||
+          'đ',
+      };
+    },
+
+    getAddresses,
+
+    async saveAddress(input: DeliveryAddressInput): Promise<DeliveryAddress[]> {
+      await apiBridge.post<AddressResponse>(apiRoutes.user.address, {
+        type: input.id ? 'edit' : 'add',
+        id: input.id,
+        name: input.name,
+        phone: input.phone,
+        country: input.country,
+        city: input.city,
+        zip: input.zip,
+        address: input.address,
+      });
+      return getAddresses();
+    },
+
+    async changeQuantity(
+      productId: number,
+      quantity: number,
+    ): Promise<CheckoutSummary> {
+      if (quantity <= 0) {
+        return removeItem(productId);
+      }
+
+      await apiBridge.post(apiRoutes.products.market, {
+        type: 'change_qty',
+        product_id: productId,
+        qty: quantity,
+      });
+      return getSummary();
+    },
+
+    removeItem,
+
+    async buy(addressId: string): Promise<CheckoutResult> {
+      const response = await apiBridge.post<BuyResponse>(
+        apiRoutes.products.market,
+        {
+          type: 'buy',
+          address_id: addressId,
+        },
+      );
+
+      return {
+        success: response.api_status === 200 || response.api_status === '200',
+        message:
+          response.message ||
+          response.data ||
+          'Đơn hàng đã được xử lý thành công.',
+      };
+    },
   };
 }
