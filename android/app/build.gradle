@@ -79,13 +79,13 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.vnseearn"
+    namespace "com.vnseea.android"
     defaultConfig {
-        applicationId "com.vnseearn"
+        applicationId "com.vnseea.android"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 7
+        versionName "7.0"
         ndk {
             abiFilters "arm64-v8a"
         }
@@ -93,6 +93,15 @@ android {
             GOOGLE_MAPS_API_KEY: project.env.get("GOOGLE_MAPS_API_KEY", ""),
             usesCleartextTraffic: "true"
         ]
+        externalNativeBuild {
+            cmake {
+                // Limit parallel clang invocations to reduce peak memory.
+                // rnscreens/rnsvg/safeareacontext instantiate huge C++ templates
+                // from RN's folly/yoga headers and OOM on Windows when parallel.
+                // 1 = sequential compile; raise to 2 once the build is stable.
+                arguments "-DCMAKE_BUILD_PARALLEL_LEVEL=1"
+            }
+        }
     }
     signingConfigs {
         debug {
@@ -100,6 +109,13 @@ android {
             storePassword 'android'
             keyAlias 'androiddebugkey'
             keyPassword 'android'
+        }
+
+        release {
+            storeFile file(MYAPP_UPLOAD_STORE_FILE)
+            storePassword MYAPP_UPLOAD_STORE_PASSWORD
+            keyAlias MYAPP_UPLOAD_KEY_ALIAS
+            keyPassword MYAPP_UPLOAD_KEY_PASSWORD
         }
     }
     buildTypes {
@@ -109,7 +125,7 @@ android {
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
