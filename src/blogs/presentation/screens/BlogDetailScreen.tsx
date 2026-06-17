@@ -1,5 +1,5 @@
 // Description: Renders one real WoWonder article loaded by blog id.
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -26,6 +26,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useBlogDetailViewModel } from '../../application/view-models/useBlogDetailViewModel';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { getBlogsCopy } from '../../application/i18n/blogsCopy';
 
 type BlogDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type BlogDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.BLOG_DETAIL>;
@@ -37,6 +42,8 @@ function BlogDetailScreen() {
   const route = useRoute<BlogDetailRoute>();
   console.log('[BlogDetailScreen] Route params:', route.params);
   const vm = useBlogDetailViewModel(route.params.blogId);
+  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const copy = getBlogsCopy(language);
 
   const handleShare = useCallback(async () => {
     if (!vm.article?.url) return;
@@ -51,7 +58,7 @@ function BlogDetailScreen() {
     return (
       <SafeAreaView className="flex-1 items-center justify-center surface-base">
         <ActivityIndicator color={BRAND} size="large" />
-        <Text className="mt-4 text-body-secondary">Đang tải bài viết...</Text>
+        <Text className="mt-4 text-body-secondary">{copy.loading}</Text>
       </SafeAreaView>
     );
   }
@@ -68,12 +75,12 @@ function BlogDetailScreen() {
           >
             <ArrowLeft size={22} color="#0F172A" />
           </TouchableOpacity>
-          <Text className="ml-3 text-heading">Bài viết</Text>
+          <Text className="ml-3 text-heading">{copy.blogsTitle}</Text>
         </View>
         <View className="flex-1 items-center justify-center px-8">
           <FileText size={56} color="rgba(0,0,255,0.32)" />
           <Text className="mt-5 text-center text-heading">
-            Không tải được bài viết
+            {copy.error}
           </Text>
           <Text className="mt-2 text-center text-body-secondary">
             {vm.error}
@@ -106,7 +113,7 @@ function BlogDetailScreen() {
           >
             <ArrowLeft size={22} color="#0F172A" />
           </TouchableOpacity>
-          <Text className="ml-3 text-heading">Bài viết</Text>
+          <Text className="ml-3 text-heading">{copy.blogsTitle}</Text>
         </View>
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"
@@ -137,7 +144,7 @@ function BlogDetailScreen() {
         <View className="bg-white px-5 py-5">
           <View className="self-start rounded-full bg-blue-50 px-3 py-1">
             <Text className="text-caption-primary text-brand">
-              {article.category || 'Bài viết'}
+              {article.category || copy.blogsTitle}
             </Text>
           </View>
           <Text className="mt-4 text-display">{article.title}</Text>
@@ -149,13 +156,13 @@ function BlogDetailScreen() {
             <View className="flex-row items-center">
               <Clock3 size={16} color={BRAND} />
               <Text className="ml-2 text-caption-secondary">
-                {article.postedLabel || 'Mới đăng'}
+                {article.postedLabel || copy.date}
               </Text>
             </View>
             <View className="flex-row items-center">
               <Eye size={16} color={BRAND} />
               <Text className="ml-2 text-caption-secondary">
-                {article.views ?? 0} lượt xem
+                {article.views ?? 0} {copy.views}
               </Text>
             </View>
           </View>
@@ -163,7 +170,7 @@ function BlogDetailScreen() {
 
         <View className="mt-3 bg-white px-5 py-5">
           <Text className="text-body-secondary">
-            {article.content || article.description || 'Bài viết chưa có nội dung.'}
+            {article.content || article.description || copy.noBlogsDesc}
           </Text>
         </View>
 

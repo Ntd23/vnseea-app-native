@@ -3549,6 +3549,10 @@ function SettingsScreen() {
       if (id === 'live') {
         navigation.navigate(ROUTES.LIVE);
       }
+
+      if (id === 'poke') {
+        navigation.navigate(ROUTES.POKE);
+      }
     },
     [navigation],
   );

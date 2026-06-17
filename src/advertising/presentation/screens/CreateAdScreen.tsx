@@ -28,6 +28,11 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { useAdsViewModel } from '../../application/view-models/useAdsViewModel';
 import type { AdBiddingType, AdGender, AdAppearsType, AdItem } from '../../domain/types/ads.types';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import {
+  languageStorage,
+  type AppLanguage,
+} from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { getAdvertisingCopy } from '../../application/i18n/advertisingCopy';
 
 type CreateAdNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -39,6 +44,60 @@ const AD_COUNTRY_OPTIONS = [
   { id: '2', name: 'Canada' },
   { id: '73', name: 'France' },
   { id: '229', name: 'United Kingdom' },
+  { id: '3', name: 'Australia' },
+  { id: '4', name: 'Germany' },
+  { id: '5', name: 'Japan' },
+  { id: '6', name: 'South Korea' },
+  { id: '7', name: 'China' },
+  { id: '8', name: 'Singapore' },
+  { id: '9', name: 'Malaysia' },
+  { id: '10', name: 'Thailand' },
+  { id: '11', name: 'Indonesia' },
+  { id: '12', name: 'Philippines' },
+  { id: '13', name: 'India' },
+  { id: '14', name: 'Brazil' },
+  { id: '15', name: 'Mexico' },
+  { id: '16', name: 'Spain' },
+  { id: '17', name: 'Italy' },
+  { id: '18', name: 'Netherlands' },
+  { id: '19', name: 'Russia' },
+  { id: '20', name: 'Turkey' },
+  { id: '21', name: 'Saudi Arabia' },
+  { id: '22', name: 'United Arab Emirates' },
+  { id: '23', name: 'South Africa' },
+  { id: '24', name: 'Egypt' },
+  { id: '25', name: 'Nigeria' },
+  { id: '26', name: 'Argentina' },
+  { id: '27', name: 'Colombia' },
+  { id: '28', name: 'Chile' },
+  { id: '29', name: 'Peru' },
+  { id: '30', name: 'Poland' },
+  { id: '31', name: 'Sweden' },
+  { id: '32', name: 'Norway' },
+  { id: '33', name: 'Denmark' },
+  { id: '34', name: 'Finland' },
+  { id: '35', name: 'Switzerland' },
+  { id: '36', name: 'Austria' },
+  { id: '37', name: 'Belgium' },
+  { id: '38', name: 'Ireland' },
+  { id: '39', name: 'Portugal' },
+  { id: '40', name: 'Greece' },
+  { id: '41', name: 'Czech Republic' },
+  { id: '42', name: 'Hungary' },
+  { id: '43', name: 'Romania' },
+  { id: '44', name: 'Ukraine' },
+  { id: '45', name: 'Israel' },
+  { id: '46', name: 'Pakistan' },
+  { id: '47', name: 'Bangladesh' },
+  { id: '48', name: 'Sri Lanka' },
+  { id: '49', name: 'Nepal' },
+  { id: '50', name: 'Myanmar' },
+  { id: '51', name: 'Cambodia' },
+  { id: '52', name: 'Laos' },
+  { id: '53', name: 'New Zealand' },
+  { id: '54', name: 'Hong Kong' },
+  { id: '55', name: 'Taiwan' },
+  { id: '56', name: 'Macau' },
 ] as const;
 
 function CreateAdScreen() {
@@ -46,6 +105,8 @@ function CreateAdScreen() {
   const route = useRoute<RouteProp<RootStackParamList, typeof ROUTES.CREATE_AD>>();
   const editingAd = route.params?.ad;
   const { isCreating, isUpdating, createAd, updateAd } = useAdsViewModel();
+  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const copy = getAdvertisingCopy(language);
 
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState({
@@ -89,7 +150,61 @@ function CreateAdScreen() {
     }
   };
 
+  const validateStep = (currentStep: number): boolean => {
+    switch (currentStep) {
+      case 0:
+        if (!formData.name.trim() || formData.name.trim().length < 3) {
+          showToast({ message: copy.errorCompanyName, type: 'error' });
+          return false;
+        }
+        if (!/^https?:\/\/.+\..+/i.test(formData.website.trim())) {
+          showToast({ message: copy.errorWebsite, type: 'error' });
+          return false;
+        }
+        if (!formData.headline.trim() || formData.headline.trim().length < 5) {
+          showToast({ message: copy.errorHeadline, type: 'error' });
+          return false;
+        }
+        if (!formData.description.trim()) {
+          showToast({ message: copy.errorDescription, type: 'error' });
+          return false;
+        }
+        if (!formData.media) {
+          showToast({ message: copy.errorImage, type: 'error' });
+          return false;
+        }
+        return true;
+
+      case 1:
+        const audienceList = formData.audienceList.trim();
+        const countryIds = audienceList.split(',').map(item => item.trim()).filter(Boolean);
+        if (countryIds.length === 0 || countryIds.some(item => !/^\d+$/.test(item) || item === '0')) {
+          showToast({ message: copy.errorCountry, type: 'error' });
+          return false;
+        }
+        if (!formData.location.trim()) {
+          showToast({ message: copy.errorLocation, type: 'error' });
+          return false;
+        }
+        return true;
+
+      case 2:
+        // Budget is optional: empty or 0 means unlimited
+        return true;
+
+      case 3:
+        return true;
+
+      default:
+        return true;
+    }
+  };
+
   const next = () => {
+    if (!validateStep(step)) {
+      return;
+    }
+
     if (step < 3) {
       setStep(s => s + 1);
     } else {
@@ -180,38 +295,38 @@ function CreateAdScreen() {
     if (editingAd) {
       const res = await updateAd(editingAd.id, adData);
       if (res.success) {
-        showToast({ message: 'Cập nhật quảng cáo thành công!', type: 'success' });
+        showToast({ message: copy.successUpdate, type: 'success' });
         setTimeout(() => navigation.goBack(), 1500);
       } else {
-        showToast({ message: res.error || 'Cập nhật quảng cáo thất bại.', type: 'error' });
+        showToast({ message: res.error || copy.errorUpdate, type: 'error' });
       }
     } else {
       const res = await createAd(adData);
       if (res.success) {
-        showToast({ message: 'Tạo quảng cáo thành công!', type: 'success' });
+        showToast({ message: copy.successCreate, type: 'success' });
         setTimeout(() => navigation.goBack(), 1500);
       } else {
-        showToast({ message: res.error || 'Không tạo được quảng cáo. Vui lòng thử lại.', type: 'error' });
+        showToast({ message: res.error || copy.errorCreate, type: 'error' });
       }
     }
   };
 
   const getStepTitle = () => {
     switch (step) {
-      case 0: return editingAd ? 'Chỉnh sửa thông tin' : 'Thông tin quảng cáo';
-      case 1: return 'Đối tượng';
-      case 2: return 'Ngân sách & Thanh toán';
-      case 3: return 'Xem trước';
+      case 0: return editingAd ? copy.step1TitleEdit : copy.step1Title;
+      case 1: return copy.step2Title;
+      case 2: return copy.step3Title;
+      case 3: return copy.step4Title;
       default: return '';
     }
   };
 
   const getStepHelper = () => {
     switch (step) {
-      case 0: return 'Nhập thông tin cơ bản về quảng cáo.';
-      case 1: return 'Chọn đối tượng bạn muốn tiếp cận.';
-      case 2: return 'Đặt ngân sách và phương thức thanh toán.';
-      case 3: return 'Xem lại trước khi xuất bản.';
+      case 0: return copy.step1Helper;
+      case 1: return copy.step2Helper;
+      case 2: return copy.step3Helper;
+      case 3: return copy.step4Helper;
       default: return '';
     }
   };
@@ -222,12 +337,12 @@ function CreateAdScreen() {
         return (
           <View className="gap-5">
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Tên công ty</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.companyName}</Text>
               <View className="flex-row items-center min-h-[54px] rounded-xl border border-slate-200 bg-white px-4">
                 <Target size={20} color="#64748B" />
                 <TextInput
                   className="ml-3 flex-1 text-body-primary"
-                  placeholder="Nhập tên công ty"
+                  placeholder={copy.companyNamePlaceholder}
                   placeholderTextColor="#94A3B8"
                   value={formData.name}
                   onChangeText={t => setFormData(p => ({ ...p, name: t }))}
@@ -236,12 +351,12 @@ function CreateAdScreen() {
             </View>
 
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Website</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.website}</Text>
               <View className="flex-row items-center min-h-[54px] rounded-xl border border-slate-200 bg-white px-4">
                 <Globe size={20} color="#64748B" />
                 <TextInput
                   className="ml-3 flex-1 text-body-primary"
-                  placeholder="https://example.com"
+                  placeholder={copy.websitePlaceholder}
                   placeholderTextColor="#94A3B8"
                   value={formData.website}
                   onChangeText={t => setFormData(p => ({ ...p, website: t }))}
@@ -252,11 +367,11 @@ function CreateAdScreen() {
             </View>
 
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Tiêu đề quảng cáo</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.headline}</Text>
               <View className="min-h-[54px] rounded-xl border border-slate-200 bg-white px-4 justify-center">
                 <TextInput
                   className="text-body-primary"
-                  placeholder="Nhập tiêu đề hấp dẫn"
+                  placeholder={copy.headlinePlaceholder}
                   placeholderTextColor="#94A3B8"
                   value={formData.headline}
                   onChangeText={t => setFormData(p => ({ ...p, headline: t }))}
@@ -265,11 +380,11 @@ function CreateAdScreen() {
             </View>
 
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Mô tả</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.description}</Text>
               <View className="min-h-[100px] rounded-xl border border-slate-200 bg-white p-4">
                 <TextInput
                   className="flex-1 text-body-primary"
-                  placeholder="Nhập mô tả quảng cáo"
+                  placeholder={copy.descriptionPlaceholder}
                   placeholderTextColor="#94A3B8"
                   multiline
                   textAlignVertical="top"
@@ -280,7 +395,7 @@ function CreateAdScreen() {
             </View>
 
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Hình ảnh</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.image}</Text>
               <TouchableOpacity
                 className="min-h-[180px] items-center justify-center rounded-xl border-2 border-dashed border-blue-700 p-6 bg-slate-50"
                 activeOpacity={0.85}
@@ -307,12 +422,12 @@ function CreateAdScreen() {
                     >
                       <Text className="text-white">X</Text>
                     </TouchableOpacity>
-                    <Text className="mt-3 text-center text-title-primary text-blue-700">Đổi ảnh khác</Text>
+                    <Text className="mt-3 text-center text-title-primary text-blue-700">{copy.changeImage}</Text>
                   </View>
                 ) : (
                   <>
                     <ImagePlus size={48} color={BRAND} />
-                    <Text className="mt-4 text-title-primary text-blue-700">Chọn ảnh từ thư viện</Text>
+                    <Text className="mt-4 text-title-primary text-blue-700">{copy.selectImage}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -324,7 +439,7 @@ function CreateAdScreen() {
         return (
           <View className="gap-5">
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Giới tính</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.gender}</Text>
               <View className="flex-row gap-3">
                 {(['all', 'male', 'female'] as AdGender[]).map(g => (
                   <TouchableOpacity
@@ -333,7 +448,7 @@ function CreateAdScreen() {
                     onPress={() => setFormData(p => ({ ...p, gender: g }))}
                   >
                     <Text className={`text-center font-semibold ${formData.gender === g ? 'text-white' : 'text-slate-700'}`}>
-                      {g === 'all' ? 'Tất cả' : g === 'male' ? 'Nam' : 'Nữ'}
+                      {g === 'all' ? copy.genderAll : g === 'male' ? copy.genderMale : copy.genderFemale}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -341,7 +456,7 @@ function CreateAdScreen() {
             </View>
 
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Quốc gia mục tiêu</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.targetCountry}</Text>
               <View className="flex-row flex-wrap gap-2">
                 {AD_COUNTRY_OPTIONS.map(country => (
                   <TouchableOpacity
@@ -364,17 +479,15 @@ function CreateAdScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-              <Text className="mt-2 text-caption-secondary">
-                Hệ thống yêu cầu mã quốc gia, Việt Nam = 233.
-              </Text>
+              <Text className="mt-2 text-caption-secondary">{copy.countryCodeHint}</Text>
             </View>
 
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Địa điểm hiển thị</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.displayLocation}</Text>
               <View className="flex-row items-center min-h-[54px] rounded-xl border border-slate-200 bg-white px-4">
                 <TextInput
                   className="flex-1 text-body-primary"
-                  placeholder="Vietnam"
+                  placeholder={copy.displayLocationPlaceholder}
                   placeholderTextColor="#94A5B8"
                   value={formData.location}
                   onChangeText={t => setFormData(p => ({ ...p, location: t }))}
@@ -383,12 +496,17 @@ function CreateAdScreen() {
             </View>
 
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Vị trí hiển thị</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.displayPosition}</Text>
               <View className="gap-3">
                 {([
-                  { value: 'post', label: 'Bài đăng' },
-                  { value: 'sidebar', label: 'Thanh bên' },
-                  { value: 'video', label: 'Video' },
+                  { value: 'post', label: copy.positionPost },
+                  { value: 'sidebar', label: copy.positionSidebar },
+                  { value: 'video', label: copy.positionVideo },
+                  { value: 'story', label: copy.positionStory },
+                  { value: 'timeline', label: copy.positionTimeline },
+                  { value: 'groups', label: copy.positionGroups },
+                  { value: 'pages', label: copy.positionPages },
+                  { value: 'messages', label: copy.positionMessages },
                 ] as { value: AdAppearsType; label: string }[]).map(item => (
                   <TouchableOpacity
                     key={item.value}
@@ -408,7 +526,7 @@ function CreateAdScreen() {
         return (
           <View className="gap-5">
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Phương thức đặt giá</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.biddingMethod}</Text>
               <View className="gap-3">
                 <TouchableOpacity
                   className={`flex-row items-center rounded-xl px-4 py-4 ${formData.bidding === 'clicks' ? 'bg-blue-50 border border-blue-700' : 'bg-slate-100 border border-transparent'}`}
@@ -416,8 +534,8 @@ function CreateAdScreen() {
                 >
                   <View className={`h-5 w-5 rounded-full border-2 ${formData.bidding === 'clicks' ? 'border-blue-700' : 'border-slate-300'}`} />
                   <View className="ml-3">
-                    <Text className="text-body-primary font-semibold">Theo lượt nhấp</Text>
-                    <Text className="text-caption-secondary">Thanh toán khi người dùng nhấn vào quảng cáo</Text>
+                    <Text className="text-body-primary font-semibold">{copy.biddingClicks}</Text>
+                    <Text className="text-caption-secondary">{copy.biddingClicksDesc}</Text>
                   </View>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -426,20 +544,20 @@ function CreateAdScreen() {
                 >
                   <View className={`h-5 w-5 rounded-full border-2 ${formData.bidding === 'views' ? 'border-blue-700' : 'border-slate-300'}`} />
                   <View className="ml-3">
-                    <Text className="text-body-primary font-semibold">Theo lượt xem</Text>
-                    <Text className="text-caption-secondary">Thanh toán theo số lượt hiển thị</Text>
+                    <Text className="text-body-primary font-semibold">{copy.biddingViews}</Text>
+                    <Text className="text-caption-secondary">{copy.biddingViewsDesc}</Text>
                   </View>
                 </TouchableOpacity>
               </View>
             </View>
 
             <View>
-              <Text className="mb-2 text-label-primary text-slate-500">Ngân sách (VNĐ)</Text>
+              <Text className="mb-2 text-label-primary text-slate-500">{copy.budget}</Text>
               <View className="flex-row items-center min-h-[54px] rounded-xl border border-slate-200 bg-white px-4">
                 <DollarSign size={20} color="#64748B" />
                 <TextInput
                   className="ml-3 flex-1 text-body-primary"
-                  placeholder="100000"
+                  placeholder={copy.budgetPlaceholder}
                   placeholderTextColor="#94A3B8"
                   keyboardType="numeric"
                   value={formData.budget}
@@ -453,7 +571,7 @@ function CreateAdScreen() {
       case 3:
         return (
           <View className="gap-5">
-            <Text className="text-heading">Xem trước quảng cáo</Text>
+            <Text className="text-heading">{copy.previewTitle}</Text>
 
             <View className="rounded-xl bg-white overflow-hidden border border-slate-200">
               <View className="flex-row items-center p-4">
@@ -490,42 +608,42 @@ function CreateAdScreen() {
 
               <View className="p-4">
                 <Text className="text-xl font-bold leading-tight">
-                  {formData.headline || 'Tiêu đề quảng cáo'}
+                  {formData.headline || copy.headline}
                 </Text>
                 <Text className="mt-2 text-body-secondary" numberOfLines={3}>
-                  {formData.description || 'Mô tả sẽ hiển thị ở đây'}
+                  {formData.description || copy.description}
                 </Text>
                 <TouchableOpacity className="mt-4 items-center rounded-lg bg-blue-700 py-3">
-                  <Text className="font-bold text-white">Tìm hiểu thêm</Text>
+                  <Text className="font-bold text-white">{copy.learnMore}</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
             <View className="rounded-xl bg-slate-50 p-4">
-              <Text className="mb-3 font-semibold text-body-primary">Thông tin chiến dịch</Text>
+              <Text className="mb-3 font-semibold text-body-primary">{copy.campaignInfo}</Text>
               <View className="gap-2">
                 <View className="flex-row items-center">
                   <Users size={16} color="#64748B" />
                   <Text className="ml-2 text-caption-secondary">
-                    Đối tượng: {formData.gender === 'all' ? 'Tất cả mọi người' : formData.gender === 'male' ? 'Nam giới' : 'Nữ giới'}
+                    {formData.gender === 'all' ? copy.audienceAll : formData.gender === 'male' ? copy.audienceMale : copy.audienceFemale}
                   </Text>
                 </View>
                 <View className="flex-row items-center">
                   <DollarSign size={16} color="#64748B" />
                   <Text className="ml-2 text-caption-secondary">
-                    Ngân sách: {formData.budget ? `${parseFloat(formData.budget).toLocaleString('vi-VN')} VNĐ` : 'Chưa đặt'}
+                    {copy.budgetLabel} {formData.budget ? `${parseFloat(formData.budget).toLocaleString('vi-VN')} VNĐ` : copy.budgetUnlimited}
                   </Text>
                 </View>
                 <View className="flex-row items-center">
                   <Target size={16} color="#64748B" />
                   <Text className="ml-2 text-caption-secondary">
-                    Thanh toán: {formData.bidding === 'clicks' ? 'Theo lượt nhấp' : 'Theo lượt xem'}
+                    {formData.bidding === 'clicks' ? copy.paymentClicks : copy.paymentViews}
                   </Text>
                 </View>
                 <View className="flex-row items-center">
                   <Globe size={16} color="#64748B" />
                   <Text className="ml-2 text-caption-secondary">
-                    Vị trí: {formData.appears === 'post' ? 'Bài đăng' : formData.appears === 'sidebar' ? 'Thanh bên' : 'Video'}
+                    {formData.appears === 'post' ? copy.positionLabelPost : formData.appears === 'sidebar' ? copy.positionLabelSidebar : formData.appears === 'video' ? copy.positionLabelVideo : formData.appears === 'story' ? copy.positionLabelStory : formData.appears === 'timeline' ? copy.positionLabelTimeline : formData.appears === 'groups' ? copy.positionLabelGroups : formData.appears === 'pages' ? copy.positionLabelPages : copy.positionLabelMessages}
                   </Text>
                 </View>
               </View>
@@ -535,9 +653,9 @@ function CreateAdScreen() {
               <View className="flex-row items-center rounded-xl bg-amber-50 p-4">
                 <Text className="text-lg">!</Text>
                 <View className="ml-3 flex-1">
-                  <Text className="font-medium text-amber-800">Cần điền thêm thông tin</Text>
+                  <Text className="font-medium text-amber-800">{copy.needMoreInfo}</Text>
                   <Text className="text-caption-secondary text-amber-700">
-                    Quay lại điền đầy đủ thông tin để quảng cáo hiệu quả hơn
+                    {copy.needMoreInfoDesc}
                   </Text>
                 </View>
               </View>
@@ -596,7 +714,7 @@ function CreateAdScreen() {
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text className="text-title-primary text-white">
-              {step === 3 ? (editingAd ? 'Lưu thay đổi' : 'Xuất bản ngay') : 'Tiếp tục'}
+              {step === 3 ? (editingAd ? copy.saveChanges : copy.publishNow) : copy.continue}
             </Text>
           )}
         </TouchableOpacity>
