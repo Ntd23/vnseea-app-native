@@ -11,6 +11,10 @@ import {
 } from './src/messages';
 import { requestCallStartupPermissions } from './src/shared-kernel/application/permissions/callStartupPermissions';
 import { initializePushNotifications } from './src/shared-kernel/infrastructure/push/oneSignalPush';
+import { initI18n } from './src/shared-kernel/infrastructure/i18n';
+
+// Initialize i18n before any component subscribes to translations.
+initI18n();
 
 // GestureHandlerRootView must wrap the entire app tree for any
 // react-native-gesture-handler components to receive touch events.

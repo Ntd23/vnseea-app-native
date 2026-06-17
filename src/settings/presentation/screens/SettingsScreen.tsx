@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   ScrollView,
+  StatusBar,
   Switch,
   Text,
   TextInput,
@@ -75,6 +76,7 @@ import {
   languageStorage,
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -85,7 +87,6 @@ import ProfileHeaderCard from '../components/ProfileHeaderCard';
 import FeatureGrid from '../components/FeatureGrid';
 import GoProBanner from '../components/GoProBanner';
 import SettingsMenuList from '../components/SettingsMenuList';
-import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import type {
   UserGender,
   UserUploadFile,
@@ -3341,6 +3342,9 @@ function SettingsScreen() {
   const handleDirectLanguageChange = useCallback(
     (lang: AppLanguage) => {
       setLanguage(lang);
+      // Keep the new i18next instance in sync with the legacy MMKV store
+      // so consumers that use `useTranslation` re-render immediately.
+      changeLocale(lang);
       Alert.alert(
         'Ngôn ngữ / Language',
         lang === 'vi' ? 'Đã đổi sang Tiếng Việt' : 'Changed to English',
@@ -3549,17 +3553,13 @@ function SettingsScreen() {
       if (id === 'live') {
         navigation.navigate(ROUTES.LIVE);
       }
-
-      if (id === 'poke') {
-        navigation.navigate(ROUTES.POKE);
-      }
     },
     [navigation],
   );
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" />
 
       {/* Top App Bar */}
       <View className="surface-topbar flex-row items-center justify-between px-5 py-3">

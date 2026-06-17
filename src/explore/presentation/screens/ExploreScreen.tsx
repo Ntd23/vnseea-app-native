@@ -914,12 +914,14 @@ function ExploreScreen() {
       setSharingPost(post);
       requestAnimationFrame(() => {
         setShareSheetVisible(true);
+        tabBarVisibility.setVisible(false);
       });
     }
   }, []);
 
   const handleCloseShareModal = useCallback(() => {
     setShareSheetVisible(false);
+    tabBarVisibility.setVisible(true);
     setTimeout(() => {
       setSharingPost(undefined);
     }, 180);
