@@ -2121,6 +2121,7 @@ export type PhotoViewerState = {
 } | null;
 
 const PHOTO_VIEWER_IMAGE_HEIGHT_RATIO = 0.62;
+const PHOTO_VIEWER_COMMENT_OPEN_DELAY_MS = 180;
 
 const PhotoViewerImage = React.memo(function PhotoViewerImage({
   url,
@@ -2282,13 +2283,25 @@ export function PhotoViewerModal({
     onClose();
   }, [onClose]);
 
+  const handleCommentPress = useCallback(() => {
+    if (!livePost) return;
+    const postId = livePost.id;
+    setPickerAnchor(null);
+    onClose();
+    setTimeout(() => {
+      onCommentTap(postId);
+    }, PHOTO_VIEWER_COMMENT_OPEN_DELAY_MS);
+  }, [livePost, onClose, onCommentTap]);
+
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
     .failOffsetX([-10, 10])
     .onUpdate(event => {
+      'worklet';
       translateY.value = event.translationY;
     })
     .onEnd(event => {
+      'worklet';
       if (event.translationY > 100 || event.velocityY > 500) {
         // Slide off screen downwards
         translateY.value = withTiming(SCREEN_H, { duration: 180 }, () => {
@@ -2674,7 +2687,7 @@ export function PhotoViewerModal({
 
                     {/* Comment Capsule */}
                     <GHTouchableOpacity
-                      onPress={() => onCommentTap(livePost.id)}
+                      onPress={handleCommentPress}
                       activeOpacity={0.75}
                       style={{
                         flexDirection: 'row',
