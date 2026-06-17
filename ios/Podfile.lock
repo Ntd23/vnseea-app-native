@@ -3,6 +3,28 @@ PODS:
   - hermes-engine (250829098.0.10):
     - hermes-engine/Pre-built (= 250829098.0.10)
   - hermes-engine/Pre-built (250829098.0.10)
+  - LiquidGlass (0.8.0):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - livekit-react-native (2.11.0):
     - hermes-engine
     - livekit-react-native-webrtc
@@ -2349,7 +2371,7 @@ PODS:
     - ReactNativeDependencies
     - RNWorklets
     - Yoga
-  - RNScreens (4.24.0):
+  - RNScreens (4.25.2):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2371,9 +2393,9 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
-    - RNScreens/common (= 4.24.0)
+    - RNScreens/common (= 4.25.2)
     - Yoga
-  - RNScreens/common (4.24.0):
+  - RNScreens/common (4.25.2):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2542,6 +2564,7 @@ PODS:
 DEPENDENCIES:
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
+  - "LiquidGlass (from `../node_modules/@callstack/liquid-glass`)"
   - "livekit-react-native (from `../node_modules/@livekit/react-native`)"
   - "livekit-react-native-webrtc (from `../node_modules/@livekit/react-native-webrtc`)"
   - NitroMmkv (from `../node_modules/react-native-mmkv`)
@@ -2650,6 +2673,8 @@ EXTERNAL SOURCES:
   hermes-engine:
     :podspec: "../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec"
     :tag: hermes-v250829098.0.10
+  LiquidGlass:
+    :path: "../node_modules/@callstack/liquid-glass"
   livekit-react-native:
     :path: "../node_modules/@livekit/react-native"
   livekit-react-native-webrtc:
@@ -2842,6 +2867,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   hermes-engine: bb344a9154603a1fe6bf20c5790af4dbbf40f77f
+  LiquidGlass: 9dd6be7ac113cae8b84f895d8a3eede578dbef98
   livekit-react-native: 4b178062d4b1df81748aa3bc34bbfff6570ce920
   livekit-react-native-webrtc: 6384bffff182166749ea42ccc419cee6785b0603
   MMKVCore: 3d16ce9f7d411e135020915fde98a056859a1efa
@@ -2932,7 +2958,7 @@ SPEC CHECKSUMS:
   RNDateTimePicker: 7b2738f1e595f83c14580a11c476872755c5befc
   RNGestureHandler: 2ff61eac036eaf89f6818bf4ed9c39771a17d134
   RNReanimated: f735b1747a7a93bda7ca102c6d37a3cf54b6d5e8
-  RNScreens: 01b065ded2dfe7987bcce770ff3a196be417ff41
+  RNScreens: 991cc417cd396602a6cf59a42139e5a9d91462a9
   RNSVG: 04044c3abcf177fd674a1a3d13097efa1adebcbe
   RNVectorIcons: 97f26211c07d69e45b189f9dd0dbbe5e2d2b0b92
   RNVoipPushNotification: 4998fe6724d421da616dca765da7dc421ff54c4e
@@ -2940,6 +2966,6 @@ SPEC CHECKSUMS:
   WebRTC-SDK: ac5965a3cc2c258973466e3b1739ab0308bab0d0
   Yoga: 77dfa8673de2874e1855002ae59c68b8be9b007b
 
-PODFILE CHECKSUM: 32d931c82143444d9d587412c9e4e6e53eb6ffb4
+PODFILE CHECKSUM: ca5eba242c20846337ee90e0ecdd8b54f5f0194f
 
 COCOAPODS: 1.16.2

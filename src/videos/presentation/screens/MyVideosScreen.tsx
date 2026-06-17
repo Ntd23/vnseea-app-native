@@ -8,7 +8,6 @@ import {
   FlatList,
   Image,
   RefreshControl,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -31,8 +30,10 @@ import {
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToReels } from '../../../navigation/reelsNavigation';
 import type { FeedVideoPost } from '../../../feed/domain/types/feed.types';
 import { useMyVideosViewModel } from '../../application/view-models/useMyVideosViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const LIST_PADDING = 16;
@@ -167,9 +168,10 @@ function MyVideosScreen() {
 
   const handleOpenVideo = useCallback(
     (post: FeedVideoPost) => {
-      navigation.navigate(ROUTES.MAIN_TABS, {
-        screen: ROUTES.REELS,
-        params: { initialVideoId: post.id, post, source: 'myVideos' },
+      navigateToReels(navigation, {
+        initialVideoId: post.id,
+        post,
+        source: 'myVideos',
       });
     },
     [navigation],
@@ -232,7 +234,7 @@ function MyVideosScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.headerBg} />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={COLORS.headerBg} />
 
       {/* ─── Header ──────────────────────────────────────────── */}
       <View style={styles.header}>

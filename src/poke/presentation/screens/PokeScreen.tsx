@@ -6,7 +6,6 @@ import {
   FlatList,
   Image,
   RefreshControl,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -21,8 +20,9 @@ import {
   languageStorage,
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
-import { getPokeCopy, getPokeCopyAsString } from '../../application/i18n/pokeCopy';
+import { getPokeCopyAsString } from '../../application/i18n/pokeCopy';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const BRAND = '#0000FF';
 
@@ -147,11 +147,12 @@ function PokeScreen() {
   const navigation = useNavigation();
   const [language] = useState<AppLanguage>(languageStorage.getLanguage());
   const copy = getPokeCopyAsString(language);
+  const { loadPokes } = vm;
 
   useFocusEffect(
     useCallback(() => {
-      void vm.loadPokes();
-    }, []),
+      void loadPokes();
+    }, [loadPokes]),
   );
 
   const handlePokeBack = useCallback(
@@ -212,7 +213,7 @@ function PokeScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       <View className="surface-topbar px-4 pb-3 pt-2">
         <View className="flex-row items-center justify-between">

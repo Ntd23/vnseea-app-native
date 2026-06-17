@@ -39,7 +39,7 @@ import {
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToReels } from '../../../navigation/reelsNavigation';
 import type { RootStackParamList } from '../../../navigation/types';
 import type {
   FeedPost,
@@ -1087,7 +1087,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     // does a `goBack()` first which pops the actual stack — so
     // 'home' is a safe default even when the card is rendered inside
     // a different surface.
-    navigation.navigate(ROUTES.REELS, {
+    navigateToReels(navigation, {
       initialVideoId: post.id,
       post,
       source: 'home',
@@ -1573,7 +1573,6 @@ export const TextPostCard = React.memo(function TextPostCard({
     </View>
   );
 });
-
 
 
 

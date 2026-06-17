@@ -5,7 +5,6 @@ import {
   FlatList,
   PanResponder,
   RefreshControl,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -30,6 +29,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { useMarketplaceViewModel } from '../../application/view-models/useMarketplaceViewModel';
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type MarketplaceNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -227,7 +227,7 @@ function MarketplaceScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       <View className="surface-topbar flex-row items-center px-4 py-3">
         <TouchableOpacity

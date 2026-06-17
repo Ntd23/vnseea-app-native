@@ -29,6 +29,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import type { GroupLiveKitParticipant } from '../../domain/types/groupCall.types';
 
@@ -351,7 +352,7 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-950" edges={['top', 'bottom']}>
+    <SafeAreaView className="flex-1 bg-slate-950" edges={ROOT_SAFE_AREA_EDGES}>
       <View className="flex-row items-center justify-between px-4 pb-3 pt-2">
         <TouchableOpacity
           className="h-11 w-11 items-center justify-center rounded-full bg-slate-900"

@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -50,6 +49,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { useCreateOfferViewModel } from '../../application/view-models/useOfferViewModel';
 import type { DiscountType } from '../../domain/types/offer.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const BRAND = '#3435F7';
 const TEXT = '#0F172A';
@@ -516,7 +516,7 @@ export default function CreateOfferScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={styles.header}>
         <PressScale
           onPress={handleBack}

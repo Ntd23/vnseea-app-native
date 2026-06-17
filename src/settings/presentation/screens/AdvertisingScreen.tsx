@@ -6,7 +6,6 @@ import {
   Image,
   RefreshControl,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -28,6 +27,7 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useAdvertisingViewModel } from '../../application/view-models/useAdvertisingViewModel';
 import type { AdItem } from '../../../advertising/domain/types/ads.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
   languageStorage,
   type AppLanguage,
@@ -220,7 +220,7 @@ function AdCampaignCard({
 
 function AdvertisingScreen() {
   const navigation = useNavigation<any>();
-  const { ads, isLoading, isRefreshing, isDeleting, error, fetchAds, refresh, deleteAd } = useAdvertisingViewModel();
+  const { ads, isLoading, isRefreshing, error, fetchAds, refresh, deleteAd } = useAdvertisingViewModel();
   const [language] = useState<AppLanguage>(languageStorage.getLanguage());
   const copy = getAdvertisingCopy(language);
 
@@ -258,13 +258,13 @@ function AdvertisingScreen() {
         },
       ]
     );
-  }, [deleteAd]);
+  }, [deleteAd, copy.deleteFailed, copy.deleteSuccess]);
 
   const isEmpty = !isLoading && ads.length === 0;
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       <View className="surface-topbar flex-row items-center justify-between px-4 py-3">
         <TouchableOpacity

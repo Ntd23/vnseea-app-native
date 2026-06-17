@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -16,12 +15,12 @@ import {
 import { launchImageLibrary, type Asset, type MediaType } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ArrowLeft, FileText, Plus, X } from 'lucide-react-native';
+import { ArrowLeft, Plus, X } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { createBlogsRepository } from '../../infrastructure/repositories/ApiBlogsRepository';
 import type { BlogCreateData } from '../../domain/repositories/BlogsRepository';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
   languageStorage,
   type AppLanguage,
@@ -29,8 +28,6 @@ import {
 import { getBlogsCopy } from '../../application/i18n/blogsCopy';
 
 type CreateBlogNav = NativeStackNavigationProp<RootStackParamList>;
-
-const BRAND = '#0000FF';
 
 const categories = [
   { id: 'vehicles', label: 'Xe cộ' },
@@ -141,7 +138,7 @@ function CreateBlogScreen() {
         thumbnailFile,
       };
 
-      const result = await repository.createBlog(data);
+      await repository.createBlog(data);
       Alert.alert(
         'Thành công',
         copy.successCreate,
@@ -164,7 +161,7 @@ function CreateBlogScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       <View className="surface-topbar h-16 flex-row items-center justify-between px-4">
         <View className="flex-row items-center">

@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -22,6 +21,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
 import { launchImageLibrary, type Asset } from 'react-native-image-picker';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CoverRoute = RouteProp<RootStackParamList, typeof ROUTES.COVER_VIEWER>;
@@ -178,7 +178,7 @@ function CoverViewerScreen({ route, navigation }: Props) {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <FocusAwareStatusBar barStyle="light-content" translucent backgroundColor="transparent" />
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>

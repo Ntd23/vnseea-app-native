@@ -1,10 +1,8 @@
 // Description: Ad Details Screen - Shows detailed information about an ad campaign
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -27,17 +25,15 @@ import {
 } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
-import type { AdItem } from '../../domain/types/ads.types';
 import {
   languageStorage,
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getAdvertisingCopy } from '../../application/i18n/advertisingCopy';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type AdDetailsNav = NativeStackNavigationProp<RootStackParamList>;
 type AdDetailsRoute = RouteProp<RootStackParamList, typeof ROUTES.AD_DETAILS>;
-
-const BRAND = '#1d4ed8';
 
 function formatNumber(value: number | string | undefined) {
   const numeric = Number(value ?? 0);
@@ -111,7 +107,7 @@ function AdDetailsScreen() {
   if (!ad) {
     return (
       <SafeAreaView className="flex-1 bg-white">
-        <StatusBar barStyle="dark-content" />
+        <FocusAwareStatusBar barStyle="dark-content" />
         <View className="flex-1 items-center justify-center px-8">
           <Text className="text-body-secondary text-center">{copy.notFound}</Text>
           <TouchableOpacity
@@ -130,7 +126,7 @@ function AdDetailsScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Header */}
       <View className="h-14 flex-row items-center justify-between border-b border-slate-200 px-4">

@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -33,6 +32,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useProductViewModel } from '../../application/view-models/useProductViewModel';
 import type { ProductFormData } from '../../application/view-models/useProductViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CreateProductNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -278,7 +278,7 @@ export default function CreateProductScreen() {
   if (submitSuccess) {
     return (
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-        <StatusBar barStyle="dark-content" />
+        <FocusAwareStatusBar barStyle="dark-content" />
         <View className="flex-1 items-center justify-center px-6">
           <View className="h-20 w-20 items-center justify-center rounded-full bg-green-100">
             <CheckCircle2 size={50} color="#22c55e" />
@@ -315,7 +315,7 @@ export default function CreateProductScreen() {
   // MAIN FORM STATE
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0000FF" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
       <View className="surface-brand h-16 flex-row items-center justify-between px-4">
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"

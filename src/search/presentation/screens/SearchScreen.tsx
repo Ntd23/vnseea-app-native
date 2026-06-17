@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Image,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -39,6 +38,7 @@ import type { FundingItem } from '../../../funding/domain/types/funding.types';
 import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type SearchNav = NativeStackNavigationProp<RootStackParamList>;
 type SearchRoute = RouteProp<RootStackParamList, typeof ROUTES.SEARCH>;
@@ -541,7 +541,7 @@ function SearchScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-[#F0F2F5]" edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       <View className="bg-white px-4 pb-3 pt-2">
         <View className="flex-row items-center">

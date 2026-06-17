@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -54,6 +53,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { usePagesViewModel } from '../../application/view-models/usePagesViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import type {
   CreatePageDraft,
   PagesItem,
@@ -1696,7 +1696,7 @@ function CreatePageScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

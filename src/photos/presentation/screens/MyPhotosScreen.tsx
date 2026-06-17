@@ -6,7 +6,6 @@ import {
   FlatList,
   Image,
   RefreshControl,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -21,6 +20,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { usePhotosViewModel } from '../../application/view-models/usePhotosViewModel';
 import type { PhotosItem } from '../../domain/types/photos.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type MyPhotosNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -102,7 +102,7 @@ function MyPhotosScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       <View style={styles.header}>
         <View style={styles.headerLeft}>

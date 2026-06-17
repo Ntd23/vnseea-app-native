@@ -6,7 +6,6 @@ import {
   FlatList,
   Image,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -34,6 +33,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductItem } from '../../domain/types/product.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type ProductDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.PRODUCT_DETAIL>;
 type ProductDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -268,7 +268,7 @@ function MissingProductFallback({
 }) {
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
       <View className="surface-topbar flex-row items-center px-4 py-3">
         <TouchableOpacity
           activeOpacity={0.8}
@@ -358,7 +358,7 @@ function ProductDetailContent({
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       <View className="surface-topbar flex-row items-center justify-between px-4 py-3">
         <TouchableOpacity

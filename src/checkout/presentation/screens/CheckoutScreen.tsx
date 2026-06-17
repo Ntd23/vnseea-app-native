@@ -5,7 +5,6 @@ import {
   Image,
   Modal,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -33,6 +32,7 @@ import {
   useCheckoutViewModel,
   type CheckoutStep,
 } from '../../application/view-models/useCheckoutViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CheckoutNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -515,7 +515,7 @@ function CheckoutScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
       <View className="surface-topbar flex-row items-center px-4 py-3">
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"

@@ -8,7 +8,6 @@ import {
   Modal,
   Platform,
   ScrollView,
-  StatusBar,
   Switch,
   Text,
   TextInput,
@@ -86,6 +85,7 @@ import ProfileHeaderCard from '../components/ProfileHeaderCard';
 import FeatureGrid from '../components/FeatureGrid';
 import GoProBanner from '../components/GoProBanner';
 import SettingsMenuList from '../components/SettingsMenuList';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import type {
   UserGender,
   UserUploadFile,
@@ -3559,7 +3559,7 @@ function SettingsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Top App Bar */}
       <View className="surface-topbar flex-row items-center justify-between px-5 py-3">

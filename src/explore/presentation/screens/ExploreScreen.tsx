@@ -15,7 +15,6 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -74,6 +73,7 @@ import HashtagCard from '../components/HashtagCard';
 import HashtagSkeleton from '../components/HashtagSkeleton';
 import HashtagTabs from '../components/HashtagTabs';
 import StatPill from '../components/StatPill';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const BRAND = '#0000ff';
 const AVATAR_FALLBACK = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
@@ -1151,7 +1151,7 @@ function ExploreScreen() {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-          <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+          <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
 
           <View className="surface-brand h-14 flex-row items-center justify-between px-4">
             <TouchableOpacity
@@ -1269,7 +1269,7 @@ function ExploreScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
 
       {/* Header — gradient brand bar */}
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">

@@ -5,7 +5,6 @@ import {
   FlatList,
   Image,
   RefreshControl,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -30,6 +29,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useBlogsViewModel } from '../../application/view-models/useBlogsViewModel';
 import type { BlogsItem } from '../../domain/types/blogs.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
   languageStorage,
   type AppLanguage,
@@ -184,6 +184,13 @@ function BlogsScreen() {
   const [language] = useState<AppLanguage>(languageStorage.getLanguage());
   const copy = getBlogsCopy(language);
   const previousParams = useRef<{ category?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined>(undefined);
+  const {
+    handleCategoryChange,
+    handleSearchChange: handleViewModelSearchChange,
+    handleSortChange,
+    handleMyPostsOnlyChange,
+    loadFirstPage,
+  } = vm;
 
   useFocusEffect(
     useCallback(() => {
@@ -202,38 +209,45 @@ function BlogsScreen() {
       
       if (params?.category !== undefined) {
         console.log('[BlogsScreen] Setting category:', params.category === 'all' ? null : params.category);
-        vm.handleCategoryChange(params.category === 'all' ? null : params.category);
+        handleCategoryChange(params.category === 'all' ? null : params.category);
         shouldLoad = true;
       }
       if (params?.searchQuery !== undefined) {
         console.log('[BlogsScreen] Setting search query:', params.searchQuery);
-        vm.handleSearchChange(params.searchQuery);
+        handleViewModelSearchChange(params.searchQuery);
         setSearchText(params.searchQuery);
         shouldLoad = true;
       }
       if (params?.sortBy) {
         console.log('[BlogsScreen] Setting sort by:', params.sortBy);
-        vm.handleSortChange(params.sortBy);
+        handleSortChange(params.sortBy);
         shouldLoad = true;
       }
       if (params?.myPostsOnly !== undefined) {
         console.log('[BlogsScreen] Setting my posts only:', params.myPostsOnly);
-        vm.handleMyPostsOnlyChange(params.myPostsOnly);
+        handleMyPostsOnlyChange(params.myPostsOnly);
         shouldLoad = true;
       }
       
       // Load data on first focus or when params change
       if (shouldLoad && paramsChanged) {
         console.log('[BlogsScreen] Loading first page due to params change');
-        void vm.loadFirstPage(false);
+        void loadFirstPage(false);
       } else if (previousParams.current === undefined) {
         // Initial load when no params exist
         console.log('[BlogsScreen] Initial load - loading first page');
-        void vm.loadFirstPage(false);
+        void loadFirstPage(false);
       }
       
       previousParams.current = params;
-    }, [route.params]),
+    }, [
+      route.params,
+      handleCategoryChange,
+      handleViewModelSearchChange,
+      handleSortChange,
+      handleMyPostsOnlyChange,
+      loadFirstPage,
+    ]),
   );
 
   const handleSearchChange = useCallback((text: string) => {
@@ -275,7 +289,7 @@ function BlogsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       <View className="surface-topbar px-4 pb-3 pt-2">
         <View className="mb-3 flex-row items-center justify-between">

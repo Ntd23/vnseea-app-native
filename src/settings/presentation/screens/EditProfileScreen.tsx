@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -25,6 +24,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import type { UserProfile } from '../../../user/domain/types/user.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type EditProfileParams = {
   EditProfile: {
@@ -154,7 +154,7 @@ function EditProfileScreen({ route, navigation }: EditProfileScreenProps) {
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Header */}
       <View className="h-14 flex-row items-center justify-between border-b border-slate-200 bg-white px-4">

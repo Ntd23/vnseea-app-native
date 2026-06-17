@@ -5,7 +5,6 @@ import {
   Image,
   RefreshControl,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -25,6 +24,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
 import type { EventsItem } from '../../domain/types/events.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
   languageStorage,
   type AppLanguage,
@@ -186,7 +186,7 @@ function EventsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
 
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">
         <TouchableOpacity

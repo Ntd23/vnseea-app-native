@@ -10,7 +10,6 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -88,6 +87,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 // work currently in flight (offers, etc.) doesn't collide with
 // the import surface.
 import PageShareActionSheet from '../components/PageShareActionSheet';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type PageDetailProps = NativeStackScreenProps<
   RootStackParamList,
@@ -1651,7 +1651,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
 
   return (
     <View className="flex-1 surface-base">
-      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+      <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
       {/* Header Back / More buttons have been moved INSIDE the
           PageHero (ListHeader) at dòng ~331, anchored to the cover

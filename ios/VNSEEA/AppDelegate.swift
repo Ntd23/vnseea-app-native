@@ -30,7 +30,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
     window = UIWindow(frame: UIScreen.main.bounds)
 
     factory.startReactNative(
-      withModuleName: "VnseeaRn",
+      withModuleName: "VNSEEA",
       in: window,
       launchOptions: launchOptions
     )

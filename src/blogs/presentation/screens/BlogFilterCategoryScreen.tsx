@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import {
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -11,7 +10,6 @@ import {
 import {
   ArrowLeft,
   Car,
-  CheckCircle2,
   Clock,
   Eye,
   GraduationCap,
@@ -38,6 +36,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
   languageStorage,
   type AppLanguage,
@@ -118,7 +117,7 @@ function BlogFilterCategoryScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND} />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={BRAND} />
 
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">
         <TouchableOpacity

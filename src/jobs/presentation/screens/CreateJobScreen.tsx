@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -33,6 +32,7 @@ import { useCreateJobViewModel } from '../../application/view-models/useCreateJo
 import type { JobType } from '../../domain/types/jobs.types';
 import { JOB_TYPE_VIETNAMESE, JOB_CATEGORIES, SALARY_DATE_OPTIONS } from '../../domain/types/jobs.types';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CreateJobNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -176,7 +176,7 @@ function CreateJobScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Header */}
       <View className="h-14 flex-row items-center justify-between border-b border-slate-200 bg-white px-4">

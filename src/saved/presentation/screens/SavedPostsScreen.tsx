@@ -6,7 +6,6 @@ import {
   Image,
   RefreshControl,
   Share,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -34,6 +33,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToReels } from '../../../navigation/reelsNavigation';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { SavedItem, SavedItemKind } from '../../domain/types/saved.types';
 import type { FeedVideoPost } from '../../../feed/domain/types/feed.types';
@@ -43,6 +43,7 @@ import {
   useSavedViewModel,
 } from '../../application/view-models/useSavedViewModel';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type SavedPostsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -327,9 +328,10 @@ function SavedPostsScreen() {
     (item: SavedItem) => {
       if (item.kind === 'video') {
         const post = buildFeedVideoPost(item);
-        (navigation as any).navigate(ROUTES.MAIN_TABS, {
-          screen: ROUTES.REELS,
-          params: { initialVideoId: item.id, post, source: 'saved' },
+        navigateToReels(navigation, {
+          initialVideoId: item.id,
+          post,
+          source: 'saved',
         });
       } else {
         navigation.navigate(ROUTES.POST_DETAIL, {
@@ -411,7 +413,7 @@ function SavedPostsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <View
         style={{
           height: 64,

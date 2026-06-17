@@ -2,7 +2,6 @@ import React from 'react';
 import {
   FlatList,
   Share,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -13,6 +12,7 @@ import {ArrowLeft, Link, Search, Share2} from 'lucide-react-native';
 import {useNavigation} from '@react-navigation/native';
 import {useInviteFriendsViewModel} from '../../application/view-models/useInviteFriendsViewModel';
 import type {Contact} from '../../domain/types/wallet.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 /* ── Contact row ── */
 function ContactRow({
@@ -92,7 +92,7 @@ function InviteFriendsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" />
+      <FocusAwareStatusBar barStyle="light-content" />
 
       {/* Top App Bar */}
       <View className="surface-brand flex-row items-center px-4 py-3">

@@ -6,7 +6,6 @@ import {
   Image,
   ScrollView,
   Share,
-  StatusBar,
   Text,
   TouchableOpacity as Pressable,
   View,
@@ -31,6 +30,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { JobsItem, JobType, JOB_TYPE_VIETNAMESE, SALARY_DATE_OPTIONS } from '../../domain/types/jobs.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type JobDetailNav = NativeStackNavigationProp<RootStackParamList>;
 type JobDetailRoute = RouteProp<RootStackParamList, 'JobDetail'>;
@@ -164,7 +164,7 @@ function JobDetailScreen() {
   if (!job && !jobId) {
     return (
       <SafeAreaView className="flex-1 bg-[#f1f4fb]" edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#f1f4fb" />
+        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f1f4fb" />
         <View className="flex-1 items-center justify-center">
           <Text className="text-slate-500">Không có thông tin việc làm</Text>
           <Pressable
@@ -183,7 +183,7 @@ function JobDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-[#f1f4fb]" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f1f4fb" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f1f4fb" />
 
       {/* Header */}
       <View className="flex-row items-center justify-between bg-[#f1f4fb] px-4 pb-3">

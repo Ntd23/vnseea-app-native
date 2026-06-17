@@ -6,7 +6,6 @@ import {
   Image,
   RefreshControl,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity as Pressable,
   View,
@@ -23,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useMoviesViewModel } from '../../application/view-models/useMoviesViewModel';
 import type { MovieItem } from '../../domain/types/movies.types';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type MoviesNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -215,7 +215,7 @@ function MoviesScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-[#f1f4fb]" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f1f4fb" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f1f4fb" />
 
       {/* Header */}
       <View className="flex-row items-center justify-between bg-[#f1f4fb] px-4 pb-3">

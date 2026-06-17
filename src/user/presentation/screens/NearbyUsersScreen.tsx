@@ -15,7 +15,6 @@ import {
   Platform,
   ScrollView,
   Share,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -44,6 +43,7 @@ import {
 import type { RootStackParamList } from '../../../navigation/types';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { useUserViewModel } from '../../application/view-models/useUserViewModel';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import type {
   MapPlacePrediction,
   NearbyPlace,
@@ -792,7 +792,7 @@ export default function NearbyUsersScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       <MapView
         ref={mapRef}

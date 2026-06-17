@@ -6,7 +6,6 @@ import {
   Modal,
   Platform,
   ScrollView,
-  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -33,6 +32,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
   languageStorage,
   type AppLanguage,
@@ -534,7 +534,7 @@ function CreateEventScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0000FF" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
       <View className="surface-brand h-16 flex-row items-center justify-between px-4">
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"

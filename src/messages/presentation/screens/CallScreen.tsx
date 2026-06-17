@@ -3,7 +3,6 @@ import React from 'react';
 import {
   Image,
   ScrollView,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -21,6 +20,7 @@ import {
   Video,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const profileAvatar =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuDDMxZeLkYZFBvoygmSWZXW4pfr9DMaLyGE0uog2SYzF6qBfmJa0MKMCtMoRQpPKEulrK2wiRfg7OkyrZnFstIjSQJlT6rBAO_Ey4ybTC9riiqSRWgXvo8BOW8_dy-cNVvAp9k2WY3u26KzEfDKy4VEykjBdcFoiHNN-_0eN7oMdWDI1jxzEIICfLKkceMCH4hRfalPhM4tpmmGsJmJpV1ik2LFlS8Caxh7vQ2awti-aPMnBVcKEgSdelZIq-Xug1nwaNMXEQY2q_4';
@@ -158,7 +158,7 @@ function CallRow({ item }: { item: CallItem }) {
 function CallScreen() {
   return (
     <SafeAreaView className="flex-1 bg-[#f8f9ff]" edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0000FF" />
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
 
       <View className="surface-brand h-14 flex-row items-center justify-between px-4">
         <View className="flex-row items-center">

@@ -6,7 +6,6 @@ import {
   FlatList,
   Modal,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -38,6 +37,7 @@ import {
 } from '../../application/view-models/useMyProductsViewModel';
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type MyProductsNav = NativeStackNavigationProp<RootStackParamList>;
 type MyProductsRoute = RouteProp<RootStackParamList, typeof ROUTES.MY_PRODUCTS>;
@@ -385,7 +385,7 @@ function MyProductsScreen() {
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <FocusAwareStatusBar barStyle="dark-content" />
 
       <View className="surface-topbar flex-row items-center px-4 py-3">
         <TouchableOpacity
