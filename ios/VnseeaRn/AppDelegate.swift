@@ -54,7 +54,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
     didUpdate pushCredentials: PKPushCredentials,
     for type: PKPushType
   ) {
-    RNVoipPushNotificationManager.didUpdatePushCredentials(
+    RNVoipPushNotificationManager.didUpdate(
       pushCredentials,
       forType: type.rawValue
     )
@@ -82,7 +82,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
       : (directHandle.isEmpty ? "livekit" : directHandle)
 
     RNVoipPushNotificationManager.addCompletionHandler(uuid, completionHandler: completion)
-    RNVoipPushNotificationManager.didReceiveIncomingPushWithPayload(payload, forType: type.rawValue)
+    RNVoipPushNotificationManager.didReceiveIncomingPush(with: payload, forType: type.rawValue)
     RNCallKeep.reportNewIncomingCall(
       uuid,
       handle: handle,
