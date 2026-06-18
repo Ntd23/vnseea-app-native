@@ -25,6 +25,7 @@ import {
   View,
   Alert,
   InteractionManager,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ImageProps,
@@ -1541,6 +1542,8 @@ export function PhotoViewerModal({
   const language = useAppLanguage();
   const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [topBarHeight, setTopBarHeight] = useState(0);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
   const [pickerAnchor, setPickerAnchor] = useState<{
@@ -1627,6 +1630,20 @@ export function PhotoViewerModal({
     }, PHOTO_VIEWER_COMMENT_OPEN_DELAY_MS);
   }, [livePost, onClose, onCommentTap]);
 
+  const handleTopBarLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextHeight = event.nativeEvent.layout.height;
+    setTopBarHeight(previousHeight =>
+      Math.abs(previousHeight - nextHeight) < 0.5 ? previousHeight : nextHeight,
+    );
+  }, []);
+
+  const handleBottomPanelLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextHeight = event.nativeEvent.layout.height;
+    setBottomPanelHeight(previousHeight =>
+      Math.abs(previousHeight - nextHeight) < 0.5 ? previousHeight : nextHeight,
+    );
+  }, []);
+
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
     .failOffsetX([-10, 10])
@@ -1679,6 +1696,15 @@ export function PhotoViewerModal({
   if (!state || !livePost) return null;
   const { post } = state;
   const total = post.photos.length;
+  const hasMeasuredViewerChrome = topBarHeight > 0 && bottomPanelHeight > 0;
+  const fallbackPhotoViewportHeight =
+    SCREEN_H * PHOTO_VIEWER_IMAGE_HEIGHT_RATIO;
+  const photoViewportTop = hasMeasuredViewerChrome
+    ? topBarHeight
+    : (SCREEN_H - fallbackPhotoViewportHeight) / 2;
+  const photoViewportHeight = hasMeasuredViewerChrome
+    ? Math.max(1, SCREEN_H - topBarHeight - bottomPanelHeight)
+    : fallbackPhotoViewportHeight;
 
   return (
     <Modal
@@ -1695,6 +1721,7 @@ export function PhotoViewerModal({
             <Animated.View style={[contentStyle, { flex: 1 }]}>
               {/* â”€â”€ Top bar: page counter (left) + close button (right) â”€â”€ */}
               <View
+                onLayout={handleTopBarLayout}
                 style={{
                   position: 'absolute',
                   top: 0,
@@ -1771,48 +1798,59 @@ export function PhotoViewerModal({
               </View>
 
               {/* â”€â”€ Horizontally paginated photo list â”€â”€ */}
-              <FlatList
-                ref={flatListRef}
-                data={post.photos}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                initialScrollIndex={state.initialIndex}
-                getItemLayout={(_, index) => ({
-                  length: SCREEN_W,
-                  offset: SCREEN_W * index,
-                  index,
-                })}
-                windowSize={3}
-                initialNumToRender={1}
-                maxToRenderPerBatch={1}
-                removeClippedSubviews={Platform.OS === 'android'}
-                onScrollToIndexFailed={info => {
-                  setTimeout(() => {
-                    flatListRef.current?.scrollToIndex({
-                      index: info.index,
-                      animated: false,
-                    });
-                  }, 100);
+              <View
+                style={{
+                  position: 'absolute',
+                  top: photoViewportTop,
+                  left: 0,
+                  right: 0,
+                  height: photoViewportHeight,
                 }}
-                onMomentumScrollEnd={e => {
-                  const idx = Math.round(
-                    e.nativeEvent.contentOffset.x / SCREEN_W,
-                  );
-                  setCurrentIndex(idx);
-                }}
-                keyExtractor={(url, i) => `viewer-${i}-${url}`}
-                renderItem={({ item: url }) => (
-                  <PhotoViewerImage
-                    url={url}
-                    width={SCREEN_W}
-                    height={SCREEN_H}
-                  />
-                )}
-              />
+              >
+                <FlatList
+                  ref={flatListRef}
+                  data={post.photos}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  initialScrollIndex={state.initialIndex}
+                  getItemLayout={(_, index) => ({
+                    length: SCREEN_W,
+                    offset: SCREEN_W * index,
+                    index,
+                  })}
+                  windowSize={3}
+                  initialNumToRender={1}
+                  maxToRenderPerBatch={1}
+                  removeClippedSubviews={Platform.OS === 'android'}
+                  onScrollToIndexFailed={info => {
+                    setTimeout(() => {
+                      flatListRef.current?.scrollToIndex({
+                        index: info.index,
+                        animated: false,
+                      });
+                    }, 100);
+                  }}
+                  onMomentumScrollEnd={e => {
+                    const idx = Math.round(
+                      e.nativeEvent.contentOffset.x / SCREEN_W,
+                    );
+                    setCurrentIndex(idx);
+                  }}
+                  keyExtractor={(url, i) => `viewer-${i}-${url}`}
+                  renderItem={({ item: url }) => (
+                    <PhotoViewerImage
+                      url={url}
+                      width={SCREEN_W}
+                      height={photoViewportHeight}
+                    />
+                  )}
+                />
+              </View>
 
               {/* â”€â”€ Bottom overlay: publisher + reaction counts â”€â”€ */}
               <View
+                onLayout={handleBottomPanelLayout}
                 style={{
                   position: 'absolute',
                   bottom: 0,

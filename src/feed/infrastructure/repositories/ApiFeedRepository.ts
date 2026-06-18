@@ -31,8 +31,6 @@ import type {
   FeedPostsPage,
   FeedRepository,
   FeedRecommendationEventInput,
-  GetPostByIdResult,
-  PostComment,
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
 import type {
@@ -538,24 +536,31 @@ function looksLikeVideo(raw: Record<string, unknown>): boolean {
 //
 //   1. Single photo  → `postFile` is the image URL, `postFileThumb` may
 //                      contain a thumb. `postType` may be 'photo'.
-//   2. Album upload  → `photo_album` is an array of objects each with
-//                      an `image_org` field (full URL). This is what
+//   2. Album upload  → `photo_album` is an array of objects with
+//                      `image` (original) and sometimes `image_org` (small
+//                      crop, despite the misleading name). This is what
 //                      WoWonder writes when our `createPost` sends
 //                      `postPhotos[]` + `album_name`. Confirmed by
-//                      `phtml/sources/timeline.php:252` which does
-//                      `Wo_GetMedia($wo['story']['photo_album'][0]['image_org'])`.
+//                      `Wo_GetAlbumPhotos()`, which stores `image_org`
+//                      as `*_small.*` while `image` keeps the uploaded file.
 //   3. Multi-image   → `photo_multi` same shape as `photo_album` (items
 //                      with `image_org`). Used for the `multi_image=1`
 //                      flag flow — also surfaced via `timeline.php:257`.
 //   4. Imported URL  → `postPhoto` contains a single URL grabbed from
 //                      a link in `postText`.
 //
-// IMPORTANT: WoWonder's item keys include `image_org` (the photo URL)
-// and `image` (sometimes a thumbnail). Previously we only looked for
-// `image`/`url`/`source`/etc — that's why multi-photo posts rendered
-// caption but no images. We now check `image_org` FIRST so the
-// full-res URL wins, then fall back to the others.
+// IMPORTANT: WoWonder's item keys are inconsistent across endpoints. Some
+// return `image_org` as the original image, but album helpers in this backend
+// put a generated `*_small.*` 400x400 crop there and keep the original in
+// `image`. Fullscreen viewers must use the original URL, while thumbnails can
+// still crop visually in the card UI via `resizeMode="cover"`.
 const IMAGE_URL_PATTERN = /\.(png|jpg|jpeg|gif|webp|heic)(?:[?#/]|$)/i;
+const GENERATED_SMALL_IMAGE_PATTERN =
+  /_small\.(png|jpg|jpeg|gif|webp|heic)(?:[?#/]|$)/i;
+
+function looksLikeGeneratedSmallImage(url: string): boolean {
+  return GENERATED_SMALL_IMAGE_PATTERN.test(url);
+}
 
 function extractPhotoUrls(raw: Record<string, unknown>): string[] {
   const urls: string[] = [];
@@ -596,21 +601,25 @@ function extractPhotoUrls(raw: Record<string, unknown>): string[] {
       }
       if (item && typeof item === 'object') {
         const obj = item as Record<string, unknown>;
-        // `image_org` is the canonical full-res URL key (confirmed
-        // against timeline.php). We still check the legacy keys after
-        // so installs that surface the photo under a different name
-        // still work.
-        tryPush(
-          readString(
-            obj,
-            'image_org',
-            'image',
-            'url',
-            'source',
-            'src',
-            'photo',
-          ),
-        );
+        const imageOrg = readString(obj, 'image_org');
+        const image = readString(obj, 'image');
+        const preferredImage =
+          imageOrg &&
+          image &&
+          looksLikeGeneratedSmallImage(imageOrg) &&
+          !looksLikeGeneratedSmallImage(image)
+            ? image
+            : imageOrg || image;
+
+        // Prefer the original upload when the backend exposes both the
+        // generated square crop and the original file. Keep the legacy keys
+        // after that so installs that surface photos under another name still
+        // work.
+        if (preferredImage) {
+          tryPush(preferredImage);
+        } else {
+          tryPush(readString(obj, 'url', 'source', 'src', 'photo'));
+        }
       }
     }
   }
