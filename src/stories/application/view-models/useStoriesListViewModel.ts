@@ -57,7 +57,11 @@ export interface StoriesListRow {
   segmentCount: number;
 }
 
-export function useStoriesListViewModel() {
+export interface UseStoriesListViewModelOptions {
+  initialStories?: StoryItem[];
+}
+
+export function useStoriesListViewModel(options: UseStoriesListViewModelOptions = {}) {
   const {
     stories,
     isLoading,
@@ -65,6 +69,19 @@ export function useStoriesListViewModel() {
   } = useStoriesViewModel();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [overrideStories, setOverrideStories] = useState<StoryItem[] | null>(
+    options.initialStories && options.initialStories.length > 0
+      ? options.initialStories
+      : null,
+  );
+
+  useEffect(() => {
+    setOverrideStories(
+      options.initialStories && options.initialStories.length > 0
+        ? options.initialStories
+        : null,
+    );
+  }, [options.initialStories]);
 
   // Wrap the underlying reload so we can present a separate "refreshing"
   // state for the pull-to-refresh spinner while the loading skeleton only
@@ -72,43 +89,46 @@ export function useStoriesListViewModel() {
   const reload = useCallback(async () => {
     setIsRefreshing(true);
     try {
+      setOverrideStories(null);
       await reloadStories();
     } finally {
       setIsRefreshing(false);
     }
   }, [reloadStories]);
 
-  // Flatten + sort once per render. We collapse each StoryItem (publisher
-  // bubble) into N rows — one per media segment — and sort the whole list
-  // by segment.postedAt DESC so the freshest story sits in the top-left.
+  const sourceStories = overrideStories ?? stories;
+
+  // Build one grid row per publisher/story bubble. The viewer owns segment
+  // progression, so the grid only needs the freshest segment as the cover.
   const flatRows = useMemo<StoriesListRow[]>(() => {
     const rows: StoriesListRow[] = [];
-    for (const story of stories) {
+    for (const story of sourceStories) {
       const sortedMedia = [...story.media].sort((a, b) => {
         const aTs = a.postedAt ?? story.postedAt;
         const bTs = b.postedAt ?? story.postedAt;
         return (bTs ?? 0) - (aTs ?? 0);
       });
 
-      for (const segment of sortedMedia) {
-        const coverUrl = segment.url || story.thumbnailUrl || story.publisher.avatarUrl || '';
-        rows.push({
-          key: `${story.publisher.userId}-${segment.id}`,
-          index: rows.length,
-          publisher: story.publisher,
-          coverUrl,
-          segment,
-          isVideo: segment.type === 'video',
-          publisherUserId: story.publisher.userId,
-          postedAt: segment.postedAt ?? story.postedAt,
-          isViewed: story.isViewed,
-          hasUnseen: story.hasUnseen,
-          segmentCount: story.media.length,
-        });
-      }
+      const segment = sortedMedia[0];
+      if (!segment) continue;
+
+      const coverUrl = segment.url || story.thumbnailUrl || story.publisher.avatarUrl || '';
+      rows.push({
+        key: `${story.publisher.userId}-${story.id}`,
+        index: rows.length,
+        publisher: story.publisher,
+        coverUrl,
+        segment,
+        isVideo: sortedMedia.some(item => item.type === 'video'),
+        publisherUserId: story.publisher.userId,
+        postedAt: segment.postedAt ?? story.postedAt,
+        isViewed: story.isViewed,
+        hasUnseen: story.hasUnseen,
+        segmentCount: story.media.length,
+      });
     }
 
-    // Newest segment first. Ties broken by publisher userId so the order
+    // Newest story first. Ties broken by publisher userId so the order
     // is stable across renders (Array#sort is stable on modern V8/Hermes).
     rows.sort((a, b) => {
       if (b.postedAt !== a.postedAt) return b.postedAt - a.postedAt;
@@ -118,15 +138,13 @@ export function useStoriesListViewModel() {
     // Re-stamp indexes after sort so the screen can pass `index` straight
     // to `StoryViewer`'s `initialUserIndex`.
     return rows.map((row, idx) => ({ ...row, index: idx }));
-  }, [stories]);
+  }, [sourceStories]);
 
-  // Resolve the StoryItem list in the SAME order as the flattened rows so
-  // the screen can pass `pagedStories` straight to StoryViewerScreen and
-  // index into it with the row's `index`. The viewer's "initialUserIndex"
-  // param then lines up exactly with which grid cell the user tapped.
+  // Resolve the StoryItem list in the SAME order as the rows so the tapped
+  // row index lines up exactly with StoryViewer's `initialUserIndex`.
   const pagedStories = useMemo<StoryItem[]>(() => {
     const publisherToStory = new Map<string, StoryItem>();
-    for (const story of stories) {
+    for (const story of sourceStories) {
       publisherToStory.set(story.publisher.userId, story);
     }
     const seenPublishers = new Set<string>();
@@ -140,18 +158,20 @@ export function useStoriesListViewModel() {
       }
     }
     return ordered;
-  }, [flatRows, stories]);
+  }, [flatRows, sourceStories]);
 
   // Auto-trigger an initial refresh whenever the screen mounts so the grid
   // always opens with fresh data — matches the rail's behaviour.
   useEffect(() => {
-    void reloadStories();
-  }, [reloadStories]);
+    if (!overrideStories) {
+      void reloadStories();
+    }
+  }, [overrideStories, reloadStories]);
 
   return {
     rows: flatRows,
     pagedStories,
-    isLoading,
+    isLoading: overrideStories ? false : isLoading,
     isRefreshing,
     error: null as string | null,
     reload,

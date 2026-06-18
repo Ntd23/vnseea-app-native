@@ -17,6 +17,7 @@ import {
   EditProfileScreen,
   MyInfoScreen,
   SettingsScreen,
+  UserDashboardScreen,
 } from '../settings';
 import { CreateAdScreen, AdDetailsScreen } from '../advertising';
 import {
@@ -48,6 +49,7 @@ import { CreateJobScreen, JobDetailScreen, JobsScreen } from '../jobs';
 import {
   AvatarViewerScreen,
   CoverViewerScreen,
+  ProfileFriendsScreen,
   ProfileScreen,
 } from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
@@ -142,6 +144,7 @@ export function createStackRoutes(
     { name: ROUTES.REELS, component: ReelsScreen },
     { name: ROUTES.POST_DETAIL, component: PostDetailScreen },
     { name: ROUTES.PROFILE, component: ProfileScreen },
+    { name: ROUTES.PROFILE_FRIENDS, component: ProfileFriendsScreen },
     { name: ROUTES.MY_PHOTOS, component: MyPhotosScreen },
     { name: ROUTES.ALBUMS, component: AlbumsScreen },
     { name: ROUTES.CREATE_ALBUM, component: CreateAlbumScreen },
@@ -198,6 +201,7 @@ export function createStackRoutes(
     { name: ROUTES.OFFERS, component: OffersScreen },
     { name: ROUTES.PAGE_OFFERS, component: PageOffersScreen },
     { name: ROUTES.CREATE_OFFER, component: CreateOfferScreen },
+    { name: ROUTES.USER_DASHBOARD, component: UserDashboardScreen },
     { name: ROUTES.SETTINGS_MY_INFO, component: MyInfoScreen },
     { name: ROUTES.SETTINGS_ADDRESS, component: AddressScreen },
     { name: ROUTES.EDIT_PROFILE, component: EditProfileScreen },

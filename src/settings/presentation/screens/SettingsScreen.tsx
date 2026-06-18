@@ -47,6 +47,7 @@ import {
   LogOut,
   MapPin,
   Mail,
+  MessageCircle,
   Monitor,
   Pencil,
   Phone,
@@ -61,17 +62,22 @@ import {
   X,
   Globe,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import type {
+  MainTabParamList,
   RootStackParamList,
   RootStackRouteName,
+  SettingsPanelRouteParam,
 } from '../../../navigation/types';
 import { useAuthViewModel } from '../../../auth/application/view-models/useAuthViewModel';
+import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import {
   languageStorage,
   type AppLanguage,
@@ -97,6 +103,7 @@ import {
 } from '../../domain/constants/countries';
 
 type SettingsNav = NativeStackNavigationProp<RootStackParamList>;
+type SettingsRoute = RouteProp<MainTabParamList, typeof ROUTES.SETTINGS>;
 type AccountFormState = {
   username: string;
   phoneNumber: string;
@@ -238,22 +245,7 @@ type PrivacyFormState = {
   shareData: string;
 };
 
-type SettingsPanel =
-  | 'main'
-  | 'general'
-  | 'earnings'
-  | 'general-common'
-  | 'general-profile'
-  | 'general-social-links'
-  | 'general-address'
-  | 'general-privacy'
-  | 'general-blocked-users'
-  | 'general-sessions'
-  | 'general-avatar'
-  | 'general-password'
-  | 'general-two-factor'
-  | 'general-notifications'
-  | 'general-verification';
+type SettingsPanel = SettingsPanelRouteParam;
 
 type PasswordFormState = {
   currentPassword: string;
@@ -461,17 +453,23 @@ function settingsPanelTitle(panel: SettingsPanel, language: AppLanguage) {
   return isVi ? 'Cài đặt chung' : 'General settings';
 }
 
-function settingsPanelBackTarget(panel: SettingsPanel): SettingsPanel {
-  if (panel === 'general' || panel === 'earnings') {
-    return 'main';
-  }
-
-  return 'general';
-}
-
 function apiSucceeded(status: unknown) {
   return status === 200 || status === '200';
 }
+
+const settingsHeaderIconStyle = {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  backgroundColor: '#ffffff',
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.08,
+  shadowRadius: 4,
+  elevation: 2,
+};
 
 function numberFromApi(value: unknown) {
   const numberValue = Number(value);
@@ -3288,14 +3286,40 @@ function AccountVerificationCard() {
 
 function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
+  const route = useRoute<SettingsRoute>();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<SettingsPanel>('main');
+
+  const navigateToPanel = useCallback(
+    (newPanel: SettingsPanel) => {
+      setActivePanel(newPanel);
+    },
+    [],
+  );
+
   const [currencySettings, setCurrencySettings] =
     useState<CurrencySettingsState | null>(null);
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const { profile, features, settingsMenu, language, setLanguage, copy } =
     useSettingsViewModel();
   const { logout } = useAuthViewModel();
+  const { logoUrl, siteName, imageErrorCount, notifyImageError } =
+    useAuthBranding();
+  const { messageCount } = useUnreadBadgeCounts();
+  const showDashboardBack =
+    activePanel !== 'main' && Boolean(route.params?.fromDashboard);
+
+  const handleDashboardBack = useCallback(() => {
+    setActivePanel('main');
+    navigation.navigate(ROUTES.USER_DASHBOARD);
+  }, [navigation]);
+
+  useEffect(() => {
+    const requestedPanel = route.params?.initialPanel;
+    if (requestedPanel) {
+      setActivePanel(requestedPanel);
+    }
+  }, [route.params?.initialPanel]);
 
   const loadCurrencySettings = useCallback(async () => {
     setCurrencyLoading(true);
@@ -3434,13 +3458,13 @@ function SettingsScreen() {
     async (id: string) => {
       if (id === 'general') {
         setSheetVisible(false);
-        setActivePanel('general');
+        navigateToPanel('general');
         return;
       }
 
       if (id === 'earnings') {
         setSheetVisible(false);
-        setActivePanel('earnings');
+        navigateToPanel('earnings');
         return;
       }
 
@@ -3465,7 +3489,7 @@ function SettingsScreen() {
         }
       }
     },
-    [logout, navigation],
+    [logout, navigation, navigateToPanel],
   );
 
   const handleFeaturePress = useCallback(
@@ -3562,26 +3586,36 @@ function SettingsScreen() {
       <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Top App Bar */}
-      <View className="surface-topbar flex-row items-center justify-between px-5 py-3">
+      <View
+        className="surface-topbar flex-row items-center justify-between px-4"
+        style={{
+          height: 64,
+          borderBottomWidth: 1,
+          borderBottomColor: '#f1f5f9',
+          backgroundColor: '#ffffff',
+        }}
+      >
         {activePanel !== 'main' ? (
           <>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              onPress={() =>
-                setActivePanel(settingsPanelBackTarget(activePanel))
-              }
-              className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm border border-slate-100/50"
-              style={{
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.05,
-                shadowRadius: 8,
-                elevation: 2,
-              }}
-            >
-              <ArrowLeft size={22} color="#0000ff" />
-            </TouchableOpacity>
+            {showDashboardBack ? (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                onPress={handleDashboardBack}
+                className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm border border-slate-100/50"
+                style={{
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 8,
+                  elevation: 2,
+                }}
+              >
+                <ArrowLeft size={22} color="#0000ff" />
+              </TouchableOpacity>
+            ) : (
+              <View className="h-11 w-11" />
+            )}
             <Text className="flex-1 text-center text-[20px] font-bold text-slate-900">
               {settingsPanelTitle(activePanel, language)}
             </Text>
@@ -3589,24 +3623,92 @@ function SettingsScreen() {
           </>
         ) : (
           <>
-            <Text className="text-heading text-[#ef4444]">WoWonder</Text>
-            <View className="flex-row items-center gap-4">
+            <View className="flex-row items-center">
+              {logoUrl && imageErrorCount === 0 ? (
+                <View
+                  style={{
+                    backgroundColor: '#002fff',
+                    borderRadius: 10,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    height: 36,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Image
+                    source={{ uri: logoUrl }}
+                    style={{ width: 105, height: '100%' }}
+                    resizeMode="contain"
+                    onError={notifyImageError}
+                  />
+                </View>
+              ) : (
+                <Text
+                  style={{
+                    fontSize: 26,
+                    fontWeight: '900',
+                    color: '#002fff',
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {siteName || 'VNSEEA'}
+                </Text>
+              )}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <TouchableOpacity
-                activeOpacity={0.8}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                activeOpacity={0.75}
                 onPress={() => navigation.navigate(ROUTES.SEARCH)}
+                style={settingsHeaderIconStyle}
               >
-                <Search size={22} color="#0000ff" />
+                <Search size={20} color="#002fff" strokeWidth={2.5} />
               </TouchableOpacity>
               <TouchableOpacity
-                activeOpacity={0.8}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                activeOpacity={0.75}
                 onPress={() => setSheetVisible(true)}
+                style={[
+                  settingsHeaderIconStyle,
+                  { transform: [{ rotate: sheetVisible ? '45deg' : '0deg' }] },
+                ]}
+              >
+                <Plus size={22} color="#002fff" strokeWidth={2.5} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => navigation.navigate(ROUTES.MESSAGES)}
                 style={{
-                  transform: [{ rotate: sheetVisible ? '45deg' : '0deg' }],
+                  ...settingsHeaderIconStyle,
+                  position: 'relative',
                 }}
               >
-                <Plus size={22} color="#0000ff" />
+                <MessageCircle size={20} color="#002fff" strokeWidth={2.5} />
+                {messageCount > 0 ? (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      top: -4,
+                      right: -4,
+                      minWidth: 18,
+                      height: 18,
+                      borderRadius: 9,
+                      backgroundColor: '#002fff',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingHorizontal: 4,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        fontWeight: '700',
+                        color: '#ffffff',
+                      }}
+                    >
+                      {messageCount > 99 ? '99+' : messageCount}
+                    </Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
             </View>
           </>
@@ -3625,23 +3727,23 @@ function SettingsScreen() {
                 <GeneralSettingsMenuRow
                   label="Chung"
                   icon={<User size={22} color="#0000ff" />}
-                  onPress={() => setActivePanel('general-common')}
+                  onPress={() => navigateToPanel('general-common')}
                 />
                 <GeneralSettingsMenuRow
                   label="Hồ sơ"
                   icon={<Pencil size={22} color="#0000ff" />}
-                  onPress={() => setActivePanel('general-profile')}
+                  onPress={() => navigateToPanel('general-profile')}
                 />
                 <GeneralSettingsMenuRow
                   label="Liên kết mạng xã hội"
                   icon={<Link size={22} color="#0000ff" />}
-                  onPress={() => setActivePanel('general-social-links')}
+                  onPress={() => navigateToPanel('general-social-links')}
                 />
                 <GeneralSettingsMenuRow
                   label="Ảnh đại diện"
                   icon={<Camera size={22} color="#0000ff" />}
                   isLast
-                  onPress={() => setActivePanel('general-avatar')}
+                  onPress={() => navigateToPanel('general-avatar')}
                 />
               </GeneralSettingsSection>
 
@@ -3649,18 +3751,18 @@ function SettingsScreen() {
                 <GeneralSettingsMenuRow
                   label="Địa chỉ giao hàng"
                   icon={<MapPin size={22} color="#0000ff" />}
-                  onPress={() => setActivePanel('general-address')}
+                  onPress={() => navigateToPanel('general-address')}
                 />
                 <GeneralSettingsMenuRow
                   label="Quyền riêng tư"
                   icon={<LockKeyhole size={22} color="#0000ff" />}
-                  onPress={() => setActivePanel('general-privacy')}
+                  onPress={() => navigateToPanel('general-privacy')}
                 />
                 <GeneralSettingsMenuRow
                   label="Chặn người dùng"
                   icon={<Ban size={22} color="#0000ff" />}
                   isLast
-                  onPress={() => setActivePanel('general-blocked-users')}
+                  onPress={() => navigateToPanel('general-blocked-users')}
                 />
               </GeneralSettingsSection>
 
@@ -3668,23 +3770,23 @@ function SettingsScreen() {
                 <GeneralSettingsMenuRow
                   label="Phiên đăng nhập"
                   icon={<Monitor size={22} color="#0000ff" />}
-                  onPress={() => setActivePanel('general-sessions')}
+                  onPress={() => navigateToPanel('general-sessions')}
                 />
                 <GeneralSettingsMenuRow
                   label="Mật khẩu"
                   icon={<LockKeyhole size={22} color="#0000ff" />}
-                  onPress={() => setActivePanel('general-password')}
+                  onPress={() => navigateToPanel('general-password')}
                 />
                 <GeneralSettingsMenuRow
                   label="Xác thực 2 yếu tố"
                   icon={<ShieldCheck size={22} color="#0000ff" />}
-                  onPress={() => setActivePanel('general-two-factor')}
+                  onPress={() => navigateToPanel('general-two-factor')}
                 />
                 <GeneralSettingsMenuRow
                   label="Xác thực tài khoản"
                   icon={<BadgeCheck size={22} color="#0000ff" />}
                   isLast
-                  onPress={() => setActivePanel('general-verification')}
+                  onPress={() => navigateToPanel('general-verification')}
                 />
               </GeneralSettingsSection>
 
@@ -3692,7 +3794,7 @@ function SettingsScreen() {
                 <GeneralSettingsMenuRow
                   label="Thông báo"
                   icon={<Bell size={22} color="#0000ff" />}
-                  onPress={() => setActivePanel('general-notifications')}
+                  onPress={() => navigateToPanel('general-notifications')}
                 />
                 <TouchableOpacity
                   activeOpacity={0.82}
@@ -3834,6 +3936,7 @@ function SettingsScreen() {
             <ProfileHeaderCard
               profile={profile}
               onPress={() => navigation.navigate(ROUTES.PROFILE)}
+              viewProfileLabel={copy.viewProfile}
             />
           ) : (
             <View className="surface-card flex-row items-center gap-4 px-5 py-4">

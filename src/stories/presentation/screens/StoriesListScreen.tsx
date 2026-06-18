@@ -46,8 +46,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { ArrowLeft, Sparkles } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
+import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getStoriesCopy } from '../../application/i18n/storiesCopy';
 import {
@@ -62,10 +64,13 @@ const ANIMATED_CELL_COUNT = 8;
 
 export default function StoriesListScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<RouteProp<RootStackParamList, typeof ROUTES.STORIES_LIST>>();
   const language = useAppLanguage();
   const copy = getStoriesCopy(language);
+  const initialStories = route.params?.stories;
+  const title = route.params?.title ?? copy.headerTitle;
   const { rows, pagedStories, isLoading, isRefreshing, reload, hasMore } =
-    useStoriesListViewModel();
+    useStoriesListViewModel({ initialStories });
 
   const headerTranslateY = useSharedValue(-40);
   const headerOpacity = useSharedValue(0);
@@ -179,7 +184,7 @@ export default function StoriesListScreen() {
           activeOpacity={0.8}
           onPress={handleBack}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityLabel={copy.headerTitle}
+          accessibilityLabel={title}
           accessibilityRole="button"
           className="h-10 w-10 items-center justify-center rounded-full"
         >
@@ -190,7 +195,7 @@ export default function StoriesListScreen() {
             className="text-[17px] font-extrabold text-slate-900"
             numberOfLines={1}
           >
-            {copy.headerTitle}
+            {title}
           </Text>
           {rows.length > 0 ? (
             <Text className="mt-0.5 text-[11px] font-semibold text-slate-500">

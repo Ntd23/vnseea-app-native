@@ -2,8 +2,8 @@
 //
 // Mirrors the AppLanguage + Record<AppLanguage, Record<key, string>> pattern
 // used by `notificationCopy.ts` and `shareCopy.ts`. The screen reads
-// `STORIES_LIST_COPY[language]` via `useAppLanguage` — never `useT` /
-// `react-i18next` — to stay consistent with the rest of the stories domain.
+// `STORIES_LIST_COPY[language]` via `useAppLanguage` to stay consistent with
+// the rest of the stories domain.
 
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 
@@ -62,11 +62,6 @@ export function getStoriesCopy(language: AppLanguage): StoriesCopy {
   return STORIES_LIST_COPY[language];
 }
 
-/**
- * Render a unix-seconds timestamp as a localised relative phrase using the
- * stories copy table. Mirrors the formatter in StoryViewerScreen so the rail
- * and the grid render identical text.
- */
 export function formatStoriesRelativeTime(
   postedAt: number | undefined,
   copy: StoriesCopy,

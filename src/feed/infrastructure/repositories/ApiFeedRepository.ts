@@ -1824,9 +1824,9 @@ export function createFeedRepository(): FeedRepository {
       }
 
       // Server returns the freshly-created post in the same shape as
-      // `/api/posts` returns. Reuse `mapTextPost` so the optimistic
-      // prepend is type-consistent with the rest of the feed.
-      const post = mapTextPost(response.post_data);
+      // `/api/posts` returns. Route it through `mapPost` so video uploads
+      // are prepended as video cards instead of being coerced to text.
+      const post = mapPost(response.post_data);
 
       return { postId: post.id, post };
     },

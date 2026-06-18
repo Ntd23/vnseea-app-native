@@ -1195,7 +1195,7 @@ export function LiveKitCallSessionProvider({
               callType: params.callType,
             })
             .catch(() => null);
-          if (status?.active && status.status === 'answered') {
+          if (status && status.status === 'answered') {
             await joinAnsweredOutgoingCall(
               nextCallId,
               params.callType,
@@ -1459,9 +1459,15 @@ export function LiveKitCallSessionProvider({
 
   useEffect(() => {
     const interval = setInterval(() => {
-      async function syncConnectedCall() {
+      async function syncCallStatus() {
         const current = sessionRef.current;
-        if (!current || current.phase !== 'connected' || !current.callId) {
+        if (!current || !current.callId || isFinalPhase(current.phase)) {
+          return;
+        }
+
+        // Skip if the call is still initializing (no callId yet)
+        // or if we're in the process of answering (brief transient phase)
+        if (current.phase === 'initializing' || current.phase === 'answering') {
           return;
         }
 
@@ -1473,13 +1479,22 @@ export function LiveKitCallSessionProvider({
           .catch(() => null);
         if (!status) return;
 
-        if (status.finished || !status.active) {
+        if (status.finished) {
           closeSentRef.current = true;
           finishSession();
           return;
         }
 
-        if (status.status === 'answered') {
+        // Handle terminal statuses that indicate the call was cancelled/ended
+        const terminalStatuses = ['cancelled', 'ended', 'no_answer', 'missed', 'declined'];
+        if (status.status && terminalStatuses.includes(status.status)) {
+          closeSentRef.current = true;
+          finishSession();
+          return;
+        }
+
+        // Timer drift correction only applies during connected phase
+        if (current.phase === 'connected' && status.status === 'answered') {
           const measuredAt = Date.now();
           const startedAt = resolveLocalStartedAtFromServer(
             status,
@@ -1500,7 +1515,7 @@ export function LiveKitCallSessionProvider({
         }
       }
 
-      syncConnectedCall().catch(() => undefined);
+      syncCallStatus().catch(() => undefined);
     }, CONNECTED_CALL_SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
@@ -1525,7 +1540,7 @@ export function LiveKitCallSessionProvider({
           callType: current.callType,
         })
         .then(status => {
-          if (status.active && status.status === 'answered') {
+          if (status && status.status === 'answered') {
             return joinAnsweredOutgoingCall(
               current.callId,
               current.callType,

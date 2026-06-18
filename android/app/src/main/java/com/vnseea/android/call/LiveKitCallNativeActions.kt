@@ -1,6 +1,9 @@
 // Description: Performs signed LiveKit call actions from Android native call UI.
 package com.vnseea.android.call
 
+import android.app.NotificationManager
+import android.content.Context
+import android.content.Intent
 import com.vnseea.android.BuildConfig
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
@@ -26,6 +29,17 @@ object LiveKitCallNativeActions {
   const val EXTRA_RING_MODE = "ring_mode"
   const val EXTRA_CALL_CONTEXT = "call_context"
   const val EXTRA_NATIVE_ACTION = "vnseea_call_action"
+  const val ACTION_DISMISS_INCOMING_CALL = "com.vnseea.android.call.DISMISS_INCOMING_CALL"
+
+  fun dismissIncomingCall(context: Context, callId: String?) {
+    if (callId.isNullOrBlank()) return
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+    manager?.cancel(callId.hashCode())
+    context.sendBroadcast(Intent(ACTION_DISMISS_INCOMING_CALL).apply {
+      setPackage(context.packageName)
+      putExtra(EXTRA_CALL_ID, callId)
+    })
+  }
 
   fun postAction(apiUrl: String?, actionToken: String?, action: String) {
     if (apiUrl.isNullOrBlank() || actionToken.isNullOrBlank()) return

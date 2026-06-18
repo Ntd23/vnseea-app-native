@@ -12,6 +12,7 @@ import type { ProductItem } from '../product/domain/types/product.types';
 import type { FeedPost } from '../feed/domain/types/feed.types';
 import type { AdItem } from '../advertising/domain/types/ads.types';
 import type { EventsItem } from '../events/domain/types/events.types';
+import type { UserProfile } from '../user/domain/types/user.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]: undefined;
@@ -24,8 +25,30 @@ export type MainTabParamList = {
       }
     | undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
-  [ROUTES.SETTINGS]: undefined;
+  [ROUTES.SETTINGS]:
+    | {
+        initialPanel?: SettingsPanelRouteParam;
+        fromDashboard?: boolean;
+      }
+    | undefined;
 };
+
+export type SettingsPanelRouteParam =
+  | 'main'
+  | 'general'
+  | 'earnings'
+  | 'general-common'
+  | 'general-profile'
+  | 'general-social-links'
+  | 'general-address'
+  | 'general-privacy'
+  | 'general-blocked-users'
+  | 'general-sessions'
+  | 'general-avatar'
+  | 'general-password'
+  | 'general-two-factor'
+  | 'general-notifications'
+  | 'general-verification';
 
 /**
  * Where a Reels screen was opened from. Used by the back FAB to
@@ -54,6 +77,11 @@ export type RootStackParamList = {
     post?: FeedPost;
   };
   [ROUTES.PROFILE]: { userId?: string } | undefined;
+  [ROUTES.PROFILE_FRIENDS]: {
+    userId: string;
+    title?: string;
+    initialFriends?: UserProfile[];
+  };
   [ROUTES.MY_PHOTOS]: undefined;
   [ROUTES.ALBUMS]: undefined;
   [ROUTES.CREATE_ALBUM]: undefined;
@@ -126,6 +154,7 @@ export type RootStackParamList = {
   [ROUTES.PAGE_OFFERS]: { pageId: number; pageName?: string; isOwner?: boolean };
   [ROUTES.CREATE_OFFER]: { pageId: number; pageName?: string };
   [ROUTES.SETTINGS_MY_INFO]: undefined;
+  [ROUTES.USER_DASHBOARD]: undefined;
   [ROUTES.SETTINGS_ADDRESS]: undefined;
   [ROUTES.EDIT_PROFILE]: undefined;
   [ROUTES.SETTINGS_MESSAGES]: undefined;
@@ -145,7 +174,12 @@ export type RootStackParamList = {
     stories: StoryItem[];
     initialUserIndex: number;
   };
-  [ROUTES.STORIES_LIST]: undefined;
+  [ROUTES.STORIES_LIST]:
+    | {
+        stories?: StoryItem[];
+        title?: string;
+      }
+    | undefined;
   [ROUTES.AVATAR_VIEWER]: {
     avatarUrl: string;
     userName: string;

@@ -54,6 +54,44 @@ class VnseeaCallIntentModule(
   }
 
   @ReactMethod
+  fun dismissIncomingCall(callId: String?, promise: Promise) {
+    try {
+      LiveKitCallNativeActions.dismissIncomingCall(appContext, callId)
+      promise.resolve(!callId.isNullOrBlank())
+    } catch (error: Exception) {
+      promise.reject("E_DISMISS_INCOMING_CALL", error)
+    }
+  }
+
+  @ReactMethod
+  fun showIncomingCall(callData: com.facebook.react.bridge.ReadableMap, promise: Promise) {
+    try {
+      val intent = Intent(appContext, IncomingCallActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+          Intent.FLAG_ACTIVITY_CLEAR_TOP or
+          Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val iterator = callData.keySetIterator()
+        while (iterator.hasNextKey()) {
+          val key = iterator.nextKey()
+          try {
+            putExtra(key, callData.getString(key))
+          } catch (_: Throwable) {
+          }
+        }
+      }
+      val activity = appContext.currentActivity
+      if (activity != null) {
+        activity.startActivity(intent)
+      } else {
+        appContext.startActivity(intent)
+      }
+      promise.resolve(true)
+    } catch (error: Exception) {
+      promise.reject("E_SHOW_INCOMING_CALL", error)
+    }
+  }
+
+  @ReactMethod
   fun canUseFullScreenIntent(promise: Promise) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
       promise.resolve(true)
