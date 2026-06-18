@@ -1998,7 +1998,7 @@ export function PhotoViewerModal({
                             fontWeight: '600',
                           }}
                         >
-                          {language === 'vi' ? 'Theo dĂµi' : 'Follow'}
+                          {language === 'vi' ? 'Theo dõi' : 'Follow'}
                         </Text>
                       </GHTouchableOpacity>
                     );

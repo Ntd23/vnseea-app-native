@@ -40,7 +40,6 @@ import {
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
-  interpolate,
   type SharedValue,
 } from 'react-native-reanimated';
 import VideoPlayer from 'react-native-video';
@@ -51,7 +50,6 @@ import {
   Heart,
   MessageCircle,
   Play,
-  Share2,
   Volume2,
   VolumeX,
   Forward,
@@ -155,8 +153,6 @@ function ReelItemBase({
   onOpenProfile,
   onUnavailable,
   onFollow,
-  scrollY,
-  index,
 }: Props) {
   const insets = useSafeAreaInsets();
   const language = useAppLanguage();
@@ -312,7 +308,7 @@ function ReelItemBase({
   const gradId = `rg-${item.id}`;
 
   return (
-    <Animated.View style={[{ width: '100%', height, backgroundColor: '#000', overflow: 'hidden' }, animatedStyle]}>
+    <Animated.View style={[styles.reelRoot, { height }, animatedStyle]}>
 
       {/* ── Thumbnail / poster ───────────────────────────────────────── */}
       {item.thumbnailUrl ? (
@@ -360,7 +356,7 @@ function ReelItemBase({
       <Svg
         width={SCREEN_W}
         height={height * 0.35}
-        style={{ position: 'absolute', bottom: 0, left: 0 }}
+        style={styles.bottomGradient}
         pointerEvents="none"
       >
         <Defs>
@@ -698,6 +694,16 @@ function MusicDisc({
 }
 
 const styles = StyleSheet.create({
+  reelRoot: {
+    width: '100%',
+    backgroundColor: '#000',
+    overflow: 'hidden',
+  },
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+  },
   // Center play / error overlay
   centerOverlay: {
     position: 'absolute',
