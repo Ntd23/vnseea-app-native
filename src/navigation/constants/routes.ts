@@ -81,6 +81,7 @@ export const ROUTES = {
   CREATE_POST: 'CreatePost',
   CREATE_STORY: 'CreateStory',
   STORY_VIEWER: 'StoryViewer',
+  STORIES_LIST: 'StoriesList',
   AVATAR_VIEWER: 'AvatarViewer',
   COVER_VIEWER: 'CoverViewer',
   LIVE: 'Live',

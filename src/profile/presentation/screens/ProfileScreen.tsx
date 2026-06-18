@@ -76,6 +76,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { ToastContainer, showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
 import { EditProfileActionSheet } from '../../../shared-kernel/presentation/components/EditProfileActionSheet';
+import { AvatarActionSheet } from '../../../shared-kernel/presentation/components/AvatarActionSheet';
 import { StoryOptionsSheet } from '../../../shared-kernel/presentation/components/StoryOptionsSheet';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getPokeCopy } from '../../../poke/application/i18n/pokeCopy';
@@ -191,6 +192,10 @@ const PROFILE_COPY: Record<AppLanguage, {
   noPosts: string;
   edit: string;
   avatarOptionsTitle: string;
+  avatarSheetTitle: string;
+  avatarSheetSubtitle: string;
+  viewAvatarLabel: string;
+  viewAvatarHint: string;
   cancel: string;
   errorTitle: string;
   reactionError: string;
@@ -251,6 +256,10 @@ const PROFILE_COPY: Record<AppLanguage, {
     noPosts: 'Chưa có bài viết nào',
     edit: 'Chỉnh sữa',
     avatarOptionsTitle: 'Tùy chọn ảnh đại diện',
+    avatarSheetTitle: 'Tùy chọn',
+    avatarSheetSubtitle: 'Bạn muốn làm gì?',
+    viewAvatarLabel: 'Xem ảnh đại diện',
+    viewAvatarHint: 'Mở ảnh đại diện',
     cancel: 'Hủy',
     errorTitle: 'Lỗi',
     reactionError: 'Không thể cập nhật cảm xúc. Vui lòng thử lại.',
@@ -310,6 +319,10 @@ const PROFILE_COPY: Record<AppLanguage, {
     noPosts: 'No posts yet',
     edit: 'Edit',
     avatarOptionsTitle: 'Profile picture options',
+    avatarSheetTitle: 'Options',
+    avatarSheetSubtitle: 'What would you like to do?',
+    viewAvatarLabel: 'View profile picture',
+    viewAvatarHint: 'Open their avatar',
     cancel: 'Cancel',
     errorTitle: 'Error',
     reactionError: 'Could not update reaction. Please try again.',
@@ -1041,6 +1054,7 @@ function ProfileScreen() {
   } | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [editSheetVisible, setEditSheetVisible] = useState(false);
+  const [avatarSheetVisible, setAvatarSheetVisible] = useState(false);
 
   // Note: tab bar is hidden via direct tabBarVisibility calls in each handler below.
   const [storyOptionsSheet, setStoryOptionsSheet] = useState<StoryItem | null>(null);
@@ -1450,35 +1464,49 @@ function ProfileScreen() {
 
   // Avatar Press Handler
   const handleAvatarPress = () => {
-    if (isOwnProfile) {
-      // Navigate to AvatarViewerScreen for own profile
+    if (userStory) {
+      // Có story → mở action sheet 2 options: Xem ảnh đại diện + Xem tin
+      // Áp dụng cho cả own profile và người khác. Sửa ảnh vẫn ở icon
+      // Camera riêng ở góc avatar (chỉ render khi isOwnProfile).
+      setAvatarSheetVisible(true);
+      tabBarVisibility.setVisible(false);
+      return;
+    }
+    // Không story → mở thẳng AvatarViewer (giữ nguyên flow cũ)
+    navigation.navigate(ROUTES.AVATAR_VIEWER, {
+      avatarUrl: avatarUrl,
+      userName: displayName,
+      userId: targetUserId ?? currentUserId ?? profile?.id,
+    });
+  };
+
+  const handleViewAvatarFromSheet = useCallback(() => {
+    setAvatarSheetVisible(false);
+    tabBarVisibility.setVisible(true);
+    setTimeout(() => {
       navigation.navigate(ROUTES.AVATAR_VIEWER, {
         avatarUrl: avatarUrl,
         userName: displayName,
-        userId: currentUserId ?? profile?.id,
+        userId: targetUserId ?? currentUserId ?? profile?.id,
       });
-    } else if (userStory) {
-      Alert.alert(
-        copy.avatarOptionsTitle,
-        '',
-        [
-          {
-            text: copy.viewStory,
-            onPress: () => {
-              navigation.navigate(ROUTES.STORY_VIEWER, {
-                stories: [userStory],
-                initialUserIndex: 0,
-              });
-            },
-          },
-          {
-            text: copy.cancel,
-            style: 'cancel',
-          },
-        ]
-      );
+    }, 220);
+  }, [avatarUrl, displayName, navigation, profile?.id, targetUserId, currentUserId]);
+
+  const handleViewStoryFromAvatar = useCallback(() => {
+    if (!userStory) {
+      setAvatarSheetVisible(false);
+      tabBarVisibility.setVisible(true);
+      return;
     }
-  };
+    setAvatarSheetVisible(false);
+    tabBarVisibility.setVisible(true);
+    setTimeout(() => {
+      navigation.navigate(ROUTES.STORY_VIEWER, {
+        stories: [userStory],
+        initialUserIndex: 0,
+      });
+    }, 220);
+  }, [userStory, navigation]);
 
   // Cover Photo Press Handler
   const handleCoverPress = () => {
@@ -2529,6 +2557,25 @@ function ProfileScreen() {
             changeCoverHint: copy.changeCoverHint,
             editDetailsLabel: copy.editDetailsLabel,
             editDetailsHint: copy.editDetailsHint,
+            cancel: copy.sheetCancel,
+          }}
+        />
+        <AvatarActionSheet
+          visible={avatarSheetVisible}
+          onClose={() => {
+            setAvatarSheetVisible(false);
+            tabBarVisibility.setVisible(true);
+          }}
+          avatarUrl={avatarUrl}
+          onViewAvatar={handleViewAvatarFromSheet}
+          onViewStory={handleViewStoryFromAvatar}
+          copy={{
+            title: copy.avatarSheetTitle,
+            subtitle: copy.avatarSheetSubtitle,
+            viewAvatarLabel: copy.viewAvatarLabel,
+            viewAvatarHint: copy.viewAvatarHint,
+            viewStoryLabel: copy.viewStoryAction,
+            viewStoryHint: copy.viewStoryHint,
             cancel: copy.sheetCancel,
           }}
         />

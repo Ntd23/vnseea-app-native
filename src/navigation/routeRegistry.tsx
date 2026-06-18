@@ -7,7 +7,7 @@ import { ForgotPasswordScreen, LoginScreen, RegisterScreen } from '../auth';
 import { CreatePostScreen, FeedScreen, PostDetailScreen } from '../feed';
 import { ExploreScreen } from '../explore';
 import { CreateReelScreen, ReelsScreen } from '../reels';
-import { CreateStoryScreen, StoryViewerScreen } from '../stories';
+import { CreateStoryScreen, StoriesListScreen, StoryViewerScreen } from '../stories';
 import { NotificationsScreen } from '../notifications';
 import { MemoriesScreen } from '../memories';
 import { OffersScreen, PageOffersScreen, CreateOfferScreen } from '../offers';
@@ -210,6 +210,7 @@ export function createStackRoutes(
     { name: ROUTES.CREATE_POST, component: CreatePostScreen },
     { name: ROUTES.CREATE_STORY, component: CreateStoryScreen },
     { name: ROUTES.STORY_VIEWER, component: StoryViewerScreen },
+    { name: ROUTES.STORIES_LIST, component: StoriesListScreen },
     { name: ROUTES.AVATAR_VIEWER, component: AvatarViewerScreen },
     { name: ROUTES.COVER_VIEWER, component: CoverViewerScreen },
     { name: ROUTES.CREATE_GROUP_CHAT, component: CreateGroupChatScreen },

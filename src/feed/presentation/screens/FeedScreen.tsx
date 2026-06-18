@@ -509,13 +509,17 @@ function StoriesRow({ avatarUrl, copy }: { avatarUrl?: string; copy: FeedCopy })
     [navigation, vm.stories],
   );
 
+  const goToStoriesList = useCallback(() => {
+    navigation.navigate(ROUTES.STORIES_LIST);
+  }, [navigation]);
+
   return (
     <View className="mb-4 bg-white pb-1.5 pt-0.5">
       <View className="mb-2.5 flex-row items-center justify-between px-4">
         <Text className="text-[18px] font-extrabold text-[#050505]">
           {copy.storiesTitle}
         </Text>
-        <TouchableOpacity activeOpacity={0.8}>
+        <TouchableOpacity activeOpacity={0.8} onPress={goToStoriesList}>
           <View className="flex-row items-center">
             <Text className="text-[14px] font-extrabold text-[#0866ff]">
               {copy.seeAll}

@@ -145,6 +145,7 @@ export type RootStackParamList = {
     stories: StoryItem[];
     initialUserIndex: number;
   };
+  [ROUTES.STORIES_LIST]: undefined;
   [ROUTES.AVATAR_VIEWER]: {
     avatarUrl: string;
     userName: string;
