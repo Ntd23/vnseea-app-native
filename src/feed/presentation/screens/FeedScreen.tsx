@@ -154,6 +154,14 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
 import type { ProductItem } from '../../../product/domain/types/product.types';
+import {
+  FeedCardContent,
+  FeedCardSurface,
+  FeedGlassActionBar,
+  FeedGlassActionButton,
+  FeedMediaFrame,
+  FeedTouchableCardSurface,
+} from '../components/FeedCardChrome';
 import { PollPostCard } from '../components/PollPostCard';
 import { ComposerCard } from '../components/ComposerCard';
 import {
@@ -205,49 +213,9 @@ const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const IMAGE_PREFETCH_LOOKAHEAD = 5;
 const MAX_IMAGE_PREFETCH_URLS = 8;
-const FEED_SCREEN_WIDTH = Dimensions.get('window').width;
-const FEED_CARD_WIDTH = FEED_SCREEN_WIDTH;
-const FEED_PHOTO_GRID_WIDTH = FEED_CARD_WIDTH - 8;
-const FEED_CARD_CLASS = 'mb-2 border-y border-[#dddfe2] bg-white';
-const FEED_CARD_PADDING_CLASS = 'px-3 py-3';
-const FEED_MEDIA_CLASS = 'w-full bg-black';
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: Platform.OS === 'ios' ? 24 : 96,
 };
-
-// â”€â”€ Pre-computed photo grid layouts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Static layout objects for the Facebook-style photo grid. Computed once at
-// module level so TextPostCard never allocates new style objects per-render.
-const PHOTO_GRID_LAYOUTS = {
-  single: { width: FEED_PHOTO_GRID_WIDTH, height: FEED_PHOTO_GRID_WIDTH / 1.4 },
-  duoItem: {
-    width: FEED_PHOTO_GRID_WIDTH / 2,
-    height: FEED_PHOTO_GRID_WIDTH / 2,
-  },
-  triHero: {
-    width: FEED_PHOTO_GRID_WIDTH,
-    height: FEED_PHOTO_GRID_WIDTH / 1.6,
-  },
-  triItem: {
-    width: FEED_PHOTO_GRID_WIDTH / 2,
-    height: FEED_PHOTO_GRID_WIDTH / 2,
-  },
-  quadItem: {
-    width: FEED_PHOTO_GRID_WIDTH / 2,
-    height: FEED_PHOTO_GRID_WIDTH / 2,
-  },
-};
-const PHOTO_GRID_ITEM_PADDING = { padding: 2 };
-
-function getPhotoLayout(index: number, total: number) {
-  if (total === 1) return PHOTO_GRID_LAYOUTS.single;
-  if (total === 2) return PHOTO_GRID_LAYOUTS.duoItem;
-  if (total === 3)
-    return index === 0
-      ? PHOTO_GRID_LAYOUTS.triHero
-      : PHOTO_GRID_LAYOUTS.triItem;
-  return PHOTO_GRID_LAYOUTS.quadItem;
-}
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -758,8 +726,8 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
   }, [copy.adLinkErrorMessage, copy.adLinkErrorTitle, post.targetUrl]);
 
   return (
-    <View className={FEED_CARD_CLASS}>
-      <View className={FEED_CARD_PADDING_CLASS}>
+    <FeedCardSurface>
+      <FeedCardContent>
         <View className="flex-row items-center">
           <Avatar uri={post.publisher.avatarUrl ?? images.me} size={42} />
           <View className="ml-3 flex-1">
@@ -793,34 +761,36 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
             {post.description}
           </Text>
         )}
-      </View>
+      </FeedCardContent>
 
       {!!post.mediaUrl && (
-        <TouchableOpacity
-          activeOpacity={post.targetUrl ? 0.88 : 1}
-          onPress={handlePress}
-          className="h-56 w-full bg-slate-100"
-        >
-          {post.isVideo ? (
-            <View className="h-full w-full items-center justify-center bg-slate-900">
-              <View className="h-16 w-16 items-center justify-center rounded-full bg-white/15">
-                <Text className="ml-1 text-3xl text-white">{'\u25B6'}</Text>
+        <FeedMediaFrame className="h-56 bg-slate-100">
+          <TouchableOpacity
+            activeOpacity={post.targetUrl ? 0.88 : 1}
+            onPress={handlePress}
+            className="h-full w-full"
+          >
+            {post.isVideo ? (
+              <View className="h-full w-full items-center justify-center bg-slate-900">
+                <View className="h-16 w-16 items-center justify-center rounded-full bg-white/15">
+                  <Text className="ml-1 text-3xl text-white">{'\u25B6'}</Text>
+                </View>
+                <Text className="mt-3 text-sm font-semibold text-white">
+                  {copy.adVideo}
+                </Text>
               </View>
-              <Text className="mt-3 text-sm font-semibold text-white">
-                {copy.adVideo}
-              </Text>
-            </View>
-          ) : (
-            <FeedMediaImage
-              uri={post.mediaUrl}
-              className="h-full w-full"
-              resizeMode="cover"
-            />
-          )}
-        </TouchableOpacity>
+            ) : (
+              <FeedMediaImage
+                uri={post.mediaUrl}
+                className="h-full w-full"
+                resizeMode="cover"
+              />
+            )}
+          </TouchableOpacity>
+        </FeedMediaFrame>
       )}
 
-      <View className="flex-row items-center justify-between border-t border-[#dddfe2] px-3 py-3">
+      <FeedGlassActionBar className="border-t border-[#dddfe2] px-3 py-3 pt-3">
         <View className="mr-4 flex-1">
           <Text className="text-xs font-semibold uppercase tracking-[0.4px] text-[#64748b]">
             {copy.ad}
@@ -830,7 +800,7 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
           </Text>
         </View>
 
-        <TouchableOpacity
+        <FeedGlassActionButton
           activeOpacity={0.86}
           disabled={!post.targetUrl}
           onPress={handlePress}
@@ -839,9 +809,9 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
           <Text className="text-sm font-bold text-[#0866ff]">
             {copy.learnMore}
           </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+        </FeedGlassActionButton>
+      </FeedGlassActionBar>
+    </FeedCardSurface>
   );
 });
 
@@ -868,12 +838,8 @@ const FeedLivePostCard = React.memo(
     const isStale = item.state === 'stale';
 
     return (
-      <TouchableOpacity
-        activeOpacity={0.88}
-        onPress={handlePress}
-        className={FEED_CARD_CLASS}
-      >
-        <View className={FEED_CARD_PADDING_CLASS}>
+      <FeedTouchableCardSurface activeOpacity={0.88} onPress={handlePress}>
+        <FeedCardContent>
           <View className="flex-row items-center">
             <Avatar uri={item.publisher.avatarUrl || images.me} size={42} />
             <View className="ml-3 flex-1">
@@ -902,9 +868,9 @@ const FeedLivePostCard = React.memo(
               <Radio size={18} color="#ef4444" />
             </View>
           </View>
-        </View>
+        </FeedCardContent>
 
-        <View className="relative h-52 bg-[#0f172a]">
+        <FeedMediaFrame className="relative h-52 bg-[#0f172a]">
           {item.thumbnailUrl ? (
             <FeedMediaImage
               uri={item.thumbnailUrl}
@@ -929,9 +895,9 @@ const FeedLivePostCard = React.memo(
               {item.viewerCount}
             </Text>
           </View>
-        </View>
+        </FeedMediaFrame>
 
-        <View className={FEED_CARD_PADDING_CLASS}>
+        <FeedCardContent>
           <Text
             className="text-[15px] font-extrabold text-[#111827]"
             numberOfLines={2}
@@ -948,8 +914,8 @@ const FeedLivePostCard = React.memo(
               {copy.watchLive}
             </Text>
           </View>
-        </View>
-      </TouchableOpacity>
+        </FeedCardContent>
+      </FeedTouchableCardSurface>
     );
   },
   (prev, next) =>
@@ -1098,12 +1064,8 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
   }, [job, onPress]);
 
   return (
-    <TouchableOpacity
-      className={FEED_CARD_CLASS}
-      activeOpacity={0.9}
-      onPress={handlePress}
-    >
-      <View className={FEED_CARD_PADDING_CLASS}>
+    <FeedTouchableCardSurface activeOpacity={0.9} onPress={handlePress}>
+      <FeedCardContent>
         <View className="flex-row items-center">
           <Avatar uri={avatar} size={42} />
           <View className="ml-3 flex-1">
@@ -1160,17 +1122,19 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
             </Text>
           </View>
         </View>
-      </View>
+      </FeedCardContent>
 
       {!!cover && (
-        <FeedMediaImage
-          uri={cover}
-          className="h-44 w-full bg-slate-100"
-          resizeMode="cover"
-        />
+        <FeedMediaFrame className="h-44 bg-slate-100">
+          <FeedMediaImage
+            uri={cover}
+            className="h-full w-full"
+            resizeMode="cover"
+          />
+        </FeedMediaFrame>
       )}
 
-      <View className="flex-row items-center justify-between border-t border-[#dddfe2] px-3 py-3">
+      <FeedGlassActionBar className="border-t border-[#dddfe2] px-3 py-3 pt-3">
         <View className="mr-4 flex-1">
           <Text className="text-xs font-semibold uppercase tracking-[0.4px] text-[#64748b]">
             {copy.salary}
@@ -1188,8 +1152,8 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
             {copy.viewJob}
           </Text>
         </View>
-      </View>
-    </TouchableOpacity>
+      </FeedGlassActionBar>
+    </FeedTouchableCardSurface>
   );
 });
 
@@ -2167,8 +2131,9 @@ function PostSkeleton() {
   }));
 
   return (
-    <Animated.View style={animatedStyle} className={FEED_CARD_CLASS}>
-      <View className={FEED_CARD_PADDING_CLASS}>
+    <Animated.View style={animatedStyle}>
+      <FeedCardSurface>
+        <FeedCardContent>
         {/* Header: avatar + name + time */}
         <View className="mb-4 flex-row items-center">
           <View className="h-10 w-10 rounded-full bg-slate-200" />
@@ -2180,15 +2145,16 @@ function PostSkeleton() {
         {/* Caption */}
         <View className="h-3 w-full rounded bg-slate-200" />
         <View className="mt-2 h-3 w-3/4 rounded bg-slate-200" />
-      </View>
-      {/* Media placeholder for photo / video skeletons. */}
-      <View className="h-56 w-full bg-slate-200" />
-      {/* Action row */}
-      <View className="flex-row justify-between border-t border-[#dddfe2] px-3 py-3">
-        <View className="h-6 w-16 rounded bg-slate-200" />
-        <View className="h-6 w-20 rounded bg-slate-200" />
-        <View className="h-6 w-16 rounded bg-slate-200" />
-      </View>
+        </FeedCardContent>
+        {/* Media placeholder for photo / video skeletons. */}
+        <FeedMediaFrame className="h-56 bg-slate-200" />
+        {/* Action row */}
+        <FeedGlassActionBar className="border-t border-[#dddfe2] px-3 py-3 pt-3">
+          <View className="h-6 w-16 rounded bg-slate-200" />
+          <View className="h-6 w-20 rounded bg-slate-200" />
+          <View className="h-6 w-16 rounded bg-slate-200" />
+        </FeedGlassActionBar>
+      </FeedCardSurface>
     </Animated.View>
   );
 }
