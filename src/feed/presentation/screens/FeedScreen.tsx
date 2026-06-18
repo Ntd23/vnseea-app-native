@@ -17,7 +17,6 @@ import {
   Pressable,
   KeyboardAvoidingView,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -53,7 +52,6 @@ import Animated, {
 import {
   Briefcase,
   Building2,
-  ChevronRight,
   Globe,
   HeartHandshake,
   Lock,
@@ -144,11 +142,6 @@ import type {
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
-import {
-  storyCreatedEvents,
-  storyDeletedEvents,
-  useStoriesViewModel,
-} from '../../../stories';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -164,7 +157,7 @@ import {
   FeedTouchableCardSurface,
 } from '../components/FeedCardChrome';
 import { PollPostCard } from '../components/PollPostCard';
-import { ComposerCard } from '../components/ComposerCard';
+import { HomeFeedIntro } from '../components/HomeFeedIntro';
 import {
   feedActiveVideoIdSnapshot,
   FEED_COPY,
@@ -441,199 +434,6 @@ function FilterTabs({
           );
         })}
       </View>
-    </View>
-  );
-}
-
-function StoriesRow({ avatarUrl, copy }: { avatarUrl?: string; copy: FeedCopy }) {
-  const navigation = useNavigation<FeedNav>();
-  const vm = useStoriesViewModel();
-  const prependStory = vm.prependStory;
-  const removeStoryLocal = vm.removeStoryLocal;
-
-  useEffect(() => {
-    const unsubCreated = storyCreatedEvents.subscribe(story => {
-      prependStory(story);
-    });
-    const unsubDeleted = storyDeletedEvents.subscribe(storyId => {
-      removeStoryLocal(storyId);
-    });
-    return () => {
-      unsubCreated();
-      unsubDeleted();
-    };
-  }, [prependStory, removeStoryLocal]);
-
-  const goToCreateStory = useCallback(() => {
-    navigation.navigate(ROUTES.CREATE_STORY);
-  }, [navigation]);
-
-  const goToViewerForGroup = useCallback(
-    (index: number) => {
-      navigation.navigate(ROUTES.STORY_VIEWER, {
-        stories: vm.stories,
-        initialUserIndex: index,
-      });
-    },
-    [navigation, vm.stories],
-  );
-
-  return (
-    <View className="mb-4 bg-white pb-1.5 pt-0.5">
-      <View className="mb-2.5 flex-row items-center justify-between px-4">
-        <Text className="text-[18px] font-extrabold text-[#050505]">
-          {copy.storiesTitle}
-        </Text>
-        <TouchableOpacity activeOpacity={0.8}>
-          <View className="flex-row items-center">
-            <Text className="text-[14px] font-extrabold text-[#0866ff]">
-              {copy.seeAll}
-            </Text>
-            <ChevronRight size={18} color="#0866ff" />
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerClassName="gap-3 px-4"
-      >
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={goToCreateStory}
-          className="h-44 w-28 overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white"
-        >
-          <Image
-            source={{ uri: avatarUrl ?? images.me }}
-            className="h-24 w-full"
-            resizeMode="cover"
-            fadeDuration={0}
-          />
-          <View className="flex-1 items-center justify-center bg-white px-2 pb-1.5">
-            <View className="absolute -top-[18px] h-9 w-9 items-center justify-center rounded-full border-4 border-white bg-[#0866ff]">
-              <Plus size={20} color="#FFFFFF" />
-            </View>
-            <Text className="mt-4 text-center text-[13px] font-extrabold text-[#050505]">
-              {copy.createStory}
-            </Text>
-            <Text
-              className="mt-0.5 text-center text-[10px] font-semibold leading-4 text-[#667085]"
-              numberOfLines={1}
-            >
-              {copy.createStorySubtitle}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {vm.stories.map((story, index) => {
-          const hasUnseen = story.hasUnseen && !story.isViewed;
-
-          return (
-            <TouchableOpacity
-              key={story.publisher.userId}
-              activeOpacity={0.85}
-              onPress={() => goToViewerForGroup(index)}
-              className={`h-44 w-28 overflow-hidden rounded-2xl ${
-                hasUnseen ? '' : 'opacity-80'
-              }`}
-            >
-              <Image
-                source={{ uri: story.thumbnailUrl ?? story.publisher.avatarUrl }}
-                className="h-full w-full"
-                resizeMode="cover"
-                fadeDuration={0}
-              />
-              <View className="absolute inset-0 bg-black/25" />
-              <View className="absolute bottom-0 left-0 right-0 h-24 bg-black/35" />
-              <View
-                className={`absolute left-2 top-2 h-8 w-8 overflow-hidden rounded-full border-2 ${
-                  hasUnseen ? 'border-white' : 'border-slate-200'
-                } bg-white p-0.5`}
-              >
-                <Image
-                  source={{ uri: story.publisher.avatarUrl }}
-                  className="h-full w-full rounded-full"
-                  resizeMode="cover"
-                  fadeDuration={0}
-                />
-                {story.media.length > 1 ? (
-                  <View className="absolute -bottom-2 -right-2 flex h-4 items-center justify-center rounded-full bg-blue-600 px-1">
-                    <Text className="text-[9px] font-bold text-white">
-                      {story.media.length}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text
-                className="absolute bottom-3 left-2 right-2 text-[12px] font-extrabold text-white"
-                numberOfLines={1}
-              >
-                {story.publisher.name}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-    </View>
-  );
-}
-
-function GreetingCard({
-  userName,
-  copy,
-}: {
-  userName?: string;
-  copy: FeedCopy;
-}) {
-  const displayName = userName || copy.userFallback;
-  const isVi = copy.publicLabel === 'Công khai';
-
-  const hour = new Date().getHours();
-  let title = '';
-  let body = '';
-  let emoji = '\uD83C\uDF05';
-
-  if (hour >= 5 && hour < 12) {
-    title = isVi
-      ? `Chào buổi sáng, ${displayName}`
-      : `Good morning, ${displayName}`;
-    body = isVi
-      ? 'Chào ngày mới! Chúc bạn có một ngày tràn đầy năng lượng và làm việc hiệu quả.'
-      : 'Good morning! Wishing you a day full of energy and great productivity.';
-    emoji = '\u2600\uFE0F';
-  } else if (hour >= 12 && hour < 18) {
-    title = isVi
-      ? `Chào buổi chiều, ${displayName}`
-      : `Good afternoon, ${displayName}`;
-    body = isVi
-      ? 'Chúc bạn có một buổi chiều suôn sẻ, tràn ngập niềm vui và năng lượng.'
-      : 'Hope your afternoon is going productive, smooth, and full of joy!';
-    emoji = '\uD83C\uDF24\uFE0F';
-  } else {
-    title = isVi
-      ? `Chào buổi tối, ${displayName}`
-      : `Good evening, ${displayName}`;
-    body = isVi
-      ? 'Buổi tối ấm áp! Hãy thư giãn và tận hưởng những phút giây bình yên của ngày.'
-      : 'Evening is life saying you are getting closer to your dreams.';
-    emoji = '\uD83C\uDF07';
-  }
-
-  return (
-    <View className="mx-4 mb-4 flex-row items-center justify-between overflow-hidden rounded-2xl border border-[#dfe7ff] bg-[#eef4ff] px-4 py-3.5">
-      <View className="mr-3 h-11 w-11 items-center justify-center rounded-full bg-white">
-        <Text className="text-2xl">{'\uD83D\uDC4B'}</Text>
-      </View>
-      <View className="flex-1 pr-2">
-        <Text className="text-[17px] font-extrabold text-[#050505]">
-          {title}
-        </Text>
-        <Text className="mt-1.5 text-[13px] font-semibold leading-5 text-[#667085]">
-          {body}
-        </Text>
-      </View>
-      <Text className="text-3xl">{emoji}</Text>
     </View>
   );
 }
@@ -3482,13 +3282,13 @@ function FeedScreen() {
           activeSource={activeFeedSource}
           onChangeSource={setActiveFeedSource}
         />
-        <ComposerCard
-          onPress={goToCreatePost}
+        <HomeFeedIntro
+          onCreatePostPress={goToCreatePost}
+          userId={userVm.user?.userId}
           avatarUrl={userVm.user?.avatar}
+          userName={userVm.user?.name}
           copy={copy}
         />
-        <StoriesRow avatarUrl={userVm.user?.avatar} copy={copy} />
-        <GreetingCard userName={userVm.user?.name} copy={copy} />
       </View>
     ),
     [
@@ -3496,6 +3296,7 @@ function FeedScreen() {
       copy,
       goToCreatePost,
       setActiveFeedSource,
+      userVm.user?.userId,
       userVm.user?.avatar,
       userVm.user?.name,
     ],
