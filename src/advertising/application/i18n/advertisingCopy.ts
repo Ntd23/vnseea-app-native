@@ -126,6 +126,12 @@ export const ADVERTISING_COPY: Record<AppLanguage, Record<string, string>> = {
     timeLabel: 'Thời gian',
     postedLabel: 'Đã đăng',
     adVideo: 'Quảng cáo video',
+    monthlyViewsClicks: 'Lượt xem/Nhấp hàng tháng',
+    last30Days: '30 ngày gần nhất',
+    viewsLabel: 'Lượt xem',
+    clicksLabel: 'Lượt nhấp',
+    spentLabel: 'Đã chi',
+    noChartData: 'Chưa có dữ liệu thống kê',
   },
   en: {
     // Create Ad Screen
@@ -250,6 +256,12 @@ export const ADVERTISING_COPY: Record<AppLanguage, Record<string, string>> = {
     timeLabel: 'Time',
     postedLabel: 'Posted',
     adVideo: 'Video Ad',
+    monthlyViewsClicks: 'Monthly Views/Clicks',
+    last30Days: 'Last 30 Days',
+    viewsLabel: 'Views',
+    clicksLabel: 'Clicks',
+    spentLabel: 'Spent',
+    noChartData: 'No statistics data available',
   },
 };
 

@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -80,6 +81,7 @@ import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { useSettingsViewModel } from '../../application/view-models/useSettingsViewModel';
 import { useMyInfoViewModel } from '../../application/view-models/useMyInfoViewModel';
 import { useUserViewModel } from '../../../user/application/view-models/useUserViewModel';
@@ -3553,6 +3555,14 @@ function SettingsScreen() {
       if (id === 'live') {
         navigation.navigate(ROUTES.LIVE);
       }
+
+      if (id === 'poke') {
+        navigation.navigate(ROUTES.POKE);
+      }
+
+      if (id === 'forum') {
+        navigation.navigate(ROUTES.FORUM);
+      }
     },
     [navigation],
   );
@@ -3853,7 +3863,9 @@ function SettingsScreen() {
           </View>
 
           <View className="mt-5">
-            <GoProBanner />
+            <GoProBanner
+              onPress={() => Linking.openURL(apiConfig.webBaseUrl)}
+            />
           </View>
 
           <View className="mt-6">

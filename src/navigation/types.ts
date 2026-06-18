@@ -163,6 +163,7 @@ export type RootStackParamList = {
   };
   [ROUTES.GO_LIVE]: undefined;
   [ROUTES.POKE]: undefined;
+  [ROUTES.FORUM]: undefined;
 };
 
 export type MainTabRouteName = keyof MainTabParamList;

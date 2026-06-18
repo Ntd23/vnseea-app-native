@@ -186,6 +186,51 @@ function CreateEventScreen() {
 
   // Navigation
   function next() {
+    // Validation for each step
+    switch (step) {
+      case 0:
+        if (!formData.name.trim()) {
+          showToast({ message: copy.errorNameRequired, type: 'error' });
+          return;
+        }
+        break;
+      case 1:
+        if (!formData.startDate) {
+          showToast({ message: copy.errorStartDateRequired, type: 'error' });
+          return;
+        }
+        if (!formData.startTime) {
+          showToast({ message: copy.errorStartTimeRequired, type: 'error' });
+          return;
+        }
+        break;
+      case 2:
+        if (!formData.endDate) {
+          showToast({ message: copy.errorEndDateRequired, type: 'error' });
+          return;
+        }
+        if (!formData.endTime) {
+          showToast({ message: copy.errorEndTimeRequired, type: 'error' });
+          return;
+        }
+        break;
+      case 3:
+        // Image is optional
+        break;
+      case 4:
+        if (!formData.location.trim()) {
+          showToast({ message: copy.errorLocationRequired, type: 'error' });
+          return;
+        }
+        break;
+      case 5:
+        if (!formData.description.trim()) {
+          showToast({ message: copy.errorDescriptionRequired, type: 'error' });
+          return;
+        }
+        break;
+    }
+
     if (step < 5) {
       setStep(value => value + 1);
     } else {

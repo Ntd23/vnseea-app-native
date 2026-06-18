@@ -160,6 +160,9 @@ export const apiRoutes = {
     get: 'get-movies',
     comments: 'movies_comments',
   },
+  forum: {
+    main: 'forum',
+  },
 } as const;
 
 export const appRoutes = {

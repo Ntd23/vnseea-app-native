@@ -102,7 +102,7 @@ function EmptyState({
           <Plus size={18} color="#FFFFFF" />
         )}
         <Text className="text-title-primary text-inverse">
-          {error ? 'Thử lại' : copy.createBlog}
+          {error ? copy.retry : copy.createBlog}
         </Text>
       </TouchableOpacity>
     </View>
@@ -139,7 +139,7 @@ function ArticleCard({
       <View className="p-4">
         <View className="self-start rounded-full bg-blue-50 px-3 py-1">
           <Text className="text-caption-primary text-brand">
-            {article.category || 'Bài viết'}
+            {article.category || copy.article}
           </Text>
         </View>
 
@@ -326,7 +326,7 @@ function BlogsScreen() {
           <Search size={18} color="#64748B" />
           <TextInput
             className="flex-1 text-body-primary"
-            placeholder="Tìm kiếm bài viết..."
+            placeholder={copy.searchPlaceholder}
             placeholderTextColor="#94A3B8"
             value={searchText}
             onChangeText={handleSearchChange}
@@ -366,9 +366,9 @@ function BlogsScreen() {
               <FileText size={28} color={BRAND} />
             </View>
             <View className="ml-4 flex-1">
-              <Text className="text-heading">Bài viết mới nhất</Text>
+              <Text className="text-heading">{copy.newestArticles}</Text>
               <Text className="mt-1 text-body-secondary">
-                Nội dung cộng đồng được tải trực tiếp từ VNSEEA.
+                {copy.communityContent}
               </Text>
             </View>
           </View>

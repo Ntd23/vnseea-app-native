@@ -15,6 +15,10 @@ export const BLOGS_COPY: Record<AppLanguage, Record<string, string>> = {
     createBlog: 'Viết blog',
     loading: 'Đang tải...',
     error: 'Có lỗi xảy ra',
+    retry: 'Thử lại',
+    article: 'Bài viết',
+    newestArticles: 'Bài viết mới nhất',
+    communityContent: 'Nội dung cộng đồng được tải trực tiếp từ VNSEEA.',
     // Blog Filter Category Screen
     filterTitle: 'Lọc blogs',
     category: 'Danh mục',
@@ -76,6 +80,10 @@ export const BLOGS_COPY: Record<AppLanguage, Record<string, string>> = {
     createBlog: 'Write Blog',
     loading: 'Loading...',
     error: 'An error occurred',
+    retry: 'Retry',
+    article: 'Article',
+    newestArticles: 'Newest Articles',
+    communityContent: 'Community content loaded directly from VNSEEA.',
     // Blog Filter Category Screen
     filterTitle: 'Filter Blogs',
     category: 'Category',
