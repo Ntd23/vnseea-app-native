@@ -61,38 +61,41 @@ type MessagesNav = NativeStackNavigationProp<RootStackParamList>;
 
 type ChatFilter = 'broadcast' | 'users' | 'groups';
 
-const MESSAGE_COPY: Record<AppLanguage, {
-  title: string;
-  searchPlaceholder: string;
-  createStory: string;
-  retry: string;
-  errorTitle: string;
-  filters: Record<ChatFilter, string>;
-  selectedRecipients: (count: number) => string;
-  broadcastPlaceholder: string;
-  now: string;
-  minuteSuffix: string;
-  weekdays: string[];
-  noMessage: string;
-  startConversation: string;
-  sentImage: string;
-  sentImageMe: string;
-  sentVideo: string;
-  sentVideoMe: string;
-  sentAudio: string;
-  sentAudioMe: string;
-  audioCall: string;
-  groupAudioCall: string;
-  videoCall: string;
-  groupVideoCall: string;
-  sentFile: string;
-  sentFileMe: string;
-  sentProduct: string;
-  sentProductMe: string;
-  sentSticker: string;
-  sentStickerMe: string;
-  mePrefix: string;
-}> = {
+const MESSAGE_COPY: Record<
+  AppLanguage,
+  {
+    title: string;
+    searchPlaceholder: string;
+    createStory: string;
+    retry: string;
+    errorTitle: string;
+    filters: Record<ChatFilter, string>;
+    selectedRecipients: (count: number) => string;
+    broadcastPlaceholder: string;
+    now: string;
+    minuteSuffix: string;
+    weekdays: string[];
+    noMessage: string;
+    startConversation: string;
+    sentImage: string;
+    sentImageMe: string;
+    sentVideo: string;
+    sentVideoMe: string;
+    sentAudio: string;
+    sentAudioMe: string;
+    audioCall: string;
+    groupAudioCall: string;
+    videoCall: string;
+    groupVideoCall: string;
+    sentFile: string;
+    sentFileMe: string;
+    sentProduct: string;
+    sentProductMe: string;
+    sentSticker: string;
+    sentStickerMe: string;
+    mePrefix: string;
+  }
+> = {
   vi: {
     title: 'Tin nhắn',
     searchPlaceholder: 'Tìm kiếm',
@@ -381,7 +384,10 @@ function LastMessagePreviewIcon({ kind }: { kind?: ChatPreviewKind }) {
   return null;
 }
 
-function getVisibleLastMessage(chat: ChatItem, copy: typeof MESSAGE_COPY.vi = MESSAGE_COPY.vi) {
+function getVisibleLastMessage(
+  chat: ChatItem,
+  copy: typeof MESSAGE_COPY.vi = MESSAGE_COPY.vi,
+) {
   if (chat.lastMessageKind === 'audio_call') {
     return chat.chatType === 'group' ? copy.groupAudioCall : copy.audioCall;
   }
@@ -762,6 +768,7 @@ function StoriesBubbleRow({
 
   const cachedProfile = sessionStorage.getUserProfile();
   const avatarUrl = cachedProfile?.avatarUrl || undefined;
+  const currentUserId = sessionStorage.getSession()?.userId ?? '';
 
   const goToCreateStory = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_STORY);
@@ -779,19 +786,21 @@ function StoriesBubbleRow({
 
   const stories = useMemo<StoryItem[]>(
     () =>
-      storiesVm.stories.map(story => {
-        const knownOnline = onlineByUserId.get(story.publisher.userId);
-        if (knownOnline === undefined) return story;
+      storiesVm.stories
+        .filter(story => story.publisher.userId !== currentUserId)
+        .map(story => {
+          const knownOnline = onlineByUserId.get(story.publisher.userId);
+          if (knownOnline === undefined) return story;
 
-        return {
-          ...story,
-          publisher: {
-            ...story.publisher,
-            isOnline: knownOnline,
-          },
-        };
-      }),
-    [onlineByUserId, storiesVm.stories],
+          return {
+            ...story,
+            publisher: {
+              ...story.publisher,
+              isOnline: knownOnline,
+            },
+          };
+        }),
+    [currentUserId, onlineByUserId, storiesVm.stories],
   );
 
   const goToViewerForGroup = useCallback(
@@ -929,7 +938,12 @@ function MessageLabelsModal({
   }, [labelColor, labelName, onCreate]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
       <View className="flex-1 justify-end bg-black/30">
         <View className="max-h-[86%] rounded-t-3xl bg-white px-5 pb-6 pt-4">
           <View className="mb-4 flex-row items-center justify-between">
@@ -1002,7 +1016,9 @@ function MessageLabelsModal({
                           onPress={() => {
                             if (!chat) return;
                             const action = attached ? onDetach : onAttach;
-                            action(chat.userId, label.id).catch(() => undefined);
+                            action(chat.userId, label.id).catch(
+                              () => undefined,
+                            );
                           }}
                         >
                           <Text
@@ -1055,7 +1071,9 @@ function MessageLabelsModal({
                 />
                 <TouchableOpacity
                   className={`h-11 justify-center rounded-lg px-4 ${
-                    labelName.trim() && !isLoading ? 'bg-blue-500' : 'bg-slate-300'
+                    labelName.trim() && !isLoading
+                      ? 'bg-blue-500'
+                      : 'bg-slate-300'
                   }`}
                   disabled={!labelName.trim() || isLoading}
                   onPress={() => {
@@ -1259,7 +1277,9 @@ function MessageScreen() {
     async (labelId: string) => {
       setShowBroadcastLabelOptions(false);
       const recipients = await selectBroadcastLabel(labelId);
-      setSelectedRecipients(new Set(recipients.map(recipient => recipient.userId)));
+      setSelectedRecipients(
+        new Set(recipients.map(recipient => recipient.userId)),
+      );
     },
     [selectBroadcastLabel],
   );
@@ -1302,7 +1322,12 @@ function MessageScreen() {
       setBroadcastText('');
       setBroadcastAttachment(null);
     }
-  }, [broadcastAttachment, broadcastText, selectedRecipients, sendBulkMessages]);
+  }, [
+    broadcastAttachment,
+    broadcastText,
+    selectedRecipients,
+    sendBulkMessages,
+  ]);
 
   const canSendBroadcast =
     selectedRecipients.size > 0 &&
@@ -1522,7 +1547,9 @@ function MessageScreen() {
               hasQuery={query.trim().length > 0}
             />
           }
-          contentContainerStyle={visibleChats.length === 0 ? { flex: 1 } : undefined}
+          contentContainerStyle={
+            visibleChats.length === 0 ? { flex: 1 } : undefined
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
