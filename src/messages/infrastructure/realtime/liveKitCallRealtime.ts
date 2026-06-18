@@ -87,9 +87,15 @@ export type ChatTypingRealtimeEvent = {
   typingAsset?: string;
 };
 
+export type UserOnlineStatusRealtimeEvent = {
+  userId: string;
+  isOnline: boolean;
+};
+
 type Listener<T> = (event: T) => void;
 type EventName =
   | 'typing'
+  | 'userStatus'
   | 'incoming'
   | 'answered'
   | 'declined'
@@ -117,6 +123,7 @@ const socketIoClient = require('socket.io-client') as SocketIoClient;
 
 const listeners = {
   typing: new Set<Listener<ChatTypingRealtimeEvent>>(),
+  userStatus: new Set<Listener<UserOnlineStatusRealtimeEvent>>(),
   incoming: new Set<Listener<IncomingLiveKitCall>>(),
   answered: new Set<Listener<LiveKitCallRealtimeEvent>>(),
   declined: new Set<Listener<LiveKitCallRealtimeEvent>>(),
@@ -310,6 +317,20 @@ function mapTypingEvent(value: unknown): ChatTypingRealtimeEvent | null {
   };
 }
 
+function mapUserStatusEvent(
+  value: unknown,
+  isOnline: boolean,
+): UserOnlineStatusRealtimeEvent | null {
+  const raw = asRecord(value);
+  const userId = readString(raw.user_id ?? raw.userId ?? raw.id);
+  if (!userId) return null;
+
+  return {
+    userId,
+    isOnline,
+  };
+}
+
 function removeSocketListener(
   target: SocketLike | null,
   event: string,
@@ -413,6 +434,14 @@ function bindSocketEvents(nextSocket: SocketLike) {
   nextSocket.on('typing', payload => {
     const event = mapTypingEvent(payload);
     if (event) dispatch('typing', event);
+  });
+  nextSocket.on('on_user_loggedin', payload => {
+    const event = mapUserStatusEvent(payload, true);
+    if (event) dispatch('userStatus', event);
+  });
+  nextSocket.on('on_user_loggedoff', payload => {
+    const event = mapUserStatusEvent(payload, false);
+    if (event) dispatch('userStatus', event);
   });
   nextSocket.on('livekit_call_incoming', payload => {
     console.log('[LiveKitRealtime] incoming event received');
@@ -726,6 +755,16 @@ export function onChatTyping(listener: Listener<ChatTypingRealtimeEvent>) {
   connectWebMessageTypingRealtime().catch(() => undefined);
   return () => {
     listeners.typing.delete(listener);
+  };
+}
+
+export function onUserOnlineStatus(
+  listener: Listener<UserOnlineStatusRealtimeEvent>,
+) {
+  listeners.userStatus.add(listener);
+  connectLiveKitCallRealtime();
+  return () => {
+    listeners.userStatus.delete(listener);
   };
 }
 

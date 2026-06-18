@@ -24,6 +24,7 @@ export interface StoryPublisher {
   name: string;
   avatarUrl?: string;
   isVerified?: boolean;
+  isOnline?: boolean;
 }
 
 /**
