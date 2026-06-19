@@ -103,44 +103,47 @@ const IMAGE_GALLERY_WIDTH = 268;
 const IMAGE_GALLERY_GAP = 3;
 const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
 
-const CHAT_COPY: Record<AppLanguage, {
-  today: string;
-  yesterday: string;
-  loadingMessages: string;
-  hello: (name: string) => string;
-  emptyHint: string;
-  newMessages: string;
-  recording: (duration: string) => string;
-  inputPlaceholder: string;
-  retryHint: string;
-  clearHistory: string;
-  clearHistoryMessage: string;
-  cancel: string;
-  delete: string;
-  removeMember: string;
-  removeMemberMessage: (name: string) => string;
-  audioCallFailedTitle: string;
-  missingRecipient: string;
-  missingGroup: string;
-  recordFailed: string;
-  groupChat: string;
-  addMembers: string;
-  groupMembers: string;
-  sharedMedia: string;
-  emptySharedMedia: string;
-  leaveGroup: string;
-  leaveGroupMessage: string;
-  leaveGroupConfirm: string;
-  errorTitle: string;
-  cannotFindMember: string;
-  cannotAddMember: string;
-  cannotSaveGroup: string;
-  cannotClearHistory: string;
-  cannotLeaveGroup: string;
-  cannotRemoveMember: string;
-  missedCall: string;
-  noAnswer: string;
-}> = {
+const CHAT_COPY: Record<
+  AppLanguage,
+  {
+    today: string;
+    yesterday: string;
+    loadingMessages: string;
+    hello: (name: string) => string;
+    emptyHint: string;
+    newMessages: string;
+    recording: (duration: string) => string;
+    inputPlaceholder: string;
+    retryHint: string;
+    clearHistory: string;
+    clearHistoryMessage: string;
+    cancel: string;
+    delete: string;
+    removeMember: string;
+    removeMemberMessage: (name: string) => string;
+    audioCallFailedTitle: string;
+    missingRecipient: string;
+    missingGroup: string;
+    recordFailed: string;
+    groupChat: string;
+    addMembers: string;
+    groupMembers: string;
+    sharedMedia: string;
+    emptySharedMedia: string;
+    leaveGroup: string;
+    leaveGroupMessage: string;
+    leaveGroupConfirm: string;
+    errorTitle: string;
+    cannotFindMember: string;
+    cannotAddMember: string;
+    cannotSaveGroup: string;
+    cannotClearHistory: string;
+    cannotLeaveGroup: string;
+    cannotRemoveMember: string;
+    missedCall: string;
+    noAnswer: string;
+  }
+> = {
   vi: {
     today: 'Hôm nay',
     yesterday: 'Hôm qua',
@@ -236,7 +239,10 @@ function formatMessageTime(timestamp: number) {
 }
 
 // Format date separator
-function formatDateSeparator(timestamp: number, copy: typeof CHAT_COPY.vi): string {
+function formatDateSeparator(
+  timestamp: number,
+  copy: typeof CHAT_COPY.vi,
+): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const messageDate = new Date(timestamp * 1000);
@@ -307,6 +313,99 @@ function buildMessageListItems(messages: MessageItem[]): ChatMessageListItem[] {
   return items;
 }
 
+type MessageSkeletonBubbleWidthStyle =
+  | 'messageSkeletonBubbleSmall'
+  | 'messageSkeletonBubbleMedium'
+  | 'messageSkeletonBubbleLarge'
+  | 'messageSkeletonBubbleXLarge';
+
+type MessageSkeletonRow = {
+  id: string;
+  sentByMe: boolean;
+  bubbleWidthStyle: MessageSkeletonBubbleWidthStyle;
+  lines: number;
+};
+
+const MESSAGE_SKELETON_ROWS: MessageSkeletonRow[] = [
+  {
+    id: 'skeleton-1',
+    sentByMe: false,
+    bubbleWidthStyle: 'messageSkeletonBubbleLarge',
+    lines: 2,
+  },
+  {
+    id: 'skeleton-2',
+    sentByMe: true,
+    bubbleWidthStyle: 'messageSkeletonBubbleMedium',
+    lines: 1,
+  },
+  {
+    id: 'skeleton-3',
+    sentByMe: false,
+    bubbleWidthStyle: 'messageSkeletonBubbleXLarge',
+    lines: 3,
+  },
+  {
+    id: 'skeleton-4',
+    sentByMe: true,
+    bubbleWidthStyle: 'messageSkeletonBubbleLarge',
+    lines: 2,
+  },
+  {
+    id: 'skeleton-5',
+    sentByMe: false,
+    bubbleWidthStyle: 'messageSkeletonBubbleSmall',
+    lines: 1,
+  },
+];
+
+function ChatMessagesSkeleton() {
+  return (
+    <View style={styles.messageSkeletonContainer}>
+      {MESSAGE_SKELETON_ROWS.map(row => (
+        <View
+          key={row.id}
+          style={[
+            styles.messageSkeletonRow,
+            row.sentByMe
+              ? styles.messageSkeletonRowSent
+              : styles.messageSkeletonRowReceived,
+          ]}
+        >
+          {!row.sentByMe ? (
+            <View style={styles.messageSkeletonAvatar} />
+          ) : null}
+          <View
+            style={[
+              styles.messageSkeletonBubble,
+              styles[row.bubbleWidthStyle],
+              row.sentByMe
+                ? styles.messageSkeletonBubbleSent
+                : styles.messageSkeletonBubbleReceived,
+            ]}
+          >
+            {Array.from({ length: row.lines }).map((_, index) => {
+              const isLastLine = index === row.lines - 1;
+              return (
+                <View
+                  key={`${row.id}-line-${index}`}
+                  style={[
+                    styles.messageSkeletonLine,
+                    row.sentByMe
+                      ? styles.messageSkeletonLineSent
+                      : styles.messageSkeletonLineReceived,
+                    index > 0 ? styles.messageSkeletonLineGap : null,
+                    isLastLine ? styles.messageSkeletonLineShort : null,
+                  ]}
+                />
+              );
+            })}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
 function assetToAttachment(asset: Asset): MessageAttachment | undefined {
   if (!asset.uri) return undefined;
 
@@ -1488,7 +1587,15 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       startGroupCall(callParams);
       navigation.navigate(ROUTES.GROUP_CALL_ROOM, callParams);
     },
-    [chat.avatar, chat.name, copy.audioCallFailedTitle, copy.missingGroup, groupId, navigation, startGroupCall],
+    [
+      chat.avatar,
+      chat.name,
+      copy.audioCallFailedTitle,
+      copy.missingGroup,
+      groupId,
+      navigation,
+      startGroupCall,
+    ],
   );
 
   const handleOpenGroupInfo = useCallback(() => {
@@ -1526,11 +1633,11 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   const handleSearchAddableUsers = useCallback(() => {
     searchAddableUsers(addableQuery).catch(caught => {
-        Alert.alert(
-          copy.cannotFindMember,
-          caught instanceof Error ? caught.message : copy.retryHint,
-        );
-      });
+      Alert.alert(
+        copy.cannotFindMember,
+        caught instanceof Error ? caught.message : copy.retryHint,
+      );
+    });
   }, [addableQuery, copy.cannotFindMember, copy.retryHint, searchAddableUsers]);
 
   const handleToggleAddableUser = useCallback((user: GroupAddableUser) => {
@@ -1561,7 +1668,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           caught instanceof Error ? caught.message : copy.retryHint,
         );
       });
-  }, [addGroupUsers, copy.cannotAddMember, copy.retryHint, searchAddableUsers, selectedAddableIds]);
+  }, [
+    addGroupUsers,
+    copy.cannotAddMember,
+    copy.retryHint,
+    searchAddableUsers,
+    selectedAddableIds,
+  ]);
 
   const handlePickGroupAvatar = useCallback(async () => {
     const result = await launchImageLibrary({
@@ -1594,7 +1707,14 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           caught instanceof Error ? caught.message : copy.retryHint,
         );
       });
-  }, [copy.cannotSaveGroup, copy.retryHint, editGroup, editGroupAvatar, editGroupName, groupInfo?.name]);
+  }, [
+    copy.cannotSaveGroup,
+    copy.retryHint,
+    editGroup,
+    editGroupAvatar,
+    editGroupName,
+    groupInfo?.name,
+  ]);
 
   const handleClearGroupHistory = useCallback(() => {
     Alert.alert(copy.clearHistory, copy.clearHistoryMessage, [
@@ -1619,7 +1739,17 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         },
       },
     ]);
-  }, [clearGroupHistory, copy.cancel, copy.cannotClearHistory, copy.clearHistory, copy.clearHistoryMessage, copy.delete, copy.retryHint, loadGroupInfo, loadInitial]);
+  }, [
+    clearGroupHistory,
+    copy.cancel,
+    copy.cannotClearHistory,
+    copy.clearHistory,
+    copy.clearHistoryMessage,
+    copy.delete,
+    copy.retryHint,
+    loadGroupInfo,
+    loadInitial,
+  ]);
 
   const handleLeaveGroup = useCallback(() => {
     Alert.alert(copy.leaveGroup, copy.leaveGroupMessage, [
@@ -1644,7 +1774,16 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         },
       },
     ]);
-  }, [copy.cancel, copy.cannotLeaveGroup, copy.leaveGroup, copy.leaveGroupConfirm, copy.leaveGroupMessage, copy.retryHint, leaveGroup, navigation]);
+  }, [
+    copy.cancel,
+    copy.cannotLeaveGroup,
+    copy.leaveGroup,
+    copy.leaveGroupConfirm,
+    copy.leaveGroupMessage,
+    copy.retryHint,
+    leaveGroup,
+    navigation,
+  ]);
 
   const handleRemoveGroupMember = useCallback(
     (member: GroupChatMember) => {
@@ -1664,7 +1803,15 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         },
       ]);
     },
-    [copy.cancel, copy.cannotRemoveMember, copy.delete, copy.removeMember, copy.removeMemberMessage, copy.retryHint, removeGroupUser],
+    [
+      copy.cancel,
+      copy.cannotRemoveMember,
+      copy.delete,
+      copy.removeMember,
+      copy.removeMemberMessage,
+      copy.retryHint,
+      removeGroupUser,
+    ],
   );
 
   return (
@@ -1772,12 +1919,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
         {/* Messages */}
         {isLoading ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" color="#2563eb" />
-            <Text className="mt-3 text-sm text-gray-500">
-              {copy.loadingMessages}
-            </Text>
-          </View>
+          <ChatMessagesSkeleton />
         ) : (
           <FlatList<ChatMessageListItem>
             ref={flatListRef}
@@ -2090,7 +2232,73 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  imageGallery: {
+  messageSkeletonAvatar: {
+    width: 32,
+    height: 32,
+    marginRight: 8,
+    borderRadius: 16,
+    backgroundColor: '#E2E8F0',
+  },
+  messageSkeletonBubble: {
+    maxWidth: '78%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  messageSkeletonBubbleReceived: {
+    borderBottomLeftRadius: 6,
+    backgroundColor: '#F1F5F9',
+  },
+  messageSkeletonBubbleSent: {
+    borderBottomRightRadius: 6,
+    backgroundColor: '#EFF6FF',
+  },
+  messageSkeletonBubbleSmall: {
+    width: 176,
+  },
+  messageSkeletonBubbleMedium: {
+    width: 188,
+  },
+  messageSkeletonBubbleLarge: {
+    width: 224,
+  },
+  messageSkeletonBubbleXLarge: {
+    width: 252,
+  },
+  messageSkeletonContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  messageSkeletonLine: {
+    width: '100%',
+    height: 12,
+    borderRadius: 999,
+  },
+  messageSkeletonLineGap: {
+    marginTop: 8,
+  },
+  messageSkeletonLineReceived: {
+    backgroundColor: '#E2E8F0',
+  },
+  messageSkeletonLineSent: {
+    backgroundColor: '#DBEAFE',
+  },
+  messageSkeletonLineShort: {
+    width: '68%',
+  },
+  messageSkeletonRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: 16,
+  },
+  messageSkeletonRowReceived: {
+    justifyContent: 'flex-start',
+  },
+  messageSkeletonRowSent: {
+    justifyContent: 'flex-end',
+  },  imageGallery: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: IMAGE_GALLERY_GAP,
