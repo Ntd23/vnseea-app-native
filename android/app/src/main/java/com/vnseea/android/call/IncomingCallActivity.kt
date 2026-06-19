@@ -16,25 +16,31 @@ import android.graphics.Paint
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioAttributes
+import android.media.Ringtone
+import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.WindowManager
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
-import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.vnseea.android.MainActivity
 import java.net.URL
-import android.view.MotionEvent
+import java.util.Calendar
 
 class IncomingCallActivity : Activity() {
   private var dismissReceiver: BroadcastReceiver? = null
+  private var ringtone: Ringtone? = null
 
   private fun extra(key: String) = intent.getStringExtra(key).orEmpty()
 
@@ -76,31 +82,31 @@ class IncomingCallActivity : Activity() {
     } else {
       "B\u1ea1n \u0111ang c\u00f3 cu\u1ed9c g\u1ecdi video \u0111\u1ebfn"
     }
+    val backgroundMode = currentBackgroundMode()
 
     val root = FrameLayout(this).apply {
-      background = GradientDrawable(
-        GradientDrawable.Orientation.TL_BR,
-        intArrayOf(
-          Color.rgb(4, 24, 48),
-          Color.rgb(8, 42, 78),
-          Color.rgb(2, 14, 35),
-        ),
-      )
+      background = backgroundMode.fallbackDrawable()
       layoutParams = ViewGroup.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT,
       )
     }
-    val bgImage = ImageView(this).apply {
-      scaleType = ImageView.ScaleType.CENTER_CROP
-      alpha = 0f
-      layoutParams = FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.MATCH_PARENT,
-      )
+    val backgroundResourceId = resources.getIdentifier(
+      backgroundMode.imageResourceName,
+      "drawable",
+      packageName,
+    )
+    if (backgroundResourceId != 0) {
+      root.addView(ImageView(this).apply {
+        scaleType = ImageView.ScaleType.CENTER_CROP
+        setImageResource(backgroundResourceId)
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+        )
+      })
     }
-    root.addView(bgImage)
-    root.addView(CallBackgroundView(this))
+    root.addView(CallBackgroundView(this, backgroundMode))
 
     val content = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -139,7 +145,7 @@ class IncomingCallActivity : Activity() {
       }
     })
 
-    content.addView(createAvatarBlock(callerName, avatarUrl, bgImage))
+    content.addView(createAvatarBlock(callerName, avatarUrl))
 
     content.addView(TextView(this).apply {
       text = callerName
@@ -186,6 +192,7 @@ class IncomingCallActivity : Activity() {
     // The fullscreen activity is now the call surface; remove the heads-up card
     // so the lock-screen UI does not show two incoming-call layers at once.
     cancelNotification()
+    startRingtone()
   }
 
   override fun onNewIntent(nextIntent: Intent) {
@@ -194,6 +201,7 @@ class IncomingCallActivity : Activity() {
   }
 
   override fun onDestroy() {
+    stopRingtone()
     dismissReceiver?.let { receiver ->
       try {
         unregisterReceiver(receiver)
@@ -204,7 +212,7 @@ class IncomingCallActivity : Activity() {
     super.onDestroy()
   }
 
-  private fun createAvatarBlock(name: String, avatarUrl: String, bgImage: ImageView): FrameLayout {
+  private fun createAvatarBlock(name: String, avatarUrl: String): FrameLayout {
     val size = dp(176)
     val avatarSize = dp(134)
     val block = FrameLayout(this).apply {
@@ -256,7 +264,7 @@ class IncomingCallActivity : Activity() {
         )
       }
       avatarContainer.addView(image)
-      loadAvatar(avatarUrl, image, bgImage)
+      loadAvatar(avatarUrl, image)
     }
 
     block.addView(avatarContainer)
@@ -270,7 +278,7 @@ class IncomingCallActivity : Activity() {
     return block
   }
 
-  private fun loadAvatar(url: String, image: ImageView, bgImage: ImageView) {
+  private fun loadAvatar(url: String, image: ImageView) {
     Thread {
       try {
         val bitmap = URL(url).openStream().use { stream ->
@@ -279,12 +287,47 @@ class IncomingCallActivity : Activity() {
         Handler(Looper.getMainLooper()).post {
           image.setImageBitmap(bitmap)
           image.animate().alpha(1f).setDuration(180L).start()
-          bgImage.setImageBitmap(bitmap)
-          bgImage.animate().alpha(0.18f).setDuration(300L).start()
         }
       } catch (_: Throwable) {
       }
     }.start()
+  }
+
+  private fun startRingtone() {
+    val ringtoneUri = incomingRingtoneUri()
+    try {
+      ringtone = RingtoneManager.getRingtone(this, ringtoneUri)?.apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          audioAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        }
+        play()
+      }
+    } catch (_: Throwable) {
+      ringtone = null
+    }
+  }
+
+  private fun stopRingtone() {
+    try {
+      ringtone?.stop()
+    } catch (_: Throwable) {
+    }
+    ringtone = null
+  }
+
+  private fun incomingRingtoneUri(): Uri {
+    val customRingtoneId = resources.getIdentifier(
+      "incoming_call_ringtone",
+      "raw",
+      packageName,
+    )
+    if (customRingtoneId != 0) {
+      return Uri.parse("android.resource://$packageName/$customRingtoneId")
+    }
+    return RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
   }
 
   private fun statusPill(): TextView {
@@ -372,6 +415,7 @@ class IncomingCallActivity : Activity() {
         rightMargin = dp(20)
       }
       setOnClickListener {
+        stopRingtone()
         cancelNotification()
         LiveKitCallNativeActions.postAction(
           extra(LiveKitCallNativeActions.EXTRA_API_URL),
@@ -459,6 +503,7 @@ class IncomingCallActivity : Activity() {
                 .translationX(maxSlide.toFloat())
                 .setDuration(120L)
                 .withEndAction {
+                  stopRingtone()
                   cancelNotification()
                   LiveKitCallNativeActions.postAction(
                     extra(LiveKitCallNativeActions.EXTRA_API_URL),
@@ -501,6 +546,7 @@ class IncomingCallActivity : Activity() {
           dismissIntent?.getStringExtra(LiveKitCallNativeActions.EXTRA_CALL_ID).orEmpty()
         val currentCallId = extra(LiveKitCallNativeActions.EXTRA_CALL_ID)
         if (dismissedCallId.isNotBlank() && dismissedCallId != currentCallId) return
+        stopRingtone()
         cancelNotification()
         finishAndRemoveTask()
       }
@@ -549,6 +595,61 @@ class IncomingCallActivity : Activity() {
     manager?.cancel(callId.hashCode())
   }
 
+  private fun currentBackgroundMode(): CallBackgroundMode {
+    val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    return when (hour) {
+      in 5..11 -> CallBackgroundMode.MORNING
+      in 12..17 -> CallBackgroundMode.AFTERNOON
+      else -> CallBackgroundMode.NIGHT
+    }
+  }
+
+  private enum class CallBackgroundMode(
+    val imageResourceName: String,
+    val skyColors: IntArray,
+    val sunColor: Int,
+    val mountainNear: Int,
+    val mountainFar: Int,
+    val waterColor: Int,
+    val overlayTop: Int,
+    val overlayBottom: Int,
+  ) {
+    MORNING(
+      "incoming_call_bg_morning",
+      intArrayOf(Color.rgb(73, 146, 214), Color.rgb(180, 219, 245), Color.rgb(255, 231, 185)),
+      Color.rgb(255, 222, 128),
+      Color.rgb(24, 79, 87),
+      Color.rgb(54, 116, 130),
+      Color.rgb(59, 143, 179),
+      Color.argb(112, 4, 18, 38),
+      Color.argb(180, 1, 10, 24),
+    ),
+    AFTERNOON(
+      "incoming_call_bg_afternoon",
+      intArrayOf(Color.rgb(45, 74, 105), Color.rgb(238, 139, 84), Color.rgb(32, 65, 71)),
+      Color.rgb(255, 146, 71),
+      Color.rgb(20, 58, 50),
+      Color.rgb(50, 82, 73),
+      Color.rgb(157, 84, 55),
+      Color.argb(120, 11, 16, 24),
+      Color.argb(200, 1, 7, 14),
+    ),
+    NIGHT(
+      "incoming_call_bg_night",
+      intArrayOf(Color.rgb(4, 18, 43), Color.rgb(13, 41, 79), Color.rgb(1, 8, 23)),
+      Color.rgb(231, 240, 255),
+      Color.rgb(5, 30, 47),
+      Color.rgb(12, 51, 79),
+      Color.rgb(7, 35, 66),
+      Color.argb(92, 1, 8, 24),
+      Color.argb(220, 0, 3, 12),
+    );
+
+    fun fallbackDrawable(): GradientDrawable {
+      return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, skyColors)
+    }
+  }
+
   private class RingView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.STROKE
@@ -567,7 +668,10 @@ class IncomingCallActivity : Activity() {
     }
   }
 
-  private class CallBackgroundView(context: Context) : View(context) {
+  private class CallBackgroundView(
+    context: Context,
+    private val mode: CallBackgroundMode,
+  ) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     override fun onDraw(canvas: Canvas) {
@@ -577,21 +681,82 @@ class IncomingCallActivity : Activity() {
         0f,
         width.toFloat(),
         height.toFloat(),
-        intArrayOf(
-          Color.argb(160, 11, 66, 118),
-          Color.argb(80, 93, 77, 164),
-          Color.argb(120, 2, 18, 42),
-        ),
+        mode.skyColors,
         null,
         Shader.TileMode.CLAMP,
       )
       canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
       paint.shader = null
       paint.style = Paint.Style.FILL
-      paint.color = Color.argb(34, 55, 135, 255)
-      canvas.drawCircle(width * 0.1f, height * 0.2f, width * 0.42f, paint)
-      paint.color = Color.argb(24, 255, 84, 115)
-      canvas.drawCircle(width * 0.88f, height * 0.58f, width * 0.48f, paint)
+      drawScene(canvas)
+      paint.shader = LinearGradient(
+        0f,
+        0f,
+        0f,
+        height.toFloat(),
+        intArrayOf(mode.overlayTop, Color.argb(32, 0, 0, 0), mode.overlayBottom),
+        null,
+        Shader.TileMode.CLAMP,
+      )
+      canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+      paint.shader = null
+      paint.color = Color.argb(32, 255, 255, 255)
+      canvas.drawCircle(width * 0.14f, height * 0.13f, width * 0.24f, paint)
+      paint.color = Color.argb(28, 74, 115, 255)
+      canvas.drawCircle(width * 0.84f, height * 0.26f, width * 0.34f, paint)
+    }
+
+    private fun drawScene(canvas: Canvas) {
+      val w = width.toFloat()
+      val h = height.toFloat()
+      paint.color = Color.argb(210, Color.red(mode.sunColor), Color.green(mode.sunColor), Color.blue(mode.sunColor))
+      canvas.drawCircle(w * 0.74f, h * 0.28f, w * 0.13f, paint)
+
+      paint.color = mode.mountainFar
+      val farPath = android.graphics.Path().apply {
+        moveTo(0f, h * 0.58f)
+        lineTo(w * 0.18f, h * 0.41f)
+        lineTo(w * 0.35f, h * 0.58f)
+        lineTo(w * 0.52f, h * 0.37f)
+        lineTo(w * 0.76f, h * 0.58f)
+        lineTo(w, h * 0.43f)
+        lineTo(w, h * 0.68f)
+        lineTo(0f, h * 0.68f)
+        close()
+      }
+      canvas.drawPath(farPath, paint)
+
+      paint.color = mode.mountainNear
+      val nearPath = android.graphics.Path().apply {
+        moveTo(0f, h * 0.66f)
+        lineTo(w * 0.23f, h * 0.48f)
+        lineTo(w * 0.47f, h * 0.67f)
+        lineTo(w * 0.68f, h * 0.49f)
+        lineTo(w, h * 0.68f)
+        lineTo(w, h)
+        lineTo(0f, h)
+        close()
+      }
+      canvas.drawPath(nearPath, paint)
+
+      paint.shader = LinearGradient(
+        0f,
+        h * 0.62f,
+        0f,
+        h,
+        intArrayOf(Color.argb(170, Color.red(mode.waterColor), Color.green(mode.waterColor), Color.blue(mode.waterColor)), Color.argb(230, 2, 12, 24)),
+        null,
+        Shader.TileMode.CLAMP,
+      )
+      canvas.drawRect(0f, h * 0.62f, w, h, paint)
+      paint.shader = null
+
+      paint.color = Color.argb(38, 255, 255, 255)
+      paint.strokeWidth = 2f
+      for (index in 0..8) {
+        val y = h * (0.66f + index * 0.032f)
+        canvas.drawLine(w * 0.18f, y, w * 0.82f, y + index * 1.6f, paint)
+      }
     }
   }
 }
