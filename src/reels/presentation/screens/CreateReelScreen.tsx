@@ -43,7 +43,11 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useCreateReelViewModel } from '../../application/view-models/useCreateReelViewModel';
 import type { ReelPrivacy } from '../../domain/types/reels.types';
+import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
+import type { FeedVideoPost } from '../../../feed/domain/types/feed.types';
+import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
@@ -290,10 +294,13 @@ export default function CreateReelScreen() {
   const copy = CREATE_REEL_COPY[language];
 
   const vm = useCreateReelViewModel();
+  const feedRepo = useMemo(() => createFeedRepository(), []);
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const emittedCreatedPostIdsRef = useRef(new Set<string>());
+  const handledUploadResultRef = useRef<string | null>(null);
 
   // ScrollView ref for keyboard avoidance
   const scrollRef = useRef<ScrollView | null>(null);
@@ -309,6 +316,47 @@ export default function CreateReelScreen() {
     { label: copy.privacyFriends, value: 1 as ReelPrivacy, icon: Users },
     { label: copy.privacyOnlyMe, value: 2 as ReelPrivacy, icon: Lock },
   ], [copy]);
+
+  const emitCreatedReelPost = useCallback(
+    async (result: { postId: string; postFileUrl: string }) => {
+      if (emittedCreatedPostIdsRef.current.has(result.postId)) return;
+      emittedCreatedPostIdsRef.current.add(result.postId);
+
+      try {
+        const { post } = await feedRepo.getPostById(result.postId, {
+          fetchComments: false,
+        });
+        postCreatedEvents.emit(post);
+        return;
+      } catch (caught) {
+        console.warn('[CreateReel] get created post fallback:', caught);
+      }
+
+      const session = sessionStorage.getSession();
+      const profile = sessionStorage.getUserProfile();
+      const fallbackPost: FeedVideoPost = {
+        kind: 'video',
+        id: result.postId,
+        caption: vm.draft.caption?.trim() || undefined,
+        videoUrl: result.postFileUrl,
+        postedAt: Math.floor(Date.now() / 1000),
+        likeCount: 0,
+        commentCount: 0,
+        isLiked: false,
+        myReaction: null,
+        topReactions: [],
+        publisher: {
+          id: session?.userId ?? '',
+          name: profile?.name || profile?.username || '',
+          username: profile?.username || '',
+          avatarUrl: profile?.avatarUrl,
+        },
+      };
+
+      postCreatedEvents.emit(fallbackPost);
+    },
+    [feedRepo, vm.draft.caption],
+  );
 
   useEffect(() => {
     const showEvent =
@@ -472,7 +520,17 @@ export default function CreateReelScreen() {
   React.useEffect(() => {
     if (vm.uploadState.phase === 'success') {
       const { result } = vm.uploadState;
+      const resultKey =
+        result.status === 'created'
+          ? `${result.status}:${result.postId}`
+          : `${result.status}:${result.message}`;
+      if (handledUploadResultRef.current === resultKey) {
+        return;
+      }
+      handledUploadResultRef.current = resultKey;
+
       if (result.status === 'created') {
+        void emitCreatedReelPost(result);
         Alert.alert(copy.alertSuccessTitle, copy.alertSuccessMsg, [
           { text: 'OK', onPress: () => { vm.reset(); navigation.goBack(); } },
         ]);
@@ -486,7 +544,7 @@ export default function CreateReelScreen() {
         ]);
       }
     }
-  }, [vm.uploadState.phase, navigation, vm, copy]);
+  }, [copy, emitCreatedReelPost, navigation, vm]);
 
   return (
     <SafeAreaView

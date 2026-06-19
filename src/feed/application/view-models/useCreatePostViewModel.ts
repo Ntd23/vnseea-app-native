@@ -18,7 +18,7 @@ import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedR
 import type {
   CreatePostDraft,
   CreatePostResult,
-  FeedTextPost,
+  FeedPost,
   PostAudioAttachment,
   PostFeeling,
   PostPhotoAttachment,
@@ -121,10 +121,10 @@ const VIEW_MODEL_COPY = {
 export type UseCreatePostOptions = {
   /**
    * Called after a successful create with the freshly-built
-   * `FeedTextPost`. FeedScreen uses this to optimistically prepend the
+   * `FeedPost`. FeedScreen uses this to optimistically prepend the
    * post to the home feed without a full refetch.
    */
-  onCreated?: (post: FeedTextPost) => void;
+  onCreated?: (post: FeedPost) => void;
   pageId?: string;
 };
 

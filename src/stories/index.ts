@@ -9,3 +9,4 @@ export { storyDeletedEvents } from './application/events/storyDeletedEvents';
 export { storyReactedEvents } from './application/events/storyReactedEvents';
 export { default as CreateStoryScreen } from './presentation/screens/CreateStoryScreen';
 export { default as StoryViewerScreen } from './presentation/screens/StoryViewerScreen';
+export { default as StoriesListScreen } from './presentation/screens/StoriesListScreen';

@@ -25,6 +25,7 @@ import {
   View,
   Alert,
   InteractionManager,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ImageProps,
@@ -509,13 +510,17 @@ function StoriesRow({ avatarUrl, copy }: { avatarUrl?: string; copy: FeedCopy })
     [navigation, vm.stories],
   );
 
+  const goToStoriesList = useCallback(() => {
+    navigation.navigate(ROUTES.STORIES_LIST);
+  }, [navigation]);
+
   return (
     <View className="mb-4 bg-white pb-1.5 pt-0.5">
       <View className="mb-2.5 flex-row items-center justify-between px-4">
         <Text className="text-[18px] font-extrabold text-[#050505]">
           {copy.storiesTitle}
         </Text>
-        <TouchableOpacity activeOpacity={0.8}>
+        <TouchableOpacity activeOpacity={0.8} onPress={goToStoriesList}>
           <View className="flex-row items-center">
             <Text className="text-[14px] font-extrabold text-[#0866ff]">
               {copy.seeAll}
@@ -2280,6 +2285,13 @@ function FeedScreen() {
   // Viewport tracking & Autoplay logic for video cards.
   const activeVideoIdRef = useRef<string | null>(feedActiveVideoIdSnapshot);
   const pendingActiveVideoIdRef = useRef<string | null>(null);
+  const latestViewableFeedItemsRef = useRef<any[]>([]);
+  const feedVideoRefsRef = useRef(
+    new Map<string, React.ElementRef<typeof View>>(),
+  );
+  const feedMeasureRequestRef = useRef(0);
+  const feedScrollYRef = useRef(0);
+  const feedViewportHeightRef = useRef(0);
   const isScrollingRef = useRef(false);
   const lastLoadMoreRequestAtRef = useRef(0);
   const lastSupplementalLoadMoreRequestAtRef = useRef(0);
@@ -2300,6 +2312,86 @@ function FeedScreen() {
     publishFeedActiveVideo(videoId);
   }, []);
 
+  const pickViewableFeedVideoId = useCallback(() => {
+    const viewableVideo = latestViewableFeedItemsRef.current.find(
+      item =>
+        item.isViewable &&
+        item.item?.type === 'post' &&
+        item.item.post?.kind === 'video',
+    );
+
+    return viewableVideo ? String(viewableVideo.item.post.id) : null;
+  }, []);
+
+  const setFeedVideoRef = useCallback(
+    (postId: string, node: React.ElementRef<typeof View> | null) => {
+      if (node) {
+        feedVideoRefsRef.current.set(postId, node);
+      } else {
+        feedVideoRefsRef.current.delete(postId);
+      }
+    },
+    [],
+  );
+
+  const measureActiveFeedVideoOnScreen = useCallback(
+    (commitImmediately = false) => {
+      const entries = Array.from(feedVideoRefsRef.current.entries());
+      if (entries.length === 0) return;
+
+      const requestId = feedMeasureRequestRef.current + 1;
+      feedMeasureRequestRef.current = requestId;
+      const viewportHeight =
+        feedViewportHeightRef.current || Dimensions.get('window').height;
+      const viewportCenter = viewportHeight * 0.52;
+      let remaining = entries.length;
+      let nextVideoId: string | null = null;
+      let bestDistance = Number.POSITIVE_INFINITY;
+
+      entries.forEach(([videoId, node]) => {
+        node.measureInWindow((_x, y, _width, height) => {
+          if (feedMeasureRequestRef.current !== requestId) return;
+
+          const visibleHeight = Math.min(y + height, viewportHeight) - Math.max(y, 0);
+          if (visibleHeight > 0) {
+            const visibleRatio = visibleHeight / Math.max(height, 1);
+            if (visibleRatio >= 0.22 || visibleHeight >= 150) {
+              const distance = Math.abs(y + height / 2 - viewportCenter);
+              if (distance < bestDistance) {
+                bestDistance = distance;
+                nextVideoId = videoId;
+              }
+            }
+          }
+
+          remaining -= 1;
+          if (remaining === 0) {
+            const fallbackVideoId = nextVideoId ?? pickViewableFeedVideoId();
+
+            if (commitImmediately || !isScrollingRef.current) {
+              if (fallbackVideoId !== activeVideoIdRef.current) {
+                setActiveFeedVideo(fallbackVideoId);
+              }
+              pendingActiveVideoIdRef.current = null;
+              return;
+            }
+
+            pendingActiveVideoIdRef.current = fallbackVideoId;
+          }
+        });
+      });
+    },
+    [pickViewableFeedVideoId, setActiveFeedVideo],
+  );
+
+  const handleFeedViewportLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      feedViewportHeightRef.current = event.nativeEvent.layout.height;
+      measureActiveFeedVideoOnScreen(!isScrollingRef.current);
+    },
+    [measureActiveFeedVideoOnScreen],
+  );
+
   // Lightweight scroll pause: only track scrolling state for video
   // autoplay, do NOT null out activeVideoId (that causes expensive
   // unmount/remount of the video player â†’ jank).
@@ -2317,12 +2409,19 @@ function FeedScreen() {
     setFeedScrollBusy(false);
     publishFeedScrollBusy(false);
     // Commit whichever video became visible during the scroll.
-    const pendingVideoId = pendingActiveVideoIdRef.current;
+    const pendingVideoId =
+      pickViewableFeedVideoId() ?? pendingActiveVideoIdRef.current;
     pendingActiveVideoIdRef.current = null;
     if (pendingVideoId !== activeVideoIdRef.current) {
       setActiveFeedVideo(pendingVideoId);
     }
-  }, [setActiveFeedVideo, setFeedScrollBusy]);
+    measureActiveFeedVideoOnScreen(true);
+  }, [
+    measureActiveFeedVideoOnScreen,
+    pickViewableFeedVideoId,
+    setActiveFeedVideo,
+    setFeedScrollBusy,
+  ]);
 
   const handleScrollBeginDrag = useCallback(() => {
     beginScrollPause();
@@ -2337,9 +2436,24 @@ function FeedScreen() {
     beginScrollPause();
   }, [beginScrollPause]);
 
+  const handleFeedScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, layoutMeasurement } = event.nativeEvent;
+      feedScrollYRef.current = contentOffset.y;
+      feedViewportHeightRef.current = layoutMeasurement.height;
+    },
+    [],
+  );
+
   const handleScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const velocityY = Math.abs(event.nativeEvent.velocity?.y ?? 0);
+      const { contentOffset, layoutMeasurement } = event.nativeEvent;
+      feedScrollYRef.current = contentOffset.y;
+      feedViewportHeightRef.current = layoutMeasurement.height;
+      if (velocityY < 0.05 && !isMomentumScrollingRef.current) {
+        measureActiveFeedVideoOnScreen(true);
+      }
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
       }
@@ -2350,17 +2464,24 @@ function FeedScreen() {
         }
       }, 80);
     },
-    [endScrollPause],
+    [endScrollPause, measureActiveFeedVideoOnScreen],
   );
 
-  const handleMomentumScrollEnd = useCallback(() => {
-    if (scrollEndTimeoutRef.current) {
-      clearTimeout(scrollEndTimeoutRef.current);
-      scrollEndTimeoutRef.current = null;
-    }
-    isMomentumScrollingRef.current = false;
-    endScrollPause();
-  }, [endScrollPause]);
+  const handleMomentumScrollEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, layoutMeasurement } = event.nativeEvent;
+      feedScrollYRef.current = contentOffset.y;
+      feedViewportHeightRef.current = layoutMeasurement.height;
+      measureActiveFeedVideoOnScreen(true);
+      if (scrollEndTimeoutRef.current) {
+        clearTimeout(scrollEndTimeoutRef.current);
+        scrollEndTimeoutRef.current = null;
+      }
+      isMomentumScrollingRef.current = false;
+      endScrollPause();
+    },
+    [endScrollPause, measureActiveFeedVideoOnScreen],
+  );
 
   useEffect(() => {
     return () => {
@@ -2712,12 +2833,13 @@ function FeedScreen() {
 
   // Viewability config for FlatList autoplay
   const viewabilityConfigRef = useRef({
-    itemVisiblePercentThreshold: 50, // 50% of the item must be visible
-    minimumViewTime: 150, // Must remain visible for 150ms before triggering to prevent spam during scroll
+    itemVisiblePercentThreshold: 25,
+    minimumViewTime: 80,
   });
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: any[] }) => {
+      latestViewableFeedItemsRef.current = viewableItems;
       const viewableVideo = viewableItems.find(
         item =>
           item.isViewable &&
@@ -3122,6 +3244,27 @@ function FeedScreen() {
     fundingVm.currencySymbol,
   ]);
 
+  useEffect(() => {
+    const videoIds = new Set(
+      feedListItems
+        .filter(
+          (item): item is Extract<FeedListItem, { type: 'post' }> =>
+            item.type === 'post' && item.post.kind === 'video',
+        )
+        .map(item => item.post.id),
+    );
+
+    Array.from(feedVideoRefsRef.current.keys()).forEach(videoId => {
+      if (!videoIds.has(videoId)) {
+        feedVideoRefsRef.current.delete(videoId);
+      }
+    });
+
+    if (activeVideoIdRef.current && !videoIds.has(activeVideoIdRef.current)) {
+      setActiveFeedVideo(null);
+    }
+  }, [feedListItems, setActiveFeedVideo]);
+
   // â”€â”€ Smart image prefetch â€” only the next ~10 upcoming items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Instead of prefetching ALL images (which wastes bandwidth and CPU on
   // content the user may never scroll to), we track a "high-water mark"
@@ -3206,17 +3349,19 @@ function FeedScreen() {
   // Separate memoized render functions for each type - prevents full re-render
   const renderVideoPost = useCallback(
     ({ item }: { item: FeedVideoPost }) => (
-      <HomeVideoPostCard
-        key={item.id}
-        post={item}
-        copy={copy}
-        onReact={handleToggleReactionStable}
-        onOpenPicker={handleOpenPicker}
-        onCommentTap={handleCommentTapStable}
-        onShare={handleOpenSharePost}
-        navigateToProfile={navigateToProfile}
-        onOpenPostMenu={handleOpenPostMenu}
-      />
+      <View ref={node => setFeedVideoRef(item.id, node)}>
+        <HomeVideoPostCard
+          key={item.id}
+          post={item}
+          copy={copy}
+          onReact={handleToggleReactionStable}
+          onOpenPicker={handleOpenPicker}
+          onCommentTap={handleCommentTapStable}
+          onShare={handleOpenSharePost}
+          navigateToProfile={navigateToProfile}
+          onOpenPostMenu={handleOpenPostMenu}
+        />
+      </View>
     ),
     [
       handleCommentTapStable,
@@ -3225,6 +3370,7 @@ function FeedScreen() {
       handleOpenSharePost,
       navigateToProfile,
       handleOpenPostMenu,
+      setFeedVideoRef,
       handleToggleReactionStable,
     ],
   );
@@ -3512,7 +3658,9 @@ function FeedScreen() {
             decelerationRate="normal"
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
-            scrollEventThrottle={64}
+            onLayout={handleFeedViewportLayout}
+            onScroll={handleFeedScroll}
+            scrollEventThrottle={32}
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={viewabilityConfigRef.current}
             onScrollBeginDrag={handleScrollBeginDrag}

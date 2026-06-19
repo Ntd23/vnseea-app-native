@@ -12,6 +12,7 @@ import {
   View,
   Alert,
   ActivityIndicator,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -56,6 +57,7 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
+import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import {
@@ -76,6 +78,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { ToastContainer, showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
 import { EditProfileActionSheet } from '../../../shared-kernel/presentation/components/EditProfileActionSheet';
+import { AvatarActionSheet } from '../../../shared-kernel/presentation/components/AvatarActionSheet';
 import { StoryOptionsSheet } from '../../../shared-kernel/presentation/components/StoryOptionsSheet';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getPokeCopy } from '../../../poke/application/i18n/pokeCopy';
@@ -109,6 +112,10 @@ const FRIEND_TILE_WIDTH = Math.floor((SCREEN_WIDTH / 2 - 32 - 6) / 2);
 const PROFILE_FRIENDS_PAGE_WIDTH = FRIEND_TILE_WIDTH * 2 + 6;
 const PROFILE_STORY_MAX_AGE_SECONDS = 24 * 60 * 60;
 const PROFILE_POST_PAGE_SIZE = 20;
+
+function isProfileFeedPost(post: FeedPost): post is ProfileFeedPost {
+  return post.kind === 'text' || post.kind === 'video' || post.kind === 'poll';
+}
 
 function getActiveTimeValue(lastSeenText?: string | null): string {
   const value = String(lastSeenText ?? '').trim();
@@ -191,6 +198,10 @@ const PROFILE_COPY: Record<AppLanguage, {
   noPosts: string;
   edit: string;
   avatarOptionsTitle: string;
+  avatarSheetTitle: string;
+  avatarSheetSubtitle: string;
+  viewAvatarLabel: string;
+  viewAvatarHint: string;
   cancel: string;
   errorTitle: string;
   reactionError: string;
@@ -223,12 +234,12 @@ const PROFILE_COPY: Record<AppLanguage, {
     followersText: count => `Có ${count} người theo dõi`,
     followingText: count => `Đang theo dõi ${count} người`,
     pointsText: count => `Tích lũy ${count} điểm`,
-    editPublicDetails: 'Chỉnh sữa chi tiết công khai',
-    editProfileSheetTitle: 'Chỉnh sữa hồ sơ',
+    editPublicDetails: 'Chỉnh sửa chi tiết công khai',
+    editProfileSheetTitle: 'Chỉnh sửa hồ sơ',
     editProfileSheetSubtitle: 'Bạn muốn thay đổi điều gì?',
     changeCoverLabel: 'Thay đổi ảnh bìa',
     changeCoverHint: 'Cập nhật ảnh nền của bạn',
-    editDetailsLabel: 'Chỉnh sữa thông tin',
+    editDetailsLabel: 'Chỉnh sửa thông tin',
     editDetailsHint: 'Tên, tiểu sử, công việc...',
     sheetCancel: 'Hủy',
     viewStoryAction: 'Xem tin',
@@ -249,8 +260,12 @@ const PROFILE_COPY: Record<AppLanguage, {
     manage: 'Quản lý',
     loadPostsError: 'Lỗi tải bài viết',
     noPosts: 'Chưa có bài viết nào',
-    edit: 'Chỉnh sữa',
+    edit: 'Chỉnh sửa',
     avatarOptionsTitle: 'Tùy chọn ảnh đại diện',
+    avatarSheetTitle: 'Tùy chọn',
+    avatarSheetSubtitle: 'Bạn muốn làm gì?',
+    viewAvatarLabel: 'Xem ảnh đại diện',
+    viewAvatarHint: 'Mở ảnh đại diện',
     cancel: 'Hủy',
     errorTitle: 'Lỗi',
     reactionError: 'Không thể cập nhật cảm xúc. Vui lòng thử lại.',
@@ -310,6 +325,10 @@ const PROFILE_COPY: Record<AppLanguage, {
     noPosts: 'No posts yet',
     edit: 'Edit',
     avatarOptionsTitle: 'Profile picture options',
+    avatarSheetTitle: 'Options',
+    avatarSheetSubtitle: 'What would you like to do?',
+    viewAvatarLabel: 'View profile picture',
+    viewAvatarHint: 'Open their avatar',
     cancel: 'Cancel',
     errorTitle: 'Error',
     reactionError: 'Could not update reaction. Please try again.',
@@ -1025,6 +1044,14 @@ function ProfileScreen() {
   const [hasMorePosts, setHasMorePosts] = useState(false);
   const [postsCursor, setPostsCursor] = useState<string | undefined>(undefined);
   const isLoadingMorePostsRef = React.useRef(false);
+  const [activeProfileVideoId, setActiveProfileVideoIdState] = useState<string | null>(null);
+  const activeProfileVideoIdRef = useRef<string | null>(null);
+  const profileVideoLayoutsRef = useRef(
+    new Map<string, { y: number; height: number }>(),
+  );
+  const profilePostsListOffsetYRef = useRef(0);
+  const profileScrollYRef = useRef(0);
+  const profileViewportHeightRef = useRef(0);
   const [postsError, setPostsError] = useState<string | null>(null);
   const [userStory, setUserStory] = useState<StoryItem | null>(null);
   const [allStories, setAllStories] = useState<StoryItem[]>([]);
@@ -1041,6 +1068,7 @@ function ProfileScreen() {
   } | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [editSheetVisible, setEditSheetVisible] = useState(false);
+  const [avatarSheetVisible, setAvatarSheetVisible] = useState(false);
 
   // Note: tab bar is hidden via direct tabBarVisibility calls in each handler below.
   const [storyOptionsSheet, setStoryOptionsSheet] = useState<StoryItem | null>(null);
@@ -1065,12 +1093,131 @@ function ProfileScreen() {
     onCommentCountChange: updateProfileCommentCount,
   });
 
+  useEffect(() => {
+    const profileUserId = targetUserId ?? currentUserId ?? profile?.id;
+    if (!profileUserId) return undefined;
+
+    return postCreatedEvents.subscribe(post => {
+      if (!isProfileFeedPost(post)) return;
+      if (String(post.publisher.id) !== String(profileUserId)) return;
+
+      setPosts(prev => [
+        post,
+        ...prev.filter(existingPost => existingPost.id !== post.id),
+      ]);
+      setPostsError(null);
+    });
+  }, [currentUserId, profile?.id, targetUserId]);
+
+  const setActiveProfileVideoId = useCallback((nextVideoId: string | null) => {
+    if (activeProfileVideoIdRef.current === nextVideoId) return;
+    activeProfileVideoIdRef.current = nextVideoId;
+    setActiveProfileVideoIdState(nextVideoId);
+  }, []);
+
+  const updateActiveProfileVideoFromScroll = useCallback(
+    (scrollY: number, viewportHeight: number) => {
+      if (viewportHeight <= 0 || profileVideoLayoutsRef.current.size === 0) {
+        setActiveProfileVideoId(null);
+        return;
+      }
+
+      const viewportTop = scrollY;
+      const viewportBottom = scrollY + viewportHeight;
+      const viewportCenter = scrollY + viewportHeight * 0.52;
+      let nextVideoId: string | null = null;
+      let bestDistance = Number.POSITIVE_INFINITY;
+
+      profileVideoLayoutsRef.current.forEach((layout, videoId) => {
+        const absoluteY = profilePostsListOffsetYRef.current + layout.y;
+        const itemTop = absoluteY;
+        const itemBottom = absoluteY + layout.height;
+        const visibleHeight =
+          Math.min(itemBottom, viewportBottom) - Math.max(itemTop, viewportTop);
+
+        if (visibleHeight <= 0) return;
+
+        const visibleRatio = visibleHeight / Math.max(layout.height, 1);
+        if (visibleRatio < 0.28 && visibleHeight < 180) return;
+
+        const itemCenter = absoluteY + layout.height / 2;
+        const distance = Math.abs(itemCenter - viewportCenter);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          nextVideoId = videoId;
+        }
+      });
+
+      setActiveProfileVideoId(nextVideoId);
+    },
+    [setActiveProfileVideoId],
+  );
+
+  const handleProfileVideoLayout = useCallback(
+    (postId: string, event: LayoutChangeEvent) => {
+      const { y, height } = event.nativeEvent.layout;
+      if (height <= 0) return;
+
+      profileVideoLayoutsRef.current.set(postId, { y, height });
+      updateActiveProfileVideoFromScroll(
+        profileScrollYRef.current,
+        profileViewportHeightRef.current,
+      );
+    },
+    [updateActiveProfileVideoFromScroll],
+  );
+
+  const handleProfilePostsListLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      profilePostsListOffsetYRef.current = event.nativeEvent.layout.y;
+      updateActiveProfileVideoFromScroll(
+        profileScrollYRef.current,
+        profileViewportHeightRef.current,
+      );
+    },
+    [updateActiveProfileVideoFromScroll],
+  );
+
+  useEffect(() => {
+    const videoIds = new Set(
+      posts
+        .filter((post): post is FeedVideoPost => post.kind === 'video')
+        .map(post => post.id),
+    );
+
+    Array.from(profileVideoLayoutsRef.current.keys()).forEach(videoId => {
+      if (!videoIds.has(videoId)) {
+        profileVideoLayoutsRef.current.delete(videoId);
+      }
+    });
+
+    if (
+      activeProfileVideoIdRef.current &&
+      !videoIds.has(activeProfileVideoIdRef.current)
+    ) {
+      setActiveProfileVideoId(null);
+    }
+  }, [posts, setActiveProfileVideoId]);
+
   useFocusEffect(useCallback(() => {
     loadProfile({
       userId: route.params?.userId,
       includeFriends: true,
     }).catch(() => undefined);
   }, [loadProfile, route.params?.userId]));
+
+  useFocusEffect(
+    useCallback(() => {
+      updateActiveProfileVideoFromScroll(
+        profileScrollYRef.current,
+        profileViewportHeightRef.current,
+      );
+
+      return () => {
+        setActiveProfileVideoId(null);
+      };
+    }, [setActiveProfileVideoId, updateActiveProfileVideoFromScroll]),
+  );
 
   // Load User Posts
   useEffect(() => {
@@ -1313,6 +1460,15 @@ function ProfileScreen() {
     navigation.navigate(ROUTES.PROFILE, { userId });
   }, [navigation]);
 
+  const handleOpenFriendsList = useCallback(() => {
+    if (!targetUserId) return;
+    navigation.navigate(ROUTES.PROFILE_FRIENDS, {
+      userId: String(targetUserId),
+      title: copy.friends,
+      initialFriends: profileFriends,
+    });
+  }, [copy.friends, navigation, profileFriends, targetUserId]);
+
   const handleVotePoll = useCallback(async (postId: string, optionId: string) => {
     let snapshot: FeedPollPost | undefined;
 
@@ -1438,6 +1594,12 @@ function ProfileScreen() {
   const handleProfileScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      profileScrollYRef.current = contentOffset.y;
+      profileViewportHeightRef.current = layoutMeasurement.height;
+      updateActiveProfileVideoFromScroll(
+        contentOffset.y,
+        layoutMeasurement.height,
+      );
       if (
         contentSize.height - (contentOffset.y + layoutMeasurement.height) <
         480
@@ -1445,40 +1607,78 @@ function ProfileScreen() {
         handleLoadMorePosts();
       }
     },
-    [handleLoadMorePosts],
+    [handleLoadMorePosts, updateActiveProfileVideoFromScroll],
+  );
+
+  const handleProfileScrollEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, layoutMeasurement } = event.nativeEvent;
+      profileScrollYRef.current = contentOffset.y;
+      profileViewportHeightRef.current = layoutMeasurement.height;
+      updateActiveProfileVideoFromScroll(
+        contentOffset.y,
+        layoutMeasurement.height,
+      );
+    },
+    [updateActiveProfileVideoFromScroll],
+  );
+
+  const handleProfileViewportLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      profileViewportHeightRef.current = event.nativeEvent.layout.height;
+      updateActiveProfileVideoFromScroll(
+        profileScrollYRef.current,
+        event.nativeEvent.layout.height,
+      );
+    },
+    [updateActiveProfileVideoFromScroll],
   );
 
   // Avatar Press Handler
   const handleAvatarPress = () => {
-    if (isOwnProfile) {
-      // Navigate to AvatarViewerScreen for own profile
+    if (userStory) {
+      // Có story → mở action sheet 2 options: Xem ảnh đại diện + Xem tin
+      // Áp dụng cho cả own profile và người khác. Sửa ảnh vẫn ở icon
+      // Camera riêng ở góc avatar (chỉ render khi isOwnProfile).
+      setAvatarSheetVisible(true);
+      tabBarVisibility.setVisible(false);
+      return;
+    }
+    // Không story → mở thẳng AvatarViewer (giữ nguyên flow cũ)
+    navigation.navigate(ROUTES.AVATAR_VIEWER, {
+      avatarUrl: avatarUrl,
+      userName: displayName,
+      userId: targetUserId ?? currentUserId ?? profile?.id,
+    });
+  };
+
+  const handleViewAvatarFromSheet = useCallback(() => {
+    setAvatarSheetVisible(false);
+    tabBarVisibility.setVisible(true);
+    setTimeout(() => {
       navigation.navigate(ROUTES.AVATAR_VIEWER, {
         avatarUrl: avatarUrl,
         userName: displayName,
-        userId: currentUserId ?? profile?.id,
+        userId: targetUserId ?? currentUserId ?? profile?.id,
       });
-    } else if (userStory) {
-      Alert.alert(
-        copy.avatarOptionsTitle,
-        '',
-        [
-          {
-            text: copy.viewStory,
-            onPress: () => {
-              navigation.navigate(ROUTES.STORY_VIEWER, {
-                stories: [userStory],
-                initialUserIndex: 0,
-              });
-            },
-          },
-          {
-            text: copy.cancel,
-            style: 'cancel',
-          },
-        ]
-      );
+    }, 220);
+  }, [avatarUrl, displayName, navigation, profile?.id, targetUserId, currentUserId]);
+
+  const handleViewStoryFromAvatar = useCallback(() => {
+    if (!userStory) {
+      setAvatarSheetVisible(false);
+      tabBarVisibility.setVisible(true);
+      return;
     }
-  };
+    setAvatarSheetVisible(false);
+    tabBarVisibility.setVisible(true);
+    setTimeout(() => {
+      navigation.navigate(ROUTES.STORY_VIEWER, {
+        stories: [userStory],
+        initialUserIndex: 0,
+      });
+    }, 220);
+  }, [userStory, navigation]);
 
   // Cover Photo Press Handler
   const handleCoverPress = () => {
@@ -1559,8 +1759,20 @@ function ProfileScreen() {
     navigation.navigate(ROUTES.CREATE_STORY);
   };
 
+  const handleOpenStoriesList = useCallback(() => {
+    const profileStories = [
+      ...(userStory ? [userStory] : []),
+      ...allStories,
+    ];
+
+    navigation.navigate(ROUTES.STORIES_LIST, {
+      stories: profileStories,
+      title: copy.stories,
+    });
+  }, [allStories, copy.stories, navigation, userStory]);
+
   const handleOpenDashboard = () => {
-    navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.SETTINGS });
+    navigation.navigate(ROUTES.USER_DASHBOARD);
   };
 
   const handleOpenMessages = () => {
@@ -1701,8 +1913,11 @@ function ProfileScreen() {
           className="flex-1"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
+          onLayout={handleProfileViewportLayout}
           onScroll={handleProfileScroll}
-          scrollEventThrottle={240}
+          onMomentumScrollEnd={handleProfileScrollEnd}
+          onScrollEndDrag={handleProfileScrollEnd}
+          scrollEventThrottle={32}
         >
           {/* Cover Photo */}
           <View style={profileMainStyles.coverContainer}>
@@ -2063,6 +2278,7 @@ function ProfileScreen() {
                 <Text style={profileMainStyles.cardTitle}>{copy.stories}</Text>
                 <TouchableOpacity
                   activeOpacity={0.8}
+                  onPress={handleOpenStoriesList}
                 >
                   <Text style={profileMainStyles.cardHeaderAction}>
                     {language === 'vi' ? 'Xem tất cả >' : 'See all >'}
@@ -2306,7 +2522,7 @@ function ProfileScreen() {
                   <Text className="text-[15px] font-bold text-[#050505]">{copy.friends}</Text>
                   <TouchableOpacity
                     activeOpacity={0.8}
-                    onPress={() => navigation.navigate(ROUTES.INVITE_FRIENDS)}
+                    onPress={handleOpenFriendsList}
                   >
                     <Text className="text-[12px] font-bold text-[#1877F2]">
                       {language === 'vi' ? 'Xem tất cả >' : 'See all >'}
@@ -2450,24 +2666,28 @@ function ProfileScreen() {
               <Text style={profilePostStyles.stateText}>{copy.noPosts}</Text>
             </View>
           ) : (
-            <View>
+            <View onLayout={handleProfilePostsListLayout}>
               {posts.map(post => {
                 if (post.kind === 'video') {
                   return (
-                    <HomeVideoPostCard
+                    <View
                       key={`video-${post.id}`}
-                      post={post}
-                      copy={postCardCopy}
-                      onReact={handleSetPostReaction}
-                      onOpenPicker={handleOpenPicker}
-                      onCommentTap={commentVm.openComments}
-                      onShare={handleOpenSharePost}
-                      isActive={false}
-                      gestureX={gestureX}
-                      gestureY={gestureY}
-                      gestureActive={gestureActive}
-                      navigateToProfile={handleNavigateToProfile}
-                    />
+                      onLayout={event => handleProfileVideoLayout(post.id, event)}
+                    >
+                      <HomeVideoPostCard
+                        post={post}
+                        copy={postCardCopy}
+                        onReact={handleSetPostReaction}
+                        onOpenPicker={handleOpenPicker}
+                        onCommentTap={commentVm.openComments}
+                        onShare={handleOpenSharePost}
+                        isActive={activeProfileVideoId === post.id}
+                        gestureX={gestureX}
+                        gestureY={gestureY}
+                        gestureActive={gestureActive}
+                        navigateToProfile={handleNavigateToProfile}
+                      />
+                    </View>
                   );
                 }
 
@@ -2529,6 +2749,25 @@ function ProfileScreen() {
             changeCoverHint: copy.changeCoverHint,
             editDetailsLabel: copy.editDetailsLabel,
             editDetailsHint: copy.editDetailsHint,
+            cancel: copy.sheetCancel,
+          }}
+        />
+        <AvatarActionSheet
+          visible={avatarSheetVisible}
+          onClose={() => {
+            setAvatarSheetVisible(false);
+            tabBarVisibility.setVisible(true);
+          }}
+          avatarUrl={avatarUrl}
+          onViewAvatar={handleViewAvatarFromSheet}
+          onViewStory={handleViewStoryFromAvatar}
+          copy={{
+            title: copy.avatarSheetTitle,
+            subtitle: copy.avatarSheetSubtitle,
+            viewAvatarLabel: copy.viewAvatarLabel,
+            viewAvatarHint: copy.viewAvatarHint,
+            viewStoryLabel: copy.viewStoryAction,
+            viewStoryHint: copy.viewStoryHint,
             cancel: copy.sheetCancel,
           }}
         />
@@ -2954,5 +3193,3 @@ const profileMainStyles = StyleSheet.create({
 });
 
 export default ProfileScreen;
-
-
