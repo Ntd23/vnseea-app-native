@@ -61,7 +61,6 @@ import {
   MoreHorizontal,
   Plus,
   Radio,
-  Search,
   Send,
   Share2,
   ShoppingBag,
@@ -121,9 +120,6 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { RootStackParamList } from '../../../navigation/types';
-import type { RootStackRouteName } from '../../../navigation/types';
-import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
-import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
 import type {
@@ -143,7 +139,6 @@ import type {
 } from '../../domain/repositories/FeedRepository';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
-import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
@@ -157,7 +152,15 @@ import {
   FeedTouchableCardSurface,
 } from '../components/FeedCardChrome';
 import { PollPostCard } from '../components/PollPostCard';
+import { FeedHeader } from '../components/FeedHeader';
+import { FeedHeaderCollapseFrame } from '../components/FeedHeaderCollapseFrame';
 import { HomeFeedIntro } from '../components/HomeFeedIntro';
+import {
+  createFeedChromeCollapseState,
+  getNextFeedChromeCollapseState,
+  resetFeedChromeScrollIntent,
+  type FeedChromeCollapseState,
+} from '../components/feedChromeCollapse';
 import {
   feedActiveVideoIdSnapshot,
   FEED_COPY,
@@ -210,6 +213,10 @@ const MAX_IMAGE_PREFETCH_URLS = 8;
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: Platform.OS === 'ios' ? 24 : 96,
 };
+const FEED_SAFE_AREA_CLASS_NAME =
+  Platform.OS === 'ios' ? 'flex-1' : 'flex-1 surface-base';
+const FEED_SAFE_AREA_STYLE =
+  Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -252,150 +259,6 @@ const Avatar = React.memo(function Avatar({
     />
   );
 });
-
-function FeedHeader() {
-  const navigation = useNavigation<FeedNav>();
-  const { messageCount } = useUnreadBadgeCounts();
-  const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
-  const [sheetVisible, setSheetVisible] = useState(false);
-  const [buttonRotation, setButtonRotation] = useState('0deg');
-
-  const handleOpenSheet = useCallback(() => {
-    setSheetVisible(true);
-    setButtonRotation('45deg');
-  }, []);
-
-  const handleCloseSheet = useCallback(() => {
-    setSheetVisible(false);
-    setButtonRotation('0deg');
-  }, []);
-
-  const handleCreateNavigate = useCallback(
-    (route: RootStackRouteName) => {
-      if (route === ROUTES.CREATE_EVENT) navigation.navigate(ROUTES.CREATE_EVENT);
-      if (route === ROUTES.CREATE_PRODUCT) navigation.navigate(ROUTES.CREATE_PRODUCT);
-      if (route === ROUTES.CREATE_PAGE) navigation.navigate(ROUTES.CREATE_PAGE);
-      if (route === ROUTES.CREATE_GROUP) navigation.navigate(ROUTES.CREATE_GROUP);
-      if (route === ROUTES.CREATE_REEL) navigation.navigate(ROUTES.CREATE_REEL);
-      if (route === ROUTES.CREATE_POST) navigation.navigate(ROUTES.CREATE_POST);
-      if (route === ROUTES.CREATE_STORY) navigation.navigate(ROUTES.CREATE_STORY);
-      if (route === ROUTES.CREATE_POLL) navigation.navigate(ROUTES.CREATE_POLL);
-      if (route === ROUTES.CREATE_ALBUM) navigation.navigate(ROUTES.CREATE_ALBUM);
-      if (route === ROUTES.CREATE_AD) navigation.navigate(ROUTES.CREATE_AD);
-    },
-    [navigation],
-  );
-
-  return (
-    <>
-      <View
-        className="surface-topbar flex-row items-center justify-between px-4"
-        style={{
-          height: 64,
-          borderBottomWidth: 1,
-          borderBottomColor: '#f1f5f9',
-          backgroundColor: '#ffffff',
-        }}
-      >
-        <View className="flex-row items-center">
-          {logoUrl && imageErrorCount === 0 ? (
-            <View
-              style={{
-                backgroundColor: '#002fff',
-                borderRadius: 10,
-                paddingHorizontal: 10,
-                paddingVertical: 5,
-                height: 36,
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
-              <Image
-                source={{ uri: logoUrl }}
-                style={{ width: 105, height: '100%' }}
-                resizeMode="contain"
-                onError={notifyImageError}
-              />
-            </View>
-          ) : (
-            <Text
-              style={{
-                fontSize: 26,
-                fontWeight: '900',
-                color: '#002fff',
-                letterSpacing: 0.5,
-              }}
-            >
-              VNSEEA
-            </Text>
-          )}
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={() => navigation.navigate(ROUTES.SEARCH)}
-            style={feedHeaderIconStyle}
-          >
-            <Search size={20} color="#002fff" strokeWidth={2.5} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={handleOpenSheet}
-            style={[feedHeaderIconStyle, { transform: [{ rotate: buttonRotation }] }]}
-          >
-            <Plus size={22} color="#002fff" strokeWidth={2.5} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={() => navigation.navigate(ROUTES.MESSAGES)}
-            style={[feedHeaderIconStyle, { position: 'relative' }]}
-          >
-            <MessageCircle size={20} color="#002fff" strokeWidth={2.5} />
-            {messageCount > 0 ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  top: -4,
-                  right: -4,
-                  minWidth: 18,
-                  height: 18,
-                  borderRadius: 9,
-                  backgroundColor: '#002fff',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingHorizontal: 4,
-                }}
-              >
-                <Text style={{ fontSize: 10, fontWeight: '700', color: '#ffffff' }}>
-                  {messageCount > 99 ? '99+' : messageCount}
-                </Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
-        </View>
-      </View>
-      <CreateActionSheet
-        visible={sheetVisible}
-        onClose={handleCloseSheet}
-        onNavigate={handleCreateNavigate}
-      />
-    </>
-  );
-}
-
-const feedHeaderIconStyle = {
-  width: 40,
-  height: 40,
-  borderRadius: 20,
-  backgroundColor: '#ffffff',
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.08,
-  shadowRadius: 4,
-  elevation: 2,
-};
 
 function FilterTabs({
   copy,
@@ -2098,6 +1961,10 @@ function FeedScreen() {
   const scrollEndTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const feedChromeCollapseStateRef = useRef<FeedChromeCollapseState>(
+    createFeedChromeCollapseState(),
+  );
+  const [isFeedChromeHidden, setIsFeedChromeHidden] = useState(false);
 
   const setActiveFeedVideo = useCallback((videoId: string | null) => {
     activeVideoIdRef.current = videoId;
@@ -2129,8 +1996,28 @@ function FeedScreen() {
   }, [setActiveFeedVideo, setFeedScrollBusy]);
 
   const handleScrollBeginDrag = useCallback(() => {
+    feedChromeCollapseStateRef.current = resetFeedChromeScrollIntent(
+      feedChromeCollapseStateRef.current,
+    );
     beginScrollPause();
   }, [beginScrollPause]);
+
+  const handleFeedScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (Platform.OS !== 'ios') return;
+
+      const nextState = getNextFeedChromeCollapseState(
+        feedChromeCollapseStateRef.current,
+        event.nativeEvent.contentOffset.y,
+      );
+
+      feedChromeCollapseStateRef.current = nextState;
+      setIsFeedChromeHidden(current =>
+        current === nextState.hidden ? current : nextState.hidden,
+      );
+    },
+    [],
+  );
 
   const handleMomentumScrollBegin = useCallback(() => {
     if (scrollEndTimeoutRef.current) {
@@ -3304,9 +3191,15 @@ function FeedScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView className="flex-1 surface-base" edges={ROOT_SAFE_AREA_EDGES}>
+      <SafeAreaView
+        className={FEED_SAFE_AREA_CLASS_NAME}
+        style={FEED_SAFE_AREA_STYLE}
+        edges={ROOT_SAFE_AREA_EDGES}
+      >
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
-        <FeedHeader />
+        <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
+          <FeedHeader />
+        </FeedHeaderCollapseFrame>
         <View className="flex-1">
           <FlatList
             data={feedListItems}
@@ -3317,7 +3210,8 @@ function FeedScreen() {
             decelerationRate="normal"
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
-            scrollEventThrottle={64}
+            scrollEventThrottle={16}
+            onScroll={handleFeedScroll}
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={viewabilityConfigRef.current}
             onScrollBeginDrag={handleScrollBeginDrag}
