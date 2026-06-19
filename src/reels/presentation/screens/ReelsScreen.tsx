@@ -172,18 +172,33 @@ export default function ReelsScreen() {
       return;
     }
 
+    let targetIndex: number;
     const index = vm.items.findIndex(
       item => String(item.id) === String(initialVideoId),
     );
     if (index >= 0) {
-      setInitialScrollIndexValue(index);
+      targetIndex = index;
     } else {
       // The deeplinked reel wasn't found in the first page (e.g. it's
       // older than PAGE_SIZE items). Fall back to merging it back in
       // via `setInitialVideo` — that prepends it at index 0.
       vm.setInitialVideo(String(initialVideoId), initialPost);
-      setInitialScrollIndexValue(0);
+      targetIndex = 0;
     }
+
+    setInitialScrollIndexValue(targetIndex);
+
+    // `initialScrollIndex` only works on FlatList's FIRST mount.
+    // For subsequent navigations (user tapping a different video from
+    // feed while Reels tab is already mounted), we must imperatively
+    // scroll to the correct position.
+    vm.setActiveIndex(targetIndex);
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToIndex({
+        index: targetIndex,
+        animated: false,
+      });
+    });
 
     // Mark this id as consumed BEFORE clearing the route param so we
     // don't loop on the next render.
@@ -195,17 +210,26 @@ export default function ReelsScreen() {
 
     // Clear navigation params so the deep-link doesn't re-trigger on
     // subsequent renders / focus changes.
-    navigation.setParams({ initialVideoId: undefined, post: undefined });
+    navigation.setParams({ initialVideoId: undefined, post: undefined, seekTime: undefined });
   }, [
     isFocusedScreen,
     initialVideoId,
     initialPost,
     vm.items,
     vm.setInitialVideo,
+    vm.setActiveIndex,
     vm,
     navigation,
     entryProgress,
   ]);
+
+  // When the screen loses focus (user goes back to feed), clear the
+  // consumed ref so re-tapping the SAME video works next time.
+  useEffect(() => {
+    if (!isFocusedScreen) {
+      consumedInitialVideoIdRef.current = null;
+    }
+  }, [isFocusedScreen]);
 
   // Use the full screen height — the feed is meant to be edge-to-edge.
   const [viewportHeight, setViewportHeight] = useState(
@@ -389,6 +413,11 @@ export default function ReelsScreen() {
         activeIndex: vm.activeIndex,
       });
 
+      const initialSeekTime =
+        String(item.id) === String(initialVideoId)
+          ? route.params?.seekTime
+          : undefined;
+
       return (
         <ReelItem
           item={item}
@@ -404,6 +433,7 @@ export default function ReelsScreen() {
           onFollow={vm.followPublisher}
           scrollY={scrollY}
           index={index}
+          initialSeekTime={initialSeekTime}
         />
       );
     },
@@ -421,6 +451,8 @@ export default function ReelsScreen() {
       handleToggleMute,
       scrollY,
       preloadRadius,
+      initialVideoId,
+      route.params?.seekTime,
     ],
   );
 

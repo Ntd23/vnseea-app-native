@@ -190,10 +190,12 @@ describe('FeedHeader platform chrome', () => {
   it('preserves header navigation and create action behavior on both platforms', () => {
     const defaultSource = read('src/feed/presentation/components/FeedHeader.tsx');
     const iosSource = read('src/feed/presentation/components/FeedHeader.ios.tsx');
+    const drawerSource = read('src/feed/presentation/components/HeaderProfileDrawer.tsx');
 
-    expect(defaultSource).toContain('ROUTES.PROFILE');
+    expect(defaultSource).toContain('HeaderProfileDrawer');
     expect(defaultSource).toContain('ROUTES.NOTIFICATIONS');
     expect(defaultSource).toContain('useNotificationBadgeViewModel');
+    expect(drawerSource).toContain('ROUTES.PROFILE');
 
     expect(iosSource).toContain('Menu');
     expect(iosSource).toContain('accessibilityLabel="Menu"');

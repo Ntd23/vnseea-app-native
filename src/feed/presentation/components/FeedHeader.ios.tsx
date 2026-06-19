@@ -21,6 +21,7 @@ import { useAuthBranding } from '../../../auth/application/view-models/useAuthBr
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
+import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -67,13 +68,16 @@ export function FeedHeader() {
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [buttonRotation, setButtonRotation] = useState('0deg');
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const handleOpenSheet = useCallback(() => {
     setSheetVisible(true);
     setButtonRotation('45deg');
   }, []);
 
-  const handleOpenFutureDrawer = useCallback(() => {}, []);
+  const handleOpenFutureDrawer = useCallback(() => {
+    setMenuVisible(true);
+  }, []);
 
   const handleCloseSheet = useCallback(() => {
     setSheetVisible(false);
@@ -164,6 +168,10 @@ export function FeedHeader() {
         visible={sheetVisible}
         onClose={handleCloseSheet}
         onNavigate={handleCreateNavigate}
+      />
+      <HeaderProfileDrawer
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
       />
     </>
   );

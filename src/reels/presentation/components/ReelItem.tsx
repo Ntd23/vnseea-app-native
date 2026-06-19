@@ -130,6 +130,7 @@ interface Props {
   onUnavailable?: (postId: string) => void;
   scrollY?: SharedValue<number>;
   index?: number;
+  initialSeekTime?: number;
 }
 
 function formatCount(n: number): string {
@@ -153,6 +154,7 @@ function ReelItemBase({
   onOpenProfile,
   onUnavailable,
   onFollow,
+  initialSeekTime,
 }: Props) {
   const insets = useSafeAreaInsets();
   const language = useAppLanguage();
@@ -161,6 +163,22 @@ function ReelItemBase({
   const [isReady, setIsReady] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
+  const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
+
+  useEffect(() => {
+    if (initialSeekTime !== undefined && initialSeekTime > 0) {
+      setSeekTime(initialSeekTime);
+    }
+  }, [initialSeekTime]);
+
+  useEffect(() => {
+    if (isActive && isReady && seekTime !== undefined && videoRef.current) {
+      console.log(`[ReelItem] Seeking active video to ${seekTime}s`);
+      videoRef.current.seek(seekTime);
+      setSeekTime(undefined);
+    }
+  }, [isActive, isReady, seekTime]);
 
   // Removed scale/opacity/translateY parallax — it was causing items to
   // appear misaligned ("lệch") during and after scrolling.
@@ -322,6 +340,7 @@ function ReelItemBase({
       {/* ── Video — mounted only when in the ±1 preload window ─────── */}
       {shouldMount && item.videoUrl ? (
         <VideoPlayer
+          ref={videoRef}
           source={{ uri: item.videoUrl }}
           style={StyleSheet.absoluteFill}
           resizeMode="contain"

@@ -32,6 +32,9 @@ import {
   BadgeCheck,
   Ban,
   Bell,
+  Bookmark,
+  Briefcase,
+  Calendar,
   CalendarDays,
   Camera,
   Check,
@@ -40,25 +43,48 @@ import {
   CircleDollarSign,
   Circle,
   Clock3,
+  Clock,
+  Film,
+  Flag,
+  Flame,
   FileBadge,
+  FileText,
+  Gamepad2,
+  HeartHandshake,
   IdCard,
+  Image as ImageLucide,
   ImagePlus,
+  Images,
+  LayoutGrid,
   Link,
   LockKeyhole,
   LogOut,
   MapPin,
+  MapPinned,
+  Megaphone,
   Mail,
   MessageCircle,
+  MessageSquare,
   Monitor,
+  Music,
   Pencil,
   Phone,
   Plus,
+  Pointer,
+  Radio,
+  Rocket,
   Save,
   Search,
   ShieldCheck,
   Smartphone,
+  Sparkles,
   Store,
+  Tag,
   User,
+  UserPlus,
+  UserSearch,
+  Users,
+  Video,
   Wallet,
   X,
   Globe,
@@ -407,6 +433,33 @@ const EMAIL_NOTIFICATION_ITEMS: Array<{
 function fieldValue(value: unknown) {
   return String(value ?? '').trim();
 }
+
+const FEATURE_LABELS_VI = {
+  following: 'Theo dõi',
+  poke: 'Chọc',
+  forum: 'Diễn đàn',
+  albums: 'Album',
+  photos: 'Ảnh',
+  videos: 'Video của tôi',
+  saved: 'Đã lưu',
+  groups: 'Nhóm',
+  pages: 'Trang',
+  blogs: 'Bài viết',
+  market: 'Cửa hàng',
+  boosted: 'Boosted',
+  popular: 'Xu hướng',
+  events: 'Sự kiện',
+  'find-friends': 'Tìm bạn',
+  nearby: 'Gần đây',
+  offers: 'Ưu đãi',
+  movies: 'Phim',
+  jobs: 'Việc làm',
+  common: 'Chung',
+  memories: 'Kỷ niệm',
+  funding: 'Gây quỹ',
+  live: 'Trực tiếp',
+  ads: 'Quảng cáo',
+} as const;
 
 function readFlag(value: unknown, fallback = true) {
   if (typeof value === 'boolean') return value;
@@ -3733,6 +3786,161 @@ function SettingsScreen() {
         >
           {activePanel === 'general' ? (
             <View>
+              <GeneralSettingsSection title="💬 Giao tiếp">
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.following}
+                  icon={<UserPlus size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.FOLLOWING)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.poke}
+                  icon={<Pointer size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.POKE)}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="📷 Nội dung & Media">
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.albums}
+                  icon={<Images size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.ALBUMS)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.photos}
+                  icon={<ImageLucide size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.MY_PHOTOS)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.videos}
+                  icon={<Video size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.MY_VIDEOS)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.saved}
+                  icon={<Bookmark size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.SAVED_POSTS)}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="👥 Cộng đồng">
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.groups}
+                  icon={<Users size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.EXPLORE_GROUPS)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.pages}
+                  icon={<Flag size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.PAGES)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI['find-friends']}
+                  icon={<UserSearch size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.INVITE_FRIENDS)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.nearby}
+                  icon={<MapPinned size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.NEARBY_USERS)}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="🛒 Thương mại">
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.market}
+                  icon={<Store size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.MARKETPLACE)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.jobs}
+                  icon={<Briefcase size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.JOBS)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.offers}
+                  icon={<Tag size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.OFFERS)}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="📰 Nội dung & Tin tức">
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.blogs}
+                  icon={<FileText size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.BLOGS)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.popular}
+                  icon={<Flame size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.POPULAR)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.events}
+                  icon={<Calendar size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.EVENTS)}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.movies}
+                  icon={<Film size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.MOVIES)}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="🎮 Giải trí">
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.live}
+                  icon={<Radio size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.LIVE)}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="💰 Tài chính">
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.funding}
+                  icon={<HeartHandshake size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.FUNDING)}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="📈 Kinh doanh">
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.boosted}
+                  icon={<Rocket size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.BOOSTED)}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="🕒 Cá nhân">
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.memories}
+                  icon={<Clock size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.MEMORIES)}
+                />
+              </GeneralSettingsSection>
+
+              <GeneralSettingsSection title="⚙️ Hệ thống">
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.common}
+                  icon={<LayoutGrid size={22} color="#0000ff" />}
+                  onPress={() => navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.EXPLORE })}
+                />
+                <GeneralSettingsMenuRow
+                  label={FEATURE_LABELS_VI.ads}
+                  icon={<Megaphone size={22} color="#0000ff" />}
+                  isLast
+                  onPress={() => navigation.navigate(ROUTES.ADVERTISING)}
+                />
+              </GeneralSettingsSection>
+
               <GeneralSettingsSection title="Thông tin">
                 <GeneralSettingsMenuRow
                   label="Chung"

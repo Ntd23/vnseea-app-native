@@ -123,7 +123,11 @@ const REACTION_IMAGES: Record<ReactionType, any> = {
 };
 
 // Floating picker pill geometry â€” used to clamp X within the viewport.
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   SafeAreaView,
@@ -2265,6 +2269,15 @@ function FeedScreen() {
       };
     }, []),
   );
+
+  const isFocused = useIsFocused();
+  useEffect(() => {
+    if (!isFocused) {
+      setActiveFeedVideo(null);
+    } else {
+      measureActiveFeedVideoOnScreen(true);
+    }
+  }, [isFocused, setActiveFeedVideo, measureActiveFeedVideoOnScreen]);
 
   // Subscribe to the global "post created" event so the home feed gets
   // an instant prepend the moment CreatePostScreen finishes. We mount
