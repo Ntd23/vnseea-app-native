@@ -17,6 +17,13 @@ import {
   Edit,
 } from 'lucide-react-native';
 import type { EventsItem } from '../../domain/types/events.types';
+import {
+  FeedCardContent,
+  FeedCardSurface,
+  FeedGlassActionBar,
+  FeedGlassActionButton,
+  FeedMediaFrame,
+} from '../../../feed/presentation/components/FeedCardChrome';
 
 interface EventPostCardProps {
   event: EventsItem;
@@ -111,9 +118,9 @@ const EventPostCard = React.memo(function EventPostCard({
       : 'Chưa có người tham gia';
 
   return (
-    <View className="mb-2 border-y border-[#dddfe2] bg-white">
+    <FeedCardSurface>
       {/* Publisher Header (Matches other feed posts) */}
-      <View className="px-3 py-3 pb-2">
+      <FeedCardContent className="pb-2">
         <View className="flex-row items-center justify-between">
           <TouchableOpacity
             className="flex-row items-center flex-1 mr-2"
@@ -158,30 +165,32 @@ const EventPostCard = React.memo(function EventPostCard({
             </Text>
           ) : null}
         </View>
-      </View>
+      </FeedCardContent>
 
       {/* Cover Image */}
-      <TouchableOpacity activeOpacity={0.95} onPress={handlePress}>
-        {coverUrl ? (
-          <Image
-            source={{ uri: coverUrl }}
-            className="w-full"
-            style={{ aspectRatio: 1.6 }}
-            resizeMode="cover"
-            fadeDuration={0}
-          />
-        ) : (
-          <View
-            className="w-full items-center justify-center bg-slate-200"
-            style={{ aspectRatio: 1.6 }}
-          >
-            <CalendarDays size={48} color="#94A3B8" />
-          </View>
-        )}
-      </TouchableOpacity>
+      <FeedMediaFrame>
+        <TouchableOpacity activeOpacity={0.95} onPress={handlePress}>
+          {coverUrl ? (
+            <Image
+              source={{ uri: coverUrl }}
+              className="w-full"
+              style={{ aspectRatio: 1.6 }}
+              resizeMode="cover"
+              fadeDuration={0}
+            />
+          ) : (
+            <View
+              className="w-full items-center justify-center bg-slate-200"
+              style={{ aspectRatio: 1.6 }}
+            >
+              <CalendarDays size={48} color="#94A3B8" />
+            </View>
+          )}
+        </TouchableOpacity>
+      </FeedMediaFrame>
 
       {/* Event Details (Date badge + Info block) */}
-      <View className="px-3 py-3 pb-3">
+      <FeedCardContent className="pb-3">
         <View className="flex-row border-b border-[#F0F2F5] pb-4 mb-3">
           {/* Calendar style Date block */}
           <View className="h-16 w-16 items-center justify-center rounded-2xl bg-[#0000ff]/10">
@@ -219,10 +228,10 @@ const EventPostCard = React.memo(function EventPostCard({
         </View>
 
         {/* Action Buttons */}
-        <View className="flex-row items-center justify-between border-t border-[#F0F2F5] pt-3.5 mt-2">
+        <FeedGlassActionBar className="mt-2 border-t border-[#F0F2F5] pt-3.5">
           {event.is_owner ? (
             <>
-              <TouchableOpacity
+              <FeedGlassActionButton
                 className="flex-1 flex-row items-center justify-center py-1.5 px-1"
                 activeOpacity={0.75}
                 onPress={handleEditPress}
@@ -231,9 +240,9 @@ const EventPostCard = React.memo(function EventPostCard({
                 <Text className="ml-2 text-[13px] font-semibold text-[#0866FF]" numberOfLines={1}>
                   Sửa
                 </Text>
-              </TouchableOpacity>
+              </FeedGlassActionButton>
               
-              <TouchableOpacity
+              <FeedGlassActionButton
                 className="flex-1 flex-row items-center justify-center py-1.5 px-1"
                 activeOpacity={0.75}
                 onPress={handleSharePress}
@@ -242,11 +251,11 @@ const EventPostCard = React.memo(function EventPostCard({
                 <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
                   Chia sẻ
                 </Text>
-              </TouchableOpacity>
+              </FeedGlassActionButton>
             </>
           ) : (
             <>
-              <TouchableOpacity
+              <FeedGlassActionButton
                 className="flex-1 flex-row items-center justify-center py-1.5 px-1"
                 activeOpacity={0.75}
                 onPress={handleInterestedPress}
@@ -259,9 +268,9 @@ const EventPostCard = React.memo(function EventPostCard({
                 >
                   {event.is_interested ? 'Quan tâm' : 'Quan tâm'}
                 </Text>
-              </TouchableOpacity>
+              </FeedGlassActionButton>
 
-              <TouchableOpacity
+              <FeedGlassActionButton
                 className="flex-1 flex-row items-center justify-center py-1.5 px-1"
                 activeOpacity={0.75}
                 onPress={handleGoingPress}
@@ -274,9 +283,9 @@ const EventPostCard = React.memo(function EventPostCard({
                 >
                   {event.is_going ? 'Tham gia' : 'Tham gia'}
                 </Text>
-              </TouchableOpacity>
+              </FeedGlassActionButton>
 
-              <TouchableOpacity
+              <FeedGlassActionButton
                 className="flex-1 flex-row items-center justify-center py-1.5 px-1"
                 activeOpacity={0.75}
                 onPress={handleSharePress}
@@ -285,12 +294,12 @@ const EventPostCard = React.memo(function EventPostCard({
                 <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
                   Chia sẻ
                 </Text>
-              </TouchableOpacity>
+              </FeedGlassActionButton>
             </>
           )}
-        </View>
-      </View>
-    </View>
+        </FeedGlassActionBar>
+      </FeedCardContent>
+    </FeedCardSurface>
   );
 });
 

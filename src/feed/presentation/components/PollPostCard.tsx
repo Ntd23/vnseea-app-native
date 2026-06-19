@@ -23,6 +23,11 @@ import Animated, { runOnJS, useSharedValue } from 'react-native-reanimated';
 import type { FeedPollPost, PollOption } from '../../domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import {
+  FeedCardSurface,
+  FeedGlassActionBar,
+  FeedGlassActionButton,
+} from './FeedCardChrome';
 
 interface PollPostCardProps {
   post: FeedPollPost;
@@ -316,7 +321,7 @@ export const PollPostCard = React.memo(function PollPostCard({
   const reactionColor = post.myReaction ? REACTION_COLOR[post.myReaction] : '#65676B';
 
   return (
-    <View className="mb-2 border-y border-[#dddfe2] bg-white">
+    <FeedCardSurface>
       {/* Publisher Header */}
       <View className="flex-row items-center justify-between px-3 py-3 pb-2">
         <TouchableOpacity
@@ -406,7 +411,7 @@ export const PollPostCard = React.memo(function PollPostCard({
       </View>
 
       {/* Action buttons (Like / Comment / Share) */}
-      <View className="flex-row items-center justify-between px-3 py-2.5">
+      <FeedGlassActionBar className="border-t-0 px-3 py-2.5 pt-0">
         <GestureDetector gesture={composedGesture}>
           <Animated.View
             ref={likeButtonRef as any}
@@ -431,7 +436,7 @@ export const PollPostCard = React.memo(function PollPostCard({
           </Animated.View>
         </GestureDetector>
 
-        <TouchableOpacity
+        <FeedGlassActionButton
           className="flex-1 flex-row items-center justify-center py-1"
           activeOpacity={0.75}
           onPress={() => onCommentTap(post.id)}
@@ -440,9 +445,9 @@ export const PollPostCard = React.memo(function PollPostCard({
           <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
             {copy.comment}
           </Text>
-        </TouchableOpacity>
+        </FeedGlassActionButton>
 
-        <TouchableOpacity
+        <FeedGlassActionButton
           className="flex-1 flex-row items-center justify-center py-1"
           activeOpacity={0.75}
           onPress={() => onShare?.(post)}
@@ -451,9 +456,9 @@ export const PollPostCard = React.memo(function PollPostCard({
           <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
             {copy.share}
           </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+        </FeedGlassActionButton>
+      </FeedGlassActionBar>
+    </FeedCardSurface>
   );
 });
 

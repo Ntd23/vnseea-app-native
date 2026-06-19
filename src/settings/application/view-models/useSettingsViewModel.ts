@@ -35,6 +35,13 @@ const MOCK_FEATURES: FeatureGridItem[] = [
     iconColor: BRAND,
   },
   {
+    id: 'forum',
+    label: 'Diễn đàn',
+    iconKey: 'MessageSquare',
+    bgColor: '',
+    iconColor: BRAND,
+  },
+  {
     id: 'albums',
     label: 'Album',
     iconKey: 'Images',
@@ -228,6 +235,7 @@ const FEATURE_LABELS: Record<AppLanguage, Record<string, string>> = {
     messages: 'Messages',
     following: 'Following',
     poke: 'Poke',
+    forum: 'Forum',
     albums: 'Albums',
     photos: 'Photos',
     videos: 'My videos',

@@ -15,6 +15,13 @@ import {
   Share2,
 } from 'lucide-react-native';
 import type { ProductItem } from '../../domain/types/product.types';
+import {
+  FeedCardContent,
+  FeedCardSurface,
+  FeedGlassActionBar,
+  FeedGlassActionButton,
+  FeedMediaFrame,
+} from '../../../feed/presentation/components/FeedCardChrome';
 
 // ── Helpers outside component (avoid recreation on each render) ────
 
@@ -142,9 +149,9 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
   // Full Feed layout (matches Facebook Post/Video post card design)
   return (
-    <View className="mb-2 border-y border-[#dddfe2] bg-white">
+    <FeedCardSurface>
       {/* Header & Product Text - same padding block for vertical alignment */}
-      <View className="px-3 py-3 pb-2">
+      <FeedCardContent className="pb-2">
         <View className="flex-row items-center justify-between">
           <TouchableOpacity
             className="flex-row items-center flex-1 mr-2"
@@ -197,30 +204,32 @@ const ProductPostCard = React.memo(function ProductPostCard({
             </Text>
           ) : null}
         </View>
-      </View>
+      </FeedCardContent>
 
       {/* Product Image */}
-      <TouchableOpacity activeOpacity={0.95} onPress={handlePress}>
-        {imageUrl ? (
-          <Image
-            source={{ uri: imageUrl }}
-            className="w-full"
-            style={{ aspectRatio: 1.4 }}
-            resizeMode="cover"
-            fadeDuration={0}
-          />
-        ) : (
-          <View
-            className="w-full items-center justify-center bg-slate-200"
-            style={{ aspectRatio: 1.4 }}
-          >
-            <ShoppingBag size={48} color="#94A3B8" />
-          </View>
-        )}
-      </TouchableOpacity>
+      <FeedMediaFrame>
+        <TouchableOpacity activeOpacity={0.95} onPress={handlePress}>
+          {imageUrl ? (
+            <Image
+              source={{ uri: imageUrl }}
+              className="w-full"
+              style={{ aspectRatio: 1.4 }}
+              resizeMode="cover"
+              fadeDuration={0}
+            />
+          ) : (
+            <View
+              className="w-full items-center justify-center bg-slate-200"
+              style={{ aspectRatio: 1.4 }}
+            >
+              <ShoppingBag size={48} color="#94A3B8" />
+            </View>
+          )}
+        </TouchableOpacity>
+      </FeedMediaFrame>
 
       {/* Product Footer Actions */}
-      <View className="px-3 py-3 pt-3">
+      <FeedCardContent className="pt-3">
         {/* Price & Location Summary */}
         <View className="flex-row items-center justify-between border-b border-[#F0F2F5] pb-3.5 mb-3">
           <Text className="text-heading text-[18px] font-bold text-[#1877F2] flex-shrink mr-4" numberOfLines={1}>
@@ -237,8 +246,8 @@ const ProductPostCard = React.memo(function ProductPostCard({
         </View>
 
         {/* Facebook-style Action Buttons (prevent overlapping/wrapping issues) */}
-        <View className="flex-row items-center justify-between pt-1">
-          <TouchableOpacity
+        <FeedGlassActionBar className="border-t-0 pt-1">
+          <FeedGlassActionButton
             className="flex-1 flex-row items-center justify-center py-1.5 px-1"
             activeOpacity={0.75}
             onPress={handlePress}
@@ -247,9 +256,9 @@ const ProductPostCard = React.memo(function ProductPostCard({
             <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
               Chi tiết
             </Text>
-          </TouchableOpacity>
+          </FeedGlassActionButton>
 
-          <TouchableOpacity
+          <FeedGlassActionButton
             className="flex-1 flex-row items-center justify-center py-1.5 px-1"
             activeOpacity={0.75}
             onPress={handleProfilePress}
@@ -258,9 +267,9 @@ const ProductPostCard = React.memo(function ProductPostCard({
             <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
               Nhắn tin
             </Text>
-          </TouchableOpacity>
+          </FeedGlassActionButton>
 
-          <TouchableOpacity
+          <FeedGlassActionButton
             className="flex-1 flex-row items-center justify-center py-1.5 px-1"
             activeOpacity={0.75}
             onPress={handleSharePress}
@@ -269,10 +278,10 @@ const ProductPostCard = React.memo(function ProductPostCard({
             <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
               Chia sẻ
             </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
+          </FeedGlassActionButton>
+        </FeedGlassActionBar>
+      </FeedCardContent>
+    </FeedCardSurface>
   );
 });
 

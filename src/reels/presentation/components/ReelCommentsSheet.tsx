@@ -77,6 +77,14 @@ import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/us
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import {
+  CommentSheetComposerDock,
+  CommentSheetComposerInputSurface,
+  CommentSheetControlSurface,
+  CommentSheetHeaderBadge,
+  CommentSheetReactionBadgeSurface,
+  CommentSheetReactionPickerSurface,
+} from './CommentSheetChrome';
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 
@@ -161,8 +169,8 @@ const COMMENTS_COPY = {
 
 // ── Reaction lookup tables ───────────────────────────────────────────────
 // The picker shows all 6 emojis. Each reaction also has a label (shown on
-// the "Thích" button when active) and a color (the label changes color to
-// match the reaction, like Facebook). `null` is the no-reaction default.
+// the active state color (the label changes color to match the reaction,
+// like Facebook). `null` is the no-reaction default.
 
 const REACTION_EMOJI: Record<ReactionType, string> = {
   like: '👍',
@@ -171,15 +179,6 @@ const REACTION_EMOJI: Record<ReactionType, string> = {
   wow: '😮',
   sad: '😢',
   angry: '😡',
-};
-
-const REACTION_LABEL: Record<ReactionType, string> = {
-  like: 'Thích',
-  love: 'Yêu thích',
-  haha: 'Haha',
-  wow: 'Wow',
-  sad: 'Buồn',
-  angry: 'Phẫn nộ',
 };
 
 const REACTION_COLOR: Record<ReactionType, string> = {
@@ -300,6 +299,8 @@ function ReelCommentsSheetBase({
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
   const insets = useSafeAreaInsets();
+  const sheetBottomPadding = Platform.OS === 'ios' ? 0 : Math.max(insets.bottom, 10);
+  const composerBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 0;
   const wavRecorder = useWavAudioRecorder();
   const {
     isRecording: isWavRecording,
@@ -392,9 +393,13 @@ function ReelCommentsSheetBase({
   });
 
   const title = useMemo(() => {
+    return copy.commentsTitle;
+  }, [copy.commentsTitle]);
+
+  const headerCountLabel = useMemo(() => {
     const count = Math.max(commentCount, comments.length);
-    return count > 0 ? `${formatCount(count)} ${copy.commentsLabel}` : copy.commentsTitle;
-  }, [commentCount, comments.length, copy]);
+    return count > 0 ? formatCount(count) : null;
+  }, [commentCount, comments.length]);
 
   const handleSubmit = useCallback(() => {
     const trimmed = draft.trim();
@@ -472,29 +477,32 @@ function ReelCommentsSheetBase({
    * / `type` — Android omits both on some devices) so the repo can pass
    * it straight to FormData.
    */
-  const handleImagePickerResult = useCallback((result: any) => {
-    if (result.didCancel) return;
-    if (result.errorCode) {
-      Alert.alert(copy.errorTitle, result.errorMessage ?? copy.errorActionMsg);
-      return;
-    }
-    const asset = result.assets?.[0];
-    if (!asset?.uri) return;
+  const handleImagePickerResult = useCallback(
+    (result: any) => {
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        Alert.alert(copy.errorTitle, result.errorMessage ?? copy.errorActionMsg);
+        return;
+      }
+      const asset = result.assets?.[0];
+      if (!asset?.uri) return;
 
-    const uri =
-      Platform.OS === 'android' && !asset.uri.startsWith('file://')
-        ? `file://${asset.uri}`
-        : asset.uri;
+      const uri =
+        Platform.OS === 'android' && !asset.uri.startsWith('file://')
+          ? `file://${asset.uri}`
+          : asset.uri;
 
-    setPendingImage({
-      uri,
-      name: asset.fileName ?? `comment-${Date.now()}.jpg`,
-      type: asset.type ?? 'image/jpeg',
-      width: asset.width,
-      height: asset.height,
-    });
-    setPendingAudio(null);
-  }, []);
+      setPendingImage({
+        uri,
+        name: asset.fileName ?? `comment-${Date.now()}.jpg`,
+        type: asset.type ?? 'image/jpeg',
+        width: asset.width,
+        height: asset.height,
+      });
+      setPendingAudio(null);
+    },
+    [copy.errorActionMsg, copy.errorTitle],
+  );
 
   useEffect(() => {
     if (replyingTo) {
@@ -689,7 +697,7 @@ function ReelCommentsSheetBase({
             styles.sheet,
             {
               height: sheetHeight as ViewStyle['height'],
-              paddingBottom: Math.max(insets.bottom, 10),
+              paddingBottom: sheetBottomPadding,
               transform: [
                 { translateY: sheetTranslateY },
                 { scale: sheetScale },
@@ -700,16 +708,26 @@ function ReelCommentsSheetBase({
           <View style={styles.grabber} />
 
           <View style={styles.header}>
-            <View style={styles.headerSide} />
+            <View style={styles.headerSide}>
+              {headerCountLabel ? (
+                <CommentSheetHeaderBadge style={styles.headerCountBadge}>
+                  <Text style={styles.headerCountText}>{headerCountLabel}</Text>
+                </CommentSheetHeaderBadge>
+              ) : null}
+            </View>
             <Text style={styles.title}>{title}</Text>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={onClose}
-              style={styles.closeButton}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <X size={20} color="#111827" />
-            </TouchableOpacity>
+            <View style={[styles.headerSide, styles.headerCloseSide]}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={onClose}
+                style={styles.closeButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <CommentSheetControlSurface style={styles.closeButtonSurface}>
+                  <X size={20} color="#111827" />
+                </CommentSheetControlSurface>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {isLoading ? (
@@ -840,7 +858,7 @@ function ReelCommentsSheetBase({
             </View>
           ) : null}
 
-          <View style={styles.inputBar}>
+          <CommentSheetComposerDock style={[styles.inputBar, { paddingBottom: composerBottomPadding }]}>
             {/* Image picker button — leftmost in the row, mirrors FB layout */}
             <TouchableOpacity
               activeOpacity={0.7}
@@ -878,21 +896,23 @@ function ReelCommentsSheetBase({
               )}
             </TouchableOpacity>
 
-            <TextInput
-              ref={inputRef}
-              value={draft}
-              onChangeText={setDraft}
-              placeholder={
-                replyingTo
-                  ? copy.replyingPlaceholder.replace('{username}', replyingTo.username)
-                  : copy.addCommentPlaceholder
-              }
-              placeholderTextColor="#94a3b8"
-              style={styles.input}
-              multiline
-              maxLength={500}
-              editable={!isWavRecording}
-            />
+            <CommentSheetComposerInputSurface style={styles.inputSurface}>
+              <TextInput
+                ref={inputRef}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder={
+                  replyingTo
+                    ? copy.replyingPlaceholder.replace('{username}', replyingTo.username)
+                    : copy.addCommentPlaceholder
+                }
+                placeholderTextColor="#94a3b8"
+                style={styles.input}
+                multiline
+                maxLength={500}
+                editable={!isWavRecording}
+              />
+            </CommentSheetComposerInputSurface>
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleSubmit}
@@ -913,7 +933,7 @@ function ReelCommentsSheetBase({
             >
               <SendHorizonal size={18} color="#fff" />
             </TouchableOpacity>
-          </View>
+          </CommentSheetComposerDock>
         </Animated.View>
       </KeyboardAvoidingView>
 
@@ -1105,7 +1125,7 @@ function ReactionPicker({ anchor, onPick, onDismiss }: PickerProps) {
     <View style={styles.pickerLayer} pointerEvents="box-none">
       {/* Invisible full-screen backdrop swallows the next tap to dismiss. */}
       <Pressable style={styles.pickerBackdrop} onPress={onDismiss} />
-      <View style={[styles.pickerPill, { left, top }]}>
+      <CommentSheetReactionPickerSurface style={[styles.pickerPill, { left, top }]}>
         {ALL_REACTION_TYPES.map(type => (
           <TouchableOpacity
             key={type}
@@ -1117,7 +1137,7 @@ function ReactionPicker({ anchor, onPick, onDismiss }: PickerProps) {
             <Text style={styles.pickerEmoji}>{REACTION_EMOJI[type]}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </CommentSheetReactionPickerSurface>
     </View>
   );
 }
@@ -1344,7 +1364,10 @@ function CommentRow({
 
   const bubbleBg = highlightAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['#f0f2f5', '#e0f2fe'],
+    outputRange:
+      Platform.OS === 'ios'
+        ? ['#ffffff', '#eff6ff']
+        : ['#f0f2f5', '#e0f2fe'],
   });
 
   return (
@@ -1482,12 +1505,12 @@ function CommentRow({
 
             {/* Reaction count overlay aligned on the far right end of the action row */}
             {comment.likeCount > 0 ? (
-              <View style={styles.reactionBadge}>
+              <CommentSheetReactionBadgeSurface style={styles.reactionBadge}>
                 <Text style={styles.reactionBadgeCount}>
                   {formatCount(comment.likeCount)}
                 </Text>
                 {renderReactionIcon(comment.myReaction || 'like')}
-              </View>
+              </CommentSheetReactionBadgeSurface>
             ) : null}
           </View>
         )}
@@ -1516,29 +1539,58 @@ const styles = StyleSheet.create({
   },
   sheet: {
     height: '72%',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    backgroundColor: '#fff',
+    borderTopLeftRadius: Platform.OS === 'ios' ? 30 : 18,
+    borderTopRightRadius: Platform.OS === 'ios' ? 30 : 18,
+    backgroundColor:
+      Platform.OS === 'ios' ? 'rgba(248, 250, 252, 0.94)' : '#fff',
     overflow: 'hidden',
+    borderWidth: Platform.OS === 'ios' ? StyleSheet.hairlineWidth : 0,
+    borderColor: 'rgba(255, 255, 255, 0.74)',
+    shadowColor: '#1f2a44',
+    shadowOffset: { width: 0, height: -18 },
+    shadowOpacity: Platform.OS === 'ios' ? 0.18 : 0,
+    shadowRadius: Platform.OS === 'ios' ? 34 : 0,
   },
   grabber: {
     alignSelf: 'center',
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#d1d5db',
-    marginTop: 8,
+    width: Platform.OS === 'ios' ? 40 : 36,
+    height: Platform.OS === 'ios' ? 5 : 4,
+    borderRadius: 999,
+    backgroundColor:
+      Platform.OS === 'ios' ? 'rgba(15, 23, 42, 0.18)' : '#d1d5db',
+    marginTop: Platform.OS === 'ios' ? 10 : 8,
   },
   header: {
-    height: 52,
+    height: Platform.OS === 'ios' ? 56 : 52,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor:
+      Platform.OS === 'ios' ? 'rgba(15, 23, 42, 0.08)' : '#f1f5f9',
     paddingHorizontal: 16,
   },
   headerSide: {
-    width: 36,
+    width: Platform.OS === 'ios' ? 74 : 36,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  headerCloseSide: {
+    alignItems: 'flex-end',
+  },
+  headerCountBadge: {
+    minWidth: 34,
+    height: 30,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    backgroundColor:
+      Platform.OS === 'ios' ? 'transparent' : '#eef4ff',
+  },
+  headerCountText: {
+    color: '#0872ff',
+    fontSize: 12,
+    fontWeight: '800',
   },
   title: {
     flex: 1,
@@ -1551,7 +1603,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: 'transparent',
+  },
+  closeButtonSurface: {
+    flex: 1,
+    borderRadius: 16,
+    backgroundColor:
+      Platform.OS === 'ios' ? 'transparent' : '#f3f4f6',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1584,8 +1642,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   listContent: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: Platform.OS === 'ios' ? 13 : 12,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
   },
   emptyListContent: {
     flexGrow: 1,
@@ -1664,7 +1722,8 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1.5,
     borderBottomWidth: 1.5,
     borderBottomLeftRadius: 10,
-    borderColor: '#cbd5e1',
+    borderColor:
+      Platform.OS === 'ios' ? 'rgba(100, 116, 139, 0.28)' : '#cbd5e1',
   },
 
   // ── Bubble ──────────────────────────────────────────────────────────
@@ -1679,6 +1738,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    borderWidth: Platform.OS === 'ios' ? StyleSheet.hairlineWidth : 0,
+    borderColor: 'rgba(15, 23, 42, 0.08)',
+    shadowColor: '#1f2a44',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: Platform.OS === 'ios' ? 0.055 : 0,
+    shadowRadius: Platform.OS === 'ios' ? 14 : 0,
   },
   nameRow: {
     flexDirection: 'row',
@@ -1739,16 +1804,17 @@ const styles = StyleSheet.create({
   reactionBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#fff',
     borderRadius: 999,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e5e7eb',
+    borderColor:
+      Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.8)' : '#e5e7eb',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
+    shadowOpacity: Platform.OS === 'ios' ? 0.1 : 0.08,
+    shadowRadius: Platform.OS === 'ios' ? 8 : 2,
     elevation: 2,
   },
   reactionBadgeCount: {
@@ -1853,7 +1919,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: '#f8fafc',
+    backgroundColor:
+      Platform.OS === 'ios' ? 'rgba(248, 250, 252, 0.92)' : '#f8fafc',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#e2e8f0',
   },
@@ -1889,7 +1956,8 @@ const styles = StyleSheet.create({
   replyBarClose: {
     padding: 4,
     borderRadius: 12,
-    backgroundColor: '#f1f5f9',
+    backgroundColor:
+      Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.72)' : '#f1f5f9',
     marginLeft: 8,
   },
 
@@ -1899,17 +1967,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e5e7eb',
+    borderTopColor:
+      Platform.OS === 'ios' ? 'rgba(15, 23, 42, 0.08)' : '#e5e7eb',
     paddingHorizontal: 12,
     paddingTop: 8,
-    backgroundColor: '#fff',
+    backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#fff',
+    overflow: 'hidden',
+  },
+  inputSurface: {
+    flex: 1,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   input: {
     flex: 1,
     maxHeight: 90,
     minHeight: 40,
     borderRadius: 20,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#f1f5f9',
     paddingHorizontal: 14,
     paddingTop: Platform.OS === 'ios' ? 10 : 8,
     paddingBottom: Platform.OS === 'ios' ? 10 : 8,
@@ -1942,7 +2017,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 4,
-    backgroundColor: '#fff',
+    backgroundColor:
+      Platform.OS === 'ios' ? 'rgba(248, 250, 252, 0.86)' : '#fff',
   },
   pendingImageWrap: {
     width: 88,
@@ -1973,7 +2049,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 4,
-    backgroundColor: '#fff',
+    backgroundColor:
+      Platform.OS === 'ios' ? 'rgba(248, 250, 252, 0.86)' : '#fff',
   },
   pendingAudioBody: {
     flex: 1,
@@ -1991,7 +2068,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 15,
-    backgroundColor: '#f1f5f9',
+    backgroundColor:
+      Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.72)' : '#f1f5f9',
   },
 
   // ── Image viewer modal ──────────────────────────────────────────────
@@ -2001,7 +2079,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: '#fef2f2',
+    backgroundColor:
+      Platform.OS === 'ios' ? 'rgba(254, 242, 242, 0.9)' : '#fef2f2',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#fecaca',
   },
@@ -2028,7 +2107,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
-    backgroundColor: '#fff',
+    backgroundColor:
+      Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.76)' : '#fff',
   },
   recordingStop: {
     width: 32,
@@ -2085,15 +2165,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 8,
-    backgroundColor: '#fff',
+    backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#fff',
     borderRadius: 26,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
+    shadowOpacity: Platform.OS === 'ios' ? 0.2 : 0.18,
+    shadowRadius: Platform.OS === 'ios' ? 16 : 10,
     elevation: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e5e7eb',
+    borderColor:
+      Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.82)' : '#e5e7eb',
   },
   pickerItem: {
     width: 40,

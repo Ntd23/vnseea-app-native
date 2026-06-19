@@ -78,6 +78,7 @@ import { WithdrawalScreen } from '../withdrawal';
 import { NearbyUsersScreen } from '../user';
 import { LiveScreen, LiveRoomScreen, GoLiveScreen } from '../live';
 import { PokeScreen } from '../poke';
+import ForumScreen from '../forum/presentation/screens/ForumScreen';
 
 type ScreenComponent = React.ComponentType<any>;
 type TabIconComponent = React.ComponentType<{
@@ -223,5 +224,6 @@ export function createStackRoutes(
     { name: ROUTES.LIVE_ROOM, component: LiveRoomScreen },
     { name: ROUTES.GO_LIVE, component: GoLiveScreen },
     { name: ROUTES.POKE, component: PokeScreen },
+    { name: ROUTES.FORUM, component: ForumScreen },
   ];
 }

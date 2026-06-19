@@ -21,15 +21,12 @@ import {
   ArrowLeft,
   Calendar,
   HeartHandshake,
-  MoreVertical,
   ShieldCheck,
-  Trash2,
   User,
   Users,
   X,
 } from 'lucide-react-native';
 import { useFundingDetailViewModel } from '../../application/view-models/useFundingDetailViewModel';
-import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { FundingDonation } from '../../domain/types/funding.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -51,7 +48,6 @@ const DETAIL_COPY = {
     descLabel: 'MÔ TẢ',
     donorsLabel: 'NGƯỜI ỦNG HỘ GẦN ĐÂY',
     noDonors: 'Chưa có lượt ủng hộ nào.',
-    ownerLabel: 'Bạn là chủ chiến dịch',
     askDonate: 'Bạn muốn ủng hộ?',
     btnDonate: 'Ủng hộ',
     modalTitle: 'Ủng hộ chiến dịch',
@@ -60,12 +56,6 @@ const DETAIL_COPY = {
     modalErrorAmount: 'Vui lòng nhập số tiền hợp lệ',
     alertSuccessTitle: 'Cảm ơn',
     alertSuccessMsg: 'Ủng hộ của bạn đã được gửi thành công.',
-    menuEdit: 'Chỉnh sửa',
-    menuDelete: 'Xóa',
-    featureComing: 'Sắp ra mắt',
-    editComingMsg: 'Chức năng chỉnh sửa sẽ được cập nhật sau.',
-    alertDeletedTitle: 'Đã xóa',
-    alertDeletedMsg: 'Chiến dịch đã được xóa.',
     loading: 'Đang tải...',
     errorTitle: 'Đã xảy ra lỗi',
     retry: 'Thử lại',
@@ -88,7 +78,6 @@ const DETAIL_COPY = {
     descLabel: 'DESCRIPTION',
     donorsLabel: 'RECENT SUPPORTERS',
     noDonors: 'No supporters yet.',
-    ownerLabel: 'You are the owner',
     askDonate: 'Want to support?',
     btnDonate: 'Donate',
     modalTitle: 'Support Campaign',
@@ -97,12 +86,6 @@ const DETAIL_COPY = {
     modalErrorAmount: 'Please enter a valid amount',
     alertSuccessTitle: 'Thank You',
     alertSuccessMsg: 'Your support has been successfully sent.',
-    menuEdit: 'Edit',
-    menuDelete: 'Delete',
-    featureComing: 'Coming Soon',
-    editComingMsg: 'Edit feature will be updated soon.',
-    alertDeletedTitle: 'Deleted',
-    alertDeletedMsg: 'The campaign has been deleted.',
     loading: 'Loading...',
     errorTitle: 'An error occurred',
     retry: 'Retry',
@@ -281,9 +264,7 @@ function FundingDetailScreen() {
   const copy = DETAIL_COPY[language] || DETAIL_COPY.vi;
 
   const fundId = route.params?.fundId ?? '';
-  const currentUserId = sessionStorage.getSession()?.userId;
   const [donateModalVisible, setDonateModalVisible] = useState(false);
-  const [menuVisible, setMenuVisible] = useState(false);
 
   const {
     campaign,
@@ -294,7 +275,6 @@ function FundingDetailScreen() {
     currencySymbol,
     reload,
     donate,
-    confirmDelete,
   } = useFundingDetailViewModel(fundId);
 
   // Entrance slide-up and fade-in animations for staggered cover and details card
@@ -366,8 +346,6 @@ function FundingDetailScreen() {
     },
     [donate, copy],
   );
-
-  const isOwner = !!campaign && String(campaign.user_id) === String(currentUserId);
 
   if (isLoading && !campaign) {
     return (
@@ -449,13 +427,7 @@ function FundingDetailScreen() {
           <ArrowLeft size={18} color="#0F172A" />
         </TouchableOpacity>
         <Text className="text-[18px] font-extrabold text-[#0F172A]">{copy.headerTitle}</Text>
-        <TouchableOpacity
-          className="h-9 w-9 items-center justify-center rounded-full bg-white border border-[#E2E8F0] shadow-sm"
-          activeOpacity={0.75}
-          onPress={() => setMenuVisible(true)}
-        >
-          <MoreVertical size={18} color="#0F172A" />
-        </TouchableOpacity>
+        <View className="h-9 w-9" />
       </View>
 
       <ScrollView
@@ -629,42 +601,27 @@ function FundingDetailScreen() {
         }}
         className="bg-white border border-[#F1F5F9] flex-row items-center rounded-3xl p-3"
       >
-        {isOwner ? (
+        <View className="flex-1 pl-3 justify-center">
+          <Text className="text-[11px] font-bold text-[#94A3B8]">{copy.askDonate}</Text>
+          <Text className="text-[13px] font-extrabold text-[#0F172A] mt-0.5" numberOfLines={1}>
+            {formatMoney(raised, currencySymbol)} / {formatMoney(goal, currencySymbol)}
+          </Text>
+        </View>
+        <Animated.View style={{ transform: [{ scale: ctaScale }] }}>
           <TouchableOpacity
-            className="flex-row items-center justify-center py-2.5 bg-white border border-[#E2E8F0] rounded-full min-h-[44px] flex-1"
+            className="flex-row items-center rounded-full px-7 py-3 shadow-md"
+            style={{ backgroundColor: BRAND_COLOR }}
             activeOpacity={0.85}
-            onPress={() => setMenuVisible(true)}
+            onPressIn={handleCtaPressIn}
+            onPressOut={handleCtaPressOut}
+            onPress={() => setDonateModalVisible(true)}
           >
-            <Trash2 size={16} color="#ef4444" />
-            <Text className="ml-2 text-[13px] font-extrabold text-red-500">
-              {copy.ownerLabel}
+            <HeartHandshake size={16} color="#ffffff" />
+            <Text className="ml-2 text-[14px] font-bold text-white">
+              {copy.btnDonate}
             </Text>
           </TouchableOpacity>
-        ) : (
-          <>
-            <View className="flex-1 pl-3 justify-center">
-              <Text className="text-[11px] font-bold text-[#94A3B8]">{copy.askDonate}</Text>
-              <Text className="text-[13px] font-extrabold text-[#0F172A] mt-0.5" numberOfLines={1}>
-                {formatMoney(raised, currencySymbol)} / {formatMoney(goal, currencySymbol)}
-              </Text>
-            </View>
-            <Animated.View style={{ transform: [{ scale: ctaScale }] }}>
-              <TouchableOpacity
-                className="flex-row items-center rounded-full px-7 py-3 shadow-md"
-                style={{ backgroundColor: BRAND_COLOR }}
-                activeOpacity={0.85}
-                onPressIn={handleCtaPressIn}
-                onPressOut={handleCtaPressOut}
-                onPress={() => setDonateModalVisible(true)}
-              >
-                <HeartHandshake size={16} color="#ffffff" />
-                <Text className="ml-2 text-[14px] font-bold text-white">
-                  {copy.btnDonate}
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
-          </>
-        )}
+        </Animated.View>
       </View>
 
       {/* Donate Modal */}
@@ -676,49 +633,6 @@ function FundingDetailScreen() {
         currencySymbol={currencySymbol}
         copy={copy}
       />
-
-      {/* Settings / Options Modal */}
-      <Modal
-        visible={menuVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMenuVisible(false)}
-      >
-        <Pressable
-          className="flex-1 bg-black/40"
-          onPress={() => setMenuVisible(false)}
-        >
-          <View className="absolute right-4 top-20 bg-white border border-[#F1F5F9] w-48 rounded-2xl overflow-hidden p-0 shadow-lg">
-            <TouchableOpacity
-              className="flex-row items-center px-4 py-3.5"
-              activeOpacity={0.8}
-              onPress={() => {
-                setMenuVisible(false);
-                Alert.alert(copy.featureComing, copy.editComingMsg);
-              }}
-            >
-              <MoreVertical size={16} color="#0F172A" />
-              <Text className="ml-2.5 text-[14px] font-bold text-[#334155]">{copy.menuEdit}</Text>
-            </TouchableOpacity>
-            <View className="h-px bg-[#F1F5F9]" />
-            <TouchableOpacity
-              className="flex-row items-center px-4 py-3.5"
-              activeOpacity={0.8}
-              onPress={() => {
-                setMenuVisible(false);
-                confirmDelete(() => {
-                  Alert.alert(copy.alertDeletedTitle, copy.alertDeletedMsg, [
-                    { text: 'OK', onPress: () => navigation.goBack() },
-                  ]);
-                });
-              }}
-            >
-              <Trash2 size={16} color="#ef4444" />
-              <Text className="ml-2.5 text-[14px] font-bold text-red-500">{copy.menuDelete}</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }

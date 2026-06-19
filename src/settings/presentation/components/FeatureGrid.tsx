@@ -20,6 +20,7 @@ import {
   MapPinned,
   Megaphone,
   MessageCircle,
+  MessageSquare,
   Pointer,
   Radio,
   Rocket,
@@ -37,6 +38,7 @@ const ICON_MAP: Record<
   React.ComponentType<{ size: number; color: string }>
 > = {
   MessageCircle,
+  MessageSquare,
   UserPlus,
   Pointer,
   Images,
