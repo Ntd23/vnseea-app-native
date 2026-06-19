@@ -70,6 +70,7 @@ import {
 } from 'lucide-react-native';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
+import { nativeTabMinimizeBehavior } from '../../../navigation/nativeTabMinimizeBehavior';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
 import { createProfileRepository } from '../../../profile/infrastructure/repositories/ApiProfileRepository';
@@ -116,6 +117,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   SafeAreaView,
   useSafeAreaInsets,
+  type Edge,
 } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -213,10 +215,15 @@ const MAX_IMAGE_PREFETCH_URLS = 8;
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: Platform.OS === 'ios' ? 24 : 96,
 };
+const FEED_HEADER_CONTENT_HEIGHT = 73;
 const FEED_SAFE_AREA_CLASS_NAME =
   Platform.OS === 'ios' ? 'flex-1' : 'flex-1 surface-base';
 const FEED_SAFE_AREA_STYLE =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
+const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
+  Platform.OS === 'ios' ? ['left', 'right'] : ROOT_SAFE_AREA_EDGES;
+const FEED_IOS_STICKY_HEADER_INDICES =
+  Platform.OS === 'ios' ? [0] : undefined;
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -1861,6 +1868,8 @@ function PostSkeleton() {
 }
 
 type FeedListItem =
+  | { type: 'ios-header'; id: 'feed-ios-header' }
+  | { type: 'intro'; id: 'feed-intro' }
   | { type: 'post'; id: string; post: FeedPost }
   | { type: 'live'; id: string; item: LiveStreamItem }
   | {
@@ -1924,6 +1933,7 @@ function FeedScreen() {
   const language = useAppLanguage();
   const copy = FEED_COPY[language];
   const vm = useFeedViewModel();
+  const feedSafeAreaInsets = useSafeAreaInsets();
   const userVm = useCurrentUserViewModel();
   const feedPosts = vm.posts;
   const prependFeedPost = vm.prependPost;
@@ -1936,6 +1946,10 @@ function FeedScreen() {
   const setFeedScrollBusy = vm.setScrollBusy;
   const activeFeedSource = vm.feedSource;
   const setActiveFeedSource = vm.setFeedSource;
+  const feedRefreshProgressViewOffset =
+    Platform.OS === 'ios'
+      ? feedSafeAreaInsets.top + FEED_HEADER_CONTENT_HEIGHT
+      : 0;
 
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -2113,9 +2127,24 @@ function FeedScreen() {
 
       if (Platform.OS !== 'ios') return;
 
+      if (contentOffset.y < 0) {
+        feedChromeCollapseStateRef.current = createFeedChromeCollapseState();
+        nativeTabMinimizeBehavior.setBehavior('none');
+        setIsFeedChromeHidden(false);
+        return;
+      }
+
+      const currentY = Math.max(0, contentOffset.y);
+      const previousY = feedChromeCollapseStateRef.current.lastY;
+      if (currentY < previousY) {
+        nativeTabMinimizeBehavior.setBehavior('none');
+      } else if (currentY > previousY) {
+        nativeTabMinimizeBehavior.setBehavior('onScrollDown');
+      }
+
       const nextState = getNextFeedChromeCollapseState(
         feedChromeCollapseStateRef.current,
-        contentOffset.y,
+        currentY,
       );
 
       feedChromeCollapseStateRef.current = nextState;
@@ -2175,6 +2204,7 @@ function FeedScreen() {
       activeVideoIdRef.current = null;
       publishFeedActiveVideo(null);
       publishFeedScrollBusy(false);
+      nativeTabMinimizeBehavior.setBehavior('onScrollDown');
     };
   }, []);
 
@@ -3244,8 +3274,48 @@ function FeedScreen() {
     [copy, handleOpenLive],
   );
 
+  const renderFeedIntro = useCallback(
+    () => (
+      <View>
+        <FilterTabs
+          copy={copy}
+          activeSource={activeFeedSource}
+          onChangeSource={setActiveFeedSource}
+        />
+        <HomeFeedIntro
+          onCreatePostPress={goToCreatePost}
+          userId={userVm.user?.userId}
+          avatarUrl={userVm.user?.avatar}
+          userName={userVm.user?.name}
+          copy={copy}
+        />
+      </View>
+    ),
+    [
+      activeFeedSource,
+      copy,
+      goToCreatePost,
+      setActiveFeedSource,
+      userVm.user?.userId,
+      userVm.user?.avatar,
+      userVm.user?.name,
+    ],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: FeedListItem }) => {
+      if (item.type === 'ios-header') {
+        return (
+          <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
+            <FeedHeader />
+          </FeedHeaderCollapseFrame>
+        );
+      }
+
+      if (item.type === 'intro') {
+        return renderFeedIntro();
+      }
+
       if (item.type === 'groups-carousel') {
         return renderGroupsCarousel({ item });
       }
@@ -3288,6 +3358,8 @@ function FeedScreen() {
       renderJobPost,
       renderLivePost,
       renderPagesCarousel,
+      isFeedChromeHidden,
+      renderFeedIntro,
       renderPollPost,
       renderProductPost,
       renderTextPost,
@@ -3297,32 +3369,72 @@ function FeedScreen() {
 
   const keyExtractor = useCallback((item: FeedListItem) => item.id, []);
 
-  const ListHeaderComponent = useMemo(
-    () => (
-      <View>
-        <FilterTabs
-          copy={copy}
-          activeSource={activeFeedSource}
-          onChangeSource={setActiveFeedSource}
-        />
-        <HomeFeedIntro
-          onCreatePostPress={goToCreatePost}
-          userId={userVm.user?.userId}
-          avatarUrl={userVm.user?.avatar}
-          userName={userVm.user?.name}
-          copy={copy}
-        />
-      </View>
-    ),
-    [
-      activeFeedSource,
-      copy,
-      goToCreatePost,
-      setActiveFeedSource,
-      userVm.user?.userId,
-      userVm.user?.avatar,
-      userVm.user?.name,
+  const androidListHeaderComponent = useMemo(
+    () => renderFeedIntro(),
+    [renderFeedIntro],
+  );
+
+  const iosFeedListItems = useMemo<FeedListItem[]>(
+    () => [
+      { type: 'ios-header', id: 'feed-ios-header' },
+      { type: 'intro', id: 'feed-intro' },
+      ...feedListItems,
     ],
+    [feedListItems],
+  );
+
+  const feedListElement = (
+    <FlatList
+      data={Platform.OS === 'ios' ? iosFeedListItems : feedListItems}
+      renderItem={renderItem}
+      keyExtractor={keyExtractor}
+      extraData={language}
+      ListHeaderComponent={
+        Platform.OS === 'ios' ? undefined : androidListHeaderComponent
+      }
+      stickyHeaderIndices={FEED_IOS_STICKY_HEADER_INDICES}
+      decelerationRate="normal"
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled
+      onLayout={handleFeedViewportLayout}
+      scrollEventThrottle={16}
+      onScroll={handleFeedScroll}
+      onViewableItemsChanged={onViewableItemsChanged}
+      viewabilityConfig={viewabilityConfigRef.current}
+      onScrollBeginDrag={handleScrollBeginDrag}
+      onScrollEndDrag={handleScrollEndDrag}
+      onMomentumScrollBegin={handleMomentumScrollBegin}
+      onMomentumScrollEnd={handleMomentumScrollEnd}
+      onEndReached={handleLoadMore}
+      onEndReachedThreshold={0.75}
+      ListFooterComponent={ListFooterComponent}
+      contentContainerStyle={FEED_LIST_CONTENT_STYLE}
+      refreshControl={
+        <RefreshControl
+          refreshing={
+            vm.isRefreshing ||
+            productsVm.isRefreshing ||
+            eventsVm.isRefreshing ||
+            jobsVm.isRefreshing ||
+            groupsVm.isRefreshing ||
+            pagesVm.isRefreshing ||
+            liveVm.isRefreshing
+          }
+          onRefresh={handleRefresh}
+          tintColor="#0866FF"
+          progressViewOffset={feedRefreshProgressViewOffset}
+        />
+      }
+      ListEmptyComponent={
+        vm.isLoading ? (
+          <View>
+            {[1, 2, 3].map(i => (
+              <PostSkeleton key={i} />
+            ))}
+          </View>
+        ) : null
+      }
+    />
   );
 
   return (
@@ -3330,61 +3442,19 @@ function FeedScreen() {
       <SafeAreaView
         className={FEED_SAFE_AREA_CLASS_NAME}
         style={FEED_SAFE_AREA_STYLE}
-        edges={ROOT_SAFE_AREA_EDGES}
+        edges={FEED_ROOT_SAFE_AREA_EDGES}
       >
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
-        <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
-          <FeedHeader />
-        </FeedHeaderCollapseFrame>
-        <View className="flex-1">
-          <FlatList
-            data={feedListItems}
-            renderItem={renderItem}
-            keyExtractor={keyExtractor}
-            extraData={language}
-            ListHeaderComponent={ListHeaderComponent}
-            decelerationRate="normal"
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-            onLayout={handleFeedViewportLayout}
-            scrollEventThrottle={16}
-            onScroll={handleFeedScroll}
-            onViewableItemsChanged={onViewableItemsChanged}
-            viewabilityConfig={viewabilityConfigRef.current}
-            onScrollBeginDrag={handleScrollBeginDrag}
-            onScrollEndDrag={handleScrollEndDrag}
-            onMomentumScrollBegin={handleMomentumScrollBegin}
-            onMomentumScrollEnd={handleMomentumScrollEnd}
-            onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.75}
-            ListFooterComponent={ListFooterComponent}
-            contentContainerStyle={FEED_LIST_CONTENT_STYLE}
-            refreshControl={
-              <RefreshControl
-                refreshing={
-                  vm.isRefreshing ||
-                  productsVm.isRefreshing ||
-                  eventsVm.isRefreshing ||
-                  jobsVm.isRefreshing ||
-                  groupsVm.isRefreshing ||
-                  pagesVm.isRefreshing ||
-                  liveVm.isRefreshing
-                }
-                onRefresh={handleRefresh}
-                tintColor="#0866FF"
-              />
-            }
-            ListEmptyComponent={
-              vm.isLoading ? (
-                <View>
-                  {[1, 2, 3].map(i => (
-                    <PostSkeleton key={i} />
-                  ))}
-                </View>
-              ) : null
-            }
-          />
-        </View>
+        {Platform.OS === 'ios' ? (
+          feedListElement
+        ) : (
+          <>
+            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
+              <FeedHeader />
+            </FeedHeaderCollapseFrame>
+            <View className="flex-1">{feedListElement}</View>
+          </>
+        )}
         <ReactionPickerOverlay
           anchor={pickerAnchor}
           onPick={handlePickReaction}

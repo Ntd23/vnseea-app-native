@@ -39,6 +39,18 @@ describe('feed chrome scroll-collapse intent', () => {
     expect(state.upwardDelta).toBe(0);
   });
 
+  it('shows again as soon as the user scrolls upward', () => {
+    let state = createFeedChromeCollapseState();
+    state = getNextFeedChromeCollapseState(state, 130);
+    state = getNextFeedChromeCollapseState(state, 170);
+    expect(state.hidden).toBe(true);
+
+    state = getNextFeedChromeCollapseState(state, 169);
+
+    expect(state.hidden).toBe(false);
+    expect(state.upwardDelta).toBe(0);
+  });
+
   it('always shows near the top of the feed', () => {
     let state = createFeedChromeCollapseState();
     state = getNextFeedChromeCollapseState(state, 140);
