@@ -13,6 +13,7 @@ import { TAB_ROUTES } from './routeRegistry';
 import type { MainTabParamList } from './types';
 import { useNotificationBadgeViewModel } from '../notifications';
 import { tabBarVisibility } from './tabBarVisibility';
+import { useNativeTabMinimizeBehavior } from './nativeTabMinimizeBehavior';
 import {
   createIosNativeTabOptions,
   getCustomTabRoutes,
@@ -214,6 +215,7 @@ function CustomMainTabNavigator() {
 function NativeIosTabNavigator() {
   const { notificationCount: notificationBadgeCount } =
     useNotificationBadgeViewModel();
+  const nativeTabMinimizeBehavior = useNativeTabMinimizeBehavior();
 
   return (
     <NativeTab.Navigator
@@ -221,7 +223,7 @@ function NativeIosTabNavigator() {
       screenOptions={{
         headerShown: false,
         tabBarControllerMode: 'tabBar',
-        tabBarMinimizeBehavior: 'onScrollDown',
+        tabBarMinimizeBehavior: nativeTabMinimizeBehavior,
         tabBarBlurEffect: 'systemDefault',
         overrideScrollViewContentInsetAdjustmentBehavior: false,
       }}

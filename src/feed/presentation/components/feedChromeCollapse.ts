@@ -1,6 +1,6 @@
 export const FEED_CHROME_HIDE_MIN_Y = 96;
 export const FEED_CHROME_HIDE_SCROLL_DELTA = 28;
-export const FEED_CHROME_SHOW_SCROLL_DELTA = 14;
+export const FEED_CHROME_SHOW_SCROLL_DELTA = 1;
 export const FEED_CHROME_SHOW_TOP_Y = 32;
 
 export type FeedChromeCollapseState = {
