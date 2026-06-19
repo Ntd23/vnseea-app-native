@@ -229,8 +229,6 @@ const FEED_SAFE_AREA_STYLE =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios' ? ['left', 'right'] : ROOT_SAFE_AREA_EDGES;
-const FEED_IOS_STICKY_HEADER_INDICES =
-  Platform.OS === 'ios' ? [0] : undefined;
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -1906,7 +1904,6 @@ function PostSkeleton() {
 }
 
 type FeedListItem =
-  | { type: 'ios-header'; id: 'feed-ios-header' }
   | { type: 'intro'; id: 'feed-intro' }
   | { type: 'post'; id: string; post: FeedPost }
   | { type: 'live'; id: string; item: LiveStreamItem }
@@ -1988,6 +1985,14 @@ function FeedScreen() {
     Platform.OS === 'ios'
       ? feedSafeAreaInsets.top + FEED_HEADER_CONTENT_HEIGHT
       : 0;
+  const feedHeaderOverlayHeight = feedRefreshProgressViewOffset;
+  const feedListContentStyle = useMemo(
+    () =>
+      Platform.OS === 'ios'
+        ? [FEED_LIST_CONTENT_STYLE, { paddingTop: feedHeaderOverlayHeight }]
+        : FEED_LIST_CONTENT_STYLE,
+    [feedHeaderOverlayHeight],
+  );
 
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -3342,14 +3347,6 @@ function FeedScreen() {
 
   const renderItem = useCallback(
     ({ item }: { item: FeedListItem }) => {
-      if (item.type === 'ios-header') {
-        return (
-          <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
-            <FeedHeader />
-          </FeedHeaderCollapseFrame>
-        );
-      }
-
       if (item.type === 'intro') {
         return renderFeedIntro();
       }
@@ -3396,7 +3393,6 @@ function FeedScreen() {
       renderJobPost,
       renderLivePost,
       renderPagesCarousel,
-      isFeedChromeHidden,
       renderFeedIntro,
       renderPollPost,
       renderProductPost,
@@ -3413,11 +3409,7 @@ function FeedScreen() {
   );
 
   const iosFeedListItems = useMemo<FeedListItem[]>(
-    () => [
-      { type: 'ios-header', id: 'feed-ios-header' },
-      { type: 'intro', id: 'feed-intro' },
-      ...feedListItems,
-    ],
+    () => [{ type: 'intro', id: 'feed-intro' }, ...feedListItems],
     [feedListItems],
   );
 
@@ -3430,7 +3422,6 @@ function FeedScreen() {
       ListHeaderComponent={
         Platform.OS === 'ios' ? undefined : androidListHeaderComponent
       }
-      stickyHeaderIndices={FEED_IOS_STICKY_HEADER_INDICES}
       decelerationRate="normal"
       showsVerticalScrollIndicator={false}
       nestedScrollEnabled
@@ -3446,7 +3437,7 @@ function FeedScreen() {
       onEndReached={handleLoadMore}
       onEndReachedThreshold={0.75}
       ListFooterComponent={ListFooterComponent}
-      contentContainerStyle={FEED_LIST_CONTENT_STYLE}
+      contentContainerStyle={feedListContentStyle}
       refreshControl={
         <RefreshControl
           refreshing={
@@ -3484,7 +3475,12 @@ function FeedScreen() {
       >
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         {Platform.OS === 'ios' ? (
-          feedListElement
+          <>
+            {feedListElement}
+            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
+              <FeedHeader />
+            </FeedHeaderCollapseFrame>
+          </>
         ) : (
           <>
             <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>

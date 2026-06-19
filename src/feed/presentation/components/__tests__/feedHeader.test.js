@@ -65,13 +65,27 @@ describe('FeedHeader platform chrome', () => {
 
     expect(iosFrameSource).toContain('useSafeAreaInsets');
     expect(iosFrameSource).toContain('insets.top + FEED_HEADER_CONTENT_HEIGHT');
-    expect(iosFrameSource).toContain('height: expandedHeight * progress.value');
-    expect(iosFrameSource).toContain('paddingTop: insets.top * progress.value');
+    expect(iosFrameSource).toContain('height: expandedHeight');
+    expect(iosFrameSource).toContain('paddingTop: insets.top');
     expect(iosFrameSource).toContain("backgroundColor: 'rgba(248, 250, 252, 0.94)'");
     expect(defaultFrameSource).not.toContain('useSafeAreaInsets');
   });
 
-  it('collapses the iOS feed header in layout instead of overlaying it', () => {
+  it('renders the iOS feed header as an absolute overlay that does not reflow posts', () => {
+    const iosFrameSource = read(
+      'src/feed/presentation/components/FeedHeaderCollapseFrame.ios.tsx',
+    );
+
+    expect(iosFrameSource).toContain('const contentAnimatedStyle = useAnimatedStyle');
+    expect(iosFrameSource).toContain('style={[styles.frame, frameStyle]}');
+    expect(iosFrameSource).toContain('style={[styles.content, contentStyle, contentAnimatedStyle]}');
+    expect(iosFrameSource).toContain("position: 'absolute'");
+    expect(iosFrameSource).toContain("pointerEvents={hidden ? 'none' : 'box-none'}");
+    expect(iosFrameSource).not.toContain('height: expandedHeight * progress.value');
+    expect(iosFrameSource).not.toContain('paddingTop: insets.top * progress.value');
+  });
+
+  it('keeps the iOS feed header as one overlay outside FlatList instead of a sticky item', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
     const defaultFrameSource = read(
       'src/feed/presentation/components/FeedHeaderCollapseFrame.tsx',
@@ -86,7 +100,12 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).toContain('</FeedHeaderCollapseFrame>');
     expect(feedScreenSource).toContain('onScroll={handleFeedScroll}');
     expect(feedScreenSource).toContain('scrollEventThrottle={16}');
-    expect(feedScreenSource).not.toContain('FEED_HEADER_OVERLAY_STYLE');
+    expect(feedScreenSource).toContain('const feedHeaderOverlayHeight = feedRefreshProgressViewOffset');
+    expect(feedScreenSource).toContain('paddingTop: feedHeaderOverlayHeight');
+    expect(feedScreenSource).toContain('contentContainerStyle={feedListContentStyle}');
+    expect(feedScreenSource).not.toContain('FEED_IOS_STICKY_HEADER_INDICES');
+    expect(feedScreenSource).not.toContain('stickyHeaderIndices=');
+    expect(feedScreenSource).not.toContain("type: 'ios-header'");
 
     expect(defaultFrameSource).not.toContain('react-native-reanimated');
     expect(defaultFrameSource).not.toContain('@callstack/liquid-glass');
@@ -107,7 +126,7 @@ describe('FeedHeader platform chrome', () => {
     expect(behaviorSource).toContain("'onScrollDown'");
   });
 
-  it('uses a FlatList-first iOS Feed layout so native tabs can observe scroll', () => {
+  it('keeps FlatList first on iOS so native tabs can observe scroll behind the overlay header', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
     expect(feedScreenSource).toContain('const feedListElement = (');
@@ -119,20 +138,20 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).toContain('<FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>');
     expect(feedScreenSource).toContain('<View className="flex-1">{feedListElement}</View>');
     expect(feedScreenSource).toMatch(
-      /Platform\.OS === 'ios'\s*\?\s*\(\s*feedListElement\s*\)/,
+      /Platform\.OS === 'ios'\s*\?\s*\(\s*<>\s*\{feedListElement\}/,
     );
   });
 
-  it('uses a sticky first Feed item for the iOS header so it can reappear immediately', () => {
+  it('uses the intro as the first iOS Feed item instead of a sticky header item', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
-    expect(feedScreenSource).toContain("type: 'ios-header'");
     expect(feedScreenSource).toContain("type: 'intro'");
-    expect(feedScreenSource).toContain('const FEED_IOS_STICKY_HEADER_INDICES');
-    expect(feedScreenSource).toContain('stickyHeaderIndices={FEED_IOS_STICKY_HEADER_INDICES}');
     expect(feedScreenSource).toContain('const iosFeedListItems');
-    expect(feedScreenSource).toContain('if (item.type === \'ios-header\')');
     expect(feedScreenSource).toContain('if (item.type === \'intro\')');
+    expect(feedScreenSource).not.toContain("type: 'ios-header'");
+    expect(feedScreenSource).not.toContain('const FEED_IOS_STICKY_HEADER_INDICES');
+    expect(feedScreenSource).not.toContain('stickyHeaderIndices={FEED_IOS_STICKY_HEADER_INDICES}');
+    expect(feedScreenSource).not.toContain('if (item.type === \'ios-header\')');
     expect(feedScreenSource).not.toContain('const iOSListHeaderComponent');
   });
 
@@ -148,7 +167,7 @@ describe('FeedHeader platform chrome', () => {
     expect(mainTabNavigatorSource).toContain('tabBarMinimizeBehavior: nativeTabMinimizeBehavior');
   });
 
-  it('keeps pull-to-refresh visible below the iOS sticky header', () => {
+  it('keeps pull-to-refresh visible below the iOS overlay header', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
     expect(feedScreenSource).toContain('const FEED_HEADER_CONTENT_HEIGHT = 73');
