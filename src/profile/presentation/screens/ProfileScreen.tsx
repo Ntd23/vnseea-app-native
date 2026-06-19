@@ -5,6 +5,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,16 +13,17 @@ import {
   View,
   Alert,
   ActivityIndicator,
+  type ListRenderItemInfo,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ViewToken,
 } from 'react-native';
 import {
   ArrowLeft,
   Briefcase,
   Camera,
   Clock,
-  MapPin,
   MoreHorizontal,
   PlusCircle,
   Search,
@@ -32,11 +34,6 @@ import {
   Sparkles,
   Verified,
   MessageCircle,
-  Play,
-  ChevronRight,
-  Video,
-  Image as ImageIcon,
-  Calendar,
 
   Copy,
 
@@ -85,6 +82,11 @@ import { getPokeCopy } from '../../../poke/application/i18n/pokeCopy';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
+import {
+  createNativeTabScrollPublisherState,
+  publishNativeTabScrollBehavior,
+  publishNativeTabScrollIntent,
+} from '../../../navigation/nativeTabScrollPublisher';
 import type {
   FeedPollPost,
   FeedPost,
@@ -104,7 +106,6 @@ type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
 type ProfileRoute = RouteProp<RootStackParamList, typeof ROUTES.PROFILE>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const FRIEND_ITEM_WIDTH = (SCREEN_WIDTH - 64 - 16) / 3;
 const PROFILE_POST_MEDIA_HEIGHT = Math.min(320, Math.round(SCREEN_WIDTH * 0.62));
 // One friend tile width in a 2-col grid inside the right column of the Details+Friends row.
 // PROFILE_FRIENDS_PAGE_WIDTH = width of one "page" (2 columns) = 2 tiles + 1 gap.
@@ -798,10 +799,6 @@ function getStoryPreviewUrl(story: StoryItem | null, fallbackAvatar: string) {
   );
 }
 
-function hasVideoStory(story: StoryItem | null) {
-  return Boolean(story?.media.some(item => item.type === 'video'));
-}
-
 function updateProfileTopReactions(
   current: ReactionType[],
   previousReaction: ReactionType | null,
@@ -830,52 +827,6 @@ function getOldestProfilePostId(posts: ProfileFeedPost[]) {
     .map(post => Number(post.id))
     .filter(id => Number.isFinite(id) && id > 0);
   return ids.length > 0 ? String(Math.min(...ids)) : undefined;
-}
-
-function formatJoinedDate(registered: string | undefined, lang: AppLanguage): string {
-  if (!registered) return '';
-  const timestamp = Number(registered);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) {
-    try {
-      const d = new Date(registered);
-      if (!isNaN(d.getTime())) {
-        return formatFormattedDate(d, lang);
-      }
-    } catch (err) {
-      return '';
-    }
-    return '';
-  }
-  const date = new Date(timestamp * 1000);
-  return formatFormattedDate(date, lang);
-}
-
-function formatFormattedDate(date: Date, lang: AppLanguage): string {
-  if (lang === 'vi') {
-    const day = date.getDate();
-    const month = date.getMonth() + 1;
-    const year = date.getFullYear();
-    return `Đã tham gia ${day} Thg ${month}, ${year}`;
-  } else {
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const day = date.getDate();
-    const month = monthNames[date.getMonth()];
-    const year = date.getFullYear();
-    return `Joined ${month} ${day}, ${year}`;
-  }
-}
-
-function DetailRow({ icon, text }: { icon: React.ReactNode; text: string }) {
-  return (
-    <View className="mb-3.5 flex-row items-center">
-      <View className="h-8 w-8 items-center justify-center rounded-full bg-slate-50 border border-slate-200/40 shadow-sm mr-3">
-        {icon}
-      </View>
-      <Text className="flex-1 text-[14px] leading-snug text-[#1e293b] font-medium">
-        {text}
-      </Text>
-    </View>
-  );
 }
 
 // Skeleton Loading Component with pulse animation
@@ -1017,7 +968,6 @@ function ProfileScreen() {
     followers,
     following,
     isLoading,
-    error,
     loadProfile,
     toggleFollow,
     pokeUser,
@@ -1052,6 +1002,9 @@ function ProfileScreen() {
   const profilePostsListOffsetYRef = useRef(0);
   const profileScrollYRef = useRef(0);
   const profileViewportHeightRef = useRef(0);
+  const nativeTabScrollPublisherStateRef = useRef(
+    createNativeTabScrollPublisherState(),
+  );
   const [postsError, setPostsError] = useState<string | null>(null);
   const [userStory, setUserStory] = useState<StoryItem | null>(null);
   const [allStories, setAllStories] = useState<StoryItem[]>([]);
@@ -1108,6 +1061,24 @@ function ProfileScreen() {
       setPostsError(null);
     });
   }, [currentUserId, profile?.id, targetUserId]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
+
+    return () => {
+      publishNativeTabScrollBehavior('onScrollDown');
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'ios') return undefined;
+
+      return () => {
+        publishNativeTabScrollBehavior('onScrollDown');
+      };
+    }, []),
+  );
 
   const setActiveProfileVideoId = useCallback((nextVideoId: string | null) => {
     if (activeProfileVideoIdRef.current === nextVideoId) return;
@@ -1177,6 +1148,26 @@ function ProfileScreen() {
     },
     [updateActiveProfileVideoFromScroll],
   );
+
+  const profilePostsViewabilityConfigRef = useRef({
+    itemVisiblePercentThreshold: 28,
+    minimumViewTime: 80,
+  });
+
+  const onProfilePostViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const visibleVideo = viewableItems.find(
+        item =>
+          item.isViewable &&
+          (item.item as ProfileFeedPost | undefined)?.kind === 'video',
+      );
+      setActiveProfileVideoId(
+        visibleVideo?.item
+          ? String((visibleVideo.item as ProfileFeedPost).id)
+          : null,
+      );
+    },
+  ).current;
 
   useEffect(() => {
     const videoIds = new Set(
@@ -1340,8 +1331,6 @@ function ProfileScreen() {
     [followers],
   );
   const storyPreviewUrl = getStoryPreviewUrl(userStory, avatarUrl);
-  const storySegmentCount = userStory?.media.length ?? 0;
-  const storyHasVideo = hasVideoStory(userStory);
   const shouldShowStorySection = Boolean(userStory) || isStoryLoading || isOwnProfile;
   const relationshipState =
     profile?.followingState ??
@@ -1596,6 +1585,12 @@ function ProfileScreen() {
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
       profileScrollYRef.current = contentOffset.y;
       profileViewportHeightRef.current = layoutMeasurement.height;
+      if (Platform.OS === 'ios') {
+        publishNativeTabScrollIntent(
+          nativeTabScrollPublisherStateRef,
+          contentOffset.y,
+        );
+      }
       updateActiveProfileVideoFromScroll(
         contentOffset.y,
         layoutMeasurement.height,
@@ -1716,7 +1711,7 @@ function ProfileScreen() {
     }
   };
 
-  const handleChangeCover = async () => {
+  const handleChangeCover = useCallback(async () => {
     try {
       const result = await launchImageLibrary({
         mediaType: 'photo',
@@ -1745,7 +1740,7 @@ function ProfileScreen() {
     } finally {
       setIsLoadingCover(false);
     }
-  };
+  }, [copy.errorTitle, loadProfile, targetUserId, updateCover]);
 
   const handleOpenStory = () => {
     if (!userStory) return;
@@ -1904,21 +1899,8 @@ function ProfileScreen() {
     return <FullProfileSkeleton />;
   }
 
-  return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <View style={profileMainStyles.container}>
-        <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
-
-        <ScrollView
-          className="flex-1"
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          onLayout={handleProfileViewportLayout}
-          onScroll={handleProfileScroll}
-          onMomentumScrollEnd={handleProfileScrollEnd}
-          onScrollEndDrag={handleProfileScrollEnd}
-          scrollEventThrottle={32}
-        >
+  const profileContentHeader = (
+    <>
           {/* Cover Photo */}
           <View style={profileMainStyles.coverContainer}>
             <TouchableOpacity
@@ -2648,90 +2630,147 @@ function ProfileScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+    </>
+  );
 
-          {/* Posts List */}
-          {isPostsLoading && posts.length === 0 ? (
-            <View>
-              <PostSkeletonCard />
-              <PostSkeletonCard />
-            </View>
-          ) : postsError ? (
-            <View style={profilePostStyles.stateCard}>
-              <Text style={[profilePostStyles.stateText, { color: '#EF4444' }]}>
-                {copy.loadPostsError}: {postsError}
-              </Text>
-            </View>
-          ) : posts.length === 0 ? (
-            <View style={profilePostStyles.stateCard}>
-              <Text style={profilePostStyles.stateText}>{copy.noPosts}</Text>
-            </View>
-          ) : (
-            <View onLayout={handleProfilePostsListLayout}>
-              {posts.map(post => {
-                if (post.kind === 'video') {
-                  return (
-                    <View
-                      key={`video-${post.id}`}
-                      onLayout={event => handleProfileVideoLayout(post.id, event)}
-                    >
-                      <HomeVideoPostCard
-                        post={post}
-                        copy={postCardCopy}
-                        onReact={handleSetPostReaction}
-                        onOpenPicker={handleOpenPicker}
-                        onCommentTap={commentVm.openComments}
-                        onShare={handleOpenSharePost}
-                        isActive={activeProfileVideoId === post.id}
-                        gestureX={gestureX}
-                        gestureY={gestureY}
-                        gestureActive={gestureActive}
-                        navigateToProfile={handleNavigateToProfile}
-                      />
-                    </View>
-                  );
-                }
+  const renderProfilePostContent = (post: ProfileFeedPost) => {
+    if (post.kind === 'video') {
+      return (
+        <View
+          key={`video-${post.id}`}
+          onLayout={event => handleProfileVideoLayout(post.id, event)}
+        >
+          <HomeVideoPostCard
+            post={post}
+            copy={postCardCopy}
+            onReact={handleSetPostReaction}
+            onOpenPicker={handleOpenPicker}
+            onCommentTap={commentVm.openComments}
+            onShare={handleOpenSharePost}
+            isActive={activeProfileVideoId === post.id}
+            gestureX={gestureX}
+            gestureY={gestureY}
+            gestureActive={gestureActive}
+            navigateToProfile={handleNavigateToProfile}
+          />
+        </View>
+      );
+    }
 
-                if (post.kind === 'poll') {
-                  return (
-                    <PollPostCard
-                      key={`poll-${post.id}`}
-                      post={post}
-                      onVote={handleVotePoll}
-                      onReact={handleSetPostReaction}
-                      onOpenPicker={handleOpenPicker}
-                      onCommentTap={commentVm.openComments}
-                      onShare={handleOpenSharePost}
-                      onProfilePress={handleNavigateToProfile}
-                      currentUserAvatar={avatarUrl}
-                    />
-                  );
-                }
+    if (post.kind === 'poll') {
+      return (
+        <PollPostCard
+          key={`poll-${post.id}`}
+          post={post}
+          onVote={handleVotePoll}
+          onReact={handleSetPostReaction}
+          onOpenPicker={handleOpenPicker}
+          onCommentTap={commentVm.openComments}
+          onShare={handleOpenSharePost}
+          onProfilePress={handleNavigateToProfile}
+          currentUserAvatar={avatarUrl}
+        />
+      );
+    }
 
-                return (
-                  <TextPostCard
-                    key={`text-${post.id}`}
-                    post={post}
-                    copy={postCardCopy}
-                    onReact={handleSetPostReaction}
-                    onOpenPicker={handleOpenPicker}
-                    onCommentTap={commentVm.openComments}
-                    onPhotoPress={handlePhotoPress}
-                    onShare={handleOpenSharePost}
-                    gestureX={gestureX}
-                    gestureY={gestureY}
-                    gestureActive={gestureActive}
-                    navigateToProfile={handleNavigateToProfile}
-                  />
-                );
-              })}
-            </View>
-          )}
-          {isLoadingMorePosts ? (
-            <View className="items-center py-4">
-              <ActivityIndicator size="small" color="#1877F2" />
-            </View>
-          ) : null}
-        </ScrollView>
+    return (
+      <TextPostCard
+        key={`text-${post.id}`}
+        post={post}
+        copy={postCardCopy}
+        onReact={handleSetPostReaction}
+        onOpenPicker={handleOpenPicker}
+        onCommentTap={commentVm.openComments}
+        onPhotoPress={handlePhotoPress}
+        onShare={handleOpenSharePost}
+        gestureX={gestureX}
+        gestureY={gestureY}
+        gestureActive={gestureActive}
+        navigateToProfile={handleNavigateToProfile}
+      />
+    );
+  };
+
+  const renderProfilePostItem = ({
+    item,
+  }: ListRenderItemInfo<ProfileFeedPost>) => renderProfilePostContent(item);
+
+  const profilePostsEmptyComponent =
+    isPostsLoading && posts.length === 0 ? (
+      <View>
+        <PostSkeletonCard />
+        <PostSkeletonCard />
+      </View>
+    ) : postsError ? (
+      <View style={profilePostStyles.stateCard}>
+        <Text style={[profilePostStyles.stateText, { color: '#EF4444' }]}>
+          {copy.loadPostsError}: {postsError}
+        </Text>
+      </View>
+    ) : posts.length === 0 ? (
+      <View style={profilePostStyles.stateCard}>
+        <Text style={profilePostStyles.stateText}>{copy.noPosts}</Text>
+      </View>
+    ) : null;
+
+  const profilePostsFooterComponent = isLoadingMorePosts ? (
+    <View className="items-center py-4">
+      <ActivityIndicator size="small" color="#1877F2" />
+    </View>
+  ) : null;
+
+  const profilePostsListElement = (
+    <FlatList
+      data={posts}
+      keyExtractor={post => `${post.kind}-${post.id}`}
+      renderItem={renderProfilePostItem}
+      ListHeaderComponent={profileContentHeader}
+      ListEmptyComponent={profilePostsEmptyComponent}
+      ListFooterComponent={profilePostsFooterComponent}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingBottom: 40 }}
+      onLayout={handleProfileViewportLayout}
+      onScroll={handleProfileScroll}
+      onMomentumScrollEnd={handleProfileScrollEnd}
+      onScrollEndDrag={handleProfileScrollEnd}
+      scrollEventThrottle={Platform.OS === 'ios' ? 16 : 32}
+      onEndReached={handleLoadMorePosts}
+      onEndReachedThreshold={0.35}
+      onViewableItemsChanged={onProfilePostViewableItemsChanged}
+      viewabilityConfig={profilePostsViewabilityConfigRef.current}
+    />
+  );
+
+  const profileScrollElement = (
+    <ScrollView
+      className="flex-1"
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingBottom: 40 }}
+      onLayout={handleProfileViewportLayout}
+      onScroll={handleProfileScroll}
+      onMomentumScrollEnd={handleProfileScrollEnd}
+      onScrollEndDrag={handleProfileScrollEnd}
+      scrollEventThrottle={32}
+    >
+      {profileContentHeader}
+
+      {/* Posts List */}
+      {profilePostsEmptyComponent ? (
+        profilePostsEmptyComponent
+      ) : (
+        <View onLayout={handleProfilePostsListLayout}>
+          {posts.map(post => renderProfilePostContent(post))}
+        </View>
+      )}
+      {profilePostsFooterComponent}
+    </ScrollView>
+  );
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={profileMainStyles.container}>
+        <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+        {Platform.OS === 'ios' ? profilePostsListElement : profileScrollElement}
         <EditProfileActionSheet
           visible={editSheetVisible}
           onClose={() => {

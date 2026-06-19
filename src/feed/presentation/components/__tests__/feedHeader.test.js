@@ -159,9 +159,10 @@ describe('FeedHeader platform chrome', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
     const mainTabNavigatorSource = read('src/navigation/MainTabNavigator.tsx');
 
-    expect(feedScreenSource).toContain('nativeTabMinimizeBehavior');
-    expect(feedScreenSource).toContain("nativeTabMinimizeBehavior.setBehavior('none')");
-    expect(feedScreenSource).toContain("nativeTabMinimizeBehavior.setBehavior('onScrollDown')");
+    expect(feedScreenSource).toContain('createNativeTabScrollPublisherState');
+    expect(feedScreenSource).toContain('publishNativeTabScrollIntent');
+    expect(feedScreenSource).toContain("publishNativeTabScrollBehavior('none')");
+    expect(feedScreenSource).toContain("publishNativeTabScrollBehavior('onScrollDown')");
     expect(mainTabNavigatorSource).toContain('useNativeTabMinimizeBehavior');
     expect(mainTabNavigatorSource).toContain('const nativeTabMinimizeBehavior = useNativeTabMinimizeBehavior()');
     expect(mainTabNavigatorSource).toContain('tabBarMinimizeBehavior: nativeTabMinimizeBehavior');
@@ -183,7 +184,7 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).toContain('if (contentOffset.y < 0)');
     expect(feedScreenSource).toContain('createFeedChromeCollapseState()');
     expect(feedScreenSource).toContain('setIsFeedChromeHidden(false)');
-    expect(feedScreenSource).toContain("nativeTabMinimizeBehavior.setBehavior('none')");
+    expect(feedScreenSource).toContain("publishNativeTabScrollBehavior('none')");
   });
 
   it('preserves header navigation and create action behavior on both platforms', () => {

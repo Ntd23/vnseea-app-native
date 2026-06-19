@@ -1,6 +1,7 @@
 // Description: Displays Marketplace products with searchable filter controls.
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Platform,
   ActivityIndicator,
   FlatList,
   PanResponder,
@@ -10,10 +11,12 @@ import {
   TouchableOpacity,
   View,
   type ListRenderItemInfo,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   RotateCcw,
@@ -30,6 +33,11 @@ import { useMarketplaceViewModel } from '../../application/view-models/useMarket
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  createNativeTabScrollPublisherState,
+  publishNativeTabScrollBehavior,
+  publishNativeTabScrollIntent,
+} from '../../../navigation/nativeTabScrollPublisher';
 
 type MarketplaceNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -195,8 +203,30 @@ function DistanceSlider({
 
 function MarketplaceScreen() {
   const navigation = useNavigation<MarketplaceNav>();
+  const insets = useSafeAreaInsets();
   const vm = useMarketplaceViewModel();
+  const nativeTabScrollPublisherStateRef = useRef(
+    createNativeTabScrollPublisherState(),
+  );
   const hasActiveFilters = Boolean(vm.categoryId || vm.distance || vm.orderBy);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
+
+    return () => {
+      publishNativeTabScrollBehavior('onScrollDown');
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'ios') return undefined;
+
+      return () => {
+        publishNativeTabScrollBehavior('onScrollDown');
+      };
+    }, []),
+  );
 
   const handleMyProducts = useCallback(() => {
     navigation.navigate(ROUTES.MY_PRODUCTS);
@@ -225,11 +255,24 @@ function MarketplaceScreen() {
     [handleProductPress],
   );
 
-  return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" />
+  const handleMarketplaceScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (Platform.OS !== 'ios') return;
 
-      <View className="surface-topbar flex-row items-center px-4 py-3">
+      publishNativeTabScrollIntent(
+        nativeTabScrollPublisherStateRef,
+        event.nativeEvent.contentOffset.y,
+      );
+    },
+    [],
+  );
+
+  const marketplaceHeader = (
+    <>
+      <View
+        className="surface-topbar flex-row items-center px-4 py-3"
+        style={Platform.OS === 'ios' ? { paddingTop: insets.top + 12 } : undefined}
+      >
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"
           activeOpacity={0.8}
@@ -409,6 +452,19 @@ function MarketplaceScreen() {
           </View>
         ) : null}
       </View>
+    </>
+  );
+
+  const marketplaceListHeaderComponent =
+    Platform.OS === 'ios' ? marketplaceHeader : undefined;
+
+  return (
+    <SafeAreaView
+      className="flex-1 surface-base"
+      edges={Platform.OS === 'ios' ? ['left', 'right'] : ['top']}
+    >
+      <FocusAwareStatusBar barStyle="dark-content" />
+      {Platform.OS === 'ios' ? undefined : marketplaceHeader}
 
       <FlatList
         data={vm.products}
@@ -417,8 +473,11 @@ function MarketplaceScreen() {
         numColumns={2}
         columnWrapperStyle={MARKETPLACE_COLUMN_STYLE}
         contentContainerClassName="gap-3 px-4 pb-10 pt-1"
+        ListHeaderComponent={marketplaceListHeaderComponent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        onScroll={Platform.OS === 'ios' ? handleMarketplaceScroll : undefined}
+        scrollEventThrottle={Platform.OS === 'ios' ? 16 : undefined}
         onEndReached={vm.loadMore}
         onEndReachedThreshold={0.35}
         refreshControl={

@@ -77,7 +77,11 @@ import {
 } from 'lucide-react-native';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
-import { nativeTabMinimizeBehavior } from '../../../navigation/nativeTabMinimizeBehavior';
+import {
+  createNativeTabScrollPublisherState,
+  publishNativeTabScrollBehavior,
+  publishNativeTabScrollIntent,
+} from '../../../navigation/nativeTabScrollPublisher';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
 import { createProfileRepository } from '../../../profile/infrastructure/repositories/ApiProfileRepository';
@@ -119,7 +123,7 @@ const REACTION_IMAGES: Record<ReactionType, any> = {
 };
 
 // Floating picker pill geometry â€” used to clamp X within the viewport.
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   SafeAreaView,
@@ -2028,6 +2032,9 @@ function FeedScreen() {
   const feedChromeCollapseStateRef = useRef<FeedChromeCollapseState>(
     createFeedChromeCollapseState(),
   );
+  const nativeTabScrollPublisherStateRef = useRef(
+    createNativeTabScrollPublisherState(),
+  );
   const [isFeedChromeHidden, setIsFeedChromeHidden] = useState(false);
 
   const setActiveFeedVideo = useCallback((videoId: string | null) => {
@@ -2172,18 +2179,18 @@ function FeedScreen() {
 
       if (contentOffset.y < 0) {
         feedChromeCollapseStateRef.current = createFeedChromeCollapseState();
-        nativeTabMinimizeBehavior.setBehavior('none');
+        nativeTabScrollPublisherStateRef.current =
+          createNativeTabScrollPublisherState(0, 'none');
+        publishNativeTabScrollBehavior('none');
         setIsFeedChromeHidden(false);
         return;
       }
 
       const currentY = Math.max(0, contentOffset.y);
-      const previousY = feedChromeCollapseStateRef.current.lastY;
-      if (currentY < previousY) {
-        nativeTabMinimizeBehavior.setBehavior('none');
-      } else if (currentY > previousY) {
-        nativeTabMinimizeBehavior.setBehavior('onScrollDown');
-      }
+      publishNativeTabScrollIntent(
+        nativeTabScrollPublisherStateRef,
+        currentY,
+      );
 
       const nextState = getNextFeedChromeCollapseState(
         feedChromeCollapseStateRef.current,
@@ -2247,9 +2254,17 @@ function FeedScreen() {
       activeVideoIdRef.current = null;
       publishFeedActiveVideo(null);
       publishFeedScrollBusy(false);
-      nativeTabMinimizeBehavior.setBehavior('onScrollDown');
+      publishNativeTabScrollBehavior('onScrollDown');
     };
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        publishNativeTabScrollBehavior('onScrollDown');
+      };
+    }, []),
+  );
 
   // Subscribe to the global "post created" event so the home feed gets
   // an instant prepend the moment CreatePostScreen finishes. We mount

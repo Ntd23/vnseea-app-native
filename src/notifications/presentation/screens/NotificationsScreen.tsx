@@ -3,13 +3,18 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Platform,
   ActivityIndicator,
   Alert,
+  FlatList,
   RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
   View,
+  type ListRenderItemInfo,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -27,9 +32,15 @@ import NotificationsHeader from '../components/NotificationsHeader';
 import NotificationsTabs from '../components/NotificationsTabs';
 import NotificationsFilterSheet from '../components/NotificationsFilterSheet';
 import NotificationSectionList from '../components/NotificationSectionList';
+import NotificationCard from '../components/NotificationCard';
 import NotificationsEmptyState from '../components/NotificationsEmptyState';
 import NotificationsSkeleton from '../components/NotificationsSkeleton';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  createNativeTabScrollPublisherState,
+  publishNativeTabScrollBehavior,
+  publishNativeTabScrollIntent,
+} from '../../../navigation/nativeTabScrollPublisher';
 
 type NotificationsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -248,10 +259,31 @@ function NotificationsScreen() {
   const hasNotifications = notifications.length > 0;
   const hasFiltered = filteredNotifications.length > 0;
   const hasNotificationsRef = useRef(hasNotifications);
+  const nativeTabScrollPublisherStateRef = useRef(
+    createNativeTabScrollPublisherState(),
+  );
 
   useEffect(() => {
     hasNotificationsRef.current = hasNotifications;
   }, [hasNotifications]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
+
+    return () => {
+      publishNativeTabScrollBehavior('onScrollDown');
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'ios') return undefined;
+
+      return () => {
+        publishNativeTabScrollBehavior('onScrollDown');
+      };
+    }, []),
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -357,10 +389,166 @@ function NotificationsScreen() {
     [copy.rejectFailed, language, rejectGroupChatInvitation],
   );
 
-  return (
-    <SafeAreaView style={{ backgroundColor: '#f4f7fa' }} className="flex-1" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
+  const notificationsListHeaderComponent = (
+    <>
+      <NotificationsHeader
+        title={copy.headerTitle}
+        onMarkAllRead={handleMarkAllSeen}
+        onFilterPress={() => setFilterSheetVisible(true)}
+        filterActive={activeFilter !== 'all'}
+      />
 
+      {hasNotifications ? (
+        <NotificationsTabs
+          labels={{ all: copy.tabAll, unread: copy.tabUnread }}
+          active={activeTab}
+          onChange={setActiveTab}
+          unreadCount={unreadCount}
+        />
+      ) : null}
+    </>
+  );
+
+  const renderNotificationItem = useCallback(
+    ({ item, index }: ListRenderItemInfo<NotificationsItem>) => {
+      const isGroupChatInvite = item.type === 'added_you_to_group';
+      const isPending =
+        isGroupChatInvite && item.groupChatId
+          ? pendingActions.has(item.groupChatId)
+          : false;
+
+      return (
+        <NotificationCard
+          item={item}
+          index={index}
+          language={language}
+          onPress={handlePress}
+          onLongPress={isGroupChatInvite ? undefined : handleLongPress}
+          onAcceptGroupChat={
+            isGroupChatInvite ? handleAcceptGroupChat : undefined
+          }
+          onRejectGroupChat={
+            isGroupChatInvite ? handleRejectGroupChat : undefined
+          }
+          isPending={isPending}
+          labels={{
+            acceptInvite: copy.acceptInvite,
+            rejectInvite: copy.rejectInvite,
+          }}
+        />
+      );
+    },
+    [
+      copy.acceptInvite,
+      copy.rejectInvite,
+      handleAcceptGroupChat,
+      handleLongPress,
+      handlePress,
+      handleRejectGroupChat,
+      language,
+      pendingActions,
+    ],
+  );
+
+  const notificationsListEmptyComponent =
+    isLoading && !hasNotifications ? (
+      <NotificationsSkeleton />
+    ) : error && !hasNotifications ? (
+      <View className="flex-1 items-center justify-center px-8">
+        <Text className="mb-3 text-center text-body-secondary">
+          {error}
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => loadFirstPage()}
+          className="rounded-full bg-[#0000ff] px-6 py-2.5"
+        >
+          <Text className="text-[14px] font-semibold text-white">
+            {copy.retry}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    ) : !hasNotifications ? (
+      <NotificationsEmptyState
+        variant="all"
+        title={copy.emptyTitle}
+        description={copy.emptyDescription}
+      />
+    ) : !hasFiltered ? (
+      <NotificationsEmptyState
+        variant={activeTab === 'unread' ? 'unread' : 'all'}
+        title={activeTab === 'unread' ? copy.noUnread : copy.emptyTitle}
+        description={
+          activeTab === 'unread'
+            ? copy.noUnreadDescription
+            : copy.emptyDescription
+        }
+      />
+    ) : null;
+
+  const notificationsListFooterComponent =
+    isLoadingMore ? (
+      <View className="items-center py-4">
+        <ActivityIndicator size="small" color="#0000ff" />
+      </View>
+    ) : !hasMore && filteredNotifications.length > 0 ? (
+      <View className="items-center justify-center pt-8 pb-10">
+        <BeautifulBellIllustration />
+        <Text className="text-[16px] font-bold text-slate-800 text-center">
+          {copy.allLoaded}
+        </Text>
+        <Text className="text-[13px] text-slate-400 text-center mt-1.5 px-6">
+          {language === 'vi'
+            ? 'Bạn sẽ nhận được thông báo mới khi có hoạt động'
+            : 'You will receive new notifications when there is activity'}
+        </Text>
+      </View>
+    ) : null;
+
+  const handleNotificationsEndReached = useCallback(() => {
+    if (hasFiltered && hasMore && !isLoadingMore) {
+      loadMore();
+    }
+  }, [hasFiltered, hasMore, isLoadingMore, loadMore]);
+
+  const handleNotificationsScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (Platform.OS !== 'ios') return;
+
+      publishNativeTabScrollIntent(
+        nativeTabScrollPublisherStateRef,
+        event.nativeEvent.contentOffset.y,
+      );
+    },
+    [],
+  );
+
+  const iosNotificationsListElement = (
+    <FlatList
+      data={hasFiltered ? filteredNotifications : []}
+      keyExtractor={item => item.id}
+      renderItem={renderNotificationItem}
+      ListHeaderComponent={notificationsListHeaderComponent}
+      ListEmptyComponent={notificationsListEmptyComponent}
+      ListFooterComponent={notificationsListFooterComponent}
+      contentContainerClassName="px-4 pb-10 pt-3"
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={refresh}
+          colors={['#0000ff']}
+        />
+      }
+      onEndReached={handleNotificationsEndReached}
+      onEndReachedThreshold={0.35}
+      onScroll={handleNotificationsScroll}
+      scrollEventThrottle={16}
+    />
+  );
+
+  const notificationsBody = (
+    <>
       <NotificationsHeader
         title={copy.headerTitle}
         onMarkAllRead={handleMarkAllSeen}
@@ -499,6 +687,17 @@ function NotificationsScreen() {
           </ScrollView>
         )}
       </View>
+    </>
+  );
+
+  return (
+    <SafeAreaView
+      style={{ backgroundColor: '#f4f7fa' }}
+      className="flex-1"
+      edges={Platform.OS === 'ios' ? ['top', 'left', 'right'] : ['top']}
+    >
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
+      {Platform.OS === 'ios' ? iosNotificationsListElement : notificationsBody}
 
       <NotificationsFilterSheet
         visible={filterSheetVisible}
