@@ -1,5 +1,5 @@
 // Description: Ad Details Screen - Shows detailed information about an ad campaign
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Image,
   ScrollView,
@@ -31,6 +31,8 @@ import {
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getAdvertisingCopy } from '../../application/i18n/advertisingCopy';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import type { AdDailyStats } from '../../domain/types/ads.types';
+import { createAdsRepository } from '../../infrastructure/repositories/ApiAdsRepository';
 
 type AdDetailsNav = NativeStackNavigationProp<RootStackParamList>;
 type AdDetailsRoute = RouteProp<RootStackParamList, typeof ROUTES.AD_DETAILS>;
@@ -97,12 +99,96 @@ function isVideoMedia(url?: string) {
   return /\.(mp4|mov|m4v|avi|webm)(\?|$)/i.test(url ?? '');
 }
 
+function DailyStatsChart({ dailyStats, copy }: { dailyStats: AdDailyStats[]; copy: Record<string, string> }) {
+  const maxViews = Math.max(...dailyStats.map(d => d.views), 1);
+
+  return (
+    <View className="mb-6 rounded-xl bg-slate-50 p-4">
+      <Text className="mb-4 text-heading text-[#1a1c1e]">{copy.monthlyViewsClicks}</Text>
+      <Text className="mb-4 text-caption-secondary text-[#64748b]">{copy.last30Days}</Text>
+
+      {dailyStats.length === 0 ? (
+        <View className="items-center py-8">
+          <BarChart3 size={32} color="#94a3b8" />
+          <Text className="mt-2 text-sm font-semibold text-[#64748b]">{copy.noChartData}</Text>
+        </View>
+      ) : (
+        dailyStats.map((day, index) => (
+          <View key={day.date} className="mb-4">
+            <Text className="mb-2 text-xs font-semibold text-[#64748b]">{day.date}</Text>
+
+            {/* Views bar */}
+            <View className="mb-2 flex-row items-center">
+              <Text className="w-16 text-xs text-[#64748b]">{copy.viewsLabel}</Text>
+              <View className="flex-1 rounded bg-slate-200">
+                <View
+                  className="rounded bg-blue-500"
+                  style={{ width: `${(day.views / maxViews) * 100}%` }}
+                />
+              </View>
+              <Text className="ml-2 w-12 text-right text-xs text-[#1a1c1e]">{day.views}</Text>
+            </View>
+
+            {/* Clicks bar */}
+            <View className="mb-2 flex-row items-center">
+              <Text className="w-16 text-xs text-[#64748b]">{copy.clicksLabel}</Text>
+              <View className="flex-1 rounded bg-slate-200">
+                <View
+                  className="rounded bg-green-500"
+                  style={{ width: `${(day.clicks / maxViews) * 100}%` }}
+                />
+              </View>
+              <Text className="ml-2 w-12 text-right text-xs text-[#1a1c1e]">{day.clicks}</Text>
+            </View>
+
+            {/* Spent bar */}
+            <View className="flex-row items-center">
+              <Text className="w-16 text-xs text-[#64748b]">{copy.spentLabel}</Text>
+              <View className="flex-1 rounded bg-slate-200">
+                <View
+                  className="rounded bg-orange-500"
+                  style={{ width: `${(day.spent / maxViews) * 100}%` }}
+                />
+              </View>
+              <Text className="ml-2 w-12 text-right text-xs text-[#1a1c1e]">{day.spent}</Text>
+            </View>
+
+            {index < dailyStats.length - 1 && <View className="mt-4 h-px bg-slate-200" />}
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
 function AdDetailsScreen() {
   const navigation = useNavigation<AdDetailsNav>();
   const route = useRoute<AdDetailsRoute>();
   const ad = route.params?.ad;
   const [language] = useState<AppLanguage>(languageStorage.getLanguage());
   const copy = getAdvertisingCopy(language);
+  const [dailyStats, setDailyStats] = useState<AdDailyStats[]>([]);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
+
+  const repository = createAdsRepository();
+
+  useEffect(() => {
+    const fetchDailyStats = async () => {
+      if (!ad?.id) return;
+      setIsLoadingStats(true);
+      try {
+        const stats = await repository.getAdDailyStats(ad.id);
+        setDailyStats(stats);
+      } catch (error) {
+        console.error('Failed to fetch daily stats:', error);
+        setDailyStats([]);
+      } finally {
+        setIsLoadingStats(false);
+      }
+    };
+
+    fetchDailyStats();
+  }, [ad?.id, repository]);
 
   if (!ad) {
     return (
@@ -206,8 +292,16 @@ function AdDetailsScreen() {
                 <Text className="mt-2 text-2xl font-bold text-[#1a1c1e]">{formatNumber(ad.spent)}đ</Text>
                 <Text className="mt-1 text-caption-secondary text-[#64748b]">{copy.spent}</Text>
               </View>
+              <View className="items-center">
+                <BarChart3 size={24} color="#64748b" />
+                <Text className="mt-2 text-2xl font-bold text-[#1a1c1e]">{formatNumber(ad.posted)}</Text>
+                <Text className="mt-1 text-caption-secondary text-[#64748b]">{copy.postedLabel || 'Đã đăng'}</Text>
+              </View>
             </View>
           </View>
+
+          {/* Monthly Views/Clicks Chart */}
+          <DailyStatsChart dailyStats={dailyStats} copy={copy} />
 
           {/* Details */}
           <View className="space-y-4">

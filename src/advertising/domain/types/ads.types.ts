@@ -58,3 +58,10 @@ export interface CreateAdResult {
   adId: number;
   ad: AdItem;
 }
+
+export interface AdDailyStats {
+  date: string; // Format: YYYY-MM-DD
+  views: number;
+  clicks: number;
+  spent: number;
+}

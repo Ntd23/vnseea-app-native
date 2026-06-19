@@ -113,13 +113,11 @@ function AdCampaignCard({
         <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1">
             <Text className="text-title-primary text-[#1a1c1e]" numberOfLines={2}>
-              {title}
+              {ad.name || copy.advertisingTitle}
             </Text>
-            {!!ad.description && (
-              <Text className="mt-1 text-sm text-[#64748b]" numberOfLines={2}>
-                {ad.description}
-              </Text>
-            )}
+            <Text className="mt-1 text-sm text-[#64748b]" numberOfLines={2}>
+              {ad.headline || ''}
+            </Text>
           </View>
 
           <View className="rounded-full px-3 py-1" style={{ backgroundColor: status.bg }}>

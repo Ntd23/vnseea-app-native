@@ -90,6 +90,7 @@ export const ROUTES = {
   LIVE_ROOM: 'LiveRoom',
   GO_LIVE: 'GoLive',
   POKE: 'Poke',
+  FORUM: 'Forum',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];
