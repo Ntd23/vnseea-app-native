@@ -1,4 +1,4 @@
-﻿// PostCards.tsx â€” Shared post card components used by FeedScreen, ProfileScreen,
+// PostCards.tsx â€” Shared post card components used by FeedScreen, ProfileScreen,
 // ExploreScreen, PageDetailScreen, etc.
 // Extracted from FeedScreen.tsx for easier maintenance.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1043,6 +1043,45 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const isActive = controlledIsActive ?? trackedIsActive;
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [muted, setMuted] = useState(true);
+  const [aspectRatio, setAspectRatio] = useState(16 / 9); // Default landscape
+  const currentTimeRef = useRef<number>(0);
+
+  // Measure thumbnail size on mount to avoid layout jumps
+  useEffect(() => {
+    if (post.thumbnailUrl) {
+      console.log(`[HomeVideoPostCard] Fetching size for thumbnail: ${post.thumbnailUrl}`);
+      Image.getSize(
+        post.thumbnailUrl,
+        (width, height) => {
+          if (width > 0 && height > 0) {
+            const ratio = width / height;
+            // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
+            const clampedRatio = Math.max(0.75, Math.min(16 / 9, ratio));
+            console.log(`[HomeVideoPostCard] Thumbnail loaded: ${width}x${height}, ratio: ${ratio}, clamped: ${clampedRatio}`);
+            setAspectRatio(clampedRatio);
+          }
+        },
+        (err) => {
+          console.warn('[HomeVideoPostCard] getSize failed for thumbnail:', err);
+        }
+      );
+    }
+  }, [post.thumbnailUrl]);
+
+  // Refine aspect ratio when actual video loads
+  const handleVideoLoad = useCallback((data: any) => {
+    console.log('[HomeVideoPostCard] Video onLoad triggered, data:', data);
+    const size = data?.naturalSize ?? data;
+    if (size) {
+      const { width, height } = size;
+      if (width > 0 && height > 0) {
+        const ratio = width / height;
+        const clampedRatio = Math.max(0.75, Math.min(16 / 9, ratio));
+        console.log(`[HomeVideoPostCard] Video size loaded: ${width}x${height}, ratio: ${ratio}, clamped: ${clampedRatio}`);
+        setAspectRatio(clampedRatio);
+      }
+    }
+  }, []);
 
   // Profile tap handler
   const handleProfilePress = useCallback(() => {
@@ -1052,6 +1091,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [navigateToProfile, post.publisher.id]);
 
   const handleVideoPress = useCallback(() => {
+    // Immediately mute/pause the video on home feed before navigating
+    setMuted(true);
+    setManuallyPaused(true);
+
     // `source: 'home'` tells ReelsScreen where the user came from so
     // the back button can return to this exact list (instead of
     // jumping to the Feed tab). HomeVideoPostCard is also reused
@@ -1063,6 +1106,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       initialVideoId: post.id,
       post,
       source: 'home',
+      seekTime: currentTimeRef.current,
     });
   }, [navigation, post]);
 
@@ -1071,9 +1115,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // Keep VideoPlayer mounted while active (even when paused) â€” avoids the
   // expensive ExoPlayer init/teardown cycle that causes frame drops on scroll.
   const shouldMountVideo = isActive;
+  // Auto-unmute when video becomes active, mute when scrolled away
   useEffect(() => {
-    if (!isActive) {
+    if (isActive) {
+      setMuted(false);
+    } else {
       setManuallyPaused(false);
+      setMuted(true);
     }
   }, [isActive]);
 
@@ -1125,11 +1173,11 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           <Text className="text-body-primary">{post.caption}</Text>
         ) : null}
       </FeedCardContent>
-      <FeedMediaFrame className="h-56">
+      <FeedMediaFrame style={{ aspectRatio }}>
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={handleVideoPress}
-          className="h-full w-full"
+          style={{ width: '100%', height: '100%' }}
         >
           {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
           {shouldMountVideo ? (
@@ -1147,6 +1195,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 playWhenInactive={false}
                 useTextureView={false}
                 bufferConfig={VIDEO_BUFFER_CONFIG}
+                onLoad={handleVideoLoad}
+                onProgress={data => {
+                  currentTimeRef.current = data.currentTime;
+                }}
                 onError={error => {
                   console.warn(
                     '[HomeVideoPostCard] video error',
@@ -1334,7 +1386,50 @@ const PostHeader = React.memo(function PostHeader({
   );
 });
 
-// â”€â”€ TextPostCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const SinglePostImage = React.memo(function SinglePostImage({
+  uri,
+  onPress,
+}: {
+  uri: string;
+  onPress: () => void;
+}) {
+  const [aspectRatio, setAspectRatio] = useState(4 / 3);
+
+  useEffect(() => {
+    if (!uri) return;
+    Image.getSize(
+      uri,
+      (width, height) => {
+        if (width > 0 && height > 0) {
+          const ratio = width / height;
+          // Clamp aspect ratio to resemble Facebook:
+          // Facebook caps portrait to 4:5 (0.8) and landscape to 1.91:1
+          const clampedRatio = Math.max(0.75, Math.min(1.91, ratio));
+          setAspectRatio(clampedRatio);
+        }
+      },
+      (err) => {
+        console.warn('[SinglePostImage] getSize failed', err);
+      },
+    );
+  }, [uri]);
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.95} delayPressIn={0}>
+      <FeedMediaImage
+        uri={uri}
+        style={{
+          width: '100%',
+          aspectRatio,
+          backgroundColor: '#F1F5F9',
+        }}
+        resizeMode="cover"
+      />
+    </TouchableOpacity>
+  );
+});
+
+// ── TextPostCard ──────────────────────────────────────────────────────
 export const TextPostCard = React.memo(function TextPostCard({
   post,
   copy: providedCopy,
@@ -1471,7 +1566,14 @@ export const TextPostCard = React.memo(function TextPostCard({
           </Text>
         ) : null}
       </FeedCardContent>
-      {totalPhotos > 0 ? (
+      {totalPhotos === 1 ? (
+        <FeedMediaFrame className="bg-transparent">
+          <SinglePostImage
+            uri={post.photos[0]}
+            onPress={() => onPhotoPress(post, 0)}
+          />
+        </FeedMediaFrame>
+      ) : totalPhotos > 1 ? (
         <FeedMediaFrame
           className="flex-row flex-wrap bg-transparent"
           onLayout={handlePhotoGridLayout}
