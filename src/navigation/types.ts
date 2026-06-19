@@ -24,7 +24,10 @@ export type MainTabParamList = {
         source?: ReelSource;
       }
     | undefined;
+  [ROUTES.MARKETPLACE]: undefined;
+  [ROUTES.NEARBY_USERS]: undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
+  [ROUTES.PROFILE]: { userId?: string } | undefined;
   [ROUTES.SETTINGS]:
     | {
         initialPanel?: SettingsPanelRouteParam;

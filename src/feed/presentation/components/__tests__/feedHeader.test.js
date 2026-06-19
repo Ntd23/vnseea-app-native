@@ -190,6 +190,21 @@ describe('FeedHeader platform chrome', () => {
     const defaultSource = read('src/feed/presentation/components/FeedHeader.tsx');
     const iosSource = read('src/feed/presentation/components/FeedHeader.ios.tsx');
 
+    expect(defaultSource).toContain('ROUTES.PROFILE');
+    expect(defaultSource).toContain('ROUTES.NOTIFICATIONS');
+    expect(defaultSource).toContain('useNotificationBadgeViewModel');
+
+    expect(iosSource).toContain('Menu');
+    expect(iosSource).toContain('accessibilityLabel="Menu"');
+    expect(iosSource).not.toContain('Bell');
+    expect(iosSource).not.toContain('CircleUser');
+    expect(iosSource).not.toContain('ROUTES.PROFILE');
+    expect(iosSource).not.toContain('ROUTES.NOTIFICATIONS');
+    expect(iosSource).not.toContain('useCurrentUserViewModel');
+    expect(iosSource).not.toContain('useNotificationBadgeViewModel');
+    expect(iosSource).not.toContain('transitionAnim');
+    expect(iosSource).not.toContain('avatarImage');
+
     for (const source of [defaultSource, iosSource]) {
       expect(source).toContain('CreateActionSheet');
       expect(source).toContain('ROUTES.SEARCH');

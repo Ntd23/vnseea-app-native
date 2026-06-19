@@ -1,6 +1,7 @@
 import type { NativeBottomTabNavigationOptions } from '@react-navigation/bottom-tabs/unstable';
 import { ROUTES } from './constants/routes';
 import type { MainTabRouteName } from './types';
+import type { AppLanguage } from '../shared-kernel/infrastructure/storage/languageStorage';
 
 type RouteWithName = {
   name: MainTabRouteName;
@@ -8,26 +9,35 @@ type RouteWithName = {
 
 const IOS_NATIVE_TAB_ROUTE_NAMES = new Set<MainTabRouteName>([
   ROUTES.FEED,
-  ROUTES.EXPLORE,
   ROUTES.REELS,
+  ROUTES.MARKETPLACE,
   ROUTES.NOTIFICATIONS,
-  ROUTES.SETTINGS,
+  ROUTES.PROFILE,
 ]);
 
-const TAB_LABELS: Record<MainTabRouteName, string> = {
-  [ROUTES.FEED]: 'Home',
-  [ROUTES.EXPLORE]: 'Explore',
-  [ROUTES.REELS]: 'Video',
-  [ROUTES.NOTIFICATIONS]: 'Notifications',
-  [ROUTES.SETTINGS]: 'Settings',
+const TAB_LABELS: Record<AppLanguage, Partial<Record<MainTabRouteName, string>>> = {
+  vi: {
+    [ROUTES.FEED]: 'Trang chủ',
+    [ROUTES.REELS]: 'Video',
+    [ROUTES.MARKETPLACE]: 'Mua sắm',
+    [ROUTES.NOTIFICATIONS]: 'Thông báo',
+    [ROUTES.PROFILE]: 'Cá nhân',
+  },
+  en: {
+    [ROUTES.FEED]: 'Home',
+    [ROUTES.REELS]: 'Video',
+    [ROUTES.MARKETPLACE]: 'Shop',
+    [ROUTES.NOTIFICATIONS]: 'Notifications',
+    [ROUTES.PROFILE]: 'Profile',
+  },
 };
 
-const IOS_SF_SYMBOLS: Record<MainTabRouteName, string> = {
+const IOS_SF_SYMBOLS: Partial<Record<MainTabRouteName, string>> = {
   [ROUTES.FEED]: 'house.fill',
-  [ROUTES.EXPLORE]: 'number',
   [ROUTES.REELS]: 'play.rectangle.fill',
+  [ROUTES.MARKETPLACE]: 'cart.fill',
   [ROUTES.NOTIFICATIONS]: 'bell.fill',
-  [ROUTES.SETTINGS]: 'gearshape.fill',
+  [ROUTES.PROFILE]: 'person.crop.circle.fill',
 };
 
 export function getCustomTabRoutes<T extends RouteWithName>(routes: T[]): T[] {
@@ -49,12 +59,14 @@ export function formatNotificationTabBadge(count: number) {
 export function createIosNativeTabOptions(
   routeName: MainTabRouteName,
   notificationCount = 0,
+  language: AppLanguage = 'vi',
 ): NativeBottomTabNavigationOptions {
   const options: NativeBottomTabNavigationOptions = {
-    tabBarLabel: TAB_LABELS[routeName],
+    tabBarLabel:
+      TAB_LABELS[language][routeName] ?? TAB_LABELS.en[routeName] ?? routeName,
     tabBarIcon: {
       type: 'sfSymbol',
-      name: IOS_SF_SYMBOLS[routeName],
+      name: IOS_SF_SYMBOLS[routeName] ?? 'circle.fill',
     } as NativeBottomTabNavigationOptions['tabBarIcon'],
   };
 

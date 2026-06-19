@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  Animated,
   Image,
   StyleSheet,
   Text,
@@ -11,7 +10,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Bell, CircleUser, MessageCircle, Plus, Search } from 'lucide-react-native';
+import { Menu, MessageCircle, Plus, Search } from 'lucide-react-native';
 
 import { ROUTES } from '../../../navigation/constants/routes';
 import type {
@@ -20,8 +19,6 @@ import type {
 } from '../../../navigation/types';
 import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
-import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
-import { useNotificationBadgeViewModel } from '../../../notifications';
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
 
@@ -66,33 +63,17 @@ function HeaderGlassActionButton({
 
 export function FeedHeader() {
   const navigation = useNavigation<FeedHeaderNav>();
-  const { messageCount, notificationCount } = useUnreadBadgeCounts();
+  const { messageCount } = useUnreadBadgeCounts();
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
-  const { user } = useCurrentUserViewModel();
-  useNotificationBadgeViewModel();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [buttonRotation, setButtonRotation] = useState('0deg');
-
-  const avatarUrl = user?.avatar;
-  const transitionAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (avatarUrl) {
-      const timer = setTimeout(() => {
-        Animated.timing(transitionAnim, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }).start();
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [avatarUrl, transitionAnim]);
 
   const handleOpenSheet = useCallback(() => {
     setSheetVisible(true);
     setButtonRotation('45deg');
   }, []);
+
+  const handleOpenFutureDrawer = useCallback(() => {}, []);
 
   const handleCloseSheet = useCallback(() => {
     setSheetVisible(false);
@@ -125,6 +106,13 @@ export function FeedHeader() {
           fallbackColor="rgba(255, 255, 255, 0.72)"
           style={styles.headerGlassDock}
         >
+          <HeaderGlassActionButton
+            accessibilityLabel="Menu"
+            onPress={handleOpenFutureDrawer}
+          >
+            <Menu size={19} color="#002fff" strokeWidth={2.55} />
+          </HeaderGlassActionButton>
+
           <View style={styles.brandRow}>
             {logoUrl && imageErrorCount === 0 ? (
               <View style={styles.logoPill}>
@@ -168,76 +156,6 @@ export function FeedHeader() {
               }
             >
               <MessageCircle size={19} color="#002fff" strokeWidth={2.55} />
-            </HeaderGlassActionButton>
-            <HeaderGlassActionButton
-              accessibilityLabel="Notifications"
-              onPress={() =>
-                navigation.navigate(ROUTES.MAIN_TABS, {
-                  screen: ROUTES.NOTIFICATIONS,
-                })
-              }
-              badge={
-                notificationCount > 0 ? (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>
-                      {notificationCount > 99 ? '99+' : notificationCount}
-                    </Text>
-                  </View>
-                ) : null
-              }
-            >
-              <Bell size={19} color="#002fff" strokeWidth={2.55} />
-            </HeaderGlassActionButton>
-            <HeaderGlassActionButton
-              accessibilityLabel="Profile"
-              onPress={() => navigation.navigate(ROUTES.PROFILE)}
-            >
-              <View style={styles.profileIconContainer}>
-                <Animated.View
-                  style={[
-                    styles.profileIconLayer,
-                    {
-                      opacity: transitionAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 0],
-                      }),
-                      transform: [
-                        {
-                          scale: transitionAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [1, 0.7],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                >
-                  <CircleUser size={19} color="#002fff" strokeWidth={2.55} />
-                </Animated.View>
-                {avatarUrl ? (
-                  <Animated.View
-                    style={[
-                      styles.profileIconLayer,
-                      {
-                        opacity: transitionAnim,
-                        transform: [
-                          {
-                            scale: transitionAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0.7, 1],
-                            }),
-                          },
-                        ],
-                      },
-                    ]}
-                  >
-                    <Image
-                      source={{ uri: avatarUrl }}
-                      style={styles.avatarImage}
-                    />
-                  </Animated.View>
-                ) : null}
-              </View>
             </HeaderGlassActionButton>
           </View>
         </AdaptiveGlassSurface>
@@ -346,25 +264,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     color: '#ffffff',
-  },
-  profileIconContainer: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  profileIconLayer: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    height: '100%',
-  },
-  avatarImage: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
   },
 });
 

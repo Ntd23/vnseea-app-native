@@ -9,11 +9,12 @@ import { createNativeBottomTabNavigator } from '@react-navigation/bottom-tabs/un
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from '@react-native-community/blur';
 import { ROUTES } from './constants/routes';
-import { TAB_ROUTES } from './routeRegistry';
+import { IOS_NATIVE_TAB_ROUTES, TAB_ROUTES } from './routeRegistry';
 import type { MainTabParamList } from './types';
 import { useNotificationBadgeViewModel } from '../notifications';
 import { tabBarVisibility } from './tabBarVisibility';
 import { useNativeTabMinimizeBehavior } from './nativeTabMinimizeBehavior';
+import { useAppLanguage } from '../shared-kernel/application/hooks/useAppLanguage';
 import {
   createIosNativeTabOptions,
   getCustomTabRoutes,
@@ -216,6 +217,7 @@ function NativeIosTabNavigator() {
   const { notificationCount: notificationBadgeCount } =
     useNotificationBadgeViewModel();
   const nativeTabMinimizeBehavior = useNativeTabMinimizeBehavior();
+  const language = useAppLanguage();
 
   return (
     <NativeTab.Navigator
@@ -228,12 +230,16 @@ function NativeIosTabNavigator() {
         overrideScrollViewContentInsetAdjustmentBehavior: false,
       }}
     >
-      {getIosNativeTabRoutes(TAB_ROUTES).map(({ name, component }) => (
+      {getIosNativeTabRoutes(IOS_NATIVE_TAB_ROUTES).map(({ name, component }) => (
         <NativeTab.Screen
           key={name}
           name={name}
           component={component}
-          options={createIosNativeTabOptions(name, notificationBadgeCount)}
+          options={createIosNativeTabOptions(
+            name,
+            notificationBadgeCount,
+            language,
+          )}
         />
       ))}
     </NativeTab.Navigator>
