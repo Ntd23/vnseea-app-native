@@ -19,4 +19,15 @@ describe('PhotoViewerModal comment transition', () => {
       /handleCommentPress[\s\S]*onClose\(\)[\s\S]*setTimeout[\s\S]*onCommentTap\(postId\)/,
     );
   });
+
+  test('sizes photos within the visible viewport instead of behind the bottom panel', () => {
+    expect(photoViewerSource).toContain('topBarHeight');
+    expect(photoViewerSource).toContain('bottomPanelHeight');
+    expect(photoViewerSource).toContain('onLayout={handleTopBarLayout}');
+    expect(photoViewerSource).toContain('onLayout={handleBottomPanelLayout}');
+    expect(photoViewerSource).toContain('PHOTO_VIEWER_IMAGE_HEIGHT_RATIO');
+    expect(photoViewerSource).toContain('photoViewportHeight');
+    expect(photoViewerSource).toContain('height={photoViewportHeight}');
+    expect(photoViewerSource).not.toContain('height={SCREEN_H}');
+  });
 });

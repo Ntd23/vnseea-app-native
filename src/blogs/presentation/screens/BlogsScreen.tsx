@@ -262,7 +262,7 @@ function BlogsScreen() {
 
   const openFilter = useCallback(() => {
     navigation.navigate(ROUTES.BLOG_FILTER_CATEGORY, {
-      currentCategory: vm.selectedCategory,
+      currentCategory: vm.selectedCategory || undefined,
       searchQuery: vm.searchQuery || undefined,
       sortBy: vm.sortBy,
       myPostsOnly: vm.myPostsOnly,

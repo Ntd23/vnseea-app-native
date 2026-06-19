@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Dimensions,
   Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -12,7 +13,9 @@ import {
   View,
   type ImageProps,
   type ImageStyle,
+  type LayoutChangeEvent,
   type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
 import {
@@ -52,6 +55,22 @@ import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
+import {
+  FeedCardContent,
+  FeedCardSurface,
+  FeedGlassActionBar,
+  FeedGlassActionButton,
+  FeedMediaFrame,
+  FeedReactionPickerPointer,
+  FeedReactionPickerSurface,
+} from './FeedCardChrome';
+import { getPhotoGridItemLayout } from './photoGridLayout';
+
+export {
+  FEED_CARD_CLASS,
+  FEED_CARD_PADDING_CLASS,
+  FEED_MEDIA_CLASS,
+} from './FeedCardChrome';
 
 // â”€â”€ Reaction lookup tables â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const REACTION_EMOJI: Record<ReactionType, string> = {
@@ -95,47 +114,13 @@ const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const IMAGE_PREFETCH_LOOKAHEAD = 5;
 const MAX_IMAGE_PREFETCH_URLS = 8;
-const FEED_SCREEN_WIDTH = Dimensions.get('window').width;
-const FEED_CARD_WIDTH = FEED_SCREEN_WIDTH;
-const FEED_PHOTO_GRID_WIDTH = FEED_CARD_WIDTH - 8;
-export const FEED_CARD_CLASS = 'mb-2 border-y border-[#dddfe2] bg-white';
-export const FEED_CARD_PADDING_CLASS = 'px-3 py-3';
-export const FEED_MEDIA_CLASS = 'w-full bg-black';
-
-// â”€â”€ Photo grid layouts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// â”€â”€ Pre-computed photo grid layouts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Static layout objects for the Facebook-style photo grid. Computed once at
-// module level so TextPostCard never allocates new style objects per-render.
-const PHOTO_GRID_LAYOUTS = {
-  single: { width: FEED_PHOTO_GRID_WIDTH, height: FEED_PHOTO_GRID_WIDTH / 1.4 },
-  duoItem: {
-    width: FEED_PHOTO_GRID_WIDTH / 2,
-    height: FEED_PHOTO_GRID_WIDTH / 2,
-  },
-  triHero: {
-    width: FEED_PHOTO_GRID_WIDTH,
-    height: FEED_PHOTO_GRID_WIDTH / 1.6,
-  },
-  triItem: {
-    width: FEED_PHOTO_GRID_WIDTH / 2,
-    height: FEED_PHOTO_GRID_WIDTH / 2,
-  },
-  quadItem: {
-    width: FEED_PHOTO_GRID_WIDTH / 2,
-    height: FEED_PHOTO_GRID_WIDTH / 2,
-  },
-};
+const DEFAULT_PHOTO_GRID_WIDTH = Dimensions.get('window').width - 8;
 const PHOTO_GRID_ITEM_PADDING = { padding: 2 };
-
-function getPhotoLayout(index: number, total: number) {
-  if (total === 1) return PHOTO_GRID_LAYOUTS.single;
-  if (total === 2) return PHOTO_GRID_LAYOUTS.duoItem;
-  if (total === 3)
-    return index === 0
-      ? PHOTO_GRID_LAYOUTS.triHero
-      : PHOTO_GRID_LAYOUTS.triItem;
-  return PHOTO_GRID_LAYOUTS.quadItem;
-}
+const PHOTO_GRID_TILE_STYLE: ViewStyle = { flex: 1, overflow: 'hidden' };
+const IOS_PHOTO_GRID_TILE_STYLE: ViewStyle | undefined =
+  Platform.OS === 'ios' ? { borderRadius: 12 } : undefined;
+const IOS_PHOTO_GRID_FRAME_STYLE: ViewStyle | undefined =
+  Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 
 // â”€â”€ FeedCopy type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export type FeedCopy = {
@@ -747,8 +732,8 @@ const VideoPostActions = React.memo(function VideoPostActions({
   // the v4 minimal fix we just open the picker; the parent already
   // drives the drag highlight via the same `onLikeLongPress` prop.
   return (
-    <View className="flex-row items-center justify-between border-t border-slate-200 pt-4">
-      <TouchableOpacity
+    <FeedGlassActionBar>
+      <FeedGlassActionButton
         ref={likeButtonRef as any}
         accessibilityRole="button"
         accessibilityLabel="like"
@@ -757,7 +742,6 @@ const VideoPostActions = React.memo(function VideoPostActions({
         onLongPress={onLikeLongPress}
         delayLongPress={400}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        className="flex-row items-center"
       >
         {myReaction ? (
           <Image
@@ -778,10 +762,9 @@ const VideoPostActions = React.memo(function VideoPostActions({
         >
           {label}
         </Text>
-      </TouchableOpacity>
+      </FeedGlassActionButton>
 
-      <TouchableOpacity
-        className="flex-row items-center"
+      <FeedGlassActionButton
         activeOpacity={0.75}
         onPress={onCommentTap}
       >
@@ -789,10 +772,9 @@ const VideoPostActions = React.memo(function VideoPostActions({
         <Text style={{ marginLeft: 6, color: '#64748B', fontSize: 14 }}>
           {copy.comment}
         </Text>
-      </TouchableOpacity>
+      </FeedGlassActionButton>
 
-      <TouchableOpacity
-        className="flex-row items-center"
+      <FeedGlassActionButton
         activeOpacity={0.75}
         onPress={() => onShare?.(post)}
       >
@@ -800,8 +782,8 @@ const VideoPostActions = React.memo(function VideoPostActions({
         <Text style={{ marginLeft: 6, color: '#64748B', fontSize: 14 }}>
           {copy.share}
         </Text>
-      </TouchableOpacity>
-    </View>
+      </FeedGlassActionButton>
+    </FeedGlassActionBar>
   );
 });
 
@@ -823,10 +805,10 @@ export function ReactionPickerOverlay({
   gestureActive: any;
   hasDragged?: any;
 }) {
-  if (!anchor) return null;
-
   const localDragged = useSharedValue(false);
   const gDragged = hasDragged ?? localDragged;
+
+  if (!anchor) return null;
 
   const screenWidth = Dimensions.get('window').width;
   const left = Math.max(
@@ -855,24 +837,20 @@ export function ReactionPickerOverlay({
           backgroundColor: 'transparent',
         }}
       />
-      <View
+      <FeedReactionPickerPointer
+        pointerEvents="none"
         style={{
           position: 'absolute',
           left: arrowLeft,
           top: top + PICKER_HEIGHT - 8,
           width: 16,
           height: 16,
-          backgroundColor: '#FFFFFF',
           transform: [{ rotate: '45deg' }],
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.18,
-          shadowRadius: 10,
           elevation: 12,
           zIndex: 99,
         }}
       />
-      <View
+      <FeedReactionPickerSurface
         style={{
           position: 'absolute',
           left,
@@ -883,12 +861,6 @@ export function ReactionPickerOverlay({
           alignItems: 'center',
           justifyContent: 'space-between',
           paddingHorizontal: 8,
-          backgroundColor: '#fff',
-          borderRadius: 26,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.18,
-          shadowRadius: 10,
           elevation: 12,
           zIndex: 100,
         }}
@@ -909,7 +881,7 @@ export function ReactionPickerOverlay({
             onDismiss={onDismiss}
           />
         ))}
-      </View>
+      </FeedReactionPickerSurface>
     </>
   );
 }
@@ -1133,8 +1105,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [onOpenPicker, post.id]);
 
   return (
-    <View className={FEED_CARD_CLASS}>
-      <View className={FEED_CARD_PADDING_CLASS}>
+    <FeedCardSurface>
+      <FeedCardContent>
         <PostHeader
           avatar={post.publisher.avatarUrl}
           name={post.publisher.name}
@@ -1152,99 +1124,101 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         {post.caption ? (
           <Text className="text-body-primary">{post.caption}</Text>
         ) : null}
-      </View>
-      <TouchableOpacity
-        activeOpacity={0.9}
-        onPress={handleVideoPress}
-        className={`h-56 ${FEED_MEDIA_CLASS}`}
-      >
-        {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
-        {shouldMountVideo ? (
-          <View pointerEvents="none" style={{ width: '100%', height: '100%' }}>
-            <VideoPlayer
-              source={videoSource}
+      </FeedCardContent>
+      <FeedMediaFrame className="h-56">
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={handleVideoPress}
+          className="h-full w-full"
+        >
+          {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
+          {shouldMountVideo ? (
+            <View pointerEvents="none" style={{ width: '100%', height: '100%' }}>
+              <VideoPlayer
+                source={videoSource}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="cover"
+                paused={!playing}
+                controls={false}
+                muted={muted}
+                repeat
+                ignoreSilentSwitch="ignore"
+                playInBackground={false}
+                playWhenInactive={false}
+                useTextureView={false}
+                bufferConfig={VIDEO_BUFFER_CONFIG}
+                onError={error => {
+                  console.warn(
+                    '[HomeVideoPostCard] video error',
+                    post.id,
+                    post.videoUrl,
+                    error,
+                  );
+                }}
+              />
+            </View>
+          ) : post.thumbnailUrl ? (
+            <FeedMediaImage
+              uri={post.thumbnailUrl}
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"
-              paused={!playing}
-              controls={false}
-              muted={muted}
-              repeat
-              ignoreSilentSwitch="ignore"
-              playInBackground={false}
-              playWhenInactive={false}
-              useTextureView={false}
-              bufferConfig={VIDEO_BUFFER_CONFIG}
-              onError={error => {
-                console.warn(
-                  '[HomeVideoPostCard] video error',
-                  post.id,
-                  post.videoUrl,
-                  error,
-                );
-              }}
             />
-          </View>
-        ) : post.thumbnailUrl ? (
-          <FeedMediaImage
-            uri={post.thumbnailUrl}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-          />
-        ) : null}
-        {/* Big play button overlay while paused */}
-        {!playing ? (
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              bottom: 0,
-              left: 0,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
+          ) : null}
+          {/* Big play button overlay while paused */}
+          {!playing ? (
             <View
+              pointerEvents="none"
               style={{
-                width: 64,
-                height: 64,
-                borderRadius: 32,
-                backgroundColor: 'rgba(0,0,0,0.55)',
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Text style={{ color: '#fff', fontSize: 26, marginLeft: 4 }}>
-                {'\u25B6'}
-              </Text>
+              <View
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 32,
+                  backgroundColor: 'rgba(0,0,0,0.55)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 26, marginLeft: 4 }}>
+                  {'\u25B6'}
+                </Text>
+              </View>
             </View>
-          </View>
-        ) : null}
-        {/* Mute toggle â€” top-right when playing */}
-        {playing ? (
-          <TouchableOpacity
-            onPress={() => setMuted(m => !m)}
-            activeOpacity={0.85}
-            style={{
-              position: 'absolute',
-              top: 10,
-              right: 10,
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              backgroundColor: 'rgba(0,0,0,0.45)',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: 16 }}>
-              {muted ? '\uD83D\uDD07' : '\uD83D\uDD0A'}
-            </Text>
-          </TouchableOpacity>
-        ) : null}
-      </TouchableOpacity>
-      <View className={FEED_CARD_PADDING_CLASS}>
+          ) : null}
+          {/* Mute toggle â€” top-right when playing */}
+          {playing ? (
+            <TouchableOpacity
+              onPress={() => setMuted(m => !m)}
+              activeOpacity={0.85}
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                backgroundColor: 'rgba(0,0,0,0.45)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 16 }}>
+                {muted ? '\uD83D\uDD07' : '\uD83D\uDD0A'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </TouchableOpacity>
+      </FeedMediaFrame>
+      <FeedCardContent>
         <VideoReactionSummary
           likeCount={post.likeCount}
           commentCount={post.commentCount}
@@ -1268,8 +1242,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           gestureStartY={gStartY}
           hasDragged={gDragged}
         />
-      </View>
-    </View>
+      </FeedCardContent>
+    </FeedCardSurface>
   );
 });
 
@@ -1453,10 +1427,23 @@ export const TextPostCard = React.memo(function TextPostCard({
   const totalPhotos = post.photos.length;
   const displayedPhotos = post.photos.slice(0, 4);
   const hasMorePhotos = totalPhotos > 4;
+  const [photoGridWidth, setPhotoGridWidth] = useState(
+    DEFAULT_PHOTO_GRID_WIDTH,
+  );
+  const handlePhotoGridLayout = useCallback((event: LayoutChangeEvent) => {
+    if (Platform.OS !== 'ios') return;
+
+    const nextWidth = event.nativeEvent.layout.width;
+    if (nextWidth <= 0) return;
+
+    setPhotoGridWidth(previousWidth =>
+      Math.abs(previousWidth - nextWidth) < 0.5 ? previousWidth : nextWidth,
+    );
+  }, []);
 
   return (
-    <View className={FEED_CARD_CLASS}>
-      <View className={FEED_CARD_PADDING_CLASS}>
+    <FeedCardSurface>
+      <FeedCardContent>
         <PostHeader
           avatar={post.publisher.avatarUrl}
           name={post.publisher.name}
@@ -1483,12 +1470,21 @@ export const TextPostCard = React.memo(function TextPostCard({
             {post.feeling.emoji ?? ''}
           </Text>
         ) : null}
-      </View>
+      </FeedCardContent>
       {totalPhotos > 0 ? (
-        <View className="flex-row flex-wrap px-1">
+        <FeedMediaFrame
+          className="flex-row flex-wrap bg-transparent"
+          onLayout={handlePhotoGridLayout}
+          style={IOS_PHOTO_GRID_FRAME_STYLE}
+        >
           {displayedPhotos.map((url, index) => {
             // Show "+N" overlay on the 4th photo when there are more photos
             const isFourthPhotoWithMore = index === 3 && hasMorePhotos;
+            const photoLayout = getPhotoGridItemLayout(
+              index,
+              totalPhotos,
+              photoGridWidth,
+            );
 
             return (
               <TouchableOpacity
@@ -1496,12 +1492,11 @@ export const TextPostCard = React.memo(function TextPostCard({
                 onPress={() => onPhotoPress(post, index)}
                 activeOpacity={0.95}
                 delayPressIn={0}
-                style={[
-                  getPhotoLayout(index, totalPhotos),
-                  PHOTO_GRID_ITEM_PADDING,
-                ]}
+                style={[photoLayout, PHOTO_GRID_ITEM_PADDING]}
               >
-                <View style={{ flex: 1, overflow: 'hidden' }}>
+                <View
+                  style={[PHOTO_GRID_TILE_STYLE, IOS_PHOTO_GRID_TILE_STYLE]}
+                >
                   <FeedMediaImage
                     uri={url}
                     style={{
@@ -1538,14 +1533,14 @@ export const TextPostCard = React.memo(function TextPostCard({
               </TouchableOpacity>
             );
           })}
-        </View>
+        </FeedMediaFrame>
       ) : null}
       {post.audioUrl ? (
         <View className="px-3 pb-1">
           <AudioPlayer uri={post.audioUrl} />
         </View>
       ) : null}
-      <View className={FEED_CARD_PADDING_CLASS}>
+      <FeedCardContent>
         <VideoReactionSummary
           likeCount={post.likeCount}
           commentCount={post.commentCount}
@@ -1569,11 +1564,7 @@ export const TextPostCard = React.memo(function TextPostCard({
           gestureStartY={gStartY}
           hasDragged={gDragged}
         />
-      </View>
-    </View>
+      </FeedCardContent>
+    </FeedCardSurface>
   );
 });
-
-
-
-

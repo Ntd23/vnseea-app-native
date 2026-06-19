@@ -17,7 +17,6 @@ import {
   Pressable,
   KeyboardAvoidingView,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -53,7 +52,6 @@ import Animated, {
 import {
   Briefcase,
   Building2,
-  ChevronRight,
   Globe,
   HeartHandshake,
   Lock,
@@ -63,7 +61,6 @@ import {
   MoreHorizontal,
   Plus,
   Radio,
-  Search,
   Send,
   Share2,
   ShoppingBag,
@@ -123,9 +120,6 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { RootStackParamList } from '../../../navigation/types';
-import type { RootStackRouteName } from '../../../navigation/types';
-import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
-import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
 import type {
@@ -144,19 +138,29 @@ import type {
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
-import {
-  storyCreatedEvents,
-  storyDeletedEvents,
-  useStoriesViewModel,
-} from '../../../stories';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
-import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
 import type { ProductItem } from '../../../product/domain/types/product.types';
+import {
+  FeedCardContent,
+  FeedCardSurface,
+  FeedGlassActionBar,
+  FeedGlassActionButton,
+  FeedMediaFrame,
+  FeedTouchableCardSurface,
+} from '../components/FeedCardChrome';
 import { PollPostCard } from '../components/PollPostCard';
-import { ComposerCard } from '../components/ComposerCard';
+import { FeedHeader } from '../components/FeedHeader';
+import { FeedHeaderCollapseFrame } from '../components/FeedHeaderCollapseFrame';
+import { HomeFeedIntro } from '../components/HomeFeedIntro';
+import {
+  createFeedChromeCollapseState,
+  getNextFeedChromeCollapseState,
+  resetFeedChromeScrollIntent,
+  type FeedChromeCollapseState,
+} from '../components/feedChromeCollapse';
 import {
   feedActiveVideoIdSnapshot,
   FEED_COPY,
@@ -206,49 +210,13 @@ const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const IMAGE_PREFETCH_LOOKAHEAD = 5;
 const MAX_IMAGE_PREFETCH_URLS = 8;
-const FEED_SCREEN_WIDTH = Dimensions.get('window').width;
-const FEED_CARD_WIDTH = FEED_SCREEN_WIDTH;
-const FEED_PHOTO_GRID_WIDTH = FEED_CARD_WIDTH - 8;
-const FEED_CARD_CLASS = 'mb-2 border-y border-[#dddfe2] bg-white';
-const FEED_CARD_PADDING_CLASS = 'px-3 py-3';
-const FEED_MEDIA_CLASS = 'w-full bg-black';
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: Platform.OS === 'ios' ? 24 : 96,
 };
-
-// â”€â”€ Pre-computed photo grid layouts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Static layout objects for the Facebook-style photo grid. Computed once at
-// module level so TextPostCard never allocates new style objects per-render.
-const PHOTO_GRID_LAYOUTS = {
-  single: { width: FEED_PHOTO_GRID_WIDTH, height: FEED_PHOTO_GRID_WIDTH / 1.4 },
-  duoItem: {
-    width: FEED_PHOTO_GRID_WIDTH / 2,
-    height: FEED_PHOTO_GRID_WIDTH / 2,
-  },
-  triHero: {
-    width: FEED_PHOTO_GRID_WIDTH,
-    height: FEED_PHOTO_GRID_WIDTH / 1.6,
-  },
-  triItem: {
-    width: FEED_PHOTO_GRID_WIDTH / 2,
-    height: FEED_PHOTO_GRID_WIDTH / 2,
-  },
-  quadItem: {
-    width: FEED_PHOTO_GRID_WIDTH / 2,
-    height: FEED_PHOTO_GRID_WIDTH / 2,
-  },
-};
-const PHOTO_GRID_ITEM_PADDING = { padding: 2 };
-
-function getPhotoLayout(index: number, total: number) {
-  if (total === 1) return PHOTO_GRID_LAYOUTS.single;
-  if (total === 2) return PHOTO_GRID_LAYOUTS.duoItem;
-  if (total === 3)
-    return index === 0
-      ? PHOTO_GRID_LAYOUTS.triHero
-      : PHOTO_GRID_LAYOUTS.triItem;
-  return PHOTO_GRID_LAYOUTS.quadItem;
-}
+const FEED_SAFE_AREA_CLASS_NAME =
+  Platform.OS === 'ios' ? 'flex-1' : 'flex-1 surface-base';
+const FEED_SAFE_AREA_STYLE =
+  Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -292,150 +260,6 @@ const Avatar = React.memo(function Avatar({
   );
 });
 
-function FeedHeader() {
-  const navigation = useNavigation<FeedNav>();
-  const { messageCount } = useUnreadBadgeCounts();
-  const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
-  const [sheetVisible, setSheetVisible] = useState(false);
-  const [buttonRotation, setButtonRotation] = useState('0deg');
-
-  const handleOpenSheet = useCallback(() => {
-    setSheetVisible(true);
-    setButtonRotation('45deg');
-  }, []);
-
-  const handleCloseSheet = useCallback(() => {
-    setSheetVisible(false);
-    setButtonRotation('0deg');
-  }, []);
-
-  const handleCreateNavigate = useCallback(
-    (route: RootStackRouteName) => {
-      if (route === ROUTES.CREATE_EVENT) navigation.navigate(ROUTES.CREATE_EVENT);
-      if (route === ROUTES.CREATE_PRODUCT) navigation.navigate(ROUTES.CREATE_PRODUCT);
-      if (route === ROUTES.CREATE_PAGE) navigation.navigate(ROUTES.CREATE_PAGE);
-      if (route === ROUTES.CREATE_GROUP) navigation.navigate(ROUTES.CREATE_GROUP);
-      if (route === ROUTES.CREATE_REEL) navigation.navigate(ROUTES.CREATE_REEL);
-      if (route === ROUTES.CREATE_POST) navigation.navigate(ROUTES.CREATE_POST);
-      if (route === ROUTES.CREATE_STORY) navigation.navigate(ROUTES.CREATE_STORY);
-      if (route === ROUTES.CREATE_POLL) navigation.navigate(ROUTES.CREATE_POLL);
-      if (route === ROUTES.CREATE_ALBUM) navigation.navigate(ROUTES.CREATE_ALBUM);
-      if (route === ROUTES.CREATE_AD) navigation.navigate(ROUTES.CREATE_AD);
-    },
-    [navigation],
-  );
-
-  return (
-    <>
-      <View
-        className="surface-topbar flex-row items-center justify-between px-4"
-        style={{
-          height: 64,
-          borderBottomWidth: 1,
-          borderBottomColor: '#f1f5f9',
-          backgroundColor: '#ffffff',
-        }}
-      >
-        <View className="flex-row items-center">
-          {logoUrl && imageErrorCount === 0 ? (
-            <View
-              style={{
-                backgroundColor: '#002fff',
-                borderRadius: 10,
-                paddingHorizontal: 10,
-                paddingVertical: 5,
-                height: 36,
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
-              <Image
-                source={{ uri: logoUrl }}
-                style={{ width: 105, height: '100%' }}
-                resizeMode="contain"
-                onError={notifyImageError}
-              />
-            </View>
-          ) : (
-            <Text
-              style={{
-                fontSize: 26,
-                fontWeight: '900',
-                color: '#002fff',
-                letterSpacing: 0.5,
-              }}
-            >
-              VNSEEA
-            </Text>
-          )}
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={() => navigation.navigate(ROUTES.SEARCH)}
-            style={feedHeaderIconStyle}
-          >
-            <Search size={20} color="#002fff" strokeWidth={2.5} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={handleOpenSheet}
-            style={[feedHeaderIconStyle, { transform: [{ rotate: buttonRotation }] }]}
-          >
-            <Plus size={22} color="#002fff" strokeWidth={2.5} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={() => navigation.navigate(ROUTES.MESSAGES)}
-            style={[feedHeaderIconStyle, { position: 'relative' }]}
-          >
-            <MessageCircle size={20} color="#002fff" strokeWidth={2.5} />
-            {messageCount > 0 ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  top: -4,
-                  right: -4,
-                  minWidth: 18,
-                  height: 18,
-                  borderRadius: 9,
-                  backgroundColor: '#002fff',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingHorizontal: 4,
-                }}
-              >
-                <Text style={{ fontSize: 10, fontWeight: '700', color: '#ffffff' }}>
-                  {messageCount > 99 ? '99+' : messageCount}
-                </Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
-        </View>
-      </View>
-      <CreateActionSheet
-        visible={sheetVisible}
-        onClose={handleCloseSheet}
-        onNavigate={handleCreateNavigate}
-      />
-    </>
-  );
-}
-
-const feedHeaderIconStyle = {
-  width: 40,
-  height: 40,
-  borderRadius: 20,
-  backgroundColor: '#ffffff',
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.08,
-  shadowRadius: 4,
-  elevation: 2,
-};
-
 function FilterTabs({
   copy,
   activeSource,
@@ -473,203 +297,6 @@ function FilterTabs({
           );
         })}
       </View>
-    </View>
-  );
-}
-
-function StoriesRow({ avatarUrl, copy }: { avatarUrl?: string; copy: FeedCopy }) {
-  const navigation = useNavigation<FeedNav>();
-  const vm = useStoriesViewModel();
-  const prependStory = vm.prependStory;
-  const removeStoryLocal = vm.removeStoryLocal;
-
-  useEffect(() => {
-    const unsubCreated = storyCreatedEvents.subscribe(story => {
-      prependStory(story);
-    });
-    const unsubDeleted = storyDeletedEvents.subscribe(storyId => {
-      removeStoryLocal(storyId);
-    });
-    return () => {
-      unsubCreated();
-      unsubDeleted();
-    };
-  }, [prependStory, removeStoryLocal]);
-
-  const goToCreateStory = useCallback(() => {
-    navigation.navigate(ROUTES.CREATE_STORY);
-  }, [navigation]);
-
-  const goToViewerForGroup = useCallback(
-    (index: number) => {
-      navigation.navigate(ROUTES.STORY_VIEWER, {
-        stories: vm.stories,
-        initialUserIndex: index,
-      });
-    },
-    [navigation, vm.stories],
-  );
-
-  const goToStoriesList = useCallback(() => {
-    navigation.navigate(ROUTES.STORIES_LIST);
-  }, [navigation]);
-
-  return (
-    <View className="mb-4 bg-white pb-1.5 pt-0.5">
-      <View className="mb-2.5 flex-row items-center justify-between px-4">
-        <Text className="text-[18px] font-extrabold text-[#050505]">
-          {copy.storiesTitle}
-        </Text>
-        <TouchableOpacity activeOpacity={0.8} onPress={goToStoriesList}>
-          <View className="flex-row items-center">
-            <Text className="text-[14px] font-extrabold text-[#0866ff]">
-              {copy.seeAll}
-            </Text>
-            <ChevronRight size={18} color="#0866ff" />
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerClassName="gap-3 px-4"
-      >
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={goToCreateStory}
-          className="h-44 w-28 overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white"
-        >
-          <Image
-            source={{ uri: avatarUrl ?? images.me }}
-            className="h-24 w-full"
-            resizeMode="cover"
-            fadeDuration={0}
-          />
-          <View className="flex-1 items-center justify-center bg-white px-2 pb-1.5">
-            <View className="absolute -top-[18px] h-9 w-9 items-center justify-center rounded-full border-4 border-white bg-[#0866ff]">
-              <Plus size={20} color="#FFFFFF" />
-            </View>
-            <Text className="mt-4 text-center text-[13px] font-extrabold text-[#050505]">
-              {copy.createStory}
-            </Text>
-            <Text
-              className="mt-0.5 text-center text-[10px] font-semibold leading-4 text-[#667085]"
-              numberOfLines={1}
-            >
-              {copy.createStorySubtitle}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {vm.stories.map((story, index) => {
-          const hasUnseen = story.hasUnseen && !story.isViewed;
-
-          return (
-            <TouchableOpacity
-              key={story.publisher.userId}
-              activeOpacity={0.85}
-              onPress={() => goToViewerForGroup(index)}
-              className={`h-44 w-28 overflow-hidden rounded-2xl ${
-                hasUnseen ? '' : 'opacity-80'
-              }`}
-            >
-              <Image
-                source={{ uri: story.thumbnailUrl ?? story.publisher.avatarUrl }}
-                className="h-full w-full"
-                resizeMode="cover"
-                fadeDuration={0}
-              />
-              <View className="absolute inset-0 bg-black/25" />
-              <View className="absolute bottom-0 left-0 right-0 h-24 bg-black/35" />
-              <View
-                className={`absolute left-2 top-2 h-8 w-8 overflow-hidden rounded-full border-2 ${
-                  hasUnseen ? 'border-white' : 'border-slate-200'
-                } bg-white p-0.5`}
-              >
-                <Image
-                  source={{ uri: story.publisher.avatarUrl }}
-                  className="h-full w-full rounded-full"
-                  resizeMode="cover"
-                  fadeDuration={0}
-                />
-                {story.media.length > 1 ? (
-                  <View className="absolute -bottom-2 -right-2 flex h-4 items-center justify-center rounded-full bg-blue-600 px-1">
-                    <Text className="text-[9px] font-bold text-white">
-                      {story.media.length}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text
-                className="absolute bottom-3 left-2 right-2 text-[12px] font-extrabold text-white"
-                numberOfLines={1}
-              >
-                {story.publisher.name}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-    </View>
-  );
-}
-
-function GreetingCard({
-  userName,
-  copy,
-}: {
-  userName?: string;
-  copy: FeedCopy;
-}) {
-  const displayName = userName || copy.userFallback;
-  const isVi = copy.publicLabel === 'Công khai';
-
-  const hour = new Date().getHours();
-  let title = '';
-  let body = '';
-  let emoji = '\uD83C\uDF05';
-
-  if (hour >= 5 && hour < 12) {
-    title = isVi
-      ? `Chào buổi sáng, ${displayName}`
-      : `Good morning, ${displayName}`;
-    body = isVi
-      ? 'Chào ngày mới! Chúc bạn có một ngày tràn đầy năng lượng và làm việc hiệu quả.'
-      : 'Good morning! Wishing you a day full of energy and great productivity.';
-    emoji = '\u2600\uFE0F';
-  } else if (hour >= 12 && hour < 18) {
-    title = isVi
-      ? `Chào buổi chiều, ${displayName}`
-      : `Good afternoon, ${displayName}`;
-    body = isVi
-      ? 'Chúc bạn có một buổi chiều suôn sẻ, tràn ngập niềm vui và năng lượng.'
-      : 'Hope your afternoon is going productive, smooth, and full of joy!';
-    emoji = '\uD83C\uDF24\uFE0F';
-  } else {
-    title = isVi
-      ? `Chào buổi tối, ${displayName}`
-      : `Good evening, ${displayName}`;
-    body = isVi
-      ? 'Buổi tối ấm áp! Hãy thư giãn và tận hưởng những phút giây bình yên của ngày.'
-      : 'Evening is life saying you are getting closer to your dreams.';
-    emoji = '\uD83C\uDF07';
-  }
-
-  return (
-    <View className="mx-4 mb-4 flex-row items-center justify-between overflow-hidden rounded-2xl border border-[#dfe7ff] bg-[#eef4ff] px-4 py-3.5">
-      <View className="mr-3 h-11 w-11 items-center justify-center rounded-full bg-white">
-        <Text className="text-2xl">{'\uD83D\uDC4B'}</Text>
-      </View>
-      <View className="flex-1 pr-2">
-        <Text className="text-[17px] font-extrabold text-[#050505]">
-          {title}
-        </Text>
-        <Text className="mt-1.5 text-[13px] font-semibold leading-5 text-[#667085]">
-          {body}
-        </Text>
-      </View>
-      <Text className="text-3xl">{emoji}</Text>
     </View>
   );
 }
@@ -763,8 +390,8 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
   }, [copy.adLinkErrorMessage, copy.adLinkErrorTitle, post.targetUrl]);
 
   return (
-    <View className={FEED_CARD_CLASS}>
-      <View className={FEED_CARD_PADDING_CLASS}>
+    <FeedCardSurface>
+      <FeedCardContent>
         <View className="flex-row items-center">
           <Avatar uri={post.publisher.avatarUrl ?? images.me} size={42} />
           <View className="ml-3 flex-1">
@@ -798,34 +425,36 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
             {post.description}
           </Text>
         )}
-      </View>
+      </FeedCardContent>
 
       {!!post.mediaUrl && (
-        <TouchableOpacity
-          activeOpacity={post.targetUrl ? 0.88 : 1}
-          onPress={handlePress}
-          className="h-56 w-full bg-slate-100"
-        >
-          {post.isVideo ? (
-            <View className="h-full w-full items-center justify-center bg-slate-900">
-              <View className="h-16 w-16 items-center justify-center rounded-full bg-white/15">
-                <Text className="ml-1 text-3xl text-white">{'\u25B6'}</Text>
+        <FeedMediaFrame className="h-56 bg-slate-100">
+          <TouchableOpacity
+            activeOpacity={post.targetUrl ? 0.88 : 1}
+            onPress={handlePress}
+            className="h-full w-full"
+          >
+            {post.isVideo ? (
+              <View className="h-full w-full items-center justify-center bg-slate-900">
+                <View className="h-16 w-16 items-center justify-center rounded-full bg-white/15">
+                  <Text className="ml-1 text-3xl text-white">{'\u25B6'}</Text>
+                </View>
+                <Text className="mt-3 text-sm font-semibold text-white">
+                  {copy.adVideo}
+                </Text>
               </View>
-              <Text className="mt-3 text-sm font-semibold text-white">
-                {copy.adVideo}
-              </Text>
-            </View>
-          ) : (
-            <FeedMediaImage
-              uri={post.mediaUrl}
-              className="h-full w-full"
-              resizeMode="cover"
-            />
-          )}
-        </TouchableOpacity>
+            ) : (
+              <FeedMediaImage
+                uri={post.mediaUrl}
+                className="h-full w-full"
+                resizeMode="cover"
+              />
+            )}
+          </TouchableOpacity>
+        </FeedMediaFrame>
       )}
 
-      <View className="flex-row items-center justify-between border-t border-[#dddfe2] px-3 py-3">
+      <FeedGlassActionBar className="border-t border-[#dddfe2] px-3 py-3 pt-3">
         <View className="mr-4 flex-1">
           <Text className="text-xs font-semibold uppercase tracking-[0.4px] text-[#64748b]">
             {copy.ad}
@@ -835,7 +464,7 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
           </Text>
         </View>
 
-        <TouchableOpacity
+        <FeedGlassActionButton
           activeOpacity={0.86}
           disabled={!post.targetUrl}
           onPress={handlePress}
@@ -844,9 +473,9 @@ const FeedAdPostCard = React.memo(function FeedAdPostCard({
           <Text className="text-sm font-bold text-[#0866ff]">
             {copy.learnMore}
           </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+        </FeedGlassActionButton>
+      </FeedGlassActionBar>
+    </FeedCardSurface>
   );
 });
 
@@ -873,12 +502,8 @@ const FeedLivePostCard = React.memo(
     const isStale = item.state === 'stale';
 
     return (
-      <TouchableOpacity
-        activeOpacity={0.88}
-        onPress={handlePress}
-        className={FEED_CARD_CLASS}
-      >
-        <View className={FEED_CARD_PADDING_CLASS}>
+      <FeedTouchableCardSurface activeOpacity={0.88} onPress={handlePress}>
+        <FeedCardContent>
           <View className="flex-row items-center">
             <Avatar uri={item.publisher.avatarUrl || images.me} size={42} />
             <View className="ml-3 flex-1">
@@ -907,9 +532,9 @@ const FeedLivePostCard = React.memo(
               <Radio size={18} color="#ef4444" />
             </View>
           </View>
-        </View>
+        </FeedCardContent>
 
-        <View className="relative h-52 bg-[#0f172a]">
+        <FeedMediaFrame className="relative h-52 bg-[#0f172a]">
           {item.thumbnailUrl ? (
             <FeedMediaImage
               uri={item.thumbnailUrl}
@@ -934,9 +559,9 @@ const FeedLivePostCard = React.memo(
               {item.viewerCount}
             </Text>
           </View>
-        </View>
+        </FeedMediaFrame>
 
-        <View className={FEED_CARD_PADDING_CLASS}>
+        <FeedCardContent>
           <Text
             className="text-[15px] font-extrabold text-[#111827]"
             numberOfLines={2}
@@ -953,8 +578,8 @@ const FeedLivePostCard = React.memo(
               {copy.watchLive}
             </Text>
           </View>
-        </View>
-      </TouchableOpacity>
+        </FeedCardContent>
+      </FeedTouchableCardSurface>
     );
   },
   (prev, next) =>
@@ -1103,12 +728,8 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
   }, [job, onPress]);
 
   return (
-    <TouchableOpacity
-      className={FEED_CARD_CLASS}
-      activeOpacity={0.9}
-      onPress={handlePress}
-    >
-      <View className={FEED_CARD_PADDING_CLASS}>
+    <FeedTouchableCardSurface activeOpacity={0.9} onPress={handlePress}>
+      <FeedCardContent>
         <View className="flex-row items-center">
           <Avatar uri={avatar} size={42} />
           <View className="ml-3 flex-1">
@@ -1165,17 +786,19 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
             </Text>
           </View>
         </View>
-      </View>
+      </FeedCardContent>
 
       {!!cover && (
-        <FeedMediaImage
-          uri={cover}
-          className="h-44 w-full bg-slate-100"
-          resizeMode="cover"
-        />
+        <FeedMediaFrame className="h-44 bg-slate-100">
+          <FeedMediaImage
+            uri={cover}
+            className="h-full w-full"
+            resizeMode="cover"
+          />
+        </FeedMediaFrame>
       )}
 
-      <View className="flex-row items-center justify-between border-t border-[#dddfe2] px-3 py-3">
+      <FeedGlassActionBar className="border-t border-[#dddfe2] px-3 py-3 pt-3">
         <View className="mr-4 flex-1">
           <Text className="text-xs font-semibold uppercase tracking-[0.4px] text-[#64748b]">
             {copy.salary}
@@ -1193,8 +816,8 @@ const FeedJobPostCard = React.memo(function FeedJobPostCard({
             {copy.viewJob}
           </Text>
         </View>
-      </View>
-    </TouchableOpacity>
+      </FeedGlassActionBar>
+    </FeedTouchableCardSurface>
   );
 });
 
@@ -1582,6 +1205,8 @@ export function PhotoViewerModal({
   const language = useAppLanguage();
   const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [topBarHeight, setTopBarHeight] = useState(0);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
   const [pickerAnchor, setPickerAnchor] = useState<{
@@ -1668,6 +1293,20 @@ export function PhotoViewerModal({
     }, PHOTO_VIEWER_COMMENT_OPEN_DELAY_MS);
   }, [livePost, onClose, onCommentTap]);
 
+  const handleTopBarLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextHeight = event.nativeEvent.layout.height;
+    setTopBarHeight(previousHeight =>
+      Math.abs(previousHeight - nextHeight) < 0.5 ? previousHeight : nextHeight,
+    );
+  }, []);
+
+  const handleBottomPanelLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextHeight = event.nativeEvent.layout.height;
+    setBottomPanelHeight(previousHeight =>
+      Math.abs(previousHeight - nextHeight) < 0.5 ? previousHeight : nextHeight,
+    );
+  }, []);
+
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
     .failOffsetX([-10, 10])
@@ -1720,6 +1359,15 @@ export function PhotoViewerModal({
   if (!state || !livePost) return null;
   const { post } = state;
   const total = post.photos.length;
+  const hasMeasuredViewerChrome = topBarHeight > 0 && bottomPanelHeight > 0;
+  const fallbackPhotoViewportHeight =
+    SCREEN_H * PHOTO_VIEWER_IMAGE_HEIGHT_RATIO;
+  const photoViewportTop = hasMeasuredViewerChrome
+    ? topBarHeight
+    : (SCREEN_H - fallbackPhotoViewportHeight) / 2;
+  const photoViewportHeight = hasMeasuredViewerChrome
+    ? Math.max(1, SCREEN_H - topBarHeight - bottomPanelHeight)
+    : fallbackPhotoViewportHeight;
 
   return (
     <Modal
@@ -1736,6 +1384,7 @@ export function PhotoViewerModal({
             <Animated.View style={[contentStyle, { flex: 1 }]}>
               {/* â”€â”€ Top bar: page counter (left) + close button (right) â”€â”€ */}
               <View
+                onLayout={handleTopBarLayout}
                 style={{
                   position: 'absolute',
                   top: 0,
@@ -1812,48 +1461,59 @@ export function PhotoViewerModal({
               </View>
 
               {/* â”€â”€ Horizontally paginated photo list â”€â”€ */}
-              <FlatList
-                ref={flatListRef}
-                data={post.photos}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                initialScrollIndex={state.initialIndex}
-                getItemLayout={(_, index) => ({
-                  length: SCREEN_W,
-                  offset: SCREEN_W * index,
-                  index,
-                })}
-                windowSize={3}
-                initialNumToRender={1}
-                maxToRenderPerBatch={1}
-                removeClippedSubviews={Platform.OS === 'android'}
-                onScrollToIndexFailed={info => {
-                  setTimeout(() => {
-                    flatListRef.current?.scrollToIndex({
-                      index: info.index,
-                      animated: false,
-                    });
-                  }, 100);
+              <View
+                style={{
+                  position: 'absolute',
+                  top: photoViewportTop,
+                  left: 0,
+                  right: 0,
+                  height: photoViewportHeight,
                 }}
-                onMomentumScrollEnd={e => {
-                  const idx = Math.round(
-                    e.nativeEvent.contentOffset.x / SCREEN_W,
-                  );
-                  setCurrentIndex(idx);
-                }}
-                keyExtractor={(url, i) => `viewer-${i}-${url}`}
-                renderItem={({ item: url }) => (
-                  <PhotoViewerImage
-                    url={url}
-                    width={SCREEN_W}
-                    height={SCREEN_H}
-                  />
-                )}
-              />
+              >
+                <FlatList
+                  ref={flatListRef}
+                  data={post.photos}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  initialScrollIndex={state.initialIndex}
+                  getItemLayout={(_, index) => ({
+                    length: SCREEN_W,
+                    offset: SCREEN_W * index,
+                    index,
+                  })}
+                  windowSize={3}
+                  initialNumToRender={1}
+                  maxToRenderPerBatch={1}
+                  removeClippedSubviews={Platform.OS === 'android'}
+                  onScrollToIndexFailed={info => {
+                    setTimeout(() => {
+                      flatListRef.current?.scrollToIndex({
+                        index: info.index,
+                        animated: false,
+                      });
+                    }, 100);
+                  }}
+                  onMomentumScrollEnd={e => {
+                    const idx = Math.round(
+                      e.nativeEvent.contentOffset.x / SCREEN_W,
+                    );
+                    setCurrentIndex(idx);
+                  }}
+                  keyExtractor={(url, i) => `viewer-${i}-${url}`}
+                  renderItem={({ item: url }) => (
+                    <PhotoViewerImage
+                      url={url}
+                      width={SCREEN_W}
+                      height={photoViewportHeight}
+                    />
+                  )}
+                />
+              </View>
 
               {/* â”€â”€ Bottom overlay: publisher + reaction counts â”€â”€ */}
               <View
+                onLayout={handleBottomPanelLayout}
                 style={{
                   position: 'absolute',
                   bottom: 0,
@@ -2001,7 +1661,7 @@ export function PhotoViewerModal({
                             fontWeight: '600',
                           }}
                         >
-                          {language === 'vi' ? 'Theo dĂµi' : 'Follow'}
+                          {language === 'vi' ? 'Theo dõi' : 'Follow'}
                         </Text>
                       </GHTouchableOpacity>
                     );
@@ -2172,8 +1832,9 @@ function PostSkeleton() {
   }));
 
   return (
-    <Animated.View style={animatedStyle} className={FEED_CARD_CLASS}>
-      <View className={FEED_CARD_PADDING_CLASS}>
+    <Animated.View style={animatedStyle}>
+      <FeedCardSurface>
+        <FeedCardContent>
         {/* Header: avatar + name + time */}
         <View className="mb-4 flex-row items-center">
           <View className="h-10 w-10 rounded-full bg-slate-200" />
@@ -2185,15 +1846,16 @@ function PostSkeleton() {
         {/* Caption */}
         <View className="h-3 w-full rounded bg-slate-200" />
         <View className="mt-2 h-3 w-3/4 rounded bg-slate-200" />
-      </View>
-      {/* Media placeholder for photo / video skeletons. */}
-      <View className="h-56 w-full bg-slate-200" />
-      {/* Action row */}
-      <View className="flex-row justify-between border-t border-[#dddfe2] px-3 py-3">
-        <View className="h-6 w-16 rounded bg-slate-200" />
-        <View className="h-6 w-20 rounded bg-slate-200" />
-        <View className="h-6 w-16 rounded bg-slate-200" />
-      </View>
+        </FeedCardContent>
+        {/* Media placeholder for photo / video skeletons. */}
+        <FeedMediaFrame className="h-56 bg-slate-200" />
+        {/* Action row */}
+        <FeedGlassActionBar className="border-t border-[#dddfe2] px-3 py-3 pt-3">
+          <View className="h-6 w-16 rounded bg-slate-200" />
+          <View className="h-6 w-20 rounded bg-slate-200" />
+          <View className="h-6 w-16 rounded bg-slate-200" />
+        </FeedGlassActionBar>
+      </FeedCardSurface>
     </Animated.View>
   );
 }
@@ -2306,6 +1968,10 @@ function FeedScreen() {
   const scrollEndTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const feedChromeCollapseStateRef = useRef<FeedChromeCollapseState>(
+    createFeedChromeCollapseState(),
+  );
+  const [isFeedChromeHidden, setIsFeedChromeHidden] = useState(false);
 
   const setActiveFeedVideo = useCallback((videoId: string | null) => {
     activeVideoIdRef.current = videoId;
@@ -2424,6 +2090,9 @@ function FeedScreen() {
   ]);
 
   const handleScrollBeginDrag = useCallback(() => {
+    feedChromeCollapseStateRef.current = resetFeedChromeScrollIntent(
+      feedChromeCollapseStateRef.current,
+    );
     beginScrollPause();
   }, [beginScrollPause]);
 
@@ -2441,6 +2110,18 @@ function FeedScreen() {
       const { contentOffset, layoutMeasurement } = event.nativeEvent;
       feedScrollYRef.current = contentOffset.y;
       feedViewportHeightRef.current = layoutMeasurement.height;
+
+      if (Platform.OS !== 'ios') return;
+
+      const nextState = getNextFeedChromeCollapseState(
+        feedChromeCollapseStateRef.current,
+        contentOffset.y,
+      );
+
+      feedChromeCollapseStateRef.current = nextState;
+      setIsFeedChromeHidden(current =>
+        current === nextState.hidden ? current : nextState.hidden,
+      );
     },
     [],
   );
@@ -3624,13 +3305,13 @@ function FeedScreen() {
           activeSource={activeFeedSource}
           onChangeSource={setActiveFeedSource}
         />
-        <ComposerCard
-          onPress={goToCreatePost}
+        <HomeFeedIntro
+          onCreatePostPress={goToCreatePost}
+          userId={userVm.user?.userId}
           avatarUrl={userVm.user?.avatar}
+          userName={userVm.user?.name}
           copy={copy}
         />
-        <StoriesRow avatarUrl={userVm.user?.avatar} copy={copy} />
-        <GreetingCard userName={userVm.user?.name} copy={copy} />
       </View>
     ),
     [
@@ -3638,6 +3319,7 @@ function FeedScreen() {
       copy,
       goToCreatePost,
       setActiveFeedSource,
+      userVm.user?.userId,
       userVm.user?.avatar,
       userVm.user?.name,
     ],
@@ -3645,9 +3327,15 @@ function FeedScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView className="flex-1 surface-base" edges={ROOT_SAFE_AREA_EDGES}>
+      <SafeAreaView
+        className={FEED_SAFE_AREA_CLASS_NAME}
+        style={FEED_SAFE_AREA_STYLE}
+        edges={ROOT_SAFE_AREA_EDGES}
+      >
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
-        <FeedHeader />
+        <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
+          <FeedHeader />
+        </FeedHeaderCollapseFrame>
         <View className="flex-1">
           <FlatList
             data={feedListItems}
@@ -3659,8 +3347,8 @@ function FeedScreen() {
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
             onLayout={handleFeedViewportLayout}
+            scrollEventThrottle={16}
             onScroll={handleFeedScroll}
-            scrollEventThrottle={32}
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={viewabilityConfigRef.current}
             onScrollBeginDrag={handleScrollBeginDrag}
