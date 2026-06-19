@@ -1,5 +1,6 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Image,
   StyleSheet,
   Text,
@@ -10,7 +11,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { MessageCircle, Plus, Search } from 'lucide-react-native';
+import { Bell, CircleUser, MessageCircle, Plus, Search } from 'lucide-react-native';
 
 import { ROUTES } from '../../../navigation/constants/routes';
 import type {
@@ -19,6 +20,8 @@ import type {
 } from '../../../navigation/types';
 import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
+import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
+import { useNotificationBadgeViewModel } from '../../../notifications';
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
 
@@ -63,10 +66,28 @@ function HeaderGlassActionButton({
 
 export function FeedHeader() {
   const navigation = useNavigation<FeedHeaderNav>();
-  const { messageCount } = useUnreadBadgeCounts();
+  const { messageCount, notificationCount } = useUnreadBadgeCounts();
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
+  const { user } = useCurrentUserViewModel();
+  useNotificationBadgeViewModel();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [buttonRotation, setButtonRotation] = useState('0deg');
+
+  const avatarUrl = user?.avatar;
+  const transitionAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (avatarUrl) {
+      const timer = setTimeout(() => {
+        Animated.timing(transitionAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }).start();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [avatarUrl, transitionAnim]);
 
   const handleOpenSheet = useCallback(() => {
     setSheetVisible(true);
@@ -131,7 +152,7 @@ export function FeedHeader() {
               onPress={handleOpenSheet}
               style={{ transform: [{ rotate: buttonRotation }] }}
             >
-              <Plus size={21} color="#002fff" strokeWidth={2.65} />
+              <Plus size={19} color="#002fff" strokeWidth={2.65} />
             </HeaderGlassActionButton>
             <HeaderGlassActionButton
               accessibilityLabel="Messages"
@@ -148,6 +169,76 @@ export function FeedHeader() {
             >
               <MessageCircle size={19} color="#002fff" strokeWidth={2.55} />
             </HeaderGlassActionButton>
+            <HeaderGlassActionButton
+              accessibilityLabel="Notifications"
+              onPress={() =>
+                navigation.navigate(ROUTES.MAIN_TABS, {
+                  screen: ROUTES.NOTIFICATIONS,
+                })
+              }
+              badge={
+                notificationCount > 0 ? (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {notificationCount > 99 ? '99+' : notificationCount}
+                    </Text>
+                  </View>
+                ) : null
+              }
+            >
+              <Bell size={19} color="#002fff" strokeWidth={2.55} />
+            </HeaderGlassActionButton>
+            <HeaderGlassActionButton
+              accessibilityLabel="Profile"
+              onPress={() => navigation.navigate(ROUTES.PROFILE)}
+            >
+              <View style={styles.profileIconContainer}>
+                <Animated.View
+                  style={[
+                    styles.profileIconLayer,
+                    {
+                      opacity: transitionAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 0],
+                      }),
+                      transform: [
+                        {
+                          scale: transitionAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [1, 0.7],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                >
+                  <CircleUser size={19} color="#002fff" strokeWidth={2.55} />
+                </Animated.View>
+                {avatarUrl ? (
+                  <Animated.View
+                    style={[
+                      styles.profileIconLayer,
+                      {
+                        opacity: transitionAnim,
+                        transform: [
+                          {
+                            scale: transitionAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.7, 1],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  >
+                    <Image
+                      source={{ uri: avatarUrl }}
+                      style={styles.avatarImage}
+                    />
+                  </Animated.View>
+                ) : null}
+              </View>
+            </HeaderGlassActionButton>
           </View>
         </AdaptiveGlassSurface>
       </View>
@@ -163,24 +254,24 @@ export function FeedHeader() {
 const styles = StyleSheet.create({
   headerRoot: {
     backgroundColor: 'transparent',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 7,
   },
   headerGlassDock: {
-    minHeight: 58,
-    borderRadius: 29,
+    minHeight: 52,
+    borderRadius: 26,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.84)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingLeft: 14,
-    paddingRight: 8,
+    paddingLeft: 12,
+    paddingRight: 6,
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
   },
   brandRow: {
     flex: 1,
@@ -190,23 +281,23 @@ const styles = StyleSheet.create({
   },
   logoPill: {
     backgroundColor: '#002fff',
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    height: 38,
-    minWidth: 126,
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    height: 32,
+    minWidth: 110,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#002fff',
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
   },
   logoImage: {
-    width: 105,
-    height: 26,
+    width: 90,
+    height: 22,
   },
   brandText: {
-    fontSize: 23,
+    fontSize: 21,
     fontWeight: '900',
     color: '#002fff',
     letterSpacing: 0,
@@ -214,20 +305,20 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   headerActionTouchable: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   headerGlassAction: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.92)',
     alignItems: 'center',
@@ -239,22 +330,41 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#002fff',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 3,
     borderWidth: 1,
     borderColor: '#ffffff',
   },
   badgeText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
     color: '#ffffff',
+  },
+  profileIconContainer: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  profileIconLayer: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  avatarImage: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
   },
 });
 

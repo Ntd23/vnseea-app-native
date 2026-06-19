@@ -71,6 +71,7 @@ class IncomingCallActivity : Activity() {
     } else {
       extra(LiveKitCallNativeActions.EXTRA_AVATAR)
     }
+    val callerBackgroundUrl = callerBackgroundUrl(isGroupCall, avatarUrl)
     val isAudioCall = extra(LiveKitCallNativeActions.EXTRA_CALL_TYPE) == "audio"
     val title = if (isAudioCall) {
       "\u260e Cu\u1ed9c g\u1ecdi tho\u1ea1i"
@@ -91,22 +92,49 @@ class IncomingCallActivity : Activity() {
         ViewGroup.LayoutParams.MATCH_PARENT,
       )
     }
-    val backgroundResourceId = resources.getIdentifier(
-      backgroundMode.imageResourceName,
-      "drawable",
-      packageName,
-    )
-    if (backgroundResourceId != 0) {
+    if (callerBackgroundUrl.isNotBlank()) {
       root.addView(ImageView(this).apply {
         scaleType = ImageView.ScaleType.CENTER_CROP
-        setImageResource(backgroundResourceId)
+        alpha = 0f
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+        )
+        loadRemoteImage(callerBackgroundUrl, this)
+      })
+      root.addView(View(this).apply {
+        background = callerPhotoOverlayDrawable()
         layoutParams = FrameLayout.LayoutParams(
           ViewGroup.LayoutParams.MATCH_PARENT,
           ViewGroup.LayoutParams.MATCH_PARENT,
         )
       })
+    } else {
+      val backgroundResourceId = resources.getIdentifier(
+        backgroundMode.imageResourceName,
+        "drawable",
+        packageName,
+      )
+      if (backgroundResourceId != 0) {
+        root.addView(ImageView(this).apply {
+          scaleType = ImageView.ScaleType.CENTER_CROP
+          setImageResource(backgroundResourceId)
+          layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+          )
+        })
+        root.addView(View(this).apply {
+          background = photoOverlayDrawable(backgroundMode)
+          layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+          )
+        })
+      } else {
+        root.addView(CallBackgroundView(this, backgroundMode))
+      }
     }
-    root.addView(CallBackgroundView(this, backgroundMode))
 
     val content = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -279,9 +307,17 @@ class IncomingCallActivity : Activity() {
   }
 
   private fun loadAvatar(url: String, image: ImageView) {
+    loadRemoteImage(url, image)
+  }
+
+  private fun loadRemoteImage(url: String, image: ImageView) {
     Thread {
       try {
-        val bitmap = URL(url).openStream().use { stream ->
+        val connection = URL(url).openConnection().apply {
+          connectTimeout = 3500
+          readTimeout = 5000
+        }
+        val bitmap = connection.getInputStream().use { stream ->
           BitmapFactory.decodeStream(stream)
         } ?: return@Thread
         Handler(Looper.getMainLooper()).post {
@@ -291,6 +327,27 @@ class IncomingCallActivity : Activity() {
       } catch (_: Throwable) {
       }
     }.start()
+  }
+
+  private fun callerBackgroundUrl(isGroupCall: Boolean, avatarUrl: String): String {
+    val candidates = if (isGroupCall) {
+      listOf(
+        extra(LiveKitCallNativeActions.EXTRA_GROUP_COVER),
+        extra(LiveKitCallNativeActions.EXTRA_COVER_URL),
+        extra(LiveKitCallNativeActions.EXTRA_COVER),
+        avatarUrl,
+      )
+    } else {
+      listOf(
+        extra(LiveKitCallNativeActions.EXTRA_CALLER_COVER),
+        extra(LiveKitCallNativeActions.EXTRA_COVER_URL),
+        extra(LiveKitCallNativeActions.EXTRA_COVER),
+        avatarUrl,
+      )
+    }
+    return candidates.firstOrNull { value ->
+      value.startsWith("http://") || value.startsWith("https://")
+    }.orEmpty()
   }
 
   private fun startRingtone() {
@@ -354,8 +411,16 @@ class IncomingCallActivity : Activity() {
       ).apply {
         bottomMargin = dp(44)
       }
-      addView(utilityButton("\u2026", "Nh\u1eafn tin"))
-      addView(utilityButton("\u266a", "T\u1eaft chu\u00f4ng"))
+      addView(utilityButton("\u2026", "Nh\u1eafn tin").apply {
+        setOnClickListener { openMessageThread() }
+      })
+      addView(utilityButton("\u266a", "T\u1eaft chu\u00f4ng").apply {
+        setOnClickListener {
+          stopRingtone()
+          alpha = 0.72f
+          (getChildAt(1) as? TextView)?.text = "\u0110\u00e3 t\u1eaft"
+        }
+      })
     }
   }
 
@@ -539,6 +604,22 @@ class IncomingCallActivity : Activity() {
     return container
   }
 
+  private fun openMessageThread() {
+    stopRingtone()
+    cancelNotification()
+    LiveKitCallNativeActions.postAction(
+      extra(LiveKitCallNativeActions.EXTRA_API_URL),
+      extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),
+      "decline",
+    )
+    startActivity(Intent(this@IncomingCallActivity, MainActivity::class.java).apply {
+      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+      putExtras(intent)
+      putExtra(LiveKitCallNativeActions.EXTRA_NATIVE_ACTION, "message")
+    })
+    finish()
+  }
+
   private fun registerDismissReceiver() {
     val receiver = object : BroadcastReceiver() {
       override fun onReceive(context: Context?, dismissIntent: Intent?) {
@@ -582,6 +663,28 @@ class IncomingCallActivity : Activity() {
       cornerRadius = radius.toFloat()
       setColor(color)
     }
+  }
+
+  private fun photoOverlayDrawable(mode: CallBackgroundMode): GradientDrawable {
+    return GradientDrawable(
+      GradientDrawable.Orientation.TOP_BOTTOM,
+      intArrayOf(
+        mode.overlayTop,
+        Color.argb(26, 0, 0, 0),
+        mode.overlayBottom,
+      ),
+    )
+  }
+
+  private fun callerPhotoOverlayDrawable(): GradientDrawable {
+    return GradientDrawable(
+      GradientDrawable.Orientation.TOP_BOTTOM,
+      intArrayOf(
+        Color.argb(160, 2, 9, 24),
+        Color.argb(74, 2, 9, 24),
+        Color.argb(230, 0, 4, 13),
+      ),
+    )
   }
 
   private fun dp(value: Int): Int {

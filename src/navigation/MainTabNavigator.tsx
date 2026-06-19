@@ -191,6 +191,9 @@ const CustomTab = createBottomTabNavigator<MainTabParamList>();
 const NativeTab = createNativeBottomTabNavigator<MainTabParamList>();
 
 function renderCustomTabBar(props: BottomTabBarProps) {
+  if (Platform.OS === 'android') {
+    return null;
+  }
   return <CustomTabBar {...props} />;
 }
 

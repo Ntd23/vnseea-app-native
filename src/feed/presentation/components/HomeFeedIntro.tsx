@@ -19,20 +19,25 @@ function DefaultStoriesRow({
   avatarUrl,
   copy,
 }: Pick<HomeFeedIntroProps, 'avatarUrl' | 'copy'>) {
-  const { stories, goToCreateStory, goToViewerForGroup } = useHomeStoriesRail();
+  const {
+    stories,
+    goToCreateStory,
+    goToViewerForGroup,
+    goToStoriesList,
+  } = useHomeStoriesRail();
 
   return (
-    <View className="mb-4 bg-white pb-1.5 pt-0.5">
-      <View className="mb-2.5 flex-row items-center justify-between px-4">
-        <Text className="text-[18px] font-extrabold text-[#050505]">
+    <View className="mb-4 bg-white pb-1 pt-1">
+      <View className="mb-3 flex-row items-center justify-between px-4">
+        <Text className="text-[21px] font-extrabold text-[#050505]">
           {copy.storiesTitle}
         </Text>
-        <TouchableOpacity activeOpacity={0.8}>
+        <TouchableOpacity activeOpacity={0.8} onPress={goToStoriesList}>
           <View className="flex-row items-center">
-            <Text className="text-[14px] font-extrabold text-[#0866ff]">
+            <Text className="text-[15px] font-extrabold text-[#0758ff]">
               {copy.seeAll}
             </Text>
-            <ChevronRight size={18} color="#0866ff" />
+            <ChevronRight size={19} color="#0758ff" strokeWidth={2.5} />
           </View>
         </TouchableOpacity>
       </View>
@@ -45,7 +50,7 @@ function DefaultStoriesRow({
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={goToCreateStory}
-          className="h-44 w-28 overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white"
+          className="h-44 w-28 overflow-hidden rounded-[18px] border border-[#e5e7eb] bg-white shadow-sm"
         >
           <Image
             source={{ uri: avatarUrl ?? HOME_INTRO_FALLBACK_AVATAR }}
@@ -57,7 +62,7 @@ function DefaultStoriesRow({
             <View className="absolute -top-[18px] h-9 w-9 items-center justify-center rounded-full border-4 border-white bg-[#0866ff]">
               <Plus size={20} color="#FFFFFF" />
             </View>
-            <Text className="mt-4 text-center text-[13px] font-extrabold text-[#050505]">
+            <Text className="mt-4 text-center text-[14px] font-extrabold text-[#050505]">
               {copy.createStory}
             </Text>
             <Text
@@ -77,7 +82,7 @@ function DefaultStoriesRow({
               key={story.publisher.userId || story.id}
               activeOpacity={0.85}
               onPress={() => goToViewerForGroup(index)}
-              className={`h-44 w-28 overflow-hidden rounded-2xl ${
+              className={`h-44 w-28 overflow-hidden rounded-[18px] shadow-sm ${
                 hasUnseen ? '' : 'opacity-80'
               }`}
             >
@@ -136,19 +141,19 @@ function DefaultGreetingCard({
   const greeting = getHomeGreetingModel({ userName, copy });
 
   return (
-    <View className="mx-4 mb-4 flex-row items-center justify-between overflow-hidden rounded-2xl border border-[#dfe7ff] bg-[#eef4ff] px-4 py-3.5">
-      <View className="mr-3 h-11 w-11 items-center justify-center rounded-full bg-white">
-        <Text className="text-2xl">{'\uD83D\uDC4B'}</Text>
+    <View className="mx-4 mb-4 flex-row items-center justify-between overflow-hidden rounded-[18px] border border-[#dfe7ff] bg-[#eef4ff] px-4 py-4">
+      <View className="mr-3 h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm">
+        <Text className="text-3xl">{'\uD83D\uDC4B'}</Text>
       </View>
       <View className="flex-1 pr-2">
-        <Text className="text-[17px] font-extrabold text-[#050505]">
+        <Text className="text-[20px] font-extrabold text-[#050505]">
           {greeting.title}
         </Text>
-        <Text className="mt-1.5 text-[13px] font-semibold leading-5 text-[#667085]">
+        <Text className="mt-1.5 text-[14px] font-semibold leading-5 text-[#667085]">
           {greeting.body}
         </Text>
       </View>
-      <Text className="text-3xl">{greeting.emoji}</Text>
+      <Text className="text-4xl">{greeting.emoji}</Text>
     </View>
   );
 }
