@@ -22,6 +22,11 @@ type NativeCallListeners = {
   onIncomingGroup?: (call: IncomingGroupLiveKitCall) => void;
 };
 
+type AndroidCallIntentModule = {
+  getInitialCallAction?: () => Promise<Record<string, string> | null>;
+  dismissIncomingCall?: (callId: string) => Promise<boolean>;
+};
+
 type ActiveNativeCall = {
   context: 'direct' | 'group';
   callId?: string;
@@ -38,12 +43,15 @@ let isConfigured = false;
 let listeners: NativeCallListeners = {};
 let cachedCallKeep: Record<string, any> | null | undefined;
 let cachedVoipPush: Record<string, any> | null | undefined;
-let cachedInitialNativeAction:
-  | Promise<Record<string, string> | null>
-  | null
-  | undefined;
+let cachedInitialNativeAction: Promise<Record<string, string> | null> | null =
+  null;
 const pendingAnswerUuids: string[] = [];
 const pendingEndUuids: string[] = [];
+
+function getAndroidCallIntentModule() {
+  if (Platform.OS !== 'android') return null;
+  return NativeModules.VnseeaCallIntent as AndroidCallIntentModule | undefined;
+}
 
 function loadCallKeep() {
   if (Platform.OS === 'android') return null;
@@ -218,6 +226,31 @@ function readPushLiveKitGroupCall(
   };
 }
 
+function readPushClosedLiveKitCallId(payload: unknown) {
+  const callId = readPushString(payload, 'call_id');
+  if (!callId) return '';
+
+  const eventType = readPushString(payload, 'event_type').toLowerCase();
+  const status = readPushString(payload, 'status').toLowerCase();
+  const isClosedEvent =
+    eventType === 'livekit_call_closed' ||
+    eventType === 'livekit_call_cancelled' ||
+    eventType === 'livekit_call_canceled' ||
+    eventType === 'livekit_call_declined' ||
+    eventType === 'livekit_group_call_closed';
+  const isClosedStatus = [
+    'ended',
+    'cancelled',
+    'canceled',
+    'declined',
+    'no_answer',
+    'missed',
+    'closed',
+  ].includes(status);
+
+  return isClosedEvent || isClosedStatus ? callId : '';
+}
+
 function rememberNativeCallFromPayload(callUuid: string, payload: unknown) {
   const incomingGroupCall = readPushLiveKitGroupCall(payload);
   if (incomingGroupCall) {
@@ -279,6 +312,14 @@ function registerOneSignalCallListeners() {
       getNotification(): { additionalData?: object };
       preventDefault(): void;
     }) => {
+      const closedCallId = readPushClosedLiveKitCallId(
+        event.getNotification().additionalData,
+      );
+      if (closedCallId) {
+        event.preventDefault();
+        dismissNativeIncomingCall(closedCallId);
+        return;
+      }
       const incomingCall = readPushLiveKitCall(
         event.getNotification().additionalData,
       );
@@ -299,6 +340,13 @@ function registerOneSignalCallListeners() {
   OneSignal.Notifications.addEventListener(
     'click',
     (event: { notification: { additionalData?: object } }) => {
+      const closedCallId = readPushClosedLiveKitCallId(
+        event.notification.additionalData,
+      );
+      if (closedCallId) {
+        dismissNativeIncomingCall(closedCallId);
+        return;
+      }
       const incomingCall = readPushLiveKitCall(
         event.notification.additionalData,
       );
@@ -498,14 +546,29 @@ export function getNativeCall(callUuid: string) {
 
 async function getInitialNativeActionPayload(): Promise<Record<string, string> | null> {
   if (Platform.OS !== 'android') return null;
-  if (cachedInitialNativeAction !== undefined) {
+  if (cachedInitialNativeAction) {
     return cachedInitialNativeAction;
   }
-  const module = NativeModules.VnseeaCallIntent as
-    | { getInitialCallAction?: () => Promise<Record<string, string> | null> }
-    | undefined;
-  cachedInitialNativeAction = module?.getInitialCallAction?.() ?? null;
+  const module = getAndroidCallIntentModule();
+  const initialActionPromise = module?.getInitialCallAction?.();
+  if (!initialActionPromise) {
+    return null;
+  }
+  cachedInitialNativeAction =
+    initialActionPromise?.then(payload => {
+      if (!payload) {
+        cachedInitialNativeAction = null;
+      }
+      return payload;
+    }).catch(error => {
+      cachedInitialNativeAction = null;
+      throw error;
+    });
   return cachedInitialNativeAction;
+}
+
+function clearInitialNativeActionPayload() {
+  cachedInitialNativeAction = null;
 }
 
 export async function getInitialNativeCallAction(): Promise<IncomingLiveKitCall | null> {
@@ -517,22 +580,30 @@ export async function getInitialNativeCallAction(): Promise<IncomingLiveKitCall 
   ) {
     return null;
   }
-  return readPushLiveKitCall({
+  const call = readPushLiveKitCall({
     provider: 'livekit',
     event_type: 'livekit_call',
     ...payload,
   });
+  if (call) {
+    clearInitialNativeActionPayload();
+  }
+  return call;
 }
 
 export async function getInitialNativeGroupCallAction(): Promise<IncomingGroupLiveKitCall | null> {
   const payload = await getInitialNativeActionPayload();
   if (!payload) return null;
-  return readPushLiveKitGroupCall({
+  const call = readPushLiveKitGroupCall({
     provider: 'livekit_group',
     event_type: 'livekit_group_call',
     call_context: 'group',
     ...payload,
   });
+  if (call) {
+    clearInitialNativeActionPayload();
+  }
+  return call;
 }
 
 export async function startNativeOutgoingCall(params: {
@@ -572,8 +643,29 @@ export async function displayNativeIncomingCall(call: IncomingLiveKitCall) {
     callId: call.callId,
     callType: call.callType,
     peer: call.peer,
-    usesNativeCallUi: Boolean(loadCallKeep()?.default),
+    usesNativeCallUi: Platform.OS === 'ios',
   });
+
+  if (Platform.OS === 'android') {
+    const module = getAndroidCallIntentModule();
+    if (module && 'showIncomingCall' in module) {
+      // @ts-ignore
+      module.showIncomingCall({
+        event_type: 'livekit_call',
+        call_id: call.callId,
+        call_type: call.callType,
+        room_name: call.roomName || '',
+        from_id: call.peer.id,
+        name: call.peer.name,
+        avatar: call.peer.avatar || '',
+        action_token: call.actionToken || '',
+        api_url: call.apiUrl || '',
+        call_context: 'direct',
+      }).catch((err: any) => console.warn('[LiveKitCall] showIncomingCall failed', err));
+    }
+    return callUuid;
+  }
+
   const RNCallKeep = loadCallKeep();
   if (!RNCallKeep?.default) return callUuid;
   RNCallKeep.default.displayIncomingCall(
@@ -610,8 +702,34 @@ export async function displayNativeIncomingGroupCall(
     callType: call.callType,
     peer: call.caller,
     group: call.group,
-    usesNativeCallUi: Boolean(loadCallKeep()?.default),
+    usesNativeCallUi: Platform.OS === 'ios',
   });
+
+  if (Platform.OS === 'android') {
+    const module = getAndroidCallIntentModule();
+    if (module && 'showIncomingCall' in module) {
+      // @ts-ignore
+      module.showIncomingCall({
+        event_type: 'livekit_group_call',
+        call_id: call.callId,
+        call_type: call.callType,
+        room_name: call.roomName || '',
+        group_id: call.groupId,
+        group_name: call.group.name,
+        group_avatar: call.group.avatar || '',
+        caller_id: call.caller.id,
+        caller_name: call.caller.name,
+        caller_avatar: call.caller.avatar || '',
+        name: call.caller.name,
+        avatar: call.caller.avatar || '',
+        action_token: call.actionToken || '',
+        api_url: call.apiUrl || '',
+        call_context: 'group',
+      }).catch((err: any) => console.warn('[LiveKitCall] showIncomingGroupCall failed', err));
+    }
+    return callUuid;
+  }
+
   const RNCallKeep = loadCallKeep();
   if (!RNCallKeep?.default) return callUuid;
   RNCallKeep.default.displayIncomingCall(
@@ -660,4 +778,32 @@ export function endNativeCall(callUuid?: string, reason?: number) {
     reason ?? endReasons.REMOTE_ENDED ?? 2,
   );
   RNCallKeep.default.endCall(callUuid);
+}
+
+export function dismissNativeIncomingCall(callId?: string) {
+  if (!callId) return;
+
+  const matchingCallUuids: string[] = [];
+  for (const [callUuid, nativeCall] of activeCalls.entries()) {
+    if (nativeCall.callId === callId) {
+      matchingCallUuids.push(callUuid);
+    }
+  }
+
+  if (Platform.OS === 'android') {
+    for (const callUuid of matchingCallUuids) {
+      activeCalls.delete(callUuid);
+    }
+    const dismissPromise = getAndroidCallIntentModule()?.dismissIncomingCall?.(
+      callId,
+    );
+    dismissPromise?.catch(error => {
+      console.warn('[LiveKitCall] Could not dismiss Android call UI', error);
+    });
+    return;
+  }
+
+  for (const callUuid of matchingCallUuids) {
+    endNativeCall(callUuid);
+  }
 }

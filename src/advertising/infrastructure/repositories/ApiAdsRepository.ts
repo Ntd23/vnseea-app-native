@@ -3,13 +3,13 @@
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import type { AdsRepository } from '../../domain/repositories/AdsRepository';
-import type { AdItem, AdFormData, CreateAdResult } from '../../domain/types/ads.types';
+import type { AdItem, AdFormData, CreateAdResult, AdDailyStats } from '../../domain/types/ads.types';
 
 const ADS_ROUTE = apiRoutes.ads.main;
 
 type AdsResponse = {
   api_status: number | string;
-  data?: AdItem | AdItem[];
+  data?: AdItem | AdItem[] | { ad: AdItem; clicks: Array<{ DateOnly: string; ADClicks: number; Spend: number }>; views: Array<{ DateOnly: string; ADviews: number; Spend: number }> };
   message?: string;
 };
 
@@ -90,6 +90,63 @@ export function createAdsRepository(): AdsRepository {
       } catch (error) {
         console.error('[ApiAdsRepository] getAdById error:', error);
         return null;
+      }
+    },
+
+    async getAdDailyStats(id: number): Promise<AdDailyStats[]> {
+      try {
+        const response = await apiBridge.post<AdsResponse>(ADS_ROUTE, {
+          type: 'fetch_ad_stats',
+          ad_id: id,
+        });
+
+        if (response.api_status === 200 || response.api_status === '200') {
+          const data = response.data as { ad: AdItem; clicks: Array<{ DateOnly: string; ADClicks: number; Spend: number }>; views: Array<{ DateOnly: string; ADviews: number; Spend: number }> };
+          
+          // Merge clicks and views data by date
+          const statsMap = new Map<string, AdDailyStats>();
+          
+          // Process clicks data
+          if (data.clicks) {
+            data.clicks.forEach(click => {
+              const date = click.DateOnly;
+              statsMap.set(date, {
+                date,
+                views: 0,
+                clicks: click.ADClicks,
+                spent: click.Spend,
+              });
+            });
+          }
+          
+          // Process views data and merge with clicks
+          if (data.views) {
+            data.views.forEach(view => {
+              const date = view.DateOnly;
+              const existing = statsMap.get(date);
+              if (existing) {
+                existing.views = view.ADviews;
+                existing.spent = Math.max(existing.spent, view.Spend);
+              } else {
+                statsMap.set(date, {
+                  date,
+                  views: view.ADviews,
+                  clicks: 0,
+                  spent: view.Spend,
+                });
+              }
+            });
+          }
+          
+          // Convert map to array and sort by date descending
+          return Array.from(statsMap.values()).sort((a, b) => 
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+        }
+        return [];
+      } catch (error) {
+        console.error('[ApiAdsRepository] getAdDailyStats error:', error);
+        return [];
       }
     },
 

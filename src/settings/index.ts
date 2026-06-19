@@ -7,6 +7,7 @@ export { default as AdvertisingScreen } from './presentation/screens/Advertising
 export { default as SettingsMessagesScreen } from './presentation/screens/SettingsMessagesScreen';
 export { default as MyInfoScreen } from './presentation/screens/MyInfoScreen';
 export { default as EditProfileScreen } from './presentation/screens/EditProfileScreen';
+export { default as UserDashboardScreen } from './presentation/screens/UserDashboardScreen';
 export { default as AddressScreen } from './presentation/screens/AddressScreen';
 // Re-export CreateAdScreen from advertising module
 export { default as CreateAdScreen } from '../advertising/presentation/screens/CreateAdScreen';

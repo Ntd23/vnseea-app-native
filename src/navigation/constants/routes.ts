@@ -10,6 +10,7 @@ export const ROUTES = {
   REELS: 'Reels',
   NOTIFICATIONS: 'Notifications',
   PROFILE: 'Profile',
+  PROFILE_FRIENDS: 'ProfileFriends',
   MY_PHOTOS: 'MyPhotos',
   ALBUMS: 'Albums',
   CREATE_ALBUM: 'CreateAlbum',
@@ -59,6 +60,7 @@ export const ROUTES = {
   JOB_DETAIL: 'JobDetail',
   CREATE_JOB: 'CreateJob',
   SETTINGS: 'Settings',
+  USER_DASHBOARD: 'UserDashboard',
   SETTINGS_MY_INFO: 'SettingsMyInfo',
   SETTINGS_ADDRESS: 'SettingsAddress',
   EDIT_PROFILE: 'EditProfile',
@@ -81,12 +83,14 @@ export const ROUTES = {
   CREATE_POST: 'CreatePost',
   CREATE_STORY: 'CreateStory',
   STORY_VIEWER: 'StoryViewer',
+  STORIES_LIST: 'StoriesList',
   AVATAR_VIEWER: 'AvatarViewer',
   COVER_VIEWER: 'CoverViewer',
   LIVE: 'Live',
   LIVE_ROOM: 'LiveRoom',
   GO_LIVE: 'GoLive',
   POKE: 'Poke',
+  FORUM: 'Forum',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];

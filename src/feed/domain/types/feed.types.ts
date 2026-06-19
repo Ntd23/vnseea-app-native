@@ -108,7 +108,7 @@ export interface CreatePostDraft {
  */
 export interface CreatePostResult {
   postId: string;
-  post: FeedTextPost;
+  post: FeedPost;
 }
 
 /**

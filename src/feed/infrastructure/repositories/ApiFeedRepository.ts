@@ -31,6 +31,8 @@ import type {
   FeedPostsPage,
   FeedRepository,
   FeedRecommendationEventInput,
+  GetPostByIdResult,
+  PostComment,
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
 import type {
@@ -1833,9 +1835,9 @@ export function createFeedRepository(): FeedRepository {
       }
 
       // Server returns the freshly-created post in the same shape as
-      // `/api/posts` returns. Reuse `mapTextPost` so the optimistic
-      // prepend is type-consistent with the rest of the feed.
-      const post = mapTextPost(response.post_data);
+      // `/api/posts` returns. Route it through `mapPost` so video uploads
+      // are prepended as video cards instead of being coerced to text.
+      const post = mapPost(response.post_data);
 
       return { postId: post.id, post };
     },
@@ -2101,7 +2103,7 @@ export function createFeedRepository(): FeedRepository {
       return mapPost(response.data);
     },
 
-    async getPostById(postId, options = {}) {
+    async getPostById(postId, options = {}): Promise<GetPostByIdResult> {
       // The public `get-post-data` endpoint takes a comma-separated
       // `fetch` list to opt into each bucket. We default to post + comments
       // since the detail screen always shows both. `add_view=1` bumps the
@@ -2152,19 +2154,7 @@ function mapPost(raw: Record<string, unknown>): FeedTextPost | FeedVideoPost {
   return mapTextPost(raw);
 }
 
-function mapPostComment(raw: Record<string, unknown>): {
-  id: string;
-  text: string;
-  postedAt?: number;
-  publisher: {
-    id: string;
-    name: string;
-    username: string;
-    avatarUrl?: string;
-  };
-  likeCount: number;
-  isLiked: boolean;
-} {
+function mapPostComment(raw: Record<string, unknown>): PostComment {
   const publisher =
     (raw.publisher as Record<string, unknown> | undefined) ??
     (raw.user_data as Record<string, unknown> | undefined) ??

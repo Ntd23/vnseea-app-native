@@ -3,22 +3,39 @@ package com.vnseea.android.call
 
 import android.app.Activity
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Outline
+import android.graphics.Paint
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.vnseea.android.MainActivity
+import java.net.URL
+import android.view.MotionEvent
 
 class IncomingCallActivity : Activity() {
+  private var dismissReceiver: BroadcastReceiver? = null
+
   private fun extra(key: String) = intent.getStringExtra(key).orEmpty()
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,104 +49,328 @@ class IncomingCallActivity : Activity() {
         WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
     )
+    window.statusBarColor = Color.TRANSPARENT
+    window.navigationBarColor = Color.TRANSPARENT
+
+    registerDismissReceiver()
 
     val isGroupCall = extra(LiveKitCallNativeActions.EXTRA_EVENT_TYPE) == "livekit_group_call"
     val callerName = if (isGroupCall) {
-      extra(LiveKitCallNativeActions.EXTRA_GROUP_NAME).ifBlank { "Nhom" }
+      extra(LiveKitCallNativeActions.EXTRA_GROUP_NAME).ifBlank { "VNSEEA" }
     } else {
       extra(LiveKitCallNativeActions.EXTRA_NAME).ifBlank { "VNSEEA" }
     }
-    val callType = if (extra(LiveKitCallNativeActions.EXTRA_CALL_TYPE) == "audio") {
-      if (isGroupCall) "GROUP AUDIO CALL" else "AUDIO CALL"
+    val avatarUrl = if (isGroupCall) {
+      extra(LiveKitCallNativeActions.EXTRA_GROUP_AVATAR)
     } else {
-      if (isGroupCall) "GROUP VIDEO CALL" else "VIDEO CALL"
+      extra(LiveKitCallNativeActions.EXTRA_AVATAR)
+    }
+    val isAudioCall = extra(LiveKitCallNativeActions.EXTRA_CALL_TYPE) == "audio"
+    val title = if (isAudioCall) {
+      "\u260e Cu\u1ed9c g\u1ecdi tho\u1ea1i"
+    } else {
+      "\u25a0 Cu\u1ed9c g\u1ecdi video"
+    }
+    val callDescription = if (isAudioCall) {
+      "B\u1ea1n \u0111ang c\u00f3 cu\u1ed9c g\u1ecdi tho\u1ea1i \u0111\u1ebfn"
+    } else {
+      "B\u1ea1n \u0111ang c\u00f3 cu\u1ed9c g\u1ecdi video \u0111\u1ebfn"
     }
 
     val root = FrameLayout(this).apply {
-      setBackgroundColor(Color.rgb(14, 54, 86))
+      background = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(
+          Color.rgb(4, 24, 48),
+          Color.rgb(8, 42, 78),
+          Color.rgb(2, 14, 35),
+        ),
+      )
       layoutParams = ViewGroup.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT,
       )
     }
+    val bgImage = ImageView(this).apply {
+      scaleType = ImageView.ScaleType.CENTER_CROP
+      alpha = 0f
+      layoutParams = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+      )
+    }
+    root.addView(bgImage)
+    root.addView(CallBackgroundView(this))
 
     val content = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
-      gravity = Gravity.CENTER
-      setPadding(dp(32), dp(54), dp(32), dp(42))
+      gravity = Gravity.CENTER_HORIZONTAL
+      setPadding(dp(28), dp(76), dp(28), dp(34))
       layoutParams = FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT,
       )
     }
 
-    val avatarText = callerName.trim().take(1).ifBlank { "V" }.uppercase()
     content.addView(TextView(this).apply {
-      text = avatarText
-      textSize = 42f
+      text = title
+      textSize = 21f
       typeface = Typeface.DEFAULT_BOLD
-      setTextColor(Color.rgb(14, 54, 86))
+      setTextColor(Color.WHITE)
       gravity = Gravity.CENTER
-      background = oval(Color.rgb(222, 232, 240))
-      layoutParams = LinearLayout.LayoutParams(dp(112), dp(112)).apply {
-        bottomMargin = dp(28)
-      }
+      includeFontPadding = false
+      layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+      )
     })
 
     content.addView(TextView(this).apply {
+      text = "\u0110ang g\u1ecdi \u0111\u1ebfn..."
+      textSize = 15f
+      setTextColor(Color.rgb(186, 201, 225))
+      gravity = Gravity.CENTER
+      includeFontPadding = false
+      layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+      ).apply {
+        topMargin = dp(9)
+      }
+    })
+
+    content.addView(createAvatarBlock(callerName, avatarUrl, bgImage))
+
+    content.addView(TextView(this).apply {
       text = callerName
-      textSize = 28f
+      textSize = 32f
       typeface = Typeface.DEFAULT_BOLD
       setTextColor(Color.WHITE)
       gravity = Gravity.CENTER
       maxLines = 2
+      includeFontPadding = false
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
-      )
+      ).apply {
+        topMargin = dp(26)
+      }
     })
+
+    content.addView(statusPill())
+
     content.addView(TextView(this).apply {
-      text = "$callType..."
-      textSize = 18f
-      letterSpacing = 0.08f
-      setTextColor(Color.rgb(215, 226, 236))
+      text = callDescription
+      textSize = 15f
+      setTextColor(Color.rgb(221, 228, 239))
       gravity = Gravity.CENTER
+      includeFontPadding = false
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       ).apply {
-        topMargin = dp(12)
+        topMargin = dp(28)
       }
     })
 
-    val spacer = View(this).apply {
+    content.addView(View(this).apply {
       layoutParams = LinearLayout.LayoutParams(1, 0, 1f)
-    }
-    content.addView(spacer)
+    })
 
-    val utilityActions = LinearLayout(this).apply {
+    content.addView(utilityActions())
+    content.addView(createModernCallActions(isAudioCall))
+
+    root.addView(content)
+    setContentView(root)
+
+    // The fullscreen activity is now the call surface; remove the heads-up card
+    // so the lock-screen UI does not show two incoming-call layers at once.
+    cancelNotification()
+  }
+
+  override fun onNewIntent(nextIntent: Intent) {
+    super.onNewIntent(nextIntent)
+    setIntent(nextIntent)
+  }
+
+  override fun onDestroy() {
+    dismissReceiver?.let { receiver ->
+      try {
+        unregisterReceiver(receiver)
+      } catch (_: Throwable) {
+      }
+    }
+    dismissReceiver = null
+    super.onDestroy()
+  }
+
+  private fun createAvatarBlock(name: String, avatarUrl: String, bgImage: ImageView): FrameLayout {
+    val size = dp(176)
+    val avatarSize = dp(134)
+    val block = FrameLayout(this).apply {
+      layoutParams = LinearLayout.LayoutParams(size, size).apply {
+        topMargin = dp(56)
+      }
+    }
+    block.addView(RingView(this).apply {
+      layoutParams = FrameLayout.LayoutParams(size, size, Gravity.CENTER)
+    })
+
+    val avatarContainer = FrameLayout(this).apply {
+      background = ovalBorder(Color.rgb(231, 238, 255), Color.rgb(96, 91, 255), dp(4))
+      clipToOutline = true
+      outlineProvider = object : ViewOutlineProvider() {
+        override fun getOutline(view: View, outline: Outline) {
+          outline.setOval(0, 0, view.width, view.height)
+        }
+      }
+      layoutParams = FrameLayout.LayoutParams(avatarSize, avatarSize, Gravity.CENTER)
+    }
+
+    val fallback = TextView(this).apply {
+      text = name.trim().take(1).ifBlank { "V" }.uppercase()
+      textSize = 48f
+      typeface = Typeface.DEFAULT_BOLD
+      setTextColor(Color.rgb(20, 57, 135))
+      gravity = Gravity.CENTER
+      background = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(Color.rgb(236, 243, 255), Color.rgb(212, 225, 255)),
+      ).apply {
+        shape = GradientDrawable.OVAL
+      }
+      layoutParams = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+      )
+    }
+    avatarContainer.addView(fallback)
+
+    if (avatarUrl.isNotBlank()) {
+      val image = ImageView(this).apply {
+        scaleType = ImageView.ScaleType.CENTER_CROP
+        alpha = 0f
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+        )
+      }
+      avatarContainer.addView(image)
+      loadAvatar(avatarUrl, image, bgImage)
+    }
+
+    block.addView(avatarContainer)
+    block.addView(View(this).apply {
+      background = ovalBorder(Color.rgb(31, 205, 75), Color.WHITE, dp(4))
+      layoutParams = FrameLayout.LayoutParams(dp(32), dp(32), Gravity.RIGHT or Gravity.BOTTOM).apply {
+        rightMargin = dp(22)
+        bottomMargin = dp(22)
+      }
+    })
+    return block
+  }
+
+  private fun loadAvatar(url: String, image: ImageView, bgImage: ImageView) {
+    Thread {
+      try {
+        val bitmap = URL(url).openStream().use { stream ->
+          BitmapFactory.decodeStream(stream)
+        } ?: return@Thread
+        Handler(Looper.getMainLooper()).post {
+          image.setImageBitmap(bitmap)
+          image.animate().alpha(1f).setDuration(180L).start()
+          bgImage.setImageBitmap(bitmap)
+          bgImage.animate().alpha(0.18f).setDuration(300L).start()
+        }
+      } catch (_: Throwable) {
+      }
+    }.start()
+  }
+
+  private fun statusPill(): TextView {
+    return TextView(this).apply {
+      text = "\u25cf  Online"
+      textSize = 14f
+      setTextColor(Color.WHITE)
+      gravity = Gravity.CENTER
+      includeFontPadding = false
+      background = roundRect(Color.argb(48, 255, 255, 255), dp(22))
+      layoutParams = LinearLayout.LayoutParams(dp(110), dp(38)).apply {
+        topMargin = dp(18)
+      }
+    }
+  }
+
+  private fun utilityActions(): LinearLayout {
+    return LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       ).apply {
-        bottomMargin = dp(34)
+        bottomMargin = dp(44)
       }
+      addView(utilityButton("\u2026", "Nh\u1eafn tin"))
+      addView(utilityButton("\u266a", "T\u1eaft chu\u00f4ng"))
     }
-    utilityActions.addView(utilityButton("Remind Me"))
-    utilityActions.addView(utilityButton("Message"))
-    content.addView(utilityActions)
+  }
 
-    val actions = LinearLayout(this).apply {
-      orientation = LinearLayout.HORIZONTAL
+  private fun utilityButton(icon: String, label: String): LinearLayout {
+    return LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
+      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+      addView(TextView(this@IncomingCallActivity).apply {
+        text = icon
+        textSize = 30f
+        typeface = Typeface.DEFAULT_BOLD
+        setTextColor(Color.WHITE)
+        gravity = Gravity.CENTER
+        background = oval(Color.argb(46, 255, 255, 255))
+        layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
+      })
+      addView(TextView(this@IncomingCallActivity).apply {
+        text = label
+        textSize = 14f
+        setTextColor(Color.rgb(232, 237, 247))
+        gravity = Gravity.CENTER
+        includeFontPadding = false
+        layoutParams = LinearLayout.LayoutParams(
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+          topMargin = dp(14)
+        }
+      })
+    }
+  }
+
+  private fun createModernCallActions(isAudioCall: Boolean): View {
+    val container = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(16), 0, dp(16), 0)
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
-      )
+      ).apply {
+        bottomMargin = dp(40)
+      }
     }
-    actions.addView(callButton("Decline", Color.rgb(238, 48, 48)).apply {
+
+    // 1. Decline Button
+    val declineBtn = TextView(this).apply {
+      text = "\u260e" // Phone icon
+      textSize = 24f
+      typeface = Typeface.DEFAULT_BOLD
+      setTextColor(Color.WHITE)
+      gravity = Gravity.CENTER
+      background = oval(Color.rgb(239, 57, 62)) // Red color
+      elevation = dp(4).toFloat()
+      layoutParams = LinearLayout.LayoutParams(dp(64), dp(64)).apply {
+        rightMargin = dp(20)
+      }
       setOnClickListener {
         cancelNotification()
         LiveKitCallNativeActions.postAction(
@@ -139,59 +380,160 @@ class IncomingCallActivity : Activity() {
         )
         finishAndRemoveTask()
       }
-    })
-    actions.addView(callButton("Answer", Color.rgb(88, 208, 72)).apply {
-      setOnClickListener {
-        cancelNotification()
-        LiveKitCallNativeActions.postAction(
-          extra(LiveKitCallNativeActions.EXTRA_API_URL),
-          extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),
-          "answer",
-        )
-        startActivity(Intent(this@IncomingCallActivity, MainActivity::class.java).apply {
-          flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-          putExtras(intent)
-          putExtra(LiveKitCallNativeActions.EXTRA_NATIVE_ACTION, "answer")
-        })
-        finish()
-      }
-    })
-    content.addView(actions)
-    root.addView(content)
-    setContentView(root)
-  }
+    }
+    container.addView(declineBtn)
 
-  private fun callButton(label: String, color: Int): TextView {
-    return TextView(this).apply {
-      text = label
+    // 2. Slide to Answer
+    val sliderTrack = FrameLayout(this).apply {
+      background = roundRect(Color.argb(50, 255, 255, 255), dp(32))
+      layoutParams = LinearLayout.LayoutParams(
+        0,
+        dp(64),
+        1f
+      )
+    }
+
+    val promptText = TextView(this).apply {
+      text = "Tr\u01b0\u1ee3t \u0111\u1ec3 tr\u1ea3 l\u1eddi" // "Trượt để trả lời"
       textSize = 14f
+      setTextColor(Color.WHITE)
+      gravity = Gravity.CENTER
+      layoutParams = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT
+      ).apply {
+        leftMargin = dp(48) // Offset to not overlap with handle initially
+        rightMargin = dp(12)
+      }
+    }
+    sliderTrack.addView(promptText)
+
+    val handle = TextView(this).apply {
+      text = if (isAudioCall) "\u260e" else "\u25a0"
+      textSize = 22f
       typeface = Typeface.DEFAULT_BOLD
       setTextColor(Color.WHITE)
       gravity = Gravity.CENTER
-      background = oval(color)
-      layoutParams = LinearLayout.LayoutParams(dp(86), dp(86)).apply {
-        leftMargin = dp(26)
-        rightMargin = dp(26)
+      background = oval(Color.rgb(77, 213, 66)) // Green color
+      layoutParams = FrameLayout.LayoutParams(
+        dp(56),
+        dp(56),
+        Gravity.LEFT or Gravity.CENTER_VERTICAL
+      ).apply {
+        leftMargin = dp(4)
       }
     }
+    sliderTrack.addView(handle)
+
+    var initialX = 0f
+    var startTranslationX = 0f
+    var isAnswered = false
+
+    handle.setOnTouchListener(object : View.OnTouchListener {
+      override fun onTouch(v: View, event: MotionEvent): Boolean {
+        if (isAnswered) return false
+        val maxSlide = sliderTrack.width - v.width - dp(8)
+
+        when (event.action) {
+          MotionEvent.ACTION_DOWN -> {
+            initialX = event.rawX
+            startTranslationX = v.translationX
+            v.parent.requestDisallowInterceptTouchEvent(true)
+            return true
+          }
+          MotionEvent.ACTION_MOVE -> {
+            val deltaX = event.rawX - initialX
+            var nextTranslationX = startTranslationX + deltaX
+            if (nextTranslationX < 0f) nextTranslationX = 0f
+            if (nextTranslationX > maxSlide) nextTranslationX = maxSlide.toFloat()
+            v.translationX = nextTranslationX
+
+            val progress = nextTranslationX / maxSlide
+            promptText.alpha = 1f - progress
+            return true
+          }
+          MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            if (v.translationX >= maxSlide * 0.82f) {
+              isAnswered = true
+              v.animate()
+                .translationX(maxSlide.toFloat())
+                .setDuration(120L)
+                .withEndAction {
+                  cancelNotification()
+                  LiveKitCallNativeActions.postAction(
+                    extra(LiveKitCallNativeActions.EXTRA_API_URL),
+                    extra(LiveKitCallNativeActions.EXTRA_ACTION_TOKEN),
+                    "answer",
+                  )
+                  startActivity(Intent(this@IncomingCallActivity, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    putExtras(intent)
+                    putExtra(LiveKitCallNativeActions.EXTRA_NATIVE_ACTION, "answer")
+                  })
+                  finish()
+                }
+                .start()
+            } else {
+              v.animate()
+                .translationX(0f)
+                .setDuration(220L)
+                .start()
+              promptText.animate()
+                .alpha(1f)
+                .setDuration(220L)
+                .start()
+            }
+            return true
+          }
+          else -> return false
+        }
+      }
+    })
+
+    container.addView(sliderTrack)
+    return container
   }
 
-  private fun utilityButton(label: String): TextView {
-    return TextView(this).apply {
-      text = label
-      textSize = 12f
-      setTextColor(Color.rgb(226, 235, 243))
-      gravity = Gravity.CENTER
-      layoutParams = LinearLayout.LayoutParams(dp(112), dp(42)).apply {
-        leftMargin = dp(10)
-        rightMargin = dp(10)
+  private fun registerDismissReceiver() {
+    val receiver = object : BroadcastReceiver() {
+      override fun onReceive(context: Context?, dismissIntent: Intent?) {
+        val dismissedCallId =
+          dismissIntent?.getStringExtra(LiveKitCallNativeActions.EXTRA_CALL_ID).orEmpty()
+        val currentCallId = extra(LiveKitCallNativeActions.EXTRA_CALL_ID)
+        if (dismissedCallId.isNotBlank() && dismissedCallId != currentCallId) return
+        cancelNotification()
+        finishAndRemoveTask()
       }
+    }
+    dismissReceiver = receiver
+    val filter = IntentFilter(LiveKitCallNativeActions.ACTION_DISMISS_INCOMING_CALL)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+    } else {
+      @Suppress("DEPRECATION")
+      registerReceiver(receiver, filter)
     }
   }
 
   private fun oval(color: Int): GradientDrawable {
     return GradientDrawable().apply {
       shape = GradientDrawable.OVAL
+      setColor(color)
+    }
+  }
+
+  private fun ovalBorder(color: Int, strokeColor: Int, strokeWidth: Int): GradientDrawable {
+    return GradientDrawable().apply {
+      shape = GradientDrawable.OVAL
+      setColor(color)
+      setStroke(strokeWidth, strokeColor)
+    }
+  }
+
+  private fun roundRect(color: Int, radius: Int): GradientDrawable {
+    return GradientDrawable().apply {
+      shape = GradientDrawable.RECTANGLE
+      cornerRadius = radius.toFloat()
       setColor(color)
     }
   }
@@ -205,5 +547,51 @@ class IncomingCallActivity : Activity() {
     if (callId.isBlank()) return
     val manager = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
     manager?.cancel(callId.hashCode())
+  }
+
+  private class RingView(context: Context) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeWidth = 2f
+    }
+
+    override fun onDraw(canvas: Canvas) {
+      super.onDraw(canvas)
+      val centerX = width / 2f
+      val centerY = height / 2f
+      val maxRadius = minOf(width, height) / 2f - 3f
+      for (index in 0 until 5) {
+        paint.color = Color.argb(54 - index * 8, 116, 112, 255)
+        canvas.drawCircle(centerX, centerY, maxRadius - index * 17f, paint)
+      }
+    }
+  }
+
+  private class CallBackgroundView(context: Context) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    override fun onDraw(canvas: Canvas) {
+      super.onDraw(canvas)
+      paint.shader = LinearGradient(
+        0f,
+        0f,
+        width.toFloat(),
+        height.toFloat(),
+        intArrayOf(
+          Color.argb(160, 11, 66, 118),
+          Color.argb(80, 93, 77, 164),
+          Color.argb(120, 2, 18, 42),
+        ),
+        null,
+        Shader.TileMode.CLAMP,
+      )
+      canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+      paint.shader = null
+      paint.style = Paint.Style.FILL
+      paint.color = Color.argb(34, 55, 135, 255)
+      canvas.drawCircle(width * 0.1f, height * 0.2f, width * 0.42f, paint)
+      paint.color = Color.argb(24, 255, 84, 115)
+      canvas.drawCircle(width * 0.88f, height * 0.58f, width * 0.48f, paint)
+    }
   }
 }
