@@ -51,28 +51,28 @@ export function ComposerCard({
   copy: ComposerCopy;
 }) {
   return (
-    <View className="bg-white px-4 pb-3.5 pt-3">
+    <View className="bg-white px-4 pb-3 pt-1">
       <View className="mb-3 flex-row items-center">
-        <Avatar uri={avatarUrl ?? FALLBACK_AVATAR} size={44} />
+        <Avatar uri={avatarUrl ?? FALLBACK_AVATAR} size={48} />
         <TouchableOpacity
-          className="ml-3 min-h-[46px] flex-1 flex-row items-center justify-between rounded-xl border border-[#dfe3eb] bg-white px-4"
+          className="ml-3 min-h-[52px] flex-1 flex-row items-center justify-between rounded-[24px] border border-[#dfe3eb] bg-white px-5"
           activeOpacity={0.8}
           onPress={onPress}
         >
-          <Text className="text-[14px] font-semibold text-[#667085]">
+          <Text className="text-[17px] font-semibold text-[#667085]">
             {copy.composerPlaceholder}
           </Text>
-          <ImageIcon size={20} color="#0866ff" />
+          <ImageIcon size={24} color="#0758ff" strokeWidth={2.2} />
         </TouchableOpacity>
       </View>
-      <View className="flex-row items-center justify-between rounded-xl border border-[#edf0f5] bg-white px-3 py-2.5 shadow-sm">
+      <View className="min-h-[52px] flex-row items-center justify-between rounded-2xl border border-[#edf0f5] bg-white px-3 shadow-sm">
         <TouchableOpacity
           className="flex-1 flex-row items-center justify-center"
           activeOpacity={0.75}
           onPress={onPress}
         >
-          <ImageIcon size={18} color="#22c55e" />
-          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">
+          <ImageIcon size={23} color="#22c55e" strokeWidth={2.25} />
+          <Text className="ml-2 text-[15px] font-bold text-[#4b5563]">
             {copy.library}
           </Text>
         </TouchableOpacity>
@@ -82,8 +82,8 @@ export function ComposerCard({
           activeOpacity={0.75}
           onPress={onPress}
         >
-          <Tag size={18} color="#0000ff" />
-          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">
+          <Tag size={23} color="#0758ff" strokeWidth={2.25} />
+          <Text className="ml-2 text-[15px] font-bold text-[#4b5563]">
             {copy.tag}
           </Text>
         </TouchableOpacity>
@@ -93,8 +93,8 @@ export function ComposerCard({
           activeOpacity={0.75}
           onPress={onPress}
         >
-          <Smile size={18} color="#f59e0b" />
-          <Text className="ml-2 text-[13px] font-bold text-[#4b5563]">
+          <Smile size={23} color="#ff8a00" strokeWidth={2.25} />
+          <Text className="ml-2 text-[15px] font-bold text-[#4b5563]">
             {copy.feeling}
           </Text>
         </TouchableOpacity>

@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -16,11 +17,16 @@ import com.vnseea.android.R
 import org.json.JSONObject
 
 object LiveKitCallNotifier {
-  private const val CHANNEL_ID = "vnseea_calls_fullscreen_v3"
+  private const val CHANNEL_ID = "vnseea_calls_fullscreen_v4"
 
   fun show(context: Context, data: JSONObject) {
     Log.i("LiveKitCallPush", "build notification call_id=${data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)} event_type=${data.optString(LiveKitCallNativeActions.EXTRA_EVENT_TYPE)}")
     val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    val ringtoneUri = incomingCallRingtoneUri(context)
+    val ringtoneAttributes = AudioAttributes.Builder()
+      .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+      .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+      .build()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       manager.createNotificationChannel(
         NotificationChannel(
@@ -32,13 +38,7 @@ object LiveKitCallNotifier {
           lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
           enableVibration(true)
           vibrationPattern = longArrayOf(0, 700, 350, 700)
-          setSound(
-            null,
-            AudioAttributes.Builder()
-              .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-              .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-              .build(),
-          )
+          setSound(ringtoneUri, ringtoneAttributes)
         },
       )
     }
@@ -96,6 +96,7 @@ object LiveKitCallNotifier {
       .setContentIntent(fullScreenPendingIntent)
       .setFullScreenIntent(fullScreenPendingIntent, true)
       .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
+      .setSound(ringtoneUri)
       .addAction(
         0,
         "Decline",
@@ -134,6 +135,18 @@ object LiveKitCallNotifier {
     }
   }
 
+  private fun incomingCallRingtoneUri(context: Context): Uri {
+    val customRingtoneId = context.resources.getIdentifier(
+      "incoming_call_ringtone",
+      "raw",
+      context.packageName,
+    )
+    if (customRingtoneId != 0) {
+      return Uri.parse("android.resource://${context.packageName}/$customRingtoneId")
+    }
+    return android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+  }
+
   private fun copyCallExtras(data: JSONObject, intent: Intent) {
     for (key in listOf(
       LiveKitCallNativeActions.EXTRA_EVENT_TYPE,
@@ -151,6 +164,10 @@ object LiveKitCallNotifier {
       LiveKitCallNativeActions.EXTRA_CALLER_AVATAR,
       LiveKitCallNativeActions.EXTRA_NAME,
       LiveKitCallNativeActions.EXTRA_AVATAR,
+      LiveKitCallNativeActions.EXTRA_COVER,
+      LiveKitCallNativeActions.EXTRA_COVER_URL,
+      LiveKitCallNativeActions.EXTRA_CALLER_COVER,
+      LiveKitCallNativeActions.EXTRA_GROUP_COVER,
       LiveKitCallNativeActions.EXTRA_ACTION_TOKEN,
       LiveKitCallNativeActions.EXTRA_API_URL,
       LiveKitCallNativeActions.EXTRA_RING_MODE,

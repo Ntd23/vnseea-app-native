@@ -293,6 +293,29 @@ export function useIncomingLiveKitCalls() {
       });
   }, [openIncomingCallRoom, openIncomingGroupCallRoom]);
 
+  const handleInitialNativeMessageAction = useCallback(() => {
+    const nativeCallService = loadNativeCallService();
+    if (!nativeCallService?.getInitialNativeMessageAction) return;
+
+    nativeCallService
+      .getInitialNativeMessageAction()
+      .then(action => {
+        if (!action) return;
+        dismissNativeIncomingCall(action.callId);
+        setActiveIncomingCall(null);
+        setActiveIncomingGroupCall(null);
+        runWhenNavigationReady(() => {
+          navigationRef.navigate(ROUTES.CHAT, { chat: action.chat });
+        });
+      })
+      .catch(() => undefined);
+  }, [
+    dismissNativeIncomingCall,
+    runWhenNavigationReady,
+    setActiveIncomingCall,
+    setActiveIncomingGroupCall,
+  ]);
+
   useEffect(() => {
     const nativeCallService = loadNativeCallService();
     nativeCallService?.configureNativeCallService?.().catch(() => undefined);
@@ -418,6 +441,7 @@ export function useIncomingLiveKitCalls() {
     }) ?? (() => undefined);
 
     handleInitialNativeCallAction();
+    handleInitialNativeMessageAction();
 
     const realtimeConnectInterval = setInterval(() => {
       if (!isAppForeground()) return;
@@ -430,6 +454,7 @@ export function useIncomingLiveKitCalls() {
         if (nextState !== 'active') return;
         connectLiveKitCallRealtime();
         handleInitialNativeCallAction();
+        handleInitialNativeMessageAction();
       },
     );
 
@@ -453,6 +478,7 @@ export function useIncomingLiveKitCalls() {
     handleIncomingCallSignal,
     handleIncomingGroupCallSignal,
     handleInitialNativeCallAction,
+    handleInitialNativeMessageAction,
     leaveCall,
     repository,
   ]);

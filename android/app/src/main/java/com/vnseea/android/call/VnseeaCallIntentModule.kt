@@ -21,9 +21,18 @@ class VnseeaCallIntentModule(
 
   @ReactMethod
   fun getInitialCallAction(promise: Promise) {
+    resolveInitialAction("answer", promise)
+  }
+
+  @ReactMethod
+  fun getInitialMessageAction(promise: Promise) {
+    resolveInitialAction("message", promise)
+  }
+
+  private fun resolveInitialAction(expectedAction: String, promise: Promise) {
     val intent = appContext.currentActivity?.intent
     val extras = intent?.extras
-    if (extras == null || extras.getString(LiveKitCallNativeActions.EXTRA_NATIVE_ACTION) != "answer") {
+    if (extras == null || extras.getString(LiveKitCallNativeActions.EXTRA_NATIVE_ACTION) != expectedAction) {
       promise.resolve(null)
       return
     }
@@ -49,6 +58,7 @@ class VnseeaCallIntentModule(
     )) {
       map.putString(key, extras.getString(key).orEmpty())
     }
+    map.putString(LiveKitCallNativeActions.EXTRA_NATIVE_ACTION, expectedAction)
     intent.removeExtra(LiveKitCallNativeActions.EXTRA_NATIVE_ACTION)
     promise.resolve(map)
   }

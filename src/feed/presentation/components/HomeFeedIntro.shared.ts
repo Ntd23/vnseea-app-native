@@ -61,10 +61,17 @@ export function useHomeStoriesRail() {
     [navigation, vm.stories],
   );
 
+  const goToStoriesList = useCallback(() => {
+    navigation.navigate(ROUTES.STORIES_LIST, {
+      stories: vm.stories,
+    });
+  }, [navigation, vm.stories]);
+
   return {
     stories: vm.stories,
     goToCreateStory,
     goToViewerForGroup,
+    goToStoriesList,
   };
 }
 

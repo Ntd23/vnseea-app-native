@@ -219,7 +219,7 @@ function getPollTotalVotes(options: FeedPollPost['options']) {
 }
 
 export function useFeedViewModel() {
-  const [feedSource, setFeedSourceState] = useState<FeedSource>('all');
+  const [feedSource, setFeedSourceState] = useState<FeedSource | 'photos'>('all');
   const [posts, setPosts] = useState<FeedPost[]>(() => {
     const cachedLightPosts = feedCacheStorage
       .getCachedPosts()
@@ -643,10 +643,11 @@ export function useFeedViewModel() {
   }, [commitFeedSources, prefetchNextPage, scheduleVideoBuffer]);
 
   const selectFeedSource = useCallback(
-    (nextSource: FeedSource) => {
-      if (feedSourceRef.current === nextSource) return;
+    (nextSource: FeedSource | 'photos') => {
+      const nextApiSource = nextSource === 'photos' ? 'all' : nextSource;
+      if (feedSourceRef.current === nextApiSource && feedSource === nextSource) return;
 
-      feedSourceRef.current = nextSource;
+      feedSourceRef.current = nextApiSource;
       setFeedSourceState(nextSource);
       lightPostsRef.current = [];
       videoPostsRef.current = [];
@@ -661,7 +662,7 @@ export function useFeedViewModel() {
       setHasLoadedOnce(false);
       loadPosts(false);
     },
-    [loadPosts],
+    [loadPosts, feedSource],
   );
 
   const loadMorePosts = useCallback(async () => {
@@ -829,13 +830,23 @@ export function useFeedViewModel() {
   // Older UI code reads `vm.videoPosts` / `vm.textPosts`. We keep these
   // as memoised projections of the single source of truth so the home
   // screen can migrate to `vm.posts` at its own pace.
+  const visiblePosts = useMemo(() => {
+    if (feedSource === 'photos') {
+      return posts.filter(
+        (post): post is FeedTextPost =>
+          post.kind === 'text' && Array.isArray(post.photos) && post.photos.length > 0,
+      );
+    }
+    return posts;
+  }, [posts, feedSource]);
+
   const videoPosts = useMemo<FeedVideoPost[]>(
-    () => posts.filter((p): p is FeedVideoPost => p.kind === 'video'),
-    [posts],
+    () => visiblePosts.filter((p): p is FeedVideoPost => p.kind === 'video'),
+    [visiblePosts],
   );
   const textPosts = useMemo<FeedTextPost[]>(
-    () => posts.filter((p): p is FeedTextPost => p.kind === 'text'),
-    [posts],
+    () => visiblePosts.filter((p): p is FeedTextPost => p.kind === 'text'),
+    [visiblePosts],
   );
 
   /**
@@ -1033,7 +1044,7 @@ export function useFeedViewModel() {
   return {
     feedSource,
     setFeedSource: selectFeedSource,
-    posts,
+    posts: visiblePosts,
     isLoading: isLoading || isRefreshing,
     isRefreshing,
     isLoadingMore,

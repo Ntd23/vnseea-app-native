@@ -274,13 +274,13 @@ function mapUnreadCounts(response: NotificationsResponse): NotificationsUnreadCo
 
   return {
     notificationCount: visibleUnreadCount,
-    messageCount: 0,
+    messageCount: toCount(response.count_new_messages),
   };
 }
 
 function fetchNotificationsResponse(offset?: string | number | null) {
   const payload: Record<string, string> = {
-    fetch: 'notifications',
+    fetch: 'notifications,count_new_messages',
     include_all_notifications: '1',
   };
   if (offset) {

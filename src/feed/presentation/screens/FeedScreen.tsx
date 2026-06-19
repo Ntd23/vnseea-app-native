@@ -1,4 +1,4 @@
-﻿// Description: Renders the Stitch Facebook-style VNSEEA feed inside the main tab shell.
+// Description: Renders the Stitch Facebook-style VNSEEA feed inside the main tab shell.
 import React, {
   useCallback,
   useEffect,
@@ -52,8 +52,12 @@ import Animated, {
 import {
   Briefcase,
   Building2,
+  ChevronDown,
+  Compass,
+  Filter,
   Globe,
   HeartHandshake,
+  Image as ImageIcon,
   Lock,
   MapPin,
   MessageCircle,
@@ -64,8 +68,11 @@ import {
   Send,
   Share2,
   ShoppingBag,
+  Smile,
+  Star,
   ThumbsUp,
   Users,
+  Video,
   X,
 } from 'lucide-react-native';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
@@ -211,12 +218,12 @@ const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const IMAGE_PREFETCH_LOOKAHEAD = 5;
 const MAX_IMAGE_PREFETCH_URLS = 8;
 const FEED_LIST_CONTENT_STYLE = {
-  paddingBottom: Platform.OS === 'ios' ? 24 : 96,
+  paddingBottom: 24,
 };
 const FEED_SAFE_AREA_CLASS_NAME =
-  Platform.OS === 'ios' ? 'flex-1' : 'flex-1 surface-base';
+  Platform.OS === 'ios' ? 'flex-1' : 'flex-1 bg-white';
 const FEED_SAFE_AREA_STYLE =
-  Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
+  Platform.OS === 'ios' ? { backgroundColor: '#FFFFFF' } : undefined;
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -266,36 +273,67 @@ function FilterTabs({
   onChangeSource,
 }: {
   copy: FeedCopy;
-  activeSource: FeedSource;
-  onChangeSource: (source: FeedSource) => void;
+  activeSource: FeedSource | 'photos';
+  onChangeSource: (source: FeedSource | 'photos') => void;
 }) {
+  const navigation = useNavigation<any>();
+
   return (
-    <View className="border-b border-[#dddfe2] bg-white px-4 pt-2.5">
-      <View className="flex-row items-end justify-between">
-        {copy.filters.map(filter => {
-          const active = filter.source === activeSource;
-          return (
-            <TouchableOpacity
-              key={filter.source}
-              className="min-h-[38px] flex-1 items-center justify-center"
-              activeOpacity={0.8}
-              onPress={() => onChangeSource(filter.source)}
-            >
-              <Text
-                className={`text-[15px] font-extrabold ${
-                  active ? 'text-[#0000ff]' : 'text-title-secondary'
-                }`}
-              >
-                {filter.label}
-              </Text>
-              <View
-                className={`mt-2.5 h-[3px] w-16 rounded-full ${
-                  active ? 'bg-[#0000ff]' : 'bg-transparent'
-                }`}
-              />
-            </TouchableOpacity>
-          );
-        })}
+    <View className="bg-white px-4 pb-3 pt-4">
+      <View className="min-h-[54px] flex-row items-center justify-around rounded-[20px] border border-[#e3e8f2] bg-white px-4 shadow-sm">
+        {/* Tất cả */}
+        <TouchableOpacity
+          className="h-10 flex-1 items-center justify-center"
+          activeOpacity={0.75}
+          onPress={() => onChangeSource('all')}
+        >
+          <Compass
+            size={24}
+            color={activeSource === 'all' ? '#0758ff' : '#9ca3af'}
+            strokeWidth={activeSource === 'all' ? 2.5 : 2.0}
+          />
+        </TouchableOpacity>
+
+        <View className="h-7 w-px bg-[#dfe4ef]" />
+
+        {/* Bài viết ảnh */}
+        <TouchableOpacity
+          className="h-10 flex-1 items-center justify-center"
+          activeOpacity={0.75}
+          onPress={() => onChangeSource('photos')}
+        >
+          <ImageIcon
+            size={24}
+            color={activeSource === 'photos' ? '#22c55e' : '#9ca3af'}
+            strokeWidth={activeSource === 'photos' ? 2.5 : 2.0}
+          />
+        </TouchableOpacity>
+
+        <View className="h-7 w-px bg-[#dfe4ef]" />
+
+        {/* Video Reel */}
+        <TouchableOpacity
+          className="h-10 flex-1 items-center justify-center"
+          activeOpacity={0.75}
+          onPress={() => navigation.navigate(ROUTES.REELS)}
+        >
+          <Video size={24} color="#0758ff" strokeWidth={2.2} />
+        </TouchableOpacity>
+
+        <View className="h-7 w-px bg-[#dfe4ef]" />
+
+        {/* Người follow */}
+        <TouchableOpacity
+          className="h-10 flex-1 items-center justify-center"
+          activeOpacity={0.75}
+          onPress={() => onChangeSource('following')}
+        >
+          <Users
+            size={24}
+            color={activeSource === 'following' ? '#0758ff' : '#9ca3af'}
+            strokeWidth={activeSource === 'following' ? 2.5 : 2.0}
+          />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -3332,7 +3370,7 @@ function FeedScreen() {
         style={FEED_SAFE_AREA_STYLE}
         edges={ROOT_SAFE_AREA_EDGES}
       >
-        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
           <FeedHeader />
         </FeedHeaderCollapseFrame>

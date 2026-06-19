@@ -16,7 +16,10 @@ export function useNotificationBadgeViewModel() {
   const refresh = useCallback(async () => {
     try {
       const counts = await repository.getUnreadCounts();
-      setUnreadBadgeCounts({ notificationCount: counts.notificationCount });
+      setUnreadBadgeCounts({
+        notificationCount: counts.notificationCount,
+        messageCount: counts.messageCount,
+      });
     } catch (error) {
       console.warn('[useNotificationBadgeViewModel] refresh failed', error);
     }

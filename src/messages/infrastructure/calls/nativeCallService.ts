@@ -13,6 +13,7 @@ import type {
   GroupLiveKitGroup,
   IncomingGroupLiveKitCall,
 } from '../../domain/types/groupCall.types';
+import type { ChatItem } from '../../domain/types/messages.types';
 
 type NativeCallListeners = {
   onAnswer?: (callUuid: string) => void;
@@ -24,7 +25,13 @@ type NativeCallListeners = {
 
 type AndroidCallIntentModule = {
   getInitialCallAction?: () => Promise<Record<string, string> | null>;
+  getInitialMessageAction?: () => Promise<Record<string, string> | null>;
   dismissIncomingCall?: (callId: string) => Promise<boolean>;
+};
+
+export type NativeMessageAction = {
+  callId: string;
+  chat: ChatItem;
 };
 
 type ActiveNativeCall = {
@@ -44,6 +51,8 @@ let listeners: NativeCallListeners = {};
 let cachedCallKeep: Record<string, any> | null | undefined;
 let cachedVoipPush: Record<string, any> | null | undefined;
 let cachedInitialNativeAction: Promise<Record<string, string> | null> | null =
+  null;
+let cachedInitialNativeMessageAction: Promise<Record<string, string> | null> | null =
   null;
 const pendingAnswerUuids: string[] = [];
 const pendingEndUuids: string[] = [];
@@ -571,6 +580,69 @@ function clearInitialNativeActionPayload() {
   cachedInitialNativeAction = null;
 }
 
+async function getInitialNativeMessageActionPayload(): Promise<Record<string, string> | null> {
+  if (Platform.OS !== 'android') return null;
+  if (cachedInitialNativeMessageAction) {
+    return cachedInitialNativeMessageAction;
+  }
+  const module = getAndroidCallIntentModule();
+  const initialActionPromise = module?.getInitialMessageAction?.();
+  if (!initialActionPromise) {
+    return null;
+  }
+  cachedInitialNativeMessageAction =
+    initialActionPromise.then(payload => {
+      if (!payload) {
+        cachedInitialNativeMessageAction = null;
+      }
+      return payload;
+    }).catch(error => {
+      cachedInitialNativeMessageAction = null;
+      throw error;
+    });
+  return cachedInitialNativeMessageAction;
+}
+
+function clearInitialNativeMessageActionPayload() {
+  cachedInitialNativeMessageAction = null;
+}
+
+function directCallToChat(call: IncomingLiveKitCall): ChatItem {
+  return {
+    id: `user:${call.peer.id}`,
+    chatId: call.peer.id,
+    chatType: 'user',
+    participantId: call.peer.id,
+    userId: call.peer.id,
+    username: call.peer.username ?? '',
+    name: call.peer.name,
+    avatar: call.peer.avatar,
+    lastMessage: '',
+    lastMessageTime: Math.floor(Date.now() / 1000),
+    unreadCount: 0,
+    isOnline: false,
+    isVerified: false,
+  };
+}
+
+function groupCallToChat(call: IncomingGroupLiveKitCall): ChatItem {
+  return {
+    id: `group:${call.groupId}`,
+    chatId: call.groupId,
+    chatType: 'group',
+    groupId: call.groupId,
+    userId: call.groupId,
+    username: '',
+    name: call.group.name,
+    avatar: call.group.avatar,
+    lastMessage: '',
+    lastMessageTime: Math.floor(Date.now() / 1000),
+    unreadCount: 0,
+    isOnline: false,
+    isVerified: false,
+  };
+}
+
 export async function getInitialNativeCallAction(): Promise<IncomingLiveKitCall | null> {
   const payload = await getInitialNativeActionPayload();
   if (!payload) return null;
@@ -604,6 +676,38 @@ export async function getInitialNativeGroupCallAction(): Promise<IncomingGroupLi
     clearInitialNativeActionPayload();
   }
   return call;
+}
+
+export async function getInitialNativeMessageAction(): Promise<NativeMessageAction | null> {
+  const payload = await getInitialNativeMessageActionPayload();
+  if (!payload) return null;
+
+  const groupCall = readPushLiveKitGroupCall({
+    provider: 'livekit_group',
+    event_type: 'livekit_group_call',
+    call_context: 'group',
+    ...payload,
+  });
+  if (groupCall) {
+    clearInitialNativeMessageActionPayload();
+    return {
+      callId: groupCall.callId,
+      chat: groupCallToChat(groupCall),
+    };
+  }
+
+  const directCall = readPushLiveKitCall({
+    provider: 'livekit',
+    event_type: 'livekit_call',
+    ...payload,
+  });
+  if (!directCall) return null;
+
+  clearInitialNativeMessageActionPayload();
+  return {
+    callId: directCall.callId,
+    chat: directCallToChat(directCall),
+  };
 }
 
 export async function startNativeOutgoingCall(params: {
