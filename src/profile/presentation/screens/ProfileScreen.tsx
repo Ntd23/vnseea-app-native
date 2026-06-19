@@ -37,6 +37,7 @@ import {
   Video,
   Image as ImageIcon,
   Calendar,
+  ShoppingCart,
 
   Copy,
 
@@ -151,6 +152,7 @@ const PROFILE_COPY: Record<AppLanguage, {
   userFallback: string;
   dashboard: string;
   addToStory: string;
+  cartLabel: string;
   followed: string;
   message: string;
   poke: string;
@@ -215,6 +217,7 @@ const PROFILE_COPY: Record<AppLanguage, {
     userFallback: 'Người dùng',
     dashboard: 'Bảng điều khiển',
     addToStory: 'Thêm vào tin',
+    cartLabel: 'Giỏ hàng',
     followed: 'Đã theo dõi',
     message: 'Nhắn tin',
     poke: 'Chọc',
@@ -278,6 +281,7 @@ const PROFILE_COPY: Record<AppLanguage, {
     userFallback: 'User',
     dashboard: 'Dashboard',
     addToStory: 'Add to story',
+    cartLabel: 'Cart',
     followed: 'Following',
     message: 'Message',
     poke: 'Poke',
@@ -1775,6 +1779,18 @@ function ProfileScreen() {
     navigation.navigate(ROUTES.USER_DASHBOARD);
   };
 
+  const handleOpenCart = () => {
+    // Khi ở own profile → sản phẩm của mình (không truyền userId)
+    // Khi ở profile người khác → sản phẩm của người đó (truyền userId)
+    if (isOwnProfile) {
+      navigation.navigate(ROUTES.MY_PRODUCTS);
+    } else if (targetUserId) {
+      navigation.navigate(ROUTES.MY_PRODUCTS, {
+        userId: String(targetUserId),
+      });
+    }
+  };
+
   const handleOpenMessages = () => {
     if (!targetUserId || isOwnProfile) {
       navigation.navigate(ROUTES.MESSAGES);
@@ -1920,7 +1936,7 @@ function ProfileScreen() {
           scrollEventThrottle={32}
         >
           {/* Cover Photo */}
-          <View style={profileMainStyles.coverContainer}>
+          <View key={`cover-${targetUserId}-${isOwnProfile}`} style={profileMainStyles.coverContainer}>
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={handleCoverPress}
@@ -1969,16 +1985,27 @@ function ProfileScreen() {
               </View>
             </View>
 
-            {/* Edit Profile Button overlapping cover photo bottom right */}
-            {isOwnProfile && (
+            {/* Edit Profile (own) or Cart (other) button overlapping cover photo bottom right */}
+            {isOwnProfile ? (
               <TouchableOpacity
-                style={profileMainStyles.editCoverButton}
+                style={[profileMainStyles.editCoverButton, { zIndex: 100, elevation: 12 }]}
                 activeOpacity={0.85}
                 onPress={handleEditProfilePress}
               >
                 <Edit size={14} color="#050505" />
                 <Text style={profileMainStyles.editCoverText}>
                   {language === 'vi' ? 'Chỉnh sữa hồ sơ' : 'Edit profile'}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[profileMainStyles.editCoverButton, { zIndex: 100, elevation: 12 }]}
+                activeOpacity={0.85}
+                onPress={handleOpenCart}
+              >
+                <ShoppingCart size={14} color="#050505" />
+                <Text style={profileMainStyles.editCoverText}>
+                  {copy.cartLabel}
                 </Text>
               </TouchableOpacity>
             )}
@@ -2111,65 +2138,8 @@ function ProfileScreen() {
               )}
             </View>
 
-            {/* Stats Grid */}
-            <View style={profileMainStyles.statsContainer}>
-              <View style={profileMainStyles.statItem}>
-                <View style={[profileMainStyles.statIconContainer, { backgroundColor: '#E7F3FF' }]}>
-                  <Users size={15} color="#1877F2" />
-                </View>
-                <Text style={profileMainStyles.statNumber}>{followerCount}</Text>
-                <Text style={profileMainStyles.statLabel}>
-                  {language === 'vi' ? 'Bạn bè' : 'Friends'}
-                </Text>
-              </View>
-
-              <View style={profileMainStyles.statItem}>
-                <View style={[profileMainStyles.statIconContainer, { backgroundColor: '#F0F9FF' }]}>
-                  <Clock size={15} color="#0EA5E9" />
-                </View>
-                <Text style={profileMainStyles.statNumber}>
-                  {getActiveTimeValue(profile?.lastSeenText)}
-                </Text>
-                <Text style={profileMainStyles.statLabel}>
-                  {language === 'vi' ? 'Thời gian' : 'Time'}
-                </Text>
-              </View>
-
-              <View style={profileMainStyles.statItem}>
-                <View style={[profileMainStyles.statIconContainer, { backgroundColor: '#ECFDF5' }]}>
-                  <Users size={15} color="#10B981" />
-                </View>
-                <Text style={profileMainStyles.statNumber}>{followerCount}</Text>
-                <Text style={profileMainStyles.statLabel}>
-                  {language === 'vi' ? 'Người theo dõi' : 'Followers'}
-                </Text>
-              </View>
-
-              <View style={profileMainStyles.statItem}>
-                <View style={[profileMainStyles.statIconContainer, { backgroundColor: '#FFF7ED' }]}>
-                  <UserCheck size={15} color="#F59E0B" />
-                </View>
-                <Text style={profileMainStyles.statNumber}>{followingCount}</Text>
-                <Text style={profileMainStyles.statLabel}>
-                  {language === 'vi' ? 'Đang theo dõi' : 'Following'}
-                </Text>
-              </View>
-
-              <View style={profileMainStyles.statItem}>
-                <View style={[profileMainStyles.statIconContainer, { backgroundColor: '#F5F3FF' }]}>
-                  <Star size={15} color="#8B5CF6" />
-                </View>
-                <Text style={profileMainStyles.statNumber}>
-                  {Number(profile?.points ?? 0)}
-                </Text>
-                <Text style={profileMainStyles.statLabel}>
-                  {language === 'vi' ? 'Điểm' : 'Points'}
-                </Text>
-              </View>
-            </View>
-
             {/* Action Buttons Row */}
-            <View style={profileMainStyles.primaryButtonsRow}>
+            <View key={`actions-${targetUserId}-${isOwnProfile}`} style={profileMainStyles.primaryButtonsRow}>
               {isOwnProfile ? (
                 <>
                   <TouchableOpacity
@@ -2190,7 +2160,18 @@ function ProfileScreen() {
                   >
                     <PlusCircle size={16} color="#1877F2" />
                     <Text style={profileMainStyles.storyAddButtonText}>
-                      {language === 'vi' ? 'Thêm vào tin' : 'Add to story'}
+                      {copy.addToStory}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={profileMainStyles.storyAddButton}
+                    activeOpacity={0.85}
+                    onPress={handleOpenCart}
+                  >
+                    <ShoppingCart size={16} color="#1877F2" />
+                    <Text style={profileMainStyles.storyAddButtonText}>
+                      {copy.cartLabel}
                     </Text>
                   </TouchableOpacity>
                 </>
@@ -2963,38 +2944,6 @@ const profileMainStyles = StyleSheet.create({
   copyButton: {
     marginLeft: 6,
     padding: 2,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 18,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#F0F2F5',
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  statNumber: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#050505',
-  },
-  statLabel: {
-    fontSize: 10,
-    color: '#65676B',
-    fontWeight: '600',
-    marginTop: 2,
   },
   primaryButtonsRow: {
     flexDirection: 'row',

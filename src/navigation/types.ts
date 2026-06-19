@@ -22,6 +22,7 @@ export type MainTabParamList = {
         initialVideoId?: string;
         post?: FeedPost;
         source?: ReelSource;
+        seekTime?: number;
       }
     | undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
@@ -70,6 +71,7 @@ export type RootStackParamList = {
         initialVideoId?: string;
         post?: FeedPost;
         source?: ReelSource;
+        seekTime?: number;
       }
     | undefined;
   [ROUTES.POST_DETAIL]: {
@@ -112,6 +114,7 @@ export type RootStackParamList = {
   [ROUTES.MY_PRODUCTS]:
     | {
         initialTab?: 'products' | 'purchased' | 'orders';
+        userId?: string;
       }
     | undefined;
   [ROUTES.PRODUCT_DETAIL]: {

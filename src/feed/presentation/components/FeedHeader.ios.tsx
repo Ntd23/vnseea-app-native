@@ -24,6 +24,7 @@ import { useCurrentUserViewModel } from '../../../shared-kernel/application/view
 import { useNotificationBadgeViewModel } from '../../../notifications';
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
+import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -72,6 +73,7 @@ export function FeedHeader() {
   useNotificationBadgeViewModel();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [buttonRotation, setButtonRotation] = useState('0deg');
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const avatarUrl = user?.avatar;
   const transitionAnim = useRef(new Animated.Value(0)).current;
@@ -190,7 +192,7 @@ export function FeedHeader() {
             </HeaderGlassActionButton>
             <HeaderGlassActionButton
               accessibilityLabel="Profile"
-              onPress={() => navigation.navigate(ROUTES.PROFILE)}
+              onPress={() => setMenuVisible(true)}
             >
               <View style={styles.profileIconContainer}>
                 <Animated.View
@@ -246,6 +248,10 @@ export function FeedHeader() {
         visible={sheetVisible}
         onClose={handleCloseSheet}
         onNavigate={handleCreateNavigate}
+      />
+      <HeaderProfileDrawer
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
       />
     </>
   );
