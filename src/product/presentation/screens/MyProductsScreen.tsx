@@ -326,7 +326,9 @@ function OrderDetailModal({
 function MyProductsScreen() {
   const navigation = useNavigation<MyProductsNav>();
   const route = useRoute<MyProductsRoute>();
-  const vm = useMyProductsViewModel();
+  const targetUserIdRaw = route.params?.userId;
+  const targetUserId = targetUserIdRaw ? Number(targetUserIdRaw) : undefined;
+  const vm = useMyProductsViewModel(targetUserId);
   const { setActiveTab } = vm;
   const [selectedOrder, setSelectedOrder] = useState<OrdersItem | null>(null);
 
@@ -397,19 +399,25 @@ function MyProductsScreen() {
           <ArrowLeft size={22} color="#1E293B" />
         </TouchableOpacity>
         <View className="ml-2 flex-1">
-          <Text className="text-heading">Sản phẩm của tôi</Text>
+          <Text className="text-heading">
+            {targetUserId ? 'Sản phẩm' : 'Sản phẩm của tôi'}
+          </Text>
           <Text className="mt-0.5 text-caption-secondary">
-            Quản lý mua bán marketplace
+            {targetUserId
+              ? 'Danh sách sản phẩm của người dùng'
+              : 'Quản lý mua bán marketplace'}
           </Text>
         </View>
-        <TouchableOpacity
-          className="btn-primary h-10 px-4"
-          activeOpacity={0.9}
-          onPress={handleCreate}
-        >
-          <Plus size={17} color="#FFFFFF" />
-          <Text className="text-caption-primary text-inverse">Đăng bán</Text>
-        </TouchableOpacity>
+        {!targetUserId && (
+          <TouchableOpacity
+            className="btn-primary h-10 px-4"
+            activeOpacity={0.9}
+            onPress={handleCreate}
+          >
+            <Plus size={17} color="#FFFFFF" />
+            <Text className="text-caption-primary text-inverse">Đăng bán</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View className="border-b border-slate-100 bg-white py-3">
@@ -418,7 +426,13 @@ function MyProductsScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerClassName="gap-2 px-4"
         >
-          {TABS.map(tab => {
+          {TABS.filter(tab => {
+            // Khi xem sản phẩm của người khác → chỉ hiện tab 'products'
+            if (targetUserId) {
+              return tab.key === 'products';
+            }
+            return true;
+          }).map(tab => {
             const isActive = tab.key === vm.activeTab;
             return (
               <TouchableOpacity

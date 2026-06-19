@@ -38,7 +38,7 @@ function matchesOrderStatus(item: OrdersItem, status: OrderStatusFilter) {
   return status === 'all' || item.status === status;
 }
 
-export function useMyProductsViewModel() {
+export function useMyProductsViewModel(targetUserId?: number) {
   const [activeTab, setActiveTab] = useState<MyProductsTab>('products');
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [purchasedOrders, setPurchasedOrders] = useState<OrdersItem[]>([]);
@@ -61,18 +61,30 @@ export function useMyProductsViewModel() {
     setError(null);
 
     try {
-      const response = await productRepository.getProducts({ limit: 60 });
-      setProducts(response.products.filter(product => product.is_owner));
+      const response = await productRepository.getProducts({
+        limit: 60,
+        user_id: targetUserId,
+      });
+      // Nếu targetUserId có → lấy tất cả sản phẩm của user đó (không filter is_owner)
+      // Nếu không → chỉ lấy sản phẩm của mình (is_owner)
+      const filtered = targetUserId
+        ? response.products.filter(
+            product => String(product.user_id) === String(targetUserId),
+          )
+        : response.products.filter(product => product.is_owner);
+      setProducts(filtered);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : 'Không tải được sản phẩm của tôi.',
+          : targetUserId
+            ? 'Không tải được sản phẩm của người dùng.'
+            : 'Không tải được sản phẩm của tôi.',
       );
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [targetUserId]);
 
   const loadOrders = useCallback(async () => {
     setIsOrdersLoading(true);

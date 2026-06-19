@@ -114,6 +114,7 @@ export type RootStackParamList = {
   [ROUTES.MY_PRODUCTS]:
     | {
         initialTab?: 'products' | 'purchased' | 'orders';
+        userId?: string;
       }
     | undefined;
   [ROUTES.PRODUCT_DETAIL]: {
