@@ -43,7 +43,7 @@ if ($wo['loggedin'] == true) {
         if (!empty($wo['config']['auto_group_join'])) {
             Wo_AutoGroupJoin(Wo_UserIdFromEmail($email));
         }
-        header("Location: " . Wo_SeoLink('index.php?link1=start-up'));
+        header("Location: " . $wo['config']['site_url']);
         exit();
       }
   } else {

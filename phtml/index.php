@@ -66,7 +66,9 @@ if (!empty($auto_redirect)) {
     }
 }
 if ($wo['loggedin'] == true) {
-    $update_last_seen = Wo_LastSeen($wo['user']['user_id']);
+        if (!empty($wo['user']['user_id'])) {
+        $update_last_seen = Wo_LastSeen($wo['user']['user_id']);
+    }
 } else if (!empty($_SERVER['HTTP_HOST'])) {
 }
 if (!empty($_GET)) {
@@ -166,7 +168,7 @@ foreach ($all_langs as $key => $value) {
     $wo['lang_og_meta'] .= '<link rel="alternate" href="'.$wo['config']['site_url'].'?lang='.$value.'" hreflang="'.$iso.'" />';
 }
 
-if ((!$wo['loggedin'] || ($wo['loggedin'] && $wo['user']['banned'] != 1))) {
+if ((!$wo['loggedin'] || ($wo['loggedin'] && (!isset($wo['user']['banned']) || $wo['user']['banned'] != 1)))) {
     if ($wo['config']['membership_system'] == 1) {
         if ($wo['loggedin'] == true) {
             if ($wo['user']['is_pro'] != 0 || Wo_IsAdmin()) {

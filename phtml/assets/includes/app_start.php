@@ -1,5 +1,4 @@
 <?php
-// English description: Boots the WoWonder application, database, configuration defaults, and runtime globals.
 ini_set('display_errors', 0);
 ini_set('display_startup_errors', 0);
 error_reporting(0);
@@ -50,14 +49,15 @@ $required_config_defaults = array(
     'livekit_host' => '',
     'livekit_api_key' => '',
     'livekit_api_secret' => '',
-    'google_server_map_api' => '',
+	'google_server_map_api' => '',
     'sepay' => '0',
     'sepay_mode' => 'live',
     'sepay_bank_acc' => '',
     'sepay_bank_code' => '',
     'sepay_account_name' => '',
     'sepay_webhook_token' => '',
-    'sepay_desc_prefix' => 'SE'
+    'sepay_desc_prefix' => 'SE',
+    'email_activation_point' => '0'
 );
 foreach ($required_config_defaults as $config_name => $config_value) {
     if (!array_key_exists($config_name, $config)) {
@@ -173,15 +173,27 @@ if (Wo_IsLogged() == true) {
     $session_id         = !empty($_SESSION["user_id"]) ? $_SESSION["user_id"] : $_COOKIE["user_id"];
     $wo["user_session"] = Wo_GetUserFromSessionID($session_id);
     $wo["user"]         = Wo_UserData($wo["user_session"]);
-    if (!empty($wo["user"]["language"])) {
-        if (in_array($wo["user"]["language"], $langs)) {
-            $_SESSION["lang"] = $wo["user"]["language"];
+    if (empty($wo["user"]) || empty($wo["user"]["user_id"]) || !is_numeric($wo["user"]["user_id"])) {
+        if (!empty($_SESSION["user_id"])) {
+            unset($_SESSION["user_id"]);
         }
+        if (!empty($_COOKIE["user_id"])) {
+            unset($_COOKIE["user_id"]);
+            setcookie("user_id", "", -1);
+            setcookie("user_id", "", -1, "/");
+        }
+        $wo["user"] = array();
+    } else {
+        if (!empty($wo["user"]["language"])) {
+            if (in_array($wo["user"]["language"], $langs)) {
+                $_SESSION["lang"] = $wo["user"]["language"];
+            }
+        }
+        if ($wo["user"]["user_id"] < 0 || empty($wo["user"]["user_id"]) || !is_numeric($wo["user"]["user_id"]) || Wo_UserActive($wo["user"]["username"]) === false) {
+            header("Location: " . Wo_SeoLink("index.php?link1=logout"));
+        }
+        $wo["loggedin"] = true;
     }
-    if ($wo["user"]["user_id"] < 0 || empty($wo["user"]["user_id"]) || !is_numeric($wo["user"]["user_id"]) || Wo_UserActive($wo["user"]["username"]) === false) {
-        header("Location: " . Wo_SeoLink("index.php?link1=logout"));
-    }
-    $wo["loggedin"] = true;
 } else {
     $wo["userSession"] = getUserProfileSessionID();
 }
@@ -574,5 +586,5 @@ if (!empty($_COOKIE['watched_reels'])) {
 $wo['hiddenConfig'] = $wo['config'];
 $wo['have_monetization'] = 0;
 if ($wo['config']['monetization'] == 1 && $wo["loggedin"]) {
-    $wo['have_monetization'] = $wo['user']['have_monetization'];
+    $wo['have_monetization'] = !empty($wo['user']['have_monetization']) ? $wo['user']['have_monetization'] : 0;
 }
