@@ -1115,11 +1115,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // Keep VideoPlayer mounted while active (even when paused) â€” avoids the
   // expensive ExoPlayer init/teardown cycle that causes frame drops on scroll.
   const shouldMountVideo = isActive;
-  // Auto-unmute when video becomes active, mute when scrolled away
+  // Home feed video is muted by default. Users can opt into sound with the
+  // volume button, and we reset to muted once the card scrolls away.
   useEffect(() => {
-    if (isActive) {
-      setMuted(false);
-    } else {
+    if (!isActive) {
       setManuallyPaused(false);
       setMuted(true);
     }

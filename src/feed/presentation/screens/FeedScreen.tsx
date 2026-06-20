@@ -2690,14 +2690,6 @@ function FeedScreen() {
     [copy, reportFeedPost],
   );
 
-  // Autoplay the first video on mount / load
-  useEffect(() => {
-    const firstVideo = feedPosts.find(p => p.kind === 'video');
-    if (firstVideo && !activeVideoIdRef.current && !isScrollingRef.current) {
-      setActiveFeedVideo(firstVideo.id);
-    }
-  }, [feedPosts, setActiveFeedVideo]);
-
   // Infinite scroll pagination â€” calls loadMore directly.
   // Previous version wrapped in InteractionManager which caused stale
   // closure issues (the guard flags were captured at callback creation
