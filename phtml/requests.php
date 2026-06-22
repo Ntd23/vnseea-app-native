@@ -121,6 +121,7 @@ $non_login_array = array(
     'pay_with_bitcoin',
     'resend_two_factor',
     'cashfree',
+    'qrcode',
 );
 if ($wo['config']['membership_system'] == 1) {
     $non_login_array[] = 'pro_register';

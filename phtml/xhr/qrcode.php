@@ -45,13 +45,7 @@ error_reporting(E_ALL);
 
     if ($f === 'qrcode'  ) {
         if($s === 'wallet-qr-code'){
-        // yêu cầu đăng nhập qua cookie phiên
-        if (empty($wo['loggedin'])) {
-            http_response_code(401);
-            exit;
-        }
-
-        $to = isset($_GET['to']) ? (int)$_GET['to'] : (int)$wo['user']['user_id'];
+        $to = isset($_GET['to']) ? (int)$_GET['to'] : (!empty($wo['loggedin']) ? (int)$wo['user']['user_id'] : 0);
         $ud = Wo_UserData($to);
         if (empty($ud['user_id']) || $ud['banned'] == 1 || $ud['active'] == 0) {
             http_response_code(404);
@@ -89,6 +83,51 @@ error_reporting(E_ALL);
         }
 
         // dọn buffer & trả PNG
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        header('Content-Type: image/png');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        QRcode::png($payload, false, QR_ECLEVEL_Q, 6, 2);
+        exit;
+    }
+    if($s === 'points-qr-code'){
+        $to = isset($_GET['to']) ? (int)$_GET['to'] : (!empty($wo['loggedin']) ? (int)$wo['user']['user_id'] : 0);
+        $ud = Wo_UserData($to);
+        if (empty($ud['user_id']) || $ud['banned'] == 1 || $ud['active'] == 0) {
+            http_response_code(404);
+            exit;
+        }
+
+        $points  = isset($_GET['points']) ? (int) wo_parse_amount($_GET['points']) : null;
+        $payload = 'POINTS|to=' . $to . (($points !== null && $points > 0) ? '|points=' . $points . '|amount=' . $points : '');
+        $paths = [
+            __DIR__ . '/assets/includes/phpqrcode/qrlib.php',
+            __DIR__ . '/../assets/includes/phpqrcode/qrlib.php',
+            dirname(__DIR__) . '/assets/includes/phpqrcode/qrlib.php',
+        ];
+        $ok = false;
+        foreach ($paths as $p) {
+            if (file_exists($p)) {
+                require_once $p;
+                $ok = true;
+                break;
+            }
+        }
+        if (!$ok || !class_exists('QRcode')) {
+            http_response_code(500);
+            header('Content-Type:text/plain');
+            echo 'QR library not found';
+            exit;
+        }
+
+        if (!empty($_GET['debug'])) {
+            header('Content-Type: text/plain; charset=utf-8');
+            echo "to={$to}\npayload={$payload}\n";
+            exit;
+        }
+
         while (ob_get_level()) {
             ob_end_clean();
         }

@@ -873,6 +873,14 @@
                             </div>
                         </div>
                         <hr>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">Thưởng đăng ký tài khoản</label>
+                                <input type="text" name="email_activation_point" class="form-control" value="<?php echo !empty($wo['config']['email_activation_point']) ? $wo['config']['email_activation_point'] : 0?>">
+                                <small class="admin-info">Người dùng sẽ nhận được bao nhiêu điểm sau khi đăng ký và xác minh email thành công?</small>
+                            </div>
+                        </div>
+                        <hr>
                          <div class="form-group form-float">
                             <div class="form-line">
                                 <label class="form-label">Giới hạn người dùng miễn phí hàng ngày</label>
