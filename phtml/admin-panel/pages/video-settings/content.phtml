@@ -347,6 +347,21 @@
                                 <input type="password" id="livekit_api_secret" name="livekit_api_secret" class="form-control" value="<?php echo $wo['config']['livekit_api_secret'];?>">
                             </div>
                         </div>
+                        <div class="alert alert-info">
+                            Webhook signing can use a different LiveKit key than call token signing. Leave these webhook fields empty to fall back to the API key and secret above.
+                        </div>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">LiveKit Webhook API Key</label>
+                                <input type="text" id="livekit_webhook_api_key" name="livekit_webhook_api_key" class="form-control" value="<?php echo $wo['config']['livekit_webhook_api_key'];?>">
+                            </div>
+                        </div>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">LiveKit Webhook API Secret</label>
+                                <input type="password" id="livekit_webhook_api_secret" name="livekit_webhook_api_secret" class="form-control" value="<?php echo $wo['config']['livekit_webhook_api_secret'];?>">
+                            </div>
+                        </div>
                         <input type="hidden" name="hash_id" value="<?php echo Wo_CreateSession();?>">
                     </form>
                 </div>

@@ -68,12 +68,25 @@ if ($f == 'livekit_webhook') {
         }
     }
 
+    if (!function_exists('Wo_LiveKitWebhookConfigValue')) {
+        function Wo_LiveKitWebhookConfigValue($primary_key, $fallback_key = '')
+        {
+            global $wo;
+            if (!empty($wo['config'][$primary_key])) {
+                return trim((string) $wo['config'][$primary_key]);
+            }
+            if ($fallback_key !== '' && !empty($wo['config'][$fallback_key])) {
+                return trim((string) $wo['config'][$fallback_key]);
+            }
+            return '';
+        }
+    }
+
     if (!function_exists('Wo_LiveKitWebhookVerify')) {
         function Wo_LiveKitWebhookVerify($raw_body)
         {
-            global $wo;
-            $api_key = !empty($wo['config']['livekit_api_key']) ? trim($wo['config']['livekit_api_key']) : '';
-            $api_secret = !empty($wo['config']['livekit_api_secret']) ? trim($wo['config']['livekit_api_secret']) : '';
+            $api_key = Wo_LiveKitWebhookConfigValue('livekit_webhook_api_key', 'livekit_api_key');
+            $api_secret = Wo_LiveKitWebhookConfigValue('livekit_webhook_api_secret', 'livekit_api_secret');
             $token = Wo_LiveKitWebhookToken();
             if ($api_key === '' || $api_secret === '' || $token === '') {
                 return false;
