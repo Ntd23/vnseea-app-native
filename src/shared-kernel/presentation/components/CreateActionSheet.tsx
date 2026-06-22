@@ -24,6 +24,7 @@ import {
   Users,
   X,
   ChevronRight,
+  Radio,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackRouteName } from '../../../navigation/types';
@@ -40,7 +41,8 @@ type CreateActionKey =
   | 'page'
   | 'group'
   | 'reel'
-  | 'blog';
+  | 'blog'
+  | 'live';
 
 type CreateAction = {
   key: CreateActionKey;
@@ -64,6 +66,7 @@ export const CREATE_ACTIONS: CreateAction[] = [
   { key: 'album', Icon: Images, iconColor: '#10b981', iconBg: '#ecfdf5', route: ROUTES.CREATE_ALBUM },
   { key: 'ad', Icon: Megaphone, iconColor: '#f59e0b', iconBg: '#fffbeb', route: ROUTES.CREATE_AD },
   { key: 'event', Icon: CalendarDays, iconColor: '#ef4444', iconBg: '#fef2f2', route: ROUTES.CREATE_EVENT },
+  { key: 'live', Icon: Radio, iconColor: '#ef4444', iconBg: '#fef2f2', route: ROUTES.GO_LIVE },
   { key: 'poll', Icon: BarChart3, iconColor: '#0284c7', iconBg: '#f0f9ff', route: ROUTES.CREATE_POLL },
   { key: 'product', Icon: PackagePlus, iconColor: '#8b5cf6', iconBg: '#f5f3ff', route: ROUTES.CREATE_PRODUCT },
   { key: 'page', Icon: FilePlus2, iconColor: '#0ea5e9', iconBg: '#f0f9ff', route: ROUTES.CREATE_PAGE },
@@ -89,6 +92,7 @@ export const CREATE_ACTIONS_COPY = {
       group: { label: 'Tạo nhóm mới', subtitle: 'Kết nối với nhiều người hơn' },
       reel: { label: 'Tạo video', subtitle: 'Chia sẻ video với mọi người' },
       blog: { label: 'Tạo blog', subtitle: 'Viết bài chia sẻ kiến thức' },
+      live: { label: 'Live', subtitle: 'Bắt đầu phát video trực tiếp' },
     },
   },
   en: {
@@ -105,6 +109,7 @@ export const CREATE_ACTIONS_COPY = {
       group: { label: 'Create new group', subtitle: 'Connect with more people' },
       reel: { label: 'Create video', subtitle: 'Share video with everyone' },
       blog: { label: 'Create blog', subtitle: 'Write and share knowledge' },
+      live: { label: 'Live', subtitle: 'Start a live video stream' },
     },
   },
 };

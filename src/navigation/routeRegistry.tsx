@@ -12,7 +12,11 @@ import {
 import { ROUTES } from './constants/routes';
 import type { MainTabRouteName, RootStackRouteName } from './types';
 import { ForgotPasswordScreen, LoginScreen, RegisterScreen } from '../auth';
-import { CreatePostScreen, FeedScreen, PostDetailScreen } from '../feed';
+import {
+  CreatePostScreen,
+  FeedScreen,
+  PostDetailScreen,
+} from '../feed';
 import { ExploreScreen } from '../explore';
 import { CreateReelScreen, ReelsScreen } from '../reels';
 import { CreateStoryScreen, StoriesListScreen, StoryViewerScreen } from '../stories';
@@ -52,7 +56,7 @@ import {
   GroupDetailScreen,
 } from '../community';
 import { CreateFundingScreen, FundingDetailScreen, FundingScreen } from '../funding';
-import { MoviesScreen } from '../movies';
+import { CreateMovieScreen, MoviesScreen } from '../movies';
 import { CreateJobScreen, JobDetailScreen, JobsScreen } from '../jobs';
 import {
   AvatarViewerScreen,
@@ -230,6 +234,7 @@ export function createStackRoutes(
     { name: ROUTES.BLOG_DETAIL, component: BlogDetailScreen },
     { name: ROUTES.CREATE_BLOG, component: CreateBlogScreen },
     { name: ROUTES.MOVIES, component: MoviesScreen },
+    { name: ROUTES.CREATE_MOVIE, component: CreateMovieScreen },
     { name: ROUTES.JOBS, component: JobsScreen },
     { name: ROUTES.JOB_DETAIL, component: JobDetailScreen },
     { name: ROUTES.CREATE_JOB, component: CreateJobScreen },

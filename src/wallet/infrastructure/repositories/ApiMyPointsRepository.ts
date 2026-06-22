@@ -96,7 +96,7 @@ function mapCurrencyConfig(
     config.wallet_currency || config.ads_currency,
     'USD',
   );
-  const displayCurrency = normalizeCurrency(config.display_currency, 'VND');
+  const displayCurrency = normalizeCurrency(config.display_currency, 'VNSEEA');
   const walletExchangeRate = Math.max(toNumber(config.wallet_exchange_rate), 1);
   const displayExchangeRate = toNumber(config.display_exchange_rate);
 

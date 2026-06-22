@@ -42,6 +42,7 @@ import {
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
 import type { RootStackParamList } from '../../../navigation/types';
 import type {
@@ -595,18 +596,32 @@ const REACTION_BADGE_BG: Record<ReactionType, string> = {
 // â”€â”€ PhotoViewerModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // â”€â”€ Post sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const VideoReactionSummary = React.memo(function VideoReactionSummary({
+  postId,
   likeCount,
   commentCount,
   myReaction,
   topReactions,
   copy,
+  post,
+  onOpenReactions,
 }: {
+  postId: string;
   likeCount: number;
   commentCount: number;
   myReaction: ReactionType | null;
   topReactions: ReactionType[];
   copy: FeedCopy;
+  post?: FeedPost;
+  /**
+   * Opens the "who reacted" bottom sheet at the parent screen level.
+   * Passed down from the owning screen (FeedScreen, ProfileScreen, etc.)
+   * so the sheet can be hosted centrally instead of each card owning its
+   * own modal — same pattern used by `ReelCommentsSheet` host screens.
+   */
+  onOpenReactions?: (postId: string, post: FeedPost) => void;
 }) {
+  // The sheet is hosted by the parent screen — we no longer navigate.
+
   // Don't render the row at all if nobody has reacted AND there are no
   // comments â€” keeps simple posts visually quiet, FB-style.
   if (likeCount <= 0 && commentCount <= 0) return null;
@@ -625,10 +640,25 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
     return '';
   })();
 
+  const handleOpenReactions = useCallback(() => {
+    if (!postId) return;
+    // Defer to the parent — it owns the bottom-sheet modal so a single
+    // sheet instance is shared across the visible post list. Falls back
+    // to no-op if a caller forgets to wire the prop.
+    if (onOpenReactions && post) {
+      onOpenReactions(postId, post);
+    }
+  }, [onOpenReactions, postId, post]);
+
   return (
     <View className="mb-4 flex-row items-center justify-between">
-      {/* Left: stacked reaction badges + label */}
-      <View className="mr-2 flex-1 flex-row items-center">
+      {/* Left: stacked reaction badges + label (Tappable to open reactions list) */}
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={handleOpenReactions}
+        disabled={likeCount <= 0}
+        className="mr-2 flex-1 flex-row items-center"
+      >
         {likeCount > 0 ? (
           <>
             {/* Facebook-style stacked emoji badges â€” each badge overlaps
@@ -668,7 +698,7 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
             </Text>
           </>
         ) : null}
-      </View>
+      </TouchableOpacity>
       {/* Right: comment count */}
       {commentCount > 0 ? (
         <Text className="text-caption-secondary" numberOfLines={1}>
@@ -996,6 +1026,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   onOpenPicker,
   onCommentTap,
   onShare,
+  onOpenReactions,
   isActive: controlledIsActive,
   gestureX,
   gestureY,
@@ -1012,6 +1043,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   onOpenPicker: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
   onShare?: (post: FeedPost) => void;
+  /**
+   * Tapping the reaction-summary row opens the "who reacted" bottom
+   * sheet hosted by the parent screen. We forward it down to
+   * `VideoReactionSummary` so the card doesn't need to navigate on
+   * its own (avoids stacking a Modal inside a Modal).
+   */
+  onOpenReactions?: (postId: string, post: FeedPost) => void;
   isActive?: boolean;
   gestureX?: any;
   gestureY?: any;
@@ -1271,11 +1309,14 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       </FeedMediaFrame>
       <FeedCardContent>
         <VideoReactionSummary
+          postId={post.id}
           likeCount={post.likeCount}
           commentCount={post.commentCount}
           myReaction={post.myReaction}
           topReactions={post.topReactions}
           copy={copy}
+          post={post}
+          onOpenReactions={onOpenReactions}
         />
         <VideoPostActions
           myReaction={post.myReaction}
@@ -1437,6 +1478,7 @@ export const TextPostCard = React.memo(function TextPostCard({
   onCommentTap,
   onPhotoPress,
   onShare,
+  onOpenReactions,
   gestureX,
   gestureY,
   gestureActive,
@@ -1454,6 +1496,12 @@ export const TextPostCard = React.memo(function TextPostCard({
   onCommentTap: (postId: string) => void;
   onPhotoPress: (post: FeedTextPost, photoIndex: number) => void;
   onShare?: (post: FeedPost) => void;
+  /**
+   * Tapping the reaction-summary row opens the "who reacted" bottom
+   * sheet hosted by the parent screen. Forwarded down to
+   * `VideoReactionSummary` so the card itself stays navigation-free.
+   */
+  onOpenReactions?: (postId: string, post: FeedPost) => void;
   // Reanimated shared values for the FB-style drag-to-pick reaction
   // picker. Threaded through `VideoPostActions` so the long-press +
   // pan gesture can update them and `ReactionIcon` can react to the
@@ -1643,11 +1691,14 @@ export const TextPostCard = React.memo(function TextPostCard({
       ) : null}
       <FeedCardContent>
         <VideoReactionSummary
+          postId={post.id}
           likeCount={post.likeCount}
           commentCount={post.commentCount}
           myReaction={post.myReaction}
           topReactions={post.topReactions}
           copy={copy}
+          post={post}
+          onOpenReactions={onOpenReactions}
         />
         <VideoPostActions
           myReaction={post.myReaction}

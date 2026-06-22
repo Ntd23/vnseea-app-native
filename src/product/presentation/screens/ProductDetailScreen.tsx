@@ -48,7 +48,7 @@ function formatPrice(product: ProductItem) {
     ? value.toLocaleString('vi-VN')
     : product.price;
   const currency =
-    product.currency_symbol || product.currency_code || product.currency || 'đ';
+    product.currency_symbol || product.currency_code || product.currency || 'VNSEEA';
   return `${formattedPrice} ${currency}`;
 }
 

@@ -33,6 +33,7 @@ export function usePostDetailViewModel({
 }: UsePostDetailViewModelOptions) {
   const [post, setPost] = useState<FeedPost | undefined>(fallbackPost);
   const [comments, setComments] = useState<PostComment[]>([]);
+  const [likedUsers, setLikedUsers] = useState<Array<Record<string, unknown>>>([]);
   const [isLoading, setIsLoading] = useState(fallbackPost === undefined);
   const [isLoadingComments, setIsLoadingComments] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +59,23 @@ export function usePostDetailViewModel({
         if (cancelled) return;
         setPost(prev => prev ?? result.post);
         setComments(result.comments);
+
+        // Fetch liked users preview list (max 3 users for stacked avatar visual feedback)
+        feedRepository
+          .getPostReactions(postId, undefined, 3)
+          .then(reactionsPage => {
+            if (cancelled) return;
+            const mapped = (reactionsPage.users ?? []).map(u => ({
+              avatar: u.avatarUrl,
+              name: u.name,
+              username: u.username,
+              id: u.id,
+            }));
+            setLikedUsers(mapped);
+          })
+          .catch(err => {
+            console.warn('[usePostDetailViewModel] Failed to fetch liked users preview', err);
+          });
       })
       .catch(caught => {
         if (cancelled) return;
@@ -140,5 +158,6 @@ export function usePostDetailViewModel({
     error,
     submitComment,
     isSubmitting,
+    likedUsers,
   };
 }

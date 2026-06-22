@@ -23,7 +23,7 @@ const MOCK_OFFERS: Offer[] = [
     description: 'Giảm giá 50% tất cả sản phẩm công nghệ. Áp dụng cho khách hàng mới và cũ.',
     discountedItems: 'Điện thoại, Laptop, Phụ kiện',
     image: 'https://picsum.photos/seed/offer1/400/200',
-    currency: 'VND',
+    currency: 'VNSEEA',
     expireDate: '2026-06-30',
     expireTime: '23:59',
     time: Math.floor(Date.now() / 1000) - 86400,
@@ -104,7 +104,7 @@ const DISCOUNT_LABELS: Record<DiscountType, string> = {
 };
 
 const CURRENCY_OPTIONS = [
-  { value: 'VND', label: 'VND' },
+  { value: 'VNSEEA', label: 'VNSEEA' },
   { value: 'USD', label: 'USD' },
 ];
 
@@ -227,7 +227,7 @@ export function useCreateOfferViewModel(pageId: number, language: AppLanguage = 
     return d.toISOString().split('T')[0];
   });
   const [expireTime, setExpireTime] = useState('23:59');
-  const [currency, setCurrency] = useState('VND');
+  const [currency, setCurrency] = useState('VNSEEA');
   const [thumbnailBase64, setThumbnailBase64] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

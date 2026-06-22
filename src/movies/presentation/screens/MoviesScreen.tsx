@@ -14,12 +14,14 @@ import {
   ArrowLeft,
   Clapperboard,
   Play,
+  Plus,
   Star,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROUTES } from '../../../navigation/constants/routes';
 import { useMoviesViewModel } from '../../application/view-models/useMoviesViewModel';
 import type { MovieItem } from '../../domain/types/movies.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -240,6 +242,20 @@ function MoviesScreen() {
             </Text>
           </View>
         </View>
+        <Pressable
+          className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm"
+          activeOpacity={0.8}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          onPress={() => navigation.navigate(ROUTES.CREATE_MOVIE)}
+          style={{
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 8,
+          }}
+        >
+          <Plus size={22} color={BRAND} />
+        </Pressable>
       </View>
 
       {/* Category Filter */}

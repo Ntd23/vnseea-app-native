@@ -54,6 +54,7 @@ import type {
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { PostComment } from '../../domain/repositories/FeedRepository';
 import { usePostDetailViewModel } from '../../application/view-models/usePostDetailViewModel';
+import PostReactionsSheet from '../components/PostReactionsSheet';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
@@ -395,13 +396,21 @@ function AlbumGrid({
 /**
  * Stacked avatar preview + count of who liked/reacted to this post.
  * Drives the "An, Bình, Cường và 12 người khác đã thả cảm xúc" row.
+ *
+ * Tapping the row opens `PostReactionsSheet` (Modal bottom sheet hosted
+ * at the bottom of this screen) so the user can see the full list
+ * grouped by reaction type (Tất cả / Thích / Yêu thích / ...).
+ * When `totalCount === 0` the row renders as static text — there's
+ * nothing to drill into yet.
  */
 function LikedUsersPreview({
   users,
   totalCount,
+  onPress,
 }: {
   users: Array<Record<string, unknown>>;
   totalCount: number;
+  onPress: () => void;
 }) {
   const PREVIEW_COUNT = 3;
   const preview = users.slice(0, PREVIEW_COUNT);
@@ -424,7 +433,14 @@ function LikedUsersPreview({
   }
 
   return (
-    <View className="flex-row items-center px-4 py-3">
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={onPress}
+      disabled={totalCount === 0}
+      className="flex-row items-center px-4 py-3"
+      accessibilityRole="button"
+      accessibilityLabel="Xem danh sách cảm xúc"
+    >
       <View className="flex-row items-center">
         {preview.map((raw, index) => {
           const avatar = readAvatar(raw);
@@ -461,7 +477,7 @@ function LikedUsersPreview({
           <>Hãy là người đầu tiên thả cảm xúc</>
         )}
       </Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -473,8 +489,10 @@ function LikedUsersPreview({
  */
 function ReactionSummary({
   post,
+  onPress,
 }: {
   post: FeedTextPost | FeedVideoPost;
+  onPress?: () => void;
 }) {
   const breakdown = post.reactionBreakdown;
   const top = post.topReactions;
@@ -492,7 +510,12 @@ function ReactionSummary({
     : post.likeCount;
 
   return (
-    <View className="flex-row items-center justify-between px-4 py-2.5">
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      disabled={!onPress}
+      className="flex-row items-center justify-between px-4 py-2.5"
+    >
       <View className="flex-row items-center">
         <Text className="text-base">{summary}</Text>
         <Text className="ml-2 text-caption-primary text-slate-700">
@@ -519,7 +542,7 @@ function ReactionSummary({
           </Text>
         ) : null}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -821,12 +844,12 @@ function PostDetailScreen() {
     error,
     submitComment,
     isSubmitting,
+    likedUsers,
   } = usePostDetailViewModel({
     fallbackPost: postFromParams,
     postId,
   });
 
-  const likedUsers: Array<Record<string, unknown>> = [];
   const wonderedUsers: Array<Record<string, unknown>> = [];
   const isRefreshing = false;
   const reload = () => {};
@@ -933,6 +956,16 @@ function PostDetailScreen() {
   const handleMore = useCallback(() => {
     // TODO follow-up: post menu (save/report/delete if owner).
   }, []);
+
+  // Open the "who reacted" bottom sheet. The sheet is mounted at the
+  // bottom of this screen — it owns its own VM + tab state, so we just
+  // flip a local visibility flag here instead of pushing a screen.
+  const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
+
+  const handleOpenReactions = useCallback(() => {
+    if (!postId) return;
+    setReactionsSheetVisible(true);
+  }, [postId]);
 
   const openExternalLink = useCallback((url: string) => {
     Linking.openURL(url).catch(() => undefined);
@@ -1057,8 +1090,9 @@ function PostDetailScreen() {
             <LikedUsersPreview
               users={likedUsers}
               totalCount={totalReactions}
+              onPress={handleOpenReactions}
             />
-            <ReactionSummary post={activePost} />
+            <ReactionSummary post={activePost} onPress={handleOpenReactions} />
           </View>
 
           <PostActions
@@ -1103,6 +1137,12 @@ function PostDetailScreen() {
           isSubmitting={isSubmitting}
         />
       </KeyboardAvoidingView>
+
+      <PostReactionsSheet
+        visible={reactionsSheetVisible}
+        postId={postId ?? null}
+        onClose={() => setReactionsSheetVisible(false)}
+      />
     </SafeAreaView>
   );
 }

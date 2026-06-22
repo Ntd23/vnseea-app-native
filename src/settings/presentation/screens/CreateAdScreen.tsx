@@ -700,7 +700,7 @@ function CreateAdScreen() {
                   placeholder="0"
                   value={form.budget}
                   onChangeText={v => updateField('budget', v)}
-                  unit="VND"
+                  unit="VNSEEA"
                   keyboardType="numeric"
                 />
               </View>

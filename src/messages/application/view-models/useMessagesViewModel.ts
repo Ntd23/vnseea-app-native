@@ -47,6 +47,20 @@ function mergeChatItems(...chatLists: ChatItem[][]) {
   });
 }
 
+function applyFollowingStatus(
+  chats: ChatItem[],
+  followingIds: Set<string>,
+  followerIds: Set<string> = new Set(),
+): ChatItem[] {
+  return chats.map(chat => ({
+    ...chat,
+    isFollowing:
+      chat.chatType === 'user' ? followingIds.has(chat.userId) : false,
+    isFollower:
+      chat.chatType === 'user' ? followerIds.has(chat.userId) : false,
+  }));
+}
+
 function syncUnreadBadgeCount(chats: ChatItem[]) {
   setUnreadBadgeCounts({
     messageCount: chats.reduce((total, chat) => total + chat.unreadCount, 0),
@@ -144,6 +158,27 @@ export function useMessagesViewModel() {
   const isSyncingLatestChatsRef = useRef(false);
   const isLoadingLabelsRef = useRef(false);
   const labelRecipientsRef = useRef<LabelRecipient[]>([]);
+  const followingUserIdsRef = useRef<Set<string>>(new Set());
+  const followerUserIdsRef = useRef<Set<string>>(new Set());
+
+  // Load following and follower user IDs from API
+  const loadFollowingUserIds = useCallback(async (forceRefresh = false) => {
+    try {
+      const [followingIds, followerIds] = await Promise.all([
+        repository.getFollowingUserIds(forceRefresh),
+        repository.getFollowerUserIds(forceRefresh),
+      ]);
+      followingUserIdsRef.current = followingIds;
+      followerUserIdsRef.current = followerIds;
+      // Re-stamp following and follower status on current chats
+      setState(prev => ({
+        ...prev,
+        chats: applyFollowingStatus(prev.chats, followingIds, followerIds),
+      }));
+    } catch {
+      // Silent: keep current state
+    }
+  }, []);
 
   // Load all chats
   const loadChats = useCallback(async (
@@ -161,8 +196,9 @@ export function useMessagesViewModel() {
 
     try {
       const chats = await repository.getChats({
-        includeDiscovery: options.includeDiscovery ?? showSpinner,
+        includeDiscovery: options.includeDiscovery ?? true,
         latestOnly: options.latestOnly,
+        forceRefresh: options.forceRefresh,
       });
       setState(prev => {
         const nextChats =
@@ -172,7 +208,11 @@ export function useMessagesViewModel() {
 
         return {
           ...prev,
-          chats: applyLabelsToChats(nextChats, labelRecipientsRef.current),
+          chats: applyFollowingStatus(
+            applyLabelsToChats(nextChats, labelRecipientsRef.current),
+            followingUserIdsRef.current,
+            followerUserIdsRef.current,
+          ),
           isLoadingChats: false,
         };
       });
@@ -200,7 +240,11 @@ export function useMessagesViewModel() {
 
         return {
           ...prev,
-          chats: applyLabelsToChats(chats, labelRecipientsRef.current),
+          chats: applyFollowingStatus(
+            applyLabelsToChats(chats, labelRecipientsRef.current),
+            followingUserIdsRef.current,
+            followerUserIdsRef.current,
+          ),
         };
       });
     } catch {
@@ -581,11 +625,13 @@ export function useMessagesViewModel() {
         loadChats(false, {
           includeDiscovery: true,
           merge: true,
+          forceRefresh: true,
         }),
       )
       .catch(() => undefined);
     loadLabels().catch(() => undefined);
-  }, [loadChats, loadLabels]);
+    loadFollowingUserIds(true).catch(() => undefined);
+  }, [loadChats, loadLabels, loadFollowingUserIds]);
 
   useEffect(() => {
     syncUnreadBadgeCount(state.chats);
@@ -630,6 +676,7 @@ export function useMessagesViewModel() {
     syncLatestChats,
     chatSyncIntervalMs: CHAT_SYNC_INTERVAL_MS,
     loadLabels,
+    loadFollowingUserIds,
     loadGroupChats,
     createGroupChat,
     createLabel,

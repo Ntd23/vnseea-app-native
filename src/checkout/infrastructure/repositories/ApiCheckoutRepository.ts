@@ -98,7 +98,7 @@ function mapCheckoutItem(raw: RawProduct): CheckoutItem {
     quantity,
     total: price * quantity,
     currencySymbol:
-      stringValue(raw.currency_symbol) || stringValue(raw.currency_code) || 'đ',
+      stringValue(raw.currency_symbol) || stringValue(raw.currency_code) || 'VNSEEA',
   };
 }
 
@@ -109,7 +109,7 @@ function normalizeSummaryCurrency(
   const rawTotal = items.reduce((sum, item) => sum + item.total, 0);
   const shouldConvert = convertedTotal > 0 && rawTotal > 0;
   const ratio = shouldConvert ? convertedTotal / rawTotal : 1;
-  const currencySymbol = shouldConvert ? 'đ' : items[0]?.currencySymbol || 'đ';
+  const currencySymbol = shouldConvert ? 'VNSEEA' : items[0]?.currencySymbol || 'VNSEEA';
 
   return items.map(item => {
     const price = item.price * ratio;
@@ -143,7 +143,7 @@ async function getSummary(): Promise<CheckoutSummary> {
   );
   const subtotal =
     convertedTotal || items.reduce((sum, item) => sum + item.total, 0);
-  const currencySymbol = items[0]?.currencySymbol || 'đ';
+  const currencySymbol = items[0]?.currencySymbol || 'VNSEEA';
 
   return {
     items,
@@ -176,7 +176,7 @@ export function createCheckoutRepository(): CheckoutRepository {
         currencySymbol:
           stringValue(response.user_data?.points_config?.display_currency_symbol) ||
           stringValue(response.user_data?.points_config?.currency_symbol) ||
-          'đ',
+          'VNSEEA',
       };
     },
 

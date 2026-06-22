@@ -234,6 +234,20 @@ function ReelItemBase({
     }
   }, [isActive, isReady, seekTime]);
 
+  useEffect(() => {
+    if (isActive) {
+      setUserPaused(false);
+      const hasInitialSeek = initialSeekTime !== undefined && initialSeekTime > 0;
+      if (seekTime === undefined && !hasInitialSeek) {
+        if (isReady && videoRef.current) {
+          videoRef.current.seek(0);
+        } else {
+          setSeekTime(0);
+        }
+      }
+    }
+  }, [isActive, initialSeekTime]);
+
   // Removed scale/opacity/translateY parallax — it was causing items to
   // appear misaligned ("lệch") during and after scrolling.
   const animatedStyle = useAnimatedStyle(() => {
@@ -1115,6 +1129,7 @@ export const ReelItem = memo(ReelItemBase, (prev, next) => {
     prev.isMuted === next.isMuted &&
     prev.height === next.height &&
     prev.scrollY === next.scrollY &&
-    prev.index === next.index
+    prev.index === next.index &&
+    prev.autoScrollEnabled === next.autoScrollEnabled
   );
 });

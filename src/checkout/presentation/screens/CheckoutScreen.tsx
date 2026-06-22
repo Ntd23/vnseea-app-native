@@ -511,7 +511,7 @@ function CheckoutScreen() {
   const summary = vm.summary;
   const wallet = vm.walletBalance?.wallet ?? 0;
   const currencySymbol =
-    summary?.currencySymbol || vm.walletBalance?.currencySymbol || 'đ';
+    summary?.currencySymbol || vm.walletBalance?.currencySymbol || 'VNSEEA';
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>

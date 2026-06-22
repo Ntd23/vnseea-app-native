@@ -40,8 +40,8 @@ export function useAffiliatesViewModel() {
     () =>
       formatCurrency(
         overview?.earningPerUser ?? 0,
-        overview?.currency ?? 'VND',
-        overview?.currencySymbol ?? 'đ',
+        overview?.currency ?? 'VNSEEA',
+        overview?.currencySymbol ?? 'VNSEEA',
       ),
     [overview],
   );
@@ -49,8 +49,8 @@ export function useAffiliatesViewModel() {
     () =>
       formatCurrency(
         overview?.availableReward ?? 0,
-        overview?.currency ?? 'VND',
-        overview?.currencySymbol ?? 'đ',
+        overview?.currency ?? 'VNSEEA',
+        overview?.currencySymbol ?? 'VNSEEA',
       ),
     [overview],
   );

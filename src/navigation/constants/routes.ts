@@ -56,6 +56,7 @@ export const ROUTES = {
   BLOG_DETAIL: 'BlogDetail',
   CREATE_BLOG: 'CreateBlog',
   MOVIES: 'Movies',
+  CREATE_MOVIE: 'CreateMovie',
   JOBS: 'Jobs',
   JOB_DETAIL: 'JobDetail',
   CREATE_JOB: 'CreateJob',

@@ -4,7 +4,12 @@
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import type { MoviesRepository } from '../../domain/repositories/MoviesRepository';
-import type { MovieItem, MoviesResponse } from '../../domain/types/movies.types';
+import type {
+  CreateMovieInput,
+  CreateMovieResponse,
+  MovieItem,
+  MoviesResponse,
+} from '../../domain/types/movies.types';
 
 export function createMoviesRepository(): MoviesRepository {
   return {
@@ -22,6 +27,42 @@ export function createMoviesRepository(): MoviesRepository {
       );
 
       return response.movies ?? [];
+    },
+
+    async createMovie(input: CreateMovieInput): Promise<CreateMovieResponse> {
+      // Build multipart payload. apiBridge.multipart handles file objects that
+      // look like { uri, name, type } and forwards access_token + server_key
+      // for the WoWonder v2 API. See apiBridge.ts:29-102.
+      const formData: Record<string, unknown> = {
+        name: input.name,
+        description: input.description,
+        genre: input.genre,
+        country: input.country,
+        stars: input.stars,
+        producer: input.producer,
+        release: input.release,
+        duration: input.duration,
+        quality: input.quality,
+        rating: input.rating,
+        source: input.source,
+      };
+
+      if (input.cover) {
+        formData.cover = input.cover;
+      }
+
+      const response = await apiBridge.multipart<CreateMovieResponse>(
+        apiRoutes.movies.create,
+        formData,
+      );
+
+      if (response.api_status !== 200) {
+        const errorText =
+          response.errors?.error_text ?? 'Could not create movie';
+        throw new Error(errorText);
+      }
+
+      return response;
     },
   };
 }

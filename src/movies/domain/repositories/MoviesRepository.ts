@@ -1,7 +1,11 @@
 // Movies Repository Interface
 // Port từ: client/src/movies/domain/repositories/
 
-import type { MovieItem } from '../types/movies.types';
+import type {
+  CreateMovieInput,
+  CreateMovieResponse,
+  MovieItem,
+} from '../types/movies.types';
 
 export interface MoviesRepository {
   getMovies(options?: {
@@ -10,4 +14,6 @@ export interface MoviesRepository {
     genre?: string;
     country?: string;
   }): Promise<MovieItem[]>;
+
+  createMovie(input: CreateMovieInput): Promise<CreateMovieResponse>;
 }

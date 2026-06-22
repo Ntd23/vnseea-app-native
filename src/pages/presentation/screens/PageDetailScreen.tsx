@@ -69,6 +69,11 @@ import {
   ReactionPickerOverlay,
   TextPostCard,
 } from '../../../feed/presentation/components/PostCards';
+import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
+import {
+  PhotoViewerModal,
+  type PhotoViewerState,
+} from '../../../shared-kernel/presentation/components/PhotoViewerModal';
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
 import { ShareActionSheet } from '../../../shared-kernel/presentation/components/ShareActionSheet';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
@@ -1263,6 +1268,11 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     y: number;
   } | null>(null);
   const [activeVideoPostId, setActiveVideoPostId] = useState<string | null>(null);
+  // Photo viewer modal — mirrors Feed / Profile. Opens when the user
+  // taps any photo inside a page post so the page is consistent with
+  // the global viewer (swipe, progress, reaction, comment).
+  const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
+  const openingPhotoViewerRef = useRef(false);
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
   const gestureActive = useSharedValue(false);
@@ -1272,6 +1282,17 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   const commentVm = useFeedCommentsViewModel({
     onCommentCountChange: vm.updatePostCommentCount,
   });
+  const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
+  const [reactionsSheetPostId, setReactionsSheetPostId] = useState<string | null>(null);
+
+  const openReactionsSheet = useCallback((postId: string, _post: FeedPost) => {
+    setReactionsSheetPostId(postId);
+    setReactionsSheetVisible(true);
+  }, []);
+
+  const closeReactionsSheet = useCallback(() => {
+    setReactionsSheetVisible(false);
+  }, []);
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item?: FeedPost }> }) => {
       const nextVideo = viewableItems.find(
@@ -1386,11 +1407,27 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   );
 
   const handlePhotoPress = useCallback(
-    (post: FeedTextPost) => {
-      handleOpenPost(post);
+    (post: FeedTextPost, photoIndex: number) => {
+      // Debounce so the same tap can't open two viewers if the
+      // card and the page-level gesture both fire. Mirrors the
+      // guard in FeedScreen / ProfileScreen so behavior stays in sync.
+      if (openingPhotoViewerRef.current) return;
+      const total = post.photos?.length ?? 0;
+      if (total <= 0) return;
+      const safeIndex = Math.min(Math.max(photoIndex, 0), total - 1);
+      openingPhotoViewerRef.current = true;
+      setPhotoViewer({ post, initialIndex: safeIndex });
+      setTimeout(() => {
+        openingPhotoViewerRef.current = false;
+      }, 300);
     },
-    [handleOpenPost],
+    [],
   );
+
+  const handleClosePhotoViewer = useCallback(() => {
+    setPhotoViewer(null);
+    openingPhotoViewerRef.current = false;
+  }, []);
 
   // Open the dedicated page share sheet. Previously this jumped
   // straight to React Native's native Share dialog with a fixed
@@ -1545,6 +1582,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
             gestureStartX={gestureStartX}
             gestureStartY={gestureStartY}
             hasDragged={hasDragged}
+            onOpenReactions={openReactionsSheet}
           />
         );
       }
@@ -1566,6 +1604,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
             gestureStartX={gestureStartX}
             gestureStartY={gestureStartY}
             hasDragged={hasDragged}
+            onOpenReactions={openReactionsSheet}
           />
         );
       }
@@ -1724,6 +1763,11 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         gestureActive={gestureActive}
         hasDragged={hasDragged}
       />
+      <PostReactionsSheet
+        visible={reactionsSheetVisible}
+        postId={reactionsSheetPostId}
+        onClose={closeReactionsSheet}
+      />
       <ReelCommentsSheet
         visible={commentVm.isCommentsOpen}
         comments={commentVm.comments}
@@ -1755,6 +1799,13 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onClose={handleClosePostShare}
         post={sharingPost}
         onInternalShare={handleInternalSharePost}
+      />
+      <PhotoViewerModal
+        state={photoViewer}
+        onClose={handleClosePhotoViewer}
+        onReact={vm.togglePostReaction}
+        onCommentTap={handleOpenComments}
+        posts={vm.posts}
       />
     </View>
   );

@@ -10,17 +10,16 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Menu, MessageCircle, Plus, Search } from 'lucide-react-native';
+import { Menu, MessageCircle, Search } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ROUTES } from '../../../navigation/constants/routes';
 import type {
   RootStackParamList,
-  RootStackRouteName,
 } from '../../../navigation/types';
 import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
-import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
 import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
@@ -66,70 +65,48 @@ export function FeedHeader() {
   const navigation = useNavigation<FeedHeaderNav>();
   const { messageCount } = useUnreadBadgeCounts();
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
-  const [sheetVisible, setSheetVisible] = useState(false);
-  const [buttonRotation, setButtonRotation] = useState('0deg');
   const [menuVisible, setMenuVisible] = useState(false);
-
-  const handleOpenSheet = useCallback(() => {
-    setSheetVisible(true);
-    setButtonRotation('45deg');
-  }, []);
 
   const handleOpenFutureDrawer = useCallback(() => {
     setMenuVisible(true);
   }, []);
 
-  const handleCloseSheet = useCallback(() => {
-    setSheetVisible(false);
-    setButtonRotation('0deg');
-  }, []);
-
-  const handleCreateNavigate = useCallback(
-    (route: RootStackRouteName) => {
-      if (route === ROUTES.CREATE_EVENT) navigation.navigate(ROUTES.CREATE_EVENT);
-      if (route === ROUTES.CREATE_PRODUCT) navigation.navigate(ROUTES.CREATE_PRODUCT);
-      if (route === ROUTES.CREATE_PAGE) navigation.navigate(ROUTES.CREATE_PAGE);
-      if (route === ROUTES.CREATE_GROUP) navigation.navigate(ROUTES.CREATE_GROUP);
-      if (route === ROUTES.CREATE_REEL) navigation.navigate(ROUTES.CREATE_REEL);
-      if (route === ROUTES.CREATE_POST) navigation.navigate(ROUTES.CREATE_POST);
-      if (route === ROUTES.CREATE_STORY) navigation.navigate(ROUTES.CREATE_STORY);
-      if (route === ROUTES.CREATE_POLL) navigation.navigate(ROUTES.CREATE_POLL);
-      if (route === ROUTES.CREATE_ALBUM) navigation.navigate(ROUTES.CREATE_ALBUM);
-      if (route === ROUTES.CREATE_AD) navigation.navigate(ROUTES.CREATE_AD);
-    },
-    [navigation],
-  );
-
   return (
     <>
-      <View style={styles.headerRoot}>
+      <View style={styles.headerRoot} pointerEvents="box-none">
         <AdaptiveGlassSurface
           effect="regular"
           interactive={false}
-          blurAmount={24}
+          blurAmount={26}
           fallbackColor="rgba(255, 255, 255, 0.72)"
           style={styles.headerGlassDock}
         >
-          <HeaderGlassActionButton
-            accessibilityLabel="Menu"
-            onPress={handleOpenFutureDrawer}
-          >
-            <Menu size={19} color="#002fff" strokeWidth={2.55} />
-          </HeaderGlassActionButton>
-
           <View style={styles.brandRow}>
-            {logoUrl && imageErrorCount === 0 ? (
-              <View style={styles.logoPill}>
+            <HeaderGlassActionButton
+              accessibilityLabel="Profile Menu"
+              onPress={handleOpenFutureDrawer}
+            >
+              <Menu size={19} color="#002fff" strokeWidth={2.55} />
+            </HeaderGlassActionButton>
+            <TouchableOpacity
+              activeOpacity={0.82}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                marginLeft: 10,
+              }}
+            >
+              {logoUrl && imageErrorCount === 0 ? (
                 <Image
                   source={{ uri: logoUrl }}
                   style={styles.logoImage}
                   resizeMode="contain"
                   onError={notifyImageError}
                 />
-              </View>
-            ) : (
-              <Text style={styles.brandText}>VNSEEA</Text>
-            )}
+              ) : (
+                <Text style={styles.brandText}>VNSEEA</Text>
+              )}
+            </TouchableOpacity>
           </View>
 
           <View style={styles.actions}>
@@ -138,13 +115,6 @@ export function FeedHeader() {
               onPress={() => navigation.navigate(ROUTES.SEARCH)}
             >
               <Search size={19} color="#002fff" strokeWidth={2.55} />
-            </HeaderGlassActionButton>
-            <HeaderGlassActionButton
-              accessibilityLabel="Create"
-              onPress={handleOpenSheet}
-              style={{ transform: [{ rotate: buttonRotation }] }}
-            >
-              <Plus size={19} color="#002fff" strokeWidth={2.65} />
             </HeaderGlassActionButton>
             <HeaderGlassActionButton
               accessibilityLabel="Messages"
@@ -164,11 +134,6 @@ export function FeedHeader() {
           </View>
         </AdaptiveGlassSurface>
       </View>
-      <CreateActionSheet
-        visible={sheetVisible}
-        onClose={handleCloseSheet}
-        onNavigate={handleCreateNavigate}
-      />
       <HeaderProfileDrawer
         visible={menuVisible}
         onClose={() => setMenuVisible(false)}

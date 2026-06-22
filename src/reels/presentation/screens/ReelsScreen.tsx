@@ -264,6 +264,7 @@ export default function ReelsScreen() {
   // by the gesture definition) so the focus effect below can reset it —
   // we have to undo a successful dismissal when the user returns.
   const dragX = useSharedValue(0);
+  const screenDismissX = useSharedValue(0);
 
   const scrollY = useSharedValue(0);
   const nativeTabScrollLastY = useSharedValue(0);
@@ -372,13 +373,14 @@ export default function ReelsScreen() {
   useFocusEffect(
     useCallback(() => {
       dragX.value = 0;
+      screenDismissX.value = 0;
 
       return () => {
         if (isIosTabRoute) {
           publishNativeTabScrollBehavior('onScrollDown');
         }
       };
-    }, [dragX, isIosTabRoute]),
+    }, [dragX, screenDismissX, isIosTabRoute]),
   );
 
   // FlatList requires `onViewableItemsChanged` to have a stable identity
@@ -577,8 +579,7 @@ export default function ReelsScreen() {
         .enabled(!isIosTabRoute && !vm.isCommentsOpen)
         .onUpdate(event => {
           'worklet';
-          // Clamp to ≥ 0 so leftward overshoot doesn't push the screen
-          // off the wrong side.
+          // Track swipe progress for the back indicator icon while keeping screen still.
           dragX.value = Math.max(0, event.translationX);
         })
         .onEnd(event => {
@@ -589,8 +590,9 @@ export default function ReelsScreen() {
             event.velocityX > 700;
 
           if (shouldDismiss) {
-            // Animate out, then hop to the feed on JS thread.
-            dragX.value = withTiming(
+            // Animate both indicator and screen out, then hop to feed.
+            dragX.value = withTiming(SCREEN_WIDTH, { duration: 180 });
+            screenDismissX.value = withTiming(
               SCREEN_WIDTH,
               { duration: 180 },
               finished => {
@@ -598,11 +600,11 @@ export default function ReelsScreen() {
               },
             );
           } else {
-            // Spring back to origin.
+            // Spring back the indicator cleanly. Screen remains at 0.
             dragX.value = withSpring(0, { damping: 18, stiffness: 220 });
           }
         }),
-    [dragX, goBackToFeed, isIosTabRoute, vm.isCommentsOpen],
+    [dragX, screenDismissX, goBackToFeed, isIosTabRoute, vm.isCommentsOpen],
   );
 
   const screenAnimatedStyle = useAnimatedStyle(() => {
@@ -613,8 +615,29 @@ export default function ReelsScreen() {
     return {
       opacity,
       transform: [
-        { translateX: dragX.value },
+        { translateX: screenDismissX.value },
         { translateY },
+        { scale },
+      ],
+    };
+  });
+
+  const backIndicatorStyle = useAnimatedStyle(() => {
+    const threshold = SCREEN_WIDTH * 0.32;
+    // Fade in the indicator as user drags.
+    const opacity = interpolate(dragX.value, [0, 40, threshold], [0, 0.85, 1], 'clamp');
+    // Scale up the circle indicator slightly.
+    const scale = interpolate(dragX.value, [0, threshold], [0.6, 1.2], 'clamp');
+    // Slide indicator from left margin inwards.
+    const translateX = interpolate(dragX.value, [0, threshold], [-60, 20], 'clamp');
+    // Highlight indicator background blue if dragged far enough to trigger back.
+    const isReady = dragX.value >= threshold;
+
+    return {
+      opacity,
+      backgroundColor: isReady ? 'rgba(8, 102, 255, 0.85)' : 'rgba(0, 0, 0, 0.65)',
+      transform: [
+        { translateX },
         { scale },
       ],
     };
@@ -678,6 +701,12 @@ export default function ReelsScreen() {
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           getItemLayout={getItemLayout}
+          extraData={{
+            autoScrollEnabled,
+            isMuted,
+            activeIndex: vm.activeIndex,
+            isFocusedScreen,
+          }}
           // Only supply `initialScrollIndex` when we have a real
           // deeplink — leaving it `undefined` for normal visits keeps
           // RN's default behaviour (scroll to top). The `??` form
@@ -817,6 +846,17 @@ export default function ReelsScreen() {
             }
           }}
         />
+
+        {/* Left edge back swipe indicator bubble */}
+        <Animated.View
+          style={[
+            styles.backIndicatorContainer,
+            backIndicatorStyle,
+            { top: viewportHeight / 2 - 25 },
+          ]}
+        >
+          <ChevronLeft size={24} color="#FFF" />
+        </Animated.View>
       </Animated.View>
     </GestureDetector>
   );
@@ -918,5 +958,16 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     alignItems: 'center',
     backgroundColor: '#000',
+  },
+  backIndicatorContainer: {
+    position: 'absolute',
+    left: 0,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
   },
 });

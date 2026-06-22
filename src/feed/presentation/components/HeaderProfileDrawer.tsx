@@ -265,25 +265,23 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
 
     if (visible) {
       setShouldRender(true);
-      setContentReady(true);
-      // Jump to off-screen so the slide-in is visible, then animate to 0.
+      setContentReady(true); // Render content immediately to avoid white/blank flash
       translateX.setValue(DRAWER_W);
+
       Animated.parallel([
         Animated.timing(backdropOpacity, {
           toValue: 0.55,
-          duration: 50,
+          duration: 150,
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(translateX, {
           toValue: 0,
-          duration: 90,
+          duration: 180,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: false,
+          useNativeDriver: true, // Use native driver for smooth 60fps translation
         }),
       ]).start(({ finished }) => {
-        // If the animation failed for any reason, make sure the drawer ends
-        // up at its visible position.
         if (!finished) {
           translateX.setValue(0);
         }
@@ -292,24 +290,25 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
       const closeAnim = Animated.parallel([
         Animated.timing(backdropOpacity, {
           toValue: 0,
-          duration: 60,
+          duration: 150,
           easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.timing(translateX, {
           toValue: DRAWER_W,
-          duration: 110,
+          duration: 180,
           easing: Easing.in(Easing.cubic),
-          useNativeDriver: false,
+          useNativeDriver: true, // Use native driver for smooth 60fps translation
         }),
       ]);
       closeAnimRef.current = closeAnim;
-      // Hide Modal immediately so the underlying screen is interactive while
-      // the drawer finishes its slide-out — perceived close feels instant.
-      setShouldRender(false);
-      setContentReady(false);
-      closeAnim.start(() => {
+
+      closeAnim.start(({ finished }) => {
         closeAnimRef.current = null;
+        if (finished) {
+          setShouldRender(false);
+          setContentReady(false);
+        }
       });
     }
   }, [visible, backdropOpacity, translateX]);

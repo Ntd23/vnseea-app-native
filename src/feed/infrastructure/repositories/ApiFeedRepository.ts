@@ -33,8 +33,13 @@ import type {
   FeedRecommendationEventInput,
   GetPostByIdResult,
   PostComment,
+  PostReactionsPage,
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
+import type {
+  PostReactionCount,
+  PostReactionUser,
+} from '../../domain/types/reactions.types';
 import type {
   CreatePostDraft,
   CreatePostResult,
@@ -2137,6 +2142,77 @@ export function createFeedRepository(): FeedRepository {
 
       return { post, comments };
     },
+
+    async getPostReactions(
+      postId,
+      reaction,
+      limit = 20,
+      offset = 0,
+    ): Promise<PostReactionsPage> {
+      // We always pull BOTH `reactions` (per-type counts) and `users`
+      // (the requested slice) in a single round-trip — the backend
+      // returns both regardless of the `reaction` filter, so there's
+      // no second call to fetch tab badges. Pass `reaction` only when
+      // the caller asked for one specific type so the backend can
+      // skip the others on the users query.
+      //
+      // CRITICAL: this endpoint reads `$_GET['post_id']` on the PHP
+      // side (`phtml/api/v2/endpoints/post-reactions.php:4`), NOT
+      // `$_POST`. Sending the payload as the request body returns
+      // `404 post_id can not be empty`. We pass it through axios
+      // `config.params` so it gets serialized into the query string.
+      const response = await backendApi.post<{
+        api_status: number | string;
+        post_id?: number | string;
+        reactions?: Array<Record<string, unknown>>;
+        users?: Array<Record<string, unknown>>;
+        errors?: { error_text?: string };
+        message?: string;
+      }>(
+        apiRoutes.feed.postReactions,
+        {},
+        {
+          params: {
+            post_id: postId,
+            ...(reaction ? { reaction } : {}),
+            limit,
+            offset,
+          },
+        },
+      );
+
+      if (String(response.api_status) !== '200') {
+        throw new Error(
+          response.errors?.error_text ||
+            response.message ||
+            'Không tải được danh sách cảm xúc.',
+        );
+      }
+
+      const reactions = (response.reactions ?? [])
+        .map(mapPostReactionCount)
+        .filter((c): c is PostReactionCount => c !== null);
+
+      const users = (response.users ?? [])
+        .map(mapPostReactionUser)
+        .filter((u): u is PostReactionUser => u !== null);
+
+      // Offset-based pagination: if the server returned a full page,
+      // there might be more. We treat `users.length < limit` as the
+      // explicit end-of-list signal so we don't request a second page
+      // that would return zero rows.
+      const reachedEnd = users.length < limit;
+      const nextOffset = reachedEnd
+        ? undefined
+        : String(offset + users.length);
+
+      return {
+        users,
+        reactions,
+        nextOffset,
+        reachedEnd,
+      };
+    },
   };
 }
 
@@ -2194,5 +2270,91 @@ function mapPostComment(raw: Record<string, unknown>): PostComment {
     likeCount: readNumber(raw, 'comment_likes', 'likes'),
     isLiked:
       myReaction !== null || readBool(raw, 'is_comment_liked', 'isLiked'),
+  };
+}
+
+// ── Post reactions mapping ───────────────────────────────────────────────
+//
+// `post-reactions.php` returns a single combined response shape regardless
+// of whether the caller asked for one reaction type or all:
+//
+//   {
+//     api_status: 200,
+//     post_id: number,
+//     reactions: [{ reaction: 'like'|'love'|'haha'|...|'angry', count: 5 }, ...],
+//     users:     [{ user_id, name, username, avatar, reaction, is_following, ... }, ...]
+//   }
+//
+// `reactions` lists ONLY the reaction types that have ≥1 user (i.e. a
+// missing entry == zero count). We surface those counts to the UI as
+// tab badges. `users` is the already-filtered slice for the requested
+// tab (or all types interleaved when no filter is set), tagged with the
+// specific reaction each user left.
+function parseReactionType(raw: Record<string, unknown>): string {
+  const rawReaction = raw.reaction;
+  if (typeof rawReaction === 'string') {
+    return rawReaction;
+  }
+  if (typeof rawReaction === 'number') {
+    return String(rawReaction);
+  }
+  if (rawReaction && typeof rawReaction === 'object') {
+    const rObj = rawReaction as Record<string, unknown>;
+    const typeVal = rObj.type;
+    if (typeof typeVal === 'string' && typeVal.length > 0) return typeVal;
+    if (typeof typeVal === 'number') return String(typeVal);
+  }
+
+  const rawType = raw.type;
+  if (typeof rawType === 'string' && rawType.length > 0) return rawType;
+  if (typeof rawType === 'number') return String(rawType);
+
+  const rawReactionType = raw.reaction_type;
+  if (typeof rawReactionType === 'string' && rawReactionType.length > 0) return rawReactionType;
+  if (typeof rawReactionType === 'number') return String(rawReactionType);
+
+  return '';
+}
+
+function mapPostReactionCount(raw: Record<string, unknown>): PostReactionCount | null {
+  const rawType = parseReactionType(raw);
+  const reaction = WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()];
+  if (!reaction) return null;
+  const count = readNumber(raw, 'count');
+  return { reaction, count };
+}
+
+function mapPostReactionUser(raw: Record<string, unknown>): PostReactionUser | null {
+  const rawType = parseReactionType(raw);
+  const reaction = WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()];
+  if (!reaction) return null;
+
+  // Backend strips a few private fields server-side via `$non_allowed`
+  // but defensive reads keep us safe on older installs.
+  const id = readString(raw, 'user_id', 'id');
+  if (!id) return null;
+
+  const firstName = readString(raw, 'first_name');
+  const lastName = readString(raw, 'last_name');
+  const username = readString(raw, 'username', 'user_name');
+  const name =
+    [firstName, lastName].filter(Boolean).join(' ').trim() ||
+    readString(raw, 'name', 'full_name') ||
+    username ||
+    'Người dùng';
+
+  // Avatars arrive as either a full URL (when served through `Wo_GetMedia`)
+  // or a bare `/upload/...` path on older installs — same dual format the
+  // feed mapper already handles via `normalizeMediaUrl`.
+  const avatarUrl =
+    normalizeMediaUrl(readString(raw, 'avatar', 'profile_picture')) || undefined;
+
+  return {
+    id,
+    name,
+    username,
+    avatarUrl,
+    reaction,
+    isFollowing: readBool(raw, 'is_following'),
   };
 }

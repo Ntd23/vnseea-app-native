@@ -32,12 +32,12 @@ function formatPrice(price: string, symbolOrCode: string): string {
   let currency = symbolOrCode;
   if (currency === '0') currency = '$';
   else if (currency === '1') currency = '€';
-  else if (currency === 'VND' || currency === 'vnd') currency = 'đ';
-  
+  else if (currency === 'VNSEEA' || currency === 'vnd') currency = 'VNSEEA';
+
   const formatted = numPrice.toLocaleString('vi-VN');
-  
-  if (currency === 'đ' || currency === 'VND') {
-    return `${formatted} đ`;
+
+  if (currency === 'VNSEEA' || currency === 'VNSEEA') {
+    return `${formatted} VNSEEA`;
   }
   if (currency === '$' || currency === 'USD') {
     return `$${formatted}`;
@@ -99,7 +99,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
     onShare?.(product);
   }, [onShare, product]);
 
-  const currencySymbol = product.currency_symbol || product.currency_code || product.currency || 'VND';
+  const currencySymbol = product.currency_symbol || product.currency_code || product.currency || 'VNSEEA';
 
   // Compact layout (used inside the horizontal carousel)
   if (compact) {

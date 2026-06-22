@@ -145,6 +145,7 @@ export type RootStackParamList = {
   [ROUTES.BLOG_DETAIL]: { blogId: string };
   [ROUTES.CREATE_BLOG]: undefined;
   [ROUTES.MOVIES]: undefined;
+  [ROUTES.CREATE_MOVIE]: undefined;
   [ROUTES.JOBS]: undefined;
   [ROUTES.JOB_DETAIL]: { jobId?: string; job?: any };
   [ROUTES.CREATE_JOB]: undefined;

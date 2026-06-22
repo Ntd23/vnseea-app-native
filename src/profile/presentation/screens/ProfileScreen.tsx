@@ -1,4 +1,4 @@
-﻿// Description: Renders the Facebook-style profile screen with user-backed API data.
+// Description: Renders the Facebook-style profile screen with user-backed API data.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -66,13 +66,14 @@ import { useFeedCommentsViewModel } from '../../../feed/application/view-models/
 import {
   PhotoViewerModal,
   type PhotoViewerState,
-} from '../../../feed/presentation/screens/FeedScreen';
+} from '../../../shared-kernel/presentation/components/PhotoViewerModal';
 import {
   FEED_COPY as POST_CARD_COPY,
   HomeVideoPostCard,
   ReactionPickerOverlay,
   TextPostCard,
 } from '../../../feed/presentation/components/PostCards';
+import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
 import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
 import { createPollRepository } from '../../../poll/infrastructure/repositories/ApiPollRepository';
@@ -1035,6 +1036,17 @@ function ProfileScreen() {
   // Note: tab bar is hidden via direct tabBarVisibility calls in each handler below.
   const [storyOptionsSheet, setStoryOptionsSheet] = useState<StoryItem | null>(null);
   const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(undefined);
+  const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
+  const [reactionsSheetPostId, setReactionsSheetPostId] = useState<string | null>(null);
+
+  const openReactionsSheet = useCallback((postId: string, _post: FeedPost) => {
+    setReactionsSheetPostId(postId);
+    setReactionsSheetVisible(true);
+  }, []);
+
+  const closeReactionsSheet = useCallback(() => {
+    setReactionsSheetVisible(false);
+  }, []);
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
   const gestureActive = useSharedValue(false);
@@ -2676,6 +2688,7 @@ function ProfileScreen() {
             gestureY={gestureY}
             gestureActive={gestureActive}
             navigateToProfile={handleNavigateToProfile}
+            onOpenReactions={openReactionsSheet}
           />
         </View>
       );
@@ -2711,6 +2724,7 @@ function ProfileScreen() {
         gestureY={gestureY}
         gestureActive={gestureActive}
         navigateToProfile={handleNavigateToProfile}
+        onOpenReactions={openReactionsSheet}
       />
     );
   };
@@ -2863,6 +2877,11 @@ function ProfileScreen() {
           gestureX={gestureX}
           gestureY={gestureY}
           gestureActive={gestureActive}
+        />
+        <PostReactionsSheet
+          visible={reactionsSheetVisible}
+          postId={reactionsSheetPostId}
+          onClose={closeReactionsSheet}
         />
         <PhotoViewerModal
           state={photoViewer}

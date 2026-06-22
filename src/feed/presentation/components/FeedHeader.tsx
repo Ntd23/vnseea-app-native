@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Bell,
   CircleUser,
@@ -27,19 +28,17 @@ import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useNotificationBadgeViewModel } from '../../../notifications';
-import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
 import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
 
 export function FeedHeader() {
   const navigation = useNavigation<FeedHeaderNav>();
+  const insets = useSafeAreaInsets();
   const { messageCount, notificationCount } = useUnreadBadgeCounts();
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
   const { user } = useCurrentUserViewModel();
   useNotificationBadgeViewModel();
-  const [sheetVisible, setSheetVisible] = useState(false);
-  const [buttonRotation, setButtonRotation] = useState('0deg');
   const [menuVisible, setMenuVisible] = useState(false);
 
   const avatarUrl = user?.avatar;
@@ -58,11 +57,6 @@ export function FeedHeader() {
     }
   }, [avatarUrl, transitionAnim]);
 
-  const handleOpenSheet = useCallback(() => {
-    setSheetVisible(true);
-    setButtonRotation('45deg');
-  }, []);
-
   const handlePressLogo = useCallback(() => {
     // Always navigate to the Feed tab first. If we're already on the
     // Feed tab, the navigation is a no-op for routing but the listener
@@ -77,30 +71,9 @@ export function FeedHeader() {
     });
   }, [navigation]);
 
-  const handleCloseSheet = useCallback(() => {
-    setSheetVisible(false);
-    setButtonRotation('0deg');
-  }, []);
-
-  const handleCreateNavigate = useCallback(
-    (route: RootStackRouteName) => {
-      if (route === ROUTES.CREATE_EVENT) navigation.navigate(ROUTES.CREATE_EVENT);
-      if (route === ROUTES.CREATE_PRODUCT) navigation.navigate(ROUTES.CREATE_PRODUCT);
-      if (route === ROUTES.CREATE_PAGE) navigation.navigate(ROUTES.CREATE_PAGE);
-      if (route === ROUTES.CREATE_GROUP) navigation.navigate(ROUTES.CREATE_GROUP);
-      if (route === ROUTES.CREATE_REEL) navigation.navigate(ROUTES.CREATE_REEL);
-      if (route === ROUTES.CREATE_POST) navigation.navigate(ROUTES.CREATE_POST);
-      if (route === ROUTES.CREATE_STORY) navigation.navigate(ROUTES.CREATE_STORY);
-      if (route === ROUTES.CREATE_POLL) navigation.navigate(ROUTES.CREATE_POLL);
-      if (route === ROUTES.CREATE_ALBUM) navigation.navigate(ROUTES.CREATE_ALBUM);
-      if (route === ROUTES.CREATE_AD) navigation.navigate(ROUTES.CREATE_AD);
-    },
-    [navigation],
-  );
-
   return (
     <>
-      <View style={styles.headerRoot}>
+      <View style={[styles.headerRoot, { paddingTop: insets.top }]}>
         <View style={styles.topBar}>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -132,13 +105,6 @@ export function FeedHeader() {
               style={styles.headerIcon}
             >
               <Search size={19} color="#0758ff" strokeWidth={2.4} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={handleOpenSheet}
-              style={[styles.headerIcon, { transform: [{ rotate: buttonRotation }] }]}
-            >
-              <Plus size={19} color="#0758ff" strokeWidth={2.2} />
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.75}
@@ -227,11 +193,6 @@ export function FeedHeader() {
           </View>
         </View>
       </View>
-      <CreateActionSheet
-        visible={sheetVisible}
-        onClose={handleCloseSheet}
-        onNavigate={handleCreateNavigate}
-      />
       <HeaderProfileDrawer
         visible={menuVisible}
         onClose={() => setMenuVisible(false)}
