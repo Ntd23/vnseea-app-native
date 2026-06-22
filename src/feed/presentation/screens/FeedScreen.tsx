@@ -44,6 +44,7 @@ import Animated, {
   withSpring,
   interpolate,
   Extrapolation,
+  Easing,
   runOnJS,
   useAnimatedReaction,
   withRepeat,
@@ -139,6 +140,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import type { RootStackParamList } from '../../../navigation/types';
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
+import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import type {
   FeedPost,
   FeedTextPost,
@@ -1275,17 +1277,54 @@ export function PhotoViewerModal({
   const localHasDragged = useSharedValue(false);
 
   const translateY = useSharedValue(0);
+  const openProgress = useSharedValue(0);
+  const openScale = useSharedValue(0.92);
+  const contentOpacity = useSharedValue(0);
 
-  // Sync page on mount. Previously we also ran a 200ms fade-in + scale-up
-  // via `openProgress` Reanimated value â€” that delayed the FIRST FRAME
-  // the user saw the photo. v3: open instantly (opacity 1, scale 1) and
-  // only animate when the user actively drags the modal down to dismiss.
+  // Sync page on mount + animate open with snappy fade + scale
   useEffect(() => {
     if (state) {
       setCurrentIndex(state.initialIndex);
       translateY.value = 0;
+      openProgress.value = 0;
+      openScale.value = 0.92;
+      contentOpacity.value = 0;
+      // Open animation: snappy fade-in + scale-up (parallel, native driver)
+      openProgress.value = withTiming(1, {
+        duration: 160,
+        easing: Easing.out(Easing.cubic),
+      });
+      openScale.value = withSpring(1, {
+        stiffness: 140,
+        damping: 12,
+      });
+      contentOpacity.value = withTiming(1, {
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+      });
     }
-  }, [state, translateY]);
+  }, [state, translateY, openProgress, openScale, contentOpacity]);
+
+  const animateClose = useCallback(() => {
+    // Snappy close: opacity fade fast + scale-down
+    contentOpacity.value = withTiming(0, {
+      duration: 90,
+      easing: Easing.in(Easing.cubic),
+    });
+    openScale.value = withTiming(0.94, {
+      duration: 160,
+      easing: Easing.inOut(Easing.cubic),
+    });
+    openProgress.value = withTiming(
+      0,
+      { duration: 150, easing: Easing.in(Easing.cubic) },
+      finished => {
+        if (finished) {
+          runOnJS(onClose)();
+        }
+      },
+    );
+  }, [openProgress, openScale, contentOpacity, onClose]);
 
   const livePost = useMemo(() => {
     if (!state) return null;
@@ -1331,18 +1370,17 @@ export function PhotoViewerModal({
   }, [livePost, isFollowedLocally]);
 
   const handleClose = useCallback(() => {
-    onClose();
-  }, [onClose]);
+    // Animate close first, then call onClose when animation finishes
+    animateClose();
+  }, [animateClose]);
 
   const handleCommentPress = useCallback(() => {
     if (!livePost) return;
     const postId = livePost.id;
     setPickerAnchor(null);
-    onClose();
-    setTimeout(() => {
-      onCommentTap(postId);
-    }, PHOTO_VIEWER_COMMENT_OPEN_DELAY_MS);
-  }, [livePost, onClose, onCommentTap]);
+    // Mở comment sheet ngay tại chỗ, không đóng modal viewer trước
+    onCommentTap(postId);
+  }, [livePost, onCommentTap]);
 
   const handleTopBarLayout = useCallback((event: LayoutChangeEvent) => {
     const nextHeight = event.nativeEvent.layout.height;
@@ -1360,21 +1398,39 @@ export function PhotoViewerModal({
 
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
-    .failOffsetX([-10, 10])
+    .failOffsetX([-15, 15])
     .onUpdate(event => {
       'worklet';
       translateY.value = event.translationY;
     })
     .onEnd(event => {
       'worklet';
-      if (event.translationY > 100 || event.velocityY > 500) {
-        // Slide off screen downwards
-        translateY.value = withTiming(SCREEN_H, { duration: 180 }, () => {
-          runOnJS(onClose)();
-        });
+      // Thoát nếu vuốt lên hoặc xuống quá xa (>120px) hoặc velocity cao (>500)
+      const absTranslationY = Math.abs(event.translationY);
+      const absVelocityY = Math.abs(event.velocityY);
+      const shouldDismiss =
+        absTranslationY > 120 ||
+        absVelocityY > 500 ||
+        (absTranslationY > 60 && absVelocityY > 300);
+
+      if (shouldDismiss) {
+        // Slide off + fade out parallel (snappy ~150ms)
+        const targetY = event.translationY > 0 ? SCREEN_H : -SCREEN_H;
+        translateY.value = withTiming(targetY, { duration: 150 });
+        openScale.value = withTiming(0.92, { duration: 150 });
+        contentOpacity.value = withTiming(0, { duration: 90 });
+        openProgress.value = withTiming(
+          0,
+          { duration: 150, easing: Easing.in(Easing.cubic) },
+          finished => {
+            if (finished) {
+              runOnJS(onClose)();
+            }
+          },
+        );
       } else {
         // Snap back to center
-        translateY.value = withSpring(0, { damping: 15 });
+        translateY.value = withSpring(0, { damping: 15, stiffness: 200 });
       }
     });
 
@@ -1386,7 +1442,9 @@ export function PhotoViewerModal({
       Extrapolation.CLAMP,
     );
     // Clamp to prevent floating-point underflow producing invalid rgba values
-    const finalOpacity = Math.max(0, Math.min(1, dragProgress));
+    const dragOpacity = Math.max(0, Math.min(1, dragProgress));
+    // Combine open progress + drag opacity for snappy entry + drag dim
+    const finalOpacity = Math.min(openProgress.value, dragOpacity);
     return {
       flex: 1,
       backgroundColor: `rgba(0, 0, 0, ${finalOpacity})`,
@@ -1400,10 +1458,15 @@ export function PhotoViewerModal({
       [1, 0.8],
       Extrapolation.CLAMP,
     );
+    // Combine open scale + drag scale (multiplicative)
+    const finalScale = openScale.value * dragScale;
     return {
       flex: 1,
-      transform: [{ translateY: translateY.value }, { scale: dragScale }],
-      opacity: 1,
+      transform: [
+        { translateY: translateY.value },
+        { scale: finalScale },
+      ],
+      opacity: contentOpacity.value,
     };
   });
 
@@ -1977,6 +2040,10 @@ function FeedScreen() {
   const copy = FEED_COPY[language];
   const vm = useFeedViewModel();
   const feedSafeAreaInsets = useSafeAreaInsets();
+  // Top-bar logo: FeedScreen only acts on the scroll-to-top event when it
+  // is the currently focused tab. Declared up here so the hook order
+  // matches the rest of FeedScreen (no conditional hooks below).
+  const isFeedTabFocused = useIsFocused();
   const userVm = useCurrentUserViewModel();
   const feedPosts = vm.posts;
   const prependFeedPost = vm.prependPost;
@@ -1986,6 +2053,20 @@ function FeedScreen() {
   const reportFeedPost = vm.reportPost;
   const shareFeedPost = vm.sharePost;
   const reloadFeedPosts = vm.reloadPosts;
+  const mainFeedListRef = useRef<FlatList>(null);
+
+  // Top-bar logo button: when tapped while already on the Feed tab,
+  // scroll the feed back to the top and trigger a fresh reload — same
+  // behaviour as Facebook/TikTok. We check `useIsFocused` so this only
+  // runs when the Feed tab is the active tab, not when the user tapped
+  // the logo from another tab to switch back to Feed.
+  useEffect(() => {
+    return feedLogoEvents.subscribe(() => {
+      if (!isFeedTabFocused) return;
+      mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      reloadFeedPosts();
+    });
+  }, [isFeedTabFocused, reloadFeedPosts]);
   const setFeedScrollBusy = vm.setScrollBusy;
   const activeFeedSource = vm.feedSource;
   const setActiveFeedSource = vm.setFeedSource;
@@ -3435,6 +3516,7 @@ function FeedScreen() {
 
   const feedListElement = (
     <FlatList
+      ref={mainFeedListRef}
       data={Platform.OS === 'ios' ? iosFeedListItems : feedListItems}
       renderItem={renderItem}
       keyExtractor={keyExtractor}

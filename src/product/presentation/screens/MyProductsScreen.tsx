@@ -46,10 +46,10 @@ const PRODUCT_COLUMNS = { justifyContent: 'space-between' } as const;
 const ORDER_DETAIL_MAX_HEIGHT = Dimensions.get('window').height * 0.82;
 
 const TABS: Array<{ key: MyProductsTab; label: string }> = [
+  { key: 'marketplace', label: 'Cửa hàng chung' },
   { key: 'products', label: 'Sản phẩm của tôi' },
   { key: 'purchased', label: 'Đã mua' },
   { key: 'orders', label: 'Đơn hàng' },
-  { key: 'marketplace', label: 'Marketplace' },
 ];
 
 const PRODUCT_SORT_OPTIONS: Array<{ label: string; value: ProductSortOption }> = [
@@ -345,7 +345,7 @@ function MyProductsScreen() {
   const handleTabPress = useCallback(
     (tab: MyProductsTab) => {
       if (tab === 'marketplace') {
-        navigation.navigate(ROUTES.NEARBY_USERS);
+        navigation.navigate(ROUTES.MARKETPLACE);
         return;
       }
       setActiveTab(tab);
@@ -433,7 +433,25 @@ function MyProductsScreen() {
             }
             return true;
           }).map(tab => {
+            const isMarketplace = tab.key === 'marketplace';
             const isActive = tab.key === vm.activeTab;
+
+            if (isMarketplace) {
+              return (
+                <TouchableOpacity
+                  key={tab.key}
+                  className="rounded-full border border-blue-600 bg-blue-50 px-4 py-2 flex-row items-center gap-1.5 shadow-sm"
+                  activeOpacity={0.8}
+                  onPress={() => handleTabPress(tab.key)}
+                >
+                  <ShoppingBag size={15} color="#2563EB" />
+                  <Text className="text-caption-primary text-blue-600 font-semibold">
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }
+
             return (
               <TouchableOpacity
                 key={tab.key}

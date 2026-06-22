@@ -1,6 +1,7 @@
 // Description: Animated notification card matching the screenshot design.
-// Uses white card background, rounded-[20px] corners, left blue border for unread,
-// absolute date formatting (DD.MM.YY), and right-aligned unread dot + action menu.
+// Card has a colored left border (per notification type), circular avatar
+// with a small action badge, primary text with a timestamp, and a trailing
+// unread dot + overflow menu on the right.
 
 import React, { memo, useMemo } from 'react';
 import {
@@ -49,32 +50,79 @@ interface NotificationCardProps {
   };
 }
 
-type IconComponent = React.ComponentType<{ size: number; color: string }>;
+type IconComponent = React.ComponentType<{
+  size: number;
+  color: string;
+  strokeWidth?: number;
+}>;
 
-const ICON_BY_TYPE: Record<string, { Icon: IconComponent; iconColor: string }> = {
-  following: { Icon: UserPlus, iconColor: '#94a3b8' }, // grey person silhouette
-  liked_post: { Icon: Heart, iconColor: '#F33E58' },
-  wondered_post: { Icon: Heart, iconColor: '#F7B125' },
-  shared_post: { Icon: Share2, iconColor: '#65676B' },
-  liked_page: { Icon: Flag, iconColor: '#1877F2' },
-  comment: { Icon: MessageCircle, iconColor: '#3b82f6' }, // blue message bubble
-  comment_reply: { Icon: MessageCircle, iconColor: '#3b82f6' },
-  profile_wall_post: { Icon: ImageIcon, iconColor: '#1877F2' },
-  visited_profile: { Icon: UserCheck, iconColor: '#94a3b8' }, // grey person icon
-  joined_group: { Icon: UserCheck, iconColor: '#1877F2' },
-  accepted_request: { Icon: UserCheck, iconColor: '#22c55e' }, // green group/person
-  interested_event: { Icon: CalendarDays, iconColor: '#EA4335' },
-  going_event: { Icon: CalendarDays, iconColor: '#22c55e' },
-  added_you_to_group: { Icon: Users, iconColor: '#22c55e' }, // green group icon
-  accept_group_chat_request: { Icon: Users, iconColor: '#22c55e' }, // green group icon
-  declined_group_chat_request: { Icon: Users, iconColor: '#DC2626' },
+type NotificationStyle = {
+  Icon: IconComponent;
+  iconColor: string;
+  borderColor: string;
 };
 
-function getNotificationIcon(type: string) {
-  return ICON_BY_TYPE[type] ?? { Icon: Bell, iconColor: '#94a3b8' };
+const STYLE_BY_TYPE: Record<string, NotificationStyle> = {
+  following: { Icon: UserPlus, iconColor: '#3B82F6', borderColor: '#3B82F6' },
+  liked_post: { Icon: Heart, iconColor: '#EF4444', borderColor: '#EF4444' },
+  wondered_post: { Icon: Heart, iconColor: '#F59E0B', borderColor: '#F59E0B' },
+  shared_post: { Icon: Share2, iconColor: '#0EA5E9', borderColor: '#0EA5E9' },
+  liked_page: { Icon: Flag, iconColor: '#0000FF', borderColor: '#0000FF' },
+  comment: { Icon: MessageCircle, iconColor: '#0000FF', borderColor: '#0000FF' },
+  comment_reply: { Icon: MessageCircle, iconColor: '#0000FF', borderColor: '#0000FF' },
+  comment_mention: { Icon: MessageCircle, iconColor: '#0000FF', borderColor: '#0000FF' },
+  post_mention: { Icon: MessageCircle, iconColor: '#0000FF', borderColor: '#0000FF' },
+  profile_wall_post: { Icon: ImageIcon, iconColor: '#A855F7', borderColor: '#A855F7' },
+  visited_profile: { Icon: UserCheck, iconColor: '#64748B', borderColor: '#64748B' },
+  joined_group: { Icon: UserCheck, iconColor: '#22C55E', borderColor: '#22C55E' },
+  accepted_request: { Icon: UserCheck, iconColor: '#22C55E', borderColor: '#22C55E' },
+  interested_event: { Icon: CalendarDays, iconColor: '#EF4444', borderColor: '#EF4444' },
+  going_event: { Icon: CalendarDays, iconColor: '#22C55E', borderColor: '#22C55E' },
+  invited_event: { Icon: CalendarDays, iconColor: '#F59E0B', borderColor: '#F59E0B' },
+  added_you_to_group: { Icon: Users, iconColor: '#22C55E', borderColor: '#22C55E' },
+  accept_group_chat_request: { Icon: Users, iconColor: '#22C55E', borderColor: '#22C55E' },
+  declined_group_chat_request: { Icon: Users, iconColor: '#EF4444', borderColor: '#EF4444' },
+};
+
+function getNotificationStyle(type: string): NotificationStyle {
+  return STYLE_BY_TYPE[type] ?? { Icon: Bell, iconColor: '#94a3b8', borderColor: '#94a3b8' };
 }
 
 const ENTER_BASE = FadeInDown.duration(280).easing(Easing.out(Easing.cubic));
+
+function formatRelativeTime(
+  createdAt: number | undefined,
+  language: AppLanguage,
+): string {
+  if (!createdAt) {
+    return language === 'vi' ? 'Vừa xong' : 'Just now';
+  }
+  const now = Date.now();
+  const diff = Math.max(0, Math.floor((now - createdAt) / 1000));
+  if (diff < 60) {
+    return language === 'vi' ? 'Vừa xong' : 'Just now';
+  }
+  if (diff < 3600) {
+    const m = Math.floor(diff / 60);
+    return language === 'vi' ? `${m} phút trước` : `${m} min ago`;
+  }
+  if (diff < 86400) {
+    const h = Math.floor(diff / 3600);
+    return language === 'vi' ? `${h} giờ trước` : `${h}h ago`;
+  }
+  if (diff < 86400 * 7) {
+    const d = Math.floor(diff / 86400);
+    return language === 'vi' ? `${d} ngày trước` : `${d}d ago`;
+  }
+  try {
+    const date = new Date(createdAt);
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}`;
+  } catch {
+    return language === 'vi' ? 'Vừa xong' : 'Just now';
+  }
+}
 
 function NotificationCard({
   item,
@@ -87,30 +135,23 @@ function NotificationCard({
   isPending,
   labels,
 }: NotificationCardProps) {
-  const { Icon, iconColor } = getNotificationIcon(item.type);
-  
+  const { Icon, iconColor, borderColor } = getNotificationStyle(item.type);
+
   const text = useMemo(
     () => formatNotificationText(item, language),
     [item, language],
   );
 
-  const formattedTime = useMemo(() => {
-    if (!item.createdAt) return item.timeText;
-    try {
-      const date = new Date(item.createdAt);
-      const dd = String(date.getDate()).padStart(2, '0');
-      const mm = String(date.getMonth() + 1).padStart(2, '0');
-      const yy = String(date.getFullYear()).slice(-2);
-      return `${dd}.${mm}.${yy}`;
-    } catch {
-      return item.timeText;
-    }
-  }, [item.createdAt, item.timeText]);
+  const relativeTime = useMemo(
+    () => formatRelativeTime(item.createdAt, language),
+    [item.createdAt, language],
+  );
 
   const isGroupChatInvite = item.type === 'added_you_to_group';
   const avatar = item.notifier?.avatarUrl;
   const hasAvatar = Boolean(avatar);
   const entering = ENTER_BASE.delay(Math.min(index, 12) * 40);
+  const isUnread = !item.seen;
 
   return (
     <Animated.View
@@ -121,57 +162,52 @@ function NotificationCard({
         activeOpacity={0.85}
         onPress={() => onPress(item)}
         onLongPress={onLongPress ? () => onLongPress(item) : undefined}
-        style={[
-          {
-            backgroundColor: '#ffffff',
-            shadowColor: '#94a3b8',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.06,
-            shadowRadius: 10,
-            elevation: 2,
-          },
-          !item.seen
-            ? { borderLeftWidth: 4, borderLeftColor: '#0000ff' }
-            : { borderLeftWidth: 0 },
-        ]}
-        className="mb-3 px-4 py-4 rounded-[20px] border border-slate-100/70"
+        style={{
+          backgroundColor: '#ffffff',
+          shadowColor: '#0f172a',
+          shadowOffset: { width: 0, height: 3 },
+          shadowOpacity: 0.05,
+          shadowRadius: 8,
+          elevation: 2,
+          borderLeftWidth: 4,
+          borderLeftColor: borderColor,
+        }}
+        className="mb-3 pl-3 pr-3.5 py-3.5 rounded-2xl border border-slate-100"
       >
-        <View className="flex-row items-center">
+        <View className="flex-row items-start">
           {/* Avatar Container */}
           <View className="relative">
             {hasAvatar ? (
               <Image
                 source={{ uri: avatar }}
-                className="h-14 w-14 rounded-full bg-slate-100"
+                className="h-12 w-12 rounded-full bg-slate-100"
                 resizeMode="cover"
               />
             ) : (
-              <View
-                className="h-14 w-14 items-center justify-center rounded-full bg-slate-50"
-              >
-                <Icon size={24} color={iconColor} />
+              <View className="h-12 w-12 items-center justify-center rounded-full bg-slate-50">
+                <Icon size={22} color={iconColor} />
               </View>
             )}
-            
+
             {/* Overlapping Action Badge at bottom-right of avatar */}
             <View
-              className="absolute -bottom-1 -right-1 h-6 w-6 items-center justify-center rounded-full border border-white"
+              className="absolute -bottom-1 -right-1 h-5 w-5 items-center justify-center rounded-full border-2 border-white"
               style={{ backgroundColor: iconColor }}
             >
-              <Icon size={12} color="#FFFFFF" />
+              <Icon size={10} color="#FFFFFF" strokeWidth={3} />
             </View>
           </View>
 
           {/* Text Content */}
-          <View className="ml-4 flex-1 pr-2">
+          <View className="ml-3 flex-1 pr-1">
             <Text
-              className="text-[15px] font-semibold text-slate-800 leading-snug"
+              className="text-[14.5px] font-semibold text-slate-800 leading-snug"
               numberOfLines={3}
             >
               {text}
             </Text>
-            <Text className="mt-1.5 text-[13px] text-slate-400">
-              {formattedTime || (language === 'vi' ? 'Vừa xong' : 'Just now')}
+            <Text className="mt-1 text-[12px] font-medium text-slate-400">
+              {relativeTime}
             </Text>
 
             {isGroupChatInvite && onAcceptGroupChat && onRejectGroupChat ? (
@@ -221,21 +257,19 @@ function NotificationCard({
           </View>
 
           {/* Right Action/Indicator side */}
-          <View className="h-12 justify-between items-end">
+          <View className="ml-1 items-end justify-between self-stretch py-0.5">
             {/* Unread blue dot */}
-            {!item.seen ? (
-              <View className="h-2.5 w-2.5 rounded-full bg-[#0000ff]" />
-            ) : (
-              <View className="h-2.5 w-2.5 bg-transparent" />
-            )}
+            <View
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: isUnread ? '#0000ff' : 'transparent' }}
+            />
 
             {/* Menu options trigger */}
             <TouchableOpacity
               onPress={() => onLongPress?.(item)}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              className="mt-auto"
             >
-              <MoreHorizontal size={20} color="#94a3b8" />
+              <MoreHorizontal size={18} color="#94a3b8" />
             </TouchableOpacity>
           </View>
         </View>

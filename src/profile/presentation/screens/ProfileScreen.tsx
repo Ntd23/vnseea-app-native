@@ -1199,6 +1199,44 @@ function ProfileScreen() {
     }
   }, [posts, setActiveProfileVideoId]);
 
+  // ── Re-fetch when the route's userId changes ──────────────────────
+  // `navigation.navigate(ROUTES.PROFILE, { userId })` from sibling
+  // screens (e.g. PostDetail → comment publisher) does NOT remount
+  // this component, and React Navigation only fires `useFocusEffect`
+  // on blur→focus, NOT on params-only changes. Without this effect
+  // the screen keeps showing the previous user's profile even
+  // though the URL says otherwise. We compare the new param against
+  // the last value we acted on (stored in a ref) and reset derived
+  // state + reload when they differ.
+  const lastLoadedUserIdRef = useRef<string | undefined>(route.params?.userId);
+  useEffect(() => {
+    const nextUserId = route.params?.userId;
+    if (lastLoadedUserIdRef.current === nextUserId) {
+      return;
+    }
+    lastLoadedUserIdRef.current = nextUserId;
+
+    // Reset user-scoped state so the previous user's posts/stories
+    // don't bleed into the new user's profile view.
+    setPosts([]);
+    setPostsCursor(undefined);
+    setHasMorePosts(false);
+    setPostsError(null);
+    setUserStory(null);
+    setAllStories([]);
+    setIsStoryLoading(false);
+    setIsConnectLoading(false);
+    setIsPokeLoading(false);
+    setStoryOptionsSheet(null);
+    setSharingPost(undefined);
+    setActiveProfileVideoIdState(null);
+
+    loadProfile({
+      userId: nextUserId,
+      includeFriends: true,
+    }).catch(() => undefined);
+  }, [route.params?.userId, loadProfile]);
+
   useFocusEffect(useCallback(() => {
     loadProfile({
       userId: route.params?.userId,

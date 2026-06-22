@@ -63,6 +63,10 @@ import { AudioPlayer } from '../../../shared-kernel/presentation/components/Audi
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import CreateActionSheet, {
+  CREATE_ACTIONS,
+} from '../../../shared-kernel/presentation/components/CreateActionSheet';
+import type { RootStackRouteName } from '../../../navigation/types';
 import type {
   PostFeeling,
   PostPhotoAttachment,
@@ -105,6 +109,8 @@ const CREATE_POST_COPY = {
     feeling: 'Cảm xúc',
     audio: 'Âm thanh',
     video: 'Video',
+    more: 'Thêm',
+    moreShort: 'Thêm',
     videoError: 'Không chọn được video',
     videoErrorTip: 'Vui lòng thử lại.',
     addVideo: 'Thêm video',
@@ -148,6 +154,8 @@ const CREATE_POST_COPY = {
     feeling: 'Feeling',
     audio: 'Audio',
     video: 'Video',
+    more: 'More',
+    moreShort: 'More',
     videoError: 'Could not select video',
     videoErrorTip: 'Please try again.',
     addVideo: 'Add video',
@@ -464,6 +472,7 @@ function CreatePostScreen() {
 
   const [privacySheetVisible, setPrivacySheetVisible] = useState(false);
   const [feelingSheetVisible, setFeelingSheetVisible] = useState(false);
+  const [moreSheetVisible, setMoreSheetVisible] = useState(false);
   const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
 
   const privacyOptions = useMemo(() => [
@@ -661,6 +670,20 @@ function CreatePostScreen() {
     }
   }, [navigation, vm]);
 
+  // Navigate from the "More" sheet. We close the sheet first, then
+  // push the chosen creation route on top of the current stack so the
+  // user can always back-button out and land here. The `as never`
+  // mirrors the pattern used in `handleDismiss` of StoryViewer — the
+  // route name is already typed by `RootStackRouteName`, we just
+  // need to satisfy the generic overload.
+  const handleMoreNavigate = useCallback(
+    (route: RootStackRouteName) => {
+      setMoreSheetVisible(false);
+      navigation.navigate(route as never);
+    },
+    [navigation],
+  );
+
   const handleDiscard = useCallback(() => {
     const hasContent =
       vm.draft.text.trim().length > 0 ||
@@ -690,6 +713,267 @@ function CreatePostScreen() {
   }, [navigation, vm, copy]);
 
   const renderBottomActions = (isFloating: boolean) => {
+    // ── Compact layout ─────────────────────────────────────────────
+    // 4 inline shortcuts unique to the post flow (`feeling` lives here
+    // because it tags the post itself, not a standalone creation).
+    // The fifth slot opens the global "More" sheet.
+    const compactButtons: Array<{
+      key: string;
+      label: string;
+      onPress: () => void;
+      Icon: React.ComponentType<{ size: number; color: string; fill?: string }>;
+      iconBg: string;
+      iconColor: string;
+      altIcon?: React.ReactNode;
+    }> = [
+      {
+        key: 'photo',
+        label: copy.photo,
+        onPress: handlePickPhotos,
+        Icon: ImageIcon,
+        iconBg: '#f0fdf4',
+        iconColor: '#22c55e',
+      },
+      {
+        key: 'feeling',
+        label: copy.feeling,
+        onPress: () => setFeelingSheetVisible(true),
+        Icon: Smile,
+        iconBg: '#fef9c3',
+        iconColor: '#eab308',
+      },
+      {
+        key: 'audio',
+        label: copy.audio,
+        onPress: handleAudioAction,
+        Icon: Music2,
+        iconBg: '#fdf2f8',
+        iconColor: '#ec4899',
+        altIcon: <Square size={14} color="#ec4899" fill="#ec4899" />,
+      },
+      {
+        key: 'video',
+        label: copy.video,
+        onPress: handlePickVideo,
+        Icon: VideoIcon,
+        iconBg: '#eff6ff',
+        iconColor: '#3b82f6',
+      },
+    ];
+
+    // ── Expanded layout ─────────────────────────────────────────────
+    // When the keyboard is NOT open we render a 2-row × 4-col grid:
+    //
+    //   Row 1 (post-flow):  Photo · Feeling · Audio · Video
+    //   Row 2 (create):    Ad · Product · Event · Page
+    //
+    // Anything else (Story / Album / Poll / Group / Blog) lives behind
+    // the "Thêm" link in the card header, which opens the global
+    // CreateActionSheet.
+    //
+    // Row 1 buttons keep their existing per-route accent colour (the
+    // icon backgrounds stay saturated). Row 2 buttons reuse the icon
+    // + colour from CREATE_ACTIONS so they match the global sheet.
+    const expandedRow1: Array<{
+      key: string;
+      label: string;
+      onPress: () => void;
+      Icon: React.ComponentType<{ size: number; color: string; fill?: string }>;
+      iconBg: string;
+      iconColor: string;
+      altIcon?: React.ReactNode;
+    }> = [
+      {
+        key: 'photo',
+        label: copy.photo,
+        onPress: handlePickPhotos,
+        Icon: ImageIcon,
+        iconBg: '#f0fdf4',
+        iconColor: '#22c55e',
+      },
+      {
+        key: 'feeling',
+        label: copy.feeling,
+        onPress: () => setFeelingSheetVisible(true),
+        Icon: Smile,
+        iconBg: '#fef9c3',
+        iconColor: '#eab308',
+      },
+      {
+        key: 'audio',
+        label: copy.audio,
+        onPress: handleAudioAction,
+        Icon: Music2,
+        iconBg: '#fdf2f8',
+        iconColor: '#ec4899',
+        altIcon: <Square size={14} color="#ec4899" fill="#ec4899" />,
+      },
+      {
+        key: 'video',
+        label: copy.video,
+        onPress: handlePickVideo,
+        Icon: VideoIcon,
+        iconBg: '#eff6ff',
+        iconColor: '#3b82f6',
+      },
+    ];
+
+    const expandedRow2: Array<{
+      actionKey: 'ad' | 'product' | 'event' | 'page';
+      label: string;
+      onPress: () => void;
+    }> = [
+      {
+        actionKey: 'ad',
+        label: language === 'vi' ? 'Quảng cáo' : 'Ad',
+        onPress: () => navigation.navigate(ROUTES.CREATE_AD as never),
+      },
+      {
+        actionKey: 'product',
+        label: language === 'vi' ? 'Sản phẩm' : 'Product',
+        onPress: () => navigation.navigate(ROUTES.CREATE_PRODUCT as never),
+      },
+      {
+        actionKey: 'event',
+        label: language === 'vi' ? 'Sự kiện' : 'Event',
+        onPress: () => navigation.navigate(ROUTES.CREATE_EVENT as never),
+      },
+      {
+        actionKey: 'page',
+        label: language === 'vi' ? 'Trang' : 'Page',
+        onPress: () => navigation.navigate(ROUTES.CREATE_PAGE as never),
+      },
+    ];
+
+    // Slightly darker muted text colour so the secondary routes don't
+    // compete with the four "primary" shortcuts (which keep the
+    // existing per-route accent colour).
+    const SECONDARY_LABEL_COLOR = '#475569';
+
+    const renderShortcutButton = (
+      button: typeof compactButtons[number],
+      size: 44 | 48,
+    ) => {
+      const Icon = button.Icon;
+      const showAlt = button.altIcon && button.key === 'audio' && wavRecorder.isRecording;
+      return (
+        <TouchableOpacity
+          key={button.key}
+          onPress={button.onPress}
+          activeOpacity={0.7}
+          style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: 1,
+          }}
+        >
+          <View
+            style={{
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+              backgroundColor: button.iconBg,
+              alignItems: 'center',
+              justifyContent: 'center',
+              ...(size === 48 ? { marginBottom: 8 } : null),
+            }}
+          >
+            {showAlt ? (
+              button.altIcon
+            ) : (
+              <Icon size={size === 44 ? 20 : 22} color={button.iconColor} />
+            )}
+          </View>
+          {isFloating ? null : (
+            <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
+              {button.label}
+            </Text>
+          )}
+        </TouchableOpacity>
+      );
+    };
+
+    // Single dashed "More" cell shared by both layouts.
+    const renderMoreButton = () => (
+      <TouchableOpacity
+        key="more"
+        onPress={() => setMoreSheetVisible(true)}
+        activeOpacity={0.7}
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          flex: 1,
+        }}
+      >
+        <View
+          style={{
+            width: isFloating ? 44 : 48,
+            height: isFloating ? 44 : 48,
+            borderRadius: isFloating ? 22 : 24,
+            backgroundColor: '#f8fafc',
+            borderWidth: 1,
+            borderColor: '#e2e8f0',
+            borderStyle: 'dashed',
+            alignItems: 'center',
+            justifyContent: 'center',
+            ...(isFloating ? null : { marginBottom: 8 }),
+          }}
+        >
+          <ChevronRight
+            size={isFloating ? 18 : 20}
+            color="#475569"
+            strokeWidth={2.4}
+          />
+        </View>
+        {isFloating ? null : (
+          <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
+            {copy.moreShort}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+
+    // Look up the CREATE_ACTIONS entry for a Row-2 shortcut so we can
+    // reuse its icon / colour. This keeps the inline tray in sync
+    // with the global "More" sheet — adding a new action in one place
+    // surfaces everywhere.
+    const renderRow2Shortcut = (
+      entry: typeof expandedRow2[number],
+    ) => {
+      const action = CREATE_ACTIONS.find(a => a.key === entry.actionKey);
+      if (!action) return null;
+      const Icon = action.Icon;
+      return (
+        <TouchableOpacity
+          key={entry.actionKey}
+          onPress={entry.onPress}
+          activeOpacity={0.7}
+          style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: 1,
+          }}
+        >
+          <View
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              backgroundColor: action.iconBg,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 8,
+            }}
+          >
+            <Icon size={22} color={action.iconColor} strokeWidth={2} />
+          </View>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
+            {entry.label}
+          </Text>
+        </TouchableOpacity>
+      );
+    };
+
     if (isFloating) {
       return (
         <View
@@ -704,39 +988,8 @@ function CreatePostScreen() {
             justifyContent: 'space-between',
           }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flex: 1 }}>
-            {/* Photo */}
-            <TouchableOpacity onPress={handlePickPhotos} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center' }}>
-                <ImageIcon size={20} color="#22c55e" />
-              </View>
-            </TouchableOpacity>
-
-            {/* Feeling */}
-            <TouchableOpacity onPress={() => setFeelingSheetVisible(true)} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#fef9c3', alignItems: 'center', justifyContent: 'center' }}>
-                <Smile size={20} color="#eab308" />
-              </View>
-            </TouchableOpacity>
-
-            {/* Audio */}
-            <TouchableOpacity onPress={handleAudioAction} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#fdf2f8', alignItems: 'center', justifyContent: 'center' }}>
-                {wavRecorder.isRecording ? (
-                  <Square size={14} color="#ec4899" fill="#ec4899" />
-                ) : (
-                  <Music2 size={20} color="#ec4899" />
-                )}
-              </View>
-            </TouchableOpacity>
-
-            {/* Video */}
-            <TouchableOpacity onPress={handlePickVideo} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' }}>
-                <VideoIcon size={20} color="#3b82f6" />
-              </View>
-            </TouchableOpacity>
-          </View>
+          {compactButtons.map(b => renderShortcutButton(b, 44))}
+          {renderMoreButton()}
         </View>
       );
     }
@@ -764,46 +1017,27 @@ function CreatePostScreen() {
         {/* Header Row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1e293b' }}>{copy.addPost}</Text>
-          <ChevronRight size={18} color="#94a3b8" />
+          <TouchableOpacity
+            onPress={() => setMoreSheetVisible(true)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.7}
+            style={{ flexDirection: 'row', alignItems: 'center' }}
+          >
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#0000ff', marginRight: 2 }}>
+              {copy.more}
+            </Text>
+            <ChevronRight size={16} color="#0000ff" strokeWidth={2.4} />
+          </TouchableOpacity>
         </View>
 
-        {/* Buttons Row */}
+        {/* Row 1 — post-flow shortcuts (Photo / Feeling / Audio / Video). */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          {/* Photo */}
-          <TouchableOpacity onPress={handlePickPhotos} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-              <ImageIcon size={22} color="#22c55e" />
-            </View>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.photo}</Text>
-          </TouchableOpacity>
+          {expandedRow1.map(b => renderShortcutButton(b, 48))}
+        </View>
 
-          {/* Feeling */}
-          <TouchableOpacity onPress={() => setFeelingSheetVisible(true)} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#fef9c3', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-              <Smile size={22} color="#eab308" />
-            </View>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.feeling}</Text>
-          </TouchableOpacity>
-
-          {/* Audio */}
-          <TouchableOpacity onPress={handleAudioAction} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#fdf2f8', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-              {wavRecorder.isRecording ? (
-                <Square size={16} color="#ec4899" fill="#ec4899" />
-              ) : (
-                <Music2 size={22} color="#ec4899" />
-              )}
-            </View>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.audio}</Text>
-          </TouchableOpacity>
-
-          {/* Video */}
-          <TouchableOpacity onPress={handlePickVideo} style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-              <VideoIcon size={22} color="#3b82f6" />
-            </View>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}>{copy.video}</Text>
-          </TouchableOpacity>
+        {/* Row 2 — quick creation routes (Ad / Product / Event / Page). */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
+          {expandedRow2.map(renderRow2Shortcut)}
         </View>
       </View>
     );
@@ -1213,6 +1447,16 @@ function CreatePostScreen() {
         options={translatedFeelings}
         title={copy.feelingsTitle}
         clearLabel={copy.feelingsClear}
+      />
+
+      {/* Shared "More" sheet — surfaces every creation route the app
+          supports (story / album / event / poll / product / page /
+          group / reel / blog) sourced from CREATE_ACTIONS so this
+          screen and the Home `+` button can never drift apart. */}
+      <CreateActionSheet
+        visible={moreSheetVisible}
+        onClose={() => setMoreSheetVisible(false)}
+        onNavigate={handleMoreNavigate}
       />
 
       {/* ── Floating mention / hashtag bar above the keyboard ── */}

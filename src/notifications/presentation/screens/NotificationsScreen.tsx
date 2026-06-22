@@ -28,8 +28,8 @@ import type { GroupItem } from '../../../community/domain/types/community.types'
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import { useNotificationsViewModel } from '../../application/view-models/useNotificationsViewModel';
 import type { NotificationsItem } from '../../domain/types/notifications.types';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import NotificationsHeader from '../components/NotificationsHeader';
-import NotificationsTabs from '../components/NotificationsTabs';
 import NotificationsFilterSheet from '../components/NotificationsFilterSheet';
 import NotificationSectionList from '../components/NotificationSectionList';
 import NotificationCard from '../components/NotificationCard';
@@ -257,7 +257,8 @@ function NotificationsScreen() {
 
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   const hasNotifications = notifications.length > 0;
-  const hasFiltered = filteredNotifications.length > 0;
+  const visibleNotifications = filteredNotifications;
+  const hasFiltered = visibleNotifications.length > 0;
   const hasNotificationsRef = useRef(hasNotifications);
   const nativeTabScrollPublisherStateRef = useRef(
     createNativeTabScrollPublisherState(),
@@ -353,11 +354,6 @@ function NotificationsScreen() {
     [copy.deleteCancel, copy.deleteConfirm, copy.deleteMessage, copy.deleteTitle, deleteNotification],
   );
 
-  const handleMarkAllSeen = useCallback(() => {
-    markAllAsSeen();
-    Alert.alert(copy.headerTitle, copy.markAllSeenToast);
-  }, [copy.headerTitle, copy.markAllSeenToast, markAllAsSeen]);
-
   const handleAcceptGroupChat = useCallback(
     async (groupChatId: string) => {
       const success = await acceptGroupChatInvitation(groupChatId);
@@ -390,23 +386,11 @@ function NotificationsScreen() {
   );
 
   const notificationsListHeaderComponent = (
-    <>
-      <NotificationsHeader
-        title={copy.headerTitle}
-        onMarkAllRead={handleMarkAllSeen}
-        onFilterPress={() => setFilterSheetVisible(true)}
-        filterActive={activeFilter !== 'all'}
-      />
-
-      {hasNotifications ? (
-        <NotificationsTabs
-          labels={{ all: copy.tabAll, unread: copy.tabUnread }}
-          active={activeTab}
-          onChange={setActiveTab}
-          unreadCount={unreadCount}
-        />
-      ) : null}
-    </>
+    <NotificationsHeader
+      title={copy.headerTitle}
+      onFilterPress={() => setFilterSheetVisible(true)}
+      filterActive={activeFilter !== 'all'}
+    />
   );
 
   const renderNotificationItem = useCallback(
@@ -476,13 +460,9 @@ function NotificationsScreen() {
       />
     ) : !hasFiltered ? (
       <NotificationsEmptyState
-        variant={activeTab === 'unread' ? 'unread' : 'all'}
-        title={activeTab === 'unread' ? copy.noUnread : copy.emptyTitle}
-        description={
-          activeTab === 'unread'
-            ? copy.noUnreadDescription
-            : copy.emptyDescription
-        }
+        variant="all"
+        title={copy.emptyTitle}
+        description={copy.emptyDescription}
       />
     ) : null;
 
@@ -491,7 +471,7 @@ function NotificationsScreen() {
       <View className="items-center py-4">
         <ActivityIndicator size="small" color="#0000ff" />
       </View>
-    ) : !hasMore && filteredNotifications.length > 0 ? (
+    ) : !hasMore && visibleNotifications.length > 0 ? (
       <View className="items-center justify-center pt-8 pb-10">
         <BeautifulBellIllustration />
         <Text className="text-[16px] font-bold text-slate-800 text-center">
@@ -525,7 +505,7 @@ function NotificationsScreen() {
 
   const iosNotificationsListElement = (
     <FlatList
-      data={hasFiltered ? filteredNotifications : []}
+      data={hasFiltered ? visibleNotifications : []}
       keyExtractor={item => item.id}
       renderItem={renderNotificationItem}
       ListHeaderComponent={notificationsListHeaderComponent}
@@ -551,19 +531,9 @@ function NotificationsScreen() {
     <>
       <NotificationsHeader
         title={copy.headerTitle}
-        onMarkAllRead={handleMarkAllSeen}
         onFilterPress={() => setFilterSheetVisible(true)}
         filterActive={activeFilter !== 'all'}
       />
-
-      {hasNotifications ? (
-        <NotificationsTabs
-          labels={{ all: copy.tabAll, unread: copy.tabUnread }}
-          active={activeTab}
-          onChange={setActiveTab}
-          unreadCount={unreadCount}
-        />
-      ) : null}
 
       <View className="flex-1">
         {isLoading && !hasNotifications ? (
@@ -614,15 +584,9 @@ function NotificationsScreen() {
             }
           >
             <NotificationsEmptyState
-              variant={activeTab === 'unread' ? 'unread' : 'all'}
-              title={
-                activeTab === 'unread' ? copy.noUnread : copy.emptyTitle
-              }
-              description={
-                activeTab === 'unread'
-                  ? copy.noUnreadDescription
-                  : copy.emptyDescription
-              }
+              variant="all"
+              title={copy.emptyTitle}
+              description={copy.emptyDescription}
             />
           </ScrollView>
         ) : (
@@ -652,7 +616,7 @@ function NotificationsScreen() {
             scrollEventThrottle={400}
           >
             <NotificationSectionList
-              items={filteredNotifications}
+              items={visibleNotifications}
               language={language}
               pendingActions={pendingActions}
               onItemPress={handlePress}
@@ -671,7 +635,7 @@ function NotificationsScreen() {
               </View>
             ) : null}
 
-            {!hasMore && filteredNotifications.length > 0 ? (
+            {!hasMore && visibleNotifications.length > 0 ? (
               <View className="items-center justify-center pt-8 pb-10">
                 <BeautifulBellIllustration />
                 <Text className="text-[16px] font-bold text-slate-800 text-center">
@@ -697,6 +661,10 @@ function NotificationsScreen() {
       edges={Platform.OS === 'ios' ? ['top', 'left', 'right'] : ['top']}
     >
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
+      {/* FeedHeader is the app-wide top bar (menu, logo, search, create,
+          messages). It already manages its own top safe-area inset, so we
+          render it on top of the notifications body. */}
+      <FeedHeader />
       {Platform.OS === 'ios' ? iosNotificationsListElement : notificationsBody}
 
       <NotificationsFilterSheet

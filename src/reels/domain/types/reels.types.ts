@@ -69,6 +69,7 @@ export interface ReelsItem {
    * likes, and the heart UI falls back to using `isLiked` as a boolean.
    */
   myReaction: ReactionType | null;
+  raw?: any;
 }
 
 /** Page of reels returned by the API — `nextCursor` is the id of the last item, used for `after_post_id`. */

@@ -28,12 +28,20 @@
 //     the bar across exactly that span. Video's own `paused` prop is
 //     bound to `isPaused` so long-press freezes both bar AND playback.
 //   • On animation finish → advance to next segment / user / close.
+//
+// Swipe-down-to-dismiss:
+//   • Drag down from anywhere on the media area → the whole story sheet
+//     follows the finger, fading out as it travels. Mirrors the cover /
+//     photo viewer pattern.
+//   • Release before the threshold (35% of screen height OR vy > 800)
+//     → spring back to center, progress timer resumes.
+//   • Release after the threshold → animate off-screen and call
+//     `navigation.goBack()`.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
-  Easing,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -54,8 +62,18 @@ import type {
   NativeStackScreenProps,
 } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import ReanimatedAnimated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { ChevronDown, MoreHorizontal, Repeat, ThumbsUp } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROUTES } from '../../../navigation/constants/routes';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
 import { storyDeletedEvents } from '../../application/events/storyDeletedEvents';
 import { storyReactedEvents } from '../../application/events/storyReactedEvents';
@@ -109,7 +127,7 @@ function formatRelativeTime(timestamp?: number) {
 
 function StoryViewerScreen({ route }: Props) {
   const navigation = useNavigation<Nav>();
-  const { width: viewportWidth } = useWindowDimensions();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
 
   // Support BOTH: new API (stories array passed directly) AND old API
   // (stories list + initialUserIndex). This keeps backwards compat while
@@ -510,7 +528,155 @@ function StoryViewerScreen({ route }: Props) {
   const handleLongPressStart = useCallback(() => setIsPaused(true), []);
   const handlePressOut = useCallback(() => setIsPaused(false), []);
 
+  // ── Swipe-down-to-dismiss gesture ──────────────────────────────────
+  // All gesture-related hooks (useSharedValue, useAnimatedStyle,
+  // useMemo) MUST live ABOVE the early-return below to satisfy the
+  // Rules of Hooks. The early-return is only allowed to live BELOW
+  // the last hook call in the render body.
+  //
+  // We mirror the photo viewer feel: dragging down translates the whole
+  // sheet and fades the background, releasing past the threshold (or
+  // with enough downward velocity) dismisses the viewer. Otherwise it
+  // springs back to centre. Horizontal swipes are intentionally ignored
+  // so they don't fight the tap-to-advance zones.
+  const dismissThreshold = Math.max(140, viewportHeight * 0.35);
+  const dismissVelocity = 800;
+
+  const swipeTranslateY = useSharedValue(0);
+  const swipeProgress = useSharedValue(0); // 0..1 of how far the drag is
+
+  // Guard against double-dismiss. Both withTiming callbacks could
+  // theoretically race (especially when the gesture is interrupted),
+  // and React Navigation throws a development warning if `goBack()`
+  // fires when there is no route under us. This ref is checked on the
+  // JS thread inside `handleDismiss` so only the first call wins.
+  const dismissedRef = useRef(false);
+
+  // Reset the guard when we navigate to a fresh viewer (new story
+  // array / new user index) so a second swipe-down in the same mount
+  // still works. The check uses both the first story id and the
+  // current user index so we don't reset mid-dismiss-animation.
+  useEffect(() => {
+    dismissedRef.current = false;
+  }, [passedStories, userIndex]);
+
+  const handleDismiss = useCallback(() => {
+    if (dismissedRef.current) {
+      return;
+    }
+    dismissedRef.current = true;
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      // Fall back to the safe route when there is nothing to pop to
+      // (e.g. StoryViewer was opened as the very first screen, or the
+      // parent stack has been reset while we were animating).
+      navigation.navigate(ROUTES.MAIN_TABS as never);
+    }
+  }, [navigation]);
+
+  const swipeSheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: swipeTranslateY.value }],
+    // Fade fully to 0 at the end of the gesture so the navigator's
+    // pop transition never sees a translucent frame underneath it —
+    // that was the source of the white-gap flash.
+    opacity: 1 - swipeProgress.value,
+  }));
+
+  // Build the pan gesture once. We re-create it when the dismissal
+  // primitives change (e.g. `setIsPaused` reference, dismiss threshold)
+  // so the worklet captures stay current.
+  const swipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetY([-10, 10])
+        .failOffsetX([-20, 20])
+        .onBegin(() => {
+          // Pause the auto-advancing progress while the user is dragging,
+          // so the timer doesn't fire mid-swipe and pop them to the next
+          // segment unexpectedly.
+          runOnJS(setIsPaused)(true);
+        })
+        .onUpdate(event => {
+          // Only honour downward drags; allow a tiny upward rubber-band
+          // so the gesture feels natural.
+          const translation = Math.max(-40, event.translationY);
+          swipeTranslateY.value = translation;
+          // Map distance to a 0..1 progress, clamped at 1 so the
+          // background can fade fully out.
+          swipeProgress.value = Math.min(
+            1,
+            Math.max(0, translation / dismissThreshold),
+          );
+        })
+        .onEnd(event => {
+          const passedThreshold =
+            swipeTranslateY.value > dismissThreshold ||
+            event.velocityY > dismissVelocity;
+
+          if (passedThreshold) {
+            // Animate the rest of the way off-screen, then go back. The
+            // timing here is intentionally matched to the native-stack
+            // `fade` animation configured for this route in
+            // AppNavigator.tsx (220ms) so the two transitions play in
+            // lock-step — no white gap, no double fade, no leftover frame.
+            //
+            // We pop the route slightly BEFORE the sheet translation
+            // finishes (when opacity has already reached 0) so the
+            // native-stack fade is in motion by the time the sheet would
+            // otherwise stall at its final frame.
+            //
+            // Only the SHORTER `swipeProgress` timer (160ms) is wired
+            // to call `handleDismiss` — the longer translateY timer
+            // would otherwise race and trigger a second `goBack()` call,
+            // which React Navigation rejects with a dev warning.
+            const dismissMs = 220;
+            const popAtMs = 160; // opacity is already ~0.27 by here
+            swipeTranslateY.value = withTiming(
+              viewportHeight,
+              {
+                duration: dismissMs,
+                easing: Easing.out(Easing.cubic),
+              },
+            );
+            swipeProgress.value = withTiming(
+              1,
+              { duration: popAtMs, easing: Easing.out(Easing.cubic) },
+              finished => {
+                if (finished) {
+                  runOnJS(handleDismiss)();
+                }
+              },
+            );
+          } else {
+            // Spring back to centre and resume the progress timer.
+            swipeTranslateY.value = withSpring(0, {
+              damping: 18,
+              stiffness: 220,
+              mass: 0.6,
+            });
+            swipeProgress.value = withSpring(0, {
+              damping: 18,
+              stiffness: 220,
+              mass: 0.6,
+            });
+            runOnJS(setIsPaused)(false);
+          }
+        })
+        .onFinalize(() => {
+          // Safety net: if the gesture is cancelled (e.g. ScrollView parent
+          // wins the race) make sure we don't leave isPaused stuck on.
+          runOnJS(setIsPaused)(false);
+        }),
+    // The gesture closes over stable refs/setters only; we deliberately
+    // exclude the changing values below so the worklet isn't rebuilt on
+    // every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   // ── Early-out when no stories ───────────────────────────────────────
+  // Safe to early-return now — every hook above is unconditional.
   if (!currentStory || !currentSegment) {
     return (
       <SafeAreaView style={styles.container} edges={ROOT_SAFE_AREA_EDGES}>
@@ -525,246 +691,251 @@ function StoryViewerScreen({ route }: Props) {
     );
   }
 
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#000" />
+    <GestureDetector gesture={swipeGesture}>
+      <ReanimatedAnimated.View style={[styles.container, swipeSheetStyle]}>
+        <SafeAreaView style={styles.container} edges={['top']}>
+          <FocusAwareStatusBar barStyle="light-content" backgroundColor="#000" />
 
-      {/* ── Media (renders BEHIND the controls) ────────────────────── */}
-      <View style={styles.mediaWrap}>
-        {currentSegment.type === 'image' ? (
-          <Image
-            key={`img-${currentStory.id}-${segmentIndex}`}
-            source={{ uri: currentSegment.url }}
-            style={styles.media}
-            resizeMode="contain"
-          />
-        ) : (
-          <VideoPlayer
-            // `key` ensures the player remounts when we move to a new
-            // video segment — otherwise the old VideoPlayer instance
-            // would keep playing the previous URL until React reconciles.
-            key={`vid-${currentStory.id}-${segmentIndex}`}
-            source={{ uri: currentSegment.url }}
-            style={styles.media}
-            paused={isPaused}
-            resizeMode="contain"
-            onLoad={data => {
-              // Some Android codecs report 0 for `duration` on first
-              // load — clamp so the timer doesn't fire instantly.
-              const ms = Math.max(1000, (data.duration ?? 0) * 1000);
-              setVideoDurationMs(ms);
-            }}
-            onError={() => {
-              // If the video fails to load, fall back to the default
-              // duration and proceed. The user sees a black frame for
-              // ~15s — worse than ideal but better than getting stuck.
-              setVideoDurationMs(VIDEO_FALLBACK_MS);
-            }}
-          />
-        )}
-      </View>
-
-      {/* ── Tap zones (transparent overlays over the media) ────────── */}
-      <View style={styles.tapZones} pointerEvents="box-none">
-        <Pressable
-          style={styles.tapZoneLeft}
-          onPress={goBack}
-          onLongPress={handleLongPressStart}
-          onPressOut={handlePressOut}
-          delayLongPress={250}
-        />
-        <Pressable
-          style={styles.tapZoneRight}
-          onPress={advance}
-          onLongPress={handleLongPressStart}
-          onPressOut={handlePressOut}
-          delayLongPress={250}
-        />
-      </View>
-
-      {/* ── Floating Text Overlay (Facebook Style) ── */}
-      {currentStory.title ? (
-        <View style={styles.floatingCaptionWrap} pointerEvents="none">
-          <Text style={styles.floatingCaptionText}>
-            {currentStory.title}
-          </Text>
-        </View>
-      ) : null}
-
-      {/* ── Top overlay: progress bars + header + tags ──────────────────── */}
-      <View style={styles.topOverlay} pointerEvents="box-none">
-        {/* Progress bars — one per segment (Facebook style: each segment has its own bar) */}
-        <View style={styles.progressRow}>
-          {segments.map((_, idx) => {
-            const isPast = idx < segmentIndex;
-            const isActive = idx === segmentIndex;
-            return (
-              <View key={`${segmentIndex}-${idx}`} style={styles.progressTrack}>
-                {isPast ? (
-                  // Past segments — fully filled
-                  <View style={[styles.progressFill, { width: '100%' }]} />
-                ) : isActive ? (
-                  // Active — animated width interpolated from 0..1
-                  <Animated.View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: progress.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ['0%', '100%'],
-                        }),
-                      },
-                    ]}
-                  />
-                ) : null}
-              </View>
-            );
-          })}
-        </View>
-
-        {/* Header row: avatar with online dot + name & time on same line + close + options */}
-        <View style={styles.header}>
-          <View style={styles.avatarContainer}>
-            {currentStory.publisher.avatarUrl ? (
+          {/* ── Media (renders BEHIND the controls) ────────────────────── */}
+          <View style={styles.mediaWrap}>
+            {currentSegment.type === 'image' ? (
               <Image
-                source={{ uri: currentStory.publisher.avatarUrl }}
-                style={styles.avatar}
+                key={`img-${currentStory.id}-${segmentIndex}`}
+                source={{ uri: currentSegment.url }}
+                style={styles.media}
+                resizeMode="contain"
               />
             ) : (
-              <View style={styles.avatarFallback}>
-                <Text style={styles.avatarFallbackText}>
-                  {currentStory.publisher.name.charAt(0).toUpperCase()}
-                </Text>
-              </View>
+              <VideoPlayer
+                // `key` ensures the player remounts when we move to a new
+                // video segment — otherwise the old VideoPlayer instance
+                // would keep playing the previous URL until React reconciles.
+                key={`vid-${currentStory.id}-${segmentIndex}`}
+                source={{ uri: currentSegment.url }}
+                style={styles.media}
+                paused={isPaused}
+                resizeMode="contain"
+                onLoad={data => {
+                  // Some Android codecs report 0 for `duration` on first
+                  // load — clamp so the timer doesn't fire instantly.
+                  const ms = Math.max(1000, (data.duration ?? 0) * 1000);
+                  setVideoDurationMs(ms);
+                }}
+                onError={() => {
+                  // If the video fails to load, fall back to the default
+                  // duration and proceed. The user sees a black frame for
+                  // ~15s — worse than ideal but better than getting stuck.
+                  setVideoDurationMs(VIDEO_FALLBACK_MS);
+                }}
+              />
             )}
-            {currentStory.publisher.isOnline ? (
-              <View style={styles.onlineDot} />
-            ) : null}
           </View>
-          <View style={styles.headerText}>
-            <Text style={styles.headerName} numberOfLines={1}>
-              {currentStory.publisher.name}{' '}
-              <Text style={styles.headerTime}>
-                {formatRelativeTime(currentSegment.postedAt ?? currentStory.postedAt)}
+
+          {/* ── Tap zones (transparent overlays over the media) ────────── */}
+          <View style={styles.tapZones} pointerEvents="box-none">
+            <Pressable
+              style={styles.tapZoneLeft}
+              onPress={goBack}
+              onLongPress={handleLongPressStart}
+              onPressOut={handlePressOut}
+              delayLongPress={250}
+            />
+            <Pressable
+              style={styles.tapZoneRight}
+              onPress={advance}
+              onLongPress={handleLongPressStart}
+              onPressOut={handlePressOut}
+              delayLongPress={250}
+            />
+          </View>
+
+          {/* ── Floating Text Overlay (Facebook Style) ── */}
+          {currentStory.title ? (
+            <View style={styles.floatingCaptionWrap} pointerEvents="none">
+              <Text style={styles.floatingCaptionText}>
+                {currentStory.title}
               </Text>
-            </Text>
-          </View>
+            </View>
+          ) : null}
 
-          {/* Close (ChevronDown) */}
-          <TouchableOpacity
-            onPress={close}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={styles.headerIconBtn}
-          >
-            <ChevronDown size={24} color="#fff" />
-          </TouchableOpacity>
-
-          {/* More actions (Options) */}
-          <TouchableOpacity
-            onPress={handleMorePress}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={styles.headerIconBtn}
-          >
-            <MoreHorizontal size={22} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* ── Bottom overlay: reactions picker ─────────────── */}
-      <View style={styles.reactionBurstLayer} pointerEvents="none">
-        {reactionBurst.map(item => (
-          <Animated.Text
-            key={item.id}
-            style={[
-              styles.floatingReactionEmoji,
-              {
-                left: item.left,
-                fontSize: item.size,
-                opacity: item.opacity,
-                transform: [
-                  { translateY: item.translateY },
-                  {
-                    translateX: item.translateY.interpolate({
-                      inputRange: [-340, 0],
-                      outputRange: [item.driftX, 0],
-                    }),
-                  },
-                  { scale: item.scale },
-                  {
-                    rotate: item.rotate.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['-10deg', '12deg'],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            {item.emoji}
-          </Animated.Text>
-        ))}
-      </View>
-
-      <View style={styles.bottomOverlay} pointerEvents="box-none">
-        {/* Solid black bottom bar */}
-        <View style={styles.bottomBarContainer}>
-          <View style={styles.inputRow}>
-            {/* Quick Reactions */}
-            <Animated.View style={[styles.quickReactions, { transform: [{ scale: reactionScale }] }]}>
-              {[
-                (['like', '👍'] as const),
-                (['love', '❤️'] as const),
-                (['haha', '😆'] as const),
-                (['wow', '😮'] as const),
-                (['sad', '😢'] as const),
-                (['angry', '😡'] as const),
-              ].map(([type, emoji]) => {
-                const isActive = currentStory.myReaction === type;
+          {/* ── Top overlay: progress bars + header + tags ──────────────────── */}
+          <View style={styles.topOverlay} pointerEvents="box-none">
+            {/* Progress bars — one per segment (Facebook style: each segment has its own bar) */}
+            <View style={styles.progressRow}>
+              {segments.map((_, idx) => {
+                const isPast = idx < segmentIndex;
+                const isActive = idx === segmentIndex;
                 return (
-                  <TouchableOpacity
-                    key={type}
-                    onPress={() => {
-                      console.log('[StoryViewer] Reaction button pressed:', type);
-                      onReact(type);
-                    }}
-                    activeOpacity={0.5}
-                    style={[
-                      styles.quickReactionBtn,
-                      isActive ? styles.reactionBtnActive : null,
-                    ]}
-                  >
-                    {type === 'like' ? (
-                      <View style={[
-                        styles.fbLikeCircle,
-                        { 
-                          backgroundColor: isActive ? '#1877F2' : '#2A2B2C',
-                          opacity: isActive ? 1 : 0.6 
-                        }
-                      ]}>
-                        <ThumbsUp 
-                          size={16} 
-                          color={isActive ? '#fff' : 'rgba(255, 255, 255, 0.7)'} 
-                          fill={isActive ? '#fff' : 'none'} 
-                        />
-                      </View>
-                    ) : (
-                      <Text 
+                  <View key={`${segmentIndex}-${idx}`} style={styles.progressTrack}>
+                    {isPast ? (
+                      // Past segments — fully filled
+                      <View style={[styles.progressFill, { width: '100%' }]} />
+                    ) : isActive ? (
+                      // Active — animated width interpolated from 0..1
+                      <Animated.View
                         style={[
-                          styles.quickReactionEmoji,
-                          { opacity: isActive ? 1 : 0.6 }
+                          styles.progressFill,
+                          {
+                            width: progress.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: ['0%', '100%'],
+                            }),
+                          },
                         ]}
-                      >
-                        {emoji}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
+                      />
+                    ) : null}
+                  </View>
                 );
               })}
-            </Animated.View>
+            </View>
+
+            {/* Header row: avatar with online dot + name & time on same line + close + options */}
+            <View style={styles.header}>
+              <View style={styles.avatarContainer}>
+                {currentStory.publisher.avatarUrl ? (
+                  <Image
+                    source={{ uri: currentStory.publisher.avatarUrl }}
+                    style={styles.avatar}
+                  />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    <Text style={styles.avatarFallbackText}>
+                      {currentStory.publisher.name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+                {currentStory.publisher.isOnline ? (
+                  <View style={styles.onlineDot} />
+                ) : null}
+              </View>
+              <View style={styles.headerText}>
+                <Text style={styles.headerName} numberOfLines={1}>
+                  {currentStory.publisher.name}{' '}
+                  <Text style={styles.headerTime}>
+                    {formatRelativeTime(currentSegment.postedAt ?? currentStory.postedAt)}
+                  </Text>
+                </Text>
+              </View>
+
+              {/* Close (ChevronDown) */}
+              <TouchableOpacity
+                onPress={close}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.headerIconBtn}
+              >
+                <ChevronDown size={24} color="#fff" />
+              </TouchableOpacity>
+
+              {/* More actions (Options) */}
+              <TouchableOpacity
+                onPress={handleMorePress}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.headerIconBtn}
+              >
+                <MoreHorizontal size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </View>
-    </SafeAreaView>
+
+          {/* ── Bottom overlay: reactions picker ─────────────── */}
+          <View style={styles.reactionBurstLayer} pointerEvents="none">
+            {reactionBurst.map(item => (
+              <Animated.Text
+                key={item.id}
+                style={[
+                  styles.floatingReactionEmoji,
+                  {
+                    left: item.left,
+                    fontSize: item.size,
+                    opacity: item.opacity,
+                    transform: [
+                      { translateY: item.translateY },
+                      {
+                        translateX: item.translateY.interpolate({
+                          inputRange: [-340, 0],
+                          outputRange: [item.driftX, 0],
+                        }),
+                      },
+                      { scale: item.scale },
+                      {
+                        rotate: item.rotate.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['-10deg', '12deg'],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                {item.emoji}
+              </Animated.Text>
+            ))}
+          </View>
+
+          <View style={styles.bottomOverlay} pointerEvents="box-none">
+            {/* Solid black bottom bar */}
+            <View style={styles.bottomBarContainer}>
+              <View style={styles.inputRow}>
+                {/* Quick Reactions */}
+                <Animated.View style={[styles.quickReactions, { transform: [{ scale: reactionScale }] }]}>
+                  {[
+                    (['like', '👍'] as const),
+                    (['love', '❤️'] as const),
+                    (['haha', '😆'] as const),
+                    (['wow', '😮'] as const),
+                    (['sad', '😢'] as const),
+                    (['angry', '😡'] as const),
+                  ].map(([type, emoji]) => {
+                    const isActive = currentStory.myReaction === type;
+                    return (
+                      <TouchableOpacity
+                        key={type}
+                        onPress={() => {
+                          console.log('[StoryViewer] Reaction button pressed:', type);
+                          onReact(type);
+                        }}
+                        activeOpacity={0.5}
+                        style={[
+                          styles.quickReactionBtn,
+                          isActive ? styles.reactionBtnActive : null,
+                        ]}
+                      >
+                        {type === 'like' ? (
+                          <View style={[
+                            styles.fbLikeCircle,
+                            {
+                              backgroundColor: isActive ? '#1877F2' : '#2A2B2C',
+                              opacity: isActive ? 1 : 0.6
+                            }
+                          ]}>
+                            <ThumbsUp
+                              size={16}
+                              color={isActive ? '#fff' : 'rgba(255, 255, 255, 0.7)'}
+                              fill={isActive ? '#fff' : 'none'}
+                            />
+                          </View>
+                        ) : (
+                          <Text
+                            style={[
+                              styles.quickReactionEmoji,
+                              { opacity: isActive ? 1 : 0.6 }
+                            ]}
+                          >
+                            {emoji}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </Animated.View>
+              </View>
+            </View>
+          </View>
+        </SafeAreaView>
+      </ReanimatedAnimated.View>
+    </GestureDetector>
   );
 }
 

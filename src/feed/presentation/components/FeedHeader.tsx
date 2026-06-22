@@ -23,6 +23,7 @@ import type {
   RootStackRouteName,
 } from '../../../navigation/types';
 import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
+import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useNotificationBadgeViewModel } from '../../../notifications';
@@ -62,6 +63,20 @@ export function FeedHeader() {
     setButtonRotation('45deg');
   }, []);
 
+  const handlePressLogo = useCallback(() => {
+    // Always navigate to the Feed tab first. If we're already on the
+    // Feed tab, the navigation is a no-op for routing but the listener
+    // on FeedScreen still picks up the event and scrolls the list back
+    // to the top + reloads. We rely on the event bus rather than
+    // poking at navigation state, which differs between stack / tab /
+    // drawer nesting and is unreliable in the header (a child of the
+    // tab screen, not the tab navigator itself).
+    feedLogoEvents.emitScrollToTop();
+    navigation.navigate(ROUTES.MAIN_TABS, {
+      screen: ROUTES.FEED,
+    });
+  }, [navigation]);
+
   const handleCloseSheet = useCallback(() => {
     setSheetVisible(false);
     setButtonRotation('0deg');
@@ -87,7 +102,14 @@ export function FeedHeader() {
     <>
       <View style={styles.headerRoot}>
         <View style={styles.topBar}>
-          <View style={styles.brandRow}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            onPress={handlePressLogo}
+            accessibilityRole="button"
+            accessibilityLabel="home"
+            style={styles.brandRow}
+          >
             {logoUrl && imageErrorCount === 0 ? (
               <View style={styles.logoPill}>
                 <Image
@@ -102,7 +124,7 @@ export function FeedHeader() {
                 <Text style={styles.brandText}>VNSEEA</Text>
               </View>
             )}
-          </View>
+          </TouchableOpacity>
           <View style={styles.actions}>
             <TouchableOpacity
               activeOpacity={0.75}

@@ -55,12 +55,14 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { ChevronLeft, RotateCcw } from 'lucide-react-native';
+import { ChevronLeft, RotateCcw, ChevronsDown, VolumeX, Volume2 } from 'lucide-react-native';
+import { createMMKV } from 'react-native-mmkv';
 import { useReelsViewModel } from '../../application/view-models/useReelsViewModel';
 import type { ReelsItem } from '../../domain/types/reels.types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { ReelItem } from '../components/ReelItem';
 import { ReelCommentsSheet } from '../components/ReelCommentsSheet';
+import { ReelPublisherOverlay } from '../components/ReelPublisherOverlay';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { isReelItemActive } from './reelsPlayback';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -102,11 +104,25 @@ const REELS_COPY = {
   },
 };
 
+const reelsStorage = createMMKV({ id: 'vnseea-reels-settings' });
+
 export default function ReelsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const isFocusedScreen = useIsFocused();
   const insets = useSafeAreaInsets();
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
+    return reelsStorage.getBoolean('reels.autoScroll') ?? false;
+  });
+
+  const toggleAutoScroll = useCallback(() => {
+    setAutoScrollEnabled(prev => {
+      const next = !prev;
+      reelsStorage.set('reels.autoScroll', next);
+      return next;
+    });
+  }, []);
+  const [selectedPublisherId, setSelectedPublisherId] = useState<string | null>(null);
   const language = useAppLanguage();
   const copy = REELS_COPY[language];
   const isIosTabRoute =
@@ -384,6 +400,35 @@ export default function ReelsScreen() {
 
   const handleToggleMute = useCallback(() => setIsMuted(m => !m), []);
 
+  const handleVideoEnd = useCallback((index: number) => {
+    if (!autoScrollEnabled) return;
+    if (index !== vm.activeIndex) return;
+    if (index < vm.items.length - 1) {
+      const nextIndex = index + 1;
+      vm.setActiveIndex(nextIndex);
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToIndex({
+          index: nextIndex,
+          animated: true,
+        });
+      });
+    }
+  }, [autoScrollEnabled, vm.activeIndex, vm.items, vm.setActiveIndex]);
+
+  const handleOpenProfile = useCallback((userId: string) => {
+    setSelectedPublisherId(userId);
+  }, []);
+
+  const handlePlayPublisherReel = useCallback((reelId: string, rawPost: any) => {
+    if (rawPost) {
+      vm.setInitialVideo(reelId, rawPost);
+      vm.setActiveIndex(0);
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToIndex({ index: 0, animated: false });
+      });
+    }
+  }, [vm]);
+
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     const nextHeight = Math.round(event.nativeEvent.layout.height);
     setViewportHeight(prev => (prev === nextHeight ? prev : nextHeight));
@@ -431,9 +476,12 @@ export default function ReelsScreen() {
           onOpenComments={vm.openComments}
           onUnavailable={vm.markUnavailable}
           onFollow={vm.followPublisher}
+          onOpenProfile={handleOpenProfile}
           scrollY={scrollY}
           index={index}
           initialSeekTime={initialSeekTime}
+          autoScrollEnabled={autoScrollEnabled}
+          onVideoEnd={handleVideoEnd}
         />
       );
     },
@@ -445,6 +493,7 @@ export default function ReelsScreen() {
       vm.openComments,
       vm.markUnavailable,
       vm.followPublisher,
+      handleOpenProfile,
       itemHeight,
       isMuted,
       isFocusedScreen,
@@ -453,6 +502,8 @@ export default function ReelsScreen() {
       preloadRadius,
       initialVideoId,
       route.params?.seekTime,
+      autoScrollEnabled,
+      handleVideoEnd,
     ],
   );
 
@@ -684,15 +735,50 @@ export default function ReelsScreen() {
             Page Detail, Profile, Saved, My Videos…). Only falls back
             to a Home tab-switch when there's nothing to pop (e.g.
             Reels was launched as the very first tab). */}
-        {!isIosTabRoute ? (
-          <TouchableOpacity
-            onPress={goBackToFeed}
-            style={[styles.backFab, { top: Math.max(insets.top, 12) }]}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <ChevronLeft size={26} color="#fff" />
-          </TouchableOpacity>
-        ) : null}
+        {/* Floating Header Overlay */}
+        <View style={[styles.headerOverlay, { top: Math.max(insets.top, 12) }]}>
+          {/* Left: Back button (if stack navigator has back capability) */}
+          {!isIosTabRoute ? (
+            <TouchableOpacity
+              onPress={goBackToFeed}
+              style={styles.headerButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <ChevronLeft size={26} color="#fff" />
+            </TouchableOpacity>
+          ) : (
+            <View />
+          )}
+
+          {/* Right: Auto scroll toggle + Mute button */}
+          <View style={styles.headerRightRow}>
+            <TouchableOpacity
+              onPress={toggleAutoScroll}
+              style={[
+                styles.headerCapsuleButton,
+                autoScrollEnabled && styles.headerButtonActive,
+              ]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <ChevronsDown size={18} color="#fff" />
+              <Text style={styles.headerButtonText}>
+                {autoScrollEnabled ? 'Auto On' : 'Auto Off'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleToggleMute}
+              style={styles.headerButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              {isMuted ? (
+                <VolumeX size={20} color="#fff" />
+              ) : (
+                <Volume2 size={20} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
 
         <ReelCommentsSheet
           visible={vm.isCommentsOpen}
@@ -719,6 +805,18 @@ export default function ReelsScreen() {
           onRetryFailedComment={vm.retryFailedComment}
           onDeleteFailedComment={vm.deleteFailedComment}
         />
+
+        <ReelPublisherOverlay
+          visible={selectedPublisherId !== null}
+          userId={selectedPublisherId}
+          onClose={() => setSelectedPublisherId(null)}
+          onPlayReel={handlePlayPublisherReel}
+          onFollowToggled={(userId, isFollowing) => {
+            if (isFollowing) {
+              vm.followPublisher(userId);
+            }
+          }}
+        />
       </Animated.View>
     </GestureDetector>
   );
@@ -727,6 +825,46 @@ export default function ReelsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   list: { flex: 1, backgroundColor: '#000' },
+  headerOverlay: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 10,
+  },
+  headerButton: {
+    height: 40,
+    width: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCapsuleButton: {
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+  },
+  headerButtonActive: {
+    backgroundColor: '#0866ff',
+  },
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
   fullCenter: {
     flex: 1,
     backgroundColor: '#000',
@@ -780,15 +918,5 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     alignItems: 'center',
     backgroundColor: '#000',
-  },
-  backFab: {
-    position: 'absolute',
-    left: 12,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
