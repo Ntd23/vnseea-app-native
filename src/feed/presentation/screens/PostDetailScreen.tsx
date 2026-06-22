@@ -661,32 +661,84 @@ function PostActions({
   );
 }
 
-function CommentRow({ comment }: { comment: PostComment }) {
+function CommentRow({
+  comment,
+  onOpenProfile,
+}: {
+  comment: PostComment;
+  onOpenProfile: (userId: string) => void;
+}) {
+  // The header (avatar + name + @handle) is the only piece that
+  // navigates — the comment body remains long-press / selectable
+  // text so users can still copy a quote without accidentally
+  // jumping to the publisher's profile.
+  //
+  // Normalise the publisher id: the feed mapper in ApiFeedRepository
+  // uses `readString()` which collapses missing values to "" (empty
+  // string) rather than `undefined`. Treating "" as a valid id would
+  // make ProfileScreen render the current user's profile as a
+  // fallback (its `route.params?.userId ?? currentUserId` mask),
+  // which is misleading — so we explicitly strip empty ids before
+  // passing the value down. In dev we also log the raw payload so
+  // missing-id comments are easy to spot.
+  const rawId = comment.publisher?.id?.trim() ?? '';
+  const publisherKey = rawId;
+
+  const handleOpenProfile = useCallback(() => {
+    if (!publisherKey) {
+      if (__DEV__) {
+        console.warn(
+          '[CommentRow] cannot open profile — publisher has no usable id',
+          {
+            commentId: comment.id,
+            publisher: comment.publisher,
+            username: comment.publisher?.username,
+          },
+        );
+      }
+      return;
+    }
+    onOpenProfile(publisherKey);
+  }, [onOpenProfile, publisherKey, comment.id, comment.publisher]);
+
   return (
     <View className="flex-row px-4 py-3">
-      {comment.publisher?.avatarUrl ? (
-        <Image
-          source={{ uri: comment.publisher.avatarUrl }}
-          className="avatar-sm bg-slate-200"
-          resizeMode="cover"
-        />
-      ) : (
-        <View className="avatar-sm items-center justify-center bg-[#0000ff]/10">
-          <Text className="text-caption-primary text-brand">
-            {(comment.publisher?.name?.[0] ?? '?').toUpperCase()}
-          </Text>
-        </View>
-      )}
+      <TouchableOpacity
+        onPress={handleOpenProfile}
+        activeOpacity={0.7}
+        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        disabled={!publisherKey}
+      >
+        {comment.publisher?.avatarUrl ? (
+          <Image
+            source={{ uri: comment.publisher.avatarUrl }}
+            className="avatar-sm bg-slate-200"
+            resizeMode="cover"
+          />
+        ) : (
+          <View className="avatar-sm items-center justify-center bg-[#0000ff]/10">
+            <Text className="text-caption-primary text-brand">
+              {(comment.publisher?.name?.[0] ?? '?').toUpperCase()}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
       <View className="ml-3 flex-1">
         <View className="rounded-2xl bg-slate-100 px-3 py-2.5">
-          <Text className="text-caption-primary text-slate-900" numberOfLines={1}>
-            {comment.publisher?.name ?? 'Người dùng'}{' '}
-            {comment.publisher?.username ? (
-              <Text className="text-caption-secondary">
-                @{comment.publisher.username}
-              </Text>
-            ) : null}
-          </Text>
+          <TouchableOpacity
+            onPress={handleOpenProfile}
+            activeOpacity={0.7}
+            disabled={!publisherKey}
+          >
+            <Text className="text-caption-primary text-slate-900" numberOfLines={1}>
+              {comment.publisher?.name ?? 'Người dùng'}{' '}
+              {comment.publisher?.username ? (
+                <Text className="text-caption-secondary">
+                  @{comment.publisher.username}
+                </Text>
+              ) : null}
+            </Text>
+          </TouchableOpacity>
           <Text className="mt-1 text-body-secondary" selectable>
             {comment.text}
           </Text>
@@ -793,10 +845,57 @@ function PostDetailScreen() {
     : 0;
 
   // ── Action handlers ─────────────────────────────────────────────────
+  // ROUTES.PROFILE is registered BOTH as a root Stack.Screen AND as
+  // the Profile tab inside MainTabs (see routeRegistry.tsx). Calling
+  // `navigation.navigate(ROUTES.PROFILE, ...)` from this root-stack
+  // screen would push a fresh ProfileScreen instance on top of the
+  // stack instead of switching to the existing Profile tab — which
+  // feels like "tap doesn't navigate" because the tab bar below stays
+  // pinned to whichever tab the user was on.
+  //
+  // We resolve the parent navigator (MainTabs) and dispatch through
+  // it so React Navigation actually switches the tab. `getParent()`
+  // returns undefined if there's no parent (e.g. during deep link
+  // setup tests) — we fall back to the local navigate in that case so
+  // the user still reaches a profile screen.
+  const navigateToProfile = useCallback(
+    (userId: string) => {
+      if (!userId) return;
+      const parent = navigation.getParent();
+      if (parent) {
+        // The parent navigator is the root NativeStack which only
+        // exposes MAIN_TABS as a typed param list. Cast to `never`
+        // for the route name and nested object so TS doesn't try to
+        // reconcile the deeply nested tab param types — the runtime
+        // path is correct and matches React Navigation's
+        // "navigate to a screen inside a nested navigator" contract.
+        parent.navigate(
+          ROUTES.MAIN_TABS,
+          {
+            screen: ROUTES.PROFILE,
+            params: { userId },
+          },
+        );
+        return;
+      }
+      navigation.navigate(ROUTES.PROFILE, { userId });
+    },
+    [navigation],
+  );
+
   const handleProfilePress = useCallback(() => {
-    if (!activePost?.publisher?.id) return;
-    navigation.navigate(ROUTES.PROFILE, { userId: activePost.publisher.id });
-  }, [navigation, activePost]);
+    navigateToProfile(activePost?.publisher?.id ?? '');
+  }, [navigateToProfile, activePost]);
+
+  // Tapping a comment's avatar / name jumps to that user's profile.
+  // The comment body stays long-press-selectable so quotes can still
+  // be copied without leaving the post.
+  const handleCommentProfilePress = useCallback(
+    (userId: string) => {
+      navigateToProfile(userId);
+    },
+    [navigateToProfile],
+  );
 
   const handleReact = useCallback(
     (reaction: ReactionType | null) => {
@@ -983,7 +1082,11 @@ function PostDetailScreen() {
             </View>
             {comments.length > 0 ? (
               comments.map(comment => (
-                <CommentRow key={comment.id} comment={comment} />
+                <CommentRow
+                  key={comment.id}
+                  comment={comment}
+                  onOpenProfile={handleCommentProfilePress}
+                />
               ))
             ) : (
               <View className="px-4 pb-4">

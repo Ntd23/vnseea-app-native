@@ -140,6 +140,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import type { RootStackParamList } from '../../../navigation/types';
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
+import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import type {
   FeedPost,
   FeedTextPost,
@@ -2039,6 +2040,10 @@ function FeedScreen() {
   const copy = FEED_COPY[language];
   const vm = useFeedViewModel();
   const feedSafeAreaInsets = useSafeAreaInsets();
+  // Top-bar logo: FeedScreen only acts on the scroll-to-top event when it
+  // is the currently focused tab. Declared up here so the hook order
+  // matches the rest of FeedScreen (no conditional hooks below).
+  const isFeedTabFocused = useIsFocused();
   const userVm = useCurrentUserViewModel();
   const feedPosts = vm.posts;
   const prependFeedPost = vm.prependPost;
@@ -2048,6 +2053,20 @@ function FeedScreen() {
   const reportFeedPost = vm.reportPost;
   const shareFeedPost = vm.sharePost;
   const reloadFeedPosts = vm.reloadPosts;
+  const mainFeedListRef = useRef<FlatList>(null);
+
+  // Top-bar logo button: when tapped while already on the Feed tab,
+  // scroll the feed back to the top and trigger a fresh reload — same
+  // behaviour as Facebook/TikTok. We check `useIsFocused` so this only
+  // runs when the Feed tab is the active tab, not when the user tapped
+  // the logo from another tab to switch back to Feed.
+  useEffect(() => {
+    return feedLogoEvents.subscribe(() => {
+      if (!isFeedTabFocused) return;
+      mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      reloadFeedPosts();
+    });
+  }, [isFeedTabFocused, reloadFeedPosts]);
   const setFeedScrollBusy = vm.setScrollBusy;
   const activeFeedSource = vm.feedSource;
   const setActiveFeedSource = vm.setFeedSource;
@@ -3497,6 +3516,7 @@ function FeedScreen() {
 
   const feedListElement = (
     <FlatList
+      ref={mainFeedListRef}
       data={Platform.OS === 'ios' ? iosFeedListItems : feedListItems}
       renderItem={renderItem}
       keyExtractor={keyExtractor}

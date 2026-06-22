@@ -1,10 +1,15 @@
-// Description: Bottom-sheet style modal that lets the user filter non-message notifications by type.
+// Description: Bottom-sheet style modal that lets the user filter
+// non-message notifications by type. Uses the native Modal with
+// animationType="slide" so Android can use its optimized bottom-up
+// sheet animation. Content is rendered eagerly (only when visible=true)
+// to keep the first frame after open lightweight.
 
-import React from 'react';
+import React, { memo, useCallback } from 'react';
 import {
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -73,6 +78,53 @@ const LABEL_KEY: Record<NotificationFilterType, keyof NotificationsFilterSheetPr
   events: 'filterEvents',
 };
 
+const FilterRow = memo(function FilterRow({
+  id,
+  active,
+  color,
+  label,
+  onPress,
+}: {
+  id: NotificationFilterType;
+  active: boolean;
+  color: string;
+  label: string;
+  onPress: () => void;
+}) {
+  const Icon = ICON_MAP[id];
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      style={[
+        styles.row,
+        { backgroundColor: active ? '#EFF6FF' : '#F8FAFC' },
+      ]}
+    >
+      <View
+        style={[
+          styles.iconBubble,
+          { backgroundColor: `${color}1A` },
+        ]}
+      >
+        <Icon size={18} color={color} />
+      </View>
+      <Text
+        style={[
+          styles.rowLabel,
+          {
+            color: active ? '#0000FF' : '#1E293B',
+            fontWeight: active ? '700' : '500',
+          },
+        ]}
+      >
+        {label}
+      </Text>
+      {active ? <Check size={18} color="#0000FF" /> : null}
+    </TouchableOpacity>
+  );
+});
+
 export default function NotificationsFilterSheet({
   visible,
   onClose,
@@ -80,76 +132,128 @@ export default function NotificationsFilterSheet({
   onSelect,
   labels,
 }: NotificationsFilterSheetProps) {
+  const handleSelect = useCallback(
+    (id: NotificationFilterType) => {
+      onSelect(id);
+      onClose();
+    },
+    [onSelect, onClose],
+  );
+
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="slide"
       onRequestClose={onClose}
+      statusBarTranslucent
     >
-      <Pressable
-        className="flex-1 justify-end bg-black/40"
-        onPress={onClose}
-      >
-        <Pressable
-          onPress={e => e.stopPropagation?.()}
-          className="rounded-t-3xl bg-white px-4 pb-6 pt-4"
-        >
-          <View className="mb-3 flex-row items-center justify-between">
-            <Text className="text-heading">{labels.title}</Text>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              onPress={onClose}
-              className="rounded-full bg-slate-100 px-4 py-1.5"
-            >
-              <Text className="text-caption-primary">{labels.close}</Text>
-            </TouchableOpacity>
-          </View>
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable onPress={e => e.stopPropagation?.()} style={styles.sheet}>
+          <View style={styles.sheetInner}>
+            <View style={styles.headerRow}>
+              <Text style={styles.title}>{labels.title}</Text>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                onPress={onClose}
+                style={styles.closeBtn}
+              >
+                <Text style={styles.closeText}>{labels.close}</Text>
+              </TouchableOpacity>
+            </View>
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            style={{ maxHeight: 480 }}
-          >
-            {ORDER.map(id => {
-              const Icon = ICON_MAP[id];
-              const color = COLOR_MAP[id];
-              const isActive = active === id;
-              const label = labels[LABEL_KEY[id]];
-              return (
-                <TouchableOpacity
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={styles.list}
+              contentContainerStyle={styles.listContent}
+            >
+              {ORDER.map(id => (
+                <FilterRow
                   key={id}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    onSelect(id);
-                    onClose();
-                  }}
-                  className={`mb-2 flex-row items-center rounded-xl px-3 py-3 ${
-                    isActive ? 'bg-blue-50' : 'bg-slate-50'
-                  }`}
-                >
-                  <View
-                    className="h-9 w-9 items-center justify-center rounded-full"
-                    style={{ backgroundColor: `${color}1A` }}
-                  >
-                    <Icon size={18} color={color} />
-                  </View>
-                  <Text
-                    className={`ml-3 flex-1 text-[15px] ${
-                      isActive
-                        ? 'font-semibold text-[#0000ff]'
-                        : 'font-medium text-slate-800'
-                    }`}
-                  >
-                    {label}
-                  </Text>
-                  {isActive ? <Check size={18} color="#0000ff" /> : null}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+                  id={id}
+                  active={active === id}
+                  color={COLOR_MAP[id]}
+                  label={labels[LABEL_KEY[id]]}
+                  onPress={() => handleSelect(id)}
+                />
+              ))}
+            </ScrollView>
+          </View>
         </Pressable>
       </Pressable>
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
+  sheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 24,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 24,
+  },
+  sheetInner: {
+    // No nested wrapper — keeps the first paint cheap.
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  closeBtn: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  closeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  list: {
+    maxHeight: 480,
+  },
+  listContent: {
+    paddingBottom: 4,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  iconBubble: {
+    height: 36,
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+  },
+  rowLabel: {
+    marginLeft: 12,
+    flex: 1,
+    fontSize: 15,
+  },
+});

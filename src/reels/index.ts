@@ -7,3 +7,5 @@ export { useCreateReelViewModel } from './application/view-models/useCreateReelV
 export { default as ReelsScreen } from './presentation/screens/ReelsScreen';
 export { default as CreateReelScreen } from './presentation/screens/CreateReelScreen';
 export { ReelItem } from './presentation/components/ReelItem';
+export { ReelPublisherOverlay } from './presentation/components/ReelPublisherOverlay';
+

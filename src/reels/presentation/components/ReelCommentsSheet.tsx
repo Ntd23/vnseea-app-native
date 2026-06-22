@@ -85,6 +85,8 @@ import {
   CommentSheetReactionBadgeSurface,
   CommentSheetReactionPickerSurface,
 } from './CommentSheetChrome';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { ROUTES } from '../../../navigation/constants/routes';
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 
@@ -298,6 +300,12 @@ function ReelCommentsSheetBase({
 }: Props) {
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
+  const navigation = useNavigation<any>();
+  const isScreenFocused = useIsFocused();
+
+  const handlePressProfile = useCallback((userId: string) => {
+    navigation.navigate(ROUTES.PROFILE, { userId });
+  }, [navigation]);
   const insets = useSafeAreaInsets();
   const sheetBottomPadding = Platform.OS === 'ios' ? 0 : Math.max(insets.bottom, 10);
   const composerBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 0;
@@ -641,6 +649,7 @@ function ReelCommentsSheetBase({
           onStartReply={onStartReply}
           onOpenImage={handleOpenImage}
           replyingToCommentId={replyingTo?.commentId}
+          onPressProfile={handlePressProfile}
         />
       );
     },
@@ -655,6 +664,7 @@ function ReelCommentsSheetBase({
       onStartReply,
       repliesById,
       replyingTo,
+      handlePressProfile,
     ],
   );
 
@@ -677,7 +687,7 @@ function ReelCommentsSheetBase({
 
   return (
     <Modal
-      visible={isMounted}
+      visible={isMounted && isScreenFocused}
       transparent
       animationType="none"
       statusBarTranslucent
@@ -1161,6 +1171,7 @@ interface ThreadProps {
   /** Threaded through to each row so taps on comment images open the viewer. */
   onOpenImage: (uri: string) => void;
   replyingToCommentId?: string | null;
+  onPressProfile: (userId: string) => void;
 }
 
 function CommentThreadBase({
@@ -1176,6 +1187,7 @@ function CommentThreadBase({
   onStartReply,
   onOpenImage,
   replyingToCommentId,
+  onPressProfile,
 }: ThreadProps) {
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
@@ -1207,6 +1219,7 @@ function CommentThreadBase({
         onReply={handleReply}
         onOpenImage={onOpenImage}
         isReplyingToThis={replyingToCommentId === comment.id}
+        onPressProfile={onPressProfile}
       />
 
       {comment.replyCount > 0 || isExpanded ? (
@@ -1251,6 +1264,7 @@ function CommentThreadBase({
               }
               onOpenImage={onOpenImage}
               isReplyingToThis={replyingToCommentId === reply.id}
+              onPressProfile={onPressProfile}
             />
           ))}
         </View>
@@ -1281,6 +1295,7 @@ interface RowProps {
   /** Called when the user taps the comment's image — opens the viewer. */
   onOpenImage: (uri: string) => void;
   isReplyingToThis?: boolean;
+  onPressProfile: (userId: string) => void;
 }
 
 function CommentRow({
@@ -1292,6 +1307,7 @@ function CommentRow({
   onReply,
   onOpenImage,
   isReplyingToThis,
+  onPressProfile,
 }: RowProps) {
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
@@ -1338,6 +1354,12 @@ function CommentRow({
   const likeLabel = myReaction ? copy[`${myReaction}Reaction` as keyof typeof copy] : copy.likeReaction;
   const likeColor = myReaction ? REACTION_COLOR[myReaction] : '#64748b';
 
+  const handleProfilePress = useCallback(() => {
+    if (comment.publisher.userId) {
+      onPressProfile(comment.publisher.userId);
+    }
+  }, [comment.publisher.userId, onPressProfile]);
+
   // Pulse highlight animation when this comment is being replied to
   const highlightAnim = useRef(new Animated.Value(0)).current;
 
@@ -1373,10 +1395,12 @@ function CommentRow({
   return (
     <View style={[styles.commentRow, isReply && styles.commentRowReply]}>
       {isReply ? <View style={styles.branchLine} pointerEvents="none" /> : null}
-      <Image
-        source={{ uri: comment.publisher.avatarUrl || AVATAR_FALLBACK }}
-        style={isReply ? styles.commentAvatarSmall : styles.commentAvatar}
-      />
+      <TouchableOpacity onPress={handleProfilePress} activeOpacity={0.85}>
+        <Image
+          source={{ uri: comment.publisher.avatarUrl || AVATAR_FALLBACK }}
+          style={isReply ? styles.commentAvatarSmall : styles.commentAvatar}
+        />
+      </TouchableOpacity>
       <View style={styles.commentBody}>
         {/* Name (long-press here also opens the delete menu when owner) */}
         <Pressable
@@ -1390,9 +1414,11 @@ function CommentRow({
         >
           <Animated.View style={[styles.bubble, { backgroundColor: bubbleBg }]}>
             <View style={styles.nameRow}>
-              <Text style={styles.commentName} numberOfLines={1}>
-                {displayName}
-              </Text>
+              <TouchableOpacity onPress={handleProfilePress} activeOpacity={0.85}>
+                <Text style={styles.commentName} numberOfLines={1}>
+                  {displayName}
+                </Text>
+              </TouchableOpacity>
               {comment.publisher.isAdmin ? (
                 <View style={styles.adminBadge}>
                   <Text style={styles.adminBadgeText}>Admin</Text>

@@ -296,6 +296,7 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
       myReaction !== null || readBool(raw, 'isLiked', 'postReacted'),
     isSaved: readBool(raw, 'isSaved'),
     myReaction,
+    raw,
   };
 }
 

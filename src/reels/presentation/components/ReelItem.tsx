@@ -32,6 +32,7 @@ import {
   Dimensions,
   Easing,
   Image,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -57,6 +58,7 @@ import {
 import type { ReactionType, ReelsItem } from '../../domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../domain/types/reels.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 
 const REEL_ITEM_COPY = {
   vi: {
@@ -131,6 +133,8 @@ interface Props {
   scrollY?: SharedValue<number>;
   index?: number;
   initialSeekTime?: number;
+  autoScrollEnabled: boolean;
+  onVideoEnd?: (index: number) => void;
 }
 
 function formatCount(n: number): string {
@@ -139,6 +143,13 @@ function formatCount(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
 }
+
+const formatTime = (seconds: number) => {
+  if (isNaN(seconds) || seconds < 0) return '00:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+};
 
 function ReelItemBase({
   item,
@@ -155,16 +166,59 @@ function ReelItemBase({
   onUnavailable,
   onFollow,
   initialSeekTime,
+  autoScrollEnabled,
+  onVideoEnd,
+  index = 0,
 }: Props) {
   const insets = useSafeAreaInsets();
   const language = useAppLanguage();
   const copy = REEL_ITEM_COPY[language];
+  const currentUserId = sessionStorage.getSession()?.userId;
+  const isOwnVideo = currentUserId && String(item.publisher.userId) === String(currentUserId);
+  const showFollowBadge = !isOwnVideo && !item.publisher.isFollowing;
   const [userPaused, setUserPaused] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
+
+  // Video progress & scrubbing states
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekProgress, setSeekProgress] = useState(0);
+
+  const handleTouchStart = useCallback((event: any) => {
+    if (duration <= 0) return;
+    const touchX = event.nativeEvent.pageX;
+    const progress = Math.min(1, Math.max(0, touchX / SCREEN_W));
+    setIsSeeking(true);
+    setSeekProgress(progress);
+    if (videoRef.current) {
+      videoRef.current.seek(progress * duration);
+    }
+  }, [duration]);
+
+  const handleTouchMove = useCallback((event: any) => {
+    if (duration <= 0 || !isSeeking) return;
+    const touchX = event.nativeEvent.pageX;
+    const progress = Math.min(1, Math.max(0, touchX / SCREEN_W));
+    setSeekProgress(progress);
+    if (videoRef.current) {
+      videoRef.current.seek(progress * duration);
+    }
+  }, [duration, isSeeking]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (duration <= 0) return;
+    setIsSeeking(false);
+    if (videoRef.current) {
+      const targetTime = seekProgress * duration;
+      videoRef.current.seek(targetTime);
+      setCurrentTime(targetTime);
+    }
+  }, [duration, seekProgress]);
 
   useEffect(() => {
     if (initialSeekTime !== undefined && initialSeekTime > 0) {
@@ -344,16 +398,31 @@ function ReelItemBase({
           source={{ uri: item.videoUrl }}
           style={StyleSheet.absoluteFill}
           resizeMode="contain"
-          repeat
+          repeat={!autoScrollEnabled}
           paused={!playing}
           muted={isMuted || !isActive}
           ignoreSilentSwitch="ignore"
           playInBackground={false}
           playWhenInactive={false}
-          progressUpdateInterval={1000}
+          progressUpdateInterval={250}
           useTextureView={false}
           onReadyForDisplay={() => setIsReady(true)}
-          onLoad={() => setIsReady(true)}
+          onLoad={(data) => {
+            setIsReady(true);
+            if (data?.duration) {
+              setDuration(data.duration);
+            }
+          }}
+          onProgress={(data) => {
+            if (!isSeeking && data?.currentTime !== undefined) {
+              setCurrentTime(data.currentTime);
+            }
+          }}
+          onEnd={() => {
+            if (autoScrollEnabled && onVideoEnd) {
+              onVideoEnd(index);
+            }
+          }}
           onError={() => {
             setHasError(true);
             setIsReady(true);
@@ -451,18 +520,7 @@ function ReelItemBase({
         </RNAnimated.View>
       ))}
 
-      {/* ── Top-right: mute toggle ────────────────────────────────────── */}
-      <TouchableOpacity
-        onPress={onToggleMute}
-        style={[styles.muteBtn, { top: Math.max(insets.top + 10, 14) }]}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-      >
-        {isMuted ? (
-          <VolumeX size={20} color="#fff" />
-        ) : (
-          <Volume2 size={20} color="#fff" />
-        )}
-      </TouchableOpacity>
+      {/* Mute button is now handled globally at the ReelsScreen header level */}
 
       {/* ── Right rail: avatar → like → comment → save → share ──────── */}
       <View
@@ -482,8 +540,8 @@ function ReelItemBase({
               style={styles.avatarImg}
             />
           </TouchableOpacity>
-          {/* Follow (+) badge overlapping the bottom of the avatar, only shown if not followed */}
-          {!item.publisher.isFollowing && (
+          {/* Follow (+) badge overlapping the bottom of the avatar, only shown if not followed and not own video */}
+          {showFollowBadge && (
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={() => item.publisher.userId && onFollow?.(item.publisher.userId)}
@@ -604,6 +662,45 @@ function ReelItemBase({
           </Text>
         ) : null}
       </View>
+
+      {/* ── Progress bar/seekbar ── */}
+      {duration > 0 && (
+        <View
+          style={styles.progressBarContainer}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <View style={[
+            styles.progressTrack,
+            isSeeking && { height: 5 }
+          ]}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${(isSeeking ? seekProgress : currentTime / duration) * 100}%` },
+              ]}
+            />
+            {isSeeking && (
+              <View
+                style={[
+                  styles.progressThumb,
+                  { left: `${seekProgress * 100}%` },
+                ]}
+              />
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* ── Seek time overlay in center of the screen ── */}
+      {isSeeking && (
+        <View style={styles.seekTimeOverlay}>
+          <Text style={styles.seekTimeText}>
+            {formatTime(seekProgress * duration)} / {formatTime(duration)}
+          </Text>
+        </View>
+      )}
 
     </Animated.View>
   );
@@ -822,16 +919,53 @@ const styles = StyleSheet.create({
     lineHeight: 36,
   },
 
-  // Mute button — top-right corner
-  muteBtn: {
+  // Mute button style is no longer needed since it's in ReelsScreen.tsx
+  progressBarContainer: {
     position: 'absolute',
-    right: 16,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(0,0,0,0.38)',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 30,
+    justifyContent: 'flex-end',
+    paddingBottom: 6,
+    zIndex: 10,
+  },
+  progressTrack: {
+    height: 2.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.24)',
+    width: '100%',
+    position: 'relative',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#fff',
+  },
+  progressThumb: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#fff',
+    top: -3.5,
+    marginLeft: -5,
+  },
+  seekTimeOverlay: {
+    position: 'absolute',
+    top: '40%',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 20,
+  },
+  seekTimeText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'monospace',
   },
 
   // Right action rail

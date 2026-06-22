@@ -1,5 +1,5 @@
 // Description: Renders a modern, animated right-side profile and settings drawer.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -15,7 +15,6 @@ import {
   Vibration,
   View,
   Alert,
-  InteractionManager,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -68,7 +67,7 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { SettingsPanelRouteParam } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { useMyInfoViewModel } from '../../../settings/application/view-models/useMyInfoViewModel';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useAuthViewModel } from '../../../auth/application/view-models/useAuthViewModel';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -135,16 +134,16 @@ const DRAWER_COPY = {
     featAds: 'Quảng cáo',
 
     // Feature categories
-    catCommunicate: '💬 Giao tiếp',
-    catMedia: '📷 Nội dung & Media',
-    catCommunity: '👥 Cộng đồng',
-    catCommerce: '🛒 Thương mại',
-    catNews: '📰 Nội dung & Tin tức',
-    catEntertainment: '🎮 Giải trí',
-    catFinance: '💰 Tài chính',
-    catBusiness: '📈 Kinh doanh',
-    catPersonal: '🕒 Cá nhân',
-    catSystem: '⚙️ Hệ thống',
+    catCommunicate: 'Giao tiếp',
+    catMedia: 'Nội dung & Media',
+    catCommunity: 'Cộng đồng',
+    catCommerce: 'Thương mại',
+    catNews: 'Nội dung & Tin tức',
+    catEntertainment: 'Giải trí',
+    catFinance: 'Tài chính',
+    catBusiness: 'Kinh doanh',
+    catPersonal: 'Cá nhân',
+    catSystem: 'Hệ thống',
   },
   en: {
     menuTitle: 'Profile & Settings',
@@ -204,16 +203,16 @@ const DRAWER_COPY = {
     featAds: 'Ads',
 
     // Feature categories
-    catCommunicate: '💬 Communication',
-    catMedia: '📷 Media',
-    catCommunity: '👥 Community',
-    catCommerce: '🛒 Commerce',
-    catNews: '📰 News & Content',
-    catEntertainment: '🎮 Entertainment',
-    catFinance: '💰 Finance',
-    catBusiness: '📈 Business',
-    catPersonal: '🕒 Personal',
-    catSystem: '⚙️ System',
+    catCommunicate: 'Communication',
+    catMedia: 'Media',
+    catCommunity: 'Community',
+    catCommerce: 'Commerce',
+    catNews: 'News & Content',
+    catEntertainment: 'Entertainment',
+    catFinance: 'Finance',
+    catBusiness: 'Business',
+    catPersonal: 'Personal',
+    catSystem: 'System',
   },
 };
 
@@ -229,16 +228,24 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const language = useAppLanguage();
   const copy = DRAWER_COPY[language] || DRAWER_COPY.vi;
-  const { profile } = useMyInfoViewModel();
   const { logout } = useAuthViewModel();
 
   const [shouldRender, setShouldRender] = useState(visible);
-  const translateX = useRef(new Animated.Value(DRAWER_W)).current;
-  const drawerScale = useRef(new Animated.Value(0.96)).current;
-  const drawerOpacity = useRef(new Animated.Value(0)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const contentOpacity = useRef(new Animated.Value(0)).current;
+  const [contentReady, setContentReady] = useState(visible);
+  // Read profile directly from MMKV cache — no fetch, no hook re-renders
+  const cachedProfile = useMemo(() => sessionStorage.getUserProfile(), []);
+  const profile = cachedProfile;
+  // Drawer is always at translateX=0 by default so it is visible the moment
+  // the Modal mounts. The "slide in" effect is created by the useEffect
+  // jumping translateX to DRAWER_W right BEFORE the open animation runs;
+  // if that effect somehow misses a frame, the user still sees the drawer
+  // appear at its final position instead of being stuck off-screen.
+  const translateX = useRef(new Animated.Value(0)).current;
+  const drawerOpacity = useRef(new Animated.Value(1)).current;
+  const backdropOpacity = useRef(new Animated.Value(visible ? 0.55 : 0)).current;
   const closeAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+  const openAnimFrame = useRef<number | null>(null);
+  const contentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // Cancel any running close animation if drawer is re-opened mid-close
@@ -246,99 +253,79 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
       closeAnimRef.current.stop();
       closeAnimRef.current = null;
     }
+    // Cancel any pending open frame from a previous render
+    if (openAnimFrame.current !== null) {
+      cancelAnimationFrame(openAnimFrame.current);
+      openAnimFrame.current = null;
+    }
+    if (contentTimerRef.current !== null) {
+      clearTimeout(contentTimerRef.current);
+      contentTimerRef.current = null;
+    }
 
     if (visible) {
       setShouldRender(true);
-      // Wait for next frame so Modal mounts before animating in
-      InteractionManager.runAfterInteractions(() => {
-        Animated.parallel([
-          // Backdrop fades in quickly (perceived responsiveness)
-          Animated.timing(backdropOpacity, {
-            toValue: 0.55,
-            duration: 180,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          // Drawer slides in with subtle scale-up for premium feel
-          Animated.spring(translateX, {
-            toValue: 0,
-            tension: 90,
-            friction: 12,
-            useNativeDriver: true,
-          }),
-          Animated.spring(drawerScale, {
-            toValue: 1,
-            tension: 110,
-            friction: 11,
-            useNativeDriver: true,
-          }),
-          Animated.timing(drawerOpacity, {
-            toValue: 1,
-            duration: 160,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          // Content fades in slightly after drawer starts moving for layered reveal
-          Animated.timing(contentOpacity, {
-            toValue: 1,
-            duration: 220,
-            delay: 80,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }),
-        ]).start();
+      setContentReady(true);
+      // Jump to off-screen so the slide-in is visible, then animate to 0.
+      translateX.setValue(DRAWER_W);
+      Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 0.55,
+          duration: 50,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateX, {
+          toValue: 0,
+          duration: 90,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: false,
+        }),
+      ]).start(({ finished }) => {
+        // If the animation failed for any reason, make sure the drawer ends
+        // up at its visible position.
+        if (!finished) {
+          translateX.setValue(0);
+        }
       });
     } else {
       const closeAnim = Animated.parallel([
-        // Backdrop fades out fast — instant visual feedback that it's closing
         Animated.timing(backdropOpacity, {
           toValue: 0,
-          duration: 140,
+          duration: 60,
           easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
         }),
-        // Content fades first for snappy perceived close
-        Animated.timing(contentOpacity, {
-          toValue: 0,
-          duration: 100,
+        Animated.timing(translateX, {
+          toValue: DRAWER_W,
+          duration: 110,
           easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
-        // Drawer slides out with subtle scale-down
-        Animated.parallel([
-          Animated.timing(translateX, {
-            toValue: DRAWER_W,
-            duration: 200,
-            easing: Easing.inOut(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.timing(drawerScale, {
-            toValue: 0.97,
-            duration: 200,
-            easing: Easing.inOut(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.timing(drawerOpacity, {
-            toValue: 0,
-            duration: 180,
-            easing: Easing.in(Easing.cubic),
-            useNativeDriver: true,
-          }),
-        ]),
       ]);
       closeAnimRef.current = closeAnim;
-      closeAnim.start(({ finished }) => {
-        if (finished) {
-          // Reset state for next open so animation starts clean
-          translateX.setValue(DRAWER_W);
-          drawerScale.setValue(0.96);
-          drawerOpacity.setValue(0);
-          contentOpacity.setValue(0);
-          setShouldRender(false);
-        }
+      // Hide Modal immediately so the underlying screen is interactive while
+      // the drawer finishes its slide-out — perceived close feels instant.
+      setShouldRender(false);
+      setContentReady(false);
+      closeAnim.start(() => {
+        closeAnimRef.current = null;
       });
     }
-  }, [visible, backdropOpacity, translateX, drawerScale, drawerOpacity, contentOpacity]);
+  }, [visible, backdropOpacity, translateX]);
+
+  useEffect(() => {
+    return () => {
+      if (openAnimFrame.current !== null) {
+        cancelAnimationFrame(openAnimFrame.current);
+        openAnimFrame.current = null;
+      }
+      if (contentTimerRef.current !== null) {
+        clearTimeout(contentTimerRef.current);
+        contentTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleClose = useCallback(() => {
     onClose();
@@ -483,18 +470,11 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
 
   if (!shouldRender) return null;
 
-  // Determine user role label
-  const roleLabel = profile?.admin
-    ? copy.roleAdmin
-    : profile?.pro
-    ? copy.rolePro
-    : copy.roleMember;
-
-  const roleColor = profile?.admin
-    ? 'text-red-500 bg-red-50 border-red-100'
-    : profile?.pro
-    ? 'text-blue-500 bg-blue-50 border-blue-100'
-    : 'text-slate-500 bg-slate-50 border-slate-100';
+  // Determine user role label — cache doesn't carry admin/pro flags, so we
+  // default to Member. Refresh the profile separately when the user lands
+  // on Settings.
+  const roleLabel = copy.roleMember;
+  const roleColor = 'text-slate-500 bg-slate-50 border-slate-100';
 
   return (
     <Modal
@@ -515,10 +495,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
           style={[
             styles.drawer,
             {
-              transform: [
-                { translateX },
-                { scale: drawerScale },
-              ],
+              transform: [{ translateX }],
               opacity: drawerOpacity,
               paddingTop: Math.max(insets.top, 12),
               paddingBottom: Math.max(insets.bottom, 12),
@@ -537,12 +514,14 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             </TouchableOpacity>
           </View>
 
-          <Animated.View style={[styles.scrollWrapper, { opacity: contentOpacity }]}>
+          {contentReady ? (
+          <View style={styles.scrollWrapper}>
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
             decelerationRate="normal"
-            scrollEventThrottle={16}
+            scrollEventThrottle={32}
+            removeClippedSubviews
           >
             {/* User Profile Card */}
             <TouchableOpacity
@@ -560,8 +539,8 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
                     <Text style={styles.profileUsername} numberOfLines={1}>
                       @{profile?.username || 'user'}
                     </Text>
-                    <View style={[styles.roleBadge, profile?.admin ? styles.roleAdmin : profile?.pro ? styles.rolePro : styles.roleMember]}>
-                      <Text style={[styles.roleText, profile?.admin ? styles.roleTextAdmin : profile?.pro ? styles.roleTextPro : styles.roleTextMember]}>
+                    <View style={[styles.roleBadge, styles.roleMember]}>
+                      <Text style={[styles.roleText, styles.roleTextMember]}>
                         {roleLabel}
                       </Text>
                     </View>
@@ -581,7 +560,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
                     <View style={styles.statTexts}>
                       <Text style={styles.statLabel}>{copy.walletLabel}</Text>
                       <Text style={styles.statVal} numberOfLines={1}>
-                        VND {profile?.wallet ? Number(profile.wallet).toLocaleString('vi-VN') : '0'}
+                        VND 0
                       </Text>
                     </View>
                   </View>
@@ -593,7 +572,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
                     <View style={styles.statTexts}>
                       <Text style={styles.statLabel}>{copy.pointsLabel}</Text>
                       <Text style={styles.statVal} numberOfLines={1}>
-                        {profile?.points ? Number(profile.points).toLocaleString('vi-VN') : '0'}
+                        0
                       </Text>
                     </View>
                   </View>
@@ -875,81 +854,30 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
               <Text style={styles.logoutText}>{copy.logoutLabel}</Text>
             </TouchableOpacity>
           </ScrollView>
-        </Animated.View>
+          </View>
+        ) : null}
         </Animated.View>
       </View>
     </Modal>
   );
 }
 
-// Sub-component for individual settings rows
-function MenuRow({ title, icon, onPress, highlight = false }: { title: string; icon: React.ReactNode; onPress: () => void; highlight?: boolean }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
-  const iconBounce = useRef(new Animated.Value(1)).current;
-  const pressInRef = useRef<Animated.CompositeAnimation | null>(null);
-  const pressOutRef = useRef<Animated.CompositeAnimation | null>(null);
-
-  const handlePressIn = useCallback(() => {
-    // Cancel any running rebound to prevent jitter
-    if (pressOutRef.current) {
-      pressOutRef.current.stop();
-      pressOutRef.current = null;
-    }
-    pressInRef.current = Animated.parallel([
-      Animated.spring(scale, {
-        toValue: 0.96,
-        useNativeDriver: true,
-        tension: 220,
-        friction: 14,
-      }),
-      Animated.timing(opacity, {
-        toValue: 0.78,
-        duration: 80,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.spring(iconBounce, {
-        toValue: 1.18,
-        useNativeDriver: true,
-        tension: 200,
-        friction: 8,
-      }),
-    ]);
-    pressInRef.current.start();
-  }, [scale, opacity, iconBounce]);
-
-  const handlePressOut = useCallback(() => {
-    if (pressInRef.current) {
-      pressInRef.current.stop();
-      pressInRef.current = null;
-    }
-    pressOutRef.current = Animated.parallel([
-      Animated.spring(scale, {
-        toValue: 1,
-        useNativeDriver: true,
-        tension: 240,
-        friction: 11,
-      }),
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 140,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.spring(iconBounce, {
-        toValue: 1,
-        useNativeDriver: true,
-        tension: 220,
-        friction: 9,
-      }),
-    ]);
-    pressOutRef.current.start();
-  }, [scale, opacity, iconBounce]);
-
+// Sub-component for individual settings rows — memoized, no per-row Animated
+// values to keep the list cheap to render. Native activeOpacity + a thin
+// highlight overlay are enough for tactile feedback at this scale.
+const MenuRow = React.memo(function MenuRow({
+  title,
+  icon,
+  onPress,
+  highlight = false,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  onPress: () => void;
+  highlight?: boolean;
+}) {
   const handlePress = useCallback(() => {
     // Subtle haptic feedback for premium feel — sharper for highlight rows
-    // Vibration is built into RN so no extra dependency needed
     if (highlight) {
       Vibration.vibrate(15);
     } else {
@@ -959,44 +887,34 @@ function MenuRow({ title, icon, onPress, highlight = false }: { title: string; i
   }, [highlight, onPress]);
 
   return (
-    <Animated.View
-      style={{
-        transform: [{ scale }],
-        opacity,
-      }}
+    <TouchableOpacity
+      onPress={handlePress}
+      activeOpacity={0.7}
+      delayPressIn={0}
+      style={[styles.row, highlight ? styles.rowHighlight : null]}
     >
-      <TouchableOpacity
-        onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={1}
-        delayPressIn={0}
-        style={[styles.row, highlight ? styles.rowHighlight : null]}
-      >
-        <View style={styles.rowLeft}>
-          <Animated.View
-            style={[
-              styles.rowIconBg,
-              highlight ? styles.rowIconBgHighlight : null,
-              { transform: [{ scale: iconBounce }] },
-            ]}
-          >
-            {icon}
-          </Animated.View>
-          <Text style={[styles.rowTitle, highlight ? styles.rowTitleHighlight : null]}>
-            {title}
-          </Text>
-          {highlight ? (
-            <View style={styles.highlightBadge}>
-              <Text style={styles.highlightBadgeText}>★</Text>
-            </View>
-          ) : null}
+      <View style={styles.rowLeft}>
+        <View
+          style={[
+            styles.rowIconBg,
+            highlight ? styles.rowIconBgHighlight : null,
+          ]}
+        >
+          {icon}
         </View>
-        <ChevronRight size={16} color={highlight ? '#0052ff' : '#94a3b8'} strokeWidth={2.5} />
-      </TouchableOpacity>
-    </Animated.View>
+        <Text style={[styles.rowTitle, highlight ? styles.rowTitleHighlight : null]}>
+          {title}
+        </Text>
+        {highlight ? (
+          <View style={styles.highlightBadge}>
+            <Text style={styles.highlightBadgeText}>★</Text>
+          </View>
+        ) : null}
+      </View>
+      <ChevronRight size={16} color={highlight ? '#0052ff' : '#94a3b8'} strokeWidth={2.5} />
+    </TouchableOpacity>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

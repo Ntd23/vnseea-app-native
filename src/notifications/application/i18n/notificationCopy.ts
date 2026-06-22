@@ -39,6 +39,8 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
     filterEvents: 'Sự kiện',
     noUnread: 'Bạn đã đọc hết thông báo',
     noUnreadDescription: 'Quay lại sau nhé, chúng tôi sẽ thông báo khi có gì mới.',
+    searchPlaceholder: 'Tìm kiếm thông báo',
+    noSearchResults: 'Không tìm thấy thông báo phù hợp',
   },
   en: {
     headerTitle: 'Notifications',
@@ -73,6 +75,8 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
     filterEvents: 'Events',
     noUnread: 'You are all caught up',
     noUnreadDescription: 'Come back later, we will let you know when something is new.',
+    searchPlaceholder: 'Search notifications',
+    noSearchResults: 'No notifications match your search',
   },
 };
 

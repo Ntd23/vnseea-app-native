@@ -54,7 +54,11 @@ type CreateAction = {
   route?: RootStackRouteName;
 };
 
-const actions: CreateAction[] = [
+// Exported so other screens (e.g. CreatePostScreen) can render a
+// preview of the most common actions inline and open this sheet for
+// the full list. Keep this as the single source of truth — any new
+// "create" type the app supports goes here first.
+export const CREATE_ACTIONS: CreateAction[] = [
   { key: 'post', Icon: ImagePlus, iconColor: '#1d4ed8', iconBg: '#eff6ff', route: ROUTES.CREATE_POST },
   { key: 'story', Icon: CircleDot, iconColor: '#7c3aed', iconBg: '#faf5ff', route: ROUTES.CREATE_STORY },
   { key: 'album', Icon: Images, iconColor: '#10b981', iconBg: '#ecfdf5', route: ROUTES.CREATE_ALBUM },
@@ -68,7 +72,9 @@ const actions: CreateAction[] = [
   { key: 'blog', Icon: FileText, iconColor: '#2563eb', iconBg: '#eff6ff', route: ROUTES.CREATE_BLOG },
 ];
 
-const SHEET_COPY = {
+const actions = CREATE_ACTIONS;
+
+export const CREATE_ACTIONS_COPY = {
   vi: {
     title: 'Tạo mới',
     actions: {
@@ -102,6 +108,8 @@ const SHEET_COPY = {
     },
   },
 };
+
+const SHEET_COPY = CREATE_ACTIONS_COPY;
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
