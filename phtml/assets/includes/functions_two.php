@@ -8687,4 +8687,145 @@ function updatePoints($price)
     $points_amount  = ($wo['config']['point_allow_withdrawal'] == 0) ? ($wo["user"]['points'] - $points) : $wo["user"]['points'];
     $query_one      = mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `points` = '{$points_amount}', `wallet` = '{$wallet_amount}' WHERE `user_id` = {$wo['user']['user_id']} ");
 }
+
+if (!function_exists('Wo_ApiVoipConfigValue')) {
+    function Wo_ApiVoipConfigValue($name, $default = '')
+    {
+        global $wo;
+        return isset($wo['config'][$name]) ? trim($wo['config'][$name]) : $default;
+    }
+}
+
+if (!function_exists('Wo_ApiVoipApnsEnvironment')) {
+    function Wo_ApiVoipApnsEnvironment()
+    {
+        $environment = strtolower(Wo_ApiVoipConfigValue('ios_voip_apns_environment', 'production'));
+        return in_array($environment, array('sandbox', 'development')) ? 'sandbox' : 'production';
+    }
+}
+
+if (!function_exists('Wo_ApiVoipApnsEndpoint')) {
+    function Wo_ApiVoipApnsEndpoint()
+    {
+        if (Wo_ApiVoipApnsEnvironment() == 'sandbox') {
+            return 'https://api.sandbox.push.apple.com/3/device/';
+        }
+        return 'https://api.push.apple.com/3/device/';
+    }
+}
+
+if (!function_exists('Wo_ApiVoipClearToken')) {
+    function Wo_ApiVoipClearToken($recipient)
+    {
+        global $sqlConnect;
+        $user_id = !empty($recipient['user_id']) ? intval($recipient['user_id']) : 0;
+        if ($user_id <= 0) {
+            return;
+        }
+        mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `ios_voip_token` = '' WHERE `user_id` = '" . Wo_Secure($user_id) . "'");
+    }
+}
+
+if (!function_exists('Wo_ApiVoipLog')) {
+    function Wo_ApiVoipLog($context, $notification_data, $recipient, $environment, $status, $apns_id, $reason)
+    {
+        $call_id = !empty($notification_data['call_id']) ? $notification_data['call_id'] : '-';
+        $user_id = !empty($recipient['user_id']) ? $recipient['user_id'] : '-';
+        error_log('[voip_apns] context=' . $context .
+            ' call_id=' . $call_id .
+            ' user_id=' . $user_id .
+            ' environment=' . $environment .
+            ' http=' . intval($status) .
+            ' apns_id=' . ($apns_id !== '' ? $apns_id : '-') .
+            ' reason=' . ($reason !== '' ? $reason : '-'));
+    }
+}
+
+if (!function_exists('Wo_ApiSendApnsVoipPush')) {
+    function Wo_ApiSendApnsVoipPush($recipient, $notification_data, $display_name, $call_type, $context)
+    {
+        if (Wo_ApiVoipConfigValue('ios_voip_enabled', '0') != '1') {
+            return false;
+        }
+        if (empty($recipient['ios_voip_token'])) {
+            return false;
+        }
+
+        $team_id = Wo_ApiVoipConfigValue('ios_voip_team_id');
+        $key_id = Wo_ApiVoipConfigValue('ios_voip_key_id');
+        $bundle_id = Wo_ApiVoipConfigValue('ios_voip_bundle_id');
+        $key_path = Wo_ApiVoipConfigValue('ios_voip_private_key_path');
+        if ($team_id === '' || $key_id === '' || $bundle_id === '' || $key_path === '' || !class_exists('\\Firebase\\JWT\\JWT')) {
+            return false;
+        }
+        if (!file_exists($key_path)) {
+            return false;
+        }
+
+        $private_key = file_get_contents($key_path);
+        if (empty($private_key)) {
+            return false;
+        }
+
+        $jwt = \Firebase\JWT\JWT::encode(array(
+            'iss' => $team_id,
+            'iat' => time()
+        ), $private_key, 'ES256', $key_id);
+        $body_prefix = ($context == 'group') ? 'Group ' : '';
+        $payload = array_merge($notification_data, array(
+            'aps' => array(
+                'alert' => array(
+                    'title' => $display_name,
+                    'body' => $body_prefix . (($call_type == 'video') ? 'Video call' : 'Audio call')
+                ),
+                'sound' => 'default',
+                'content-available' => 1
+            )
+        ));
+        $environment = Wo_ApiVoipApnsEnvironment();
+        $response_headers = array();
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, Wo_ApiVoipApnsEndpoint() . rawurlencode($recipient['ios_voip_token']));
+        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            'authorization: bearer ' . $jwt,
+            'apns-topic: ' . $bundle_id . '.voip',
+            'apns-push-type: voip',
+            'apns-priority: 10',
+            'apns-expiration: ' . (time() + 45),
+            'content-type: application/json'
+        ));
+        curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $header) use (&$response_headers) {
+            $length = strlen($header);
+            $parts = explode(':', $header, 2);
+            if (count($parts) == 2) {
+                $response_headers[strtolower(trim($parts[0]))] = trim($parts[1]);
+            }
+            return $length;
+        });
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+        $result = curl_exec($ch);
+        $error = curl_error($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $decoded = !empty($result) ? json_decode($result, true) : array();
+        $reason = (!empty($decoded['reason'])) ? $decoded['reason'] : $error;
+        $apns_id = !empty($response_headers['apns-id']) ? $response_headers['apns-id'] : '';
+        Wo_ApiVoipLog($context, $notification_data, $recipient, $environment, $status, $apns_id, $reason);
+
+        if (intval($status) == 410 && $reason == 'Unregistered') {
+            Wo_ApiVoipClearToken($recipient);
+        }
+        if (intval($status) == 400 && $reason == 'BadDeviceToken') {
+            error_log('[voip_apns] BadDeviceToken environment=' . $environment . ' user_id=' . (!empty($recipient['user_id']) ? $recipient['user_id'] : '-'));
+        }
+
+        return $status >= 200 && $status < 300;
+    }
+}
 ?>

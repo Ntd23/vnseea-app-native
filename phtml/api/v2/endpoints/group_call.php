@@ -237,57 +237,10 @@ function Wo_ApiGroupCallPublishRealtime($event, $group_call, $extra = array()) {
 }
 
 function Wo_ApiGroupCallSendVoipPush($recipient, $notification_data, $display_name, $call_type) {
-    global $wo;
-    if (empty($recipient['ios_voip_token'])) {
+    if (!function_exists('Wo_ApiSendApnsVoipPush')) {
         return false;
     }
-    $team_id = !empty($wo['config']['ios_voip_team_id']) ? trim($wo['config']['ios_voip_team_id']) : '';
-    $key_id = !empty($wo['config']['ios_voip_key_id']) ? trim($wo['config']['ios_voip_key_id']) : '';
-    $bundle_id = !empty($wo['config']['ios_voip_bundle_id']) ? trim($wo['config']['ios_voip_bundle_id']) : '';
-    $key_path = !empty($wo['config']['ios_voip_private_key_path']) ? trim($wo['config']['ios_voip_private_key_path']) : '';
-    if ($team_id === '' || $key_id === '' || $bundle_id === '' || $key_path === '' || !class_exists('\\Firebase\\JWT\\JWT')) {
-        return false;
-    }
-    if (!file_exists($key_path)) {
-        return false;
-    }
-    $private_key = file_get_contents($key_path);
-    if (empty($private_key)) {
-        return false;
-    }
-    $jwt = \Firebase\JWT\JWT::encode(array(
-        'iss' => $team_id,
-        'iat' => time()
-    ), $private_key, 'ES256', $key_id);
-    $payload = array_merge($notification_data, array(
-        'aps' => array(
-            'alert' => array(
-                'title' => $display_name,
-                'body' => ($call_type == 'video') ? 'Group video call' : 'Group audio call'
-            ),
-            'sound' => 'default',
-            'content-available' => 1
-        )
-    ));
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, 'https://api.push.apple.com/3/device/' . rawurlencode($recipient['ios_voip_token']));
-    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-        'authorization: bearer ' . $jwt,
-        'apns-topic: ' . $bundle_id . '.voip',
-        'apns-push-type: voip',
-        'apns-priority: 10',
-        'content-type: application/json'
-    ));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-    curl_exec($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    return $status >= 200 && $status < 300;
+    return Wo_ApiSendApnsVoipPush($recipient, $notification_data, $display_name, $call_type, 'group');
 }
 
 function Wo_ApiGroupCallSendPush($user_ids, $group_call, $caller) {
