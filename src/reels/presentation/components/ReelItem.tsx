@@ -59,6 +59,7 @@ import type { ReactionType, ReelsItem } from '../../domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../domain/types/reels.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { videoPlaybackTimes } from '../screens/reelsPlayback';
 
 const REEL_ITEM_COPY = {
   vi: {
@@ -241,17 +242,20 @@ function ReelItemBase({
 
   useEffect(() => {
     if (isCurrent && !prevIsCurrentRef.current) {
+      const savedTime = videoPlaybackTimes.get(String(item.id)) ?? 0;
       const hasInitialSeek = initialSeekTime !== undefined && initialSeekTime > 0;
-      if (seekTime === undefined && !hasInitialSeek) {
+      const targetTime = hasInitialSeek ? (initialSeekTime ?? 0) : savedTime;
+
+      if (seekTime === undefined) {
         if (isReady && videoRef.current) {
-          videoRef.current.seek(0);
+          videoRef.current.seek(targetTime);
         } else {
-          setSeekTime(0);
+          setSeekTime(targetTime);
         }
       }
     }
     prevIsCurrentRef.current = isCurrent;
-  }, [isCurrent, isReady, initialSeekTime]);
+  }, [isCurrent, isReady, initialSeekTime, item.id]);
 
   useEffect(() => {
     if (isActive) {
@@ -446,6 +450,7 @@ function ReelItemBase({
           onProgress={(data) => {
             if (!isSeeking && data?.currentTime !== undefined) {
               setCurrentTime(data.currentTime);
+              videoPlaybackTimes.set(String(item.id), data.currentTime);
             }
           }}
           onEnd={() => {

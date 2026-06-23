@@ -1,3 +1,5 @@
+export const videoPlaybackTimes = new Map<string, number>();
+
 export function isReelItemActive({
   isScreenFocused,
   isCommentsOpen,

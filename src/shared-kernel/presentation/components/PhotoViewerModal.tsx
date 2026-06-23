@@ -201,16 +201,16 @@ export function PhotoViewerModal({
       setCurrentIndex(state.initialIndex);
       translateY.value = 0;
       openProgress.value = 0;
-      openScale.value = 0.92;
+      openScale.value = 0.96;
       contentOpacity.value = 0;
       // Open animation: snappy fade-in + scale-up (parallel, native driver)
       openProgress.value = withTiming(1, {
         duration: 160,
         easing: Easing.out(Easing.cubic),
       });
-      openScale.value = withSpring(1, {
-        stiffness: 140,
-        damping: 12,
+      openScale.value = withTiming(1, {
+        duration: 160,
+        easing: Easing.out(Easing.quad),
       });
       contentOpacity.value = withTiming(1, {
         duration: 180,

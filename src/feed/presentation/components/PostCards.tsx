@@ -44,6 +44,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
+import { videoPlaybackTimes } from '../../../reels/presentation/screens/reelsPlayback';
 import type { RootStackParamList } from '../../../navigation/types';
 import type {
   FeedPost,
@@ -1018,7 +1019,7 @@ function ReactionIcon({
   );
 }
 
-// â”€â”€ HomeVideoPostCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── HomeVideoPostCard ─────────────────────────────────────────────────────────────
 export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   post,
   copy: providedCopy,
@@ -1028,6 +1029,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   onShare,
   onOpenReactions,
   isActive: controlledIsActive,
+  isScreenFocused,
   gestureX,
   gestureY,
   gestureActive,
@@ -1051,6 +1053,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
    */
   onOpenReactions?: (postId: string, post: FeedPost) => void;
   isActive?: boolean;
+  isScreenFocused?: boolean;
   gestureX?: any;
   gestureY?: any;
   gestureActive?: any;
@@ -1078,11 +1081,16 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
-  const isActive = controlledIsActive ?? trackedIsActive;
+  const isActive = controlledIsActive !== undefined
+    ? controlledIsActive
+    : (isScreenFocused !== false && trackedIsActive);
   const [manuallyPaused, setManuallyPaused] = useState(false);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(true);
   const [aspectRatio, setAspectRatio] = useState(16 / 9); // Default landscape
   const currentTimeRef = useRef<number>(0);
+  const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
+  const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
+  const [isReady, setIsReady] = useState(false);
 
   // Measure thumbnail size on mount to avoid layout jumps
   useEffect(() => {
@@ -1109,6 +1117,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // Refine aspect ratio when actual video loads
   const handleVideoLoad = useCallback((data: any) => {
     console.log('[HomeVideoPostCard] Video onLoad triggered, data:', data);
+    setIsReady(true);
     const size = data?.naturalSize ?? data;
     if (size) {
       const { width, height } = size;
@@ -1148,19 +1157,34 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     });
   }, [navigation, post]);
 
-  // â”€â”€ Mount strategy â€” keep player alive, just pause â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  //
-  // Keep VideoPlayer mounted while active (even when paused) â€” avoids the
-  // expensive ExoPlayer init/teardown cycle that causes frame drops on scroll.
-  const shouldMountVideo = isActive;
-  // Home feed video is muted by default. Users can opt into sound with the
-  // volume button, and we reset to muted once the card scrolls away.
+  // ── Mount strategy ──
+  const shouldMountVideo = isScreenFocused !== false;
+
   useEffect(() => {
-    if (!isActive) {
-      setManuallyPaused(false);
+    if (isActive) {
       setMuted(false);
+      const savedTime = videoPlaybackTimes.get(post.id);
+      if (savedTime !== undefined && savedTime > 0) {
+        if (isReady && videoRef.current) {
+          videoRef.current.seek(savedTime);
+        } else {
+          setSeekTime(savedTime);
+        }
+      }
+    } else {
+      setMuted(true);
+      setManuallyPaused(false);
+      setIsReady(false);
+      setSeekTime(undefined);
     }
-  }, [isActive]);
+  }, [isActive, isReady, post.id]);
+
+  useEffect(() => {
+    if (isActive && isReady && seekTime !== undefined && videoRef.current) {
+      videoRef.current.seek(seekTime);
+      setSeekTime(undefined);
+    }
+  }, [isActive, isReady, seekTime]);
 
   const playing = isActive && !manuallyPaused;
   const videoSource = useMemo(() => ({ uri: post.videoUrl }), [post.videoUrl]);
@@ -1220,6 +1244,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           {shouldMountVideo ? (
             <View pointerEvents="none" style={{ width: '100%', height: '100%' }}>
               <VideoPlayer
+                ref={videoRef}
                 source={videoSource}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
@@ -1235,6 +1260,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 onLoad={handleVideoLoad}
                 onProgress={data => {
                   currentTimeRef.current = data.currentTime;
+                  videoPlaybackTimes.set(post.id, data.currentTime);
                 }}
                 onError={error => {
                   console.warn(

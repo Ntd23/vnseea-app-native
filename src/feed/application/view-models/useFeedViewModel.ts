@@ -20,7 +20,7 @@
 // `posts` directly, those derived exports can be deleted.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { InteractionManager } from 'react-native';
+import { InteractionManager, DeviceEventEmitter } from 'react-native';
 import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedRepository';
 import { createPollRepository } from '../../../poll/infrastructure/repositories/ApiPollRepository';
 import type {
@@ -401,6 +401,41 @@ export function useFeedViewModel() {
       cacheVideoPostsAfterInteractions(videoPostsRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      'postReactionChanged',
+      (event: {
+        postId: string;
+        myReaction: ReactionType | null;
+        likeCount: number;
+        topReactions: ReactionType[];
+      }) => {
+        updatePostEverywhere(post => {
+          if (post.id !== event.postId) return post;
+          if (post.kind !== 'text' && post.kind !== 'video' && post.kind !== 'poll') {
+            return post;
+          }
+          const typedPost = post as FeedTextPost | FeedVideoPost | FeedPollPost;
+          if (
+            typedPost.myReaction === event.myReaction &&
+            typedPost.likeCount === event.likeCount
+          ) {
+            return post;
+          }
+          return {
+            ...post,
+            myReaction: event.myReaction,
+            likeCount: event.likeCount,
+            topReactions: event.topReactions,
+          };
+        });
+      },
+    );
+    return () => {
+      subscription.remove();
+    };
+  }, [updatePostEverywhere]);
 
   const ensureVideoBuffer = useCallback(
     (lightCount: number) => {
@@ -877,6 +912,8 @@ export function useFeedViewModel() {
     async (postId: string, nextReaction: ReactionType) => {
       let snapshot: FeedPost | undefined;
       let targetReaction: ReactionType | null = nextReaction;
+      let finalLikeCount = 0;
+      let finalTopReactions: ReactionType[] = [];
 
       updatePostEverywhere(post => {
         if (post.id !== postId) return post;
@@ -915,6 +952,9 @@ export function useFeedViewModel() {
           newTopReactions = [];
         }
 
+        finalLikeCount = likeCount;
+        finalTopReactions = newTopReactions;
+
         // The spread preserves `kind` so the discriminator survives -
         // TypeScript narrows correctly when consumers read the post.
         return {
@@ -926,12 +966,28 @@ export function useFeedViewModel() {
         };
       });
 
+      // Emit global reaction changed event
+      DeviceEventEmitter.emit('postReactionChanged', {
+        postId,
+        myReaction: targetReaction,
+        likeCount: finalLikeCount,
+        topReactions: finalTopReactions,
+      });
+
       try {
         await repository.setReaction(postId, targetReaction);
       } catch {
         if (snapshot) {
           const original = snapshot;
           updatePostEverywhere(post => (post.id === postId ? original : post));
+          // Re-emit original reaction on failure
+          const typedOriginal = original as FeedTextPost | FeedVideoPost | FeedPollPost;
+          DeviceEventEmitter.emit('postReactionChanged', {
+            postId,
+            myReaction: typedOriginal.myReaction,
+            likeCount: typedOriginal.likeCount,
+            topReactions: typedOriginal.topReactions,
+          });
         }
       }
     },

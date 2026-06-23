@@ -63,6 +63,8 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { ReelItem } from '../components/ReelItem';
 import { ReelCommentsSheet } from '../components/ReelCommentsSheet';
 import { ReelPublisherOverlay } from '../components/ReelPublisherOverlay';
+import { ReelsFilterTabs, type ReelsFilterSource } from '../components/ReelsFilterTabs';
+import { REELS_COPY } from '../../application/i18n/reelsCopy';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { isReelItemActive } from './reelsPlayback';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -85,28 +87,7 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as any;
 
-const REELS_COPY = {
-  vi: {
-    loading: 'Đang tải reels...',
-    failedLoad: 'Không tải được reels',
-    tryAgain: 'Thử lại',
-    noReels: 'Chưa có reel nào',
-    beFirst: 'Hãy là người đầu tiên đăng một video Reel!',
-    postReel: 'Đăng Reel',
-    autoOn: 'Tự động: Bật',
-    autoOff: 'Tự động: Tắt',
-  },
-  en: {
-    loading: 'Loading reels...',
-    failedLoad: 'Failed to load reels',
-    tryAgain: 'Try again',
-    noReels: 'No reels yet',
-    beFirst: 'Be the first one to post a Reel!',
-    postReel: 'Post Reel',
-    autoOn: 'Auto: On',
-    autoOff: 'Auto: Off',
-  },
-};
+
 
 const reelsStorage = createMMKV({ id: 'vnseea-reels-settings' });
 
@@ -118,6 +99,12 @@ export default function ReelsScreen() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
     return reelsStorage.getBoolean('reels.autoScroll') ?? false;
   });
+
+ // Filter tab the user is currently on. We render 'videos' as the
+ // active tab because Reels IS the videos destination, but we keep
+ // the data filter independent (default 'all' = show every reel).
+ const [activeFilter, setActiveFilter] = useState<ReelsFilterSource>('videos');
+
 
   const toggleAutoScroll = useCallback(() => {
     setAutoScrollEnabled(prev => {
@@ -564,6 +551,28 @@ export default function ReelsScreen() {
     rootNavigator.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
   }, [navigation]);
 
+  // Filter tab handler — placed AFTER navigateToFeed because it
+  // references that function. Order: update active state first
+  // so the UI flips immediately, then run navigation side-effect.
+  const handleFilterChange = useCallback((next: ReelsFilterSource) => {
+  if (next === 'videos') {
+  setActiveFilter('videos');
+  return;
+  }
+  if (next === 'all' || next === 'photos') {
+  navigateToFeed();
+  return;
+  }
+  if (next === 'locations') {
+  navigation.navigate(ROUTES.NEARBY_USERS);
+  return;
+  }
+  if (next === 'market') {
+  navigation.navigate(ROUTES.MARKETPLACE);
+  return;
+  }
+  }, [navigateToFeed, navigation]);
+
   const goBackToFeed = useCallback(() => {
     // Prefer goBack when this screen sits on top of a stack — it POPS
     // the screen entirely, so the next visit re-mounts with fresh state
@@ -770,8 +779,19 @@ export default function ReelsScreen() {
             Page Detail, Profile, Saved, My Videos…). Only falls back
             to a Home tab-switch when there's nothing to pop (e.g.
             Reels was launched as the very first tab). */}
-        {/* Floating Header Overlay */}
-        <View style={[styles.headerOverlay, { top: Math.max(insets.top, 12) }]}>
+        {/* Filter tabs bar — sits ABOVE the back/auto/mute header so the
+         user can hop to other sections (Locations, Market) without
+         leaving the video surface. Dark capsule to match the video bg. */}
+        <ReelsFilterTabs
+         copy={copy}
+         activeSource={activeFilter}
+         onChangeSource={handleFilterChange}
+         topInset={Math.max(insets.top, 12)}
+         style={styles.filterBarOffset}
+         />
+
+        {/* Floating Header Overlay — shifted down to clear the filter bar. */}
+        <View style={[styles.headerOverlay, { top: Math.max(insets.top, 12) + 64 }]}>
           {/* Left: Back button (if stack navigator has back capability) */}
           {!isIosTabRoute ? (
             <TouchableOpacity
@@ -871,6 +891,7 @@ export default function ReelsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   list: { flex: 1, backgroundColor: '#000' },
+ filterBarOffset: { position: 'absolute', left: 0, right: 0, top: 0, zIndex: 11 },
   headerOverlay: {
     position: 'absolute',
     left: 12,

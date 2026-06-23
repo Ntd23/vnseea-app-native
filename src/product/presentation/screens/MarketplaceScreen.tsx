@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Modal,
   type ListRenderItemInfo,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -26,6 +27,9 @@ import {
   ShoppingCart,
   SlidersHorizontal,
   X,
+  ChevronDown,
+  Check,
+  MapPin,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -157,20 +161,10 @@ function DistanceSlider({
 
   return (
     <View>
-      <View className="mb-3 flex-row items-center justify-between">
-        <View>
-          <Text className="text-caption-primary">Khoảng cách</Text>
-          <Text className="mt-0.5 text-caption-secondary">
-            {value ? `Trong phạm vi ${value} km` : 'Chưa áp dụng'}
-          </Text>
-        </View>
-        <TouchableOpacity
-          className="rounded-full border border-slate-200 bg-white px-3 py-2"
-          activeOpacity={0.8}
-          onPress={() => onChange(undefined)}
-        >
-          <Text className="text-caption-secondary">Tắt</Text>
-        </TouchableOpacity>
+      <View className="mb-2">
+        <Text className="text-caption-secondary font-medium">
+          Tùy chỉnh khoảng cách: {value ? `${value} km` : '25 km (Mặc định)'}
+        </Text>
       </View>
 
       <View
@@ -201,6 +195,186 @@ function DistanceSlider({
   );
 }
 
+function FilterPickerModal<T>({
+  visible,
+  title,
+  options,
+  selectedValue,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  options: Array<{ label: string; value: T }>;
+  selectedValue: T;
+  onSelect: (value: T) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        activeOpacity={1}
+        className="flex-1 justify-end bg-black/40"
+        onPress={onClose}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          className="bg-white rounded-t-3xl px-5 pb-8 pt-5"
+          style={{ maxHeight: '70%' }}
+        >
+          <View className="flex-row items-center justify-between pb-4 border-b border-slate-100 mb-2">
+            <Text className="text-lg font-bold text-slate-800">{title}</Text>
+            <TouchableOpacity
+              className="h-8 w-8 items-center justify-center rounded-full bg-slate-100"
+              activeOpacity={0.8}
+              onPress={onClose}
+            >
+              <X size={16} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+
+          <FlatList
+            data={options}
+            keyExtractor={(_, index) => String(index)}
+            renderItem={({ item }) => {
+              const isSelected = item.value === selectedValue;
+              return (
+                <TouchableOpacity
+                  className="flex-row items-center justify-between py-3.5 border-b border-slate-50"
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    onSelect(item.value);
+                    onClose();
+                  }}
+                >
+                  <Text
+                    className={`text-body-primary text-base ${
+                      isSelected ? 'text-blue-600 font-semibold' : 'text-slate-700'
+                    }`}
+                  >
+                    {item.label}
+                  </Text>
+                  {isSelected ? <Check size={18} color="#0000FF" /> : null}
+                </TouchableOpacity>
+              );
+            }}
+            showsVerticalScrollIndicator={false}
+          />
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+function DistancePickerModal({
+  visible,
+  value,
+  error,
+  onChange,
+  onClose,
+}: {
+  visible: boolean;
+  value: number | undefined;
+  error: string | null;
+  onChange: (value: number | undefined) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        activeOpacity={1}
+        className="flex-1 justify-end bg-black/40"
+        onPress={onClose}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          className="bg-white rounded-t-3xl px-5 pb-8 pt-5"
+        >
+          <View className="flex-row items-center justify-between pb-4 border-b border-slate-100 mb-5">
+            <Text className="text-lg font-bold text-slate-800">Khoảng cách vị trí</Text>
+            <TouchableOpacity
+              className="h-8 w-8 items-center justify-center rounded-full bg-slate-100"
+              activeOpacity={0.8}
+              onPress={onClose}
+            >
+              <X size={16} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick Select Buttons */}
+          <View className="mb-6">
+            <Text className="text-caption-primary mb-2.5 font-medium">Chọn nhanh</Text>
+            <View className="flex-row flex-wrap gap-2">
+              {[
+                { label: 'Tắt', value: undefined },
+                { label: '5 km', value: 5 },
+                { label: '10 km', value: 10 },
+                { label: '25 km', value: 25 },
+                { label: '50 km', value: 50 },
+                { label: '100 km', value: 100 },
+              ].map((opt, idx) => {
+                const isActive = opt.value === value;
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    className={`rounded-full border px-4 py-2 ${
+                      isActive
+                        ? 'border-blue-600 bg-blue-50'
+                        : 'border-slate-200 bg-white'
+                    }`}
+                    activeOpacity={0.8}
+                    onPress={() => onChange(opt.value)}
+                  >
+                    <Text
+                      className={
+                        isActive
+                          ? 'text-caption-primary font-semibold text-blue-600'
+                          : 'text-caption-secondary'
+                      }
+                    >
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Custom distance slider */}
+          <View className="border-t border-slate-100 pt-5 mb-4">
+            <DistanceSlider
+              value={value}
+              error={error}
+              onChange={onChange}
+            />
+          </View>
+
+          {/* Apply button */}
+          <TouchableOpacity
+            className="btn-primary h-12 w-full items-center justify-center rounded-xl bg-blue-600 mt-4"
+            activeOpacity={0.9}
+            onPress={onClose}
+          >
+            <Text className="text-caption-primary font-bold text-white">
+              Áp dụng
+            </Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 function MarketplaceScreen() {
   const navigation = useNavigation<MarketplaceNav>();
   const insets = useSafeAreaInsets();
@@ -209,6 +383,41 @@ function MarketplaceScreen() {
     createNativeTabScrollPublisherState(),
   );
   const hasActiveFilters = Boolean(vm.categoryId || vm.distance || vm.orderBy);
+
+  const [sortModalVisible, setSortModalVisible] = useState(false);
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [distanceModalVisible, setDistanceModalVisible] = useState(false);
+
+  const currentSortLabel = useMemo(() => {
+    const option = SORT_OPTIONS.find(opt => opt.value === vm.orderBy);
+    return option ? option.label : 'Mới đăng';
+  }, [vm.orderBy]);
+
+  const currentCategoryLabel = useMemo(() => {
+    if (vm.categoryId === undefined) return 'Thể loại';
+    const category = vm.categories.find(cat => cat.id === vm.categoryId);
+    return category ? category.label : 'Thể loại';
+  }, [vm.categoryId, vm.categories]);
+
+  const currentDistanceLabel = useMemo(() => {
+    if (vm.distance === undefined) return 'Khoảng cách vị trí';
+    return `Phạm vi ${vm.distance} km`;
+  }, [vm.distance]);
+
+  const handleNearbyStoresToggle = useCallback(() => {
+    if (vm.distance === 15) {
+      vm.setDistance(undefined);
+    } else {
+      vm.setDistance(15);
+    }
+  }, [vm.distance, vm.setDistance]);
+
+  const categoryOptions = useMemo(() => {
+    return [
+      { label: 'Tất cả thể loại', value: undefined },
+      ...vm.categories.map(c => ({ label: c.label, value: c.id })),
+    ];
+  }, [vm.categories]);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return undefined;
@@ -313,8 +522,9 @@ function MarketplaceScreen() {
       </View>
 
       <View className="px-4 pb-3 pt-4">
-        <View className="flex-row items-center gap-2">
-          <View className="input-shell flex-1 flex-row items-center px-4">
+        <View className="surface-panel gap-3 p-4 rounded-2xl border border-slate-100 bg-white shadow-sm">
+          {/* Row 1: Search Input */}
+          <View className="input-shell flex-row items-center px-4 bg-slate-50 border border-slate-200 rounded-xl">
             <Search size={19} color="#64748B" />
             <TextInput
               className="ml-3 min-h-[46px] flex-1 text-body-primary"
@@ -335,122 +545,71 @@ function MarketplaceScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
-          <TouchableOpacity
-            className={`h-12 w-12 items-center justify-center rounded-2xl border ${
-              hasActiveFilters
-                ? 'border-blue-600 bg-blue-50'
-                : 'border-slate-200 bg-white'
-            }`}
-            activeOpacity={0.8}
-            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-            onPress={vm.toggleFilters}
-          >
-            <SlidersHorizontal size={20} color="#0000FF" />
-          </TouchableOpacity>
-        </View>
 
-        {vm.filtersVisible ? (
-          <View className="surface-panel mt-3 gap-4 px-4 py-4">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-title-primary">Bộ lọc</Text>
-              <TouchableOpacity
-                className="h-9 w-9 items-center justify-center rounded-full bg-slate-100"
-                activeOpacity={0.8}
-                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                onPress={vm.resetFilters}
-              >
-                <RotateCcw size={17} color="#64748B" />
-              </TouchableOpacity>
-            </View>
+          {/* Row 2: Sort and Category Dropdowns */}
+          <View className="flex-row gap-2">
+            <TouchableOpacity
+              className="flex-1 flex-row items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-3"
+              activeOpacity={0.8}
+              onPress={() => setSortModalVisible(true)}
+            >
+              <Text className="text-body-primary text-sm font-semibold" numberOfLines={1}>
+                {currentSortLabel}
+              </Text>
+              <ChevronDown size={15} color="#64748B" />
+            </TouchableOpacity>
 
-            <View>
-              <Text className="mb-2 text-caption-primary">Sắp xếp theo</Text>
-              <View className="flex-row flex-wrap gap-2">
-                {SORT_OPTIONS.map(option => {
-                  const isActive = option.value === vm.orderBy;
-                  return (
-                    <TouchableOpacity
-                      key={option.label}
-                      className={`rounded-full border px-3 py-2 ${
-                        isActive
-                          ? 'border-blue-600 bg-blue-50'
-                          : 'border-slate-200 bg-white'
-                      }`}
-                      activeOpacity={0.8}
-                      onPress={() => vm.setOrderBy(option.value)}
-                    >
-                      <Text
-                        className={
-                          isActive
-                            ? 'text-caption-primary text-brand'
-                            : 'text-caption-secondary'
-                        }
-                      >
-                        {option.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            <View>
-              <Text className="mb-2 text-caption-primary">Thể loại</Text>
-              <View className="flex-row flex-wrap gap-2">
-                <TouchableOpacity
-                  className={`rounded-full border px-3 py-2 ${
-                    vm.categoryId
-                      ? 'border-slate-200 bg-white'
-                      : 'border-blue-600 bg-blue-50'
-                  }`}
-                  activeOpacity={0.8}
-                  onPress={() => vm.setCategoryId(undefined)}
-                >
-                  <Text
-                    className={
-                      vm.categoryId
-                        ? 'text-caption-secondary'
-                        : 'text-caption-primary text-brand'
-                    }
-                  >
-                    Tất cả
-                  </Text>
-                </TouchableOpacity>
-                {vm.categories.map(category => {
-                  const isActive = category.id === vm.categoryId;
-                  return (
-                    <TouchableOpacity
-                      key={category.id}
-                      className={`rounded-full border px-3 py-2 ${
-                        isActive
-                          ? 'border-blue-600 bg-blue-50'
-                          : 'border-slate-200 bg-white'
-                      }`}
-                      activeOpacity={0.8}
-                      onPress={() => vm.setCategoryId(category.id)}
-                    >
-                      <Text
-                        className={
-                          isActive
-                            ? 'text-caption-primary text-brand'
-                            : 'text-caption-secondary'
-                        }
-                      >
-                        {category.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            <DistanceSlider
-              value={vm.distance}
-              error={vm.distanceFilterError}
-              onChange={vm.setDistance}
-            />
+            <TouchableOpacity
+              className="flex-1 flex-row items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-3"
+              activeOpacity={0.8}
+              onPress={() => setCategoryModalVisible(true)}
+            >
+              <Text className="text-body-primary text-sm font-semibold" numberOfLines={1}>
+                {currentCategoryLabel}
+              </Text>
+              <ChevronDown size={15} color="#64748B" />
+            </TouchableOpacity>
           </View>
-        ) : null}
+
+          {/* Row 3: Distance Dropdown */}
+          <TouchableOpacity
+            className="flex-row items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-3"
+            activeOpacity={0.8}
+            onPress={() => setDistanceModalVisible(true)}
+          >
+            <View className="flex-row items-center gap-2">
+              <MapPin size={16} color="#0000FF" />
+              <Text className="text-body-primary text-sm font-semibold">
+                {currentDistanceLabel}
+              </Text>
+            </View>
+            <ChevronDown size={15} color="#64748B" />
+          </TouchableOpacity>
+
+          {/* Row 4: Nearby stores button and Reset button */}
+          <View className="flex-row gap-2 mt-1">
+            <TouchableOpacity
+              className={`flex-1 h-11 items-center justify-center rounded-xl flex-row gap-2 ${
+                vm.distance === 15 ? 'bg-blue-700' : 'bg-blue-600'
+              }`}
+              activeOpacity={0.9}
+              onPress={handleNearbyStoresToggle}
+            >
+              <MapPin size={16} color="#FFFFFF" />
+              <Text className="text-caption-primary font-bold text-white text-sm">
+                Cửa hàng lân cận (15 km)
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50"
+              activeOpacity={0.8}
+              onPress={vm.resetFilters}
+            >
+              <RotateCcw size={17} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     </>
   );
@@ -500,6 +659,31 @@ function MarketplaceScreen() {
             <ActivityIndicator className="py-6" size="small" color="#0000FF" />
           ) : null
         }
+      />
+      <FilterPickerModal
+        visible={sortModalVisible}
+        title="Sắp xếp theo"
+        options={SORT_OPTIONS}
+        selectedValue={vm.orderBy}
+        onSelect={vm.setOrderBy}
+        onClose={() => setSortModalVisible(false)}
+      />
+
+      <FilterPickerModal
+        visible={categoryModalVisible}
+        title="Thể loại"
+        options={categoryOptions}
+        selectedValue={vm.categoryId}
+        onSelect={vm.setCategoryId}
+        onClose={() => setCategoryModalVisible(false)}
+      />
+
+      <DistancePickerModal
+        visible={distanceModalVisible}
+        value={vm.distance}
+        error={vm.distanceFilterError}
+        onChange={vm.setDistance}
+        onClose={() => setDistanceModalVisible(false)}
       />
     </SafeAreaView>
   );

@@ -2483,6 +2483,7 @@ function FeedScreen() {
           onOpenReactions={openReactionsSheet}
           navigateToProfile={navigateToProfile}
           onOpenPostMenu={handleOpenPostMenu}
+          isScreenFocused={isFeedTabFocused}
         />
       </View>
     ),
@@ -2496,6 +2497,7 @@ function FeedScreen() {
       setFeedVideoRef,
       handleToggleReactionStable,
       openReactionsSheet,
+      isFeedTabFocused,
     ],
   );
 
