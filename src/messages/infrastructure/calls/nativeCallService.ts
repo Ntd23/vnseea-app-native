@@ -337,13 +337,23 @@ function registerOneSignalCallListeners() {
       );
       if (incomingGroupCall) {
         event.preventDefault();
-        listeners.onIncomingGroup?.(incomingGroupCall);
+        if (Platform.OS === 'ios') {
+          displayNativeIncomingGroupCall(incomingGroupCall).catch(
+            () => undefined,
+          );
+        } else {
+          listeners.onIncomingGroup?.(incomingGroupCall);
+        }
         return;
       }
       if (!incomingCall) return;
 
       event.preventDefault();
-      listeners.onIncoming?.(incomingCall);
+      if (Platform.OS === 'ios') {
+        displayNativeIncomingCall(incomingCall).catch(() => undefined);
+      } else {
+        listeners.onIncoming?.(incomingCall);
+      }
     },
   );
   OneSignal.Notifications.addEventListener(

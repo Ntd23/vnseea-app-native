@@ -37,6 +37,7 @@ import { navigationRef } from '../../../navigation/navigationRef';
 import { requestCallMediaPermissions } from '../../../shared-kernel/application/utils/microphonePermission';
 import type {
   IncomingLiveKitCall,
+  LiveKitCallCheckResult,
   LiveKitCallPeer,
   LiveKitCallRouteParams,
   LiveKitCallType,
@@ -141,12 +142,39 @@ const OUTGOING_RING_TIMEOUT_MS = 43_000;
 const OUTGOING_ANSWER_WATCHDOG_INTERVAL_MS = 650;
 const CONNECTED_CALL_SYNC_INTERVAL_MS = 2_000;
 const LIVEKIT_CALL_DATA_TOPIC = 'vnseea-call-event';
+const CALL_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 const LIVEKIT_ROOM_OPTIONS = {
   adaptiveStream: { pixelDensity: 'screen' },
 } as const;
 
 const LiveKitCallSessionContext =
   createContext<LiveKitCallSessionContextValue | null>(null);
+
+function serializeCallDebugError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+  return {
+    message: String(error),
+  };
+}
+
+function logCallDebug(event: string, data: Record<string, unknown> = {}) {
+  const payload = {
+    event,
+    at: new Date().toISOString(),
+    ...data,
+  };
+
+  try {
+    console.log(CALL_DEBUG_PREFIX, JSON.stringify(payload));
+  } catch {
+    console.log(CALL_DEBUG_PREFIX, event, data);
+  }
+}
 
 function disconnectRoomSafely(room: Room | null) {
   if (!room || room.state === ConnectionState.Disconnected) return;
@@ -360,10 +388,6 @@ function resolveServerStartedAtMs(
     return timing.call.startedAtMs;
   }
   return startedAt > 0 ? startedAt * 1000 : 0;
-}
-
-function localStartedAtFromElapsed(elapsedSeconds: number) {
-  return Date.now() - Math.max(0, elapsedSeconds) * 1000;
 }
 
 function resolveLocalStartedAtFromServer(
@@ -836,7 +860,41 @@ export function LiveKitCallSessionProvider({
     ) => {
       patchSession({ phase: 'connecting' });
       await AudioSession.startAudioSession().catch(() => undefined);
-      const nextPayload = await repository.getJoinPayload({ callId, callType });
+      logCallDebug('payload_request', {
+        callId,
+        callType,
+        callUuid,
+      });
+      let nextPayload: LiveKitJoinPayload;
+      try {
+        nextPayload = await repository.getJoinPayload({ callId, callType });
+      } catch (payloadError) {
+        logCallDebug('payload_error', {
+          callId,
+          callType,
+          callUuid,
+          error: serializeCallDebugError(payloadError),
+        });
+        throw payloadError;
+      }
+      logCallDebug('payload_response', {
+        callId,
+        callType,
+        callUuid,
+        wsUrl: nextPayload.wsUrl,
+        roomName: nextPayload.call.roomName,
+        sourceRoomName: nextPayload.call.sourceRoomName,
+        callStatus: nextPayload.call.status,
+        startedAt: nextPayload.call.startedAt,
+        startedAtMs: nextPayload.call.startedAtMs,
+        elapsedSeconds: nextPayload.elapsedSeconds,
+        elapsedMs: nextPayload.elapsedMs,
+        serverNow: nextPayload.serverNow,
+        serverNowMs: nextPayload.serverNowMs,
+        currentUserId: nextPayload.currentUser.id,
+        peerId: nextPayload.peer?.id,
+        tokenLength: nextPayload.token.length,
+      });
       const payloadStartedAt = nextPayload.call.startedAt;
       const overrideStartedAt = timingOverride?.startedAt ?? 0;
       const shouldUsePayloadTiming = hasUsableTimerTiming(
@@ -872,6 +930,13 @@ export function LiveKitCallSessionProvider({
 
       const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS);
       const handleDisconnected = (reason?: DisconnectReason) => {
+        logCallDebug('room_disconnected', {
+          callId,
+          callType,
+          callUuid,
+          roomName: nextPayload.call.roomName,
+          reason: reason ? String(reason) : '',
+        });
         if (closeSentRef.current) return;
         patchSession({
           mediaErrorText: reason
@@ -881,6 +946,14 @@ export function LiveKitCallSessionProvider({
       };
       const handleMediaDeviceError = (error: Error) => {
         const failure = MediaDeviceFailure.getFailure(error);
+        logCallDebug('media_device_error', {
+          callId,
+          callType,
+          callUuid,
+          roomName: nextPayload.call.roomName,
+          failure: failure ? String(failure) : '',
+          error: serializeCallDebugError(error),
+        });
         patchSession({
           mediaErrorText: failure
             ? `Không mở được thiết bị media: ${String(failure)}.`
@@ -888,8 +961,42 @@ export function LiveKitCallSessionProvider({
         });
       };
       const handleEncryptionError = () => {
+        logCallDebug('encryption_error', {
+          callId,
+          callType,
+          callUuid,
+          roomName: nextPayload.call.roomName,
+        });
         patchSession({
           mediaErrorText: 'Không thể mã hóa kết nối media.',
+        });
+      };
+      const handleConnected = () => {
+        logCallDebug('room_connected', {
+          callId,
+          callType,
+          callUuid,
+          roomName: nextPayload.call.roomName,
+          sourceRoomName: nextPayload.call.sourceRoomName,
+          connectionState: String(nextRoom.state),
+          localIdentity: nextRoom.localParticipant.identity,
+          remoteParticipants: nextRoom.remoteParticipants.size,
+        });
+      };
+      const handleParticipantConnected = (participant: {
+        identity?: string;
+        sid?: string;
+        name?: string;
+      }) => {
+        logCallDebug('participant_connected', {
+          callId,
+          callType,
+          callUuid,
+          roomName: nextPayload.call.roomName,
+          participantIdentity: participant.identity,
+          participantSid: participant.sid,
+          participantName: participant.name,
+          remoteParticipants: nextRoom.remoteParticipants.size,
         });
       };
       const handleParticipantDisconnected = () => {
@@ -897,6 +1004,24 @@ export function LiveKitCallSessionProvider({
         if (!current || closeSentRef.current) return;
         closeSentRef.current = true;
         finishSession();
+      };
+      const handleTrackSubscribed = (
+        track?: { kind?: string; source?: string; sid?: string },
+        publication?: { kind?: string; source?: string; trackSid?: string },
+        participant?: { identity?: string; sid?: string; name?: string },
+      ) => {
+        logCallDebug('track_subscribed', {
+          callId,
+          callType,
+          callUuid,
+          roomName: nextPayload.call.roomName,
+          trackKind: track?.kind ?? publication?.kind,
+          trackSource: track?.source ?? publication?.source,
+          trackSid: track?.sid ?? publication?.trackSid,
+          participantIdentity: participant?.identity,
+          participantSid: participant?.sid,
+          participantName: participant?.name,
+        });
       };
       const handleDataReceived = (
         payload: Uint8Array,
@@ -930,20 +1055,26 @@ export function LiveKitCallSessionProvider({
       };
 
       nextRoom
+        .on(RoomEvent.Connected, handleConnected)
         .on(RoomEvent.Disconnected, handleDisconnected)
         .on(RoomEvent.MediaDevicesError, handleMediaDeviceError)
         .on(RoomEvent.EncryptionError, handleEncryptionError)
+        .on(RoomEvent.ParticipantConnected, handleParticipantConnected)
         .on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected)
+        .on(RoomEvent.TrackSubscribed, handleTrackSubscribed)
         .on(RoomEvent.DataReceived, handleDataReceived);
       roomEventCleanupRef.current = () => {
         nextRoom
+          .off(RoomEvent.Connected, handleConnected)
           .off(RoomEvent.Disconnected, handleDisconnected)
           .off(RoomEvent.MediaDevicesError, handleMediaDeviceError)
           .off(RoomEvent.EncryptionError, handleEncryptionError)
+          .off(RoomEvent.ParticipantConnected, handleParticipantConnected)
           .off(
             RoomEvent.ParticipantDisconnected,
             handleParticipantDisconnected,
           )
+          .off(RoomEvent.TrackSubscribed, handleTrackSubscribed)
           .off(RoomEvent.DataReceived, handleDataReceived);
       };
 
@@ -968,14 +1099,93 @@ export function LiveKitCallSessionProvider({
         return next;
       });
       try {
+        logCallDebug('room_connect_start', {
+          callId,
+          callType,
+          callUuid,
+          wsUrl: nextPayload.wsUrl,
+          roomName: nextPayload.call.roomName,
+        });
         await nextRoom.connect(nextPayload.wsUrl, nextPayload.token);
-        await Promise.all([
-          nextRoom.localParticipant.setMicrophoneEnabled(true),
-          callType === 'video'
-            ? nextRoom.localParticipant.setCameraEnabled(true)
-            : Promise.resolve(),
-        ]);
+        logCallDebug('room_connect_success', {
+          callId,
+          callType,
+          callUuid,
+          roomName: nextPayload.call.roomName,
+          connectionState: String(nextRoom.state),
+        });
+        try {
+          logCallDebug('local_microphone_enable_start', {
+            callId,
+            callType,
+            callUuid,
+            roomName: nextPayload.call.roomName,
+          });
+          await nextRoom.localParticipant.setMicrophoneEnabled(true);
+          logCallDebug('local_microphone_enabled', {
+            callId,
+            callType,
+            callUuid,
+            roomName: nextPayload.call.roomName,
+            enabled: true,
+          });
+        } catch (microphoneError) {
+          logCallDebug('local_microphone_enabled', {
+            callId,
+            callType,
+            callUuid,
+            roomName: nextPayload.call.roomName,
+            enabled: false,
+            error: serializeCallDebugError(microphoneError),
+          });
+          throw microphoneError;
+        }
+
+        if (callType === 'video') {
+          try {
+            logCallDebug('local_camera_enable_start', {
+              callId,
+              callType,
+              callUuid,
+              roomName: nextPayload.call.roomName,
+            });
+            await nextRoom.localParticipant.setCameraEnabled(true);
+            logCallDebug('local_camera_enabled', {
+              callId,
+              callType,
+              callUuid,
+              roomName: nextPayload.call.roomName,
+              enabled: true,
+            });
+          } catch (cameraError) {
+            logCallDebug('local_camera_enabled', {
+              callId,
+              callType,
+              callUuid,
+              roomName: nextPayload.call.roomName,
+              enabled: false,
+              error: serializeCallDebugError(cameraError),
+            });
+            throw cameraError;
+          }
+        } else {
+          logCallDebug('local_camera_enabled', {
+            callId,
+            callType,
+            callUuid,
+            roomName: nextPayload.call.roomName,
+            enabled: false,
+            skipped: true,
+          });
+        }
       } catch (caught) {
+        logCallDebug('room_connect_error', {
+          callId,
+          callType,
+          callUuid,
+          roomName: nextPayload.call.roomName,
+          error: serializeCallDebugError(caught),
+        });
         disconnectActiveRoom();
         throw caught;
       }
@@ -1170,21 +1380,21 @@ export function LiveKitCallSessionProvider({
         });
 
         const checkAnsweredAndJoin = async () => {
-          const current = sessionRef.current;
+          const activeSession = sessionRef.current;
           const roomState = activeRoomRef.current?.state;
           const isAlreadyJoiningOrConnected =
-            current?.phase === 'connecting' ||
-            current?.phase === 'connected' ||
-            Boolean(current?.payload) ||
+            activeSession?.phase === 'connecting' ||
+            activeSession?.phase === 'connected' ||
+            Boolean(activeSession?.payload) ||
             (roomState !== undefined &&
               roomState !== ConnectionState.Disconnected);
 
           if (isAlreadyJoiningOrConnected) return true;
           if (
-            !current ||
-            current.direction !== 'outgoing' ||
-            current.callId !== nextCallId ||
-            current.phase !== 'ringing'
+            !activeSession ||
+            activeSession.direction !== 'outgoing' ||
+            activeSession.callId !== nextCallId ||
+            activeSession.phase !== 'ringing'
           ) {
             return true;
           }
@@ -1300,6 +1510,11 @@ export function LiveKitCallSessionProvider({
 
       async function boot() {
         const isGranted = await requestCallMediaPermissions(call.callType);
+        logCallDebug('media_permission_result', {
+          callId: call.callId,
+          callType: call.callType,
+          granted: isGranted,
+        });
         if (!isGranted) {
           throw new Error(formatPermissionError(call.callType));
         }
@@ -1307,9 +1522,46 @@ export function LiveKitCallSessionProvider({
 
         const nextUuid = createNativeCallUuid(call.callId, call.callType);
         patchSession({ nativeCallUuid: nextUuid });
-        const answerTiming = await repository.answerCall({
+        logCallDebug('callkit_answer_start', {
           callId: call.callId,
           callType: call.callType,
+          callUuid: nextUuid,
+          peerId: call.peer.id,
+          peerName: call.peer.name,
+        });
+        logCallDebug('answer_request', {
+          callId: call.callId,
+          callType: call.callType,
+          callUuid: nextUuid,
+        });
+        let answerTiming: LiveKitCallCheckResult;
+        try {
+          answerTiming = await repository.answerCall({
+            callId: call.callId,
+            callType: call.callType,
+          });
+        } catch (answerError) {
+          logCallDebug('answer_error', {
+            callId: call.callId,
+            callType: call.callType,
+            callUuid: nextUuid,
+            error: serializeCallDebugError(answerError),
+          });
+          throw answerError;
+        }
+        logCallDebug('answer_response', {
+          callId: call.callId,
+          callType: call.callType,
+          callUuid: nextUuid,
+          status: answerTiming.status,
+          active: answerTiming.active,
+          finished: answerTiming.finished,
+          startedAt: answerTiming.startedAt,
+          startedAtMs: answerTiming.startedAtMs,
+          elapsedSeconds: answerTiming.elapsedSeconds,
+          elapsedMs: answerTiming.elapsedMs,
+          serverNow: answerTiming.serverNow,
+          serverNowMs: answerTiming.serverNowMs,
         });
         if (call.peer.id) {
           emitLiveKitCallAnswered({
@@ -1333,6 +1585,11 @@ export function LiveKitCallSessionProvider({
       }
 
       boot().catch(caught => {
+        logCallDebug('incoming_boot_error', {
+          callId: call.callId,
+          callType: call.callType,
+          error: serializeCallDebugError(caught),
+        });
         patchSession({
           phase: 'error',
           error:
@@ -1476,8 +1733,30 @@ export function LiveKitCallSessionProvider({
             callId: current.callId,
             callType: current.callType,
           })
-          .catch(() => null);
+          .catch(checkError => {
+            logCallDebug('check_error', {
+              callId: current.callId,
+              callType: current.callType,
+              phase: current.phase,
+              error: serializeCallDebugError(checkError),
+            });
+            return null;
+          });
         if (!status) return;
+        logCallDebug('check_response', {
+          callId: current.callId,
+          callType: current.callType,
+          phase: current.phase,
+          status: status.status,
+          active: status.active,
+          finished: status.finished,
+          startedAt: status.startedAt,
+          startedAtMs: status.startedAtMs,
+          elapsedSeconds: status.elapsedSeconds,
+          elapsedMs: status.elapsedMs,
+          serverNow: status.serverNow,
+          serverNowMs: status.serverNowMs,
+        });
 
         if (status.finished) {
           closeSentRef.current = true;

@@ -549,7 +549,7 @@ else if ($action == 'native_action') {
                 ? Wo_ApiGroupCallError('decline_failed', 'Could not decline group call invite.', 404)
                 : array('api_status' => 200);
         }
-        else if ($call_action == 'leave') {
+        else if ($call_action == 'close') {
             $group_call = Wo_LeaveGroupCall($call_id, $actor_id);
             if (!empty($group_call)) {
                 $sync_data = Wo_GetGroupCallSyncData($call_id, $actor_id);

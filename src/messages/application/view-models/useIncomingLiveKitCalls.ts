@@ -239,10 +239,10 @@ export function useIncomingLiveKitCalls() {
         loadNativeCallService()?.displayNativeIncomingCall?.(call);
       } else {
         if (!isAppForeground()) return;
-        setActiveIncomingCall(call);
+        loadNativeCallService()?.displayNativeIncomingCall?.(call);
       }
     },
-    [setActiveIncomingCall, shouldIgnoreIncomingSignal],
+    [shouldIgnoreIncomingSignal],
   );
 
   const handleIncomingGroupCallSignal = useCallback(
@@ -258,6 +258,10 @@ export function useIncomingLiveKitCalls() {
         loadNativeCallService()?.displayNativeIncomingGroupCall?.(call);
       } else {
         if (!isAppForeground()) return;
+        if (call.ringMode !== 'passive') {
+          loadNativeCallService()?.displayNativeIncomingGroupCall?.(call);
+          return;
+        }
         setActiveIncomingGroupCall(call);
       }
     },
@@ -480,7 +484,10 @@ export function useIncomingLiveKitCalls() {
     handleInitialNativeCallAction,
     handleInitialNativeMessageAction,
     leaveCall,
+    openIncomingCallRoom,
     repository,
+    setActiveIncomingCall,
+    setActiveIncomingGroupCall,
   ]);
 
   // Poll incoming call status and auto-dismiss if the call is no longer active

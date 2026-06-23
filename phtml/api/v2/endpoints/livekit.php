@@ -19,6 +19,31 @@ function Wo_ApiLiveKitError($error_id, $error_text, $api_status = 400) {
     );
 }
 
+function Wo_ApiLiveKitDebugLog($type, $fields = array()) {
+    $parts = array('[vnseea_call_debug]', 'type=' . $type);
+    if (!empty($fields) && is_array($fields)) {
+        foreach ($fields as $key => $value) {
+            if (is_array($value) || is_object($value)) {
+                $value = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+            $value = str_replace(array("\n", "\r"), ' ', (string) $value);
+            $parts[] = $key . '=' . $value;
+        }
+    }
+    $line = implode(' ', $parts);
+    error_log($line);
+
+    $log_dir = realpath(__DIR__ . '/../../../xhr/logs');
+    if ($log_dir === false) {
+        $log_dir = __DIR__ . '/../../../xhr/logs';
+        if (!is_dir($log_dir)) {
+            @mkdir($log_dir, 0755, true);
+        }
+    }
+    $log_file = rtrim($log_dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'vnseea_call_debug.log';
+    @file_put_contents($log_file, date('c') . ' ' . $line . PHP_EOL, FILE_APPEND | LOCK_EX);
+}
+
 function Wo_ApiLiveKitCallType($value) {
     return ($value === 'audio') ? 'audio' : 'video';
 }
@@ -499,6 +524,21 @@ function Wo_ApiLiveKitBuildPayload($call_id, $call_type) {
             'canPublishData' => true
         )
     );
+    Wo_ApiLiveKitDebugLog('payload', array(
+        'user_id' => $user_id,
+        'call_id' => $call_id,
+        'call_type' => $call_type,
+        'raw_room_name' => $room_request,
+        'livekit_room' => $room_name,
+        'token_room' => $payload['video']['room'],
+        'status' => $call_status,
+        'active' => $call_active,
+        'started_at' => $timing['started_at'],
+        'started_at_ms' => $timing['started_at_ms'],
+        'elapsed' => $timing['elapsed'],
+        'elapsed_ms' => $timing['elapsed_ms'],
+        'ws_url' => $ws_url
+    ));
 
     return array_merge(array(
         'api_status' => 200,
@@ -553,6 +593,19 @@ function Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id) {
 
     $answered_source = Wo_GetCallSourceById($call_id, $call_type);
     $timing = Wo_ApiLiveKitTiming($answered_source, $call_type);
+    Wo_ApiLiveKitDebugLog('answer', array(
+        'call_id' => $call_id,
+        'call_type' => $call_type,
+        'actor_id' => $actor_id,
+        'affected_rows' => $answered_rows,
+        'already_answered' => $already_answered ? 1 : 0,
+        'status' => !empty($answered_source['status']) ? $answered_source['status'] : '',
+        'active' => intval(!empty($answered_source['active']) ? $answered_source['active'] : 0),
+        'started_at' => $timing['started_at'],
+        'started_at_ms' => $timing['started_at_ms'],
+        'elapsed' => $timing['elapsed'],
+        'elapsed_ms' => $timing['elapsed_ms']
+    ));
     Wo_ApiLiveKitPublishRealtime('answered', $answered_source, $call_type, array_merge(array(
         'status' => 'answered',
         'active' => true,
@@ -685,6 +738,17 @@ else if ($action == 'check') {
         }
         $call_source = Wo_GetCallSourceById($call_id, $call_type);
         $timing = Wo_ApiLiveKitTiming($call_source, $call_type);
+        Wo_ApiLiveKitDebugLog('check', array(
+            'user_id' => intval($wo['user']['user_id']),
+            'call_id' => $call_id,
+            'call_type' => $call_type,
+            'status' => $call_status,
+            'active' => intval(!empty($call_source['active']) ? $call_source['active'] : 0),
+            'started_at' => $timing['started_at'],
+            'started_at_ms' => $timing['started_at_ms'],
+            'elapsed' => $timing['elapsed'],
+            'elapsed_ms' => $timing['elapsed_ms']
+        ));
         $response_data = array_merge(array(
             'api_status' => 200,
             'call_id' => (string) $call_id,
