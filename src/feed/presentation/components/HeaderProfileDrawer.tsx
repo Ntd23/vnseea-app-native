@@ -15,6 +15,7 @@ import {
   Vibration,
   View,
   Alert,
+  Linking,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -43,7 +44,6 @@ import {
   UserPlus,
   Pointer,
   Images,
-  Image as ImageLucide,
   Video,
   Bookmark,
   Users,
@@ -63,12 +63,29 @@ import {
   Clock,
   LayoutGrid,
   Megaphone,
+  MessageSquare,
+  Compass,
+  Settings,
+  Sparkles,
+  Newspaper,
+  Shield,
+  Map,
+  Moon,
+  Languages,
+  Repeat,
+  Keyboard,
+  Globe,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { SettingsPanelRouteParam } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { useAppTheme } from '../../../shared-kernel/application/hooks/useAppTheme';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useAuthViewModel } from '../../../auth/application/view-models/useAuthViewModel';
+import { useEarningsViewModel } from '../../../wallet';
+import { useMyInfoViewModel, useSettingsViewModel } from '../../../settings';
+import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
 
 const SCREEN_W = Dimensions.get('window').width;
 const DRAWER_W = SCREEN_W * 0.84;
@@ -110,28 +127,52 @@ const DRAWER_COPY = {
 
     // Feature labels
     featFollowing: 'Theo dõi',
-    featPoke: 'Chọc bạn bè',
-    featAlbums: 'Album ảnh',
-    featPhotos: 'Ảnh',
+    featPoke: 'Chọc',
+    featAlbums: 'Tập ảnh',
+    featPhotos: 'Xem',
     featVideos: 'Video của tôi',
-    featSaved: 'Đã lưu',
-    featGroups: 'Nhóm',
-    featPages: 'Trang',
-    featFindFriends: 'Tìm bạn bè',
+    featSaved: 'Bài đã lưu',
+    featGroups: 'Nhóm của tôi',
+    featPages: 'Các trang',
+    featFindFriends: 'Tìm bạn',
+ featMapAddress: 'Bản đồ tìm địa chỉ',
     featNearby: 'Người ở gần',
-    featMarket: 'Chợ',
+    featMarket: 'Thị trường',
     featJobs: 'Việc làm',
     featOffers: 'Ưu đãi',
-    featBlogs: 'Bài viết',
-    featPopular: 'Xu hướng',
+    featBlogs: 'Blog',
+    featPopular: 'Bài viết phổ biến',
     featEvents: 'Sự kiện',
     featMovies: 'Phim',
     featLive: 'Phát trực tiếp',
-    featFunding: 'Gây quỹ',
+    featFunding: 'Kinh phí',
     featBoosted: 'Quảng bá',
-    featMemories: 'Kỷ niệm',
+    featMemories: 'Ký ức',
     featGeneral: 'Tổng quan',
     featAds: 'Quảng cáo',
+
+    // New labels for the requested list
+    featMyProducts: 'Sản phẩm của tôi',
+    featMyArticles: 'Bài báo của tôi',
+    featForums: 'Diễn đàn',
+    featReels: 'cuộn phim',
+    featExplore: 'Khám phá',
+    featPopularThings: 'Những điều phổ biến',
+    settingsLabel: 'Cài đặt',
+    subscriptionsLabel: 'Đăng ký',
+    adminAreaLabel: 'Khu vực quản trị',
+
+ // New copy for the 3-zone menu
+ sectionContent: 'Quản lý nội dung',
+ sectionAccount: 'Cài đặt',
+ sectionMore: 'Khác',
+ switchAccountLabel: 'Chuyển tài khoản',
+ languageLabel: 'Ngôn ngữ',
+ languageChangeVi: 'Đã đổi sang Tiếng Việt',
+ languageChangeEn: 'Đã đổi sang Tiếng Anh',
+ nightModeLabel: 'Chế độ',
+ themeChangeDark: 'Đã đổi sang chế độ tối',
+ themeChangeLight: 'Đã đổi sang chế độ sáng',
 
     // Feature categories
     catCommunicate: 'Giao tiếp',
@@ -181,18 +222,19 @@ const DRAWER_COPY = {
     featFollowing: 'Following',
     featPoke: 'Poke',
     featAlbums: 'Albums',
-    featPhotos: 'Photos',
+    featPhotos: 'Watch',
     featVideos: 'My videos',
-    featSaved: 'Saved',
-    featGroups: 'Groups',
+    featSaved: 'Saved posts',
+    featGroups: 'My groups',
     featPages: 'Pages',
     featFindFriends: 'Find friends',
+ featMapAddress: 'Map address search',
     featNearby: 'Nearby',
     featMarket: 'Marketplace',
     featJobs: 'Jobs',
     featOffers: 'Offers',
-    featBlogs: 'Articles',
-    featPopular: 'Trending',
+    featBlogs: 'Blog',
+    featPopular: 'Popular posts',
     featEvents: 'Events',
     featMovies: 'Movies',
     featLive: 'Live',
@@ -201,6 +243,29 @@ const DRAWER_COPY = {
     featMemories: 'Memories',
     featGeneral: 'General',
     featAds: 'Ads',
+
+    // New labels for the requested list
+    featMyProducts: 'My products',
+    featMyArticles: 'My articles',
+    featForums: 'Forums',
+    featReels: 'Reels',
+    featExplore: 'Explore',
+    featPopularThings: 'Popular things',
+    settingsLabel: 'Settings',
+    subscriptionsLabel: 'Subscriptions',
+    adminAreaLabel: 'Admin Area',
+
+ // New copy for the 3-zone menu
+ sectionContent: 'Content management',
+ sectionAccount: 'Settings',
+ sectionMore: 'More',
+ switchAccountLabel: 'Switch account',
+ languageLabel: 'Language',
+ languageChangeVi: 'Switched to Vietnamese',
+ languageChangeEn: 'Switched to English',
+ nightModeLabel: 'Night mode',
+ themeChangeDark: 'Switched to dark mode',
+ themeChangeLight: 'Switched to light mode',
 
     // Feature categories
     catCommunicate: 'Communication',
@@ -229,12 +294,19 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
   const language = useAppLanguage();
   const copy = DRAWER_COPY[language] || DRAWER_COPY.vi;
   const { logout } = useAuthViewModel();
+  const { walletOverview } = useEarningsViewModel();
+  const { profile: fullProfile } = useMyInfoViewModel();
+  const { language: currentLanguage, setLanguage } = useSettingsViewModel();
+  const { theme: currentTheme, setTheme } = useAppTheme();
 
   const [shouldRender, setShouldRender] = useState(visible);
   const [contentReady, setContentReady] = useState(visible);
   // Read profile directly from MMKV cache — no fetch, no hook re-renders
   const cachedProfile = useMemo(() => sessionStorage.getUserProfile(), []);
   const profile = cachedProfile;
+
+  const isAdmin = Boolean(fullProfile?.admin);
+  const isPro = Boolean(fullProfile?.pro);
   // Drawer is always at translateX=0 by default so it is visible the moment
   // the Modal mounts. The "slide in" effect is created by the useEffect
   // jumping translateX to DRAWER_W right BEFORE the open animation runs;
@@ -381,7 +453,24 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
           case 'findFriends':
             navigation.navigate(ROUTES.INVITE_FRIENDS);
             return;
-          case 'nearby':
+            case 'mapAddress':
+            // The map/address search lives in the Nearby screen
+            // (it renders a real MapView with place markers + a
+            // search bar). Reusing it keeps the user inside the
+            // in-app experience.
+            navigation.navigate(ROUTES.NEARBY_USERS);
+            return;
+            case 'switchAccount':
+            // Drop the cached credentials and bounce to login.
+            // Using navigation.reset keeps the back-stack empty
+            // so the user can't accidentally return to the previous
+            // account's data.
+            navigation.reset({
+             index: 0,
+             routes: [{ name: ROUTES.LOGIN }],
+            });
+            return;
+              case 'nearby':
             navigation.navigate(ROUTES.NEARBY_USERS);
             return;
           case 'market':
@@ -423,6 +512,33 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
           case 'ads':
             navigation.navigate(ROUTES.ADVERTISING);
             return;
+          case 'myProducts':
+            navigation.navigate(ROUTES.MY_PRODUCTS);
+            return;
+          case 'myArticles':
+            navigation.navigate(ROUTES.BLOGS);
+            return;
+          case 'forum':
+            navigation.navigate(ROUTES.FORUM);
+            return;
+          case 'reels':
+            navigation.navigate(ROUTES.REELS);
+            return;
+          case 'explore':
+            navigation.navigate(ROUTES.EXPLORE);
+            return;
+          case 'common':
+            openSettingsPanel('general-common');
+            return;
+          case 'settings':
+            navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.SETTINGS });
+            return;
+          case 'go-pro':
+            Linking.openURL(apiConfig.webBaseUrl).catch(() => undefined);
+            return;
+          case 'admin':
+            navigation.navigate(ROUTES.USER_DASHBOARD);
+            return;
         }
         return;
       }
@@ -462,6 +578,39 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
     ]);
   }, [logout, handleClose, copy]);
 
+  // Inline language toggle (drawer row + two pill buttons).
+  // The user no longer has to navigate into a separate screen to
+  // change the locale - tap VI or EN right here in the menu.
+  const handleLanguageChange = useCallback(
+   (next: 'vi' | 'en') => {
+   if (next === language) return;
+   setLanguage(next);
+   // Keep the i18next instance in sync with the MMKV store so any
+   // consumer using useTranslation re-renders immediately.
+   changeLocale(next);
+   Alert.alert(
+   next === 'vi' ? 'Ngôn ngơ / Language' : 'Language / Ngôn ngơ',
+   next === 'vi' ? copy.languageChangeVi : copy.languageChangeEn,
+   );
+   },
+   [copy.languageChangeEn, copy.languageChangeVi, language, setLanguage],
+);
+
+  // Inline theme toggle (drawer row + two pill buttons).
+  // Same shape as the language row: tap "T"oi or "S"ang to switch
+  // the app theme on the fly, no separate screen required.
+  const handleThemeChange = useCallback(
+   (next: 'light' | 'dark') => {
+   if (next === currentTheme) return;
+   setTheme(next);
+   Alert.alert(
+   next === 'dark' ? copy.nightModeLabel : 'Chế độ sáng',
+   next === 'dark' ? copy.themeChangeDark : copy.themeChangeLight,
+   );
+   },
+   [copy.nightModeLabel, copy.themeChangeDark, copy.themeChangeLight, currentTheme, setTheme],
+  );
+
   const handleOpenProfile = useCallback(() => {
     handleClose();
     navigation.navigate(ROUTES.PROFILE);
@@ -469,11 +618,23 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
 
   if (!shouldRender) return null;
 
-  // Determine user role label — cache doesn't carry admin/pro flags, so we
-  // default to Member. Refresh the profile separately when the user lands
-  // on Settings.
-  const roleLabel = copy.roleMember;
-  const roleColor = 'text-slate-500 bg-slate-50 border-slate-100';
+  const roleLabel = isAdmin
+    ? copy.roleAdmin
+    : isPro
+    ? copy.rolePro
+    : copy.roleMember;
+
+  const roleStyle = isAdmin
+    ? styles.roleAdmin
+    : isPro
+    ? styles.rolePro
+    : styles.roleMember;
+
+  const roleTextStyle = isAdmin
+    ? styles.roleTextAdmin
+    : isPro
+    ? styles.roleTextPro
+    : styles.roleTextMember;
 
   return (
     <Modal
@@ -538,8 +699,8 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
                     <Text style={styles.profileUsername} numberOfLines={1}>
                       @{profile?.username || 'user'}
                     </Text>
-                    <View style={[styles.roleBadge, styles.roleMember]}>
-                      <Text style={[styles.roleText, styles.roleTextMember]}>
+                    <View style={[styles.roleBadge, roleStyle]}>
+                      <Text style={[styles.roleText, roleTextStyle]}>
                         {roleLabel}
                       </Text>
                     </View>
@@ -550,7 +711,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
                   />
                 </View>
 
-                {/* Wallet & Points widgets */}
+                {/* Wallet widget */}
                 <View style={styles.statsRow}>
                   <View style={styles.statBox}>
                     <View style={styles.statIconBgWallet}>
@@ -559,19 +720,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
                     <View style={styles.statTexts}>
                       <Text style={styles.statLabel}>{copy.walletLabel}</Text>
                       <Text style={styles.statVal} numberOfLines={1}>
-                        VND 0
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.statBox}>
-                    <View style={styles.statIconBgPoints}>
-                      <Coins size={16} color="#eab308" strokeWidth={2.2} />
-                    </View>
-                    <View style={styles.statTexts}>
-                      <Text style={styles.statLabel}>{copy.pointsLabel}</Text>
-                      <Text style={styles.statVal} numberOfLines={1}>
-                        0
+                        {`${(Number(walletOverview?.balance) || 0).toLocaleString('vi-VN')} VNSEEA`}
                       </Text>
                     </View>
                   </View>
@@ -579,279 +728,224 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
               </View>
             </TouchableOpacity>
 
-            {/* Quick Access - 3 mục nổi bật đứng đầu drawer */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#fef3c7' }]}>
-                <Star size={14} color="#a16207" fill="#a16207" />
-              </View>
-              <Text style={styles.sectionHeader}>Nổi bật</Text>
+            <Text style={styles.zoneLabel}>{copy.sectionContent}</Text>
+            <MenuRow
+             title={copy.featMapAddress}
+             icon={<Map size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'mapAddress' })}
+            />
+            <MenuRow
+             title={copy.featPages}
+             icon={<Flag size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'pages' })}
+            />
+            <MenuRow
+             title={copy.featMyProducts}
+             icon={<Briefcase size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'myProducts' })}
+            />
+            <MenuRow
+             title={copy.featMarket}
+             icon={<Store size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'market' })}
+            />
+            <MenuRow
+             title={copy.featBlogs}
+             icon={<FileText size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'blogs' })}
+            />
+            <MenuRow
+             title={copy.featMyArticles}
+             icon={<Newspaper size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'myArticles' })}
+            />
+            <MenuRow
+             title={copy.featMovies}
+             icon={<Film size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'movies' })}
+            />
+            <MenuRow
+             title={copy.featEvents}
+             icon={<Calendar size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'events' })}
+            />
+            <MenuRow
+             title={copy.featGroups}
+             icon={<Users size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'groups' })}
+            />
+            <MenuRow
+             title={copy.featForums}
+             icon={<MessageSquare size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'forum' })}
+            />
+            <MenuRow
+             title={copy.featAds}
+             icon={<Megaphone size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'ads' })}
+            />
+            <MenuRow
+             title={copy.featAlbums}
+             icon={<Images size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'albums' })}
+            />
+            <MenuRow
+             title={copy.featPhotos}
+             icon={<LucideImage size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'photos' })}
+            />
+            <MenuRow
+             title={copy.featReels}
+             icon={<Video size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'reels' })}
+            />
+            <MenuRow
+             title={copy.featSaved}
+             icon={<Bookmark size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'saved' })}
+            />
+            <MenuRow
+             title={copy.featPoke}
+             icon={<Pointer size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'poke' })}
+            />
+            <MenuRow
+             title={copy.featExplore}
+             icon={<Compass size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'explore' })}
+            />
+            <MenuRow
+             title={copy.featPopular}
+             icon={<Flame size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'popular' })}
+            />
+            <MenuRow
+             title={copy.featJobs}
+             icon={<Briefcase size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'jobs' })}
+            />
+            <MenuRow
+             title={copy.featPopularThings}
+             icon={<LayoutGrid size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'common' })}
+            />
+            <MenuRow
+             title={copy.featFunding}
+             icon={<HeartHandshake size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'funding' })}
+            />
+            <MenuRow
+             title={copy.featMemories}
+             icon={<Clock size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'memories' })}
+            />
+            <MenuRow
+             title={copy.featOffers}
+             icon={<Tag size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'offers' })}
+            />
+            <Text style={styles.zoneLabel}>{copy.sectionAccount}</Text>
+            <MenuRow
+             title={copy.settingsLabel}
+             icon={<Settings size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'settings' })}
+            />
+            <MenuRow
+             title={copy.subscriptionsLabel}
+             icon={<Sparkles size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'go-pro' })}
+            />
+            {isAdmin ? (
+             <MenuRow
+             title={copy.adminAreaLabel}
+             icon={<Shield size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'admin' })}
+             />
+            ) : null}
+            <MenuRow
+             title={copy.logoutLabel}
+             icon={<LogOut size={18} color="#ef4444" />}
+             onPress={handleLogout}
+            />
+            <Text style={styles.zoneLabel}>{copy.sectionMore}</Text>
+            <MenuRow
+             title={copy.switchAccountLabel}
+             icon={<Repeat size={18} color="#0052ff" />}
+             onPress={() => handleItemPress({ type: 'feature', feature: 'switchAccount' })}
+            />
+            <View style={styles.row}>
+             <View style={styles.rowLeft}>
+             <View style={styles.rowIconBg}>
+             <Moon size={18} color="#0052ff" />
+             </View>
+             <Text style={styles.rowTitle}>{copy.nightModeLabel}</Text>
+             </View>
+             <View style={styles.langPillRow}>
+             <TouchableOpacity
+             activeOpacity={0.8}
+             onPress={() => handleThemeChange('light')}
+             style={[
+             styles.langPill,
+             currentTheme === 'light' ? styles.langPillActive : styles.langPillInactive,
+             ]}
+             >
+             <Text style={[
+             styles.langPillText,
+             currentTheme === 'light' ? styles.langPillTextActive : styles.langPillTextInactive,
+             ]}>Sáng
+            </Text>
+             </TouchableOpacity>
+             <TouchableOpacity
+             activeOpacity={0.8}
+             onPress={() => handleThemeChange('dark')}
+             style={[
+             styles.langPill,
+             currentTheme === 'dark' ? styles.langPillActive : styles.langPillInactive,
+             ]}
+             >
+             <Text style={[
+             styles.langPillText,
+             currentTheme === 'dark' ? styles.langPillTextActive : styles.langPillTextInactive,
+             ]}>Tối</Text>
+             </TouchableOpacity>
+             </View>
             </View>
-            <MenuRow
-              title={copy.featNearby}
-              icon={
-                <View style={[styles.highlightIconBubble, { backgroundColor: '#0ea5e9' }]}>
-                  <MapPinned size={18} color="#ffffff" strokeWidth={2.4} />
-                </View>
-              }
-              highlight
-              onPress={() => handleItemPress({ type: 'feature', feature: 'nearby' })}
-            />
-            <MenuRow
-              title={copy.featMarket}
-              icon={
-                <View style={[styles.highlightIconBubble, { backgroundColor: '#f59e0b' }]}>
-                  <Store size={18} color="#ffffff" strokeWidth={2.4} />
-                </View>
-              }
-              highlight
-              onPress={() => handleItemPress({ type: 'feature', feature: 'market' })}
-            />
-            <MenuRow
-              title={copy.myPoints}
-              icon={
-                <View style={[styles.highlightIconBubble, { backgroundColor: '#eab308' }]}>
-                  <Star size={18} color="#ffffff" strokeWidth={2.4} fill="#ffffff" />
-                </View>
-              }
-              highlight
-              onPress={() => handleItemPress({ type: 'route', route: 'myPoints' })}
-            />
-
-            {/* Account Settings Section - removed; moved to Cài đặt chung in SettingsScreen */}
-
-            {/* Security Section - removed; moved to Cài đặt chung in SettingsScreen */}
-
-            {/* Feature: Giao tiếp */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#eef2ff' }]}>
-                <UserPlus size={14} color="#4338ca" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.catCommunicate}</Text>
+            <View style={styles.row}>
+             <View style={styles.rowLeft}>
+             <View style={styles.rowIconBg}>
+             <Globe size={18} color="#0052ff" />
+             </View>
+             <Text style={styles.rowTitle}>{copy.languageLabel}</Text>
+             </View>
+             <View style={styles.langPillRow}>
+             <TouchableOpacity
+             activeOpacity={0.8}
+             onPress={() => handleLanguageChange('vi')}
+             style={[
+             styles.langPill,
+             currentLanguage === 'vi' ? styles.langPillActive : styles.langPillInactive,
+             ]}
+             >
+             <Text style={[
+             styles.langPillText,
+             currentLanguage === 'vi' ? styles.langPillTextActive : styles.langPillTextInactive,
+             ]}>VI</Text>
+             </TouchableOpacity>
+             <TouchableOpacity
+             activeOpacity={0.8}
+             onPress={() => handleLanguageChange('en')}
+             style={[
+             styles.langPill,
+             currentLanguage === 'en' ? styles.langPillActive : styles.langPillInactive,
+             ]}
+             >
+             <Text style={[
+             styles.langPillText,
+             currentLanguage === 'en' ? styles.langPillTextActive : styles.langPillTextInactive,
+             ]}>EN</Text>
+             </TouchableOpacity>
+             </View>
             </View>
-            <MenuRow
-              title={copy.featFollowing}
-              icon={<UserPlus size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'following' })}
-            />
-            <MenuRow
-              title={copy.featPoke}
-              icon={<Pointer size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'poke' })}
-            />
-
-            {/* Feature: Nội dung & Media */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#fce7f3' }]}>
-                <ImageLucide size={14} color="#be185d" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.catMedia}</Text>
-            </View>
-            <MenuRow
-              title={copy.featAlbums}
-              icon={<Images size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'albums' })}
-            />
-            <MenuRow
-              title={copy.featPhotos}
-              icon={<ImageLucide size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'photos' })}
-            />
-            <MenuRow
-              title={copy.featVideos}
-              icon={<Video size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'videos' })}
-            />
-            <MenuRow
-              title={copy.featSaved}
-              icon={<Bookmark size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'saved' })}
-            />
-
-            {/* Feature: Cộng đồng */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#ecfeff' }]}>
-                <Users size={14} color="#0e7490" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.catCommunity}</Text>
-            </View>
-            <MenuRow
-              title={copy.featGroups}
-              icon={<Users size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'groups' })}
-            />
-            <MenuRow
-              title={copy.featPages}
-              icon={<Flag size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'pages' })}
-            />
-            <MenuRow
-              title={copy.featFindFriends}
-              icon={<UserSearch size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'findFriends' })}
-            />
-
-            {/* Feature: Thương mại */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#fef3c7' }]}>
-                <Briefcase size={14} color="#b45309" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.catCommerce}</Text>
-            </View>
-            <MenuRow
-              title={copy.featJobs}
-              icon={<Briefcase size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'jobs' })}
-            />
-            <MenuRow
-              title={copy.featOffers}
-              icon={<Tag size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'offers' })}
-            />
-
-            {/* Feature: Nội dung & Tin tức */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#eef2ff' }]}>
-                <FileText size={14} color="#4338ca" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.catNews}</Text>
-            </View>
-            <MenuRow
-              title={copy.featBlogs}
-              icon={<FileText size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'blogs' })}
-            />
-            <MenuRow
-              title={copy.featPopular}
-              icon={<Flame size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'popular' })}
-            />
-            <MenuRow
-              title={copy.featEvents}
-              icon={<Calendar size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'events' })}
-            />
-            <MenuRow
-              title={copy.featMovies}
-              icon={<Film size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'movies' })}
-            />
-
-            {/* Feature: Giải trí */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#fce7f3' }]}>
-                <Radio size={14} color="#be185d" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.catEntertainment}</Text>
-            </View>
-            <MenuRow
-              title={copy.featLive}
-              icon={<Radio size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'live' })}
-            />
-
-            {/* Feature: Tài chính */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#dcfce7' }]}>
-                <HeartHandshake size={14} color="#15803d" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.catFinance}</Text>
-            </View>
-            <MenuRow
-              title={copy.featFunding}
-              icon={<HeartHandshake size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'funding' })}
-            />
-
-            {/* Feature: Kinh doanh */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#fef9c3' }]}>
-                <Rocket size={14} color="#a16207" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.catBusiness}</Text>
-            </View>
-            <MenuRow
-              title={copy.featBoosted}
-              icon={<Rocket size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'boosted' })}
-            />
-
-            {/* Feature: Cá nhân */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#f1f5f9' }]}>
-                <Clock size={14} color="#475569" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.catPersonal}</Text>
-            </View>
-            <MenuRow
-              title={copy.featMemories}
-              icon={<Clock size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'memories' })}
-            />
-
-            {/* Feature: Hệ thống */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#e2e8f0' }]}>
-                <LayoutGrid size={14} color="#334155" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.catSystem}</Text>
-            </View>
-            <MenuRow
-              title={copy.featGeneral}
-              icon={<LayoutGrid size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'general' })}
-            />
-            <MenuRow
-              title={copy.featAds}
-              icon={<Megaphone size={18} color="#0052ff" />}
-              onPress={() => handleItemPress({ type: 'feature', feature: 'ads' })}
-            />
-
-            {/* Finance & Monetization */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#fef9c3' }]}>
-                <CircleDollarSign size={14} color="#a16207" />
-              </View>
-              <Text style={styles.sectionHeader}>{copy.groupFinance}</Text>
-            </View>
-
-            <MenuRow
-              title={copy.monetization}
-              icon={<CircleDollarSign size={18} color="#eab308" />}
-              onPress={() => handleItemPress({ type: 'route', route: 'earnings' })}
-            />
-            <MenuRow
-              title={copy.referralRewards}
-              icon={<Gift size={18} color="#eab308" />}
-              onPress={() => handleItemPress({ type: 'route', route: 'affiliates' })}
-            />
-
-            {/* Notifications and Socials */}
-            <View style={styles.sectionHeaderRow}>
-              <View style={[styles.sectionIconBubble, { backgroundColor: '#ede9fe' }]}>
-                <Bell size={14} color="#6d28d9" />
-              </View>
-              <Text style={styles.sectionHeader}>Cài đặt phụ</Text>
-            </View>
-            <MenuRow
-              title={copy.notifications}
-              icon={<Bell size={18} color="#6366f1" />}
-              onPress={() => handleItemPress({ type: 'panel', panel: 'general-notifications' })}
-            />
-            <MenuRow
-              title={copy.socialLinks}
-              icon={<LucideLink size={18} color="#6366f1" />}
-              onPress={() => handleItemPress({ type: 'panel', panel: 'general-social-links' })}
-            />
-
-            {/* Logout Button */}
-            <TouchableOpacity
-              onPress={handleLogout}
-              activeOpacity={0.8}
-              style={styles.logoutBtn}
-            >
-              <LogOut size={18} color="#ffffff" strokeWidth={2.2} />
-              <Text style={styles.logoutText}>{copy.logoutLabel}</Text>
-            </TouchableOpacity>
           </ScrollView>
           </View>
         ) : null}
@@ -868,49 +962,32 @@ const MenuRow = React.memo(function MenuRow({
   title,
   icon,
   onPress,
-  highlight = false,
 }: {
   title: string;
   icon: React.ReactNode;
   onPress: () => void;
-  highlight?: boolean;
 }) {
   const handlePress = useCallback(() => {
-    // Subtle haptic feedback for premium feel — sharper for highlight rows
-    if (highlight) {
-      Vibration.vibrate(15);
-    } else {
-      Vibration.vibrate(8);
-    }
+    Vibration.vibrate(8);
     onPress();
-  }, [highlight, onPress]);
+  }, [onPress]);
 
   return (
     <TouchableOpacity
       onPress={handlePress}
       activeOpacity={0.7}
       delayPressIn={0}
-      style={[styles.row, highlight ? styles.rowHighlight : null]}
+      style={styles.row}
     >
       <View style={styles.rowLeft}>
-        <View
-          style={[
-            styles.rowIconBg,
-            highlight ? styles.rowIconBgHighlight : null,
-          ]}
-        >
+        <View style={styles.rowIconBg}>
           {icon}
         </View>
-        <Text style={[styles.rowTitle, highlight ? styles.rowTitleHighlight : null]}>
+        <Text style={styles.rowTitle}>
           {title}
         </Text>
-        {highlight ? (
-          <View style={styles.highlightBadge}>
-            <Text style={styles.highlightBadgeText}>★</Text>
-          </View>
-        ) : null}
       </View>
-      <ChevronRight size={16} color={highlight ? '#0052ff' : '#94a3b8'} strokeWidth={2.5} />
+      <ChevronRight size={16} color="#94a3b8" strokeWidth={2.5} />
     </TouchableOpacity>
   );
 });
@@ -1073,15 +1150,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 8,
   },
-  statIconBgPoints: {
-    width: 28,
-    height: 28,
-    borderRadius: 10,
-    backgroundColor: '#fef9c3',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
   statTexts: {
     flex: 1,
   },
@@ -1096,28 +1164,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0f172a',
   },
-  sectionHeader: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 18,
-    marginBottom: 10,
-    paddingLeft: 4,
-  },
-  sectionIconBubble: {
-    width: 26,
-    height: 26,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1129,16 +1175,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#f1f5f9',
-  },
-  rowHighlight: {
-    backgroundColor: '#eef2ff',
-    borderColor: '#0052ff',
-    borderWidth: 1.5,
-    shadowColor: '#0052ff',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 3,
   },
   rowLeft: {
     flexDirection: 'row',
@@ -1155,45 +1191,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  rowIconBgHighlight: {
-    backgroundColor: 'transparent',
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+  langPillRow: {
+    flexDirection: 'row',
+    gap: 6,
   },
-  highlightIconBubble: {
-    width: 32,
+  langPill: {
+    minWidth: 44,
     height: 32,
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 4,
-    elevation: 2,
+  },
+  langPillActive: {
+    borderColor: '#0052ff',
+    backgroundColor: '#eff6ff',
+  },
+  langPillInactive: {
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+  },
+  langPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  langPillTextActive: {
+    color: '#0052ff',
+  },
+  langPillTextInactive: {
+    color: '#94a3b8',
+  },
+  zoneLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginTop: 16,
+    marginBottom: 8,
+    paddingHorizontal: 4,
   },
   rowTitle: {
     fontSize: 14,
     fontWeight: '700',
     color: '#334155',
-  },
-  rowTitleHighlight: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#001a66',
-  },
-  highlightBadge: {
-    marginLeft: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    backgroundColor: '#0052ff',
-  },
-  highlightBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#ffffff',
   },
   logoutBtn: {
     flexDirection: 'row',

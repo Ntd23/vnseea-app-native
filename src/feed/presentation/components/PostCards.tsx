@@ -1080,7 +1080,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const trackedIsActive = useFeedVideoActivity(post.id);
   const isActive = controlledIsActive ?? trackedIsActive;
   const [manuallyPaused, setManuallyPaused] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [aspectRatio, setAspectRatio] = useState(16 / 9); // Default landscape
   const currentTimeRef = useRef<number>(0);
 
@@ -1158,7 +1158,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   useEffect(() => {
     if (!isActive) {
       setManuallyPaused(false);
-      setMuted(true);
+      setMuted(false);
     }
   }, [isActive]);
 

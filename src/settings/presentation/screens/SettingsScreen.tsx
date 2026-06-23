@@ -87,8 +87,7 @@ import {
   Video,
   Wallet,
   X,
-  Globe,
-} from 'lucide-react-native';
+ } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
@@ -109,7 +108,6 @@ import {
   languageStorage,
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
-import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -3432,20 +3430,7 @@ function SettingsScreen() {
       tabBarVisibility.setVisible(true);
     };
   }, []);
-  const handleDirectLanguageChange = useCallback(
-    (lang: AppLanguage) => {
-      setLanguage(lang);
-      // Keep the new i18next instance in sync with the legacy MMKV store
-      // so consumers that use `useTranslation` re-render immediately.
-      changeLocale(lang);
-      Alert.alert(
-        'Ngôn ngữ / Language',
-        lang === 'vi' ? 'Đã đổi sang Tiếng Việt' : 'Changed to English',
-      );
-    },
-    [setLanguage],
-  );
-
+  
   const handleCurrencyPress = useCallback(() => {
     if (currencyLoading) return;
 
@@ -4082,56 +4067,6 @@ function SettingsScreen() {
                     <ChevronRight size={18} color="#94a3b8" />
                   )}
                 </TouchableOpacity>
-                <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
-                  <View className="flex-row items-center">
-                    <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
-                      <Globe size={20} color="#0000ff" />
-                    </View>
-                    <Text className="text-[16px] font-semibold text-slate-800">
-                      {copy.languageTitle}
-                    </Text>
-                  </View>
-                  <View className="flex-row gap-2.5">
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => handleDirectLanguageChange('vi')}
-                      className={`h-9 w-14 items-center justify-center rounded-xl border-2 ${
-                        language === 'vi'
-                          ? 'border-[#0000ff]'
-                          : 'border-slate-200'
-                      }`}
-                    >
-                      <Text
-                        className={`text-sm font-bold ${
-                          language === 'vi'
-                            ? 'text-[#0000ff]'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        VI
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => handleDirectLanguageChange('en')}
-                      className={`h-9 w-14 items-center justify-center rounded-xl border-2 ${
-                        language === 'en'
-                          ? 'border-[#0000ff]'
-                          : 'border-slate-200'
-                      }`}
-                    >
-                      <Text
-                        className={`text-sm font-bold ${
-                          language === 'en'
-                            ? 'text-[#0000ff]'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        EN
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
               </GeneralSettingsSection>
             </View>
           ) : activePanel === 'earnings' ? (

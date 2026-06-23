@@ -61,7 +61,7 @@ export const ROUTES = {
   JOB_DETAIL: 'JobDetail',
   CREATE_JOB: 'CreateJob',
   SETTINGS: 'Settings',
-  USER_DASHBOARD: 'UserDashboard',
+   USER_DASHBOARD: 'UserDashboard',
   SETTINGS_MY_INFO: 'SettingsMyInfo',
   SETTINGS_ADDRESS: 'SettingsAddress',
   EDIT_PROFILE: 'EditProfile',

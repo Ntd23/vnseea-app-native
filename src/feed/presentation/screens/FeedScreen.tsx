@@ -237,7 +237,7 @@ const MAX_IMAGE_PREFETCH_URLS = 8;
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: 24,
 };
-const FEED_HEADER_CONTENT_HEIGHT = 73;
+const FEED_HEADER_CONTENT_HEIGHT = 139;
 const FEED_SAFE_AREA_CLASS_NAME =
   Platform.OS === 'ios' ? 'flex-1' : 'flex-1 bg-white';
 const FEED_SAFE_AREA_STYLE =
@@ -299,8 +299,8 @@ function FilterTabs({
   const navigation = useNavigation<any>();
 
   return (
-    <View className="bg-white px-4 pb-3 pt-4">
-      <View className="min-h-[54px] flex-row items-center justify-around rounded-[20px] border border-[#e3e8f2] bg-white px-4 shadow-sm">
+    <View className="bg-white px-4 pb-2 pt-2">
+      <View className="min-h-[50px] flex-row items-center justify-around rounded-[16px] border border-[#e3e8f2] bg-white px-4 shadow-sm">
         {/* Tất cả */}
         <TouchableOpacity
           className="h-10 flex-1 items-center justify-center"
@@ -316,7 +316,22 @@ function FilterTabs({
 
         <View className="h-7 w-px bg-[#dfe4ef]" />
 
-        {/* Bài viết ảnh */}
+        {/* Bản đồ địa chỉ */}
+        <TouchableOpacity
+          className="h-10 flex-1 items-center justify-center"
+          activeOpacity={0.75}
+          onPress={() => navigation.navigate(ROUTES.NEARBY_USERS)}
+        >
+          <MapPin
+            size={24}
+            color="#9ca3af"
+            strokeWidth={2.0}
+          />
+        </TouchableOpacity>
+
+        <View className="h-7 w-px bg-[#dfe4ef]" />
+
+        {/* Ảnh */}
         <TouchableOpacity
           className="h-10 flex-1 items-center justify-center"
           activeOpacity={0.75}
@@ -324,34 +339,38 @@ function FilterTabs({
         >
           <ImageIcon
             size={24}
-            color={activeSource === 'photos' ? '#22c55e' : '#9ca3af'}
+            color={activeSource === 'photos' ? '#0758ff' : '#9ca3af'}
             strokeWidth={activeSource === 'photos' ? 2.5 : 2.0}
           />
         </TouchableOpacity>
 
         <View className="h-7 w-px bg-[#dfe4ef]" />
 
-        {/* Video Reel */}
+        {/* Video */}
         <TouchableOpacity
           className="h-10 flex-1 items-center justify-center"
           activeOpacity={0.75}
           onPress={() => navigation.navigate(ROUTES.REELS)}
         >
-          <Video size={24} color="#0758ff" strokeWidth={2.2} />
+          <Video
+            size={24}
+            color="#9ca3af"
+            strokeWidth={2.0}
+          />
         </TouchableOpacity>
 
         <View className="h-7 w-px bg-[#dfe4ef]" />
 
-        {/* Người follow */}
+        {/* Thị trường */}
         <TouchableOpacity
           className="h-10 flex-1 items-center justify-center"
           activeOpacity={0.75}
-          onPress={() => onChangeSource('following')}
+          onPress={() => navigation.navigate(ROUTES.MARKETPLACE)}
         >
-          <Users
+          <ShoppingBag
             size={24}
-            color={activeSource === 'following' ? '#0758ff' : '#9ca3af'}
-            strokeWidth={activeSource === 'following' ? 2.5 : 2.0}
+            color="#9ca3af"
+            strokeWidth={2.0}
           />
         </TouchableOpacity>
       </View>
@@ -1304,16 +1323,10 @@ function FeedScreen() {
   const setFeedScrollBusy = vm.setScrollBusy;
   const activeFeedSource = vm.feedSource;
   const setActiveFeedSource = vm.setFeedSource;
-  const feedRefreshProgressViewOffset =
-    Platform.OS === 'ios'
-      ? feedSafeAreaInsets.top + FEED_HEADER_CONTENT_HEIGHT
-      : 0;
+  const feedRefreshProgressViewOffset = feedSafeAreaInsets.top + FEED_HEADER_CONTENT_HEIGHT;
   const feedHeaderOverlayHeight = feedRefreshProgressViewOffset;
   const feedListContentStyle = useMemo(
-    () =>
-      Platform.OS === 'ios'
-        ? [FEED_LIST_CONTENT_STYLE, { paddingTop: feedHeaderOverlayHeight }]
-        : FEED_LIST_CONTENT_STYLE,
+    () => [FEED_LIST_CONTENT_STYLE, { paddingTop: feedHeaderOverlayHeight }],
     [feedHeaderOverlayHeight],
   );
 
@@ -1494,7 +1507,6 @@ function FeedScreen() {
       feedScrollYRef.current = contentOffset.y;
       feedViewportHeightRef.current = layoutMeasurement.height;
 
-      if (Platform.OS !== 'ios') return;
 
       if (contentOffset.y < 0) {
         feedChromeCollapseStateRef.current = createFeedChromeCollapseState();
@@ -2680,11 +2692,6 @@ function FeedScreen() {
   const renderFeedIntro = useCallback(
     () => (
       <View>
-        <FilterTabs
-          copy={copy}
-          activeSource={activeFeedSource}
-          onChangeSource={setActiveFeedSource}
-        />
         <HomeFeedIntro
           onCreatePostPress={goToCreatePost}
           userId={userVm.user?.userId}
@@ -2695,10 +2702,8 @@ function FeedScreen() {
       </View>
     ),
     [
-      activeFeedSource,
       copy,
       goToCreatePost,
-      setActiveFeedSource,
       userVm.user?.userId,
       userVm.user?.avatar,
       userVm.user?.name,
@@ -2835,21 +2840,17 @@ function FeedScreen() {
         edges={FEED_ROOT_SAFE_AREA_EDGES}
       >
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        {Platform.OS === 'ios' ? (
-          <>
-            {feedListElement}
-            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
-              <FeedHeader />
-            </FeedHeaderCollapseFrame>
-          </>
-        ) : (
-          <>
-            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
-              <FeedHeader />
-            </FeedHeaderCollapseFrame>
-            <View className="flex-1">{feedListElement}</View>
-          </>
-        )}
+        {feedListElement}
+        <View style={styles.staticHeaderContainer}>
+          <FeedHeader />
+        </View>
+        <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
+          <FilterTabs
+            copy={copy}
+            activeSource={activeFeedSource}
+            onChangeSource={setActiveFeedSource}
+          />
+        </FeedHeaderCollapseFrame>
         <ReactionPickerOverlay
           anchor={pickerAnchor}
           onPick={handlePickReaction}
@@ -2923,5 +2924,15 @@ function FeedScreen() {
     </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  staticHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+  },
+});
 
 export default FeedScreen;

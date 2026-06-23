@@ -102,6 +102,8 @@ interface Props {
   height: number;
   /** True when this is the currently-visible reel (plays + unmutes). */
   isActive: boolean;
+  /** True when this is the active selected item in the vertical feed. */
+  isCurrent: boolean;
   /** True when this reel is within the preload window (current ±1). */
   shouldMount: boolean;
   /** Global mute state shared across the feed. */
@@ -155,6 +157,7 @@ function ReelItemBase({
   item,
   height,
   isActive,
+  isCurrent,
   shouldMount,
   isMuted,
   onToggleMute,
@@ -234,9 +237,10 @@ function ReelItemBase({
     }
   }, [isActive, isReady, seekTime]);
 
+  const prevIsCurrentRef = useRef(false);
+
   useEffect(() => {
-    if (isActive) {
-      setUserPaused(false);
+    if (isCurrent && !prevIsCurrentRef.current) {
       const hasInitialSeek = initialSeekTime !== undefined && initialSeekTime > 0;
       if (seekTime === undefined && !hasInitialSeek) {
         if (isReady && videoRef.current) {
@@ -246,7 +250,14 @@ function ReelItemBase({
         }
       }
     }
-  }, [isActive, initialSeekTime]);
+    prevIsCurrentRef.current = isCurrent;
+  }, [isCurrent, isReady, initialSeekTime]);
+
+  useEffect(() => {
+    if (isActive) {
+      setUserPaused(false);
+    }
+  }, [isActive]);
 
   // Removed scale/opacity/translateY parallax — it was causing items to
   // appear misaligned ("lệch") during and after scrolling.
@@ -412,7 +423,12 @@ function ReelItemBase({
           source={{ uri: item.videoUrl }}
           style={StyleSheet.absoluteFill}
           resizeMode="contain"
-          repeat={!autoScrollEnabled}
+          // Don't use `repeat` prop here. When autoScrollEnabled flips
+ // false → true mid-playback, react-native-video doesn't reliably
+ // turn off the active loop, so onEnd never fires and the user
+ // gets stuck on the last video. We handle looping ourselves in
+ // onEnd by seeking back to 0.
+ repeat={false}
           paused={!playing}
           muted={isMuted || !isActive}
           ignoreSilentSwitch="ignore"
@@ -433,10 +449,14 @@ function ReelItemBase({
             }
           }}
           onEnd={() => {
-            if (autoScrollEnabled && onVideoEnd) {
-              onVideoEnd(index);
-            }
-          }}
+ if (autoScrollEnabled) {
+ // Auto-scroll ON -> ask parent to jump to the next reel.
+ onVideoEnd?.(index);
+ } else if (videoRef.current) {
+ // Auto-scroll OFF -> loop the current reel by seeking to 0.
+ videoRef.current.seek(0);
+ }
+ }}
           onError={() => {
             setHasError(true);
             setIsReady(true);
@@ -1125,6 +1145,7 @@ export const ReelItem = memo(ReelItemBase, (prev, next) => {
   return (
     prev.item === next.item &&
     prev.isActive === next.isActive &&
+    prev.isCurrent === next.isCurrent &&
     prev.shouldMount === next.shouldMount &&
     prev.isMuted === next.isMuted &&
     prev.height === next.height &&

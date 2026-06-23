@@ -27,7 +27,7 @@ import {
   AddressScreen,
   AdvertisingScreen,
   EditProfileScreen,
-  MyInfoScreen,
+ MyInfoScreen,
   SettingsScreen,
   UserDashboardScreen,
 } from '../settings';

@@ -7,7 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const FEED_HEADER_CONTENT_HEIGHT = 73;
+const FEED_FILTER_HEIGHT = 66;
 const FEED_HEADER_COLLAPSE_DURATION_MS = 190;
 
 type FeedHeaderCollapseFrameProps = {
@@ -20,13 +20,14 @@ export function FeedHeaderCollapseFrame({
   hidden = false,
 }: FeedHeaderCollapseFrameProps) {
   const insets = useSafeAreaInsets();
-  const expandedHeight = insets.top + FEED_HEADER_CONTENT_HEIGHT;
+  const expandedHeight = FEED_FILTER_HEIGHT;
   const progress = useSharedValue(hidden ? 0 : 1);
   const frameStyle = {
     height: expandedHeight,
+    top: insets.top + 68,
   };
   const contentStyle = {
-    paddingTop: insets.top,
+    paddingTop: 0,
   };
 
   useEffect(() => {
@@ -37,7 +38,7 @@ export function FeedHeaderCollapseFrame({
 
   const contentAnimatedStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * -10 }],
+    transform: [{ translateY: (1 - progress.value) * -FEED_FILTER_HEIGHT }],
   }));
 
   return (

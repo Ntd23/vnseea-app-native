@@ -93,6 +93,8 @@ const REELS_COPY = {
     noReels: 'Chưa có reel nào',
     beFirst: 'Hãy là người đầu tiên đăng một video Reel!',
     postReel: 'Đăng Reel',
+    autoOn: 'Tự động: Bật',
+    autoOff: 'Tự động: Tắt',
   },
   en: {
     loading: 'Loading reels...',
@@ -101,6 +103,8 @@ const REELS_COPY = {
     noReels: 'No reels yet',
     beFirst: 'Be the first one to post a Reel!',
     postReel: 'Post Reel',
+    autoOn: 'Auto: On',
+    autoOff: 'Auto: Off',
   },
 };
 
@@ -451,6 +455,7 @@ export default function ReelsScreen() {
     ({ item, index }: { item: ReelsItem; index: number }) => {
       const distance = Math.abs(index - vm.activeIndex);
       const shouldMount = distance <= preloadRadius;
+      const isCurrent = index === vm.activeIndex;
       // A reel only counts as "active" when this screen has focus —
       // when the user switches tabs, every reel becomes inactive (paused).
       const isActive = isReelItemActive({
@@ -470,6 +475,7 @@ export default function ReelsScreen() {
           item={item}
           height={itemHeight}
           isActive={isActive}
+          isCurrent={isCurrent}
           shouldMount={shouldMount}
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
@@ -791,7 +797,7 @@ export default function ReelsScreen() {
             >
               <ChevronsDown size={18} color="#fff" />
               <Text style={styles.headerButtonText}>
-                {autoScrollEnabled ? 'Auto On' : 'Auto Off'}
+                {autoScrollEnabled ? copy.autoOn : copy.autoOff}
               </Text>
             </TouchableOpacity>
 
