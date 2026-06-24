@@ -1152,24 +1152,21 @@ async function fetchRawFeedPosts(
 
       const [sugRes, friendsRes, nearbyRes] = await Promise.all([
         // Pull a generous author pool so discovery has enough breadth
-        // to cover the install even when the user follows nobody. The
-        // previous 12 was too tight — once we filtered to 8 in
-        // `pickedIds` we often ended up with 2-3 real authors and
-        // their tiny post sets.
+        // to cover the install even when the user follows nobody.
         backendApi
-          .post<SuggestionsResponse>(apiRoutes.user.suggestions, { limit: 24 })
+          .post<SuggestionsResponse>(apiRoutes.user.suggestions, { limit: 60 }) // Increased to 60
           .catch(() => ({} as SuggestionsResponse)),
         sessionUserIdLocal
           ? backendApi
               .post<FriendsResponse>(apiRoutes.social.friends, {
                 user_id: sessionUserIdLocal,
                 type: 'following,followers',
-                limit: 30,
+                limit: 500, // Fetch up to 500 friends/followers
               })
               .catch(() => ({} as FriendsResponse))
           : Promise.resolve({} as FriendsResponse),
         backendApi
-          .post<NearbyResponse>(apiRoutes.user.nearby, { limit: 15 })
+          .post<NearbyResponse>(apiRoutes.user.nearby, { limit: 40 }) // Increased to 40
           .catch(() => ({} as NearbyResponse)),
       ]);
 
@@ -1188,19 +1185,11 @@ async function fetchRawFeedPosts(
       return [];
     }
 
-    // Keep discovery rich enough that a fresh account with no follows
-    // still sees a healthy mix of authors. The previous 8×3=24 cap
-    // meant the feed plateaued around 30-40 light posts even though
-    // the install had many more authors with active content. Bumping
-    // to 16×8=128 potential posts per page is safe because the
-    // server-side filter (`isLightFeedPost`) + dedupe + chronological
-    // sort keeps the actual rendered feed a comfortable size.
-    const pickedIds = ids.slice(0, 16);
-    // 8 posts per author is enough to surface their active content
-    // without flooding the feed. Combined with 16 authors that's
-    // 128 candidate posts per page, which the dedupe + sort shrink
-    // down to a manageable size.
-    const perUserLimit = 8;
+    // Shuffle the list of IDs and select up to 20 random authors on each page fetch
+    // to ensure variety and cover all followers/followings over time.
+    const shuffledIds = [...ids].sort(() => Math.random() - 0.5);
+    const pickedIds = shuffledIds.slice(0, 20);
+    const perUserLimit = 10;
 
     const perUser = await Promise.all(
       pickedIds.map(id =>
@@ -1349,7 +1338,7 @@ async function fetchRawFeedPosts(
   //    follows an active author (e.g. the admin) gets the full 20-30
   //    posts from that author instead of just the first 30.
   const followedLimit = Math.max(limit, 45);
-  const [followedRaw, ownRaw] = await Promise.all([
+  const [followedRaw, ownRaw, publicRaw] = await Promise.all([
     tryFetch({
       type: 'get_news_feed',
       limit: followedLimit,
@@ -1366,6 +1355,16 @@ async function fetchRawFeedPosts(
           limit: ownRawLimit,
           after_post_id: afterPostId,
         })
+      : Promise.resolve<Array<Record<string, unknown>>>([]),
+    // Fetch popular public posts on page 1 only
+    !afterPostId
+      ? backendApi
+          .get<{
+            api_status?: number | string;
+            data?: Array<Record<string, unknown>>;
+          }>(apiRoutes.popular.mostLiked)
+          .then(res => res.data ?? [])
+          .catch(() => [] as Array<Record<string, unknown>>)
       : Promise.resolve<Array<Record<string, unknown>>>([]),
   ]);
 
@@ -1465,14 +1464,16 @@ async function fetchRawFeedPosts(
     pushPost(post, true);
   }
 
-  // Phase 2: followed + discovery — no cap. The viewer's own posts
+  // Phase 2: followed + discovery + public — no cap. The viewer's own posts
   // that already landed in `ownRaw` will be deduped here, but
-  // additional ones (e.g. admin posts the user followed) are
-  // allowed through.
+  // additional ones are allowed through.
   for (const post of followedRaw) {
     pushPost(post, false);
   }
   for (const post of discoveryRaw) {
+    pushPost(post, false);
+  }
+  for (const post of publicRaw) {
     pushPost(post, false);
   }
 
@@ -1485,7 +1486,8 @@ async function fetchRawFeedPosts(
     own: ownRaw.length,
     ownLimit: ownPostsLimit,
     discovery: discoveryRaw.length,
-    rawTotal: followedRaw.length + discoveryRaw.length + ownRaw.length,
+    public: publicRaw.length,
+    rawTotal: followedRaw.length + discoveryRaw.length + ownRaw.length + publicRaw.length,
     merged: merged.length,
     dropped: dropCounters,
   });

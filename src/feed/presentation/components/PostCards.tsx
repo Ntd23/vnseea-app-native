@@ -1243,7 +1243,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
           {shouldMountVideo ? (
             <View pointerEvents="none" style={{ width: '100%', height: '100%' }}>
-              <VideoPlayer
+               <VideoPlayer
                 ref={videoRef}
                 source={videoSource}
                 style={{ width: '100%', height: '100%' }}
@@ -1262,6 +1262,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   currentTimeRef.current = data.currentTime;
                   videoPlaybackTimes.set(post.id, data.currentTime);
                 }}
+                poster={post.thumbnailUrl}
+                posterResizeMode="cover"
                 onError={error => {
                   console.warn(
                     '[HomeVideoPostCard] video error',

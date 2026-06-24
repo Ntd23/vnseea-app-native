@@ -66,7 +66,10 @@ interface ProductPostCardProps {
   product: ProductItem;
   onPress?: (product: ProductItem) => void;
   onMorePress?: (product: ProductItem) => void;
+  /** Navigate to the seller profile (tapped on avatar/header). */
   onProfilePress?: (userId: string) => void;
+  /** Open a chat thread with the seller (tapped on Nhắn tin button). */
+  onContactSeller?: (product: ProductItem) => void;
   onShare?: (product: ProductItem) => void;
   compact?: boolean;
 }
@@ -76,6 +79,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
   onPress,
   onMorePress,
   onProfilePress,
+  onContactSeller,
   onShare,
   compact,
 }: ProductPostCardProps) {
@@ -94,6 +98,14 @@ const ProductPostCard = React.memo(function ProductPostCard({
       onProfilePress?.(String(product.seller.user_id));
     }
   }, [onProfilePress, product.seller?.user_id]);
+
+  const handleContactSeller = useCallback(() => {
+    // Only offer chat if the backend says the viewer can contact the
+    // seller (logged-in, not the owner). Falls back to no-op when the
+    // parent hasn't wired the prop or the product forbids contact.
+    if (!product.can_contact_seller || !product.seller?.user_id) return;
+    onContactSeller?.(product);
+  }, [onContactSeller, product, product.can_contact_seller, product.seller?.user_id]);
 
   const handleSharePress = useCallback(() => {
     onShare?.(product);
@@ -261,7 +273,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
           <FeedGlassActionButton
             className="flex-1 flex-row items-center justify-center py-1.5 px-1"
             activeOpacity={0.75}
-            onPress={handleProfilePress}
+            onPress={handleContactSeller}
           >
             <MessageCircle size={18} color="#65676B" />
             <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>

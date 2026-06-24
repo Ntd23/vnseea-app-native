@@ -1,5 +1,6 @@
 // Description: Displays Marketplace products with searchable filter controls.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LayoutAnimation, Platform as RNPlatform, UIManager } from 'react-native';
 import {
   Platform,
   ActivityIndicator,
@@ -30,6 +31,9 @@ import {
   ChevronDown,
   Check,
   MapPin,
+  Compass,
+  Video,
+  Image as ImageIcon,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -47,6 +51,7 @@ type MarketplaceNav = NativeStackNavigationProp<RootStackParamList>;
 
 const MARKETPLACE_COLUMN_STYLE = {
   justifyContent: 'space-between',
+  paddingHorizontal: 16,
 } as const;
 
 const SORT_OPTIONS: Array<{
@@ -376,7 +381,7 @@ function DistancePickerModal({
 }
 
 function MarketplaceScreen() {
-  const navigation = useNavigation<MarketplaceNav>();
+  const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const vm = useMarketplaceViewModel();
   const nativeTabScrollPublisherStateRef = useRef(
@@ -387,6 +392,21 @@ function MarketplaceScreen() {
   const [sortModalVisible, setSortModalVisible] = useState(false);
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [distanceModalVisible, setDistanceModalVisible] = useState(false);
+
+ // Collapsible filter panel state. When the user scrolls down past
+ // COLLAPSE_THRESHOLD we collapse the filter chip bar (search + sort
+ // + category + distance + nearby + reset) and keep only the top app
+ // bar plus a compact sticky search/handle bar. Scrolling back up
+ // re-expands it.
+ const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+ const lastScrollYRef = useRef(0);
+ const COLLAPSE_THRESHOLD = 120;
+  // Collapsible filter panel state. When the user scrolls the product
+  // list down we collapse the filter chip bar (search + sort + category
+  // + distance + nearby + reset) and keep only the top app bar visible.
+  // A small sticky "Search + Bộ lọc" handle stays so the user can
+  // either type a query or tap the toggle to expand the panel again.
+  
 
   const currentSortLabel = useMemo(() => {
     const option = SORT_OPTIONS.find(opt => opt.value === vm.orderBy);
@@ -466,20 +486,289 @@ function MarketplaceScreen() {
 
   const handleMarketplaceScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (Platform.OS !== 'ios') return;
+      const y = event.nativeEvent.contentOffset.y;
+      const lastY = lastScrollYRef.current;
+      const delta = y - lastY;
+      lastScrollYRef.current = y;
 
-      publishNativeTabScrollIntent(
-        nativeTabScrollPublisherStateRef,
-        event.nativeEvent.contentOffset.y,
-      );
+      // Collapse the filter chip bar when scrolling DOWN past the
+      // threshold; re-expand it when scrolling back UP. We only call
+      // LayoutAnimation when the state actually flips so the panel
+      // doesn't animate on every frame.
+      if (delta > 0 && y > COLLAPSE_THRESHOLD) {
+        setFiltersCollapsed(prev => {
+          if (prev) return prev;
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          return true;
+        });
+      } else if (delta < -2 && y < COLLAPSE_THRESHOLD) {
+        setFiltersCollapsed(prev => {
+          if (!prev) return prev;
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          return false;
+        });
+      }
+
+      if (Platform.OS === 'ios') {
+        publishNativeTabScrollIntent(
+          nativeTabScrollPublisherStateRef,
+          y,
+        );
+      }
     },
     [],
   );
 
+  const collapsedBar = (
+    <View className="px-4 pb-2 pt-1">
+      <View className="surface-panel flex-row items-center gap-2 p-2 rounded-2xl border border-slate-100/80 bg-white shadow-sm shadow-slate-100/40">
+        <View className="input-shell flex-1 flex-row items-center px-3 bg-slate-50 border border-slate-100 rounded-2xl">
+          <Search size={16} color="#64748B" />
+          <TextInput
+            className="ml-2 min-h-[38px] flex-1 text-body-primary text-sm font-medium"
+            placeholder="Tìm sản phẩm, địa điểm..."
+            placeholderTextColor="#94A3B8"
+            value={vm.keyword}
+            onChangeText={vm.setKeyword}
+            returnKeyType="search"
+          />
+          {vm.keyword ? (
+            <TouchableOpacity
+              className="h-6 w-6 items-center justify-center rounded-full bg-slate-200/50"
+              activeOpacity={0.8}
+              onPress={() => vm.setKeyword('')}
+            >
+              <X size={12} color="#64748B" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        <TouchableOpacity
+          className="h-10 px-3.5 flex-row items-center justify-center rounded-2xl bg-[#0F56FB] gap-1.5 shadow-sm shadow-blue-200/50"
+          activeOpacity={0.85}
+          onPress={() => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setFiltersCollapsed(false);
+          }}
+          hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+        >
+          <SlidersHorizontal size={15} color="#FFFFFF" />
+          <Text className="text-caption-primary font-bold text-white text-xs">Bộ lọc</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const fullBar = (
+    <View className="px-4 pb-2 pt-2">
+      <View className="surface-panel gap-2.5 p-3.5 rounded-2xl border border-slate-100/80 bg-white shadow-sm shadow-slate-100/40">
+        {/* Row 1: Search Input */}
+        <View className="input-shell flex-row items-center px-4 bg-slate-50 border border-slate-100 rounded-2xl">
+          <Search size={18} color="#64748B" />
+          <TextInput
+            className="ml-2.5 min-h-[46px] flex-1 text-body-primary text-sm font-medium"
+            placeholder="Tìm sản phẩm, địa điểm..."
+            placeholderTextColor="#94A3B8"
+            value={vm.keyword}
+            onChangeText={vm.setKeyword}
+            returnKeyType="search"
+          />
+          {vm.keyword ? (
+            <TouchableOpacity
+              className="h-7 w-7 items-center justify-center rounded-full bg-slate-200/50"
+              activeOpacity={0.8}
+              hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+              onPress={() => vm.setKeyword('')}
+            >
+              <X size={14} color="#64748B" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {/* Row 2: Sort and Category Dropdowns */}
+        <View className="flex-row gap-2.5">
+          <TouchableOpacity
+            className={`flex-1 flex-row items-center justify-between rounded-2xl border px-3.5 py-3 ${
+              vm.orderBy !== undefined
+                ? 'border-blue-200 bg-blue-50/60'
+                : 'border-slate-200/50 bg-slate-50/50'
+            }`}
+            activeOpacity={0.8}
+            onPress={() => setSortModalVisible(true)}
+          >
+            <Text
+              className={`text-sm font-semibold flex-1 mr-1 ${
+                vm.orderBy !== undefined ? 'text-[#0F56FB]' : 'text-slate-700'
+              }`}
+              numberOfLines={1}
+            >
+              {currentSortLabel}
+            </Text>
+            <ChevronDown size={14} color={vm.orderBy !== undefined ? '#0F56FB' : '#64748B'} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            className={`flex-1 flex-row items-center justify-between rounded-2xl border px-3.5 py-3 ${
+              vm.categoryId !== undefined
+                ? 'border-blue-200 bg-blue-50/60'
+                : 'border-slate-200/50 bg-slate-50/50'
+            }`}
+            activeOpacity={0.8}
+            onPress={() => setCategoryModalVisible(true)}
+          >
+            <Text
+              className={`text-sm font-semibold flex-1 mr-1 ${
+                vm.categoryId !== undefined ? 'text-[#0F56FB]' : 'text-slate-700'
+              }`}
+              numberOfLines={1}
+            >
+              {currentCategoryLabel}
+            </Text>
+            <ChevronDown size={14} color={vm.categoryId !== undefined ? '#0F56FB' : '#64748B'} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Row 3: Distance Dropdown */}
+        <TouchableOpacity
+          className={`flex-row items-center justify-between rounded-2xl border px-3.5 py-3 ${
+            vm.distance !== undefined && vm.distance !== 15
+              ? 'border-blue-200 bg-blue-50/60'
+              : 'border-slate-200/50 bg-slate-50/50'
+          }`}
+          activeOpacity={0.8}
+          onPress={() => setDistanceModalVisible(true)}
+        >
+          <View className="flex-row items-center gap-2">
+            <MapPin size={15} color={vm.distance !== undefined && vm.distance !== 15 ? '#0F56FB' : '#64748B'} />
+            <Text
+              className={`text-sm font-semibold ${
+                vm.distance !== undefined && vm.distance !== 15 ? 'text-[#0F56FB]' : 'text-slate-700'
+              }`}
+            >
+              {currentDistanceLabel}
+            </Text>
+          </View>
+          <ChevronDown size={14} color={vm.distance !== undefined && vm.distance !== 15 ? '#0F56FB' : '#64748B'} />
+        </TouchableOpacity>
+
+        {/* Row 4: Nearby stores button and Reset button */}
+        <View className="flex-row gap-2.5 mt-0.5">
+          <TouchableOpacity
+            className={`flex-1 h-11 items-center justify-center rounded-2xl flex-row gap-2 shadow-sm ${
+              vm.distance === 15
+                ? 'bg-[#0F56FB] border border-[#0F56FB] shadow-blue-200/50'
+                : 'bg-slate-50 border border-slate-200/50 shadow-slate-100/20'
+            }`}
+            activeOpacity={0.85}
+            onPress={handleNearbyStoresToggle}
+          >
+            <MapPin size={15} color={vm.distance === 15 ? '#FFFFFF' : '#64748B'} />
+            <Text
+              className={`font-bold text-sm ${
+                vm.distance === 15 ? 'text-white' : 'text-slate-700'
+              }`}
+            >
+              Cửa hàng lân cận (15 km)
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            className={`h-11 w-11 items-center justify-center rounded-2xl border ${
+              hasActiveFilters
+                ? 'border-red-200 bg-red-50/60'
+                : 'border-slate-200/50 bg-slate-50/50 opacity-40'
+            }`}
+            activeOpacity={0.8}
+            disabled={!hasActiveFilters}
+            onPress={vm.resetFilters}
+          >
+            <RotateCcw size={16} color={hasActiveFilters ? '#EF4444' : '#64748B'} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+
+  const marketplaceTopTabs = (
+    <View className="bg-white px-4 pb-2 pt-1">
+      <View className="min-h-[50px] flex-row items-center justify-around rounded-[16px] border border-[#e3e8f2] bg-white px-4 shadow-sm">
+        {/* Tất cả */}
+        <TouchableOpacity
+          className="h-10 flex-1 items-center justify-center"
+          activeOpacity={0.75}
+          onPress={() => navigation.navigate(ROUTES.FEED)}
+        >
+          <Compass
+            size={24}
+            color="#9ca3af"
+            strokeWidth={2.0}
+          />
+        </TouchableOpacity>
+
+        <View className="h-7 w-px bg-[#dfe4ef]" />
+
+        {/* Bản đồ địa chỉ */}
+        <TouchableOpacity
+          className="h-10 flex-1 items-center justify-center"
+          activeOpacity={0.75}
+          onPress={() => navigation.navigate(ROUTES.NEARBY_USERS)}
+        >
+          <MapPin
+            size={24}
+            color="#9ca3af"
+            strokeWidth={2.0}
+          />
+        </TouchableOpacity>
+
+        <View className="h-7 w-px bg-[#dfe4ef]" />
+
+        {/* Ảnh */}
+        <TouchableOpacity
+          className="h-10 flex-1 items-center justify-center"
+          activeOpacity={0.75}
+          onPress={() => {
+            navigation.navigate(ROUTES.FEED, { filter: 'photos' });
+          }}
+        >
+          <ImageIcon
+            size={24}
+            color="#9ca3af"
+            strokeWidth={2.0}
+          />
+        </TouchableOpacity>
+
+        <View className="h-7 w-px bg-[#dfe4ef]" />
+
+        {/* Video */}
+        <TouchableOpacity
+          className="h-10 flex-1 items-center justify-center"
+          activeOpacity={0.75}
+          onPress={() => navigation.navigate(ROUTES.REELS)}
+        >
+          <Video
+            size={24}
+            color="#9ca3af"
+            strokeWidth={2.0}
+          />
+        </TouchableOpacity>
+
+        <View className="h-7 w-px bg-[#dfe4ef]" />
+
+        {/* Thị trường */}
+        <View className="h-10 flex-1 items-center justify-center">
+          <ShoppingBag
+            size={24}
+            color="#0758ff"
+            strokeWidth={2.5}
+          />
+        </View>
+      </View>
+    </View>
+  );
+
   const marketplaceHeader = (
-    <>
+    <View className="bg-white border-b border-slate-100">
       <View
-        className="surface-topbar flex-row items-center px-4 py-3"
+        className="surface-topbar flex-row items-center px-4 pt-3 pb-2"
         style={Platform.OS === 'ios' ? { paddingTop: insets.top + 12 } : undefined}
       >
         <TouchableOpacity
@@ -492,7 +781,6 @@ function MarketplaceScreen() {
         </TouchableOpacity>
         <View className="ml-2 flex-1">
           <Text className="text-heading">Cửa hàng</Text>
-          <Text className="mt-0.5 text-caption-secondary">Marketplace</Text>
         </View>
         <TouchableOpacity
           className="relative mr-2 h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white"
@@ -520,102 +808,12 @@ function MarketplaceScreen() {
           </Text>
         </TouchableOpacity>
       </View>
-
-      <View className="px-4 pb-3 pt-4">
-        <View className="surface-panel gap-3 p-4 rounded-2xl border border-slate-100 bg-white shadow-sm">
-          {/* Row 1: Search Input */}
-          <View className="input-shell flex-row items-center px-4 bg-slate-50 border border-slate-200 rounded-xl">
-            <Search size={19} color="#64748B" />
-            <TextInput
-              className="ml-3 min-h-[46px] flex-1 text-body-primary"
-              placeholder="Tìm sản phẩm, địa điểm..."
-              placeholderTextColor="#94A3B8"
-              value={vm.keyword}
-              onChangeText={vm.setKeyword}
-              returnKeyType="search"
-            />
-            {vm.keyword ? (
-              <TouchableOpacity
-                className="h-8 w-8 items-center justify-center rounded-full"
-                activeOpacity={0.8}
-                hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
-                onPress={() => vm.setKeyword('')}
-              >
-                <X size={16} color="#64748B" />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          {/* Row 2: Sort and Category Dropdowns */}
-          <View className="flex-row gap-2">
-            <TouchableOpacity
-              className="flex-1 flex-row items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-3"
-              activeOpacity={0.8}
-              onPress={() => setSortModalVisible(true)}
-            >
-              <Text className="text-body-primary text-sm font-semibold" numberOfLines={1}>
-                {currentSortLabel}
-              </Text>
-              <ChevronDown size={15} color="#64748B" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              className="flex-1 flex-row items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-3"
-              activeOpacity={0.8}
-              onPress={() => setCategoryModalVisible(true)}
-            >
-              <Text className="text-body-primary text-sm font-semibold" numberOfLines={1}>
-                {currentCategoryLabel}
-              </Text>
-              <ChevronDown size={15} color="#64748B" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Row 3: Distance Dropdown */}
-          <TouchableOpacity
-            className="flex-row items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-3"
-            activeOpacity={0.8}
-            onPress={() => setDistanceModalVisible(true)}
-          >
-            <View className="flex-row items-center gap-2">
-              <MapPin size={16} color="#0000FF" />
-              <Text className="text-body-primary text-sm font-semibold">
-                {currentDistanceLabel}
-              </Text>
-            </View>
-            <ChevronDown size={15} color="#64748B" />
-          </TouchableOpacity>
-
-          {/* Row 4: Nearby stores button and Reset button */}
-          <View className="flex-row gap-2 mt-1">
-            <TouchableOpacity
-              className={`flex-1 h-11 items-center justify-center rounded-xl flex-row gap-2 ${
-                vm.distance === 15 ? 'bg-blue-700' : 'bg-blue-600'
-              }`}
-              activeOpacity={0.9}
-              onPress={handleNearbyStoresToggle}
-            >
-              <MapPin size={16} color="#FFFFFF" />
-              <Text className="text-caption-primary font-bold text-white text-sm">
-                Cửa hàng lân cận (15 km)
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              className="h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50"
-              activeOpacity={0.8}
-              onPress={vm.resetFilters}
-            >
-              <RotateCcw size={17} color="#64748B" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </>
+      {marketplaceTopTabs}
+      {filtersCollapsed ? collapsedBar : fullBar}
+    </View>
   );
 
-  const marketplaceListHeaderComponent =
-    Platform.OS === 'ios' ? marketplaceHeader : undefined;
+  const marketplaceListHeaderComponent = marketplaceHeader;
 
   return (
     <SafeAreaView
@@ -623,7 +821,7 @@ function MarketplaceScreen() {
       edges={Platform.OS === 'ios' ? ['left', 'right'] : ['top']}
     >
       <FocusAwareStatusBar barStyle="dark-content" />
-      {Platform.OS === 'ios' ? undefined : marketplaceHeader}
+      {null}
 
       <FlatList
         data={vm.products}
@@ -631,12 +829,13 @@ function MarketplaceScreen() {
         renderItem={renderProduct}
         numColumns={2}
         columnWrapperStyle={MARKETPLACE_COLUMN_STYLE}
-        contentContainerClassName="gap-3 px-4 pb-10 pt-1"
+        contentContainerClassName="gap-3 pb-10 pt-1"
         ListHeaderComponent={marketplaceListHeaderComponent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        onScroll={Platform.OS === 'ios' ? handleMarketplaceScroll : undefined}
-        scrollEventThrottle={Platform.OS === 'ios' ? 16 : undefined}
+        stickyHeaderIndices={[0]}
+        onScroll={handleMarketplaceScroll}
+        scrollEventThrottle={16}
         onEndReached={vm.loadMore}
         onEndReachedThreshold={0.35}
         refreshControl={
