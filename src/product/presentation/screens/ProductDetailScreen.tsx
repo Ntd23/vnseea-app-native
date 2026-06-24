@@ -1,5 +1,5 @@
 // Description: Renders product detail and starts marketplace cart checkout.
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -327,6 +327,7 @@ function ProductDetailContent({
         isOnline: false,
         isVerified: false,
       },
+      product,
     });
   }, [navigation, product]);
 
@@ -504,7 +505,38 @@ function ProductDetailScreen() {
   const route = useRoute<ProductDetailRoute>();
   const { productId, product: productFromParams } = route.params;
 
-  const product: ProductItem | undefined = productFromParams;
+  const [product, setProduct] = useState<ProductItem | undefined>(productFromParams);
+  const [loading, setLoading] = useState(!productFromParams && !!productId);
+
+  useEffect(() => {
+    if (!productFromParams && productId) {
+      setLoading(true);
+      repository
+        .getProducts({ product_id: productId })
+        .then(res => {
+          if (res.products && res.products.length > 0) {
+            setProduct(res.products[0]);
+          }
+        })
+        .catch(err => {
+          console.error('Failed to fetch product by ID:', err);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+  }, [productId, productFromParams]);
+
+  if (loading) {
+    return (
+      <SafeAreaView className="flex-1 bg-[#F8FAFC] items-center justify-center">
+        <ActivityIndicator size="large" color={BRAND} />
+        <Text className="mt-4 text-sm font-semibold text-slate-500">
+          Đang tải chi tiết sản phẩm...
+        </Text>
+      </SafeAreaView>
+    );
+  }
 
   if (!product) {
     return (

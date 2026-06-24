@@ -99,4 +99,5 @@ export interface GetProductsInput {
   keyword?: string;
   distance?: number;
   order_by?: 'price_low' | 'price_high';
+  product_id?: number;
 }

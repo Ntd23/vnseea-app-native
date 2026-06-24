@@ -38,6 +38,7 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useMarketplaceViewModel } from '../../application/view-models/useMarketplaceViewModel';
+import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -384,6 +385,9 @@ function MarketplaceScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const vm = useMarketplaceViewModel();
+ // Repository for direct product operations (e.g. quick add-to-cart
+ // from the marketplace card).
+ const repository = createProductRepository();
   const nativeTabScrollPublisherStateRef = useRef(
     createNativeTabScrollPublisherState(),
   );
@@ -475,15 +479,70 @@ function MarketplaceScreen() {
     [navigation],
   );
 
+ // Quick add-to-cart from the marketplace card. Same backend path
+ // as the ProductDetailScreen button - calls repository.addToCart
+ // and pops straight to Checkout so the user sees the result.
+ const handleAddToCart = useCallback(
+ async (product: ProductItem) => {
+ if (!product.can_add_to_cart) return;
+ try {
+ await repository.addToCart(product.id, 1);
+ navigation.navigate(ROUTES.CHECKOUT);
+ } catch (error) {
+ // Silent failure for the marketplace card - the user can
+ // always retry from the product detail screen.
+ console.warn('[MarketplaceScreen] addToCart failed', error);
+ }
+ },
+ [navigation, repository],
+ );
+
+ // Open a chat thread with the product seller. Mirrors the handler
+  // in ProductDetailScreen so behaviour stays consistent across the
+  // marketplace list and the detail screen.
+  const handleContactSeller = useCallback(
+    (product: ProductItem) => {
+    const seller = product.seller;
+    if (!seller?.user_id) return;
+    navigation.navigate(ROUTES.CHAT, {
+    chat: {
+    id: String(seller.user_id),
+    chatId: String(seller.user_id),
+    chatType: 'user',
+    participantId: String(seller.user_id),
+    userId: String(seller.user_id),
+    username: seller.username || "",
+    name: seller.name || "",
+    avatar: seller.avatar || "",
+    lastMessage: "",
+    lastMessageTime: 0,
+    unreadCount: 0,
+    isOnline: false,
+    isVerified: false,
+    },
+    product,
+    });
+    },
+    [navigation],
+  );
+
+
   const renderProduct = useCallback(
     ({ item }: ListRenderItemInfo<ProductItem>) => (
       <View className="w-[48%]">
-        <ProductPostCard compact product={item} onPress={handleProductPress} />
+        <ProductPostCard
+          compact
+          product={item}
+          onPress={handleProductPress}
+          onContactSeller={handleContactSeller}
+
+          onAddToCart={handleAddToCart}
+        />
       </View>
     ),
-    [handleProductPress],
+    [handleProductPress, handleContactSeller, handleAddToCart],
   );
-
+ 
   const handleMarketplaceScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const y = event.nativeEvent.contentOffset.y;
