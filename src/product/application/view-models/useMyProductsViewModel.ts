@@ -7,6 +7,10 @@ import type {
 } from '../../../orders/domain/types/orders.types';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductItem } from '../../domain/types/product.types';
+import {
+  buildProductCategoryOptions,
+  normalizeProductCategoriesMap,
+} from './productCategoryOptions';
 
 const productRepository = createProductRepository();
 const ordersRepository = createOrdersRepository();
@@ -41,13 +45,17 @@ function matchesOrderStatus(item: OrdersItem, status: OrderStatusFilter) {
 export function useMyProductsViewModel(targetUserId?: number) {
   const [activeTab, setActiveTab] = useState<MyProductsTab>('products');
   const [products, setProducts] = useState<ProductItem[]>([]);
+  const [categoriesById, setCategoriesById] = useState<Record<string, string>>(
+    {},
+  );
   const [purchasedOrders, setPurchasedOrders] = useState<OrdersItem[]>([]);
   const [sellerOrders, setSellerOrders] = useState<OrdersItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [productSort, setProductSort] = useState<ProductSortOption>('newest');
   const [categoryId, setCategoryId] = useState<number | undefined>();
   const [purchasedSearch, setPurchasedSearch] = useState('');
-  const [purchasedStatus, setPurchasedStatus] = useState<OrderStatusFilter>('all');
+  const [purchasedStatus, setPurchasedStatus] =
+    useState<OrderStatusFilter>('all');
   const [ordersSearch, setOrdersSearch] = useState('');
   const [ordersStatus, setOrdersStatus] = useState<OrderStatusFilter>('all');
   const [filtersVisible, setFiltersVisible] = useState(false);
@@ -65,13 +73,15 @@ export function useMyProductsViewModel(targetUserId?: number) {
         limit: 60,
         user_id: targetUserId,
       });
-      // Nếu targetUserId có → lấy tất cả sản phẩm của user đó (không filter is_owner)
-      // Nếu không → chỉ lấy sản phẩm của mình (is_owner)
       const filtered = targetUserId
         ? response.products.filter(
             product => String(product.user_id) === String(targetUserId),
           )
         : response.products.filter(product => product.is_owner);
+
+      setCategoriesById(
+        normalizeProductCategoriesMap(response.products_categories),
+      );
       setProducts(filtered);
     } catch (caughtError) {
       setError(
@@ -117,18 +127,10 @@ export function useMyProductsViewModel(targetUserId?: number) {
     setFiltersVisible(false);
   }, [activeTab]);
 
-  const categories = useMemo(() => {
-    const map = new Map<number, string>();
-    products.forEach(product => {
-      if (product.category) {
-        map.set(
-          product.category,
-          product.category_name || `Thể loại ${product.category}`,
-        );
-      }
-    });
-    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
-  }, [products]);
+  const categories = useMemo(
+    () => buildProductCategoryOptions(products, categoriesById),
+    [categoriesById, products],
+  );
 
   const filteredProducts = useMemo(() => {
     const query = productSearch.trim().toLowerCase();

@@ -45,8 +45,9 @@ import {
   MarketplaceScreen,
   MyProductsScreen,
   ProductDetailScreen,
+  SellerStoreScreen,
 } from '../product';
-import { CheckoutScreen } from '../checkout';
+import { CartScreen, CheckoutScreen, ShippingAddressScreen } from '../checkout';
 import { CreateEventScreen, EventDetailScreen, EventsScreen } from '../events';
 import { CreatePollScreen } from '../poll';
 import {
@@ -213,7 +214,10 @@ export function createStackRoutes(
     { name: ROUTES.MARKETPLACE, component: MarketplaceScreen },
     { name: ROUTES.MY_PRODUCTS, component: MyProductsScreen },
     { name: ROUTES.PRODUCT_DETAIL, component: ProductDetailScreen },
+    { name: ROUTES.SELLER_STORE, component: SellerStoreScreen },
+    { name: ROUTES.CART, component: CartScreen },
     { name: ROUTES.CHECKOUT, component: CheckoutScreen },
+    { name: ROUTES.SHIPPING_ADDRESS, component: ShippingAddressScreen },
     { name: ROUTES.CREATE_PRODUCT, component: CreateProductScreen },
     { name: ROUTES.CREATE_EVENT, component: CreateEventScreen },
     { name: ROUTES.EDIT_EVENT, component: CreateEventScreen },

@@ -2,6 +2,7 @@
 // Displays products in Facebook Marketplace-style layout.
 import React, { useCallback } from 'react';
 import {
+  type GestureResponderEvent,
   Image,
   Text,
   TouchableOpacity,
@@ -72,7 +73,10 @@ interface ProductPostCardProps {
   /** Open a chat thread with the seller (tapped on Nhắn tin button). */
   onContactSeller?: (product: ProductItem) => void;
   /** Add product to cart (tapped on Thêm giỏ button). */
-  onAddToCart?: (product: ProductItem) => void;
+  onAddToCart?: (
+    product: ProductItem,
+    origin?: { x: number; y: number },
+  ) => void;
   onShare?: (product: ProductItem) => void;
   compact?: boolean;
 }
@@ -108,9 +112,17 @@ const ProductPostCard = React.memo(function ProductPostCard({
     onContactSeller?.(product);
   }, [onContactSeller, product, product.can_contact_seller, product.seller?.user_id]);
 
-  const handleAddToCart = useCallback(() => {
+  const handleAddToCart = useCallback((event?: GestureResponderEvent) => {
     if (!product.can_add_to_cart) return;
-    onAddToCart?.(product);
+    onAddToCart?.(
+      product,
+      event
+        ? {
+            x: event.nativeEvent.pageX,
+            y: event.nativeEvent.pageY,
+          }
+        : undefined,
+    );
   }, [onAddToCart, product, product.can_add_to_cart]);
 
   const handleSharePress = useCallback(() => {

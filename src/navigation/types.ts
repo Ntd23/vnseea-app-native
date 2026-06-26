@@ -124,7 +124,19 @@ export type RootStackParamList = {
     productId: number;
     product?: ProductItem;
   };
-  [ROUTES.CHECKOUT]: undefined;
+  [ROUTES.CART]: undefined;
+  [ROUTES.CHECKOUT]:
+    | {
+        selectedProductIds?: number[];
+        selectedAddressId?: string;
+      }
+    | undefined;
+  [ROUTES.SHIPPING_ADDRESS]:
+    | {
+        selectedProductIds?: number[];
+        selectedAddressId?: string;
+      }
+    | undefined;
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;
   [ROUTES.EDIT_EVENT]: { event: EventsItem };
@@ -206,6 +218,12 @@ export type RootStackParamList = {
   [ROUTES.GO_LIVE]: undefined;
   [ROUTES.POKE]: undefined;
   [ROUTES.FORUM]: undefined;
+  [ROUTES.SELLER_STORE]: {
+    sellerId: number;
+    sellerName?: string;
+    sellerUsername?: string;
+    sellerAvatar?: string;
+  };
 };
 
 export type MainTabRouteName = keyof MainTabParamList;

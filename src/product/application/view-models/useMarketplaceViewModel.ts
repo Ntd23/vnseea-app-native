@@ -11,6 +11,7 @@ import type {
  GetProductsInput,
  ProductItem,
 } from '../../domain/types/product.types';
+import { useSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 
 const repository = createProductRepository();
 const PAGE_SIZE = 20;
@@ -117,7 +118,7 @@ export function useMarketplaceViewModel() {
  const [distanceFilterAvailable, setDistanceFilterAvailable] =
  useState(true);
  const [filtersVisible, setFiltersVisible] = useState(false);
- const [cartCount, setCartCount] = useState(0);
+ const { cartCount, syncCartCount } = useSyncedCartCount(0);
  const [isLoading, setIsLoading] = useState(true);
  const [isRefreshing, setIsRefreshing] = useState(false);
  const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -146,7 +147,7 @@ export function useMarketplaceViewModel() {
  ]);
 
  setProducts(response.products);
- setCartCount(nextCartCount);
+ syncCartCount(nextCartCount);
  setCategories(currentCategories =>
  mergeCategoryOptions(
  currentCategories,
@@ -171,7 +172,7 @@ export function useMarketplaceViewModel() {
  setIsRefreshing(false);
  }
  },
- [categoryId, distance, keyword, orderBy],
+ [categoryId, distance, keyword, orderBy, syncCartCount],
  );
 
  const loadMore = useCallback(async () => {
@@ -240,6 +241,13 @@ export function useMarketplaceViewModel() {
  setDistance(undefined);
  }, []);
 
+ const updateCartCount = useCallback(
+ (nextCount?: number) => {
+ syncCartCount(nextCount, 1);
+ },
+ [syncCartCount],
+ );
+
  useEffect(() => {
  const timeoutId = setTimeout(() => {
  loadFirstPage().catch(() => undefined);
@@ -271,6 +279,7 @@ export function useMarketplaceViewModel() {
  setDistance,
  toggleFilters: () => setFiltersVisible(isVisible => !isVisible),
  resetFilters,
+ updateCartCount,
  reload: () => loadFirstPage(true),
  loadMore,
  };

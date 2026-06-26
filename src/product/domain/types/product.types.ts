@@ -36,6 +36,8 @@ export interface ProductItem {
   lng?: string;
   type: number; // 0 = normal, 1 = sell
   units?: number;
+  rating?: number | string;
+  reviews_count?: number | string;
   active: number;
   post_id: number;
   time: string;

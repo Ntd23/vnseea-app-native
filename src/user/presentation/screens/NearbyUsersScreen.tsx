@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Keyboard,
   Linking,
@@ -105,6 +106,15 @@ function formatDistance(value?: number) {
   if (value === undefined || !Number.isFinite(value)) return '';
   if (value < 1000) return `${Math.max(1, Math.round(value))} m`;
   return `${(value / 1000).toFixed(value < 10000 ? 1 : 0)} km`;
+}
+
+function formatDuration(seconds: number) {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 1) return 'Dưới 1 phút';
+  if (minutes < 60) return `${minutes} phút`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours} giờ ${remainingMinutes} phút` : `${hours} giờ`;
 }
 
 function formatCoordinate(coordinate: LatLng) {
@@ -338,6 +348,9 @@ export default function NearbyUsersScreen() {
     [],
   );
   const [activeRoute, setActiveRoute] = useState<LatLng[]>([]);
+  const [activeRouteDuration, setActiveRouteDuration] = useState<number | null>(
+    null,
+  );
   const [routeHeading, setRouteHeading] = useState<number | null>(null);
   const [hasCenteredOnUser, setHasCenteredOnUser] = useState(false);
   const [hasLoadedNearbyPages, setHasLoadedNearbyPages] = useState(false);
@@ -461,6 +474,7 @@ export default function NearbyUsersScreen() {
         setActiveRoute(routePath);
         setActiveRouteConnector(routeConnector);
         setActiveDestination(destination);
+        setActiveRouteDuration(route.durationSeconds);
         lastRoutedOriginRef.current = origin;
 
         if (navigationPath.length > 1) {
@@ -511,6 +525,7 @@ export default function NearbyUsersScreen() {
       setIsSearchFocused(false);
       setSelectedPoint(point);
       setIsSheetCollapsed(false);
+      setActiveRouteDuration(null);
 
       mapRef.current?.animateToRegion(
         {
@@ -574,6 +589,7 @@ export default function NearbyUsersScreen() {
     setActiveRouteConnector([]);
     setActiveDestination(null);
     setRouteHeading(null);
+    setActiveRouteDuration(null);
     lastRoutedOriginRef.current = null;
     selectPoint(
       {
@@ -684,6 +700,66 @@ export default function NearbyUsersScreen() {
       title: selectedPoint.title,
     }).catch(() => undefined);
   }, [selectedPoint]);
+
+  const handleGetDirections = useCallback(() => {
+    if (!selectedPoint) return;
+    const dest = selectedPoint.coordinate;
+
+    const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${dest.latitude},${dest.longitude}&travelmode=walking`;
+    const appleMapsUrl = `http://maps.apple.com/?daddr=${dest.latitude},${dest.longitude}&dirflg=w`;
+
+    const openMap = (url: string) => {
+      Linking.openURL(url).catch(() => {
+        Alert.alert('Lỗi', 'Không thể mở ứng dụng bản đồ.');
+      });
+    };
+
+    if (Platform.OS === 'ios') {
+      Alert.alert(
+        'Chọn bản đồ',
+        'Bạn muốn bắt đầu chỉ đường bằng ứng dụng nào?',
+        [
+          {
+            text: 'Google Maps',
+            onPress: () => openMap(googleMapsUrl),
+          },
+          {
+            text: 'Apple Maps',
+            onPress: () => openMap(appleMapsUrl),
+          },
+          {
+            text: 'Xem lộ trình trong app',
+            onPress: () => refreshRoute(dest).catch(() => undefined),
+          },
+          {
+            text: 'Huỷ',
+            style: 'cancel',
+          },
+        ],
+        { cancelable: true },
+      );
+    } else {
+      Alert.alert(
+        'Bắt đầu điều hướng',
+        'Mở Google Maps để bắt đầu chỉ đường và điều hướng?',
+        [
+          {
+            text: 'Mở Google Maps',
+            onPress: () => openMap(googleMapsUrl),
+          },
+          {
+            text: 'Xem lộ trình trong app',
+            onPress: () => refreshRoute(dest).catch(() => undefined),
+          },
+          {
+            text: 'Huỷ',
+            style: 'cancel',
+          },
+        ],
+        { cancelable: true },
+      );
+    }
+  }, [selectedPoint, refreshRoute]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -1120,6 +1196,13 @@ export default function NearbyUsersScreen() {
           </View>
 
           <View className="mt-3 flex-row flex-wrap items-center">
+            {activeRouteDuration !== null && activeRouteDuration > 0 ? (
+              <View style={styles.durationBadge}>
+                <Text style={styles.durationText}>
+                  {formatDuration(activeRouteDuration)} đi bộ
+                </Text>
+              </View>
+            ) : null}
             {selectedDistance !== undefined ? (
               <View style={styles.distanceBadge}>
                 <Text style={styles.distanceText}>
@@ -1156,7 +1239,7 @@ export default function NearbyUsersScreen() {
             <TouchableOpacity
               activeOpacity={0.86}
               className="flex-1 items-center rounded-xl bg-blue-700 px-2 py-3"
-              onPress={() => refreshRoute(selectedPoint.coordinate)}
+              onPress={handleGetDirections}
               disabled={selectedPoint.source === 'self'}
               style={selectedPoint.source === 'self' ? { opacity: 0.45 } : null}
             >
@@ -1524,5 +1607,17 @@ const styles = StyleSheet.create({
     zIndex: 30,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  durationBadge: {
+    marginRight: 8,
+    borderRadius: 999,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  durationText: {
+    color: '#15803D',
+    fontSize: 11,
+    fontWeight: '800',
   },
 });

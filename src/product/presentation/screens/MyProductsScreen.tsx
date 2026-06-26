@@ -13,7 +13,12 @@ import {
   View,
   type ListRenderItemInfo,
 } from 'react-native';
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -40,12 +45,15 @@ import {
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
+import { useSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 
 type MyProductsNav = NativeStackNavigationProp<RootStackParamList>;
 type MyProductsRoute = RouteProp<RootStackParamList, typeof ROUTES.MY_PRODUCTS>;
 
 const PRODUCT_COLUMNS = { justifyContent: 'space-between' } as const;
 const ORDER_DETAIL_MAX_HEIGHT = Dimensions.get('window').height * 0.82;
+const productRepository = createProductRepository();
 
 const TABS: Array<{ key: MyProductsTab; label: string }> = [
   { key: 'products', label: 'Sản phẩm của tôi' },
@@ -331,6 +339,7 @@ function MyProductsScreen() {
   const targetUserId = targetUserIdRaw ? Number(targetUserIdRaw) : undefined;
   const vm = useMyProductsViewModel(targetUserId);
   const { setActiveTab } = vm;
+  const { cartCount, syncCartCount } = useSyncedCartCount(0);
   const [selectedOrder, setSelectedOrder] = useState<OrdersItem | null>(null);
 
   useEffect(() => {
@@ -342,6 +351,27 @@ function MyProductsScreen() {
   const handleCreate = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_PRODUCT);
   }, [navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      productRepository
+        .getCartCount()
+        .then(count => {
+          if (!cancelled) {
+            syncCartCount(count);
+          }
+        })
+        .catch(error => {
+          console.warn('[MyProducts] getCartCount error:', error);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [syncCartCount]),
+  );
 
   const handleTabPress = useCallback(
     (tab: MyProductsTab) => {
@@ -426,12 +456,19 @@ function MyProductsScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              className="flex-1 flex-row items-center justify-center bg-orange-500 rounded-xl py-3 px-3 shadow-sm active:bg-orange-600"
+              className="relative flex-1 flex-row items-center justify-center bg-orange-500 rounded-xl py-3 px-3 shadow-sm active:bg-orange-600"
               style={{ backgroundColor: '#F97316' }}
               activeOpacity={0.8}
-              onPress={() => navigation.navigate(ROUTES.CHECKOUT)}
+              onPress={() => navigation.navigate(ROUTES.CART)}
             >
               <ShoppingCart size={16} color="#FFFFFF" />
+              {cartCount > 0 ? (
+                <View className="absolute right-2 top-1 h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1">
+                  <Text className="text-[10px] font-extrabold text-white">
+                    {cartCount > 99 ? '99+' : cartCount}
+                  </Text>
+                </View>
+              ) : null}
               <Text className="ml-2 text-white font-semibold text-caption-primary">
                 Giỏ hàng
               </Text>
