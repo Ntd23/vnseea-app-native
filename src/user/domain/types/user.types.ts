@@ -170,11 +170,26 @@ export type MapRouteInput = {
   mode?: 'walking' | 'driving' | 'bicycling' | 'transit';
 };
 
+export type MapRoutePoint = {
+  latitude: number;
+  longitude: number;
+};
+
+export type MapRouteStep = {
+  instruction?: string;
+  maneuver?: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  startLocation?: MapRoutePoint;
+  endLocation?: MapRoutePoint;
+  path?: MapRoutePoint[];
+};
+
 export type MapRoute = {
-  path: Array<{
-    latitude: number;
-    longitude: number;
-  }>;
+  id?: string;
+  summary?: string;
+  path: MapRoutePoint[];
+  steps?: MapRouteStep[];
   distanceMeters: number;
   durationSeconds: number;
   provider: 'google';

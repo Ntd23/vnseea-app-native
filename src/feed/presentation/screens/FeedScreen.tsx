@@ -17,6 +17,7 @@ import {
   Pressable,
   KeyboardAvoidingView,
   RefreshControl,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -138,6 +139,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   SafeAreaView,
   useSafeAreaInsets,
+  initialWindowMetrics,
   type Edge,
 } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -218,7 +220,6 @@ import {
   FeedFundingCarousel,
 } from '../../../funding';
 import type { FundingItem } from '../../../funding/domain/types/funding.types';
-import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const PICKER_WIDTH = 282;
@@ -232,18 +233,23 @@ const VIDEO_BUFFER_CONFIG = {
 };
 const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
+const FEED_EARLY_LOAD_DISTANCE_MULTIPLIER = 2.25;
+const FEED_EARLY_LOAD_MIN_DISTANCE = 1600;
 const IMAGE_PREFETCH_LOOKAHEAD = 5;
 const MAX_IMAGE_PREFETCH_URLS = 8;
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: 24,
 };
-const FEED_HEADER_CONTENT_HEIGHT = 139;
+const FEED_HEADER_BAR_HEIGHT = 68;
+const FEED_FILTER_BAR_HEIGHT = 66;
+const FEED_HEADER_CONTENT_HEIGHT =
+  FEED_HEADER_BAR_HEIGHT + FEED_FILTER_BAR_HEIGHT;
 const FEED_SAFE_AREA_CLASS_NAME =
   Platform.OS === 'ios' ? 'flex-1' : 'flex-1 bg-white';
 const FEED_SAFE_AREA_STYLE =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
-  Platform.OS === 'ios' ? ['left', 'right'] : ROOT_SAFE_AREA_EDGES;
+  Platform.OS === 'ios' ? ['left', 'right'] : ['left', 'right', 'bottom'];
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -1323,7 +1329,11 @@ function FeedScreen() {
   const setFeedScrollBusy = vm.setScrollBusy;
   const activeFeedSource = vm.feedSource;
   const setActiveFeedSource = vm.setFeedSource;
-  const feedRefreshProgressViewOffset = feedSafeAreaInsets.top + FEED_HEADER_CONTENT_HEIGHT;
+  const rawTopInset = feedSafeAreaInsets.top > 0
+    ? feedSafeAreaInsets.top
+    : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
+  const topInset = Platform.OS === 'android' ? 0 : rawTopInset;
+  const feedRefreshProgressViewOffset = topInset + FEED_HEADER_CONTENT_HEIGHT;
   const feedHeaderOverlayHeight = feedRefreshProgressViewOffset;
   const feedListContentStyle = useMemo(
     () => [FEED_LIST_CONTENT_STYLE, { paddingTop: feedHeaderOverlayHeight }],
@@ -1350,6 +1360,7 @@ function FeedScreen() {
   const isScrollingRef = useRef(false);
   const lastLoadMoreRequestAtRef = useRef(0);
   const lastSupplementalLoadMoreRequestAtRef = useRef(0);
+  const triggerLoadMoreRef = useRef<() => void>(() => {});
   const supplementalLoadStartedRef = useRef(false);
   const supplementalInteractionRef = useRef<ReturnType<
     typeof InteractionManager.runAfterInteractions
@@ -1503,7 +1514,7 @@ function FeedScreen() {
 
   const handleFeedScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, layoutMeasurement } = event.nativeEvent;
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
       feedScrollYRef.current = contentOffset.y;
       feedViewportHeightRef.current = layoutMeasurement.height;
 
@@ -1532,6 +1543,17 @@ function FeedScreen() {
       setIsFeedChromeHidden(current =>
         current === nextState.hidden ? current : nextState.hidden,
       );
+
+      const earlyLoadDistance = Math.max(
+        layoutMeasurement.height * FEED_EARLY_LOAD_DISTANCE_MULTIPLIER,
+        FEED_EARLY_LOAD_MIN_DISTANCE,
+      );
+      const distanceFromEnd =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+
+      if (distanceFromEnd <= earlyLoadDistance) {
+        triggerLoadMoreRef.current();
+      }
     },
     [],
   );
@@ -2094,6 +2116,8 @@ function FeedScreen() {
     isProductsAllLoaded,
     loadMoreProducts,
   ]);
+
+  triggerLoadMoreRef.current = handleLoadMore;
 
   const handleRefresh = useCallback(() => {
     reloadFeedPosts(true);

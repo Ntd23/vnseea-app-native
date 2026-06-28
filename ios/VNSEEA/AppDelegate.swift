@@ -44,6 +44,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
       "maximumCallGroups": "1",
       "maximumCallsPerCallGroup": "8",
       "supportsVideo": true,
+      "ringtoneSound": "incoming_call_ringtone.mp3",
       "includesCallsInRecents": false,
     ])
     RNVoipPushNotificationManager.voipRegistration()

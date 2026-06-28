@@ -36,11 +36,11 @@ import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/
 const repository = createFeedRepository();
 const pollRepository = createPollRepository();
 
-// Keep enough real feed items in each page so FlashList has room to
-// pre-render and the user does not hit the pagination edge immediately.
-// Bumped 20→30 so even after the heavy dedupe (3 streams) we usually
-// keep a healthy first paint on sparse accounts.
-const PAGE_SIZE = 30;
+// Home pagination is id-cursored: first page = newest posts, every
+// subsequent page asks for posts older than the smallest id already shown.
+// Keep the visible page at 10 items so load-more is predictable and avoids
+// skipping older posts that live in the same raw API window.
+const PAGE_SIZE = 10;
 const VIDEO_PAGE_SIZE = 12;
 const VIDEO_INSERT_INTERVAL = 5;
 const FEED_VM_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;

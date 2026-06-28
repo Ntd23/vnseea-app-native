@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
+  Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -9,7 +11,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, initialWindowMetrics } from 'react-native-safe-area-context';
 import {
   Bell,
   CircleUser,
@@ -31,15 +33,21 @@ import { useNotificationBadgeViewModel } from '../../../notifications';
 import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
+const HEADER_BAR_HEIGHT = 68;
 
-export function FeedHeader() {
+export const FeedHeader = React.memo(function FeedHeader() {
   const navigation = useNavigation<FeedHeaderNav>();
   const insets = useSafeAreaInsets();
+  const rawTopInset = insets.top > 0
+    ? insets.top
+    : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
+  const topInset = Platform.OS === 'android' ? 0 : rawTopInset;
   const { messageCount, notificationCount } = useUnreadBadgeCounts();
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
   const { user } = useCurrentUserViewModel();
   useNotificationBadgeViewModel();
   const [menuVisible, setMenuVisible] = useState(false);
+  const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
 
   const avatarUrl = user?.avatar;
   const transitionAnim = useRef(new Animated.Value(0)).current;
@@ -71,9 +79,23 @@ export function FeedHeader() {
     });
   }, [navigation]);
 
+  const handleOpenMenu = useCallback(() => {
+    setHasOpenedMenu(true);
+    setMenuVisible(true);
+  }, []);
+
+  const handleCloseMenu = useCallback(() => {
+    setMenuVisible(false);
+  }, []);
+
   return (
     <>
-      <View style={[styles.headerRoot, { paddingTop: insets.top }]}>
+      <View
+        style={[
+          styles.headerRoot,
+          { height: topInset + HEADER_BAR_HEIGHT, paddingTop: topInset },
+        ]}
+      >
         <View style={styles.topBar}>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -140,7 +162,7 @@ export function FeedHeader() {
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.75}
-              onPress={() => setMenuVisible(true)}
+              onPress={handleOpenMenu}
               style={styles.headerIcon}
             >
               <View style={styles.profileIconContainer}>
@@ -193,17 +215,18 @@ export function FeedHeader() {
           </View>
         </View>
       </View>
-      <HeaderProfileDrawer
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-      />
+      {hasOpenedMenu ? (
+        <HeaderProfileDrawer
+          visible={menuVisible}
+          onClose={handleCloseMenu}
+        />
+      ) : null}
     </>
   );
-}
+});
 
 const styles = StyleSheet.create({
   headerRoot: {
-    height: 68,
     borderBottomWidth: 1,
     borderBottomColor: '#e8ebf3',
     backgroundColor: '#ffffff',
@@ -324,4 +347,3 @@ const styles = StyleSheet.create({
 });
 
 export default FeedHeader;
-

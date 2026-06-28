@@ -44,7 +44,10 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
-import { videoPlaybackTimes } from '../../../reels/presentation/screens/reelsPlayback';
+import {
+  getVideoPlaybackTime,
+  setVideoPlaybackTime,
+} from '../../../reels/presentation/screens/reelsPlayback';
 import type { RootStackParamList } from '../../../navigation/types';
 import type {
   FeedPost,
@@ -156,6 +159,7 @@ export type FeedCopy = {
   photoCount: (count: number) => string;
   sponsored: string;
   adVideo: string;
+  videoUnavailable: string;
   ad: string;
   sponsoredContent: string;
   learnMore: string;
@@ -262,6 +266,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     photoCount: count => `${count} ảnh`,
     sponsored: 'Được tài trợ',
     adVideo: 'Quảng cáo video',
+    videoUnavailable: 'Kh\u00f4ng ph\u00e1t \u0111\u01b0\u1ee3c video',
     ad: 'Quảng cáo',
     sponsoredContent: 'Nội dung được tài trợ',
     learnMore: 'Tìm hiểu thêm',
@@ -368,6 +373,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     photoCount: count => `${count} photos`,
     sponsored: 'Sponsored',
     adVideo: 'Video ad',
+    videoUnavailable: 'Video unavailable',
     ad: 'Ad',
     sponsoredContent: 'Sponsored content',
     learnMore: 'Learn more',
@@ -1087,15 +1093,34 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [muted, setMuted] = useState(true);
   const [aspectRatio, setAspectRatio] = useState(16 / 9); // Default landscape
-  const currentTimeRef = useRef<number>(0);
+  const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
   const [isReady, setIsReady] = useState(false);
+  const [hasRenderedFrame, setHasRenderedFrame] = useState(false);
+  const [hasVideoError, setHasVideoError] = useState(false);
+  const videoUrl = post.videoUrl.trim();
+  const hasVideoUrl = videoUrl.length > 0;
+  const canAttemptVideo = hasVideoUrl && !hasVideoError;
+
+  useEffect(() => {
+    const savedTime = getVideoPlaybackTime(post.id, 0);
+    currentTimeRef.current = savedTime;
+    setSeekTime(savedTime > 0.05 ? savedTime : undefined);
+    setIsReady(false);
+    setHasRenderedFrame(false);
+    setHasVideoError(false);
+  }, [post.id, post.videoUrl]);
+
+  useEffect(() => {
+    return () => {
+      setVideoPlaybackTime(post.id, currentTimeRef.current);
+    };
+  }, [post.id]);
 
   // Measure thumbnail size on mount to avoid layout jumps
   useEffect(() => {
     if (post.thumbnailUrl) {
-      console.log(`[HomeVideoPostCard] Fetching size for thumbnail: ${post.thumbnailUrl}`);
       Image.getSize(
         post.thumbnailUrl,
         (width, height) => {
@@ -1103,7 +1128,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             const ratio = width / height;
             // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
             const clampedRatio = Math.max(0.75, Math.min(16 / 9, ratio));
-            console.log(`[HomeVideoPostCard] Thumbnail loaded: ${width}x${height}, ratio: ${ratio}, clamped: ${clampedRatio}`);
             setAspectRatio(clampedRatio);
           }
         },
@@ -1116,15 +1140,15 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   // Refine aspect ratio when actual video loads
   const handleVideoLoad = useCallback((data: any) => {
-    console.log('[HomeVideoPostCard] Video onLoad triggered, data:', data);
+    setHasVideoError(false);
     setIsReady(true);
+    setHasRenderedFrame(false);
     const size = data?.naturalSize ?? data;
     if (size) {
       const { width, height } = size;
       if (width > 0 && height > 0) {
         const ratio = width / height;
         const clampedRatio = Math.max(0.75, Math.min(16 / 9, ratio));
-        console.log(`[HomeVideoPostCard] Video size loaded: ${width}x${height}, ratio: ${ratio}, clamped: ${clampedRatio}`);
         setAspectRatio(clampedRatio);
       }
     }
@@ -1138,6 +1162,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [navigateToProfile, post.publisher.id]);
 
   const handleVideoPress = useCallback(() => {
+    const resumeTime = getVideoPlaybackTime(post.id, currentTimeRef.current);
+    currentTimeRef.current = resumeTime;
+    setVideoPlaybackTime(post.id, resumeTime);
+
     // Immediately mute/pause the video on home feed before navigating
     setMuted(true);
     setManuallyPaused(true);
@@ -1153,18 +1181,23 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       initialVideoId: post.id,
       post,
       source: 'home',
-      seekTime: currentTimeRef.current,
+      seekTime: resumeTime,
     });
   }, [navigation, post]);
 
   // ── Mount strategy ──
-  const shouldMountVideo = isScreenFocused !== false;
+  // Keep the feed closer to the Reels strategy: do not mount a native
+  // video surface for every off-screen/inactive video. Paused Android
+  // video surfaces often render as a plain black rectangle; thumbnails
+  // are a better preview until this card is the active one.
+  const shouldMountVideo = isScreenFocused !== false && isActive && canAttemptVideo;
 
   useEffect(() => {
     if (isActive) {
       setMuted(false);
-      const savedTime = videoPlaybackTimes.get(post.id);
-      if (savedTime !== undefined && savedTime > 0) {
+      const savedTime = getVideoPlaybackTime(post.id, currentTimeRef.current);
+      currentTimeRef.current = savedTime;
+      if (savedTime > 0.05) {
         if (isReady && videoRef.current) {
           videoRef.current.seek(savedTime);
         } else {
@@ -1175,19 +1208,21 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       setMuted(true);
       setManuallyPaused(false);
       setIsReady(false);
+      setHasRenderedFrame(false);
       setSeekTime(undefined);
     }
   }, [isActive, isReady, post.id]);
 
   useEffect(() => {
     if (isActive && isReady && seekTime !== undefined && videoRef.current) {
+      currentTimeRef.current = seekTime;
       videoRef.current.seek(seekTime);
       setSeekTime(undefined);
     }
   }, [isActive, isReady, seekTime]);
 
-  const playing = isActive && !manuallyPaused;
-  const videoSource = useMemo(() => ({ uri: post.videoUrl }), [post.videoUrl]);
+  const playing = shouldMountVideo && !manuallyPaused;
+  const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
 
   // Need an on-screen position for the "ThĂ­ch" button so the picker
   // anchors above it (matches the Facebook web/mobile pattern).
@@ -1241,13 +1276,28 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           style={{ width: '100%', height: '100%' }}
         >
           {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
-          {shouldMountVideo ? (
-            <View pointerEvents="none" style={{ width: '100%', height: '100%' }}>
-               <VideoPlayer
-                ref={videoRef}
-                source={videoSource}
+          {post.thumbnailUrl ? (
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <FeedMediaImage
+                uri={post.thumbnailUrl}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
+                deferWhileScrolling={false}
+              />
+            </View>
+          ) : null}
+          {shouldMountVideo ? (
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <VideoPlayer
+                ref={videoRef}
+                source={videoSource}
+                style={[
+                  StyleSheet.absoluteFill,
+                  post.thumbnailUrl && !hasRenderedFrame
+                    ? { opacity: 0 }
+                    : null,
+                ]}
+                resizeMode="contain"
                 paused={!playing}
                 controls={false}
                 muted={muted}
@@ -1255,16 +1305,34 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 ignoreSilentSwitch="ignore"
                 playInBackground={false}
                 playWhenInactive={false}
+                // Match Reels' renderer. Some Android codecs/CDN videos render
+                // black on TextureView but play correctly on SurfaceView.
                 useTextureView={false}
                 bufferConfig={VIDEO_BUFFER_CONFIG}
+                onReadyForDisplay={() => {
+                  setIsReady(true);
+                }}
                 onLoad={handleVideoLoad}
                 onProgress={data => {
-                  currentTimeRef.current = data.currentTime;
-                  videoPlaybackTimes.set(post.id, data.currentTime);
+                  const nextTime = data?.currentTime;
+                  if (
+                    typeof nextTime !== 'number' ||
+                    !Number.isFinite(nextTime)
+                  ) {
+                    return;
+                  }
+                  currentTimeRef.current = nextTime;
+                  setVideoPlaybackTime(post.id, nextTime);
+                  if (!hasRenderedFrame && nextTime > 0.05) {
+                    setHasRenderedFrame(true);
+                  }
                 }}
                 poster={post.thumbnailUrl}
                 posterResizeMode="cover"
                 onError={error => {
+                  setHasVideoError(true);
+                  setIsReady(false);
+                  setHasRenderedFrame(false);
                   console.warn(
                     '[HomeVideoPostCard] video error',
                     post.id,
@@ -1273,14 +1341,43 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   );
                 }}
               />
+              {post.thumbnailUrl && !hasRenderedFrame ? (
+                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                  <FeedMediaImage
+                    uri={post.thumbnailUrl}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="cover"
+                    deferWhileScrolling={false}
+                  />
+                </View>
+              ) : null}
             </View>
           ) : post.thumbnailUrl ? (
-            <FeedMediaImage
-              uri={post.thumbnailUrl}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="cover"
-            />
-          ) : null}
+            null
+          ) : (
+            <View
+              style={{
+                width: '100%',
+                height: '100%',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#020617',
+                paddingHorizontal: 20,
+              }}
+            >
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: '700',
+                  textAlign: 'center',
+                  opacity: hasVideoUrl && !hasVideoError ? 0.75 : 1,
+                }}
+              >
+                {hasVideoUrl && !hasVideoError ? '\u25B6' : copy.videoUnavailable}
+              </Text>
+            </View>
+          )}
           {/* Big play button overlay while paused */}
           {!playing ? (
             <View

@@ -364,9 +364,21 @@ const _siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 function normalizeMediaUrl(url: string | undefined): string | undefined {
   if (!url) return undefined;
-  if (/^https?:\/\//i.test(url)) return url;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
   // Relative path — prepend site root.
-  return `${_siteRoot}/${url.replace(/^\/+/, '')}`;
+  return `${_siteRoot}/${trimmed.replace(/^\/+/, '')}`;
+}
+
+function normalizePlayableMediaUrl(url: string | undefined): string | undefined {
+  const normalized = normalizeMediaUrl(url);
+  if (!normalized) return undefined;
+  try {
+    return encodeURI(normalized);
+  } catch {
+    return normalized;
+  }
 }
 
 function readNumber(raw: Record<string, unknown>, ...keys: string[]) {
@@ -441,15 +453,28 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     likeCount = apiLikeCount;
   }
 
+  const videoUrl = normalizePlayableMediaUrl(readString(raw, 'postFile')) ?? '';
+  const thumbnailUrl =
+    normalizePlayableMediaUrl(
+      readString(
+        raw,
+        'postFileThumb',
+        'postFileThumbnail',
+        'video_thumb',
+        'videoThumb',
+        'thumbnail',
+        'thumb',
+      ),
+    ) ?? undefined;
+
   return {
     kind: 'video',
     id: postId,
     caption: cleanCaption(readString(raw, 'postText')) || undefined,
-    // `postFile` + `postFileThumb` + `avatar` are pre-normalized by
-    // `Wo_GetMedia()` in posts.php → already full URLs. Do NOT wrap
-    // them with `normalizeMediaUrl` or we double-prepend the host.
-    videoUrl: readString(raw, 'postFile'),
-    thumbnailUrl: readString(raw, 'postFileThumb') || undefined,
+    // Some endpoints return full Wo_GetMedia URLs, others still return
+    // relative media paths. normalizePlayableMediaUrl handles both.
+    videoUrl,
+    thumbnailUrl,
     postedAt: readNumber(raw, 'time') || undefined,
     likeCount,
     commentCount: readNumber(raw, 'post_comments', 'commentCount'),
@@ -530,9 +555,10 @@ function mapAdPost(raw: Record<string, unknown>): FeedAdPost {
 function looksLikeVideo(raw: Record<string, unknown>): boolean {
   if (looksLikeAd(raw)) return false;
   const postType = readString(raw, 'postType').toLowerCase();
+  const file = normalizePlayableMediaUrl(readString(raw, 'postFile'));
+  if (!file) return false;
   if (postType === 'video' || postType === 'reel') return true;
-  const file = readString(raw, 'postFile');
-  return Boolean(file) && VIDEO_URL_PATTERN.test(file);
+  return VIDEO_URL_PATTERN.test(file);
 }
 
 // ── Photo URL extraction for text/photo posts ────────────────────────────
@@ -1056,6 +1082,38 @@ async function fetchRecommendedRawFeedPostsWithFallback(
 ): Promise<RawFeedPostsPage> {
   try {
     const page = await fetchRecommendedRawFeedPosts(limit, afterPostId, source);
+    if (page.posts.length >= limit && !page.reachedEnd) {
+      return page;
+    }
+
+    const legacyPage = await fetchRawFeedPosts(limit, afterPostId, source);
+    if (legacyPage.posts.length > 0) {
+      const merged = new Map<string, Record<string, unknown>>();
+      for (const post of [...page.posts, ...legacyPage.posts]) {
+        merged.set(rawPostKey(post), post);
+      }
+      const posts = Array.from(merged.values());
+      const nextCursor = getOldestRawPostId(posts);
+      debugFeedRepository('recommended-feed merged fallback', {
+        afterPostId: afterPostId ?? 'first',
+        recommended: page.posts.length,
+        legacy: legacyPage.posts.length,
+        merged: posts.length,
+        nextCursor: nextCursor ?? '(none)',
+      });
+
+      return {
+        posts,
+        nextCursor,
+        primaryCount: Math.max(page.primaryCount, legacyPage.primaryCount),
+        reachedEnd:
+          page.reachedEnd === true &&
+          legacyPage.posts.length === 0 &&
+          legacyPage.reachedEnd === true,
+        sourceKind: 'legacy',
+      };
+    }
+
     if (page.posts.length > 0 || page.reachedEnd) {
       return page;
     }
@@ -1648,31 +1706,70 @@ export function createFeedRepository(): FeedRepository {
       afterPostId?: string,
       source: FeedSource = 'all',
     ): Promise<FeedPostsPage> {
-      const rawLimit = Math.max(limit, Math.ceil(limit * 1.5));
-      const page = await fetchRecommendedRawFeedPostsWithFallback(
-        rawLimit,
-        afterPostId,
-        source,
-      );
-      const mappedPosts = mixAdsIntoPosts(mapLightRawFeedPosts(page.posts));
+      const rawLimit = Math.max(limit * 3, 30);
+      const maxScanPages = 4;
+      const mappedById = new Map<string, FeedPost>();
+      let cursor = afterPostId;
+      let lastRawCursor: string | undefined;
+      let reachedEnd = false;
+      let primaryCount = 0;
+      let scannedRawRows = 0;
+
+      for (let scan = 0; scan < maxScanPages && mappedById.size < limit; scan += 1) {
+        const page = await fetchRecommendedRawFeedPostsWithFallback(
+          rawLimit,
+          cursor,
+          source,
+        );
+        scannedRawRows += page.posts.length;
+        primaryCount += page.primaryCount;
+
+        for (const post of mapLightRawFeedPosts(page.posts)) {
+          if (!mappedById.has(post.id)) {
+            mappedById.set(post.id, post);
+          }
+        }
+
+        const nextRawCursor = page.nextCursor ?? getOldestRawPostId(page.posts);
+        const advancedCursor = Boolean(nextRawCursor && nextRawCursor !== cursor);
+        lastRawCursor = nextRawCursor;
+        reachedEnd =
+          page.reachedEnd === true ||
+          page.posts.length === 0 ||
+          !advancedCursor;
+
+        if (reachedEnd || !advancedCursor) {
+          break;
+        }
+
+        cursor = nextRawCursor;
+      }
+
+      const mappedPosts = mixAdsIntoPosts(Array.from(mappedById.values()));
       const posts = mappedPosts.slice(0, limit);
       const renderedCursor = getOldestFeedPostId(posts);
-      const scanningCursor = page.nextCursor;
       const nextCursor =
-        page.sourceKind === 'recommended'
-          ? scanningCursor ?? renderedCursor
-          : renderedCursor ?? scanningCursor;
+        mappedPosts.length > limit
+          ? renderedCursor
+          : lastRawCursor ?? renderedCursor;
+
+      debugFeedRepository('light posts page', {
+        requestedLimit: limit,
+        rawLimit,
+        afterPostId: afterPostId ?? 'first',
+        scannedRawRows,
+        primaryCount,
+        mapped: mappedPosts.length,
+        returned: posts.length,
+        renderedCursor: renderedCursor ?? '(none)',
+        nextCursor: nextCursor ?? '(none)',
+        reachedEnd,
+      });
+
       return {
         posts,
-        // Use the oldest post that was actually returned to the UI. The raw
-        // API batch may be larger than the visible page so using its oldest
-        // id would skip renderable posts and make Home run out too early.
         nextCursor,
-        reachedEnd:
-          page.reachedEnd === true ||
-          (posts.length === 0 &&
-            page.primaryCount === 0 &&
-            page.posts.length < rawLimit),
+        reachedEnd: reachedEnd && mappedPosts.length <= limit,
       };
     },
 

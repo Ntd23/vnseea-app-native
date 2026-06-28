@@ -61,14 +61,20 @@ function HeaderGlassActionButton({
   );
 }
 
-export function FeedHeader() {
+export const FeedHeader = React.memo(function FeedHeader() {
   const navigation = useNavigation<FeedHeaderNav>();
   const { messageCount } = useUnreadBadgeCounts();
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
   const [menuVisible, setMenuVisible] = useState(false);
+  const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
 
   const handleOpenFutureDrawer = useCallback(() => {
+    setHasOpenedMenu(true);
     setMenuVisible(true);
+  }, []);
+
+  const handleCloseFutureDrawer = useCallback(() => {
+    setMenuVisible(false);
   }, []);
 
   return (
@@ -134,13 +140,15 @@ export function FeedHeader() {
           </View>
         </AdaptiveGlassSurface>
       </View>
-      <HeaderProfileDrawer
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-      />
+      {hasOpenedMenu ? (
+        <HeaderProfileDrawer
+          visible={menuVisible}
+          onClose={handleCloseFutureDrawer}
+        />
+      ) : null}
     </>
   );
-}
+});
 
 const styles = StyleSheet.create({
   headerRoot: {
