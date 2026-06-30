@@ -38,9 +38,21 @@ if (typeof runtimeRoot.CustomEvent === 'undefined') {
 
 global.Event = runtimeRoot.Event;
 global.CustomEvent = runtimeRoot.CustomEvent;
+
+if (typeof runtimeRoot.DOMException === 'undefined') {
+  runtimeRoot.DOMException = class DOMException extends Error {
+    constructor(message, name) {
+      super(message);
+      this.name = name || 'DOMException';
+    }
+  };
+}
+global.DOMException = runtimeRoot.DOMException;
+
 if (global.window) {
   global.window.Event = runtimeRoot.Event;
   global.window.CustomEvent = runtimeRoot.CustomEvent;
+  global.window.DOMException = runtimeRoot.DOMException;
 }
 
 const {
