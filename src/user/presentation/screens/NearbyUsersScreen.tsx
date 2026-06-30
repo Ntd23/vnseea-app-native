@@ -80,6 +80,34 @@ const ROUTE_CONNECTOR_MIN_METERS = 5;
 const ROUTE_LOOKAHEAD_MIN_METERS = 14;
 const ROUTE_LOOKAHEAD_MAX_METERS = 58;
 const LOCATION_RECENTER_DISTANCE_METERS = 50000;
+const SHOW_DISCOVERY_PLACES_ON_MAP = false;
+const CLEAN_GOOGLE_MAP_STYLE = [
+  {
+    featureType: 'poi',
+    elementType: 'all',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'transit',
+    elementType: 'all',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'administrative.neighborhood',
+    elementType: 'labels',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'administrative.land_parcel',
+    elementType: 'labels',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'off' }],
+  },
+];
 const DEFAULT_REGION = {
   latitude: 16.047079,
   longitude: 108.20623,
@@ -731,6 +759,7 @@ export default function NearbyUsersScreen() {
         })),
     [nearbyPlaces],
   );
+  const visiblePageMarkers = SHOW_DISCOVERY_PLACES_ON_MAP ? pageMarkers : [];
 
   const nearbyQuickPlaces = useMemo(
     () =>
@@ -755,6 +784,9 @@ export default function NearbyUsersScreen() {
         .slice(0, 8),
     [currentLocation, pageMarkers],
   );
+  const visibleNearbyQuickPlaces = SHOW_DISCOVERY_PLACES_ON_MAP
+    ? nearbyQuickPlaces
+    : [];
 
   const selectedDistance = useMemo(() => {
     if (!selectedPoint) return undefined;
@@ -1513,7 +1545,11 @@ export default function NearbyUsersScreen() {
         ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         initialRegion={DEFAULT_REGION}
-        googleMapId={hasGoogleMapId ? googleMapId : undefined}
+        googleMapId={
+          hasGoogleMapId && SHOW_DISCOVERY_PLACES_ON_MAP
+            ? googleMapId
+            : undefined
+        }
         loadingEnabled
         mapType="standard"
         pitchEnabled
@@ -1526,7 +1562,8 @@ export default function NearbyUsersScreen() {
         showsUserLocation={locationAllowed}
         toolbarEnabled={false}
         userInterfaceStyle="light"
-        onPoiClick={handlePoiPress}
+        customMapStyle={CLEAN_GOOGLE_MAP_STYLE}
+        onPoiClick={SHOW_DISCOVERY_PLACES_ON_MAP ? handlePoiPress : undefined}
         onUserLocationChange={handleUserLocationChange}
         onPanDrag={() => {
           if (isNavigating) {
@@ -1574,7 +1611,7 @@ export default function NearbyUsersScreen() {
           </Marker>
         ) : null}
 
-        {pageMarkers.map(({ place, coordinate }) => {
+        {visiblePageMarkers.map(({ place, coordinate }) => {
           if (
             selectedPoint?.source === 'page' &&
             selectedPoint.id === place.id
@@ -1765,13 +1802,14 @@ export default function NearbyUsersScreen() {
             </View>
           </View>
 
+          {SHOW_DISCOVERY_PLACES_ON_MAP ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.exploreChipRow}
           >
-            {nearbyQuickPlaces.length > 0 ? (
-              nearbyQuickPlaces.map(({ place, distanceMeters }) => (
+            {visibleNearbyQuickPlaces.length > 0 ? (
+              visibleNearbyQuickPlaces.map(({ place, distanceMeters }) => (
                 <TouchableOpacity
                   key={`nearby-chip:${place.id}`}
                   activeOpacity={0.86}
@@ -1796,6 +1834,7 @@ export default function NearbyUsersScreen() {
               </View>
             )}
           </ScrollView>
+          ) : null}
 
           {locationSource === 'profile' ? (
             <View style={styles.locationFallbackNotice}>
