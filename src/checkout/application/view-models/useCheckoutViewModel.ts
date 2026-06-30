@@ -1,23 +1,33 @@
 // Description: Coordinates marketplace checkout state, wallet checks, quantity changes, and payment.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createCheckoutRepository } from '../../infrastructure/repositories/ApiCheckoutRepository';
+import { createUserRepository } from '../../../user/infrastructure/repositories/ApiUserRepository';
+import type { UserProfile } from '../../../user/domain/types/user.types';
 import type {
   CheckoutSummary,
   DeliveryAddress,
   DeliveryAddressInput,
   WalletCheckoutBalance,
 } from '../../domain/types/checkout.types';
+import { setSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 
 const repository = createCheckoutRepository();
+const userRepository = createUserRepository();
 
 export type CheckoutStep = 'cart' | 'confirm' | 'payment';
+
+export type CheckoutViewModelOptions = {
+  selectedProductIds?: number[];
+  selectedAddressId?: string;
+  initialStep?: CheckoutStep;
+};
 
 const EMPTY_ADDRESS_FORM: DeliveryAddressInput = {
   name: '',
   phone: '',
   country: '',
   city: '',
-  zip: '',
+  zip: '10000',
   address: '',
 };
 
@@ -25,7 +35,14 @@ function messageFromError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-export function useCheckoutViewModel() {
+function countSummaryItems(summary: CheckoutSummary | null) {
+  return (
+    summary?.items.reduce((count, item) => count + Math.max(0, item.quantity), 0) ??
+    0
+  );
+}
+
+export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
   const [summary, setSummary] = useState<CheckoutSummary | null>(null);
   const [walletBalance, setWalletBalance] =
     useState<WalletCheckoutBalance | null>(null);
@@ -33,6 +50,8 @@ export function useCheckoutViewModel() {
   const [selectedAddressId, setSelectedAddressId] = useState('');
   const [addressForm, setAddressForm] =
     useState<DeliveryAddressInput>(EMPTY_ADDRESS_FORM);
+  const [currentUserProfile, setCurrentUserProfile] =
+    useState<UserProfile | null>(null);
   const [step, setStep] = useState<CheckoutStep>('confirm');
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
@@ -50,11 +69,33 @@ export function useCheckoutViewModel() {
     [addresses, selectedAddressId],
   );
 
+  const selectedSummary = useMemo(() => {
+    if (!summary) return null;
+    const selectedIds = new Set(
+      (options.selectedProductIds ?? [])
+        .map(id => Number(id))
+        .filter(id => Number.isFinite(id) && id > 0),
+    );
+    if (!selectedIds.size) return summary;
+
+    const items = summary.items.filter(item => selectedIds.has(item.productId));
+    const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+
+    return {
+      ...summary,
+      items,
+      subtotal,
+      total: subtotal + summary.shipping,
+    };
+  }, [options.selectedProductIds, summary]);
+
   const canPay = Boolean(
-    summary && walletBalance && walletBalance.wallet >= summary.total,
+    selectedSummary &&
+      walletBalance &&
+      walletBalance.wallet >= selectedSummary.total,
   );
 
-  const itemCount = summary?.items.reduce(
+  const itemCount = selectedSummary?.items.reduce(
     (count, item) => count + item.quantity,
     0,
   ) ?? 0;
@@ -65,32 +106,47 @@ export function useCheckoutViewModel() {
     setPaymentError(null);
 
     try {
-      const [nextSummary, nextAddresses, nextWalletBalance] =
+      const [nextSummary, nextAddresses, nextWalletBalance, nextUserProfile] =
         await Promise.all([
           repository.getSummary(),
           repository.getAddresses(),
           repository.getWalletBalance(),
-        ]);
+          userRepository.getCurrentUser().catch(() => null),
+      ]);
       setSummary(nextSummary);
+      setSyncedCartCount(countSummaryItems(nextSummary));
       setAddresses(nextAddresses);
       setWalletBalance(nextWalletBalance);
+      setCurrentUserProfile(nextUserProfile);
 
-      const nextSelectedAddress = nextAddresses[0];
+      const nextSelectedAddress =
+        nextAddresses.find(address => address.id === options.selectedAddressId) ??
+        nextAddresses[0];
       if (nextSelectedAddress) {
         setSelectedAddressId(nextSelectedAddress.id);
         setAddressForm(nextSelectedAddress);
-        setStep('payment');
+        setStep(options.initialStep ?? 'payment');
       } else {
         setSelectedAddressId('');
-        setAddressForm(EMPTY_ADDRESS_FORM);
-        setStep('confirm');
+        const userFullName = nextUserProfile
+          ? [nextUserProfile.firstName, nextUserProfile.lastName]
+              .filter(Boolean)
+              .join(' ')
+              .trim() || nextUserProfile.name
+          : '';
+        setAddressForm({
+          ...EMPTY_ADDRESS_FORM,
+          name: userFullName || '',
+          phone: nextUserProfile?.phoneNumber || '',
+        });
+        setStep(options.initialStep ?? 'confirm');
       }
     } catch (caughtError) {
       setError(messageFromError(caughtError, 'Không tải được thông tin thanh toán.'));
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [options.initialStep, options.selectedAddressId]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -111,13 +167,36 @@ export function useCheckoutViewModel() {
     [],
   );
 
+  const selectAddress = useCallback((address: DeliveryAddress) => {
+    setSelectedAddressId(address.id);
+    setAddressForm(address);
+    setAddressError(null);
+    setStep('payment');
+  }, []);
+
+  const createNewAddress = useCallback(() => {
+    setSelectedAddressId('');
+    const userFullName = currentUserProfile
+      ? [currentUserProfile.firstName, currentUserProfile.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || currentUserProfile.name
+      : '';
+    setAddressForm({
+      ...EMPTY_ADDRESS_FORM,
+      name: userFullName || '',
+      phone: currentUserProfile?.phoneNumber || '',
+    });
+    setAddressError(null);
+    setStep('confirm');
+  }, [currentUserProfile]);
+
   const saveAddress = useCallback(async () => {
     const requiredFields: Array<keyof DeliveryAddressInput> = [
       'name',
       'phone',
       'country',
       'city',
-      'zip',
       'address',
     ];
     const missingField = requiredFields.find(
@@ -133,9 +212,14 @@ export function useCheckoutViewModel() {
     setAddressError(null);
 
     try {
-      const nextAddresses = await repository.saveAddress(addressForm);
+      const nextAddresses = await repository.saveAddress({
+        ...addressForm,
+        zip: String(addressForm.zip || '').trim() || '10000',
+      });
       setAddresses(nextAddresses);
-      const savedAddress = nextAddresses[0];
+      const savedAddress = addressForm.id
+        ? nextAddresses.find(a => a.id === addressForm.id)
+        : nextAddresses[0];
       if (savedAddress) {
         setSelectedAddressId(savedAddress.id);
         setAddressForm(savedAddress);
@@ -158,7 +242,9 @@ export function useCheckoutViewModel() {
       setPaymentError(null);
 
       try {
-        setSummary(await repository.changeQuantity(productId, quantity));
+        const nextSummary = await repository.changeQuantity(productId, quantity);
+        setSummary(nextSummary);
+        setSyncedCartCount(countSummaryItems(nextSummary));
         await refreshWallet();
       } catch (caughtError) {
         setPaymentError(
@@ -198,11 +284,12 @@ export function useCheckoutViewModel() {
     setSuccessMessage(null);
 
     try {
-      const result = await repository.buy(addressId);
+      const result = await repository.buy(addressId, options.selectedProductIds);
       setConfirmVisible(false);
       if (result.success) {
         setSuccessMessage(result.message);
         setSuccessVisible(true);
+        setSyncedCartCount(undefined, -itemCount);
       } else {
         setPaymentError(result.message);
       }
@@ -222,7 +309,7 @@ export function useCheckoutViewModel() {
     } finally {
       setIsPaying(false);
     }
-  }, [load, selectedAddress, selectedAddressId]);
+  }, [load, options.selectedProductIds, selectedAddress, selectedAddressId]);
 
   return {
     addressError,
@@ -239,6 +326,7 @@ export function useCheckoutViewModel() {
     paymentError,
     selectedAddress,
     selectedAddressId,
+    selectedSummary,
     step,
     successMessage,
     successVisible,
@@ -247,10 +335,12 @@ export function useCheckoutViewModel() {
     changeQuantity,
     closeConfirm: () => setConfirmVisible(false),
     closeSuccess: () => setSuccessVisible(false),
+    createNewAddress,
     load,
     openConfirm,
     pay,
     saveAddress,
+    selectAddress,
     setStep,
     updateAddressField,
   };

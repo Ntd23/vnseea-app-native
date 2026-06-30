@@ -2,6 +2,7 @@
 // Displays products in Facebook Marketplace-style layout.
 import React, { useCallback } from 'react';
 import {
+  type GestureResponderEvent,
   Image,
   Text,
   TouchableOpacity,
@@ -13,6 +14,7 @@ import {
   ShoppingBag,
   MessageCircle,
   Share2,
+  ShoppingCart
 } from 'lucide-react-native';
 import type { ProductItem } from '../../domain/types/product.types';
 import {
@@ -32,12 +34,12 @@ function formatPrice(price: string, symbolOrCode: string): string {
   let currency = symbolOrCode;
   if (currency === '0') currency = '$';
   else if (currency === '1') currency = '€';
-  else if (currency === 'VND' || currency === 'vnd') currency = 'đ';
-  
+  else if (currency === 'VNSEEA' || currency === 'vnd') currency = 'VNSEEA';
+
   const formatted = numPrice.toLocaleString('vi-VN');
-  
-  if (currency === 'đ' || currency === 'VND') {
-    return `${formatted} đ`;
+
+  if (currency === 'VNSEEA') {
+    return `${formatted} VNSEEA`;
   }
   if (currency === '$' || currency === 'USD') {
     return `$${formatted}`;
@@ -66,7 +68,15 @@ interface ProductPostCardProps {
   product: ProductItem;
   onPress?: (product: ProductItem) => void;
   onMorePress?: (product: ProductItem) => void;
+  /** Navigate to the seller profile (tapped on avatar/header). */
   onProfilePress?: (userId: string) => void;
+  /** Open a chat thread with the seller (tapped on Nhắn tin button). */
+  onContactSeller?: (product: ProductItem) => void;
+  /** Add product to cart (tapped on Thêm giỏ button). */
+  onAddToCart?: (
+    product: ProductItem,
+    origin?: { x: number; y: number },
+  ) => void;
   onShare?: (product: ProductItem) => void;
   compact?: boolean;
 }
@@ -76,6 +86,8 @@ const ProductPostCard = React.memo(function ProductPostCard({
   onPress,
   onMorePress,
   onProfilePress,
+  onContactSeller,
+  onAddToCart,
   onShare,
   compact,
 }: ProductPostCardProps) {
@@ -95,17 +107,35 @@ const ProductPostCard = React.memo(function ProductPostCard({
     }
   }, [onProfilePress, product.seller?.user_id]);
 
+  const handleContactSeller = useCallback(() => {
+    if (!product.can_contact_seller || !product.seller?.user_id) return;
+    onContactSeller?.(product);
+  }, [onContactSeller, product, product.can_contact_seller, product.seller?.user_id]);
+
+  const handleAddToCart = useCallback((event?: GestureResponderEvent) => {
+    if (!product.can_add_to_cart) return;
+    onAddToCart?.(
+      product,
+      event
+        ? {
+            x: event.nativeEvent.pageX,
+            y: event.nativeEvent.pageY,
+          }
+        : undefined,
+    );
+  }, [onAddToCart, product, product.can_add_to_cart]);
+
   const handleSharePress = useCallback(() => {
     onShare?.(product);
   }, [onShare, product]);
 
-  const currencySymbol = product.currency_symbol || product.currency_code || product.currency || 'VND';
+  const currencySymbol = product.currency_symbol || product.currency_code || product.currency || 'VNSEEA';
 
-  // Compact layout (used inside the horizontal carousel)
+  // Compact layout (used inside the horizontal carousel and marketplace grids)
   if (compact) {
     return (
       <TouchableOpacity
-        className="surface-card overflow-hidden w-full"
+        className="surface-card overflow-hidden w-full rounded-2xl border border-slate-100/80 bg-white shadow-sm shadow-slate-100/40"
         activeOpacity={0.9}
         onPress={handlePress}
       >
@@ -114,13 +144,13 @@ const ProductPostCard = React.memo(function ProductPostCard({
           <Image
             source={{ uri: imageUrl }}
             className="w-full"
-            style={{ aspectRatio: 1.4 }}
+            style={{ aspectRatio: 1.15 }}
             resizeMode="cover"
           />
         ) : (
           <View
             className="w-full items-center justify-center bg-slate-200"
-            style={{ aspectRatio: 1.4 }}
+            style={{ aspectRatio: 1.15 }}
           >
             <ShoppingBag size={32} color="#94A3B8" />
           </View>
@@ -128,20 +158,54 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
         {/* Compact Content */}
         <View className="p-3">
-          <Text className="text-body-primary font-bold text-[14px] text-[#050505]" numberOfLines={1}>
+          <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>
             {product.name}
-          </Text>
-          <Text className="text-[14px] font-bold text-[#1877F2] mt-1">
-            {formatPrice(product.price, currencySymbol)}
           </Text>
           {product.location ? (
             <View className="flex-row items-center mt-1">
-              <MapPin size={11} color="#65676B" />
-              <Text className="ml-1 text-[11px] text-[#65676B]" numberOfLines={1}>
+              <MapPin size={10.5} color="#94A3B8" />
+              <Text className="ml-1 text-[11px] text-slate-400 font-medium" numberOfLines={1}>
                 {product.location}
               </Text>
             </View>
           ) : null}
+
+          {/* Price & Action Row */}
+          <View className="flex-row items-center justify-between mt-2.5">
+            <Text className="text-[15px] font-extrabold text-[#0F56FB] flex-1 mr-1.5" numberOfLines={1}>
+              {formatPrice(product.price, currencySymbol)}
+            </Text>
+
+            {!product.is_owner ? (
+              <View className="flex-row items-center gap-1.5" style={{ flexShrink: 0 }}>
+                {/* Cart Action */}
+                <TouchableOpacity
+                  className={`h-8 w-8 items-center justify-center rounded-full ${
+                    product.can_add_to_cart ? 'bg-blue-50/80 active:bg-blue-100/80' : 'bg-slate-50'
+                  }`}
+                  activeOpacity={0.7}
+                  disabled={!product.can_add_to_cart}
+                  onPress={handleAddToCart}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <ShoppingCart size={15} color={product.can_add_to_cart ? "#0F56FB" : "#CBD5E1"} />
+                </TouchableOpacity>
+
+                {/* Contact Action */}
+                <TouchableOpacity
+                  className={`h-8 w-8 items-center justify-center rounded-full ${
+                    product.can_contact_seller ? 'bg-blue-50/80 active:bg-blue-100/80' : 'bg-slate-50'
+                  }`}
+                  activeOpacity={0.7}
+                  disabled={!product.can_contact_seller}
+                  onPress={handleContactSeller}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <MessageCircle size={15} color={product.can_contact_seller ? "#0F56FB" : "#CBD5E1"} />
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -258,16 +322,34 @@ const ProductPostCard = React.memo(function ProductPostCard({
             </Text>
           </FeedGlassActionButton>
 
-          <FeedGlassActionButton
-            className="flex-1 flex-row items-center justify-center py-1.5 px-1"
-            activeOpacity={0.75}
-            onPress={handleProfilePress}
-          >
-            <MessageCircle size={18} color="#65676B" />
-            <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
-              Nhắn tin
-            </Text>
-          </FeedGlassActionButton>
+          {!product.is_owner ? (
+            <>
+              <FeedGlassActionButton
+                className="flex-1 flex-row items-center justify-center py-1.5 px-1"
+                activeOpacity={0.75}
+                onPress={handleAddToCart}
+              >
+                <ShoppingCart size={18} color={product.can_add_to_cart ? "#0866FF" : "#9CA3AF"} />
+                <Text
+                  className={`ml-2 text-[13px] font-semibold ${product.can_add_to_cart ? "text-brand" : "text-[#9CA3AF]"}`}
+                  numberOfLines={1}
+                >
+                  Thêm giỏ
+                </Text>
+              </FeedGlassActionButton>
+
+              <FeedGlassActionButton
+                className="flex-1 flex-row items-center justify-center py-1.5 px-1"
+                activeOpacity={0.75}
+                onPress={handleContactSeller}
+              >
+                <MessageCircle size={18} color="#65676B" />
+                <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
+                  Nhắn tin
+                </Text>
+              </FeedGlassActionButton>
+            </>
+          ) : null}
 
           <FeedGlassActionButton
             className="flex-1 flex-row items-center justify-center py-1.5 px-1"

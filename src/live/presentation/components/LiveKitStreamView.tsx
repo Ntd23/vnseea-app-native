@@ -45,9 +45,85 @@ async function requestAndroidHostPermissions() {
   );
 }
 
-function LiveKitVideoSurface({ isHost }: { isHost: boolean }) {
+function LiveKitVideoSurface({
+  isHost,
+  cameraFacing = 'front',
+}: {
+  isHost: boolean;
+  cameraFacing?: 'front' | 'back';
+}) {
   const tracks = useTracks([Track.Source.Camera]);
   const { localParticipant, cameraTrack: localCameraTrack } = useLocalParticipant();
+
+  // LiveKit defaults to front camera ('user') on connect.
+  const currentFacingModeRef = React.useRef<'user' | 'environment'>('user');
+  const desiredFacingMode = cameraFacing === 'front' ? 'user' : 'environment';
+  const isSwitchingRef = React.useRef(false);
+  // Bumping this key forces VideoTrack to remount and pick up the new track
+  const [trackRenderKey, setTrackRenderKey] = useState(0);
+
+  useEffect(() => {
+    if (!isHost || !localParticipant) return;
+    if (currentFacingModeRef.current === desiredFacingMode) return;
+    if (isSwitchingRef.current) return;
+
+    const publication = localParticipant.getTrackPublication(Track.Source.Camera);
+    const trackObj = publication?.track as
+      | {
+          restartTrack?: (options?: {
+            facingMode?: 'user' | 'environment';
+          }) => Promise<void>;
+          mediaStreamTrack?: { _switchCamera?: () => void };
+        }
+      | undefined;
+
+    if (!trackObj) return;
+
+    isSwitchingRef.current = true;
+    console.log(`[LiveKitVideoSurface] Switching camera: ${currentFacingModeRef.current} -> ${desiredFacingMode}`);
+
+    const performSwitch = async () => {
+      try {
+        let didSwitch = false;
+
+        // Primary: restartTrack — replaces the physical camera track
+        if (trackObj.restartTrack) {
+          try {
+            await trackObj.restartTrack({ facingMode: desiredFacingMode });
+            didSwitch = true;
+          } catch (e) {
+            console.warn('[LiveKitVideoSurface] restartTrack failed, trying fallback:', e);
+          }
+        }
+
+        // Fallback: native _switchCamera (toggle)
+        if (!didSwitch && trackObj.mediaStreamTrack?._switchCamera) {
+          try {
+            trackObj.mediaStreamTrack._switchCamera();
+            didSwitch = true;
+          } catch (e) {
+            console.error('[LiveKitVideoSurface] _switchCamera also failed:', e);
+          }
+        }
+
+        if (didSwitch) {
+          currentFacingModeRef.current = desiredFacingMode;
+          // Force VideoTrack to remount so it binds to the new track
+          setTrackRenderKey(k => k + 1);
+          // Second bump after a short delay to handle async track readiness
+          setTimeout(() => setTrackRenderKey(k => k + 1), 400);
+        }
+      } catch (e) {
+        console.error('[LiveKitVideoSurface] camera switch error:', e);
+      } finally {
+        setTimeout(() => {
+          isSwitchingRef.current = false;
+        }, 800);
+      }
+    };
+
+    performSwitch();
+  }, [isHost, localParticipant, desiredFacingMode, localCameraTrack]);
 
   useEffect(() => {
     console.log('[LiveKitVideoSurface] tracks update:', tracks.map(t => ({
@@ -76,14 +152,16 @@ function LiveKitVideoSurface({ isHost }: { isHost: boolean }) {
     const localTrack = trackRefs.find(item => item.participant.isLocal);
     const remoteTrack = trackRefs.find(item => !item.participant.isLocal);
     return isHost ? localTrack ?? remoteTrack : remoteTrack ?? localTrack;
-  }, [isHost, localCameraTrack, localParticipant, tracks]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost, localCameraTrack, localParticipant, tracks, trackRenderKey]);
 
   if (cameraTrack) {
     return (
       <VideoTrack
+        key={`camera-${trackRenderKey}`}
         trackRef={cameraTrack}
         objectFit="cover"
-        mirror={isHost && cameraTrack.participant.isLocal}
+        mirror={isHost && cameraTrack.participant.isLocal && cameraFacing === 'front'}
         style={absoluteFillStyle}
       />
     );
@@ -102,9 +180,11 @@ function LiveKitVideoSurface({ isHost }: { isHost: boolean }) {
 export function LiveKitStreamView({
   session,
   isHost,
+  cameraFacing = 'front',
 }: {
   session: LiveSession;
   isHost: boolean;
+  cameraFacing?: 'front' | 'back';
 }) {
   const [permissionState, setPermissionState] = useState<PermissionState>(
     isHost && Platform.OS === 'android' ? 'checking' : 'granted',
@@ -205,7 +285,7 @@ export function LiveKitStreamView({
       }}
     >
       <View style={styles.container}>
-        <LiveKitVideoSurface isHost={isHost} />
+        <LiveKitVideoSurface isHost={isHost} cameraFacing={cameraFacing} />
         {connectionMessage ? (
           <View style={styles.statusPill}>
             <Text style={styles.statusText}>{connectionMessage}</Text>

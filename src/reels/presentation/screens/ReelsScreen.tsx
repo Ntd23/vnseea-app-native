@@ -63,6 +63,8 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { ReelItem } from '../components/ReelItem';
 import { ReelCommentsSheet } from '../components/ReelCommentsSheet';
 import { ReelPublisherOverlay } from '../components/ReelPublisherOverlay';
+import { ReelsFilterTabs, type ReelsFilterSource } from '../components/ReelsFilterTabs';
+import { REELS_COPY } from '../../application/i18n/reelsCopy';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { isReelItemActive } from './reelsPlayback';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -85,24 +87,7 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as any;
 
-const REELS_COPY = {
-  vi: {
-    loading: 'Đang tải reels...',
-    failedLoad: 'Không tải được reels',
-    tryAgain: 'Thử lại',
-    noReels: 'Chưa có reel nào',
-    beFirst: 'Hãy là người đầu tiên đăng một video Reel!',
-    postReel: 'Đăng Reel',
-  },
-  en: {
-    loading: 'Loading reels...',
-    failedLoad: 'Failed to load reels',
-    tryAgain: 'Try again',
-    noReels: 'No reels yet',
-    beFirst: 'Be the first one to post a Reel!',
-    postReel: 'Post Reel',
-  },
-};
+
 
 const reelsStorage = createMMKV({ id: 'vnseea-reels-settings' });
 
@@ -114,6 +99,12 @@ export default function ReelsScreen() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
     return reelsStorage.getBoolean('reels.autoScroll') ?? false;
   });
+
+ // Filter tab the user is currently on. We render 'videos' as the
+ // active tab because Reels IS the videos destination, but we keep
+ // the data filter independent (default 'all' = show every reel).
+ const [activeFilter, setActiveFilter] = useState<ReelsFilterSource>('videos');
+
 
   const toggleAutoScroll = useCallback(() => {
     setAutoScrollEnabled(prev => {
@@ -264,6 +255,7 @@ export default function ReelsScreen() {
   // by the gesture definition) so the focus effect below can reset it —
   // we have to undo a successful dismissal when the user returns.
   const dragX = useSharedValue(0);
+  const screenDismissX = useSharedValue(0);
 
   const scrollY = useSharedValue(0);
   const nativeTabScrollLastY = useSharedValue(0);
@@ -372,13 +364,14 @@ export default function ReelsScreen() {
   useFocusEffect(
     useCallback(() => {
       dragX.value = 0;
+      screenDismissX.value = 0;
 
       return () => {
         if (isIosTabRoute) {
           publishNativeTabScrollBehavior('onScrollDown');
         }
       };
-    }, [dragX, isIosTabRoute]),
+    }, [dragX, screenDismissX, isIosTabRoute]),
   );
 
   // FlatList requires `onViewableItemsChanged` to have a stable identity
@@ -449,6 +442,7 @@ export default function ReelsScreen() {
     ({ item, index }: { item: ReelsItem; index: number }) => {
       const distance = Math.abs(index - vm.activeIndex);
       const shouldMount = distance <= preloadRadius;
+      const isCurrent = index === vm.activeIndex;
       // A reel only counts as "active" when this screen has focus —
       // when the user switches tabs, every reel becomes inactive (paused).
       const isActive = isReelItemActive({
@@ -468,6 +462,7 @@ export default function ReelsScreen() {
           item={item}
           height={itemHeight}
           isActive={isActive}
+          isCurrent={isCurrent}
           shouldMount={shouldMount}
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
@@ -556,6 +551,28 @@ export default function ReelsScreen() {
     rootNavigator.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
   }, [navigation]);
 
+  // Filter tab handler — placed AFTER navigateToFeed because it
+  // references that function. Order: update active state first
+  // so the UI flips immediately, then run navigation side-effect.
+  const handleFilterChange = useCallback((next: ReelsFilterSource) => {
+  if (next === 'videos') {
+  setActiveFilter('videos');
+  return;
+  }
+  if (next === 'all' || next === 'photos') {
+  navigateToFeed();
+  return;
+  }
+  if (next === 'locations') {
+  navigation.navigate(ROUTES.NEARBY_USERS);
+  return;
+  }
+  if (next === 'market') {
+  navigation.navigate(ROUTES.MARKETPLACE);
+  return;
+  }
+  }, [navigateToFeed, navigation]);
+
   const goBackToFeed = useCallback(() => {
     // Prefer goBack when this screen sits on top of a stack — it POPS
     // the screen entirely, so the next visit re-mounts with fresh state
@@ -577,8 +594,7 @@ export default function ReelsScreen() {
         .enabled(!isIosTabRoute && !vm.isCommentsOpen)
         .onUpdate(event => {
           'worklet';
-          // Clamp to ≥ 0 so leftward overshoot doesn't push the screen
-          // off the wrong side.
+          // Track swipe progress for the back indicator icon while keeping screen still.
           dragX.value = Math.max(0, event.translationX);
         })
         .onEnd(event => {
@@ -589,8 +605,9 @@ export default function ReelsScreen() {
             event.velocityX > 700;
 
           if (shouldDismiss) {
-            // Animate out, then hop to the feed on JS thread.
-            dragX.value = withTiming(
+            // Animate both indicator and screen out, then hop to feed.
+            dragX.value = withTiming(SCREEN_WIDTH, { duration: 180 });
+            screenDismissX.value = withTiming(
               SCREEN_WIDTH,
               { duration: 180 },
               finished => {
@@ -598,11 +615,11 @@ export default function ReelsScreen() {
               },
             );
           } else {
-            // Spring back to origin.
+            // Spring back the indicator cleanly. Screen remains at 0.
             dragX.value = withSpring(0, { damping: 18, stiffness: 220 });
           }
         }),
-    [dragX, goBackToFeed, isIosTabRoute, vm.isCommentsOpen],
+    [dragX, screenDismissX, goBackToFeed, isIosTabRoute, vm.isCommentsOpen],
   );
 
   const screenAnimatedStyle = useAnimatedStyle(() => {
@@ -613,8 +630,29 @@ export default function ReelsScreen() {
     return {
       opacity,
       transform: [
-        { translateX: dragX.value },
+        { translateX: screenDismissX.value },
         { translateY },
+        { scale },
+      ],
+    };
+  });
+
+  const backIndicatorStyle = useAnimatedStyle(() => {
+    const threshold = SCREEN_WIDTH * 0.32;
+    // Fade in the indicator as user drags.
+    const opacity = interpolate(dragX.value, [0, 40, threshold], [0, 0.85, 1], 'clamp');
+    // Scale up the circle indicator slightly.
+    const scale = interpolate(dragX.value, [0, threshold], [0.6, 1.2], 'clamp');
+    // Slide indicator from left margin inwards.
+    const translateX = interpolate(dragX.value, [0, threshold], [-60, 20], 'clamp');
+    // Highlight indicator background blue if dragged far enough to trigger back.
+    const isReady = dragX.value >= threshold;
+
+    return {
+      opacity,
+      backgroundColor: isReady ? 'rgba(8, 102, 255, 0.85)' : 'rgba(0, 0, 0, 0.65)',
+      transform: [
+        { translateX },
         { scale },
       ],
     };
@@ -678,6 +716,12 @@ export default function ReelsScreen() {
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           getItemLayout={getItemLayout}
+          extraData={{
+            autoScrollEnabled,
+            isMuted,
+            activeIndex: vm.activeIndex,
+            isFocusedScreen,
+          }}
           // Only supply `initialScrollIndex` when we have a real
           // deeplink — leaving it `undefined` for normal visits keeps
           // RN's default behaviour (scroll to top). The `??` form
@@ -735,8 +779,19 @@ export default function ReelsScreen() {
             Page Detail, Profile, Saved, My Videos…). Only falls back
             to a Home tab-switch when there's nothing to pop (e.g.
             Reels was launched as the very first tab). */}
-        {/* Floating Header Overlay */}
-        <View style={[styles.headerOverlay, { top: Math.max(insets.top, 12) }]}>
+        {/* Filter tabs bar — sits ABOVE the back/auto/mute header so the
+         user can hop to other sections (Locations, Market) without
+         leaving the video surface. Dark capsule to match the video bg. */}
+        <ReelsFilterTabs
+         copy={copy}
+         activeSource={activeFilter}
+         onChangeSource={handleFilterChange}
+         topInset={Math.max(insets.top, 12)}
+         style={styles.filterBarOffset}
+         />
+
+        {/* Floating Header Overlay — shifted down to clear the filter bar. */}
+        <View style={[styles.headerOverlay, { top: Math.max(insets.top, 12) + 64 }]}>
           {/* Left: Back button (if stack navigator has back capability) */}
           {!isIosTabRoute ? (
             <TouchableOpacity
@@ -762,7 +817,7 @@ export default function ReelsScreen() {
             >
               <ChevronsDown size={18} color="#fff" />
               <Text style={styles.headerButtonText}>
-                {autoScrollEnabled ? 'Auto On' : 'Auto Off'}
+                {autoScrollEnabled ? copy.autoOn : copy.autoOff}
               </Text>
             </TouchableOpacity>
 
@@ -817,6 +872,17 @@ export default function ReelsScreen() {
             }
           }}
         />
+
+        {/* Left edge back swipe indicator bubble */}
+        <Animated.View
+          style={[
+            styles.backIndicatorContainer,
+            backIndicatorStyle,
+            { top: viewportHeight / 2 - 25 },
+          ]}
+        >
+          <ChevronLeft size={24} color="#FFF" />
+        </Animated.View>
       </Animated.View>
     </GestureDetector>
   );
@@ -825,6 +891,7 @@ export default function ReelsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   list: { flex: 1, backgroundColor: '#000' },
+ filterBarOffset: { position: 'absolute', left: 0, right: 0, top: 0, zIndex: 11 },
   headerOverlay: {
     position: 'absolute',
     left: 12,
@@ -918,5 +985,16 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     alignItems: 'center',
     backgroundColor: '#000',
+  },
+  backIndicatorContainer: {
+    position: 'absolute',
+    left: 0,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
   },
 });

@@ -1,5 +1,5 @@
 // Description: Provides a reusable modal address search input through the backend map discovery bridge.
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -94,6 +94,15 @@ export function AddressAutocomplete({
   const [debounceTimer, setDebounceTimer] = useState<ReturnType<
     typeof setTimeout
   > | null>(null);
+  const modalInputRef = useRef<TextInput>(null);
+
+  const handleModalShow = useCallback(() => {
+    // Small delay lets the modal animation finish so keyboard opens instantly
+    const timer = setTimeout(() => {
+      modalInputRef.current?.focus();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   const getErrorMessage = useCallback((error: unknown) => {
     if (error instanceof Error && error.message) {
@@ -268,6 +277,7 @@ export function AddressAutocomplete({
         animationType="slide"
         presentationStyle="pageSheet"
         onRequestClose={closeModal}
+        onShow={handleModalShow}
       >
         <SafeAreaView style={styles.modalRoot}>
           {/* Top Sheet Handle Indicator */}
@@ -287,12 +297,12 @@ export function AddressAutocomplete({
                 <MapPin size={18} color="#002fff" />
               </View>
               <TextInput
+                ref={modalInputRef}
                 style={styles.modalInput}
                 value={modalQuery}
                 onChangeText={handleModalTextChange}
                 placeholder={placeholder || copy.placeholder}
                 placeholderTextColor="#94A3B8"
-                autoFocus
                 autoCapitalize="none"
                 autoCorrect={false}
                 returnKeyType="search"

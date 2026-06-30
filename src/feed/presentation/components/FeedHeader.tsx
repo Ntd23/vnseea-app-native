@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
+  Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -9,6 +11,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets, initialWindowMetrics } from 'react-native-safe-area-context';
 import {
   Bell,
   CircleUser,
@@ -27,20 +30,24 @@ import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useNotificationBadgeViewModel } from '../../../notifications';
-import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
 import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
+const HEADER_BAR_HEIGHT = 68;
 
-export function FeedHeader() {
+export const FeedHeader = React.memo(function FeedHeader() {
   const navigation = useNavigation<FeedHeaderNav>();
+  const insets = useSafeAreaInsets();
+  const rawTopInset = insets.top > 0
+    ? insets.top
+    : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
+  const topInset = Platform.OS === 'android' ? 0 : rawTopInset;
   const { messageCount, notificationCount } = useUnreadBadgeCounts();
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
   const { user } = useCurrentUserViewModel();
   useNotificationBadgeViewModel();
-  const [sheetVisible, setSheetVisible] = useState(false);
-  const [buttonRotation, setButtonRotation] = useState('0deg');
   const [menuVisible, setMenuVisible] = useState(false);
+  const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
 
   const avatarUrl = user?.avatar;
   const transitionAnim = useRef(new Animated.Value(0)).current;
@@ -58,11 +65,6 @@ export function FeedHeader() {
     }
   }, [avatarUrl, transitionAnim]);
 
-  const handleOpenSheet = useCallback(() => {
-    setSheetVisible(true);
-    setButtonRotation('45deg');
-  }, []);
-
   const handlePressLogo = useCallback(() => {
     // Always navigate to the Feed tab first. If we're already on the
     // Feed tab, the navigation is a no-op for routing but the listener
@@ -77,30 +79,23 @@ export function FeedHeader() {
     });
   }, [navigation]);
 
-  const handleCloseSheet = useCallback(() => {
-    setSheetVisible(false);
-    setButtonRotation('0deg');
+  const handleOpenMenu = useCallback(() => {
+    setHasOpenedMenu(true);
+    setMenuVisible(true);
   }, []);
 
-  const handleCreateNavigate = useCallback(
-    (route: RootStackRouteName) => {
-      if (route === ROUTES.CREATE_EVENT) navigation.navigate(ROUTES.CREATE_EVENT);
-      if (route === ROUTES.CREATE_PRODUCT) navigation.navigate(ROUTES.CREATE_PRODUCT);
-      if (route === ROUTES.CREATE_PAGE) navigation.navigate(ROUTES.CREATE_PAGE);
-      if (route === ROUTES.CREATE_GROUP) navigation.navigate(ROUTES.CREATE_GROUP);
-      if (route === ROUTES.CREATE_REEL) navigation.navigate(ROUTES.CREATE_REEL);
-      if (route === ROUTES.CREATE_POST) navigation.navigate(ROUTES.CREATE_POST);
-      if (route === ROUTES.CREATE_STORY) navigation.navigate(ROUTES.CREATE_STORY);
-      if (route === ROUTES.CREATE_POLL) navigation.navigate(ROUTES.CREATE_POLL);
-      if (route === ROUTES.CREATE_ALBUM) navigation.navigate(ROUTES.CREATE_ALBUM);
-      if (route === ROUTES.CREATE_AD) navigation.navigate(ROUTES.CREATE_AD);
-    },
-    [navigation],
-  );
+  const handleCloseMenu = useCallback(() => {
+    setMenuVisible(false);
+  }, []);
 
   return (
     <>
-      <View style={styles.headerRoot}>
+      <View
+        style={[
+          styles.headerRoot,
+          { height: topInset + HEADER_BAR_HEIGHT, paddingTop: topInset },
+        ]}
+      >
         <View style={styles.topBar}>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -132,13 +127,6 @@ export function FeedHeader() {
               style={styles.headerIcon}
             >
               <Search size={19} color="#0758ff" strokeWidth={2.4} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={handleOpenSheet}
-              style={[styles.headerIcon, { transform: [{ rotate: buttonRotation }] }]}
-            >
-              <Plus size={19} color="#0758ff" strokeWidth={2.2} />
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.75}
@@ -174,7 +162,7 @@ export function FeedHeader() {
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.75}
-              onPress={() => setMenuVisible(true)}
+              onPress={handleOpenMenu}
               style={styles.headerIcon}
             >
               <View style={styles.profileIconContainer}>
@@ -227,22 +215,18 @@ export function FeedHeader() {
           </View>
         </View>
       </View>
-      <CreateActionSheet
-        visible={sheetVisible}
-        onClose={handleCloseSheet}
-        onNavigate={handleCreateNavigate}
-      />
-      <HeaderProfileDrawer
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-      />
+      {hasOpenedMenu ? (
+        <HeaderProfileDrawer
+          visible={menuVisible}
+          onClose={handleCloseMenu}
+        />
+      ) : null}
     </>
   );
-}
+});
 
 const styles = StyleSheet.create({
   headerRoot: {
-    height: 68,
     borderBottomWidth: 1,
     borderBottomColor: '#e8ebf3',
     backgroundColor: '#ffffff',
@@ -363,4 +347,3 @@ const styles = StyleSheet.create({
 });
 
 export default FeedHeader;
-

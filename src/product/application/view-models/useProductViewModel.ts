@@ -33,7 +33,7 @@ const initialFormData: ProductFormData = {
   product_price: '',
   product_location: '',
   product_type: 0,
-  currency: 'VND',
+  currency: 'VNSEEA',
   lat: '',
   lng: '',
   units: undefined,

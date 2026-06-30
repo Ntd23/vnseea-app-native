@@ -185,6 +185,11 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
   );
 
   const loadStream = useCallback(async () => {
+    if (!postId || postId <= 0) {
+      setError('ID live không hợp lệ.');
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
@@ -201,9 +206,14 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
       } else {
         setError('Live này không còn hoạt động.');
       }
-    } catch (err) {
-      console.error('[LiveRoom] load stream error:', err);
-      setError('Không tải được live.');
+    } catch (err: any) {
+      console.warn('[LiveRoom] load stream error:', err);
+      if (err?.message?.includes('post not found')) {
+        setError('Live này không còn hoạt động.');
+        setState('offline');
+      } else {
+        setError('Không tải được live.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -211,6 +221,7 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
 
   const refreshComments = useCallback(
     async (onlyNew = false) => {
+      if (!postId || postId <= 0) return;
       try {
         const latestId = onlyNew
           ? Math.max(0, ...comments.map(comment => Number(comment.id) || 0))
@@ -228,8 +239,11 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
           setReactionsCount(result.reactionsCount);
         }
         collectReactionEvents(result.reactionEvents, onlyNew && isHost);
-      } catch (err) {
-        console.error('[LiveRoom] comments error:', err);
+      } catch (err: any) {
+        console.warn('[LiveRoom] comments error:', err);
+        if (err?.message?.includes('post not found')) {
+          setState('offline');
+        }
       }
     },
     [collectReactionEvents, comments, isHost, postId, repository],
@@ -237,23 +251,23 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
 
   useEffect(() => {
     loadStream().catch(err => {
-      console.error('[LiveRoom] initial stream load error:', err);
+      console.warn('[LiveRoom] initial stream load error:', err);
     });
   }, [loadStream]);
 
   useEffect(() => {
-    if (!streamInfo) return undefined;
+    if (!streamInfo || state === 'offline' || state === 'stale') return undefined;
     refreshComments(false).catch(err => {
-      console.error('[LiveRoom] initial comments load error:', err);
+      console.warn('[LiveRoom] initial comments load error:', err);
     });
     const timer = setInterval(() => {
       refreshComments(true).catch(err => {
-        console.error('[LiveRoom] comments polling error:', err);
+        console.warn('[LiveRoom] comments polling error:', err);
       });
     }, 5000);
 
     return () => clearInterval(timer);
-  }, [refreshComments, streamInfo]);
+  }, [refreshComments, streamInfo, state]);
 
   return {
     streamInfo,
@@ -311,10 +325,11 @@ export function useGoLiveViewModel() {
   const repository = useMemo(() => createLiveRepository(), []);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [privacy, setPrivacy] = useState('1');
+  const [privacy, setPrivacy] = useState('0');
   const [isLoading, setIsLoading] = useState(false);
 
   const privacyOptions = [
+    { value: '0', label: 'Công khai' },
     { value: '1', label: 'Bạn bè' },
     { value: '2', label: 'Bạn bè của bạn' },
     { value: '3', label: 'Chỉ mình tôi' },
@@ -333,7 +348,7 @@ export function useGoLiveViewModel() {
       setIsLoading(true);
       try {
         return await repository.createLive({
-          title: title.trim(),
+          title: title.trim() || 'Trực tiếp',
           description: description.trim(),
           privacy,
         });

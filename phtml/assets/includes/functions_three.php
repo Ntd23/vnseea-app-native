@@ -559,6 +559,15 @@ function Wo_GetProduct($id = 0)
 	$fetched_data['reviews_count'] = $db->where('product_id', $fetched_data['id'])->getValue(T_PRODUCT_REVIEW, "count(id)");
 	$fetched_data['price_format'] = Wo_FormatPriceByCurrency($fetched_data['price'], $fetched_data['currency']);
 	$fetched_data['price_input_format'] = $fetched_data['price_format'];
+	// Populate the human-readable category name. The mobile app's
+	// marketplace filter reads product.category_name to render the
+	// "Thể loại" dropdown labels; without this every category
+	// would fall back to "Thể loại <id>". Mirrors the existing
+	// blog pattern in this file (search for blog_categories).
+	$fetched_data['category_name'] = '';
+	if (!empty($wo['products_categories'][$fetched_data['category']])) {
+		$fetched_data['category_name'] = $wo['products_categories'][$fetched_data['category']];
+	}
 	return $fetched_data;
 }
 function Wo_DeleteProductImage($id)

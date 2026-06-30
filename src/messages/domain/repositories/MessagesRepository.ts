@@ -125,4 +125,12 @@ export interface MessagesRepository {
   detachLabel(userId: string, labelId: string): Promise<void>;
 
   getUsersByLabel(labelId: string): Promise<LabelRecipient[]>;
+
+  getFollowingUserIds(forceRefresh?: boolean): Promise<Set<string>>;
+
+  /**
+   * Get the set of user IDs that are following the current user.
+   * API: POST /api/get-friends
+   */
+  getFollowerUserIds(forceRefresh?: boolean): Promise<Set<string>>;
 }

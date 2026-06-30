@@ -42,7 +42,12 @@ import {
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
+import {
+  getVideoPlaybackTime,
+  setVideoPlaybackTime,
+} from '../../../reels/presentation/screens/reelsPlayback';
 import type { RootStackParamList } from '../../../navigation/types';
 import type {
   FeedPost,
@@ -154,6 +159,7 @@ export type FeedCopy = {
   photoCount: (count: number) => string;
   sponsored: string;
   adVideo: string;
+  videoUnavailable: string;
   ad: string;
   sponsoredContent: string;
   learnMore: string;
@@ -260,6 +266,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     photoCount: count => `${count} ảnh`,
     sponsored: 'Được tài trợ',
     adVideo: 'Quảng cáo video',
+    videoUnavailable: 'Kh\u00f4ng ph\u00e1t \u0111\u01b0\u1ee3c video',
     ad: 'Quảng cáo',
     sponsoredContent: 'Nội dung được tài trợ',
     learnMore: 'Tìm hiểu thêm',
@@ -366,6 +373,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     photoCount: count => `${count} photos`,
     sponsored: 'Sponsored',
     adVideo: 'Video ad',
+    videoUnavailable: 'Video unavailable',
     ad: 'Ad',
     sponsoredContent: 'Sponsored content',
     learnMore: 'Learn more',
@@ -595,18 +603,32 @@ const REACTION_BADGE_BG: Record<ReactionType, string> = {
 // â”€â”€ PhotoViewerModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // â”€â”€ Post sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const VideoReactionSummary = React.memo(function VideoReactionSummary({
+  postId,
   likeCount,
   commentCount,
   myReaction,
   topReactions,
   copy,
+  post,
+  onOpenReactions,
 }: {
+  postId: string;
   likeCount: number;
   commentCount: number;
   myReaction: ReactionType | null;
   topReactions: ReactionType[];
   copy: FeedCopy;
+  post?: FeedPost;
+  /**
+   * Opens the "who reacted" bottom sheet at the parent screen level.
+   * Passed down from the owning screen (FeedScreen, ProfileScreen, etc.)
+   * so the sheet can be hosted centrally instead of each card owning its
+   * own modal — same pattern used by `ReelCommentsSheet` host screens.
+   */
+  onOpenReactions?: (postId: string, post: FeedPost) => void;
 }) {
+  // The sheet is hosted by the parent screen — we no longer navigate.
+
   // Don't render the row at all if nobody has reacted AND there are no
   // comments â€” keeps simple posts visually quiet, FB-style.
   if (likeCount <= 0 && commentCount <= 0) return null;
@@ -625,10 +647,25 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
     return '';
   })();
 
+  const handleOpenReactions = useCallback(() => {
+    if (!postId) return;
+    // Defer to the parent — it owns the bottom-sheet modal so a single
+    // sheet instance is shared across the visible post list. Falls back
+    // to no-op if a caller forgets to wire the prop.
+    if (onOpenReactions && post) {
+      onOpenReactions(postId, post);
+    }
+  }, [onOpenReactions, postId, post]);
+
   return (
     <View className="mb-4 flex-row items-center justify-between">
-      {/* Left: stacked reaction badges + label */}
-      <View className="mr-2 flex-1 flex-row items-center">
+      {/* Left: stacked reaction badges + label (Tappable to open reactions list) */}
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={handleOpenReactions}
+        disabled={likeCount <= 0}
+        className="mr-2 flex-1 flex-row items-center"
+      >
         {likeCount > 0 ? (
           <>
             {/* Facebook-style stacked emoji badges â€” each badge overlaps
@@ -668,7 +705,7 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
             </Text>
           </>
         ) : null}
-      </View>
+      </TouchableOpacity>
       {/* Right: comment count */}
       {commentCount > 0 ? (
         <Text className="text-caption-secondary" numberOfLines={1}>
@@ -988,7 +1025,7 @@ function ReactionIcon({
   );
 }
 
-// â”€â”€ HomeVideoPostCard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── HomeVideoPostCard ─────────────────────────────────────────────────────────────
 export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   post,
   copy: providedCopy,
@@ -996,7 +1033,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   onOpenPicker,
   onCommentTap,
   onShare,
+  onOpenReactions,
   isActive: controlledIsActive,
+  isScreenFocused,
   gestureX,
   gestureY,
   gestureActive,
@@ -1012,7 +1051,15 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   onOpenPicker: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
   onShare?: (post: FeedPost) => void;
+  /**
+   * Tapping the reaction-summary row opens the "who reacted" bottom
+   * sheet hosted by the parent screen. We forward it down to
+   * `VideoReactionSummary` so the card doesn't need to navigate on
+   * its own (avoids stacking a Modal inside a Modal).
+   */
+  onOpenReactions?: (postId: string, post: FeedPost) => void;
   isActive?: boolean;
+  isScreenFocused?: boolean;
   gestureX?: any;
   gestureY?: any;
   gestureActive?: any;
@@ -1040,16 +1087,40 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
-  const isActive = controlledIsActive ?? trackedIsActive;
+  const isActive = controlledIsActive !== undefined
+    ? controlledIsActive
+    : (isScreenFocused !== false && trackedIsActive);
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [muted, setMuted] = useState(true);
   const [aspectRatio, setAspectRatio] = useState(16 / 9); // Default landscape
-  const currentTimeRef = useRef<number>(0);
+  const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
+  const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
+  const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
+  const [isReady, setIsReady] = useState(false);
+  const [hasRenderedFrame, setHasRenderedFrame] = useState(false);
+  const [hasVideoError, setHasVideoError] = useState(false);
+  const videoUrl = post.videoUrl.trim();
+  const hasVideoUrl = videoUrl.length > 0;
+  const canAttemptVideo = hasVideoUrl && !hasVideoError;
+
+  useEffect(() => {
+    const savedTime = getVideoPlaybackTime(post.id, 0);
+    currentTimeRef.current = savedTime;
+    setSeekTime(savedTime > 0.05 ? savedTime : undefined);
+    setIsReady(false);
+    setHasRenderedFrame(false);
+    setHasVideoError(false);
+  }, [post.id, post.videoUrl]);
+
+  useEffect(() => {
+    return () => {
+      setVideoPlaybackTime(post.id, currentTimeRef.current);
+    };
+  }, [post.id]);
 
   // Measure thumbnail size on mount to avoid layout jumps
   useEffect(() => {
     if (post.thumbnailUrl) {
-      console.log(`[HomeVideoPostCard] Fetching size for thumbnail: ${post.thumbnailUrl}`);
       Image.getSize(
         post.thumbnailUrl,
         (width, height) => {
@@ -1057,7 +1128,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             const ratio = width / height;
             // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
             const clampedRatio = Math.max(0.75, Math.min(16 / 9, ratio));
-            console.log(`[HomeVideoPostCard] Thumbnail loaded: ${width}x${height}, ratio: ${ratio}, clamped: ${clampedRatio}`);
             setAspectRatio(clampedRatio);
           }
         },
@@ -1070,14 +1140,15 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   // Refine aspect ratio when actual video loads
   const handleVideoLoad = useCallback((data: any) => {
-    console.log('[HomeVideoPostCard] Video onLoad triggered, data:', data);
+    setHasVideoError(false);
+    setIsReady(true);
+    setHasRenderedFrame(false);
     const size = data?.naturalSize ?? data;
     if (size) {
       const { width, height } = size;
       if (width > 0 && height > 0) {
         const ratio = width / height;
         const clampedRatio = Math.max(0.75, Math.min(16 / 9, ratio));
-        console.log(`[HomeVideoPostCard] Video size loaded: ${width}x${height}, ratio: ${ratio}, clamped: ${clampedRatio}`);
         setAspectRatio(clampedRatio);
       }
     }
@@ -1091,6 +1162,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [navigateToProfile, post.publisher.id]);
 
   const handleVideoPress = useCallback(() => {
+    const resumeTime = getVideoPlaybackTime(post.id, currentTimeRef.current);
+    currentTimeRef.current = resumeTime;
+    setVideoPlaybackTime(post.id, resumeTime);
+
     // Immediately mute/pause the video on home feed before navigating
     setMuted(true);
     setManuallyPaused(true);
@@ -1106,26 +1181,48 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       initialVideoId: post.id,
       post,
       source: 'home',
-      seekTime: currentTimeRef.current,
+      seekTime: resumeTime,
     });
   }, [navigation, post]);
 
-  // â”€â”€ Mount strategy â€” keep player alive, just pause â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  //
-  // Keep VideoPlayer mounted while active (even when paused) â€” avoids the
-  // expensive ExoPlayer init/teardown cycle that causes frame drops on scroll.
-  const shouldMountVideo = isActive;
-  // Home feed video is muted by default. Users can opt into sound with the
-  // volume button, and we reset to muted once the card scrolls away.
-  useEffect(() => {
-    if (!isActive) {
-      setManuallyPaused(false);
-      setMuted(true);
-    }
-  }, [isActive]);
+  // ── Mount strategy ──
+  // Keep the feed closer to the Reels strategy: do not mount a native
+  // video surface for every off-screen/inactive video. Paused Android
+  // video surfaces often render as a plain black rectangle; thumbnails
+  // are a better preview until this card is the active one.
+  const shouldMountVideo = isScreenFocused !== false && isActive && canAttemptVideo;
 
-  const playing = isActive && !manuallyPaused;
-  const videoSource = useMemo(() => ({ uri: post.videoUrl }), [post.videoUrl]);
+  useEffect(() => {
+    if (isActive) {
+      setMuted(false);
+      const savedTime = getVideoPlaybackTime(post.id, currentTimeRef.current);
+      currentTimeRef.current = savedTime;
+      if (savedTime > 0.05) {
+        if (isReady && videoRef.current) {
+          videoRef.current.seek(savedTime);
+        } else {
+          setSeekTime(savedTime);
+        }
+      }
+    } else {
+      setMuted(true);
+      setManuallyPaused(false);
+      setIsReady(false);
+      setHasRenderedFrame(false);
+      setSeekTime(undefined);
+    }
+  }, [isActive, isReady, post.id]);
+
+  useEffect(() => {
+    if (isActive && isReady && seekTime !== undefined && videoRef.current) {
+      currentTimeRef.current = seekTime;
+      videoRef.current.seek(seekTime);
+      setSeekTime(undefined);
+    }
+  }, [isActive, isReady, seekTime]);
+
+  const playing = shouldMountVideo && !manuallyPaused;
+  const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
 
   // Need an on-screen position for the "ThĂ­ch" button so the picker
   // anchors above it (matches the Facebook web/mobile pattern).
@@ -1179,12 +1276,28 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           style={{ width: '100%', height: '100%' }}
         >
           {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
-          {shouldMountVideo ? (
-            <View pointerEvents="none" style={{ width: '100%', height: '100%' }}>
-              <VideoPlayer
-                source={videoSource}
+          {post.thumbnailUrl ? (
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <FeedMediaImage
+                uri={post.thumbnailUrl}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
+                deferWhileScrolling={false}
+              />
+            </View>
+          ) : null}
+          {shouldMountVideo ? (
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <VideoPlayer
+                ref={videoRef}
+                source={videoSource}
+                style={[
+                  StyleSheet.absoluteFill,
+                  post.thumbnailUrl && !hasRenderedFrame
+                    ? { opacity: 0 }
+                    : null,
+                ]}
+                resizeMode="contain"
                 paused={!playing}
                 controls={false}
                 muted={muted}
@@ -1192,13 +1305,34 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 ignoreSilentSwitch="ignore"
                 playInBackground={false}
                 playWhenInactive={false}
+                // Match Reels' renderer. Some Android codecs/CDN videos render
+                // black on TextureView but play correctly on SurfaceView.
                 useTextureView={false}
                 bufferConfig={VIDEO_BUFFER_CONFIG}
+                onReadyForDisplay={() => {
+                  setIsReady(true);
+                }}
                 onLoad={handleVideoLoad}
                 onProgress={data => {
-                  currentTimeRef.current = data.currentTime;
+                  const nextTime = data?.currentTime;
+                  if (
+                    typeof nextTime !== 'number' ||
+                    !Number.isFinite(nextTime)
+                  ) {
+                    return;
+                  }
+                  currentTimeRef.current = nextTime;
+                  setVideoPlaybackTime(post.id, nextTime);
+                  if (!hasRenderedFrame && nextTime > 0.05) {
+                    setHasRenderedFrame(true);
+                  }
                 }}
+                poster={post.thumbnailUrl}
+                posterResizeMode="cover"
                 onError={error => {
+                  setHasVideoError(true);
+                  setIsReady(false);
+                  setHasRenderedFrame(false);
                   console.warn(
                     '[HomeVideoPostCard] video error',
                     post.id,
@@ -1207,14 +1341,43 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   );
                 }}
               />
+              {post.thumbnailUrl && !hasRenderedFrame ? (
+                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                  <FeedMediaImage
+                    uri={post.thumbnailUrl}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="cover"
+                    deferWhileScrolling={false}
+                  />
+                </View>
+              ) : null}
             </View>
           ) : post.thumbnailUrl ? (
-            <FeedMediaImage
-              uri={post.thumbnailUrl}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="cover"
-            />
-          ) : null}
+            null
+          ) : (
+            <View
+              style={{
+                width: '100%',
+                height: '100%',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#020617',
+                paddingHorizontal: 20,
+              }}
+            >
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: '700',
+                  textAlign: 'center',
+                  opacity: hasVideoUrl && !hasVideoError ? 0.75 : 1,
+                }}
+              >
+                {hasVideoUrl && !hasVideoError ? '\u25B6' : copy.videoUnavailable}
+              </Text>
+            </View>
+          )}
           {/* Big play button overlay while paused */}
           {!playing ? (
             <View
@@ -1271,11 +1434,14 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       </FeedMediaFrame>
       <FeedCardContent>
         <VideoReactionSummary
+          postId={post.id}
           likeCount={post.likeCount}
           commentCount={post.commentCount}
           myReaction={post.myReaction}
           topReactions={post.topReactions}
           copy={copy}
+          post={post}
+          onOpenReactions={onOpenReactions}
         />
         <VideoPostActions
           myReaction={post.myReaction}
@@ -1437,6 +1603,7 @@ export const TextPostCard = React.memo(function TextPostCard({
   onCommentTap,
   onPhotoPress,
   onShare,
+  onOpenReactions,
   gestureX,
   gestureY,
   gestureActive,
@@ -1454,6 +1621,12 @@ export const TextPostCard = React.memo(function TextPostCard({
   onCommentTap: (postId: string) => void;
   onPhotoPress: (post: FeedTextPost, photoIndex: number) => void;
   onShare?: (post: FeedPost) => void;
+  /**
+   * Tapping the reaction-summary row opens the "who reacted" bottom
+   * sheet hosted by the parent screen. Forwarded down to
+   * `VideoReactionSummary` so the card itself stays navigation-free.
+   */
+  onOpenReactions?: (postId: string, post: FeedPost) => void;
   // Reanimated shared values for the FB-style drag-to-pick reaction
   // picker. Threaded through `VideoPostActions` so the long-press +
   // pan gesture can update them and `ReactionIcon` can react to the
@@ -1643,11 +1816,14 @@ export const TextPostCard = React.memo(function TextPostCard({
       ) : null}
       <FeedCardContent>
         <VideoReactionSummary
+          postId={post.id}
           likeCount={post.likeCount}
           commentCount={post.commentCount}
           myReaction={post.myReaction}
           topReactions={post.topReactions}
           copy={copy}
+          post={post}
+          onOpenReactions={onOpenReactions}
         />
         <VideoPostActions
           myReaction={post.myReaction}

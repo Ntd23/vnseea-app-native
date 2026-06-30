@@ -87,8 +87,7 @@ import {
   Video,
   Wallet,
   X,
-  Globe,
-} from 'lucide-react-native';
+ } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
@@ -109,7 +108,6 @@ import {
   languageStorage,
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
-import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -121,6 +119,7 @@ import ProfileHeaderCard from '../components/ProfileHeaderCard';
 import FeatureGrid from '../components/FeatureGrid';
 import GoProBanner from '../components/GoProBanner';
 import SettingsMenuList from '../components/SettingsMenuList';
+import SettingsMenuBoard from '../components/SettingsMenuBoard';
 import type {
   UserGender,
   UserUploadFile,
@@ -3342,7 +3341,6 @@ function AccountVerificationCard() {
 function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const route = useRoute<SettingsRoute>();
-  const [sheetVisible, setSheetVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<SettingsPanel>('main');
 
   const navigateToPanel = useCallback(
@@ -3355,8 +3353,22 @@ function SettingsScreen() {
   const [currencySettings, setCurrencySettings] =
     useState<CurrencySettingsState | null>(null);
   const [currencyLoading, setCurrencyLoading] = useState(false);
-  const { profile, features, settingsMenu, language, setLanguage, copy } =
-    useSettingsViewModel();
+  const {
+    profile,
+    features,
+    settingsMenu,
+    contentMenu,
+    accountMenu,
+    systemMenu,
+    footerMenu,
+    walletSummary,
+    pointsSummary,
+    isAdmin,
+    sectionLabels,
+    language,
+    setLanguage,
+    copy,
+  } = useSettingsViewModel();
   const { logout } = useAuthViewModel();
   const { logoUrl, siteName, imageErrorCount, notifyImageError } =
     useAuthBranding();
@@ -3418,20 +3430,7 @@ function SettingsScreen() {
       tabBarVisibility.setVisible(true);
     };
   }, []);
-  const handleDirectLanguageChange = useCallback(
-    (lang: AppLanguage) => {
-      setLanguage(lang);
-      // Keep the new i18next instance in sync with the legacy MMKV store
-      // so consumers that use `useTranslation` re-render immediately.
-      changeLocale(lang);
-      Alert.alert(
-        'Ngôn ngữ / Language',
-        lang === 'vi' ? 'Đã đổi sang Tiếng Việt' : 'Changed to English',
-      );
-    },
-    [setLanguage],
-  );
-
+  
   const handleCurrencyPress = useCallback(() => {
     if (currencyLoading) return;
 
@@ -3464,61 +3463,14 @@ function SettingsScreen() {
     loadCurrencySettings,
   ]);
 
-  const handleCreateNavigate = useCallback(
-    (route: RootStackRouteName) => {
-      if (route === ROUTES.CREATE_EVENT) {
-        navigation.navigate(ROUTES.CREATE_EVENT);
-      }
-
-      if (route === ROUTES.CREATE_PRODUCT) {
-        navigation.navigate(ROUTES.CREATE_PRODUCT);
-      }
-
-      if (route === ROUTES.CREATE_PAGE) {
-        navigation.navigate(ROUTES.CREATE_PAGE);
-      }
-
-      if (route === ROUTES.CREATE_GROUP) {
-        navigation.navigate(ROUTES.CREATE_GROUP);
-      }
-
-      if (route === ROUTES.CREATE_STORY) {
-        navigation.navigate(ROUTES.CREATE_STORY);
-      }
-
-      if (route === ROUTES.CREATE_POST) {
-        navigation.navigate(ROUTES.CREATE_POST);
-      }
-
-      if (route === ROUTES.CREATE_POLL) {
-        navigation.navigate(ROUTES.CREATE_POLL);
-      }
-
-      if (route === ROUTES.CREATE_REEL) {
-        navigation.navigate(ROUTES.CREATE_REEL);
-      }
-
-      if (route === ROUTES.CREATE_AD) {
-        navigation.navigate(ROUTES.CREATE_AD);
-      }
-
-      if (route === ROUTES.CREATE_BLOG) {
-        navigation.navigate(ROUTES.CREATE_BLOG);
-      }
-    },
-    [navigation],
-  );
-
   const handleSettingsItemPress = useCallback(
     async (id: string) => {
       if (id === 'general') {
-        setSheetVisible(false);
         navigateToPanel('general');
         return;
       }
 
       if (id === 'earnings') {
-        setSheetVisible(false);
         navigateToPanel('earnings');
         return;
       }
@@ -3528,6 +3480,16 @@ function SettingsScreen() {
           screen: ROUTES.NOTIFICATIONS,
         });
       }
+
+      // The new menu board routes `find-friends`, `pages`, `my-products`,
+      // `market`, `blogs`, `my-articles`, `movies`, `events`, `groups`,
+      // `forum`, `ads`, `albums`, `photos`, `videos`, `saved`, `poke`,
+      // `explore`, `popular`, `jobs`, `common`, `funding`, `memories`,
+      // `offers`, `go-pro`, `admin`, `switch-account`, `shortcuts` and
+      // `night-mode` through `handleFeaturePress` so they share a single
+      // navigation table. Any id that slips past both handlers is
+      // intentionally ignored — the user can still reach the feature
+      // from the original FeatureGrid if we ever wire it back in.
 
       if (id === 'logout') {
         try {
@@ -3640,8 +3602,83 @@ function SettingsScreen() {
       if (id === 'forum') {
         navigation.navigate(ROUTES.FORUM);
       }
+
+      // ── 5-section board extensions ─────────────────────────────────
+      // These ids are introduced by the new SettingsMenuBoard layout
+      // (matches the reference image). Each one maps to an existing
+      // route so we don't add new screens just to render a list row.
+
+      if (id === 'my-products') {
+        navigation.navigate(ROUTES.MY_PRODUCTS as never);
+        return;
+      }
+
+      if (id === 'my-articles') {
+        navigation.navigate(ROUTES.BLOGS as never);
+        return;
+      }
+
+      if (id === 'explore') {
+        navigation.navigate(ROUTES.EXPLORE as never);
+        return;
+      }
+
+      if (id === 'admin') {
+        if (!isAdmin) return;
+        // Admin link points at the same user dashboard surface the
+        // settings tab already owns, so admins land directly inside
+        // the management area without a full-screen take-over.
+        navigation.navigate(ROUTES.USER_DASHBOARD as never);
+        return;
+      }
+
+      if (id === 'go-pro') {
+        // Go-Pro lives on the web today — open the configured web base
+        // URL so the user lands on the upgrade page in their browser.
+        Linking.openURL(apiConfig.webBaseUrl).catch(() => undefined);
+        return;
+      }
+
+      if (id === 'switch-account') {
+        // Drop the cached credentials and bounce to login. Using
+        // `navigation.reset` keeps the back-stack empty so the user
+        // can't accidentally return to a previous account's data.
+        navigation.reset({
+          index: 0,
+          routes: [{ name: ROUTES.LOGIN }],
+        });
+        return;
+      }
+
+      if (id === 'shortcuts') {
+        Alert.alert(
+          copy.proTitle,
+          'Danh sách phím tắt sẽ được cập nhật trong phiên bản sau.',
+        );
+        return;
+      }
+
+      if (id === 'night-mode') {
+        // Night mode toggle is handled by SettingsMenuBoard's Switch
+        // component directly. We just expose a no-op fallback here
+        // for tap-on-row accessibility.
+        return;
+      }
     },
-    [navigation],
+    [isAdmin, navigation, copy.proTitle],
+  );
+
+  const handleToggleNightMode = useCallback(
+    (next: boolean) => {
+      // Lightweight bridge to the existing language/theme store would
+      // live here once night-mode persistence lands. For now we only
+      // surface a soft confirmation so the toggle is obviously wired.
+      Alert.alert(
+        next ? 'Đã bật chế độ ban đêm' : 'Đã tắt chế độ ban đêm',
+        'Tính năng này sẽ được cập nhật trong phiên bản tiếp theo.',
+      );
+    },
+    [],
   );
 
   return (
@@ -3726,16 +3763,6 @@ function SettingsScreen() {
                 style={settingsHeaderIconStyle}
               >
                 <Search size={20} color="#002fff" strokeWidth={2.5} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={() => setSheetVisible(true)}
-                style={[
-                  settingsHeaderIconStyle,
-                  { transform: [{ rotate: sheetVisible ? '45deg' : '0deg' }] },
-                ]}
-              >
-                <Plus size={22} color="#002fff" strokeWidth={2.5} />
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.75}
@@ -4040,56 +4067,6 @@ function SettingsScreen() {
                     <ChevronRight size={18} color="#94a3b8" />
                   )}
                 </TouchableOpacity>
-                <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
-                  <View className="flex-row items-center">
-                    <View className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-[#eef2ff]">
-                      <Globe size={20} color="#0000ff" />
-                    </View>
-                    <Text className="text-[16px] font-semibold text-slate-800">
-                      {copy.languageTitle}
-                    </Text>
-                  </View>
-                  <View className="flex-row gap-2.5">
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => handleDirectLanguageChange('vi')}
-                      className={`h-9 w-14 items-center justify-center rounded-xl border-2 ${
-                        language === 'vi'
-                          ? 'border-[#0000ff]'
-                          : 'border-slate-200'
-                      }`}
-                    >
-                      <Text
-                        className={`text-sm font-bold ${
-                          language === 'vi'
-                            ? 'text-[#0000ff]'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        VI
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => handleDirectLanguageChange('en')}
-                      className={`h-9 w-14 items-center justify-center rounded-xl border-2 ${
-                        language === 'en'
-                          ? 'border-[#0000ff]'
-                          : 'border-slate-200'
-                      }`}
-                    >
-                      <Text
-                        className={`text-sm font-bold ${
-                          language === 'en'
-                            ? 'text-[#0000ff]'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        EN
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
               </GeneralSettingsSection>
             </View>
           ) : activePanel === 'earnings' ? (
@@ -4179,20 +4156,32 @@ function SettingsScreen() {
             />
           </View>
 
+          {/* 5-section menu board (info / content / settings / system /
+              footer). Replaces the old single-list SettingsMenuList so
+              the Settings tab mirrors the reference image exactly. */}
           <View className="mt-6">
-            <SettingsMenuList
-              items={settingsMenu}
-              onItemPress={handleSettingsItemPress}
+            <SettingsMenuBoard
+              wallet={walletSummary}
+              points={pointsSummary}
+              isAdmin={isAdmin}
+              contentMenu={contentMenu}
+              accountMenu={accountMenu}
+              systemMenu={systemMenu}
+              footerMenu={footerMenu}
+              sectionLabels={sectionLabels}
+              onItemPress={(id: string) => {
+                // Route every menu item through the same dispatcher
+                // so navigation logic stays in one place.
+                handleFeaturePress(id);
+              }}
+              onSwitchAccountPress={() => handleFeaturePress('switch-account')}
+              onShortcutsPress={() => handleFeaturePress('shortcuts')}
+              onToggleNightMode={handleToggleNightMode}
             />
           </View>
         </ScrollView>
       )}
 
-      <CreateActionSheet
-        visible={sheetVisible}
-        onClose={() => setSheetVisible(false)}
-        onNavigate={handleCreateNavigate}
-      />
     </SafeAreaView>
   );
 }

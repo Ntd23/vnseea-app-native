@@ -13,7 +13,12 @@ import {
   View,
   type ListRenderItemInfo,
 } from 'react-native';
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -23,7 +28,9 @@ import {
   RotateCw,
   Search,
   ShoppingBag,
+  ShoppingCart,
   SlidersHorizontal,
+  Store,
   X,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -38,15 +45,17 @@ import {
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
+import { useSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 
 type MyProductsNav = NativeStackNavigationProp<RootStackParamList>;
 type MyProductsRoute = RouteProp<RootStackParamList, typeof ROUTES.MY_PRODUCTS>;
 
 const PRODUCT_COLUMNS = { justifyContent: 'space-between' } as const;
 const ORDER_DETAIL_MAX_HEIGHT = Dimensions.get('window').height * 0.82;
+const productRepository = createProductRepository();
 
 const TABS: Array<{ key: MyProductsTab; label: string }> = [
-  { key: 'marketplace', label: 'Cửa hàng chung' },
   { key: 'products', label: 'Sản phẩm của tôi' },
   { key: 'purchased', label: 'Đã mua' },
   { key: 'orders', label: 'Đơn hàng' },
@@ -330,6 +339,7 @@ function MyProductsScreen() {
   const targetUserId = targetUserIdRaw ? Number(targetUserIdRaw) : undefined;
   const vm = useMyProductsViewModel(targetUserId);
   const { setActiveTab } = vm;
+  const { cartCount, syncCartCount } = useSyncedCartCount(0);
   const [selectedOrder, setSelectedOrder] = useState<OrdersItem | null>(null);
 
   useEffect(() => {
@@ -341,6 +351,27 @@ function MyProductsScreen() {
   const handleCreate = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_PRODUCT);
   }, [navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      productRepository
+        .getCartCount()
+        .then(count => {
+          if (!cancelled) {
+            syncCartCount(count);
+          }
+        })
+        .catch(error => {
+          console.warn('[MyProducts] getCartCount error:', error);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [syncCartCount]),
+  );
 
   const handleTabPress = useCallback(
     (tab: MyProductsTab) => {
@@ -408,23 +439,50 @@ function MyProductsScreen() {
               : 'Quản lý mua bán marketplace'}
           </Text>
         </View>
-        {!targetUserId && (
-          <TouchableOpacity
-            className="btn-primary h-10 px-4"
-            activeOpacity={0.9}
-            onPress={handleCreate}
-          >
-            <Plus size={17} color="#FFFFFF" />
-            <Text className="text-caption-primary text-inverse">Đăng bán</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
-      <View className="border-b border-slate-100 bg-white py-3">
+      {!targetUserId && (
+        <View className="mx-4 my-2.5 rounded-2xl bg-white p-3 border border-slate-100 shadow-sm">
+          <View className="flex-row items-center gap-3">
+            <TouchableOpacity
+              className="flex-1 flex-row items-center justify-center bg-blue-600 rounded-xl py-3 px-3 shadow-sm active:bg-blue-700"
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate(ROUTES.MARKETPLACE)}
+            >
+              <Store size={16} color="#FFFFFF" />
+              <Text className="ml-2 text-white font-semibold text-caption-primary">
+                Chuyển đến thị trường
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="relative flex-1 flex-row items-center justify-center bg-orange-500 rounded-xl py-3 px-3 shadow-sm active:bg-orange-600"
+              style={{ backgroundColor: '#F97316' }}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate(ROUTES.CART)}
+            >
+              <ShoppingCart size={16} color="#FFFFFF" />
+              {cartCount > 0 ? (
+                <View className="absolute right-2 top-1 h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1">
+                  <Text className="text-[10px] font-extrabold text-white">
+                    {cartCount > 99 ? '99+' : cartCount}
+                  </Text>
+                </View>
+              ) : null}
+              <Text className="ml-2 text-white font-semibold text-caption-primary">
+                Giỏ hàng
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      <View className="flex-row items-center justify-between border-b border-slate-100 bg-white">
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerClassName="gap-2 px-4"
+          contentContainerClassName="flex-row items-center gap-6 px-4"
+          className="flex-1"
         >
           {TABS.filter(tab => {
             // Khi xem sản phẩm của người khác → chỉ hiện tab 'products'
@@ -433,49 +491,39 @@ function MyProductsScreen() {
             }
             return true;
           }).map(tab => {
-            const isMarketplace = tab.key === 'marketplace';
             const isActive = tab.key === vm.activeTab;
-
-            if (isMarketplace) {
-              return (
-                <TouchableOpacity
-                  key={tab.key}
-                  className="rounded-full border border-blue-600 bg-blue-50 px-4 py-2 flex-row items-center gap-1.5 shadow-sm"
-                  activeOpacity={0.8}
-                  onPress={() => handleTabPress(tab.key)}
-                >
-                  <ShoppingBag size={15} color="#2563EB" />
-                  <Text className="text-caption-primary text-blue-600 font-semibold">
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            }
 
             return (
               <TouchableOpacity
                 key={tab.key}
-                className={`rounded-full border px-4 py-2 ${
-                  isActive
-                    ? 'border-blue-600 bg-blue-50'
-                    : 'border-slate-200 bg-white'
-                }`}
+                className="py-3.5 relative"
                 activeOpacity={0.8}
                 onPress={() => handleTabPress(tab.key)}
               >
                 <Text
-                  className={
-                    isActive
-                      ? 'text-caption-primary text-brand'
-                      : 'text-caption-secondary'
-                  }
+                  className={`text-body-primary font-semibold ${
+                    isActive ? 'text-slate-900 font-bold' : 'text-slate-500'
+                  }`}
                 >
                   {tab.label}
                 </Text>
+                {isActive && (
+                  <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
+                )}
               </TouchableOpacity>
             );
           })}
         </ScrollView>
+        {!targetUserId && (
+          <TouchableOpacity
+            className="mx-4 flex-row items-center bg-blue-600 rounded-full px-3 py-1.5 shadow-sm active:bg-blue-700"
+            activeOpacity={0.8}
+            onPress={handleCreate}
+          >
+            <Plus size={14} color="#FFFFFF" />
+            <Text className="ml-1 text-white font-semibold text-xs">Tạo ra</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {vm.activeTab === 'products' ? (

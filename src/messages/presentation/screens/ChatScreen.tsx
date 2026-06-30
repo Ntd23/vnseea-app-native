@@ -26,6 +26,8 @@ import {
   TouchableOpacity,
   View,
   UIManager,
+  PanResponder,
+  ToastAndroid,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -45,6 +47,7 @@ import {
   PhoneMissed,
   Play,
   Send,
+  ShoppingBag,
   Square,
   Trash2,
   UserMinus,
@@ -53,8 +56,11 @@ import {
   Volume2,
   VolumeX,
   X,
+  CornerUpLeft,
+  Copy,
 } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
 import {
   launchImageLibrary,
   type Asset,
@@ -75,12 +81,36 @@ import type {
   MessageAttachment,
   MessageItem,
 } from '../../domain/types/messages.types';
+import type { ProductItem } from '../../../product/domain/types/product.types';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { useAudioRecorder } from '../../../shared-kernel/application/hooks/useAudioRecorder';
 import { formatAudioDuration } from '../../../shared-kernel/application/utils/audioFiles';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+
+function formatPrice(price: string, symbolOrCode: string): string {
+  const numPrice = parseFloat(price);
+  if (isNaN(numPrice)) return price;
+  
+  let currency = symbolOrCode;
+  if (currency === '0') currency = '$';
+  else if (currency === '1') currency = '€';
+  else if (currency === 'VNSEEA' || currency === 'vnd') currency = 'VNSEEA';
+
+  const formatted = numPrice.toLocaleString('vi-VN');
+
+  if (currency === 'VNSEEA') {
+    return `${formatted} VNSEEA`;
+  }
+  if (currency === '$' || currency === 'USD') {
+    return `$${formatted}`;
+  }
+  if (currency === '€' || currency === 'EUR') {
+    return `€${formatted}`;
+  }
+  return `${formatted} ${currency}`;
+}
 
 type ChatScreenProps = NativeStackScreenProps<
   RootStackParamList,
@@ -584,77 +614,388 @@ function CallEventContent({ message }: { message: MessageItem }) {
 }
 
 // Message Bubble
+function parseProductInquiry(messageText: string) {
+  if (!messageText || !messageText.includes('Tôi muốn hỏi về sản phẩm:')) {
+    return null;
+  }
+  try {
+    const nameMatch = messageText.match(/👉\s*\*(.*?)\*/);
+    const priceMatch = messageText.match(/💰\s*Giá:\s*\*(.*?)\*/);
+    const locationMatch = messageText.match(/📍\s*Địa điểm:\s*\*(.*?)\*/);
+    const imageMatch = messageText.match(/📷\s*Ảnh:\s*(http\S+)/);
+    const idMatch = messageText.match(/🆔\s*ID:\s*\*(.*?)\*/);
+    const msgMatch = messageText.match(/💬\s*Lời nhắn:\s*([\s\S]+)$/);
+
+    if (!nameMatch) return null;
+
+    return {
+      name: nameMatch[1],
+      price: priceMatch ? priceMatch[1] : '',
+      location: locationMatch ? locationMatch[1] : '',
+      image: imageMatch ? imageMatch[1] : '',
+      id: idMatch ? idMatch[1] : '',
+      userMessage: msgMatch ? msgMatch[1].trim() : '',
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function parseMessageReply(messageText: string) {
+  if (!messageText || !messageText.includes('↪️ *Trả lời tin nhắn:*')) {
+    return null;
+  }
+  try {
+    const senderMatch = messageText.match(/👉\s*\*(.*?)\*:\s*([\s\S]*?)\s*🆔/);
+    const idMatch = messageText.match(/🆔\s*ID:\s*\*(.*?)\*/);
+    const imageMatch = messageText.match(/🖼️\s*Ảnh:\s*\*(.*?)\*/);
+
+    if (!senderMatch) return null;
+
+    let replyText = '';
+    const doubleNewlineIndex = messageText.indexOf('\n\n');
+    if (doubleNewlineIndex !== -1) {
+      replyText = messageText.substring(doubleNewlineIndex + 2).trim();
+    } else {
+      let lastBlockIndex = -1;
+      if (imageMatch) {
+        lastBlockIndex = messageText.indexOf(imageMatch[0]) + imageMatch[0].length;
+      } else if (idMatch) {
+        lastBlockIndex = messageText.indexOf(idMatch[0]) + idMatch[0].length;
+      }
+      if (lastBlockIndex !== -1) {
+        replyText = messageText.substring(lastBlockIndex).trim();
+      }
+    }
+
+    return {
+      senderName: senderMatch[1],
+      originalMessage: senderMatch[2],
+      originalMessageId: idMatch ? idMatch[1] : '',
+      originalImage: imageMatch ? imageMatch[1] : '',
+      replyText: replyText || messageText,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function getMessageSnippet(message: MessageItem, chatName: string) {
+  if (message.media) {
+    if (message.mediaType === 'image') return '📷 Hình ảnh';
+    if (message.mediaType === 'video') return '🎥 Video';
+    if (message.mediaType === 'audio') return '🎵 Tin nhắn thoại';
+    return '📎 Tệp tin';
+  }
+
+  const productInquiry = parseProductInquiry(message.message);
+  if (productInquiry) {
+    return `🛍️ Hỏi về sản phẩm: ${productInquiry.name}`;
+  }
+
+  const replyInfo = parseMessageReply(message.message);
+  if (replyInfo) {
+    return replyInfo.replyText;
+  }
+
+  return message.message;
+}
+
+function ReplyMessageBubble({
+  reply,
+  isSentByMe,
+}: {
+  reply: {
+    senderName: string;
+    originalMessage: string;
+    originalMessageId: string;
+    originalImage?: string;
+    replyText: string;
+  };
+  isSentByMe: boolean;
+}) {
+  const replyBg = 'bg-black/5';
+  const senderColor = 'text-blue-600';
+  const originalMessageColor = 'text-slate-500';
+  const replyTextColor = 'text-slate-900';
+
+  return (
+    <View className="flex-col min-w-[150px] mt-0.5">
+      {/* Original message frame */}
+      <View
+        className={`flex-row rounded-lg overflow-hidden ${replyBg} items-stretch`}
+        style={{ minHeight: 42 }}
+      >
+        {/* Left vertical blue line */}
+        <View className="w-1 bg-[#0084FF]" />
+
+        {/* Content column */}
+        <View className="flex-1 pl-2 py-1.5 justify-center">
+          <Text className={`text-[12px] font-bold ${senderColor}`} numberOfLines={1}>
+            {reply.senderName}
+          </Text>
+          <Text className={`text-[11px] mt-0.5 ${originalMessageColor}`} numberOfLines={1}>
+            {reply.originalMessage}
+          </Text>
+        </View>
+
+        {/* Optional Right image thumbnail */}
+        {!!reply.originalImage && (
+          <View className="justify-center px-1.5 py-1">
+            <Image
+              source={{ uri: reply.originalImage }}
+              className="w-9 h-9 rounded bg-slate-200"
+              resizeMode="cover"
+            />
+          </View>
+        )}
+      </View>
+
+      {/* Main Reply message text */}
+      <Text className={`text-[15px] leading-5 mt-1.5 ${replyTextColor}`}>
+        {reply.replyText}
+      </Text>
+    </View>
+  );
+}
+
+function ProductInquiryBubble({
+  product,
+  isSentByMe,
+}: {
+  product: {
+    name: string;
+    price: string;
+    location?: string;
+    image?: string;
+    id?: string;
+    userMessage: string;
+  };
+  isSentByMe: boolean;
+}) {
+  const cardBg = isSentByMe ? 'bg-black/15' : 'bg-white';
+  const cardBorder = isSentByMe ? 'border-white/10' : 'border-gray-200';
+  const nameColor = isSentByMe ? 'text-white' : 'text-slate-800';
+  const priceColor = isSentByMe ? 'text-blue-200' : 'text-blue-600';
+  const textColor = isSentByMe ? 'text-white' : 'text-slate-900';
+  const navigation = useNavigation<any>();
+
+  const handlePressProduct = () => {
+    if (product.id) {
+      navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+        productId: Number(product.id),
+      });
+    }
+  };
+
+  return (
+    <View className="flex-col min-w-[200px] mt-0.5">
+      {/* Product Frame */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={handlePressProduct}
+        className={`rounded-xl border overflow-hidden ${cardBg} ${cardBorder} mb-2`}
+      >
+        {!!product.image && (
+          <Image
+            source={{ uri: product.image }}
+            className="w-full h-32"
+            resizeMode="cover"
+          />
+        )}
+        <View className="p-2.5">
+          <Text className={`text-sm font-bold leading-5 ${nameColor}`} numberOfLines={2}>
+            {product.name}
+          </Text>
+          <Text className={`text-[13px] font-extrabold mt-1 ${priceColor}`}>
+            {product.price}
+          </Text>
+          {!!product.location && (
+            <Text className={`text-[10px] mt-1 opacity-70 ${isSentByMe ? 'text-white/80' : 'text-slate-500'}`} numberOfLines={1}>
+              📍 {product.location}
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
+
+      {/* Message question */}
+      <Text className={`text-[15px] leading-5 ${textColor}`}>
+        {product.userMessage || 'Mặt hàng này còn không bạn yêu?'}
+      </Text>
+    </View>
+  );
+}
+
 function MessageBubble({
   message,
   avatar,
   onOpenMedia,
+  onReply,
+  onLongPress,
 }: {
   message: MessageItem;
   avatar: string;
   onOpenMedia: OpenChatMedia;
+  onReply?: (message: MessageItem) => void;
+  onLongPress?: (message: MessageItem) => void;
 }) {
   const isMediaOnly =
     !message.callEvent &&
     !message.message &&
     ['image', 'video', 'audio'].includes(message.mediaType ?? '');
 
+  const productInquiry = parseProductInquiry(message.message);
+  const replyInfo = parseMessageReply(message.message);
+
+  const translateX = useRef(new Animated.Value(0)).current;
+  const replyIconOpacity = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        const { dx, dy } = gestureState;
+        return Math.abs(dx) > 10 && Math.abs(dy) < 8;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        const drag = gestureState.dx;
+        if (drag > 0) {
+          translateX.setValue(Math.min(drag, 60));
+          replyIconOpacity.setValue(Math.min(drag / 45, 1));
+        } else {
+          translateX.setValue(Math.max(drag, -20));
+          replyIconOpacity.setValue(0);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const drag = gestureState.dx;
+        if (drag > 45 && onReply) {
+          onReply(message);
+        }
+        Animated.parallel([
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 50,
+            friction: 7,
+          }),
+          Animated.timing(replyIconOpacity, {
+            toValue: 0,
+            duration: 150,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      },
+    })
+  ).current;
+
   return (
     <View
-      className={`mb-2 flex-row px-3 ${
-        message.isSentByMe ? 'justify-end' : 'justify-start'
-      }`}
+      className="mb-2 px-3 relative justify-center"
+      {...panResponder.panHandlers}
     >
-      {!message.isSentByMe && (
-        <Image
-          source={{ uri: avatar }}
-          className="mr-2 mt-1 h-7 w-7 rounded-full bg-gray-200"
-        />
-      )}
-      <View
-        className={`max-w-[78%] ${
-          isMediaOnly
-            ? ''
-            : message.isSentByMe
-            ? 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
-            : 'rounded-2xl rounded-bl-md bg-gray-100 px-3 py-2'
-        } ${message.deliveryState === 'sending' ? 'opacity-70' : ''}`}
+      {/* Reply Icon Indicator behind the bubble */}
+      <Animated.View
+        style={{
+          opacity: replyIconOpacity,
+          position: 'absolute',
+          left: 12,
+          top: '25%',
+          transform: [
+            {
+              scale: replyIconOpacity.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.6, 1],
+              }),
+            },
+          ],
+        }}
+        className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center border border-slate-200"
       >
-        {message.callEvent ? (
-          <CallEventContent message={message} />
-        ) : (
-          <>
-            <MessageMedia message={message} onOpenMedia={onOpenMedia} />
-            {!!message.message && (
-              <Text
-                className={`text-[15px] leading-5 ${
-                  message.isSentByMe ? 'text-white' : 'text-gray-900'
-                }`}
-              >
-                {message.message}
-              </Text>
-            )}
-          </>
+        <CornerUpLeft size={16} color="#0084FF" />
+      </Animated.View>
+
+      {/* Sliding message row */}
+      <Animated.View
+        style={{ transform: [{ translateX }] }}
+        className={`flex-row ${
+          message.isSentByMe ? 'justify-end' : 'justify-start'
+        }`}
+      >
+        {!message.isSentByMe && (
+          <Image
+            source={{ uri: avatar }}
+            className="mr-2 mt-1 h-7 w-7 rounded-full bg-gray-200"
+          />
         )}
-        <Text
-          className={`mt-1 text-right text-[10px] ${
-            message.deliveryState === 'failed'
-              ? isMediaOnly
-                ? 'text-red-600'
-                : 'text-red-100'
-              : isMediaOnly
-              ? 'text-gray-500'
+        <View
+          className={`max-w-[78%] ${
+            isMediaOnly
+              ? ''
               : message.isSentByMe
-              ? 'text-blue-100'
-              : 'text-gray-500'
-          }`}
+              ? !!replyInfo
+                ? 'rounded-2xl rounded-br-md bg-[#E5F3FF] px-3 py-2 border border-[#B3DCFF]'
+                : 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
+              : 'rounded-2xl rounded-bl-md bg-gray-100 px-3 py-2'
+          } ${message.deliveryState === 'sending' ? 'opacity-70' : ''}`}
         >
-          {message.deliveryState === 'sending'
-            ? 'Đang gửi...'
-            : message.deliveryState === 'failed'
-            ? 'Gửi thất bại'
-            : formatMessageTime(message.time)}
-        </Text>
-      </View>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onLongPress={() => onLongPress?.(message)}
+            delayLongPress={350}
+          >
+            {message.callEvent ? (
+              <CallEventContent message={message} />
+            ) : (
+              <>
+                <MessageMedia message={message} onOpenMedia={onOpenMedia} />
+                {!!message.message && (
+                  productInquiry ? (
+                    <ProductInquiryBubble
+                      product={productInquiry}
+                      isSentByMe={message.isSentByMe ?? false}
+                    />
+                  ) : replyInfo ? (
+                    <ReplyMessageBubble
+                      reply={replyInfo}
+                      isSentByMe={message.isSentByMe ?? false}
+                    />
+                  ) : (
+                    <Text
+                      className={`text-[15px] leading-5 ${
+                        message.isSentByMe ? 'text-white' : 'text-gray-900'
+                      }`}
+                    >
+                      {message.message}
+                    </Text>
+                  )
+                )}
+              </>
+            )}
+            <Text
+              className={`mt-1 text-right text-[10px] ${
+                message.deliveryState === 'failed'
+                  ? isMediaOnly
+                    ? 'text-red-600'
+                    : 'text-red-100'
+                  : isMediaOnly
+                  ? 'text-gray-500'
+                  : message.isSentByMe
+                  ? !!replyInfo
+                    ? 'text-slate-400'
+                    : 'text-blue-100'
+                  : 'text-gray-500'
+              }`}
+            >
+              {message.deliveryState === 'sending'
+                ? 'Đang gửi...'
+                : message.deliveryState === 'failed'
+                ? 'Gửi thất bại'
+                : formatMessageTime(message.time)}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -1255,6 +1596,15 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   } = useChatViewModel(chat);
 
   const [text, setText] = useState('');
+  const [replyingMessage, setReplyingMessage] = useState<MessageItem | undefined>(undefined);
+  const [selectedOptionMessage, setSelectedOptionMessage] = useState<MessageItem | undefined>(undefined);
+  const [attachedProduct, setAttachedProduct] = useState<ProductItem | undefined>(route.params?.product);
+
+  useEffect(() => {
+    if (route.params?.product) {
+      setAttachedProduct(route.params.product);
+    }
+  }, [route.params?.product]);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [isGroupInfoVisible, setIsGroupInfoVisible] = useState(false);
   const [expandedGroupInfoSections, setExpandedGroupInfoSections] = useState<
@@ -1284,7 +1634,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const pendingInitialScrollRef = useRef(false);
   const sendAnim = useRef(new Animated.Value(1)).current;
   const canSend =
-    Boolean(text.trim()) || attachments.length > 0 || recorder.isRecording;
+    Boolean(text.trim()) || attachments.length > 0 || recorder.isRecording || Boolean(attachedProduct);
   const messageItems = useMemo(
     () => buildMessageListItems(messages),
     [messages],
@@ -1435,7 +1785,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       ? [{ ...recordedAudio, mediaType: 'audio' as const }]
       : attachments;
 
-    if (!text.trim() && pendingAttachments.length === 0) return;
+    if (!text.trim() && pendingAttachments.length === 0 && !attachedProduct) return;
 
     // Animate send button
     Animated.sequence([
@@ -1451,7 +1801,37 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       }),
     ]).start();
 
-    const nextText = text;
+    let nextText = text;
+    if (attachedProduct) {
+      const currencySymbol = attachedProduct.currency_symbol || attachedProduct.currency_code || attachedProduct.currency || 'VNSEEA';
+      const formattedPrice = formatPrice(attachedProduct.price, currencySymbol);
+      const imageUrl = attachedProduct.images?.[0]?.image || '';
+      const productId = attachedProduct.id;
+      
+      nextText = `🛍️ *Tôi muốn hỏi về sản phẩm:*\n👉 *${attachedProduct.name}*\n💰 Giá: *${formattedPrice}*${
+        attachedProduct.location ? `\n📍 Địa điểm: *${attachedProduct.location}*` : ''
+      }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${productId ? `\n🆔 ID: *${productId}*` : ''}\n\n💬 Lời nhắn: ${text.trim() || 'Mặt hàng này còn không bạn?'}`;
+      
+      setAttachedProduct(undefined);
+    } else if (replyingMessage) {
+      const originalSnippet = getMessageSnippet(replyingMessage, chat.name);
+      const senderName = replyingMessage.isSentByMe ? 'Tôi' : (chat.name || 'Người dùng');
+      
+      let originalImageUrl = '';
+      if (replyingMessage.media && replyingMessage.mediaType === 'image') {
+        originalImageUrl = replyingMessage.media;
+      } else {
+        const prod = parseProductInquiry(replyingMessage.message);
+        if (prod && prod.image) {
+          originalImageUrl = prod.image;
+        }
+      }
+      
+      const imgSegment = originalImageUrl ? `\n🖼️ Ảnh: *${originalImageUrl}*` : '';
+      nextText = `↪️ *Trả lời tin nhắn:*\n👉 *${senderName}*: ${originalSnippet}\n🆔 ID: *${replyingMessage.id}*${imgSegment}\n\n${nextText}`;
+      setReplyingMessage(undefined);
+    }
+
     const nextAttachments = pendingAttachments;
     setText('');
     stopTyping();
@@ -1465,7 +1845,59 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         await sendMessage(index === 0 ? nextText : '', attachment);
       }
     }
-  }, [attachments, recorder, sendMessage, stopTyping, text, sendAnim]);
+  }, [
+    attachments,
+    recorder,
+    sendMessage,
+    stopTyping,
+    text,
+    sendAnim,
+    attachedProduct,
+    replyingMessage,
+    chat.name,
+  ]);
+
+  const handleSelectOptionReply = useCallback(() => {
+    if (!selectedOptionMessage) return;
+    setReplyingMessage(selectedOptionMessage);
+    setSelectedOptionMessage(undefined);
+  }, [selectedOptionMessage]);
+
+  const handleSelectOptionCopy = useCallback(async () => {
+    if (!selectedOptionMessage) return;
+    try {
+      const { Clipboard } = require('react-native');
+      await Clipboard.setString(selectedOptionMessage.message || '');
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Đã sao chép tin nhắn', ToastAndroid.SHORT);
+      } else {
+        Alert.alert('Thông báo', 'Đã sao chép tin nhắn');
+      }
+    } catch (e) {
+      console.warn(e);
+    } finally {
+      setSelectedOptionMessage(undefined);
+    }
+  }, [selectedOptionMessage]);
+
+  const handleSendProductInquiryOption = useCallback(
+    async (optionText: string) => {
+      if (!attachedProduct) return;
+      const currencySymbol = attachedProduct.currency_symbol || attachedProduct.currency_code || attachedProduct.currency || 'VNSEEA';
+      const formattedPrice = formatPrice(attachedProduct.price, currencySymbol);
+      const imageUrl = attachedProduct.images?.[0]?.image || '';
+      const productId = attachedProduct.id;
+
+      const nextText = `🛍️ *Tôi muốn hỏi về sản phẩm:*\n👉 *${attachedProduct.name}*\n💰 Giá: *${formattedPrice}*${
+        attachedProduct.location ? `\n📍 Địa điểm: *${attachedProduct.location}*` : ''
+      }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${productId ? `\n🆔 ID: *${productId}*` : ''}\n\n💬 Lời nhắn: ${optionText}`;
+
+      setAttachedProduct(undefined);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      await sendMessage(nextText);
+    },
+    [attachedProduct, sendMessage],
+  );
 
   const handlePickMedia = useCallback(async () => {
     const result = await launchImageLibrary({
@@ -1940,6 +2372,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   message={item.message}
                   avatar={chat.avatar}
                   onOpenMedia={handleOpenMedia}
+                  onReply={setReplyingMessage}
+                  onLongPress={setSelectedOptionMessage}
                 />
               );
             }}
@@ -2072,6 +2506,105 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             </ScrollView>
           </View>
         )}
+
+        {/* Product Attachment Preview Card */}
+        {attachedProduct && (
+          <View className="border-t border-gray-100 bg-white">
+            {/* Product Info Row */}
+            <View className="px-3 pt-2.5 pb-2 flex-row items-center justify-between">
+              <View className="flex-row items-center flex-1 mr-3">
+                {attachedProduct.images?.[0]?.image ? (
+                  <Image
+                    source={{ uri: attachedProduct.images[0].image }}
+                    className="h-12 w-12 rounded-lg"
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View className="h-12 w-12 rounded-lg bg-slate-100 items-center justify-center">
+                    <ShoppingBag size={20} color="#94A3B8" />
+                  </View>
+                )}
+                <View className="ml-2.5 flex-1">
+                  <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>
+                    {attachedProduct.name}
+                  </Text>
+                  <Text className="text-xs font-semibold text-[#0F56FB] mt-0.5" numberOfLines={1}>
+                    {formatPrice(attachedProduct.price, attachedProduct.currency_symbol || attachedProduct.currency_code || attachedProduct.currency || 'VNSEEA')}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                className="h-7 w-7 items-center justify-center rounded-full bg-slate-100 active:bg-slate-200"
+                activeOpacity={0.8}
+                onPress={() => {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setAttachedProduct(undefined);
+                }}
+              >
+                <X size={14} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick Option Suggestion Chips */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 10, paddingTop: 2 }}
+            >
+              {[
+                'Mặt hàng này còn không bạn yêu',
+                'Giá cả như nào vậy bạn',
+                'Cho mình xin thêm thông tin nhé con vợ',
+                'Hàng hiệu à',
+              ].map((optionText, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => handleSendProductInquiryOption(optionText)}
+                  className="mr-2 rounded-full border border-blue-100 bg-blue-50/50 px-3.5 py-1.5 active:bg-blue-100"
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-xs font-semibold text-blue-600">
+                    {optionText}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Reply Preview Bar */}
+        {replyingMessage ? (
+          <View className="flex-row items-center justify-between border-t border-gray-100 bg-gray-50 px-4 py-2.5">
+            <View className="flex-row items-center flex-1">
+              <View className="mr-2.5 h-6 w-0.5 rounded bg-blue-500" />
+              <View className="flex-1">
+                <Text className="text-xs font-bold text-blue-600">
+                  {replyingMessage.isSentByMe ? 'Đang trả lời chính mình' : `Đang trả lời ${chat.name || 'Người dùng'}`}
+                </Text>
+                <Text className="text-xs text-gray-500 mt-0.5" numberOfLines={1}>
+                  {getMessageSnippet(replyingMessage, chat.name)}
+                </Text>
+              </View>
+              {/* Optional Right image thumbnail in preview bar */}
+              {replyingMessage.media && replyingMessage.mediaType === 'image' && (
+                <Image
+                  source={{ uri: replyingMessage.media }}
+                  className="w-8 h-8 rounded ml-2 bg-slate-200"
+                  resizeMode="cover"
+                />
+              )}
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setReplyingMessage(undefined);
+              }}
+              className="ml-3 h-6 w-6 items-center justify-center rounded-full bg-gray-200 active:bg-gray-300"
+            >
+              <X size={14} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* Input Bar */}
         <View className="flex-row items-end border-t border-gray-200 bg-white px-3 py-2">
@@ -2227,6 +2760,65 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           )}
         </SafeAreaView>
       </Modal>
+
+      {/* Custom Option Message Modal (Action Sheet) */}
+      <Modal
+        visible={Boolean(selectedOptionMessage)}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setSelectedOptionMessage(undefined)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setSelectedOptionMessage(undefined)}
+        >
+          <View style={styles.modalContainer} className="bg-white/95 rounded-t-3xl border border-gray-100 shadow-2xl">
+            <View className="items-center py-2.5">
+              <View className="h-1.5 w-12 rounded-full bg-gray-300" />
+            </View>
+            <View className="px-5 pb-8 pt-3">
+              <Text className="text-center text-sm font-semibold text-gray-500 mb-6">
+                Tùy chọn tin nhắn
+              </Text>
+              
+              <TouchableOpacity
+                className="flex-row items-center rounded-xl bg-gray-50 px-4 py-4 mb-3 active:bg-gray-100"
+                onPress={handleSelectOptionReply}
+              >
+                <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-50">
+                  <CornerUpLeft size={20} color="#3B82F6" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-base font-semibold text-gray-800">Trả lời</Text>
+                  <Text className="text-xs text-gray-500">Trích dẫn tin nhắn này</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                className="flex-row items-center rounded-xl bg-gray-50 px-4 py-4 mb-5 active:bg-gray-100"
+                onPress={handleSelectOptionCopy}
+              >
+                <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-emerald-50">
+                  <Copy size={20} color="#10B981" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-base font-semibold text-gray-800">Sao chép</Text>
+                  <Text className="text-xs text-gray-500">Sao chép nội dung tin nhắn</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                className="items-center justify-center rounded-full bg-gray-200/80 py-3.5 active:bg-gray-300"
+                onPress={() => setSelectedOptionMessage(undefined)}
+              >
+                <Text className="text-base font-bold text-gray-600">Hủy</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2331,6 +2923,16 @@ const styles = StyleSheet.create({
   },
   messageVideo: { height: '100%', width: '100%', backgroundColor: '#000' },
   viewerVideo: { width: '100%', height: '100%', backgroundColor: '#000' },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  modalContainer: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
 });
 
 export default ChatScreen;

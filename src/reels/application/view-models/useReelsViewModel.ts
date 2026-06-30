@@ -9,6 +9,7 @@
 // holds more than 3 decoders simultaneously.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { DeviceEventEmitter } from 'react-native';
 import { createReelsRepository } from '../../infrastructure/repositories/ApiReelsRepository';
 import { createAuthRepository } from '../../../auth/infrastructure/repositories/ApiAuthRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -140,6 +141,39 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      'postReactionChanged',
+      (event: {
+        postId: string;
+        myReaction: ReactionType | null;
+        likeCount: number;
+      }) => {
+        setItems(prev =>
+          prev.map(item => {
+            if (item.id !== event.postId) return item;
+            const willBeReacted = event.myReaction !== null;
+            if (
+              item.myReaction === event.myReaction &&
+              item.likeCount === event.likeCount
+            ) {
+              return item;
+            }
+            return {
+              ...item,
+              myReaction: event.myReaction,
+              isLiked: willBeReacted,
+              likeCount: event.likeCount,
+            };
+          }),
+        );
+      },
+    );
+    return () => {
+      subscription.remove();
     };
   }, []);
 
@@ -415,6 +449,7 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
     async (postId: string, nextReaction: ReactionType, forceSet?: boolean) => {
       let snapshot: ReelsItem | undefined;
       let targetReaction: ReactionType | null = nextReaction;
+      let finalLikeCount = 0;
 
       setItems(prev =>
         prev.map(item => {
@@ -431,14 +466,24 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
           const willBeReacted = targetReaction !== null;
           const countDelta = Number(willBeReacted) - Number(wasReacted);
 
+          finalLikeCount = Math.max(0, item.likeCount + countDelta);
+
           return {
             ...item,
             myReaction: targetReaction,
             isLiked: willBeReacted,
-            likeCount: Math.max(0, item.likeCount + countDelta),
+            likeCount: finalLikeCount,
           };
         }),
       );
+
+      // Emit global reaction changed event
+      DeviceEventEmitter.emit('postReactionChanged', {
+        postId,
+        myReaction: targetReaction,
+        likeCount: finalLikeCount,
+        topReactions: targetReaction ? [targetReaction] : [],
+      });
 
       try {
         await repository.setReaction(postId, targetReaction);
@@ -448,6 +493,13 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
           setItems(prev =>
             prev.map(item => (item.id === postId ? original : item)),
           );
+          // Re-emit original reaction on failure
+          DeviceEventEmitter.emit('postReactionChanged', {
+            postId,
+            myReaction: original.myReaction,
+            likeCount: original.likeCount,
+            topReactions: original.myReaction ? [original.myReaction] : [],
+          });
         }
       }
     },

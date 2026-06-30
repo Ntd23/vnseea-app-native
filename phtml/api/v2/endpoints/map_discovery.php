@@ -360,6 +360,39 @@ function Wo_ApiMapDiscoveryDecodePolyline($encoded_path) {
     return $points;
 }
 
+function Wo_ApiMapDiscoveryRouteSteps($leg) {
+    $steps = array();
+    if (empty($leg['steps']) || !is_array($leg['steps'])) {
+        return $steps;
+    }
+
+    foreach ($leg['steps'] as $step) {
+        $instruction = '';
+        if (!empty($step['html_instructions'])) {
+            $instruction = html_entity_decode(strip_tags($step['html_instructions']), ENT_QUOTES, 'UTF-8');
+            $instruction = trim(preg_replace('/\s+/', ' ', $instruction));
+        }
+
+        $steps[] = array(
+            'instruction' => $instruction,
+            'maneuver' => !empty($step['maneuver']) ? $step['maneuver'] : '',
+            'path' => Wo_ApiMapDiscoveryDecodePolyline(!empty($step['polyline']['points']) ? $step['polyline']['points'] : ''),
+            'distanceMeters' => !empty($step['distance']['value']) ? (float) $step['distance']['value'] : 0,
+            'durationSeconds' => !empty($step['duration']['value']) ? (float) $step['duration']['value'] : 0,
+            'startLocation' => array(
+                'lat' => !empty($step['start_location']['lat']) ? (float) $step['start_location']['lat'] : 0,
+                'lng' => !empty($step['start_location']['lng']) ? (float) $step['start_location']['lng'] : 0
+            ),
+            'endLocation' => array(
+                'lat' => !empty($step['end_location']['lat']) ? (float) $step['end_location']['lat'] : 0,
+                'lng' => !empty($step['end_location']['lng']) ? (float) $step['end_location']['lng'] : 0
+            )
+        );
+    }
+
+    return $steps;
+}
+
 function Wo_ApiMapDiscoveryRoute() {
     $origin_lat = Wo_ApiMapDiscoveryNumber('origin_lat');
     $origin_lng = Wo_ApiMapDiscoveryNumber('origin_lng');
@@ -386,24 +419,36 @@ function Wo_ApiMapDiscoveryRoute() {
         return Wo_ApiMapDiscoveryError('route_not_found', 'Google route not found.', 404);
     }
 
-    $route = $google['routes'][0];
-    foreach ($google['routes'] as $candidate_route) {
-        $candidate_distance = !empty($candidate_route['legs'][0]['distance']['value']) ? (float) $candidate_route['legs'][0]['distance']['value'] : null;
-        $current_distance = !empty($route['legs'][0]['distance']['value']) ? (float) $route['legs'][0]['distance']['value'] : null;
-        if ($candidate_distance !== null && ($current_distance === null || $candidate_distance < $current_distance)) {
-            $route = $candidate_route;
+    $routes = array();
+    foreach ($google['routes'] as $route_index => $candidate_route) {
+        if (empty($candidate_route['legs'][0])) {
+            continue;
         }
-    }
-    $leg = $route['legs'][0];
-    return array(
-        'api_status' => 200,
-        'route' => array(
-            'path' => Wo_ApiMapDiscoveryDecodePolyline(!empty($route['overview_polyline']['points']) ? $route['overview_polyline']['points'] : ''),
-            'distanceMeters' => !empty($leg['distance']['value']) ? (float) $leg['distance']['value'] : 0,
-            'durationSeconds' => !empty($leg['duration']['value']) ? (float) $leg['duration']['value'] : 0,
+        $candidate_leg = $candidate_route['legs'][0];
+        $routes[] = array(
+            'id' => 'route-' . ($route_index + 1),
+            'summary' => !empty($candidate_route['summary']) ? $candidate_route['summary'] : '',
+            'path' => Wo_ApiMapDiscoveryDecodePolyline(!empty($candidate_route['overview_polyline']['points']) ? $candidate_route['overview_polyline']['points'] : ''),
+            'steps' => Wo_ApiMapDiscoveryRouteSteps($candidate_leg),
+            'distanceMeters' => !empty($candidate_leg['distance']['value']) ? (float) $candidate_leg['distance']['value'] : 0,
+            'durationSeconds' => !empty($candidate_leg['duration']['value']) ? (float) $candidate_leg['duration']['value'] : 0,
             'mode' => $mode,
             'provider' => 'google'
-        )
+        );
+    }
+
+    if (empty($routes)) {
+        return Wo_ApiMapDiscoveryError('route_not_found', 'Google route not found.', 404);
+    }
+
+    usort($routes, function ($left, $right) {
+        return ($left['durationSeconds'] <=> $right['durationSeconds']);
+    });
+
+    return array(
+        'api_status' => 200,
+        'route' => $routes[0],
+        'routes' => $routes
     );
 }
 

@@ -10,6 +10,10 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../types/feed.types';
+import type {
+  PostReactionCount,
+  PostReactionUser,
+} from '../types/reactions.types';
 
 export type FeedSource = 'all' | 'following';
 export type FeedShareDestination = 'timeline' | 'page' | 'group' | 'message';
@@ -51,6 +55,22 @@ export interface FeedRecommendationEventInput {
 export interface FeedPostsPage<TPost extends FeedPost = FeedPost> {
   posts: TPost[];
   nextCursor?: string;
+  reachedEnd: boolean;
+}
+
+/**
+ * Page-shaped response for `FeedRepository.getPostReactions`.
+ *
+ * `users` is the slice the UI is about to render (already filtered by
+ * `reaction` when the caller asked for a specific type). `reactions`
+ * carries the per-type total counts for tab badges. Pagination uses
+ * an opaque cursor string so the repository can swap implementations
+ * later without rippling changes through the view-model.
+ */
+export interface PostReactionsPage {
+  users: PostReactionUser[];
+  reactions: PostReactionCount[];
+  nextOffset?: string;
   reachedEnd: boolean;
 }
 
@@ -199,6 +219,20 @@ export interface FeedRepository {
     postId: string,
     options?: { fetchComments?: boolean; addView?: boolean },
   ): Promise<GetPostByIdResult>;
+
+  /**
+   * Fetch the list of users who reacted to a post, plus the per-type
+   * count summary used to badge the reaction tabs in
+   * `PostReactionsScreen`. When `reaction` is omitted the backend
+   * returns users across all reaction types (interleaved); when set,
+   * only users who reacted with that type come back, paginated.
+   */
+  getPostReactions(
+    postId: string,
+    reaction?: ReactionType,
+    limit?: number,
+    offset?: number,
+  ): Promise<PostReactionsPage>;
 }
 
 export interface GetPostByIdResult {

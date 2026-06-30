@@ -7,7 +7,7 @@ import type { FundingItem } from '../../domain/types/funding.types';
 
 const repository = createFundingRepository();
 const FEED_FUNDING_LIMIT = 8;
-const DEFAULT_CURRENCY_SYMBOL = 'VND';
+const DEFAULT_CURRENCY_SYMBOL = 'VNSEEA';
 
 type InteractionTask = ReturnType<typeof InteractionManager.runAfterInteractions>;
 

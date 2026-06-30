@@ -59,6 +59,10 @@ import type { ReactionType, ReelsItem } from '../../domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../domain/types/reels.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import {
+  getVideoPlaybackTime,
+  setVideoPlaybackTime,
+} from '../screens/reelsPlayback';
 
 const REEL_ITEM_COPY = {
   vi: {
@@ -102,6 +106,8 @@ interface Props {
   height: number;
   /** True when this is the currently-visible reel (plays + unmutes). */
   isActive: boolean;
+  /** True when this is the active selected item in the vertical feed. */
+  isCurrent: boolean;
   /** True when this reel is within the preload window (current ±1). */
   shouldMount: boolean;
   /** Global mute state shared across the feed. */
@@ -155,6 +161,7 @@ function ReelItemBase({
   item,
   height,
   isActive,
+  isCurrent,
   shouldMount,
   isMuted,
   onToggleMute,
@@ -182,6 +189,7 @@ function ReelItemBase({
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
+  const currentTimeRef = useRef(getVideoPlaybackTime(item.id, 0));
 
   // Video progress & scrubbing states
   const [duration, setDuration] = useState(0);
@@ -217,22 +225,65 @@ function ReelItemBase({
       const targetTime = seekProgress * duration;
       videoRef.current.seek(targetTime);
       setCurrentTime(targetTime);
+      currentTimeRef.current = targetTime;
+      setVideoPlaybackTime(item.id, targetTime);
     }
-  }, [duration, seekProgress]);
+  }, [duration, item.id, seekProgress]);
 
   useEffect(() => {
-    if (initialSeekTime !== undefined && initialSeekTime > 0) {
-      setSeekTime(initialSeekTime);
+    const targetTime =
+      initialSeekTime !== undefined && initialSeekTime > 0
+        ? initialSeekTime
+        : getVideoPlaybackTime(item.id, 0);
+
+    currentTimeRef.current = targetTime;
+    if (targetTime > 0.05) {
+      setSeekTime(targetTime);
+    } else {
+      setSeekTime(undefined);
     }
-  }, [initialSeekTime]);
+  }, [initialSeekTime, item.id]);
 
   useEffect(() => {
     if (isActive && isReady && seekTime !== undefined && videoRef.current) {
       console.log(`[ReelItem] Seeking active video to ${seekTime}s`);
+      currentTimeRef.current = seekTime;
       videoRef.current.seek(seekTime);
       setSeekTime(undefined);
     }
   }, [isActive, isReady, seekTime]);
+
+  const prevIsCurrentRef = useRef(false);
+
+  useEffect(() => {
+    if (isCurrent && !prevIsCurrentRef.current) {
+      const savedTime = getVideoPlaybackTime(item.id, 0);
+      const hasInitialSeek = initialSeekTime !== undefined && initialSeekTime > 0;
+      const targetTime = hasInitialSeek ? (initialSeekTime ?? 0) : savedTime;
+
+      currentTimeRef.current = targetTime;
+      if (seekTime === undefined && targetTime > 0.05) {
+        if (isReady && videoRef.current) {
+          videoRef.current.seek(targetTime);
+        } else {
+          setSeekTime(targetTime);
+        }
+      }
+    }
+    prevIsCurrentRef.current = isCurrent;
+  }, [isCurrent, isReady, initialSeekTime, item.id]);
+
+  useEffect(() => {
+    return () => {
+      setVideoPlaybackTime(item.id, currentTimeRef.current);
+    };
+  }, [item.id]);
+
+  useEffect(() => {
+    if (isActive) {
+      setUserPaused(false);
+    }
+  }, [isActive]);
 
   // Removed scale/opacity/translateY parallax — it was causing items to
   // appear misaligned ("lệch") during and after scrolling.
@@ -398,7 +449,12 @@ function ReelItemBase({
           source={{ uri: item.videoUrl }}
           style={StyleSheet.absoluteFill}
           resizeMode="contain"
-          repeat={!autoScrollEnabled}
+          // Don't use `repeat` prop here. When autoScrollEnabled flips
+ // false → true mid-playback, react-native-video doesn't reliably
+ // turn off the active loop, so onEnd never fires and the user
+ // gets stuck on the last video. We handle looping ourselves in
+ // onEnd by seeking back to 0.
+ repeat={false}
           paused={!playing}
           muted={isMuted || !isActive}
           ignoreSilentSwitch="ignore"
@@ -415,12 +471,23 @@ function ReelItemBase({
           }}
           onProgress={(data) => {
             if (!isSeeking && data?.currentTime !== undefined) {
-              setCurrentTime(data.currentTime);
+              const nextTime = data.currentTime;
+              setCurrentTime(nextTime);
+              currentTimeRef.current = nextTime;
+              setVideoPlaybackTime(item.id, nextTime);
             }
           }}
           onEnd={() => {
-            if (autoScrollEnabled && onVideoEnd) {
-              onVideoEnd(index);
+            if (autoScrollEnabled) {
+              setVideoPlaybackTime(item.id, 0);
+              // Auto-scroll ON -> ask parent to jump to the next reel.
+              onVideoEnd?.(index);
+            } else if (videoRef.current) {
+              // Auto-scroll OFF -> loop the current reel by seeking to 0.
+              videoRef.current.seek(0);
+              currentTimeRef.current = 0;
+              setCurrentTime(0);
+              setVideoPlaybackTime(item.id, 0);
             }
           }}
           onError={() => {
@@ -1111,10 +1178,12 @@ export const ReelItem = memo(ReelItemBase, (prev, next) => {
   return (
     prev.item === next.item &&
     prev.isActive === next.isActive &&
+    prev.isCurrent === next.isCurrent &&
     prev.shouldMount === next.shouldMount &&
     prev.isMuted === next.isMuted &&
     prev.height === next.height &&
     prev.scrollY === next.scrollY &&
-    prev.index === next.index
+    prev.index === next.index &&
+    prev.autoScrollEnabled === next.autoScrollEnabled
   );
 });

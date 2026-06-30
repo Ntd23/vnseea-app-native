@@ -35,7 +35,9 @@ export const ROUTES = {
   MARKETPLACE: 'Marketplace',
   MY_PRODUCTS: 'MyProducts',
   PRODUCT_DETAIL: 'ProductDetail',
+  CART: 'Cart',
   CHECKOUT: 'Checkout',
+  SHIPPING_ADDRESS: 'ShippingAddress',
   CREATE_PRODUCT: 'CreateProduct',
   CREATE_EVENT: 'CreateEvent',
   EDIT_EVENT: 'EditEvent',
@@ -56,11 +58,12 @@ export const ROUTES = {
   BLOG_DETAIL: 'BlogDetail',
   CREATE_BLOG: 'CreateBlog',
   MOVIES: 'Movies',
+  CREATE_MOVIE: 'CreateMovie',
   JOBS: 'Jobs',
   JOB_DETAIL: 'JobDetail',
   CREATE_JOB: 'CreateJob',
   SETTINGS: 'Settings',
-  USER_DASHBOARD: 'UserDashboard',
+   USER_DASHBOARD: 'UserDashboard',
   SETTINGS_MY_INFO: 'SettingsMyInfo',
   SETTINGS_ADDRESS: 'SettingsAddress',
   EDIT_PROFILE: 'EditProfile',
@@ -91,6 +94,7 @@ export const ROUTES = {
   GO_LIVE: 'GoLive',
   POKE: 'Poke',
   FORUM: 'Forum',
+  SELLER_STORE: 'SellerStore',
 } as const;
 
 export type RouteName = (typeof ROUTES)[keyof typeof ROUTES];

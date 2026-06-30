@@ -15,5 +15,5 @@ export interface CheckoutRepository {
   saveAddress(input: DeliveryAddressInput): Promise<DeliveryAddress[]>;
   changeQuantity(productId: number, quantity: number): Promise<CheckoutSummary>;
   removeItem(productId: number): Promise<CheckoutSummary>;
-  buy(addressId: string): Promise<CheckoutResult>;
+  buy(addressId: string, selectedProductIds?: number[]): Promise<CheckoutResult>;
 }

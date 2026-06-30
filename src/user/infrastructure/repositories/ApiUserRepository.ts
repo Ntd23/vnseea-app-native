@@ -17,6 +17,8 @@ import type {
   GetUserProfileInput,
   MapPlacePrediction,
   MapRoute,
+  MapRoutePoint,
+  MapRouteStep,
   NearbyPlace,
   NearbyPlaceKind,
   NearbyPagesInput,
@@ -84,13 +86,36 @@ type PlaceDetailsResponse = ApiEnvelope & {
   place?: RawApiRecord;
 };
 
+type RawRoutePoint = { lat?: number | string; lng?: number | string };
+
+type RawRouteStep = {
+  instruction?: string;
+  htmlInstruction?: string;
+  html_instructions?: string;
+  maneuver?: string;
+  path?: RawRoutePoint[];
+  distanceMeters?: number | string;
+  durationSeconds?: number | string;
+  startLocation?: RawRoutePoint;
+  start_location?: RawRoutePoint;
+  endLocation?: RawRoutePoint;
+  end_location?: RawRoutePoint;
+};
+
+type RawRouteRecord = {
+  id?: number | string;
+  routeId?: number | string;
+  summary?: string;
+  path?: RawRoutePoint[];
+  steps?: RawRouteStep[];
+  distanceMeters?: number | string;
+  durationSeconds?: number | string;
+  provider?: string;
+};
+
 type RouteResponse = ApiEnvelope & {
-  route?: {
-    path?: Array<{ lat?: number | string; lng?: number | string }>;
-    distanceMeters?: number | string;
-    durationSeconds?: number | string;
-    provider?: string;
-  };
+  route?: RawRouteRecord;
+  routes?: RawRouteRecord[];
 };
 
 type UpdateUserResponse = ApiEnvelope & {
@@ -236,26 +261,78 @@ function mapGooglePlace(record: RawApiRecord | undefined): NearbyPlace | null {
   };
 }
 
-function mapRoute(response: RouteResponse): MapRoute {
-  const route = response.route;
+function mapRoutePoint(point: RawRoutePoint | undefined) {
+  if (!point) return undefined;
+  const latitude = Number(point.lat);
+  const longitude = Number(point.lng);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return undefined;
+  }
+  return { latitude, longitude };
+}
+
+function mapRouteStep(step: RawRouteStep): MapRouteStep | null {
+  const startLocation = mapRoutePoint(step.startLocation ?? step.start_location);
+  const endLocation = mapRoutePoint(step.endLocation ?? step.end_location);
+  const path = (step.path ?? [])
+    .map(mapRoutePoint)
+    .filter(Boolean) as MapRoutePoint[];
+  const distanceMeters = Number(step.distanceMeters ?? 0) || 0;
+  const durationSeconds = Number(step.durationSeconds ?? 0) || 0;
+
+  if (!startLocation && !endLocation && path.length === 0) {
+    return null;
+  }
+
+  return {
+    instruction: String(
+      step.instruction ?? step.htmlInstruction ?? step.html_instructions ?? '',
+    ).trim(),
+    maneuver: String(step.maneuver ?? '').trim(),
+    distanceMeters,
+    durationSeconds,
+    startLocation,
+    endLocation,
+    path,
+  };
+}
+
+function mapRouteRecord(route: RouteResponse['route'], index = 0): MapRoute {
   if (!route) {
     throw new Error('Không tìm thấy đường đi.');
   }
 
   return {
+    id: String(route.routeId ?? route.id ?? `route-${index + 1}`),
+    summary: String(route.summary ?? ''),
     path: (route.path ?? [])
-      .map(point => ({
-        latitude: Number(point.lat),
-        longitude: Number(point.lng),
-      }))
-      .filter(
-        point =>
-          Number.isFinite(point.latitude) && Number.isFinite(point.longitude),
-      ),
+      .map(mapRoutePoint)
+      .filter(Boolean) as MapRoute['path'],
+    steps: (route.steps ?? [])
+      .map(mapRouteStep)
+      .filter(Boolean) as MapRouteStep[],
     distanceMeters: Number(route.distanceMeters ?? 0) || 0,
     durationSeconds: Number(route.durationSeconds ?? 0) || 0,
     provider: 'google',
   };
+}
+
+function mapRoute(response: RouteResponse): MapRoute {
+  return mapRouteRecord(response.route, 0);
+}
+
+function mapRoutes(response: RouteResponse): MapRoute[] {
+  const routes = Array.isArray(response.routes) ? response.routes : [];
+  const mappedRoutes = routes
+    .map((route, index) => mapRouteRecord(route, index))
+    .filter(route => route.path.length > 1);
+
+  if (mappedRoutes.length > 0) {
+    return mappedRoutes;
+  }
+
+  const fallbackRoute = mapRoute(response);
+  return fallbackRoute.path.length > 1 ? [fallbackRoute] : [];
 }
 
 function mapFamily(records: UserProfileResponse['family']): UserProfile[] {
@@ -435,6 +512,22 @@ export function createUserRepository(): UserRepository {
       );
 
       return mapRoute(response);
+    },
+
+    async getRoutes(input) {
+      const response = await apiBridge.post<RouteResponse>(
+        apiRoutes.user.mapDiscovery,
+        {
+          type: 'route',
+          origin_lat: input.originLat,
+          origin_lng: input.originLng,
+          destination_lat: input.destinationLat,
+          destination_lng: input.destinationLng,
+          mode: input.mode ?? 'walking',
+        },
+      );
+
+      return mapRoutes(response);
     },
 
     async getFriends(input: FriendsInput): Promise<FriendsResult> {

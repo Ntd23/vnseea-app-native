@@ -9,3 +9,4 @@ export { default as CreateProductScreen } from './presentation/screens/CreatePro
 export { default as MarketplaceScreen } from './presentation/screens/MarketplaceScreen';
 export { default as MyProductsScreen } from './presentation/screens/MyProductsScreen';
 export { default as ProductDetailScreen } from './presentation/screens/ProductDetailScreen';
+export { default as SellerStoreScreen } from './presentation/screens/SellerStoreScreen';
