@@ -80,7 +80,8 @@ const ROUTE_CONNECTOR_MIN_METERS = 5;
 const ROUTE_LOOKAHEAD_MIN_METERS = 14;
 const ROUTE_LOOKAHEAD_MAX_METERS = 58;
 const LOCATION_RECENTER_DISTANCE_METERS = 50000;
-const SHOW_DISCOVERY_PLACES_ON_MAP = false;
+const SHOW_APP_DISCOVERY_PLACES_ON_MAP = true;
+const HIDE_GOOGLE_DISCOVERY_PLACES = true;
 const CLEAN_GOOGLE_MAP_STYLE = [
   {
     featureType: 'poi',
@@ -137,6 +138,90 @@ type RouteOption = MapRoute & {
 };
 
 type LocationSource = 'gps' | 'profile' | null;
+
+type PageAvatarMapMarkerProps = {
+  coordinate: LatLng;
+  place: Pick<NearbyPlace, 'avatarUrl' | 'id' | 'name'>;
+  selected?: boolean;
+  zIndex: number;
+  onPress: () => void;
+};
+
+function PageAvatarMapMarker({
+  coordinate,
+  place,
+  selected = false,
+  zIndex,
+  onPress,
+}: PageAvatarMapMarkerProps) {
+  const avatarUri = place.avatarUrl || FALLBACK_AVATAR;
+  const [tracksViewChanges, setTracksViewChanges] = useState(true);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+    }
+    setTracksViewChanges(true);
+    Image.prefetch(avatarUri).catch(() => undefined);
+    settleTimerRef.current = setTimeout(() => {
+      setTracksViewChanges(false);
+    }, 2500);
+
+    return () => {
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
+      }
+    };
+  }, [avatarUri]);
+
+  const handleAvatarLoadEnd = useCallback(() => {
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+    }
+    settleTimerRef.current = setTimeout(() => {
+      setTracksViewChanges(false);
+      settleTimerRef.current = null;
+    }, 350);
+  }, []);
+
+  return (
+    <Marker
+      anchor={{ x: 0.13, y: 1 }}
+      coordinate={coordinate}
+      onPress={onPress}
+      tracksViewChanges={tracksViewChanges}
+      zIndex={zIndex}
+    >
+      <View
+        collapsable={false}
+        style={[
+          styles.pageMarker,
+          styles.pageMarkerWithBadge,
+          selected && styles.selectedPageAvatarMarker,
+        ]}
+      >
+        <View collapsable={false} style={styles.pageAvatarMarker}>
+          <Image
+            key={avatarUri}
+            source={{ uri: avatarUri }}
+            resizeMode="cover"
+            fadeDuration={0}
+            onLoadEnd={handleAvatarLoadEnd}
+            onError={handleAvatarLoadEnd}
+            style={styles.pageAvatarMarkerImage}
+          />
+        </View>
+        <View collapsable={false} style={styles.pageNameBadge}>
+          <Text style={styles.pageNameBadgeText} numberOfLines={1}>
+            {place.name}
+          </Text>
+        </View>
+      </View>
+    </Marker>
+  );
+}
 
 type TurnInstruction = {
   distanceMeters: number;
@@ -759,7 +844,9 @@ export default function NearbyUsersScreen() {
         })),
     [nearbyPlaces],
   );
-  const visiblePageMarkers = SHOW_DISCOVERY_PLACES_ON_MAP ? pageMarkers : [];
+  const visiblePageMarkers = SHOW_APP_DISCOVERY_PLACES_ON_MAP
+    ? pageMarkers
+    : [];
 
   const nearbyQuickPlaces = useMemo(
     () =>
@@ -784,7 +871,7 @@ export default function NearbyUsersScreen() {
         .slice(0, 8),
     [currentLocation, pageMarkers],
   );
-  const visibleNearbyQuickPlaces = SHOW_DISCOVERY_PLACES_ON_MAP
+  const visibleNearbyQuickPlaces = SHOW_APP_DISCOVERY_PLACES_ON_MAP
     ? nearbyQuickPlaces
     : [];
 
@@ -1546,7 +1633,7 @@ export default function NearbyUsersScreen() {
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         initialRegion={DEFAULT_REGION}
         googleMapId={
-          hasGoogleMapId && SHOW_DISCOVERY_PLACES_ON_MAP
+          hasGoogleMapId && !HIDE_GOOGLE_DISCOVERY_PLACES
             ? googleMapId
             : undefined
         }
@@ -1563,7 +1650,9 @@ export default function NearbyUsersScreen() {
         toolbarEnabled={false}
         userInterfaceStyle="light"
         customMapStyle={CLEAN_GOOGLE_MAP_STYLE}
-        onPoiClick={SHOW_DISCOVERY_PLACES_ON_MAP ? handlePoiPress : undefined}
+        onPoiClick={
+          HIDE_GOOGLE_DISCOVERY_PLACES ? undefined : handlePoiPress
+        }
         onUserLocationChange={handleUserLocationChange}
         onPanDrag={() => {
           if (isNavigating) {
@@ -1619,46 +1708,39 @@ export default function NearbyUsersScreen() {
             return null;
           }
 
-          const showNameBadge = true;
-
           return (
-            <Marker
-              key={`${place.id}:badge`}
-              anchor={showNameBadge ? { x: 0.13, y: 1 } : { x: 0.5, y: 1 }}
+            <PageAvatarMapMarker
+              key={`${place.id}:page-avatar:${place.avatarUrl || 'fallback'}`}
               coordinate={coordinate}
+              place={place}
+              zIndex={12}
               onPress={() => selectPage(place)}
-              tracksViewChanges={showNameBadge}
-              zIndex={showNameBadge ? 12 : 4}
-            >
-              <View
-                style={[
-                  styles.pageMarker,
-                  showNameBadge && styles.pageMarkerWithBadge,
-                ]}
-              >
-                <View style={styles.pagePinWrapper}>
-                  <View style={styles.pagePinTail} />
-                  <View style={styles.pagePinHead}>
-                    <View style={styles.pagePinCore} />
-                  </View>
-                </View>
-                {showNameBadge ? (
-                  <View style={styles.pageNameBadge}>
-                    <Text style={styles.pageNameBadgeText} numberOfLines={1}>
-                      {place.name}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            </Marker>
+            />
           );
         })}
 
-        {selectedPoint ? (
+        {selectedPoint?.source === 'page' ? (
+          <PageAvatarMapMarker
+            key={`selected:${selectedPoint.id}:${selectedPoint.avatarUrl || 'fallback'}`}
+            coordinate={selectedPoint.coordinate}
+            place={{
+              id: selectedPoint.id,
+              name: selectedPoint.title,
+              avatarUrl: selectedPoint.avatarUrl,
+            }}
+            selected
+            zIndex={30}
+            onPress={() => {
+              setIsSheetCollapsed(false);
+            }}
+          />
+        ) : selectedPoint ? (
           <Marker
             key={`selected:${selectedPoint.id}:${selectedPoint.title}`}
             anchor={
-              selectedPoint.showNameBadge ? { x: 0.13, y: 1 } : { x: 0.5, y: 1 }
+              selectedPoint.showNameBadge
+                ? { x: 0.13, y: 1 }
+                : { x: 0.5, y: 1 }
             }
             coordinate={selectedPoint.coordinate}
             onPress={() => {
@@ -1802,7 +1884,7 @@ export default function NearbyUsersScreen() {
             </View>
           </View>
 
-          {SHOW_DISCOVERY_PLACES_ON_MAP ? (
+          {SHOW_APP_DISCOVERY_PLACES_ON_MAP ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -2568,19 +2650,43 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   pageMarker: {
-    width: 44,
-    minHeight: 58,
+    width: 52,
+    minHeight: 60,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
   },
   pageMarkerWithBadge: {
-    width: 190,
+    width: 210,
+  },
+  pageAvatarMarker: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#EEF4FF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 5,
+    elevation: 7,
+  },
+  pageAvatarMarkerImage: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#E2E8F0',
+  },
+  selectedPageAvatarMarker: {
+    transform: [{ scale: 1.04 }],
   },
   pageNameBadge: {
-    maxWidth: 132,
-    marginLeft: 4,
-    marginBottom: 16,
+    maxWidth: 144,
+    marginLeft: 6,
+    marginBottom: 8,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: '#DDE7FF',

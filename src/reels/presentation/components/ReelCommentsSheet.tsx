@@ -44,6 +44,7 @@ import {
   TouchableOpacity,
   View,
   type ViewStyle,
+  PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -340,6 +341,40 @@ function ReelCommentsSheetBase({
   const [imageViewerUri, setImageViewerUri] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(visible);
   const openProgress = useRef(new Animated.Value(0)).current;
+  const panY = useRef(new Animated.Value(0)).current;
+  const listScrollOffset = useRef(0);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only capture gesture if dragging downwards AND the list is scrolled to the top
+        return gestureState.dy > 5 && listScrollOffset.current <= 0;
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        if (gestureState.dy > 0) {
+          panY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        if (gestureState.dy > 120 || gestureState.vy > 0.5) {
+          Animated.timing(panY, {
+            toValue: Dimensions.get('window').height,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            onClose();
+            panY.setValue(0);
+          });
+        } else {
+          Animated.spring(panY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   // Picker state — which comment's "Thích" was long-pressed, plus the
   // anchor coordinates so the pill floats just above the actual button.
@@ -390,10 +425,13 @@ function ReelCommentsSheetBase({
     outputRange: [0, 1],
   });
 
-  const sheetTranslateY = openProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [460, 0],
-  });
+  const sheetTranslateY = Animated.add(
+    openProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [500, 0],
+    }),
+    panY
+  );
 
   const sheetScale = openProgress.interpolate({
     inputRange: [0, 1],
@@ -714,29 +752,32 @@ function ReelCommentsSheetBase({
               ],
             },
           ]}
+          {...panResponder.panHandlers}
         >
-          <View style={styles.grabber} />
+          <View>
+            <View style={styles.grabber} />
 
-          <View style={styles.header}>
-            <View style={styles.headerSide}>
-              {headerCountLabel ? (
-                <CommentSheetHeaderBadge style={styles.headerCountBadge}>
-                  <Text style={styles.headerCountText}>{headerCountLabel}</Text>
-                </CommentSheetHeaderBadge>
-              ) : null}
-            </View>
-            <Text style={styles.title}>{title}</Text>
-            <View style={[styles.headerSide, styles.headerCloseSide]}>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={onClose}
-                style={styles.closeButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <CommentSheetControlSurface style={styles.closeButtonSurface}>
-                  <X size={20} color="#111827" />
-                </CommentSheetControlSurface>
-              </TouchableOpacity>
+            <View style={styles.header}>
+              <View style={styles.headerSide}>
+                {headerCountLabel ? (
+                  <CommentSheetHeaderBadge style={styles.headerCountBadge}>
+                    <Text style={styles.headerCountText}>{headerCountLabel}</Text>
+                  </CommentSheetHeaderBadge>
+                ) : null}
+              </View>
+              <Text style={styles.title}>{title}</Text>
+              <View style={[styles.headerSide, styles.headerCloseSide]}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={onClose}
+                  style={styles.closeButton}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <CommentSheetControlSurface style={styles.closeButtonSurface}>
+                    <X size={20} color="#111827" />
+                  </CommentSheetControlSurface>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -769,6 +810,10 @@ function ReelCommentsSheetBase({
               ]}
               onEndReached={onEndReached}
               onEndReachedThreshold={0.6}
+              onScroll={(e) => {
+                listScrollOffset.current = e.nativeEvent.contentOffset.y;
+              }}
+              scrollEventThrottle={16}
               ListEmptyComponent={
                 <View style={styles.emptyBox}>
                   <Text style={styles.emptyTitle}>{copy.noCommentsTitle}</Text>
