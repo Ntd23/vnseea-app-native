@@ -11,6 +11,7 @@ import {
   Alert,
   Image,
   Keyboard,
+  Modal,
   PermissionsAndroid,
   Platform,
   ScrollView,
@@ -37,12 +38,16 @@ import {
   ArrowLeft,
   ArrowUp,
   ArrowUpDown,
+  Bell,
   Compass,
   CornerUpLeft,
   CornerUpRight,
+  Eye,
+  Heart,
   LocateFixed,
   MapPin,
   MapPinCheck,
+  MessageCircle,
   Mic,
   MoreVertical,
   Navigation as NavigationIcon,
@@ -50,11 +55,21 @@ import {
   Share2,
   SlidersHorizontal,
   Undo2,
+  UserPlus,
+  Users,
   Volume2,
   X,
 } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROUTES } from '../../../navigation/constants/routes';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { createPagesRepository } from '../../../pages/infrastructure/repositories/ApiPagesRepository';
+import type {
+  PageUser,
+  PagesItem,
+} from '../../../pages/domain/types/pages.types';
+import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import { useUserViewModel } from '../../application/view-models/useUserViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
@@ -73,7 +88,7 @@ type NearbyNav = NativeStackNavigationProp<RootStackParamList>;
 
 const BRAND = '#0000FF';
 const ACCENT = '#EF4444';
-const FALLBACK_AVATAR = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
+const FALLBACK_AVATAR = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 const NAVIGATION_CAMERA_PITCH = 60;
 const NAVIGATION_CAMERA_ZOOM = 19.25;
 const ROUTE_CONNECTOR_MIN_METERS = 5;
@@ -82,6 +97,7 @@ const ROUTE_LOOKAHEAD_MAX_METERS = 58;
 const LOCATION_RECENTER_DISTANCE_METERS = 50000;
 const SHOW_APP_DISCOVERY_PLACES_ON_MAP = true;
 const HIDE_GOOGLE_DISCOVERY_PLACES = true;
+const pagesRepository = createPagesRepository();
 const CLEAN_GOOGLE_MAP_STYLE = [
   {
     featureType: 'poi',
@@ -128,6 +144,7 @@ type SelectedPoint = {
   avatarUrl?: string;
   url?: string;
   showNameBadge?: boolean;
+  page?: NearbyPlace;
   coordinate: LatLng;
   distanceMeters?: number;
 };
@@ -138,6 +155,7 @@ type RouteOption = MapRoute & {
 };
 
 type LocationSource = 'gps' | 'profile' | null;
+type RouteLoadSource = 'user' | 'auto';
 
 type PageAvatarMapMarkerProps = {
   coordinate: LatLng;
@@ -155,40 +173,67 @@ function PageAvatarMapMarker({
   onPress,
 }: PageAvatarMapMarkerProps) {
   const avatarUri = place.avatarUrl || FALLBACK_AVATAR;
+  const markerInitial = useMemo(() => {
+    const trimmedName = place.name.trim();
+    return trimmedName.length > 0 ? trimmedName.charAt(0).toLocaleUpperCase('vi-VN') : 'V';
+  }, [place.name]);
+  const [imageReady, setImageReady] = useState(false);
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
-  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (settleTimerRef.current) {
-      clearTimeout(settleTimerRef.current);
-    }
+    let isMounted = true;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    setImageReady(false);
     setTracksViewChanges(true);
-    Image.prefetch(avatarUri).catch(() => undefined);
-    settleTimerRef.current = setTimeout(() => {
-      setTracksViewChanges(false);
-    }, 2500);
+    Image.prefetch(avatarUri)
+      .then(() => {
+        if (!isMounted) return;
+        setImageReady(true);
+        setTracksViewChanges(true);
+        settleTimer = setTimeout(
+          () => {
+            if (isMounted) {
+              setTracksViewChanges(false);
+            }
+          },
+          Platform.OS === 'android' ? 1200 : 800,
+        );
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setImageReady(false);
+        if (Platform.OS !== 'android') {
+          setTracksViewChanges(false);
+        }
+      });
 
     return () => {
-      if (settleTimerRef.current) {
-        clearTimeout(settleTimerRef.current);
-        settleTimerRef.current = null;
+      isMounted = false;
+      if (settleTimer) {
+        clearTimeout(settleTimer);
       }
     };
   }, [avatarUri]);
 
-  const handleAvatarLoadEnd = useCallback(() => {
-    if (settleTimerRef.current) {
-      clearTimeout(settleTimerRef.current);
-    }
-    settleTimerRef.current = setTimeout(() => {
+  const handleImageLoaded = useCallback(() => {
+    setImageReady(true);
+    setTracksViewChanges(true);
+    setTimeout(() => {
       setTracksViewChanges(false);
-      settleTimerRef.current = null;
-    }, 350);
+    }, Platform.OS === 'android' ? 1200 : 800);
+  }, []);
+
+  const handleImageError = useCallback(() => {
+    setImageReady(false);
+    if (Platform.OS !== 'android') {
+      setTracksViewChanges(false);
+    }
   }, []);
 
   return (
     <Marker
-      anchor={{ x: 0.13, y: 1 }}
+      anchor={{ x: 0.5, y: 1 }}
       coordinate={coordinate}
       onPress={onPress}
       tracksViewChanges={tracksViewChanges}
@@ -196,25 +241,54 @@ function PageAvatarMapMarker({
     >
       <View
         collapsable={false}
+        renderToHardwareTextureAndroid
         style={[
-          styles.pageMarker,
-          styles.pageMarkerWithBadge,
+          styles.pageAvatarMapMarkerRoot,
           selected && styles.selectedPageAvatarMarker,
         ]}
       >
-        <View collapsable={false} style={styles.pageAvatarMarker}>
-          <Image
-            key={avatarUri}
-            source={{ uri: avatarUri }}
-            resizeMode="cover"
-            fadeDuration={0}
-            onLoadEnd={handleAvatarLoadEnd}
-            onError={handleAvatarLoadEnd}
-            style={styles.pageAvatarMarkerImage}
-          />
+        <View style={styles.pageAvatarMarkerStage}>
+          {selected ? <View style={styles.pageAvatarSelectedHalo} /> : null}
+          <View
+            collapsable={false}
+            renderToHardwareTextureAndroid
+            style={[
+              styles.pageAvatarMarker,
+              selected && styles.pageAvatarMarkerSelected,
+            ]}
+          >
+            <View style={styles.pageAvatarMarkerFallback}>
+              <Text style={styles.pageAvatarMarkerFallbackText}>{markerInitial}</Text>
+            </View>
+            <Image
+              key={avatarUri}
+              source={{ uri: avatarUri }}
+              resizeMode="cover"
+              fadeDuration={0}
+              onLoad={handleImageLoaded}
+              onLoadEnd={handleImageLoaded}
+              onError={handleImageError}
+              style={[
+                styles.pageAvatarMarkerImage,
+                !imageReady && styles.pageAvatarMarkerImageLoading,
+              ]}
+            />
+          </View>
         </View>
-        <View collapsable={false} style={styles.pageNameBadge}>
-          <Text style={styles.pageNameBadgeText} numberOfLines={1}>
+        <View
+          collapsable={false}
+          style={[
+            styles.pageAvatarNameBadge,
+            selected && styles.pageAvatarNameBadgeSelected,
+          ]}
+        >
+          <Text
+            style={[
+              styles.pageAvatarNameBadgeText,
+              selected && styles.pageAvatarNameBadgeTextSelected,
+            ]}
+            numberOfLines={1}
+          >
             {place.name}
           </Text>
         </View>
@@ -268,6 +342,78 @@ function formatCoordinate(coordinate: LatLng) {
   return `${coordinate.latitude.toFixed(14)},${coordinate.longitude.toFixed(
     14,
   )}`;
+}
+
+function formatCompactCount(value?: number) {
+  if (value === undefined || !Number.isFinite(value)) return '0';
+  if (value < 1000) return `${Math.max(0, Math.round(value))}`;
+  if (value < 1000000) {
+    return `${(value / 1000).toFixed(value < 10000 ? 1 : 0)}K`;
+  }
+  return `${(value / 1000000).toFixed(value < 10000000 ? 1 : 0)}M`;
+}
+
+function pageOwnerFromNearbyPlace(place: NearbyPlace): PageUser | undefined {
+  if (!place.ownerId) return undefined;
+
+  return {
+    id: place.ownerId,
+    name: place.ownerName || place.ownerUsername || 'Chủ trang',
+    username: place.ownerUsername || '',
+    avatarUrl: place.ownerAvatarUrl,
+    role: 'owner',
+  };
+}
+
+function pageFromNearbyPlace(place: NearbyPlace): PagesItem {
+  const pageId = String(place.pageId || place.id.replace(/^page:/, ''));
+
+  return {
+    id: pageId,
+    pageId,
+    pageName: place.username || pageId,
+    pageTitle: place.name,
+    pageDescription: place.description,
+    pageCategory: place.category,
+    address: place.location,
+    placeId: place.placeId,
+    lat: place.coordinate?.latitude,
+    lng: place.coordinate?.longitude,
+    mapPinStatus: place.mapPinStatus,
+    mapPinApproved: place.mapPinApproved,
+    avatar: place.avatarUrl,
+    cover: place.coverUrl,
+    url: place.url,
+    likes: place.likes,
+    followersCount: place.followersCount,
+    postCount: place.postCount,
+    isFollowing: place.isFollowing,
+    isLiked: place.isLiked,
+    ownerId: place.ownerId,
+    owner: pageOwnerFromNearbyPlace(place),
+  };
+}
+
+function chatFromPageOwner(page: PagesItem): ChatItem | null {
+  const owner = page.owner;
+  const ownerId = owner?.id || page.ownerId;
+  if (!ownerId) return null;
+
+  return {
+    id: `user:${ownerId}`,
+    chatId: ownerId,
+    chatType: 'user',
+    participantId: ownerId,
+    userId: ownerId,
+    username: owner?.username || '',
+    name: owner?.name || owner?.username || 'Chủ trang',
+    avatar: owner?.avatarUrl || FALLBACK_AVATAR,
+    lastMessage: '',
+    lastMessageTime: 0,
+    unreadCount: 0,
+    isOnline: false,
+    isVerified: false,
+  };
 }
 
 function bearingBetween(origin: LatLng, destination: LatLng) {
@@ -362,6 +508,21 @@ function pointAlongRoute(path: LatLng[], targetDistance: number) {
   }
 
   return path[path.length - 1];
+}
+
+function navigationCameraCenter(origin: LatLng, routePath: LatLng[]) {
+  const path = buildNavigationPath(origin, routePath);
+  const remainingDistance = routeDistance(path);
+  if (remainingDistance <= ROUTE_LOOKAHEAD_MIN_METERS) {
+    return origin;
+  }
+
+  const lookAheadDistance = Math.min(
+    Math.max(remainingDistance * 0.22, ROUTE_LOOKAHEAD_MIN_METERS),
+    ROUTE_LOOKAHEAD_MAX_METERS,
+  );
+
+  return pointAlongRoute(path, lookAheadDistance) || origin;
 }
 
 function initialRouteHeading(
@@ -742,6 +903,7 @@ export default function NearbyUsersScreen() {
   const navigation = useNavigation<NearbyNav>();
   const {
     clearPlacePredictions,
+    currentUser,
     error,
     getPlaceDetails,
     getRoutes,
@@ -755,14 +917,18 @@ export default function NearbyUsersScreen() {
   const mapRef = useRef<MapView>(null);
   const currentLocationRef = useRef<LatLng | null>(null);
   const hasLoadedNearbyPagesRef = useRef(false);
+  const activeDestinationRef = useRef<LatLng | null>(null);
+  const isNavigatingRef = useRef(false);
   const lastRoutedOriginRef = useRef<LatLng | null>(null);
   const lastSpokenInstructionRef = useRef('');
+  const selectedPointTitleRef = useRef<string | undefined>(undefined);
   const lastNavigationCameraHeadingRef = useRef<{
     heading: number | null;
     center: LatLng | null;
     updatedAt: number;
   }>({ heading: null, center: null, updatedAt: 0 });
   const routeRequestIdRef = useRef(0);
+  const pageDetailRequestIdRef = useRef(0);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [locationAllowed, setLocationAllowed] = useState(Platform.OS === 'ios');
   const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
@@ -776,6 +942,12 @@ export default function NearbyUsersScreen() {
   const [selectedPoint, setSelectedPoint] = useState<SelectedPoint | null>(
     null,
   );
+  const [pageDetailPlace, setPageDetailPlace] = useState<NearbyPlace | null>(
+    null,
+  );
+  const [pageDetail, setPageDetail] = useState<PagesItem | null>(null);
+  const [isPageDetailLoading, setIsPageDetailLoading] = useState(false);
+  const [isPageActionLoading, setIsPageActionLoading] = useState(false);
   const [isSheetCollapsed, setIsSheetCollapsed] = useState(false);
   const [activeDestination, setActiveDestination] = useState<LatLng | null>(
     null,
@@ -875,6 +1047,14 @@ export default function NearbyUsersScreen() {
     ? nearbyQuickPlaces
     : [];
 
+  useEffect(() => {
+    visiblePageMarkers.slice(0, 32).forEach(({ place }) => {
+      if (place.avatarUrl) {
+        Image.prefetch(place.avatarUrl).catch(() => undefined);
+      }
+    });
+  }, [visiblePageMarkers]);
+
   const selectedDistance = useMemo(() => {
     if (!selectedPoint) return undefined;
     if (currentLocation) {
@@ -882,11 +1062,28 @@ export default function NearbyUsersScreen() {
     }
     return selectedPoint.distanceMeters;
   }, [currentLocation, selectedPoint]);
+  const currentViewerId = useMemo(
+    () => currentUser?.id || sessionStorage.getSession()?.userId,
+    [currentUser?.id],
+  );
+  const activePageDetail = pageDetail ?? (pageDetailPlace ? pageFromNearbyPlace(pageDetailPlace) : null);
+  const isOwnPageDetail =
+    Boolean(activePageDetail?.ownerId) &&
+    Boolean(currentViewerId) &&
+    String(activePageDetail?.ownerId) === String(currentViewerId);
+  const canFollowPageDetail =
+    Boolean(activePageDetail) &&
+    !isOwnPageDetail &&
+    activePageDetail?.isFollowing !== true;
   const routeMatchesSelectedPoint = useMemo(
     () => isSameCoordinate(activeDestination, selectedPoint?.coordinate),
     [activeDestination, selectedPoint?.coordinate],
   );
   const shouldShowRoute = activeRoute.length > 1 && routeMatchesSelectedPoint;
+  const alternativeRoutes = useMemo(
+    () => routeOptions.filter(route => route.id !== selectedRouteId),
+    [routeOptions, selectedRouteId],
+  );
   const selectedRoute = useMemo(
     () => routeOptions.find(route => route.id === selectedRouteId),
     [routeOptions, selectedRouteId],
@@ -930,8 +1127,22 @@ export default function NearbyUsersScreen() {
     });
   }, [activeRouteDuration]);
 
-  const stopInAppNavigation = useCallback(() => {
+  useEffect(() => {
+    activeDestinationRef.current = activeDestination;
+  }, [activeDestination]);
+
+  useEffect(() => {
+    isNavigatingRef.current = isNavigating;
+  }, [isNavigating]);
+
+  useEffect(() => {
+    selectedPointTitleRef.current = selectedPoint?.title;
+  }, [selectedPoint?.title]);
+
+  const resetRouteState = useCallback(() => {
     routeRequestIdRef.current += 1;
+    activeDestinationRef.current = null;
+    isNavigatingRef.current = false;
     setActiveDestination(null);
     setActiveRoute([]);
     setActiveRouteConnector([]);
@@ -939,6 +1150,7 @@ export default function NearbyUsersScreen() {
     setRouteOptions([]);
     setSelectedRouteId('');
     setIsNavigating(false);
+    setIsAutoCentering(false);
     setRouteHeading(null);
     setIsLoadingRoutes(false);
     lastRoutedOriginRef.current = null;
@@ -950,6 +1162,15 @@ export default function NearbyUsersScreen() {
     };
     stopNavigationSpeech();
     setIsSheetCollapsed(false);
+
+    // Reset map camera to 2D North-up
+    mapRef.current?.animateCamera(
+      {
+        pitch: 0,
+        heading: 0,
+      },
+      { duration: 450 },
+    );
   }, []);
 
   useEffect(
@@ -975,20 +1196,39 @@ export default function NearbyUsersScreen() {
     }
 
     lastNavigationCameraHeadingRef.current = {
-      heading: 0,
+      heading: routeHeading,
       center: location,
       updatedAt: now,
     };
+    const cameraCenter = navigationCameraCenter(location, activeRoute);
+    const nextHeading =
+      activeDestination !== null
+        ? initialRouteHeading(
+            buildNavigationPath(location, activeRoute),
+            location,
+            activeDestination,
+          )
+        : routeHeading ?? currentHeading;
+    setRouteHeading(nextHeading);
     mapRef.current?.animateCamera(
       {
-        center: location,
-        heading: 0, // Map does not rotate
-        pitch: 0,   // Keep flat 2D view
+        center: cameraCenter,
+        heading: nextHeading,
+        pitch: NAVIGATION_CAMERA_PITCH,
         zoom: NAVIGATION_CAMERA_ZOOM,
       },
       { duration: 180 },
     );
-  }, [currentLocation, isNavigating, shouldShowRoute, isAutoCentering]);
+  }, [
+    activeDestination,
+    activeRoute,
+    currentHeading,
+    currentLocation,
+    isNavigating,
+    isAutoCentering,
+    routeHeading,
+    shouldShowRoute,
+  ]);
 
   useEffect(() => {
     if (!voiceGuidanceEnabled) {
@@ -1023,11 +1263,15 @@ export default function NearbyUsersScreen() {
 
     if (isNavigating) {
       setIsAutoCentering(true);
+      const cameraCenter =
+        shouldShowRoute && activeRoute.length > 1
+          ? navigationCameraCenter(location, activeRoute)
+          : location;
       mapRef.current?.animateCamera(
         {
-          center: location,
-          heading: 0,
-          pitch: 0,
+          center: cameraCenter,
+          heading: routeHeading ?? currentHeading,
+          pitch: NAVIGATION_CAMERA_PITCH,
           zoom: NAVIGATION_CAMERA_ZOOM,
         },
         { duration: 400 },
@@ -1042,7 +1286,7 @@ export default function NearbyUsersScreen() {
         350,
       );
     }
-  }, [isNavigating]);
+  }, [activeRoute, currentHeading, isNavigating, routeHeading, shouldShowRoute]);
 
   const resetMapHeading = useCallback(() => {
     mapRef.current?.animateCamera(
@@ -1065,26 +1309,7 @@ export default function NearbyUsersScreen() {
     [loadNearbyPages],
   );
 
-  const clearRoutePreview = useCallback(() => {
-    routeRequestIdRef.current += 1;
-    setActiveDestination(null);
-    setActiveRoute([]);
-    setActiveRouteConnector([]);
-    setActiveRouteDuration(null);
-    setRouteOptions([]);
-    setSelectedRouteId('');
-    setIsNavigating(false);
-    setRouteHeading(null);
-    setIsLoadingRoutes(false);
-    lastRoutedOriginRef.current = null;
-    lastSpokenInstructionRef.current = '';
-    lastNavigationCameraHeadingRef.current = {
-      heading: null,
-      center: null,
-      updatedAt: 0,
-    };
-    stopNavigationSpeech();
-  }, []);
+
 
   const focusRoute = useCallback(
     (
@@ -1103,6 +1328,8 @@ export default function NearbyUsersScreen() {
           ? [navigationPath[0], navigationPath[1]]
           : [];
 
+      activeDestinationRef.current = destination;
+      isNavigatingRef.current = navigating;
       setActiveRoute(routePath);
       setActiveRouteConnector(routeConnector);
       setActiveDestination(destination);
@@ -1120,11 +1347,12 @@ export default function NearbyUsersScreen() {
           origin,
           destination,
         );
-        const heading = 0; // Map does not rotate, keep heading 0
+        const heading = routeBearing;
+        const cameraCenter = navigationCameraCenter(origin, routePath);
         const navigationCamera = {
-          center: origin,
+          center: cameraCenter,
           heading,
-          pitch: 0, // Flat view
+          pitch: NAVIGATION_CAMERA_PITCH,
           zoom: NAVIGATION_CAMERA_ZOOM,
         };
 
@@ -1178,9 +1406,20 @@ export default function NearbyUsersScreen() {
       destination: LatLng,
       navigating: boolean,
       destinationTitle?: string,
+      source: RouteLoadSource = 'user',
     ) => {
       const origin = currentLocationRef.current;
       if (!origin) return;
+      if (source === 'auto') {
+        const activeDestinationSnapshot = activeDestinationRef.current;
+        if (
+          !isNavigatingRef.current ||
+          !activeDestinationSnapshot ||
+          !isSameCoordinate(activeDestinationSnapshot, destination)
+        ) {
+          return;
+        }
+      }
 
       const requestId = routeRequestIdRef.current + 1;
       routeRequestIdRef.current = requestId;
@@ -1208,7 +1447,7 @@ export default function NearbyUsersScreen() {
         if (routeRequestIdRef.current !== requestId) {
           return;
         }
-        setRouteOptions(nextOptions);
+        setRouteOptions(navigating ? [nextOptions[0]] : nextOptions);
         focusRoute(nextOptions[0], destination, navigating, destinationTitle);
         setIsSheetCollapsed(navigating);
       } catch {
@@ -1216,7 +1455,7 @@ export default function NearbyUsersScreen() {
           return;
         }
         setIsLoadingRoutes(false);
-        clearRoutePreview();
+        resetRouteState();
         Alert.alert(
           'Không tải được lộ trình',
           'VNSEEA chưa lấy được đường đi trong app. Bạn thử lại sau nhé.',
@@ -1227,7 +1466,7 @@ export default function NearbyUsersScreen() {
         }
       }
     },
-    [clearRoutePreview, focusRoute, getRoutes],
+    [focusRoute, getRoutes, resetRouteState],
   );
 
   const selectPoint = useCallback(
@@ -1236,7 +1475,7 @@ export default function NearbyUsersScreen() {
       setIsSearchFocused(false);
       setSelectedPoint(point);
       setIsSheetCollapsed(false);
-      clearRoutePreview();
+      resetRouteState();
 
       mapRef.current?.animateToRegion(
         {
@@ -1251,7 +1490,7 @@ export default function NearbyUsersScreen() {
         loadRouteOptions(point.coordinate, false, point.title).catch(() => undefined);
       }
     },
-    [clearRoutePreview, loadRouteOptions],
+    [loadRouteOptions, resetRouteState],
   );
 
   const selectPage = useCallback(
@@ -1266,6 +1505,7 @@ export default function NearbyUsersScreen() {
         avatarUrl: page.avatarUrl,
         url: page.url,
         showNameBadge: true,
+        page,
         coordinate: page.coordinate,
         distanceMeters: page.distanceMeters,
       });
@@ -1407,23 +1647,24 @@ export default function NearbyUsersScreen() {
         loadPagesAroundUser(location).catch(() => undefined);
       }
 
-      if (!activeDestination || !isNavigating) return;
+      const latestActiveDestination = activeDestinationRef.current;
+      if (!latestActiveDestination || !isNavigatingRef.current) return;
       const lastOrigin = lastRoutedOriginRef.current;
       if (!lastOrigin || distanceMeters(lastOrigin, location) > 30) {
-        loadRouteOptions(activeDestination, true, selectedPoint?.title).catch(
-          () => undefined,
-        );
+        loadRouteOptions(
+          latestActiveDestination,
+          true,
+          selectedPointTitleRef.current,
+          'auto',
+        ).catch(() => undefined);
       }
     },
     [
-      activeDestination,
       hasCenteredOnUser,
       hasLoadedNearbyPages,
-      isNavigating,
       loadPagesAroundUser,
       loadRouteOptions,
       locationSource,
-      selectedPoint?.title,
     ],
   );
 
@@ -1442,6 +1683,33 @@ export default function NearbyUsersScreen() {
 
   const handleViewDetails = useCallback(() => {
     if (!selectedPoint) return;
+
+    if (selectedPoint.source === 'page' && selectedPoint.page) {
+      const initialPage = pageFromNearbyPlace(selectedPoint.page);
+      const requestId = pageDetailRequestIdRef.current + 1;
+      pageDetailRequestIdRef.current = requestId;
+
+      setPageDetailPlace(selectedPoint.page);
+      setPageDetail(initialPage);
+      setIsPageDetailLoading(Boolean(initialPage.pageId));
+
+      if (initialPage.pageId) {
+        pagesRepository
+          .getPageDetail({ pageId: initialPage.pageId })
+          .then(fullPage => {
+            if (pageDetailRequestIdRef.current === requestId) {
+              setPageDetail(fullPage);
+            }
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            if (pageDetailRequestIdRef.current === requestId) {
+              setIsPageDetailLoading(false);
+            }
+          });
+      }
+      return;
+    }
 
     Alert.alert(
       selectedPoint.title,
@@ -1462,6 +1730,87 @@ export default function NearbyUsersScreen() {
       ],
     );
   }, [handleShare, selectedDistance, selectedPoint]);
+
+  const closePageDetail = useCallback(() => {
+    pageDetailRequestIdRef.current += 1;
+    setPageDetailPlace(null);
+    setPageDetail(null);
+    setIsPageDetailLoading(false);
+    setIsPageActionLoading(false);
+  }, []);
+
+  const handleOpenPageDetail = useCallback(() => {
+    if (!activePageDetail) return;
+    closePageDetail();
+    navigation.navigate(ROUTES.PAGE_DETAIL, { page: activePageDetail });
+  }, [activePageDetail, closePageDetail, navigation]);
+
+  const handleMessagePageOwner = useCallback(() => {
+    if (!activePageDetail) return;
+
+    if (isOwnPageDetail) {
+      closePageDetail();
+      navigation.navigate(ROUTES.PAGE_DETAIL, { page: activePageDetail });
+      return;
+    }
+
+    const chat = chatFromPageOwner(activePageDetail);
+    if (!chat) {
+      Alert.alert(
+        'Chưa có thông tin người tạo trang',
+        'API chưa trả về người tạo page nên chưa thể mở đoạn chat.',
+      );
+      return;
+    }
+
+    closePageDetail();
+    navigation.navigate(ROUTES.CHAT, { chat });
+  }, [activePageDetail, closePageDetail, isOwnPageDetail, navigation]);
+
+  const handleFollowPageDetail = useCallback(async () => {
+    if (!activePageDetail?.pageId || isPageActionLoading) return;
+
+    const previous = activePageDetail;
+    setIsPageActionLoading(true);
+    setPageDetail(current =>
+      current
+        ? {
+            ...current,
+            isFollowing: true,
+            followersCount: Math.max(0, (current.followersCount ?? 0) + 1),
+          }
+        : current,
+    );
+
+    try {
+      const result = await pagesRepository.toggleFollowPage(activePageDetail.pageId);
+      setPageDetail(current =>
+        current
+          ? {
+              ...current,
+              isFollowing: result.isFollowing,
+              followersCount: Math.max(
+                0,
+                (previous.followersCount ?? current.followersCount ?? 0) +
+                  (result.isFollowing === previous.isFollowing
+                    ? 0
+                    : result.isFollowing
+                      ? 1
+                      : -1),
+              ),
+            }
+          : current,
+      );
+    } catch (err) {
+      setPageDetail(previous);
+      Alert.alert(
+        'Không thể theo dõi',
+        err instanceof Error ? err.message : 'Vui lòng thử lại sau.',
+      );
+    } finally {
+      setIsPageActionLoading(false);
+    }
+  }, [activePageDetail, isPageActionLoading]);
 
   const handleGetDirections = useCallback(async () => {
     if (!selectedPoint || selectedPoint.source === 'self') return;
@@ -1492,10 +1841,16 @@ export default function NearbyUsersScreen() {
     Keyboard.dismiss();
     setIsSearchFocused(false);
 
-    const currentRoute =
-      routeOptions.find(route => route.id === selectedRouteId) ||
-      routeOptions[0];
+    const hasRouteForSelectedPoint =
+      routeMatchesSelectedPoint &&
+      activeDestination !== null &&
+      isSameCoordinate(activeDestination, selectedPoint.coordinate);
+    const currentRoute = hasRouteForSelectedPoint
+      ? routeOptions.find(route => route.id === selectedRouteId) ||
+        routeOptions[0]
+      : undefined;
     if (currentRoute) {
+      setRouteOptions([currentRoute]);
       focusRoute(currentRoute, selectedPoint.coordinate, true, selectedPoint.title);
       setIsSheetCollapsed(true);
       return;
@@ -1505,7 +1860,9 @@ export default function NearbyUsersScreen() {
   }, [
     focusRoute,
     loadRouteOptions,
+    activeDestination,
     routeOptions,
+    routeMatchesSelectedPoint,
     selectedPoint,
     selectedRouteId,
   ]);
@@ -1780,59 +2137,85 @@ export default function NearbyUsersScreen() {
           </Marker>
         ) : null}
 
-        {shouldShowRoute ? (
-          <>
-            {routeOptions
-              .filter(route => route.id !== selectedRouteId)
-              .map(route => (
-                <Polyline
-                  key={`route-option:${route.id}`}
-                  coordinates={route.path}
-                  lineCap="round"
-                  lineJoin="round"
-                  strokeColor="rgba(100, 116, 139, 0.72)"
-                  strokeWidth={4}
-                  zIndex={14}
-                />
-              ))}
-            {activeRouteConnector.length > 1 ? (
-              <>
-                <Polyline
-                  coordinates={activeRouteConnector}
-                  lineCap="round"
-                  lineDashPattern={[2, 8]}
-                  strokeColor="rgba(255, 255, 255, 0.95)"
-                  strokeWidth={8}
-                  zIndex={15}
-                />
-                <Polyline
-                  coordinates={activeRouteConnector}
-                  lineCap="round"
-                  lineDashPattern={[2, 8]}
-                  strokeColor="#6B7280"
-                  strokeWidth={4}
-                  zIndex={16}
-                />
-              </>
-            ) : null}
-            <Polyline
-              coordinates={activeRoute}
-              lineCap="round"
-              lineJoin="round"
-              strokeColor="rgba(255, 255, 255, 0.92)"
-              strokeWidth={9}
-              zIndex={16}
-            />
-            <Polyline
-              coordinates={activeRoute}
-              lineCap="round"
-              lineJoin="round"
-              strokeColor="#1A73E8"
-              strokeWidth={6}
-              zIndex={17}
-            />
-          </>
-        ) : null}
+        {/* Main Route & Connector Polylines (Always mounted to prevent react-native-maps unmount render bugs on Android) */}
+        <Polyline
+          coordinates={
+            isRoutePreview && shouldShowRoute && alternativeRoutes[0]
+              ? alternativeRoutes[0].path
+              : []
+          }
+          lineCap="round"
+          lineJoin="round"
+          strokeColor="rgba(100, 116, 139, 0.72)"
+          strokeWidth={4}
+          zIndex={14}
+        />
+        <Polyline
+          coordinates={
+            isRoutePreview && shouldShowRoute && alternativeRoutes[1]
+              ? alternativeRoutes[1].path
+              : []
+          }
+          lineCap="round"
+          lineJoin="round"
+          strokeColor="rgba(100, 116, 139, 0.72)"
+          strokeWidth={4}
+          zIndex={14}
+        />
+        <Polyline
+          coordinates={
+            isRoutePreview && shouldShowRoute && alternativeRoutes[2]
+              ? alternativeRoutes[2].path
+              : []
+          }
+          lineCap="round"
+          lineJoin="round"
+          strokeColor="rgba(100, 116, 139, 0.72)"
+          strokeWidth={4}
+          zIndex={14}
+        />
+
+        <Polyline
+          coordinates={
+            shouldShowRoute && activeRouteConnector.length > 1
+              ? activeRouteConnector
+              : []
+          }
+          lineCap="round"
+          lineDashPattern={[2, 8]}
+          strokeColor="rgba(255, 255, 255, 0.95)"
+          strokeWidth={8}
+          zIndex={15}
+        />
+        <Polyline
+          coordinates={
+            shouldShowRoute && activeRouteConnector.length > 1
+              ? activeRouteConnector
+              : []
+          }
+          lineCap="round"
+          lineDashPattern={[2, 8]}
+          strokeColor="#6B7280"
+          strokeWidth={4}
+          zIndex={16}
+        />
+
+        <Polyline
+          coordinates={shouldShowRoute ? activeRoute : []}
+          lineCap="round"
+          lineJoin="round"
+          strokeColor="rgba(255, 255, 255, 0.92)"
+          strokeWidth={9}
+          zIndex={16}
+        />
+        <Polyline
+          coordinates={shouldShowRoute ? activeRoute : []}
+          lineCap="round"
+          lineJoin="round"
+          strokeColor="#1A73E8"
+          strokeWidth={6}
+          zIndex={17}
+        />
       </MapView>
 
       {!isNavigating && !isRoutePreview ? (
@@ -2083,7 +2466,7 @@ export default function NearbyUsersScreen() {
               <TouchableOpacity
                 activeOpacity={0.82}
                 style={styles.routeIconButton}
-                onPress={clearRoutePreview}
+                onPress={resetRouteState}
               >
                 <X size={18} color="#334155" />
               </TouchableOpacity>
@@ -2168,7 +2551,7 @@ export default function NearbyUsersScreen() {
           <TouchableOpacity
             activeOpacity={0.86}
             style={styles.navigationRoundButton}
-            onPress={stopInAppNavigation}
+            onPress={resetRouteState}
           >
             <X size={31} color="#334155" />
           </TouchableOpacity>
@@ -2368,6 +2751,212 @@ export default function NearbyUsersScreen() {
           </View>
         </View>
       ) : null}
+
+      <Modal
+        visible={Boolean(activePageDetail)}
+        transparent
+        animationType="fade"
+        onRequestClose={closePageDetail}
+      >
+        <View style={styles.pageDetailModalBackdrop}>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={StyleSheet.absoluteFill}
+            onPress={closePageDetail}
+          />
+          {activePageDetail ? (
+            <View style={styles.pageDetailModalCard}>
+              <TouchableOpacity
+                activeOpacity={0.82}
+                style={styles.pageDetailModalClose}
+                onPress={closePageDetail}
+              >
+                <X size={20} color="#475569" />
+              </TouchableOpacity>
+
+              <View style={styles.pageDetailCoverWrap}>
+                <Image
+                  source={{
+                    uri:
+                      activePageDetail.cover ||
+                      activePageDetail.avatar ||
+                      FALLBACK_AVATAR,
+                  }}
+                  style={styles.pageDetailCoverImage}
+                  resizeMode="cover"
+                />
+                <View style={styles.pageDetailCoverOverlay} />
+              </View>
+
+              <View style={styles.pageDetailAvatarRing}>
+                <Image
+                  source={{
+                    uri: activePageDetail.avatar || FALLBACK_AVATAR,
+                  }}
+                  style={styles.pageDetailAvatar}
+                  resizeMode="cover"
+                />
+              </View>
+
+              <View style={styles.pageDetailBody}>
+                <Text style={styles.pageDetailTitle} numberOfLines={2}>
+                  {activePageDetail.pageTitle || activePageDetail.pageName}
+                </Text>
+                <Text style={styles.pageDetailHandle} numberOfLines={1}>
+                  @{activePageDetail.pageName || activePageDetail.pageId}
+                </Text>
+
+                <View style={styles.pageDetailOwnerRow}>
+                  <Image
+                    source={{
+                      uri:
+                        activePageDetail.owner?.avatarUrl ||
+                        activePageDetail.avatar ||
+                        FALLBACK_AVATAR,
+                    }}
+                    style={styles.pageDetailOwnerAvatar}
+                  />
+                  <View style={styles.pageDetailOwnerCopy}>
+                    <Text style={styles.pageDetailOwnerLabel}>
+                      Người tạo trang
+                    </Text>
+                    <Text style={styles.pageDetailOwnerName} numberOfLines={1}>
+                      {activePageDetail.owner?.name ||
+                        activePageDetail.owner?.username ||
+                        (activePageDetail.ownerId
+                          ? `ID ${activePageDetail.ownerId}`
+                          : 'Chưa có dữ liệu')}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.pageDetailStats}>
+                  <View style={styles.pageDetailStat}>
+                    <Heart size={18} color="#EF4444" fill="#EF4444" />
+                    <Text style={styles.pageDetailStatValue}>
+                      {formatCompactCount(activePageDetail.likes)}
+                    </Text>
+                    <Text style={styles.pageDetailStatLabel}>Lượt thích</Text>
+                  </View>
+                  <View style={styles.pageDetailStatDivider} />
+                  <View style={styles.pageDetailStat}>
+                    <Users size={18} color="#0000FF" />
+                    <Text style={styles.pageDetailStatValue}>
+                      {formatCompactCount(activePageDetail.followersCount)}
+                    </Text>
+                    <Text style={styles.pageDetailStatLabel}>Theo dõi</Text>
+                  </View>
+                  <View style={styles.pageDetailStatDivider} />
+                  <View style={styles.pageDetailStat}>
+                    <MapPin size={18} color="#64748B" />
+                    <Text style={styles.pageDetailStatValue}>
+                      {pageDetailPlace?.distanceMeters
+                        ? formatDistance(pageDetailPlace.distanceMeters)
+                        : selectedDistance !== undefined
+                          ? formatDistance(selectedDistance)
+                          : '--'}
+                    </Text>
+                    <Text style={styles.pageDetailStatLabel}>Khoảng cách</Text>
+                  </View>
+                </View>
+
+                {isPageDetailLoading ? (
+                  <View style={styles.pageDetailLoading}>
+                    <ActivityIndicator size="small" color="#0000FF" />
+                    <Text style={styles.pageDetailLoadingText}>
+                      Đang cập nhật thông tin page...
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.pageDetailStatusPill}>
+                  <Bell
+                    size={16}
+                    color={
+                      isOwnPageDetail || activePageDetail.isFollowing
+                        ? '#0000FF'
+                        : '#64748B'
+                    }
+                  />
+                  <Text style={styles.pageDetailStatusText}>
+                    {isOwnPageDetail
+                      ? 'Trang của bạn'
+                      : activePageDetail.isFollowing
+                        ? 'Bạn đang theo dõi trang này'
+                        : 'Bạn chưa theo dõi trang này'}
+                  </Text>
+                </View>
+
+                <View style={styles.pageDetailActions}>
+                  {canFollowPageDetail ? (
+                    <TouchableOpacity
+                      activeOpacity={0.86}
+                      style={[
+                        styles.pageDetailActionButton,
+                        styles.pageDetailPrimaryButton,
+                      ]}
+                      disabled={isPageActionLoading}
+                      onPress={handleFollowPageDetail}
+                    >
+                      {isPageActionLoading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <Bell size={17} color="#FFFFFF" />
+                          <Text style={styles.pageDetailPrimaryText}>
+                            Theo dõi
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  ) : null}
+                  <TouchableOpacity
+                    activeOpacity={0.86}
+                    style={[
+                      styles.pageDetailActionButton,
+                      canFollowPageDetail
+                        ? styles.pageDetailSecondaryButton
+                        : styles.pageDetailPrimaryButton,
+                    ]}
+                    onPress={handleOpenPageDetail}
+                  >
+                    <Eye
+                      size={17}
+                      color={canFollowPageDetail ? '#0000FF' : '#FFFFFF'}
+                    />
+                    <Text
+                      style={
+                        canFollowPageDetail
+                          ? styles.pageDetailSecondaryText
+                          : styles.pageDetailPrimaryText
+                      }
+                    >
+                      Xem page
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.86}
+                    style={[
+                      styles.pageDetailActionButton,
+                      styles.pageDetailSecondaryButton,
+                    ]}
+                    onPress={handleMessagePageOwner}
+                  >
+                    {isOwnPageDetail ? (
+                      <UserPlus size={17} color="#0000FF" />
+                    ) : (
+                      <MessageCircle size={17} color="#0000FF" />
+                    )}
+                    <Text style={styles.pageDetailSecondaryText}>
+                      {isOwnPageDetail ? 'Mời người' : 'Nhắn tin'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2659,6 +3248,30 @@ const styles = StyleSheet.create({
   pageMarkerWithBadge: {
     width: 210,
   },
+  pageAvatarMapMarkerRoot: {
+    width: 132,
+    minHeight: 92,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 8,
+    paddingHorizontal: 10,
+    paddingBottom: 8,
+  },
+  pageAvatarMarkerStage: {
+    width: 66,
+    height: 62,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pageAvatarSelectedHalo: {
+    position: 'absolute',
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    backgroundColor: 'rgba(0, 0, 255, 0.14)',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 0, 255, 0.22)',
+  },
   pageAvatarMarker: {
     width: 48,
     height: 48,
@@ -2674,14 +3287,67 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 7,
   },
+  pageAvatarMarkerSelected: {
+    borderColor: BRAND,
+    borderWidth: 4,
+    shadowOpacity: 0.32,
+    elevation: 10,
+  },
+  pageAvatarMarkerFallback: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 24,
+    backgroundColor: '#DBEAFE',
+  },
+  pageAvatarMarkerFallbackText: {
+    color: BRAND,
+    fontSize: 18,
+    fontWeight: '900',
+  },
   pageAvatarMarkerImage: {
+    position: 'absolute',
     width: 42,
     height: 42,
     borderRadius: 21,
     backgroundColor: '#E2E8F0',
   },
+  pageAvatarMarkerImageLoading: {
+    opacity: 0,
+  },
   selectedPageAvatarMarker: {
-    transform: [{ scale: 1.04 }],
+    transform: [{ scale: 1.08 }],
+  },
+  pageAvatarNameBadge: {
+    maxWidth: 112,
+    marginTop: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#DDE7FF',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  pageAvatarNameBadgeSelected: {
+    borderColor: BRAND,
+    backgroundColor: BRAND,
+  },
+  pageAvatarNameBadgeText: {
+    color: '#0F172A',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  pageAvatarNameBadgeTextSelected: {
+    color: '#FFFFFF',
   },
   pageNameBadge: {
     maxWidth: 144,
@@ -3169,5 +3835,212 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 14,
     marginLeft: 6,
+  },
+  pageDetailModalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+  },
+  pageDetailModalCard: {
+    overflow: 'hidden',
+    borderRadius: 28,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.18,
+    shadowRadius: 26,
+    elevation: 16,
+  },
+  pageDetailModalClose: {
+    position: 'absolute',
+    right: 14,
+    top: 14,
+    zIndex: 5,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+  },
+  pageDetailCoverWrap: {
+    height: 132,
+    backgroundColor: '#E8EEF9',
+  },
+  pageDetailCoverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  pageDetailCoverOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(2, 6, 23, 0.18)',
+  },
+  pageDetailAvatarRing: {
+    position: 'absolute',
+    top: 82,
+    left: 22,
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    borderWidth: 5,
+    borderColor: '#FFFFFF',
+    overflow: 'hidden',
+    backgroundColor: '#EEF2FF',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 9,
+  },
+  pageDetailAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  pageDetailBody: {
+    paddingHorizontal: 22,
+    paddingTop: 44,
+    paddingBottom: 20,
+  },
+  pageDetailTitle: {
+    color: '#020617',
+    fontSize: 25,
+    fontWeight: '900',
+    lineHeight: 31,
+  },
+  pageDetailHandle: {
+    marginTop: 3,
+    color: '#64748B',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  pageDetailOwnerRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 18,
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+  },
+  pageDetailOwnerAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#E2E8F0',
+  },
+  pageDetailOwnerCopy: {
+    marginLeft: 10,
+    flex: 1,
+  },
+  pageDetailOwnerLabel: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  pageDetailOwnerName: {
+    marginTop: 1,
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  pageDetailStats: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 14,
+  },
+  pageDetailStat: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  pageDetailStatDivider: {
+    width: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  pageDetailStatValue: {
+    marginTop: 6,
+    color: '#020617',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  pageDetailStatLabel: {
+    marginTop: 2,
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  pageDetailLoading: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 9,
+  },
+  pageDetailLoadingText: {
+    marginLeft: 8,
+    color: '#1D4ED8',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  pageDetailStatusPill: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  pageDetailStatusText: {
+    marginLeft: 7,
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  pageDetailActions: {
+    marginTop: 14,
+    flexDirection: 'row',
+  },
+  pageDetailActionButton: {
+    minHeight: 48,
+    flex: 1,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    paddingHorizontal: 8,
+    marginHorizontal: 4,
+  },
+  pageDetailPrimaryButton: {
+    backgroundColor: '#0000FF',
+  },
+  pageDetailSecondaryButton: {
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+  },
+  pageDetailPrimaryText: {
+    marginLeft: 6,
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  pageDetailSecondaryText: {
+    marginLeft: 6,
+    color: '#0000FF',
+    fontSize: 13,
+    fontWeight: '900',
   },
 });

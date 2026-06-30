@@ -1,6 +1,6 @@
 // Description: Custom bottom tab navigator with VnseeaRn brand design.
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Dimensions, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   BottomTabBarProps,
   createBottomTabNavigator,
@@ -37,7 +37,9 @@ function CustomTabBar({
   const [, setVisible] = useState(true);
   const translateY = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const [barWidth, setBarWidth] = useState(0);
+  const [barWidth, setBarWidth] = useState(
+    Dimensions.get('window').width - 36, // Initialize to screen width minus horizontal margins (18px each side) to prevent position shift glitch on mount
+  );
 
   const activeRouteIdx = state.index;
   const slideAnim = useRef(new Animated.Value(activeRouteIdx)).current;

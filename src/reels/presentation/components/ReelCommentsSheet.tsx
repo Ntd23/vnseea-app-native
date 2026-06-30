@@ -44,7 +44,6 @@ import {
   TouchableOpacity,
   View,
   type ViewStyle,
-  PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -343,38 +342,11 @@ function ReelCommentsSheetBase({
   const openProgress = useRef(new Animated.Value(0)).current;
   const panY = useRef(new Animated.Value(0)).current;
   const listScrollOffset = useRef(0);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        // Only capture gesture if dragging downwards AND the list is scrolled to the top
-        return gestureState.dy > 5 && listScrollOffset.current <= 0;
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        if (gestureState.dy > 0) {
-          panY.setValue(gestureState.dy);
-        }
-      },
-      onPanResponderRelease: (evt, gestureState) => {
-        if (gestureState.dy > 120 || gestureState.vy > 0.5) {
-          Animated.timing(panY, {
-            toValue: Dimensions.get('window').height,
-            duration: 200,
-            useNativeDriver: true,
-          }).start(() => {
-            onClose();
-            panY.setValue(0);
-          });
-        } else {
-          Animated.spring(panY, {
-            toValue: 0,
-            useNativeDriver: true,
-          }).start();
-        }
-      },
-    })
-  ).current;
+  const touchStartY = useRef(0);
+  const isDraggingSheet = useRef(false);
+  const isClosingRef = useRef(false);
 
   // Picker state — which comment's "Thích" was long-pressed, plus the
   // anchor coordinates so the pill floats just above the actual button.
@@ -397,8 +369,10 @@ function ReelCommentsSheetBase({
 
   useEffect(() => {
     if (visible) {
+      isClosingRef.current = false;
       setIsMounted(true);
       openProgress.setValue(0);
+      panY.setValue(0);
       Animated.spring(openProgress, {
         toValue: 1,
         damping: 18,
@@ -406,6 +380,12 @@ function ReelCommentsSheetBase({
         mass: 0.8,
         useNativeDriver: true,
       }).start();
+      return;
+    }
+
+    if (isClosingRef.current) {
+      setIsMounted(false);
+      isClosingRef.current = false;
       return;
     }
 
@@ -418,12 +398,18 @@ function ReelCommentsSheetBase({
         setIsMounted(false);
       }
     });
-  }, [openProgress, visible]);
+  }, [openProgress, panY, visible]);
 
-  const backdropOpacity = openProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1],
+  const dragBackdropOpacity = panY.interpolate({
+    inputRange: [0, 120, 360],
+    outputRange: [1, 0.42, 0],
+    extrapolate: 'clamp',
   });
+
+  const backdropOpacity = Animated.multiply(
+    openProgress,
+    dragBackdropOpacity,
+  );
 
   const sheetTranslateY = Animated.add(
     openProgress.interpolate({
@@ -752,7 +738,59 @@ function ReelCommentsSheetBase({
               ],
             },
           ]}
-          {...panResponder.panHandlers}
+          onTouchStart={(e) => {
+            touchStartY.current = e.nativeEvent.pageY;
+            isDraggingSheet.current = false;
+          }}
+          onTouchMove={(e) => {
+            const currentY = e.nativeEvent.pageY;
+            const dy = currentY - touchStartY.current;
+
+            if (dy > 5 && listScrollOffset.current <= 0) {
+              if (!isDraggingSheet.current) {
+                isDraggingSheet.current = true;
+                setScrollEnabled(false);
+              }
+              panY.setValue(dy);
+            }
+          }}
+          onTouchEnd={(e) => {
+            if (isDraggingSheet.current) {
+              const currentY = e.nativeEvent.pageY;
+              const dy = currentY - touchStartY.current;
+
+              if (dy > 120) {
+                isClosingRef.current = true;
+                Animated.timing(panY, {
+                  toValue: Dimensions.get('window').height,
+                  duration: 200,
+                  useNativeDriver: true,
+                }).start(() => {
+                  setScrollEnabled(true);
+                  onClose();
+                });
+              } else {
+                Animated.spring(panY, {
+                  toValue: 0,
+                  useNativeDriver: true,
+                }).start(() => {
+                  setScrollEnabled(true);
+                });
+              }
+              isDraggingSheet.current = false;
+            }
+          }}
+          onTouchCancel={() => {
+            if (isDraggingSheet.current) {
+              Animated.spring(panY, {
+                toValue: 0,
+                useNativeDriver: true,
+              }).start(() => {
+                setScrollEnabled(true);
+              });
+              isDraggingSheet.current = false;
+            }
+          }}
         >
           <View>
             <View style={styles.grabber} />
@@ -804,6 +842,7 @@ function ReelCommentsSheetBase({
               renderItem={renderThread}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              scrollEnabled={scrollEnabled}
               contentContainerStyle={[
                 styles.listContent,
                 comments.length === 0 ? styles.emptyListContent : null,
