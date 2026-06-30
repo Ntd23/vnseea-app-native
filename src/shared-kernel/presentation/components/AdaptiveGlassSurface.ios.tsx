@@ -25,7 +25,12 @@ function AdaptiveGlassSurface({
   testID,
   ...viewProps
 }: AdaptiveGlassSurfaceProps) {
-  if (isLiquidGlassSupported()) {
+  const liquidGlassSupported =
+    typeof isLiquidGlassSupported === 'function'
+      ? isLiquidGlassSupported.call(undefined)
+      : Boolean(isLiquidGlassSupported);
+
+  if (liquidGlassSupported) {
     return (
       <LiquidGlassView
         {...viewProps}

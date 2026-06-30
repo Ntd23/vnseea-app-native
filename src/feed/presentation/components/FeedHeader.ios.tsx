@@ -11,7 +11,6 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Menu, MessageCircle, Search } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ROUTES } from '../../../navigation/constants/routes';
 import type {
@@ -96,22 +95,20 @@ export const FeedHeader = React.memo(function FeedHeader() {
             </HeaderGlassActionButton>
             <TouchableOpacity
               activeOpacity={0.82}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                marginLeft: 10,
-              }}
+              style={styles.brandLogoTouchable}
             >
-              {logoUrl && imageErrorCount === 0 ? (
-                <Image
-                  source={{ uri: logoUrl }}
-                  style={styles.logoImage}
-                  resizeMode="contain"
-                  onError={notifyImageError}
-                />
-              ) : (
-                <Text style={styles.brandText}>VNSEEA</Text>
-              )}
+              <View style={styles.logoPill}>
+                {logoUrl && imageErrorCount === 0 ? (
+                  <Image
+                    source={{ uri: logoUrl }}
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                    onError={notifyImageError}
+                  />
+                ) : (
+                  <Text style={styles.brandText}>VNSEEA</Text>
+                )}
+              </View>
             </TouchableOpacity>
           </View>
 
@@ -178,6 +175,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  brandLogoTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
   logoPill: {
     backgroundColor: '#002fff',
     borderRadius: 15,
@@ -198,7 +200,7 @@ const styles = StyleSheet.create({
   brandText: {
     fontSize: 21,
     fontWeight: '900',
-    color: '#002fff',
+    color: '#ffffff',
     letterSpacing: 0,
   },
   actions: {

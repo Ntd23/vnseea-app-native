@@ -8,5 +8,5 @@ declare module '@callstack/liquid-glass' {
   }
 
   export const LiquidGlassView: React.ComponentType<LiquidGlassViewProps>;
-  export function isLiquidGlassSupported(): boolean;
+  export const isLiquidGlassSupported: boolean | (() => boolean);
 }
