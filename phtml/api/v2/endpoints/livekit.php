@@ -243,6 +243,58 @@ function Wo_ApiLiveKitSendVoipPush($recipient, $notification_data, $caller_name,
     return Wo_ApiSendApnsVoipPush($recipient, $notification_data, $caller_name, $call_type, 'direct');
 }
 
+function Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status, $actor_id = 0) {
+    global $wo;
+    if (empty($call_source) || !is_array($call_source)) {
+        return;
+    }
+
+    $call_id = Wo_ApiLiveKitSourceId($call_source);
+    $from_id = intval(!empty($call_source['from_id']) ? $call_source['from_id'] : 0);
+    $to_id = intval(!empty($call_source['to_id']) ? $call_source['to_id'] : 0);
+    $actor_id = intval($actor_id);
+    $recipient_ids = array_values(array_unique(array_filter(array($from_id, $to_id), function ($user_id) use ($actor_id) {
+        return intval($user_id) > 0 && ($actor_id <= 0 || intval($user_id) !== $actor_id);
+    })));
+    if (empty($recipient_ids)) {
+        $recipient_ids = array_values(array_unique(array_filter(array($from_id, $to_id))));
+    }
+
+    $actor = $actor_id > 0 ? Wo_UserData($actor_id) : array();
+    $display_name = !empty($actor['name']) ? $actor['name'] : 'VNSEEA';
+    $notification_data = array(
+        'event_type' => 'livekit_call_closed',
+        'call_context' => 'direct',
+        'provider' => 'livekit',
+        'uuid' => Wo_ApiLiveKitCallUuid($call_id, $call_type),
+        'from_id' => (string) $from_id,
+        'to_id' => (string) $to_id,
+        'call_type' => $call_type,
+        'room_name' => !empty($call_source['room_name']) ? $call_source['room_name'] : '',
+        'call_id' => (string) $call_id,
+        'status' => $final_status,
+        'closed_by' => (string) $actor_id,
+        'expires_at' => (string) (time() + 20),
+        'api_url' => rtrim($wo['config']['site_url'], '/') . '/api/livekit'
+    );
+
+    foreach ($recipient_ids as $recipient_id) {
+        $recipient = Wo_UserData($recipient_id);
+        $sent = false;
+        if (!empty($recipient) && is_array($recipient)) {
+            $sent = Wo_ApiLiveKitSendVoipPush($recipient, $notification_data, $display_name, $call_type);
+        }
+        Wo_ApiLiveKitDebugLog('close_voip_push', array(
+            'call_id' => $call_id,
+            'call_type' => $call_type,
+            'status' => $final_status,
+            'actor_id' => $actor_id,
+            'recipient_id' => $recipient_id,
+            'sent' => $sent ? 1 : 0
+        ));
+    }
+}
+
 function Wo_ApiLiveKitVerifyActionToken($token) {
     $secret = Wo_ApiLiveKitActionSecret();
     if ($secret === '' || empty($token) || strpos($token, '.') === false) {
@@ -647,6 +699,7 @@ function Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, $actor
             'peer_id' => (string) $actor_id,
             'duration' => $duration
         ));
+        Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status, $actor_id);
     }
 
     return array(
@@ -735,6 +788,7 @@ else if ($action == 'check') {
                 'status_by' => $wo['user']['user_id']
             ));
             $call_status = 'no_answer';
+            Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, 'no_answer', intval($wo['user']['user_id']));
         }
         $call_source = Wo_GetCallSourceById($call_id, $call_type);
         $timing = Wo_ApiLiveKitTiming($call_source, $call_type);

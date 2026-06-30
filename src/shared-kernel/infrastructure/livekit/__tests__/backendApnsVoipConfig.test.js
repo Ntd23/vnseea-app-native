@@ -66,4 +66,16 @@ describe('backend APNs VoIP config wiring', () => {
     expect(livekit).not.toContain('https://api.push.apple.com/3/device/');
     expect(groupCall).not.toContain('https://api.push.apple.com/3/device/');
   });
+
+  it('sends a direct VoIP close push when a LiveKit call is cancelled, declined, ended, or no-answer', () => {
+    const livekit = read('phtml/api/v2/endpoints/livekit.php');
+
+    expect(livekit).toContain('function Wo_ApiLiveKitSendCloseVoipPush');
+    expect(livekit).toContain("'event_type' => 'livekit_call_closed'");
+    expect(livekit).toContain("'status' => $final_status");
+    expect(livekit).toContain("'closed_by' => (string) $actor_id");
+    expect(livekit).toContain('Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status, $actor_id)');
+    expect(livekit).toContain("Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, 'no_answer', intval($wo['user']['user_id']))");
+    expect(livekit).toContain("Wo_ApiLiveKitDebugLog('close_voip_push'");
+  });
 });

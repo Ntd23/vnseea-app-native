@@ -30,4 +30,30 @@ describe('incoming LiveKit calls native UI routing', () => {
     );
     expect(source).toContain('setActiveIncomingGroupCall(call);');
   });
+
+  it('clears stale custom incoming UI state when a native CallKit answer is consumed', () => {
+    const source = read(
+      'src/messages/application/view-models/useIncomingLiveKitCalls.ts',
+    );
+
+    expect(source).toContain('clearNativeAnsweredIncomingState');
+    expect(source).toContain('clearNativeAnsweredIncomingState();');
+  });
+
+  it('does not dismiss the iOS CallKit call before answer/join completes', () => {
+    const source = read(
+      'src/messages/application/view-models/useIncomingLiveKitCalls.ts',
+    );
+    const start = source.indexOf('const openIncomingCallRoom = useCallback');
+    const end = source.indexOf('const openIncomingGroupCallRoom = useCallback');
+    const block = source.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(block).toContain('answerIncomingCall(call)');
+    expect(source).toContain('const dismissAndroidIncomingCall = useCallback');
+    expect(source).toContain("Platform.OS !== 'android'");
+    expect(block).toContain('dismissAndroidIncomingCall(call.callId)');
+    expect(block).not.toContain('dismissNativeIncomingCall(call.callId);');
+  });
 });

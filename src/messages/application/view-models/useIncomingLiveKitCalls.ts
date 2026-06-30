@@ -133,25 +133,37 @@ export function useIncomingLiveKitCalls() {
     loadNativeCallService()?.dismissNativeIncomingCall?.(callId);
   }, []);
 
+  const dismissAndroidIncomingCall = useCallback(
+    (callId?: string) => {
+      if (Platform.OS !== 'android') return;
+      dismissNativeIncomingCall(callId);
+    },
+    [dismissNativeIncomingCall],
+  );
+
   const openIncomingCallRoom = useCallback(
     (call: IncomingLiveKitCall) => {
-      dismissNativeIncomingCall(call.callId);
+      dismissAndroidIncomingCall(call.callId);
       runWhenNavigationReady(() => {
-        answerIncomingCall(call);
-        navigationRef.navigate(ROUTES.CALL_ROOM, {
-          callId: call.callId,
-          callType: call.callType,
-          direction: 'incoming',
-          peer: call.peer,
-        });
+        answerIncomingCall(call)
+          .then(didAnswer => {
+            if (!didAnswer) return;
+            navigationRef.navigate(ROUTES.CALL_ROOM, {
+              callId: call.callId,
+              callType: call.callType,
+              direction: 'incoming',
+              peer: call.peer,
+            });
+          })
+          .catch(() => undefined);
       });
     },
-    [answerIncomingCall, dismissNativeIncomingCall, runWhenNavigationReady],
+    [answerIncomingCall, dismissAndroidIncomingCall, runWhenNavigationReady],
   );
 
   const openIncomingGroupCallRoom = useCallback(
     (call: IncomingGroupLiveKitCall) => {
-      dismissNativeIncomingCall(call.callId);
+      dismissAndroidIncomingCall(call.callId);
       runWhenNavigationReady(() => {
         answerIncomingGroupCall(call);
         navigationRef.navigate(ROUTES.GROUP_CALL_ROOM, {
@@ -164,7 +176,7 @@ export function useIncomingLiveKitCalls() {
         });
       });
     },
-    [answerIncomingGroupCall, dismissNativeIncomingCall, runWhenNavigationReady],
+    [answerIncomingGroupCall, dismissAndroidIncomingCall, runWhenNavigationReady],
   );
 
   const acceptIncomingCall = useCallback(() => {
@@ -216,6 +228,11 @@ export function useIncomingLiveKitCalls() {
     dismissNativeIncomingCall,
     setActiveIncomingGroupCall,
   ]);
+
+  const clearNativeAnsweredIncomingState = useCallback(() => {
+    setActiveIncomingCall(null);
+    setActiveIncomingGroupCall(null);
+  }, [setActiveIncomingCall, setActiveIncomingGroupCall]);
 
   const shouldIgnoreIncomingSignal = useCallback(() => {
     if (!navigationRef.isReady()) return true;
@@ -356,6 +373,7 @@ export function useIncomingLiveKitCalls() {
       onIncoming: handleIncomingCallSignal,
       onIncomingGroup: handleIncomingGroupCallSignal,
       onAnswer(callUuid) {
+        clearNativeAnsweredIncomingState();
         const nativeCall = nativeCallService.getNativeCall(callUuid);
         if (!nativeCall?.callId || !navigationRef.isReady()) return;
         if (nativeCall.context === 'group') {
@@ -476,6 +494,7 @@ export function useIncomingLiveKitCalls() {
   }, [
     answerIncomingCall,
     answerIncomingGroupCall,
+    clearNativeAnsweredIncomingState,
     clearIncomingCallTimers,
     endCall,
     groupRepository,

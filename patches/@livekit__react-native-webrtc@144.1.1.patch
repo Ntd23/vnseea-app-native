@@ -1,0 +1,139 @@
+diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDeviceModuleObserver.m
+--- a/ios/RCTWebRTC/AudioDeviceModuleObserver.m
++++ b/ios/RCTWebRTC/AudioDeviceModuleObserver.m
+@@ -1,4 +1,5 @@
+ #import "AudioDeviceModuleObserver.h"
++#import <AVFoundation/AVFoundation.h>
+ #import <React/RCTLog.h>
+ #import <os/log.h>
+ 
+@@ -27,8 +28,107 @@ static os_log_t ADMObserverLog(void) {
+         log = os_log_create("com.livekit.react-native-webrtc", "AudioDeviceModuleObserver");
+     });
+     return log;
++}
++
++static NSString *VNSEEAPortTypesForAudioSessionPorts(NSArray<AVAudioSessionPortDescription *> *ports) {
++    NSMutableArray<NSString *> *portTypes = [NSMutableArray array];
++    for (AVAudioSessionPortDescription *port in ports) {
++        if (port.portType != nil) {
++            [portTypes addObject:port.portType];
++        }
++    }
++    return [portTypes componentsJoinedByString:@","];
++}
++
++static NSString *VNSEEARecordPermissionName(AVAudioSessionRecordPermission permission) {
++    switch (permission) {
++        case AVAudioSessionRecordPermissionGranted:
++            return @"granted";
++        case AVAudioSessionRecordPermissionDenied:
++            return @"denied";
++        case AVAudioSessionRecordPermissionUndetermined:
++        default:
++            return @"undetermined";
++    }
++}
++
++static void VNSEEALogWebRTCAudioSessionState(
++    NSString *event,
++    BOOL isPlayoutEnabled,
++    BOOL isRecordingEnabled,
++    NSError *error) {
++    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
++    AVAudioSessionRouteDescription *route = audioSession.currentRoute;
++    NSLog(
++        @"[VNSEEA_CALL_DEBUG] {\"event\":\"%@\",\"isPlayoutEnabled\":%@,\"isRecordingEnabled\":%@,\"category\":\"%@\",\"mode\":\"%@\",\"inputAvailable\":%@,\"recordPermission\":\"%@\",\"sampleRate\":%.0f,\"ioBufferDuration\":%.4f,\"inputs\":\"%@\",\"outputs\":\"%@\",\"error\":\"%@\"}",
++        event,
++        isPlayoutEnabled ? @"true" : @"false",
++        isRecordingEnabled ? @"true" : @"false",
++        audioSession.category ?: @"",
++        audioSession.mode ?: @"",
++        audioSession.isInputAvailable ? @"true" : @"false",
++        VNSEEARecordPermissionName(audioSession.recordPermission),
++        audioSession.sampleRate,
++        audioSession.IOBufferDuration,
++        VNSEEAPortTypesForAudioSessionPorts(route.inputs),
++        VNSEEAPortTypesForAudioSessionPorts(route.outputs),
++        error.localizedDescription ?: @"");
++}
++
++static BOOL VNSEEAShouldUseVoiceCallAudioSession(BOOL isRecordingEnabled) {
++    if (isRecordingEnabled) {
++        return YES;
++    }
++
++    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
++    return [audioSession.category isEqualToString:AVAudioSessionCategoryPlayAndRecord] &&
++        [audioSession.mode isEqualToString:AVAudioSessionModeVoiceChat];
+ }
+ 
++static void VNSEEAConfigureAudioSessionForEngine(BOOL isPlayoutEnabled, BOOL isRecordingEnabled) {
++    if (!VNSEEAShouldUseVoiceCallAudioSession(isRecordingEnabled)) {
++        return;
++    }
++
++    NSError *error = nil;
++    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
++    AVAudioSessionCategoryOptions categoryOptions =
++        AVAudioSessionCategoryOptionAllowBluetooth |
++        AVAudioSessionCategoryOptionDefaultToSpeaker |
++        AVAudioSessionCategoryOptionMixWithOthers;
++
++    if (![audioSession setCategory:AVAudioSessionCategoryPlayAndRecord
++                       withOptions:categoryOptions
++                             error:&error]) {
++        VNSEEALogWebRTCAudioSessionState(
++            @"native_webrtc_audio_session_config_error", isPlayoutEnabled, isRecordingEnabled, error);
++        return;
++    }
++    if (![audioSession setMode:AVAudioSessionModeVoiceChat error:&error]) {
++        VNSEEALogWebRTCAudioSessionState(
++            @"native_webrtc_audio_session_config_error", isPlayoutEnabled, isRecordingEnabled, error);
++        return;
++    }
++    if (![audioSession setPreferredSampleRate:48000.0 error:&error]) {
++        VNSEEALogWebRTCAudioSessionState(
++            @"native_webrtc_audio_session_config_error", isPlayoutEnabled, isRecordingEnabled, error);
++        return;
++    }
++    if (![audioSession setPreferredIOBufferDuration:0.01 error:&error]) {
++        VNSEEALogWebRTCAudioSessionState(
++            @"native_webrtc_audio_session_config_error", isPlayoutEnabled, isRecordingEnabled, error);
++        return;
++    }
++    if (![audioSession setActive:YES error:&error]) {
++        VNSEEALogWebRTCAudioSessionState(
++            @"native_webrtc_audio_session_config_error", isPlayoutEnabled, isRecordingEnabled, error);
++        return;
++    }
++
++    VNSEEALogWebRTCAudioSessionState(
++        @"native_webrtc_audio_session_configured", isPlayoutEnabled, isRecordingEnabled, nil);
++}
++
+ @interface AudioDeviceModuleObserver ()
+ 
+ @property(weak, nonatomic) WebRTCModule *module;
+@@ -186,6 +286,10 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
+               isPlayoutEnabled:(BOOL)isPlayoutEnabled
+             isRecordingEnabled:(BOOL)isRecordingEnabled {
+     BOOL isActive = self.isWillEnableEngineActive;
++
++    VNSEEALogWebRTCAudioSessionState(
++        @"native_webrtc_audio_engine_will_enable", isPlayoutEnabled, isRecordingEnabled, nil);
++    VNSEEAConfigureAudioSessionForEngine(isPlayoutEnabled, isRecordingEnabled);
+ 
+     if (isActive) {
+         RCTLog(@"[AudioDeviceModuleObserver] Engine will enable - playout: %d, recording: %d - waiting for JS response",
+@@ -220,6 +324,10 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
+             isRecordingEnabled:(BOOL)isRecordingEnabled {
+     BOOL isActive = self.isWillStartEngineActive;
+ 
++    VNSEEALogWebRTCAudioSessionState(
++        @"native_webrtc_audio_engine_will_start", isPlayoutEnabled, isRecordingEnabled, nil);
++    VNSEEAConfigureAudioSessionForEngine(isPlayoutEnabled, isRecordingEnabled);
++
+     if (isActive) {
+         RCTLog(@"[AudioDeviceModuleObserver] Engine will start - playout: %d, recording: %d - waiting for JS response",
+                isPlayoutEnabled,

@@ -38,10 +38,11 @@ describe('iOS PushKit and APNs entitlement wiring', () => {
     expect(project).toContain('APS_ENVIRONMENT = production;');
   });
 
-  it('keeps VoIP and remote notification background modes enabled', () => {
+  it('keeps audio, VoIP, and remote notification background modes enabled', () => {
     const plist = read('ios/VNSEEA/Info.plist');
 
     expect(plist).toContain('<key>UIBackgroundModes</key>');
+    expect(plist).toContain('<string>audio</string>');
     expect(plist).toContain('<string>voip</string>');
     expect(plist).toContain('<string>remote-notification</string>');
   });
