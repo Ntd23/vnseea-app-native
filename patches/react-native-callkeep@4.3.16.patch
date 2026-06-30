@@ -25,3 +25,204 @@ index c78c45810e9d30fc063c7fec21bfbd45ac2edbae..2f71f1f495fc759394fc1c5519742c84
      public void startCall(String uuid, String number, String callerName) {
          this.startCall(uuid, number, callerName, false, null);
      }
+diff --git a/ios/RNCallKeep/RNCallKeep.m b/ios/RNCallKeep/RNCallKeep.m
+--- a/ios/RNCallKeep/RNCallKeep.m
++++ b/ios/RNCallKeep/RNCallKeep.m
+@@ -16,6 +16,7 @@
+ 
+ #import <AVFoundation/AVAudioSession.h>
+ #import <CallKit/CallKit.h>
++#import <objc/message.h>
+ 
+ #ifdef DEBUG
+ static int const OUTGOING_CALL_WAKEUP_DELAY = 10;
+@@ -37,6 +38,114 @@ static NSString *const RNCallKeepProviderReset = @"RNCallKeepProviderReset";
+ static NSString *const RNCallKeepCheckReachability = @"RNCallKeepCheckReachability";
+ static NSString *const RNCallKeepDidChangeAudioRoute = @"RNCallKeepDidChangeAudioRoute";
+ static NSString *const RNCallKeepDidLoadWithEvents = @"RNCallKeepDidLoadWithEvents";
++
++static NSString *VNSEEAPortTypesForAudioSessionPorts(NSArray<AVAudioSessionPortDescription *> *ports) {
++    NSMutableArray<NSString *> *portTypes = [NSMutableArray array];
++    for (AVAudioSessionPortDescription *port in ports) {
++        if (port.portType != nil) {
++            [portTypes addObject:port.portType];
++        }
++    }
++    return [portTypes componentsJoinedByString:@","];
++}
++
++static NSString *VNSEEARecordPermissionName(AVAudioSessionRecordPermission permission) {
++    switch (permission) {
++        case AVAudioSessionRecordPermissionGranted:
++            return @"granted";
++        case AVAudioSessionRecordPermissionDenied:
++            return @"denied";
++        case AVAudioSessionRecordPermissionUndetermined:
++        default:
++            return @"undetermined";
++    }
++}
++
++static void VNSEEALogAudioSessionState(NSString *event, NSError *error) {
++    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
++    AVAudioSessionRouteDescription *route = audioSession.currentRoute;
++    NSLog(
++        @"[VNSEEA_CALL_DEBUG] {\"event\":\"%@\",\"category\":\"%@\",\"mode\":\"%@\",\"inputAvailable\":%@,\"recordPermission\":\"%@\",\"sampleRate\":%.0f,\"ioBufferDuration\":%.4f,\"inputs\":\"%@\",\"outputs\":\"%@\",\"error\":\"%@\"}",
++        event,
++        audioSession.category ?: @"",
++        audioSession.mode ?: @"",
++        audioSession.isInputAvailable ? @"true" : @"false",
++        VNSEEARecordPermissionName(audioSession.recordPermission),
++        audioSession.sampleRate,
++        audioSession.IOBufferDuration,
++        VNSEEAPortTypesForAudioSessionPorts(route.inputs),
++        VNSEEAPortTypesForAudioSessionPorts(route.outputs),
++        error.localizedDescription ?: @"");
++}
++
++static void VNSEEABridgeRTCAudioSession(SEL selector, AVAudioSession *audioSession, NSString *successEvent, NSString *errorEvent) {
++    Class rtcAudioSessionClass = NSClassFromString(@"RTCAudioSession");
++    SEL sharedInstanceSelector = NSSelectorFromString(@"sharedInstance");
++    if (rtcAudioSessionClass == nil || ![rtcAudioSessionClass respondsToSelector:sharedInstanceSelector]) {
++        VNSEEALogAudioSessionState(errorEvent, nil);
++        return;
++    }
++
++    id (*sharedInstance)(id, SEL) = (id (*)(id, SEL))objc_msgSend;
++    id rtcAudioSession = sharedInstance(rtcAudioSessionClass, sharedInstanceSelector);
++    if (rtcAudioSession == nil || ![rtcAudioSession respondsToSelector:selector]) {
++        VNSEEALogAudioSessionState(errorEvent, nil);
++        return;
++    }
++
++    void (*bridgeCall)(id, SEL, AVAudioSession *) = (void (*)(id, SEL, AVAudioSession *))objc_msgSend;
++    bridgeCall(rtcAudioSession, selector, audioSession);
++    VNSEEALogAudioSessionState(successEvent, nil);
++}
++
++static void VNSEEABridgeRTCAudioSessionDidActivate(AVAudioSession *audioSession) {
++    VNSEEABridgeRTCAudioSession(
++        NSSelectorFromString(@"audioSessionDidActivate:"),
++        audioSession,
++        @"native_callkit_audio_session_activated",
++        @"native_callkit_audio_session_activate_error");
++}
++
++static void VNSEEABridgeRTCAudioSessionDidDeactivate(AVAudioSession *audioSession) {
++    VNSEEABridgeRTCAudioSession(
++        NSSelectorFromString(@"audioSessionDidDeactivate:"),
++        audioSession,
++        @"native_callkit_audio_session_deactivated",
++        @"native_callkit_audio_session_deactivate_error");
++}
++
++static void VNSEEAConfigureCallKitAudioSession(AVAudioSession *audioSession) {
++    NSError *error = nil;
++    AVAudioSessionCategoryOptions categoryOptions =
++        AVAudioSessionCategoryOptionAllowBluetooth |
++        AVAudioSessionCategoryOptionDefaultToSpeaker |
++        AVAudioSessionCategoryOptionMixWithOthers;
++
++    if (![audioSession setCategory:AVAudioSessionCategoryPlayAndRecord
++                       withOptions:categoryOptions
++                             error:&error]) {
++        VNSEEALogAudioSessionState(@"native_callkit_audio_session_config_error", error);
++        return;
++    }
++    if (![audioSession setMode:AVAudioSessionModeVoiceChat error:&error]) {
++        VNSEEALogAudioSessionState(@"native_callkit_audio_session_config_error", error);
++        return;
++    }
++    if (![audioSession setPreferredSampleRate:48000.0 error:&error]) {
++        VNSEEALogAudioSessionState(@"native_callkit_audio_session_config_error", error);
++        return;
++    }
++    if (![audioSession setPreferredIOBufferDuration:0.01 error:&error]) {
++        VNSEEALogAudioSessionState(@"native_callkit_audio_session_config_error", error);
++        return;
++    }
++    if (![audioSession setActive:YES error:&error]) {
++        VNSEEALogAudioSessionState(@"native_callkit_audio_session_config_error", error);
++        return;
++    }
++
++    VNSEEALogAudioSessionState(@"native_callkit_audio_session_configured", nil);
++}
+ 
+ @implementation RNCallKeep
+ {
+@@ -915,10 +1024,12 @@ - (void)configureAudioSession
+ #ifdef DEBUG
+     NSLog(@"[RNCallKeep][configureAudioSession] Activating audio session");
+ #endif
++    AVAudioSessionCategoryOptions categoryOptions =
++        AVAudioSessionCategoryOptionAllowBluetooth |
++        AVAudioSessionCategoryOptionDefaultToSpeaker |
++        AVAudioSessionCategoryOptionMixWithOthers;
++    NSString *mode = AVAudioSessionModeVoiceChat;
+ 
+-    NSUInteger categoryOptions = AVAudioSessionCategoryOptionAllowBluetooth | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+-    NSString *mode = AVAudioSessionModeDefault;
+-
+     NSDictionary *settings = [RNCallKeep getSettings];
+     if (settings && settings[@"audioSession"]) {
+         if (settings[@"audioSession"][@"categoryOptions"]) {
+@@ -931,16 +1042,33 @@ - (void)configureAudioSession
+     }
+ 
+     AVAudioSession* audioSession = [AVAudioSession sharedInstance];
+-    [audioSession setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:categoryOptions error:nil];
++    NSError *error = nil;
++    if (![audioSession setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:categoryOptions error:&error]) {
++        VNSEEALogAudioSessionState(@"native_callkit_audio_session_config_error", error);
++        return;
++    }
+ 
+-    [audioSession setMode:mode error:nil];
++    if (![audioSession setMode:mode error:&error]) {
++        VNSEEALogAudioSessionState(@"native_callkit_audio_session_config_error", error);
++        return;
++    }
+ 
+-    double sampleRate = 44100.0;
+-    [audioSession setPreferredSampleRate:sampleRate error:nil];
++    double sampleRate = 48000.0;
++    if (![audioSession setPreferredSampleRate:sampleRate error:&error]) {
++        VNSEEALogAudioSessionState(@"native_callkit_audio_session_config_error", error);
++        return;
++    }
+ 
+-    NSTimeInterval bufferDuration = .005;
+-    [audioSession setPreferredIOBufferDuration:bufferDuration error:nil];
+-    [audioSession setActive:TRUE error:nil];
++    NSTimeInterval bufferDuration = 0.01;
++    if (![audioSession setPreferredIOBufferDuration:bufferDuration error:&error]) {
++        VNSEEALogAudioSessionState(@"native_callkit_audio_session_config_error", error);
++        return;
++    }
++    if (![audioSession setActive:YES error:&error]) {
++        VNSEEALogAudioSessionState(@"native_callkit_audio_session_config_error", error);
++        return;
++    }
++    VNSEEALogAudioSessionState(@"native_callkit_audio_session_configured", nil);
+ }
+ 
+ + (BOOL)application:(UIApplication *)application
+@@ -1142,7 +1270,8 @@ - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession
+     };
+     [[NSNotificationCenter defaultCenter] postNotificationName:AVAudioSessionInterruptionNotification object:nil userInfo:userInfo];
+ 
+-    [self configureAudioSession];
++    VNSEEAConfigureCallKitAudioSession(audioSession);
++    VNSEEABridgeRTCAudioSessionDidActivate(audioSession);
+     [self sendEventWithNameWrapper:RNCallKeepDidActivateAudioSession body:nil];
+ }
+ 
+@@ -1151,6 +1280,7 @@ - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSessio
+ #ifdef DEBUG
+     NSLog(@"[RNCallKeep][CXProviderDelegate][provider:didDeactivateAudioSession]");
+ #endif
++    VNSEEABridgeRTCAudioSessionDidDeactivate(audioSession);
+     [self sendEventWithNameWrapper:RNCallKeepDidDeactivateAudioSession body:nil];
+ }
+ 

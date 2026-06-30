@@ -1,0 +1,102 @@
+diff -ruN package/ios/Video/AudioSessionManager.swift package-current/ios/Video/AudioSessionManager.swift
+--- package/ios/Video/AudioSessionManager.swift	1985-10-26 15:15:00
++++ package-current/ios/Video/AudioSessionManager.swift	2026-06-29 23:40:07
+@@ -45,6 +45,24 @@
+         NotificationCenter.default.removeObserver(self)
+     }
+ 
++    private func isVnseeaCallKitVoiceSessionActive(_ audioSession: AVAudioSession = AVAudioSession.sharedInstance()) -> Bool {
++        return audioSession.category == AVAudioSession.Category.playAndRecord &&
++            audioSession.mode == AVAudioSession.Mode.voiceChat
++    }
++
++    private func logVnseeaVoiceSessionSkip(_ event: String) {
++        let audioSession = AVAudioSession.sharedInstance()
++        NSLog(
++            "[VNSEEA_CALL_DEBUG] {\"event\":\"%@\",\"category\":\"%@\",\"mode\":\"%@\",\"inputAvailable\":%@,\"sampleRate\":%.0f,\"ioBufferDuration\":%.4f}",
++            event,
++            audioSession.category.rawValue,
++            audioSession.mode.rawValue,
++            audioSession.isInputAvailable ? "true" : "false",
++            audioSession.sampleRate,
++            audioSession.ioBufferDuration
++        )
++    }
++
+     // MARK: - Public API
+ 
+     func setIsAudioSessionManagementForcedDisabled(disabled: Bool) {
+@@ -74,6 +92,11 @@
+     }
+ 
+     func updateAudioSessionConfiguration() {
++        if isVnseeaCallKitVoiceSessionActive() {
++            logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_update")
++            return
++        }
++
+         // Activate audio session if needed
+         let isAnyPlayerPlaying = videoViews.allObjects.contains { view in
+             return !view.isMuted() && view._player != nil && view._player?.rate != 0
+@@ -124,6 +147,11 @@
+     private func configureForRemoteControlEvents() {
+         let audioSession = AVAudioSession.sharedInstance()
+ 
++        if isVnseeaCallKitVoiceSessionActive(audioSession) {
++            logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_remote_controls")
++            return
++        }
++
+         do {
+             // Remote control events always need playback category
+             try audioSession.setCategory(.playback, mode: .moviePlayback)
+@@ -139,6 +167,11 @@
+         let audioSession = AVAudioSession.sharedInstance()
+         var options: AVAudioSession.CategoryOptions = []
+ 
++        if isVnseeaCallKitVoiceSessionActive(audioSession) {
++            logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_configure")
++            return
++        }
++
+         // Check player properties
+         let anyPlayerShowNotificationControls = videoViews.allObjects.contains { view in
+             return view._showNotificationControls
+@@ -291,6 +324,12 @@
+             return
+         }
+ 
++        if isVnseeaCallKitVoiceSessionActive() {
++            logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_activate")
++            isAudioSessionActive = false
++            return
++        }
++
+         do {
+             try AVAudioSession.sharedInstance().setActive(true)
+             isAudioSessionActive = true
+@@ -304,6 +343,12 @@
+             return
+         }
+ 
++        if isVnseeaCallKitVoiceSessionActive() {
++            logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_deactivate")
++            isAudioSessionActive = false
++            return
++        }
++
+         do {
+             try AVAudioSession.sharedInstance().setActive(
+                 false, options: .notifyOthersOnDeactivation
+@@ -355,6 +400,11 @@
+ 
+         switch reason {
+         case .categoryChange, .override, .wakeFromSleep, .newDeviceAvailable, .oldDeviceUnavailable:
++            if isVnseeaCallKitVoiceSessionActive() {
++                logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_route_change")
++                return
++            }
++
+             // Reconfigure audio session when route changes
+             updateAudioSessionConfiguration()
+         default:

@@ -19,6 +19,31 @@ function Wo_ApiLiveKitError($error_id, $error_text, $api_status = 400) {
     );
 }
 
+function Wo_ApiLiveKitDebugLog($type, $fields = array()) {
+    $parts = array('[vnseea_call_debug]', 'type=' . $type);
+    if (!empty($fields) && is_array($fields)) {
+        foreach ($fields as $key => $value) {
+            if (is_array($value) || is_object($value)) {
+                $value = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+            $value = str_replace(array("\n", "\r"), ' ', (string) $value);
+            $parts[] = $key . '=' . $value;
+        }
+    }
+    $line = implode(' ', $parts);
+    error_log($line);
+
+    $log_dir = realpath(__DIR__ . '/../../../xhr/logs');
+    if ($log_dir === false) {
+        $log_dir = __DIR__ . '/../../../xhr/logs';
+        if (!is_dir($log_dir)) {
+            @mkdir($log_dir, 0755, true);
+        }
+    }
+    $log_file = rtrim($log_dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'vnseea_call_debug.log';
+    @file_put_contents($log_file, date('c') . ' ' . $line . PHP_EOL, FILE_APPEND | LOCK_EX);
+}
+
 function Wo_ApiLiveKitCallType($value) {
     return ($value === 'audio') ? 'audio' : 'video';
 }
@@ -212,57 +237,62 @@ function Wo_ApiLiveKitUserColumnExists($column) {
 }
 
 function Wo_ApiLiveKitSendVoipPush($recipient, $notification_data, $caller_name, $call_type) {
+    if (!function_exists('Wo_ApiSendApnsVoipPush')) {
+        return false;
+    }
+    return Wo_ApiSendApnsVoipPush($recipient, $notification_data, $caller_name, $call_type, 'direct');
+}
+
+function Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status, $actor_id = 0) {
     global $wo;
-    if (empty($recipient['ios_voip_token'])) {
-        return false;
+    if (empty($call_source) || !is_array($call_source)) {
+        return;
     }
-    $team_id = !empty($wo['config']['ios_voip_team_id']) ? trim($wo['config']['ios_voip_team_id']) : '';
-    $key_id = !empty($wo['config']['ios_voip_key_id']) ? trim($wo['config']['ios_voip_key_id']) : '';
-    $bundle_id = !empty($wo['config']['ios_voip_bundle_id']) ? trim($wo['config']['ios_voip_bundle_id']) : '';
-    $key_path = !empty($wo['config']['ios_voip_private_key_path']) ? trim($wo['config']['ios_voip_private_key_path']) : '';
-    if ($team_id === '' || $key_id === '' || $bundle_id === '' || $key_path === '' || !class_exists('\\Firebase\\JWT\\JWT')) {
-        return false;
+
+    $call_id = Wo_ApiLiveKitSourceId($call_source);
+    $from_id = intval(!empty($call_source['from_id']) ? $call_source['from_id'] : 0);
+    $to_id = intval(!empty($call_source['to_id']) ? $call_source['to_id'] : 0);
+    $actor_id = intval($actor_id);
+    $recipient_ids = array_values(array_unique(array_filter(array($from_id, $to_id), function ($user_id) use ($actor_id) {
+        return intval($user_id) > 0 && ($actor_id <= 0 || intval($user_id) !== $actor_id);
+    })));
+    if (empty($recipient_ids)) {
+        $recipient_ids = array_values(array_unique(array_filter(array($from_id, $to_id))));
     }
-    if (!file_exists($key_path)) {
-        return false;
+
+    $actor = $actor_id > 0 ? Wo_UserData($actor_id) : array();
+    $display_name = !empty($actor['name']) ? $actor['name'] : 'VNSEEA';
+    $notification_data = array(
+        'event_type' => 'livekit_call_closed',
+        'call_context' => 'direct',
+        'provider' => 'livekit',
+        'uuid' => Wo_ApiLiveKitCallUuid($call_id, $call_type),
+        'from_id' => (string) $from_id,
+        'to_id' => (string) $to_id,
+        'call_type' => $call_type,
+        'room_name' => !empty($call_source['room_name']) ? $call_source['room_name'] : '',
+        'call_id' => (string) $call_id,
+        'status' => $final_status,
+        'closed_by' => (string) $actor_id,
+        'expires_at' => (string) (time() + 20),
+        'api_url' => rtrim($wo['config']['site_url'], '/') . '/api/livekit'
+    );
+
+    foreach ($recipient_ids as $recipient_id) {
+        $recipient = Wo_UserData($recipient_id);
+        $sent = false;
+        if (!empty($recipient) && is_array($recipient)) {
+            $sent = Wo_ApiLiveKitSendVoipPush($recipient, $notification_data, $display_name, $call_type);
+        }
+        Wo_ApiLiveKitDebugLog('close_voip_push', array(
+            'call_id' => $call_id,
+            'call_type' => $call_type,
+            'status' => $final_status,
+            'actor_id' => $actor_id,
+            'recipient_id' => $recipient_id,
+            'sent' => $sent ? 1 : 0
+        ));
     }
-    $private_key = file_get_contents($key_path);
-    if (empty($private_key)) {
-        return false;
-    }
-    $jwt = \Firebase\JWT\JWT::encode(array(
-        'iss' => $team_id,
-        'iat' => time()
-    ), $private_key, 'ES256', $key_id);
-    $payload = array_merge($notification_data, array(
-        'aps' => array(
-            'alert' => array(
-                'title' => $caller_name,
-                'body' => ($call_type == 'video') ? 'Video call' : 'Audio call'
-            ),
-            'sound' => 'default',
-            'content-available' => 1
-        )
-    ));
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, 'https://api.push.apple.com/3/device/' . rawurlencode($recipient['ios_voip_token']));
-    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-        'authorization: bearer ' . $jwt,
-        'apns-topic: ' . $bundle_id . '.voip',
-        'apns-push-type: voip',
-        'apns-priority: 10',
-        'content-type: application/json'
-    ));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-    curl_exec($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    return $status >= 200 && $status < 300;
 }
 
 function Wo_ApiLiveKitVerifyActionToken($token) {
@@ -546,6 +576,21 @@ function Wo_ApiLiveKitBuildPayload($call_id, $call_type) {
             'canPublishData' => true
         )
     );
+    Wo_ApiLiveKitDebugLog('payload', array(
+        'user_id' => $user_id,
+        'call_id' => $call_id,
+        'call_type' => $call_type,
+        'raw_room_name' => $room_request,
+        'livekit_room' => $room_name,
+        'token_room' => $payload['video']['room'],
+        'status' => $call_status,
+        'active' => $call_active,
+        'started_at' => $timing['started_at'],
+        'started_at_ms' => $timing['started_at_ms'],
+        'elapsed' => $timing['elapsed'],
+        'elapsed_ms' => $timing['elapsed_ms'],
+        'ws_url' => $ws_url
+    ));
 
     return array_merge(array(
         'api_status' => 200,
@@ -600,6 +645,19 @@ function Wo_ApiLiveKitAnswerCall($call_id, $call_type, $actor_id) {
 
     $answered_source = Wo_GetCallSourceById($call_id, $call_type);
     $timing = Wo_ApiLiveKitTiming($answered_source, $call_type);
+    Wo_ApiLiveKitDebugLog('answer', array(
+        'call_id' => $call_id,
+        'call_type' => $call_type,
+        'actor_id' => $actor_id,
+        'affected_rows' => $answered_rows,
+        'already_answered' => $already_answered ? 1 : 0,
+        'status' => !empty($answered_source['status']) ? $answered_source['status'] : '',
+        'active' => intval(!empty($answered_source['active']) ? $answered_source['active'] : 0),
+        'started_at' => $timing['started_at'],
+        'started_at_ms' => $timing['started_at_ms'],
+        'elapsed' => $timing['elapsed'],
+        'elapsed_ms' => $timing['elapsed_ms']
+    ));
     Wo_ApiLiveKitPublishRealtime('answered', $answered_source, $call_type, array_merge(array(
         'status' => 'answered',
         'active' => true,
@@ -641,6 +699,7 @@ function Wo_ApiLiveKitCloseCall($call_id, $call_type, $status, $duration, $actor
             'peer_id' => (string) $actor_id,
             'duration' => $duration
         ));
+        Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, $final_status, $actor_id);
     }
 
     return array(
@@ -729,9 +788,21 @@ else if ($action == 'check') {
                 'status_by' => $wo['user']['user_id']
             ));
             $call_status = 'no_answer';
+            Wo_ApiLiveKitSendCloseVoipPush($call_source, $call_type, 'no_answer', intval($wo['user']['user_id']));
         }
         $call_source = Wo_GetCallSourceById($call_id, $call_type);
         $timing = Wo_ApiLiveKitTiming($call_source, $call_type);
+        Wo_ApiLiveKitDebugLog('check', array(
+            'user_id' => intval($wo['user']['user_id']),
+            'call_id' => $call_id,
+            'call_type' => $call_type,
+            'status' => $call_status,
+            'active' => intval(!empty($call_source['active']) ? $call_source['active'] : 0),
+            'started_at' => $timing['started_at'],
+            'started_at_ms' => $timing['started_at_ms'],
+            'elapsed' => $timing['elapsed'],
+            'elapsed_ms' => $timing['elapsed_ms']
+        ));
         $response_data = array_merge(array(
             'api_status' => 200,
             'call_id' => (string) $call_id,

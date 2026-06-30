@@ -5,6 +5,7 @@ import React_RCTAppDelegate
 import ReactAppDependencyProvider
 import livekit_react_native
 import PushKit
+import AVFoundation
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
@@ -44,8 +45,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
       "maximumCallGroups": "1",
       "maximumCallsPerCallGroup": "8",
       "supportsVideo": true,
-      "ringtoneSound": "incoming_call_ringtone.mp3",
       "includesCallsInRecents": false,
+      "audioSession": [
+        "categoryOptions": Int(AVAudioSession.CategoryOptions([
+          .allowBluetoothHFP,
+          .defaultToSpeaker,
+        ]).rawValue),
+        "mode": AVAudioSession.Mode.voiceChat.rawValue,
+      ],
     ])
     RNVoipPushNotificationManager.voipRegistration()
   }
@@ -69,6 +76,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
   ) {
     let data = payload.dictionaryPayload
     let uuid = nativeCallUuid(from: data)
+    if isClosedLiveKitCallPush(data) {
+      RNVoipPushNotificationManager.didReceiveIncomingPush(with: payload, forType: type.rawValue)
+      completion()
+      return
+    }
     let callType = stringValue(data["call_type"])
     let isGroupCall = stringValue(data["event_type"]) == "livekit_group_call" || stringValue(data["call_context"]) == "group"
     let groupName = stringValue(data["group_name"])
@@ -106,6 +118,28 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
       return uuid
     }
     return UUID().uuidString.lowercased()
+  }
+
+  private func isClosedLiveKitCallPush(_ payload: [AnyHashable: Any]) -> Bool {
+    let eventType = stringValue(payload["event_type"]).lowercased()
+    let status = stringValue(payload["status"]).lowercased()
+    let closedEventTypes: Set<String> = [
+      "livekit_call_closed",
+      "livekit_call_cancelled",
+      "livekit_call_canceled",
+      "livekit_call_declined",
+      "livekit_group_call_closed",
+    ]
+    let closedStatuses: Set<String> = [
+      "ended",
+      "cancelled",
+      "canceled",
+      "declined",
+      "no_answer",
+      "missed",
+      "closed",
+    ]
+    return closedEventTypes.contains(eventType) || closedStatuses.contains(status)
   }
 
   private func stringValue(_ value: Any?) -> String {

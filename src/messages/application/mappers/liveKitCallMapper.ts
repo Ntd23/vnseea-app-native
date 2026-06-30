@@ -37,6 +37,10 @@ function resolveBoolean(value: unknown) {
   return value === true || value === 1 || value === '1';
 }
 
+function resolveExplicitFalse(value: unknown) {
+  return value === false || value === 0 || value === '0' || value === 'false';
+}
+
 export function normalizeLiveKitCallType(value: unknown): LiveKitCallType {
   return value === 'audio' ? 'audio' : 'video';
 }
@@ -138,15 +142,33 @@ export function mapLiveKitCheckResponse(
 
 export function mapLiveKitJoinPayload(response: unknown): LiveKitJoinPayload {
   const raw = asRecord(response);
+  if (resolveExplicitFalse(raw.join_ready)) {
+    const message = resolveString(raw.message || raw.error);
+    throw new Error(
+      message
+        ? `LiveKit join payload is not ready: ${message}`
+        : 'LiveKit join payload is not ready.',
+    );
+  }
+
   const livekit = asRecord(raw.livekit);
   const serverNow = resolveNumber(raw.server_now);
   const elapsedSeconds = resolveNumber(raw.elapsed);
+  const call = mapCallSummary(raw.call);
+  const wsUrl = resolveString(livekit.ws_url);
+  const token = resolveString(livekit.token);
+  if (!wsUrl || !token || !call.roomName) {
+    throw new Error(
+      'Missing LiveKit join payload: wsUrl, token, and roomName are required.',
+    );
+  }
+
   return {
-    call: mapCallSummary(raw.call),
+    call,
     currentUser: mapLiveKitPeer(raw.current_user),
     peer: mapLiveKitPeer(raw.peer),
-    wsUrl: resolveString(livekit.ws_url),
-    token: resolveString(livekit.token),
+    wsUrl,
+    token,
     serverNow,
     serverNowMs: resolveNumber(raw.server_now_ms, serverNow * 1000),
     elapsedSeconds,

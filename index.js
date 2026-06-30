@@ -1,4 +1,5 @@
 // Description: Registers React Native app globals and mounts the VNSEEA root component.
+/* global globalThis */
 /**
  * @format
  */
@@ -42,10 +43,12 @@ if (global.window) {
   global.window.CustomEvent = runtimeRoot.CustomEvent;
 }
 
-const { registerGlobals } = require('@livekit/react-native');
+const {
+  registerLiveKitGlobalsForVnseea,
+} = require('./src/shared-kernel/infrastructure/livekit/registerLiveKitGlobals');
 const AppModule = require('./App');
 const App = AppModule?.default ?? AppModule;
 
-registerGlobals();
+registerLiveKitGlobalsForVnseea();
 
 AppRegistry.registerComponent(appName, () => App);

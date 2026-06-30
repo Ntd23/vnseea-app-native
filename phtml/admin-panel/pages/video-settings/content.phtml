@@ -347,6 +347,69 @@
                                 <input type="password" id="livekit_api_secret" name="livekit_api_secret" class="form-control" value="<?php echo $wo['config']['livekit_api_secret'];?>">
                             </div>
                         </div>
+                        <div class="alert alert-info">
+                            Webhook signing can use a different LiveKit key than call token signing. Leave these webhook fields empty to fall back to the API key and secret above.
+                        </div>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">LiveKit Webhook API Key</label>
+                                <input type="text" id="livekit_webhook_api_key" name="livekit_webhook_api_key" class="form-control" value="<?php echo $wo['config']['livekit_webhook_api_key'];?>">
+                            </div>
+                        </div>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">LiveKit Webhook API Secret</label>
+                                <input type="password" id="livekit_webhook_api_secret" name="livekit_webhook_api_secret" class="form-control" value="<?php echo $wo['config']['livekit_webhook_api_secret'];?>">
+                            </div>
+                        </div>
+                        <div class="clearfix"></div>
+                        <hr>
+                        <div class="float-left">
+                            <label for="ios_voip_enabled" class="main-label">iOS PushKit / CallKit VoIP Push</label>
+                            <br><small class="admin-info">Enable APNs VoIP pushes for iPhone incoming LiveKit calls. Keep disabled until Apple VoIP credentials are configured.</small>
+                        </div>
+                        <div class="form-group float-right switcher">
+                            <input type="hidden" name="ios_voip_enabled" value="0" />
+                            <input type="checkbox" name="ios_voip_enabled" id="chck-ios_voip_enabled" value="1" <?php echo ($wo['config']['ios_voip_enabled'] == 1) ? 'checked': '';?>>
+                            <label for="chck-ios_voip_enabled" class="check-trail"><span class="check-handler"></span></label>
+                        </div>
+                        <div class="clearfix"></div>
+                        <div class="alert alert-info">
+                            These APNs settings are only for iOS VoIP incoming call pushes. Token generation still uses the LiveKit API key and secret above.
+                        </div>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">Apple Team ID</label>
+                                <input type="text" id="ios_voip_team_id" name="ios_voip_team_id" class="form-control" value="<?php echo $wo['config']['ios_voip_team_id'];?>">
+                            </div>
+                        </div>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">APNs Key ID</label>
+                                <input type="text" id="ios_voip_key_id" name="ios_voip_key_id" class="form-control" value="<?php echo $wo['config']['ios_voip_key_id'];?>">
+                            </div>
+                        </div>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">iOS App Bundle ID</label>
+                                <input type="text" id="ios_voip_bundle_id" name="ios_voip_bundle_id" class="form-control" value="<?php echo $wo['config']['ios_voip_bundle_id'];?>">
+                            </div>
+                        </div>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">APNs Private Key Path</label>
+                                <input type="text" id="ios_voip_private_key_path" name="ios_voip_private_key_path" class="form-control" value="<?php echo $wo['config']['ios_voip_private_key_path'];?>">
+                            </div>
+                        </div>
+                        <div class="form-group form-float">
+                            <div class="form-line">
+                                <label class="form-label">APNs Environment</label>
+                                <select id="ios_voip_apns_environment" name="ios_voip_apns_environment" class="form-control show-tick">
+                                    <option value="production" <?php echo ($wo['config']['ios_voip_apns_environment'] == 'production') ? 'selected': '';?>>Production</option>
+                                    <option value="sandbox" <?php echo ($wo['config']['ios_voip_apns_environment'] == 'sandbox') ? 'selected': '';?>>Sandbox</option>
+                                </select>
+                            </div>
+                        </div>
                         <input type="hidden" name="hash_id" value="<?php echo Wo_CreateSession();?>">
                     </form>
                 </div>

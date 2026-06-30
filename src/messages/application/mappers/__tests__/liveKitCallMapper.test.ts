@@ -92,6 +92,32 @@ describe('liveKitCallMapper', () => {
     expect(JSON.stringify(payload)).not.toContain('must-not-map');
   });
 
+  it('rejects join payloads without LiveKit connection details', () => {
+    expect(() =>
+      mapLiveKitJoinPayload({
+        call: {
+          id: 1286,
+          type: 'audio',
+          room_name: '',
+          status: 'answered',
+        },
+        livekit: {
+          ws_url: '',
+          token: '',
+        },
+      }),
+    ).toThrow(/missing livekit join payload/i);
+  });
+
+  it('rejects join payloads that backend marks as not ready', () => {
+    expect(() =>
+      mapLiveKitJoinPayload({
+        join_ready: false,
+        message: 'Call is not ready to join.',
+      }),
+    ).toThrow(/not ready/i);
+  });
+
   it('maps missing incoming calls as null', () => {
     expect(mapIncomingLiveKitCall({ incoming_call: null })).toBeNull();
   });

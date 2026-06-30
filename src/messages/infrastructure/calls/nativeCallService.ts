@@ -19,6 +19,7 @@ type NativeCallListeners = {
   onAnswer?: (callUuid: string) => void;
   onEnd?: (callUuid: string) => void;
   onMute?: (muted: boolean) => void;
+  onAudioSessionActivated?: (callUuid?: string) => void;
   onIncoming?: (call: IncomingLiveKitCall) => void;
   onIncomingGroup?: (call: IncomingGroupLiveKitCall) => void;
 };
@@ -56,10 +57,72 @@ let cachedInitialNativeMessageAction: Promise<Record<string, string> | null> | n
   null;
 const pendingAnswerUuids: string[] = [];
 const pendingEndUuids: string[] = [];
+const CALL_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
+type NativeAudioSessionActivationResult = {
+  activated: boolean;
+  source: 'not_ios' | 'non_native_call' | 'recent' | 'event' | 'timeout';
+  callUuid?: string;
+  activationAgeMs?: number;
+};
+
+type NativeAudioSessionActivationWaiter = {
+  callUuid?: string;
+  resolve: (result: NativeAudioSessionActivationResult) => void;
+};
+
+const audioSessionActivationWaiters =
+  new Set<NativeAudioSessionActivationWaiter>();
+const CALLKIT_AUDIO_SESSION_RECENT_MS = 15_000;
+let lastWebRTCAudioSessionActivatedAt = 0;
+let lastWebRTCAudioSessionActivatedCallUuid = '';
 
 function getAndroidCallIntentModule() {
   if (Platform.OS !== 'android') return null;
   return NativeModules.VnseeaCallIntent as AndroidCallIntentModule | undefined;
+}
+
+function logNativeCallDebug(event: string, data: Record<string, unknown> = {}) {
+  console.log(
+    CALL_DEBUG_PREFIX,
+    JSON.stringify({
+      event,
+      at: new Date().toISOString(),
+      ...data,
+    }),
+  );
+}
+
+function notifyWebRTCAudioSessionActivated(params: {
+  rawCallUuid?: string;
+  resolvedCallUuid?: string;
+  candidateCount: number;
+}) {
+  const { rawCallUuid, resolvedCallUuid, candidateCount } = params;
+  lastWebRTCAudioSessionActivatedAt = Date.now();
+  lastWebRTCAudioSessionActivatedCallUuid = resolvedCallUuid ?? '';
+  logNativeCallDebug('callkit_webrtc_audio_session_activated', {
+    rawCallUuid,
+    resolvedCallUuid,
+    candidateCount,
+    activationApplied: true,
+    bridgeOwner: 'native_callkeep',
+  });
+  return true;
+}
+
+function notifyWebRTCAudioSessionDeactivated(params: {
+  rawCallUuid?: string;
+  resolvedCallUuid?: string;
+  candidateCount: number;
+}) {
+  const { rawCallUuid, resolvedCallUuid, candidateCount } = params;
+  logNativeCallDebug('callkit_webrtc_audio_session_deactivated', {
+    rawCallUuid,
+    resolvedCallUuid,
+    candidateCount,
+    deactivationApplied: true,
+    bridgeOwner: 'native_callkeep',
+  });
 }
 
 function loadCallKeep() {
@@ -153,6 +216,8 @@ function findActiveNativeCallUuid(context: 'direct' | 'group', callId: string) {
 }
 
 function readPushLiveKitCall(payload: unknown): IncomingLiveKitCall | null {
+  if (readPushClosedLiveKitCallId(payload)) return null;
+
   const provider = readPushString(payload, 'provider');
   const callId = readPushString(payload, 'call_id');
   if (provider !== 'livekit' || !callId) return null;
@@ -190,6 +255,8 @@ function syncVoipToken(token: string) {
 function readPushLiveKitGroupCall(
   payload: unknown,
 ): IncomingGroupLiveKitCall | null {
+  if (readPushClosedLiveKitCallId(payload)) return null;
+
   const provider = readPushString(payload, 'provider');
   const context = readPushString(payload, 'call_context');
   const callId = readPushString(payload, 'call_id');
@@ -303,6 +370,101 @@ function emitEnd(callUuid: string) {
   listeners.onEnd(callUuid);
 }
 
+function hasRecentWebRTCAudioSessionActivation(callUuid?: string) {
+  if (
+    lastWebRTCAudioSessionActivatedAt <= 0 ||
+    Date.now() - lastWebRTCAudioSessionActivatedAt >
+    CALLKIT_AUDIO_SESSION_RECENT_MS
+  ) {
+    return false;
+  }
+  if (!callUuid) {
+    return Boolean(lastWebRTCAudioSessionActivatedCallUuid);
+  }
+  return lastWebRTCAudioSessionActivatedCallUuid === callUuid;
+}
+
+function resolveCallKitAudioSessionCallUuid(rawCallUuid?: string) {
+  if (rawCallUuid) {
+    return {
+      rawCallUuid,
+      resolvedCallUuid: rawCallUuid,
+      candidateCount: activeCalls.has(rawCallUuid) ? 1 : 0,
+    };
+  }
+
+  const candidateUuids = Array.from(activeCalls.entries())
+    .filter(([, activeCall]) => activeCall.usesNativeCallUi)
+    .map(([activeCallUuid]) => activeCallUuid);
+  return {
+    rawCallUuid,
+    resolvedCallUuid: candidateUuids.length === 1 ? candidateUuids[0] : '',
+    candidateCount: candidateUuids.length,
+  };
+}
+
+function activationCallUuidMatchesWaiter(
+  activatedCallUuid: string | undefined,
+  waiterCallUuid?: string,
+) {
+  if (!waiterCallUuid) return Boolean(activatedCallUuid);
+  return activatedCallUuid === waiterCallUuid;
+}
+
+function emitAudioSessionActivated(rawCallUuid?: string) {
+  const { resolvedCallUuid, candidateCount } =
+    resolveCallKitAudioSessionCallUuid(rawCallUuid);
+  logNativeCallDebug('callkit_audio_session_event_received', {
+    rawCallUuid,
+    resolvedCallUuid,
+    candidateCount,
+  });
+  const activated = resolvedCallUuid
+    ? notifyWebRTCAudioSessionActivated({
+        rawCallUuid,
+        resolvedCallUuid,
+        candidateCount,
+      })
+    : false;
+  if (!resolvedCallUuid) {
+    logNativeCallDebug('callkit_audio_session_activation_unresolved', {
+      rawCallUuid,
+      candidateCount,
+      activationApplied: false,
+    });
+  }
+  for (const waiter of Array.from(audioSessionActivationWaiters)) {
+    if (!activationCallUuidMatchesWaiter(resolvedCallUuid, waiter.callUuid)) {
+      continue;
+    }
+    waiter.resolve({
+      activated,
+      source: 'event',
+      callUuid: resolvedCallUuid,
+      activationAgeMs: 0,
+    });
+    audioSessionActivationWaiters.delete(waiter);
+  }
+  listeners.onAudioSessionActivated?.(resolvedCallUuid || undefined);
+}
+
+function emitAudioSessionDeactivated(rawCallUuid?: string) {
+  const { resolvedCallUuid, candidateCount } =
+    resolveCallKitAudioSessionCallUuid(rawCallUuid);
+  notifyWebRTCAudioSessionDeactivated({
+    rawCallUuid,
+    resolvedCallUuid,
+    candidateCount,
+  });
+  if (
+    !resolvedCallUuid ||
+    resolvedCallUuid === lastWebRTCAudioSessionActivatedCallUuid
+  ) {
+    lastWebRTCAudioSessionActivatedAt = 0;
+    lastWebRTCAudioSessionActivatedCallUuid = '';
+  }
+}
+
 function flushPendingEvents() {
   while (pendingAnswerUuids.length > 0) {
     const callUuid = pendingAnswerUuids.shift();
@@ -312,6 +474,62 @@ function flushPendingEvents() {
     const callUuid = pendingEndUuids.shift();
     if (callUuid) listeners.onEnd?.(callUuid);
   }
+}
+
+export function waitForNativeAudioSessionActivation(
+  callUuid?: string,
+  timeoutMs = 1_500,
+) {
+  if (Platform.OS !== 'ios') {
+    return Promise.resolve<NativeAudioSessionActivationResult>({
+      activated: true,
+      source: 'not_ios',
+      callUuid,
+      activationAgeMs: 0,
+    });
+  }
+  if (callUuid && !activeCalls.get(callUuid)?.usesNativeCallUi) {
+    return Promise.resolve<NativeAudioSessionActivationResult>({
+      activated: true,
+      source: 'non_native_call',
+      callUuid,
+      activationAgeMs: 0,
+    });
+  }
+  if (hasRecentWebRTCAudioSessionActivation(callUuid)) {
+    return Promise.resolve<NativeAudioSessionActivationResult>({
+      activated: true,
+      source: 'recent',
+      callUuid: lastWebRTCAudioSessionActivatedCallUuid,
+      activationAgeMs: Date.now() - lastWebRTCAudioSessionActivatedAt,
+    });
+  }
+  if (lastWebRTCAudioSessionActivatedAt > 0) {
+    logNativeCallDebug('callkit_webrtc_audio_session_activate_missing_for_recent', {
+      callUuid,
+      recentCallUuid: lastWebRTCAudioSessionActivatedCallUuid,
+      recentAgeMs: Date.now() - lastWebRTCAudioSessionActivatedAt,
+    });
+  }
+
+  return new Promise<NativeAudioSessionActivationResult>(resolve => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let waiter: NativeAudioSessionActivationWaiter;
+    const finish = (result: NativeAudioSessionActivationResult) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      audioSessionActivationWaiters.delete(waiter);
+      resolve(result);
+    };
+    waiter = {
+      callUuid,
+      resolve: finish,
+    };
+    audioSessionActivationWaiters.add(waiter);
+    timeoutId = setTimeout(
+      () => finish({ activated: false, source: 'timeout', callUuid }),
+      timeoutMs,
+    );
+  });
 }
 
 function registerOneSignalCallListeners() {
@@ -337,13 +555,23 @@ function registerOneSignalCallListeners() {
       );
       if (incomingGroupCall) {
         event.preventDefault();
-        listeners.onIncomingGroup?.(incomingGroupCall);
+        if (Platform.OS === 'ios') {
+          displayNativeIncomingGroupCall(incomingGroupCall).catch(
+            () => undefined,
+          );
+        } else {
+          listeners.onIncomingGroup?.(incomingGroupCall);
+        }
         return;
       }
       if (!incomingCall) return;
 
       event.preventDefault();
-      listeners.onIncoming?.(incomingCall);
+      if (Platform.OS === 'ios') {
+        displayNativeIncomingCall(incomingCall).catch(() => undefined);
+      } else {
+        listeners.onIncoming?.(incomingCall);
+      }
     },
   );
   OneSignal.Notifications.addEventListener(
@@ -407,9 +635,6 @@ export async function configureNativeCallService() {
   if (isConfigured) return;
   const RNCallKeep = loadCallKeep();
   if (RNCallKeep?.default) {
-    const AudioSessionCategoryOption =
-      RNCallKeep.AudioSessionCategoryOption ?? {};
-    const AudioSessionMode = RNCallKeep.AudioSessionMode ?? {};
     await RNCallKeep.default.setup({
       ios: {
         appName: 'VNSEEA',
@@ -418,13 +643,6 @@ export async function configureNativeCallService() {
         maximumCallsPerCallGroup: '1',
         ringtoneSound: 'incoming_call_ringtone.mp3',
         includesCallsInRecents: false,
-        audioSession: {
-          categoryOptions:
-            (AudioSessionCategoryOption.allowBluetooth ?? 0) |
-            (AudioSessionCategoryOption.allowBluetoothA2DP ?? 0) |
-            (AudioSessionCategoryOption.defaultToSpeaker ?? 0),
-          mode: AudioSessionMode.videoChat,
-        },
       },
       android: {
         selfManaged: true,
@@ -455,6 +673,22 @@ export async function configureNativeCallService() {
       },
     );
     RNCallKeep.default.addEventListener(
+      'didActivateAudioSession',
+      (event: any) => {
+        emitAudioSessionActivated(
+          event?.callUUID ?? event?.callUuid ?? event?.uuid,
+        );
+      },
+    );
+    RNCallKeep.default.addEventListener(
+      'didDeactivateAudioSession',
+      (event: any) => {
+        emitAudioSessionDeactivated(
+          event?.callUUID ?? event?.callUuid ?? event?.uuid,
+        );
+      },
+    );
+    RNCallKeep.default.addEventListener(
       'didDisplayIncomingCall',
       (event: any) => {
         rememberNativeCallFromPayload(event.callUUID, event.payload);
@@ -478,6 +712,16 @@ export async function configureNativeCallService() {
           if (event.name === 'RNCallKeepPerformEndCallAction') {
             emitEnd(event.data.callUUID);
           }
+          if (event.name === 'RNCallKeepDidActivateAudioSession') {
+            emitAudioSessionActivated(
+              event.data?.callUUID ?? event.data?.callUuid ?? event.data?.uuid,
+            );
+          }
+          if (event.name === 'RNCallKeepDidDeactivateAudioSession') {
+            emitAudioSessionDeactivated(
+              event.data?.callUUID ?? event.data?.callUuid ?? event.data?.uuid,
+            );
+          }
         }
       },
     );
@@ -497,6 +741,15 @@ export async function configureNativeCallService() {
     RNVoipPushNotification?.default?.addEventListener(
       'notification',
       (payload: unknown) => {
+        const closedCallId = readPushClosedLiveKitCallId(payload);
+        if (closedCallId) {
+          dismissNativeIncomingCall(closedCallId);
+          RNVoipPushNotification.default.onVoipNotificationCompleted(
+            readPushString(payload, 'uuid') || closedCallId,
+          );
+          return;
+        }
+
         const incomingGroupCall = readPushLiveKitGroupCall(payload);
         if (incomingGroupCall) {
           displayNativeIncomingGroupCall(incomingGroupCall)
@@ -552,6 +805,11 @@ export function setNativeCallListeners(nextListeners: NativeCallListeners) {
 
 export function getNativeCall(callUuid: string) {
   return activeCalls.get(callUuid);
+}
+
+export function usesNativeCallUi(callUuid?: string) {
+  if (!callUuid) return false;
+  return Boolean(activeCalls.get(callUuid)?.usesNativeCallUi);
 }
 
 async function getInitialNativeActionPayload(): Promise<Record<string, string> | null> {
