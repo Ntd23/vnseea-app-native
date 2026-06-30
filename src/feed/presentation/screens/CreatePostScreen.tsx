@@ -819,14 +819,14 @@ function CreatePostScreen() {
     ];
 
     const expandedRow2: Array<{
-      actionKey: 'ad' | 'product' | 'event' | 'page';
+      actionKey: 'poll' | 'product' | 'live' | 'page';
       label: string;
       onPress: () => void;
     }> = [
       {
-        actionKey: 'ad',
-        label: language === 'vi' ? 'Quảng cáo' : 'Ad',
-        onPress: () => navigation.navigate(ROUTES.CREATE_AD as never),
+        actionKey: 'poll',
+        label: language === 'vi' ? 'Cuộc thăm dò' : 'Poll',
+        onPress: () => navigation.navigate(ROUTES.CREATE_POLL as never),
       },
       {
         actionKey: 'product',
@@ -834,9 +834,9 @@ function CreatePostScreen() {
         onPress: () => navigation.navigate(ROUTES.CREATE_PRODUCT as never),
       },
       {
-        actionKey: 'event',
-        label: language === 'vi' ? 'Sự kiện' : 'Event',
-        onPress: () => navigation.navigate(ROUTES.CREATE_EVENT as never),
+        actionKey: 'live',
+        label: language === 'vi' ? 'Live' : 'Live',
+        onPress: () => navigation.navigate(ROUTES.GO_LIVE as never),
       },
       {
         actionKey: 'page',

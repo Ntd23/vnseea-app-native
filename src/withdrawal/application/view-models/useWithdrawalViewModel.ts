@@ -105,8 +105,8 @@ export function useWithdrawalViewModel() {
   const balance = overview?.balance ?? 0;
   const walletBalance = overview?.walletBalance ?? 0;
   const minimumAmount = overview?.minimumAmount ?? 0;
-  const currency = overview?.currency ?? 'VND';
-  const currencySymbol = overview?.currencySymbol ?? 'VND';
+  const currency = overview?.currency ?? 'VNSEEA';
+  const currencySymbol = overview?.currencySymbol ?? 'VNSEEA';
   const history: WithdrawalHistoryItem[] = overview?.history ?? [];
   const hasPendingRequest = Boolean(overview?.hasPendingRequest);
 

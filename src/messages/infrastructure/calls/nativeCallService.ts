@@ -416,6 +416,7 @@ export async function configureNativeCallService() {
         supportsVideo: true,
         maximumCallGroups: '1',
         maximumCallsPerCallGroup: '1',
+        ringtoneSound: 'incoming_call_ringtone.mp3',
         includesCallsInRecents: false,
         audioSession: {
           categoryOptions:

@@ -31,6 +31,7 @@ export interface UserRepository {
   }): Promise<MapPlacePrediction[]>;
   getPlaceDetails(placeId: string): Promise<NearbyPlace | null>;
   getRoute(input: MapRouteInput): Promise<MapRoute>;
+  getRoutes(input: MapRouteInput): Promise<MapRoute[]>;
   getFriends(input: FriendsInput): Promise<FriendsResult>;
   updateCurrentUser(
     input: UpdateCurrentUserInput,

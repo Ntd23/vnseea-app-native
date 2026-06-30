@@ -187,6 +187,11 @@ export function useUserViewModel() {
     [],
   );
 
+  const getRoutes = useCallback(
+    (input: MapRouteInput) => repository.getRoutes(input),
+    [],
+  );
+
   const clearNearbyDiscovery = useCallback(() => {
     setNearbyUsers([]);
     setNearbyPlaces([]);
@@ -221,6 +226,7 @@ export function useUserViewModel() {
     searchNearbyPagesAndPlaces,
     getPlaceDetails,
     getRoute,
+    getRoutes,
     clearNearbyDiscovery,
     clearPlacePredictions,
     updateCurrentUser,

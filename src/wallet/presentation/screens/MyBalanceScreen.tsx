@@ -114,8 +114,8 @@ function MyBalanceScreen() {
     );
   }
 
-  const currency = walletOverview?.currency ?? 'VND';
-  const currencySymbol = walletOverview?.currencySymbol ?? '₫';
+  const currency = walletOverview?.currency ?? 'VNSEEA';
+  const currencySymbol = walletOverview?.currencySymbol ?? 'VNSEEA';
   const balance = walletOverview?.balance ?? 0;
   const withdrawableBalance = walletOverview?.withdrawableBalance ?? 0;
 

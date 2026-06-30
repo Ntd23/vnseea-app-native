@@ -89,7 +89,7 @@ const steps: StepConfig[] = [
     select: true,
     field: 'currency',
     options: [
-      { id: 'VND', name: 'VND - Việt Nam Đồng' },
+      { id: 'VNSEEA', name: 'VNSEEA' },
       { id: 'USD', name: 'USD - Đô la Mỹ' },
       { id: 'EUR', name: 'EUR - Euro' },
     ],

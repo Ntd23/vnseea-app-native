@@ -17,7 +17,8 @@ import com.vnseea.android.R
 import org.json.JSONObject
 
 object LiveKitCallNotifier {
-  private const val CHANNEL_ID = "vnseea_calls_fullscreen_v4"
+  private const val CHANNEL_ID = "vnseea_calls_fullscreen_v5_app_ringtone"
+  private const val INCOMING_CALL_RINGTONE_RES_NAME = "incoming_call_ringtone"
 
   fun show(context: Context, data: JSONObject) {
     Log.i("LiveKitCallPush", "build notification call_id=${data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)} event_type=${data.optString(LiveKitCallNativeActions.EXTRA_EVENT_TYPE)}")
@@ -137,7 +138,7 @@ object LiveKitCallNotifier {
 
   private fun incomingCallRingtoneUri(context: Context): Uri {
     val customRingtoneId = context.resources.getIdentifier(
-      "incoming_call_ringtone",
+      INCOMING_CALL_RINGTONE_RES_NAME,
       "raw",
       context.packageName,
     )

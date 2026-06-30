@@ -93,7 +93,7 @@ export type RootStackParamList = {
   [ROUTES.MY_VIDEOS]: undefined;
   [ROUTES.MESSAGES]: undefined;
   [ROUTES.CREATE_GROUP_CHAT]: undefined;
-  [ROUTES.CHAT]: { chat: ChatItem };
+  [ROUTES.CHAT]: { chat: ChatItem; product?: ProductItem };
   [ROUTES.GROUP_INFO]: {
     groupId: number;
     groupName: string;
@@ -124,7 +124,19 @@ export type RootStackParamList = {
     productId: number;
     product?: ProductItem;
   };
-  [ROUTES.CHECKOUT]: undefined;
+  [ROUTES.CART]: undefined;
+  [ROUTES.CHECKOUT]:
+    | {
+        selectedProductIds?: number[];
+        selectedAddressId?: string;
+      }
+    | undefined;
+  [ROUTES.SHIPPING_ADDRESS]:
+    | {
+        selectedProductIds?: number[];
+        selectedAddressId?: string;
+      }
+    | undefined;
   [ROUTES.CREATE_PRODUCT]: undefined;
   [ROUTES.CREATE_EVENT]: undefined;
   [ROUTES.EDIT_EVENT]: { event: EventsItem };
@@ -145,6 +157,7 @@ export type RootStackParamList = {
   [ROUTES.BLOG_DETAIL]: { blogId: string };
   [ROUTES.CREATE_BLOG]: undefined;
   [ROUTES.MOVIES]: undefined;
+  [ROUTES.CREATE_MOVIE]: undefined;
   [ROUTES.JOBS]: undefined;
   [ROUTES.JOB_DETAIL]: { jobId?: string; job?: any };
   [ROUTES.CREATE_JOB]: undefined;
@@ -205,6 +218,12 @@ export type RootStackParamList = {
   [ROUTES.GO_LIVE]: undefined;
   [ROUTES.POKE]: undefined;
   [ROUTES.FORUM]: undefined;
+  [ROUTES.SELLER_STORE]: {
+    sellerId: number;
+    sellerName?: string;
+    sellerUsername?: string;
+    sellerAvatar?: string;
+  };
 };
 
 export type MainTabRouteName = keyof MainTabParamList;

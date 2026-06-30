@@ -65,6 +65,7 @@ import {
   ReactionPickerOverlay,
   TextPostCard,
 } from '../../../feed/presentation/components/PostCards';
+import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { useMyGroupsViewModel } from '../../../community';
@@ -761,6 +762,17 @@ function ExploreScreen() {
   );
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
   const [sharingPost, setSharingPost] = useState<FeedTextPost | undefined>();
+  const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
+  const [reactionsSheetPostId, setReactionsSheetPostId] = useState<string | null>(null);
+
+  const openReactionsSheet = useCallback((postId: string, _post: FeedPost) => {
+    setReactionsSheetPostId(postId);
+    setReactionsSheetVisible(true);
+  }, []);
+
+  const closeReactionsSheet = useCallback(() => {
+    setReactionsSheetVisible(false);
+  }, []);
 
   const updateHashtagCommentCount = useCallback(
     (postId: string, delta: number) => {
@@ -1034,6 +1046,7 @@ function ExploreScreen() {
         gestureY={gestureY}
         gestureActive={gestureActive}
         hasDragged={hasDragged}
+        onOpenReactions={openReactionsSheet}
       />
     ),
     [
@@ -1231,6 +1244,11 @@ function ExploreScreen() {
             gestureY={gestureY}
             gestureActive={gestureActive}
             hasDragged={hasDragged}
+          />
+          <PostReactionsSheet
+            visible={reactionsSheetVisible}
+            postId={reactionsSheetPostId}
+            onClose={closeReactionsSheet}
           />
           {Boolean(commentSheetPostId) || commentVm.isCommentsOpen ? (
             <HashtagCommentsOverlay

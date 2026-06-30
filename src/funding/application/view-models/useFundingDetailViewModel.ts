@@ -23,7 +23,7 @@ export function useFundingDetailViewModel(fundId: string) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<FundingDetailMeta>({
-    currencySymbol: 'đ',
+    currencySymbol: 'VNSEEA',
   });
 
   const load = useCallback(async () => {
@@ -36,7 +36,7 @@ export function useFundingDetailViewModel(fundId: string) {
       if (detail?.recent_donations) {
         setDonations(detail.recent_donations);
       }
-      setMeta({ currencySymbol: 'đ' });
+      setMeta({ currencySymbol: 'VNSEEA' });
     } catch (caughtError) {
       setError(
         caughtError instanceof Error

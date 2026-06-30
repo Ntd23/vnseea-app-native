@@ -62,7 +62,7 @@ export function createOfferRepository(): OfferRepository {
         description: input.description ?? '',
         discountedItems: input.discountedItems ?? '',
         image: '',
-        currency: input.currency ?? 'VND',
+        currency: input.currency ?? 'VNSEEA',
         expireDate: input.expireDate ?? '',
         expireTime: input.expireTime ?? '',
         time: Math.floor(Date.now() / 1000),

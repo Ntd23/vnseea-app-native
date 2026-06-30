@@ -79,7 +79,7 @@ function mapAddress(raw: RawAddress): DeliveryAddress {
     phone: stringValue(raw.phone),
     country: stringValue(raw.country),
     city: stringValue(raw.city),
-    zip: stringValue(raw.zip),
+    zip: stringValue(raw.zip) || '10000',
     address: stringValue(raw.address),
   };
 }
@@ -98,7 +98,7 @@ function mapCheckoutItem(raw: RawProduct): CheckoutItem {
     quantity,
     total: price * quantity,
     currencySymbol:
-      stringValue(raw.currency_symbol) || stringValue(raw.currency_code) || 'đ',
+      stringValue(raw.currency_symbol) || stringValue(raw.currency_code) || 'VNSEEA',
   };
 }
 
@@ -109,7 +109,7 @@ function normalizeSummaryCurrency(
   const rawTotal = items.reduce((sum, item) => sum + item.total, 0);
   const shouldConvert = convertedTotal > 0 && rawTotal > 0;
   const ratio = shouldConvert ? convertedTotal / rawTotal : 1;
-  const currencySymbol = shouldConvert ? 'đ' : items[0]?.currencySymbol || 'đ';
+  const currencySymbol = shouldConvert ? 'VNSEEA' : items[0]?.currencySymbol || 'VNSEEA';
 
   return items.map(item => {
     const price = item.price * ratio;
@@ -125,7 +125,7 @@ function normalizeSummaryCurrency(
 async function getAddresses() {
   const response = await apiBridge.post<AddressResponse>(apiRoutes.user.address, {
     type: 'get',
-    limit: 20,
+    limit: 50,
   });
   const data = Array.isArray(response.data) ? response.data : [];
   return data.map(mapAddress);
@@ -143,7 +143,7 @@ async function getSummary(): Promise<CheckoutSummary> {
   );
   const subtotal =
     convertedTotal || items.reduce((sum, item) => sum + item.total, 0);
-  const currencySymbol = items[0]?.currencySymbol || 'đ';
+  const currencySymbol = items[0]?.currencySymbol || 'VNSEEA';
 
   return {
     items,
@@ -162,6 +162,21 @@ async function removeItem(productId: number): Promise<CheckoutSummary> {
   return getSummary();
 }
 
+async function removeCartProduct(productId: number) {
+  await apiBridge.post(apiRoutes.products.market, {
+    type: 'remove_cart',
+    product_id: productId,
+  });
+}
+
+async function addCartProduct(productId: number, quantity: number) {
+  await apiBridge.post(apiRoutes.products.market, {
+    type: 'add_cart',
+    product_id: productId,
+    qty: Math.max(1, quantity),
+  });
+}
+
 export function createCheckoutRepository(): CheckoutRepository {
   return {
     getSummary,
@@ -176,7 +191,7 @@ export function createCheckoutRepository(): CheckoutRepository {
         currencySymbol:
           stringValue(response.user_data?.points_config?.display_currency_symbol) ||
           stringValue(response.user_data?.points_config?.currency_symbol) ||
-          'đ',
+          'VNSEEA',
       };
     },
 
@@ -190,7 +205,7 @@ export function createCheckoutRepository(): CheckoutRepository {
         phone: input.phone,
         country: input.country,
         city: input.city,
-        zip: input.zip,
+        zip: String(input.zip || '').trim() || '10000',
         address: input.address,
       });
       return getAddresses();
@@ -214,14 +229,54 @@ export function createCheckoutRepository(): CheckoutRepository {
 
     removeItem,
 
-    async buy(addressId: string): Promise<CheckoutResult> {
-      const response = await apiBridge.post<BuyResponse>(
-        apiRoutes.products.market,
-        {
-          type: 'buy',
-          address_id: addressId,
-        },
+    async buy(
+      addressId: string,
+      selectedProductIds?: number[],
+    ): Promise<CheckoutResult> {
+      const selectedIds = new Set(
+        (selectedProductIds ?? [])
+          .map(id => Number(id))
+          .filter(id => Number.isFinite(id) && id > 0),
       );
+      const shouldBuySelectedOnly = selectedIds.size > 0;
+      const currentSummary = shouldBuySelectedOnly ? await getSummary() : null;
+      const itemsToRestore =
+        currentSummary?.items.filter(item => !selectedIds.has(item.productId)) ?? [];
+
+      if (shouldBuySelectedOnly && currentSummary) {
+        const selectedItems = currentSummary.items.filter(item =>
+          selectedIds.has(item.productId),
+        );
+        if (selectedItems.length === 0) {
+          return {
+            success: false,
+            message: 'Vui lòng chọn ít nhất một sản phẩm để thanh toán.',
+          };
+        }
+
+        await Promise.all(
+          itemsToRestore.map(item => removeCartProduct(item.productId)),
+        );
+      }
+
+      let response: BuyResponse;
+      try {
+        response = await apiBridge.post<BuyResponse>(
+          apiRoutes.products.market,
+          {
+            type: 'buy',
+            address_id: addressId,
+          },
+        );
+      } finally {
+        if (itemsToRestore.length > 0) {
+          await Promise.allSettled(
+            itemsToRestore.map(item =>
+              addCartProduct(item.productId, item.quantity),
+            ),
+          );
+        }
+      }
 
       return {
         success: response.api_status === 200 || response.api_status === '200',

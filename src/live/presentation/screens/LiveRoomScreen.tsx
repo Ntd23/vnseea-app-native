@@ -8,7 +8,9 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -19,6 +21,7 @@ import {
   ChevronDown,
   Eye,
   Heart,
+  LogOut,
   RefreshCw,
   Send,
   Share2,
@@ -36,6 +39,7 @@ type LiveRouteParams = {
   postId: number;
   isHost?: boolean;
   liveSession?: LiveSession;
+  initialCameraFacing?: 'front' | 'back';
 };
 
 const { width: windowWidth, height: windowHeight } = Dimensions.get('window');
@@ -49,10 +53,12 @@ export default function LiveRoomScreen() {
     postId,
     isHost: routeIsHost = false,
     liveSession: routeLiveSession,
+    initialCameraFacing = 'front',
   } = route.params || {
     postId: 0,
     isHost: false,
     liveSession: undefined,
+    initialCameraFacing: 'front',
   };
 
   const {
@@ -75,8 +81,9 @@ export default function LiveRoomScreen() {
   const [commentText, setCommentText] = useState('');
   const [isSendingComment, setIsSendingComment] = useState(false);
   const inputRef = React.useRef<TextInput>(null);
-  const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
+  const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>(initialCameraFacing);
   const [showFullDescription, setShowFullDescription] = useState(false);
+  const [leaveModalVisible, setLeaveModalVisible] = useState(false);
   
   const insets = useSafeAreaInsets();
   const isHost = routeIsHost || streamIsHost;
@@ -205,21 +212,13 @@ export default function LiveRoomScreen() {
   }, []);
 
   const handleLeave = useCallback(() => {
-    Alert.alert(
-      'Rời khỏi live',
-      'Bạn có muốn rời khỏi live không?',
-      [
-        { text: 'Ở lại', style: 'cancel' },
-        {
-          text: 'Rời đi',
-          style: 'destructive',
-          onPress: () => {
-            leave();
-            navigation.goBack();
-          },
-        },
-      ],
-    );
+    setLeaveModalVisible(true);
+  }, []);
+
+  const handleConfirmLeave = useCallback(() => {
+    setLeaveModalVisible(false);
+    leave();
+    navigation.goBack();
   }, [leave, navigation]);
 
   const handleReaction = useCallback((emoji: string) => {
@@ -277,7 +276,11 @@ export default function LiveRoomScreen() {
             <LiveCameraPreview cameraFacing={cameraFacing} enabled />
           )}
           {hasLiveKitSession && liveSession ? (
-            <LiveKitStreamView session={liveSession} isHost={isHost} />
+            <LiveKitStreamView
+              session={liveSession}
+              isHost={isHost}
+              cameraFacing={cameraFacing}
+            />
           ) : null}
         </View>
 
@@ -304,7 +307,7 @@ export default function LiveRoomScreen() {
 
           {/* Action Buttons */}
           <View className="flex-row items-center gap-2">
-            {isHost && !hasLiveKitSession && (
+            {isHost && (
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={handleToggleCamera}
@@ -522,6 +525,141 @@ export default function LiveRoomScreen() {
           </>
         )}
       </View>
+
+        {/* Custom Leave Confirmation Modal */}
+        <Modal
+          visible={leaveModalVisible}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => setLeaveModalVisible(false)}
+        >
+          <View style={leaveModalStyles.backdrop}>
+            <View style={leaveModalStyles.card}>
+              {/* Icon */}
+              <View style={leaveModalStyles.iconCircle}>
+                <LogOut size={24} color="#ef4444" />
+              </View>
+
+              {/* Text */}
+              <Text style={leaveModalStyles.title}>Rời khỏi live?</Text>
+              <Text style={leaveModalStyles.subtitle}>
+                {isHost
+                  ? 'Bạn sẽ kết thúc buổi live cho tất cả mọi người.'
+                  : 'Bạn có chắc muốn rời khỏi buổi live này không?'}
+              </Text>
+
+              {/* Buttons */}
+              <View style={leaveModalStyles.buttonRow}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setLeaveModalVisible(false)}
+                  style={leaveModalStyles.stayButton}
+                >
+                  <Text style={leaveModalStyles.stayButtonText}>Ở lại</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={handleConfirmLeave}
+                  style={leaveModalStyles.leaveButton}
+                >
+                  <Text style={leaveModalStyles.leaveButtonText}>
+                    {isHost ? 'Kết thúc live' : 'Rời đi'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
     </KeyboardAvoidingView>
   );
 }
+
+const leaveModalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: 'rgba(22, 28, 45, 0.96)',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  title: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtitle: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  stayButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stayButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  leaveButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  leaveButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+});

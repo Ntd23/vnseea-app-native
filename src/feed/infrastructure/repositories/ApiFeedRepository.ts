@@ -33,8 +33,13 @@ import type {
   FeedRecommendationEventInput,
   GetPostByIdResult,
   PostComment,
+  PostReactionsPage,
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
+import type {
+  PostReactionCount,
+  PostReactionUser,
+} from '../../domain/types/reactions.types';
 import type {
   CreatePostDraft,
   CreatePostResult,
@@ -359,9 +364,21 @@ const _siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 
 function normalizeMediaUrl(url: string | undefined): string | undefined {
   if (!url) return undefined;
-  if (/^https?:\/\//i.test(url)) return url;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
   // Relative path — prepend site root.
-  return `${_siteRoot}/${url.replace(/^\/+/, '')}`;
+  return `${_siteRoot}/${trimmed.replace(/^\/+/, '')}`;
+}
+
+function normalizePlayableMediaUrl(url: string | undefined): string | undefined {
+  const normalized = normalizeMediaUrl(url);
+  if (!normalized) return undefined;
+  try {
+    return encodeURI(normalized);
+  } catch {
+    return normalized;
+  }
 }
 
 function readNumber(raw: Record<string, unknown>, ...keys: string[]) {
@@ -436,15 +453,28 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     likeCount = apiLikeCount;
   }
 
+  const videoUrl = normalizePlayableMediaUrl(readString(raw, 'postFile')) ?? '';
+  const thumbnailUrl =
+    normalizePlayableMediaUrl(
+      readString(
+        raw,
+        'postFileThumb',
+        'postFileThumbnail',
+        'video_thumb',
+        'videoThumb',
+        'thumbnail',
+        'thumb',
+      ),
+    ) ?? undefined;
+
   return {
     kind: 'video',
     id: postId,
     caption: cleanCaption(readString(raw, 'postText')) || undefined,
-    // `postFile` + `postFileThumb` + `avatar` are pre-normalized by
-    // `Wo_GetMedia()` in posts.php → already full URLs. Do NOT wrap
-    // them with `normalizeMediaUrl` or we double-prepend the host.
-    videoUrl: readString(raw, 'postFile'),
-    thumbnailUrl: readString(raw, 'postFileThumb') || undefined,
+    // Some endpoints return full Wo_GetMedia URLs, others still return
+    // relative media paths. normalizePlayableMediaUrl handles both.
+    videoUrl,
+    thumbnailUrl,
     postedAt: readNumber(raw, 'time') || undefined,
     likeCount,
     commentCount: readNumber(raw, 'post_comments', 'commentCount'),
@@ -525,9 +555,10 @@ function mapAdPost(raw: Record<string, unknown>): FeedAdPost {
 function looksLikeVideo(raw: Record<string, unknown>): boolean {
   if (looksLikeAd(raw)) return false;
   const postType = readString(raw, 'postType').toLowerCase();
+  const file = normalizePlayableMediaUrl(readString(raw, 'postFile'));
+  if (!file) return false;
   if (postType === 'video' || postType === 'reel') return true;
-  const file = readString(raw, 'postFile');
-  return Boolean(file) && VIDEO_URL_PATTERN.test(file);
+  return VIDEO_URL_PATTERN.test(file);
 }
 
 // ── Photo URL extraction for text/photo posts ────────────────────────────
@@ -1051,6 +1082,38 @@ async function fetchRecommendedRawFeedPostsWithFallback(
 ): Promise<RawFeedPostsPage> {
   try {
     const page = await fetchRecommendedRawFeedPosts(limit, afterPostId, source);
+    if (page.posts.length >= limit && !page.reachedEnd) {
+      return page;
+    }
+
+    const legacyPage = await fetchRawFeedPosts(limit, afterPostId, source);
+    if (legacyPage.posts.length > 0) {
+      const merged = new Map<string, Record<string, unknown>>();
+      for (const post of [...page.posts, ...legacyPage.posts]) {
+        merged.set(rawPostKey(post), post);
+      }
+      const posts = Array.from(merged.values());
+      const nextCursor = getOldestRawPostId(posts);
+      debugFeedRepository('recommended-feed merged fallback', {
+        afterPostId: afterPostId ?? 'first',
+        recommended: page.posts.length,
+        legacy: legacyPage.posts.length,
+        merged: posts.length,
+        nextCursor: nextCursor ?? '(none)',
+      });
+
+      return {
+        posts,
+        nextCursor,
+        primaryCount: Math.max(page.primaryCount, legacyPage.primaryCount),
+        reachedEnd:
+          page.reachedEnd === true &&
+          legacyPage.posts.length === 0 &&
+          legacyPage.reachedEnd === true,
+        sourceKind: 'legacy',
+      };
+    }
+
     if (page.posts.length > 0 || page.reachedEnd) {
       return page;
     }
@@ -1147,24 +1210,21 @@ async function fetchRawFeedPosts(
 
       const [sugRes, friendsRes, nearbyRes] = await Promise.all([
         // Pull a generous author pool so discovery has enough breadth
-        // to cover the install even when the user follows nobody. The
-        // previous 12 was too tight — once we filtered to 8 in
-        // `pickedIds` we often ended up with 2-3 real authors and
-        // their tiny post sets.
+        // to cover the install even when the user follows nobody.
         backendApi
-          .post<SuggestionsResponse>(apiRoutes.user.suggestions, { limit: 24 })
+          .post<SuggestionsResponse>(apiRoutes.user.suggestions, { limit: 60 }) // Increased to 60
           .catch(() => ({} as SuggestionsResponse)),
         sessionUserIdLocal
           ? backendApi
               .post<FriendsResponse>(apiRoutes.social.friends, {
                 user_id: sessionUserIdLocal,
                 type: 'following,followers',
-                limit: 30,
+                limit: 500, // Fetch up to 500 friends/followers
               })
               .catch(() => ({} as FriendsResponse))
           : Promise.resolve({} as FriendsResponse),
         backendApi
-          .post<NearbyResponse>(apiRoutes.user.nearby, { limit: 15 })
+          .post<NearbyResponse>(apiRoutes.user.nearby, { limit: 40 }) // Increased to 40
           .catch(() => ({} as NearbyResponse)),
       ]);
 
@@ -1183,19 +1243,11 @@ async function fetchRawFeedPosts(
       return [];
     }
 
-    // Keep discovery rich enough that a fresh account with no follows
-    // still sees a healthy mix of authors. The previous 8×3=24 cap
-    // meant the feed plateaued around 30-40 light posts even though
-    // the install had many more authors with active content. Bumping
-    // to 16×8=128 potential posts per page is safe because the
-    // server-side filter (`isLightFeedPost`) + dedupe + chronological
-    // sort keeps the actual rendered feed a comfortable size.
-    const pickedIds = ids.slice(0, 16);
-    // 8 posts per author is enough to surface their active content
-    // without flooding the feed. Combined with 16 authors that's
-    // 128 candidate posts per page, which the dedupe + sort shrink
-    // down to a manageable size.
-    const perUserLimit = 8;
+    // Shuffle the list of IDs and select up to 20 random authors on each page fetch
+    // to ensure variety and cover all followers/followings over time.
+    const shuffledIds = [...ids].sort(() => Math.random() - 0.5);
+    const pickedIds = shuffledIds.slice(0, 20);
+    const perUserLimit = 10;
 
     const perUser = await Promise.all(
       pickedIds.map(id =>
@@ -1344,7 +1396,7 @@ async function fetchRawFeedPosts(
   //    follows an active author (e.g. the admin) gets the full 20-30
   //    posts from that author instead of just the first 30.
   const followedLimit = Math.max(limit, 45);
-  const [followedRaw, ownRaw] = await Promise.all([
+  const [followedRaw, ownRaw, publicRaw] = await Promise.all([
     tryFetch({
       type: 'get_news_feed',
       limit: followedLimit,
@@ -1361,6 +1413,16 @@ async function fetchRawFeedPosts(
           limit: ownRawLimit,
           after_post_id: afterPostId,
         })
+      : Promise.resolve<Array<Record<string, unknown>>>([]),
+    // Fetch popular public posts on page 1 only
+    !afterPostId
+      ? backendApi
+          .get<{
+            api_status?: number | string;
+            data?: Array<Record<string, unknown>>;
+          }>(apiRoutes.popular.mostLiked)
+          .then(res => res.data ?? [])
+          .catch(() => [] as Array<Record<string, unknown>>)
       : Promise.resolve<Array<Record<string, unknown>>>([]),
   ]);
 
@@ -1460,14 +1522,16 @@ async function fetchRawFeedPosts(
     pushPost(post, true);
   }
 
-  // Phase 2: followed + discovery — no cap. The viewer's own posts
+  // Phase 2: followed + discovery + public — no cap. The viewer's own posts
   // that already landed in `ownRaw` will be deduped here, but
-  // additional ones (e.g. admin posts the user followed) are
-  // allowed through.
+  // additional ones are allowed through.
   for (const post of followedRaw) {
     pushPost(post, false);
   }
   for (const post of discoveryRaw) {
+    pushPost(post, false);
+  }
+  for (const post of publicRaw) {
     pushPost(post, false);
   }
 
@@ -1480,7 +1544,8 @@ async function fetchRawFeedPosts(
     own: ownRaw.length,
     ownLimit: ownPostsLimit,
     discovery: discoveryRaw.length,
-    rawTotal: followedRaw.length + discoveryRaw.length + ownRaw.length,
+    public: publicRaw.length,
+    rawTotal: followedRaw.length + discoveryRaw.length + ownRaw.length + publicRaw.length,
     merged: merged.length,
     dropped: dropCounters,
   });
@@ -1641,31 +1706,70 @@ export function createFeedRepository(): FeedRepository {
       afterPostId?: string,
       source: FeedSource = 'all',
     ): Promise<FeedPostsPage> {
-      const rawLimit = Math.max(limit, Math.ceil(limit * 1.5));
-      const page = await fetchRecommendedRawFeedPostsWithFallback(
-        rawLimit,
-        afterPostId,
-        source,
-      );
-      const mappedPosts = mixAdsIntoPosts(mapLightRawFeedPosts(page.posts));
+      const rawLimit = Math.max(limit * 3, 30);
+      const maxScanPages = 4;
+      const mappedById = new Map<string, FeedPost>();
+      let cursor = afterPostId;
+      let lastRawCursor: string | undefined;
+      let reachedEnd = false;
+      let primaryCount = 0;
+      let scannedRawRows = 0;
+
+      for (let scan = 0; scan < maxScanPages && mappedById.size < limit; scan += 1) {
+        const page = await fetchRecommendedRawFeedPostsWithFallback(
+          rawLimit,
+          cursor,
+          source,
+        );
+        scannedRawRows += page.posts.length;
+        primaryCount += page.primaryCount;
+
+        for (const post of mapLightRawFeedPosts(page.posts)) {
+          if (!mappedById.has(post.id)) {
+            mappedById.set(post.id, post);
+          }
+        }
+
+        const nextRawCursor = page.nextCursor ?? getOldestRawPostId(page.posts);
+        const advancedCursor = Boolean(nextRawCursor && nextRawCursor !== cursor);
+        lastRawCursor = nextRawCursor;
+        reachedEnd =
+          page.reachedEnd === true ||
+          page.posts.length === 0 ||
+          !advancedCursor;
+
+        if (reachedEnd || !advancedCursor) {
+          break;
+        }
+
+        cursor = nextRawCursor;
+      }
+
+      const mappedPosts = mixAdsIntoPosts(Array.from(mappedById.values()));
       const posts = mappedPosts.slice(0, limit);
       const renderedCursor = getOldestFeedPostId(posts);
-      const scanningCursor = page.nextCursor;
       const nextCursor =
-        page.sourceKind === 'recommended'
-          ? scanningCursor ?? renderedCursor
-          : renderedCursor ?? scanningCursor;
+        mappedPosts.length > limit
+          ? renderedCursor
+          : lastRawCursor ?? renderedCursor;
+
+      debugFeedRepository('light posts page', {
+        requestedLimit: limit,
+        rawLimit,
+        afterPostId: afterPostId ?? 'first',
+        scannedRawRows,
+        primaryCount,
+        mapped: mappedPosts.length,
+        returned: posts.length,
+        renderedCursor: renderedCursor ?? '(none)',
+        nextCursor: nextCursor ?? '(none)',
+        reachedEnd,
+      });
+
       return {
         posts,
-        // Use the oldest post that was actually returned to the UI. The raw
-        // API batch may be larger than the visible page so using its oldest
-        // id would skip renderable posts and make Home run out too early.
         nextCursor,
-        reachedEnd:
-          page.reachedEnd === true ||
-          (posts.length === 0 &&
-            page.primaryCount === 0 &&
-            page.posts.length < rawLimit),
+        reachedEnd: reachedEnd && mappedPosts.length <= limit,
       };
     },
 
@@ -2137,6 +2241,77 @@ export function createFeedRepository(): FeedRepository {
 
       return { post, comments };
     },
+
+    async getPostReactions(
+      postId,
+      reaction,
+      limit = 20,
+      offset = 0,
+    ): Promise<PostReactionsPage> {
+      // We always pull BOTH `reactions` (per-type counts) and `users`
+      // (the requested slice) in a single round-trip — the backend
+      // returns both regardless of the `reaction` filter, so there's
+      // no second call to fetch tab badges. Pass `reaction` only when
+      // the caller asked for one specific type so the backend can
+      // skip the others on the users query.
+      //
+      // CRITICAL: this endpoint reads `$_GET['post_id']` on the PHP
+      // side (`phtml/api/v2/endpoints/post-reactions.php:4`), NOT
+      // `$_POST`. Sending the payload as the request body returns
+      // `404 post_id can not be empty`. We pass it through axios
+      // `config.params` so it gets serialized into the query string.
+      const response = await backendApi.post<{
+        api_status: number | string;
+        post_id?: number | string;
+        reactions?: Array<Record<string, unknown>>;
+        users?: Array<Record<string, unknown>>;
+        errors?: { error_text?: string };
+        message?: string;
+      }>(
+        apiRoutes.feed.postReactions,
+        {},
+        {
+          params: {
+            post_id: postId,
+            ...(reaction ? { reaction } : {}),
+            limit,
+            offset,
+          },
+        },
+      );
+
+      if (String(response.api_status) !== '200') {
+        throw new Error(
+          response.errors?.error_text ||
+            response.message ||
+            'Không tải được danh sách cảm xúc.',
+        );
+      }
+
+      const reactions = (response.reactions ?? [])
+        .map(mapPostReactionCount)
+        .filter((c): c is PostReactionCount => c !== null);
+
+      const users = (response.users ?? [])
+        .map(mapPostReactionUser)
+        .filter((u): u is PostReactionUser => u !== null);
+
+      // Offset-based pagination: if the server returned a full page,
+      // there might be more. We treat `users.length < limit` as the
+      // explicit end-of-list signal so we don't request a second page
+      // that would return zero rows.
+      const reachedEnd = users.length < limit;
+      const nextOffset = reachedEnd
+        ? undefined
+        : String(offset + users.length);
+
+      return {
+        users,
+        reactions,
+        nextOffset,
+        reachedEnd,
+      };
+    },
   };
 }
 
@@ -2194,5 +2369,91 @@ function mapPostComment(raw: Record<string, unknown>): PostComment {
     likeCount: readNumber(raw, 'comment_likes', 'likes'),
     isLiked:
       myReaction !== null || readBool(raw, 'is_comment_liked', 'isLiked'),
+  };
+}
+
+// ── Post reactions mapping ───────────────────────────────────────────────
+//
+// `post-reactions.php` returns a single combined response shape regardless
+// of whether the caller asked for one reaction type or all:
+//
+//   {
+//     api_status: 200,
+//     post_id: number,
+//     reactions: [{ reaction: 'like'|'love'|'haha'|...|'angry', count: 5 }, ...],
+//     users:     [{ user_id, name, username, avatar, reaction, is_following, ... }, ...]
+//   }
+//
+// `reactions` lists ONLY the reaction types that have ≥1 user (i.e. a
+// missing entry == zero count). We surface those counts to the UI as
+// tab badges. `users` is the already-filtered slice for the requested
+// tab (or all types interleaved when no filter is set), tagged with the
+// specific reaction each user left.
+function parseReactionType(raw: Record<string, unknown>): string {
+  const rawReaction = raw.reaction;
+  if (typeof rawReaction === 'string') {
+    return rawReaction;
+  }
+  if (typeof rawReaction === 'number') {
+    return String(rawReaction);
+  }
+  if (rawReaction && typeof rawReaction === 'object') {
+    const rObj = rawReaction as Record<string, unknown>;
+    const typeVal = rObj.type;
+    if (typeof typeVal === 'string' && typeVal.length > 0) return typeVal;
+    if (typeof typeVal === 'number') return String(typeVal);
+  }
+
+  const rawType = raw.type;
+  if (typeof rawType === 'string' && rawType.length > 0) return rawType;
+  if (typeof rawType === 'number') return String(rawType);
+
+  const rawReactionType = raw.reaction_type;
+  if (typeof rawReactionType === 'string' && rawReactionType.length > 0) return rawReactionType;
+  if (typeof rawReactionType === 'number') return String(rawReactionType);
+
+  return '';
+}
+
+function mapPostReactionCount(raw: Record<string, unknown>): PostReactionCount | null {
+  const rawType = parseReactionType(raw);
+  const reaction = WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()];
+  if (!reaction) return null;
+  const count = readNumber(raw, 'count');
+  return { reaction, count };
+}
+
+function mapPostReactionUser(raw: Record<string, unknown>): PostReactionUser | null {
+  const rawType = parseReactionType(raw);
+  const reaction = WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()];
+  if (!reaction) return null;
+
+  // Backend strips a few private fields server-side via `$non_allowed`
+  // but defensive reads keep us safe on older installs.
+  const id = readString(raw, 'user_id', 'id');
+  if (!id) return null;
+
+  const firstName = readString(raw, 'first_name');
+  const lastName = readString(raw, 'last_name');
+  const username = readString(raw, 'username', 'user_name');
+  const name =
+    [firstName, lastName].filter(Boolean).join(' ').trim() ||
+    readString(raw, 'name', 'full_name') ||
+    username ||
+    'Người dùng';
+
+  // Avatars arrive as either a full URL (when served through `Wo_GetMedia`)
+  // or a bare `/upload/...` path on older installs — same dual format the
+  // feed mapper already handles via `normalizeMediaUrl`.
+  const avatarUrl =
+    normalizeMediaUrl(readString(raw, 'avatar', 'profile_picture')) || undefined;
+
+  return {
+    id,
+    name,
+    username,
+    avatarUrl,
+    reaction,
+    isFollowing: readBool(raw, 'is_following'),
   };
 }

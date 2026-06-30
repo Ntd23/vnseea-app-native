@@ -47,6 +47,15 @@ let discoveryCache:
       chats: ChatItem[];
     }
   | undefined;
+let followingCache:
+  | {
+      sessionUserId: string;
+      expiresAt: number;
+      followingIds: Set<string>;
+      followerIds: Set<string>;
+    }
+  | undefined;
+const FOLLOWING_CACHE_TTL_MS = 60 * 1000; // 60s cache
 function readString(raw: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
     const value = raw[key];
@@ -695,10 +704,73 @@ async function fetchUnreadUserChats() {
     .filter(chat => chat.chatType === 'user' && chat.unreadCount > 0)
     .sort((left, right) => right.lastMessageTime - left.lastMessageTime);
 }
-async function fetchDiscoveredUserChats(): Promise<ChatItem[]> {
+async function fetchFriendsList(forceRefresh = false): Promise<{ following: Set<string>; followers: Set<string> }> {
+  const sessionUserId = sessionStorage.getSession()?.userId;
+  if (!sessionUserId) return { following: new Set(), followers: new Set() };
+  if (
+    !forceRefresh &&
+    followingCache?.sessionUserId === sessionUserId &&
+    followingCache.expiresAt > Date.now()
+  ) {
+    return {
+      following: followingCache.followingIds,
+      followers: followingCache.followerIds,
+    };
+  }
+  type FriendsResponse = {
+    data?: {
+      following?: RawRecord[];
+      followers?: RawRecord[];
+    };
+  };
+  try {
+    const response = await apiBridge.post<FriendsResponse>(
+      apiRoutes.social.friends,
+      {
+        user_id: sessionUserId,
+        type: 'following,followers',
+        limit: 500,
+      },
+    );
+    const followingList = response.data?.following ?? [];
+    const followersList = response.data?.followers ?? [];
+    const following = new Set<string>();
+    const followers = new Set<string>();
+    for (const user of followingList) {
+      const id = readString(user, 'user_id', 'id');
+      if (id && id !== sessionUserId) following.add(id);
+    }
+    for (const user of followersList) {
+      const id = readString(user, 'user_id', 'id');
+      if (id && id !== sessionUserId) followers.add(id);
+    }
+    followingCache = {
+      sessionUserId,
+      expiresAt: Date.now() + FOLLOWING_CACHE_TTL_MS,
+      followingIds: following,
+      followerIds: followers,
+    };
+    return { following, followers };
+  } catch {
+    return {
+      following: followingCache?.followingIds ?? new Set(),
+      followers: followingCache?.followerIds ?? new Set(),
+    };
+  }
+}
+async function fetchFollowingUserIds(forceRefresh = false): Promise<Set<string>> {
+  const res = await fetchFriendsList(forceRefresh);
+  return res.following;
+}
+async function fetchFollowerUserIds(forceRefresh = false): Promise<Set<string>> {
+  const res = await fetchFriendsList(forceRefresh);
+  return res.followers;
+}
+async function fetchDiscoveredUserChats(forceRefresh?: boolean): Promise<ChatItem[]> {
   const sessionUserId = sessionStorage.getSession()?.userId;
   if (!sessionUserId) return [];
   if (
+    !forceRefresh &&
     discoveryCache?.sessionUserId === sessionUserId &&
     discoveryCache.expiresAt > Date.now()
   ) {
@@ -710,63 +782,77 @@ async function fetchDiscoveredUserChats(): Promise<ChatItem[]> {
       followers?: RawRecord[];
     };
   };
-  const searchCandidates = new Map<string, RawRecord>();
-  const [friendsResponse] = await Promise.all([
-    apiBridge
+
+  try {
+    const friendsResponse = await apiBridge
       .post<FriendsResponse>(apiRoutes.social.friends, {
         user_id: sessionUserId,
         type: 'following,followers',
-        limit: 50,
+        limit: 500,
       })
-      .catch(() => ({} as FriendsResponse)),
-    fetchSearchCandidates(searchCandidates, sessionUserId),
-  ]);
-  const candidates = new Map<string, RawRecord>();
-  addCandidateUsers(candidates, friendsResponse.data?.following, sessionUserId);
-  addCandidateUsers(candidates, friendsResponse.data?.followers, sessionUserId);
-  addCandidateUsers(candidates, [...searchCandidates.values()], sessionUserId);
-  const chats: ChatItem[] = [];
-  const candidateUsers = [...candidates.values()].slice(
-    0,
-    MAX_DISCOVERY_CANDIDATES,
-  );
-  for (
-    let offset = 0;
-    offset < candidateUsers.length;
-    offset += DISCOVERY_BATCH_SIZE
-  ) {
-    const batch = candidateUsers.slice(offset, offset + DISCOVERY_BATCH_SIZE);
-    const batchChats = await Promise.all(
-      batch.map(async user => {
-        const userId = readString(user, 'user_id', 'id');
-        if (!userId) return null;
-        const messages = await fetchRawUserMessages(userId, { limit: 1 }).catch(
-          () => [],
-        );
-        const lastMessage = messages[0];
-        if (!lastMessage) return null;
-        const isUnread =
-          readString(lastMessage, 'to_id') === sessionUserId &&
-          readNumber(lastMessage, 'seen') === 0;
-        return mapChat({
+      .catch(() => ({} as FriendsResponse));
+
+    const followingUserIds = new Set<string>();
+    const followerUserIds = new Set<string>();
+    const candidates = new Map<string, RawRecord>();
+
+    const followingList = friendsResponse.data?.following ?? [];
+    const followersList = friendsResponse.data?.followers ?? [];
+
+    for (const user of followingList) {
+      const id = readString(user, 'user_id', 'id');
+      if (id && id !== sessionUserId) {
+        followingUserIds.add(id);
+        candidates.set(id, user);
+      }
+    }
+
+    for (const user of followersList) {
+      const id = readString(user, 'user_id', 'id');
+      if (id && id !== sessionUserId) {
+        followerUserIds.add(id);
+        if (!candidates.has(id)) {
+          candidates.set(id, user);
+        }
+      }
+    }
+
+    // Update the friends cache (followingCache) so other queries can use it
+    followingCache = {
+      sessionUserId,
+      expiresAt: Date.now() + FOLLOWING_CACHE_TTL_MS,
+      followingIds: followingUserIds,
+      followerIds: followerUserIds,
+    };
+
+    const chats: ChatItem[] = [];
+    for (const user of candidates.values()) {
+      const userId = readString(user, 'user_id', 'id');
+      if (!userId) continue;
+
+      chats.push(
+        mapChat({
           ...user,
           chat_type: 'user',
-          chat_id: `fallback-${userId}`,
-          chat_time: readNumber(lastMessage, 'time'),
-          last_message: lastMessage,
-          message_count: isUnread ? 1 : 0,
-        });
-      }),
-    );
-    chats.push(...batchChats.filter((chat): chat is ChatItem => chat !== null));
+          chat_id: userId,
+          chat_time: 0,
+          last_message: undefined,
+          message_count: 0,
+        })
+      );
+    }
+
+    const discoveredChats = mergeChats(chats);
+    discoveryCache = {
+      sessionUserId,
+      expiresAt: Date.now() + DISCOVERY_CACHE_TTL_MS,
+      chats: discoveredChats,
+    };
+    return discoveredChats;
+  } catch (err) {
+    console.error('fetchDiscoveredUserChats error:', err);
+    return [];
   }
-  const discoveredChats = mergeChats(chats);
-  discoveryCache = {
-    sessionUserId,
-    expiresAt: Date.now() + DISCOVERY_CACHE_TTL_MS,
-    chats: discoveredChats,
-  };
-  return discoveredChats;
 }
 function mapMessage(raw: Record<string, unknown>): MessageItem {
   const fromId = String(raw.from_id ?? raw.fromId ?? '');
@@ -994,7 +1080,7 @@ export function createMessagesRepository(): MessagesRepository {
       const includeDiscovery = options?.includeDiscovery ?? true;
       const [cachedChats, discoveredChats] = await Promise.all([
         options?.latestOnly ? fetchLatestCachedChats() : fetchCachedChats(),
-        includeDiscovery ? fetchDiscoveredUserChats().catch(() => []) : [],
+        includeDiscovery ? fetchDiscoveredUserChats(options?.forceRefresh).catch(() => []) : [],
       ]);
       return mergeChats(discoveredChats, cachedChats);
     },
@@ -1242,6 +1328,14 @@ export function createMessagesRepository(): MessagesRepository {
         },
       );
       assertTagsResponse(response);
+    },
+
+    async getFollowingUserIds(forceRefresh?: boolean) {
+      return fetchFollowingUserIds(forceRefresh);
+    },
+
+    async getFollowerUserIds(forceRefresh?: boolean) {
+      return fetchFollowerUserIds(forceRefresh);
     },
 
     async getUsersByLabel(labelId: string) {

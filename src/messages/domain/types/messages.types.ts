@@ -18,6 +18,8 @@ export interface ChatItem {
   unreadCount: number;
   isOnline: boolean;
   isVerified: boolean;
+  isFollowing?: boolean;
+  isFollower?: boolean;
   labels?: MessageLabel[];
 }
 
@@ -96,6 +98,7 @@ export interface GetMessagesOptions {
 export interface GetChatsOptions {
   includeDiscovery?: boolean;
   latestOnly?: boolean;
+  forceRefresh?: boolean;
 }
 
 export interface CreateGroupChatInput {

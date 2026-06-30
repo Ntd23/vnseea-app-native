@@ -36,7 +36,7 @@ function CarouselSeparator() {
 }
 
 function formatMoney(amount: number, symbol: string): string {
-  return `${amount.toLocaleString('vi-VN')}${symbol || 'đ'}`;
+  return `${amount.toLocaleString('vi-VN')}${symbol || 'VNSEEA'}`;
 }
 
 interface FeedFundingCarouselProps {

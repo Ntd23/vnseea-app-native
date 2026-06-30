@@ -14,7 +14,7 @@ export interface FundingViewMeta {
 }
 
 const INITIAL_META: FundingViewMeta = {
-  currencySymbol: 'đ',
+  currencySymbol: 'VNSEEA',
   canCreate: true,
 };
 
@@ -30,7 +30,7 @@ export function useFundingViewModel() {
     try {
       const response = await repository.getFundingList({ limit: 20 });
       setCampaigns(response);
-      setMeta({ currencySymbol: 'đ', canCreate: true });
+      setMeta({ currencySymbol: 'VNSEEA', canCreate: true });
     } catch (caughtError) {
       setError(
         caughtError instanceof Error

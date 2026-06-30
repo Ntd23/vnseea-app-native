@@ -2,6 +2,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Image,
   Modal,
@@ -16,9 +17,11 @@ import {
 } from 'react-native';
 import {
   ArrowLeft,
+  Bell,
   Check,
   CheckCircle2,
   ChevronDown,
+  CircleUser,
   Edit3,
   FileText,
   Film,
@@ -32,6 +35,7 @@ import {
   Tag,
   Trash2,
   Upload,
+  UserPlus,
   Users,
   Video,
   X,
@@ -42,6 +46,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { launchImageLibrary, type MediaType } from 'react-native-image-picker';
 import type { RootStackParamList } from '../../../navigation/types';
+import type { RootStackRouteName } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useMessagesViewModel } from '../../application/view-models/useMessagesViewModel';
 import type {
@@ -56,6 +61,12 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
+import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
+import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
+import { useNotificationBadgeViewModel } from '../../../notifications';
+import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
+import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
 
 type MessagesNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -451,6 +462,44 @@ function ChatListItem({
             {chat.isVerified && (
               <CheckCircle2 size={14} color="#3b82f6" className="ml-1" />
             )}
+            {chat.isFollowing && (!chat.lastMessage || chat.lastMessageTime === 0) && (
+              <View
+                style={{
+                  marginLeft: 6,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#dbeafe',
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 10,
+                  gap: 3,
+                }}
+              >
+                <UserPlus size={10} color="#2563eb" />
+                <Text style={{ fontSize: 10, color: '#2563eb', fontWeight: '600' }}>
+                  Bạn bè mới
+                </Text>
+              </View>
+            )}
+            {!chat.isFollowing && chat.isFollower && (
+              <View
+                style={{
+                  marginLeft: 6,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#f3e8ff',
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 10,
+                  gap: 3,
+                }}
+              >
+                <UserPlus size={10} color="#7c3aed" />
+                <Text style={{ fontSize: 10, color: '#7c3aed', fontWeight: '600' }}>
+                  Người follow
+                </Text>
+              </View>
+            )}
             {isGroup && (
               <View className="ml-1 h-5 w-5 items-center justify-center rounded-full bg-purple-100">
                 <Users size={12} color="#7c3aed" />
@@ -673,7 +722,7 @@ function SearchBar({
   placeholder: string;
 }) {
   return (
-    <View className="mx-4 mb-3 flex-row items-center rounded-xl bg-gray-100 px-4 py-3">
+    <View className="mx-4 mt-4 mb-3 flex-row items-center rounded-xl bg-gray-100 px-4 py-3">
       <Search size={18} color="#9ca3af" />
       <TextInput
         className="ml-3 flex-1 text-sm text-gray-900"
@@ -1136,6 +1185,44 @@ function MessageScreen() {
   const navigation = useNavigation<MessagesNav>();
   const language = useAppLanguage();
   const copy = MESSAGE_COPY[language];
+
+  // Branding & Header states/hooks
+  const { messageCount, notificationCount } = useUnreadBadgeCounts();
+  const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
+  const { user } = useCurrentUserViewModel();
+  useNotificationBadgeViewModel();
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(true);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowTooltip(false);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handlePressLogo = useCallback(() => {
+    navigation.navigate(ROUTES.MAIN_TABS, {
+      screen: ROUTES.FEED,
+    });
+  }, [navigation]);
+
+  const avatarUrl = user?.avatar;
+  const transitionAnim = useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    if (avatarUrl) {
+      const timer = setTimeout(() => {
+        Animated.timing(transitionAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }).start();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [avatarUrl, transitionAnim]);
+
   const {
     chats,
     labels,
@@ -1145,6 +1232,7 @@ function MessageScreen() {
     isLoadingLabels,
     error,
     loadChats,
+    loadFollowingUserIds,
     isSending,
     sendBulkMessages,
     createLabel,
@@ -1171,7 +1259,8 @@ function MessageScreen() {
   useFocusEffect(
     useCallback(() => {
       if (hasFocusedOnceRef.current) {
-        loadChats(false).catch(() => undefined);
+        loadChats(false, { forceRefresh: true, includeDiscovery: true }).catch(() => undefined);
+        loadFollowingUserIds(true).catch(() => undefined);
       } else {
         hasFocusedOnceRef.current = true;
       }
@@ -1181,7 +1270,7 @@ function MessageScreen() {
       }, 5000);
 
       return () => clearInterval(interval);
-    }, [loadChats]),
+    }, [loadChats, loadFollowingUserIds]),
   );
 
   const broadcastRecipientChats = useMemo(
@@ -1200,6 +1289,7 @@ function MessageScreen() {
         unreadCount: 0,
         isOnline: false,
         isVerified: false,
+        isFollowing: false,
         labels: recipient.labels,
       })),
     [broadcastRecipients],
@@ -1212,7 +1302,7 @@ function MessageScreen() {
         ? broadcastRecipientChats
         : chats;
 
-    return sourceChats.filter(chat => {
+    const filtered = sourceChats.filter(chat => {
       const matchesFilter =
         activeFilter === 'groups'
           ? chat.chatType === 'group'
@@ -1227,7 +1317,42 @@ function MessageScreen() {
 
       return matchesFilter && matchesQuery;
     });
-  }, [activeFilter, broadcastLabelId, broadcastRecipientChats, chats, query]);
+
+    // Sort logic:
+    // 1. "Bạn bè mới" (isFollowing === true AND lastMessageTime === 0) -> Priority 3
+    // 2. Active friend chats (isFollowing === true AND lastMessageTime > 0) -> Priority 2
+    // 3. Normal active chats (isFollowing === false AND lastMessageTime > 0) -> Priority 1
+    // 4. Followers without messages (isFollowing === false AND isFollower === true AND lastMessageTime === 0) -> Priority 0
+    if (activeFilter === 'users') {
+      filtered.sort((a, b) => {
+        const getPriority = (chat: ChatItem) => {
+          if (chat.unreadCount > 0) {
+            return 4; // Unread messages always go to the top
+          }
+          const hasMsg = chat.lastMessageTime > 0;
+          if (chat.isFollowing && !hasMsg) {
+            return 2; // "Bạn bè mới" (followed, no messages)
+          }
+          if (hasMsg) {
+            const nowSeconds = Date.now() / 1000;
+            const isRecent = nowSeconds - chat.lastMessageTime < 86400; // 24 hours
+            return isRecent ? 3 : 1; // Recent active chats (Priority 3) vs older active chats (Priority 1)
+          }
+          return 0; // Followers with no messages
+        };
+
+        const aPri = getPriority(a);
+        const bPri = getPriority(b);
+        if (aPri !== bPri) return bPri - aPri;
+
+        const timeDiff = b.lastMessageTime - a.lastMessageTime;
+        if (timeDiff !== 0) return timeDiff;
+        return b.unreadCount - a.unreadCount;
+      });
+    }
+
+    return filtered;
+  }, [activeFilter, broadcastLabelId, broadcastRecipientChats, chats, query, copy]);
 
   const selectedBroadcastLabel = useMemo(
     () => labels.find(label => label.id === broadcastLabelId),
@@ -1246,9 +1371,12 @@ function MessageScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadChats();
+    await Promise.all([
+      loadChats(true, { forceRefresh: true }),
+      loadFollowingUserIds(true),
+    ]).catch(() => undefined);
     setRefreshing(false);
-  }, [loadChats]);
+  }, [loadChats, loadFollowingUserIds]);
 
   const handleChatPress = useCallback(
     (chat: ChatItem) => {
@@ -1339,19 +1467,119 @@ function MessageScreen() {
       <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Header */}
-      <View className="flex-row items-center justify-between border-b border-gray-100 px-4 py-3">
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            className="mr-2 h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-            onPress={() => navigation.goBack()}
-          >
-            <ArrowLeft size={22} color="#1f2937" />
-          </TouchableOpacity>
-          <Text className="text-lg font-bold text-gray-900">{copy.title}</Text>
+      <View style={styles.headerRoot}>
+        <View style={styles.topBar}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={handlePressLogo}
+              style={styles.brandRow}
+            >
+              {logoUrl && imageErrorCount === 0 ? (
+                <View style={styles.logoPill}>
+                  <Image
+                    source={{ uri: logoUrl }}
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                    onError={notifyImageError}
+                  />
+                </View>
+              ) : (
+                <View style={styles.textLogoPill}>
+                  <Text style={styles.brandText}>VNSEEA</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.actions}>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => navigation.navigate(ROUTES.SEARCH)}
+              style={styles.headerIcon}
+            >
+              <Search size={19} color="#0758ff" strokeWidth={2.4} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() =>
+                navigation.navigate(ROUTES.MAIN_TABS, {
+                  screen: ROUTES.NOTIFICATIONS,
+                })
+              }
+              style={[styles.headerIcon, styles.messageButton]}
+            >
+              <Bell size={19} color="#0758ff" strokeWidth={2.35} />
+              {notificationCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {notificationCount > 99 ? '99+' : notificationCount}
+                  </Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => setMenuVisible(true)}
+              style={styles.headerIcon}
+            >
+              <View style={styles.profileIconContainer}>
+                <Animated.View
+                  style={[
+                    styles.profileIconLayer,
+                    {
+                      opacity: transitionAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 0],
+                      }),
+                      transform: [
+                        {
+                          scale: transitionAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [1, 0.7],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                >
+                  <CircleUser size={19} color="#0758ff" strokeWidth={2.2} />
+                </Animated.View>
+                {avatarUrl ? (
+                  <Animated.View
+                    style={[
+                      styles.profileIconLayer,
+                      {
+                        opacity: transitionAnim,
+                        transform: [
+                          {
+                            scale: transitionAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.7, 1],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  >
+                    <Image
+                      source={{ uri: avatarUrl }}
+                      style={styles.avatarImage}
+                    />
+                  </Animated.View>
+                ) : null}
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
-        <HeaderActions />
       </View>
+
+      {showTooltip && (
+        <View style={styles.tooltipBubble}>
+          <Text style={styles.tooltipText}>Chạm logo để về Home 🏠</Text>
+          <View style={styles.tooltipArrow} />
+        </View>
+      )}
 
       {/* Content */}
       <SearchBar
@@ -1591,8 +1819,169 @@ function MessageScreen() {
         onAttach={attachLabel}
         onDetach={detachLabel}
       />
+      <HeaderProfileDrawer
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+      />
     </SafeAreaView>
   );
 }
 
 export default MessageScreen;
+
+const styles = StyleSheet.create({
+  headerRoot: {
+    height: 68,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e8ebf3',
+    backgroundColor: '#ffffff',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  topBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logoPill: {
+    backgroundColor: '#1200ff',
+    borderRadius: 11,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    height: 37,
+    minWidth: 110,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#0000ff',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  logoImage: {
+    width: 100,
+    height: '100%',
+  },
+  textLogoPill: {
+    minWidth: 110,
+    height: 37,
+    borderRadius: 11,
+    backgroundColor: '#1200ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0000ff',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  brandText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#ffffff',
+    letterSpacing: 1,
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#eef1f7',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  messageButton: {
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#ff3b4f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  profileIconContainer: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  profileIconLayer: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  avatarImage: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+  },
+  tooltipBubble: {
+    position: 'absolute',
+    top: 60,
+    left: 12,
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    zIndex: 9999,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 10,
+    minWidth: 150,
+  },
+  tooltipText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  tooltipArrow: {
+    position: 'absolute',
+    top: -6,
+    left: 51,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightWidth: 6,
+    borderRightColor: 'transparent',
+    borderBottomWidth: 6,
+    borderBottomColor: '#0f172a',
+  },
+});

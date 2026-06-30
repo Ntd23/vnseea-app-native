@@ -39,6 +39,10 @@ import java.net.URL
 import java.util.Calendar
 
 class IncomingCallActivity : Activity() {
+  private companion object {
+    const val INCOMING_CALL_RINGTONE_RES_NAME = "incoming_call_ringtone"
+  }
+
   private var dismissReceiver: BroadcastReceiver? = null
   private var ringtone: Ringtone? = null
 
@@ -377,7 +381,7 @@ class IncomingCallActivity : Activity() {
 
   private fun incomingRingtoneUri(): Uri {
     val customRingtoneId = resources.getIdentifier(
-      "incoming_call_ringtone",
+      INCOMING_CALL_RINGTONE_RES_NAME,
       "raw",
       packageName,
     )

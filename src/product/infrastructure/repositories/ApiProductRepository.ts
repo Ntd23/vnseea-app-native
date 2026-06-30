@@ -68,6 +68,7 @@ export function createProductRepository(): ProductRepository {
           keyword: input?.keyword,
           distance: input?.distance,
           order_by: input?.order_by,
+          product_id: input?.product_id,
         },
       );
       return response;

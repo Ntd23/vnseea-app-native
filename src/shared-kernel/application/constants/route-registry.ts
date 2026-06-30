@@ -158,6 +158,7 @@ export const apiRoutes = {
   },
   movies: {
     get: 'get-movies',
+    create: 'create-movie',
     comments: 'movies_comments',
   },
   forum: {

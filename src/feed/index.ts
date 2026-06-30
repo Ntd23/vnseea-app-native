@@ -9,3 +9,4 @@ export { postCreatedEvents } from './application/events/postCreatedEvents';
 export { default as FeedScreen } from './presentation/screens/FeedScreen';
 export { default as CreatePostScreen } from './presentation/screens/CreatePostScreen';
 export { default as PostDetailScreen } from './presentation/screens/PostDetailScreen';
+export { default as PostReactionsSheet } from './presentation/components/PostReactionsSheet';
