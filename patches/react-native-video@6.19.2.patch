@@ -1,6 +1,6 @@
-diff -ruN package/ios/Video/AudioSessionManager.swift package-current/ios/Video/AudioSessionManager.swift
---- package/ios/Video/AudioSessionManager.swift	1985-10-26 15:15:00
-+++ package-current/ios/Video/AudioSessionManager.swift	2026-06-29 23:40:07
+diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager.swift
+--- a/ios/Video/AudioSessionManager.swift
++++ b/ios/Video/AudioSessionManager.swift
 @@ -45,6 +45,24 @@
          NotificationCenter.default.removeObserver(self)
      }

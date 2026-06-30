@@ -191,6 +191,10 @@ describe('iOS CallKit audio session configuration', () => {
     const videoPatchSource = exists(videoPatchPath) ? read(videoPatchPath) : '';
 
     expect(exists(videoPatchPath)).toBe(true);
+    expect(videoPatchSource).toContain(
+      'diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager.swift',
+    );
+    expect(videoPatchSource).not.toContain('package-current');
     expect(videoPatchSource).toContain('isVnseeaCallKitVoiceSessionActive');
     expect(videoPatchSource).toContain('AVAudioSession.Category.playAndRecord');
     expect(videoPatchSource).toContain('AVAudioSession.Mode.voiceChat');
