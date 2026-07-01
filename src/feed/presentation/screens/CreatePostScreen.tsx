@@ -13,15 +13,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   Keyboard,
   Modal,
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
@@ -72,6 +75,7 @@ import type {
   PostPhotoAttachment,
   PostPrivacy,
   PostVideoAttachment,
+  PostAudioAttachment,
 } from '../../domain/types/feed.types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -123,6 +127,14 @@ const CREATE_POST_COPY = {
     privacyOnlyMeDesc: 'Chỉ mình bạn nhìn thấy',
     feelingLabel: 'đang cảm thấy',
     suggestionsLoading: 'Đang tìm gợi ý...',
+    processing: 'Đang xử lý...',
+    tapToPlay: 'Nhấp để phát',
+    tapToPause: 'Nhấp để tạm dừng',
+    postAsPage: 'Đăng với tư cách Trang',
+    poll: 'Cuộc thăm dò',
+    product: 'Sản phẩm',
+    live: 'Live',
+    page: 'Trang',
   },
   en: {
     headerTitle: 'Create Post',
@@ -168,6 +180,14 @@ const CREATE_POST_COPY = {
     privacyOnlyMeDesc: 'Only you can see',
     feelingLabel: 'is feeling',
     suggestionsLoading: 'Finding suggestions...',
+    processing: 'Processing...',
+    tapToPlay: 'Tap to play',
+    tapToPause: 'Tap to pause',
+    postAsPage: 'Post as Page',
+    poll: 'Poll',
+    product: 'Product',
+    live: 'Live',
+    page: 'Page',
   },
 };
 
@@ -269,7 +289,14 @@ function assetToVideoAttachment(asset: Asset): PostVideoAttachment | null {
   // display it yet but the server may want it as a hint.
   const name = asset.fileName ?? `video-${Date.now()}.mp4`;
   const type = asset.type ?? 'video/mp4';
-  return { uri, name, type };
+  return {
+    uri,
+    name,
+    type,
+    width: asset.width,
+    height: asset.height,
+    duration: asset.duration,
+  };
 }
 
 // ── Sub-components ────────────────────────────────────────────────────
@@ -447,6 +474,869 @@ function FeelingPickerSheet({
 }
 
 // ── Screen ────────────────────────────────────────────────────────────
+
+// ── Sub-components React.memo ──────────────────────────────────────────
+
+interface CreatePostHeaderProps {
+  onDiscard: () => void;
+  onSubmit: () => void;
+  canSubmit: boolean;
+  isSubmitting: boolean;
+  isProcessingPhotos: boolean;
+  copy: any;
+}
+
+const CreatePostHeader = React.memo(({
+  onDiscard,
+  onSubmit,
+  canSubmit,
+  isSubmitting,
+  isProcessingPhotos,
+  copy,
+}: CreatePostHeaderProps) => {
+  return (
+    <View className="h-16 flex-row items-center justify-between px-4 bg-transparent">
+      <TouchableOpacity
+        onPress={onDiscard}
+        activeOpacity={0.7}
+        style={{
+          shadowColor: '#94a3b8',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.15,
+          shadowRadius: 10,
+          elevation: 3,
+        }}
+        className="h-12 w-12 items-center justify-center rounded-full bg-white border border-slate-100"
+      >
+        <X size={24} color="#0F172A" />
+      </TouchableOpacity>
+      
+      <Text className="text-[20px] font-bold text-slate-800">{copy.headerTitle}</Text>
+      
+      <TouchableOpacity
+        onPress={onSubmit}
+        disabled={!canSubmit || isProcessingPhotos}
+        activeOpacity={0.7}
+        className={
+          canSubmit && !isProcessingPhotos
+            ? 'rounded-full bg-[#0000ff] px-6 py-2.5'
+            : 'rounded-full bg-slate-200 px-6 py-2.5'
+        }
+      >
+        {isSubmitting ? (
+          <ActivityIndicator color={canSubmit && !isProcessingPhotos ? '#FFFFFF' : '#94A3B8'} size="small" />
+        ) : (
+          <Text
+            style={{
+              color: canSubmit && !isProcessingPhotos ? '#FFFFFF' : '#94A3B8',
+              fontWeight: '700',
+              fontSize: 15,
+            }}
+          >
+            {copy.post}
+          </Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+});
+
+interface AuthorPrivacyCardProps {
+  avatarUrl?: string;
+  displayName: string;
+  feeling?: PostFeeling;
+  feelingLabel: string | null;
+  targetPage?: any;
+  currentPrivacyLabel: string;
+  currentPrivacyIcon: React.ComponentType<{ size: number; color: string }>;
+  onPrivacyPress: () => void;
+  copy: any;
+}
+
+const AuthorPrivacyCard = React.memo(({
+  avatarUrl,
+  displayName,
+  feeling,
+  feelingLabel,
+  targetPage,
+  currentPrivacyLabel,
+  currentPrivacyIcon: PrivacyIcon,
+  onPrivacyPress,
+  copy,
+}: AuthorPrivacyCardProps) => {
+  return (
+    <View
+      style={{
+        shadowColor: '#94a3b8',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 2,
+      }}
+      className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 flex-row items-center"
+    >
+      <View className="relative">
+        {avatarUrl ? (
+          <Image
+            source={{ uri: avatarUrl }}
+            style={{ height: 56, width: 56, borderRadius: 28 }}
+            resizeMode="cover"
+          />
+        ) : (
+          <View
+            style={{
+              height: 56,
+              width: 56,
+              borderRadius: 28,
+              backgroundColor: '#E2E8F0',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 22, color: '#64748B', fontWeight: 'bold' }}>
+              {displayName.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        )}
+        <View className="absolute bottom-0 right-0 h-4.5 w-4.5 rounded-full bg-[#0000ff] border border-white items-center justify-center">
+          <Text className="text-white text-[10px] font-bold leading-none">+</Text>
+        </View>
+      </View>
+      <View className="ml-4 flex-1">
+        <View className="flex-row items-center flex-wrap">
+          <Text className="text-[16px] font-bold text-slate-800" numberOfLines={1}>
+            {displayName}
+          </Text>
+          {feeling ? (
+            <Text
+              className="ml-1.5 text-[14px] text-slate-500 font-medium"
+              numberOfLines={1}
+            >
+              {copy.feelingLabel} {feeling.emoji}{' '}
+              {feelingLabel}
+            </Text>
+          ) : null}
+        </View>
+        {targetPage ? (
+          <Text className="mt-1 text-[12px] font-semibold text-[#0000ff]">
+            {copy.postAsPage}
+          </Text>
+        ) : null}
+        <TouchableOpacity
+          onPress={onPrivacyPress}
+          activeOpacity={0.7}
+          className="mt-1.5 self-start flex-row items-center rounded-full bg-slate-100 px-3 py-1"
+        >
+          <PrivacyIcon size={12} color="#475569" />
+          <Text className="mx-1.5 text-[12px] font-semibold text-slate-600">
+            {currentPrivacyLabel}
+          </Text>
+          <ChevronDown size={12} color="#475569" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+});
+
+interface CaptionComposerProps {
+  textInputRef: React.RefObject<TextInput | null>;
+  text: string;
+  onChangeText: (text: string) => void;
+  onFocus: () => void;
+  onBlur: () => void;
+  placeholder: string;
+  onInsertChar: (char: '#' | '@') => void;
+  onFeelingPress: () => void;
+}
+
+const CharacterCounter = React.memo(({ length }: { length: number }) => {
+  return (
+    <Text className="ml-2 text-[13px] text-slate-400 font-medium">
+      {length}/5000
+    </Text>
+  );
+});
+
+const CaptionComposer = React.memo(({
+  textInputRef,
+  text,
+  onChangeText,
+  onFocus,
+  onBlur,
+  placeholder,
+  onInsertChar,
+  onFeelingPress,
+}: CaptionComposerProps) => {
+  return (
+    <View
+      style={{
+        shadowColor: '#94a3b8',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 2,
+      }}
+      className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 min-h-[220px] justify-between"
+    >
+      <TextInput
+        ref={textInputRef}
+        value={text}
+        onChangeText={onChangeText}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        placeholder={placeholder}
+        placeholderTextColor="#94A3B8"
+        multiline
+        autoFocus
+        textAlignVertical="top"
+        style={{
+          fontSize: 18,
+          lineHeight: 26,
+          color: '#1e293b',
+          padding: 0,
+          minHeight: 120,
+        }}
+      />
+
+      {/* Word counts & inline shortcuts */}
+      <View className="flex-row items-center justify-end mt-4 gap-3">
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => onInsertChar('#')}
+          className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
+        >
+          <Hash size={18} color="#64748b" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => onInsertChar('@')}
+          className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
+        >
+          <AtSign size={18} color="#64748b" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={onFeelingPress}
+          className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
+        >
+          <Smile size={18} color="#64748b" />
+        </TouchableOpacity>
+
+        <CharacterCounter length={text.length} />
+      </View>
+    </View>
+  );
+});
+
+interface MediaPreviewStripProps {
+  photos: PostPhotoAttachment[];
+  onRemovePhoto: (uri: string) => void;
+  onPickPhotos: () => void;
+  isProcessing: boolean;
+  copy: any;
+  language: string;
+}
+
+const MediaPreviewStrip = React.memo(({
+  photos,
+  onRemovePhoto,
+  onPickPhotos,
+  isProcessing,
+  copy,
+  language,
+}: MediaPreviewStripProps) => {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
+      className="mt-4"
+    >
+      <Pressable
+        onPress={onPickPhotos}
+        style={({ pressed }) => [
+          {
+            width: 100,
+            height: 100,
+            borderRadius: 16,
+            borderStyle: 'dashed',
+            borderWidth: 1.5,
+            borderColor: '#cbd5e1',
+            backgroundColor: '#ffffff',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transform: [{ scale: pressed ? 0.96 : 1 }],
+          }
+        ]}
+      >
+        <Text style={{ fontSize: 24, color: '#64748b', fontWeight: '300' }}>+</Text>
+        <Text style={{ fontSize: 10, color: '#64748b', marginTop: 4, fontWeight: '600' }}>{copy.addPhoto}</Text>
+      </Pressable>
+
+      {isProcessing && (
+        <View
+          style={{
+            width: 100,
+            height: 100,
+            borderRadius: 16,
+            backgroundColor: '#ffffff',
+            borderWidth: 1,
+            borderColor: '#e2e8f0',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <ActivityIndicator color="#0000ff" size="small" />
+          <Text style={{ fontSize: 9, color: '#64748b', marginTop: 6, fontWeight: '600', textAlign: 'center' }}>
+            {copy.processing}
+          </Text>
+        </View>
+      )}
+
+      {photos.map(photo => (
+        <View key={photo.uri} style={{ width: 100, height: 100, position: 'relative' }}>
+          <Image
+            source={{ uri: photo.uri }}
+            style={{ width: '100%', height: '100%', borderRadius: 16 }}
+            resizeMode="cover"
+            resizeMethod="resize"
+          />
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => onRemovePhoto(photo.uri)}
+            className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-white/90 items-center justify-center shadow-sm"
+          >
+            <X size={12} color="#000000" />
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      {photos.length > 0 && (
+        <Pressable
+          onPress={onPickPhotos}
+          style={({ pressed }) => [
+            {
+              width: 100,
+              height: 100,
+              borderRadius: 16,
+              backgroundColor: '#ffffff',
+              borderWidth: 1,
+              borderColor: '#f1f5f9',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#94a3b8',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.05,
+              shadowRadius: 6,
+              elevation: 1,
+              transform: [{ scale: pressed ? 0.96 : 1 }],
+            }
+          ]}
+        >
+          <Text style={{ fontSize: 20, color: '#64748b', fontWeight: 'bold' }}>...</Text>
+          <Text style={{ fontSize: 10, color: '#64748b', marginTop: 4, fontWeight: '600' }}>{copy.viewMore}</Text>
+        </Pressable>
+      )}
+    </ScrollView>
+  );
+});
+
+interface VideoPreviewCardProps {
+  video: PostVideoAttachment;
+  onRemove: () => void;
+  copy: any;
+  isKeyboardActive: boolean;
+}
+
+const VideoPreviewCard = React.memo(({
+  video,
+  onRemove,
+  copy,
+  isKeyboardActive,
+}: VideoPreviewCardProps) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+
+  // Pause video if keyboard becomes active
+  useEffect(() => {
+    if (isKeyboardActive) {
+      setIsPlaying(false);
+    }
+  }, [isKeyboardActive]);
+
+  // Compute dimensions based on video aspect ratio
+  const dimensions = useMemo(() => {
+    const defaultHeight = 180;
+    if (!video.width || !video.height) {
+      return { width: '100%', height: defaultHeight };
+    }
+    const ratio = video.width / video.height;
+    if (ratio > 1.2) {
+      // Horizontal video
+      return { width: '100%', aspectRatio: 16 / 9, maxHeight: 220 };
+    } else if (ratio < 0.8) {
+      // Vertical video
+      return { width: 180, height: 320, alignSelf: 'center' };
+    } else {
+      // Square video
+      return { width: 240, height: 240, alignSelf: 'center' };
+    }
+  }, [video.width, video.height]);
+
+  const handlePlayPause = () => {
+    setIsPlaying(prev => !prev);
+  };
+
+  const handleLoad = () => {
+    setIsVideoLoaded(true);
+  };
+
+  return (
+    <View className="mx-4 mt-4 overflow-hidden rounded-[20px] border border-blue-100 bg-blue-50">
+      <View className="flex-row items-center px-4 pt-3 pb-2">
+        <View className="h-8 w-8 items-center justify-center rounded-full bg-blue-100">
+          <VideoIcon size={16} color="#3b82f6" />
+        </View>
+        <Text
+          className="ml-2 flex-1 text-sm font-semibold text-slate-700"
+          numberOfLines={1}
+        >
+          {video.name}
+        </Text>
+        <TouchableOpacity
+          onPress={onRemove}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          className="h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm"
+        >
+          <X size={16} color="#64748B" />
+        </TouchableOpacity>
+      </View>
+      <Text
+        className="px-4 text-[11px] font-medium uppercase tracking-wider text-blue-700"
+      >
+        {copy.addVideo}
+      </Text>
+      
+      <Pressable
+        onPress={handlePlayPause}
+        style={({ pressed }) => [
+          {
+            margin: 12,
+            borderRadius: 16,
+            overflow: 'hidden',
+            backgroundColor: '#0F172A',
+            position: 'relative',
+            justifyContent: 'center',
+            alignItems: 'center',
+            transform: [{ scale: pressed ? 0.98 : 1 }],
+          },
+          dimensions as any
+        ]}
+      >
+        {/* Skeleton/Placeholder until first frame loads */}
+        {!isVideoLoaded && (
+          <View style={StyleSheet.absoluteFill} className="items-center justify-center bg-slate-900 z-10">
+            <ActivityIndicator color="#FFFFFF" size="small" />
+            <Text className="mt-2 text-xs text-slate-400 font-semibold">{copy.processing}</Text>
+          </View>
+        )}
+
+        <VideoPlayer
+          source={{ uri: video.uri }}
+          style={{ width: '100%', height: '100%' }}
+          paused={!isPlaying}
+          resizeMode="cover"
+          onLoad={handleLoad}
+          repeat
+        />
+
+        {/* Play/Pause Overlay */}
+        <View
+          style={StyleSheet.absoluteFill}
+          className="bg-black/20 items-center justify-center"
+          pointerEvents="none"
+        >
+          {!isPlaying ? (
+            <View className="h-14 w-14 items-center justify-center rounded-full bg-black/40 border border-white/20">
+              <View style={{ width: 0, height: 0, borderLeftWidth: 16, borderTopWidth: 10, borderBottomWidth: 10, borderStyle: 'solid', borderLeftColor: '#FFFFFF', borderTopColor: 'transparent', borderBottomColor: 'transparent', marginLeft: 4 }} />
+            </View>
+          ) : null}
+        </View>
+
+        {/* Meta Info overlay (Duration) */}
+        {video.duration ? (
+          <View className="absolute bottom-3 right-3 rounded-md bg-black/60 px-2 py-0.5">
+            <Text className="text-[11px] font-bold text-white">
+              {formatAudioDuration(video.duration * 1000)}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Click to Play/Pause Hint */}
+        <View className="absolute bottom-3 left-3 rounded-md bg-black/40 px-2 py-0.5">
+          <Text className="text-[10px] font-semibold text-white/80">
+            {isPlaying ? copy.tapToPause : copy.tapToPlay}
+          </Text>
+        </View>
+      </Pressable>
+    </View>
+  );
+});
+
+interface AudioPreviewCardProps {
+  isRecording: boolean;
+  durationMs: number;
+  audio?: PostAudioAttachment;
+  onCancelRecording: () => void;
+  onStopRecording: () => void;
+  onRemoveAudio: () => void;
+  copy: any;
+}
+
+const AudioPreviewCard = React.memo(({
+  isRecording,
+  durationMs,
+  audio,
+  onCancelRecording,
+  onStopRecording,
+  onRemoveAudio,
+  copy,
+}: AudioPreviewCardProps) => {
+  if (isRecording) {
+    return (
+      <View className="mx-4 mt-4 flex-row items-center rounded-[20px] border border-red-100 bg-red-50 p-4">
+        <View className="mr-3 h-3 w-3 rounded-full bg-red-500" />
+        <View className="flex-1">
+          <Text className="text-sm font-semibold text-red-700">
+            {copy.recording} {formatAudioDuration(durationMs)}
+          </Text>
+          <View className="mt-2 h-5">
+            <AudioWaveform
+              animated
+              color="#DC2626"
+              inactiveColor="#FECACA"
+              height={18}
+              barCount={34}
+            />
+          </View>
+          <Text className="mt-1 text-xs text-red-500">
+            {copy.recordingTip}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={onCancelRecording}
+          className="h-9 w-9 items-center justify-center rounded-full bg-white shadow-sm"
+        >
+          <X size={17} color="#DC2626" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onStopRecording}
+          className="ml-2 h-9 w-9 items-center justify-center rounded-full bg-red-600 shadow-sm"
+        >
+          <Square size={14} color="#FFFFFF" fill="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (audio) {
+    return (
+      <View className="mx-4 mt-4 flex-row items-center rounded-[20px] border border-blue-100 bg-blue-50 p-4">
+        <View className="flex-1">
+          <Text className="mb-2 text-sm font-semibold text-slate-700" numberOfLines={1}>
+            {audio.name}
+          </Text>
+          <AudioPlayer uri={audio.uri} compact />
+        </View>
+        <TouchableOpacity
+          onPress={onRemoveAudio}
+          className="ml-2 h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm"
+        >
+          <X size={16} color="#64748B" />
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return null;
+});
+
+interface ComposerActionTrayProps {
+  isFloating: boolean;
+  copy: any;
+  language: string;
+  onPickPhotos: () => void;
+  onFeelingPress: () => void;
+  onAudioAction: () => void;
+  onPickVideo: () => void;
+  onNavigate: (route: string) => void;
+  isRecording: boolean;
+  insetsBottom: number;
+}
+
+const ComposerActionTray = React.memo(({
+  isFloating,
+  copy,
+  language,
+  onPickPhotos,
+  onFeelingPress,
+  onAudioAction,
+  onPickVideo,
+  onNavigate,
+  isRecording,
+  insetsBottom,
+}: ComposerActionTrayProps) => {
+  const compactButtons = useMemo(() => [
+    {
+      key: 'photo',
+      label: copy.photo,
+      onPress: onPickPhotos,
+      Icon: ImageIcon,
+      iconBg: '#f0fdf4',
+      iconColor: '#22c55e',
+    },
+    {
+      key: 'feeling',
+      label: copy.feeling,
+      onPress: onFeelingPress,
+      Icon: Smile,
+      iconBg: '#fef9c3',
+      iconColor: '#eab308',
+    },
+    {
+      key: 'audio',
+      label: onAudioAction,
+      onPress: onAudioAction,
+      Icon: Music2,
+      iconBg: '#fdf2f8',
+      iconColor: '#ec4899',
+      altIcon: <Square size={14} color="#ec4899" fill="#ec4899" />,
+    },
+    {
+      key: 'video',
+      label: copy.video,
+      onPress: onPickVideo,
+      Icon: VideoIcon,
+      iconBg: '#eff6ff',
+      iconColor: '#3b82f6',
+    },
+  ], [copy, onPickPhotos, onFeelingPress, onAudioAction, onPickVideo]);
+
+  const expandedRow2 = useMemo(() => [
+    {
+      actionKey: 'poll' as const,
+      label: copy.poll,
+      route: ROUTES.CREATE_POLL,
+    },
+    {
+      actionKey: 'product' as const,
+      label: copy.product,
+      route: ROUTES.CREATE_PRODUCT,
+    },
+    {
+      actionKey: 'live' as const,
+      label: copy.live,
+      route: ROUTES.GO_LIVE,
+    },
+    {
+      actionKey: 'page' as const,
+      label: copy.page,
+      route: ROUTES.CREATE_PAGE,
+    },
+  ], [copy]);
+
+  const SECONDARY_LABEL_COLOR = '#475569';
+
+  const renderShortcutButton = (
+    button: typeof compactButtons[number],
+    size: 44 | 48,
+  ) => {
+    const Icon = button.Icon;
+    const showAlt = button.altIcon && button.key === 'audio' && isRecording;
+    return (
+      <TouchableOpacity
+        key={button.key}
+        onPress={button.onPress}
+        activeOpacity={0.7}
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          flex: 1,
+        }}
+      >
+        <View
+          style={{
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: button.iconBg,
+            alignItems: 'center',
+            justifyContent: 'center',
+            ...(size === 48 ? { marginBottom: 8 } : null),
+          }}
+        >
+          {showAlt ? (
+            button.altIcon
+          ) : (
+            <Icon size={size === 44 ? 20 : 22} color={button.iconColor} />
+          )}
+        </View>
+        {isFloating ? null : (
+          <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
+            {button.label}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  const renderMoreButton = () => (
+    <TouchableOpacity
+      key="more"
+      onPress={() => onNavigate('more_sheet')}
+      activeOpacity={0.7}
+      style={{
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: 1,
+      }}
+    >
+      <View
+        style={{
+          width: isFloating ? 44 : 48,
+          height: isFloating ? 44 : 48,
+          borderRadius: isFloating ? 22 : 24,
+          backgroundColor: '#f8fafc',
+          borderWidth: 1,
+          borderColor: '#e2e8f0',
+          borderStyle: 'dashed',
+          alignItems: 'center',
+          justifyContent: 'center',
+          ...(isFloating ? null : { marginBottom: 8 }),
+        }}
+      >
+        <ChevronRight
+          size={isFloating ? 18 : 20}
+          color="#475569"
+          strokeWidth={2.4}
+        />
+      </View>
+      {isFloating ? null : (
+        <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
+          {copy.moreShort}
+        </Text>
+      )}
+    </TouchableOpacity>
+  );
+
+  const renderRow2Shortcut = (
+    entry: typeof expandedRow2[number],
+  ) => {
+    const action = CREATE_ACTIONS.find(a => a.key === entry.actionKey);
+    if (!action) return null;
+    const Icon = action.Icon;
+    return (
+      <TouchableOpacity
+        key={entry.actionKey}
+        onPress={() => onNavigate(entry.route)}
+        activeOpacity={0.7}
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          flex: 1,
+        }}
+      >
+        <View
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            backgroundColor: action.iconBg,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: 8,
+          }}
+        >
+          <Icon size={22} color={action.iconColor} strokeWidth={2} />
+        </View>
+        <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
+          {entry.label}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  if (isFloating) {
+    return (
+      <View
+        style={{
+          backgroundColor: '#ffffff',
+          borderTopWidth: 1,
+          borderTopColor: '#f1f5f9',
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        {compactButtons.map(b => renderShortcutButton(b, 44))}
+        {renderMoreButton()}
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={{
+        marginHorizontal: 16,
+        marginBottom: Math.max(insetsBottom, 16),
+        marginTop: 16,
+        backgroundColor: '#ffffff',
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
+        paddingHorizontal: 16,
+        paddingTop: 16,
+        paddingBottom: 20,
+        shadowColor: '#94a3b8',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        elevation: 3,
+      }}
+    >
+      {/* Header Row */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1e293b' }}>{copy.addPost}</Text>
+        <TouchableOpacity
+          onPress={() => onNavigate('more_sheet')}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.7}
+          style={{ flexDirection: 'row', alignItems: 'center' }}
+        >
+          <Text style={{ fontSize: 13, fontWeight: '600', color: '#0000ff', marginRight: 2 }}>
+            {copy.more}
+          </Text>
+          <ChevronRight size={16} color="#0000ff" strokeWidth={2.4} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Row 1 — post-flow shortcuts (Photo / Feeling / Audio / Video). */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        {compactButtons.map(b => renderShortcutButton(b, 48))}
+      </View>
+
+      {/* Row 2 — quick creation routes (Ad / Product / Event / Page). */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
+        {expandedRow2.map(renderRow2Shortcut)}
+      </View>
+    </View>
+  );
+});
+
 function CreatePostScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<CreatePostRoute>();
@@ -513,43 +1403,72 @@ function CreatePostScreen() {
   }, [vm.draft.feeling, language]);
 
   const textInputRef = useRef<TextInput | null>(null);
+  const scrollViewRef = useRef<ScrollView | null>(null);
   const [isTextFocused, setIsTextFocused] = useState(false);
+
+  // Keyboard Animated transitions
+  const keyboardTransitionAnim = useRef(new Animated.Value(0)).current;
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isKeyboardActive, setIsKeyboardActive] = useState(false);
 
   useEffect(() => {
-    const showEvent =
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent =
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, e => {
-      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      const height = e.endCoordinates?.height ?? 0;
+      setKeyboardHeight(height);
+      setIsKeyboardActive(true);
+      Animated.timing(keyboardTransitionAnim, {
+        toValue: 1,
+        duration: e.duration || 250,
+        useNativeDriver: true,
+      }).start();
     });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
+
+    const hideSub = Keyboard.addListener(hideEvent, (e) => {
+      setIsKeyboardActive(false);
+      Animated.timing(keyboardTransitionAnim, {
+        toValue: 0,
+        duration: (e && e.duration) || 250,
+        useNativeDriver: true,
+      }).start();
     });
+
     return () => {
       showSub.remove();
       hideSub.remove();
     };
+  }, [keyboardTransitionAnim]);
+
+  const handleInputFocus = useCallback(() => {
+    setIsTextFocused(true);
+    // Smooth scroll caption input card to top when keyboard opens
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   }, []);
 
-  const suggestionBarBottom = Platform.OS === 'ios' ? keyboardHeight : 0;
-  const isSuggestionBarVisible = isTextFocused && keyboardHeight > 0;
+  const handleInputBlur = useCallback(() => {
+    setIsTextFocused(false);
+  }, []);
+
+  // Save callbacks in refs to make handlers stable & prevent re-renders
+  const vmRef = useRef(vm);
+  vmRef.current = vm;
 
   const insertCaptionChar = useCallback(
     (char: '#' | '@') => {
-      const current = vm.draft.text;
+      const current = vmRef.current.draft.text;
       const needsSpace = current.length > 0 && !/\s$/.test(current);
-      vm.setText(`${current}${needsSpace ? ' ' : ''}${char}`);
+      vmRef.current.setText(`${current}${needsSpace ? ' ' : ''}${char}`);
       textInputRef.current?.focus();
     },
-    [vm],
+    [],
   );
 
   const handlePickPhotos = useCallback(async () => {
-    const remaining = vm.maxPhotos - vm.draft.photos.length;
+    const remaining = vmRef.current.maxPhotos - vmRef.current.draft.photos.length;
     if (remaining <= 0) {
-      Alert.alert(copy.limitTitle, copy.limitMsg.replace('{max}', String(vm.maxPhotos)));
+      Alert.alert(copy.limitTitle, copy.limitMsg.replace('{max}', String(vmRef.current.maxPhotos)));
       return;
     }
     setIsProcessingPhotos(true);
@@ -572,31 +1491,25 @@ function CreatePostScreen() {
         .map(assetToAttachment)
         .filter((a): a is PostPhotoAttachment => a !== null);
       if (attachments.length > 0) {
-        vm.addPhotos(attachments);
+        vmRef.current.addPhotos(attachments);
       }
     } finally {
       setIsProcessingPhotos(false);
     }
-  }, [vm, copy, language]);
+  }, [copy]);
 
   const handlePickAudio = useCallback(async () => {
     try {
       const audio = await pickSupportedAudioFile();
-      if (audio) vm.setAudio(audio);
+      if (audio) vmRef.current.setAudio(audio);
     } catch (caught) {
       Alert.alert(
         copy.audioError,
         caught instanceof Error ? caught.message : copy.audioErrorTip,
       );
     }
-  }, [vm, copy]);
+  }, [copy]);
 
-  /**
-   * Open the gallery in video mode. The view-model clears any
-   * previously selected photos / audio so the resulting draft is
-   * guaranteed to be a single-media post (WoWonder's `new_post`
-   * accepts only one media type per submission).
-   */
   const handlePickVideo = useCallback(async () => {
     setIsProcessingPhotos(true);
     try {
@@ -615,22 +1528,22 @@ function CreatePostScreen() {
       if (!asset) return;
       const attachment = assetToVideoAttachment(asset);
       if (attachment) {
-        vm.setVideo(attachment);
+        vmRef.current.setVideo(attachment);
       }
     } finally {
       setIsProcessingPhotos(false);
     }
-  }, [vm, copy]);
+  }, [copy]);
 
   const handleToggleAudioRecording = useCallback(async () => {
     try {
       if (wavRecorder.isRecording) {
         const audio = await wavRecorder.stopRecording();
-        if (audio) vm.setAudio(audio);
+        if (audio) vmRef.current.setAudio(audio);
         return;
       }
 
-      vm.setAudio(undefined);
+      vmRef.current.setAudio(undefined);
       await wavRecorder.startRecording();
     } catch (caught) {
       Alert.alert(
@@ -638,7 +1551,7 @@ function CreatePostScreen() {
         caught instanceof Error ? caught.message : copy.audioErrorTip,
       );
     }
-  }, [vm, wavRecorder, copy]);
+  }, [wavRecorder, copy]);
 
   const handleAudioAction = useCallback(() => {
     if (wavRecorder.isRecording) {
@@ -664,18 +1577,12 @@ function CreatePostScreen() {
   }, [handlePickAudio, handleToggleAudioRecording, wavRecorder.isRecording, copy]);
 
   const handleSubmit = useCallback(async () => {
-    const result = await vm.submit();
+    const result = await vmRef.current.submit();
     if (result) {
       navigation.goBack();
     }
-  }, [navigation, vm]);
+  }, [navigation]);
 
-  // Navigate from the "More" sheet. We close the sheet first, then
-  // push the chosen creation route on top of the current stack so the
-  // user can always back-button out and land here. The `as never`
-  // mirrors the pattern used in `handleDismiss` of StoryViewer — the
-  // route name is already typed by `RootStackRouteName`, we just
-  // need to satisfy the generic overload.
   const handleMoreNavigate = useCallback(
     (route: RootStackRouteName) => {
       setMoreSheetVisible(false);
@@ -684,12 +1591,26 @@ function CreatePostScreen() {
     [navigation],
   );
 
+  const handleMoreNavigateRef = useRef(handleMoreNavigate);
+  handleMoreNavigateRef.current = handleMoreNavigate;
+  const stableMoreNavigate = useCallback((route: string) => {
+    handleMoreNavigateRef.current(route as RootStackRouteName);
+  }, []);
+
+  const handleActionNavigate = useCallback((route: string) => {
+    if (route === 'more_sheet') {
+      setMoreSheetVisible(true);
+    } else {
+      stableMoreNavigate(route);
+    }
+  }, [stableMoreNavigate]);
+
   const handleDiscard = useCallback(() => {
     const hasContent =
-      vm.draft.text.trim().length > 0 ||
-      vm.draft.photos.length > 0 ||
-      Boolean(vm.draft.audio) ||
-      Boolean(vm.draft.video);
+      vmRef.current.draft.text.trim().length > 0 ||
+      vmRef.current.draft.photos.length > 0 ||
+      Boolean(vmRef.current.draft.audio) ||
+      Boolean(vmRef.current.draft.video);
     if (!hasContent) {
       navigation.goBack();
       return;
@@ -703,738 +1624,371 @@ function CreatePostScreen() {
           text: copy.discardConfirm,
           style: 'destructive',
           onPress: () => {
-            vm.reset();
+            vmRef.current.reset();
             navigation.goBack();
           },
         },
       ],
       { cancelable: true },
     );
-  }, [navigation, vm, copy]);
+  }, [navigation, copy]);
 
-  const renderBottomActions = (isFloating: boolean) => {
-    // ── Compact layout ─────────────────────────────────────────────
-    // 4 inline shortcuts unique to the post flow (`feeling` lives here
-    // because it tags the post itself, not a standalone creation).
-    // The fifth slot opens the global "More" sheet.
-    const compactButtons: Array<{
-      key: string;
-      label: string;
-      onPress: () => void;
-      Icon: React.ComponentType<{ size: number; color: string; fill?: string }>;
-      iconBg: string;
-      iconColor: string;
-      altIcon?: React.ReactNode;
-    }> = [
-      {
-        key: 'photo',
-        label: copy.photo,
-        onPress: handlePickPhotos,
-        Icon: ImageIcon,
-        iconBg: '#f0fdf4',
-        iconColor: '#22c55e',
-      },
-      {
-        key: 'feeling',
-        label: copy.feeling,
-        onPress: () => setFeelingSheetVisible(true),
-        Icon: Smile,
-        iconBg: '#fef9c3',
-        iconColor: '#eab308',
-      },
-      {
-        key: 'audio',
-        label: copy.audio,
-        onPress: handleAudioAction,
-        Icon: Music2,
-        iconBg: '#fdf2f8',
-        iconColor: '#ec4899',
-        altIcon: <Square size={14} color="#ec4899" fill="#ec4899" />,
-      },
-      {
-        key: 'video',
-        label: copy.video,
-        onPress: handlePickVideo,
-        Icon: VideoIcon,
-        iconBg: '#eff6ff',
-        iconColor: '#3b82f6',
-      },
-    ];
+  const handleRemovePhoto = useCallback((uri: string) => {
+    vmRef.current.removePhoto(uri);
+  }, []);
 
-    // ── Expanded layout ─────────────────────────────────────────────
-    // When the keyboard is NOT open we render a 2-row × 4-col grid:
-    //
-    //   Row 1 (post-flow):  Photo · Feeling · Audio · Video
-    //   Row 2 (create):    Ad · Product · Event · Page
-    //
-    // Anything else (Story / Album / Poll / Group / Blog) lives behind
-    // the "Thêm" link in the card header, which opens the global
-    // CreateActionSheet.
-    //
-    // Row 1 buttons keep their existing per-route accent colour (the
-    // icon backgrounds stay saturated). Row 2 buttons reuse the icon
-    // + colour from CREATE_ACTIONS so they match the global sheet.
-    const expandedRow1: Array<{
-      key: string;
-      label: string;
-      onPress: () => void;
-      Icon: React.ComponentType<{ size: number; color: string; fill?: string }>;
-      iconBg: string;
-      iconColor: string;
-      altIcon?: React.ReactNode;
-    }> = [
-      {
-        key: 'photo',
-        label: copy.photo,
-        onPress: handlePickPhotos,
-        Icon: ImageIcon,
-        iconBg: '#f0fdf4',
-        iconColor: '#22c55e',
-      },
-      {
-        key: 'feeling',
-        label: copy.feeling,
-        onPress: () => setFeelingSheetVisible(true),
-        Icon: Smile,
-        iconBg: '#fef9c3',
-        iconColor: '#eab308',
-      },
-      {
-        key: 'audio',
-        label: copy.audio,
-        onPress: handleAudioAction,
-        Icon: Music2,
-        iconBg: '#fdf2f8',
-        iconColor: '#ec4899',
-        altIcon: <Square size={14} color="#ec4899" fill="#ec4899" />,
-      },
-      {
-        key: 'video',
-        label: copy.video,
-        onPress: handlePickVideo,
-        Icon: VideoIcon,
-        iconBg: '#eff6ff',
-        iconColor: '#3b82f6',
-      },
-    ];
+  const handleRemoveVideo = useCallback(() => {
+    vmRef.current.setVideo(undefined);
+  }, []);
 
-    const expandedRow2: Array<{
-      actionKey: 'poll' | 'product' | 'live' | 'page';
-      label: string;
-      onPress: () => void;
-    }> = [
-      {
-        actionKey: 'poll',
-        label: language === 'vi' ? 'Cuộc thăm dò' : 'Poll',
-        onPress: () => navigation.navigate(ROUTES.CREATE_POLL as never),
-      },
-      {
-        actionKey: 'product',
-        label: language === 'vi' ? 'Sản phẩm' : 'Product',
-        onPress: () => navigation.navigate(ROUTES.CREATE_PRODUCT as never),
-      },
-      {
-        actionKey: 'live',
-        label: language === 'vi' ? 'Live' : 'Live',
-        onPress: () => navigation.navigate(ROUTES.GO_LIVE as never),
-      },
-      {
-        actionKey: 'page',
-        label: language === 'vi' ? 'Trang' : 'Page',
-        onPress: () => navigation.navigate(ROUTES.CREATE_PAGE as never),
-      },
-    ];
+  const handleRemoveAudio = useCallback(() => {
+    vmRef.current.setAudio(undefined);
+  }, []);
 
-    // Slightly darker muted text colour so the secondary routes don't
-    // compete with the four "primary" shortcuts (which keep the
-    // existing per-route accent colour).
-    const SECONDARY_LABEL_COLOR = '#475569';
+  const handleCancelAudioRecording = useCallback(() => {
+    wavRecorder.cancelRecording();
+  }, [wavRecorder]);
 
-    const renderShortcutButton = (
-      button: typeof compactButtons[number],
-      size: 44 | 48,
-    ) => {
-      const Icon = button.Icon;
-      const showAlt = button.altIcon && button.key === 'audio' && wavRecorder.isRecording;
-      return (
-        <TouchableOpacity
-          key={button.key}
-          onPress={button.onPress}
-          activeOpacity={0.7}
-          style={{
-            alignItems: 'center',
-            justifyContent: 'center',
-            flex: 1,
-          }}
-        >
-          <View
-            style={{
-              width: size,
-              height: size,
-              borderRadius: size / 2,
-              backgroundColor: button.iconBg,
-              alignItems: 'center',
-              justifyContent: 'center',
-              ...(size === 48 ? { marginBottom: 8 } : null),
-            }}
-          >
-            {showAlt ? (
-              button.altIcon
-            ) : (
-              <Icon size={size === 44 ? 20 : 22} color={button.iconColor} />
-            )}
-          </View>
-          {isFloating ? null : (
-            <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
-              {button.label}
-            </Text>
-          )}
-        </TouchableOpacity>
-      );
-    };
-
-    // Single dashed "More" cell shared by both layouts.
-    const renderMoreButton = () => (
-      <TouchableOpacity
-        key="more"
-        onPress={() => setMoreSheetVisible(true)}
-        activeOpacity={0.7}
-        style={{
-          alignItems: 'center',
-          justifyContent: 'center',
-          flex: 1,
-        }}
-      >
-        <View
-          style={{
-            width: isFloating ? 44 : 48,
-            height: isFloating ? 44 : 48,
-            borderRadius: isFloating ? 22 : 24,
-            backgroundColor: '#f8fafc',
-            borderWidth: 1,
-            borderColor: '#e2e8f0',
-            borderStyle: 'dashed',
-            alignItems: 'center',
-            justifyContent: 'center',
-            ...(isFloating ? null : { marginBottom: 8 }),
-          }}
-        >
-          <ChevronRight
-            size={isFloating ? 18 : 20}
-            color="#475569"
-            strokeWidth={2.4}
-          />
-        </View>
-        {isFloating ? null : (
-          <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
-            {copy.moreShort}
-          </Text>
-        )}
-      </TouchableOpacity>
-    );
-
-    // Look up the CREATE_ACTIONS entry for a Row-2 shortcut so we can
-    // reuse its icon / colour. This keeps the inline tray in sync
-    // with the global "More" sheet — adding a new action in one place
-    // surfaces everywhere.
-    const renderRow2Shortcut = (
-      entry: typeof expandedRow2[number],
-    ) => {
-      const action = CREATE_ACTIONS.find(a => a.key === entry.actionKey);
-      if (!action) return null;
-      const Icon = action.Icon;
-      return (
-        <TouchableOpacity
-          key={entry.actionKey}
-          onPress={entry.onPress}
-          activeOpacity={0.7}
-          style={{
-            alignItems: 'center',
-            justifyContent: 'center',
-            flex: 1,
-          }}
-        >
-          <View
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: 24,
-              backgroundColor: action.iconBg,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 8,
-            }}
-          >
-            <Icon size={22} color={action.iconColor} strokeWidth={2} />
-          </View>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
-            {entry.label}
-          </Text>
-        </TouchableOpacity>
-      );
-    };
-
-    if (isFloating) {
-      return (
-        <View
-          style={{
-            backgroundColor: '#ffffff',
-            borderTopWidth: 1,
-            borderTopColor: '#f1f5f9',
-            paddingHorizontal: 16,
-            paddingVertical: 10,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          {compactButtons.map(b => renderShortcutButton(b, 44))}
-          {renderMoreButton()}
-        </View>
-      );
-    }
-
-    return (
-      <View
-        style={{
-          marginHorizontal: 16,
-          marginBottom: Math.max(insets.bottom, 16),
-          marginTop: 16,
-          backgroundColor: '#ffffff',
-          borderRadius: 20,
-          borderWidth: 1,
-          borderColor: '#f1f5f9',
-          paddingHorizontal: 16,
-          paddingTop: 16,
-          paddingBottom: 20,
-          shadowColor: '#94a3b8',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.08,
-          shadowRadius: 12,
-          elevation: 3,
-        }}
-      >
-        {/* Header Row */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1e293b' }}>{copy.addPost}</Text>
-          <TouchableOpacity
-            onPress={() => setMoreSheetVisible(true)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.7}
-            style={{ flexDirection: 'row', alignItems: 'center' }}
-          >
-            <Text style={{ fontSize: 13, fontWeight: '600', color: '#0000ff', marginRight: 2 }}>
-              {copy.more}
-            </Text>
-            <ChevronRight size={16} color="#0000ff" strokeWidth={2.4} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Row 1 — post-flow shortcuts (Photo / Feeling / Audio / Video). */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          {expandedRow1.map(b => renderShortcutButton(b, 48))}
-        </View>
-
-        {/* Row 2 — quick creation routes (Ad / Product / Event / Page). */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
-          {expandedRow2.map(renderRow2Shortcut)}
-        </View>
-      </View>
-    );
+  // Set up animated styles for trays
+  const expandedTrayStyle = {
+    opacity: keyboardTransitionAnim.interpolate({
+      inputRange: [0, 0.8, 1],
+      outputRange: [1, 0, 0],
+    }),
+    transform: [{
+      translateY: keyboardTransitionAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 100],
+      }),
+    }],
   };
+
+  const floatingBarContainerStyle = {
+    position: 'absolute' as const,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 8,
+    zIndex: 99,
+    opacity: keyboardTransitionAnim.interpolate({
+      inputRange: [0, 0.2, 1],
+      outputRange: [0, 0, 1],
+    }),
+    transform: [{
+      translateY: keyboardTransitionAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [300, Platform.OS === 'ios' ? -keyboardHeight : 0],
+      }),
+    }],
+  };
+
+  const stableSetText = useCallback((txt: string) => {
+    vmRef.current.setText(txt);
+  }, []);
+
+  const stableSetPrivacy = useCallback((prv: PostPrivacy) => {
+    vmRef.current.setPrivacy(prv);
+  }, []);
+
+  const stableSetFeeling = useCallback((flg: PostFeeling) => {
+    vmRef.current.setFeeling(flg);
+  }, []);
+
+  const stableClearFeeling = useCallback(() => {
+    vmRef.current.setFeeling(undefined);
+  }, []);
 
   return (
     <SafeAreaView style={{ backgroundColor: '#f4f7fa' }} className="flex-1" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
 
-      {/* ── Header ────────────────────────────────────────────────── */}
-      <View className="h-16 flex-row items-center justify-between px-4 bg-transparent">
-        <TouchableOpacity
-          onPress={handleDiscard}
-          activeOpacity={0.7}
-          style={{
-            shadowColor: '#94a3b8',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.15,
-            shadowRadius: 10,
-            elevation: 3,
-          }}
-          className="h-12 w-12 items-center justify-center rounded-full bg-white border border-slate-100"
-        >
-          <X size={24} color="#0F172A" />
-        </TouchableOpacity>
-        
-        <Text className="text-[20px] font-bold text-slate-800">{copy.headerTitle}</Text>
-        
-        <TouchableOpacity
-          onPress={handleSubmit}
-          disabled={!vm.canSubmit || isProcessingPhotos}
-          activeOpacity={0.7}
-          className={
-            vm.canSubmit && !isProcessingPhotos
-              ? 'rounded-full bg-[#0000ff] px-6 py-2.5'
-              : 'rounded-full bg-slate-200 px-6 py-2.5'
-          }
-        >
-          {vm.isSubmitting ? (
-            <ActivityIndicator color={vm.canSubmit && !isProcessingPhotos ? '#FFFFFF' : '#94A3B8'} size="small" />
-          ) : (
-            <Text
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        <View className="flex-1">
+          {/* Header */}
+          <CreatePostHeader
+            onDiscard={handleDiscard}
+            onSubmit={handleSubmit}
+            canSubmit={vm.canSubmit}
+            isSubmitting={vm.isSubmitting}
+            isProcessingPhotos={isProcessingPhotos}
+            copy={copy}
+          />
+
+          <ScrollView
+            ref={scrollViewRef}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 150 }}
+            className="flex-1"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Viewer + privacy card */}
+            <AuthorPrivacyCard
+              avatarUrl={avatarUrl}
+              displayName={displayName}
+              feeling={vm.draft.feeling}
+              feelingLabel={currentFeelingLabel}
+              targetPage={targetPage}
+              currentPrivacyLabel={currentPrivacy.label}
+              currentPrivacyIcon={currentPrivacy.Icon}
+              onPrivacyPress={() => setPrivacySheetVisible(true)}
+              copy={copy}
+            />
+
+            {/* Caption Input card */}
+            <CaptionComposer
+              textInputRef={textInputRef}
+              text={vm.draft.text}
+              onChangeText={stableSetText}
+              onFocus={handleInputFocus}
+              onBlur={handleInputBlur}
+              placeholder={copy.placeholder}
+              onInsertChar={insertCaptionChar}
+              onFeelingPress={() => setFeelingSheetVisible(true)}
+            />
+
+            {/* Photos Preview Strip */}
+            <MediaPreviewStrip
+              photos={vm.draft.photos}
+              onRemovePhoto={handleRemovePhoto}
+              onPickPhotos={handlePickPhotos}
+              isProcessing={isProcessingPhotos}
+              copy={copy}
+              language={language}
+            />
+
+            {/* Audio Preview Card */}
+            <AudioPreviewCard
+              isRecording={wavRecorder.isRecording}
+              durationMs={wavRecorder.durationMs}
+              audio={vm.draft.audio}
+              onCancelRecording={handleCancelAudioRecording}
+              onStopRecording={handleToggleAudioRecording}
+              onRemoveAudio={handleRemoveAudio}
+              copy={copy}
+            />
+
+            {/* Video Preview Card */}
+            {vm.draft.video ? (
+              <VideoPreviewCard
+                video={vm.draft.video}
+                onRemove={handleRemoveVideo}
+                copy={copy}
+                isKeyboardActive={isKeyboardActive}
+              />
+            ) : null}
+
+            {/* Error banner */}
+            {vm.error ? (
+              <View className="mx-4 mt-4 rounded-lg bg-red-50 px-3 py-2">
+                <Text style={{ color: '#B91C1C', fontSize: 13 }}>{vm.error}</Text>
+              </View>
+            ) : null}
+
+            {/* Expanded Action Tray */}
+            <Animated.View
+              pointerEvents={isKeyboardActive ? 'none' : 'auto'}
+              style={expandedTrayStyle}
+            >
+              <ComposerActionTray
+                isFloating={false}
+                copy={copy}
+                language={language}
+                onPickPhotos={handlePickPhotos}
+                onFeelingPress={() => setFeelingSheetVisible(true)}
+                onAudioAction={handleAudioAction}
+                onPickVideo={handlePickVideo}
+                onNavigate={handleActionNavigate}
+                isRecording={wavRecorder.isRecording}
+                insetsBottom={insets.bottom}
+              />
+            </Animated.View>
+          </ScrollView>
+
+          {/* Floating compact action bar and suggestions above keyboard */}
+          <Animated.View
+            pointerEvents={isKeyboardActive ? 'auto' : 'none'}
+            style={floatingBarContainerStyle}
+          >
+            <ComposerActionTray
+              isFloating={true}
+              copy={copy}
+              language={language}
+              onPickPhotos={handlePickPhotos}
+              onFeelingPress={() => setFeelingSheetVisible(true)}
+              onAudioAction={handleAudioAction}
+              onPickVideo={handlePickVideo}
+              onNavigate={handleActionNavigate}
+              isRecording={wavRecorder.isRecording}
+              insetsBottom={insets.bottom}
+            />
+            
+            {/* Suggestion chips */}
+            {(vm.isLoadingCaptionSuggestions || vm.captionSuggestions.length > 0) && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="always"
+                contentContainerStyle={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  gap: 8,
+                  alignItems: 'center',
+                }}
+              >
+                {vm.isLoadingCaptionSuggestions && vm.captionSuggestions.length === 0 ? (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                    }}
+                  >
+                    <ActivityIndicator color="#0866FF" size="small" />
+                    <Text
+                      style={{
+                        marginLeft: 8,
+                        fontSize: 13,
+                        color: '#64748B',
+                        fontWeight: '500',
+                      }}
+                    >
+                      {copy.suggestionsLoading}
+                    </Text>
+                  </View>
+                ) : (
+                  vm.captionSuggestions.map(suggestion => {
+                    const isMention = suggestion.kind === 'mention';
+                    return (
+                      <TouchableOpacity
+                        key={`${suggestion.kind}-${suggestion.id}`}
+                        activeOpacity={0.75}
+                        onPress={() => vm.applyCaptionSuggestion(suggestion)}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingHorizontal: 14,
+                          paddingVertical: 8,
+                          borderRadius: 999,
+                          backgroundColor: isMention ? '#EFF6FF' : '#F5F3FF',
+                          borderWidth: 1,
+                          borderColor: isMention ? '#DBEAFE' : '#EDE9FE',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: '600',
+                            color: isMention ? '#1D4ED8' : '#6D28D9',
+                          }}
+                          numberOfLines={1}
+                        >
+                          {suggestion.label}
+                        </Text>
+                        {suggestion.subtitle ? (
+                          <Text
+                            style={{
+                              marginLeft: 6,
+                              fontSize: 11,
+                              color: isMention ? '#60A5FA' : '#A78BFA',
+                            }}
+                            numberOfLines={1}
+                          >
+                            {suggestion.subtitle}
+                          </Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
+            )}
+
+            {/* Quick-insert toolbar (# / @ / Done) */}
+            <View
               style={{
-                color: vm.canSubmit && !isProcessingPhotos ? '#FFFFFF' : '#94A3B8',
-                fontWeight: '700',
-                fontSize: 15,
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderTopWidth:
+                  vm.isLoadingCaptionSuggestions || vm.captionSuggestions.length > 0
+                    ? 1
+                    : 0,
+                borderTopColor: '#F1F5F9',
               }}
             >
-              {copy.post}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 24 }}
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Viewer + privacy chip card ──────────────────────────── */}
-        <View
-          style={{
-            shadowColor: '#94a3b8',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.05,
-            shadowRadius: 10,
-            elevation: 2,
-          }}
-          className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 flex-row items-center"
-        >
-          <View className="relative">
-            {avatarUrl ? (
-              <Image
-                source={{ uri: avatarUrl }}
-                style={{ height: 56, width: 56, borderRadius: 28 }}
-                resizeMode="cover"
-              />
-            ) : (
-              <View
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => insertCaptionChar('#')}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 style={{
-                  height: 56,
-                  width: 56,
-                  borderRadius: 28,
-                  backgroundColor: '#E2E8F0',
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 4,
+                }}
+              >
+                <Hash size={20} color="#475569" strokeWidth={2.2} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => insertCaptionChar('@')}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Text style={{ fontSize: 22, color: '#64748B', fontWeight: 'bold' }}>
-                  {displayName.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-            )}
-            <View className="absolute bottom-0 right-0 h-4.5 w-4.5 rounded-full bg-[#0000ff] border border-white items-center justify-center">
-              <Text className="text-white text-[10px] font-bold leading-none">+</Text>
-            </View>
-          </View>
-          <View className="ml-4 flex-1">
-            <View className="flex-row items-center flex-wrap">
-              <Text className="text-[16px] font-bold text-slate-800" numberOfLines={1}>
-                {displayName}
-              </Text>
-              {vm.draft.feeling ? (
-                <Text
-                  className="ml-1.5 text-[14px] text-slate-500 font-medium"
-                  numberOfLines={1}
-                >
-                  {copy.feelingLabel} {vm.draft.feeling.emoji}{' '}
-                  {currentFeelingLabel}
-                </Text>
-              ) : null}
-            </View>
-            {targetPage ? (
-              <Text className="mt-1 text-[12px] font-semibold text-[#0000ff]">
-                Đăng với tư cách Trang
-              </Text>
-            ) : null}
-            <TouchableOpacity
-              onPress={() => setPrivacySheetVisible(true)}
-              activeOpacity={0.7}
-              className="mt-1.5 self-start flex-row items-center rounded-full bg-slate-100 px-3 py-1"
-            >
-              <currentPrivacy.Icon size={12} color="#475569" />
-              <Text className="mx-1.5 text-[12px] font-semibold text-slate-600">
-                {currentPrivacy.label}
-              </Text>
-              <ChevronDown size={12} color="#475569" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ── Text input card ─────────────────────────────────────── */}
-        <View
-          style={{
-            shadowColor: '#94a3b8',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.05,
-            shadowRadius: 10,
-            elevation: 2,
-          }}
-          className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 min-h-[220px] justify-between"
-        >
-          <TextInput
-            ref={textInputRef}
-            value={vm.draft.text}
-            onChangeText={vm.setText}
-            onFocus={() => setIsTextFocused(true)}
-            onBlur={() => setIsTextFocused(false)}
-            placeholder={copy.placeholder}
-            placeholderTextColor="#94A3B8"
-            multiline
-            autoFocus
-            textAlignVertical="top"
-            style={{
-              fontSize: 18,
-              lineHeight: 26,
-              color: '#1e293b',
-              padding: 0,
-              minHeight: 120,
-            }}
-          />
-
-          {/* Word counts & inline shortcuts */}
-          <View className="flex-row items-center justify-end mt-4 gap-3">
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => insertCaptionChar('#')}
-              className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
-            >
-              <Hash size={18} color="#64748b" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => insertCaptionChar('@')}
-              className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
-            >
-              <AtSign size={18} color="#64748b" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setFeelingSheetVisible(true)}
-              className="h-10 w-10 rounded-xl border border-slate-200 items-center justify-center bg-white"
-            >
-              <Smile size={18} color="#64748b" />
-            </TouchableOpacity>
-
-            <Text className="ml-2 text-[13px] text-slate-400 font-medium">
-              {vm.draft.text.length}/5000
-            </Text>
-          </View>
-        </View>
-
-        {/* ── Photo grid picker row ───────────────────────────────── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
-          className="mt-4"
-        >
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={handlePickPhotos}
-            style={{
-              width: 100,
-              height: 100,
-              borderRadius: 16,
-              borderStyle: 'dashed',
-              borderWidth: 1.5,
-              borderColor: '#cbd5e1',
-              backgroundColor: '#ffffff',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Text style={{ fontSize: 24, color: '#64748b', fontWeight: '300' }}>+</Text>
-            <Text style={{ fontSize: 10, color: '#64748b', marginTop: 4, fontWeight: '600' }}>{copy.addPhoto}</Text>
-          </TouchableOpacity>
-
-          {isProcessingPhotos && (
-            <View
-              style={{
-                width: 100,
-                height: 100,
-                borderRadius: 16,
-                backgroundColor: '#ffffff',
-                borderWidth: 1,
-                borderColor: '#e2e8f0',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <ActivityIndicator color="#0000ff" size="small" />
-              <Text style={{ fontSize: 9, color: '#64748b', marginTop: 6, fontWeight: '600', textAlign: 'center' }}>
-                {language === 'vi' ? 'Đang xử lý...' : 'Processing...'}
-              </Text>
-            </View>
-          )}
-
-          {vm.draft.photos.map(photo => (
-            <View key={photo.uri} style={{ width: 100, height: 100, position: 'relative' }}>
-              <Image
-                source={{ uri: photo.uri }}
-                style={{ width: '100%', height: '100%', borderRadius: 16 }}
-                resizeMode="cover"
-                resizeMethod="resize" // Scale down in-memory representation for instant render & scroll performance
-              />
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => vm.removePhoto(photo.uri)}
-                className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-white/90 items-center justify-center"
-              >
-                <X size={12} color="#000000" />
+                <AtSign size={20} color="#475569" strokeWidth={2.2} />
               </TouchableOpacity>
-            </View>
-          ))}
 
-          {vm.draft.photos.length > 0 && (
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handlePickPhotos}
-              style={{
-                width: 100,
-                height: 100,
-                borderRadius: 16,
-                backgroundColor: '#ffffff',
-                borderWidth: 1,
-                borderColor: '#f1f5f9',
-                alignItems: 'center',
-                justifyContent: 'center',
-                shadowColor: '#94a3b8',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.05,
-                shadowRadius: 6,
-                elevation: 1,
-              }}
-            >
-              <Text style={{ fontSize: 20, color: '#64748b', fontWeight: 'bold' }}>...</Text>
-              <Text style={{ fontSize: 10, color: '#64748b', marginTop: 4, fontWeight: '600' }}>{copy.viewMore}</Text>
-            </TouchableOpacity>
-          )}
-        </ScrollView>
+              <View style={{ flex: 1 }} />
 
-        {wavRecorder.isRecording ? (
-          <View className="mx-4 mt-4 flex-row items-center rounded-[20px] border border-red-100 bg-red-50 p-4">
-            <View className="mr-3 h-3 w-3 rounded-full bg-red-500" />
-            <View className="flex-1">
-              <Text className="text-sm font-semibold text-red-700">
-                {copy.recording} {formatAudioDuration(wavRecorder.durationMs)}
-              </Text>
-              <View className="mt-2 h-5">
-                <AudioWaveform
-                  animated
-                  color="#DC2626"
-                  inactiveColor="#FECACA"
-                  height={18}
-                  barCount={34}
-                />
-              </View>
-              <Text className="mt-1 text-xs text-red-500">
-                {copy.recordingTip}
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => wavRecorder.cancelRecording()}
-              className="h-9 w-9 items-center justify-center rounded-full bg-white"
-            >
-              <X size={17} color="#DC2626" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleToggleAudioRecording()}
-              className="ml-2 h-9 w-9 items-center justify-center rounded-full bg-red-600"
-            >
-              <Square size={14} color="#FFFFFF" fill="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        ) : vm.draft.audio ? (
-          <View className="mx-4 mt-4 flex-row items-center rounded-[20px] border border-blue-100 bg-blue-50 p-4">
-            <View className="flex-1">
-              <Text className="mb-2 text-sm font-semibold text-slate-700" numberOfLines={1}>
-                {vm.draft.audio.name}
-              </Text>
-              <AudioPlayer uri={vm.draft.audio.uri} compact />
-            </View>
-            <TouchableOpacity
-              onPress={() => vm.setAudio(undefined)}
-              className="ml-2 h-8 w-8 items-center justify-center rounded-full bg-white"
-            >
-              <X size={16} color="#64748B" />
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        {/* ── Video preview card (uses local file uri) ─────────────── */}
-        {vm.draft.video ? (
-          <View className="mx-4 mt-4 overflow-hidden rounded-[20px] border border-blue-100 bg-blue-50">
-            <View className="flex-row items-center px-4 pt-3">
-              <View className="h-8 w-8 items-center justify-center rounded-full bg-blue-100">
-                <VideoIcon size={16} color="#3b82f6" />
-              </View>
-              <Text
-                className="ml-2 flex-1 text-sm font-semibold text-slate-700"
-                numberOfLines={1}
-              >
-                {vm.draft.video.name}
-              </Text>
               <TouchableOpacity
-                onPress={() => vm.setVideo(undefined)}
+                activeOpacity={0.7}
+                onPress={() => Keyboard.dismiss()}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                className="h-8 w-8 items-center justify-center rounded-full bg-white"
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  backgroundColor: '#0000ff',
+                }}
               >
-                <X size={16} color="#64748B" />
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: '700',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  {copy.done}
+                </Text>
               </TouchableOpacity>
             </View>
-            <Text
-              className="mt-2 px-4 text-[11px] font-medium uppercase tracking-wider text-blue-700"
-            >
-              {copy.addVideo}
-            </Text>
-            <View
-              style={{
-                margin: 12,
-                height: 220,
-                borderRadius: 16,
-                overflow: 'hidden',
-                backgroundColor: '#0F172A',
-              }}
-            >
-              <VideoPlayer
-                source={{ uri: vm.draft.video.uri }}
-                style={{ width: '100%', height: '100%' }}
-                controls
-                paused
-                resizeMode="cover"
-              />
-            </View>
-          </View>
-        ) : null}
-
-        {/* ── Error banner ───────────────────────────────────────── */}
-        {vm.error ? (
-          <View className="mx-4 mt-4 rounded-lg bg-red-50 px-3 py-2">
-            <Text style={{ color: '#B91C1C', fontSize: 13 }}>{vm.error}</Text>
-          </View>
-        ) : null}
-      </ScrollView>
-
-      {/* ── Bottom action card ───────────────────────────────────── */}
-      {!isSuggestionBarVisible && renderBottomActions(false)}
+          </Animated.View>
+        </View>
+      </TouchableWithoutFeedback>
 
       <PrivacyPickerSheet
         visible={privacySheetVisible}
         current={vm.draft.privacy}
         onClose={() => setPrivacySheetVisible(false)}
-        onPick={vm.setPrivacy}
+        onPick={stableSetPrivacy}
         options={privacyOptions}
         title={copy.privacyTitle}
       />
@@ -1442,199 +1996,18 @@ function CreatePostScreen() {
         visible={feelingSheetVisible}
         current={vm.draft.feeling}
         onClose={() => setFeelingSheetVisible(false)}
-        onPick={vm.setFeeling}
-        onClear={() => vm.setFeeling(undefined)}
+        onPick={stableSetFeeling}
+        onClear={stableClearFeeling}
         options={translatedFeelings}
         title={copy.feelingsTitle}
         clearLabel={copy.feelingsClear}
       />
 
-      {/* Shared "More" sheet — surfaces every creation route the app
-          supports (story / album / event / poll / product / page /
-          group / reel / blog) sourced from CREATE_ACTIONS so this
-          screen and the Home `+` button can never drift apart. */}
       <CreateActionSheet
         visible={moreSheetVisible}
         onClose={() => setMoreSheetVisible(false)}
         onNavigate={handleMoreNavigate}
       />
-
-      {/* ── Floating mention / hashtag bar above the keyboard ── */}
-      {isSuggestionBarVisible && (
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: suggestionBarBottom,
-            backgroundColor: '#FFFFFF',
-            borderTopWidth: 1,
-            borderTopColor: '#E5E7EB',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: -2 },
-            shadowOpacity: 0.05,
-            shadowRadius: 4,
-            elevation: 8,
-          }}
-        >
-          {renderBottomActions(true)}
-          
-          {/* Row 1: Suggestion chips */}
-          {(vm.isLoadingCaptionSuggestions ||
-            vm.captionSuggestions.length > 0) && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyboardShouldPersistTaps="always"
-              contentContainerStyle={{
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-                gap: 8,
-                alignItems: 'center',
-              }}
-            >
-              {vm.isLoadingCaptionSuggestions &&
-              vm.captionSuggestions.length === 0 ? (
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                  }}
-                >
-                  <ActivityIndicator color="#0866FF" size="small" />
-                  <Text
-                    style={{
-                      marginLeft: 8,
-                      fontSize: 13,
-                      color: '#64748B',
-                      fontWeight: '500',
-                    }}
-                  >
-                    {copy.suggestionsLoading}
-                  </Text>
-                </View>
-              ) : (
-                vm.captionSuggestions.map(suggestion => {
-                  const isMention = suggestion.kind === 'mention';
-                  return (
-                    <TouchableOpacity
-                      key={`${suggestion.kind}-${suggestion.id}`}
-                      activeOpacity={0.75}
-                      onPress={() => vm.applyCaptionSuggestion(suggestion)}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingHorizontal: 14,
-                        paddingVertical: 8,
-                        borderRadius: 999,
-                        backgroundColor: isMention ? '#EFF6FF' : '#F5F3FF',
-                        borderWidth: 1,
-                        borderColor: isMention ? '#DBEAFE' : '#EDE9FE',
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 13,
-                          fontWeight: '600',
-                          color: isMention ? '#1D4ED8' : '#6D28D9',
-                        }}
-                        numberOfLines={1}
-                      >
-                        {suggestion.label}
-                      </Text>
-                      {suggestion.subtitle ? (
-                        <Text
-                          style={{
-                            marginLeft: 6,
-                            fontSize: 11,
-                            color: isMention ? '#60A5FA' : '#A78BFA',
-                          }}
-                          numberOfLines={1}
-                        >
-                          {suggestion.subtitle}
-                        </Text>
-                      ) : null}
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
-          )}
-
-          {/* Row 2: Quick-insert toolbar (# / @ / Done) */}
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              borderTopWidth:
-                vm.isLoadingCaptionSuggestions ||
-                vm.captionSuggestions.length > 0
-                  ? 1
-                  : 0,
-              borderTopColor: '#F1F5F9',
-            }}
-          >
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => insertCaptionChar('#')}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 4,
-              }}
-            >
-              <Hash size={20} color="#475569" strokeWidth={2.2} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => insertCaptionChar('@')}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <AtSign size={20} color="#475569" strokeWidth={2.2} />
-            </TouchableOpacity>
-
-            <View style={{ flex: 1 }} />
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => Keyboard.dismiss()}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              style={{
-                paddingHorizontal: 16,
-                paddingVertical: 8,
-                borderRadius: 999,
-                backgroundColor: '#0000ff',
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontWeight: '700',
-                  color: '#FFFFFF',
-                }}
-              >
-                {copy.done}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 }

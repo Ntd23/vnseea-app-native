@@ -9,6 +9,8 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   Image,
   Keyboard,
   Modal,
@@ -80,7 +82,6 @@ import { subscribeNavigationHeading } from '../../infrastructure/navigation/navi
 import type {
   MapRoute,
   MapRouteStep,
-  MapPlacePrediction,
   NearbyPlace,
 } from '../../domain/types/user.types';
 
@@ -95,6 +96,13 @@ const ROUTE_CONNECTOR_MIN_METERS = 5;
 const ROUTE_LOOKAHEAD_MIN_METERS = 14;
 const ROUTE_LOOKAHEAD_MAX_METERS = 58;
 const LOCATION_RECENTER_DISTANCE_METERS = 50000;
+const MAX_VISIBLE_PAGE_MARKERS = 64;
+const IDLE_LOCATION_STATE_MIN_METERS = 8;
+const NAVIGATION_LOCATION_STATE_MIN_METERS = 2;
+const IDLE_LOCATION_STATE_MIN_MS = 1400;
+const NAVIGATION_LOCATION_STATE_MIN_MS = 650;
+const HEADING_STATE_MIN_DEGREES = 4;
+const HEADING_STATE_MIN_MS = 120;
 const SHOW_APP_DISCOVERY_PLACES_ON_MAP = true;
 const HIDE_GOOGLE_DISCOVERY_PLACES = true;
 const pagesRepository = createPagesRepository();
@@ -132,9 +140,7 @@ const DEFAULT_REGION = {
   longitudeDelta: 0.009,
 };
 
-type SuggestionItem =
-  | { id: string; kind: 'page'; page: NearbyPlace }
-  | { id: string; kind: 'google'; prediction: MapPlacePrediction };
+type SuggestionItem = { id: string; kind: 'page'; page: NearbyPlace };
 
 type SelectedPoint = {
   id: string;
@@ -165,7 +171,7 @@ type PageAvatarMapMarkerProps = {
   onPress: () => void;
 };
 
-function PageAvatarMapMarker({
+function PageAvatarMapMarkerComponent({
   coordinate,
   place,
   selected = false,
@@ -177,12 +183,23 @@ function PageAvatarMapMarker({
     const trimmedName = place.name.trim();
     return trimmedName.length > 0 ? trimmedName.charAt(0).toLocaleUpperCase('vi-VN') : 'V';
   }, [place.name]);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [imageReady, setImageReady] = useState(false);
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
 
+  const stopTrackingSoon = useCallback((delay = Platform.OS === 'android' ? 900 : 600) => {
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+    }
+
+    settleTimerRef.current = setTimeout(() => {
+      setTracksViewChanges(false);
+      settleTimerRef.current = null;
+    }, delay);
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
-    let settleTimer: ReturnType<typeof setTimeout> | null = null;
 
     setImageReady(false);
     setTracksViewChanges(true);
@@ -191,45 +208,33 @@ function PageAvatarMapMarker({
         if (!isMounted) return;
         setImageReady(true);
         setTracksViewChanges(true);
-        settleTimer = setTimeout(
-          () => {
-            if (isMounted) {
-              setTracksViewChanges(false);
-            }
-          },
-          Platform.OS === 'android' ? 1200 : 800,
-        );
+        stopTrackingSoon();
       })
       .catch(() => {
         if (!isMounted) return;
         setImageReady(false);
-        if (Platform.OS !== 'android') {
-          setTracksViewChanges(false);
-        }
+        stopTrackingSoon(120);
       });
 
     return () => {
       isMounted = false;
-      if (settleTimer) {
-        clearTimeout(settleTimer);
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
       }
     };
-  }, [avatarUri]);
+  }, [avatarUri, stopTrackingSoon]);
 
   const handleImageLoaded = useCallback(() => {
     setImageReady(true);
     setTracksViewChanges(true);
-    setTimeout(() => {
-      setTracksViewChanges(false);
-    }, Platform.OS === 'android' ? 1200 : 800);
-  }, []);
+    stopTrackingSoon();
+  }, [stopTrackingSoon]);
 
   const handleImageError = useCallback(() => {
     setImageReady(false);
-    if (Platform.OS !== 'android') {
-      setTracksViewChanges(false);
-    }
-  }, []);
+    stopTrackingSoon(120);
+  }, [stopTrackingSoon]);
 
   return (
     <Marker
@@ -265,7 +270,6 @@ function PageAvatarMapMarker({
               source={{ uri: avatarUri }}
               resizeMode="cover"
               fadeDuration={0}
-              onLoad={handleImageLoaded}
               onLoadEnd={handleImageLoaded}
               onError={handleImageError}
               style={[
@@ -296,6 +300,18 @@ function PageAvatarMapMarker({
     </Marker>
   );
 }
+
+const PageAvatarMapMarker = React.memo(
+  PageAvatarMapMarkerComponent,
+  (previous, next) =>
+    previous.place.id === next.place.id &&
+    previous.place.name === next.place.name &&
+    previous.place.avatarUrl === next.place.avatarUrl &&
+    previous.coordinate.latitude === next.coordinate.latitude &&
+    previous.coordinate.longitude === next.coordinate.longitude &&
+    previous.selected === next.selected &&
+    previous.zIndex === next.zIndex,
+);
 
 type TurnInstruction = {
   distanceMeters: number;
@@ -851,10 +867,15 @@ function parseGeoInfo(value: unknown): LatLng | null {
   return { latitude, longitude };
 }
 
+function normalizeSearchText(value: string | undefined | null) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('vi-VN')
+    .trim();
+}
+
 function suggestionSubtitle(item: SuggestionItem) {
-  if (item.kind === 'google') {
-    return item.prediction.secondaryText || item.prediction.description;
-  }
   const distance = formatDistance(item.page.distanceMeters);
   return [item.page.location, distance].filter(Boolean).join(' · ');
 }
@@ -866,9 +887,9 @@ function SearchSuggestionRow({
   item: SuggestionItem;
   onPress: () => void;
 }) {
-  const isGoogle = item.kind === 'google';
-  const title = isGoogle ? item.prediction.mainText : item.page.name;
+  const title = item.page.name;
   const subtitle = suggestionSubtitle(item);
+  const distanceLabel = formatDistance(item.page.distanceMeters);
 
   return (
     <TouchableOpacity
@@ -876,17 +897,11 @@ function SearchSuggestionRow({
       className="flex-row items-center border-b border-slate-100 px-4 py-3"
       onPress={onPress}
     >
-      {isGoogle ? (
-        <View className="h-10 w-10 items-center justify-center rounded-full bg-slate-100">
-          <MapPin size={18} color="#64748B" />
-        </View>
-      ) : (
-        <Image
-          source={{ uri: item.page.avatarUrl || FALLBACK_AVATAR }}
-          className="h-10 w-10 rounded-full bg-slate-100"
-          resizeMode="cover"
-        />
-      )}
+      <Image
+        source={{ uri: item.page.avatarUrl || FALLBACK_AVATAR }}
+        className="h-10 w-10 rounded-full bg-slate-100"
+        resizeMode="cover"
+      />
       <View className="ml-3 flex-1">
         <Text className="text-sm font-bold text-slate-900" numberOfLines={1}>
           {title}
@@ -895,6 +910,13 @@ function SearchSuggestionRow({
           {subtitle}
         </Text>
       </View>
+      {distanceLabel ? (
+        <View className="ml-2 rounded-full bg-blue-50 px-2.5 py-1">
+          <Text className="text-xs font-extrabold text-blue-700">
+            {distanceLabel}
+          </Text>
+        </View>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -905,13 +927,11 @@ export default function NearbyUsersScreen() {
     clearPlacePredictions,
     currentUser,
     error,
-    getPlaceDetails,
     getRoutes,
     isLoading,
     loadNearbyPages,
     loadCurrentUser,
     nearbyPlaces,
-    placePredictions,
     searchNearbyPagesAndPlaces,
   } = useUserViewModel();
   const mapRef = useRef<MapView>(null);
@@ -930,6 +950,16 @@ export default function NearbyUsersScreen() {
   const routeRequestIdRef = useRef(0);
   const pageDetailRequestIdRef = useRef(0);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchModeAnim = useRef(new Animated.Value(0)).current;
+  const searchLayoutAnim = useRef(new Animated.Value(0)).current;
+  const lastLocationStateRef = useRef<LatLng | null>(null);
+  const lastLocationStateUpdatedAtRef = useRef(0);
+  const lastHeadingStateRef = useRef<number | null>(null);
+  const lastHeadingStateUpdatedAtRef = useRef(0);
+  const lastSpeedStateRef = useRef<number | null>(null);
+  const lastSpeedStateUpdatedAtRef = useRef(0);
+  const lastDeviceHeadingStateRef = useRef<number | null>(null);
+  const lastDeviceHeadingUpdatedAtRef = useRef(0);
   const [locationAllowed, setLocationAllowed] = useState(Platform.OS === 'ios');
   const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
   const [isAutoCentering, setIsAutoCentering] = useState(true);
@@ -972,39 +1002,117 @@ export default function NearbyUsersScreen() {
   const hasGoogleMapId = googleMapId.length > 0;
 
   const suggestions = useMemo<SuggestionItem[]>(() => {
-    if (query.trim().length < 3) return [];
+    const normalizedQuery = normalizeSearchText(query);
+    if (normalizedQuery.length < 3) return [];
 
-    const pageSuggestions = nearbyPlaces.map(page => ({
-      id: page.id,
-      kind: 'page' as const,
-      page,
-    }));
-    const googleSuggestions = placePredictions.map(prediction => ({
-      id: `google:${prediction.placeId}`,
-      kind: 'google' as const,
-      prediction,
-    }));
-
-    return [...pageSuggestions, ...googleSuggestions].sort((left, right) => {
-      if (left.kind === 'page' && right.kind === 'page') {
-        const leftNear = (left.page.distanceMeters ?? Infinity) <= 1000;
-        const rightNear = (right.page.distanceMeters ?? Infinity) <= 1000;
+    return nearbyPlaces
+      .filter(page => {
+        const haystack = normalizeSearchText(
+          [
+            page.name,
+            page.username,
+            page.location,
+          ]
+            .filter(Boolean)
+            .join(' '),
+        );
+        return haystack.includes(normalizedQuery);
+      })
+      .sort((left, right) => {
+        const leftNear = (left.distanceMeters ?? Infinity) <= 1000;
+        const rightNear = (right.distanceMeters ?? Infinity) <= 1000;
         if (leftNear !== rightNear) return leftNear ? -1 : 1;
         return (
-          (left.page.distanceMeters ?? Infinity) -
-          (right.page.distanceMeters ?? Infinity)
+          (left.distanceMeters ?? Infinity) -
+          (right.distanceMeters ?? Infinity)
         );
-      }
-      if (left.kind === 'page') return -1;
-      if (right.kind === 'page') return 1;
-      return 0;
-    });
-  }, [nearbyPlaces, placePredictions, query]);
+      })
+      .slice(0, 12)
+      .map(page => ({
+        id: page.id,
+        kind: 'page' as const,
+        page,
+      }));
+  }, [nearbyPlaces, query]);
 
   const shouldShowSuggestionPanel =
     isSearchFocused &&
     query.trim().length >= 3 &&
     (isLoading || suggestions.length > 0 || Boolean(searchMessage || error));
+
+  useEffect(() => {
+    const toValue = isSearchFocused ? 1 : 0;
+
+    Animated.parallel([
+      Animated.timing(searchModeAnim, {
+        toValue,
+        duration: isSearchFocused ? 260 : 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }),
+      Animated.timing(searchLayoutAnim, {
+        toValue,
+        duration: isSearchFocused ? 260 : 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, [isSearchFocused, searchLayoutAnim, searchModeAnim]);
+
+  const searchBackAnimatedStyle = useMemo(
+    () => ({
+      opacity: searchModeAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [1, 0],
+      }),
+      transform: [
+        {
+          translateX: searchModeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, -14],
+          }),
+        },
+        {
+          scale: searchModeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 0.88],
+          }),
+        },
+      ],
+    }),
+    [searchModeAnim],
+  );
+  const searchBoxAnimatedStyle = useMemo(
+    () => ({
+      marginLeft: searchLayoutAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [52, 0],
+      }),
+    }),
+    [searchLayoutAnim],
+  );
+  const quickPlacesAnimatedStyle = useMemo(
+    () => ({
+      maxHeight: searchLayoutAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [66, 0],
+      }),
+      overflow: 'hidden' as const,
+      opacity: searchModeAnim.interpolate({
+        inputRange: [0, 0.7, 1],
+        outputRange: [1, 0.2, 0],
+      }),
+      transform: [
+        {
+          translateY: searchModeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, -10],
+          }),
+        },
+      ],
+    }),
+    [searchLayoutAnim, searchModeAnim],
+  );
 
   const pageMarkers = useMemo(
     () =>
@@ -1016,9 +1124,36 @@ export default function NearbyUsersScreen() {
         })),
     [nearbyPlaces],
   );
-  const visiblePageMarkers = SHOW_APP_DISCOVERY_PLACES_ON_MAP
-    ? pageMarkers
-    : [];
+  const visiblePageMarkers = useMemo(() => {
+    if (!SHOW_APP_DISCOVERY_PLACES_ON_MAP) return [];
+
+    const anchor = currentLocation ?? selectedPoint?.coordinate ?? null;
+    if (!anchor) {
+      return pageMarkers.slice(0, MAX_VISIBLE_PAGE_MARKERS);
+    }
+
+    return pageMarkers
+      .map(item => ({
+        ...item,
+        distanceFromAnchor: distanceMeters(anchor, item.coordinate),
+      }))
+      .sort((left, right) => {
+        const leftSelected =
+          selectedPoint?.source === 'page' && selectedPoint.id === left.place.id;
+        const rightSelected =
+          selectedPoint?.source === 'page' && selectedPoint.id === right.place.id;
+        if (leftSelected !== rightSelected) return leftSelected ? -1 : 1;
+        return left.distanceFromAnchor - right.distanceFromAnchor;
+      })
+      .slice(0, MAX_VISIBLE_PAGE_MARKERS)
+      .map(({ distanceFromAnchor: _distanceFromAnchor, ...item }) => item);
+  }, [
+    currentLocation,
+    pageMarkers,
+    selectedPoint?.coordinate,
+    selectedPoint?.id,
+    selectedPoint?.source,
+  ]);
 
   const nearbyQuickPlaces = useMemo(
     () =>
@@ -1176,6 +1311,19 @@ export default function NearbyUsersScreen() {
   useEffect(
     () =>
       subscribeNavigationHeading(heading => {
+        const now = Date.now();
+        const lastHeading = lastDeviceHeadingStateRef.current;
+        if (
+          lastHeading !== null &&
+          Math.abs(normalizeBearingDelta(lastHeading, heading)) <
+            HEADING_STATE_MIN_DEGREES &&
+          now - lastDeviceHeadingUpdatedAtRef.current < HEADING_STATE_MIN_MS
+        ) {
+          return;
+        }
+
+        lastDeviceHeadingStateRef.current = heading;
+        lastDeviceHeadingUpdatedAtRef.current = now;
         setDeviceHeading(heading);
       }),
     [],
@@ -1513,25 +1661,6 @@ export default function NearbyUsersScreen() {
     [selectPoint],
   );
 
-  const selectGooglePrediction = useCallback(
-    async (prediction: MapPlacePrediction) => {
-      Keyboard.dismiss();
-      setIsSearchFocused(false);
-      const place = await getPlaceDetails(prediction.placeId);
-      if (!place?.coordinate) return;
-
-      selectPoint({
-        id: place.id,
-        source: 'google',
-        title: place.name,
-        subtitle: place.location || prediction.description,
-        url: place.url,
-        coordinate: place.coordinate,
-      });
-    },
-    [getPlaceDetails, selectPoint],
-  );
-
   const selectCurrentUser = useCallback(() => {
     const location = currentLocationRef.current;
     if (!location) return;
@@ -1579,17 +1708,31 @@ export default function NearbyUsersScreen() {
 
   const handleSelectSuggestion = useCallback(
     (item: SuggestionItem) => {
-      setQuery(
-        item.kind === 'google' ? item.prediction.mainText : item.page.name,
-      );
-      if (item.kind === 'page') {
-        selectPage(item.page);
-        return;
-      }
-      selectGooglePrediction(item.prediction).catch(() => undefined);
+      setQuery(item.page.name);
+      setIsSearchFocused(false);
+      Keyboard.dismiss();
+      selectPage(item.page);
     },
-    [selectGooglePrediction, selectPage],
+    [selectPage],
   );
+
+  const dismissSearchInput = useCallback(() => {
+    if (!isSearchFocused) return;
+
+    Keyboard.dismiss();
+    setIsSearchFocused(false);
+  }, [isSearchFocused]);
+
+  const handleMapPress = useCallback(() => {
+    dismissSearchInput();
+  }, [dismissSearchInput]);
+
+  const handleMapPanDrag = useCallback(() => {
+    dismissSearchInput();
+    if (isNavigatingRef.current) {
+      setIsAutoCentering(false);
+    }
+  }, [dismissSearchInput]);
 
   const handleUserLocationChange = useCallback(
     (event: UserLocationChangeEvent) => {
@@ -1614,11 +1757,41 @@ export default function NearbyUsersScreen() {
         distanceMeters(previousLocation, location) >
           LOCATION_RECENTER_DISTANCE_METERS;
       currentLocationRef.current = location;
-      setCurrentLocation(location);
-      setLocationSource('gps');
+      const now = Date.now();
+      const lastStateLocation = lastLocationStateRef.current;
+      const minLocationMeters = isNavigatingRef.current
+        ? NAVIGATION_LOCATION_STATE_MIN_METERS
+        : IDLE_LOCATION_STATE_MIN_METERS;
+      const minLocationMs = isNavigatingRef.current
+        ? NAVIGATION_LOCATION_STATE_MIN_MS
+        : IDLE_LOCATION_STATE_MIN_MS;
+      const movedSinceState =
+        lastStateLocation === null
+          ? Infinity
+          : distanceMeters(lastStateLocation, location);
+      if (
+        movedSinceState >= minLocationMeters ||
+        now - lastLocationStateUpdatedAtRef.current >= minLocationMs
+      ) {
+        lastLocationStateRef.current = location;
+        lastLocationStateUpdatedAtRef.current = now;
+        setCurrentLocation(location);
+      }
+      if (locationSource !== 'gps') {
+        setLocationSource('gps');
+      }
       
       const speed = coordinate.speed ?? 0;
-      setUserSpeed(speed);
+      const lastSpeed = lastSpeedStateRef.current;
+      if (
+        lastSpeed === null ||
+        Math.abs(lastSpeed - speed) >= 0.35 ||
+        now - lastSpeedStateUpdatedAtRef.current >= 900
+      ) {
+        lastSpeedStateRef.current = speed;
+        lastSpeedStateUpdatedAtRef.current = now;
+        setUserSpeed(speed);
+      }
 
       const gpsHeading = Number(coordinate.heading);
       if (
@@ -1626,7 +1799,17 @@ export default function NearbyUsersScreen() {
         gpsHeading >= 0 &&
         gpsHeading <= 360
       ) {
-        setCurrentHeading(gpsHeading);
+        const lastHeading = lastHeadingStateRef.current;
+        if (
+          lastHeading === null ||
+          Math.abs(normalizeBearingDelta(lastHeading, gpsHeading)) >=
+            HEADING_STATE_MIN_DEGREES ||
+          now - lastHeadingStateUpdatedAtRef.current >= HEADING_STATE_MIN_MS
+        ) {
+          lastHeadingStateRef.current = gpsHeading;
+          lastHeadingStateUpdatedAtRef.current = now;
+          setCurrentHeading(gpsHeading);
+        }
       }
 
       if (!hasCenteredOnUser || wasUsingProfileLocation || movedVeryFar) {
@@ -1910,9 +2093,9 @@ export default function NearbyUsersScreen() {
         limit: 20,
       })
         .then(result => {
-          if (result.pages.length === 0 && result.predictions.length === 0) {
+          if (result.pages.length === 0) {
             setSearchMessage(
-              'Không tìm thấy Page hoặc địa chỉ Google phù hợp.',
+              'Không tìm thấy Page phù hợp.',
             );
           }
         })
@@ -2010,12 +2193,9 @@ export default function NearbyUsersScreen() {
         onPoiClick={
           HIDE_GOOGLE_DISCOVERY_PLACES ? undefined : handlePoiPress
         }
+        onPress={handleMapPress}
         onUserLocationChange={handleUserLocationChange}
-        onPanDrag={() => {
-          if (isNavigating) {
-            setIsAutoCentering(false);
-          }
-        }}
+        onPanDrag={handleMapPanDrag}
         style={StyleSheet.absoluteFill}
       >
         {currentLocation ? (
@@ -2035,6 +2215,7 @@ export default function NearbyUsersScreen() {
             coordinate={currentLocation}
             flat
             rotation={userSpeed > 0.8 ? currentUserMarkerHeading : 0}
+            tracksViewChanges={false}
             zIndex={20}
             onPress={selectCurrentUser}
           >
@@ -2103,7 +2284,7 @@ export default function NearbyUsersScreen() {
             onPress={() => {
               setIsSheetCollapsed(false);
             }}
-            tracksViewChanges
+            tracksViewChanges={false}
             zIndex={30}
           >
             <View
@@ -2221,15 +2402,20 @@ export default function NearbyUsersScreen() {
       {!isNavigating && !isRoutePreview ? (
         <View style={styles.exploreTopControls}>
           <View style={styles.exploreSearchRow}>
-            <TouchableOpacity
-              activeOpacity={0.86}
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
+            <Animated.View
+              pointerEvents={isSearchFocused ? 'none' : 'auto'}
+              style={[styles.searchBackSlot, searchBackAnimatedStyle]}
             >
-              <ArrowLeft size={22} color="#0F172A" />
-            </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.86}
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+              >
+                <ArrowLeft size={22} color="#0F172A" />
+              </TouchableOpacity>
+            </Animated.View>
 
-            <View style={styles.searchBox}>
+            <Animated.View style={[styles.searchBox, searchBoxAnimatedStyle]}>
               <Search size={19} color={BRAND} />
               <TextInput
                 style={styles.searchInput}
@@ -2264,10 +2450,14 @@ export default function NearbyUsersScreen() {
               ) : (
                 <Mic size={19} color="#0F172A" />
               )}
-            </View>
+            </Animated.View>
           </View>
 
           {SHOW_APP_DISCOVERY_PLACES_ON_MAP ? (
+            <Animated.View
+              pointerEvents={isSearchFocused ? 'none' : 'auto'}
+              style={quickPlacesAnimatedStyle}
+            >
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -2299,9 +2489,10 @@ export default function NearbyUsersScreen() {
               </View>
             )}
           </ScrollView>
+            </Animated.View>
           ) : null}
 
-          {locationSource === 'profile' ? (
+          {!isSearchFocused && locationSource === 'profile' ? (
             <View style={styles.locationFallbackNotice}>
               <LocateFixed size={14} color="#1D4ED8" />
               <Text style={styles.locationFallbackText}>
@@ -2383,7 +2574,12 @@ export default function NearbyUsersScreen() {
       ) : null}
 
       {shouldShowSuggestionPanel ? (
-        <View style={styles.suggestionPanel}>
+        <View
+          style={[
+            styles.suggestionPanel,
+            isSearchFocused && styles.suggestionPanelFocused,
+          ]}
+        >
           <ScrollView
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={suggestions.length > 4}
@@ -2983,6 +3179,13 @@ const styles = StyleSheet.create({
   exploreSearchRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 52,
+  },
+  searchBackSlot: {
+    position: 'absolute',
+    top: 5,
+    left: 0,
+    zIndex: 2,
   },
   exploreChipRow: {
     paddingTop: 10,
@@ -3608,7 +3811,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   searchBox: {
-    marginLeft: 10,
     minHeight: 52,
     flex: 1,
     flexDirection: 'row',
@@ -3764,6 +3966,9 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
     elevation: 7,
+  },
+  suggestionPanelFocused: {
+    top: Platform.OS === 'android' ? 90 : 76,
   },
   topControls: {
     position: 'absolute',
