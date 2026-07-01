@@ -25,6 +25,7 @@ import {
   TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
@@ -43,7 +44,6 @@ import {
   Globe2,
   Hash,
   Image as ImageIcon,
-  ImagePlus,
   Lock,
   Music2,
   Smile,
@@ -81,6 +81,10 @@ import type {
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CreatePostRoute = RouteProp<RootStackParamList, typeof ROUTES.CREATE_POST>;
 
+const COMPOSER_PHOTO_LIMIT = 9;
+const PHOTO_GRID_COLUMNS = 3;
+const PHOTO_GRID_GAP = 8;
+
 // ── Translation copy dictionary ───────────────────────────────────────
 const CREATE_POST_COPY = {
   vi: {
@@ -89,6 +93,8 @@ const CREATE_POST_COPY = {
     privacyTitle: 'Đối tượng',
     placeholder: 'Bạn đang nghĩ gì?',
     addPhoto: 'Thêm ảnh',
+    selectedPhotos: 'Ảnh đã chọn',
+    clearPhotos: 'Xóa tất cả',
     viewMore: 'Xem thêm',
     discardTitle: 'Bỏ bài viết?',
     discardMessage: 'Bạn sẽ mất nội dung đã soạn.',
@@ -142,6 +148,8 @@ const CREATE_POST_COPY = {
     privacyTitle: 'Audience',
     placeholder: 'What is on your mind?',
     addPhoto: 'Add photo',
+    selectedPhotos: 'Selected photos',
+    clearPhotos: 'Remove all',
     viewMore: 'More',
     discardTitle: 'Discard post?',
     discardMessage: 'You will lose your drafted content.',
@@ -510,9 +518,9 @@ const CreatePostHeader = React.memo(({
       >
         <X size={24} color="#0F172A" />
       </TouchableOpacity>
-      
+
       <Text className="text-[20px] font-bold text-slate-800">{copy.headerTitle}</Text>
-      
+
       <TouchableOpacity
         onPress={onSubmit}
         disabled={!canSubmit || isProcessingPhotos}
@@ -547,9 +555,9 @@ interface AuthorPrivacyCardProps {
   feeling?: PostFeeling;
   feelingLabel: string | null;
   targetPage?: any;
-  currentPrivacyLabel: string;
-  currentPrivacyIcon: React.ComponentType<{ size: number; color: string }>;
-  onPrivacyPress: () => void;
+  currentPrivacy: PostPrivacy;
+  privacyOptions: Array<{ value: PostPrivacy; label: string; Icon: any; description: string }>;
+  onSelectPrivacy: (privacy: PostPrivacy) => void;
   copy: any;
 }
 
@@ -559,11 +567,19 @@ const AuthorPrivacyCard = React.memo(({
   feeling,
   feelingLabel,
   targetPage,
-  currentPrivacyLabel,
-  currentPrivacyIcon: PrivacyIcon,
-  onPrivacyPress,
+  currentPrivacy,
+  privacyOptions,
+  onSelectPrivacy,
   copy,
 }: AuthorPrivacyCardProps) => {
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  const currentOpt = useMemo(() => {
+    return privacyOptions.find(opt => opt.value === currentPrivacy) ?? privacyOptions[0];
+  }, [privacyOptions, currentPrivacy]);
+
+  const PrivacyIcon = currentOpt.Icon;
+
   return (
     <View
       style={{
@@ -572,6 +588,7 @@ const AuthorPrivacyCard = React.memo(({
         shadowOpacity: 0.05,
         shadowRadius: 10,
         elevation: 2,
+        zIndex: 100,
       }}
       className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 flex-row items-center"
     >
@@ -602,7 +619,7 @@ const AuthorPrivacyCard = React.memo(({
           <Text className="text-white text-[10px] font-bold leading-none">+</Text>
         </View>
       </View>
-      <View className="ml-4 flex-1">
+      <View style={{ flex: 1, marginLeft: 16, zIndex: 200 }}>
         <View className="flex-row items-center flex-wrap">
           <Text className="text-[16px] font-bold text-slate-800" numberOfLines={1}>
             {displayName}
@@ -622,17 +639,75 @@ const AuthorPrivacyCard = React.memo(({
             {copy.postAsPage}
           </Text>
         ) : null}
-        <TouchableOpacity
-          onPress={onPrivacyPress}
-          activeOpacity={0.7}
-          className="mt-1.5 self-start flex-row items-center rounded-full bg-slate-100 px-3 py-1"
-        >
-          <PrivacyIcon size={12} color="#475569" />
-          <Text className="mx-1.5 text-[12px] font-semibold text-slate-600">
-            {currentPrivacyLabel}
-          </Text>
-          <ChevronDown size={12} color="#475569" />
-        </TouchableOpacity>
+        <View style={{ position: 'relative', zIndex: 300 }} className="mt-1.5 self-start">
+          <TouchableOpacity
+            onPress={() => setIsDropdownOpen(prev => !prev)}
+            activeOpacity={0.7}
+            className="flex-row items-center rounded-full bg-slate-100 px-3 py-1"
+          >
+            <PrivacyIcon size={12} color="#475569" />
+            <Text className="mx-1.5 text-[12px] font-semibold text-slate-600">
+              {currentOpt.label}
+            </Text>
+            <ChevronDown size={12} color="#475569" />
+          </TouchableOpacity>
+
+          {isDropdownOpen && (
+            <View
+              style={{
+                position: 'absolute',
+                top: 28,
+                left: 0,
+                width: 180,
+                backgroundColor: '#ffffff',
+                borderRadius: 12,
+                padding: 4,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 8,
+                elevation: 10,
+                borderWidth: 1,
+                borderColor: '#f1f5f9',
+                zIndex: 999,
+              }}
+            >
+              {privacyOptions.map(opt => {
+                const OptIcon = opt.Icon;
+                const isSelected = opt.value === currentPrivacy;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    onPress={() => {
+                      onSelectPrivacy(opt.value);
+                      setIsDropdownOpen(false);
+                    }}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 8,
+                      backgroundColor: isSelected ? '#eff6ff' : 'transparent',
+                    }}
+                  >
+                    <OptIcon size={14} color={isSelected ? '#3b82f6' : '#64748B'} />
+                    <Text
+                      style={{
+                        marginLeft: 8,
+                        fontSize: 12,
+                        fontWeight: isSelected ? '700' : '500',
+                        color: isSelected ? '#1d4ed8' : '#334155',
+                      }}
+                    >
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -676,7 +751,7 @@ const CaptionComposer = React.memo(({
         shadowRadius: 10,
         elevation: 2,
       }}
-      className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 min-h-[220px] justify-between"
+      className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 min-h-[160px] justify-between"
     >
       <TextInput
         ref={textInputRef}
@@ -690,16 +765,16 @@ const CaptionComposer = React.memo(({
         autoFocus
         textAlignVertical="top"
         style={{
-          fontSize: 18,
-          lineHeight: 26,
+          fontSize: 17,
+          lineHeight: 24,
           color: '#1e293b',
           padding: 0,
-          minHeight: 120,
+          minHeight: 82,
         }}
       />
 
       {/* Word counts & inline shortcuts */}
-      <View className="flex-row items-center justify-end mt-4 gap-3">
+      <View className="flex-row items-center justify-end mt-3 gap-3">
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => onInsertChar('#')}
@@ -733,113 +808,184 @@ const CaptionComposer = React.memo(({
 interface MediaPreviewStripProps {
   photos: PostPhotoAttachment[];
   onRemovePhoto: (uri: string) => void;
+  onClearPhotos: () => void;
   onPickPhotos: () => void;
   isProcessing: boolean;
+  maxPhotos: number;
   copy: any;
-  language: string;
 }
 
 const MediaPreviewStrip = React.memo(({
   photos,
   onRemovePhoto,
+  onClearPhotos,
   onPickPhotos,
   isProcessing,
+  maxPhotos,
   copy,
-  language,
 }: MediaPreviewStripProps) => {
+  const { width } = useWindowDimensions();
+  const visiblePhotos = useMemo(
+    () => photos.slice(0, COMPOSER_PHOTO_LIMIT),
+    [photos],
+  );
+
+  if (photos.length === 0 && !isProcessing) {
+    return null;
+  }
+
+  const effectiveMaxPhotos = Math.min(maxPhotos, COMPOSER_PHOTO_LIMIT);
+  const containerWidth = Math.max(width - 32, 0);
+  const itemSize = Math.floor(
+    (containerWidth - PHOTO_GRID_GAP * (PHOTO_GRID_COLUMNS - 1)) / PHOTO_GRID_COLUMNS,
+  );
+  const canAddMore = photos.length < effectiveMaxPhotos;
+
+  const renderAddTile = canAddMore && photos.length > 0;
+  const showSummaryHeader = photos.length > 0 || isProcessing;
+
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
-      className="mt-4"
-    >
-      <Pressable
-        onPress={onPickPhotos}
-        style={({ pressed }) => [
-          {
-            width: 100,
-            height: 100,
-            borderRadius: 16,
-            borderStyle: 'dashed',
-            borderWidth: 1.5,
-            borderColor: '#cbd5e1',
-            backgroundColor: '#ffffff',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transform: [{ scale: pressed ? 0.96 : 1 }],
-          }
-        ]}
-      >
-        <Text style={{ fontSize: 24, color: '#64748b', fontWeight: '300' }}>+</Text>
-        <Text style={{ fontSize: 10, color: '#64748b', marginTop: 4, fontWeight: '600' }}>{copy.addPhoto}</Text>
-      </Pressable>
+    <View className="mx-4 mt-4">
+      {showSummaryHeader ? (
+        <View className="mb-3 flex-row items-center justify-between">
+          <View>
+            <Text className="text-[15px] font-bold text-slate-900">
+              {copy.selectedPhotos}
+            </Text>
+            <Text className="mt-0.5 text-[12px] font-semibold text-slate-400">
+              {Math.min(photos.length, COMPOSER_PHOTO_LIMIT)}/{effectiveMaxPhotos}
+            </Text>
+          </View>
 
-      {isProcessing && (
-        <View
-          style={{
-            width: 100,
-            height: 100,
-            borderRadius: 16,
-            backgroundColor: '#ffffff',
-            borderWidth: 1,
-            borderColor: '#e2e8f0',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <ActivityIndicator color="#0000ff" size="small" />
-          <Text style={{ fontSize: 9, color: '#64748b', marginTop: 6, fontWeight: '600', textAlign: 'center' }}>
-            {copy.processing}
-          </Text>
+          {photos.length > 0 ? (
+            <TouchableOpacity
+              activeOpacity={0.78}
+              onPress={onClearPhotos}
+              className="rounded-full bg-red-50 px-3.5 py-2"
+            >
+              <Text className="text-[12px] font-bold text-red-500">
+                {copy.clearPhotos}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
-      )}
+      ) : null}
 
-      {photos.map(photo => (
-        <View key={photo.uri} style={{ width: 100, height: 100, position: 'relative' }}>
-          <Image
-            source={{ uri: photo.uri }}
-            style={{ width: '100%', height: '100%', borderRadius: 16 }}
-            resizeMode="cover"
-            resizeMethod="resize"
-          />
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => onRemovePhoto(photo.uri)}
-            className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-white/90 items-center justify-center shadow-sm"
-          >
-            <X size={12} color="#000000" />
-          </TouchableOpacity>
-        </View>
-      ))}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {visiblePhotos.map((photo, index) => {
+          const isLastInRow = index % PHOTO_GRID_COLUMNS === PHOTO_GRID_COLUMNS - 1;
+          const hasHiddenPhotos =
+            index === COMPOSER_PHOTO_LIMIT - 1 && photos.length > COMPOSER_PHOTO_LIMIT;
+          const hiddenCount = Math.max(photos.length - COMPOSER_PHOTO_LIMIT, 0);
+          const cellStyle = {
+            width: itemSize,
+            height: itemSize,
+            borderRadius: 18,
+            overflow: 'hidden' as const,
+            marginBottom: PHOTO_GRID_GAP,
+            marginRight: isLastInRow ? 0 : PHOTO_GRID_GAP,
+            backgroundColor: '#f8fafc',
+            position: 'relative' as const,
+          };
 
-      {photos.length > 0 && (
-        <Pressable
-          onPress={onPickPhotos}
-          style={({ pressed }) => [
-            {
-              width: 100,
-              height: 100,
-              borderRadius: 16,
-              backgroundColor: '#ffffff',
-              borderWidth: 1,
-              borderColor: '#f1f5f9',
-              alignItems: 'center',
-              justifyContent: 'center',
-              shadowColor: '#94a3b8',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.05,
-              shadowRadius: 6,
-              elevation: 1,
-              transform: [{ scale: pressed ? 0.96 : 1 }],
-            }
-          ]}
-        >
-          <Text style={{ fontSize: 20, color: '#64748b', fontWeight: 'bold' }}>...</Text>
-          <Text style={{ fontSize: 10, color: '#64748b', marginTop: 4, fontWeight: '600' }}>{copy.viewMore}</Text>
-        </Pressable>
-      )}
-    </ScrollView>
+          return (
+            <View key={photo.uri} style={cellStyle}>
+              <Image
+                source={{ uri: photo.uri }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="cover"
+                resizeMethod="resize"
+              />
+
+              {hasHiddenPhotos ? (
+                <View
+                  style={StyleSheet.absoluteFill}
+                  className="items-center justify-center bg-black/60"
+                >
+                  <Text className="text-[22px] font-black text-white">
+                    +{hiddenCount}
+                  </Text>
+                </View>
+              ) : null}
+
+              <TouchableOpacity
+                activeOpacity={0.82}
+                onPress={() => onRemovePhoto(photo.uri)}
+                className="absolute right-1.5 top-1.5 h-7 w-7 items-center justify-center rounded-full bg-white/95 shadow-sm"
+              >
+                <X size={14} color="#0F172A" strokeWidth={2.6} />
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+
+        {isProcessing ? (() => {
+          const index = visiblePhotos.length;
+          const isLastInRow = index % PHOTO_GRID_COLUMNS === PHOTO_GRID_COLUMNS - 1;
+          return (
+            <View
+              key="grid-processing"
+              style={{
+                width: itemSize,
+                height: itemSize,
+                borderRadius: 18,
+                marginBottom: PHOTO_GRID_GAP,
+                marginRight: isLastInRow ? 0 : PHOTO_GRID_GAP,
+                backgroundColor: '#FFFFFF',
+                borderWidth: 1,
+                borderColor: '#E2E8F0',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <ActivityIndicator color="#0000ff" size="small" />
+              <Text className="mt-2 text-center text-[10px] font-bold text-slate-500">
+                {copy.processing}
+              </Text>
+            </View>
+          );
+        })() : null}
+
+        {renderAddTile ? (() => {
+          const index = visiblePhotos.length + (isProcessing ? 1 : 0);
+          const isLastInRow = index % PHOTO_GRID_COLUMNS === PHOTO_GRID_COLUMNS - 1;
+          return (
+            <Pressable
+              key="grid-add-btn"
+              onPress={onPickPhotos}
+              style={({ pressed }) => ({
+                width: itemSize,
+                height: itemSize,
+                marginBottom: PHOTO_GRID_GAP,
+                marginRight: isLastInRow ? 0 : PHOTO_GRID_GAP,
+                transform: [{ scale: pressed ? 0.98 : 1 }],
+              })}
+            >
+              <View
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: 18,
+                  borderStyle: 'dashed',
+                  borderWidth: 2,
+                  borderColor: '#BAC7D6',
+                  backgroundColor: '#F8FAFC',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text className="text-[32px] font-light leading-8 text-slate-400">
+                  +
+                </Text>
+                <Text className="mt-1 text-center text-[12px] font-bold text-slate-500">
+                  {copy.addPhoto}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })() : null}
+      </View>
+    </View>
   );
 });
 
@@ -856,8 +1002,14 @@ const VideoPreviewCard = React.memo(({
   copy,
   isKeyboardActive,
 }: VideoPreviewCardProps) => {
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const { width, height } = useWindowDimensions();
+  const frameWidth = Math.max(width - 52, 240);
+  const frameHeight = Math.min(
+    Math.floor(height * 0.22),
+    Math.max(132, Math.floor(frameWidth * 9 / 16)),
+  );
 
   // Pause video if keyboard becomes active
   useEffect(() => {
@@ -865,25 +1017,6 @@ const VideoPreviewCard = React.memo(({
       setIsPlaying(false);
     }
   }, [isKeyboardActive]);
-
-  // Compute dimensions based on video aspect ratio
-  const dimensions = useMemo(() => {
-    const defaultHeight = 180;
-    if (!video.width || !video.height) {
-      return { width: '100%', height: defaultHeight };
-    }
-    const ratio = video.width / video.height;
-    if (ratio > 1.2) {
-      // Horizontal video
-      return { width: '100%', aspectRatio: 16 / 9, maxHeight: 220 };
-    } else if (ratio < 0.8) {
-      // Vertical video
-      return { width: 180, height: 320, alignSelf: 'center' };
-    } else {
-      // Square video
-      return { width: 240, height: 240, alignSelf: 'center' };
-    }
-  }, [video.width, video.height]);
 
   const handlePlayPause = () => {
     setIsPlaying(prev => !prev);
@@ -894,51 +1027,56 @@ const VideoPreviewCard = React.memo(({
   };
 
   return (
-    <View className="mx-4 mt-4 overflow-hidden rounded-[20px] border border-blue-100 bg-blue-50">
-      <View className="flex-row items-center px-4 pt-3 pb-2">
-        <View className="h-8 w-8 items-center justify-center rounded-full bg-blue-100">
-          <VideoIcon size={16} color="#3b82f6" />
+    <View
+      className="mx-4 mt-4 overflow-hidden rounded-[20px] border border-slate-800 bg-slate-950 shadow-lg"
+      style={{ maxHeight: frameHeight + 54 }}
+    >
+      <View className="flex-row items-center border-b border-white/5 bg-black/25 px-3 py-2.5">
+        <View className="h-8 w-8 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10">
+          <VideoIcon size={15} color="#3b82f6" />
         </View>
-        <Text
-          className="ml-2 flex-1 text-sm font-semibold text-slate-700"
-          numberOfLines={1}
-        >
-          {video.name}
-        </Text>
+        <View className="ml-3 flex-1">
+          <Text className="text-[13px] font-bold text-slate-100" numberOfLines={1}>
+            {video.name}
+          </Text>
+          <Text className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+            {copy.addVideo}
+          </Text>
+        </View>
         <TouchableOpacity
           onPress={onRemove}
+          activeOpacity={0.7}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          className="h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm"
+          className="h-8 w-8 items-center justify-center rounded-full bg-white/10 active:scale-95"
         >
-          <X size={16} color="#64748B" />
+          <X size={15} color="#E2E8F0" />
         </TouchableOpacity>
       </View>
-      <Text
-        className="px-4 text-[11px] font-medium uppercase tracking-wider text-blue-700"
-      >
-        {copy.addVideo}
-      </Text>
-      
+
       <Pressable
         onPress={handlePlayPause}
         style={({ pressed }) => [
           {
-            margin: 12,
-            borderRadius: 16,
+            margin: 10,
+            width: frameWidth,
+            maxWidth: '100%',
+            height: frameHeight,
+            borderRadius: 14,
             overflow: 'hidden',
-            backgroundColor: '#0F172A',
+            backgroundColor: '#020617',
             position: 'relative',
             justifyContent: 'center',
             alignItems: 'center',
             transform: [{ scale: pressed ? 0.98 : 1 }],
-          },
-          dimensions as any
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.08)',
+          }
         ]}
       >
         {/* Skeleton/Placeholder until first frame loads */}
         {!isVideoLoaded && (
-          <View style={StyleSheet.absoluteFill} className="items-center justify-center bg-slate-900 z-10">
-            <ActivityIndicator color="#FFFFFF" size="small" />
+          <View style={StyleSheet.absoluteFill} className="items-center justify-center bg-slate-950 z-10">
+            <ActivityIndicator color="#3b82f6" size="small" />
             <Text className="mt-2 text-xs text-slate-400 font-semibold">{copy.processing}</Text>
           </View>
         )}
@@ -947,7 +1085,7 @@ const VideoPreviewCard = React.memo(({
           source={{ uri: video.uri }}
           style={{ width: '100%', height: '100%' }}
           paused={!isPlaying}
-          resizeMode="cover"
+          resizeMode="contain"
           onLoad={handleLoad}
           repeat
         />
@@ -955,28 +1093,39 @@ const VideoPreviewCard = React.memo(({
         {/* Play/Pause Overlay */}
         <View
           style={StyleSheet.absoluteFill}
-          className="bg-black/20 items-center justify-center"
+          className="bg-black/30 items-center justify-center"
           pointerEvents="none"
         >
           {!isPlaying ? (
-            <View className="h-14 w-14 items-center justify-center rounded-full bg-black/40 border border-white/20">
-              <View style={{ width: 0, height: 0, borderLeftWidth: 16, borderTopWidth: 10, borderBottomWidth: 10, borderStyle: 'solid', borderLeftColor: '#FFFFFF', borderTopColor: 'transparent', borderBottomColor: 'transparent', marginLeft: 4 }} />
+            <View className="h-14 w-14 items-center justify-center rounded-full border border-blue-400/30 bg-blue-600/90 shadow-lg">
+              <View style={{
+                width: 0,
+                height: 0,
+                borderLeftWidth: 15,
+                borderTopWidth: 9,
+                borderBottomWidth: 9,
+                borderStyle: 'solid',
+                borderLeftColor: '#FFFFFF',
+                borderTopColor: 'transparent',
+                borderBottomColor: 'transparent',
+                marginLeft: 5
+              }} />
             </View>
           ) : null}
         </View>
 
         {/* Meta Info overlay (Duration) */}
         {video.duration ? (
-          <View className="absolute bottom-3 right-3 rounded-md bg-black/60 px-2 py-0.5">
-            <Text className="text-[11px] font-bold text-white">
+          <View className="absolute bottom-2.5 right-2.5 rounded-lg border border-white/10 bg-black/70 px-2.5 py-1">
+            <Text className="text-[11px] font-bold text-slate-100">
               {formatAudioDuration(video.duration * 1000)}
             </Text>
           </View>
         ) : null}
 
         {/* Click to Play/Pause Hint */}
-        <View className="absolute bottom-3 left-3 rounded-md bg-black/40 px-2 py-0.5">
-          <Text className="text-[10px] font-semibold text-white/80">
+        <View className="absolute bottom-2.5 left-2.5 rounded-lg border border-white/5 bg-black/55 px-2.5 py-1">
+          <Text className="text-[10px] font-semibold text-slate-300">
             {isPlaying ? copy.tapToPause : copy.tapToPlay}
           </Text>
         </View>
@@ -1063,6 +1212,89 @@ const AudioPreviewCard = React.memo(({
   return null;
 });
 
+interface DiscardPostDialogProps {
+  visible: boolean;
+  title: string;
+  message: string;
+  cancelLabel: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+const DiscardPostDialog = React.memo(({
+  visible,
+  title,
+  message,
+  cancelLabel,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: DiscardPostDialogProps) => {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onCancel}
+    >
+      <Pressable
+        onPress={onCancel}
+        style={StyleSheet.absoluteFill}
+        className="items-center justify-center bg-slate-950/45 px-6"
+      >
+        <Pressable
+          onPress={event => event.stopPropagation()}
+          className="w-full overflow-hidden rounded-[28px] bg-white p-5 shadow-2xl"
+          style={{
+            shadowColor: '#0F172A',
+            shadowOffset: { width: 0, height: 18 },
+            shadowOpacity: 0.18,
+            shadowRadius: 28,
+            elevation: 18,
+          }}
+        >
+          <View className="mb-4 flex-row items-center">
+            <View className="mr-3 h-12 w-12 items-center justify-center rounded-2xl bg-red-50">
+              <X size={22} color="#EF4444" strokeWidth={2.8} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-[20px] font-black text-slate-950">
+                {title}
+              </Text>
+              <Text className="mt-1 text-[14px] font-semibold leading-5 text-slate-500">
+                {message}
+              </Text>
+            </View>
+          </View>
+
+          <View className="mt-2 flex-row gap-3">
+            <TouchableOpacity
+              activeOpacity={0.82}
+              onPress={onCancel}
+              className="h-[52px] flex-1 items-center justify-center rounded-2xl bg-slate-100"
+            >
+              <Text className="text-[15px] font-black text-slate-700">
+                {cancelLabel}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.82}
+              onPress={onConfirm}
+              className="h-[52px] flex-1 items-center justify-center rounded-2xl bg-red-500"
+            >
+              <Text className="text-[15px] font-black text-white">
+                {confirmLabel}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+});
+
 interface ComposerActionTrayProps {
   isFloating: boolean;
   copy: any;
@@ -1107,7 +1339,7 @@ const ComposerActionTray = React.memo(({
     },
     {
       key: 'audio',
-      label: onAudioAction,
+      label: copy.audio,
       onPress: onAudioAction,
       Icon: Music2,
       iconBg: '#fdf2f8',
@@ -1363,6 +1595,7 @@ function CreatePostScreen() {
   const [privacySheetVisible, setPrivacySheetVisible] = useState(false);
   const [feelingSheetVisible, setFeelingSheetVisible] = useState(false);
   const [moreSheetVisible, setMoreSheetVisible] = useState(false);
+  const [discardDialogVisible, setDiscardDialogVisible] = useState(false);
   const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
 
   const privacyOptions = useMemo(() => [
@@ -1412,10 +1645,22 @@ function CreatePostScreen() {
   const [isKeyboardActive, setIsKeyboardActive] = useState(false);
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    // On iOS, we want to animate with the keyboard event because it has 'keyboardWillShow' and 'keyboardWillHide' which fire immediately.
+    // On Android, those events don't exist. We use keyboardDidHide as a fallback to detect back-button dismiss.
+    if (Platform.OS !== 'ios') {
+      const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+        setIsKeyboardActive(false);
+        Animated.timing(keyboardTransitionAnim, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }).start();
+        textInputRef.current?.blur();
+      });
+      return () => hideSub.remove();
+    }
 
-    const showSub = Keyboard.addListener(showEvent, (e) => {
+    const showSub = Keyboard.addListener('keyboardWillShow', (e) => {
       const height = e.endCoordinates?.height ?? 0;
       setKeyboardHeight(height);
       setIsKeyboardActive(true);
@@ -1426,11 +1671,11 @@ function CreatePostScreen() {
       }).start();
     });
 
-    const hideSub = Keyboard.addListener(hideEvent, (e) => {
+    const hideSub = Keyboard.addListener('keyboardWillHide', (e) => {
       setIsKeyboardActive(false);
       Animated.timing(keyboardTransitionAnim, {
         toValue: 0,
-        duration: (e && e.duration) || 250,
+        duration: e.duration || 250,
         useNativeDriver: true,
       }).start();
     });
@@ -1445,11 +1690,29 @@ function CreatePostScreen() {
     setIsTextFocused(true);
     // Smooth scroll caption input card to top when keyboard opens
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-  }, []);
+
+    if (Platform.OS === 'android') {
+      setIsKeyboardActive(true);
+      Animated.timing(keyboardTransitionAnim, {
+        toValue: 1,
+        duration: 180, // fast & responsive transition on Android focus
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [keyboardTransitionAnim]);
 
   const handleInputBlur = useCallback(() => {
     setIsTextFocused(false);
-  }, []);
+
+    if (Platform.OS === 'android') {
+      setIsKeyboardActive(false);
+      Animated.timing(keyboardTransitionAnim, {
+        toValue: 0,
+        duration: 180, // fast & responsive transition on Android blur
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [keyboardTransitionAnim]);
 
   // Save callbacks in refs to make handlers stable & prevent re-renders
   const vmRef = useRef(vm);
@@ -1466,9 +1729,10 @@ function CreatePostScreen() {
   );
 
   const handlePickPhotos = useCallback(async () => {
-    const remaining = vmRef.current.maxPhotos - vmRef.current.draft.photos.length;
+    const maxPhotos = Math.min(vmRef.current.maxPhotos, COMPOSER_PHOTO_LIMIT);
+    const remaining = maxPhotos - vmRef.current.draft.photos.length;
     if (remaining <= 0) {
-      Alert.alert(copy.limitTitle, copy.limitMsg.replace('{max}', String(vmRef.current.maxPhotos)));
+      Alert.alert(copy.limitTitle, copy.limitMsg.replace('{max}', String(maxPhotos)));
       return;
     }
     setIsProcessingPhotos(true);
@@ -1491,7 +1755,7 @@ function CreatePostScreen() {
         .map(assetToAttachment)
         .filter((a): a is PostPhotoAttachment => a !== null);
       if (attachments.length > 0) {
-        vmRef.current.addPhotos(attachments);
+        vmRef.current.addPhotos(attachments.slice(0, remaining));
       }
     } finally {
       setIsProcessingPhotos(false);
@@ -1615,26 +1879,22 @@ function CreatePostScreen() {
       navigation.goBack();
       return;
     }
-    Alert.alert(
-      copy.discardTitle,
-      copy.discardMessage,
-      [
-        { text: copy.discardCancel, style: 'cancel' },
-        {
-          text: copy.discardConfirm,
-          style: 'destructive',
-          onPress: () => {
-            vmRef.current.reset();
-            navigation.goBack();
-          },
-        },
-      ],
-      { cancelable: true },
-    );
-  }, [navigation, copy]);
+    Keyboard.dismiss();
+    setDiscardDialogVisible(true);
+  }, [navigation]);
+
+  const handleConfirmDiscard = useCallback(() => {
+    setDiscardDialogVisible(false);
+    vmRef.current.reset();
+    navigation.goBack();
+  }, [navigation]);
 
   const handleRemovePhoto = useCallback((uri: string) => {
     vmRef.current.removePhoto(uri);
+  }, []);
+
+  const handleClearPhotos = useCallback(() => {
+    vmRef.current.clearPhotos();
   }, []);
 
   const handleRemoveVideo = useCallback(() => {
@@ -1735,9 +1995,9 @@ function CreatePostScreen() {
               feeling={vm.draft.feeling}
               feelingLabel={currentFeelingLabel}
               targetPage={targetPage}
-              currentPrivacyLabel={currentPrivacy.label}
-              currentPrivacyIcon={currentPrivacy.Icon}
-              onPrivacyPress={() => setPrivacySheetVisible(true)}
+              currentPrivacy={vm.draft.privacy}
+              privacyOptions={privacyOptions}
+              onSelectPrivacy={stableSetPrivacy}
               copy={copy}
             />
 
@@ -1754,14 +2014,17 @@ function CreatePostScreen() {
             />
 
             {/* Photos Preview Strip */}
-            <MediaPreviewStrip
-              photos={vm.draft.photos}
-              onRemovePhoto={handleRemovePhoto}
-              onPickPhotos={handlePickPhotos}
-              isProcessing={isProcessingPhotos}
-              copy={copy}
-              language={language}
-            />
+            {!vm.draft.video ? (
+              <MediaPreviewStrip
+                photos={vm.draft.photos}
+                onRemovePhoto={handleRemovePhoto}
+                onClearPhotos={handleClearPhotos}
+                onPickPhotos={handlePickPhotos}
+                isProcessing={isProcessingPhotos}
+                maxPhotos={Math.min(vm.maxPhotos, COMPOSER_PHOTO_LIMIT)}
+                copy={copy}
+              />
+            ) : null}
 
             {/* Audio Preview Card */}
             <AudioPreviewCard
@@ -1828,7 +2091,7 @@ function CreatePostScreen() {
               isRecording={wavRecorder.isRecording}
               insetsBottom={insets.bottom}
             />
-            
+
             {/* Suggestion chips */}
             {(vm.isLoadingCaptionSuggestions || vm.captionSuggestions.length > 0) && (
               <ScrollView
@@ -1984,14 +2247,7 @@ function CreatePostScreen() {
         </View>
       </TouchableWithoutFeedback>
 
-      <PrivacyPickerSheet
-        visible={privacySheetVisible}
-        current={vm.draft.privacy}
-        onClose={() => setPrivacySheetVisible(false)}
-        onPick={stableSetPrivacy}
-        options={privacyOptions}
-        title={copy.privacyTitle}
-      />
+
       <FeelingPickerSheet
         visible={feelingSheetVisible}
         current={vm.draft.feeling}
@@ -2001,6 +2257,16 @@ function CreatePostScreen() {
         options={translatedFeelings}
         title={copy.feelingsTitle}
         clearLabel={copy.feelingsClear}
+      />
+
+      <DiscardPostDialog
+        visible={discardDialogVisible}
+        title={copy.discardTitle}
+        message={copy.discardMessage}
+        cancelLabel={copy.discardCancel}
+        confirmLabel={copy.discardConfirm}
+        onCancel={() => setDiscardDialogVisible(false)}
+        onConfirm={handleConfirmDiscard}
       />
 
       <CreateActionSheet
