@@ -1,28 +1,12 @@
-// StoryGridCell — one tile of the StoriesListScreen grid.
-//
-// Visual recipe (mirrors the rail's Story bubble, but square):
-//
-//   ┌──────────────────────────────────┐
-//   │ [image OR video thumb, cover]    │
-//   │                            [▶]?  │ ← play badge if segment is video
-//   │  ●publisher-name  ·  3 phút      │ ← avatar w/ brand ring + name + time
-//   └──────────────────────────────────┘
-//
-// Animation: the parent FlatList wraps each cell in `Animated.View` with a
-// staggered `FadeIn` + `ZoomIn` entry so the grid cascades in. This file
-// only owns the cell's intrinsic layout — no entrance animation logic.
-
 import React, { memo, useMemo } from 'react';
-import { Image, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Text, Pressable, View } from 'react-native';
 import { Play } from 'lucide-react-native';
 import type { StoriesListRow } from '../../application/view-models/useStoriesListViewModel';
 import { formatStoriesRelativeTime, type StoriesCopy } from '../../application/i18n/storiesCopy';
 
 interface StoryGridCellProps {
   row: StoriesListRow;
-  /** Pre-resolved copy for the current language (avoids prop drilling hooks). */
   copy: StoriesCopy;
-  /** Called with the row's tap target. The parent navigates to the viewer. */
   onPress: (row: StoriesListRow) => void;
 }
 
@@ -35,102 +19,212 @@ function StoryGridCellImpl({ row, copy, onPress }: StoryGridCellProps) {
   const showVideoBadge = row.isVideo;
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.85}
+    <Pressable
       onPress={() => onPress(row)}
-      className="overflow-hidden rounded-[18px] border border-[#e2e8f0] bg-white"
+      style={{ flex: 1 }}
       accessibilityRole="button"
       accessibilityLabel={`${row.publisher.name} ${timeLabel}`}
     >
-      {/* Cover media — image OR video thumbnail. The video segment URL is a
-          CDN-normalised poster so <Image> can render it directly. */}
-      <View className="relative aspect-square w-full bg-slate-100">
-        {row.coverUrl ? (
-          <Image
-            source={{ uri: row.coverUrl }}
-            className="h-full w-full"
-            resizeMode="cover"
-            fadeDuration={0}
-          />
-        ) : (
-          <View className="h-full w-full items-center justify-center bg-slate-200">
-            <Text className="text-[12px] font-semibold text-slate-400">
-              {copy.timeJustNow}
-            </Text>
-          </View>
-        )}
-
-        {/* Soft gradient overlay so the bottom text remains readable on any
-            cover. Implemented with two stacked translucent views (no
-            react-native-linear-gradient dep needed). */}
-        <View className="absolute inset-0 bg-black/10" />
-        <View className="absolute bottom-0 left-0 right-0 h-20 bg-black/35" />
-
-        {/* Video badge — sits in the top-right so it doesn't collide with
-            the avatar in the bottom-left. */}
-        {showVideoBadge ? (
-          <View className="absolute right-2 top-2 h-7 w-7 items-center justify-center rounded-full bg-black/55">
-            <Play size={14} color="#FFFFFF" fill="#FFFFFF" />
-          </View>
-        ) : null}
-
-        {/* Unseen badge — small accent dot if the publisher still has unseen
-            segments. Hidden once the user has seen everything. */}
-        {row.hasUnseen && !row.isViewed ? (
-          <View className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-[#0000ff]" />
-        ) : null}
-
-        {/* Avatar with brand-coloured ring. Bottom-left corner. */}
-        <View className="absolute bottom-2 left-2 flex-row items-center">
-          <View
-            className="h-7 w-7 items-center justify-center overflow-hidden rounded-full border-2 border-[#0000ff] bg-white p-0.5"
-            style={{ borderColor: '#0000ff' }}
-          >
-            {row.publisher.avatarUrl ? (
-              <Image
-                source={{ uri: row.publisher.avatarUrl }}
-                className="h-full w-full rounded-full"
-                resizeMode="cover"
-                fadeDuration={0}
+      {({ pressed }) => (
+        <View
+          style={{
+            transform: [{ scale: pressed ? 0.96 : 1 }],
+            borderRadius: 22,
+            overflow: 'hidden',
+            backgroundColor: '#1E293B',
+            aspectRatio: 3 / 4,
+            position: 'relative',
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.08)',
+            shadowColor: '#000000',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.12,
+            shadowRadius: 12,
+            elevation: 4,
+          }}
+        >
+          {/* Cover Media or Premium Mesh Gradient Fallback */}
+          {row.coverUrl ? (
+            <Image
+              source={{ uri: row.coverUrl }}
+              style={{ width: '100%', height: '100%', position: 'absolute' }}
+              resizeMode="cover"
+            />
+          ) : (
+            // Premium Glassmorphic Mesh Gradient Background
+            <View style={{ width: '100%', height: '100%', position: 'absolute', backgroundColor: '#0B1329', overflow: 'hidden' }}>
+              {/* Mesh Orb 1 */}
+              <View
+                style={{
+                  position: 'absolute',
+                  top: -20,
+                  left: -20,
+                  width: 140,
+                  height: 140,
+                  borderRadius: 70,
+                  backgroundColor: '#4F46E5',
+                  opacity: 0.35,
+                }}
               />
-            ) : (
-              <View className="h-full w-full items-center justify-center rounded-full bg-slate-300">
-                <Text className="text-[10px] font-bold text-white">
-                  {row.publisher.name?.charAt(0)?.toUpperCase() ?? '?'}
+              {/* Mesh Orb 2 */}
+              <View
+                style={{
+                  position: 'absolute',
+                  bottom: -30,
+                  right: -30,
+                  width: 160,
+                  height: 160,
+                  borderRadius: 80,
+                  backgroundColor: '#06B6D4',
+                  opacity: 0.25,
+                }}
+              />
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 1.2 }}>
+                  {copy.timeJustNow}
                 </Text>
               </View>
-            )}
-          </View>
+            </View>
+          )}
 
-          {/* Publisher name + time stacked next to the avatar. numberOfLines
-              keeps the cell height fixed even for long Vietnamese names. */}
-          <View className="ml-2 flex-1">
-            <Text
-              className="text-[12px] font-extrabold text-white"
-              numberOfLines={1}
-            >
-              {row.publisher.name || row.publisher.username}
-            </Text>
-            <Text
-              className="text-[10px] font-semibold text-white/85"
-              numberOfLines={1}
-            >
-              {timeLabel}
-            </Text>
-          </View>
+          {/* Soft Vignette Shadows for Text Readability */}
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.15)' }} />
+          <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60%', backgroundColor: 'rgba(0, 0, 0, 0.45)' }} />
 
-          {/* Segment count badge — only when there are multiple segments
-              in the same publisher's bubble. */}
-          {row.segmentCount > 1 ? (
-            <View className="ml-1 h-5 min-w-[20px] items-center justify-center rounded-full bg-white/30 px-1.5">
-              <Text className="text-[10px] font-extrabold text-white">
-                {row.segmentCount}
-              </Text>
+          {/* Video Play Badge */}
+          {showVideoBadge ? (
+            <View
+              style={{
+                position: 'absolute',
+                right: 12,
+                top: 12,
+                height: 28,
+                width: 28,
+                borderRadius: 14,
+                backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.35)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Play size={12} color="#FFFFFF" fill="#FFFFFF" />
             </View>
           ) : null}
+
+          {/* Unseen badge accent dot */}
+          {row.hasUnseen && !row.isViewed ? (
+            <View
+              style={{
+                position: 'absolute',
+                right: 12,
+                top: 12,
+                height: 10,
+                width: 10,
+                borderRadius: 5,
+                backgroundColor: '#2563EB',
+                borderWidth: 1.5,
+                borderColor: '#FFFFFF',
+              }}
+            />
+          ) : null}
+
+          {/* Publisher Details and Metadata */}
+          <View
+            style={{
+              position: 'absolute',
+              bottom: 12,
+              left: 12,
+              right: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+            }}
+          >
+            {/* Avatar container */}
+            <View
+              style={{
+                height: 32,
+                width: 32,
+                borderRadius: 16,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#FFFFFF',
+                borderWidth: 2,
+                borderColor: (row.hasUnseen && !row.isViewed) ? '#2563EB' : 'rgba(255, 255, 255, 0.6)',
+                padding: 1.5,
+              }}
+            >
+              {row.publisher.avatarUrl ? (
+                <Image
+                  source={{ uri: row.publisher.avatarUrl }}
+                  style={{ width: '100%', height: '100%', borderRadius: 999 }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={{ width: '100%', height: '100%', borderRadius: 999, backgroundColor: '#cbd5e1', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#475569' }}>
+                    {row.publisher.name?.charAt(0)?.toUpperCase() ?? '?'}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Typography */}
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: '800',
+                  color: '#FFFFFF',
+                  textShadowColor: 'rgba(0, 0, 0, 0.4)',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 2,
+                }}
+                numberOfLines={1}
+              >
+                {row.publisher.name || row.publisher.username}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 10,
+                  fontWeight: '600',
+                  color: 'rgba(255, 255, 255, 0.85)',
+                  marginTop: 1,
+                  textShadowColor: 'rgba(0, 0, 0, 0.4)',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 2,
+                }}
+                numberOfLines={1}
+              >
+                {timeLabel}
+              </Text>
+            </View>
+
+            {/* Segment count badge */}
+            {row.segmentCount > 1 ? (
+              <View
+                style={{
+                  marginLeft: 6,
+                  height: 18,
+                  minWidth: 18,
+                  borderRadius: 9,
+                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.3)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 4,
+                }}
+              >
+                <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFFFFF' }}>
+                  {row.segmentCount}
+                </Text>
+              </View>
+            ) : null}
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
+      )}
+    </Pressable>
   );
 }
 

@@ -27,6 +27,51 @@ const TYPING_REMOTE_IDLE_MS = 2600;
 const WEB_GROUP_TYPING_STATUS_SYNC_MS = 2000;
 const repository = createMessagesRepository();
 
+function areCallEventsEqual(
+  left: MessageItem['callEvent'],
+  right: MessageItem['callEvent'],
+) {
+  if (left === right) return true;
+  if (!left || !right) return false;
+
+  return (
+    left.callId === right.callId &&
+    left.callType === right.callType &&
+    left.status === right.status &&
+    left.duration === right.duration &&
+    left.initiatorId === right.initiatorId &&
+    left.receiverId === right.receiverId &&
+    left.statusBy === right.statusBy &&
+    left.isInitiator === right.isInitiator &&
+    left.isReceiver === right.isReceiver &&
+    left.isGroupCall === right.isGroupCall &&
+    left.groupId === right.groupId &&
+    left.action === right.action
+  );
+}
+
+function areMessagesEqual(left: MessageItem, right: MessageItem) {
+  return (
+    left.id === right.id &&
+    left.conversationId === right.conversationId &&
+    left.fromId === right.fromId &&
+    left.toId === right.toId &&
+    left.message === right.message &&
+    left.media === right.media &&
+    left.mediaType === right.mediaType &&
+    left.time === right.time &&
+    left.isSentByMe === right.isSentByMe &&
+    left.seen === right.seen &&
+    left.deliveryState === right.deliveryState &&
+    areCallEventsEqual(left.callEvent, right.callEvent)
+  );
+}
+
+function areMessageArraysSame(left: MessageItem[], right: MessageItem[]) {
+  if (left.length !== right.length) return false;
+  return left.every((message, index) => message === right[index]);
+}
+
 function getGroupRoomId(chat: ChatItem) {
   const groupId =
     chat.groupId || chat.chatId || chat.userId || chat.id.replace(/^group:/, '');
@@ -77,11 +122,13 @@ function mergeMessages(...messageLists: MessageItem[][]) {
       const shouldKeepDeliveredOverPending =
         current.deliveryState !== undefined &&
         message.deliveryState === undefined;
+      const isSameMessage = areMessagesEqual(current, message);
 
       if (
-        shouldReplaceCallingStatus ||
-        shouldKeepDeliveredOverPending ||
-        message.time >= current.time
+        !isSameMessage &&
+        (shouldReplaceCallingStatus ||
+          shouldKeepDeliveredOverPending ||
+          message.time >= current.time)
       ) {
         messages.set(message.id, message);
       }
@@ -121,7 +168,11 @@ export function useChatViewModel(chat: ChatItem) {
   );
   const lastTypingEmitRef = useRef(0);
   const latestMessageIdRef = useRef<string | undefined>(undefined);
+  const oldestMessageIdRef = useRef<string | undefined>(undefined);
   const messageIdsRef = useRef<Set<string>>(new Set());
+  const isLoadingRef = useRef(isLoading);
+  const isLoadingMoreRef = useRef(isLoadingMore);
+  const hasMoreRef = useRef(hasMore);
   const isSending = pendingSendCount > 0;
   const getMessagesForChat = useCallback(
     (options?: Parameters<typeof repository.getMessages>[1]) =>
@@ -200,19 +251,28 @@ export function useChatViewModel(chat: ChatItem) {
   }, [chat]);
 
   const loadOlder = useCallback(async () => {
-    if (isLoading || isLoadingMore || !hasMore || messages.length === 0) {
+    const oldestMessageId = oldestMessageIdRef.current;
+    if (
+      isLoadingRef.current ||
+      isLoadingMoreRef.current ||
+      !hasMoreRef.current ||
+      !oldestMessageId
+    ) {
       return;
     }
 
-    const oldestMessage = messages[0];
+    isLoadingMoreRef.current = true;
     setIsLoadingMore(true);
 
     try {
       const page = await getMessagesForChat({
         limit: PAGE_SIZE,
-        beforeMessageId: oldestMessage.id,
+        beforeMessageId: oldestMessageId,
       });
-      setMessages(current => mergeMessages(current, page));
+      setMessages(current => {
+        const merged = mergeMessages(current, page);
+        return areMessageArraysSame(current, merged) ? current : merged;
+      });
       setHasMore(page.length >= PAGE_SIZE);
       setIsTyping(false);
       setIsRecording(false);
@@ -221,9 +281,10 @@ export function useChatViewModel(chat: ChatItem) {
         err instanceof Error ? err.message : 'Không tải thêm được tin nhắn',
       );
     } finally {
+      isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [chat, hasMore, isLoading, isLoadingMore, messages]);
+  }, [getMessagesForChat]);
 
   const refreshLatest = useCallback(
     async (showSpinner = true) => {
@@ -236,7 +297,10 @@ export function useChatViewModel(chat: ChatItem) {
         const page = await getMessagesForChat({
           limit: PAGE_SIZE,
         });
-        setMessages(current => mergeMessages(current, page));
+        setMessages(current => {
+          const merged = mergeMessages(current, page);
+          return areMessageArraysSame(current, merged) ? current : merged;
+        });
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Không cập nhật được tin nhắn',
@@ -246,7 +310,7 @@ export function useChatViewModel(chat: ChatItem) {
         if (showSpinner) setIsRefreshing(false);
       }
     },
-    [chat, isLoading, isSending, messages],
+    [getMessagesForChat, isLoading, isSending],
   );
 
   const sendMessage = useCallback(
@@ -489,8 +553,21 @@ export function useChatViewModel(chat: ChatItem) {
 
   useEffect(() => {
     latestMessageIdRef.current = messages[messages.length - 1]?.id;
+    oldestMessageIdRef.current = messages[0]?.id;
     messageIdsRef.current = new Set(messages.map(message => message.id));
   }, [messages]);
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  useEffect(() => {
+    isLoadingMoreRef.current = isLoadingMore;
+  }, [isLoadingMore]);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
 
   useEffect(() => {
     const interval = setInterval(() => {

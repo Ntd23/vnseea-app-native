@@ -953,34 +953,36 @@ const MediaPreviewStrip = React.memo(({
             <Pressable
               key="grid-add-btn"
               onPress={onPickPhotos}
-              style={({ pressed }) => ({
+              style={{
                 width: itemSize,
                 height: itemSize,
                 marginBottom: PHOTO_GRID_GAP,
                 marginRight: isLastInRow ? 0 : PHOTO_GRID_GAP,
-                transform: [{ scale: pressed ? 0.98 : 1 }],
-              })}
+              }}
             >
-              <View
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  borderRadius: 18,
-                  borderStyle: 'dashed',
-                  borderWidth: 2,
-                  borderColor: '#BAC7D6',
-                  backgroundColor: '#F8FAFC',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Text className="text-[32px] font-light leading-8 text-slate-400">
-                  +
-                </Text>
-                <Text className="mt-1 text-center text-[12px] font-bold text-slate-500">
-                  {copy.addPhoto}
-                </Text>
-              </View>
+              {({ pressed }) => (
+                <View
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: 18,
+                    borderStyle: 'dashed',
+                    borderWidth: 2,
+                    borderColor: pressed ? '#2563EB' : '#BAC7D6',
+                    backgroundColor: pressed ? '#EFF6FF' : '#F8FAFC',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transform: [{ scale: pressed ? 0.98 : 1 }],
+                  }}
+                >
+                  <Text className="text-[32px] font-light leading-8 text-slate-400">
+                    +
+                  </Text>
+                  <Text className="mt-1 text-center text-[12px] font-bold text-slate-500">
+                    {copy.addPhoto}
+                  </Text>
+                </View>
+              )}
             </Pressable>
           );
         })() : null}
@@ -1850,7 +1852,10 @@ function CreatePostScreen() {
   const handleMoreNavigate = useCallback(
     (route: RootStackRouteName) => {
       setMoreSheetVisible(false);
-      navigation.navigate(route as never);
+      if (route === ROUTES.CREATE_POST) {
+        return;
+      }
+      (navigation as any).replace(route);
     },
     [navigation],
   );

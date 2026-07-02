@@ -26,7 +26,7 @@
 // On submit success we emit through `storyCreatedEvents` so the FeedScreen
 // can prepend the new story to its rail (Phase 3 wires that listener).
 
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -58,6 +58,7 @@ import type {
   StoryItem,
 } from '../../domain/types/stories.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -282,10 +283,13 @@ function CreateStoryScreen() {
   const handleSubmit = useCallback(async () => {
     const result = await vm.submit();
     if (result) {
-      Alert.alert(copy.publishedMsg, result.message);
+      showToast({
+        message: result.message || 'Tin của bạn đã được đăng lên thành công!',
+        type: 'success',
+      });
       navigation.goBack();
     }
-  }, [navigation, vm, copy]);
+  }, [navigation, vm]);
 
   const handleDiscard = useCallback(() => {
     const hasContent =

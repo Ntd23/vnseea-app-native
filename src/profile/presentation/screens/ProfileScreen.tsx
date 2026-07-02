@@ -13,6 +13,7 @@ import {
   View,
   Alert,
   ActivityIndicator,
+  StatusBar,
   type ListRenderItemInfo,
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -971,6 +972,7 @@ function ProfileScreen() {
   const postCardCopy = POST_CARD_COPY[language];
   const pokeCopy = getPokeCopy(language);
   const insets = useSafeAreaInsets();
+  const safeTopInset = insets.top > 0 ? insets.top : (Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 44);
   const navigation = useNavigation<ProfileNav>();
   const route = useRoute<ProfileRoute>();
   const {
@@ -1994,7 +1996,7 @@ function ProfileScreen() {
 
             {/* Floating Header Inside Cover Photo */}
             <View
-              style={[profileMainStyles.headerOverlay, { paddingTop: insets.top + 8, height: insets.top + 48 }]}
+              style={[profileMainStyles.headerOverlay, { paddingTop: safeTopInset + 8, height: safeTopInset + 48 }]}
               pointerEvents="box-none"
             >
               <TouchableOpacity
@@ -2636,16 +2638,18 @@ function ProfileScreen() {
 
           {/* Composer — shared with Home feed */}
           {isOwnProfile && (
-            <ComposerCard
-              onPress={() => navigation.navigate(ROUTES.CREATE_POST)}
-              avatarUrl={avatarUrl}
-              copy={{
-                composerPlaceholder: copy.composerPlaceholder,
-                library: copy.photoVideo,
-                tag: language === 'vi' ? 'Gắn thẻ' : 'Tag',
-                feeling: copy.lifeEvent,
-              }}
-            />
+            <View style={{ borderTopWidth: 1, borderTopColor: '#E2E8F0', marginTop: 12, paddingTop: 4 }}>
+              <ComposerCard
+                onPress={() => navigation.navigate(ROUTES.CREATE_POST)}
+                avatarUrl={avatarUrl}
+                copy={{
+                  composerPlaceholder: copy.composerPlaceholder,
+                  library: language === 'vi' ? 'Ảnh/video' : 'Photo/video',
+                  tag: language === 'vi' ? 'Gắn thẻ' : 'Tag',
+                  feeling: language === 'vi' ? 'Cảm xúc' : 'Feeling',
+                }}
+              />
+            </View>
           )}
 
           {/* Posts Section Header */}

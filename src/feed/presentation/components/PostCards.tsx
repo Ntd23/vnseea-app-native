@@ -245,7 +245,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     publicLabel: 'Công khai',
     userFallback: 'Người dùng',
     composerPlaceholder: 'Bạn đang nghĩ gì?',
-    library: 'Thư viện',
+    library: 'Ảnh/video',
     tag: 'Gắn thẻ',
     feeling: 'Cảm xúc',
     storiesTitle: 'Tin tức mới',
@@ -352,7 +352,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     publicLabel: 'Public',
     userFallback: 'User',
     composerPlaceholder: "What's on your mind?",
-    library: 'Library',
+    library: 'Photo/video',
     tag: 'Tag',
     feeling: 'Feeling',
     storiesTitle: 'Latest stories',
@@ -1186,11 +1186,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [navigation, post]);
 
   // ── Mount strategy ──
-  // Keep the feed closer to the Reels strategy: do not mount a native
-  // video surface for every off-screen/inactive video. Paused Android
-  // video surfaces often render as a plain black rectangle; thumbnails
-  // are a better preview until this card is the active one.
-  const shouldMountVideo = isScreenFocused !== false && isActive && canAttemptVideo;
+  // Mount the video player immediately so the first frame renders (paused)
+  // like Facebook, but only trigger playing state when the card is active.
+  const shouldMountVideo = isScreenFocused !== false && canAttemptVideo;
 
   useEffect(() => {
     if (isActive) {
@@ -1206,10 +1204,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       }
     } else {
       setMuted(true);
-      setManuallyPaused(false);
-      setIsReady(false);
-      setHasRenderedFrame(false);
-      setSeekTime(undefined);
+      // Keep isReady and hasRenderedFrame so the video first frame stays visible when paused
     }
   }, [isActive, isReady, post.id]);
 
@@ -1221,7 +1216,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     }
   }, [isActive, isReady, seekTime]);
 
-  const playing = shouldMountVideo && !manuallyPaused;
+  const playing = shouldMountVideo && !manuallyPaused && isActive;
   const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
 
   // Need an on-screen position for the "ThĂ­ch" button so the picker
@@ -1311,6 +1306,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 bufferConfig={VIDEO_BUFFER_CONFIG}
                 onReadyForDisplay={() => {
                   setIsReady(true);
+                  setHasRenderedFrame(true);
                 }}
                 onLoad={handleVideoLoad}
                 onProgress={data => {

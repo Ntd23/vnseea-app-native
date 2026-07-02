@@ -881,7 +881,7 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
     media,
     mediaType: readMediaType(raw),
     time: readNumber(raw, 'time'),
-    isSentByMe: fromId === sessionUserId,
+    isSentByMe: callEvent ? callEvent.isInitiator : (fromId === sessionUserId),
     seen: readNumber(raw, 'seen'),
   };
 }
