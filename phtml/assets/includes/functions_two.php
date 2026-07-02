@@ -17,6 +17,40 @@ if (!empty($wo["config"]["adult_images_file"])) {
     putenv("GOOGLE_APPLICATION_CREDENTIALS=" . $wo["config"]["adult_images_file"]);
 }
 use Google\Cloud\Vision\V1\ImageAnnotatorClient;
+if (!function_exists('Wo_VnseeaCallDebugLog')) {
+    function Wo_VnseeaCallDebugLog($type, $fields = array()) {
+        $sensitive_keys = array('token', 'jwt', 'api_secret', 'access_token', 'access_token_2', 'action_token');
+        $parts = array('[vnseea_call_debug]', 'type=' . $type);
+
+        if (!empty($fields) && is_array($fields)) {
+            foreach ($fields as $key => $value) {
+                $normalized_key = strtolower((string) $key);
+                if (in_array($normalized_key, $sensitive_keys)) {
+                    $value = '[redacted]';
+                } else if (is_bool($value)) {
+                    $value = $value ? 1 : 0;
+                } else if (is_array($value) || is_object($value)) {
+                    $value = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+                $value = str_replace(array("\n", "\r"), ' ', (string) $value);
+                $parts[] = $key . '=' . $value;
+            }
+        }
+
+        $line = implode(' ', $parts);
+        error_log($line);
+
+        $log_dir = realpath(__DIR__ . '/../../xhr/logs');
+        if ($log_dir === false) {
+            $log_dir = __DIR__ . '/../../xhr/logs';
+            if (!is_dir($log_dir)) {
+                @mkdir($log_dir, 0755, true);
+            }
+        }
+        $log_file = rtrim($log_dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'vnseea_call_debug.log';
+        @file_put_contents($log_file, date('c') . ' ' . $line . PHP_EOL, FILE_APPEND | LOCK_EX);
+    }
+}
 function Wo_ReportPost($post_data = array()) {
     global $wo, $sqlConnect, $db;
     if ($wo["loggedin"] == false) {

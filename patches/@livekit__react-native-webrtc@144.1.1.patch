@@ -7,7 +7,7 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
  #import <React/RCTLog.h>
  #import <os/log.h>
  
-@@ -27,8 +28,107 @@ static os_log_t ADMObserverLog(void) {
+@@ -27,8 +28,117 @@ static os_log_t ADMObserverLog(void) {
          log = os_log_create("com.livekit.react-native-webrtc", "AudioDeviceModuleObserver");
      });
      return log;
@@ -65,7 +65,16 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +
 +    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
 +    return [audioSession.category isEqualToString:AVAudioSessionCategoryPlayAndRecord] &&
-+        [audioSession.mode isEqualToString:AVAudioSessionModeVoiceChat];
++        ([audioSession.mode isEqualToString:AVAudioSessionModeVoiceChat] ||
++         [audioSession.mode isEqualToString:AVAudioSessionModeVideoChat]);
++}
++
++static NSString *VNSEEAAudioSessionModeForEngine(void) {
++    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
++    if ([audioSession.mode isEqualToString:AVAudioSessionModeVideoChat]) {
++        return AVAudioSessionModeVideoChat;
++    }
++    return AVAudioSessionModeVoiceChat;
  }
  
 +static void VNSEEAConfigureAudioSessionForEngine(BOOL isPlayoutEnabled, BOOL isRecordingEnabled) {
@@ -87,7 +96,8 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +            @"native_webrtc_audio_session_config_error", isPlayoutEnabled, isRecordingEnabled, error);
 +        return;
 +    }
-+    if (![audioSession setMode:AVAudioSessionModeVoiceChat error:&error]) {
++    NSString *audioMode = VNSEEAAudioSessionModeForEngine();
++    if (![audioSession setMode:audioMode error:&error]) {
 +        VNSEEALogWebRTCAudioSessionState(
 +            @"native_webrtc_audio_session_config_error", isPlayoutEnabled, isRecordingEnabled, error);
 +        return;
@@ -115,7 +125,7 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
  @interface AudioDeviceModuleObserver ()
  
  @property(weak, nonatomic) WebRTCModule *module;
-@@ -186,6 +286,10 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
+@@ -186,6 +296,10 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
                isPlayoutEnabled:(BOOL)isPlayoutEnabled
              isRecordingEnabled:(BOOL)isRecordingEnabled {
      BOOL isActive = self.isWillEnableEngineActive;
@@ -126,7 +136,7 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
  
      if (isActive) {
          RCTLog(@"[AudioDeviceModuleObserver] Engine will enable - playout: %d, recording: %d - waiting for JS response",
-@@ -220,6 +324,10 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
+@@ -220,6 +334,10 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
              isRecordingEnabled:(BOOL)isRecordingEnabled {
      BOOL isActive = self.isWillStartEngineActive;
  

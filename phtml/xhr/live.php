@@ -91,6 +91,7 @@ if ($f == 'live') {
         }
 
         $payload = array();
+        $stream_name = '';
         if ($blocked_reason === '') {
             $stream_name = Wo_GenerateLiveStreamName($wo['user']['id']);
             $payload = Wo_GetLiveKitLivestreamJoinPayload($stream_name, 'host', $wo['user']['id'], $wo['user']);
@@ -98,6 +99,19 @@ if ($f == 'live') {
                 $blocked_reason = 'bootstrap_failed';
             }
         }
+        Wo_VnseeaCallDebugLog('live_bootstrap', array(
+            'user_id' => intval($wo['user']['id']),
+            'role' => 'host',
+            'status' => ($blocked_reason === '') ? 200 : 400,
+            'blocked_reason' => $blocked_reason,
+            'enabled' => $enabled ? 1 : 0,
+            'can_use_live' => $can_use_live ? 1 : 0,
+            'livekit_ready' => $livekit_ready ? 1 : 0,
+            'active_live' => $active_live,
+            'stream_name' => $stream_name,
+            'room_name' => !empty($payload['room_name']) ? $payload['room_name'] : '',
+            'ws_url' => !empty($payload['ws_url']) ? $payload['ws_url'] : ''
+        ));
 
         echo json_encode(array(
             'status' => 200,
@@ -124,6 +138,14 @@ if ($f == 'live') {
     if ($s == 'create' && $wo['config']['can_use_live']) {
         if ($wo['config']['live_video'] != 1 || !Wo_IsLiveKitAvailable()) {
             $data['message'] = $error_icon . $wo['lang']['please_check_details'];
+            Wo_VnseeaCallDebugLog('live_create', array(
+                'user_id' => intval($wo['user']['id']),
+                'role' => 'host',
+                'status' => 400,
+                'blocked_reason' => 'livekit_not_ready',
+                'live_video' => intval($wo['config']['live_video']),
+                'livekit_ready' => Wo_IsLiveKitAvailable() ? 1 : 0
+            ));
         } else {
             $if_live = intval(
                 $db
@@ -135,6 +157,13 @@ if ($f == 'live') {
             );
             if ($if_live > 0) {
                 $data['message'] = $error_icon . $wo['lang']['please_check_details'];
+                Wo_VnseeaCallDebugLog('live_create', array(
+                    'user_id' => intval($wo['user']['id']),
+                    'role' => 'host',
+                    'status' => 409,
+                    'blocked_reason' => 'live_already_running',
+                    'active_live' => $if_live
+                ));
             } else {
             $stream_name = !empty($_POST['stream_name']) ? Wo_Secure($_POST['stream_name']) : Wo_GenerateLiveStreamName($wo['user']['id']);
             $live_title = !empty($_POST['title']) ? Wo_Secure(trim($_POST['title'])) : '';
@@ -150,6 +179,13 @@ if ($f == 'live') {
             $join_payload = Wo_GetLiveKitLivestreamJoinPayload($stream_name, 'host', $wo['user']['id'], $wo['user']);
             if (empty($stream_name) || empty($join_payload)) {
                 $data['message'] = $error_icon . $wo['lang']['please_check_details'];
+                Wo_VnseeaCallDebugLog('live_create', array(
+                    'user_id' => intval($wo['user']['id']),
+                    'role' => 'host',
+                    'status' => 400,
+                    'blocked_reason' => empty($stream_name) ? 'stream_name_empty' : 'join_payload_empty',
+                    'stream_name' => $stream_name
+                ));
             } else {
                 $postPrivacy   = '0';
                 $privacy_array = array(
@@ -190,8 +226,26 @@ if ($f == 'live') {
                     $data['description'] = $live_description;
                     $data['post_url'] = Wo_SeoLink("index.php?link1=post&id=" . $post_id);
                     $data['started_at'] = time();
+                    Wo_VnseeaCallDebugLog('live_create', array(
+                        'user_id' => intval($wo['user']['id']),
+                        'role' => 'host',
+                        'status' => 200,
+                        'post_id' => intval($post_id),
+                        'stream_name' => $stream_name,
+                        'room_name' => $join_payload['room_name'],
+                        'ws_url' => $join_payload['ws_url'],
+                        'started_at' => $data['started_at']
+                    ));
                 } else {
                     $data['message'] = $error_icon . $wo['lang']['please_check_details'];
+                    Wo_VnseeaCallDebugLog('live_create', array(
+                        'user_id' => intval($wo['user']['id']),
+                        'role' => 'host',
+                        'status' => 500,
+                        'blocked_reason' => 'post_insert_failed',
+                        'stream_name' => $stream_name,
+                        'room_name' => $join_payload['room_name']
+                    ));
                 }
             }
         }
@@ -203,6 +257,12 @@ if ($f == 'live') {
     if ($s == 'join') {
         if (!Wo_IsLiveKitAvailable()) {
             $data['message'] = $error_icon . $wo['lang']['please_check_details'];
+            Wo_VnseeaCallDebugLog('live_join', array(
+                'user_id' => intval($wo['user']['id']),
+                'role' => 'viewer',
+                'status' => 400,
+                'blocked_reason' => 'livekit_not_ready'
+            ));
         } else {
             $post_id = (!empty($_POST['post_id']) && is_numeric($_POST['post_id']) && $_POST['post_id'] > 0) ? Wo_Secure($_POST['post_id']) : 0;
             $post = !empty($post_id) ? Wo_PostData($post_id) : false;
@@ -219,14 +279,42 @@ if ($f == 'live') {
             if (empty($post) || empty($post['stream_name']) || $post['postType'] !== 'live') {
                 $data['removed'] = 'yes';
                 $data['message'] = $error_icon . $wo['lang']['please_check_details'];
+                Wo_VnseeaCallDebugLog('live_join', array(
+                    'user_id' => intval($wo['user']['id']),
+                    'role' => 'viewer',
+                    'status' => 404,
+                    'blocked_reason' => 'post_not_live',
+                    'post_id' => intval($post_id)
+                ));
             } else if (intval($post['live_ended']) === 1 || $stream_state === 'offline') {
                 $data['removed'] = 'yes';
                 $data['stream_state'] = 'offline';
                 $data['message'] = $error_icon . $wo['lang']['stream_has_ended'];
+                Wo_VnseeaCallDebugLog('live_join', array(
+                    'user_id' => intval($wo['user']['id']),
+                    'role' => 'viewer',
+                    'status' => 410,
+                    'blocked_reason' => 'stream_offline',
+                    'post_id' => intval($post['id']),
+                    'stream_name' => $post['stream_name'],
+                    'stream_state' => $stream_state,
+                    'heartbeat_age' => $heartbeat_age,
+                    'live_ended' => intval($post['live_ended'])
+                ));
             } else {
                 $join_payload = Wo_GetLiveKitLivestreamJoinPayload($post['stream_name'], 'viewer', $wo['user']['id'], $wo['user']);
                 if (empty($join_payload)) {
                     $data['message'] = $error_icon . $wo['lang']['please_check_details'];
+                    Wo_VnseeaCallDebugLog('live_join', array(
+                        'user_id' => intval($wo['user']['id']),
+                        'role' => 'viewer',
+                        'status' => 400,
+                        'blocked_reason' => 'join_payload_empty',
+                        'post_id' => intval($post['id']),
+                        'stream_name' => $post['stream_name'],
+                        'stream_state' => $stream_state,
+                        'heartbeat_age' => $heartbeat_age
+                    ));
                 } else {
                     $data['status']    = 200;
                     $data['post_id']   = intval($post['id']);
@@ -237,6 +325,17 @@ if ($f == 'live') {
                     $data['token']     = $join_payload['token'];
                     $data['stream_state'] = $stream_state;
                     $data['heartbeat_age'] = $heartbeat_age;
+                    Wo_VnseeaCallDebugLog('live_join', array(
+                        'user_id' => intval($wo['user']['id']),
+                        'role' => 'viewer',
+                        'status' => 200,
+                        'post_id' => intval($post['id']),
+                        'stream_name' => $post['stream_name'],
+                        'room_name' => $join_payload['room_name'],
+                        'ws_url' => $join_payload['ws_url'],
+                        'stream_state' => $stream_state,
+                        'heartbeat_age' => $heartbeat_age
+                    ));
                 }
             }
         }

@@ -154,6 +154,7 @@ type IosVoiceAudioStage =
   | 'managed_room_connected'
   | 'managed_room_disconnected'
   | 'managed_room_error'
+  | 'ios_direct_room_error'
   | 'app_foreground'
   | 'release';
 
@@ -179,6 +180,10 @@ const LIVEKIT_CONNECT_OPTIONS = {
 
 type VnseeaLiveKitAudioRuntime = {
   getIosAudioDeviceState?: () => Record<string, unknown>;
+  setIosRealtimeMediaAudioActive?: (
+    active: boolean,
+    context: Record<string, unknown>,
+  ) => void;
   setIosVoiceCallAudioActive?: (active: boolean) => void;
 };
 
@@ -189,6 +194,10 @@ const LiveKitCallSessionContext =
 
 function shouldUseManagedIosDirectRoom(callType: LiveKitCallType) {
   return Platform.OS === 'ios' && callType === 'audio';
+}
+
+function shouldUseIosDirectCallAudioGate(callType: LiveKitCallType) {
+  return Platform.OS === 'ios' && (callType === 'audio' || callType === 'video');
 }
 
 type DirectCallConnectKeyInput = {
@@ -240,16 +249,34 @@ type IosVoiceAudioContext = {
 };
 
 function shouldManageIosVoiceAudio(callType: LiveKitCallType) {
-  return shouldUseManagedIosDirectRoom(callType);
+  return shouldUseIosDirectCallAudioGate(callType);
 }
 
 function setIosVoiceCallAudioActive(
   active: boolean,
   params: IosVoiceAudioContext,
 ) {
-  if (!shouldManageIosVoiceAudio(params.callType)) return;
+  if (!shouldUseIosDirectCallAudioGate(params.callType)) return;
+  const context = {
+    owner: 'direct-call',
+    mediaKind: params.callType,
+    role: 'call',
+    requiresInput: true,
+    callId: params.callId,
+    callUuid: params.callUuid,
+    roomName: params.roomName,
+    stage: params.stage,
+  };
   try {
-    liveKitAudioRuntime.setIosVoiceCallAudioActive?.(active);
+    if (liveKitAudioRuntime.setIosRealtimeMediaAudioActive) {
+      liveKitAudioRuntime.setIosRealtimeMediaAudioActive(active, context);
+    } else {
+      liveKitAudioRuntime.setIosVoiceCallAudioActive?.(active);
+    }
+    logCallDebug('ios_realtime_media_audio_active_set', {
+      ...context,
+      active,
+    });
     logCallDebug('ios_voice_call_audio_active_set', {
       callId: params.callId,
       callType: params.callType,
@@ -259,6 +286,11 @@ function setIosVoiceCallAudioActive(
       active,
     });
   } catch (error) {
+    logCallDebug('ios_realtime_media_audio_active_error', {
+      ...context,
+      active,
+      error: serializeCallDebugError(error),
+    });
     logCallDebug('ios_voice_call_audio_active_error', {
       callId: params.callId,
       callType: params.callType,
@@ -1816,6 +1848,7 @@ const ManagedIosDirectLiveKitRoom = React.memo(
         connect={session.iosNativeAudioReady}
         audio={true}
         video={false}
+        connectOptions={{ autoSubscribe: true }}
         onDisconnected={onDisconnected}
         onError={onError}
         onMediaDeviceFailure={failure => {
@@ -1860,10 +1893,180 @@ function ManagedIosDirectLiveKitRoomBridge({
   const connectionState = useConnectionState();
   const { localParticipant, isMicrophoneEnabled } = useLocalParticipant();
   const hasConnectedRef = useRef(false);
+  const managedPendingRemoteSubscriptionsRef = useRef(
+    new Map<string, PendingRemoteSubscription>(),
+  );
   const callId = session.callId;
   const callType = session.callType;
   const callUuid = session.nativeCallUuid;
   const roomName = session.payload?.call.roomName ?? '';
+  const MANAGED_IOS_REMOTE_SUBSCRIPTION_TIMEOUT_MS =
+    REMOTE_SUBSCRIPTION_TIMEOUT_MS;
+
+  const managedCameraTracks = useTracks([Track.Source.Camera]);
+  const managedCameraTrackRefs = useMemo(
+    () => managedCameraTracks.filter(isTrackReference),
+    [managedCameraTracks],
+  );
+
+  const clearManagedRemoteTrackSubscriptionTimeout = useCallback(
+    (trackSid?: string) => {
+      if (!trackSid) return;
+      const pending = managedPendingRemoteSubscriptionsRef.current.get(trackSid);
+      if (!pending) return;
+      clearTimeout(pending.timeoutId);
+      managedPendingRemoteSubscriptionsRef.current.delete(trackSid);
+    },
+    [],
+  );
+
+  const clearAllManagedRemoteTrackSubscriptionTimeouts = useCallback(() => {
+    managedPendingRemoteSubscriptionsRef.current.forEach(pending => {
+      clearTimeout(pending.timeoutId);
+    });
+    managedPendingRemoteSubscriptionsRef.current.clear();
+  }, []);
+
+  const scheduleManagedRemoteTrackSubscriptionTimeout = useCallback(
+    (
+      params: {
+        publication: RemoteTrackPublicationLike;
+        participant?: RemoteParticipantLike;
+        context: RemoteSubscriptionDebugContext;
+      },
+      retried = false,
+    ) => {
+      const { publication, participant, context } = params;
+      const trackSid = publication.trackSid;
+      if (!trackSid) return;
+
+      clearManagedRemoteTrackSubscriptionTimeout(trackSid);
+      const timeoutId = setTimeout(() => {
+        const pending =
+          managedPendingRemoteSubscriptionsRef.current.get(trackSid);
+        if (!pending) return;
+        if (publication.isSubscribed) {
+          clearManagedRemoteTrackSubscriptionTimeout(trackSid);
+          return;
+        }
+
+        logCallDebug('managed_track_subscription_timeout', {
+          ...remoteSubscriptionDebugPayload(context, publication, participant),
+          retried: pending.retried,
+          timeoutMs: MANAGED_IOS_REMOTE_SUBSCRIPTION_TIMEOUT_MS,
+        });
+
+        if (pending.retried) {
+          managedPendingRemoteSubscriptionsRef.current.delete(trackSid);
+          return;
+        }
+
+        logCallDebug('managed_track_subscription_retry', {
+          ...remoteSubscriptionDebugPayload(context, publication, participant),
+          retryAttempt: 1,
+        });
+
+        try {
+          if (typeof publication.setSubscribed !== 'function') {
+            throw new Error('Remote publication cannot be subscribed.');
+          }
+          publication.setSubscribed(false);
+          publication.setSubscribed(true);
+          logCallDebug('managed_track_subscription_retry_applied', {
+            ...remoteSubscriptionDebugPayload(
+              context,
+              publication,
+              participant,
+            ),
+            retryAttempt: 1,
+          });
+          scheduleManagedRemoteTrackSubscriptionTimeout(
+            {
+              publication,
+              participant,
+              context,
+            },
+            true,
+          );
+        } catch (error) {
+          logCallDebug('managed_track_subscription_failed', {
+            ...remoteSubscriptionDebugPayload(
+              context,
+              publication,
+              participant,
+            ),
+            retryAttempt: 1,
+            error: serializeCallDebugError(error),
+          });
+          managedPendingRemoteSubscriptionsRef.current.delete(trackSid);
+        }
+      }, MANAGED_IOS_REMOTE_SUBSCRIPTION_TIMEOUT_MS);
+
+      managedPendingRemoteSubscriptionsRef.current.set(trackSid, {
+        timeoutId,
+        retried,
+        publication,
+        participant,
+        context,
+      });
+    },
+    [
+      MANAGED_IOS_REMOTE_SUBSCRIPTION_TIMEOUT_MS,
+      clearManagedRemoteTrackSubscriptionTimeout,
+    ],
+  );
+
+  const requestManagedRemoteTrackSubscription = useCallback(
+    (params: {
+      publication?: RemoteTrackPublicationLike;
+      participant?: RemoteParticipantLike;
+      context: RemoteSubscriptionDebugContext;
+    }) => {
+      const { publication, participant, context } = params;
+      if (!shouldSubscribeRemotePublication(publication)) return;
+      if (publication.isSubscribed) return;
+
+      logCallDebug('managed_track_subscription_requested', {
+        ...remoteSubscriptionDebugPayload(context, publication, participant),
+      });
+
+      requestRemoteTrackSubscription({
+        publication,
+        participant,
+        context,
+        onSubscriptionRequested: scheduleManagedRemoteTrackSubscriptionTimeout,
+      });
+    },
+    [scheduleManagedRemoteTrackSubscriptionTimeout],
+  );
+
+  const requestManagedRemoteParticipantTrackSubscriptions = useCallback(
+    (participant?: RemoteParticipantLike, reason = 'managed_room_connected') => {
+      const context: RemoteSubscriptionDebugContext = {
+        callId,
+        callType,
+        callUuid,
+        roomName,
+        reason,
+      };
+      const seenTrackSids = new Set<string>();
+      const visit = (publication: RemoteTrackPublicationLike) => {
+        const trackSid = publication.trackSid ?? '';
+        if (trackSid && seenTrackSids.has(trackSid)) return;
+        if (trackSid) seenTrackSids.add(trackSid);
+        requestManagedRemoteTrackSubscription({
+          publication,
+          participant,
+          context,
+        });
+      };
+
+      participant?.trackPublications?.forEach(visit);
+      participant?.audioTrackPublications?.forEach(visit);
+      participant?.videoTrackPublications?.forEach(visit);
+    },
+    [callId, callType, callUuid, requestManagedRemoteTrackSubscription, roomName],
+  );
 
   useEffect(() => {
     onRoomAvailable(room);
@@ -1969,6 +2172,17 @@ function ManagedIosDirectLiveKitRoomBridge({
         roomName,
         ...managedTrackDebugPayload(publication, participant),
       });
+      requestManagedRemoteTrackSubscription({
+        publication,
+        participant,
+        context: {
+          callId,
+          callType,
+          callUuid,
+          roomName,
+          reason: 'managed_track_published',
+        },
+      });
     };
 
     const handleRemoteTrackSubscribed = (
@@ -1976,6 +2190,8 @@ function ManagedIosDirectLiveKitRoomBridge({
       publication?: RemoteTrackPublicationLike,
       participant?: RemoteParticipantLike,
     ) => {
+      const trackSid = track?.sid ?? publication?.trackSid;
+      clearManagedRemoteTrackSubscriptionTimeout(trackSid);
       logCallDebug('managed_remote_track_subscribed', {
         callId,
         callType,
@@ -1988,29 +2204,146 @@ function ManagedIosDirectLiveKitRoomBridge({
       });
     };
 
+    const handleParticipantConnected = (
+      participant?: RemoteParticipantLike,
+    ) => {
+      requestManagedRemoteParticipantTrackSubscriptions(
+        participant,
+        'managed_participant_connected',
+      );
+    };
+
+    const handleRemoteTrackSubscriptionFailed = (
+      trackSid?: string,
+      participant?: RemoteParticipantLike,
+      error?: unknown,
+    ) => {
+      clearManagedRemoteTrackSubscriptionTimeout(trackSid);
+      logCallDebug('managed_track_subscription_sdk_failed', {
+        callId,
+        callType,
+        callUuid,
+        roomName,
+        trackSid,
+        participantIdentity: participant?.identity,
+        participantSid: participant?.sid,
+        participantName: participant?.name,
+        error: error ? serializeCallDebugError(error) : undefined,
+      });
+    };
+
+    const handleRemoteTrackSubscriptionStatusChanged = (
+      publication?: RemoteTrackPublicationLike,
+      status?: unknown,
+      participant?: RemoteParticipantLike,
+    ) => {
+      if (publication?.isSubscribed) {
+        clearManagedRemoteTrackSubscriptionTimeout(publication.trackSid);
+      }
+      logCallDebug('managed_track_subscription_status_changed', {
+        ...remoteSubscriptionDebugPayload(
+          {
+            callId,
+            callType,
+            callUuid,
+            roomName,
+            reason: 'managed_sdk_status_changed',
+          },
+          publication,
+          participant,
+        ),
+        status: debugValue(status),
+      });
+    };
+
+    const handleRemoteTrackSubscriptionPermissionChanged = (
+      publication?: RemoteTrackPublicationLike,
+      status?: unknown,
+      participant?: RemoteParticipantLike,
+    ) => {
+      logCallDebug('managed_track_subscription_permission_changed', {
+        ...remoteSubscriptionDebugPayload(
+          {
+            callId,
+            callType,
+            callUuid,
+            roomName,
+            reason: 'managed_sdk_permission_changed',
+          },
+          publication,
+          participant,
+        ),
+        status: debugValue(status),
+      });
+    };
+
     room
       .on(RoomEvent.LocalTrackPublished, handleLocalTrackPublished)
       .on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished)
       .on(RoomEvent.TrackMuted, handleTrackMuted)
       .on(RoomEvent.TrackUnmuted, handleTrackUnmuted)
+      .on(RoomEvent.ParticipantConnected, handleParticipantConnected)
       .on(RoomEvent.TrackPublished, handleRemoteTrackPublished)
-      .on(RoomEvent.TrackSubscribed, handleRemoteTrackSubscribed);
+      .on(RoomEvent.TrackSubscribed, handleRemoteTrackSubscribed)
+      .on(
+        RoomEvent.TrackSubscriptionFailed,
+        handleRemoteTrackSubscriptionFailed,
+      )
+      .on(
+        RoomEvent.TrackSubscriptionStatusChanged,
+        handleRemoteTrackSubscriptionStatusChanged,
+      )
+      .on(
+        RoomEvent.TrackSubscriptionPermissionChanged,
+        handleRemoteTrackSubscriptionPermissionChanged,
+      );
 
     return () => {
+      clearAllManagedRemoteTrackSubscriptionTimeouts();
       room
         .off(RoomEvent.LocalTrackPublished, handleLocalTrackPublished)
         .off(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished)
         .off(RoomEvent.TrackMuted, handleTrackMuted)
         .off(RoomEvent.TrackUnmuted, handleTrackUnmuted)
+        .off(RoomEvent.ParticipantConnected, handleParticipantConnected)
         .off(RoomEvent.TrackPublished, handleRemoteTrackPublished)
-        .off(RoomEvent.TrackSubscribed, handleRemoteTrackSubscribed);
+        .off(RoomEvent.TrackSubscribed, handleRemoteTrackSubscribed)
+        .off(
+          RoomEvent.TrackSubscriptionFailed,
+          handleRemoteTrackSubscriptionFailed,
+        )
+        .off(
+          RoomEvent.TrackSubscriptionStatusChanged,
+          handleRemoteTrackSubscriptionStatusChanged,
+        )
+        .off(
+          RoomEvent.TrackSubscriptionPermissionChanged,
+          handleRemoteTrackSubscriptionPermissionChanged,
+        );
     };
-  }, [callId, callType, callUuid, localParticipant, room, roomName]);
+  }, [
+    callId,
+    callType,
+    callUuid,
+    clearAllManagedRemoteTrackSubscriptionTimeouts,
+    clearManagedRemoteTrackSubscriptionTimeout,
+    localParticipant,
+    requestManagedRemoteParticipantTrackSubscriptions,
+    requestManagedRemoteTrackSubscription,
+    room,
+    roomName,
+  ]);
 
   useEffect(() => {
     if (connectionState === ConnectionState.Connected) {
       hasConnectedRef.current = true;
       onConnected(room);
+      room.remoteParticipants.forEach(participant => {
+        requestManagedRemoteParticipantTrackSubscriptions(
+          participant as RemoteParticipantLike,
+          'managed_room_connected',
+        );
+      });
       return;
     }
 
@@ -2020,7 +2353,39 @@ function ManagedIosDirectLiveKitRoomBridge({
     ) {
       onDisconnected();
     }
-  }, [connectionState, onConnected, onDisconnected, room]);
+  }, [
+    connectionState,
+    onConnected,
+    onDisconnected,
+    requestManagedRemoteParticipantTrackSubscriptions,
+    room,
+  ]);
+
+  useEffect(() => {
+    if (callType !== 'video') return;
+    const localCameraRefs = managedCameraTrackRefs.filter(
+      trackRef => trackRef.participant?.isLocal,
+    );
+    const remoteCameraRefs = managedCameraTrackRefs.filter(
+      trackRef => !trackRef.participant?.isLocal,
+    );
+    const remotePublication = remoteCameraRefs[0]?.publication as
+      | RemoteTrackPublicationLike
+      | undefined;
+
+    logCallDebug('managed_video_render_state', {
+      callId,
+      callType,
+      callUuid,
+      roomName,
+      localCameraRefs: localCameraRefs.length,
+      remoteCameraRefs: remoteCameraRefs.length,
+      remoteTrackSid: remotePublication?.trackSid,
+      remoteIsSubscribed: remotePublication?.isSubscribed,
+      remoteHasTrack: Boolean(remotePublication?.track),
+      remoteHasStreamUrl: Boolean(resolveTrackStreamUrl(remotePublication?.track)),
+    });
+  }, [callId, callType, callUuid, managedCameraTrackRefs, roomName]);
 
   return (
     <LiveKitMediaBridge
@@ -2521,6 +2886,71 @@ export function LiveKitCallSessionProvider({
     [patchSessionForCurrentCall],
   );
 
+  const prepareIosDirectCallAudioGate = useCallback(
+    async (params: {
+      callId: string;
+      callType: LiveKitCallType;
+      callUuid: string;
+      roomName: string;
+    }) => {
+      const { callId, callType, callUuid, roomName } = params;
+      const hasNativeCallUi = usesNativeCallUi(callUuid);
+      logCallDebug('ios_direct_call_audio_gate_prepare_start', {
+        callId,
+        callType,
+        callUuid,
+        roomName,
+        usesNativeCallUi: hasNativeCallUi,
+      });
+      setIosVoiceCallAudioActive(true, {
+        callId,
+        callType,
+        callUuid,
+        roomName,
+        stage: 'before_connect',
+      });
+
+      try {
+        const isNativeAudioReady = await waitForRequiredCallKitAudioSession({
+          callId,
+          callType,
+          callUuid,
+          roomName,
+        });
+        if (!isNativeAudioReady) {
+          throw new Error(
+            'Không thể kích hoạt audio session CallKit cho cuộc gọi.',
+          );
+        }
+        logIosAudioDeviceState({
+          callId,
+          callType,
+          callUuid,
+          roomName,
+          stage: 'before_connect',
+          checkpoint: 'before_connect',
+        });
+      } catch (error) {
+        setIosVoiceCallAudioActive(false, {
+          callId,
+          callType,
+          callUuid,
+          roomName,
+          stage: 'ios_direct_room_error',
+        });
+        throw error;
+      }
+
+      logCallDebug('ios_direct_call_audio_gate_prepare_end', {
+        callId,
+        callType,
+        callUuid,
+        roomName,
+      });
+    },
+    [],
+  );
+
   const prepareManagedIosDirectRoom = useCallback(
     async (params: {
       callId: string;
@@ -2701,6 +3131,8 @@ export function LiveKitCallSessionProvider({
       disconnectActiveRoom();
 
       const isManagedIosDirectCall = shouldUseManagedIosDirectRoom(callType);
+      const shouldPrepareIosDirectAudioGate =
+        shouldUseIosDirectCallAudioGate(callType) && !isManagedIosDirectCall;
       if (isManagedIosDirectCall) {
         try {
           await prepareManagedIosDirectRoom({
@@ -2750,6 +3182,26 @@ export function LiveKitCallSessionProvider({
           sourceRoomName: nextPayload.call.sourceRoomName,
         });
         return;
+      }
+
+      if (shouldPrepareIosDirectAudioGate) {
+        try {
+          await prepareIosDirectCallAudioGate({
+            callId,
+            callType,
+            callUuid,
+            roomName: nextPayload.call.roomName,
+          });
+        } catch (prepareError) {
+          if (activeConnectKeyRef.current === nextConnectKey) {
+            activeConnectKeyRef.current = '';
+            connectPayloadPromiseRef.current = null;
+          }
+          if (usesNativeCallUi(callUuid)) {
+            endNativeCall(callUuid);
+          }
+          throw prepareError;
+        }
       }
 
       const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS);
@@ -3070,7 +3522,7 @@ export function LiveKitCallSessionProvider({
               callId,
               callType,
               payload: nextPayload,
-              iosNativeAudioReady: false,
+              iosNativeAudioReady: shouldPrepareIosDirectAudioGate,
               peer: nextPayload.peer || existingSession.peer,
               nativeCallUuid: callUuid,
               startedAt: initialStartedAt,
@@ -3153,6 +3605,7 @@ export function LiveKitCallSessionProvider({
       disconnectActiveRoom,
       finishSession,
       patchSession,
+      prepareIosDirectCallAudioGate,
       prepareManagedIosDirectRoom,
       publishLocalCallMedia,
       repository,

@@ -9,13 +9,19 @@ const {
 const CALL_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 
 let cleanupIOSAudioManagement = null;
-let iosVoiceCallAudioActive = false;
+let iosRealtimeMediaAudioContext = null;
 
 const VOICE_CALL_APPLE_AUDIO_CONFIGURATION = {
   audioCategory: 'playAndRecord',
   audioCategoryOptions: ['allowBluetooth', 'defaultToSpeaker', 'mixWithOthers'],
   audioMode: 'voiceChat',
 };
+
+const REALTIME_MEDIA_AUDIO_INPUT_OPTIONS = [
+  'allowBluetooth',
+  'defaultToSpeaker',
+  'mixWithOthers',
+];
 
 function logLiveKitAudioDebug(event, data = {}) {
   const payload = {
@@ -32,8 +38,10 @@ function logLiveKitAudioDebug(event, data = {}) {
 }
 
 function getAppleAudioConfigurationForAudioState(state) {
-  if (iosVoiceCallAudioActive) {
-    return getVoiceCallAppleAudioConfiguration();
+  if (iosRealtimeMediaAudioContext?.requiresInput) {
+    return getRealtimeMediaInputAppleAudioConfiguration(
+      iosRealtimeMediaAudioContext,
+    );
   }
 
   if (state.isRecordingEnabled) {
@@ -68,17 +76,68 @@ function getVoiceCallAppleAudioConfiguration() {
   };
 }
 
-function setIosVoiceCallAudioActive(active) {
+function getRealtimeMediaInputAppleAudioConfiguration(context) {
+  return {
+    audioCategory: 'playAndRecord',
+    audioCategoryOptions: [...REALTIME_MEDIA_AUDIO_INPUT_OPTIONS],
+    audioMode:
+      context?.owner === 'live-stream' && context?.role === 'host'
+        ? 'videoChat'
+        : 'voiceChat',
+  };
+}
+
+function normalizeIosRealtimeMediaAudioContext(context = {}) {
+  const owner =
+    context.owner === 'live-stream' ? 'live-stream' : 'direct-call';
+  const mediaKind = context.mediaKind === 'video' ? 'video' : 'audio';
+  const role = ['call', 'host', 'viewer'].includes(context.role)
+    ? context.role
+    : owner === 'live-stream'
+      ? 'viewer'
+      : 'call';
+
+  return {
+    owner,
+    mediaKind,
+    role,
+    requiresInput: Boolean(context.requiresInput),
+    roomName: typeof context.roomName === 'string' ? context.roomName : '',
+    callId: typeof context.callId === 'string' ? context.callId : '',
+    callUuid: typeof context.callUuid === 'string' ? context.callUuid : '',
+    stage: typeof context.stage === 'string' ? context.stage : '',
+  };
+}
+
+function setIosRealtimeMediaAudioActive(active, context = {}) {
   const nextActive = Boolean(active);
-  if (iosVoiceCallAudioActive === nextActive) return;
-  iosVoiceCallAudioActive = nextActive;
-  logLiveKitAudioDebug('ios_voice_call_audio_active_changed', {
-    active: iosVoiceCallAudioActive,
+  const previousContext = iosRealtimeMediaAudioContext;
+  iosRealtimeMediaAudioContext = nextActive
+    ? normalizeIosRealtimeMediaAudioContext(context)
+    : null;
+
+  logLiveKitAudioDebug('ios_realtime_media_audio_active_changed', {
+    active: nextActive,
+    previousContext,
+    context: iosRealtimeMediaAudioContext,
+  });
+}
+
+function setIosVoiceCallAudioActive(active) {
+  setIosRealtimeMediaAudioActive(active, {
+    owner: 'direct-call',
+    mediaKind: 'audio',
+    role: 'call',
+    requiresInput: true,
   });
 }
 
 function isIosVoiceCallAudioActive() {
-  return iosVoiceCallAudioActive;
+  return (
+    iosRealtimeMediaAudioContext?.owner === 'direct-call' &&
+    iosRealtimeMediaAudioContext?.role === 'call' &&
+    iosRealtimeMediaAudioContext?.requiresInput === true
+  );
 }
 
 function readIosAudioDeviceStateField(errors, field, reader) {
@@ -197,8 +256,10 @@ function registerLiveKitGlobalsForVnseea() {
 
 module.exports = {
   getIosAudioDeviceState,
+  getRealtimeMediaInputAppleAudioConfiguration,
   getVoiceCallAppleAudioConfiguration,
   isIosVoiceCallAudioActive,
   registerLiveKitGlobalsForVnseea,
+  setIosRealtimeMediaAudioActive,
   setIosVoiceCallAudioActive,
 };

@@ -1,16 +1,19 @@
 diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager.swift
 --- a/ios/Video/AudioSessionManager.swift
 +++ b/ios/Video/AudioSessionManager.swift
-@@ -45,6 +45,24 @@
+@@ -45,6 +45,27 @@
          NotificationCenter.default.removeObserver(self)
      }
  
-+    private func isVnseeaCallKitVoiceSessionActive(_ audioSession: AVAudioSession = AVAudioSession.sharedInstance()) -> Bool {
++    private func isVnseeaRealtimeMediaSessionActive(_ audioSession: AVAudioSession = AVAudioSession.sharedInstance()) -> Bool {
 +        return audioSession.category == AVAudioSession.Category.playAndRecord &&
-+            audioSession.mode == AVAudioSession.Mode.voiceChat
++            (
++                audioSession.mode == AVAudioSession.Mode.voiceChat ||
++                audioSession.mode == AVAudioSession.Mode.videoChat
++            )
 +    }
 +
-+    private func logVnseeaVoiceSessionSkip(_ event: String) {
++    private func logVnseeaRealtimeMediaSessionSkip(_ event: String) {
 +        let audioSession = AVAudioSession.sharedInstance()
 +        NSLog(
 +            "[VNSEEA_CALL_DEBUG] {\"event\":\"%@\",\"category\":\"%@\",\"mode\":\"%@\",\"inputAvailable\":%@,\"sampleRate\":%.0f,\"ioBufferDuration\":%.4f}",
@@ -26,48 +29,48 @@ diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager
      // MARK: - Public API
  
      func setIsAudioSessionManagementForcedDisabled(disabled: Bool) {
-@@ -74,6 +92,11 @@
+@@ -74,6 +95,11 @@
      }
  
      func updateAudioSessionConfiguration() {
-+        if isVnseeaCallKitVoiceSessionActive() {
-+            logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_update")
++        if isVnseeaRealtimeMediaSessionActive() {
++            logVnseeaRealtimeMediaSessionSkip("react_native_video_audio_session_skip_realtime_media_update")
 +            return
 +        }
 +
          // Activate audio session if needed
          let isAnyPlayerPlaying = videoViews.allObjects.contains { view in
              return !view.isMuted() && view._player != nil && view._player?.rate != 0
-@@ -124,6 +147,11 @@
+@@ -124,6 +150,11 @@
      private func configureForRemoteControlEvents() {
          let audioSession = AVAudioSession.sharedInstance()
  
-+        if isVnseeaCallKitVoiceSessionActive(audioSession) {
-+            logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_remote_controls")
++        if isVnseeaRealtimeMediaSessionActive(audioSession) {
++            logVnseeaRealtimeMediaSessionSkip("react_native_video_audio_session_skip_realtime_media_remote_controls")
 +            return
 +        }
 +
          do {
              // Remote control events always need playback category
              try audioSession.setCategory(.playback, mode: .moviePlayback)
-@@ -139,6 +167,11 @@
+@@ -139,6 +170,11 @@
          let audioSession = AVAudioSession.sharedInstance()
          var options: AVAudioSession.CategoryOptions = []
  
-+        if isVnseeaCallKitVoiceSessionActive(audioSession) {
-+            logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_configure")
++        if isVnseeaRealtimeMediaSessionActive(audioSession) {
++            logVnseeaRealtimeMediaSessionSkip("react_native_video_audio_session_skip_realtime_media_configure")
 +            return
 +        }
 +
          // Check player properties
          let anyPlayerShowNotificationControls = videoViews.allObjects.contains { view in
              return view._showNotificationControls
-@@ -291,6 +324,12 @@
+@@ -291,6 +327,12 @@
              return
          }
  
-+        if isVnseeaCallKitVoiceSessionActive() {
-+            logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_activate")
++        if isVnseeaRealtimeMediaSessionActive() {
++            logVnseeaRealtimeMediaSessionSkip("react_native_video_audio_session_skip_realtime_media_activate")
 +            isAudioSessionActive = false
 +            return
 +        }
@@ -75,12 +78,12 @@ diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager
          do {
              try AVAudioSession.sharedInstance().setActive(true)
              isAudioSessionActive = true
-@@ -304,6 +343,12 @@
+@@ -304,6 +346,12 @@
              return
          }
  
-+        if isVnseeaCallKitVoiceSessionActive() {
-+            logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_deactivate")
++        if isVnseeaRealtimeMediaSessionActive() {
++            logVnseeaRealtimeMediaSessionSkip("react_native_video_audio_session_skip_realtime_media_deactivate")
 +            isAudioSessionActive = false
 +            return
 +        }
@@ -88,12 +91,12 @@ diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager
          do {
              try AVAudioSession.sharedInstance().setActive(
                  false, options: .notifyOthersOnDeactivation
-@@ -355,6 +400,11 @@
+@@ -355,6 +403,11 @@
  
          switch reason {
          case .categoryChange, .override, .wakeFromSleep, .newDeviceAvailable, .oldDeviceUnavailable:
-+            if isVnseeaCallKitVoiceSessionActive() {
-+                logVnseeaVoiceSessionSkip("react_native_video_audio_session_skip_voice_call_route_change")
++            if isVnseeaRealtimeMediaSessionActive() {
++                logVnseeaRealtimeMediaSessionSkip("react_native_video_audio_session_skip_realtime_media_route_change")
 +                return
 +            }
 +

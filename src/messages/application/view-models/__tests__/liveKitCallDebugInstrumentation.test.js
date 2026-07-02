@@ -156,7 +156,7 @@ describe('LiveKit CallKit debug instrumentation', () => {
     expect(source).toContain('totalAudioEnergy');
   });
 
-  it('logs managed iOS LiveKitRoom mic and remote track events without owning media startup', () => {
+  it('logs managed iOS LiveKitRoom mic and SDK remote subscription events without owning local media startup', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
@@ -179,7 +179,11 @@ describe('LiveKit CallKit debug instrumentation', () => {
     expect(bridgeBlock).toContain("logCallDebug('managed_local_track_muted'");
     expect(bridgeBlock).toContain("logCallDebug('managed_local_track_unmuted'");
     expect(bridgeBlock).toContain("logCallDebug('managed_remote_track_published'");
+    expect(bridgeBlock).toContain("logCallDebug('managed_track_subscription_requested'");
+    expect(bridgeBlock).toContain("logCallDebug('managed_track_subscription_timeout'");
+    expect(bridgeBlock).toContain("logCallDebug('managed_track_subscription_retry_applied'");
     expect(bridgeBlock).toContain("logCallDebug('managed_remote_track_subscribed'");
+    expect(bridgeBlock).toContain("logCallDebug('managed_video_render_state'");
     expect(bridgeBlock).not.toContain("logCallDebug('managed_local_microphone_enable_start'");
     expect(bridgeBlock).not.toContain("logCallDebug('managed_local_microphone_enable_success'");
     expect(bridgeBlock).not.toContain("logCallDebug('managed_local_microphone_enable_error'");
@@ -188,13 +192,15 @@ describe('LiveKit CallKit debug instrumentation', () => {
     expect(bridgeBlock).toContain('RoomEvent.LocalTrackUnpublished');
     expect(bridgeBlock).toContain('RoomEvent.TrackMuted');
     expect(bridgeBlock).toContain('RoomEvent.TrackUnmuted');
+    expect(bridgeBlock).toContain('RoomEvent.ParticipantConnected');
     expect(bridgeBlock).toContain('RoomEvent.TrackPublished');
     expect(bridgeBlock).toContain('RoomEvent.TrackSubscribed');
-    expect(bridgeBlock).not.toContain('RoomEvent.TrackSubscriptionFailed');
-    expect(bridgeBlock).not.toContain('publication.setSubscribed');
+    expect(bridgeBlock).toContain('RoomEvent.TrackSubscriptionFailed');
+    expect(bridgeBlock).toContain('publication.setSubscribed(true)');
+    expect(bridgeBlock).toContain('publication.setSubscribed(false)');
   });
 
-  it('does not pass custom room/connect options to managed iOS direct voice LiveKitRoom', () => {
+  it('passes managed iOS direct call LiveKitRoom auto-subscribe without manual Room options', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
@@ -209,9 +215,41 @@ describe('LiveKit CallKit debug instrumentation', () => {
     expect(managedBlock).toContain('<LiveKitRoom');
     expect(managedBlock).toContain('audio={true}');
     expect(managedBlock).toContain('video={false}');
+    expect(managedBlock).toContain('connectOptions={{ autoSubscribe: true }}');
     expect(managedBlock).not.toContain("logCallDebug('managed_ios_direct_room_options'");
     expect(managedBlock).not.toContain('options={LIVEKIT_ROOM_OPTIONS}');
     expect(managedBlock).not.toContain('connectOptions={LIVEKIT_CONNECT_OPTIONS}');
+  });
+
+  it('keeps iOS direct video calls on the manual Room subscription and render path', () => {
+    const source = read(
+      'src/messages/application/view-models/useLiveKitCallSession.tsx',
+    );
+    const connectIndex = source.indexOf('const connectPayload = useCallback');
+    const connectEndIndex = source.indexOf(
+      'const joinAnsweredOutgoingCall = useCallback',
+      connectIndex,
+    );
+    const connectBlock = source.slice(connectIndex, connectEndIndex);
+    const renderGuardIndex = source.indexOf(
+      'const shouldRenderManagedIosDirectRoom',
+    );
+    const renderGuardEndIndex = source.indexOf(
+      '</LiveKitCallSessionContext.Provider>',
+      renderGuardIndex,
+    );
+    const renderGuardBlock = source.slice(renderGuardIndex, renderGuardEndIndex);
+
+    expect(source).toContain('function shouldUseIosDirectCallAudioGate');
+    expect(connectBlock).toContain('prepareIosDirectCallAudioGate({');
+    expect(connectBlock).toContain('const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)');
+    expect(connectBlock).toContain('await nextRoom.connect(nextPayload.wsUrl, nextPayload.token, LIVEKIT_CONNECT_OPTIONS)');
+    expect(connectBlock).toContain('requestRemoteParticipantTrackSubscriptions');
+    expect(connectBlock).toContain('RoomEvent.TrackSubscribed');
+    expect(connectBlock).toContain('publishLocalCallMedia({');
+    expect(renderGuardBlock).toContain('shouldUseManagedIosDirectRoom(session.callType)');
+    expect(renderGuardBlock).toContain('activeRoom');
+    expect(renderGuardBlock).toContain('!shouldUseManagedIosDirectRoom(session.callType)');
   });
 
   it('logs managed LiveKitRoom state and audio stats for iOS voice calls', () => {
@@ -321,7 +359,7 @@ describe('LiveKit CallKit debug instrumentation', () => {
     expect(bridgeBlock).not.toContain("logCallDebug('managed_local_microphone_enable_error'");
   });
 
-  it('does not force managed iOS remote microphone subscription or retry', () => {
+  it('requests managed iOS remote microphone and camera subscription with one retry', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
@@ -334,13 +372,17 @@ describe('LiveKit CallKit debug instrumentation', () => {
     );
     const bridgeBlock = source.slice(bridgeIndex, activeRoomIndex);
 
-    expect(bridgeBlock).not.toContain('MANAGED_IOS_REMOTE_SUBSCRIPTION_TIMEOUT_MS');
-    expect(bridgeBlock).not.toContain('managed_remote_subscription_requested');
-    expect(bridgeBlock).not.toContain('managed_remote_subscription_timeout');
-    expect(bridgeBlock).not.toContain('managed_remote_subscription_retry');
-    expect(bridgeBlock).not.toContain('managed_remote_publication_missing');
-    expect(bridgeBlock).not.toContain('publication.setSubscribed(true)');
-    expect(bridgeBlock).not.toContain('publication.setSubscribed(false)');
+    expect(bridgeBlock).toContain('MANAGED_IOS_REMOTE_SUBSCRIPTION_TIMEOUT_MS');
+    expect(bridgeBlock).toContain("'managed_room_connected'");
+    expect(bridgeBlock).toContain("'managed_participant_connected'");
+    expect(bridgeBlock).toContain("'managed_track_published'");
+    expect(bridgeBlock).toContain("logCallDebug('managed_track_subscription_requested'");
+    expect(bridgeBlock).toContain("logCallDebug('managed_track_subscription_timeout'");
+    expect(bridgeBlock).toContain("logCallDebug('managed_track_subscription_retry_applied'");
+    expect(bridgeBlock).toContain("logCallDebug('managed_track_subscription_sdk_failed'");
+    expect(bridgeBlock).toContain('publication.setSubscribed(true)');
+    expect(bridgeBlock).toContain('publication.setSubscribed(false)');
+    expect(bridgeBlock).toContain('shouldSubscribeRemotePublication');
   });
 
   it('does not install AudioEngine-specific lifecycle handlers for the default WebRTC audio device path', () => {

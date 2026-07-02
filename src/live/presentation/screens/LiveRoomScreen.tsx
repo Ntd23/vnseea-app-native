@@ -238,7 +238,7 @@ export default function LiveRoomScreen() {
     return streamInfo?.description?.trim() || 'Chào mừng mọi người đến với buổi live!';
   }, [streamInfo?.description]);
 
-  if (isLoading) {
+  if (isLoading && !streamInfo) {
     return (
       <View className="flex-1 items-center justify-center bg-black">
         <ActivityIndicator size="large" color="#ffffff" />
