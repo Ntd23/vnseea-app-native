@@ -223,6 +223,14 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     }));
   }, []);
 
+  /** Clear all selected photos in one state update. */
+  const clearPhotos = useCallback(() => {
+    setDraft(prev => ({
+      ...prev,
+      photos: [],
+    }));
+  }, []);
+
   /**
    * Replace the draft's video attachment. Clears photos + audio because
    * WoWonder accepts only one media type per post. Passing `undefined`
@@ -416,6 +424,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     setVideo,
     addPhotos,
     removePhoto,
+    clearPhotos,
     applyCaptionSuggestion,
     // Lifecycle
     submit,

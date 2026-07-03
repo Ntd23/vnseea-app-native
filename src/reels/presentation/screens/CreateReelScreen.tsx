@@ -50,6 +50,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
 
 // Dynamic privacy options will be created inside the component using translations.
 
@@ -531,17 +532,17 @@ export default function CreateReelScreen() {
 
       if (result.status === 'created') {
         void emitCreatedReelPost(result);
-        Alert.alert(copy.alertSuccessTitle, copy.alertSuccessMsg, [
-          { text: 'OK', onPress: () => { vm.reset(); navigation.goBack(); } },
-        ]);
+        showToast({ message: copy.alertSuccessMsg, type: 'success' });
+        vm.reset();
+        navigation.goBack();
       } else if (result.status === 'processing') {
-        Alert.alert(copy.alertProcessingTitle, result.message ?? copy.alertProcessingMsg, [
-          { text: 'OK', onPress: () => { vm.reset(); navigation.goBack(); } },
-        ]);
+        showToast({ message: result.message ?? copy.alertProcessingMsg, type: 'info' });
+        vm.reset();
+        navigation.goBack();
       } else if (result.status === 'review') {
-        Alert.alert(copy.alertReviewTitle, copy.alertReviewMsg, [
-          { text: 'OK', onPress: () => { vm.reset(); navigation.goBack(); } },
-        ]);
+        showToast({ message: copy.alertReviewMsg, type: 'info' });
+        vm.reset();
+        navigation.goBack();
       }
     }
   }, [copy, emitCreatedReelPost, navigation, vm]);

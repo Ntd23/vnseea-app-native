@@ -1,8 +1,9 @@
 // Description: Renders the canonical Messages conversation list with user, broadcast, and group tabs.
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Dimensions,
   FlatList,
   Image,
   Modal,
@@ -11,6 +12,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  Pressable,
   TextInput,
   TouchableOpacity,
   View,
@@ -722,14 +724,18 @@ function SearchBar({
   placeholder: string;
 }) {
   return (
-    <View className="mx-4 mt-4 mb-3 flex-row items-center rounded-xl bg-gray-100 px-4 py-3">
-      <Search size={18} color="#9ca3af" />
+    <View 
+      className="mx-4 mt-4 mb-3 flex-row items-center rounded-full bg-slate-100 px-4"
+      style={{ paddingVertical: Platform.OS === 'ios' ? 8 : 4 }}
+    >
+      <Search size={16} color="#64748b" />
       <TextInput
-        className="ml-3 flex-1 text-sm text-gray-900"
+        className="ml-2 flex-1 text-sm text-slate-800"
         placeholder={placeholder}
-        placeholderTextColor="#9ca3af"
+        placeholderTextColor="#94a3b8"
         value={value}
         onChangeText={onChangeText}
+        style={{ paddingVertical: 0, height: 32 }}
       />
     </View>
   );
@@ -754,30 +760,36 @@ function ChatFilters({
   labels: Record<ChatFilter, string>;
 }) {
   return (
-    <View className="mx-4 mb-2 flex-row gap-1">
+    <View className="mx-4 mt-2 mb-3 flex-row rounded-full bg-slate-100 p-1">
       {FILTERS.map(filter => {
         const active = filter.key === value;
         const Icon = filter.icon;
 
         return (
-          <TouchableOpacity
+          <Pressable
             key={filter.key}
-            className={`flex-1 flex-row items-center justify-center rounded-lg px-1 py-3 ${
-              active ? 'bg-indigo-100' : 'bg-white'
+            className={`flex-1 flex-row items-center justify-center rounded-full py-2.5 ${
+              active ? 'bg-white' : 'bg-transparent'
             }`}
-            activeOpacity={0.8}
+            style={active ? {
+              shadowColor: '#0f172a',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.1,
+              shadowRadius: 2,
+              elevation: 1,
+            } : undefined}
             onPress={() => onChange(filter.key)}
           >
-            <Icon size={15} color={active ? '#0000ff' : '#8b8b8b'} />
+            <Icon size={14} color={active ? '#2563eb' : '#64748b'} strokeWidth={active ? 2.5 : 2} />
             <Text
-              className={`ml-1 text-xs font-semibold ${
-                active ? 'text-blue-700' : 'text-gray-500'
+              className={`ml-1.5 text-xs font-semibold ${
+                active ? 'text-slate-800 font-bold' : 'text-slate-500'
               }`}
               numberOfLines={1}
             >
               {labels[filter.key]}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         );
       })}
     </View>
@@ -1255,6 +1267,50 @@ function MessageScreen() {
     new Set(),
   );
   const hasFocusedOnceRef = useRef(false);
+  const viewPagerRef = useRef<ScrollView | null>(null);
+  const screenWidth = Dimensions.get('window').width;
+  const initialScrollOffset = useRef(
+    activeFilter === 'users' ? screenWidth : activeFilter === 'groups' ? screenWidth * 2 : 0
+  ).current;
+
+  const isProgrammaticScrollRef = useRef(false);
+
+  const handleTabPress = useCallback((filter: ChatFilter) => {
+    isProgrammaticScrollRef.current = true;
+    setActiveFilter(filter);
+    setQuery('');
+    const index = FILTERS.findIndex(f => f.key === filter);
+    if (index !== -1) {
+      viewPagerRef.current?.scrollTo({ x: index * screenWidth, animated: true });
+    }
+  }, [screenWidth]);
+
+  const handleScroll = useCallback((e: any) => {
+    if (isProgrammaticScrollRef.current) {
+      return;
+    }
+    const offsetX = e.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / screenWidth);
+    const newFilter = FILTERS[index]?.key;
+    if (newFilter && newFilter !== activeFilter) {
+      setActiveFilter(newFilter);
+      setQuery('');
+    }
+  }, [activeFilter, screenWidth]);
+
+  const handleMomentumScrollEnd = useCallback(() => {
+    isProgrammaticScrollRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    const index = FILTERS.findIndex(f => f.key === activeFilter);
+    if (index !== -1) {
+      const timer = setTimeout(() => {
+        viewPagerRef.current?.scrollTo({ x: index * screenWidth, animated: false });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [screenWidth]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1295,64 +1351,74 @@ function MessageScreen() {
     [broadcastRecipients],
   );
 
-  const visibleChats = useMemo(() => {
+  const broadcastChats = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('vi-VN');
-    const sourceChats =
-      activeFilter === 'broadcast' && broadcastLabelId
-        ? broadcastRecipientChats
-        : chats;
-
-    const filtered = sourceChats.filter(chat => {
-      const matchesFilter =
-        activeFilter === 'groups'
-          ? chat.chatType === 'group'
-          : activeFilter === 'broadcast'
-          ? Boolean(broadcastLabelId) && chat.chatType === 'user'
-          : chat.chatType !== 'group';
+    const sourceChats = broadcastLabelId ? broadcastRecipientChats : [];
+    return sourceChats.filter(chat => {
       const matchesQuery =
         !normalizedQuery ||
         `${chat.name} ${chat.username} ${getVisibleLastMessage(chat, copy)}`
           .toLocaleLowerCase('vi-VN')
           .includes(normalizedQuery);
+      return matchesQuery;
+    });
+  }, [broadcastLabelId, broadcastRecipientChats, query, copy]);
 
+  const usersChats = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('vi-VN');
+    const filtered = chats.filter(chat => {
+      const matchesFilter = chat.chatType !== 'group';
+      const matchesQuery =
+        !normalizedQuery ||
+        `${chat.name} ${chat.username} ${getVisibleLastMessage(chat, copy)}`
+          .toLocaleLowerCase('vi-VN')
+          .includes(normalizedQuery);
       return matchesFilter && matchesQuery;
     });
 
-    // Sort logic:
-    // 1. "Bạn bè mới" (isFollowing === true AND lastMessageTime === 0) -> Priority 3
-    // 2. Active friend chats (isFollowing === true AND lastMessageTime > 0) -> Priority 2
-    // 3. Normal active chats (isFollowing === false AND lastMessageTime > 0) -> Priority 1
-    // 4. Followers without messages (isFollowing === false AND isFollower === true AND lastMessageTime === 0) -> Priority 0
-    if (activeFilter === 'users') {
-      filtered.sort((a, b) => {
-        const getPriority = (chat: ChatItem) => {
-          if (chat.unreadCount > 0) {
-            return 4; // Unread messages always go to the top
-          }
-          const hasMsg = chat.lastMessageTime > 0;
-          if (chat.isFollowing && !hasMsg) {
-            return 2; // "Bạn bè mới" (followed, no messages)
-          }
-          if (hasMsg) {
-            const nowSeconds = Date.now() / 1000;
-            const isRecent = nowSeconds - chat.lastMessageTime < 86400; // 24 hours
-            return isRecent ? 3 : 1; // Recent active chats (Priority 3) vs older active chats (Priority 1)
-          }
-          return 0; // Followers with no messages
-        };
+    filtered.sort((a, b) => {
+      const getPriority = (chat: ChatItem) => {
+        if (chat.unreadCount > 0) return 4;
+        const hasMsg = chat.lastMessageTime > 0;
+        if (chat.isFollowing && !hasMsg) return 2;
+        if (hasMsg) {
+          const nowSeconds = Date.now() / 1000;
+          const isRecent = nowSeconds - chat.lastMessageTime < 86400;
+          return isRecent ? 3 : 1;
+        }
+        return 0;
+      };
 
-        const aPri = getPriority(a);
-        const bPri = getPriority(b);
-        if (aPri !== bPri) return bPri - aPri;
+      const aPri = getPriority(a);
+      const bPri = getPriority(b);
+      if (aPri !== bPri) return bPri - aPri;
 
-        const timeDiff = b.lastMessageTime - a.lastMessageTime;
-        if (timeDiff !== 0) return timeDiff;
-        return b.unreadCount - a.unreadCount;
-      });
-    }
+      const timeDiff = b.lastMessageTime - a.lastMessageTime;
+      if (timeDiff !== 0) return timeDiff;
+      return b.unreadCount - a.unreadCount;
+    });
 
     return filtered;
-  }, [activeFilter, broadcastLabelId, broadcastRecipientChats, chats, query, copy]);
+  }, [chats, query, copy]);
+
+  const groupsChats = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('vi-VN');
+    return chats.filter(chat => {
+      const matchesFilter = chat.chatType === 'group';
+      const matchesQuery =
+        !normalizedQuery ||
+        `${chat.name} ${chat.username} ${getVisibleLastMessage(chat, copy)}`
+          .toLocaleLowerCase('vi-VN')
+          .includes(normalizedQuery);
+      return matchesFilter && matchesQuery;
+    });
+  }, [chats, query, copy]);
+
+  const visibleChats = useMemo(() => {
+    if (activeFilter === 'broadcast') return broadcastChats;
+    if (activeFilter === 'groups') return groupsChats;
+    return usersChats;
+  }, [activeFilter, broadcastChats, groupsChats, usersChats]);
 
   const selectedBroadcastLabel = useMemo(
     () => labels.find(label => label.id === broadcastLabelId),
@@ -1461,6 +1527,17 @@ function MessageScreen() {
     selectedRecipients.size > 0 &&
     Boolean(broadcastText.trim() || broadcastAttachment) &&
     !isSending;
+
+  const renderListEmpty = useCallback((filter: ChatFilter) => {
+    if (isLoadingChats && !refreshing) {
+      return <LoadingSkeleton />;
+    }
+    const currentChats = filter === 'broadcast' ? broadcastChats : filter === 'groups' ? groupsChats : usersChats;
+    if (error && currentChats.length === 0) {
+      return <ErrorState message={error} onRetry={() => loadChats()} copy={copy} />;
+    }
+    return <EmptyChats filter={filter} hasQuery={query.trim().length > 0} />;
+  }, [isLoadingChats, refreshing, broadcastChats, groupsChats, usersChats, error, copy, loadChats, query]);
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -1581,230 +1658,329 @@ function MessageScreen() {
         </View>
       )}
 
-      {/* Content */}
-      <SearchBar
-        value={query}
-        onChangeText={setQuery}
-        placeholder={copy.searchPlaceholder}
-      />
-      <StoriesBubbleRow chats={chats} createStoryLabel={copy.createStory} />
+      {/* Fixed Tab Bar right below the Header */}
       <ChatFilters
         value={activeFilter}
-        onChange={setActiveFilter}
+        onChange={handleTabPress}
         labels={copy.filters}
       />
-      {activeFilter === 'broadcast' && (
-        <View className="mx-4 mb-3 rounded-2xl border border-indigo-100 bg-white p-4">
-          <Text className="mb-2 text-xs font-bold uppercase text-slate-400">
-            Label
-          </Text>
-          <TouchableOpacity
-            className="mb-2 flex-row items-center rounded-xl border border-indigo-200 px-3 py-3"
-            activeOpacity={0.8}
-            onPress={() => setShowBroadcastLabelOptions(previous => !previous)}
-          >
-            {selectedBroadcastLabel && (
-              <View
-                className="mr-2 h-3 w-3 rounded-full"
-                style={{ backgroundColor: selectedBroadcastLabel.color }}
-              />
-            )}
-            <Text className="flex-1 text-base text-slate-900">
-              {selectedBroadcastLabel?.name || 'Select label'}
-            </Text>
-            <ChevronDown size={18} color="#475569" />
-          </TouchableOpacity>
 
-          {showBroadcastLabelOptions && (
-            <View className="mb-3 overflow-hidden rounded-xl border border-slate-200">
-              {labels.length === 0 ? (
-                <Text className="px-3 py-3 text-sm text-slate-500">
-                  No labels yet
-                </Text>
-              ) : (
-                labels.map(label => (
+      {/* Swipeable page views */}
+      <ScrollView
+        ref={viewPagerRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        contentOffset={{
+          x: initialScrollOffset,
+          y: 0
+        }}
+        style={{ flex: 1 }}
+      >
+        {/* PAGE 0: Broadcast (Gửi nhiều người) */}
+        <View style={{ width: screenWidth, flex: 1 }}>
+          <FlatList
+            data={isLoadingChats && !refreshing ? [] : broadcastChats}
+            keyExtractor={item => item.id}
+            extraData={`${activeFilter}:${selectedRecipients.size}:${query}:${labels.length}:${broadcastLabelId}:${isLoadingChats}:${refreshing}:${error}`}
+            ListHeaderComponent={
+              <View style={{ backgroundColor: '#ffffff' }}>
+                <SearchBar
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder={copy.searchPlaceholder}
+                />
+                
+                {/* Broadcast Panel */}
+                <View className="mx-4 mb-3 rounded-2xl border border-indigo-100 bg-white p-4">
+                  <Text className="mb-2 text-xs font-bold uppercase text-slate-400">
+                    Label
+                  </Text>
                   <TouchableOpacity
-                    key={label.id}
-                    className="flex-row items-center border-b border-slate-100 px-3 py-3 last:border-b-0"
+                    className="mb-2 flex-row items-center rounded-xl border border-indigo-200 px-3 py-3"
+                    activeOpacity={0.8}
+                    onPress={() => setShowBroadcastLabelOptions(previous => !previous)}
+                  >
+                    {selectedBroadcastLabel && (
+                      <View
+                        className="mr-2 h-3 w-3 rounded-full"
+                        style={{ backgroundColor: selectedBroadcastLabel.color }}
+                      />
+                    )}
+                    <Text className="flex-1 text-base text-slate-900">
+                      {selectedBroadcastLabel?.name || 'Select label'}
+                    </Text>
+                    <ChevronDown size={18} color="#475569" />
+                  </TouchableOpacity>
+
+                  {showBroadcastLabelOptions && (
+                    <View className="mb-3 overflow-hidden rounded-xl border border-slate-200">
+                      {labels.length === 0 ? (
+                        <Text className="px-3 py-3 text-sm text-slate-500">
+                          No labels yet
+                        </Text>
+                      ) : (
+                        labels.map(label => (
+                          <TouchableOpacity
+                            key={label.id}
+                            className="flex-row items-center border-b border-slate-100 px-3 py-3 last:border-b-0"
+                            onPress={() => {
+                              handleSelectBroadcastLabel(label.id).catch(
+                                () => undefined,
+                              );
+                            }}
+                          >
+                            <View
+                              className="mr-2 h-3 w-3 rounded-full"
+                              style={{ backgroundColor: label.color }}
+                            />
+                            <Text className="flex-1 font-semibold text-slate-700">
+                              {label.name}
+                            </Text>
+                          </TouchableOpacity>
+                        ))
+                      )}
+                    </View>
+                  )}
+
+                  <View className="mb-2 flex-row items-center justify-between">
+                    <Text className="text-xs font-bold uppercase text-slate-400">
+                      Send to
+                    </Text>
+                    <TouchableOpacity
+                      className="flex-row items-center"
+                      activeOpacity={0.8}
+                      disabled={broadcastRecipientChats.length === 0}
+                      onPress={handleToggleSelectAllRecipients}
+                    >
+                      <View
+                        className={`mr-2 h-5 w-5 items-center justify-center rounded ${
+                          broadcastRecipientChats.length > 0 &&
+                          selectedRecipients.size === broadcastRecipientChats.length
+                            ? 'bg-blue-600'
+                            : 'border border-slate-300 bg-white'
+                        }`}
+                      >
+                        {broadcastRecipientChats.length > 0 &&
+                          selectedRecipients.size === broadcastRecipientChats.length && (
+                            <Check size={14} color="#ffffff" />
+                          )}
+                      </View>
+                      <Text className="text-xs font-bold text-slate-500">
+                        Select all
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View className="mb-3 min-h-12 flex-row flex-wrap items-center gap-2 rounded-xl border border-indigo-100 px-3 py-2">
+                    {broadcastRecipientChats.length === 0 ? (
+                      <Text className="text-sm text-slate-400">
+                        Select a label to load recipients
+                      </Text>
+                    ) : (
+                      broadcastRecipientChats
+                        .filter(chat => selectedRecipients.has(chat.userId))
+                        .map(chat => (
+                          <TouchableOpacity
+                            key={chat.userId}
+                            className="flex-row items-center rounded-full bg-indigo-50 px-2 py-1"
+                            onPress={() => handleChatPress(chat)}
+                          >
+                            <UserAvatar uri={chat.avatar} name={chat.name} size={24} />
+                            <Text className="ml-1 max-w-[110px] text-xs font-semibold text-slate-600">
+                              {chat.name}
+                            </Text>
+                            <X size={13} color="#94a3b8" />
+                          </TouchableOpacity>
+                        ))
+                    )}
+                  </View>
+
+                  <TextInput
+                    className="mb-3 min-h-20 border border-slate-300 px-3 py-2 text-base text-slate-900"
+                    placeholder="Type your message"
+                    placeholderTextColor="#94a3b8"
+                    value={broadcastText}
+                    multiline
+                    textAlignVertical="top"
+                    onChangeText={setBroadcastText}
+                  />
+
+                  <TouchableOpacity
+                    className="mb-3 items-center justify-center rounded-2xl border border-indigo-100 py-3"
+                    activeOpacity={0.8}
                     onPress={() => {
-                      handleSelectBroadcastLabel(label.id).catch(
-                        () => undefined,
-                      );
+                      handleChooseBroadcastImage().catch(() => undefined);
                     }}
                   >
-                    <View
-                      className="mr-2 h-3 w-3 rounded-full"
-                      style={{ backgroundColor: label.color }}
-                    />
-                    <Text className="flex-1 font-semibold text-slate-700">
-                      {label.name}
+                    <View className="mb-2 h-9 w-9 items-center justify-center rounded-full bg-slate-100">
+                      <Upload size={18} color="#64748b" />
+                    </View>
+                    <Text className="font-semibold text-slate-900">
+                      {broadcastAttachment?.name || 'Choose file...'}
                     </Text>
+                    <Text className="mt-1 text-sm text-slate-500">Optional</Text>
                   </TouchableOpacity>
-                ))
-              )}
-            </View>
-          )}
 
-          <View className="mb-2 flex-row items-center justify-between">
-            <Text className="text-xs font-bold uppercase text-slate-400">
-              Send to
-            </Text>
-            <TouchableOpacity
-              className="flex-row items-center"
-              activeOpacity={0.8}
-              disabled={visibleChats.length === 0}
-              onPress={handleToggleSelectAllRecipients}
-            >
-              <View
-                className={`mr-2 h-5 w-5 items-center justify-center rounded ${
-                  visibleChats.length > 0 &&
-                  selectedRecipients.size === visibleChats.length
-                    ? 'bg-blue-600'
-                    : 'border border-slate-300 bg-white'
-                }`}
-              >
-                {visibleChats.length > 0 &&
-                  selectedRecipients.size === visibleChats.length && (
-                    <Check size={14} color="#ffffff" />
-                  )}
+                  <View className="items-end border-t border-slate-100 pt-3">
+                    <TouchableOpacity
+                      className={`flex-row items-center rounded-full px-5 py-3 ${
+                        canSendBroadcast ? 'bg-blue-600' : 'bg-gray-300'
+                      }`}
+                      activeOpacity={0.8}
+                      disabled={!canSendBroadcast}
+                      onPress={() => {
+                        handleSendBroadcast().catch(() => undefined);
+                      }}
+                    >
+                      {isSending ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                      ) : (
+                        <>
+                          <Send size={17} color="#ffffff" />
+                          <Text className="ml-2 font-bold text-white">
+                            Send message
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
-              <Text className="text-xs font-bold text-slate-500">
-                Select all
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View className="mb-3 min-h-12 flex-row flex-wrap items-center gap-2 rounded-xl border border-indigo-100 px-3 py-2">
-            {visibleChats.length === 0 ? (
-              <Text className="text-sm text-slate-400">
-                Select a label to load recipients
-              </Text>
-            ) : (
-              visibleChats
-                .filter(chat => selectedRecipients.has(chat.userId))
-                .map(chat => (
-                  <TouchableOpacity
-                    key={chat.userId}
-                    className="flex-row items-center rounded-full bg-indigo-50 px-2 py-1"
-                    onPress={() => handleChatPress(chat)}
-                  >
-                    <UserAvatar uri={chat.avatar} name={chat.name} size={24} />
-                    <Text className="ml-1 max-w-[110px] text-xs font-semibold text-slate-600">
-                      {chat.name}
-                    </Text>
-                    <X size={13} color="#94a3b8" />
-                  </TouchableOpacity>
-                ))
+            }
+            ListEmptyComponent={renderListEmpty('broadcast')}
+            renderItem={({ item }) => (
+              <ChatListItem
+                chat={item}
+                onPress={handleChatPress}
+                onOpenLabels={chat => setLabelTargetChat(chat)}
+                selectable={true}
+                selected={selectedRecipients.has(item.userId)}
+                copy={copy}
+              />
             )}
-          </View>
-
-          <TextInput
-            className="mb-3 min-h-20 border border-slate-300 px-3 py-2 text-base text-slate-900"
-            placeholder="Type your message"
-            placeholderTextColor="#94a3b8"
-            value={broadcastText}
-            multiline
-            textAlignVertical="top"
-            onChangeText={setBroadcastText}
+            contentContainerStyle={
+              (isLoadingChats && !refreshing) || (error && broadcastChats.length === 0) || broadcastChats.length === 0
+                ? { flexGrow: 1 }
+                : undefined
+            }
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#3b82f6']}
+              />
+            }
+            showsVerticalScrollIndicator={false}
           />
-
-          <TouchableOpacity
-            className="mb-3 items-center justify-center rounded-2xl border border-indigo-100 py-3"
-            activeOpacity={0.8}
-            onPress={() => {
-              handleChooseBroadcastImage().catch(() => undefined);
-            }}
-          >
-            <View className="mb-2 h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-              <Upload size={18} color="#64748b" />
-            </View>
-            <Text className="font-semibold text-slate-900">
-              {broadcastAttachment?.name || 'Choose file...'}
-            </Text>
-            <Text className="mt-1 text-sm text-slate-500">Optional</Text>
-          </TouchableOpacity>
-
-          <View className="items-end border-t border-slate-100 pt-3">
-            <TouchableOpacity
-              className={`flex-row items-center rounded-full px-5 py-3 ${
-                canSendBroadcast ? 'bg-blue-600' : 'bg-gray-300'
-              }`}
-              activeOpacity={0.8}
-              disabled={!canSendBroadcast}
-              onPress={() => {
-                handleSendBroadcast().catch(() => undefined);
-              }}
-            >
-              {isSending ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <>
-                  <Send size={17} color="#ffffff" />
-                  <Text className="ml-2 font-bold text-white">
-                    Send message
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
         </View>
-      )}
 
-      {isLoadingChats && !refreshing ? (
-        <LoadingSkeleton />
-      ) : error && visibleChats.length === 0 ? (
-        <ErrorState message={error} onRetry={() => loadChats()} copy={copy} />
-      ) : (
-        <FlatList
-          data={visibleChats}
-          keyExtractor={item => item.id}
-          extraData={`${activeFilter}:${selectedRecipients.size}:${query}:${labels.length}:${broadcastLabelId}`}
-          renderItem={({ item }) => (
-            <ChatListItem
-              chat={item}
-              onPress={handleChatPress}
-              onOpenLabels={chat => setLabelTargetChat(chat)}
-              selectable={activeFilter === 'broadcast'}
-              selected={selectedRecipients.has(item.userId)}
-              copy={copy}
-            />
-          )}
-          ListEmptyComponent={
-            <EmptyChats
-              filter={activeFilter}
-              hasQuery={query.trim().length > 0}
-            />
-          }
-          contentContainerStyle={
-            visibleChats.length === 0 ? { flex: 1 } : undefined
-          }
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={['#3b82f6']}
-            />
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+        {/* PAGE 1: People (Người dùng) */}
+        <View style={{ width: screenWidth, flex: 1 }}>
+          <FlatList
+            data={isLoadingChats && !refreshing ? [] : usersChats}
+            keyExtractor={item => item.id}
+            extraData={`${activeFilter}:${selectedRecipients.size}:${query}:${labels.length}:${broadcastLabelId}:${isLoadingChats}:${refreshing}:${error}`}
+            ListHeaderComponent={
+              <View style={{ backgroundColor: '#ffffff' }}>
+                <SearchBar
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder={copy.searchPlaceholder}
+                />
+                <StoriesBubbleRow chats={chats} createStoryLabel={copy.createStory} />
+              </View>
+            }
+            ListEmptyComponent={renderListEmpty('users')}
+            renderItem={({ item }) => (
+              <ChatListItem
+                chat={item}
+                onPress={handleChatPress}
+                onOpenLabels={chat => setLabelTargetChat(chat)}
+                selectable={false}
+                selected={false}
+                copy={copy}
+              />
+            )}
+            contentContainerStyle={
+              (isLoadingChats && !refreshing) || (error && usersChats.length === 0) || usersChats.length === 0
+                ? { flexGrow: 1 }
+                : undefined
+            }
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#3b82f6']}
+              />
+            }
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
+
+        {/* PAGE 2: Groups (Các nhóm) */}
+        <View style={{ width: screenWidth, flex: 1 }}>
+          <FlatList
+            data={isLoadingChats && !refreshing ? [] : groupsChats}
+            keyExtractor={item => item.id}
+            extraData={`${activeFilter}:${selectedRecipients.size}:${query}:${labels.length}:${broadcastLabelId}:${isLoadingChats}:${refreshing}:${error}`}
+            ListHeaderComponent={
+              <View style={{ backgroundColor: '#ffffff' }}>
+                <SearchBar
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder={copy.searchPlaceholder}
+                />
+              </View>
+            }
+            ListEmptyComponent={renderListEmpty('groups')}
+            renderItem={({ item }) => (
+              <ChatListItem
+                chat={item}
+                onPress={handleChatPress}
+                onOpenLabels={chat => setLabelTargetChat(chat)}
+                selectable={false}
+                selected={false}
+                copy={copy}
+              />
+            )}
+            contentContainerStyle={
+              (isLoadingChats && !refreshing) || (error && groupsChats.length === 0) || groupsChats.length === 0
+                ? { flexGrow: 1 }
+                : undefined
+            }
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#3b82f6']}
+              />
+            }
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
+      </ScrollView>
 
       {activeFilter !== 'broadcast' && (
         <View className="absolute bottom-6 right-6">
-          <TouchableOpacity
-            className="h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-lg"
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate(ROUTES.CREATE_GROUP_CHAT)}
-            style={{
+          <Pressable
+            className="h-14 w-14 items-center justify-center rounded-full bg-blue-600"
+            style={({ pressed }: { pressed: boolean }) => ({
               shadowColor: '#2563eb',
               shadowOffset: { width: 0, height: 4 },
               shadowOpacity: 0.3,
               shadowRadius: 8,
               elevation: 8,
-            }}
+              opacity: pressed ? 0.85 : 1,
+              transform: [{ scale: pressed ? 0.95 : 1 }],
+            })}
+            onPress={() => navigation.navigate(ROUTES.CREATE_GROUP_CHAT)}
           >
             <Users size={24} color="#ffffff" />
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
 

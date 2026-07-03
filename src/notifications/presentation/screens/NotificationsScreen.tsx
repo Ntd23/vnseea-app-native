@@ -91,6 +91,28 @@ function BeautifulBellIllustration() {
   );
 }
 
+function BackgroundBellWatermark() {
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: -1,
+      }}
+    >
+      <View style={{ opacity: 0.08 }}>
+        <BeautifulBellIllustration />
+      </View>
+    </View>
+  );
+}
+
 function includesAny(value: string, tokens: string[]) {
   const normalized = value.toLowerCase();
   return tokens.some(token => normalized.includes(token));
@@ -472,15 +494,9 @@ function NotificationsScreen() {
         <ActivityIndicator size="small" color="#0000ff" />
       </View>
     ) : !hasMore && visibleNotifications.length > 0 ? (
-      <View className="items-center justify-center pt-8 pb-10">
-        <BeautifulBellIllustration />
-        <Text className="text-[16px] font-bold text-slate-800 text-center">
-          {copy.allLoaded}
-        </Text>
-        <Text className="text-[13px] text-slate-400 text-center mt-1.5 px-6">
-          {language === 'vi'
-            ? 'Bạn sẽ nhận được thông báo mới khi có hoạt động'
-            : 'You will receive new notifications when there is activity'}
+      <View className="items-center justify-center pt-6 pb-8">
+        <Text className="text-[12px] font-semibold text-slate-400 text-center">
+          ✨ {copy.allLoaded}
         </Text>
       </View>
     ) : null;
@@ -636,15 +652,9 @@ function NotificationsScreen() {
             ) : null}
 
             {!hasMore && visibleNotifications.length > 0 ? (
-              <View className="items-center justify-center pt-8 pb-10">
-                <BeautifulBellIllustration />
-                <Text className="text-[16px] font-bold text-slate-800 text-center">
-                  {copy.allLoaded}
-                </Text>
-                <Text className="text-[13px] text-slate-400 text-center mt-1.5 px-6">
-                  {language === 'vi' 
-                    ? 'Bạn sẽ nhận được thông báo mới khi có hoạt động'
-                    : 'You will receive new notifications when there is activity'}
+              <View className="items-center justify-center pt-6 pb-8">
+                <Text className="text-[12px] font-semibold text-slate-400 text-center">
+                  ✨ {copy.allLoaded}
                 </Text>
               </View>
             ) : null}
@@ -665,7 +675,11 @@ function NotificationsScreen() {
           messages). It already manages its own top safe-area inset, so we
           render it on top of the notifications body. */}
       <FeedHeader />
-      {Platform.OS === 'ios' ? iosNotificationsListElement : notificationsBody}
+
+      <View className="flex-1 relative">
+        <BackgroundBellWatermark />
+        {Platform.OS === 'ios' ? iosNotificationsListElement : notificationsBody}
+      </View>
 
       <NotificationsFilterSheet
         visible={filterSheetVisible}

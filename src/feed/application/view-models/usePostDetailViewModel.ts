@@ -7,6 +7,7 @@ import { createFeedRepository } from '../../infrastructure/repositories/ApiFeedR
 import { createReelsRepository } from '../../../reels/infrastructure/repositories/ApiReelsRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { FeedPost } from '../../domain/types/feed.types';
+import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type {
   GetPostByIdResult,
   PostComment,
@@ -150,6 +151,75 @@ export function usePostDetailViewModel({
     [post],
   );
 
+  const toggleReaction = useCallback(
+    async (reaction: ReactionType | null) => {
+      if (!post) return;
+
+      const oldReaction = (post as any).myReaction ?? null;
+
+      // 1. Optimistically update local post state
+      setPost(prev => {
+        if (!prev) return prev;
+        const prevAny = prev as any;
+
+        let nextReactionBreakdown = { ...(prevAny.reactionBreakdown ?? {}) };
+
+        // Decrement old reaction if there was one
+        if (oldReaction && nextReactionBreakdown[oldReaction] !== undefined) {
+          nextReactionBreakdown[oldReaction] = Math.max(0, (nextReactionBreakdown[oldReaction] as number) - 1);
+        }
+
+        // Increment new reaction
+        if (reaction) {
+          nextReactionBreakdown[reaction] = ((nextReactionBreakdown[reaction] as number) ?? 0) + 1;
+        }
+
+        // Update isLiked / likeCount for fallback fields
+        const wasLiked = prevAny.isLiked;
+        const nextIsLiked = reaction !== null;
+        let nextLikeCount = prevAny.likeCount ?? 0;
+        if (wasLiked && !nextIsLiked) {
+          nextLikeCount = Math.max(0, nextLikeCount - 1);
+        } else if (!wasLiked && nextIsLiked) {
+          nextLikeCount += 1;
+        }
+
+        return {
+          ...prev,
+          myReaction: reaction,
+          isLiked: nextIsLiked,
+          likeCount: nextLikeCount,
+          reactionBreakdown: nextReactionBreakdown,
+        } as any;
+      });
+
+      try {
+        await feedRepository.setReaction(postId, reaction);
+        // Refresh liked users preview list after updating reaction
+        const reactionsPage = await feedRepository.getPostReactions(postId, undefined, 3);
+        const mapped = (reactionsPage.users ?? []).map(u => ({
+          avatar: u.avatarUrl,
+          name: u.name,
+          username: u.username,
+          id: u.id,
+        }));
+        setLikedUsers(mapped);
+      } catch (err) {
+        console.warn('[usePostDetailViewModel] Failed to toggle reaction', err);
+        // Rollback state on error
+        setPost(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            myReaction: oldReaction,
+            isLiked: oldReaction !== null,
+          } as any;
+        });
+      }
+    },
+    [post, postId]
+  );
+
   return {
     post,
     comments,
@@ -159,5 +229,6 @@ export function usePostDetailViewModel({
     submitComment,
     isSubmitting,
     likedUsers,
+    toggleReaction,
   };
 }
