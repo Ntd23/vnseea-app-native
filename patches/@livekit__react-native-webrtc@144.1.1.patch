@@ -7,7 +7,7 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
  #import <React/RCTLog.h>
  #import <os/log.h>
  
-@@ -27,8 +28,117 @@ static os_log_t ADMObserverLog(void) {
+@@ -27,8 +28,141 @@ static os_log_t ADMObserverLog(void) {
          log = os_log_create("com.livekit.react-native-webrtc", "AudioDeviceModuleObserver");
      });
      return log;
@@ -122,10 +122,34 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +        @"native_webrtc_audio_session_configured", isPlayoutEnabled, isRecordingEnabled, nil);
 +}
 +
++static void VNSEEAUnmuteMicrophoneForRecordingEngine(
++    RTCAudioDeviceModule *audioDeviceModule,
++    BOOL isPlayoutEnabled,
++    BOOL isRecordingEnabled) {
++    if (!isRecordingEnabled || audioDeviceModule == nil) {
++        return;
++    }
++
++    NSInteger result = [audioDeviceModule setMicrophoneMuted:NO];
++    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
++    NSLog(
++        @"[VNSEEA_CALL_DEBUG] {\"event\":\"native_webrtc_audio_microphone_unmuted\",\"result\":%ld,\"isMicrophoneMuted\":%@,\"isPlayoutEnabled\":%@,\"isRecordingEnabled\":%@,\"category\":\"%@\",\"mode\":\"%@\",\"inputAvailable\":%@,\"recordPermission\":\"%@\",\"sampleRate\":%.0f,\"ioBufferDuration\":%.4f}",
++        (long)result,
++        audioDeviceModule.isMicrophoneMuted ? @"true" : @"false",
++        isPlayoutEnabled ? @"true" : @"false",
++        isRecordingEnabled ? @"true" : @"false",
++        audioSession.category ?: @"",
++        audioSession.mode ?: @"",
++        audioSession.isInputAvailable ? @"true" : @"false",
++        VNSEEARecordPermissionName(audioSession.recordPermission),
++        audioSession.sampleRate,
++        audioSession.IOBufferDuration);
++}
++
  @interface AudioDeviceModuleObserver ()
  
  @property(weak, nonatomic) WebRTCModule *module;
-@@ -186,6 +296,10 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
+@@ -186,6 +320,11 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
                isPlayoutEnabled:(BOOL)isPlayoutEnabled
              isRecordingEnabled:(BOOL)isRecordingEnabled {
      BOOL isActive = self.isWillEnableEngineActive;
@@ -133,16 +157,18 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +    VNSEEALogWebRTCAudioSessionState(
 +        @"native_webrtc_audio_engine_will_enable", isPlayoutEnabled, isRecordingEnabled, nil);
 +    VNSEEAConfigureAudioSessionForEngine(isPlayoutEnabled, isRecordingEnabled);
++    VNSEEAUnmuteMicrophoneForRecordingEngine(audioDeviceModule, isPlayoutEnabled, isRecordingEnabled);
  
      if (isActive) {
          RCTLog(@"[AudioDeviceModuleObserver] Engine will enable - playout: %d, recording: %d - waiting for JS response",
-@@ -220,6 +334,10 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
+@@ -220,6 +359,11 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
              isRecordingEnabled:(BOOL)isRecordingEnabled {
      BOOL isActive = self.isWillStartEngineActive;
  
 +    VNSEEALogWebRTCAudioSessionState(
 +        @"native_webrtc_audio_engine_will_start", isPlayoutEnabled, isRecordingEnabled, nil);
 +    VNSEEAConfigureAudioSessionForEngine(isPlayoutEnabled, isRecordingEnabled);
++    VNSEEAUnmuteMicrophoneForRecordingEngine(audioDeviceModule, isPlayoutEnabled, isRecordingEnabled);
 +
      if (isActive) {
          RCTLog(@"[AudioDeviceModuleObserver] Engine will start - playout: %d, recording: %d - waiting for JS response",
