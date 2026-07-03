@@ -8,7 +8,7 @@ function read(relativePath) {
 }
 
 describe('LiveKit call media startup resilience', () => {
-  it('renders iOS direct audio calls through LiveKitRoom with SDK-owned media startup', () => {
+  it('renders only iOS direct audio calls through LiveKitRoom with SDK-owned media startup', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
@@ -29,13 +29,13 @@ describe('LiveKit call media startup resilience', () => {
     expect(managedBlock).toContain('audio={true}');
     expect(managedBlock).toContain('video={false}');
     expect(managedBlock).toContain('connect={session.iosNativeAudioReady}');
+    expect(managedBlock).toContain('connectOptions={{ autoSubscribe: true }}');
     expect(managedBlock).not.toContain('connect={true}');
     expect(managedBlock).toContain('useRoomContext()');
     expect(managedBlock).toContain('useConnectionState()');
     expect(managedBlock).not.toContain('options={LIVEKIT_ROOM_OPTIONS}');
     expect(managedBlock).not.toContain('connectOptions={LIVEKIT_CONNECT_OPTIONS}');
     expect(managedBlock).not.toContain('new Room');
-    expect(managedBlock).not.toContain('publication.setSubscribed');
     expect(managedBlock).not.toContain('room.localParticipant.setMicrophoneEnabled(true)');
   });
 
@@ -45,15 +45,60 @@ describe('LiveKit call media startup resilience', () => {
     );
 
     expect(source).toContain('function shouldUseManagedIosDirectRoom');
+    const managedHelperIndex = source.indexOf('function shouldUseManagedIosDirectRoom');
+    const managedHelperEndIndex = source.indexOf(
+      'function shouldUseIosDirectCallAudioGate',
+      managedHelperIndex,
+    );
+    const managedHelperBlock = source.slice(managedHelperIndex, managedHelperEndIndex);
     expect(source).toContain("Platform.OS === 'ios'");
-    expect(source).toContain("callType === 'audio'");
-    expect(source).not.toContain("callType === 'audio' || callType === 'video'");
+    expect(managedHelperBlock).toContain("callType === 'audio'");
+    expect(managedHelperBlock).not.toContain("callType === 'video'");
     expect(source).toContain('isManagedIosDirectCall');
     expect(source).toContain('managed_ios_direct_room_prepare_start');
     expect(source).toContain("logCallDebug('native_audio_gate_pass'");
     expect(source).toContain("logCallDebug('native_audio_gate_failed'");
     expect(source).toContain('iosNativeAudioReady');
     expect(source).toContain('managed_ios_direct_room_connected');
+  });
+
+  it('routes iOS direct video calls through the manual Room path while preserving the native audio gate', () => {
+    const source = read(
+      'src/messages/application/view-models/useLiveKitCallSession.tsx',
+    );
+    const connectIndex = source.indexOf('const connectPayload = useCallback');
+    const connectEndIndex = source.indexOf('const joinAnsweredOutgoingCall = useCallback', connectIndex);
+    const connectBlock = source.slice(connectIndex, connectEndIndex);
+
+    expect(source).toContain('function shouldUseIosDirectCallAudioGate');
+    expect(source).toContain("callType === 'audio' || callType === 'video'");
+    expect(connectBlock).toContain('const isManagedIosDirectCall = shouldUseManagedIosDirectRoom(callType)');
+    expect(connectBlock).toContain('prepareIosDirectCallAudioGate({');
+    expect(connectBlock).toContain('!isManagedIosDirectCall');
+    expect(connectBlock).toContain('const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)');
+    expect(connectBlock).toContain(
+      'await nextRoom.connect(nextPayload.wsUrl, nextPayload.token, LIVEKIT_CONNECT_OPTIONS)',
+    );
+    expect(connectBlock).toContain('publishLocalCallMedia({');
+    expect(source).toContain('room.localParticipant.setMicrophoneEnabled(true)');
+    expect(source).toContain('room.localParticipant.setCameraEnabled(true)');
+    expect(source).toContain('requestRemoteTrackSubscription');
+  });
+
+  it('sets the iOS realtime media latch for direct video calls before connect and clears it on teardown', () => {
+    const source = read(
+      'src/messages/application/view-models/useLiveKitCallSession.tsx',
+    );
+
+    expect(source).toContain('setIosRealtimeMediaAudioActive');
+    expect(source).toContain('shouldUseIosDirectCallAudioGate(params.callType)');
+    expect(source).toContain("owner: 'direct-call'");
+    expect(source).toContain("role: 'call'");
+    expect(source).toContain("mediaKind: params.callType");
+    expect(source).toContain('requiresInput: true');
+    expect(source).toContain("stage: 'before_connect'");
+    expect(source).toContain("stage: 'ios_direct_room_error'");
+    expect(source).toContain("stage: 'release'");
   });
 
   it('does not use custom CallKit voice locks or WebRTC audio reapply helpers', () => {
@@ -84,6 +129,7 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).toContain("logCallDebug('callkit_audio_session_wait_start'");
     expect(source).toContain("logCallDebug('callkit_audio_session_wait_end'");
     expect(source).toContain('setIosVoiceCallAudioActive(true');
+    expect(source).toContain('setIosRealtimeMediaAudioActive');
     expect(source).not.toContain('prepareIosVoiceRecordingDevice');
     expect(source).not.toContain('ensureIosVoiceRecordingRunning');
     expect(source).not.toContain('AudioDeviceModule.setEngineAvailability');
@@ -166,7 +212,7 @@ describe('LiveKit call media startup resilience', () => {
     expect(finishBlock).toContain('stopAudioSession: !isIosNativeCall');
   });
 
-  it('keeps custom Room connect options out of the managed iOS voice path', () => {
+  it('keeps manual Room options out of the managed iOS voice path while enabling SDK auto-subscribe', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
@@ -184,6 +230,8 @@ describe('LiveKit call media startup resilience', () => {
 
     expect(managedBlock).not.toContain('LIVEKIT_ROOM_OPTIONS');
     expect(managedBlock).not.toContain('LIVEKIT_CONNECT_OPTIONS');
+    expect(managedBlock).toContain('connectOptions={{ autoSubscribe: true }}');
+    expect(managedBlock).toContain('video={false}');
     expect(source).toContain('LIVEKIT_CONNECT_OPTIONS');
     expect(source).toContain('autoSubscribe: false');
     expect(source).toContain(

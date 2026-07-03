@@ -179,6 +179,7 @@ describe('iOS CallKit audio session configuration', () => {
     expect(webRtcPatchSource).toContain('native_webrtc_audio_session_config_error');
     expect(webRtcPatchSource).toContain('AVAudioSessionCategoryPlayAndRecord');
     expect(webRtcPatchSource).toContain('AVAudioSessionModeVoiceChat');
+    expect(webRtcPatchSource).toContain('AVAudioSessionModeVideoChat');
     expect(webRtcPatchSource).toContain('AVAudioSessionCategoryOptionDefaultToSpeaker');
     expect(webRtcPatchSource).toContain('AVAudioSessionCategoryOptionAllowBluetooth');
     expect(webRtcPatchSource).toContain('AVAudioSessionCategoryOptionMixWithOthers');
@@ -186,7 +187,7 @@ describe('iOS CallKit audio session configuration', () => {
     expect(webRtcPatchSource).not.toContain('startLocalRecording');
   });
 
-  it('prevents react-native-video from overriding an active CallKit voice session', () => {
+  it('prevents react-native-video from overriding an active realtime media session', () => {
     const videoPatchPath = 'patches/react-native-video@6.19.2.patch';
     const videoPatchSource = exists(videoPatchPath) ? read(videoPatchPath) : '';
 
@@ -195,16 +196,18 @@ describe('iOS CallKit audio session configuration', () => {
       'diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager.swift',
     );
     expect(videoPatchSource).not.toContain('package-current');
-    expect(videoPatchSource).toContain('isVnseeaCallKitVoiceSessionActive');
+    expect(videoPatchSource).toContain('isVnseeaRealtimeMediaSessionActive');
     expect(videoPatchSource).toContain('AVAudioSession.Category.playAndRecord');
     expect(videoPatchSource).toContain('AVAudioSession.Mode.voiceChat');
+    expect(videoPatchSource).toContain('AVAudioSession.Mode.videoChat');
     expect(videoPatchSource).toContain('VNSEEA_CALL_DEBUG');
-    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_voice_call_update');
-    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_voice_call_configure');
-    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_voice_call_remote_controls');
-    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_voice_call_activate');
-    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_voice_call_deactivate');
-    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_voice_call_route_change');
+    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_realtime_media_update');
+    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_realtime_media_configure');
+    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_realtime_media_remote_controls');
+    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_realtime_media_activate');
+    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_realtime_media_deactivate');
+    expect(videoPatchSource).toContain('react_native_video_audio_session_skip_realtime_media_route_change');
+    expect(videoPatchSource).not.toContain('react_native_video_audio_session_skip_voice_call_');
     expect(videoPatchSource).not.toContain('AVAudioSessionModeMoviePlayback');
   });
 });

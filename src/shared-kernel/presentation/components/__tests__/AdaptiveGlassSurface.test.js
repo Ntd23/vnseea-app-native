@@ -21,6 +21,23 @@ describe('AdaptiveGlassSurface platform implementations', () => {
     expect(iosSource).toContain('adaptive-glass-fallback');
   });
 
+  it('does not call liquid-glass support as a function because the package exports a boolean on iOS', () => {
+    const iosSource = fs.readFileSync(
+      path.join(componentDir, 'AdaptiveGlassSurface.ios.tsx'),
+      'utf8',
+    );
+    const typeSource = fs.readFileSync(
+      path.join(process.cwd(), 'src/types/liquid-glass.d.ts'),
+      'utf8',
+    );
+
+    expect(iosSource).not.toContain('isLiquidGlassSupported()');
+    expect(iosSource).toContain("typeof isLiquidGlassSupported === 'function'");
+    expect(typeSource).toContain(
+      'export const isLiquidGlassSupported: boolean | (() => boolean);',
+    );
+  });
+
   it('keeps the default implementation free of LiquidGlass imports for Android', () => {
     const defaultSource = fs.readFileSync(
       path.join(componentDir, 'AdaptiveGlassSurface.tsx'),

@@ -147,6 +147,7 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
   const [hasLoadedComments, setHasLoadedComments] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [liveSession, setLiveSession] = useState<LiveSession | null>(initialSession ?? null);
+  const liveSessionRef = useRef<LiveSession | null>(initialSession ?? null);
   const seenReactionEventsRef = useRef(new Set<string>());
 
   const currentUserProfile = useMemo(() => {
@@ -157,6 +158,23 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
     const userId = sessionStorage.getSession()?.userId;
     return Boolean(userId && streamInfo?.publisher.id === userId);
   }, [streamInfo?.publisher.id]);
+
+  useEffect(() => {
+    liveSessionRef.current = liveSession;
+  }, [liveSession]);
+
+  useEffect(() => {
+    if (initialSession?.postId === postId) {
+      liveSessionRef.current = initialSession;
+      setLiveSession(initialSession);
+      return;
+    }
+
+    if (liveSessionRef.current?.postId !== postId) {
+      liveSessionRef.current = null;
+      setLiveSession(null);
+    }
+  }, [initialSession, postId]);
 
   useEffect(() => {
     seenReactionEventsRef.current.clear();
@@ -199,8 +217,9 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
         setState(stream.state);
         const userId = sessionStorage.getSession()?.userId;
         const currentIsHost = Boolean(userId && stream.publisher.id === userId);
-        if (!liveSession && !currentIsHost) {
+        if (!liveSessionRef.current && !currentIsHost) {
           const session = await repository.joinLive(postId, stream.streamName);
+          liveSessionRef.current = session;
           setLiveSession(session);
         }
       } else {
@@ -217,7 +236,7 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
     } finally {
       setIsLoading(false);
     }
-  }, [postId, repository, liveSession]);
+  }, [postId, repository]);
 
   const refreshComments = useCallback(
     async (onlyNew = false) => {

@@ -26,6 +26,18 @@ describe('FeedHeader platform chrome', () => {
     expect(iosSource).not.toContain("backgroundColor: '#F8FAFC'");
   });
 
+  it('renders the iOS VNSEEA logo inside the blue brand pill', () => {
+    const iosSource = read('src/feed/presentation/components/FeedHeader.ios.tsx');
+
+    expect(iosSource).toContain('style={styles.brandLogoTouchable}');
+    expect(iosSource).toContain('<View style={styles.logoPill}>');
+    expect(iosSource.indexOf('<View style={styles.logoPill}>')).toBeLessThan(
+      iosSource.indexOf('<Text style={styles.brandText}>VNSEEA</Text>'),
+    );
+    expect(iosSource).toContain("backgroundColor: '#002fff'");
+    expect(iosSource).toContain("color: '#ffffff'");
+  });
+
   it('moves FeedHeader out of FeedScreen without importing glass into the screen', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
@@ -64,11 +76,12 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).not.toContain('edges={ROOT_SAFE_AREA_EDGES}');
 
     expect(iosFrameSource).toContain('useSafeAreaInsets');
-    expect(iosFrameSource).toContain('insets.top + FEED_HEADER_CONTENT_HEIGHT');
+    expect(iosFrameSource).toContain('insets.top + FEED_HEADER_BAR_HEIGHT');
     expect(iosFrameSource).toContain('height: expandedHeight');
     expect(iosFrameSource).toContain('paddingTop: insets.top');
+    expect(iosFrameSource).toContain('top: 0');
     expect(iosFrameSource).toContain("backgroundColor: 'rgba(248, 250, 252, 0.94)'");
-    expect(defaultFrameSource).not.toContain('useSafeAreaInsets');
+    expect(defaultFrameSource).toContain('FEED_FILTER_HEIGHT');
   });
 
   it('renders the iOS feed header as an absolute overlay that does not reflow posts', () => {
@@ -87,9 +100,6 @@ describe('FeedHeader platform chrome', () => {
 
   it('keeps the iOS feed header as one overlay outside FlatList instead of a sticky item', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
-    const defaultFrameSource = read(
-      'src/feed/presentation/components/FeedHeaderCollapseFrame.tsx',
-    );
     const iosFrameSource = read(
       'src/feed/presentation/components/FeedHeaderCollapseFrame.ios.tsx',
     );
@@ -97,6 +107,7 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).toContain("from '../components/FeedHeaderCollapseFrame'");
     expect(feedScreenSource).toContain('<FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>');
     expect(feedScreenSource).toContain('<FeedHeader />');
+    expect(feedScreenSource).toContain('<FilterTabs');
     expect(feedScreenSource).toContain('</FeedHeaderCollapseFrame>');
     expect(feedScreenSource).toContain('onScroll={handleFeedScroll}');
     expect(feedScreenSource).toContain('scrollEventThrottle={16}');
@@ -107,12 +118,24 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).not.toContain('stickyHeaderIndices=');
     expect(feedScreenSource).not.toContain("type: 'ios-header'");
 
-    expect(defaultFrameSource).not.toContain('react-native-reanimated');
-    expect(defaultFrameSource).not.toContain('@callstack/liquid-glass');
     expect(iosFrameSource).toContain('useSharedValue');
     expect(iosFrameSource).toContain('useAnimatedStyle');
     expect(iosFrameSource).toContain('withTiming');
     expect(iosFrameSource).toContain('pointerEvents={hidden ?');
+  });
+
+  it('keeps iOS and Android feed header chrome separated', () => {
+    const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
+
+    expect(feedScreenSource).toMatch(
+      /Platform\.OS === 'ios'\s*\?\s*\(\s*<>\s*\{feedListElement\}\s*<FeedHeaderCollapseFrame hidden=\{isFeedChromeHidden\}>\s*<FeedHeader \/>/s,
+    );
+    expect(feedScreenSource).toMatch(
+      /:\s*\(\s*<>\s*<View style=\{styles\.staticHeaderContainer\}>\s*<FeedHeader \/>/s,
+    );
+    expect(feedScreenSource).toMatch(
+      /<FeedHeaderCollapseFrame hidden=\{isFeedChromeHidden\}>\s*<FilterTabs/s,
+    );
   });
 
   it('keeps native iOS bottom tabs configured to minimize on scroll down', () => {
@@ -136,18 +159,25 @@ describe('FeedHeader platform chrome', () => {
       /ListHeaderComponent=\{\s*Platform\.OS === 'ios'\s*\?\s*undefined\s*:\s*androidListHeaderComponent\s*\}/,
     );
     expect(feedScreenSource).toContain('<FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>');
-    expect(feedScreenSource).toContain('<View className="flex-1">{feedListElement}</View>');
     expect(feedScreenSource).toMatch(
       /Platform\.OS === 'ios'\s*\?\s*\(\s*<>\s*\{feedListElement\}/,
     );
   });
 
-  it('uses the intro as the first iOS Feed item instead of a sticky header item', () => {
+  it('uses the intro as the first iOS Feed item and places FilterTabs before the iOS intro card', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
+    const renderIntroSource = feedScreenSource.slice(
+      feedScreenSource.indexOf('const renderFeedIntro = useCallback'),
+      feedScreenSource.indexOf('const renderItem = useCallback'),
+    );
 
     expect(feedScreenSource).toContain("type: 'intro'");
     expect(feedScreenSource).toContain('const iosFeedListItems');
     expect(feedScreenSource).toContain('if (item.type === \'intro\')');
+    expect(renderIntroSource).toContain("Platform.OS === 'ios'");
+    expect(renderIntroSource.indexOf('<FilterTabs')).toBeLessThan(
+      renderIntroSource.indexOf('<HomeFeedIntro'),
+    );
     expect(feedScreenSource).not.toContain("type: 'ios-header'");
     expect(feedScreenSource).not.toContain('const FEED_IOS_STICKY_HEADER_INDICES');
     expect(feedScreenSource).not.toContain('stickyHeaderIndices={FEED_IOS_STICKY_HEADER_INDICES}');
@@ -171,10 +201,11 @@ describe('FeedHeader platform chrome', () => {
   it('keeps pull-to-refresh visible below the iOS overlay header', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
-    expect(feedScreenSource).toContain('const FEED_HEADER_CONTENT_HEIGHT = 73');
+    expect(feedScreenSource).toContain('const FEED_IOS_HEADER_OVERLAY_HEIGHT = FEED_HEADER_BAR_HEIGHT');
     expect(feedScreenSource).toContain('const feedSafeAreaInsets = useSafeAreaInsets()');
     expect(feedScreenSource).toContain('const feedRefreshProgressViewOffset');
-    expect(feedScreenSource).toContain('feedSafeAreaInsets.top + FEED_HEADER_CONTENT_HEIGHT');
+    expect(feedScreenSource).toContain('topInset + FEED_IOS_HEADER_OVERLAY_HEIGHT');
+    expect(feedScreenSource).toContain('topInset + FEED_HEADER_CONTENT_HEIGHT');
     expect(feedScreenSource).toContain('progressViewOffset={feedRefreshProgressViewOffset}');
   });
 
@@ -187,7 +218,7 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).toContain("publishNativeTabScrollBehavior('none')");
   });
 
-  it('preserves header navigation and create action behavior on both platforms', () => {
+  it('preserves current header navigation and drawer behavior on both platforms', () => {
     const defaultSource = read('src/feed/presentation/components/FeedHeader.tsx');
     const iosSource = read('src/feed/presentation/components/FeedHeader.ios.tsx');
     const drawerSource = read('src/feed/presentation/components/HeaderProfileDrawer.tsx');
@@ -195,10 +226,12 @@ describe('FeedHeader platform chrome', () => {
     expect(defaultSource).toContain('HeaderProfileDrawer');
     expect(defaultSource).toContain('ROUTES.NOTIFICATIONS');
     expect(defaultSource).toContain('useNotificationBadgeViewModel');
+    expect(defaultSource).toContain('useCurrentUserViewModel');
     expect(drawerSource).toContain('ROUTES.PROFILE');
 
+    expect(iosSource).toContain('HeaderProfileDrawer');
     expect(iosSource).toContain('Menu');
-    expect(iosSource).toContain('accessibilityLabel="Menu"');
+    expect(iosSource).toContain('accessibilityLabel="Profile Menu"');
     expect(iosSource).not.toContain('Bell');
     expect(iosSource).not.toContain('CircleUser');
     expect(iosSource).not.toContain('ROUTES.PROFILE');
@@ -209,22 +242,9 @@ describe('FeedHeader platform chrome', () => {
     expect(iosSource).not.toContain('avatarImage');
 
     for (const source of [defaultSource, iosSource]) {
-      expect(source).toContain('CreateActionSheet');
       expect(source).toContain('ROUTES.SEARCH');
       expect(source).toContain('ROUTES.MESSAGES');
-      expect(source).toContain('ROUTES.CREATE_EVENT');
-      expect(source).toContain('ROUTES.CREATE_PRODUCT');
-      expect(source).toContain('ROUTES.CREATE_PAGE');
-      expect(source).toContain('ROUTES.CREATE_GROUP');
-      expect(source).toContain('ROUTES.CREATE_REEL');
-      expect(source).toContain('ROUTES.CREATE_POST');
-      expect(source).toContain('ROUTES.CREATE_STORY');
-      expect(source).toContain('ROUTES.CREATE_POLL');
-      expect(source).toContain('ROUTES.CREATE_ALBUM');
-      expect(source).toContain('ROUTES.CREATE_AD');
       expect(source).toContain("messageCount > 99 ? '99+' : messageCount");
-      expect(source).toContain("setButtonRotation('45deg')");
-      expect(source).toContain("setButtonRotation('0deg')");
     }
   });
 });

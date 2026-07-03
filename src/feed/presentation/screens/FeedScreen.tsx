@@ -12,15 +12,11 @@ import {
   FlatList,
   Image,
   Linking,
-  Modal,
   Platform,
-  Pressable,
-  KeyboardAvoidingView,
   RefreshControl,
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
   Alert,
@@ -32,50 +28,30 @@ import {
   type ImageStyle,
   type StyleProp,
 } from 'react-native';
-import VideoPlayer from 'react-native-video';
 import {
-  Gesture,
-  GestureDetector,
   GestureHandlerRootView,
-  TouchableOpacity as GHTouchableOpacity,
 } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
-  interpolate,
-  Extrapolation,
-  Easing,
-  runOnJS,
-  useAnimatedReaction,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
 import {
   Briefcase,
   Building2,
-  ChevronDown,
   Compass,
-  Filter,
   Globe,
-  HeartHandshake,
   Image as ImageIcon,
   Lock,
   MapPin,
-  MessageCircle,
   Megaphone,
-  MoreHorizontal,
   Plus,
   Radio,
-  Send,
-  Share2,
   ShoppingBag,
-  Smile,
-  Star,
   ThumbsUp,
   Users,
   Video,
-  X,
 } from 'lucide-react-native';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
 import {
@@ -91,45 +67,7 @@ import {
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
 import PostReactionsSheet from '../components/PostReactionsSheet';
-import { createProfileRepository } from '../../../profile/infrastructure/repositories/ApiProfileRepository';
-import type {
-  ReactionType,
-  ReelComment,
-} from '../../../reels/domain/types/reels.types';
-import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
-
-// â”€â”€ Facebook-style reaction lookup tables â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Same shape we use in the comments sheet, kept local here so the feed
-// module stays self-contained (no shared "design tokens" file yet).
-
-const REACTION_EMOJI: Record<ReactionType, string> = {
-  like: '\uD83D\uDC4D',
-  love: '\u2764\uFE0F',
-  haha: '\uD83D\uDE02',
-  wow: '\uD83D\uDE2E',
-  sad: '\uD83D\uDE22',
-  angry: '\uD83D\uDE21',
-};
-
-const REACTION_COLOR: Record<ReactionType, string> = {
-  like: '#0866ff',
-  love: '#f33e58',
-  haha: '#f7b125',
-  wow: '#f7b125',
-  sad: '#f7b125',
-  angry: '#e9710f',
-};
-
-const REACTION_IMAGES: Record<ReactionType, any> = {
-  like: require('../../../assets/reactions/reactions_like.png'),
-  love: require('../../../assets/reactions/reactions_love.png'),
-  haha: require('../../../assets/reactions/reactions_haha.png'),
-  wow: require('../../../assets/reactions/reactions_wow.png'),
-  sad: require('../../../assets/reactions/reactions_sad.png'),
-  angry: require('../../../assets/reactions/reactions_angry.png'),
-};
-
-// Floating picker pill geometry â€” used to clamp X within the viewport.
+import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import {
   useFocusEffect,
   useIsFocused,
@@ -143,7 +81,6 @@ import {
   type Edge,
 } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
-import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
@@ -159,7 +96,6 @@ import type {
   FeedAdPost,
 } from '../../domain/types/feed.types';
 import type {
-  FeedShareDestination,
   FeedSource,
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
@@ -207,13 +143,11 @@ import {
 } from '../../../jobs/domain/types/jobs.types';
 import { useJobsOnFeedViewModel } from '../../../jobs/application/view-models/useJobsOnFeedViewModel';
 import type { GroupItem } from '../../../community/domain/types/community.types';
-import { useMyGroupsViewModel } from '../../../community';
 import { useSuggestedGroupsOnFeedViewModel } from '../../../community/application/view-models/useSuggestedGroupsOnFeedViewModel';
 import { ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
-import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { useLiveViewModel } from '../../../live/application/view-models/useLiveViewModel';
 import type { LiveStreamItem } from '../../../live/domain/types/live.types';
-import { useMyPagesViewModel, usePagesOnFeedViewModel } from '../../../pages';
+import { usePagesOnFeedViewModel } from '../../../pages';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import {
   useFundingOnFeedViewModel,
@@ -222,15 +156,6 @@ import {
 import type { FundingItem } from '../../../funding/domain/types/funding.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
-const PICKER_WIDTH = 282;
-const PICKER_HEIGHT = 52;
-const PICKER_GAP = 8;
-const VIDEO_BUFFER_CONFIG = {
-  minBufferMs: 2500,
-  maxBufferMs: 5000,
-  bufferForPlaybackMs: 500,
-  bufferForPlaybackAfterRebufferMs: 2000,
-};
 const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const FEED_EARLY_LOAD_DISTANCE_MULTIPLIER = 2.25;
@@ -242,6 +167,7 @@ const FEED_LIST_CONTENT_STYLE = {
 };
 const FEED_HEADER_BAR_HEIGHT = 68;
 const FEED_FILTER_BAR_HEIGHT = 66;
+const FEED_IOS_HEADER_OVERLAY_HEIGHT = FEED_HEADER_BAR_HEIGHT;
 const FEED_HEADER_CONTENT_HEIGHT =
   FEED_HEADER_BAR_HEIGHT + FEED_FILTER_BAR_HEIGHT;
 const FEED_SAFE_AREA_CLASS_NAME =
@@ -294,7 +220,7 @@ const Avatar = React.memo(function Avatar({
 });
 
 function FilterTabs({
-  copy,
+  copy: _copy,
   activeSource,
   onChangeSource,
 }: {
@@ -403,8 +329,6 @@ function formatPostTime(timestamp: number | undefined, copy: FeedCopy) {
     copy === FEED_COPY.vi ? 'vi-VN' : 'en-US',
   );
 }
-
-type FeedShareTarget = FeedShareDestination | 'message';
 
 type FeedMediaImageProps = {
   uri: string;
@@ -1182,17 +1106,6 @@ const SuggestedPagesCarousel = React.memo(
     prev.onOpenPage === next.onOpenPage,
 );
 
-// Background colors for each reaction type's circular badge (FB-style)
-const REACTION_BADGE_BG: Record<ReactionType, string> = {
-  like: '#0866FF',
-  love: '#F33E58',
-  haha: '#F7B125',
-  wow: '#F7B125',
-  sad: '#F7B125',
-  angry: '#E9710F',
-};
-
-
 function PostSkeleton() {
   // Pulse animation: opacity oscillates every 1.5s.
   const opacity = useSharedValue(0.4);
@@ -1333,7 +1246,10 @@ function FeedScreen() {
     ? feedSafeAreaInsets.top
     : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
   const topInset = Platform.OS === 'android' ? 0 : rawTopInset;
-  const feedRefreshProgressViewOffset = topInset + FEED_HEADER_CONTENT_HEIGHT;
+  const feedRefreshProgressViewOffset =
+    Platform.OS === 'ios'
+      ? topInset + FEED_IOS_HEADER_OVERLAY_HEIGHT
+      : topInset + FEED_HEADER_CONTENT_HEIGHT;
   const feedHeaderOverlayHeight = feedRefreshProgressViewOffset;
   const feedListContentStyle = useMemo(
     () => [FEED_LIST_CONTENT_STYLE, { paddingTop: feedHeaderOverlayHeight }],
@@ -2718,6 +2634,13 @@ function FeedScreen() {
   const renderFeedIntro = useCallback(
     () => (
       <View>
+        {Platform.OS === 'ios' ? (
+          <FilterTabs
+            copy={copy}
+            activeSource={activeFeedSource}
+            onChangeSource={setActiveFeedSource}
+          />
+        ) : null}
         <HomeFeedIntro
           onCreatePostPress={goToCreatePost}
           userId={userVm.user?.userId}
@@ -2728,8 +2651,10 @@ function FeedScreen() {
       </View>
     ),
     [
+      activeFeedSource,
       copy,
       goToCreatePost,
+      setActiveFeedSource,
       userVm.user?.userId,
       userVm.user?.avatar,
       userVm.user?.name,
@@ -2785,6 +2710,7 @@ function FeedScreen() {
       renderLivePost,
       renderPagesCarousel,
       renderFeedIntro,
+      renderFundingCarousel,
       renderPollPost,
       renderProductPost,
       renderTextPost,
@@ -2866,17 +2792,28 @@ function FeedScreen() {
         edges={FEED_ROOT_SAFE_AREA_EDGES}
       >
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        {feedListElement}
-        <View style={styles.staticHeaderContainer}>
-          <FeedHeader />
-        </View>
-        <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
-          <FilterTabs
-            copy={copy}
-            activeSource={activeFeedSource}
-            onChangeSource={setActiveFeedSource}
-          />
-        </FeedHeaderCollapseFrame>
+        {Platform.OS === 'ios' ? (
+          <>
+            {feedListElement}
+            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
+              <FeedHeader />
+            </FeedHeaderCollapseFrame>
+          </>
+        ) : (
+          <>
+            <View style={styles.staticHeaderContainer}>
+              <FeedHeader />
+            </View>
+            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
+              <FilterTabs
+                copy={copy}
+                activeSource={activeFeedSource}
+                onChangeSource={setActiveFeedSource}
+              />
+            </FeedHeaderCollapseFrame>
+            {feedListElement}
+          </>
+        )}
         <ReactionPickerOverlay
           anchor={pickerAnchor}
           onPick={handlePickReaction}

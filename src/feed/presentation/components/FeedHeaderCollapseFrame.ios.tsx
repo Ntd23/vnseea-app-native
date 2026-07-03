@@ -1,13 +1,13 @@
 import React, { useEffect } from 'react';
-import { Platform, StatusBar, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets, initialWindowMetrics } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const FEED_FILTER_HEIGHT = 66;
+const FEED_HEADER_BAR_HEIGHT = 68;
 const FEED_HEADER_COLLAPSE_DURATION_MS = 190;
 
 type FeedHeaderCollapseFrameProps = {
@@ -20,17 +20,14 @@ export function FeedHeaderCollapseFrame({
   hidden = false,
 }: FeedHeaderCollapseFrameProps) {
   const insets = useSafeAreaInsets();
-  const topInset = insets.top > 0
-    ? insets.top
-    : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
-  const expandedHeight = FEED_FILTER_HEIGHT;
+  const expandedHeight = insets.top + FEED_HEADER_BAR_HEIGHT;
   const progress = useSharedValue(hidden ? 0 : 1);
   const frameStyle = {
     height: expandedHeight,
-    top: topInset + 68,
+    top: 0,
   };
   const contentStyle = {
-    paddingTop: 0,
+    paddingTop: insets.top,
   };
 
   useEffect(() => {
@@ -41,7 +38,7 @@ export function FeedHeaderCollapseFrame({
 
   const contentAnimatedStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * -FEED_FILTER_HEIGHT }],
+    transform: [{ translateY: (1 - progress.value) * -FEED_HEADER_BAR_HEIGHT }],
   }));
 
   return (
