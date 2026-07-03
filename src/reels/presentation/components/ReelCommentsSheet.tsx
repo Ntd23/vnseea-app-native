@@ -47,6 +47,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  Camera,
   ChevronDown,
   Heart,
   ImagePlus,
@@ -332,6 +333,7 @@ function ReelCommentsSheetBase({
   // submit or by tapping the X on the preview thumbnail.
   const [pendingImage, setPendingImage] =
     useState<CommentImageAttachment | null>(null);
+  const [photoPickerVisible, setPhotoPickerVisible] = useState(false);
   const [pendingAudio, setPendingAudio] =
     useState<CommentAudioAttachment | null>(null);
   // Which comment-image URL is open in the full-screen viewer (null = closed).
@@ -340,6 +342,13 @@ function ReelCommentsSheetBase({
   const [imageViewerUri, setImageViewerUri] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(visible);
   const openProgress = useRef(new Animated.Value(0)).current;
+  const panY = useRef(new Animated.Value(0)).current;
+  const listScrollOffset = useRef(0);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
+
+  const touchStartY = useRef(0);
+  const isDraggingSheet = useRef(false);
+  const isClosingRef = useRef(false);
 
   // Picker state — which comment's "Thích" was long-pressed, plus the
   // anchor coordinates so the pill floats just above the actual button.
@@ -357,13 +366,16 @@ function ReelCommentsSheetBase({
       setPendingImage(null);
       setPendingAudio(null);
       setImageViewerUri(null);
+      setPhotoPickerVisible(false);
     }
   }, [cancelWavRecording, visible]);
 
   useEffect(() => {
     if (visible) {
+      isClosingRef.current = false;
       setIsMounted(true);
       openProgress.setValue(0);
+      panY.setValue(0);
       Animated.spring(openProgress, {
         toValue: 1,
         damping: 18,
@@ -371,6 +383,12 @@ function ReelCommentsSheetBase({
         mass: 0.8,
         useNativeDriver: true,
       }).start();
+      return;
+    }
+
+    if (isClosingRef.current) {
+      setIsMounted(false);
+      isClosingRef.current = false;
       return;
     }
 
@@ -383,17 +401,26 @@ function ReelCommentsSheetBase({
         setIsMounted(false);
       }
     });
-  }, [openProgress, visible]);
+  }, [openProgress, panY, visible]);
 
-  const backdropOpacity = openProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1],
+  const dragBackdropOpacity = panY.interpolate({
+    inputRange: [0, 120, 360],
+    outputRange: [1, 0.42, 0],
+    extrapolate: 'clamp',
   });
 
-  const sheetTranslateY = openProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [460, 0],
-  });
+  const backdropOpacity = Animated.multiply(
+    openProgress,
+    dragBackdropOpacity,
+  );
+
+  const sheetTranslateY = Animated.add(
+    openProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [500, 0],
+    }),
+    panY
+  );
 
   const sheetScale = openProgress.interpolate({
     inputRange: [0, 1],
@@ -523,40 +550,9 @@ function ReelCommentsSheetBase({
    * Open the gallery picker or camera and stash the selected image in
    * `pendingImage`.
    */
-  const handlePickImage = useCallback(async () => {
-    Alert.alert(
-      copy.pickPhotoTitle,
-      copy.pickPhotoMsg,
-      [
-        {
-          text: copy.takePhoto,
-          onPress: async () => {
-            const result = await launchCamera({
-              mediaType: 'photo' as MediaType,
-              quality: 0.8,
-              saveToPhotos: false,
-              includeBase64: false,
-            });
-            handleImagePickerResult(result);
-          },
-        },
-        {
-          text: copy.chooseFromLibrary,
-          onPress: async () => {
-            const result = await launchImageLibrary({
-              mediaType: 'photo' as MediaType,
-              selectionLimit: 1,
-              quality: 0.8,
-              includeBase64: false,
-            });
-            handleImagePickerResult(result);
-          },
-        },
-        { text: copy.cancel, style: 'cancel' },
-      ],
-      { cancelable: true },
-    );
-  }, [handleImagePickerResult, copy]);
+  const handlePickImage = useCallback(() => {
+    setPhotoPickerVisible(true);
+  }, []);
 
   const handleLongPressRow = useCallback(
     (comment: ReelComment) => {
@@ -714,29 +710,84 @@ function ReelCommentsSheetBase({
               ],
             },
           ]}
-        >
-          <View style={styles.grabber} />
+          onTouchStart={(e) => {
+            touchStartY.current = e.nativeEvent.pageY;
+            isDraggingSheet.current = false;
+          }}
+          onTouchMove={(e) => {
+            const currentY = e.nativeEvent.pageY;
+            const dy = currentY - touchStartY.current;
 
-          <View style={styles.header}>
-            <View style={styles.headerSide}>
-              {headerCountLabel ? (
-                <CommentSheetHeaderBadge style={styles.headerCountBadge}>
-                  <Text style={styles.headerCountText}>{headerCountLabel}</Text>
-                </CommentSheetHeaderBadge>
-              ) : null}
-            </View>
-            <Text style={styles.title}>{title}</Text>
-            <View style={[styles.headerSide, styles.headerCloseSide]}>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={onClose}
-                style={styles.closeButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <CommentSheetControlSurface style={styles.closeButtonSurface}>
-                  <X size={20} color="#111827" />
-                </CommentSheetControlSurface>
-              </TouchableOpacity>
+            if (dy > 5 && listScrollOffset.current <= 0) {
+              if (!isDraggingSheet.current) {
+                isDraggingSheet.current = true;
+                setScrollEnabled(false);
+              }
+              panY.setValue(dy);
+            }
+          }}
+          onTouchEnd={(e) => {
+            if (isDraggingSheet.current) {
+              const currentY = e.nativeEvent.pageY;
+              const dy = currentY - touchStartY.current;
+
+              if (dy > 120) {
+                isClosingRef.current = true;
+                Animated.timing(panY, {
+                  toValue: Dimensions.get('window').height,
+                  duration: 200,
+                  useNativeDriver: true,
+                }).start(() => {
+                  setScrollEnabled(true);
+                  onClose();
+                });
+              } else {
+                Animated.spring(panY, {
+                  toValue: 0,
+                  useNativeDriver: true,
+                }).start(() => {
+                  setScrollEnabled(true);
+                });
+              }
+              isDraggingSheet.current = false;
+            }
+          }}
+          onTouchCancel={() => {
+            if (isDraggingSheet.current) {
+              Animated.spring(panY, {
+                toValue: 0,
+                useNativeDriver: true,
+              }).start(() => {
+                setScrollEnabled(true);
+              });
+              isDraggingSheet.current = false;
+            }
+          }}
+        >
+          <View>
+            <View style={styles.grabber} />
+
+            <View style={styles.header}>
+              <View style={styles.headerSide}>
+                {headerCountLabel ? (
+                  <CommentSheetHeaderBadge style={styles.headerCountBadge}>
+                    <Text style={styles.headerCountText}>{headerCountLabel}</Text>
+                  </CommentSheetHeaderBadge>
+                ) : null}
+              </View>
+              <Text style={styles.title}>{title}</Text>
+              <View style={[styles.headerSide, styles.headerCloseSide]}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={onClose}
+                  style={styles.closeButton}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <CommentSheetControlSurface style={styles.closeButtonSurface}>
+                    <X size={20} color="#111827" />
+                  </CommentSheetControlSurface>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -763,12 +814,17 @@ function ReelCommentsSheetBase({
               renderItem={renderThread}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              scrollEnabled={scrollEnabled}
               contentContainerStyle={[
                 styles.listContent,
                 comments.length === 0 ? styles.emptyListContent : null,
               ]}
               onEndReached={onEndReached}
               onEndReachedThreshold={0.6}
+              onScroll={(e) => {
+                listScrollOffset.current = e.nativeEvent.contentOffset.y;
+              }}
+              scrollEventThrottle={16}
               ListEmptyComponent={
                 <View style={styles.emptyBox}>
                   <Text style={styles.emptyTitle}>{copy.noCommentsTitle}</Text>
@@ -964,6 +1020,129 @@ function ReelCommentsSheetBase({
         uri={imageViewerUri}
         onClose={() => setImageViewerUri(null)}
       />
+
+      {/* Modern Photo Picker Bottom Sheet (Absolute Overlay instead of nested Modal to prevent Navigation Context loss) */}
+      {photoPickerVisible && (
+        <View 
+          style={{ 
+            position: 'absolute', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            backgroundColor: 'rgba(0, 0, 0, 0.4)', 
+            justifyContent: 'flex-end',
+            zIndex: 9999,
+          }}
+        >
+          <Pressable 
+            style={{ flex: 1 }} 
+            onPress={() => setPhotoPickerVisible(false)} 
+          />
+          <View 
+            style={{
+              backgroundColor: '#ffffff',
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 32,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: -10 },
+              shadowOpacity: 0.1,
+              shadowRadius: 10,
+              elevation: 20,
+            }}
+          >
+            {/* Grabber */}
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+              <View style={{ width: 40, height: 4, borderRadius: 999, backgroundColor: '#E2E8F0' }} />
+            </View>
+
+            {/* Title */}
+            <Text style={{ textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: '#1E293B', marginBottom: 24 }}>
+              {copy.pickPhotoTitle}
+            </Text>
+
+            {/* Options */}
+            <View>
+              <Pressable
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: pressed ? '#EFF6FF' : '#F8FAFC',
+                  borderRadius: 16,
+                  padding: 16,
+                  marginBottom: 12,
+                })}
+                onPress={async () => {
+                  setPhotoPickerVisible(false);
+                  const result = await launchCamera({
+                    mediaType: 'photo' as MediaType,
+                    quality: 0.8,
+                    saveToPhotos: false,
+                    includeBase64: false,
+                  });
+                  handleImagePickerResult(result);
+                }}
+              >
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+                  <Camera size={20} color="#2563eb" />
+                </View>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#1E293B' }}>
+                  {copy.takePhoto}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: pressed ? '#EEF2FF' : '#F8FAFC',
+                  borderRadius: 16,
+                  padding: 16,
+                  marginBottom: 12,
+                })}
+                onPress={async () => {
+                  setPhotoPickerVisible(false);
+                  const result = await launchImageLibrary({
+                    mediaType: 'photo' as MediaType,
+                    selectionLimit: 1,
+                    quality: 0.8,
+                    includeBase64: false,
+                  });
+                  handleImagePickerResult(result);
+                }}
+              >
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+                  <ImagePlus size={20} color="#4f46e5" />
+                </View>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#1E293B' }}>
+                  {copy.chooseFromLibrary}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => ({
+                  marginTop: 8,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                  borderRadius: 16,
+                  paddingVertical: 14,
+                  backgroundColor: pressed ? '#F1F5F9' : 'transparent',
+                })}
+                onPress={() => setPhotoPickerVisible(false)}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#64748B' }}>
+                  {copy.cancel}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
     </Modal>
   );
 }

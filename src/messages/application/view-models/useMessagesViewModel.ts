@@ -14,7 +14,26 @@ import type {
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 
 const repository = createMessagesRepository();
-const CHAT_SYNC_INTERVAL_MS = 2500;
+const CHAT_SYNC_INTERVAL_MS = 3500;
+
+function areLabelsEqual(
+  left: MessageLabel[] | undefined,
+  right: MessageLabel[] | undefined,
+) {
+  const leftLabels = left ?? [];
+  const rightLabels = right ?? [];
+
+  if (leftLabels.length !== rightLabels.length) return false;
+
+  return leftLabels.every((label, index) => {
+    const other = rightLabels[index];
+    return (
+      label.id === other?.id &&
+      label.name === other?.name &&
+      label.color === other?.color
+    );
+  });
+}
 
 function mergeChatItems(...chatLists: ChatItem[][]) {
   const chats = new Map<string, ChatItem>();
@@ -52,13 +71,22 @@ function applyFollowingStatus(
   followingIds: Set<string>,
   followerIds: Set<string> = new Set(),
 ): ChatItem[] {
-  return chats.map(chat => ({
-    ...chat,
-    isFollowing:
-      chat.chatType === 'user' ? followingIds.has(chat.userId) : false,
-    isFollower:
-      chat.chatType === 'user' ? followerIds.has(chat.userId) : false,
-  }));
+  return chats.map(chat => {
+    const isFollowing =
+      chat.chatType === 'user' ? followingIds.has(chat.userId) : false;
+    const isFollower =
+      chat.chatType === 'user' ? followerIds.has(chat.userId) : false;
+
+    if (chat.isFollowing === isFollowing && chat.isFollower === isFollower) {
+      return chat;
+    }
+
+    return {
+      ...chat,
+      isFollowing,
+      isFollower,
+    };
+  });
 }
 
 function syncUnreadBadgeCount(chats: ChatItem[]) {
@@ -104,15 +132,15 @@ function applyLabelsToChats(
 
   return chats.map(chat => {
     if (chat.chatType !== 'user') {
-      return {
-        ...chat,
-        labels: [],
-      };
+      return areLabelsEqual(chat.labels, []) ? chat : { ...chat, labels: [] };
     }
+
+    const labels = labelsByUserId.get(chat.userId) ?? [];
+    if (areLabelsEqual(chat.labels, labels)) return chat;
 
     return {
       ...chat,
-      labels: labelsByUserId.get(chat.userId) ?? [],
+      labels,
     };
   });
 }

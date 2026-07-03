@@ -77,6 +77,78 @@ function firstPinApprovedFlag(records: Array<RawApiRecord | undefined>) {
   return undefined;
 }
 
+function firstNumberFromRecords(
+  records: Array<RawApiRecord | undefined>,
+  keys: string[],
+) {
+  for (const record of records) {
+    if (!record) continue;
+    for (const key of keys) {
+      const value = asNumber(record[key]);
+      if (value !== undefined) return value;
+    }
+  }
+  return undefined;
+}
+
+function firstBooleanFromRecords(
+  records: Array<RawApiRecord | undefined>,
+  keys: string[],
+) {
+  for (const record of records) {
+    if (!record) continue;
+    const value = firstBoolean(record, keys);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function mapOwner(
+  records: Array<RawApiRecord | undefined>,
+  webBaseUrl: string,
+) {
+  const owner =
+    records
+      .map(
+        record =>
+          asRecord(record?.user_data) ||
+          asRecord(record?.owner) ||
+          asRecord(record?.publisher),
+      )
+      .find(Boolean) || undefined;
+  const ownerId =
+    firstStringFromRecords(
+      [owner, ...records],
+      ['user_id', 'owner_id', 'id'],
+    ) || firstEntityId(owner ?? {}, ['user_id', 'id']);
+  const firstName = firstString(owner ?? {}, ['first_name']);
+  const lastName = firstString(owner ?? {}, ['last_name']);
+  const ownerUsername = firstStringFromRecords(
+    [owner, ...records],
+    ['owner_username', 'username', 'user_name'],
+  );
+  const ownerName =
+    [firstName, lastName].filter(Boolean).join(' ').trim() ||
+    firstStringFromRecords(
+      [owner, ...records],
+      ['owner_name', 'name', 'full_name'],
+    ) ||
+    ownerUsername;
+
+  return {
+    ownerId,
+    ownerName,
+    ownerUsername,
+    ownerAvatarUrl: normalizeRawUrl(
+      firstStringFromRecords(
+        [owner, ...records],
+        ['owner_avatar', 'avatar', 'profile_picture'],
+      ),
+      webBaseUrl,
+    ),
+  };
+}
+
 export function mapNearbyPlace(
   record: RawApiRecord,
   kind: NearbyPlaceKind,
@@ -92,6 +164,8 @@ export function mapNearbyPlace(
   const pageId = firstEntityId(page, ['page_id', 'id']);
   const detailId = firstEntityId(detail ?? {}, ['id']);
   const name = firstString(page, ['name', 'page_title', 'title']);
+  const records = [record, page, detail];
+  const owner = mapOwner(records, webBaseUrl);
 
   if (!name) {
     return null;
@@ -107,6 +181,7 @@ export function mapNearbyPlace(
       firstString(page, ['avatar', 'page_avatar']),
       webBaseUrl,
     ),
+    coverUrl: normalizeRawUrl(firstString(page, ['cover']), webBaseUrl),
     url: normalizeRawUrl(firstString(page, ['url']), webBaseUrl),
     category: firstString(page, [
       'category',
@@ -117,6 +192,24 @@ export function mapNearbyPlace(
     location:
       firstString(detail ?? {}, ['location']) || firstString(page, ['address']),
     distance: asNumber(record.distance),
+    likes: firstNumberFromRecords(records, [
+      'likes_count',
+      'likes',
+      'page_likes',
+      'like_count',
+    ]),
+    followersCount: firstNumberFromRecords(records, [
+      'followers_count',
+      'followers',
+      'follow_count',
+    ]),
+    postCount: firstNumberFromRecords(records, ['post_count', 'posts_count']),
+    isFollowing: firstBooleanFromRecords(records, [
+      'is_following',
+      'following',
+    ]),
+    isLiked: firstBooleanFromRecords(records, ['is_liked']),
+    ...owner,
     coordinate: mapCoordinate(detail),
   };
 }
@@ -142,6 +235,7 @@ export function mapNearbyPage(
   );
   const pinnedFlag = firstPinApprovedFlag(records);
   const isPinApproved = mapPinStatus === 'approved' || pinnedFlag === true;
+  const owner = mapOwner(records, webBaseUrl);
 
   if (!name) {
     return null;
@@ -163,6 +257,10 @@ export function mapNearbyPage(
       firstStringFromRecords(records, ['avatar', 'page_avatar']),
       webBaseUrl,
     ),
+    coverUrl: normalizeRawUrl(
+      firstStringFromRecords(records, ['cover', 'page_cover']),
+      webBaseUrl,
+    ),
     url: normalizeRawUrl(firstStringFromRecords(records, ['url']), webBaseUrl),
     description: firstStringFromRecords(records, [
       'description',
@@ -171,6 +269,24 @@ export function mapNearbyPage(
     location: firstStringFromRecords(records, ['location', 'address']),
     distance: distanceMeters === undefined ? undefined : distanceMeters / 1000,
     distanceMeters,
+    likes: firstNumberFromRecords(records, [
+      'likes_count',
+      'likes',
+      'page_likes',
+      'like_count',
+    ]),
+    followersCount: firstNumberFromRecords(records, [
+      'followers_count',
+      'followers',
+      'follow_count',
+    ]),
+    postCount: firstNumberFromRecords(records, ['post_count', 'posts_count']),
+    isFollowing: firstBooleanFromRecords(records, [
+      'is_following',
+      'following',
+    ]),
+    isLiked: firstBooleanFromRecords(records, ['is_liked']),
+    ...owner,
     mapPinStatus,
     mapPinApproved: isPinApproved,
     isPinned: isPinApproved,

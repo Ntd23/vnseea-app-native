@@ -56,6 +56,14 @@ import type { PostComment } from '../../domain/repositories/FeedRepository';
 import { usePostDetailViewModel } from '../../application/view-models/usePostDetailViewModel';
 import PostReactionsSheet from '../components/PostReactionsSheet';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useSharedValue } from 'react-native-reanimated';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import {
+  TextPostCard,
+  HomeVideoPostCard,
+  ReactionPickerOverlay,
+  FEED_COPY,
+} from '../components/PostCards';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -115,19 +123,9 @@ const REACTION_PICKER: ReadonlyArray<ReactionType> = [
 // Sub-components
 // ────────────────────────────────────────────────────────────────────────
 
-function PostHeader({
-  post,
-  onBack,
-  onProfile,
-  onMore,
-}: {
-  post: FeedTextPost | FeedVideoPost;
-  onBack: () => void;
-  onProfile: () => void;
-  onMore: () => void;
-}) {
+function PostHeader({ onBack }: { onBack: () => void }) {
   return (
-    <View className="flex-row items-center px-4 py-3">
+    <View className="flex-row items-center px-4 py-3 border-b border-slate-100 min-h-[56px] bg-white">
       <TouchableOpacity
         activeOpacity={0.8}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -137,43 +135,9 @@ function PostHeader({
       >
         <ArrowLeft size={22} color="#1E293B" />
       </TouchableOpacity>
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={onProfile}
-        className="ml-1 flex-1 flex-row items-center"
-      >
-        {post.publisher?.avatarUrl ? (
-          <Image
-            source={{ uri: post.publisher.avatarUrl }}
-            className="avatar-md bg-slate-200"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="avatar-md items-center justify-center bg-[#0000ff]/10">
-            <Text className="text-caption-primary text-brand">
-              {(post.publisher?.name?.[0] ?? '?').toUpperCase()}
-            </Text>
-          </View>
-        )}
-        <View className="ml-3 flex-1">
-          <Text className="text-title-primary" numberOfLines={1}>
-            {post.publisher?.name ?? 'Người dùng'}
-          </Text>
-          <Text className="mt-0.5 text-caption-secondary" numberOfLines={1}>
-            @{post.publisher?.username ?? 'unknown'} ·{' '}
-            {formatRelativeTime(post.postedAt)}
-          </Text>
-        </View>
-      </TouchableOpacity>
-      <TouchableOpacity
-        activeOpacity={0.8}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        onPress={onMore}
-        className="h-10 w-10 items-center justify-center rounded-full"
-        accessibilityLabel="Thêm"
-      >
-        <MoreHorizontal size={20} color="#1E293B" />
-      </TouchableOpacity>
+      <Text className="ml-2 flex-1 text-[17px] font-extrabold text-[#0f172a]">
+        Bài viết
+      </Text>
     </View>
   );
 }
@@ -845,10 +809,42 @@ function PostDetailScreen() {
     submitComment,
     isSubmitting,
     likedUsers,
+    toggleReaction,
   } = usePostDetailViewModel({
     fallbackPost: postFromParams,
     postId,
   });
+
+  const language = useAppLanguage();
+  const copy = FEED_COPY[language];
+
+  // Reaction picker states
+  const [pickerAnchor, setPickerAnchor] = useState<{
+    postId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const gestureX = useSharedValue(0);
+  const gestureY = useSharedValue(0);
+  const gestureActive = useSharedValue(false);
+  const hasDragged = useSharedValue(false);
+
+  const handleOpenPicker = useCallback(
+    (postId: string, x: number, y: number) => {
+      setPickerAnchor({ postId, x, y });
+    },
+    [],
+  );
+
+  const handlePickReaction = useCallback(
+    (reaction: ReactionType) => {
+      if (!pickerAnchor) return;
+      toggleReaction(reaction);
+      setPickerAnchor(null);
+    },
+    [pickerAnchor, toggleReaction],
+  );
 
   const wonderedUsers: Array<Record<string, unknown>> = [];
   const isRefreshing = false;
@@ -1038,12 +1034,7 @@ function PostDetailScreen() {
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" />
 
-      <PostHeader
-        post={activePost}
-        onBack={() => navigation.goBack()}
-        onProfile={handleProfilePress}
-        onMore={handleMore}
-      />
+      <PostHeader onBack={() => navigation.goBack()} />
 
       <KeyboardAvoidingView
         className="flex-1"
@@ -1063,46 +1054,40 @@ function PostDetailScreen() {
             />
           }
         >
-          <PostBody post={activePost} />
-
-          {/* Optional sub-sections — only render when the backend
-              actually returned the underlying field. */}
-          {activePost.kind === 'text' && activePost.album ? (
-            <AlbumGrid album={activePost.album} />
-          ) : null}
-          {activePost.kind === 'text' && activePost.linkPreview ? (
-            <LinkPreviewCard
-              preview={activePost.linkPreview}
-              onOpen={openExternalLink}
+          {activePost.kind === 'video' ? (
+            <HomeVideoPostCard
+              post={activePost}
+              copy={copy}
+              onReact={(_id, rx) => toggleReaction(rx)}
+              onOpenPicker={handleOpenPicker}
+              onCommentTap={handleScrollToComments}
+              onShare={handleShare}
+              onOpenReactions={handleOpenReactions}
+              navigateToProfile={navigateToProfile}
+              isScreenFocused={true}
+              isActive={true}
+              gestureX={gestureX}
+              gestureY={gestureY}
+              gestureActive={gestureActive}
+              hasDragged={hasDragged}
             />
-          ) : null}
-          {activePost.sharedFrom ? (
-            <View className="px-4 pt-3">
-              <Text className="mb-1 text-caption-secondary">
-                <Globe size={12} color="#64748b" /> Đã chia sẻ bài viết
-              </Text>
-              <SharedFromCard source={activePost.sharedFrom} />
-            </View>
-          ) : null}
-
-          {/* Liked users preview + reaction summary */}
-          <View className="mt-3 border-t border-slate-100">
-            <LikedUsersPreview
-              users={likedUsers}
-              totalCount={totalReactions}
-              onPress={handleOpenReactions}
+          ) : (
+            <TextPostCard
+              post={activePost}
+              copy={copy}
+              onReact={(_id, rx) => toggleReaction(rx)}
+              onOpenPicker={handleOpenPicker}
+              onCommentTap={handleScrollToComments}
+              onPhotoPress={() => {}}
+              onShare={handleShare}
+              onOpenReactions={handleOpenReactions}
+              navigateToProfile={navigateToProfile}
+              gestureX={gestureX}
+              gestureY={gestureY}
+              gestureActive={gestureActive}
+              hasDragged={hasDragged}
             />
-            <ReactionSummary post={activePost} onPress={handleOpenReactions} />
-          </View>
-
-          <PostActions
-            post={activePost}
-            onReact={handleReact}
-            onCommentFocus={handleScrollToComments}
-            onShare={handleShare}
-            onSave={handleSave}
-            isSubmittingReaction={false}
-          />
+          )}
 
           {/* Comments section */}
           <View className="mt-2 border-t border-slate-100 bg-slate-50">
@@ -1142,6 +1127,16 @@ function PostDetailScreen() {
         visible={reactionsSheetVisible}
         postId={postId ?? null}
         onClose={() => setReactionsSheetVisible(false)}
+      />
+
+      <ReactionPickerOverlay
+        anchor={pickerAnchor}
+        onPick={handlePickReaction}
+        onDismiss={() => setPickerAnchor(null)}
+        gestureX={gestureX}
+        gestureY={gestureY}
+        gestureActive={gestureActive}
+        hasDragged={hasDragged}
       />
     </SafeAreaView>
   );
