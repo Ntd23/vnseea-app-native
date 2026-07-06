@@ -36,6 +36,10 @@ export interface UserPoints {
   walletCurrencySymbol: string;
   displayCurrency: string;
   displayCurrencySymbol: string;
+  commentsPoint?: number;
+  createPostPoint?: number;
+  reactionPoint?: number;
+  createBlogPoint?: number;
   history: PointHistoryItem[];
 }
 
