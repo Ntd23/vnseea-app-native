@@ -25,8 +25,10 @@ describe('LiveKit dependency versions', () => {
     expect(helperSource).toContain('setIosRealtimeMediaAudioActive');
     expect(helperSource).toContain('setIosVoiceCallAudioActive');
     expect(helperSource).toContain('getVoiceCallAppleAudioConfiguration');
-    expect(helperSource).toContain('getRealtimeMediaInputAppleAudioConfiguration');
-    expect(helperSource).toContain('if (iosRealtimeMediaAudioContext?.requiresInput)');
+    expect(helperSource).not.toContain('getRealtimeMediaInputAppleAudioConfiguration');
+    expect(helperSource).toContain("iosRealtimeMediaAudioContext?.owner === 'direct-call'");
+    expect(helperSource).toContain('iosRealtimeMediaAudioContext?.requiresInput');
+    expect(helperSource).not.toContain("owner: 'live-stream'");
     expect(helperSource).toContain("audioCategory: 'playAndRecord'");
     expect(helperSource).toContain("'defaultToSpeaker'");
     expect(helperSource).toContain("audioMode: 'voiceChat'");
