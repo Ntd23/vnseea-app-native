@@ -177,6 +177,21 @@ const FEED_SAFE_AREA_STYLE =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios' ? ['left', 'right'] : ['left', 'right', 'bottom'];
+const FEED_LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
+
+function logFeedLiveDebug(event: string, data: Record<string, unknown> = {}) {
+  const payload = {
+    event,
+    at: new Date().toISOString(),
+    ...data,
+  };
+
+  try {
+    console.log(FEED_LIVE_DEBUG_PREFIX, JSON.stringify(payload));
+  } catch {
+    console.log(FEED_LIVE_DEBUG_PREFIX, event, data);
+  }
+}
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -1886,9 +1901,14 @@ function FeedScreen() {
 
   const handleOpenLive = useCallback(
     (item: LiveStreamItem) => {
+      setActiveFeedVideo(null);
+      logFeedLiveDebug('feed_live_navigation_media_pause', {
+        postId: item.postId,
+        streamName: item.streamName,
+      });
       navigation.navigate(ROUTES.LIVE_ROOM, { postId: item.postId });
     },
-    [navigation],
+    [navigation, setActiveFeedVideo],
   );
 
   // ── Reactions sheet state ─────────────────────────────────────────────

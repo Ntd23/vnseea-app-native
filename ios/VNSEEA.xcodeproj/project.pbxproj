@@ -12,6 +12,9 @@
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		CA4A7AA71AB723011637073A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		E1D4A0010000000000000001 /* VNSEEALiveKitNativeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0040000000000000004 /* VNSEEALiveKitNativeView.swift */; };
+		E1D4A0020000000000000002 /* VNSEEALiveKitNativeViewManager.m in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0050000000000000005 /* VNSEEALiveKitNativeViewManager.m */; };
+		E1D4A0030000000000000003 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = E1D4A0090000000000000009 /* LiveKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +28,8 @@
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = VNSEEA/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = VNSEEA/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5C /* VNSEEA.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = VNSEEA.entitlements; path = VNSEEA/VNSEEA.entitlements; sourceTree = "<group>"; };
+		E1D4A0040000000000000004 /* VNSEEALiveKitNativeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VNSEEALiveKitNativeView.swift; path = VNSEEA/VNSEEALiveKitNativeView.swift; sourceTree = "<group>"; };
+		E1D4A0050000000000000005 /* VNSEEALiveKitNativeViewManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = VNSEEALiveKitNativeViewManager.m; path = VNSEEA/VNSEEALiveKitNativeViewManager.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -34,6 +39,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0C80B921A6F3F58F76C31292 /* libPods-VNSEEA.a in Frameworks */,
+				E1D4A0030000000000000003 /* LiveKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -45,6 +51,8 @@
 			children = (
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
+				E1D4A0040000000000000004 /* VNSEEALiveKitNativeView.swift */,
+				E1D4A0050000000000000005 /* VNSEEALiveKitNativeViewManager.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				A1B2C3D4E5F60718293A4B5C /* VNSEEA.entitlements */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
@@ -120,6 +128,9 @@
 			dependencies = (
 			);
 			name = VNSEEA;
+			packageProductDependencies = (
+				E1D4A0090000000000000009 /* LiveKit */,
+			);
 			productName = VNSEEA;
 			productReference = 13B07F961A680F5B00A75B9A /* VNSEEA.app */;
 			productType = "com.apple.product-type.application";
@@ -146,6 +157,9 @@
 				Base,
 			);
 			mainGroup = 83CBB9F61A601CBA00E9B192;
+			packageReferences = (
+				E1D4A0080000000000000008 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
+			);
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -257,6 +271,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				E1D4A0010000000000000001 /* VNSEEALiveKitNativeView.swift in Sources */,
+				E1D4A0020000000000000002 /* VNSEEALiveKitNativeViewManager.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -271,7 +287,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = VNSEEA/VNSEEA.entitlements;
-				CURRENT_PROJECT_VERSION = 55;
+				CURRENT_PROJECT_VERSION = 68;
 				DEVELOPMENT_TEAM = 7M6MAXNF4W;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = VNSEEA/Info.plist;
@@ -306,7 +322,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = VNSEEA/VNSEEA.entitlements;
-				CURRENT_PROJECT_VERSION = 55;
+				CURRENT_PROJECT_VERSION = 68;
 				DEVELOPMENT_TEAM = 7M6MAXNF4W;
 				INFOPLIST_FILE = VNSEEA/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = VNSEEA;
@@ -509,6 +525,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E1D4A0080000000000000008 /* XCRemoteSwiftPackageReference "client-sdk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/livekit/client-sdk-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 2.15.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E1D4A0090000000000000009 /* LiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E1D4A0080000000000000008 /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
+			productName = LiveKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 83CBB9F71A601CBA00E9B192 /* Project object */;
 }
