@@ -1,3 +1,4 @@
+// Description: Renders the iOS home feed intro composer, greeting, and stories rail.
 import React from 'react';
 import {
   Dimensions,
@@ -11,11 +12,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import {
-  ChevronRight,
   Image as ImageIcon,
   Plus,
-  Smile,
-  Tag,
   X,
 } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -228,37 +226,6 @@ function HomeComposerCard({
           </GlassSurface>
         </TouchableOpacity>
       </View>
-
-      <GlassSurface
-        style={styles.composerDock}
-        fallbackColor="rgba(255, 255, 255, 0.7)"
-        blurAmount={24}
-      >
-        <TouchableOpacity
-          activeOpacity={0.76}
-          onPress={onCreatePostPress}
-          style={styles.composerAction}
-        >
-          <ImageIcon size={18} color="#22c55e" strokeWidth={2.4} />
-          <Text style={styles.composerActionText}>{copy.library}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          activeOpacity={0.76}
-          onPress={onCreatePostPress}
-          style={styles.composerAction}
-        >
-          <Tag size={18} color="#0872ff" strokeWidth={2.4} />
-          <Text style={styles.composerActionText}>{copy.tag}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          activeOpacity={0.76}
-          onPress={onCreatePostPress}
-          style={styles.composerAction}
-        >
-          <Smile size={18} color="#f59e0b" strokeWidth={2.4} />
-          <Text style={styles.composerActionText}>{copy.feeling}</Text>
-        </TouchableOpacity>
-      </GlassSurface>
     </View>
   );
 }
@@ -271,14 +238,6 @@ function HomeStoriesRail({
 
   return (
     <View style={[styles.surface, styles.storiesSurface]}>
-      <View style={styles.storiesHeader}>
-        <Text style={styles.storiesTitle}>{copy.storiesTitle}</Text>
-        <TouchableOpacity activeOpacity={0.78} style={styles.seeAllButton}>
-          <Text style={styles.seeAllText}>{copy.seeAll}</Text>
-          <ChevronRight size={17} color="#0872ff" strokeWidth={2.6} />
-        </TouchableOpacity>
-      </View>
-
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -375,6 +334,12 @@ export function HomeFeedIntro({
 
   return (
     <View style={styles.root}>
+      <HomeStoriesRail avatarUrl={avatarUrl} copy={copy} />
+      <HomeComposerCard
+        onCreatePostPress={onCreatePostPress}
+        avatarUrl={avatarUrl}
+        copy={copy}
+      />
       {isGreetingVisible ? (
         <HomeGreetingCard
           avatarUrl={avatarUrl}
@@ -383,12 +348,6 @@ export function HomeFeedIntro({
           onDismiss={onDismissGreeting}
         />
       ) : null}
-      <HomeComposerCard
-        onCreatePostPress={onCreatePostPress}
-        avatarUrl={avatarUrl}
-        copy={copy}
-      />
-      <HomeStoriesRail avatarUrl={avatarUrl} copy={copy} />
     </View>
   );
 }
@@ -509,28 +468,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginRight: 10,
   },
-  composerDock: {
-    minHeight: 48,
-    marginTop: 11,
-    borderRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 6,
-  },
-  composerAction: {
-    minHeight: 36,
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 18,
-  },
-  composerActionText: {
-    marginLeft: 7,
-    color: '#334155',
-    fontSize: 12,
-    fontWeight: '800',
-  },
   storiesSurface: {
     paddingTop: 13,
     paddingBottom: 15,
@@ -546,16 +483,6 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontSize: 18,
     fontWeight: '900',
-  },
-  seeAllButton: {
-    minHeight: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  seeAllText: {
-    color: '#0872ff',
-    fontSize: 13,
-    fontWeight: '800',
   },
   storiesContent: {
     paddingHorizontal: 14,

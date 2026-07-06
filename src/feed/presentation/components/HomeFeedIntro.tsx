@@ -1,3 +1,4 @@
+// Description: Renders the default home feed intro stories, composer, and greeting.
 import React from 'react';
 import {
   Image,
@@ -6,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { ChevronRight, Plus } from 'lucide-react-native';
+import { Plus } from 'lucide-react-native';
 import { ComposerCard } from './ComposerCard';
 import {
   getHomeGreetingModel,
@@ -23,25 +24,10 @@ function DefaultStoriesRow({
     stories,
     goToCreateStory,
     goToViewerForGroup,
-    goToStoriesList,
   } = useHomeStoriesRail();
 
   return (
     <View className="mb-4 bg-white pb-1 pt-1">
-      <View className="mb-3 flex-row items-center justify-between px-4">
-        <Text className="text-[21px] font-extrabold text-[#050505]">
-          {copy.storiesTitle}
-        </Text>
-        <TouchableOpacity activeOpacity={0.8} onPress={goToStoriesList}>
-          <View className="flex-row items-center">
-            <Text className="text-[15px] font-extrabold text-[#0758ff]">
-              {copy.seeAll}
-            </Text>
-            <ChevronRight size={19} color="#0758ff" strokeWidth={2.5} />
-          </View>
-        </TouchableOpacity>
-      </View>
-
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -166,12 +152,12 @@ export function HomeFeedIntro({
 }: HomeFeedIntroProps) {
   return (
     <View>
+      <DefaultStoriesRow avatarUrl={avatarUrl} copy={copy} />
       <ComposerCard
         onPress={onCreatePostPress}
         avatarUrl={avatarUrl}
         copy={copy}
       />
-      <DefaultStoriesRow avatarUrl={avatarUrl} copy={copy} />
       <DefaultGreetingCard userName={userName} copy={copy} />
     </View>
   );

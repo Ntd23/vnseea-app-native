@@ -1,4 +1,4 @@
-// Product Repository Interface
+// Description: Defines repository operations for marketplace products.
 import type {
   CreateProductInput,
   CreateProductResponse,
@@ -15,5 +15,6 @@ export interface ProductRepository {
   addToCart(productId: number, qty?: number): Promise<AddToCartResponse>;
   getCartCount(): Promise<number>;
   createProduct(input: CreateProductInput): Promise<CreateProductResponse>;
+  updateProduct(input: CreateProductInput): Promise<CreateProductResponse>;
   getCategories(): Promise<{ categories: ProductCategory[] }>;
 }

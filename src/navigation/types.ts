@@ -138,6 +138,7 @@ export type RootStackParamList = {
       }
     | undefined;
   [ROUTES.CREATE_PRODUCT]: undefined;
+  [ROUTES.EDIT_PRODUCT]: { product: ProductItem };
   [ROUTES.CREATE_EVENT]: undefined;
   [ROUTES.EDIT_EVENT]: { event: EventsItem };
   [ROUTES.EVENT_DETAIL]: { event: EventsItem };

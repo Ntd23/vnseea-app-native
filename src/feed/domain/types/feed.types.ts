@@ -38,7 +38,7 @@ export interface FeedPublisher {
  * We use string literals here (not numbers) so the domain stays readable
  * and grep-able. The repository layer is responsible for the mapping.
  */
-export type PostPrivacy = 'public' | 'friends' | 'only_me';
+export type PostPrivacy = 'public' | 'friends' | 'only_me' | 'following' | 'followers' | 'anonymous';
 
 /**
  * A single photo attached to a draft post. The `uri` is a local
@@ -202,6 +202,7 @@ export interface FeedVideoPost {
    * Same as `FeedTextPost.topReactions` — see its JSDoc.
    */
   topReactions: ReactionType[];
+  privacy: PostPrivacy;
   publisher: FeedPublisher;
 
   // ── PostDetail-only fields (populated when fetched via getPostById) ──
@@ -237,6 +238,11 @@ export interface FeedProductPost {
   product: ProductItem;
   postedAt?: number;
   publisher: FeedPublisher;
+  likeCount: number;
+  commentCount: number;
+  isLiked: boolean;
+  myReaction: ReactionType | null;
+  topReactions: ReactionType[];
 }
 
 export interface FeedEventPost {
@@ -295,6 +301,7 @@ export interface FeedPollPost {
   totalVotes: number;
   postedAt?: number;
   likeCount: number;
+  privacy: PostPrivacy;
   commentCount: number;
   isLiked: boolean;
   myReaction: ReactionType | null;
