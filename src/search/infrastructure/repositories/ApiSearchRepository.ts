@@ -1,12 +1,10 @@
-// Search API Repository (Infrastructure)
-// Implements SearchRepository using WoWonder API endpoints.
+// Description: Implements user, page, group, and hashtag search through WoWonder API endpoints.
 
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import type { GroupItem } from '../../../community/domain/types/community.types';
-import type { FundingItem } from '../../../funding/domain/types/funding.types';
-import type { JobsItem, JobsListResponse } from '../../../jobs/domain/types/jobs.types';
+import type { TrendingHashtag } from '../../../explore/domain/types/explore.types';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import type { SearchRepository } from '../../domain/repositories/SearchRepository';
 import type {
@@ -28,9 +26,9 @@ type RawSearchResponse = {
   groups?: RawRecord[];
 };
 
-type FundingListWireResponse = {
+type HashtagSuggestionsResponse = {
   api_status: number | string;
-  data?: FundingItem[];
+  hashtags?: unknown;
 };
 
 const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
@@ -41,14 +39,30 @@ function normalizeUrl(url: string): string {
   return `${siteRoot}/${url.replace(/^\/+/, '')}`;
 }
 
-function readString(raw: RawRecord | undefined, key: string): string {
-  const value = raw?.[key];
-  return value === undefined || value === null ? '' : String(value);
+function readString(raw: RawRecord | undefined, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = raw?.[key];
+    if (typeof value === 'string' && value.length > 0) return value;
+    if (typeof value === 'number') return String(value);
+  }
+  return '';
 }
 
 function readNumber(raw: RawRecord | undefined, key: string): number | undefined {
   const parsed = Number(raw?.[key]);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readHashtagNumber(raw: RawRecord | undefined, ...keys: string[]): number {
+  for (const key of keys) {
+    const value = raw?.[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return 0;
 }
 
 function readBoolean(raw: RawRecord | undefined, key: string): boolean | undefined {
@@ -60,16 +74,6 @@ function readBoolean(raw: RawRecord | undefined, key: string): boolean | undefin
     return lower === '1' || lower === 'true' || lower === 'yes';
   }
   return undefined;
-}
-
-function includesKeyword(...values: Array<string | number | undefined | null>) {
-  return (keyword: string) => {
-    const normalized = keyword.trim().toLowerCase();
-    if (!normalized) return true;
-    return values
-      .filter(value => value !== undefined && value !== null)
-      .some(value => String(value).toLowerCase().includes(normalized));
-  };
 }
 
 function mapUserToSearchResult(user: RawRecord): SearchResult {
@@ -96,12 +100,10 @@ function mapUserToSearchResult(user: RawRecord): SearchResult {
 }
 
 function mapPage(raw: RawRecord): PagesItem {
-  const pageId = readString(raw, 'page_id') || readString(raw, 'id');
-  const pageName = readString(raw, 'page_name') || readString(raw, 'username');
+  const pageId = readString(raw, 'page_id', 'id');
+  const pageName = readString(raw, 'page_name', 'username');
   const pageTitle =
-    readString(raw, 'page_title') ||
-    readString(raw, 'name') ||
-    readString(raw, 'title') ||
+    readString(raw, 'page_title', 'name', 'title') ||
     pageName;
 
   return {
@@ -109,8 +111,8 @@ function mapPage(raw: RawRecord): PagesItem {
     pageId,
     pageName,
     pageTitle,
-    pageDescription: readString(raw, 'page_description') || readString(raw, 'about'),
-    pageCategory: readString(raw, 'page_category') || readString(raw, 'category'),
+    pageDescription: readString(raw, 'page_description', 'about'),
+    pageCategory: readString(raw, 'page_category', 'category'),
     address: readString(raw, 'address'),
     lat: readNumber(raw, 'lat'),
     lng: readNumber(raw, 'lng'),
@@ -124,12 +126,10 @@ function mapPage(raw: RawRecord): PagesItem {
 }
 
 function mapGroup(raw: RawRecord): GroupItem {
-  const groupId = readString(raw, 'group_id') || readString(raw, 'id');
-  const groupName = readString(raw, 'group_name') || readString(raw, 'username');
+  const groupId = readString(raw, 'group_id', 'id');
+  const groupName = readString(raw, 'group_name', 'username');
   const groupTitle =
-    readString(raw, 'group_title') ||
-    readString(raw, 'name') ||
-    readString(raw, 'title') ||
+    readString(raw, 'group_title', 'name', 'title') ||
     groupName;
 
   return {
@@ -138,7 +138,7 @@ function mapGroup(raw: RawRecord): GroupItem {
     groupName,
     groupTitle,
     about: readString(raw, 'about'),
-    category: readString(raw, 'category_id') || readString(raw, 'category'),
+    category: readString(raw, 'category_id', 'category'),
     privacy: readString(raw, 'privacy') === '2' ? 'private' : 'public',
     avatar: normalizeUrl(readString(raw, 'avatar')),
     cover: normalizeUrl(readString(raw, 'cover')),
@@ -150,40 +150,85 @@ function mapGroup(raw: RawRecord): GroupItem {
   };
 }
 
-function mapJobItem(raw: RawRecord): JobsItem {
-  const page = raw.page as RawRecord | undefined;
+function mapHashtag(rawInput: RawRecord | string): TrendingHashtag | null {
+  const raw = typeof rawInput === 'string' ? { tag: rawInput } : rawInput;
+  const tag = readString(raw, 'tag', 'label', 'hashtag', 'hash', 'name')
+    .replace(/^#+/, '')
+    .trim();
+
+  if (!tag) return null;
+
+  const rawTime = readString(raw, 'last_trend_time', 'time', 'created_at');
 
   return {
-    id: String(raw.id ?? raw.job_id ?? ''),
-    title: String(raw.title ?? raw.job_title ?? ''),
-    description: String(raw.description ?? ''),
-    location: String(raw.location ?? ''),
-    lat: raw.lat as string | undefined,
-    lng: raw.lng as string | undefined,
-    minimum: typeof raw.minimum === 'number' ? raw.minimum : Number(raw.minimum) || undefined,
-    maximum: typeof raw.maximum === 'number' ? raw.maximum : Number(raw.maximum) || undefined,
-    salary_date: raw.salary_date as string | undefined,
-    job_type: String(raw.job_type ?? 'full_time'),
-    category: String(raw.category ?? ''),
-    currency: raw.currency as string | undefined,
-    image: normalizeUrl(String(raw.image ?? '')),
-    image_type: raw.image_type as string | undefined,
-    page_id: String(raw.page_id ?? ''),
-    user_id: String(raw.user_id ?? ''),
-    time: Number(raw.time) || 0,
-    post_id: raw.post_id ? String(raw.post_id) : undefined,
-    page: page
-      ? {
-          page_id: String(page.page_id ?? ''),
-          page_title: String(page.page_title ?? ''),
-          page_name: String(page.page_name ?? ''),
-          page_description: String(page.page_description ?? ''),
-          avatar: normalizeUrl(String(page.avatar ?? '')),
-          cover: normalizeUrl(String(page.cover ?? '')),
-          user_id: String(page.user_id ?? ''),
-          is_page_onwer: Boolean(page.is_page_onwer),
-        }
-      : undefined,
+    id: readString(raw, 'id', 'hash_id', 'hashtag_id') || tag,
+    tag,
+    url: readString(raw, 'url'),
+    useCount: readHashtagNumber(
+      raw,
+      'trend_use_num',
+      'use_count',
+      'post_count',
+      'posts_count',
+      'posts',
+      'count',
+      'total',
+    ),
+    lastTrendTime: rawTime.length > 0 ? rawTime : null,
+  };
+}
+
+function toRawHashtagArray(input: unknown): Array<RawRecord | string> {
+  if (!input) return [];
+
+  if (Array.isArray(input)) {
+    return input.filter(
+      (item): item is RawRecord | string =>
+        typeof item === 'string' ||
+        (typeof item === 'object' && item !== null && !Array.isArray(item)),
+    );
+  }
+
+  if (typeof input === 'string') return [input];
+
+  if (typeof input === 'object') {
+    const raw = input as RawRecord;
+    if (readString(raw, 'tag', 'label', 'hashtag', 'hash', 'name').length > 0) {
+      return [raw];
+    }
+
+    return Object.values(raw).filter(
+      (item): item is RawRecord | string =>
+        typeof item === 'string' ||
+        (typeof item === 'object' && item !== null && !Array.isArray(item)),
+    );
+  }
+
+  return [];
+}
+
+function dedupeHashtags(items: TrendingHashtag[]): TrendingHashtag[] {
+  const byTag = new Map<string, TrendingHashtag>();
+
+  items.forEach(item => {
+    const key = item.tag.toLowerCase();
+    const existing = byTag.get(key);
+    if (!existing || item.useCount > existing.useCount) {
+      byTag.set(key, item);
+    }
+  });
+
+  return Array.from(byTag.values());
+}
+
+function buildExactHashtag(tag: string): TrendingHashtag {
+  const normalizedTag = tag.trim().replace(/^#+/, '');
+  return {
+    id: normalizedTag,
+    tag: normalizedTag,
+    url: '',
+    useCount: 0,
+    lastTrendTime: null,
   };
 }
 
@@ -197,18 +242,6 @@ function mapUserToSuggestionResult(user: RawRecord): SuggestionResult {
     mutualFriends: mapped.mutualFriends,
     isFollowing: mapped.isFollowing,
   };
-}
-
-function filterFunding(items: FundingItem[], keyword: string) {
-  return items.filter(item =>
-    includesKeyword(
-      item.title,
-      item.description,
-      item.user_data?.username,
-      item.user_data?.first_name,
-      item.user_data?.last_name,
-    )(keyword),
-  );
 }
 
 async function searchUsersPagesGroups(
@@ -240,24 +273,39 @@ async function searchUsersPagesGroups(
   };
 }
 
-async function searchJobs(keyword: string): Promise<JobsItem[]> {
-  const response = await apiBridge.post<JobsListResponse>('job', {
-    type: 'search',
-    keyword,
-    limit: '20',
-    offset: '0',
-  });
+async function searchHashtags(keyword: string): Promise<TrendingHashtag[]> {
+  const normalizedKeyword = keyword.trim().replace(/^#+/, '');
 
-  return ((response.data ?? []) as unknown as RawRecord[]).map(mapJobItem);
+  if (!normalizedKeyword) return [];
+
+  const items: TrendingHashtag[] = [];
+
+  try {
+    const response = await apiBridge.post<HashtagSuggestionsResponse>(
+      apiRoutes.reels.hashtagSuggestions,
+      { query: normalizedKeyword, limit: 20 },
+    );
+
+    items.push(
+      ...toRawHashtagArray(response.hashtags)
+        .map(mapHashtag)
+        .filter((item): item is TrendingHashtag => Boolean(item)),
+    );
+  } catch (error) {
+    console.warn('[ApiSearchRepository] search hashtags failed:', error);
+  }
+
+  const keywordLower = normalizedKeyword.toLowerCase();
+  const hasExact = items.some(item => item.tag.toLowerCase() === keywordLower);
+  if (!hasExact) {
+    items.unshift(buildExactHashtag(normalizedKeyword));
+  }
+
+  return dedupeHashtags(items).slice(0, 20);
 }
 
-async function searchFunding(keyword: string): Promise<FundingItem[]> {
-  const response = await apiBridge.post<FundingListWireResponse>(
-    apiRoutes.funding.list,
-    { type: 'funding', limit: 40, offset: 0 },
-  );
-
-  return filterFunding(response.data ?? [], keyword).slice(0, 20);
+function emptySearchResponse(): SearchResponse {
+  return { users: [], pages: [], groups: [], hashtags: [] };
 }
 
 export function createSearchRepository(): SearchRepository {
@@ -265,25 +313,17 @@ export function createSearchRepository(): SearchRepository {
     async searchAll(filter: SearchFilter): Promise<SearchResponse> {
       const keyword = filter.keyword?.trim() ?? '';
       if (!keyword) {
-        return { users: [], pages: [], groups: [], jobs: [], funding: [] };
+        return emptySearchResponse();
       }
 
-      const [social, jobs, funding] = await Promise.all([
+      const [social, hashtags] = await Promise.all([
         searchUsersPagesGroups(filter),
-        searchJobs(keyword).catch(error => {
-          console.warn('[ApiSearchRepository] search jobs failed:', error);
-          return [];
-        }),
-        searchFunding(keyword).catch(error => {
-          console.warn('[ApiSearchRepository] search funding failed:', error);
-          return [];
-        }),
+        searchHashtags(keyword),
       ]);
 
       return {
         ...social,
-        jobs,
-        funding,
+        hashtags,
       };
     },
 
@@ -291,8 +331,7 @@ export function createSearchRepository(): SearchRepository {
       const social = await searchUsersPagesGroups(filter);
       return {
         ...social,
-        jobs: [],
-        funding: [],
+        hashtags: [],
       };
     },
 

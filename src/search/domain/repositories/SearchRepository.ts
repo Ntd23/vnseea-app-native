@@ -1,5 +1,4 @@
-// Search Repository Interface
-// Based on WoWonder API endpoints
+// Description: Defines repository operations for user, page, group, and hashtag search.
 
 import type {
   FollowResponse,
@@ -10,21 +9,21 @@ import type {
 } from '../types/search.types';
 
 export interface SearchRepository {
-  // Search users, pages, groups, jobs, and funding campaigns by keyword
+  // Search users, pages, groups, and hashtags by keyword.
   searchAll(filter: SearchFilter): Promise<SearchResponse>;
 
-  // Search users by keyword
+  // Search users by keyword.
   searchUsers(filter: SearchFilter): Promise<SearchResponse>;
 
-  // Get friend suggestions (people you may know)
+  // Get friend suggestions (people you may know).
   getSuggestions(limit?: number): Promise<SuggestionResponse>;
 
-  // Get nearby users based on location
+  // Get nearby users based on location.
   getNearbyUsers(filter: SearchFilter): Promise<NearbyResponse>;
 
-  // Follow a user
+  // Follow a user.
   followUser(userId: string): Promise<FollowResponse>;
 
-  // Unfollow a user (same endpoint, toggles)
+  // Unfollow a user (same endpoint, toggles).
   unfollowUser(userId: string): Promise<FollowResponse>;
 }

@@ -1,4 +1,4 @@
-// Description: Dedicated global search screen for users, pages, groups, jobs, and funding.
+// Description: Dedicated global search screen for users, pages, groups, and hashtags.
 import React, { useCallback, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
@@ -12,11 +12,9 @@ import {
 import {
   ArrowLeft,
   BadgeCheck,
-  Briefcase,
   ChevronRight,
   Flag,
-  HeartHandshake,
-  MapPin,
+  Hash,
   Search,
   UserRound,
   Users,
@@ -34,8 +32,7 @@ import type {
   SearchResponse,
 } from '../../domain/types/search.types';
 import type { GroupItem } from '../../../community/domain/types/community.types';
-import type { FundingItem } from '../../../funding/domain/types/funding.types';
-import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
+import type { TrendingHashtag } from '../../../explore/domain/types/explore.types';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -49,57 +46,47 @@ const FALLBACK_AVATAR = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
 const COPY = {
   vi: {
     title: 'Tìm kiếm',
-    placeholder: 'Tìm người, trang, nhóm, việc làm, gây quỹ...',
+    placeholder: 'Tìm người, trang, nhóm, hashtag...',
     promptTitle: 'Bạn muốn tìm gì?',
-    promptBody: 'Nhập từ khóa để tìm người dùng, trang, nhóm, việc làm và chiến dịch gây quỹ.',
+    promptBody: 'Nhập từ khóa để tìm người dùng, trang, nhóm và hashtag.',
     noResults: 'Không tìm thấy kết quả',
     noResultsBody: 'Thử một từ khóa khác hoặc kiểm tra lại chính tả.',
     all: 'Tất cả',
     users: 'Người dùng',
     pages: 'Trang',
     groups: 'Nhóm',
-    jobs: 'Việc làm',
-    funding: 'Gây quỹ',
+    hashtags: 'Hashtag',
     seeAll: 'Xem tất cả',
     follow: 'Theo dõi',
     following: 'Đang theo dõi',
     pageFallback: 'Trang',
     groupFallback: 'Nhóm',
-    jobFallback: 'Việc làm',
-    fundingFallback: 'Chiến dịch gây quỹ',
-    locationFallback: 'Không có địa điểm',
-    companyFallback: 'Công ty',
+    hashtagFallback: 'Hashtag',
     members: 'thành viên',
     likes: 'lượt thích',
-    goal: 'Mục tiêu',
-    raised: 'Đã góp',
+    posts: 'bài viết',
   },
   en: {
     title: 'Search',
-    placeholder: 'Search people, pages, groups, jobs, funding...',
+    placeholder: 'Search people, pages, groups, hashtags...',
     promptTitle: 'What are you looking for?',
-    promptBody: 'Type a keyword to search users, pages, groups, jobs, and funding campaigns.',
+    promptBody: 'Type a keyword to search users, pages, groups, and hashtags.',
     noResults: 'No results found',
     noResultsBody: 'Try another keyword or check your spelling.',
     all: 'All',
     users: 'People',
     pages: 'Pages',
     groups: 'Groups',
-    jobs: 'Jobs',
-    funding: 'Funding',
+    hashtags: 'Hashtags',
     seeAll: 'See all',
     follow: 'Follow',
     following: 'Following',
     pageFallback: 'Page',
     groupFallback: 'Group',
-    jobFallback: 'Job',
-    fundingFallback: 'Funding campaign',
-    locationFallback: 'No location',
-    companyFallback: 'Company',
+    hashtagFallback: 'Hashtag',
     members: 'members',
     likes: 'likes',
-    goal: 'Goal',
-    raised: 'Raised',
+    posts: 'posts',
   },
 };
 
@@ -109,12 +96,6 @@ function formatCompact(value?: number | string | null) {
   if (numeric >= 1000000) return `${(numeric / 1000000).toFixed(1)}M`;
   if (numeric >= 1000) return `${(numeric / 1000).toFixed(1)}K`;
   return String(Math.round(numeric));
-}
-
-function formatMoney(value?: number | string | null, symbol = '') {
-  const numeric = Number(value ?? 0);
-  if (!Number.isFinite(numeric)) return `0${symbol}`;
-  return `${numeric.toLocaleString('vi-VN')}${symbol}`;
 }
 
 function Avatar({
@@ -294,12 +275,12 @@ function GroupRow({
   );
 }
 
-function JobRow({
-  job,
+function HashtagRow({
+  hashtag,
   onPress,
   copy,
 }: {
-  job: JobsItem;
+  hashtag: TrendingHashtag;
   onPress: () => void;
   copy: typeof COPY.vi;
 }) {
@@ -309,64 +290,20 @@ function JobRow({
       activeOpacity={0.86}
       onPress={onPress}
     >
-      <Avatar
-        uri={job.image || job.page?.avatar}
-        label={job.title || copy.jobFallback}
-        fallback={<Briefcase size={24} color={BRAND} />}
-      />
+      <View className="h-14 w-14 items-center justify-center rounded-full bg-[#EEF2FF]">
+        <Hash size={25} color={BRAND} />
+      </View>
       <View className="ml-3 flex-1">
         <Text className="text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
-          {job.title || copy.jobFallback}
+          #{hashtag.tag || copy.hashtagFallback}
         </Text>
         <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
-          {job.page?.page_title || copy.companyFallback}
+          {hashtag.useCount > 0
+            ? `${formatCompact(hashtag.useCount)} ${copy.posts}`
+            : copy.hashtagFallback}
         </Text>
-        <View className="mt-1 flex-row items-center">
-          <MapPin size={13} color="#64748b" />
-          <Text className="ml-1 flex-1 text-[12px] text-slate-500" numberOfLines={1}>
-            {job.location || copy.locationFallback}
-          </Text>
-        </View>
       </View>
-    </TouchableOpacity>
-  );
-}
-
-function FundingRow({
-  campaign,
-  onPress,
-  copy,
-}: {
-  campaign: FundingItem;
-  onPress: () => void;
-  copy: typeof COPY.vi;
-}) {
-  const raised = Number(campaign.raised || 0);
-  const goal = Number(campaign.amount || 0);
-  const percent = goal > 0 ? Math.min(Math.round((raised / goal) * 100), 100) : 0;
-
-  return (
-    <TouchableOpacity
-      className="mx-4 mb-2 flex-row items-center rounded-2xl bg-white p-3"
-      activeOpacity={0.86}
-      onPress={onPress}
-    >
-      <Avatar
-        uri={campaign.image}
-        label={campaign.title || copy.fundingFallback}
-        fallback={<HeartHandshake size={24} color={BRAND} />}
-      />
-      <View className="ml-3 flex-1">
-        <Text className="text-[15px] font-extrabold text-slate-950" numberOfLines={1}>
-          {campaign.title || copy.fundingFallback}
-        </Text>
-        <Text className="mt-0.5 text-[13px] text-slate-500" numberOfLines={1}>
-          {copy.raised} {formatMoney(campaign.raised)} / {copy.goal} {formatMoney(campaign.amount)}
-        </Text>
-        <View className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
-          <View className="h-full rounded-full bg-[#0000ff]" style={{ width: `${percent}%` }} />
-        </View>
-      </View>
+      <ChevronRight size={18} color="#94a3b8" />
     </TouchableOpacity>
   );
 }
@@ -399,8 +336,7 @@ function getVisibleResults(results: SearchResponse, tab: GlobalSearchTab) {
     users: tab === 'users' ? results.users : [],
     pages: tab === 'pages' ? results.pages : [],
     groups: tab === 'groups' ? results.groups : [],
-    jobs: tab === 'jobs' ? results.jobs : [],
-    funding: tab === 'funding' ? results.funding : [],
+    hashtags: tab === 'hashtags' ? results.hashtags : [],
   };
 }
 
@@ -448,8 +384,7 @@ function SearchScreen() {
       { id: 'users' as const, label: copy.users, count: results.users.length },
       { id: 'pages' as const, label: copy.pages, count: results.pages.length },
       { id: 'groups' as const, label: copy.groups, count: results.groups.length },
-      { id: 'jobs' as const, label: copy.jobs, count: results.jobs.length },
-      { id: 'funding' as const, label: copy.funding, count: results.funding.length },
+      { id: 'hashtags' as const, label: copy.hashtags, count: results.hashtags.length },
     ],
     [copy, results, totalResults],
   );
@@ -458,6 +393,13 @@ function SearchScreen() {
   const previewLimit = activeTab === 'all' ? 5 : Number.POSITIVE_INFINITY;
   const hasQuery = searchQuery.trim().length > 0;
   const isEmpty = hasQuery && !isLoading && totalResults === 0;
+
+  const handleHashtagPress = useCallback((hashtag: TrendingHashtag) => {
+    const nextQuery = `#${hashtag.tag}`;
+    setSearchQuery(nextQuery);
+    setActiveTab('hashtags');
+    void searchAll(nextQuery);
+  }, [searchAll, setActiveTab, setSearchQuery]);
 
   const renderSections = () => (
     <>
@@ -508,32 +450,17 @@ function SearchScreen() {
       ))}
 
       <SectionHeader
-        title={copy.jobs}
-        count={visibleResults.jobs.length}
+        title={copy.hashtags}
+        count={visibleResults.hashtags.length}
         copy={copy}
-        onSeeAll={activeTab === 'all' && results.jobs.length > previewLimit ? () => setActiveTab('jobs') : undefined}
+        onSeeAll={activeTab === 'all' && results.hashtags.length > previewLimit ? () => setActiveTab('hashtags') : undefined}
       />
-      {visibleResults.jobs.slice(0, previewLimit).map(job => (
-        <JobRow
-          key={`job-${job.id}`}
-          job={job}
+      {visibleResults.hashtags.slice(0, previewLimit).map(hashtag => (
+        <HashtagRow
+          key={`hashtag-${hashtag.id}`}
+          hashtag={hashtag}
           copy={copy}
-          onPress={() => navigation.navigate(ROUTES.JOB_DETAIL, { jobId: String(job.id), job })}
-        />
-      ))}
-
-      <SectionHeader
-        title={copy.funding}
-        count={visibleResults.funding.length}
-        copy={copy}
-        onSeeAll={activeTab === 'all' && results.funding.length > previewLimit ? () => setActiveTab('funding') : undefined}
-      />
-      {visibleResults.funding.slice(0, previewLimit).map(campaign => (
-        <FundingRow
-          key={`funding-${campaign.id}`}
-          campaign={campaign}
-          copy={copy}
-          onPress={() => navigation.navigate(ROUTES.FUNDING_DETAIL, { fundId: String(campaign.id) })}
+          onPress={() => handleHashtagPress(hashtag)}
         />
       ))}
     </>

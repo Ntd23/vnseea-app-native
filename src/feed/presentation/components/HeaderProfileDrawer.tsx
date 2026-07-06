@@ -15,7 +15,6 @@ import {
   Vibration,
   View,
   Alert,
-  Linking,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -66,9 +65,7 @@ import {
   MessageSquare,
   Compass,
   Settings,
-  Sparkles,
   Newspaper,
-  Shield,
   Map,
   Moon,
   Languages,
@@ -84,7 +81,6 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import { useAuthViewModel } from '../../../auth/application/view-models/useAuthViewModel';
 import { useEarningsViewModel } from '../../../wallet';
 import { useMyInfoViewModel, useSettingsViewModel } from '../../../settings';
-import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -531,12 +527,6 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             openSettingsPanel('general-common');
             return;
           case 'settings':
-            navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.SETTINGS });
-            return;
-          case 'go-pro':
-            Linking.openURL(apiConfig.webBaseUrl).catch(() => undefined);
-            return;
-          case 'admin':
             navigation.navigate(ROUTES.USER_DASHBOARD);
             return;
         }
@@ -850,18 +840,6 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
              icon={<Settings size={18} color="#0052ff" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'settings' })}
             />
-            <MenuRow
-             title={copy.subscriptionsLabel}
-             icon={<Sparkles size={18} color="#0052ff" />}
-             onPress={() => handleItemPress({ type: 'feature', feature: 'go-pro' })}
-            />
-            {isAdmin ? (
-             <MenuRow
-             title={copy.adminAreaLabel}
-             icon={<Shield size={18} color="#0052ff" />}
-             onPress={() => handleItemPress({ type: 'feature', feature: 'admin' })}
-             />
-            ) : null}
             <MenuRow
              title={copy.logoutLabel}
              icon={<LogOut size={18} color="#ef4444" />}

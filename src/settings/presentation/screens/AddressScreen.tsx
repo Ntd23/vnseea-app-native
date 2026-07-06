@@ -274,16 +274,16 @@ function AddressScreen() {
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
       {/* Header */}
-      <View className="h-14 flex-row items-center justify-between border-b border-slate-100 bg-white px-3">
+      <View className="h-16 flex-row items-center justify-between border-b border-slate-100 bg-white px-4">
         <TouchableOpacity
-          activeOpacity={0.75}
+          activeOpacity={0.82}
           onPress={() => navigation.goBack()}
-          className="h-10 w-10 items-center justify-center rounded-full"
+          className="h-11 w-11 items-center justify-center rounded-full bg-slate-50"
         >
-          <ArrowLeft size={23} color="#0F172A" />
+          <ArrowLeft size={24} color="#0F172A" />
         </TouchableOpacity>
-        <Text className="text-lg font-bold text-slate-900">Địa chỉ</Text>
-        <View className="h-10 w-10" />
+        <Text className="text-xl font-extrabold text-slate-950">Địa chỉ</Text>
+        <View className="h-11 w-11" />
       </View>
 
       {/* Content */}

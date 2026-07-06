@@ -55,6 +55,7 @@ type InteractionTask = ReturnType<typeof InteractionManager.runAfterInteractions
 let pendingLightCacheTask: InteractionTask | null = null;
 let pendingVideoCacheTask: InteractionTask | null = null;
 
+
 /**
  * Re-sort by `postedAt` desc so optimistic prepends and updates keep
  * the merged feed in chronological order. Posts without a timestamp
@@ -94,30 +95,6 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
   }
   return Array.from(map.values());
 }
-
-/**
- * Fisher-Yates shuffle. Returns a NEW array (does not mutate the input).
- *
- * Used in two places:
- *   1. Pull-to-refresh — shuffle the current page of REAL posts so the
- *      feed visibly changes order even when the backend returns the
- *      same first page on every reload (demo / sparse accounts).
- *   2. `applyFeedSources` — drop the chronological-by-`postedAt` sort
- *      in favor of a random order, per the product decision to show
- *      real posts in a non-time-linear layout.
- *
- * Pure-local; never fabricates new posts. We only re-order what the
- * backend already gave us.
- */
-function shuffleArray<T>(items: T[]): T[] {
-  const result = items.slice();
-  for (let i = result.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
-}
-
 function debugFeedVm(label: string, payload: Record<string, unknown>) {
   if (!FEED_VM_DEBUG) return;
   console.log(`[feed.vm] ${label}`, payload);
@@ -289,13 +266,8 @@ export function useFeedViewModel() {
         .slice(0, 8)
         .map(post => ({ id: post.id, kind: post.kind }));
 
-      const cleanLightPosts = dedupedLight
-        .filter(isLightFeedPost);
-      const cleanVideoPosts = uniqueById(nextVideoPosts);
-      // Random ordering — per product decision, the home feed is
-      // NOT sorted by `postedAt`. Each apply reshuffles so the user
-      // sees a different mix of real posts on every refresh, while
-      // the underlying content stays 100% from the backend.
+      const cleanLightPosts = sortByTime(dedupedLight.filter(isLightFeedPost));
+      const cleanVideoPosts = sortByTime(uniqueById(nextVideoPosts)) as FeedVideoPost[];
 
       lightPostsRef.current = cleanLightPosts;
       videoPostsRef.current = cleanVideoPosts;
@@ -646,16 +618,9 @@ export function useFeedViewModel() {
         refresh: isPullToRefresh,
       });
 
-      // On pull-to-refresh, merge API page with whatever the user is
-      // currently seeing so the visible set genuinely changes each
-      // time:
-      //   - Keep posts that were already in view and still exist in
-      //     the API response (no flicker / no jank).
-      //   - Drop posts that are no longer returned by the backend.
-      //   - Shuffle the final merged list so order changes even when
-      //     the API returns the same content.
-      // No fake posts are injected here — the feed is 100% real
-      // content from the backend, just re-ordered.
+      // On pull-to-refresh, merge the API page with posts already in view,
+      // then keep the timeline newest-first. This prevents older cached
+      // rows from staying above a post the user just created.
       if (isPullToRefresh) {
         const previousIds = new Set(
           lightPostsRef.current.map(post => post.id),
@@ -667,7 +632,7 @@ export function useFeedViewModel() {
         const newPosts = freshPosts.filter(
           post => !previousIds.has(post.id),
         );
-        const merged = shuffleArray([...knownPosts, ...newPosts]);
+        const merged = sortByTime([...knownPosts, ...newPosts]);
         commitFeedSources(merged, videoPostsRef.current);
       } else {
         commitFeedSources(freshPosts, videoPostsRef.current);

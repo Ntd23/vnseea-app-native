@@ -13,7 +13,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   Image,
   Keyboard,
   Modal,
@@ -146,7 +145,7 @@ const CREATE_POST_COPY = {
     tapToPlay: 'Nhấp để phát',
     tapToPause: 'Nhấp để tạm dừng',
     postAsPage: 'Đăng với tư cách Trang',
-    poll: 'Cuộc thăm dò',
+    poll: 'Thăm dò',
     product: 'Sản phẩm',
     live: 'Live',
     page: 'Trang',
@@ -751,6 +750,11 @@ interface CaptionComposerProps {
   placeholder: string;
   onInsertChar: (char: '#' | '@') => void;
   onFeelingPress: () => void;
+  copy: any;
+  onPickPhotos: () => void;
+  onPickVideo: () => void;
+  onCreateProduct: () => void;
+  onCreatePoll: () => void;
 }
 
 const CharacterCounter = React.memo(({ length }: { length: number }) => {
@@ -770,7 +774,47 @@ const CaptionComposer = React.memo(({
   placeholder,
   onInsertChar,
   onFeelingPress,
+  copy,
+  onPickPhotos,
+  onPickVideo,
+  onCreateProduct,
+  onCreatePoll,
 }: CaptionComposerProps) => {
+  const actionButtons = useMemo(() => [
+    {
+      key: 'photo',
+      label: copy.photo,
+      onPress: onPickPhotos,
+      Icon: ImageIcon,
+      iconBg: '#f0fdf4',
+      iconColor: '#22c55e',
+    },
+    {
+      key: 'video',
+      label: copy.video,
+      onPress: onPickVideo,
+      Icon: VideoIcon,
+      iconBg: '#eff6ff',
+      iconColor: '#3b82f6',
+    },
+    {
+      key: 'product',
+      label: copy.product,
+      onPress: onCreateProduct,
+      Icon: PackagePlus,
+      iconBg: '#f5f3ff',
+      iconColor: '#8b5cf6',
+    },
+    {
+      key: 'poll',
+      label: copy.poll,
+      onPress: onCreatePoll,
+      Icon: BarChart3,
+      iconBg: '#f0f9ff',
+      iconColor: '#0284c7',
+    },
+  ], [copy, onPickPhotos, onPickVideo, onCreateProduct, onCreatePoll]);
+
   return (
     <View
       style={{
@@ -780,7 +824,7 @@ const CaptionComposer = React.memo(({
         shadowRadius: 10,
         elevation: 2,
       }}
-      className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 min-h-[160px] justify-between"
+      className="mx-4 mt-4 bg-white rounded-[20px] border border-slate-100 p-4 min-h-[220px] justify-between"
     >
       <TextInput
         ref={textInputRef}
@@ -829,6 +873,42 @@ const CaptionComposer = React.memo(({
         </TouchableOpacity>
 
         <CharacterCounter length={text.length} />
+      </View>
+
+      <View className="mt-4 border-t border-slate-100 pt-3">
+        <View className="flex-row items-center justify-between">
+          {actionButtons.map(button => {
+            const Icon = button.Icon;
+            return (
+              <TouchableOpacity
+                key={button.key}
+                activeOpacity={0.72}
+                onPress={button.onPress}
+                className="flex-1 items-center justify-center"
+              >
+                <View
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 21,
+                    backgroundColor: button.iconBg,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 6,
+                  }}
+                >
+                  <Icon size={20} color={button.iconColor} strokeWidth={2.25} />
+                </View>
+                <Text
+                  numberOfLines={1}
+                  style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}
+                >
+                  {button.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -1596,82 +1676,37 @@ function CreatePostScreen() {
 
   const textInputRef = useRef<TextInput | null>(null);
   const scrollViewRef = useRef<ScrollView | null>(null);
-  const [isTextFocused, setIsTextFocused] = useState(false);
-
-  // Keyboard Animated transitions
-  const keyboardTransitionAnim = useRef(new Animated.Value(0)).current;
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isKeyboardActive, setIsKeyboardActive] = useState(false);
 
   useEffect(() => {
-    // On iOS, we want to animate with the keyboard event because it has 'keyboardWillShow' and 'keyboardWillHide' which fire immediately.
-    // On Android, those events don't exist. We use keyboardDidHide as a fallback to detect back-button dismiss.
-    if (Platform.OS !== 'ios') {
-      const hideSub = Keyboard.addListener('keyboardDidHide', () => {
-        setIsKeyboardActive(false);
-        Animated.timing(keyboardTransitionAnim, {
-          toValue: 0,
-          duration: 180,
-          useNativeDriver: true,
-        }).start();
-        textInputRef.current?.blur();
-      });
-      return () => hideSub.remove();
-    }
-
-    const showSub = Keyboard.addListener('keyboardWillShow', (e) => {
-      const height = e.endCoordinates?.height ?? 0;
-      setKeyboardHeight(height);
-      setIsKeyboardActive(true);
-      Animated.timing(keyboardTransitionAnim, {
-        toValue: 1,
-        duration: e.duration || 250,
-        useNativeDriver: true,
-      }).start();
-    });
-
-    const hideSub = Keyboard.addListener('keyboardWillHide', (e) => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setIsKeyboardActive(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => {
       setIsKeyboardActive(false);
-      Animated.timing(keyboardTransitionAnim, {
-        toValue: 0,
-        duration: e.duration || 250,
-        useNativeDriver: true,
-      }).start();
+      if (Platform.OS !== 'ios') {
+        textInputRef.current?.blur();
+      }
     });
 
     return () => {
       showSub.remove();
       hideSub.remove();
     };
-  }, [keyboardTransitionAnim]);
+  }, []);
 
   const handleInputFocus = useCallback(() => {
-    setIsTextFocused(true);
-    // Smooth scroll caption input card to top when keyboard opens
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-
     if (Platform.OS === 'android') {
       setIsKeyboardActive(true);
-      Animated.timing(keyboardTransitionAnim, {
-        toValue: 1,
-        duration: 180, // fast & responsive transition on Android focus
-        useNativeDriver: true,
-      }).start();
     }
-  }, [keyboardTransitionAnim]);
+  }, []);
 
   const handleInputBlur = useCallback(() => {
-    setIsTextFocused(false);
-
     if (Platform.OS === 'android') {
       setIsKeyboardActive(false);
-      Animated.timing(keyboardTransitionAnim, {
-        toValue: 0,
-        duration: 180, // fast & responsive transition on Android blur
-        useNativeDriver: true,
-      }).start();
     }
-  }, [keyboardTransitionAnim]);
+  }, []);
 
   // Save callbacks in refs to make handlers stable & prevent re-renders
   const vmRef = useRef(vm);
@@ -1910,45 +1945,7 @@ function CreatePostScreen() {
     wavRecorder.cancelRecording();
   }, [wavRecorder]);
 
-  // Set up animated styles for trays
-  const expandedTrayStyle = {
-    opacity: keyboardTransitionAnim.interpolate({
-      inputRange: [0, 0.8, 1],
-      outputRange: [1, 0, 0],
-    }),
-    transform: [{
-      translateY: keyboardTransitionAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 100],
-      }),
-    }],
-  };
 
-  const floatingBarContainerStyle = {
-    position: 'absolute' as const,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 8,
-    zIndex: 99,
-    opacity: keyboardTransitionAnim.interpolate({
-      inputRange: [0, 0.2, 1],
-      outputRange: [0, 0, 1],
-    }),
-    transform: [{
-      translateY: keyboardTransitionAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [300, Platform.OS === 'ios' ? -keyboardHeight : 0],
-      }),
-    }],
-  };
 
   const stableSetText = useCallback((txt: string) => {
     vmRef.current.setText(txt);
@@ -1965,6 +1962,14 @@ function CreatePostScreen() {
   const stableClearFeeling = useCallback(() => {
     vmRef.current.setFeeling(undefined);
   }, []);
+
+  const handleCreateProduct = useCallback(() => {
+    stableMoreNavigate(ROUTES.CREATE_PRODUCT);
+  }, [stableMoreNavigate]);
+
+  const handleCreatePoll = useCallback(() => {
+    stableMoreNavigate(ROUTES.CREATE_POLL);
+  }, [stableMoreNavigate]);
 
   return (
     <SafeAreaView style={{ backgroundColor: '#f4f7fa' }} className="flex-1" edges={['top']}>
@@ -1986,7 +1991,7 @@ function CreatePostScreen() {
           <ScrollView
             ref={scrollViewRef}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 150 }}
+            contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 24, 60) }}
             className="flex-1"
             showsVerticalScrollIndicator={false}
           >
@@ -2013,6 +2018,11 @@ function CreatePostScreen() {
               placeholder={copy.placeholder}
               onInsertChar={insertCaptionChar}
               onFeelingPress={() => setFeelingSheetVisible(true)}
+              copy={copy}
+              onPickPhotos={handlePickPhotos}
+              onPickVideo={handlePickVideo}
+              onCreateProduct={handleCreateProduct}
+              onCreatePoll={handleCreatePoll}
             />
 
             {/* Photos Preview Strip */}
@@ -2055,177 +2065,7 @@ function CreatePostScreen() {
                 <Text style={{ color: '#B91C1C', fontSize: 13 }}>{vm.error}</Text>
               </View>
             ) : null}
-
-            {/* Expanded Action Tray */}
-            <Animated.View
-              pointerEvents={isKeyboardActive ? 'none' : 'auto'}
-              style={expandedTrayStyle}
-            >
-              <ComposerActionTray
-                isFloating={false}
-                copy={copy}
-                language={language}
-                onPickPhotos={handlePickPhotos}
-                onFeelingPress={() => setFeelingSheetVisible(true)}
-                onAudioAction={handleAudioAction}
-                onPickVideo={handlePickVideo}
-                onNavigate={handleActionNavigate}
-                isRecording={wavRecorder.isRecording}
-                insetsBottom={insets.bottom}
-              />
-            </Animated.View>
           </ScrollView>
-
-          {/* Floating compact action bar and suggestions above keyboard */}
-          <Animated.View
-            pointerEvents={isKeyboardActive ? 'auto' : 'none'}
-            style={floatingBarContainerStyle}
-          >
-            <ComposerActionTray
-              isFloating={true}
-              copy={copy}
-              language={language}
-              onPickPhotos={handlePickPhotos}
-              onFeelingPress={() => setFeelingSheetVisible(true)}
-              onAudioAction={handleAudioAction}
-              onPickVideo={handlePickVideo}
-              onNavigate={handleActionNavigate}
-              isRecording={wavRecorder.isRecording}
-              insetsBottom={insets.bottom}
-            />
-
-            {/* Suggestion chips */}
-            {(vm.isLoadingCaptionSuggestions || vm.captionSuggestions.length > 0) && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyboardShouldPersistTaps="always"
-                contentContainerStyle={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 10,
-                  gap: 8,
-                  alignItems: 'center',
-                }}
-              >
-                {vm.isLoadingCaptionSuggestions && vm.captionSuggestions.length === 0 ? (
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingHorizontal: 12,
-                      paddingVertical: 6,
-                    }}
-                  >
-                    <ActivityIndicator color="#0866FF" size="small" />
-                    <Text
-                      style={{
-                        marginLeft: 8,
-                        fontSize: 13,
-                        color: '#64748B',
-                        fontWeight: '500',
-                      }}
-                    >
-                      {copy.suggestionsLoading}
-                    </Text>
-                  </View>
-                ) : (
-                  vm.captionSuggestions.map(suggestion => {
-                    const isMention = suggestion.kind === 'mention';
-                    return (
-                      <TouchableOpacity
-                        key={`${suggestion.kind}-${suggestion.id}`}
-                        activeOpacity={0.75}
-                        onPress={() => vm.applyCaptionSuggestion(suggestion)}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          paddingHorizontal: 14,
-                          paddingVertical: 8,
-                          borderRadius: 999,
-                          backgroundColor: isMention ? '#EFF6FF' : '#F5F3FF',
-                          borderWidth: 1,
-                          borderColor: isMention ? '#DBEAFE' : '#EDE9FE',
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 13,
-                            fontWeight: '600',
-                            color: isMention ? '#1D4ED8' : '#6D28D9',
-                          }}
-                          numberOfLines={1}
-                        >
-                          {suggestion.label}
-                        </Text>
-                        {suggestion.subtitle ? (
-                          <Text
-                            style={{
-                              marginLeft: 6,
-                              fontSize: 11,
-                              color: isMention ? '#60A5FA' : '#A78BFA',
-                            }}
-                            numberOfLines={1}
-                          >
-                            {suggestion.subtitle}
-                          </Text>
-                        ) : null}
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </ScrollView>
-            )}
-
-            {/* Quick-insert toolbar (# / @ / Done) */}
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderTopWidth:
-                  vm.isLoadingCaptionSuggestions || vm.captionSuggestions.length > 0
-                    ? 1
-                    : 0,
-                borderTopColor: '#F1F5F9',
-              }}
-            >
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => insertCaptionChar('#')}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginRight: 4,
-                }}
-              >
-                <Hash size={20} color="#475569" strokeWidth={2.2} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => insertCaptionChar('@')}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <AtSign size={20} color="#475569" strokeWidth={2.2} />
-              </TouchableOpacity>
-
-              <View style={{ flex: 1 }} />
-
-             
-            </View>
-          </Animated.View>
         </View>
       </TouchableWithoutFeedback>
 

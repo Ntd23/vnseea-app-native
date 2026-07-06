@@ -1,5 +1,4 @@
-// Search ViewModel
-// Handles global search state and business logic.
+// Description: Manages search state for users, pages, groups, and hashtags.
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { createSearchRepository } from '../../infrastructure/repositories/ApiSearchRepository';
@@ -14,8 +13,7 @@ const EMPTY_RESULTS: SearchResponse = {
   users: [],
   pages: [],
   groups: [],
-  jobs: [],
-  funding: [],
+  hashtags: [],
 };
 
 function countResults(results: SearchResponse) {
@@ -23,8 +21,7 @@ function countResults(results: SearchResponse) {
     results.users.length +
     results.pages.length +
     results.groups.length +
-    results.jobs.length +
-    results.funding.length
+    results.hashtags.length
   );
 }
 

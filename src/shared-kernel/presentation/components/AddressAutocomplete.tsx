@@ -58,6 +58,10 @@ interface AddressAutocompleteProps {
   }) => void;
   placeholder?: string;
   debounceMs?: number;
+  customInputContainerStyle?: any;
+  customIconWrapperStyle?: any;
+  customInputStyle?: any;
+  customIcon?: React.ReactNode;
 }
 
 const AUTOCOMPLETE_COPY = {
@@ -83,6 +87,10 @@ export function AddressAutocomplete({
   onSelectPlace,
   placeholder,
   debounceMs = 300,
+  customInputContainerStyle,
+  customIconWrapperStyle,
+  customInputStyle,
+  customIcon,
 }: AddressAutocompleteProps) {
   const language = useAppLanguage();
   const copy = AUTOCOMPLETE_COPY[language] || AUTOCOMPLETE_COPY.vi;
@@ -246,15 +254,15 @@ export function AddressAutocomplete({
   return (
     <View style={styles.container}>
       <TouchableOpacity
-        style={styles.inputContainer}
+        style={[styles.inputContainer, customInputContainerStyle]}
         onPress={openModal}
         activeOpacity={0.85}
       >
-        <View style={styles.iconWrapper}>
-          <MapPin size={18} color="#002fff" />
+        <View style={[styles.iconWrapper, customIconWrapperStyle]}>
+          {customIcon || <MapPin size={18} color="#002fff" />}
         </View>
         <Text
-          style={[styles.input, !value ? styles.placeholderText : null]}
+          style={[styles.input, !value ? styles.placeholderText : null, customInputStyle]}
           numberOfLines={1}
         >
           {value || placeholder}

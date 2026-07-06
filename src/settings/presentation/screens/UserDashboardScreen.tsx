@@ -7,7 +7,6 @@ import React, { useCallback, useMemo, useRef } from 'react';
 import {
   Alert,
   Animated,
-  Image,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -16,6 +15,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
+  ArrowLeft,
   BadgeCheck,
   Ban,
   Bell,
@@ -30,9 +30,11 @@ import {
   Mail,
   MapPin,
   Monitor,
+  Settings as SettingsIcon,
   ShieldCheck,
   Trash2,
   User,
+  Users,
   Wallet,
 } from 'lucide-react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -51,7 +53,7 @@ type IconNode = React.ReactNode;
 type DashboardAction =
   | { type: 'panel'; panel: SettingsPanelRouteParam }
   | { type: 'editProfile' }
-  | { type: 'route'; route: 'earnings' | 'affiliates' }
+  | { type: 'route'; route: 'earnings' | 'affiliates' | 'my-points' | 'my-balance' | 'settings-address' | 'settings-my-info' }
   | { type: 'alert'; alert: 'deleteAccount' };
 
 type DashboardItem = {
@@ -68,29 +70,29 @@ type DashboardItem = {
 const BRAND = '#0000ff';
 const ICON_BG = '#eef2ff';
 const ICON_COLOR = BRAND;
-const FALLBACK_AVATAR =
-  'https://ui-avatars.com/api/?background=eef2ff&color=0000ff&name=VNSEEA';
 
 const DASHBOARD_COPY = {
   vi: {
-    title: 'Bảng điều khiển',
+    title: 'Cài đặt',
     subtitle: 'Quản lý tài khoản và dữ liệu cá nhân',
     general: 'Chung',
     profile: 'Hồ sơ',
-    privacy: 'Quyền riêng tư',
-    avatar: 'Ảnh đại diện',
+    privacy: 'Sự riêng tư',
+    avatar: 'Hình đại diện & Ảnh bìa',
     password: 'Mật khẩu',
     twoFactor: '2FA',
-    notifications: 'Thông báo',
+    notifications: 'Thiết lập thông báo',
     email: 'Email',
-    socialLinks: 'Liên kết mạng xã hội',
+    socialLinks: 'đường liên kết mạng xã hội',
     verification: 'Xác thực',
-    wallet: 'Ví VNSEEA',
-    sessions: 'Phiên đăng nhập',
-    blockedUsers: 'Người đã chặn',
-    myData: 'Dữ liệu của tôi',
-    addresses: 'Địa chỉ',
-    referralRewards: 'Thưởng giới thiệu',
+    wallet: 'Kiếm tiền',
+    sessions: 'Quản lý phiên',
+    blockedUsers: 'Người dùng bị chặn',
+    myData: 'Thông tin của tôi',
+    addresses: 'Địa chỉ của tôi',
+    referralRewards: 'Các chi nhánh của tôi',
+    points: 'Điểm của tôi',
+    balance: 'Ví & Tín dụng',
     deleteAccount: 'Xóa tài khoản',
     generalHint: 'Tên đăng nhập, email, số điện thoại',
     profileHint: 'Tên, giới thiệu, công việc, trường học',
@@ -108,31 +110,34 @@ const DASHBOARD_COPY = {
     myDataHint: 'Quyền chia sẻ dữ liệu cá nhân',
     addressesHint: 'Địa chỉ giao hàng và liên hệ',
     referralRewardsHint: 'Link mời và phần thưởng giới thiệu',
-    deleteHint: 'Chức năng nguy hiểm, cần API xóa an toàn',
+    pointsHint: 'Xem điểm tích lũy và đổi quà',
+    deleteHint: 'Tài khoản của bạn sẽ bị xóa vĩnh viễn',
     deleteTitle: 'Xóa tài khoản',
     deleteMessage:
       'Mình chưa thấy endpoint xóa tài khoản an toàn trong app hiện tại, nên chưa bật thao tác này để tránh mất dữ liệu ngoài ý muốn.',
     ok: 'Đã hiểu',
   },
   en: {
-    title: 'Dashboard',
+    title: 'Settings',
     subtitle: 'Manage account and personal data',
     general: 'General',
     profile: 'Profile',
     privacy: 'Privacy',
-    avatar: 'Avatar',
+    avatar: 'Avatar & Cover',
     password: 'Password',
     twoFactor: '2FA',
-    notifications: 'Notifications',
+    notifications: 'Notification settings',
     email: 'Email',
     socialLinks: 'Social links',
     verification: 'Verification',
-    wallet: 'VNSEEA wallet',
-    sessions: 'Sessions',
+    wallet: 'Monetization',
+    sessions: 'Manage sessions',
     blockedUsers: 'Blocked users',
-    myData: 'My data',
-    addresses: 'Addresses',
-    referralRewards: 'Referral rewards',
+    myData: 'My info',
+    addresses: 'My addresses',
+    referralRewards: 'My affiliates',
+    points: 'My points',
+    balance: 'Wallet & Credit',
     deleteAccount: 'Delete account',
     generalHint: 'Username, email, phone number',
     profileHint: 'Name, bio, work, school',
@@ -150,7 +155,8 @@ const DASHBOARD_COPY = {
     myDataHint: 'Personal data sharing preferences',
     addressesHint: 'Shipping and contact addresses',
     referralRewardsHint: 'Invite link and referral rewards',
-    deleteHint: 'Dangerous action, requires safe delete API',
+    pointsHint: 'View accumulated points and redeem',
+    deleteHint: 'Your account will be permanently deleted',
     deleteTitle: 'Delete account',
     deleteMessage:
       'I did not find a safe account deletion endpoint wired in the app yet, so this action is disabled to avoid accidental data loss.',
@@ -188,10 +194,7 @@ function DashboardRow({
     ]).start();
   }, [index, opacity, translateY]);
 
-  // Destructive row gets a red tint on the icon and chevron but keeps
-  // the same card geometry so it still reads as part of the list.
-  const iconBackground = item.destructive ? '#fee2e2' : ICON_BG;
-  const iconFg = item.destructive ? '#ef4444' : item.iconColor;
+  const iconBackground = item.destructive ? '#fee2e2' : item.iconBg;
   const chevronColor = item.destructive ? '#ef4444' : '#94a3b8';
   const titleColor = item.destructive ? '#ef4444' : '#0f172a';
 
@@ -211,17 +214,11 @@ function DashboardRow({
 
         <View className="ml-3 flex-1">
           <Text
-            className="text-[15px] font-semibold"
+            className="text-[15px] font-semibold text-slate-800"
             style={{ color: titleColor }}
             numberOfLines={1}
           >
             {item.title}
-          </Text>
-          <Text
-            className="mt-0.5 text-[12px] text-slate-500"
-            numberOfLines={1}
-          >
-            {item.subtitle}
           </Text>
         </View>
 
@@ -236,7 +233,6 @@ function UserDashboardScreen() {
   const insets = useSafeAreaInsets();
   const language = useAppLanguage();
   const copy = DASHBOARD_COPY[language] || DASHBOARD_COPY.vi;
-  const { profile } = useMyInfoViewModel();
 
   const items = useMemo<DashboardItem[]>(
     () => [
@@ -244,145 +240,136 @@ function UserDashboardScreen() {
         id: 'profile',
         title: copy.profile,
         subtitle: copy.profileHint,
-        icon: <IdCard size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
+        icon: <IdCard size={20} color="#00acc1" />,
+        iconBg: '#e0f7fa',
+        iconColor: '#00acc1',
         action: { type: 'editProfile' },
-      },
-      {
-        id: 'wallet',
-        title: copy.wallet,
-        subtitle: copy.walletHint,
-        icon: <Wallet size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'route', route: 'earnings' },
-      },
-      {
-        id: 'general',
-        title: copy.general,
-        subtitle: copy.generalHint,
-        icon: <User size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'panel', panel: 'general-common' },
-      },
-      {
-        id: 'privacy',
-        title: copy.privacy,
-        subtitle: copy.privacyHint,
-        icon: <LockKeyhole size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'panel', panel: 'general-privacy' },
-      },
-      {
-        id: 'avatar',
-        title: copy.avatar,
-        subtitle: copy.avatarHint,
-        icon: <ImageIcon size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'panel', panel: 'general-avatar' },
-      },
-      {
-        id: 'password',
-        title: copy.password,
-        subtitle: copy.passwordHint,
-        icon: <KeyRound size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'panel', panel: 'general-password' },
-      },
-      {
-        id: 'two-factor',
-        title: copy.twoFactor,
-        subtitle: copy.twoFactorHint,
-        icon: <ShieldCheck size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'panel', panel: 'general-two-factor' },
-      },
-      {
-        id: 'notifications',
-        title: copy.notifications,
-        subtitle: copy.notificationsHint,
-        icon: <Bell size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'panel', panel: 'general-notifications' },
-      },
-      {
-        id: 'email',
-        title: copy.email,
-        subtitle: copy.emailHint,
-        icon: <Mail size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'panel', panel: 'general-notifications' },
       },
       {
         id: 'social-links',
         title: copy.socialLinks,
         subtitle: copy.socialLinksHint,
-        icon: <Link size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
+        icon: <Link size={20} color="#2563eb" />,
+        iconBg: '#dbeafe',
+        iconColor: '#2563eb',
         action: { type: 'panel', panel: 'general-social-links' },
       },
       {
-        id: 'verification',
-        title: copy.verification,
-        subtitle: copy.verificationHint,
-        icon: <BadgeCheck size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'panel', panel: 'general-verification' },
+        id: 'notifications',
+        title: copy.notifications,
+        subtitle: copy.notificationsHint,
+        icon: <Bell size={20} color="#8b5cf6" />,
+        iconBg: '#f5f3ff',
+        iconColor: '#8b5cf6',
+        action: { type: 'panel', panel: 'general-notifications' },
+      },
+      {
+        id: 'avatar',
+        title: copy.avatar,
+        subtitle: copy.avatarHint,
+        icon: <ImageIcon size={20} color="#0284c7" />,
+        iconBg: '#e0f2fe',
+        iconColor: '#0284c7',
+        action: { type: 'panel', panel: 'general-avatar' },
+      },
+      {
+        id: 'privacy',
+        title: copy.privacy,
+        subtitle: copy.privacyHint,
+        icon: <LockKeyhole size={20} color="#8b5cf6" />,
+        iconBg: '#f5f3ff',
+        iconColor: '#8b5cf6',
+        action: { type: 'panel', panel: 'general-privacy' },
+      },
+      {
+        id: 'password',
+        title: copy.password,
+        subtitle: copy.passwordHint,
+        icon: <KeyRound size={20} color="#06b6d4" />,
+        iconBg: '#ecfeff',
+        iconColor: '#06b6d4',
+        action: { type: 'panel', panel: 'general-password' },
       },
       {
         id: 'sessions',
         title: copy.sessions,
         subtitle: copy.sessionsHint,
-        icon: <Monitor size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
+        icon: <Monitor size={20} color="#d946ef" />,
+        iconBg: '#fdf4ff',
+        iconColor: '#d946ef',
         action: { type: 'panel', panel: 'general-sessions' },
       },
       {
         id: 'blocked-users',
         title: copy.blockedUsers,
         subtitle: copy.blockedUsersHint,
-        icon: <Ban size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
+        icon: <Ban size={20} color="#ea580c" />,
+        iconBg: '#fff7ed',
+        iconColor: '#ea580c',
         action: { type: 'panel', panel: 'general-blocked-users' },
+      },
+      {
+        id: 'general',
+        title: copy.general,
+        subtitle: copy.generalHint,
+        icon: <SettingsIcon size={20} color="#475569" />,
+        iconBg: '#f1f5f9',
+        iconColor: '#475569',
+        action: { type: 'panel', panel: 'general-common' },
       },
       {
         id: 'my-data',
         title: copy.myData,
         subtitle: copy.myDataHint,
-        icon: <Info size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'panel', panel: 'general-privacy' },
+        icon: <Info size={20} color="#475569" />,
+        iconBg: '#f1f5f9',
+        iconColor: '#475569',
+        action: { type: 'route', route: 'settings-my-info' },
       },
       {
         id: 'addresses',
         title: copy.addresses,
         subtitle: copy.addressesHint,
-        icon: <MapPin size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
-        action: { type: 'panel', panel: 'general-address' },
+        icon: <MapPin size={20} color="#475569" />,
+        iconBg: '#f1f5f9',
+        iconColor: '#475569',
+        action: { type: 'route', route: 'settings-address' },
+      },
+      {
+        id: 'wallet',
+        title: copy.wallet,
+        subtitle: copy.walletHint,
+        icon: <Wallet size={20} color="#8b5cf6" />,
+        iconBg: '#f5f3ff',
+        iconColor: '#8b5cf6',
+        action: { type: 'route', route: 'earnings' },
       },
       {
         id: 'referral-rewards',
         title: copy.referralRewards,
         subtitle: copy.referralRewardsHint,
-        icon: <Gift size={20} color={ICON_COLOR} />,
-        iconBg: ICON_BG,
-        iconColor: ICON_COLOR,
+        icon: <Users size={20} color="#ea580c" />,
+        iconBg: '#fff7ed',
+        iconColor: '#ea580c',
         action: { type: 'route', route: 'affiliates' },
+      },
+      {
+        id: 'points',
+        title: copy.points,
+        subtitle: copy.pointsHint,
+        icon: <Gift size={20} color="#ea580c" />,
+        iconBg: '#fff7ed',
+        iconColor: '#ea580c',
+        action: { type: 'route', route: 'my-points' },
+      },
+      {
+        id: 'balance',
+        title: copy.balance,
+        subtitle: copy.walletHint,
+        icon: <Wallet size={20} color="#06b6d4" />,
+        iconBg: '#ecfeff',
+        iconColor: '#06b6d4',
+        action: { type: 'route', route: 'my-balance' },
       },
       {
         id: 'delete-account',
@@ -425,7 +412,26 @@ function UserDashboardScreen() {
           navigation.navigate(ROUTES.EARNINGS);
           return;
         }
-        navigation.navigate(ROUTES.AFFILIATES);
+        if (item.action.route === 'affiliates') {
+          navigation.navigate(ROUTES.AFFILIATES);
+          return;
+        }
+        if (item.action.route === 'my-points') {
+          navigation.navigate(ROUTES.MY_POINTS);
+          return;
+        }
+        if (item.action.route === 'my-balance') {
+          navigation.navigate(ROUTES.MY_BALANCE);
+          return;
+        }
+        if (item.action.route === 'settings-address') {
+          navigation.navigate(ROUTES.SETTINGS_ADDRESS);
+          return;
+        }
+        if (item.action.route === 'settings-my-info') {
+          navigation.navigate(ROUTES.SETTINGS_MY_INFO);
+          return;
+        }
         return;
       }
 
@@ -434,71 +440,89 @@ function UserDashboardScreen() {
     [copy, navigation, openSettingsPanel],
   );
 
+  const groupedSections = useMemo(() => {
+    const itemMap = new Map(items.map(item => [item.id, item]));
+    const findItem = (id: string) => itemMap.get(id);
+
+    return [
+      {
+        id: 'sec-1',
+        items: ['general', 'profile', 'social-links', 'notifications'].map(findItem).filter(Boolean) as DashboardItem[],
+      },
+      {
+        id: 'sec-2',
+        items: ['avatar'].map(findItem).filter(Boolean) as DashboardItem[],
+      },
+      {
+        id: 'sec-3',
+        items: ['privacy', 'password', 'sessions', 'blocked-users'].map(findItem).filter(Boolean) as DashboardItem[],
+      },
+      {
+        id: 'sec-4',
+        items: ['my-data', 'addresses'].map(findItem).filter(Boolean) as DashboardItem[],
+      },
+      {
+        id: 'sec-5',
+        items: ['wallet', 'referral-rewards', 'points', 'balance'].map(findItem).filter(Boolean) as DashboardItem[],
+      },
+      {
+        id: 'sec-6',
+        items: ['delete-account'].map(findItem).filter(Boolean) as DashboardItem[],
+      },
+    ];
+  }, [items]);
+
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" />
 
-      {/* Top app bar — mirrors the reference style: plain white row
-          with back chevron + centered title. No fill, no gradient. */}
-      <View className="flex-row items-center justify-between bg-white px-4 py-3">
+      {/* Top app bar — matches the header "Chung" with circular gear icon */}
+      <View className="h-16 flex-row items-center justify-between border-b border-slate-100 bg-white px-4">
         <TouchableOpacity
-          activeOpacity={0.7}
+          activeOpacity={0.82}
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
           accessibilityLabel="back"
-          className="h-10 w-10 items-center justify-center rounded-full"
+          className="h-11 w-11 items-center justify-center rounded-full bg-slate-50"
         >
-          <ChevronRight
-            size={22}
+          <ArrowLeft
+            size={24}
             color="#0f172a"
-            style={{ transform: [{ rotate: '180deg' }] }}
           />
         </TouchableOpacity>
-        <Text className="text-[17px] font-semibold text-slate-900">
-          {copy.title}
-        </Text>
-        <View className="h-10 w-10" />
+        
+        <View className="flex-row items-center gap-2">
+          <Text className="text-xl font-extrabold text-slate-950">
+            {copy.title}
+          </Text>
+        </View>
+
+        <View className="h-11 w-11" />
       </View>
 
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingTop: 14,
+          paddingTop: 12,
           paddingBottom: insets.bottom + 24,
         }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Identity card — flat, matches the rest of the list. No
-            gradient hero, no API-ready pill, no shadow. */}
-        <View className="mb-3 flex-row items-center rounded-2xl border border-slate-100 bg-white px-3.5 py-3">
-          <Image
-            source={{ uri: profile?.avatarUrl || FALLBACK_AVATAR }}
-            className="h-10 w-10 rounded-full"
-          />
-          <View className="ml-3 flex-1">
-            <Text
-              className="text-[15px] font-semibold text-slate-900"
-              numberOfLines={1}
-            >
-              {profile?.name || 'VNSEEA'}
-            </Text>
-            <Text
-              className="mt-0.5 text-[12px] text-slate-500"
-              numberOfLines={1}
-            >
-              {copy.subtitle}
-            </Text>
-          </View>
-        </View>
-
-        {items.map((item, index) => (
-          <DashboardRow
-            key={item.id}
-            item={item}
-            index={index}
-            onPress={handlePress}
-          />
+        {groupedSections.map((section, secIndex) => (
+          <React.Fragment key={section.id}>
+            {secIndex > 0 ? (
+              <View className="mb-4 mt-2 border-b border-slate-100" />
+            ) : null}
+            {section.items.map((item, index) => (
+              <DashboardRow
+                key={item.id}
+                item={item}
+                index={secIndex * 10 + index}
+                onPress={handlePress}
+              />
+            ))}
+          </React.Fragment>
         ))}
       </ScrollView>
     </SafeAreaView>

@@ -1,9 +1,7 @@
-// Search domain types
-// Global search covers users, pages, groups, jobs, and funding campaigns.
+// Description: Defines search domain types for users, pages, groups, and hashtags.
 
 import type { GroupItem } from '../../../community/domain/types/community.types';
-import type { FundingItem } from '../../../funding/domain/types/funding.types';
-import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
+import type { TrendingHashtag } from '../../../explore/domain/types/explore.types';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
 
 export type SearchFilter = {
@@ -40,15 +38,13 @@ export type GlobalSearchTab =
   | 'users'
   | 'pages'
   | 'groups'
-  | 'jobs'
-  | 'funding';
+  | 'hashtags';
 
 export type SearchResponse = {
   users: SearchResult[];
   pages: PagesItem[];
   groups: GroupItem[];
-  jobs: JobsItem[];
-  funding: FundingItem[];
+  hashtags: TrendingHashtag[];
 };
 
 export type SuggestionResult = {
