@@ -45,7 +45,7 @@ type CreateActionKey =
   | 'live';
 
 type CreateAction = {
-  key: CreateActionKey;
+  key: string;
   Icon: React.ComponentType<{
     size: number;
     color: string;
@@ -54,6 +54,9 @@ type CreateAction = {
   iconColor: string;
   iconBg: string;
   route?: RootStackRouteName;
+  onPress?: () => void;
+  label?: string;
+  subtitle?: string;
 };
 
 // Exported so other screens (e.g. CreatePostScreen) can render a
@@ -173,18 +176,22 @@ type CreateActionSheetProps = {
   visible: boolean;
   onClose: () => void;
   onNavigate: (route: RootStackRouteName) => void;
+  actions?: CreateAction[];
 };
 
 function CreateActionSheet({
   visible,
   onClose,
   onNavigate,
+  actions: customActions,
 }: CreateActionSheetProps) {
   const language = useAppLanguage();
   const copy = SHEET_COPY[language] || SHEET_COPY.vi;
 
+  const actionsList = customActions || actions;
+
   // Animation values for cascading list items
-  const anims = useRef(actions.map(() => new Animated.Value(0))).current;
+  const anims = useRef(actionsList.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     if (visible) {
@@ -199,7 +206,7 @@ function CreateActionSheet({
       );
       Animated.stagger(40, animations).start();
     }
-  }, [visible, anims]);
+  }, [visible, anims, actionsList]);
 
   return (
     <Modal
@@ -283,8 +290,9 @@ function CreateActionSheet({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 16 }}
           >
-            {actions.map(({ key, Icon, iconColor, iconBg, route }, index) => {
+            {actionsList.map(({ key, Icon, iconColor, iconBg, route, onPress, label: customLabel, subtitle: customSubtitle }, index) => {
               const anim = anims[index];
+              if (!anim) return null;
               const opacity = anim.interpolate({
                 inputRange: [0, 1],
                 outputRange: [0, 1],
@@ -294,8 +302,9 @@ function CreateActionSheet({
                 outputRange: [24, 0],
               });
 
-              const label = copy.actions[key].label;
-              const subtitle = copy.actions[key].subtitle;
+              const actionCopy = (copy.actions as any)[key];
+              const label = customLabel || actionCopy?.label || key;
+              const subtitle = customSubtitle || actionCopy?.subtitle || '';
 
               return (
                 <Animated.View
@@ -308,7 +317,9 @@ function CreateActionSheet({
                   <ScaleButton
                     onPress={() => {
                       onClose();
-                      if (route) {
+                      if (onPress) {
+                        onPress();
+                      } else if (route) {
                         onNavigate(route);
                       }
                     }}

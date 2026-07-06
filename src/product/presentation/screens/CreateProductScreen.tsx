@@ -27,11 +27,12 @@ import {
   Package,
   X,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useProductViewModel } from '../../application/view-models/useProductViewModel';
 import type { ProductFormData } from '../../application/view-models/useProductViewModel';
+import { ROUTES } from '../../../navigation/constants/routes';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CreateProductNav = NativeStackNavigationProp<RootStackParamList>;
@@ -159,6 +160,9 @@ const steps: StepConfig[] = [
 
 export default function CreateProductScreen() {
   const navigation = useNavigation<CreateProductNav>();
+  const route = useRoute<any>();
+  const editingProduct = route.params?.product;
+
   const {
     step,
     formData,

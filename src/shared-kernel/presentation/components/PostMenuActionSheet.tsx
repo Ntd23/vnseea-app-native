@@ -1,17 +1,14 @@
-// PostMenuActionSheet - Action menu for individual posts
-//
-// Appears when user taps the "..." (MoreHorizontal) button on a post.
-// Provides Save and Report options.
+// Description: Presents post-level actions such as save, hide, delete, and report.
 
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
-  View,
   Text,
   TouchableOpacity,
-  ActivityIndicator,
+  View,
 } from 'react-native';
-import { Bookmark, Flag, X } from 'lucide-react-native';
+import { Bookmark, EyeOff, Flag, Trash2, X } from 'lucide-react-native';
 import type { FeedPost } from '../../../feed/domain/types/feed.types';
 
 interface PostMenuActionSheetProps {
@@ -19,42 +16,37 @@ interface PostMenuActionSheetProps {
   onClose: () => void;
   post: FeedPost | null;
   onSave: (postId: string) => Promise<void>;
+  onHide: (postId: string) => Promise<void> | void;
+  onDelete: (postId: string) => Promise<void>;
   onReport: (postId: string) => Promise<void>;
 }
+
+type ActionId = 'save' | 'hide' | 'delete' | 'report';
 
 export function PostMenuActionSheet({
   visible,
   onClose,
   post,
   onSave,
+  onHide,
+  onDelete,
   onReport,
 }: PostMenuActionSheetProps) {
-  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [loadingId, setLoadingId] = useState<ActionId | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSave = async () => {
+  const runAction = async (
+    actionId: ActionId,
+    action: (postId: string) => Promise<void> | void,
+  ) => {
     if (!post) return;
-    setLoadingId('save');
+    setLoadingId(actionId);
     setError(null);
     try {
-      await onSave(post.id);
+      await action(post.id);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lỗi khi lưu bài viết.');
-    } finally {
-      setLoadingId(null);
-    }
-  };
-
-  const handleReport = async () => {
-    if (!post) return;
-    setLoadingId('report');
-    setError(null);
-    try {
-      await onReport(post.id);
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lỗi khi gửi báo cáo.');
+      setError(err instanceof Error ? err.message : 'Không thực hiện được thao tác.');
     } finally {
       setLoadingId(null);
     }
@@ -62,18 +54,17 @@ export function PostMenuActionSheet({
 
   if (!visible || !post) return null;
 
+  const isBusy = loadingId !== null;
+
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
-      {/* Backdrop */}
       <TouchableOpacity
         activeOpacity={1}
         onPress={onClose}
         style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
       />
 
-      {/* Action Sheet */}
       <View className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pb-6 pt-4 shadow-lg">
-        {/* Header */}
         <View className="mb-4 flex-row items-center justify-between">
           <Text className="text-xl font-bold text-gray-900">
             Tùy chọn bài viết
@@ -83,48 +74,89 @@ export function PostMenuActionSheet({
           </TouchableOpacity>
         </View>
 
-        {/* Error */}
-        {error && (
+        {error ? (
           <Text className="mb-3 text-center text-sm text-red-500">{error}</Text>
-        )}
+        ) : null}
 
-        {/* Save Option */}
-        <TouchableOpacity
-          onPress={handleSave}
-          disabled={loadingId !== null}
-          className="flex-row items-center py-4"
-          activeOpacity={0.7}
-        >
-          {loadingId === 'save' ? (
-            <ActivityIndicator size="small" color="#3B82F6" className="mr-3" />
-          ) : (
-            <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-              <Bookmark size={20} color="#3B82F6" />
-            </View>
-          )}
-          <Text className="text-lg font-medium text-gray-900">Lưu bài viết</Text>
-        </TouchableOpacity>
-
-        {/* Divider */}
-        <View className="h-px bg-gray-200" />
-
-        {/* Report Option */}
-        <TouchableOpacity
-          onPress={handleReport}
-          disabled={loadingId !== null}
-          className="flex-row items-center py-4"
-          activeOpacity={0.7}
-        >
-          {loadingId === 'report' ? (
-            <ActivityIndicator size="small" color="#EF4444" className="mr-3" />
-          ) : (
-            <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-red-100">
-              <Flag size={20} color="#EF4444" />
-            </View>
-          )}
-          <Text className="text-lg font-medium text-gray-900">Báo cáo bài viết</Text>
-        </TouchableOpacity>
+        <MenuAction
+          label="Lưu bài viết"
+          loading={loadingId === 'save'}
+          disabled={isBusy}
+          icon={<Bookmark size={20} color="#3B82F6" />}
+          iconClassName="bg-blue-100"
+          onPress={() => runAction('save', onSave)}
+        />
+        <Divider />
+        <MenuAction
+          label="Ẩn bài viết"
+          loading={loadingId === 'hide'}
+          disabled={isBusy}
+          icon={<EyeOff size={20} color="#64748B" />}
+          iconClassName="bg-slate-100"
+          onPress={() => runAction('hide', onHide)}
+        />
+        <Divider />
+        <MenuAction
+          label="Xóa bài viết"
+          loading={loadingId === 'delete'}
+          disabled={isBusy}
+          icon={<Trash2 size={20} color="#EF4444" />}
+          iconClassName="bg-red-100"
+          textClassName="text-red-600"
+          onPress={() => runAction('delete', onDelete)}
+        />
+        <Divider />
+        <MenuAction
+          label="Báo cáo bài viết"
+          loading={loadingId === 'report'}
+          disabled={isBusy}
+          icon={<Flag size={20} color="#EF4444" />}
+          iconClassName="bg-red-100"
+          onPress={() => runAction('report', onReport)}
+        />
       </View>
     </Modal>
+  );
+}
+
+function Divider() {
+  return <View className="h-px bg-gray-200" />;
+}
+
+function MenuAction({
+  label,
+  loading,
+  disabled,
+  icon,
+  iconClassName,
+  textClassName = 'text-gray-900',
+  onPress,
+}: {
+  label: string;
+  loading: boolean;
+  disabled: boolean;
+  icon: React.ReactNode;
+  iconClassName: string;
+  textClassName?: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      className="flex-row items-center py-4"
+      activeOpacity={0.7}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color="#3B82F6" className="mr-3" />
+      ) : (
+        <View
+          className={`mr-3 h-10 w-10 items-center justify-center rounded-full ${iconClassName}`}
+        >
+          {icon}
+        </View>
+      )}
+      <Text className={`text-lg font-medium ${textClassName}`}>{label}</Text>
+    </TouchableOpacity>
   );
 }

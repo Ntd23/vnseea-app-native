@@ -14,7 +14,12 @@ import {
   ShoppingBag,
   MessageCircle,
   Share2,
-  ShoppingCart
+  ShoppingCart,
+  Star,
+  Info,
+  ThumbsUp,
+  MessageSquare,
+  Heart
 } from 'lucide-react-native';
 import type { ProductItem } from '../../domain/types/product.types';
 import {
@@ -61,6 +66,22 @@ function formatTimeAgo(timestamp: number | string): string {
   if (diff < 604800) return `${Math.floor(diff / 86400)} ngày trước`;
   return new Date(numTimestamp * 1000).toLocaleDateString('vi-VN');
 }
+function RatingStars({ value, size = 14 }: { value: number; size?: number }) {
+  const rounded = Math.round(value);
+
+  return (
+    <View className="flex-row items-center gap-0.5" style={{ flexDirection: 'row', alignItems: 'center' }}>
+      {[1, 2, 3, 4, 5].map(index => (
+        <Star
+          key={index}
+          size={size}
+          color="#F59E0B"
+          fill={index <= rounded ? '#F59E0B' : 'transparent'}
+        />
+      ))}
+    </View>
+  );
+}
 
 // ── Memoized ProductPostCard ────────────────────────────────────────────
 
@@ -79,6 +100,16 @@ interface ProductPostCardProps {
   ) => void;
   onShare?: (product: ProductItem) => void;
   compact?: boolean;
+
+  // New props for post reactions and comments
+  postId?: string;
+  likeCount?: number;
+  commentCount?: number;
+  myReaction?: string | null;
+  onReact?: (postId: string, reaction: any) => void;
+  onCommentTap?: (postId: string) => void;
+  onOpenReactions?: (postId: string, post: any) => void;
+  post?: any;
 }
 
 const ProductPostCard = React.memo(function ProductPostCard({
@@ -90,6 +121,14 @@ const ProductPostCard = React.memo(function ProductPostCard({
   onAddToCart,
   onShare,
   compact,
+  postId,
+  likeCount,
+  commentCount,
+  myReaction,
+  onReact,
+  onCommentTap,
+  onOpenReactions,
+  post,
 }: ProductPostCardProps) {
   const imageUrl = product.images?.[0]?.image;
 
@@ -259,15 +298,12 @@ const ProductPostCard = React.memo(function ProductPostCard({
           )}
         </View>
 
-        {/* Product Title / Description */}
-        <View className="mt-3">
-          <Text className="text-body-primary font-bold text-[16px] text-[#050505]" numberOfLines={2}>{product.name}</Text>
-          {product.description ? (
-            <Text className="text-body-primary mt-1 text-[#65676B] text-[13px] leading-relaxed" numberOfLines={3}>
-              {product.description}
-            </Text>
-          ) : null}
-        </View>
+        {/* Product Description */}
+        {product.description ? (
+          <Text className="text-body-primary mt-2.5 text-[#65676B] text-[13px] leading-relaxed" numberOfLines={2}>
+            {product.description}
+          </Text>
+        ) : null}
       </FeedCardContent>
 
       {/* Product Image */}
@@ -294,74 +330,148 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
       {/* Product Footer Actions */}
       <FeedCardContent className="pt-3">
-        {/* Price & Location Summary */}
-        <View className="flex-row items-center justify-between border-b border-[#F0F2F5] pb-3.5 mb-3">
-          <Text className="text-heading text-[18px] font-bold text-[#1877F2] flex-shrink mr-4" numberOfLines={1}>
-            {formatPrice(product.price, currencySymbol)}
+        {/* Divider */}
+        <View className="h-[1px] bg-slate-100 w-full mb-3" style={{ height: 1, backgroundColor: '#f1f5f9', width: '100%', marginBottom: 12 }} />
+
+        {/* Rating Stars & Reviews */}
+        <View className="flex-row items-center mb-1.5" style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+          <RatingStars value={Number(product.rating || 0)} size={15} />
+          <Text className="ml-2 text-[13px] font-semibold text-slate-500" style={{ color: '#64748B' }}>
+            {Number(product.reviews_count || 0)} Nhận xét
           </Text>
-          {product.location ? (
-            <View className="flex-row items-center flex-1 justify-end ml-2">
-              <MapPin size={14} color="#65676B" style={{ flexShrink: 0 }} />
-              <Text className="ml-1 text-[13px] text-[#65676B] flex-shrink" numberOfLines={1}>
-                {product.location}
-              </Text>
-            </View>
-          ) : null}
         </View>
 
-        {/* Facebook-style Action Buttons (prevent overlapping/wrapping issues) */}
-        <FeedGlassActionBar className="border-t-0 pt-1">
-          <FeedGlassActionButton
-            className="flex-1 flex-row items-center justify-center py-1.5 px-1"
-            activeOpacity={0.75}
-            onPress={handlePress}
-          >
-            <ShoppingBag size={18} color="#65676B" />
-            <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
-              Chi tiết
-            </Text>
-          </FeedGlassActionButton>
+        {/* Location */}
+        {product.location ? (
+          <Text className="text-[13px] text-slate-500 font-semibold leading-5 mb-2.5" numberOfLines={1} style={{ color: '#64748B', marginBottom: 10 }}>
+            {product.location}
+          </Text>
+        ) : null}
 
-          {!product.is_owner ? (
-            <>
-              <FeedGlassActionButton
-                className="flex-1 flex-row items-center justify-center py-1.5 px-1"
-                activeOpacity={0.75}
-                onPress={handleAddToCart}
-              >
-                <ShoppingCart size={18} color={product.can_add_to_cart ? "#0866FF" : "#9CA3AF"} />
-                <Text
-                  className={`ml-2 text-[13px] font-semibold ${product.can_add_to_cart ? "text-brand" : "text-[#9CA3AF]"}`}
-                  numberOfLines={1}
+        {/* Product Title */}
+        <Text className="text-body-primary font-bold text-[18px] text-[#050505] leading-7" numberOfLines={2}>
+          {product.name}
+        </Text>
+
+        {/* Price in green */}
+        <Text className="mt-1.5 text-[18px] font-bold text-green-600" style={{ color: '#16a34a', marginTop: 6 }}>
+          {formatPrice(product.price, currencySymbol)}
+        </Text>
+
+        {/* Info button */}
+        <TouchableOpacity
+          onPress={handlePress}
+          activeOpacity={0.75}
+          className="flex-row items-center rounded-full bg-slate-100 px-4 py-2 mt-3.5"
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: '#f1f5f9',
+            borderRadius: 9999,
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            alignSelf: 'flex-start',
+            marginTop: 14,
+          }}
+        >
+          <View
+            className="h-5 w-5 rounded-full bg-slate-900 items-center justify-center mr-2"
+            style={{
+              height: 20,
+              width: 20,
+              borderRadius: 10,
+              backgroundColor: '#0F172A',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: 8,
+            }}
+          >
+            <Info size={12} color="#FFFFFF" strokeWidth={3} />
+          </View>
+          <Text className="text-sm font-bold text-slate-800" style={{ color: '#1E293B' }}>
+            Thêm thông tin
+          </Text>
+        </TouchableOpacity>
+
+        {/* Raw price line with info icon */}
+        <View className="flex-row items-center mt-3.5" style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
+          <Info size={14} color="#64748B" style={{ marginRight: 6 }} />
+          <Text className="text-[13px] text-slate-500 font-semibold" style={{ color: '#64748B' }}>
+            {Number(product.price).toLocaleString('vi-VN')}
+          </Text>
+        </View>
+
+        {/* Social interactions footer */}
+        {postId ? (
+          <View className="border-t border-slate-100 mt-4 pt-3.5" style={{ borderTopWidth: 1, borderTopColor: '#f1f5f9', marginTop: 16, paddingTop: 14 }}>
+            {/* Likes and comments count row */}
+            <View className="flex-row items-center justify-between pb-3" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <View className="flex-row items-center" style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View
+                  className="h-4.5 w-4.5 rounded-full items-center justify-center mr-1.5"
+                  style={{
+                    height: 18,
+                    width: 18,
+                    borderRadius: 9,
+                    backgroundColor: '#ef4444',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 6,
+                  }}
                 >
-                  Thêm giỏ
+                  <Heart size={10} color="#FFFFFF" fill="#FFFFFF" />
+                </View>
+                <Text className="text-[13px] text-slate-500 font-bold" style={{ color: '#64748B' }}>
+                  {likeCount || 0}
                 </Text>
-              </FeedGlassActionButton>
+              </View>
+              <View className="flex-row items-center" style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text className="text-[13px] text-slate-500 font-bold" style={{ color: '#64748B' }}>
+                  {commentCount || 0} bình luận
+                </Text>
+              </View>
+            </View>
 
-              <FeedGlassActionButton
-                className="flex-1 flex-row items-center justify-center py-1.5 px-1"
-                activeOpacity={0.75}
-                onPress={handleContactSeller}
+            {/* Social Buttons */}
+            <View className="flex-row items-center justify-between border-t border-slate-100 pt-1" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 4 }}>
+              <TouchableOpacity
+                onPress={() => onReact?.(postId, 'like')}
+                activeOpacity={0.7}
+                className="flex-row items-center justify-center flex-1 py-2.5"
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 10 }}
               >
-                <MessageCircle size={18} color="#65676B" />
-                <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
-                  Nhắn tin
+                <ThumbsUp size={18} color={myReaction ? '#0000ff' : '#64748B'} strokeWidth={2.4} />
+                <Text className={`ml-2 text-[13px] font-bold ${myReaction ? 'text-[#0000ff]' : 'text-[#64748B]'}`} style={{ marginLeft: 8 }}>
+                  Thích
                 </Text>
-              </FeedGlassActionButton>
-            </>
-          ) : null}
+              </TouchableOpacity>
 
-          <FeedGlassActionButton
-            className="flex-1 flex-row items-center justify-center py-1.5 px-1"
-            activeOpacity={0.75}
-            onPress={handleSharePress}
-          >
-            <Share2 size={18} color="#65676B" />
-            <Text className="ml-2 text-[13px] font-semibold text-[#65676B]" numberOfLines={1}>
-              Chia sẻ
-            </Text>
-          </FeedGlassActionButton>
-        </FeedGlassActionBar>
+              <TouchableOpacity
+                onPress={() => onCommentTap?.(postId)}
+                activeOpacity={0.7}
+                className="flex-row items-center justify-center flex-1 py-2.5"
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 10 }}
+              >
+                <MessageSquare size={18} color="#64748B" strokeWidth={2.4} />
+                <Text className="ml-2 text-[13px] font-bold text-slate-500" style={{ color: '#64748B', marginLeft: 8 }}>
+                  Bình luận
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleSharePress}
+                activeOpacity={0.7}
+                className="flex-row items-center justify-center flex-1 py-2.5"
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 10 }}
+              >
+                <Share2 size={18} color="#64748B" strokeWidth={2.4} />
+                <Text className="ml-2 text-[13px] font-bold text-slate-500" style={{ color: '#64748B', marginLeft: 8 }}>
+                  Chia sẻ
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
       </FeedCardContent>
     </FeedCardSurface>
   );

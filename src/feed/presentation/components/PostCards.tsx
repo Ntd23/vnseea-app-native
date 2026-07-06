@@ -1,6 +1,4 @@
-// PostCards.tsx â€” Shared post card components used by FeedScreen, ProfileScreen,
-// ExploreScreen, PageDetailScreen, etc.
-// Extracted from FeedScreen.tsx for easier maintenance.
+// Description: Renders reusable feed post cards with media, reactions, and privacy metadata.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
@@ -33,12 +31,15 @@ import Animated, {
   useAnimatedReaction,
 } from 'react-native-reanimated';
 import {
+  EyeOff,
   Globe,
+  Lock,
   MessageCircle,
   MoreHorizontal,
   Share2,
   ShoppingBag,
   ThumbsUp,
+  Users,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -53,6 +54,7 @@ import type {
   FeedPost,
   FeedTextPost,
   FeedVideoPost,
+  PostPrivacy,
 } from '../../domain/types/feed.types';
 import type { FeedSource } from '../../domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
@@ -137,6 +139,10 @@ export type FeedCopy = {
   viewDetails?: string;
   sharedPostLabel: (name: string) => string;
   publicLabel: string;
+  followingPrivacyLabel: string;
+  followersPrivacyLabel: string;
+  onlyMePrivacyLabel: string;
+  anonymousPrivacyLabel: string;
   userFallback: string;
   composerPlaceholder: string;
   library: string;
@@ -243,6 +249,10 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     viewDetails: 'Xem chi tiết',
     sharedPostLabel: name => `đã chia sẻ bài viết của ${name}`,
     publicLabel: 'Công khai',
+    followingPrivacyLabel: 'Nh\u1eefng ng\u01b0\u1eddi t\u00f4i theo d\u00f5i',
+    followersPrivacyLabel: 'M\u1ecdi ng\u01b0\u1eddi theo d\u00f5i t\u00f4i',
+    onlyMePrivacyLabel: 'Ch\u1ec9 m\u00ecnh t\u00f4i',
+    anonymousPrivacyLabel: '\u1ea8n danh',
     userFallback: 'Người dùng',
     composerPlaceholder: 'Bạn đang nghĩ gì?',
     library: 'Ảnh/video',
@@ -350,6 +360,10 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     viewDetails: 'View details',
     sharedPostLabel: name => `shared ${name}'s post`,
     publicLabel: 'Public',
+    followingPrivacyLabel: 'People I follow',
+    followersPrivacyLabel: 'People following me',
+    onlyMePrivacyLabel: 'Only me',
+    anonymousPrivacyLabel: 'Anonymous',
     userFallback: 'User',
     composerPlaceholder: "What's on your mind?",
     library: 'Photo/video',
@@ -443,6 +457,26 @@ export function formatCount(count: number) {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
   return String(count);
+}
+
+function getFeedPostPrivacy(post?: FeedPost): PostPrivacy | undefined {
+  return post && 'privacy' in post ? post.privacy : undefined;
+}
+
+function getPostPrivacyMeta(privacy: PostPrivacy | undefined, copy: FeedCopy) {
+  switch (privacy) {
+    case 'following':
+      return { label: copy.followingPrivacyLabel, Icon: Users };
+    case 'followers':
+      return { label: copy.followersPrivacyLabel, Icon: Users };
+    case 'only_me':
+      return { label: copy.onlyMePrivacyLabel, Icon: Lock };
+    case 'anonymous':
+      return { label: copy.anonymousPrivacyLabel, Icon: EyeOff };
+    case 'public':
+    default:
+      return { label: copy.publicLabel, Icon: Globe };
+  }
 }
 
 export function formatPostTime(timestamp: number | undefined, copy: FeedCopy) {
@@ -1494,6 +1528,9 @@ const PostHeader = React.memo(function PostHeader({
     }
   }, [onDetailPress, post]);
 
+  const privacyMeta = getPostPrivacyMeta(getFeedPostPrivacy(post), copy);
+  const PrivacyIcon = privacyMeta.Icon;
+
   return (
     <View className="mb-4 flex-row items-center justify-between">
       <TouchableOpacity
@@ -1518,9 +1555,11 @@ const PostHeader = React.memo(function PostHeader({
               </Text>
             ) : null}
           </View>
-          <Text className="text-caption-secondary">
-            {time} {'\u2022'} {copy.publicLabel}
-          </Text>
+          <View className="mt-0.5 flex-row items-center">
+            <Text className="text-caption-secondary">{time} {'\u2022'} </Text>
+            <PrivacyIcon size={11} color="#94A3B8" />
+            <Text className="ml-1 text-caption-secondary">{privacyMeta.label}</Text>
+          </View>
           {onDetailPress && post ? (
             <TouchableOpacity
               activeOpacity={0.7}

@@ -219,6 +219,7 @@ export function createStackRoutes(
     { name: ROUTES.CHECKOUT, component: CheckoutScreen },
     { name: ROUTES.SHIPPING_ADDRESS, component: ShippingAddressScreen },
     { name: ROUTES.CREATE_PRODUCT, component: CreateProductScreen },
+    { name: ROUTES.EDIT_PRODUCT, component: CreateProductScreen },
     { name: ROUTES.CREATE_EVENT, component: CreateEventScreen },
     { name: ROUTES.EDIT_EVENT, component: CreateEventScreen },
     { name: ROUTES.EVENT_DETAIL, component: EventDetailScreen },

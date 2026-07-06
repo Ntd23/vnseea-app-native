@@ -151,7 +151,7 @@ export interface FeedRepository {
    * The draft contains:
    *   - text       → wire field `postText`
    *   - photos[]   → wire field `postPhotos[]` (single OR multi)
-   *   - privacy    → wire field `postPrivacy` (0=public, 1=friends, 2=only me)
+   *   - privacy    -> wire field `postPrivacy` (0=public, 1=following, 2=followers, 3=only me, 4=anonymous)
    *   - feeling    → wire fields `feeling_type` + `feeling`
    *
    * The repository handles the FormData serialisation + privacy
@@ -198,6 +198,11 @@ export interface FeedRepository {
    * Returns { reported: true } when the post was reported, { reported: false } when unreported.
    */
   reportPost(postId: string): Promise<{ reported: boolean }>;
+
+  /**
+   * Delete a post via WoWonder's post-actions endpoint.
+   */
+  deletePost(postId: string): Promise<{ deleted: boolean }>;
 
   /**
    * Share an existing post internally to timeline, an owned page, or an owned group.
