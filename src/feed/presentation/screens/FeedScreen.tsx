@@ -603,11 +603,17 @@ const FeedProductPostCard = React.memo(function FeedProductPostCard({
   onPress,
   onProfilePress,
   onSharePost,
+  onReact,
+  onCommentTap,
+  onOpenReactions,
 }: {
   post: FeedProductPost;
   onPress: (product: FeedProductPost['product']) => void;
   onProfilePress: (userId: string) => void;
   onSharePost: (post: FeedPost) => void;
+  onReact?: (postId: string, reaction: any) => void;
+  onCommentTap?: (postId: string) => void;
+  onOpenReactions?: (postId: string, post: FeedPost) => void;
 }) {
   const handleShare = useCallback(() => {
     onSharePost(post);
@@ -616,9 +622,17 @@ const FeedProductPostCard = React.memo(function FeedProductPostCard({
   return (
     <ProductPostCard
       product={post.product}
+      postId={post.id}
+      likeCount={post.likeCount}
+      commentCount={post.commentCount}
+      myReaction={post.myReaction}
       onPress={onPress}
       onProfilePress={onProfilePress}
       onShare={handleShare}
+      onReact={onReact}
+      onCommentTap={onCommentTap}
+      onOpenReactions={onOpenReactions}
+      post={post}
     />
   );
 });
@@ -1603,6 +1617,11 @@ function FeedScreen() {
         username: '',
         avatarUrl: product.seller?.avatar,
       },
+      likeCount: 0,
+      commentCount: 0,
+      isLiked: false,
+      myReaction: null,
+      topReactions: [],
     }));
   }, [copy.sellerFallback, productsVm.products]);
 
@@ -1974,6 +1993,13 @@ function FeedScreen() {
       }
     },
     [copy, reportFeedPost],
+  );
+
+  const handleDeletePost = useCallback(
+    async (postId: string) => {
+      await vm.deletePost(postId);
+    },
+    [vm],
   );
 
   // Infinite scroll pagination â€” calls loadMore directly.
@@ -2480,9 +2506,19 @@ function FeedScreen() {
         onPress={handleProductPress}
         onProfilePress={navigateToProfile}
         onSharePost={handleOpenSharePost}
+        onReact={handleToggleReactionStable}
+        onCommentTap={handleCommentTapStable}
+        onOpenReactions={openReactionsSheet}
       />
     ),
-    [handleProductPress, navigateToProfile, handleOpenSharePost],
+    [
+      handleProductPress,
+      navigateToProfile,
+      handleOpenSharePost,
+      handleToggleReactionStable,
+      handleCommentTapStable,
+      openReactionsSheet,
+    ],
   );
 
   const renderEventPost = useCallback(
@@ -2879,6 +2915,8 @@ function FeedScreen() {
           onClose={handleClosePostMenu}
           post={selectedPostForMenu}
           onSave={handleSavePost}
+          onHide={vm.hidePost}
+          onDelete={handleDeletePost}
           onReport={handleReportPost}
         />
         {/* â”€â”€ Toast Notification â”€â”€ */}

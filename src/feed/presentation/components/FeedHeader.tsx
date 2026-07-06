@@ -1,3 +1,4 @@
+// Description: Renders the feed app bar with navigation actions and profile access.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -130,20 +131,6 @@ export const FeedHeader = React.memo(function FeedHeader() {
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.75}
-              onPress={() => navigation.navigate(ROUTES.MESSAGES)}
-              style={[styles.headerIcon, styles.messageButton]}
-            >
-              <MessageCircle size={19} color="#0758ff" strokeWidth={2.35} />
-              {messageCount > 0 ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>
-                    {messageCount > 99 ? '99+' : messageCount}
-                  </Text>
-                </View>
-              ) : null}
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.75}
               onPress={() =>
                 navigation.navigate(ROUTES.MAIN_TABS, {
                   screen: ROUTES.NOTIFICATIONS,
@@ -156,6 +143,20 @@ export const FeedHeader = React.memo(function FeedHeader() {
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>
                     {notificationCount > 99 ? '99+' : notificationCount}
+                  </Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => navigation.navigate(ROUTES.MESSAGES)}
+              style={[styles.headerIcon, styles.messageButton]}
+            >
+              <MessageCircle size={19} color="#0758ff" strokeWidth={2.35} />
+              {messageCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {messageCount > 99 ? '99+' : messageCount}
                   </Text>
                 </View>
               ) : null}

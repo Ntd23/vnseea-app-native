@@ -39,6 +39,7 @@ export const ROUTES = {
   CHECKOUT: 'Checkout',
   SHIPPING_ADDRESS: 'ShippingAddress',
   CREATE_PRODUCT: 'CreateProduct',
+  EDIT_PRODUCT: 'EditProduct',
   CREATE_EVENT: 'CreateEvent',
   EDIT_EVENT: 'EditEvent',
   EVENT_DETAIL: 'EventDetail',

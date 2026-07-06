@@ -402,6 +402,19 @@ export function useFeedViewModel() {
     }
   }, []);
 
+  const removePostEverywhere = useCallback((postId: string) => {
+    lightPostsRef.current = lightPostsRef.current.filter(post => post.id !== postId);
+    videoPostsRef.current = videoPostsRef.current.filter(post => post.id !== postId);
+    prefetchBufferRef.current = prefetchBufferRef.current?.filter(
+      post => post.id !== postId,
+    ) ?? null;
+    setPosts(prev => prev.filter(post => post.id !== postId));
+    if (feedSourceRef.current === 'all') {
+      cacheLightPostsAfterInteractions(lightPostsRef.current);
+      cacheVideoPostsAfterInteractions(videoPostsRef.current);
+    }
+  }, []);
+
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
       'postReactionChanged',
@@ -1142,6 +1155,22 @@ export function useFeedViewModel() {
      * Toggle report/unreport a post. No optimistic update needed.
      */
     reportPost: (postId: string) => repository.reportPost(postId),
+
+    /**
+     * Hide only affects the current app feed view. The backend v2
+     * post-actions endpoint does not expose a hide action.
+     */
+    hidePost: (postId: string) => {
+      removePostEverywhere(postId);
+    },
+
+    deletePost: async (postId: string) => {
+      const result = await repository.deletePost(postId);
+      if (result.deleted) {
+        removePostEverywhere(postId);
+      }
+      return result;
+    },
 
     sharePost: repository.sharePost,
   };

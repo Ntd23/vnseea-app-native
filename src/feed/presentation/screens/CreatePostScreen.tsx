@@ -42,6 +42,7 @@ import {
   ChevronDown,
   ChevronRight,
   Globe2,
+  EyeOff,
   Hash,
   Image as ImageIcon,
   Lock,
@@ -51,6 +52,10 @@ import {
   Users,
   Video as VideoIcon,
   X,
+  PackagePlus,
+  BarChart3,
+  Radio,
+  FilePlus2,
 } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -89,8 +94,8 @@ const PHOTO_GRID_GAP = 8;
 const CREATE_POST_COPY = {
   vi: {
     headerTitle: 'Tạo bài viết',
-    post: 'Đăng',
-    privacyTitle: 'Đối tượng',
+    post: 'Chia sẻ',
+    privacyTitle: 'Phạm vi bài viết',
     placeholder: 'Bạn đang nghĩ gì?',
     addPhoto: 'Thêm ảnh',
     selectedPhotos: 'Ảnh đã chọn',
@@ -119,18 +124,22 @@ const CREATE_POST_COPY = {
     feeling: 'Cảm xúc',
     audio: 'Âm thanh',
     video: 'Video',
-    more: 'Thêm',
-    moreShort: 'Thêm',
+    more: 'Khác',
+    moreShort: 'Khác',
     videoError: 'Không chọn được video',
     videoErrorTip: 'Vui lòng thử lại.',
     addVideo: 'Thêm video',
     done: 'Hoàn tất',
-    privacyPublic: 'Công khai',
-    privacyFriends: 'Bạn bè',
+    privacyPublic: 'Tất cả mọi người',
+    privacyFollowing: 'Những người tôi theo dõi',
+    privacyFollowers: 'Mọi người theo dõi tôi',
     privacyOnlyMe: 'Chỉ mình tôi',
+    privacyAnonymous: 'Ẩn danh',
     privacyPublicDesc: 'Bất kỳ ai cũng có thể xem',
-    privacyFriendsDesc: 'Chỉ bạn bè của bạn',
+    privacyFollowingDesc: 'Chỉ những người bạn đang theo dõi',
+    privacyFollowersDesc: 'Chỉ những người đang theo dõi bạn',
     privacyOnlyMeDesc: 'Chỉ mình bạn nhìn thấy',
+    privacyAnonymousDesc: 'Đăng bài dưới chế độ ẩn danh',
     feelingLabel: 'đang cảm thấy',
     suggestionsLoading: 'Đang tìm gợi ý...',
     processing: 'Đang xử lý...',
@@ -145,7 +154,7 @@ const CREATE_POST_COPY = {
   en: {
     headerTitle: 'Create Post',
     post: 'Post',
-    privacyTitle: 'Audience',
+    privacyTitle: 'Post audience',
     placeholder: 'What is on your mind?',
     addPhoto: 'Add photo',
     selectedPhotos: 'Selected photos',
@@ -180,12 +189,16 @@ const CREATE_POST_COPY = {
     videoErrorTip: 'Please try again.',
     addVideo: 'Add video',
     done: 'Done',
-    privacyPublic: 'Public',
-    privacyFriends: 'Friends',
+    privacyPublic: 'Everyone',
+    privacyFollowing: 'People I follow',
+    privacyFollowers: 'People following me',
     privacyOnlyMe: 'Only me',
+    privacyAnonymous: 'Anonymous',
     privacyPublicDesc: 'Anyone can see',
-    privacyFriendsDesc: 'Your friends only',
+    privacyFollowingDesc: 'Only people you follow',
+    privacyFollowersDesc: 'Only people following you',
     privacyOnlyMeDesc: 'Only you can see',
+    privacyAnonymousDesc: 'Post without showing your identity',
     feelingLabel: 'is feeling',
     suggestionsLoading: 'Finding suggestions...',
     processing: 'Processing...',
@@ -488,6 +501,7 @@ function FeelingPickerSheet({
 interface CreatePostHeaderProps {
   onDiscard: () => void;
   onSubmit: () => void;
+  onLivePress: () => void;
   canSubmit: boolean;
   isSubmitting: boolean;
   isProcessingPhotos: boolean;
@@ -497,6 +511,7 @@ interface CreatePostHeaderProps {
 const CreatePostHeader = React.memo(({
   onDiscard,
   onSubmit,
+  onLivePress,
   canSubmit,
   isSubmitting,
   isProcessingPhotos,
@@ -519,32 +534,46 @@ const CreatePostHeader = React.memo(({
         <X size={24} color="#0F172A" />
       </TouchableOpacity>
 
-      <Text className="text-[20px] font-bold text-slate-800">{copy.headerTitle}</Text>
+      <View style={{ flex: 1 }} />
 
-      <TouchableOpacity
-        onPress={onSubmit}
-        disabled={!canSubmit || isProcessingPhotos}
-        activeOpacity={0.7}
-        className={
-          canSubmit && !isProcessingPhotos
-            ? 'rounded-full bg-[#0000ff] px-6 py-2.5'
-            : 'rounded-full bg-slate-200 px-6 py-2.5'
-        }
-      >
-        {isSubmitting ? (
-          <ActivityIndicator color={canSubmit && !isProcessingPhotos ? '#FFFFFF' : '#94A3B8'} size="small" />
-        ) : (
-          <Text
-            style={{
-              color: canSubmit && !isProcessingPhotos ? '#FFFFFF' : '#94A3B8',
-              fontWeight: '700',
-              fontSize: 15,
-            }}
-          >
-            {copy.post}
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <TouchableOpacity
+          onPress={onLivePress}
+          activeOpacity={0.7}
+          className="rounded-full bg-red-500 px-5 py-2.5 mr-2 flex-row items-center"
+          style={{ backgroundColor: '#ef4444' }}
+        >
+          <Radio size={16} color="#FFFFFF" strokeWidth={2.4} style={{ marginRight: 4 }} />
+          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>
+            Live
           </Text>
-        )}
-      </TouchableOpacity>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={onSubmit}
+          disabled={!canSubmit || isProcessingPhotos}
+          activeOpacity={0.7}
+          className={
+            canSubmit && !isProcessingPhotos
+              ? 'rounded-full bg-[#0000ff] px-6 py-2.5'
+              : 'rounded-full bg-slate-200 px-6 py-2.5'
+          }
+        >
+          {isSubmitting ? (
+            <ActivityIndicator color={canSubmit && !isProcessingPhotos ? '#FFFFFF' : '#94A3B8'} size="small" />
+          ) : (
+            <Text
+              style={{
+                color: canSubmit && !isProcessingPhotos ? '#FFFFFF' : '#94A3B8',
+                fontWeight: '700',
+                fontSize: 15,
+              }}
+            >
+              {copy.post}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 });
@@ -658,7 +687,7 @@ const AuthorPrivacyCard = React.memo(({
                 position: 'absolute',
                 top: 28,
                 left: 0,
-                width: 180,
+                width: 260,
                 backgroundColor: '#ffffff',
                 borderRadius: 12,
                 padding: 4,
@@ -1332,23 +1361,6 @@ const ComposerActionTray = React.memo(({
       iconColor: '#22c55e',
     },
     {
-      key: 'feeling',
-      label: copy.feeling,
-      onPress: onFeelingPress,
-      Icon: Smile,
-      iconBg: '#fef9c3',
-      iconColor: '#eab308',
-    },
-    {
-      key: 'audio',
-      label: copy.audio,
-      onPress: onAudioAction,
-      Icon: Music2,
-      iconBg: '#fdf2f8',
-      iconColor: '#ec4899',
-      altIcon: <Square size={14} color="#ec4899" fill="#ec4899" />,
-    },
-    {
       key: 'video',
       label: copy.video,
       onPress: onPickVideo,
@@ -1356,30 +1368,23 @@ const ComposerActionTray = React.memo(({
       iconBg: '#eff6ff',
       iconColor: '#3b82f6',
     },
-  ], [copy, onPickPhotos, onFeelingPress, onAudioAction, onPickVideo]);
-
-  const expandedRow2 = useMemo(() => [
     {
-      actionKey: 'poll' as const,
-      label: copy.poll,
-      route: ROUTES.CREATE_POLL,
-    },
-    {
-      actionKey: 'product' as const,
+      key: 'product',
       label: copy.product,
-      route: ROUTES.CREATE_PRODUCT,
+      onPress: () => onNavigate(ROUTES.CREATE_PRODUCT),
+      Icon: PackagePlus,
+      iconBg: '#f5f3ff',
+      iconColor: '#8b5cf6',
     },
     {
-      actionKey: 'live' as const,
-      label: copy.live,
-      route: ROUTES.GO_LIVE,
+      key: 'poll',
+      label: copy.poll,
+      onPress: () => onNavigate(ROUTES.CREATE_POLL),
+      Icon: BarChart3,
+      iconBg: '#f0f9ff',
+      iconColor: '#0284c7',
     },
-    {
-      actionKey: 'page' as const,
-      label: copy.page,
-      route: ROUTES.CREATE_PAGE,
-    },
-  ], [copy]);
+  ], [copy, onPickPhotos, onPickVideo, onNavigate]);
 
   const SECONDARY_LABEL_COLOR = '#475569';
 
@@ -1388,7 +1393,6 @@ const ComposerActionTray = React.memo(({
     size: 44 | 48,
   ) => {
     const Icon = button.Icon;
-    const showAlt = button.altIcon && button.key === 'audio' && isRecording;
     return (
       <TouchableOpacity
         key={button.key}
@@ -1410,12 +1414,7 @@ const ComposerActionTray = React.memo(({
             justifyContent: 'center',
             ...(size === 48 ? { marginBottom: 8 } : null),
           }}
-        >
-          {showAlt ? (
-            button.altIcon
-          ) : (
-            <Icon size={size === 44 ? 20 : 22} color={button.iconColor} />
-          )}
+        >          <Icon size={size === 44 ? 20 : 22} color={button.iconColor} />
         </View>
         {isFloating ? null : (
           <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
@@ -1465,43 +1464,6 @@ const ComposerActionTray = React.memo(({
     </TouchableOpacity>
   );
 
-  const renderRow2Shortcut = (
-    entry: typeof expandedRow2[number],
-  ) => {
-    const action = CREATE_ACTIONS.find(a => a.key === entry.actionKey);
-    if (!action) return null;
-    const Icon = action.Icon;
-    return (
-      <TouchableOpacity
-        key={entry.actionKey}
-        onPress={() => onNavigate(entry.route)}
-        activeOpacity={0.7}
-        style={{
-          alignItems: 'center',
-          justifyContent: 'center',
-          flex: 1,
-        }}
-      >
-        <View
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 24,
-            backgroundColor: action.iconBg,
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 8,
-          }}
-        >
-          <Icon size={22} color={action.iconColor} strokeWidth={2} />
-        </View>
-        <Text style={{ fontSize: 12, fontWeight: '600', color: SECONDARY_LABEL_COLOR }}>
-          {entry.label}
-        </Text>
-      </TouchableOpacity>
-    );
-  };
-
   if (isFloating) {
     return (
       <View
@@ -1513,11 +1475,10 @@ const ComposerActionTray = React.memo(({
           paddingVertical: 10,
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          justifyContent: 'space-around',
         }}
       >
         {compactButtons.map(b => renderShortcutButton(b, 44))}
-        {renderMoreButton()}
       </View>
     );
   }
@@ -1545,27 +1506,11 @@ const ComposerActionTray = React.memo(({
       {/* Header Row */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1e293b' }}>{copy.addPost}</Text>
-        <TouchableOpacity
-          onPress={() => onNavigate('more_sheet')}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          activeOpacity={0.7}
-          style={{ flexDirection: 'row', alignItems: 'center' }}
-        >
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#0000ff', marginRight: 2 }}>
-            {copy.more}
-          </Text>
-          <ChevronRight size={16} color="#0000ff" strokeWidth={2.4} />
-        </TouchableOpacity>
       </View>
 
-      {/* Row 1 — post-flow shortcuts (Photo / Feeling / Audio / Video). */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* Row 1 — post-flow shortcuts (Photo / Video / Product / Poll). */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' }}>
         {compactButtons.map(b => renderShortcutButton(b, 48))}
-      </View>
-
-      {/* Row 2 — quick creation routes (Ad / Product / Event / Page). */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
-        {expandedRow2.map(renderRow2Shortcut)}
       </View>
     </View>
   );
@@ -1608,16 +1553,28 @@ function CreatePostScreen() {
       description: copy.privacyPublicDesc,
     },
     {
-      value: 'friends' as PostPrivacy,
-      label: copy.privacyFriends,
+      value: 'following' as PostPrivacy,
+      label: copy.privacyFollowing,
       Icon: Users,
-      description: copy.privacyFriendsDesc,
+      description: copy.privacyFollowingDesc,
+    },
+    {
+      value: 'followers' as PostPrivacy,
+      label: copy.privacyFollowers,
+      Icon: Users,
+      description: copy.privacyFollowersDesc,
     },
     {
       value: 'only_me' as PostPrivacy,
       label: copy.privacyOnlyMe,
       Icon: Lock,
       description: copy.privacyOnlyMeDesc,
+    },
+    {
+      value: 'anonymous' as PostPrivacy,
+      label: copy.privacyAnonymous,
+      Icon: EyeOff,
+      description: copy.privacyAnonymousDesc,
     },
   ], [copy]);
 
@@ -1874,6 +1831,45 @@ function CreatePostScreen() {
     }
   }, [stableMoreNavigate]);
 
+  const customMoreActions = useMemo(() => [
+    {
+      key: 'feeling',
+      label: copy.feeling,
+      subtitle: language === 'vi' ? 'Chia sẻ cảm xúc của bạn' : 'Share your feelings',
+      Icon: Smile,
+      iconColor: '#eab308',
+      iconBg: '#fef9c3',
+      onPress: () => setFeelingSheetVisible(true),
+    },
+    {
+      key: 'audio',
+      label: copy.audio,
+      subtitle: language === 'vi' ? 'Thêm ghi âm hoặc tệp nhạc' : 'Add audio or recording',
+      Icon: Music2,
+      iconColor: '#ec4899',
+      iconBg: '#fdf2f8',
+      onPress: handleAudioAction,
+    },
+    {
+      key: 'live',
+      label: copy.live,
+      subtitle: language === 'vi' ? 'Bắt đầu phát video trực tiếp' : 'Start a live video stream',
+      Icon: Radio,
+      iconColor: '#ef4444',
+      iconBg: '#fef2f2',
+      route: ROUTES.GO_LIVE,
+    },
+    {
+      key: 'page',
+      label: copy.page,
+      subtitle: language === 'vi' ? 'Bắt đầu trang của bạn' : 'Start your page',
+      Icon: FilePlus2,
+      iconColor: '#0ea5e9',
+      iconBg: '#f0f9ff',
+      route: ROUTES.CREATE_PAGE,
+    },
+  ], [copy, language, handleAudioAction]);
+
   const handleDiscard = useCallback(() => {
     const hasContent =
       vmRef.current.draft.text.trim().length > 0 ||
@@ -1980,6 +1976,7 @@ function CreatePostScreen() {
           <CreatePostHeader
             onDiscard={handleDiscard}
             onSubmit={handleSubmit}
+            onLivePress={() => (navigation as any).replace(ROUTES.GO_LIVE)}
             canSubmit={vm.canSubmit}
             isSubmitting={vm.isSubmitting}
             isProcessingPhotos={isProcessingPhotos}
@@ -2226,27 +2223,7 @@ function CreatePostScreen() {
 
               <View style={{ flex: 1 }} />
 
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => Keyboard.dismiss()}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
-                  borderRadius: 999,
-                  backgroundColor: '#0000ff',
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 13,
-                    fontWeight: '700',
-                    color: '#FFFFFF',
-                  }}
-                >
-                  {copy.done}
-                </Text>
-              </TouchableOpacity>
+             
             </View>
           </Animated.View>
         </View>
@@ -2274,11 +2251,6 @@ function CreatePostScreen() {
         onConfirm={handleConfirmDiscard}
       />
 
-      <CreateActionSheet
-        visible={moreSheetVisible}
-        onClose={() => setMoreSheetVisible(false)}
-        onNavigate={handleMoreNavigate}
-      />
     </SafeAreaView>
   );
 }

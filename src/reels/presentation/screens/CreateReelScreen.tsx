@@ -1,4 +1,4 @@
-// Description: Screen cho phép người dùng chọn hoặc quay video, xem trước, rồi đăng lên dưới dạng Reel.
+// Description: Lets users choose or record a video, preview it, and publish it as a Reel.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -340,6 +340,7 @@ export default function CreateReelScreen() {
         id: result.postId,
         caption: vm.draft.caption?.trim() || undefined,
         videoUrl: result.postFileUrl,
+        privacy: 'public',
         postedAt: Math.floor(Date.now() / 1000),
         likeCount: 0,
         commentCount: 0,

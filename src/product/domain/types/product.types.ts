@@ -1,5 +1,4 @@
-// Product domain types
-// API Response from WoWonder /api/new-product and /api/get-products
+// Description: Defines product domain models and API request/response contracts.
 
 export interface ProductCategory {
   id: number;
@@ -78,6 +77,7 @@ export interface AddToCartResponse {
 }
 
 export interface CreateProductInput {
+  product_id?: number;
   product_title: string;
   product_category: string;
   product_description: string;

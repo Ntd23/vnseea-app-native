@@ -1,3 +1,4 @@
+// Description: Animates feed chrome sections in and out while preserving overlay layout.
 import React, { useEffect } from 'react';
 import { Platform, StatusBar, StyleSheet } from 'react-native';
 import Animated, {
@@ -14,22 +15,29 @@ const FEED_HEADER_COLLAPSE_DURATION_MS = 190;
 type FeedHeaderCollapseFrameProps = {
   children: React.ReactNode;
   hidden?: boolean;
+  height?: number;
+  top?: number;
+  translateDistance?: number;
 };
 
 export function FeedHeaderCollapseFrame({
   children,
   hidden = false,
+  height,
+  top,
+  translateDistance,
 }: FeedHeaderCollapseFrameProps) {
   const insets = useSafeAreaInsets();
   const rawTopInset = insets.top > 0
     ? insets.top
     : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
   const topInset = Platform.OS === 'android' ? 0 : rawTopInset;
-  const expandedHeight = FEED_FILTER_HEIGHT;
+  const expandedHeight = height ?? FEED_FILTER_HEIGHT;
+  const collapseDistance = translateDistance ?? expandedHeight;
   const progress = useSharedValue(hidden ? 0 : 1);
   const frameStyle = {
     height: expandedHeight,
-    top: topInset + FEED_HEADER_BAR_HEIGHT,
+    top: top ?? topInset + FEED_HEADER_BAR_HEIGHT,
   };
   const contentStyle = {
     paddingTop: 0,
@@ -43,7 +51,7 @@ export function FeedHeaderCollapseFrame({
 
   const contentAnimatedStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * -FEED_FILTER_HEIGHT }],
+    transform: [{ translateY: (1 - progress.value) * -collapseDistance }],
   }));
 
   return (

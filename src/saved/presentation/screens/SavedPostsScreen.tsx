@@ -287,6 +287,7 @@ function buildFeedVideoPost(item: SavedItem): FeedVideoPost {
     id: item.id,
     caption: item.title,
     videoUrl: item.videoUrl || '',
+    privacy: 'public',
     thumbnailUrl: item.imageUrl,
     postedAt: item.postedAt,
     likeCount,

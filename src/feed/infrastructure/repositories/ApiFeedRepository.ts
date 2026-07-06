@@ -52,22 +52,25 @@ import type {
   PostPrivacy,
 } from '../../domain/types/feed.types';
 
-// ── Privacy mapping ──────────────────────────────────────────────────────
-// WoWonder's `postPrivacy` is numeric: 0=Public, 1=Friends, 2=Only me.
-// We accept extra values (3=Close, 4=Custom) at the wire layer too, but
-// the domain only exposes the 3 most common ones.
+// Privacy mapping
+// WoWonder's `postPrivacy` is numeric and enforced by Wo_GetPostData:
+// 0=everyone, 1=people the author follows, 2=people following the author,
+// 3=only me, 4=anonymous.
 const PRIVACY_TO_WIRE: Record<PostPrivacy, string> = {
   public: '0',
   friends: '1',
-  only_me: '2',
+  following: '1',
+  followers: '2',
+  only_me: '3',
+  anonymous: '4',
 };
 
 const WIRE_TO_PRIVACY: Record<string, PostPrivacy> = {
   '0': 'public',
-  '1': 'friends',
-  '2': 'only_me',
-  // Anything else (3, 4) we collapse to 'public' on read — we don't
-  // surface those modes in the UI yet, but we shouldn't crash.
+  '1': 'following',
+  '2': 'followers',
+  '3': 'only_me',
+  '4': 'anonymous',
 };
 
 // ── Wire format ──────────────────────────────────────────────────────────
@@ -301,6 +304,8 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
 
   // Get voted option id (null if not voted)
   const votedId = (raw.voted_id as number) > 0 ? String(raw.voted_id) : null;
+  const rawPrivacy = readString(raw, 'postPrivacy');
+  const privacy: PostPrivacy = WIRE_TO_PRIVACY[rawPrivacy] ?? 'public';
 
   return {
     kind: 'poll',
@@ -316,6 +321,7 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
     isLiked: myReaction !== null || readBool(raw, 'isLiked', 'postReacted'),
     myReaction,
     topReactions: extractTopReactions(raw, myReaction),
+    privacy,
     publisher: {
       id: readString(publisher, 'user_id', 'id'),
       name,
@@ -453,6 +459,9 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     likeCount = apiLikeCount;
   }
 
+  const rawPrivacy = readString(raw, 'postPrivacy');
+  const privacy: PostPrivacy = WIRE_TO_PRIVACY[rawPrivacy] ?? 'public';
+
   const videoUrl = normalizePlayableMediaUrl(readString(raw, 'postFile')) ?? '';
   const thumbnailUrl =
     normalizePlayableMediaUrl(
@@ -481,6 +490,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     isLiked: myReaction !== null || readBool(raw, 'isLiked', 'postReacted'),
     myReaction,
     topReactions: extractTopReactions(raw, myReaction),
+    privacy,
     publisher: {
       id: readString(publisher, 'user_id', 'id'),
       name,
@@ -2105,6 +2115,25 @@ export function createFeedRepository(): FeedRepository {
       }
 
       return { reported: ok };
+    },
+
+    async deletePost(postId: string): Promise<{ deleted: boolean }> {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        action?: string;
+        message?: string;
+      }>(apiRoutes.feed.postActions, {
+        action: 'delete',
+        post_id: postId,
+      });
+
+      const deleted = String(response.api_status) === '200' &&
+        (response.action ?? '').includes('deleted');
+      if (!deleted) {
+        throw new Error(response.message ?? 'Không xóa được bài viết.');
+      }
+
+      return { deleted };
     },
 
     async sharePost(input: SharePostInput): Promise<FeedPost> {

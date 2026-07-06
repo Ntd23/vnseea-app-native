@@ -10,6 +10,9 @@ import {
 import {
   BarChart3,
   Check,
+  EyeOff,
+  Globe,
+  Lock,
   ChevronDown,
   MessageCircle,
   MessageSquare,
@@ -17,10 +20,11 @@ import {
   Share2,
   Smile,
   ThumbsUp,
+  Users,
 } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useSharedValue } from 'react-native-reanimated';
-import type { FeedPollPost, PollOption } from '../../domain/types/feed.types';
+import type { FeedPollPost, PollOption, PostPrivacy } from '../../domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
@@ -86,6 +90,10 @@ type PollCopy = {
   share: string;
   userFallback: string;
   publicLabel: string;
+  followingPrivacyLabel: string;
+  followersPrivacyLabel: string;
+  onlyMePrivacyLabel: string;
+  anonymousPrivacyLabel: string;
   totalVotesLabel: (count: string) => string;
   now: string;
   minutesAgo: (count: number) => string;
@@ -109,6 +117,10 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     share: 'Chia sẻ',
     userFallback: 'Người dùng',
     publicLabel: 'Công khai',
+    followingPrivacyLabel: 'Nh\u1eefng ng\u01b0\u1eddi t\u00f4i theo d\u00f5i',
+    followersPrivacyLabel: 'M\u1ecdi ng\u01b0\u1eddi theo d\u00f5i t\u00f4i',
+    onlyMePrivacyLabel: 'Ch\u1ec9 m\u00ecnh t\u00f4i',
+    anonymousPrivacyLabel: '\u1ea8n danh',
     totalVotesLabel: count => `${count} Tổng số phiếu bầu`,
     now: 'Vừa xong',
     minutesAgo: count => `${count} phút trước`,
@@ -130,6 +142,10 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     share: 'Share',
     userFallback: 'User',
     publicLabel: 'Public',
+    followingPrivacyLabel: 'People I follow',
+    followersPrivacyLabel: 'People following me',
+    onlyMePrivacyLabel: 'Only me',
+    anonymousPrivacyLabel: 'Anonymous',
     totalVotesLabel: count => `${count} total votes`,
     now: 'Just now',
     minutesAgo: count => `${count} min ago`,
@@ -138,6 +154,22 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     locale: 'en-US',
   },
 };
+
+function getPollPrivacyMeta(privacy: PostPrivacy | undefined, copy: PollCopy) {
+  switch (privacy) {
+    case 'following':
+      return { label: copy.followingPrivacyLabel, Icon: Users };
+    case 'followers':
+      return { label: copy.followersPrivacyLabel, Icon: Users };
+    case 'only_me':
+      return { label: copy.onlyMePrivacyLabel, Icon: Lock };
+    case 'anonymous':
+      return { label: copy.anonymousPrivacyLabel, Icon: EyeOff };
+    case 'public':
+    default:
+      return { label: copy.publicLabel, Icon: Globe };
+  }
+}
 
 function formatTimeAgo(timestamp: number | undefined, copy: PollCopy): string {
   if (!timestamp) return '';
@@ -319,6 +351,8 @@ export const PollPostCard = React.memo(function PollPostCard({
 
   const reactionLabel = post.myReaction ? copy.reactionLabel[post.myReaction] : copy.like;
   const reactionColor = post.myReaction ? REACTION_COLOR[post.myReaction] : '#65676B';
+  const privacyMeta = getPollPrivacyMeta(post.privacy, copy);
+  const PrivacyIcon = privacyMeta.Icon;
 
   return (
     <FeedCardSurface>
@@ -348,8 +382,9 @@ export const PollPostCard = React.memo(function PollPostCard({
               <Text className="text-caption-secondary text-[12px] text-[#65676B]">
                 {formatTimeAgo(post.postedAt, copy)}
               </Text>
-              <Text className="text-caption-secondary text-[12px] text-[#65676B]"> • </Text>
-              <Text className="text-caption-secondary text-[12px] text-[#65676B]">{copy.publicLabel}</Text>
+              <Text className="text-caption-secondary text-[12px] text-[#65676B]"> {'\u2022'} </Text>
+              <PrivacyIcon size={11} color="#65676B" />
+              <Text className="ml-1 text-caption-secondary text-[12px] text-[#65676B]">{privacyMeta.label}</Text>
             </View>
           </View>
         </TouchableOpacity>
