@@ -236,6 +236,8 @@ function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
     types,
     lat: record.lat !== undefined && record.lat !== null ? Number(record.lat) : undefined,
     lng: record.lng !== undefined && record.lng !== null ? Number(record.lng) : undefined,
+    icon: record.icon !== undefined && record.icon !== null ? String(record.icon) : undefined,
+    iconBackgroundColor: record.icon_background_color !== undefined && record.icon_background_color !== null ? String(record.icon_background_color) : undefined,
   };
 }
 
@@ -266,6 +268,8 @@ function mapGooglePlace(record: RawApiRecord | undefined): NearbyPlace | null {
       latitude,
       longitude,
     },
+    icon: record.icon !== undefined && record.icon !== null ? String(record.icon) : undefined,
+    iconBackgroundColor: record.icon_background_color !== undefined && record.icon_background_color !== null ? String(record.icon_background_color) : undefined,
   };
 }
 
@@ -478,15 +482,24 @@ export function createUserRepository(): UserRepository {
 
     async getPlacePredictions(input) {
       if (input.query.trim().length < 3) return [];
-      const response = await apiBridge.post<PlaceAutocompleteResponse>(
+      const response = await apiBridge.post<any>(
         apiRoutes.user.mapDiscovery,
         {
           type: 'place_autocomplete',
           query: input.query.trim(),
           origin_lat: input.lat,
           origin_lng: input.lng,
+          radius: input.radius,
         },
       );
+
+      console.warn('=== GOOGLE API DEBUG ===', {
+        nearby_status: response.debug_nearby_status,
+        nearby_error: response.debug_nearby_error,
+        autocomplete_status: response.debug_autocomplete_status,
+        autocomplete_error: response.debug_autocomplete_error,
+        predictions_count: response.predictions?.length,
+      });
 
       return (response.predictions ?? [])
         .map(mapPlacePrediction)
