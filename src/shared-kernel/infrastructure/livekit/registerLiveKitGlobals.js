@@ -17,12 +17,6 @@ const VOICE_CALL_APPLE_AUDIO_CONFIGURATION = {
   audioMode: 'voiceChat',
 };
 
-const REALTIME_MEDIA_AUDIO_INPUT_OPTIONS = [
-  'allowBluetooth',
-  'defaultToSpeaker',
-  'mixWithOthers',
-];
-
 function logLiveKitAudioDebug(event, data = {}) {
   const payload = {
     event,
@@ -38,10 +32,11 @@ function logLiveKitAudioDebug(event, data = {}) {
 }
 
 function getAppleAudioConfigurationForAudioState(state) {
-  if (iosRealtimeMediaAudioContext?.requiresInput) {
-    return getRealtimeMediaInputAppleAudioConfiguration(
-      iosRealtimeMediaAudioContext,
-    );
+  if (
+    iosRealtimeMediaAudioContext?.owner === 'direct-call' &&
+    iosRealtimeMediaAudioContext?.requiresInput
+  ) {
+    return getVoiceCallAppleAudioConfiguration();
   }
 
   if (state.isRecordingEnabled) {
@@ -76,32 +71,14 @@ function getVoiceCallAppleAudioConfiguration() {
   };
 }
 
-function getRealtimeMediaInputAppleAudioConfiguration(context) {
-  return {
-    audioCategory: 'playAndRecord',
-    audioCategoryOptions: [...REALTIME_MEDIA_AUDIO_INPUT_OPTIONS],
-    audioMode:
-      context?.owner === 'live-stream' && context?.role === 'host'
-        ? 'videoChat'
-        : 'voiceChat',
-  };
-}
-
 function normalizeIosRealtimeMediaAudioContext(context = {}) {
-  const owner =
-    context.owner === 'live-stream' ? 'live-stream' : 'direct-call';
   const mediaKind = context.mediaKind === 'video' ? 'video' : 'audio';
-  const role = ['call', 'host', 'viewer'].includes(context.role)
-    ? context.role
-    : owner === 'live-stream'
-      ? 'viewer'
-      : 'call';
 
   return {
-    owner,
+    owner: 'direct-call',
     mediaKind,
-    role,
-    requiresInput: Boolean(context.requiresInput),
+    role: 'call',
+    requiresInput: true,
     roomName: typeof context.roomName === 'string' ? context.roomName : '',
     callId: typeof context.callId === 'string' ? context.callId : '',
     callUuid: typeof context.callUuid === 'string' ? context.callUuid : '',
@@ -112,12 +89,14 @@ function normalizeIosRealtimeMediaAudioContext(context = {}) {
 function setIosRealtimeMediaAudioActive(active, context = {}) {
   const nextActive = Boolean(active);
   const previousContext = iosRealtimeMediaAudioContext;
+  const requestedOwner = context?.owner;
   iosRealtimeMediaAudioContext = nextActive
     ? normalizeIosRealtimeMediaAudioContext(context)
     : null;
 
   logLiveKitAudioDebug('ios_realtime_media_audio_active_changed', {
     active: nextActive,
+    requestedOwner,
     previousContext,
     context: iosRealtimeMediaAudioContext,
   });
@@ -256,7 +235,6 @@ function registerLiveKitGlobalsForVnseea() {
 
 module.exports = {
   getIosAudioDeviceState,
-  getRealtimeMediaInputAppleAudioConfiguration,
   getVoiceCallAppleAudioConfiguration,
   isIosVoiceCallAudioActive,
   registerLiveKitGlobalsForVnseea,

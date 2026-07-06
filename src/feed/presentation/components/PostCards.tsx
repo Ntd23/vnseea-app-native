@@ -49,6 +49,7 @@ import {
   getVideoPlaybackTime,
   setVideoPlaybackTime,
 } from '../../../reels/presentation/screens/reelsPlayback';
+import { useLiveMediaActive } from '../../../shared-kernel/application/state/liveMediaPlaybackIsolation';
 import type { RootStackParamList } from '../../../navigation/types';
 import type {
   FeedPost,
@@ -1121,6 +1122,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
+  const liveMediaActive = useLiveMediaActive();
   const isActive = controlledIsActive !== undefined
     ? controlledIsActive
     : (isScreenFocused !== false && trackedIsActive);
@@ -1332,6 +1334,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 muted={muted}
                 repeat
                 ignoreSilentSwitch="ignore"
+                disableAudioSessionManagement={Platform.OS === 'ios' && liveMediaActive}
                 playInBackground={false}
                 playWhenInactive={false}
                 // Match Reels' renderer. Some Android codecs/CDN videos render

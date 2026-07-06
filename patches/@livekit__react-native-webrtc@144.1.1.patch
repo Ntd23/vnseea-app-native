@@ -1,4 +1,5 @@
 diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDeviceModuleObserver.m
+index 8b42cf11a5de39bd0073cc1f50468bed2dcd7c50..eb062574a5291b2e892207e9765bea0099a923ed 100644
 --- a/ios/RCTWebRTC/AudioDeviceModuleObserver.m
 +++ b/ios/RCTWebRTC/AudioDeviceModuleObserver.m
 @@ -1,4 +1,5 @@
@@ -6,13 +7,11 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +#import <AVFoundation/AVFoundation.h>
  #import <React/RCTLog.h>
  #import <os/log.h>
- 
-@@ -27,8 +28,141 @@ static os_log_t ADMObserverLog(void) {
-         log = os_log_create("com.livekit.react-native-webrtc", "AudioDeviceModuleObserver");
-     });
+
+@@ -29,6 +30,283 @@ static os_log_t ADMObserverLog(void) {
      return log;
-+}
-+
+ }
+
 +static NSString *VNSEEAPortTypesForAudioSessionPorts(NSArray<AVAudioSessionPortDescription *> *ports) {
 +    NSMutableArray<NSString *> *portTypes = [NSMutableArray array];
 +    for (AVAudioSessionPortDescription *port in ports) {
@@ -21,6 +20,16 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +        }
 +    }
 +    return [portTypes componentsJoinedByString:@","];
++}
++
++static NSString *VNSEEAPortDescriptionsForAudioSessionPorts(NSArray<AVAudioSessionPortDescription *> *ports) {
++    NSMutableArray<NSString *> *descriptions = [NSMutableArray array];
++    for (AVAudioSessionPortDescription *port in ports) {
++        [descriptions addObject:[NSString stringWithFormat:@"%@:%@",
++                                 port.portType ?: @"",
++                                 port.portName ?: @""]];
++    }
++    return [descriptions componentsJoinedByString:@","];
 +}
 +
 +static NSString *VNSEEARecordPermissionName(AVAudioSessionRecordPermission permission) {
@@ -35,11 +44,124 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +    }
 +}
 +
++static BOOL VNSEEAAudioSessionPortsContainType(
++    NSArray<AVAudioSessionPortDescription *> *ports,
++    NSString *portType) {
++    for (AVAudioSessionPortDescription *port in ports) {
++        if ([port.portType isEqualToString:portType]) {
++            return YES;
++        }
++    }
++    return NO;
++}
++
++static BOOL VNSEEAAudioSessionCurrentRouteUsesBluetoothHFP(AVAudioSession *audioSession) {
++    AVAudioSessionRouteDescription *route = audioSession.currentRoute;
++    return VNSEEAAudioSessionPortsContainType(route.inputs, AVAudioSessionPortBluetoothHFP) ||
++        VNSEEAAudioSessionPortsContainType(route.outputs, AVAudioSessionPortBluetoothHFP);
++}
++
++static AVAudioSessionPortDescription *VNSEEAAudioSessionPreferredInputForRecording(AVAudioSession *audioSession) {
++    NSArray<AVAudioSessionPortDescription *> *availableInputs = audioSession.availableInputs ?: @[];
++    BOOL routeUsesBluetoothHFP = VNSEEAAudioSessionCurrentRouteUsesBluetoothHFP(audioSession);
++    if (routeUsesBluetoothHFP) {
++        for (AVAudioSessionPortDescription *input in availableInputs) {
++            if ([input.portType isEqualToString:AVAudioSessionPortBluetoothHFP]) {
++                return input;
++            }
++        }
++    }
++
++    for (AVAudioSessionPortDescription *input in availableInputs) {
++        if ([input.portType isEqualToString:AVAudioSessionPortBuiltInMic]) {
++            return input;
++        }
++    }
++
++    for (AVAudioSessionPortDescription *input in availableInputs) {
++        if ([input.portType isEqualToString:AVAudioSessionPortBluetoothHFP]) {
++            return input;
++        }
++    }
++
++    return availableInputs.firstObject;
++}
++
++static void VNSEEALogWebRTCAudioInputProbe(
++    NSString *event,
++    RTCAudioDeviceModule * _Nullable audioDeviceModule,
++    AVAudioEngine * _Nullable engine,
++    BOOL isPlayoutEnabled,
++    BOOL isRecordingEnabled,
++    NSError * _Nullable error) {
++    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
++    AVAudioSessionRouteDescription *route = audioSession.currentRoute;
++    AVAudioSessionPortDescription *preferredInput = audioSession.preferredInput;
++    AVAudioSessionPortDescription *selectedInput = route.inputs.firstObject;
++    float inputGain = audioSession.inputGainSettable ? audioSession.inputGain : -1.0f;
++    NSLog(
++        @"[VNSEEA_CALL_DEBUG] {\"event\":\"%@\",\"isPlayoutEnabled\":%@,\"isRecordingEnabled\":%@,\"isPlaying\":%@,\"isRecording\":%@,\"isEngineRunning\":%@,\"avAudioEngineRunning\":%@,\"isMicrophoneMuted\":%@,\"category\":\"%@\",\"mode\":\"%@\",\"categoryOptions\":%lu,\"inputAvailable\":%@,\"recordPermission\":\"%@\",\"inputGain\":%.3f,\"inputGainSettable\":%@,\"sampleRate\":%.0f,\"ioBufferDuration\":%.4f,\"selectedInput\":\"%@:%@\",\"preferredInput\":\"%@:%@\",\"availableInputs\":\"%@\",\"routeInputs\":\"%@\",\"routeOutputs\":\"%@\",\"error\":\"%@\"}",
++        event,
++        isPlayoutEnabled ? @"true" : @"false",
++        isRecordingEnabled ? @"true" : @"false",
++        audioDeviceModule != nil && audioDeviceModule.isPlaying ? @"true" : @"false",
++        audioDeviceModule != nil && audioDeviceModule.isRecording ? @"true" : @"false",
++        audioDeviceModule != nil && audioDeviceModule.isEngineRunning ? @"true" : @"false",
++        engine != nil && engine.isRunning ? @"true" : @"false",
++        audioDeviceModule != nil && audioDeviceModule.isMicrophoneMuted ? @"true" : @"false",
++        audioSession.category ?: @"",
++        audioSession.mode ?: @"",
++        (unsigned long)audioSession.categoryOptions,
++        audioSession.isInputAvailable ? @"true" : @"false",
++        VNSEEARecordPermissionName(audioSession.recordPermission),
++        inputGain,
++        audioSession.inputGainSettable ? @"true" : @"false",
++        audioSession.sampleRate,
++        audioSession.IOBufferDuration,
++        selectedInput.portType ?: @"",
++        selectedInput.portName ?: @"",
++        preferredInput.portType ?: @"",
++        preferredInput.portName ?: @"",
++        VNSEEAPortDescriptionsForAudioSessionPorts(audioSession.availableInputs ?: @[]),
++        VNSEEAPortDescriptionsForAudioSessionPorts(route.inputs),
++        VNSEEAPortDescriptionsForAudioSessionPorts(route.outputs),
++        error.localizedDescription ?: @"");
++}
++
++static void VNSEEAEnsureValidRecordingRoute(BOOL isPlayoutEnabled, BOOL isRecordingEnabled) {
++    if (!isRecordingEnabled) {
++        return;
++    }
++
++    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
++    AVAudioSessionPortDescription *preferredInput = VNSEEAAudioSessionPreferredInputForRecording(audioSession);
++    if (preferredInput != nil && ![audioSession.preferredInput.UID isEqualToString:preferredInput.UID]) {
++        NSError *inputError = nil;
++        if (![audioSession setPreferredInput:preferredInput error:&inputError]) {
++            VNSEEALogWebRTCAudioInputProbe(
++                @"native_webrtc_audio_input_probe", nil, nil, isPlayoutEnabled, isRecordingEnabled, inputError);
++            return;
++        }
++    }
++
++    if (!VNSEEAAudioSessionCurrentRouteUsesBluetoothHFP(audioSession)) {
++        NSError *routeError = nil;
++        if (![audioSession overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:&routeError]) {
++            VNSEEALogWebRTCAudioInputProbe(
++                @"native_webrtc_audio_input_probe", nil, nil, isPlayoutEnabled, isRecordingEnabled, routeError);
++            return;
++        }
++    }
++
++    VNSEEALogWebRTCAudioInputProbe(
++        @"native_webrtc_audio_input_probe", nil, nil, isPlayoutEnabled, isRecordingEnabled, nil);
++}
++
 +static void VNSEEALogWebRTCAudioSessionState(
 +    NSString *event,
 +    BOOL isPlayoutEnabled,
 +    BOOL isRecordingEnabled,
-+    NSError *error) {
++    NSError * _Nullable error) {
 +    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
 +    AVAudioSessionRouteDescription *route = audioSession.currentRoute;
 +    NSLog(
@@ -70,13 +192,9 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +}
 +
 +static NSString *VNSEEAAudioSessionModeForEngine(void) {
-+    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
-+    if ([audioSession.mode isEqualToString:AVAudioSessionModeVideoChat]) {
-+        return AVAudioSessionModeVideoChat;
-+    }
 +    return AVAudioSessionModeVoiceChat;
- }
- 
++}
++
 +static void VNSEEAConfigureAudioSessionForEngine(BOOL isPlayoutEnabled, BOOL isRecordingEnabled) {
 +    if (!VNSEEAShouldUseVoiceCallAudioSession(isRecordingEnabled)) {
 +        return;
@@ -85,7 +203,7 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +    NSError *error = nil;
 +    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
 +    AVAudioSessionCategoryOptions categoryOptions =
-+        AVAudioSessionCategoryOptionAllowBluetooth |
++        AVAudioSessionCategoryOptionAllowBluetoothHFP |
 +        AVAudioSessionCategoryOptionDefaultToSpeaker |
 +        AVAudioSessionCategoryOptionMixWithOthers;
 +
@@ -117,6 +235,7 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +            @"native_webrtc_audio_session_config_error", isPlayoutEnabled, isRecordingEnabled, error);
 +        return;
 +    }
++    VNSEEAEnsureValidRecordingRoute(isPlayoutEnabled, isRecordingEnabled);
 +
 +    VNSEEALogWebRTCAudioSessionState(
 +        @"native_webrtc_audio_session_configured", isPlayoutEnabled, isRecordingEnabled, nil);
@@ -146,30 +265,255 @@ diff --git a/ios/RCTWebRTC/AudioDeviceModuleObserver.m b/ios/RCTWebRTC/AudioDevi
 +        audioSession.IOBufferDuration);
 +}
 +
++static void VNSEEASchedulePostStartAudioProbe(
++    RTCAudioDeviceModule *audioDeviceModule,
++    AVAudioEngine *engine,
++    BOOL isPlayoutEnabled,
++    BOOL isRecordingEnabled) {
++    if (!isRecordingEnabled || audioDeviceModule == nil) {
++        return;
++    }
++
++    RTCAudioDeviceModule *capturedAudioDeviceModule = audioDeviceModule;
++    AVAudioEngine *capturedEngine = engine;
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
++        VNSEEAConfigureAudioSessionForEngine(isPlayoutEnabled, isRecordingEnabled);
++        VNSEEAUnmuteMicrophoneForRecordingEngine(capturedAudioDeviceModule, isPlayoutEnabled, isRecordingEnabled);
++        VNSEEALogWebRTCAudioInputProbe(
++            @"native_webrtc_audio_post_start_probe",
++            capturedAudioDeviceModule,
++            capturedEngine,
++            isPlayoutEnabled,
++            isRecordingEnabled,
++            nil);
++    });
++}
++
  @interface AudioDeviceModuleObserver ()
- 
+
  @property(weak, nonatomic) WebRTCModule *module;
-@@ -186,6 +320,11 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
-               isPlayoutEnabled:(BOOL)isPlayoutEnabled
+@@ -140,6 +418,11 @@ static os_log_t ADMObserverLog(void) {
+                      "Timed out after %llds waiting for JS to respond to %{public}@; returning default 0",
+                      (long long)kJSResponseTimeoutSeconds,
+                      eventName);
++        NSLog(
++            @"[VNSEEA_CALL_DEBUG] {\"event\":\"native_webrtc_audio_delegate_timeout\",\"delegateEvent\":\"%@\",\"requestId\":%ld,\"timeoutSeconds\":%lld}",
++            eventName,
++            (long)requestId,
++            (long long)kJSResponseTimeoutSeconds);
+         return 0;
+     }
+
+@@ -187,6 +470,11 @@ static os_log_t ADMObserverLog(void) {
              isRecordingEnabled:(BOOL)isRecordingEnabled {
      BOOL isActive = self.isWillEnableEngineActive;
-+
+
 +    VNSEEALogWebRTCAudioSessionState(
 +        @"native_webrtc_audio_engine_will_enable", isPlayoutEnabled, isRecordingEnabled, nil);
 +    VNSEEAConfigureAudioSessionForEngine(isPlayoutEnabled, isRecordingEnabled);
 +    VNSEEAUnmuteMicrophoneForRecordingEngine(audioDeviceModule, isPlayoutEnabled, isRecordingEnabled);
- 
++
      if (isActive) {
          RCTLog(@"[AudioDeviceModuleObserver] Engine will enable - playout: %d, recording: %d - waiting for JS response",
-@@ -220,6 +359,11 @@ - (NSInteger)audioDeviceModule:(RTCAudioDeviceModule *)audioDeviceModule
+                isPlayoutEnabled,
+@@ -220,6 +508,12 @@ static os_log_t ADMObserverLog(void) {
              isRecordingEnabled:(BOOL)isRecordingEnabled {
      BOOL isActive = self.isWillStartEngineActive;
- 
+
 +    VNSEEALogWebRTCAudioSessionState(
 +        @"native_webrtc_audio_engine_will_start", isPlayoutEnabled, isRecordingEnabled, nil);
 +    VNSEEAConfigureAudioSessionForEngine(isPlayoutEnabled, isRecordingEnabled);
 +    VNSEEAUnmuteMicrophoneForRecordingEngine(audioDeviceModule, isPlayoutEnabled, isRecordingEnabled);
++    VNSEEASchedulePostStartAudioProbe(audioDeviceModule, engine, isPlayoutEnabled, isRecordingEnabled);
 +
      if (isActive) {
          RCTLog(@"[AudioDeviceModuleObserver] Engine will start - playout: %d, recording: %d - waiting for JS response",
                 isPlayoutEnabled,
+@@ -240,6 +534,13 @@ static os_log_t ADMObserverLog(void) {
+     if (isActive) {
+         RCTLog(@"[AudioDeviceModuleObserver] Engine will start - JS returned: %ld", (long)result);
+     }
++    NSLog(
++        @"[VNSEEA_CALL_DEBUG] {\"event\":\"native_webrtc_audio_engine_will_start_js_result\",\"result\":%ld,\"isActive\":%@,\"isPlayoutEnabled\":%@,\"isRecordingEnabled\":%@}",
++        (long)result,
++        isActive ? @"true" : @"false",
++        isPlayoutEnabled ? @"true" : @"false",
++        isRecordingEnabled ? @"true" : @"false");
++    VNSEEASchedulePostStartAudioProbe(audioDeviceModule, engine, isPlayoutEnabled, isRecordingEnabled);
+     return result;
+ }
+
+diff --git a/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m b/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
+index 0eb3d0aab48d64dc797697bfc11812c50ea82751..3963ae3dfa04e75f139f3a6913090f592c218ce8 100644
+--- a/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
++++ b/ios/RCTWebRTC/WebRTCModule+RTCAudioDeviceModule.m
+@@ -1,5 +1,6 @@
+ #import <objc/runtime.h>
+
++#import <AVFoundation/AVFoundation.h>
+ #import <React/RCTBridge.h>
+ #import <React/RCTBridgeModule.h>
+
+diff --git a/ios/RCTWebRTC/WebRTCModule+RTCAudioSession.m b/ios/RCTWebRTC/WebRTCModule+RTCAudioSession.m
+index cd4fa138caeee9628d5f317fedc79bbffc5f703d..9608691f930633013c864372302d8ba0f3d517c3 100644
+--- a/ios/RCTWebRTC/WebRTCModule+RTCAudioSession.m
++++ b/ios/RCTWebRTC/WebRTCModule+RTCAudioSession.m
+@@ -2,19 +2,139 @@
+
+ #import <React/RCTBridge.h>
+ #import <React/RCTBridgeModule.h>
++#import <AVFoundation/AVFoundation.h>
++#import <WebRTC/RTCAudioSession.h>
++#import <WebRTC/RTCAudioSessionConfiguration.h>
+
+ #import "WebRTCModule.h"
+
++static NSString *VNSEEAWebRTCAudioRecordPermissionString(AVAudioSessionRecordPermission permission)
++{
++    switch (permission) {
++        case AVAudioSessionRecordPermissionGranted:
++            return @"granted";
++        case AVAudioSessionRecordPermissionDenied:
++            return @"denied";
++        case AVAudioSessionRecordPermissionUndetermined:
++        default:
++            return @"undetermined";
++    }
++}
++
++static NSArray *VNSEEAWebRTCAudioRoutePorts(NSArray<AVAudioSessionPortDescription *> *ports)
++{
++    NSMutableArray *result = [NSMutableArray arrayWithCapacity:ports.count];
++    for (AVAudioSessionPortDescription *port in ports) {
++        [result addObject:@{
++            @"portName": port.portName ?: @"",
++            @"portType": port.portType ?: @"",
++            @"uid": port.UID ?: @"",
++        }];
++    }
++    return result;
++}
++
++static AVAudioSessionCategoryOptions VNSEEACallKitVoiceAudioOptions(void)
++{
++    return AVAudioSessionCategoryOptionAllowBluetoothHFP |
++        AVAudioSessionCategoryOptionDefaultToSpeaker;
++}
++
++static RTCAudioSessionConfiguration *VNSEEACallKitVoiceWebRTCConfiguration(void)
++{
++    RTCAudioSessionConfiguration *voiceConfig = [RTCAudioSessionConfiguration webRTCConfiguration];
++    voiceConfig.category = AVAudioSessionCategoryPlayAndRecord;
++    voiceConfig.mode = AVAudioSessionModeVoiceChat;
++    voiceConfig.categoryOptions = VNSEEACallKitVoiceAudioOptions();
++    [RTCAudioSessionConfiguration setWebRTCConfiguration:voiceConfig];
++    return voiceConfig;
++}
++
++static void VNSEEACallKitVoiceAudioTrace(NSString *stage)
++{
++    AVAudioSession *session = [AVAudioSession sharedInstance];
++    RTCAudioSessionConfiguration *webRTCConfig = [RTCAudioSessionConfiguration webRTCConfiguration];
++    NSLog(
++        @"VNSEEA_CALLKIT_AUDIO_TRACE %@ avCategory=%@ avMode=%@ avOptions=%lu webRTCConfigCategory=%@ webRTCConfigMode=%@ webRTCConfigOptions=%lu",
++        stage ?: @"",
++        session.category ?: @"",
++        session.mode ?: @"",
++        (unsigned long)session.categoryOptions,
++        webRTCConfig.category ?: @"",
++        webRTCConfig.mode ?: @"",
++        (unsigned long)webRTCConfig.categoryOptions
++    );
++}
++
++static NSDictionary *VNSEEAWebRTCAudioSessionState(NSString *stage, NSError *configurationError, NSError *activeError)
++{
++    AVAudioSession *session = [AVAudioSession sharedInstance];
++    RTCAudioSessionConfiguration *webRTCConfig = [RTCAudioSessionConfiguration webRTCConfiguration];
++    NSMutableDictionary *state = [@{
++        @"stage": stage ?: @"",
++        @"category": session.category ?: @"",
++        @"mode": session.mode ?: @"",
++        @"categoryOptions": @(session.categoryOptions),
++        @"webRTCConfigCategory": webRTCConfig.category ?: @"",
++        @"webRTCConfigMode": webRTCConfig.mode ?: @"",
++        @"webRTCConfigOptions": @(webRTCConfig.categoryOptions),
++        @"webRTCConfigHasAllowBluetooth": @((webRTCConfig.categoryOptions & AVAudioSessionCategoryOptionAllowBluetoothHFP) != 0),
++        @"webRTCConfigHasDefaultToSpeaker": @((webRTCConfig.categoryOptions & AVAudioSessionCategoryOptionDefaultToSpeaker) != 0),
++        @"hasAllowBluetooth": @((session.categoryOptions & AVAudioSessionCategoryOptionAllowBluetoothHFP) != 0),
++        @"hasDefaultToSpeaker": @((session.categoryOptions & AVAudioSessionCategoryOptionDefaultToSpeaker) != 0),
++        @"recordPermission": VNSEEAWebRTCAudioRecordPermissionString(session.recordPermission),
++        @"inputAvailable": @(session.inputAvailable),
++        @"currentRouteInputs": VNSEEAWebRTCAudioRoutePorts(session.currentRoute.inputs),
++        @"currentRouteOutputs": VNSEEAWebRTCAudioRoutePorts(session.currentRoute.outputs),
++        @"sampleRate": @(session.sampleRate),
++        @"IOBufferDuration": @(session.IOBufferDuration),
++        @"isOtherAudioPlaying": @(session.isOtherAudioPlaying),
++    } mutableCopy];
++
++    if (configurationError != nil) {
++        state[@"configurationError"] = @{
++            @"domain": configurationError.domain ?: @"",
++            @"code": @(configurationError.code),
++            @"message": configurationError.localizedDescription ?: @"",
++        };
++    }
++    if (activeError != nil) {
++        state[@"activeError"] = @{
++            @"domain": activeError.domain ?: @"",
++            @"code": @(activeError.code),
++            @"message": activeError.localizedDescription ?: @"",
++        };
++    }
++
++    return state;
++}
++
+ @implementation WebRTCModule (RTCAudioSession)
+
+ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(audioSessionDidActivate) {
++    RTCAudioSession *rtcSession = [RTCAudioSession sharedInstance];
++    RTCAudioSessionConfiguration *voiceConfig = VNSEEACallKitVoiceWebRTCConfiguration();
++    NSError *configurationError = nil;
++    NSError *activeError = nil;
++
++    VNSEEACallKitVoiceAudioTrace(@"before_activate");
++    [rtcSession lockForConfiguration];
++    [rtcSession setConfiguration:voiceConfig error:&configurationError];
++    [rtcSession setActive:YES error:&activeError];
++    [rtcSession unlockForConfiguration];
+     [[RTCAudioSession sharedInstance] audioSessionDidActivate:[AVAudioSession sharedInstance]];
+-    return nil;
++    VNSEEACallKitVoiceAudioTrace(@"after_activate");
++
++    return VNSEEAWebRTCAudioSessionState(@"activate", configurationError, activeError);
+ }
+
+ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(audioSessionDidDeactivate) {
+     [[RTCAudioSession sharedInstance] audioSessionDidDeactivate:[AVAudioSession sharedInstance]];
+-    return nil;
++    return VNSEEAWebRTCAudioSessionState(@"deactivate", nil, nil);
++}
++
++RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(audioSessionDebugState) {
++    return VNSEEAWebRTCAudioSessionState(@"debug", nil, nil);
+ }
+
+ @end
+diff --git a/ios/RCTWebRTC/WebRTCModule.m b/ios/RCTWebRTC/WebRTCModule.m
+index ce54d8db9fafd129b37d0df643dba7e460e75763..6f8114d23f555afc5cdf487ed5dc67b3afcefd7c 100644
+--- a/ios/RCTWebRTC/WebRTCModule.m
++++ b/ios/RCTWebRTC/WebRTCModule.m
+@@ -71,7 +71,11 @@
+         RCTLogInfo(@"Using video encoder factory: %@", NSStringFromClass([encoderFactory class]));
+         RCTLogInfo(@"Using video decoder factory: %@", NSStringFromClass([decoderFactory class]));
+
+-        if (audioDevice == nil) {
++        if (audioProcessingModule != nil) {
++            if (audioDevice != nil) {
++                NSLog(@"Both audioProcessingModule and audioDevice are provided, but only one can be used. Ignoring "
++                      @"audioDevice.");
++            }
+             RCTLogInfo(@"Using audio processing module: %@", NSStringFromClass([audioProcessingModule class]));
+             _peerConnectionFactory =
+                 [[RTCPeerConnectionFactory alloc] initWithAudioDeviceModuleType:RTCAudioDeviceModuleTypeAudioEngine

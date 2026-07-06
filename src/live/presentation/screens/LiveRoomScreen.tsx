@@ -34,6 +34,7 @@ import { useLiveRoomViewModel } from '../../application/view-models/useLiveViewM
 import { LiveCameraPreview } from '../components/LiveCameraPreview';
 import { LiveKitStreamView } from '../components/LiveKitStreamView';
 import type { LiveSession, LiveStreamComment } from '../../domain/types/live.types';
+import { publishLiveMediaActive } from '../../../shared-kernel/application/state/liveMediaPlaybackIsolation';
 
 type LiveRouteParams = {
   postId: number;
@@ -100,6 +101,13 @@ export default function LiveRoomScreen() {
     name: string;
     emoji: string;
   }>>([]);
+
+  useEffect(() => {
+    publishLiveMediaActive(true);
+    return () => {
+      publishLiveMediaActive(false);
+    };
+  }, []);
 
   const spawnEmojiRain = useCallback((emoji: string, count: number) => {
     for (let i = 0; i < count; i++) {
