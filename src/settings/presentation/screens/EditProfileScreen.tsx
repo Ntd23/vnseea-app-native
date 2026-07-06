@@ -16,11 +16,6 @@ import {
   ArrowLeft,
   Check,
   ChevronDown,
-  Link,
-  MapPin,
-  Pencil,
-  Save,
-  User,
   X,
 } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -42,6 +37,7 @@ type EditProfileScreenProps = NativeStackScreenProps<
 >;
 
 type ProfileDetailsFormState = {
+  username: string;
   firstName: string;
   lastName: string;
   website: string;
@@ -54,45 +50,29 @@ type ProfileDetailsFormState = {
   schoolCompleted: boolean;
 };
 
-const EMPTY_FORM: ProfileDetailsFormState = {
-  firstName: '',
-  lastName: '',
-  website: '',
-  about: '',
-  working: '',
-  workingLink: '',
-  address: '',
-  school: '',
-  relationshipId: '0',
-  schoolCompleted: false,
-};
-
 const EDIT_PROFILE_COPY = {
   vi: {
-    title: 'Chỉnh sửa chi tiết',
+    title: 'Hồ sơ',
     loading: 'Đang tải thông tin...',
     retry: 'Thử lại',
-    firstName: 'Tên',
-    lastName: 'Họ',
-    website: 'Website',
-    about: 'Giới thiệu',
-    working: 'Công việc',
-    companyWebsite: 'Website công ty',
-    address: 'Địa chỉ',
+    firstName: 'Tên Người Dùng',
+    username: 'Tên đăng nhập',
+    website: 'Trang mạng',
+    about: 'Về tôi',
+    working: 'Làm việc tại',
+    address: 'Địa điểm',
     school: 'Trường học',
-    relationship: 'Tình trạng quan hệ',
-    schoolCompleted: 'Đã hoàn thành trường học',
-    enabled: 'Bật',
-    disabled: 'Tắt',
-    save: 'Lưu thay đổi',
+    relationship: 'Mối quan hệ',
+    schoolCompleted: 'Hoàn thành',
+    save: 'Lưu',
     saving: 'Đang lưu...',
     savedTitle: 'Đã cập nhật',
     savedMessage: 'Thông tin chi tiết của bạn đã được lưu.',
     errorTitle: 'Không lưu được',
-    relationshipTitle: 'Chọn tình trạng quan hệ',
-    addressPlaceholder: 'Tìm hoặc nhập địa chỉ',
+    relationshipTitle: 'Chọn mối quan hệ',
+    addressPlaceholder: 'Tìm địa chỉ trên Google Maps',
     firstNamePlaceholder: 'Nhập tên',
-    lastNamePlaceholder: 'Nhập họ',
+    usernamePlaceholder: 'Nhập tên đăng nhập',
     websitePlaceholder: 'https://example.com',
     aboutPlaceholder: 'Viết vài dòng về bạn...',
     workingPlaceholder: 'Công việc hiện tại',
@@ -101,30 +81,27 @@ const EDIT_PROFILE_COPY = {
     close: 'Đóng',
   },
   en: {
-    title: 'Edit details',
+    title: 'Profile',
     loading: 'Loading profile...',
     retry: 'Try again',
-    firstName: 'First name',
-    lastName: 'Last name',
+    firstName: 'User Name',
+    username: 'Username',
     website: 'Website',
-    about: 'About',
-    working: 'Working',
-    companyWebsite: 'Company website',
-    address: 'Address',
+    about: 'About me',
+    working: 'Working at',
+    address: 'Location',
     school: 'School',
     relationship: 'Relationship',
-    schoolCompleted: 'School completed',
-    enabled: 'Enabled',
-    disabled: 'Disabled',
-    save: 'Save changes',
+    schoolCompleted: 'Completed',
+    save: 'Save',
     saving: 'Saving...',
     savedTitle: 'Updated',
     savedMessage: 'Your profile details have been saved.',
     errorTitle: 'Could not save',
     relationshipTitle: 'Choose relationship',
     addressPlaceholder: 'Search or enter address',
-    firstNamePlaceholder: 'Enter first name',
-    lastNamePlaceholder: 'Enter last name',
+    firstNamePlaceholder: 'Enter name',
+    usernamePlaceholder: 'Enter username',
     websitePlaceholder: 'https://example.com',
     aboutPlaceholder: 'Write a short bio...',
     workingPlaceholder: 'Current work',
@@ -138,7 +115,7 @@ const RELATIONSHIP_OPTIONS = [
   {
     id: '0',
     label: {
-      vi: 'Không',
+      vi: 'Không có',
       en: 'None',
     },
   },
@@ -172,14 +149,29 @@ const RELATIONSHIP_OPTIONS = [
   },
 ];
 
+const EMPTY_FORM: ProfileDetailsFormState = {
+  username: '',
+  firstName: '',
+  lastName: '',
+  website: '',
+  about: '',
+  working: '',
+  workingLink: '',
+  address: '',
+  school: '',
+  relationshipId: '0',
+  schoolCompleted: false,
+};
+
 function fieldValue(value: unknown) {
   return String(value ?? '').trim();
 }
 
-function formFromProfile(profile: ReturnType<typeof useMyInfoViewModel>['profile']) {
+function formFromProfile(profile: ReturnType<typeof useMyInfoViewModel>['profile']): ProfileDetailsFormState {
   if (!profile) return EMPTY_FORM;
 
   return {
+    username: fieldValue(profile.username),
     firstName: fieldValue(profile.firstName),
     lastName: fieldValue(profile.lastName),
     website: fieldValue(profile.website),
@@ -198,19 +190,10 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-function FieldIcon({ children }: { children: React.ReactNode }) {
-  return (
-    <View className="mr-3 h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
-      {children}
-    </View>
-  );
-}
-
 function FormField({
   label,
   value,
   placeholder,
-  icon,
   multiline = false,
   keyboardType,
   autoCapitalize = 'sentences',
@@ -219,7 +202,6 @@ function FormField({
   label: string;
   value: string;
   placeholder: string;
-  icon: React.ReactNode;
   multiline?: boolean;
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad' | 'url';
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
@@ -231,11 +213,10 @@ function FormField({
         {label}
       </Text>
       <View
-        className={`flex-row rounded-2xl border border-slate-200 bg-white px-3 ${
-          multiline ? 'min-h-[124px] items-start py-3' : 'h-14 items-center'
+        className={`flex-row rounded-2xl border border-slate-200 bg-white px-3.5 ${
+          multiline ? 'min-h-[124px] items-start py-3.5' : 'h-14 items-center'
         }`}
       >
-        <FieldIcon>{icon}</FieldIcon>
         <TextInput
           className={`flex-1 p-0 text-[16px] text-slate-900 ${
             multiline ? 'min-h-[96px]' : ''
@@ -257,12 +238,10 @@ function FormField({
 function SelectField({
   label,
   value,
-  icon,
   onPress,
 }: {
   label: string;
   value: string;
-  icon: React.ReactNode;
   onPress: () => void;
 }) {
   return (
@@ -273,9 +252,8 @@ function SelectField({
       <TouchableOpacity
         activeOpacity={0.82}
         onPress={onPress}
-        className="h-14 flex-row items-center rounded-2xl border border-slate-200 bg-white px-3"
+        className="h-14 flex-row items-center rounded-2xl border border-slate-200 bg-white px-3.5"
       >
-        <FieldIcon>{icon}</FieldIcon>
         <Text className="flex-1 text-[16px] text-slate-900" numberOfLines={1}>
           {value}
         </Text>
@@ -285,29 +263,31 @@ function SelectField({
   );
 }
 
-function ToggleChoice({
+function SchoolCompletedCheckbox({
   label,
-  active,
+  selected,
   onPress,
 }: {
   label: string;
-  active: boolean;
+  selected: boolean;
   onPress: () => void;
 }) {
   return (
     <TouchableOpacity
       activeOpacity={0.82}
       onPress={onPress}
-      className={`h-12 flex-1 flex-row items-center justify-center rounded-2xl border ${
-        active ? 'border-blue-600 bg-blue-600' : 'border-slate-200 bg-white'
-      }`}
+      className="flex-row items-center mb-4 py-2"
     >
-      {active ? <Check size={18} color="#FFFFFF" /> : null}
-      <Text
-        className={`ml-2 text-[15px] font-bold ${
-          active ? 'text-white' : 'text-slate-700'
+      <View
+        className={`h-5 w-5 items-center justify-center rounded border ${
+          selected
+            ? 'border-blue-600 bg-blue-600'
+            : 'border-slate-300 bg-white'
         }`}
       >
+        {selected ? <Check size={14} color="#ffffff" strokeWidth={3} /> : null}
+      </View>
+      <Text className="ml-2 text-[15px] text-slate-700 font-medium">
         {label}
       </Text>
     </TouchableOpacity>
@@ -425,6 +405,7 @@ function EditProfileScreen({ navigation }: EditProfileScreenProps) {
 
     try {
       await updateCurrentUser({
+        username: form.username.trim(),
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         website: form.website.trim(),
@@ -531,60 +512,28 @@ function EditProfileScreen({ navigation }: EditProfileScreenProps) {
           ) : null}
 
           <View className="rounded-[28px] border border-slate-100 bg-white p-4 shadow-sm">
-            <View className="flex-row gap-3">
-              <FormField
-                label={copy.firstName}
-                value={form.firstName}
-                placeholder={copy.firstNamePlaceholder}
-                icon={<User size={21} color="#0000ff" />}
-                onChangeText={value => updateField('firstName', value)}
-              />
-              <FormField
-                label={copy.lastName}
-                value={form.lastName}
-                placeholder={copy.lastNamePlaceholder}
-                icon={<User size={21} color="#0000ff" />}
-                onChangeText={value => updateField('lastName', value)}
-              />
-            </View>
+            <FormField
+              label={copy.firstName}
+              value={form.firstName}
+              placeholder={copy.firstNamePlaceholder}
+              onChangeText={value => updateField('firstName', value)}
+            />
 
             <FormField
-              label={copy.website}
-              value={form.website}
-              placeholder={copy.websitePlaceholder}
-              icon={<Link size={21} color="#0000ff" />}
-              keyboardType="url"
+              label={copy.username}
+              value={form.username}
+              placeholder={copy.usernamePlaceholder}
               autoCapitalize="none"
-              onChangeText={value => updateField('website', value)}
+              onChangeText={value => updateField('username', value)}
             />
 
             <FormField
               label={copy.about}
               value={form.about}
               placeholder={copy.aboutPlaceholder}
-              icon={<Pencil size={21} color="#0000ff" />}
               multiline
               onChangeText={value => updateField('about', value)}
             />
-
-            <View className="flex-row gap-3">
-              <FormField
-                label={copy.working}
-                value={form.working}
-                placeholder={copy.workingPlaceholder}
-                icon={<Pencil size={21} color="#0000ff" />}
-                onChangeText={value => updateField('working', value)}
-              />
-              <FormField
-                label={copy.companyWebsite}
-                value={form.workingLink}
-                placeholder={copy.companyWebsitePlaceholder}
-                icon={<Link size={21} color="#0000ff" />}
-                keyboardType="url"
-                autoCapitalize="none"
-                onChangeText={value => updateField('workingLink', value)}
-              />
-            </View>
 
             <View className="mb-4">
               <Text className="mb-2 text-[15px] font-semibold text-slate-900">
@@ -597,40 +546,72 @@ function EditProfileScreen({ navigation }: EditProfileScreenProps) {
                 onSelectPlace={place =>
                   updateField('address', place.description || place.mainText)
                 }
+                customInputContainerStyle={{
+                  height: 56,
+                  borderRadius: 16,
+                  borderColor: '#cbd5e1',
+                  borderWidth: 1,
+                  backgroundColor: '#ffffff',
+                  paddingHorizontal: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                }}
+                customIconWrapperStyle={{
+                  display: 'none',
+                }}
+                customInputStyle={{
+                  fontSize: 16,
+                  color: '#0f172a',
+                  fontWeight: 'normal',
+                }}
               />
             </View>
 
-            <View className="flex-row gap-3">
-              <FormField
-                label={copy.school}
-                value={form.school}
-                placeholder={copy.schoolPlaceholder}
-                icon={<Pencil size={21} color="#0000ff" />}
-                onChangeText={value => updateField('school', value)}
-              />
-              <SelectField
-                label={copy.relationship}
-                value={relationshipLabel}
-                icon={<User size={21} color="#0000ff" />}
-                onPress={() => setRelationshipVisible(true)}
-              />
-            </View>
+            <FormField
+              label={copy.school}
+              value={form.school}
+              placeholder={copy.schoolPlaceholder}
+              onChangeText={value => updateField('school', value)}
+            />
 
-            <Text className="mb-2 text-[15px] font-semibold text-slate-900">
-              {copy.schoolCompleted}
-            </Text>
-            <View className="mb-1 flex-row gap-3">
-              <ToggleChoice
-                label={copy.enabled}
-                active={form.schoolCompleted}
-                onPress={() => updateField('schoolCompleted', true)}
-              />
-              <ToggleChoice
-                label={copy.disabled}
-                active={!form.schoolCompleted}
-                onPress={() => updateField('schoolCompleted', false)}
-              />
-            </View>
+            <SchoolCompletedCheckbox
+              label={copy.schoolCompleted}
+              selected={form.schoolCompleted}
+              onPress={() => updateField('schoolCompleted', !form.schoolCompleted)}
+            />
+
+            <FormField
+              label={copy.working}
+              value={form.working}
+              placeholder={copy.workingPlaceholder}
+              onChangeText={value => updateField('working', value)}
+            />
+            <Text className="text-xs text-slate-400 -mt-2 mb-4">(e.g Apple)</Text>
+
+            <FormField
+              label=""
+              value={form.workingLink}
+              placeholder={copy.companyWebsitePlaceholder}
+              keyboardType="url"
+              autoCapitalize="none"
+              onChangeText={value => updateField('workingLink', value)}
+            />
+            <Text className="text-xs text-slate-400 -mt-2 mb-4">Trang web của công ty</Text>
+
+            <FormField
+              label={copy.website}
+              value={form.website}
+              placeholder={copy.websitePlaceholder}
+              keyboardType="url"
+              autoCapitalize="none"
+              onChangeText={value => updateField('website', value)}
+            />
+
+            <SelectField
+              label={copy.relationship}
+              value={relationshipLabel}
+              onPress={() => setRelationshipVisible(true)}
+            />
           </View>
 
           <TouchableOpacity
@@ -643,9 +624,7 @@ function EditProfileScreen({ navigation }: EditProfileScreenProps) {
           >
             {isSaving ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Save size={20} color="#FFFFFF" />
-            )}
+            ) : null}
             <Text className="ml-2 text-[16px] font-extrabold text-white">
               {isSaving ? copy.saving : copy.save}
             </Text>

@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
+  Animated as RnAnimated,
   Dimensions,
   FlatList,
   Image,
@@ -1239,7 +1240,14 @@ function FeedScreen() {
   const reportFeedPost = vm.reportPost;
   const shareFeedPost = vm.sharePost;
   const reloadFeedPosts = vm.reloadPosts;
-  const mainFeedListRef = useRef<FlatList>(null);
+  const mainFeedListRef = useRef<any>(null);
+  const scrollY = useRef(new RnAnimated.Value(0)).current;
+  const clampedScrollY = RnAnimated.diffClamp(scrollY, 0, FEED_HEADER_BAR_HEIGHT);
+  const headerTranslateY = clampedScrollY.interpolate({
+    inputRange: [0, FEED_HEADER_BAR_HEIGHT],
+    outputRange: [0, -FEED_HEADER_BAR_HEIGHT],
+    extrapolate: 'clamp',
+  });
 
   // Top-bar logo button: when tapped while already on the Feed tab,
   // scroll the feed back to the top and trigger a fresh reload — same
@@ -1260,10 +1268,8 @@ function FeedScreen() {
     ? feedSafeAreaInsets.top
     : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
   const topInset = Platform.OS === 'android' ? 0 : rawTopInset;
-  const feedRefreshProgressViewOffset =
-    Platform.OS === 'ios'
-      ? topInset + FEED_IOS_HEADER_OVERLAY_HEIGHT
-      : topInset + FEED_HEADER_CONTENT_HEIGHT;
+  // Unified header height offset for both iOS and Android to support sticky tabs
+  const feedRefreshProgressViewOffset = topInset + FEED_HEADER_CONTENT_HEIGHT;
   const feedHeaderOverlayHeight = feedRefreshProgressViewOffset;
   const feedListContentStyle = useMemo(
     () => [FEED_LIST_CONTENT_STYLE, { paddingTop: feedHeaderOverlayHeight }],
@@ -2670,13 +2676,6 @@ function FeedScreen() {
   const renderFeedIntro = useCallback(
     () => (
       <View>
-        {Platform.OS === 'ios' ? (
-          <FilterTabs
-            copy={copy}
-            activeSource={activeFeedSource}
-            onChangeSource={setActiveFeedSource}
-          />
-        ) : null}
         <HomeFeedIntro
           onCreatePostPress={goToCreatePost}
           userId={userVm.user?.userId}
@@ -2687,10 +2686,8 @@ function FeedScreen() {
       </View>
     ),
     [
-      activeFeedSource,
       copy,
       goToCreatePost,
-      setActiveFeedSource,
       userVm.user?.userId,
       userVm.user?.avatar,
       userVm.user?.name,
@@ -2766,8 +2763,16 @@ function FeedScreen() {
     [feedListItems],
   );
 
+  const handleScrollCombined = RnAnimated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    {
+      useNativeDriver: true,
+      listener: handleFeedScroll,
+    }
+  );
+
   const feedListElement = (
-    <FlatList
+    <RnAnimated.FlatList
       ref={mainFeedListRef}
       data={Platform.OS === 'ios' ? iosFeedListItems : feedListItems}
       renderItem={renderItem}
@@ -2781,7 +2786,7 @@ function FeedScreen() {
       nestedScrollEnabled
       onLayout={handleFeedViewportLayout}
       scrollEventThrottle={16}
-      onScroll={handleFeedScroll}
+      onScroll={handleScrollCombined}
       onViewableItemsChanged={onViewableItemsChanged}
       viewabilityConfig={viewabilityConfigRef.current}
       onScrollBeginDrag={handleScrollBeginDrag}
@@ -2828,28 +2833,26 @@ function FeedScreen() {
         edges={FEED_ROOT_SAFE_AREA_EDGES}
       >
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        {Platform.OS === 'ios' ? (
-          <>
-            {feedListElement}
-            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
-              <FeedHeader />
-            </FeedHeaderCollapseFrame>
-          </>
-        ) : (
-          <>
-            <View style={styles.staticHeaderContainer}>
-              <FeedHeader />
-            </View>
-            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
-              <FilterTabs
-                copy={copy}
-                activeSource={activeFeedSource}
-                onChangeSource={setActiveFeedSource}
-              />
-            </FeedHeaderCollapseFrame>
-            {feedListElement}
-          </>
-        )}
+        
+        {feedListElement}
+
+        <RnAnimated.View
+          style={[
+            styles.animatedHeaderContainer,
+            {
+              transform: [{ translateY: headerTranslateY }],
+              paddingTop: topInset,
+            }
+          ]}
+        >
+          <FeedHeader />
+          <FilterTabs
+            copy={copy}
+            activeSource={activeFeedSource}
+            onChangeSource={setActiveFeedSource}
+          />
+        </RnAnimated.View>
+
         <ReactionPickerOverlay
           anchor={pickerAnchor}
           onPick={handlePickReaction}
@@ -2927,6 +2930,14 @@ function FeedScreen() {
 }
 
 const styles = StyleSheet.create({
+  animatedHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    backgroundColor: '#FFFFFF',
+  },
   staticHeaderContainer: {
     position: 'absolute',
     top: 0,

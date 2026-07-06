@@ -1,10 +1,9 @@
-// Description: Displays the authenticated viewer's real profile information.
-import React, { useCallback } from 'react';
+// Description: Allows the user to select and download their account data as an HTML file.
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
+  Alert,
   Linking,
-  RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -12,273 +11,341 @@ import {
 } from 'react-native';
 import {
   ArrowLeft,
-  AtSign,
-  BriefcaseBusiness,
-  Cake,
-  Edit2,
-  Globe2,
-  GraduationCap,
-  IdCard,
+  Download,
+  FileText,
+  Flag,
   Info,
-  Mail,
-  MapPin,
-  Phone,
-  UserRound,
+  PackageOpen,
+  UserPlus,
+  Users,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ROUTES } from '../../../navigation/constants/routes';
+import axios from 'axios';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+
 import type { RootStackParamList } from '../../../navigation/types';
-import type { UserProfile } from '../../../user/domain/types/user.types';
-import { useMyInfoViewModel } from '../../application/view-models/useMyInfoViewModel';
 
 type MyInfoNav = NativeStackNavigationProp<RootStackParamList>;
-type InfoIcon = React.ComponentType<{ size: number; color: string }>;
+type SelectionKey =
+  | 'my_information'
+  | 'posts'
+  | 'pages'
+  | 'groups'
+  | 'following'
+  | 'followers';
 
-function showValue(value: string | number | null | undefined) {
-  const text = String(value ?? '').trim();
-  return text || 'Chưa cập nhật';
-}
+type DownloadInfoResponse = {
+  api_status?: number;
+  message?: string;
+  link?: string;
+};
 
-function genderText(profile: UserProfile) {
-  if (profile.genderText) return profile.genderText;
-  if (profile.gender === 'male') return 'Nam';
-  if (profile.gender === 'female') return 'Nữ';
-  return profile.gender;
-}
-
-function websiteUrl(value: string) {
-  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
-}
-
-function InfoRow({
-  Icon,
-  label,
-  value,
-  onPress,
-}: {
-  Icon: InfoIcon;
+interface SelectionCardProps {
+  IconComponent: React.ComponentType<{ size: number; color: string }>;
   label: string;
-  value?: string | number | null;
-  onPress?: () => void;
-}) {
-  const displayValue = showValue(value);
-  const hasValue = displayValue !== 'Chưa cập nhật';
+  selected: boolean;
+  onPress: () => void;
+}
 
+function SelectionCard({
+  IconComponent,
+  label,
+  selected,
+  onPress,
+}: SelectionCardProps) {
   return (
     <TouchableOpacity
-      activeOpacity={onPress && hasValue ? 0.75 : 1}
-      disabled={!onPress || !hasValue}
+      activeOpacity={0.82}
       onPress={onPress}
-      className="flex-row items-start border-b border-slate-100 px-4 py-3.5"
+      className={`mb-4 items-center justify-center rounded-2xl border bg-white py-6 ${
+        selected ? 'border-blue-600' : 'border-slate-100'
+      }`}
+      style={{
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.03,
+        shadowRadius: 2,
+        elevation: 1,
+      }}
     >
-      <View className="mr-3 h-9 w-9 items-center justify-center rounded-full bg-blue-50">
-        <Icon size={18} color="#2563EB" />
+      <View
+        className="mb-3 h-14 w-14 items-center justify-center rounded-full"
+        style={{ backgroundColor: selected ? '#eff6ff' : '#f1f5f9' }}
+      >
+        <IconComponent size={24} color={selected ? '#2563eb' : '#64748b'} />
       </View>
-      <View className="flex-1">
-        <Text className="text-xs font-medium text-slate-500">{label}</Text>
-        <Text
-          className={`mt-0.5 text-[15px] ${
-            hasValue ? 'text-slate-900' : 'text-slate-400'
-          }`}
-        >
-          {displayValue}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View className="mt-4">
-      <Text className="mb-2 px-4 text-xs font-bold uppercase text-slate-500">
-        {title}
+      <Text
+        className={`text-[15px] font-bold ${
+          selected ? 'text-blue-600' : 'text-slate-800'
+        }`}
+      >
+        {label}
       </Text>
-      <View className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
-        {children}
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
 function MyInfoScreen() {
   const navigation = useNavigation<MyInfoNav>();
-  const { profile, isLoading, isRefreshing, error, refresh, retry } =
-    useMyInfoViewModel();
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
 
-  const openWebsite = useCallback(() => {
-    if (!profile?.website) return;
-    Linking.openURL(websiteUrl(profile.website)).catch(() => undefined);
-  }, [profile?.website]);
+  const [selections, setSelections] = useState<Record<SelectionKey, boolean>>({
+    my_information: false,
+    posts: false,
+    pages: false,
+    groups: false,
+    following: false,
+    followers: false,
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFileReady, setIsFileReady] = useState(false);
+  const [readyMessage, setReadyMessage] = useState('');
+  const [downloadLink, setDownloadLink] = useState('');
 
-  const openEmail = useCallback(() => {
-    if (!profile?.email) return;
-    Linking.openURL(`mailto:${profile.email}`).catch(() => undefined);
-  }, [profile?.email]);
+  const toggleSelection = useCallback((key: SelectionKey) => {
+    setIsFileReady(false);
+    setReadyMessage('');
+    setDownloadLink('');
+    setSelections(prev => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  }, []);
 
-  const openPhone = useCallback(() => {
-    if (!profile?.phoneNumber) return;
-    Linking.openURL(`tel:${profile.phoneNumber}`).catch(() => undefined);
-  }, [profile?.phoneNumber]);
+  const handleCreateFile = useCallback(async () => {
+    const hasSelection = Object.values(selections).some(Boolean);
+    if (!hasSelection) {
+      Alert.alert(
+        isVi ? 'Thông báo' : 'Notice',
+        isVi
+          ? 'Vui lòng chọn ít nhất một loại thông tin để tải xuống.'
+          : 'Please select at least one type of information to download.',
+      );
+      return;
+    }
 
-  const handleEditPress = useCallback(() => {
-    navigation.navigate('EditProfile' as any, {
-      profile,
-      avatarUrl: profile?.avatarUrl,
-      coverUrl: profile?.coverUrl,
-    });
-  }, [navigation, profile]);
+    setIsLoading(true);
+    setIsFileReady(false);
+    setReadyMessage('');
+    setDownloadLink('');
+
+    try {
+      // Build comma-separated data param for v2 API
+      const selectedKeys = (Object.keys(selections) as SelectionKey[]).filter(
+        key => selections[key],
+      );
+      const dataValue = selectedKeys.join(',');
+
+      const token = sessionStorage.getAccessToken();
+      const params = new URLSearchParams();
+      params.append('server_key', apiConfig.serverKey);
+      if (token) {
+        params.append('access_token', token);
+      }
+      params.append('data', dataValue);
+
+      // Call the v2 API endpoint which returns { api_status, message, link }
+      const response = await axios.post<DownloadInfoResponse>(
+        `${apiConfig.apiBaseUrl}/download_info`,
+        params.toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          timeout: 30000,
+        },
+      );
+
+      const payload = response.data ?? {};
+      if (payload.api_status !== 200 || !payload.link) {
+        throw new Error(
+          payload.message ||
+            (isVi
+              ? 'Không thể tạo tệp thông tin. Vui lòng thử lại.'
+              : 'Unable to generate your information file. Please try again.'),
+        );
+      }
+
+      setReadyMessage(
+        isVi
+          ? 'Tệp của bạn đã sẵn sàng để tải xuống!'
+          : 'Your file is ready to download!',
+      );
+      setDownloadLink(payload.link);
+      setIsFileReady(true);
+    } catch (caught) {
+      Alert.alert(
+        isVi ? 'Không thể tạo tệp' : 'Unable to create file',
+        caught instanceof Error
+          ? caught.message
+          : isVi
+            ? 'Đã có lỗi xảy ra. Vui lòng thử lại.'
+            : 'Something went wrong. Please try again.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isVi, selections]);
+
+  const handleDownloadFile = useCallback(async () => {
+    if (!downloadLink) return;
+    try {
+      await Linking.openURL(downloadLink);
+    } catch {
+      Alert.alert(
+        isVi ? 'Không thể tải xuống' : 'Unable to download',
+        isVi
+          ? 'Không mở được tệp tải xuống. Vui lòng thử lại.'
+          : 'Could not open the download file. Please try again.',
+      );
+    }
+  }, [downloadLink, isVi]);
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
-      <View className="h-14 flex-row items-center justify-between border-b border-slate-100 bg-white px-3">
+      <View
+        className="flex-row items-center justify-between border-b border-slate-100 bg-white px-4"
+        style={{ height: 64 }}
+      >
         <TouchableOpacity
-          activeOpacity={0.75}
+          activeOpacity={0.82}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={() => navigation.goBack()}
-          className="h-10 w-10 items-center justify-center rounded-full"
+          className="h-11 w-11 items-center justify-center rounded-full bg-slate-50"
         >
-          <ArrowLeft size={23} color="#0F172A" />
+          <ArrowLeft size={24} color="#0f172a" />
         </TouchableOpacity>
-        <Text className="text-lg font-bold text-slate-900">
-          Thông tin của tôi
+        <Text
+          className="flex-1 text-center text-xl font-extrabold text-slate-950"
+          numberOfLines={1}
+        >
+          {isVi ? 'Thông tin của tôi' : 'My information'}
         </Text>
-        <TouchableOpacity
-          activeOpacity={0.75}
-          onPress={handleEditPress}
-          className="h-10 w-10 items-center justify-center rounded-full"
-        >
-          <Edit2 size={20} color="#2563EB" />
-        </TouchableOpacity>
+        <View className="w-11" />
       </View>
 
-      {isLoading && !profile ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#2563EB" />
-          <Text className="mt-3 text-sm text-slate-500">
-            Đang tải thông tin...
-          </Text>
-        </View>
-      ) : !profile ? (
-        <View className="flex-1 items-center justify-center px-8">
-          <Info size={42} color="#94A3B8" />
-          <Text className="mt-4 text-center text-base font-semibold text-slate-800">
-            Không tải được thông tin cá nhân
-          </Text>
-          <Text className="mt-2 text-center text-sm text-slate-500">
-            {error ?? 'Vui lòng thử lại sau.'}
-          </Text>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => retry().catch(() => undefined)}
-            className="mt-5 rounded-full bg-blue-600 px-5 py-2.5"
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 20,
+          paddingBottom: 40,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        {isFileReady ? (
+          <View
+            className="items-center rounded-2xl border border-slate-100 bg-white px-5 py-9"
+            style={{
+              shadowColor: '#000000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.05,
+              shadowRadius: 8,
+              elevation: 2,
+            }}
           >
-            <Text className="font-semibold text-white">Thử lại</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-4 pb-8"
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={() => refresh().catch(() => undefined)}
-              colors={['#2563EB']}
-              tintColor="#2563EB"
-            />
-          }
-        >
-          <View className="mt-4 overflow-hidden rounded-2xl bg-white">
-            <View className="h-28 bg-blue-100">
-              {profile.coverUrl ? (
-                <Image
-                  source={{ uri: profile.coverUrl }}
-                  className="h-full w-full"
-                  resizeMode="cover"
-                />
-              ) : null}
+            <View className="mb-5 h-28 w-28 items-center justify-center rounded-full bg-blue-50">
+              <PackageOpen size={70} color="#1e81ce" />
             </View>
-            <View className="px-4 pb-4">
-              {profile.avatarUrl ? (
-                <Image
-                  source={{ uri: profile.avatarUrl }}
-                  className="-mt-10 h-20 w-20 rounded-full border-4 border-white bg-slate-200"
-                  resizeMode="cover"
-                />
-              ) : (
-                <View className="-mt-10 h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-blue-100">
-                  <Text className="text-2xl font-bold text-blue-700">
-                    {(profile.name ?? profile.username ?? '?')
-                      .charAt(0)
-                      .toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              <Text className="mt-2 text-xl font-bold text-slate-900">
-                {showValue(profile.name)}
-              </Text>
-              <Text className="mt-0.5 text-sm text-slate-500">
-                {profile.username
-                  ? `@${profile.username}`
-                  : 'Chưa cập nhật tên người dùng'}
-              </Text>
-            </View>
-          </View>
-
-          {error ? (
+            <Text className="mb-6 text-center text-[15px] font-extrabold text-slate-800">
+              {readyMessage ||
+                (isVi
+                  ? 'Tệp của bạn đã sẵn sàng để tải xuống!'
+                  : 'Your file is ready to download!')}
+            </Text>
             <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => retry().catch(() => undefined)}
-              className="mt-3 rounded-xl bg-amber-50 px-4 py-3"
+              activeOpacity={0.86}
+              onPress={handleDownloadFile}
+              className="h-12 flex-row items-center justify-center rounded-xl bg-blue-600 px-8"
+              style={{
+                shadowColor: '#2563eb',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.18,
+                shadowRadius: 8,
+                elevation: 3,
+              }}
             >
-              <Text className="text-sm text-amber-800">
-                Không làm mới được dữ liệu. Nhấn để thử lại.
+              <Download size={18} color="#ffffff" />
+              <Text className="ml-2 text-[15px] font-extrabold text-white">
+                {isVi ? 'Tải xuống' : 'Download'}
               </Text>
             </TouchableOpacity>
-          ) : null}
+          </View>
+        ) : (
+          <>
+            <Text className="mb-6 text-center text-[16px] font-semibold text-slate-600">
+              {isVi
+                ? 'Vui lòng chọn thông tin bạn muốn tải xuống'
+                : 'Please select the information you want to download'}
+            </Text>
 
-          <Section title="Tài khoản">
-            <InfoRow Icon={IdCard} label="ID người dùng" value={profile.id} />
-            <InfoRow Icon={AtSign} label="Tên người dùng" value={profile.username} />
-            <InfoRow Icon={Mail} label="Email" value={profile.email} onPress={openEmail} />
-            <InfoRow
-              Icon={Phone}
-              label="Số điện thoại"
-              value={profile.phoneNumber}
-              onPress={openPhone}
+            <SelectionCard
+              IconComponent={Info}
+              label={isVi ? 'Thông tin của tôi' : 'My Information'}
+              selected={selections.my_information}
+              onPress={() => toggleSelection('my_information')}
             />
-          </Section>
-
-          <Section title="Thông tin cá nhân">
-            <InfoRow Icon={UserRound} label="Họ" value={profile.lastName} />
-            <InfoRow Icon={UserRound} label="Tên" value={profile.firstName} />
-            <InfoRow Icon={UserRound} label="Giới tính" value={genderText(profile)} />
-            <InfoRow Icon={Cake} label="Ngày sinh" value={profile.birthday} />
-          </Section>
-
-          <Section title="Giới thiệu">
-            <InfoRow Icon={Info} label="Giới thiệu bản thân" value={profile.about} />
-            <InfoRow Icon={BriefcaseBusiness} label="Nơi làm việc" value={profile.working} />
-            <InfoRow Icon={GraduationCap} label="Trường học" value={profile.school} />
-            <InfoRow Icon={MapPin} label="Địa chỉ" value={profile.address} />
-            <InfoRow
-              Icon={Globe2}
-              label="Website"
-              value={profile.website}
-              onPress={openWebsite}
+            <SelectionCard
+              IconComponent={FileText}
+              label={isVi ? 'Bài viết' : 'Posts'}
+              selected={selections.posts}
+              onPress={() => toggleSelection('posts')}
             />
-          </Section>
-        </ScrollView>
-      )}
+            <SelectionCard
+              IconComponent={Flag}
+              label={isVi ? 'Các trang' : 'Pages'}
+              selected={selections.pages}
+              onPress={() => toggleSelection('pages')}
+            />
+            <SelectionCard
+              IconComponent={Users}
+              label={isVi ? 'Các nhóm' : 'Groups'}
+              selected={selections.groups}
+              onPress={() => toggleSelection('groups')}
+            />
+            <SelectionCard
+              IconComponent={UserPlus}
+              label={isVi ? 'Đang theo dõi' : 'Following'}
+              selected={selections.following}
+              onPress={() => toggleSelection('following')}
+            />
+            <SelectionCard
+              IconComponent={Users}
+              label={isVi ? 'Người theo dõi' : 'Followers'}
+              selected={selections.followers}
+              onPress={() => toggleSelection('followers')}
+            />
+
+            <TouchableOpacity
+              activeOpacity={0.86}
+              disabled={isLoading}
+              onPress={handleCreateFile}
+              className={`mt-6 h-14 flex-row items-center justify-center rounded-2xl ${
+                isLoading ? 'bg-blue-300' : 'bg-blue-600'
+              }`}
+              style={{
+                shadowColor: '#2563eb',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 8,
+                elevation: 3,
+              }}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : null}
+              <Text className="ml-2 text-[16px] font-extrabold text-white">
+                {isVi ? 'Tạo tệp' : 'Create file'}
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }

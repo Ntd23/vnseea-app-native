@@ -26,7 +26,7 @@ import {
   pick,
   types as documentTypes,
 } from '@react-native-documents/picker';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   BadgeCheck,
@@ -87,7 +87,12 @@ import {
   Video,
   Wallet,
   X,
- } from 'lucide-react-native';
+  KeyRound,
+  Trash2,
+  Info,
+  Gift,
+  Settings as SettingsIcon,
+} from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
@@ -103,6 +108,7 @@ import { useAuthViewModel } from '../../../auth/application/view-models/useAuthV
 import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import {
   languageStorage,
@@ -131,6 +137,86 @@ import {
 
 type SettingsNav = NativeStackNavigationProp<RootStackParamList>;
 type SettingsRoute = RouteProp<MainTabParamList, typeof ROUTES.SETTINGS>;
+
+const DASHBOARD_COPY = {
+  vi: {
+    title: 'Cài đặt',
+    profile: 'Hồ sơ',
+    profileHint: 'Tên, ngày sinh, nơi ở...',
+    socialLinks: 'Liên kết mạng xã hội',
+    socialLinksHint: 'Facebook, Twitter, Instagram...',
+    notifications: 'Thông báo',
+    notificationsHint: 'Cài đặt thông báo ứng dụng',
+    avatar: 'Ảnh đại diện & Ảnh bìa',
+    avatarHint: 'Thay đổi ảnh cá nhân của bạn',
+    privacy: 'Quyền riêng tư',
+    privacyHint: 'Ai có thể xem thông tin của bạn',
+    password: 'Mật khẩu',
+    passwordHint: 'Thay đổi mật khẩu tài khoản',
+    sessions: 'Phiên đăng nhập',
+    sessionsHint: 'Quản lý các thiết bị đã đăng nhập',
+    blockedUsers: 'Chặn người dùng',
+    blockedUsersHint: 'Danh sách người dùng đã chặn',
+    general: 'Chung',
+    generalHint: 'Điện thoại, giới tính, email, quốc gia, xác minh, ví',
+    myData: 'Thông tin của tôi',
+    myDataHint: 'Quản lý thông tin cá nhân',
+    addresses: 'Địa chỉ của tôi',
+    addressesHint: 'Quản lý địa chỉ giao hàng',
+    wallet: 'Cái ví',
+    walletHint: 'Số dư ví và giao dịch',
+    referralRewards: 'Điểm thưởng',
+    referralRewardsHint: 'Giới thiệu bạn bè nhận thưởng',
+    points: 'Điểm của tôi',
+    pointsHint: 'Điểm tích lũy thành viên',
+    balance: 'Số dư của tôi',
+    balanceHint: 'Quản lý số dư khả dụng',
+    deleteAccount: 'Xóa tài khoản',
+    deleteHint: 'Xóa vĩnh viễn tài khoản của bạn',
+    deleteTitle: 'Xóa tài khoản?',
+    deleteMessage: 'Bạn có chắc chắn muốn xóa tài khoản? Hành động này không thể hoàn tác.',
+    ok: 'Đồng ý',
+  },
+  en: {
+    title: 'Settings',
+    profile: 'Profile',
+    profileHint: 'Name, birthday, address...',
+    socialLinks: 'Social Links',
+    socialLinksHint: 'Facebook, Twitter, Instagram...',
+    notifications: 'Notifications',
+    notificationsHint: 'App notification settings',
+    avatar: 'Avatar & Cover',
+    avatarHint: 'Change your personal photos',
+    privacy: 'Privacy',
+    privacyHint: 'Who can see your details',
+    password: 'Password',
+    passwordHint: 'Change your account password',
+    sessions: 'Login Sessions',
+    sessionsHint: 'Manage active logged-in devices',
+    blockedUsers: 'Blocked Users',
+    blockedUsersHint: 'List of blocked users',
+    general: 'General',
+    generalHint: 'Phone, gender, email, country, verification, wallet',
+    myData: 'My Info',
+    myDataHint: 'Manage personal details',
+    addresses: 'My Address',
+    addressesHint: 'Manage delivery addresses',
+    wallet: 'Wallet',
+    walletHint: 'Wallet balance and transactions',
+    referralRewards: 'Referral Rewards',
+    referralRewardsHint: 'Invite friends to earn rewards',
+    points: 'My Points',
+    pointsHint: 'Accumulated member points',
+    balance: 'My Balance',
+    balanceHint: 'Manage available balance',
+    deleteAccount: 'Delete Account',
+    deleteHint: 'Permanently delete your account',
+    deleteTitle: 'Delete Account?',
+    deleteMessage: 'Are you sure you want to delete your account? This action cannot be undone.',
+    ok: 'Agree',
+  },
+};
+
 type AccountFormState = {
   username: string;
   phoneNumber: string;
@@ -1152,11 +1238,245 @@ function PrivacyChoiceGroup({
   );
 }
 
+// Helper to parse 'YYYY-MM-DD' into { day, month, year }
+function parseBirthday(dateStr: string) {
+  if (!dateStr) return { day: '', month: '', year: '' };
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const year = parts[0];
+    const month = parts[1];
+    const day = parts[2];
+    return { day: day.replace(/^0+/, ''), month: month.replace(/^0+/, ''), year };
+  }
+  return { day: '', month: '', year: '' };
+}
+
+// Helper to construct 'YYYY-MM-DD' from { day, month, year }
+function buildBirthday(day: string, month: string, year: string) {
+  const d = day.trim();
+  const m = month.trim();
+  const y = year.trim();
+  return `${y}-${m}-${d}`;
+}
+
+function FieldIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <View className="mr-3 h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+      {children}
+    </View>
+  );
+}
+
+function CommonFormField({
+  label,
+  value,
+  placeholder,
+  icon,
+  editable = true,
+  keyboardType = 'default',
+  secureTextEntry = false,
+  onChangeText,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  icon?: React.ReactNode;
+  editable?: boolean;
+  keyboardType?: 'default' | 'phone-pad' | 'email-address';
+  secureTextEntry?: boolean;
+  onChangeText?: (value: string) => void;
+}) {
+  return (
+    <View className="mb-4 flex-1">
+      <Text className="mb-2 text-[15px] font-semibold text-slate-900">
+        {label}
+      </Text>
+      <View className="h-14 flex-row items-center rounded-2xl border border-slate-200 bg-white px-3.5">
+        {icon ? <FieldIcon>{icon}</FieldIcon> : null}
+        <TextInput
+          className={`flex-1 p-0 text-[16px] ${
+            editable ? 'text-slate-900' : 'text-slate-500'
+          }`}
+          value={value}
+          placeholder={placeholder}
+          placeholderTextColor="#94A3B8"
+          editable={editable}
+          keyboardType={keyboardType}
+          secureTextEntry={secureTextEntry}
+          onChangeText={onChangeText}
+        />
+      </View>
+    </View>
+  );
+}
+
+function CommonSelectField({
+  label,
+  value,
+  placeholder,
+  icon,
+  rightIcon,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  icon?: React.ReactNode;
+  rightIcon?: React.ReactNode;
+  onPress: () => void;
+}) {
+  const hasValue = value && value.trim().length > 0;
+
+  return (
+    <View className="mb-4 flex-1">
+      <Text className="mb-2 text-[15px] font-semibold text-slate-900">
+        {label}
+      </Text>
+      <TouchableOpacity
+        activeOpacity={0.82}
+        onPress={onPress}
+        className="h-14 flex-row items-center rounded-2xl border border-slate-200 bg-white px-3.5"
+      >
+        {icon ? <FieldIcon>{icon}</FieldIcon> : null}
+        <Text
+          className={`flex-1 text-[16px] ${
+            hasValue ? 'text-slate-900' : 'text-slate-500'
+          }`}
+          numberOfLines={1}
+        >
+          {hasValue ? value : placeholder}
+        </Text>
+        {rightIcon ? <View className="ml-2">{rightIcon}</View> : null}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function BirthdayInputField({
+  label,
+  value,
+  onChangeText,
+  icon,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  icon: React.ReactNode;
+}) {
+  const { day, month, year } = useMemo(() => parseBirthday(value), [value]);
+
+  const handleDayChange = (text: string) => {
+    const clean = text.replace(/[^0-9]/g, '');
+    onChangeText(buildBirthday(clean, month, year));
+  };
+
+  const handleMonthChange = (text: string) => {
+    const clean = text.replace(/[^0-9]/g, '');
+    onChangeText(buildBirthday(day, clean, year));
+  };
+
+  const handleYearChange = (text: string) => {
+    const clean = text.replace(/[^0-9]/g, '');
+    onChangeText(buildBirthday(day, month, clean));
+  };
+
+  return (
+    <View className="mb-4 flex-1">
+      <Text className="mb-2 text-[15px] font-semibold text-slate-900">
+        {label}
+      </Text>
+      <View className="h-14 flex-row items-center rounded-2xl border border-slate-200 bg-white px-3">
+        <FieldIcon>{icon}</FieldIcon>
+        <View className="flex-1 flex-row items-center justify-start">
+          <TextInput
+            className="w-12 text-center text-[16px] text-slate-900 p-0 font-semibold"
+            value={day}
+            placeholder="DD"
+            placeholderTextColor="#94A3B8"
+            keyboardType="numeric"
+            maxLength={2}
+            onChangeText={handleDayChange}
+          />
+          <Text className="mx-3 text-[16px] text-slate-400 font-semibold">/</Text>
+          <TextInput
+            className="w-12 text-center text-[16px] text-slate-900 p-0 font-semibold"
+            value={month}
+            placeholder="MM"
+            placeholderTextColor="#94A3B8"
+            keyboardType="numeric"
+            maxLength={2}
+            onChangeText={handleMonthChange}
+          />
+          <Text className="mx-3 text-[16px] text-slate-400 font-semibold">/</Text>
+          <TextInput
+            className="w-20 text-center text-[16px] text-slate-900 p-0 font-semibold"
+            value={year}
+            placeholder="YYYY"
+            placeholderTextColor="#94A3B8"
+            keyboardType="numeric"
+            maxLength={4}
+            onChangeText={handleYearChange}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function VerificationCheckbox({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress?: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={onPress ? 0.82 : 1}
+      onPress={onPress}
+      disabled={!onPress}
+      className="flex-row items-center mr-6 py-2"
+    >
+      <View
+        className={`h-5 w-5 items-center justify-center rounded border ${
+          selected
+            ? 'border-blue-600 bg-blue-600'
+            : 'border-slate-300 bg-white'
+        }`}
+      >
+        {selected ? <Check size={14} color="#ffffff" strokeWidth={3} /> : null}
+      </View>
+      <Text className="ml-2 text-[15px] text-slate-700 font-medium">
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 function AccountInformationCard() {
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
+  
+  const labelPhone = isVi ? 'Điện thoại' : 'Phone';
+  const placeholderPhone = isVi ? 'Nhập số điện thoại' : 'Enter phone number';
+  const labelGender = isVi ? 'Giới tính' : 'Gender';
+  const labelEmail = isVi ? 'E-mail' : 'E-mail';
+  const placeholderEmail = isVi ? 'Nhập email' : 'Enter email';
+  const labelBirthday = isVi ? 'Ngày sinh' : 'Birthday';
+  const labelCountry = isVi ? 'Quốc gia' : 'Country';
+  const placeholderCountry = isVi ? 'Chọn quốc gia' : 'Select country';
+  const labelVerification = isVi ? 'Xác minh' : 'Verification';
+  const labelVerified = isVi ? 'Đã xác minh' : 'Verified';
+  const labelNotVerified = isVi ? 'Chưa xác minh' : 'Not verified';
+  const labelWallet = isVi ? 'Cái ví' : 'Wallet';
+
   const { profile, refresh } = useMyInfoViewModel();
   const { updateCurrentUser, isLoading } = useUserViewModel();
-  const [birthdayPickerVisible, setBirthdayPickerVisible] = useState(false);
+  const [genderPickerVisible, setGenderPickerVisible] = useState(false);
   const [countryPickerVisible, setCountryPickerVisible] = useState(false);
+  
   const [form, setForm] = useState<AccountFormState>({
     username: '',
     phoneNumber: '',
@@ -1191,17 +1511,6 @@ function AccountInformationCard() {
     [],
   );
 
-  const handleBirthdayChange = useCallback(
-    (event: DateTimePickerEvent, selectedDate?: Date) => {
-      if (Platform.OS === 'android') {
-        setBirthdayPickerVisible(false);
-      }
-      if (event.type === 'dismissed' || !selectedDate) return;
-      updateField('birthday', formatDateForApi(selectedDate));
-    },
-    [updateField],
-  );
-
   const handleSave = useCallback(async () => {
     try {
       await updateCurrentUser({
@@ -1213,92 +1522,78 @@ function AccountInformationCard() {
         countryId: form.countryId,
       });
       await refresh();
-      Alert.alert('Cài đặt chung', 'Đã lưu thông tin tài khoản.');
+      Alert.alert(isVi ? 'Thành công' : 'Success', isVi ? 'Đã lưu thông tin tài khoản.' : 'Account settings saved.');
     } catch (error) {
       Alert.alert(
-        'Cài đặt chung',
+        isVi ? 'Lỗi' : 'Error',
         error instanceof Error ? error.message : String(error),
       );
     }
-  }, [form, refresh, updateCurrentUser]);
+  }, [form, refresh, updateCurrentUser, isVi]);
 
   const isVerified = Boolean(profile?.verified);
   const wallet = fieldValue(profile?.wallet);
-  const selectedBirthday =
-    parseBirthdayDate(form.birthday) || new Date(2000, 0, 1);
   const selectedCountryName = countryNameFromId(form.countryId);
 
   return (
     <View className="surface-card px-4 py-4">
-      <AccountTextField
-        label="Username"
-        value={form.username}
-        icon={<User size={17} color="#111827" />}
-        onChangeText={value => updateField('username', value)}
-      />
-      <AccountTextField
-        label="Phone"
+      <CommonFormField
+        label={labelPhone}
         value={form.phoneNumber}
-        icon={<Phone size={17} color="#111827" />}
+        placeholder={placeholderPhone}
+        icon={<Phone size={20} color="#0000ff" />}
+        keyboardType="phone-pad"
         onChangeText={value => updateField('phoneNumber', value)}
       />
 
-      <View className="mb-4">
-        <Text className="mb-2 text-[15px] font-medium text-slate-900">
-          Gender
-        </Text>
-        <View className="flex-row">
-          <GenderButton
-            label="Male"
-            selected={form.gender === 'male'}
-            onPress={() => updateField('gender', 'male')}
-          />
-          <GenderButton
-            label="Female"
-            selected={form.gender === 'female'}
-            onPress={() => updateField('gender', 'female')}
-          />
-        </View>
-      </View>
+      <CommonSelectField
+        label={labelGender}
+        value={form.gender === 'male' ? (isVi ? 'Nam giới' : 'Male') : form.gender === 'female' ? (isVi ? 'Nữ giới' : 'Female') : ''}
+        placeholder={isVi ? 'Chọn giới tính' : 'Select gender'}
+        icon={<User size={20} color="#0000ff" />}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setGenderPickerVisible(true)}
+      />
 
-      <AccountTextField
-        label="E-mail"
+      <CommonFormField
+        label={labelEmail}
         value={form.email}
-        icon={<Mail size={17} color="#111827" />}
+        placeholder={placeholderEmail}
+        icon={<Mail size={20} color="#0000ff" />}
+        keyboardType="email-address"
         onChangeText={value => updateField('email', value)}
       />
 
-      <AccountSelectField
-        label="Birthday"
-        value={formatDateForDisplay(form.birthday)}
-        placeholder="dd/mm/yyyy"
-        icon={<CalendarDays size={17} color="#111827" />}
-        rightIcon={<CalendarDays size={16} color="#111827" />}
-        onPress={() => setBirthdayPickerVisible(true)}
+      <BirthdayInputField
+        label={labelBirthday}
+        value={form.birthday}
+        icon={<CalendarDays size={20} color="#0000ff" />}
+        onChangeText={value => updateField('birthday', value)}
       />
-      <AccountSelectField
-        label="Country"
+
+      <CommonSelectField
+        label={labelCountry}
         value={selectedCountryName}
-        placeholder="Chọn quốc gia"
-        icon={<View className="h-[17px] w-[17px]" />}
+        placeholder={placeholderCountry}
+        icon={<MapPin size={20} color="#0000ff" />}
         rightIcon={<ChevronDown size={18} color="#94a3b8" />}
         onPress={() => setCountryPickerVisible(true)}
       />
 
       <View className="mb-4">
-        <Text className="mb-2 text-[15px] font-medium text-slate-900">
-          Verification
+        <Text className="mb-2 text-[15px] font-semibold text-slate-900">
+          {labelVerification}
         </Text>
         <View className="flex-row">
-          <VerificationButton label="Verified" selected={isVerified} />
-          <VerificationButton label="Not verified" selected={!isVerified} />
+          <VerificationCheckbox label={labelVerified} selected={isVerified} />
+          <VerificationCheckbox label={labelNotVerified} selected={!isVerified} />
         </View>
       </View>
 
-      <AccountTextField
-        label="Wallet"
+      <CommonFormField
+        label={labelWallet}
         value={wallet}
-        icon={<Wallet size={17} color="#111827" />}
+        icon={<Wallet size={20} color="#0000ff" />}
         editable={false}
       />
 
@@ -1308,67 +1603,19 @@ function AccountInformationCard() {
         onPress={() => {
           handleSave().catch(() => undefined);
         }}
-        className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
+        className={`mt-6 h-14 flex-row items-center justify-center rounded-2xl ${
           isLoading ? 'bg-blue-300' : 'bg-blue-600'
         }`}
       >
         {isLoading ? (
           <ActivityIndicator size="small" color="#ffffff" />
         ) : (
-          <Save size={17} color="#ffffff" />
+          <Save size={20} color="#ffffff" />
         )}
-        <Text className="ml-2 text-[16px] font-bold text-white">Save</Text>
+        <Text className="ml-2 text-[16px] font-extrabold text-white">
+          {isVi ? 'Lưu thay đổi' : 'Save changes'}
+        </Text>
       </TouchableOpacity>
-
-      {birthdayPickerVisible && Platform.OS === 'android' ? (
-        <DateTimePicker
-          value={selectedBirthday}
-          mode="date"
-          display="default"
-          maximumDate={new Date()}
-          onChange={handleBirthdayChange}
-        />
-      ) : null}
-
-      {birthdayPickerVisible && Platform.OS === 'ios' ? (
-        <Modal
-          transparent
-          visible={birthdayPickerVisible}
-          animationType="slide"
-          onRequestClose={() => setBirthdayPickerVisible(false)}
-        >
-          <View className="flex-1 justify-end bg-black/40">
-            <View className="rounded-t-3xl bg-white px-4 pb-6 pt-4">
-              <View className="mb-4 flex-row items-center justify-between">
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => setBirthdayPickerVisible(false)}
-                  className="rounded-full bg-slate-100 px-4 py-2"
-                >
-                  <Text className="font-semibold text-slate-700">Hủy</Text>
-                </TouchableOpacity>
-                <Text className="text-lg font-extrabold text-slate-950">
-                  Chọn ngày sinh
-                </Text>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => setBirthdayPickerVisible(false)}
-                  className="rounded-full bg-blue-600 px-4 py-2"
-                >
-                  <Text className="font-semibold text-white">Xong</Text>
-                </TouchableOpacity>
-              </View>
-              <DateTimePicker
-                value={selectedBirthday}
-                mode="date"
-                display="spinner"
-                maximumDate={new Date()}
-                onChange={handleBirthdayChange}
-              />
-            </View>
-          </View>
-        </Modal>
-      ) : null}
 
       <CountryPickerModal
         visible={countryPickerVisible}
@@ -1376,6 +1623,74 @@ function AccountInformationCard() {
         onClose={() => setCountryPickerVisible(false)}
         onSelect={country => updateField('countryId', country.id)}
       />
+
+      <Modal
+        transparent
+        visible={genderPickerVisible}
+        animationType="fade"
+        onRequestClose={() => setGenderPickerVisible(false)}
+      >
+        <View className="flex-1 justify-end bg-black/40">
+          <View className="rounded-t-[28px] bg-white px-5 pb-6 pt-4">
+            <View className="mb-4 flex-row items-center justify-between">
+              <Text className="text-xl font-extrabold text-slate-950">
+                {labelGender}
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.82}
+                onPress={() => setGenderPickerVisible(false)}
+                className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+              >
+                <X size={22} color="#334155" />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.82}
+              onPress={() => {
+                updateField('gender', 'male');
+                setGenderPickerVisible(false);
+              }}
+              className={`mb-2 flex-row items-center rounded-2xl border px-4 py-4 ${
+                form.gender === 'male'
+                  ? 'border-blue-600 bg-blue-50'
+                  : 'border-slate-100 bg-white'
+              }`}
+            >
+              <Text
+                className={`flex-1 text-[16px] font-semibold ${
+                  form.gender === 'male' ? 'text-blue-700' : 'text-slate-800'
+                }`}
+              >
+                {isVi ? 'Nam giới' : 'Male'}
+              </Text>
+              {form.gender === 'male' ? <Check size={22} color="#0000ff" /> : null}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.82}
+              onPress={() => {
+                updateField('gender', 'female');
+                setGenderPickerVisible(false);
+              }}
+              className={`mb-2 flex-row items-center rounded-2xl border px-4 py-4 ${
+                form.gender === 'female'
+                  ? 'border-blue-600 bg-blue-50'
+                  : 'border-slate-100 bg-white'
+              }`}
+            >
+              <Text
+                className={`flex-1 text-[16px] font-semibold ${
+                  form.gender === 'female' ? 'text-blue-700' : 'text-slate-800'
+                }`}
+              >
+                {isVi ? 'Nữ giới' : 'Female'}
+              </Text>
+              {form.gender === 'female' ? <Check size={22} color="#0000ff" /> : null}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1555,6 +1870,29 @@ function DeliveryAddressCard() {
           onSelectPlace={place =>
             updateField('address', place.description || place.mainText)
           }
+          customInputContainerStyle={{
+            height: 40,
+            borderRadius: 8,
+            borderColor: '#cbd5e1',
+            borderWidth: 1,
+            backgroundColor: '#ffffff',
+            paddingHorizontal: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+          }}
+          customIconWrapperStyle={{
+            marginRight: 8,
+            backgroundColor: 'transparent',
+            width: 'auto',
+            height: 'auto',
+            borderRadius: 0,
+          }}
+          customInputStyle={{
+            fontSize: 15,
+            color: '#0f172a',
+            fontWeight: 'normal',
+          }}
+          customIcon={<MapPin size={17} color="#111827" />}
         />
       </View>
 
@@ -1708,6 +2046,29 @@ function ProfileInformationCard() {
           onSelectPlace={place =>
             updateField('address', place.description || place.mainText)
           }
+          customInputContainerStyle={{
+            height: 40,
+            borderRadius: 8,
+            borderColor: '#cbd5e1',
+            borderWidth: 1,
+            backgroundColor: '#ffffff',
+            paddingHorizontal: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+          }}
+          customIconWrapperStyle={{
+            marginRight: 8,
+            backgroundColor: 'transparent',
+            width: 'auto',
+            height: 'auto',
+            borderRadius: 0,
+          }}
+          customInputStyle={{
+            fontSize: 15,
+            color: '#0f172a',
+            fontWeight: 'normal',
+          }}
+          customIcon={<MapPin size={17} color="#111827" />}
         />
       </View>
 
@@ -1843,41 +2204,35 @@ function SocialLinksCard() {
 
   return (
     <View className="surface-card px-4 py-4">
-      <AccountTextField
+      <CommonFormField
         label="Facebook"
         value={form.facebook}
-        icon={<Link size={17} color="#111827" />}
         onChangeText={value => updateField('facebook', value)}
       />
-      <AccountTextField
+      <CommonFormField
         label="Twitter"
         value={form.twitter}
-        icon={<Link size={17} color="#111827" />}
         onChangeText={value => updateField('twitter', value)}
       />
-      <AccountTextField
-        label="LinkedIn"
+      <CommonFormField
+        label="Vkontakte"
+        value={form.vk}
+        onChangeText={value => updateField('vk', value)}
+      />
+      <CommonFormField
+        label="Linkedin"
         value={form.linkedin}
-        icon={<Link size={17} color="#111827" />}
         onChangeText={value => updateField('linkedin', value)}
       />
-      <AccountTextField
+      <CommonFormField
         label="Instagram"
         value={form.instagram}
-        icon={<Link size={17} color="#111827" />}
         onChangeText={value => updateField('instagram', value)}
       />
-      <AccountTextField
+      <CommonFormField
         label="YouTube"
         value={form.youtube}
-        icon={<Link size={17} color="#111827" />}
         onChangeText={value => updateField('youtube', value)}
-      />
-      <AccountTextField
-        label="VK"
-        value={form.vk}
-        icon={<Pencil size={17} color="#111827" />}
-        onChangeText={value => updateField('vk', value)}
       />
 
       <TouchableOpacity
@@ -1886,16 +2241,14 @@ function SocialLinksCard() {
         onPress={() => {
           handleSave().catch(() => undefined);
         }}
-        className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
+        className={`mt-6 h-14 flex-row items-center justify-center rounded-2xl ${
           isSaving ? 'bg-blue-300' : 'bg-blue-600'
         }`}
       >
         {isSaving ? (
           <ActivityIndicator size="small" color="#ffffff" />
-        ) : (
-          <Save size={17} color="#ffffff" />
-        )}
-        <Text className="ml-2 text-[16px] font-bold text-white">Lưu</Text>
+        ) : null}
+        <Text className="ml-2 text-[16px] font-extrabold text-white">Lưu</Text>
       </TouchableOpacity>
     </View>
   );
@@ -2026,12 +2379,26 @@ function AvatarCoverCard() {
 }
 
 function PasswordSettingsCard() {
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
+
+  const { profile, refresh } = useMyInfoViewModel();
   const { updateCurrentUser, isLoading } = useUserViewModel();
+
   const [form, setForm] = useState<PasswordFormState>({
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   });
+
+  const [twoFactor, setTwoFactor] = useState<'on' | 'off'>('off');
+  const [pickerVisible, setPickerVisible] = useState(false);
+
+  useEffect(() => {
+    if (profile) {
+      setTwoFactor(profile.twoFactor ? 'on' : 'off');
+    }
+  }, [profile]);
 
   const updateField = useCallback(
     <TKey extends keyof PasswordFormState>(
@@ -2044,60 +2411,95 @@ function PasswordSettingsCard() {
   );
 
   const handleSave = useCallback(async () => {
-    if (!form.currentPassword || !form.newPassword) {
-      Alert.alert('Mật khẩu', 'Nhập mật khẩu hiện tại và mật khẩu mới.');
-      return;
-    }
-    if (form.newPassword.length < 6) {
-      Alert.alert('Mật khẩu', 'Mật khẩu mới phải có ít nhất 6 ký tự.');
-      return;
-    }
-    if (form.newPassword !== form.confirmPassword) {
-      Alert.alert('Mật khẩu', 'Xác nhận mật khẩu chưa khớp.');
-      return;
+    const hasPasswordChange =
+      form.newPassword.length > 0 ||
+      form.currentPassword.length > 0 ||
+      form.confirmPassword.length > 0;
+
+    if (hasPasswordChange) {
+      if (!form.currentPassword || !form.newPassword) {
+        Alert.alert(
+          isVi ? 'Mật khẩu' : 'Password',
+          isVi ? 'Nhập mật khẩu hiện tại và mật khẩu mới.' : 'Please enter current and new password.',
+        );
+        return;
+      }
+      if (form.newPassword.length < 6) {
+        Alert.alert(
+          isVi ? 'Mật khẩu' : 'Password',
+          isVi ? 'Mật khẩu mới phải có ít nhất 6 ký tự.' : 'New password must be at least 6 characters.',
+        );
+        return;
+      }
+      if (form.newPassword !== form.confirmPassword) {
+        Alert.alert(
+          isVi ? 'Mật khẩu' : 'Password',
+          isVi ? 'Mật khẩu lặp lại chưa khớp.' : 'Passwords do not match.',
+        );
+        return;
+      }
     }
 
     try {
       await updateCurrentUser({
-        currentPassword: form.currentPassword,
-        newPassword: form.newPassword,
+        currentPassword: hasPasswordChange ? form.currentPassword : undefined,
+        newPassword: hasPasswordChange ? form.newPassword : undefined,
+        twoFactor: twoFactor,
       });
+      await refresh();
       setForm({
         currentPassword: '',
         newPassword: '',
         confirmPassword: '',
       });
-      Alert.alert('Mật khẩu', 'Đã cập nhật mật khẩu.');
+      Alert.alert(
+        isVi ? 'Mật khẩu & Bảo mật' : 'Password & Security',
+        isVi ? 'Đã lưu thay đổi thành công.' : 'Settings saved successfully.',
+      );
     } catch (error) {
       Alert.alert(
-        'Mật khẩu',
+        isVi ? 'Lỗi' : 'Error',
         error instanceof Error ? error.message : String(error),
       );
     }
-  }, [form, updateCurrentUser]);
+  }, [form, twoFactor, refresh, updateCurrentUser, isVi]);
+
+  const twoFactorOptions = useMemo(() => [
+    { label: isVi ? 'Cho phép' : 'Enable', value: 'on' },
+    { label: isVi ? 'Vô hiệu hóa' : 'Disable', value: 'off' },
+  ], [isVi]);
+
+  const getDisplayValue = (value: string) => {
+    return twoFactorOptions.find(opt => opt.value === value)?.label || '';
+  };
 
   return (
     <View className="surface-card px-4 py-4">
-      <AccountTextField
-        label="Current password"
+      <CommonFormField
+        label={isVi ? 'Mật khẩu hiện tại' : 'Current password'}
         value={form.currentPassword}
-        icon={<LockKeyhole size={17} color="#111827" />}
         secureTextEntry
         onChangeText={value => updateField('currentPassword', value)}
       />
-      <AccountTextField
-        label="New password"
+      <CommonFormField
+        label={isVi ? 'Mật khẩu mới' : 'New password'}
         value={form.newPassword}
-        icon={<LockKeyhole size={17} color="#111827" />}
         secureTextEntry
         onChangeText={value => updateField('newPassword', value)}
       />
-      <AccountTextField
-        label="Confirm password"
+      <CommonFormField
+        label={isVi ? 'Lặp lại mật khẩu' : 'Confirm password'}
         value={form.confirmPassword}
-        icon={<LockKeyhole size={17} color="#111827" />}
         secureTextEntry
         onChangeText={value => updateField('confirmPassword', value)}
+      />
+
+      <CommonSelectField
+        label={isVi ? 'Xác thực hai yếu tố' : 'Two-factor authentication'}
+        value={getDisplayValue(twoFactor)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPickerVisible(true)}
       />
 
       <TouchableOpacity
@@ -2106,17 +2508,69 @@ function PasswordSettingsCard() {
         onPress={() => {
           handleSave().catch(() => undefined);
         }}
-        className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
+        className={`mt-6 h-14 flex-row items-center justify-center rounded-2xl ${
           isLoading ? 'bg-blue-300' : 'bg-blue-600'
         }`}
       >
         {isLoading ? (
           <ActivityIndicator size="small" color="#ffffff" />
-        ) : (
-          <Save size={17} color="#ffffff" />
-        )}
-        <Text className="ml-2 text-[16px] font-bold text-white">Save</Text>
+        ) : null}
+        <Text className="ml-2 text-[16px] font-extrabold text-white">
+          {isVi ? 'Lưu' : 'Save'}
+        </Text>
       </TouchableOpacity>
+
+      <Modal
+        transparent
+        visible={pickerVisible}
+        animationType="fade"
+        onRequestClose={() => setPickerVisible(false)}
+      >
+        <View className="flex-1 justify-end bg-black/40">
+          <View className="rounded-t-[28px] bg-white px-5 pb-6 pt-4">
+            <View className="relative mb-4 pb-2">
+              <Text className="pr-12 text-[18px] font-extrabold text-slate-950 leading-[24px]">
+                {isVi ? 'Xác thực hai yếu tố' : 'Two-factor authentication'}
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.82}
+                onPress={() => setPickerVisible(false)}
+                className="absolute right-0 top-0 h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+              >
+                <X size={20} color="#475569" />
+              </TouchableOpacity>
+            </View>
+
+            {twoFactorOptions.map(option => {
+              const selected = option.value === twoFactor;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  activeOpacity={0.82}
+                  onPress={() => {
+                    setTwoFactor(option.value as 'on' | 'off');
+                    setPickerVisible(false);
+                  }}
+                  className={`mb-2 flex-row items-center rounded-2xl border px-4 py-4 ${
+                    selected
+                      ? 'border-blue-600 bg-blue-50'
+                      : 'border-slate-100 bg-white'
+                  }`}
+                >
+                  <Text
+                    className={`flex-1 text-[16px] font-semibold ${
+                      selected ? 'text-blue-700' : 'text-slate-800'
+                    }`}
+                  >
+                    {option.label}
+                  </Text>
+                  {selected ? <Check size={22} color="#0000ff" /> : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2395,8 +2849,12 @@ const PRIVACY_POST_OPTIONS = [
 ];
 
 function PrivacySettingsCard() {
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
+
   const { profile, refresh } = useMyInfoViewModel();
   const { updateCurrentUser, isLoading } = useUserViewModel();
+  
   const [form, setForm] = useState<PrivacyFormState>({
     messagePrivacy: '0',
     followPrivacy: '0',
@@ -2411,6 +2869,13 @@ function PrivacySettingsCard() {
     shareLocation: '1',
     shareData: '1',
   });
+
+  const [picker, setPicker] = useState<{
+    title: string;
+    options: { label: string; value: string }[];
+    onSelect: (value: string) => void;
+    selectedValue: string;
+  } | null>(null);
 
   useEffect(() => {
     const privacy = profile?.privacy;
@@ -2459,88 +2924,234 @@ function PrivacySettingsCard() {
         shareData: form.shareData,
       });
       await refresh();
-      Alert.alert('Quyền riêng tư', 'Đã lưu cài đặt quyền riêng tư.');
+      Alert.alert(isVi ? 'Quyền riêng tư' : 'Privacy', isVi ? 'Đã lưu cài đặt quyền riêng tư.' : 'Privacy settings saved.');
     } catch (error) {
       Alert.alert(
-        'Quyền riêng tư',
+        isVi ? 'Lỗi' : 'Error',
         error instanceof Error ? error.message : String(error),
       );
     }
-  }, [form, refresh, updateCurrentUser]);
+  }, [form, refresh, updateCurrentUser, isVi]);
+
+  const audienceOptions = useMemo(() => [
+    { label: isVi ? 'Tất cả mọi người' : 'Everyone', value: '0' },
+    { label: isVi ? 'Những người tôi theo dõi' : 'People I follow', value: '1' },
+    { label: isVi ? 'Không ai cả' : 'Nobody', value: '2' },
+  ], [isVi]);
+
+  const followOptions = useMemo(() => [
+    { label: isVi ? 'Tất cả mọi người' : 'Everyone', value: '0' },
+    { label: isVi ? 'Những người tôi theo dõi' : 'People I follow', value: '1' },
+  ], [isVi]);
+
+  const friendOptions = useMemo(() => [
+    { label: isVi ? 'Tất cả mọi người' : 'Everyone', value: '0' },
+    { label: isVi ? 'Những người tôi theo dõi' : 'People I follow', value: '1' },
+    { label: isVi ? 'Không ai cả' : 'Nobody', value: '2' },
+    { label: isVi ? 'Những người theo dõi tôi' : 'People following me', value: '3' },
+  ], [isVi]);
+
+  const postOptions = useMemo(() => [
+    { label: isVi ? 'Tất cả mọi người' : 'Everyone', value: 'everyone' },
+    { label: isVi ? 'Những người tôi theo dõi' : 'People I follow', value: 'ifollow' },
+    { label: isVi ? 'Không ai cả' : 'Nobody', value: 'nobody' },
+  ], [isVi]);
+
+  const dungKhongOptions = useMemo(() => [
+    { label: isVi ? 'Đúng' : 'Yes', value: '1' },
+    { label: isVi ? 'Không' : 'No', value: '0' },
+  ], [isVi]);
+
+  const visitOptions = useMemo(() => [
+    { label: isVi ? 'Đúng' : 'Yes', value: '0' },
+    { label: isVi ? 'Không' : 'No', value: '1' },
+  ], [isVi]);
+
+  const statusOptions = useMemo(() => [
+    { label: isVi ? 'Trực tuyến' : 'Online', value: '1' },
+    { label: isVi ? 'Ngoại tuyến' : 'Offline', value: '0' },
+  ], [isVi]);
+
+  const getDisplayValue = (value: string, options: { label: string; value: string }[]) => {
+    const normalized = String(value).trim().toLowerCase();
+    let lookupVal = normalized;
+    if (lookupVal === 'everyone') lookupVal = '0';
+    else if (lookupVal === 'ifollow') lookupVal = '1';
+    else if (lookupVal === 'nobody') lookupVal = '2';
+
+    return options.find(opt => opt.value === lookupVal || opt.value.toLowerCase() === normalized)?.label || options[0]?.label || '';
+  };
 
   return (
     <View className="surface-card px-4 py-4">
-      <PrivacyChoiceGroup
-        label="Who can message me"
-        value={form.messagePrivacy}
-        options={PRIVACY_AUDIENCE_OPTIONS}
-        onChange={value => updateField('messagePrivacy', value)}
+      <CommonSelectField
+        label={isVi ? 'Ai có thể theo dõi tôi?' : 'Who can follow me?'}
+        value={getDisplayValue(form.followPrivacy, followOptions)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPicker({
+          title: isVi ? 'Ai có thể theo dõi tôi?' : 'Who can follow me?',
+          options: followOptions,
+          selectedValue: form.followPrivacy,
+          onSelect: (val) => updateField('followPrivacy', val),
+        })}
       />
-      <PrivacyChoiceGroup
-        label="Who can follow me"
-        value={form.followPrivacy}
-        options={PRIVACY_ENABLED_OPTIONS}
-        onChange={value => updateField('followPrivacy', value)}
+
+      <CommonSelectField
+        label={isVi ? 'Ai có thể nhắn tin cho tôi?' : 'Who can message me?'}
+        value={getDisplayValue(form.messagePrivacy, audienceOptions)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPicker({
+          title: isVi ? 'Ai có thể nhắn tin cho tôi?' : 'Who can message me?',
+          options: audienceOptions,
+          selectedValue: form.messagePrivacy,
+          onSelect: (val) => updateField('messagePrivacy', val),
+        })}
       />
-      <PrivacyChoiceGroup
-        label="Who can see friends"
-        value={form.friendPrivacy}
-        options={PRIVACY_FRIEND_OPTIONS}
-        onChange={value => updateField('friendPrivacy', value)}
+
+      <CommonSelectField
+        label={isVi ? 'Ai có thể nhìn thấy bạn bè của tôi?' : 'Who can see my friends?'}
+        value={getDisplayValue(form.friendPrivacy, friendOptions)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPicker({
+          title: isVi ? 'Ai có thể nhìn thấy bạn bè của tôi?' : 'Who can see my friends?',
+          options: friendOptions,
+          selectedValue: form.friendPrivacy,
+          onSelect: (val) => updateField('friendPrivacy', val),
+        })}
       />
-      <PrivacyChoiceGroup
-        label="Who can see posts"
-        value={form.postPrivacy}
-        options={PRIVACY_POST_OPTIONS}
-        onChange={value => updateField('postPrivacy', value)}
+
+      <CommonSelectField
+        label={isVi ? 'Ai có thể đăng trên dòng thời gian của tôi?' : 'Who can post on my timeline?'}
+        value={getDisplayValue(form.postPrivacy, postOptions)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPicker({
+          title: isVi ? 'Ai có thể đăng trên dòng thời gian của tôi?' : 'Who can post on my timeline?',
+          options: postOptions,
+          selectedValue: form.postPrivacy,
+          onSelect: (val) => updateField('postPrivacy', val),
+        })}
       />
-      <PrivacyChoiceGroup
-        label="Show last seen"
-        value={form.showLastSeen}
-        options={PRIVACY_ENABLED_OPTIONS}
-        onChange={value => updateField('showLastSeen', value)}
+
+      <CommonSelectField
+        label={isVi ? 'Ai có thể xem ngày sinh của tôi?' : 'Who can see my birthday?'}
+        value={getDisplayValue(form.birthPrivacy, audienceOptions)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPicker({
+          title: isVi ? 'Ai có thể xem ngày sinh của tôi?' : 'Who can see my birthday?',
+          options: audienceOptions,
+          selectedValue: form.birthPrivacy,
+          onSelect: (val) => updateField('birthPrivacy', val),
+        })}
       />
-      <PrivacyChoiceGroup
-        label="Confirm followers"
-        value={form.confirmFollowers}
-        options={PRIVACY_ENABLED_OPTIONS}
-        onChange={value => updateField('confirmFollowers', value)}
+
+      <CommonSelectField
+        label={isVi ? 'Xác nhận yêu cầu khi ai đó theo dõi bạn?' : 'Confirm request when someone follows you?'}
+        value={getDisplayValue(form.confirmFollowers, dungKhongOptions)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPicker({
+          title: isVi ? 'Xác nhận yêu cầu khi ai đó theo dõi bạn?' : 'Confirm request when someone follows you?',
+          options: dungKhongOptions,
+          selectedValue: form.confirmFollowers,
+          onSelect: (val) => updateField('confirmFollowers', val),
+        })}
       />
-      <PrivacyChoiceGroup
-        label="Show activities"
-        value={form.showActivities}
-        options={PRIVACY_ENABLED_OPTIONS}
-        onChange={value => updateField('showActivities', value)}
+
+      <View className="mb-2">
+        <CommonSelectField
+          label={isVi ? 'Gửi thông báo cho người dùng khi tôi truy cập hồ sơ của họ?' : 'Send notification to users when I visit their profile?'}
+          value={getDisplayValue(form.visitPrivacy, visitOptions)}
+          placeholder={isVi ? 'Chọn...' : 'Select...'}
+          rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+          onPress={() => setPicker({
+            title: isVi ? 'Gửi thông báo cho người dùng khi tôi truy cập hồ sơ của họ?' : 'Send notification to users when I visit their profile?',
+            options: visitOptions,
+            selectedValue: form.visitPrivacy,
+            onSelect: (val) => updateField('visitPrivacy', val),
+          })}
+        />
+        <Text className="text-[12px] text-slate-400 -mt-2 mb-4 leading-[17px]">
+          {isVi 
+            ? 'nếu bạn không chia sẻ sự kiện chuyến thăm của mình, bạn sẽ không thể thấy những người khác đang truy cập hồ sơ của bạn.'
+            : 'if you do not share your profile visits, you cannot see who visits your profile.'}
+        </Text>
+      </View>
+
+      <View className="mb-2">
+        <CommonSelectField
+          label={isVi ? 'Hiển thị lần nhìn thấy cuối cùng của tôi?' : 'Show my last seen status?'}
+          value={getDisplayValue(form.showLastSeen, dungKhongOptions)}
+          placeholder={isVi ? 'Chọn...' : 'Select...'}
+          rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+          onPress={() => setPicker({
+            title: isVi ? 'Hiển thị lần nhìn thấy cuối cùng của tôi?' : 'Show my last seen status?',
+            options: dungKhongOptions,
+            selectedValue: form.showLastSeen,
+            onSelect: (val) => updateField('showLastSeen', val),
+          })}
+        />
+        <Text className="text-[12px] text-slate-400 -mt-2 mb-4 leading-[17px]">
+          {isVi 
+            ? 'nếu bạn không chia sẻ lần xem gần đây nhất của mình, bạn sẽ không thể nhìn thấy những người khác được nhìn thấy lần cuối.'
+            : 'if you do not share your last active status, you cannot see others active status.'}
+        </Text>
+      </View>
+
+      <CommonSelectField
+        label={isVi ? 'Hiển thị các hoạt động của tôi?' : 'Show my activities?'}
+        value={getDisplayValue(form.showActivities, dungKhongOptions)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPicker({
+          title: isVi ? 'Hiển thị các hoạt động của tôi?' : 'Show my activities?',
+          options: dungKhongOptions,
+          selectedValue: form.showActivities,
+          onSelect: (val) => updateField('showActivities', val),
+        })}
       />
-      <PrivacyChoiceGroup
-        label="Profile visits privacy"
-        value={form.visitPrivacy}
-        options={PRIVACY_ENABLED_OPTIONS}
-        onChange={value => updateField('visitPrivacy', value)}
+
+      <CommonSelectField
+        label={isVi ? 'Trạng thái' : 'Status'}
+        value={getDisplayValue(form.onlineStatus, statusOptions)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPicker({
+          title: isVi ? 'Trạng thái' : 'Status',
+          options: statusOptions,
+          selectedValue: form.onlineStatus,
+          onSelect: (val) => updateField('onlineStatus', val),
+        })}
       />
-      <PrivacyChoiceGroup
-        label="Birthday privacy"
-        value={form.birthPrivacy}
-        options={PRIVACY_AUDIENCE_OPTIONS}
-        onChange={value => updateField('birthPrivacy', value)}
+
+      <CommonSelectField
+        label={isVi ? 'Chia sẻ vị trí của tôi với mọi người?' : 'Share my location with everyone?'}
+        value={getDisplayValue(form.shareLocation, dungKhongOptions)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPicker({
+          title: isVi ? 'Chia sẻ vị trí của tôi với mọi người?' : 'Share my location with everyone?',
+          options: dungKhongOptions,
+          selectedValue: form.shareLocation,
+          onSelect: (val) => updateField('shareLocation', val),
+        })}
       />
-      <PrivacyChoiceGroup
-        label="Online status"
-        value={form.onlineStatus}
-        options={PRIVACY_ENABLED_OPTIONS}
-        onChange={value => updateField('onlineStatus', value)}
-      />
-      <PrivacyChoiceGroup
-        label="Share my location"
-        value={form.shareLocation}
-        options={PRIVACY_ENABLED_OPTIONS}
-        onChange={value => updateField('shareLocation', value)}
-      />
-      <PrivacyChoiceGroup
-        label="Share my data"
-        value={form.shareData}
-        options={PRIVACY_ENABLED_OPTIONS}
-        onChange={value => updateField('shareData', value)}
+
+      <CommonSelectField
+        label={isVi ? 'Cho phép công cụ tìm kiếm lập chỉ mục hồ sơ và bài đăng của tôi?' : 'Allow search engines to index my profile and posts?'}
+        value={getDisplayValue(form.shareData, dungKhongOptions)}
+        placeholder={isVi ? 'Chọn...' : 'Select...'}
+        rightIcon={<ChevronDown size={18} color="#94a3b8" />}
+        onPress={() => setPicker({
+          title: isVi ? 'Cho phép công cụ tìm kiếm lập chỉ mục hồ sơ và bài đăng của tôi?' : 'Allow search engines to index my profile and posts?',
+          options: dungKhongOptions,
+          selectedValue: form.shareData,
+          onSelect: (val) => updateField('shareData', val),
+        })}
       />
 
       <TouchableOpacity
@@ -2549,17 +3160,69 @@ function PrivacySettingsCard() {
         onPress={() => {
           handleSave().catch(() => undefined);
         }}
-        className={`mt-1 h-12 flex-row items-center justify-center rounded-xl ${
+        className={`mt-4 h-14 flex-row items-center justify-center rounded-2xl ${
           isLoading ? 'bg-blue-300' : 'bg-blue-600'
         }`}
       >
         {isLoading ? (
           <ActivityIndicator size="small" color="#ffffff" />
-        ) : (
-          <Save size={17} color="#ffffff" />
-        )}
-        <Text className="ml-2 text-[16px] font-bold text-white">Save</Text>
+        ) : null}
+        <Text className="ml-2 text-[16px] font-extrabold text-white">
+          {isVi ? 'Lưu thay đổi' : 'Save changes'}
+        </Text>
       </TouchableOpacity>
+
+      <Modal
+        transparent
+        visible={picker !== null}
+        animationType="fade"
+        onRequestClose={() => setPicker(null)}
+      >
+        <View className="flex-1 justify-end bg-black/40">
+          <View className="rounded-t-[28px] bg-white px-5 pb-6 pt-4">
+            <View className="relative mb-4 pb-2">
+              <Text className="pr-12 text-[18px] font-extrabold text-slate-950 leading-[24px]">
+                {picker?.title}
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.82}
+                onPress={() => setPicker(null)}
+                className="absolute right-0 top-0 h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+              >
+                <X size={20} color="#475569" />
+              </TouchableOpacity>
+            </View>
+
+            {picker?.options.map(option => {
+              const selected = option.value === picker.selectedValue;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  activeOpacity={0.82}
+                  onPress={() => {
+                    picker.onSelect(option.value);
+                    setPicker(null);
+                  }}
+                  className={`mb-2 flex-row items-center rounded-2xl border px-4 py-4 ${
+                    selected
+                      ? 'border-blue-600 bg-blue-50'
+                      : 'border-slate-100 bg-white'
+                  }`}
+                >
+                  <Text
+                    className={`flex-1 text-[16px] font-semibold ${
+                      selected ? 'text-blue-700' : 'text-slate-800'
+                    }`}
+                  >
+                    {option.label}
+                  </Text>
+                  {selected ? <Check size={22} color="#0000ff" /> : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -3341,6 +4004,7 @@ function AccountVerificationCard() {
 function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const route = useRoute<SettingsRoute>();
+  const insets = useSafeAreaInsets();
   const [activePanel, setActivePanel] = useState<SettingsPanel>('main');
 
   const navigateToPanel = useCallback(
@@ -3376,10 +4040,192 @@ function SettingsScreen() {
   const showDashboardBack =
     activePanel !== 'main' && Boolean(route.params?.fromDashboard);
 
+  const isVi = language === 'vi';
+  const dashboardCopy = isVi ? DASHBOARD_COPY.vi : DASHBOARD_COPY.en;
+
+  const dashboardItems = useMemo(() => [
+    {
+      id: 'profile',
+      title: dashboardCopy.profile,
+      subtitle: dashboardCopy.profileHint,
+      icon: <IdCard size={20} color="#00acc1" />,
+      iconBg: '#e0f7fa',
+      iconColor: '#00acc1',
+      action: { type: 'editProfile' },
+    },
+    {
+      id: 'social-links',
+      title: dashboardCopy.socialLinks,
+      subtitle: dashboardCopy.socialLinksHint,
+      icon: <Link size={20} color="#2563eb" />,
+      iconBg: '#dbeafe',
+      iconColor: '#2563eb',
+      action: { type: 'panel', panel: 'general-social-links' },
+    },
+    {
+      id: 'notifications',
+      title: dashboardCopy.notifications,
+      subtitle: dashboardCopy.notificationsHint,
+      icon: <Bell size={20} color="#8b5cf6" />,
+      iconBg: '#f5f3ff',
+      iconColor: '#8b5cf6',
+      action: { type: 'panel', panel: 'general-notifications' },
+    },
+    {
+      id: 'avatar',
+      title: dashboardCopy.avatar,
+      subtitle: dashboardCopy.avatarHint,
+      icon: <ImageLucide size={20} color="#0284c7" />,
+      iconBg: '#e0f2fe',
+      iconColor: '#0284c7',
+      action: { type: 'panel', panel: 'general-avatar' },
+    },
+    {
+      id: 'privacy',
+      title: dashboardCopy.privacy,
+      subtitle: dashboardCopy.privacyHint,
+      icon: <LockKeyhole size={20} color="#8b5cf6" />,
+      iconBg: '#f5f3ff',
+      iconColor: '#8b5cf6',
+      action: { type: 'panel', panel: 'general-privacy' },
+    },
+    {
+      id: 'password',
+      title: dashboardCopy.password,
+      subtitle: dashboardCopy.passwordHint,
+      icon: <KeyRound size={20} color="#06b6d4" />,
+      iconBg: '#ecfeff',
+      iconColor: '#06b6d4',
+      action: { type: 'panel', panel: 'general-password' },
+    },
+    {
+      id: 'sessions',
+      title: dashboardCopy.sessions,
+      subtitle: dashboardCopy.sessionsHint,
+      icon: <Monitor size={20} color="#d946ef" />,
+      iconBg: '#fdf4ff',
+      iconColor: '#d946ef',
+      action: { type: 'panel', panel: 'general-sessions' },
+    },
+    {
+      id: 'blocked-users',
+      title: dashboardCopy.blockedUsers,
+      subtitle: dashboardCopy.blockedUsersHint,
+      icon: <Ban size={20} color="#ea580c" />,
+      iconBg: '#fff7ed',
+      iconColor: '#ea580c',
+      action: { type: 'panel', panel: 'general-blocked-users' },
+    },
+    {
+      id: 'general',
+      title: dashboardCopy.general,
+      subtitle: dashboardCopy.generalHint,
+      icon: <SettingsIcon size={20} color="#475569" />,
+      iconBg: '#f1f5f9',
+      iconColor: '#475569',
+      action: { type: 'panel', panel: 'general-common' },
+    },
+    {
+      id: 'my-data',
+      title: dashboardCopy.myData,
+      subtitle: dashboardCopy.myDataHint,
+      icon: <Info size={20} color="#475569" />,
+      iconBg: '#f1f5f9',
+      iconColor: '#475569',
+      action: { type: 'route', route: 'settings-my-info' },
+    },
+    {
+      id: 'addresses',
+      title: dashboardCopy.addresses,
+      subtitle: dashboardCopy.addressesHint,
+      icon: <MapPin size={20} color="#475569" />,
+      iconBg: '#f1f5f9',
+      iconColor: '#475569',
+      action: { type: 'route', route: 'settings-address' },
+    },
+    {
+      id: 'wallet',
+      title: dashboardCopy.wallet,
+      subtitle: dashboardCopy.walletHint,
+      icon: <Wallet size={20} color="#8b5cf6" />,
+      iconBg: '#f5f3ff',
+      iconColor: '#8b5cf6',
+      action: { type: 'route', route: 'earnings' },
+    },
+    {
+      id: 'referral-rewards',
+      title: dashboardCopy.referralRewards,
+      subtitle: dashboardCopy.referralRewardsHint,
+      icon: <Users size={20} color="#ea580c" />,
+      iconBg: '#fff7ed',
+      iconColor: '#ea580c',
+      action: { type: 'route', route: 'affiliates' },
+    },
+    {
+      id: 'points',
+      title: dashboardCopy.points,
+      subtitle: dashboardCopy.pointsHint,
+      icon: <Gift size={20} color="#ea580c" />,
+      iconBg: '#fff7ed',
+      iconColor: '#ea580c',
+      action: { type: 'route', route: 'my-points' },
+    },
+    {
+      id: 'balance',
+      title: dashboardCopy.balance,
+      subtitle: dashboardCopy.walletHint,
+      icon: <Wallet size={20} color="#06b6d4" />,
+      iconBg: '#ecfeff',
+      iconColor: '#06b6d4',
+      action: { type: 'route', route: 'my-balance' },
+    },
+    {
+      id: 'delete-account',
+      title: dashboardCopy.deleteAccount,
+      subtitle: dashboardCopy.deleteHint,
+      icon: <Trash2 size={20} color="#ef4444" />,
+      iconBg: '#fee2e2',
+      iconColor: '#ef4444',
+      action: { type: 'alert', alert: 'deleteAccount' },
+      destructive: true,
+    },
+  ], [dashboardCopy]);
+
+  const dashboardSections = useMemo(() => {
+    const itemMap = new Map(dashboardItems.map(item => [item.id, item]));
+    const findItem = (id: string) => itemMap.get(id);
+
+    return [
+      {
+        id: 'sec-1',
+        items: ['general', 'profile', 'social-links', 'notifications'].map(findItem).filter(Boolean),
+      },
+      {
+        id: 'sec-2',
+        items: ['avatar'].map(findItem).filter(Boolean),
+      },
+      {
+        id: 'sec-3',
+        items: ['privacy', 'password', 'sessions', 'blocked-users'].map(findItem).filter(Boolean),
+      },
+      {
+        id: 'sec-4',
+        items: ['my-data', 'addresses'].map(findItem).filter(Boolean),
+      },
+      {
+        id: 'sec-5',
+        items: ['wallet', 'referral-rewards', 'points', 'balance'].map(findItem).filter(Boolean),
+      },
+      {
+        id: 'sec-6',
+        items: ['delete-account'].map(findItem).filter(Boolean),
+      },
+    ];
+  }, [dashboardItems]);
+
   const handleDashboardBack = useCallback(() => {
     setActivePanel('main');
-    navigation.navigate(ROUTES.USER_DASHBOARD);
-  }, [navigation]);
+  }, []);
 
   useEffect(() => {
     const requestedPanel = route.params?.initialPanel;
@@ -3687,36 +4533,26 @@ function SettingsScreen() {
 
       {/* Top App Bar */}
       <View
-        className="surface-topbar flex-row items-center justify-between px-4"
+        className="surface-topbar flex-row items-center justify-between px-4 border-b border-slate-100 bg-white"
         style={{
           height: 64,
-          borderBottomWidth: 1,
-          borderBottomColor: '#f1f5f9',
-          backgroundColor: '#ffffff',
         }}
       >
         {activePanel !== 'main' ? (
           <>
             {showDashboardBack ? (
               <TouchableOpacity
-                activeOpacity={0.8}
+                activeOpacity={0.82}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 onPress={handleDashboardBack}
-                className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm border border-slate-100/50"
-                style={{
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.05,
-                  shadowRadius: 8,
-                  elevation: 2,
-                }}
+                className="h-11 w-11 items-center justify-center rounded-full bg-slate-50"
               >
-                <ArrowLeft size={22} color="#0000ff" />
+                <ArrowLeft size={24} color="#0f172a" />
               </TouchableOpacity>
             ) : (
               <View className="h-11 w-11" />
             )}
-            <Text className="flex-1 text-center text-[20px] font-bold text-slate-900">
+            <Text className="flex-1 text-center text-xl font-extrabold text-slate-950" numberOfLines={1}>
               {settingsPanelTitle(activePanel, language)}
             </Text>
             <View className="w-11" />
@@ -4124,64 +4960,104 @@ function SettingsScreen() {
       ) : (
         <ScrollView
           className="flex-1"
-          contentContainerClassName="px-5 pb-28 pt-4"
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: insets.bottom + 24,
+          }}
           showsVerticalScrollIndicator={false}
         >
-          {profile ? (
-            <ProfileHeaderCard
-              profile={profile}
-              onPress={() => navigation.navigate(ROUTES.PROFILE)}
-              viewProfileLabel={copy.viewProfile}
-            />
-          ) : (
-            <View className="surface-card flex-row items-center gap-4 px-5 py-4">
-              <View className="h-16 w-16 rounded-full bg-gray-200" />
-              <View className="flex-1">
-                <View className="h-5 w-32 rounded bg-gray-200 mb-2" />
-                <View className="h-4 w-24 rounded bg-gray-200" />
-              </View>
-            </View>
-          )}
+          {dashboardSections.map((section, secIndex) => (
+            <React.Fragment key={section.id}>
+              {secIndex > 0 ? (
+                <View className="mb-4 mt-2 border-b border-slate-100" />
+              ) : null}
+              {section.items.map((item) => {
+                if (!item) return null;
+                const iconBackground = item.destructive ? '#fee2e2' : item.iconBg;
+                const chevronColor = item.destructive ? '#ef4444' : '#94a3b8';
+                const titleColor = item.destructive ? '#ef4444' : '#0f172a';
 
-          <View className="mt-5">
-            <FeatureGrid
-              features={features}
-              onFeaturePress={handleFeaturePress}
-            />
-          </View>
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (item.action.type === 'panel') {
+                        setActivePanel(item.action.panel as SettingsPanelRouteParam);
+                        return;
+                      }
+                      if (item.action.type === 'editProfile') {
+                        navigation.navigate(ROUTES.EDIT_PROFILE);
+                        return;
+                      }
+                      if (item.action.type === 'route') {
+                        if (item.action.route === 'earnings') {
+                          navigation.navigate(ROUTES.EARNINGS);
+                          return;
+                        }
+                        if (item.action.route === 'affiliates') {
+                          navigation.navigate(ROUTES.AFFILIATES);
+                          return;
+                        }
+                        if (item.action.route === 'my-points') {
+                          navigation.navigate(ROUTES.MY_POINTS);
+                          return;
+                        }
+                        if (item.action.route === 'my-balance') {
+                          navigation.navigate(ROUTES.MY_BALANCE);
+                          return;
+                        }
+                        if (item.action.route === 'settings-address') {
+                          navigation.navigate(ROUTES.SETTINGS_ADDRESS);
+                          return;
+                        }
+                        if (item.action.route === 'settings-my-info') {
+                          navigation.navigate(ROUTES.SETTINGS_MY_INFO);
+                          return;
+                        }
+                        return;
+                      }
+                      if (item.action.type === 'alert') {
+                        Alert.alert(
+                          dashboardCopy.deleteTitle,
+                          dashboardCopy.deleteMessage,
+                          [
+                            { text: dashboardCopy.ok, style: 'destructive', onPress: () => {
+                              // Perform delete action if necessary, or just close
+                            } },
+                            { text: isVi ? 'Hủy' : 'Cancel', style: 'cancel' }
+                          ]
+                        );
+                      }
+                    }}
+                    className="mb-2 flex-row items-center rounded-2xl border border-slate-100 bg-white px-3.5 py-3"
+                  >
+                    <View
+                      className="h-10 w-10 items-center justify-center rounded-full"
+                      style={{ backgroundColor: iconBackground }}
+                    >
+                      {item.icon}
+                    </View>
 
-          <View className="mt-5">
-            <GoProBanner
-              onPress={() => Linking.openURL(apiConfig.webBaseUrl)}
-            />
-          </View>
+                    <View className="ml-3 flex-1">
+                      <Text
+                        className="text-[15px] font-semibold text-slate-800"
+                        style={{ color: titleColor }}
+                        numberOfLines={1}
+                      >
+                        {item.title}
+                      </Text>
+                    </View>
 
-          {/* 5-section menu board (info / content / settings / system /
-              footer). Replaces the old single-list SettingsMenuList so
-              the Settings tab mirrors the reference image exactly. */}
-          <View className="mt-6">
-            <SettingsMenuBoard
-              wallet={walletSummary}
-              points={pointsSummary}
-              isAdmin={isAdmin}
-              contentMenu={contentMenu}
-              accountMenu={accountMenu}
-              systemMenu={systemMenu}
-              footerMenu={footerMenu}
-              sectionLabels={sectionLabels}
-              onItemPress={(id: string) => {
-                // Route every menu item through the same dispatcher
-                // so navigation logic stays in one place.
-                handleFeaturePress(id);
-              }}
-              onSwitchAccountPress={() => handleFeaturePress('switch-account')}
-              onShortcutsPress={() => handleFeaturePress('shortcuts')}
-              onToggleNightMode={handleToggleNightMode}
-            />
-          </View>
+                    <ChevronRight size={18} color={chevronColor} />
+                  </TouchableOpacity>
+                );
+              })}
+            </React.Fragment>
+          ))}
         </ScrollView>
       )}
-
     </SafeAreaView>
   );
 }

@@ -66,17 +66,17 @@ function mapPrivacy(record: RawRecord): UserProfile['privacy'] {
   return {
     message: primitiveValue(record.message_privacy),
     follow: primitiveValue(record.follow_privacy),
-    friend: primitiveValue(record.friend_privacy),
+    friend: primitiveValue(record.friend_privacy ?? record.friendPrivacy),
     post: primitiveValue(record.post_privacy),
     birth: primitiveValue(record.birth_privacy),
     phone: primitiveValue(record.phone_privacy),
-    visit: primitiveValue(record.visit_privacy),
-    showLastSeen: primitiveValue(record.showlastseen),
-    confirmFollowers: primitiveValue(record.confirm_followers),
-    showActivities: primitiveValue(record.show_activities_privacy),
-    onlineStatus: primitiveValue(record.status),
-    shareLocation: primitiveValue(record.share_my_location),
-    shareData: primitiveValue(record.share_my_data),
+    visit: primitiveValue(record.visit_privacy ?? record.visitPrivacy),
+    showLastSeen: primitiveValue(record.showlastseen ?? record.show_lastseen),
+    confirmFollowers: primitiveValue(record.confirm_followers ?? record.confirmFollowers),
+    showActivities: primitiveValue(record.show_activities_privacy ?? record.showActivitiesPrivacy),
+    onlineStatus: primitiveValue(record.online_status ?? record.status),
+    shareLocation: primitiveValue(record.share_my_location ?? record.shareLocation),
+    shareData: primitiveValue(record.share_my_data ?? record.shareData),
   };
 }
 

@@ -391,7 +391,11 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
       // caller would have to copy out `result.post` before reset
       // cleared anything it depended on. (Currently irrelevant since
       // result lives outside the draft, but defensive anyway.)
-      onCreated?.(result.post);
+      const createdPost: FeedPost = {
+        ...result.post,
+        postedAt: result.post.postedAt || Math.floor(Date.now() / 1000),
+      };
+      onCreated?.(createdPost);
       setDraft({ ...DEFAULT_DRAFT, pageId });
       return result;
     } catch (caught) {
