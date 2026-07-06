@@ -13,7 +13,6 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
-  LayoutAnimation,
   Linking,
   Modal,
   Platform,
@@ -24,17 +23,13 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  UIManager,
   PanResponder,
   ToastAndroid,
   Dimensions,
   Pressable,
-} from 'react-native';
-import {
-  FlashList,
-  type FlashListRef,
+  FlatList,
   type ListRenderItem,
-} from '@shopify/flash-list';
+} from 'react-native';
 import {
   ArrowLeft,
   Check,
@@ -99,7 +94,7 @@ import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
   if (isNaN(numPrice)) return price;
-  
+
   let currency = symbolOrCode;
   if (currency === '0') currency = '$';
   else if (currency === '1') currency = '€';
@@ -259,13 +254,6 @@ const CHAT_COPY: Record<
   },
 };
 
-if (
-  Platform.OS === 'android' &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
 // Format time
 function formatMessageTime(timestamp: number) {
   if (!timestamp) return '';
@@ -348,6 +336,26 @@ function buildMessageListItems(messages: MessageItem[]): ChatMessageListItem[] {
   }
 
   return items;
+}
+
+function getChatListItemType(item: ChatMessageListItem) {
+  if (item.kind === 'image-group') return 'image-group';
+
+  const { message } = item;
+  if (message.callEvent) {
+    return `call-${message.callEvent.callType}-${message.callEvent.status}`;
+  }
+  if (message.mediaType) {
+    return `media-${message.mediaType}`;
+  }
+  if (message.message?.includes('TĂ´i muá»‘n há»i vá» sáº£n pháº©m:')) {
+    return 'product-inquiry';
+  }
+  if (message.message?.includes('â†ªï¸ *Tráº£ lá»i tin nháº¯n:*')) {
+    return 'reply-message';
+  }
+
+  return 'text-message';
 }
 
 type MessageSkeletonBubbleWidthStyle =
@@ -632,10 +640,10 @@ function CallEventContent({
   const iconBgClass = missedIncoming ? 'bg-red-500' : isSentByMe ? 'bg-blue-500' : 'bg-gray-400';
 
   return (
-    <View 
+    <View
       className={`rounded-2xl p-3 border ${
-        isSentByMe 
-          ? 'bg-blue-50 border-blue-100/60' 
+        isSentByMe
+          ? 'bg-blue-50 border-blue-100/60'
           : 'bg-[#F0F2F7] border-slate-200/50'
       }`}
       style={{ width: 230 }}
@@ -737,6 +745,15 @@ function parseMessageReply(messageText: string) {
   }
 }
 
+function getReplyLabel(senderName: string, isSentByMe: boolean, partnerName: string) {
+  const isOriginalMe = senderName === 'Tôi';
+  if (isSentByMe) {
+    return isOriginalMe ? 'Bạn đã trả lời chính mình' : `Bạn đã trả lời ${senderName}`;
+  } else {
+    return isOriginalMe ? `${partnerName} đã trả lời bạn` : `${partnerName} đã trả lời chính mình`;
+  }
+}
+
 function getMessageSnippet(message: MessageItem, chatName: string) {
   if (message.media) {
     if (message.mediaType === 'image') return '📷 Hình ảnh';
@@ -830,11 +847,10 @@ function ProductInquiryBubble({
   };
   isSentByMe: boolean;
 }) {
-  const cardBg = isSentByMe ? 'bg-black/15' : 'bg-white';
-  const cardBorder = isSentByMe ? 'border-white/10' : 'border-gray-200';
-  const nameColor = isSentByMe ? 'text-white' : 'text-slate-800';
-  const priceColor = isSentByMe ? 'text-blue-200' : 'text-blue-600';
-  const textColor = isSentByMe ? 'text-white' : 'text-slate-900';
+  const cardBg = 'bg-white';
+  const cardBorder = 'border-slate-200';
+  const nameColor = 'text-slate-800';
+  const priceColor = 'text-blue-600';
   const navigation = useNavigation<any>();
 
   const handlePressProduct = () => {
@@ -846,57 +862,57 @@ function ProductInquiryBubble({
   };
 
   return (
-    <View className="flex-col min-w-[200px] mt-0.5">
-      {/* Product Frame */}
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={handlePressProduct}
-        className={`rounded-xl border overflow-hidden ${cardBg} ${cardBorder} mb-2`}
-      >
-        {!!product.image && (
-          <Image
-            source={{ uri: product.image }}
-            className="w-full h-32"
-            resizeMode="cover"
-          />
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={handlePressProduct}
+      className={`w-[210px] rounded-2xl border overflow-hidden ${cardBg} ${cardBorder} shadow-sm`}
+    >
+      {!!product.image && (
+        <Image
+          source={{ uri: product.image }}
+          className="w-full h-28 bg-slate-100"
+          resizeMode="cover"
+        />
+      )}
+      <View className="p-2.5">
+        <Text className={`text-[13px] font-semibold leading-4 ${nameColor}`} numberOfLines={2}>
+          {product.name}
+        </Text>
+        <Text className={`text-[12px] font-bold mt-1.5 ${priceColor}`}>
+          {product.price}
+        </Text>
+        {!!product.location && (
+          <Text className="text-[9.5px] mt-1 text-slate-400 font-medium" numberOfLines={1}>
+            📍 {product.location}
+          </Text>
         )}
-        <View className="p-2.5">
-          <Text className={`text-sm font-bold leading-5 ${nameColor}`} numberOfLines={2}>
-            {product.name}
-          </Text>
-          <Text className={`text-[13px] font-extrabold mt-1 ${priceColor}`}>
-            {product.price}
-          </Text>
-          {!!product.location && (
-            <Text className={`text-[10px] mt-1 opacity-70 ${isSentByMe ? 'text-white/80' : 'text-slate-500'}`} numberOfLines={1}>
-              📍 {product.location}
-            </Text>
-          )}
-        </View>
-      </TouchableOpacity>
-
-      {/* Message question */}
-      <Text className={`text-[15px] leading-5 ${textColor}`}>
-        {product.userMessage || 'Mặt hàng này còn không bạn yêu?'}
-      </Text>
-    </View>
+      </View>
+    </TouchableOpacity>
   );
 }
 
 function MessageBubble({
   message,
   avatar,
+  partnerName,
+  showAvatar = true,
   onOpenMedia,
   onReply,
   onLongPress,
   onRecallCall,
+  onPressReply,
+  onQuickRecord,
 }: {
   message: MessageItem;
   avatar: string;
+  partnerName: string;
+  showAvatar?: boolean;
   onOpenMedia: OpenChatMedia;
   onReply?: (message: MessageItem) => void;
   onLongPress?: (message: MessageItem) => void;
   onRecallCall?: (callType: 'audio' | 'video') => void;
+  onPressReply?: (originalMessageId: string) => void;
+  onQuickRecord?: () => void;
 }) {
   const isSentByMe = message.callEvent ? message.callEvent.isInitiator : message.isSentByMe;
 
@@ -909,13 +925,11 @@ function MessageBubble({
   const replyInfo = parseMessageReply(message.message);
   const bubbleClassName = message.callEvent
     ? ''
-    : `max-w-[78%] ${
+    : `${
         isMediaOnly
           ? ''
           : isSentByMe
-          ? !!replyInfo
-            ? 'rounded-2xl rounded-br-md bg-[#E5F3FF] px-3 py-2 border border-[#B3DCFF]'
-            : 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
+          ? 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
           : 'rounded-2xl rounded-bl-md bg-gray-100 px-3 py-2'
       }`;
 
@@ -947,14 +961,14 @@ function MessageBubble({
         Animated.parallel([
           Animated.spring(translateX, {
             toValue: 0,
-            useNativeDriver: true,
+            useNativeDriver: false,
             tension: 50,
             friction: 7,
           }),
           Animated.timing(replyIconOpacity, {
             toValue: 0,
             duration: 150,
-            useNativeDriver: true,
+            useNativeDriver: false,
           }),
         ]).start();
       },
@@ -992,83 +1006,191 @@ function MessageBubble({
         style={{ transform: [{ translateX }] }}
         className={`flex-row ${
           isSentByMe ? 'justify-end' : 'justify-start'
-        }`}
+        } items-end`}
       >
         {!isSentByMe && (
-          <Image
-            source={{ uri: avatar }}
-            className="mr-2 mt-1 h-7 w-7 rounded-full bg-gray-200"
-          />
+          showAvatar ? (
+            <Image
+              source={{ uri: avatar }}
+              className="mr-2 mb-1 h-7 w-7 rounded-full bg-gray-200"
+              fadeDuration={0}
+              resizeMethod="resize"
+            />
+          ) : (
+            <View className="w-7 mr-2" />
+          )
         )}
-        <View
-          className={`${bubbleClassName} ${
-            message.deliveryState === 'sending' ? 'opacity-70' : ''
-          }`}
-        >
+
+        {isSentByMe && message.mediaType === 'audio' && (
           <TouchableOpacity
-            activeOpacity={0.9}
-            onLongPress={() => onLongPress?.(message)}
-            delayLongPress={350}
+            activeOpacity={0.8}
+            onPress={onQuickRecord}
+            className="h-8 w-8 rounded-full justify-center items-center bg-slate-100 border border-slate-200 mr-2 mb-1"
           >
-            {message.callEvent ? (
-              <CallEventContent message={message} onRecall={onRecallCall} />
-            ) : (
-              <>
-                <MessageMedia message={message} onOpenMedia={onOpenMedia} />
-                {!!message.message && (
-                  productInquiry ? (
-                    <ProductInquiryBubble
-                      product={productInquiry}
-                      isSentByMe={isSentByMe ?? false}
-                    />
-                  ) : replyInfo ? (
-                    <ReplyMessageBubble
-                      reply={replyInfo}
-                      isSentByMe={isSentByMe ?? false}
-                    />
-                  ) : (
-                    <Text
-                      className={`text-[15px] leading-5 ${
-                        isSentByMe ? 'text-white' : 'text-gray-900'
-                      }`}
-                    >
-                      {message.message}
-                    </Text>
-                  )
-                )}
-              </>
-            )}
-            {!message.callEvent && (
-              <Text
-                className={`mt-1 text-right text-[10px] ${
-                  message.deliveryState === 'failed'
-                    ? isMediaOnly
-                      ? 'text-red-600'
-                      : 'text-red-100'
-                    : isMediaOnly
-                    ? 'text-gray-500'
-                    : isSentByMe
-                    ? !!replyInfo
-                      ? 'text-slate-400'
-                      : 'text-blue-100'
-                    : 'text-gray-500'
-                }`}
-              >
-                {message.deliveryState === 'sending'
-                  ? 'Đang gửi...'
-                  : message.deliveryState === 'failed'
-                  ? 'Gửi thất bại'
-                  : formatMessageTime(message.time)}
-              </Text>
-            )}
+            <Mic size={15} color="#475569" />
           </TouchableOpacity>
+        )}
+
+        <View className={`flex-col max-w-[78%] ${isSentByMe ? 'items-end' : 'items-start'}`}>
+          {/* Reply Label (outside bubble) */}
+          {!!replyInfo && (
+            <View className="flex-row items-center mb-1 px-1 opacity-70">
+              <CornerUpLeft size={11} color="#64748B" className="mr-1" />
+              <Text className="text-[10px] font-semibold text-slate-500">
+                {getReplyLabel(replyInfo.senderName, isSentByMe ?? false, partnerName)}
+              </Text>
+            </View>
+          )}
+
+          {/* Replied Content Preview Box (outside bubble) */}
+          {!!replyInfo && (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => replyInfo.originalMessageId && onPressReply?.(replyInfo.originalMessageId)}
+              className="mb-1 rounded-xl overflow-hidden bg-slate-100 border border-slate-200"
+              style={{ opacity: 0.9 }}
+            >
+              {replyInfo.originalImage ? (
+                <View className="relative">
+                  <Image
+                    source={{ uri: replyInfo.originalImage }}
+                    className="w-24 h-24 bg-slate-200"
+                    resizeMode="cover"
+                  />
+                  {replyInfo.originalMessage.includes('🎥') && (
+                    <View className="absolute inset-0 items-center justify-center bg-black/25">
+                      <Play size={16} color="#ffffff" fill="#ffffff" />
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <View className="px-3 py-1.5 max-w-[200px]">
+                  <Text className="text-xs text-slate-600" numberOfLines={2}>
+                    {replyInfo.originalMessage}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Product Inquiry Card (outside bubble) */}
+          {!!productInquiry && (
+            <View className="mb-2 shadow-sm">
+              <ProductInquiryBubble
+                product={productInquiry}
+                isSentByMe={isSentByMe ?? false}
+              />
+            </View>
+          )}
+
+          {/* Main Bubble */}
+          <View
+            className={`${
+              message.callEvent
+                ? ''
+                : `${isSentByMe ? 'self-end' : 'self-start'} ${
+                    isMediaOnly
+                      ? ''
+                      : isSentByMe
+                      ? 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
+                      : 'rounded-2xl rounded-bl-md bg-gray-100 px-3 py-2'
+                  }`
+            } ${
+              message.deliveryState === 'sending' ? 'opacity-70' : ''
+            }`}
+          >
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onLongPress={() => onLongPress?.(message)}
+              delayLongPress={350}
+            >
+              {message.callEvent ? (
+                <CallEventContent message={message} onRecall={onRecallCall} />
+              ) : (
+                <>
+                  <MessageMedia message={message} onOpenMedia={onOpenMedia} />
+                  {!!message.message && (
+                    productInquiry ? (
+                      <Text
+                        className={`text-[15px] leading-5 ${
+                          isSentByMe ? 'text-white' : 'text-gray-900'
+                        }`}
+                      >
+                        {productInquiry.userMessage || 'Mặt hàng này còn không bạn yêu?'}
+                      </Text>
+                    ) : replyInfo ? (
+                      <Text
+                        className={`text-[15px] leading-5 ${
+                          isSentByMe ? 'text-white' : 'text-gray-900'
+                        }`}
+                      >
+                        {replyInfo.replyText}
+                      </Text>
+                    ) : (
+                      <Text
+                        className={`text-[15px] leading-5 ${
+                          isSentByMe ? 'text-white' : 'text-gray-900'
+                        }`}
+                      >
+                        {message.message}
+                      </Text>
+                    )
+                  )}
+                </>
+              )}
+              {!message.callEvent && (
+                <Text
+                  className={`mt-1 text-right text-[10px] ${
+                    message.deliveryState === 'failed'
+                      ? isMediaOnly
+                        ? 'text-red-600'
+                        : 'text-red-100'
+                      : isMediaOnly
+                      ? 'text-gray-500'
+                      : isSentByMe
+                      ? 'text-blue-100'
+                      : 'text-gray-500'
+                  }`}
+                >
+                  {message.deliveryState === 'sending'
+                    ? 'Đang gửi...'
+                    : message.deliveryState === 'failed'
+                    ? 'Gửi thất bại'
+                    : formatMessageTime(message.time)}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {!isSentByMe && message.mediaType === 'audio' && (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onQuickRecord}
+            className="h-8 w-8 rounded-full justify-center items-center bg-slate-100 border border-slate-200 ml-2 mb-1"
+          >
+            <Mic size={15} color="#475569" />
+          </TouchableOpacity>
+        )}
       </Animated.View>
     </View>
   );
 }
 
-const MemoizedMessageBubble = React.memo(MessageBubble);
+const MemoizedMessageBubble = React.memo(
+  MessageBubble,
+  (prevProps, nextProps) => {
+    return (
+      prevProps.message.id === nextProps.message.id &&
+      prevProps.message.message === nextProps.message.message &&
+      prevProps.message.deliveryState === nextProps.message.deliveryState &&
+      prevProps.message.seen === nextProps.message.seen &&
+      prevProps.avatar === nextProps.avatar &&
+      prevProps.partnerName === nextProps.partnerName &&
+      prevProps.showAvatar === nextProps.showAvatar
+    );
+  }
+);
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -1084,8 +1206,13 @@ function SwipeToCloseContainer({
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
+        const { dx, dy } = gestureState;
+        return Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx);
+      },
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
         const { dx, dy } = gestureState;
         return Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx);
       },
@@ -1134,7 +1261,7 @@ function SwipeToCloseContainer({
   };
 
   return (
-    <Animated.View 
+    <Animated.View
       style={[{ flex: 1, backgroundColor: 'black' }, { opacity }]}
     >
       <Animated.View
@@ -1235,7 +1362,7 @@ function ChatVideoViewer({
           />
 
           {showControls && (
-            <View 
+            <View
               className="absolute inset-0 bg-black/20 items-center justify-center"
               pointerEvents="box-none"
             >
@@ -1253,11 +1380,11 @@ function ChatVideoViewer({
               </TouchableOpacity>
 
               {/* Bottom Custom Controls Bar */}
-              <View 
+              <View
                 className="absolute bottom-8 left-4 right-4 flex-row items-center bg-black/60 px-4 py-3 rounded-2xl border border-white/10"
                 pointerEvents="auto"
               >
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={handlePlayPause}
                   className="h-8 w-8 items-center justify-center rounded-full bg-white/10"
                 >
@@ -1270,8 +1397,8 @@ function ChatVideoViewer({
 
                 {/* Progress bar */}
                 <View className="flex-1 mx-3 h-1 bg-white/20 rounded-full overflow-hidden justify-center">
-                  <View 
-                    className="h-full bg-blue-500 rounded-full" 
+                  <View
+                    className="h-full bg-blue-500 rounded-full"
                     style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
                   />
                 </View>
@@ -1282,7 +1409,7 @@ function ChatVideoViewer({
                 </Text>
 
                 {/* Mute Button */}
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => {
                     setMuted(m => !m);
                     triggerControlsTimeout();
@@ -1363,7 +1490,7 @@ function ChatImage({ uri }: { uri: string }) {
 
   if (!dims) {
     return (
-      <View 
+      <View
         className="rounded-2xl bg-gray-200"
         style={{ width: 240, height: 180 }}
       />
@@ -1380,20 +1507,97 @@ function ChatImage({ uri }: { uri: string }) {
   );
 }
 
+function getChatVideoSize(width?: number, height?: number) {
+  const maxWidth = 200;
+  const maxHeight = 220;
+  const fallback = { width: 200, height: 120 };
+
+  if (!width || !height) return fallback;
+
+  const aspect = width / height;
+  if (!Number.isFinite(aspect) || aspect <= 0) return fallback;
+
+  let finalWidth = width;
+  let finalHeight = height;
+
+  if (width > height) {
+    if (width > maxWidth) {
+      finalWidth = maxWidth;
+      finalHeight = maxWidth / aspect;
+    }
+    if (finalHeight > maxHeight) {
+      finalHeight = maxHeight;
+      finalWidth = maxHeight * aspect;
+    }
+  } else {
+    if (height > maxHeight) {
+      finalHeight = maxHeight;
+      finalWidth = maxHeight * aspect;
+    }
+    if (finalWidth > maxWidth) {
+      finalWidth = maxWidth;
+      finalHeight = maxWidth / aspect;
+    }
+  }
+
+  if (finalWidth < 120) {
+    finalWidth = 120;
+    finalHeight = 120 / aspect;
+  }
+  if (finalHeight < 100) {
+    finalHeight = 100;
+    finalWidth = 100 * aspect;
+  }
+
+  return {
+    width: Math.round(finalWidth),
+    height: Math.round(finalHeight),
+  };
+}
+
 function ChatVideo({ uri, messageId }: { uri: string; messageId: string }) {
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const [isMeasured, setIsMeasured] = useState(false);
+
+  const displaySize = size || getChatVideoSize();
+
   return (
-    <View 
-      style={{ width: 240, height: 160 }}
-      className="overflow-hidden rounded-2xl bg-black"
+    <View
+      style={displaySize}
+      className="overflow-hidden rounded-2xl bg-slate-900 justify-center items-center relative"
     >
-      <VideoPlayer
-        key={messageId}
-        source={{ uri }}
-        style={{ height: '100%', width: '100%' }}
-        resizeMode="cover"
-        paused
-        muted
-      />
+      {!isMeasured && (
+        <VideoPlayer
+          key={messageId}
+          source={{ uri }}
+          style={{ width: 1, height: 1, position: 'absolute', opacity: 0 }}
+          paused={true}
+          muted={true}
+          onLoad={(event: any) => {
+            const naturalSize = event?.naturalSize;
+            if (naturalSize?.width && naturalSize?.height) {
+              setSize(
+                getChatVideoSize(
+                  Number(naturalSize.width),
+                  Number(naturalSize.height),
+                ),
+              );
+            }
+            setIsMeasured(true);
+          }}
+        />
+      )}
+
+      {/* Styled static video preview card */}
+      <Video size={40} color="#ffffff" className="opacity-15 absolute" />
+
+      <View className="h-10 w-10 items-center justify-center rounded-full bg-white/20 border border-white/30 shadow-md">
+        <Play size={18} color="#ffffff" fill="#ffffff" />
+      </View>
+
+      <View className="absolute bottom-2 right-2 bg-black/60 px-2 py-0.5 rounded-md">
+        <Text className="text-[9px] font-bold text-white/90 tracking-wider">VIDEO</Text>
+      </View>
     </View>
   );
 }
@@ -1425,11 +1629,6 @@ function MessageMedia({
         onPress={() => onOpenMedia({ uri: message.media!, type: 'video' })}
       >
         <ChatVideo uri={message.media} messageId={message.id} />
-        <View className="absolute inset-0 items-center justify-center">
-          <View className="h-10 w-10 items-center justify-center rounded-full bg-black/45">
-            <Play size={20} color="#ffffff" fill="#ffffff" />
-          </View>
-        </View>
       </TouchableOpacity>
     );
   }
@@ -2017,35 +2216,80 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
   const recorder = useAudioRecorder();
-  const flatListRef = useRef<FlashListRef<ChatMessageListItem>>(null);
+  const flatListRef = useRef<FlatList<ChatMessageListItem>>(null);
+  const mediaListRef = useRef<FlatList>(null);
   const previousLatestMessageIdRef = useRef<string | undefined>(undefined);
   const didScrollInitialRef = useRef(false);
   const pendingInitialScrollRef = useRef(false);
+  const scrollMetricsRef = useRef({
+    offsetY: 0,
+    contentHeight: 0,
+    viewportHeight: 0,
+  });
+  const pendingOlderAnchorRef = useRef<{
+    offsetY: number;
+    contentHeight: number;
+  } | null>(null);
+  const loadingOlderRef = useRef(false);
   const sendAnim = useRef(new Animated.Value(1)).current;
   const canSend =
     Boolean(text.trim()) || attachments.length > 0 || recorder.isRecording || Boolean(attachedProduct);
   const messageItems = useMemo(
-    () => buildMessageListItems(messages),
+    () => buildMessageListItems(messages).reverse(),
     [messages],
   );
+  const messageItemsRef = useRef(messageItems);
+  useEffect(() => {
+    messageItemsRef.current = messageItems;
+  }, [messageItems]);
+
   const messageListContentStyle = useMemo(
     () => ({ paddingVertical: 12, paddingBottom: 8 }),
     [],
   );
   const maintainVisibleContentPosition = useMemo(
-    () => ({
-      autoscrollToBottomThreshold: 0.12,
-      animateAutoScrollToBottom: true,
-      startRenderingFromBottom: true,
-    }),
+    () => ({ minIndexForVisible: 0 }),
     [],
   );
   const viewerMedia = viewerMediaItems[viewerMediaIndex];
+
+  useEffect(() => {
+    if (viewerMediaItems.length > 0 && viewerMediaIndex >= 0 && viewerMediaIndex < viewerMediaItems.length) {
+      const timer = setTimeout(() => {
+        mediaListRef.current?.scrollToIndex({
+          index: viewerMediaIndex,
+          animated: false,
+        });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [viewerMediaIndex, viewerMediaItems.length]);
   const scrollToLatest = useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
-      flatListRef.current?.scrollToEnd({ animated });
+      flatListRef.current?.scrollToOffset({ offset: 0, animated });
     });
   }, []);
+
+  const handlePressReply = useCallback((originalMessageId: string) => {
+    const index = messageItemsRef.current.findIndex(item => item.id === originalMessageId);
+    if (index !== -1) {
+      try {
+        flatListRef.current?.scrollToIndex({
+          index,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      } catch (e) {
+        console.warn('Scroll to index failed:', e);
+      }
+    }
+  }, []);
+
+  const handleQuickRecord = useCallback(() => {
+    if (!recorder.isRecording) {
+      recorder.startRecording().catch(() => undefined);
+    }
+  }, [recorder]);
 
   useEffect(() => {
     didScrollInitialRef.current = false;
@@ -2075,9 +2319,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     if (messages.length === 0) return;
 
     if (!didScrollInitialRef.current) {
-      pendingInitialScrollRef.current = true;
-      const timer = setTimeout(() => scrollToLatest(false), 80);
-      return () => clearTimeout(timer);
+      return;
     }
 
     if ((isAtBottom || isKeyboardVisible) && !isLoadingMore) {
@@ -2115,19 +2357,23 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     previousLatestMessageIdRef.current = latestMessageId;
   }, [isAtBottom, isKeyboardVisible, messages]);
 
-  const handleContentSizeChange = useCallback(() => {
+  const handleContentSizeChange = useCallback((_width?: number, height?: number) => {
     if (messages.length === 0) return;
-
-    if (!didScrollInitialRef.current || pendingInitialScrollRef.current) {
-      didScrollInitialRef.current = true;
-      pendingInitialScrollRef.current = false;
-      scrollToLatest(false);
-    }
-  }, [messages.length, scrollToLatest]);
+    const nextContentHeight =
+      typeof height === 'number' ? height : scrollMetricsRef.current.contentHeight;
+    scrollMetricsRef.current.contentHeight = nextContentHeight;
+  }, [messages.length]);
 
   const handleLoadOlder = useCallback(() => {
-    if (messageItems.length === 0 || isLoadingMore || !hasMore) return;
-    loadOlder().catch(() => undefined);
+    if (messageItems.length === 0 || isLoadingMore || loadingOlderRef.current || !hasMore) {
+      return;
+    }
+    loadingOlderRef.current = true;
+    loadOlder()
+      .catch(() => undefined)
+      .finally(() => {
+        loadingOlderRef.current = false;
+      });
   }, [hasMore, isLoadingMore, loadOlder, messageItems.length]);
 
   // Track scroll position
@@ -2135,8 +2381,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     (event: any) => {
       const { layoutMeasurement, contentOffset, contentSize } =
         event.nativeEvent;
-      const isAtBottomNow =
-        layoutMeasurement.height + contentOffset.y >= contentSize.height - 50;
+      scrollMetricsRef.current = {
+        offsetY: contentOffset.y,
+        contentHeight: contentSize.height,
+        viewportHeight: layoutMeasurement.height,
+      };
+
+      const isAtBottomNow = contentOffset.y <= 50;
       if (isAtBottom !== isAtBottomNow) {
         setIsAtBottom(isAtBottomNow);
       }
@@ -2198,16 +2449,16 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       const formattedPrice = formatPrice(attachedProduct.price, currencySymbol);
       const imageUrl = attachedProduct.images?.[0]?.image || '';
       const productId = attachedProduct.id;
-      
+
       nextText = `🛍️ *Tôi muốn hỏi về sản phẩm:*\n👉 *${attachedProduct.name}*\n💰 Giá: *${formattedPrice}*${
         attachedProduct.location ? `\n📍 Địa điểm: *${attachedProduct.location}*` : ''
       }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${productId ? `\n🆔 ID: *${productId}*` : ''}\n\n💬 Lời nhắn: ${text.trim() || 'Mặt hàng này còn không bạn?'}`;
-      
+
       setAttachedProduct(undefined);
     } else if (replyingMessage) {
       const originalSnippet = getMessageSnippet(replyingMessage, chat.name);
       const senderName = replyingMessage.isSentByMe ? 'Tôi' : (chat.name || 'Người dùng');
-      
+
       let originalImageUrl = '';
       if (replyingMessage.media && replyingMessage.mediaType === 'image') {
         originalImageUrl = replyingMessage.media;
@@ -2217,7 +2468,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           originalImageUrl = prod.image;
         }
       }
-      
+
       const imgSegment = originalImageUrl ? `\n🖼️ Ảnh: *${originalImageUrl}*` : '';
       nextText = `↪️ *Trả lời tin nhắn:*\n👉 *${senderName}*: ${originalSnippet}\n🆔 ID: *${replyingMessage.id}*${imgSegment}\n\n${nextText}`;
       setReplyingMessage(undefined);
@@ -2227,7 +2478,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     setText('');
     stopTyping();
     setAttachments([]);
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
     if (nextAttachments.length === 0) {
       await sendMessage(nextText);
@@ -2284,7 +2534,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${productId ? `\n🆔 ID: *${productId}*` : ''}\n\n💬 Lời nhắn: ${optionText}`;
 
       setAttachedProduct(undefined);
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       await sendMessage(nextText);
     },
     [attachedProduct, sendMessage],
@@ -2433,18 +2682,33 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         );
       }
 
+      const showAvatar =
+        item.kind === 'message' && !item.message.isSentByMe
+          ? (() => {
+              const currentIndex = messageItems.findIndex(x => x.id === item.id);
+              if (currentIndex <= 0) return true;
+              const successor = messageItems[currentIndex - 1];
+              if (!successor || successor.kind !== 'message') return true;
+              return successor.message.isSentByMe;
+            })()
+          : false;
+
       return (
         <MemoizedMessageBubble
           message={item.message}
           avatar={chat.avatar}
+          partnerName={chat.name}
+          showAvatar={showAvatar}
           onOpenMedia={handleOpenMedia}
           onReply={setReplyingMessage}
           onLongPress={setSelectedOptionMessage}
           onRecallCall={handleStartCall}
+          onPressReply={handlePressReply}
+          onQuickRecord={handleQuickRecord}
         />
       );
     },
-    [chat.avatar, handleOpenMedia, handleStartCall],
+    [chat.avatar, chat.name, messageItems, handleOpenMedia, handleStartCall, handlePressReply, handleQuickRecord],
   );
 
   const handleOpenGroupInfo = useCallback(() => {
@@ -2753,15 +3017,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               >
                 <Info size={21} color="#0000ff" />
               </TouchableOpacity>
-              {groupInfo?.isOwner ? (
-                <TouchableOpacity
-                  className="h-10 w-10 items-center justify-center rounded-full"
-                  activeOpacity={0.75}
-                  onPress={handleClearGroupHistory}
-                >
-                  <Trash2 size={20} color="#ef4444" />
-                </TouchableOpacity>
-              ) : null}
             </>
           ) : null}
         </View>
@@ -2770,35 +3025,64 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         {isLoading ? (
           <ChatMessagesSkeleton />
         ) : (
-          <FlashList<ChatMessageListItem>
+          <FlatList<ChatMessageListItem>
+            key={chat.id}
             ref={flatListRef}
             data={messageItems}
             keyExtractor={item => item.id}
             renderItem={renderMessageItem}
             contentContainerStyle={messageListContentStyle}
+            inverted
             keyboardShouldPersistTaps="handled"
             onScroll={handleScroll}
             onContentSizeChange={handleContentSizeChange}
-            scrollEventThrottle={32}
-            drawDistance={1200}
-            onStartReached={handleLoadOlder}
-            onStartReachedThreshold={0.35}
-            maintainVisibleContentPosition={maintainVisibleContentPosition}
+            scrollEventThrottle={16}
+            removeClippedSubviews={true}
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={7}
+            onEndReached={handleLoadOlder}
+            onEndReachedThreshold={2.0}
             ListHeaderComponent={
+              <View className="py-2">
+                {(isTyping || isRecording) && (
+                  <TypingIndicator name={chat.name} avatar={chat.avatar} />
+                )}
+              </View>
+            }
+            ListFooterComponent={
               isLoadingMore ? (
                 <ActivityIndicator
                   className="my-3"
                   size="small"
                   color="#2563eb"
                 />
+              ) : !hasMore ? (
+                <View className="items-center justify-center py-10 px-4">
+                  <View className="relative">
+                    <Image
+                      source={{ uri: chat.avatar }}
+                      className="h-24 w-24 rounded-full border-4 border-blue-50 shadow-md"
+                    />
+                    {chat.isOnline && (
+                      <View className="absolute bottom-1 right-1 h-5 w-5 rounded-full border-4 border-white bg-green-500" />
+                    )}
+                  </View>
+                  <Text className="mt-4 text-xl font-bold text-gray-900 text-center">
+                    {chat.name}
+                  </Text>
+                  <Text className="mt-1 text-sm text-gray-500 text-center">
+                    {chat.chatType === 'group'
+                      ? `${groupInfo?.memberCount ?? ''} thành viên`
+                      : `@${chat.username || chat.name}`}
+                  </Text>
+                  <Text className="mt-3 text-xs text-gray-400 text-center max-w-[280px]">
+                    {chat.chatType === 'group'
+                      ? 'Đây là sự bắt đầu của nhóm này. Hãy gửi tin nhắn đầu tiên để cùng trò chuyện!'
+                      : `Bạn hiện đã kết nối trên VnSeea. Hãy bắt đầu cuộc trò chuyện với ${chat.name}!`}
+                  </Text>
+                </View>
               ) : null
-            }
-            ListFooterComponent={
-              <View className="pb-2">
-                {(isTyping || isRecording) && (
-                  <TypingIndicator name={chat.name} avatar={chat.avatar} />
-                )}
-              </View>
             }
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center px-6 py-20">
@@ -2812,14 +3096,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   {copy.emptyHint}
                 </Text>
               </View>
-            }
-            refreshControl={
-              <RefreshControl
-                refreshing={isRefreshing}
-                onRefresh={() => refreshLatest().catch(() => undefined)}
-                colors={['#0084FF']}
-                tintColor="#0084FF"
-              />
             }
           />
         )}
@@ -2935,7 +3211,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 className="h-7 w-7 items-center justify-center rounded-full bg-slate-100 active:bg-slate-200"
                 activeOpacity={0.8}
                 onPress={() => {
-                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                   setAttachedProduct(undefined);
                 }}
               >
@@ -2994,7 +3269,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             </View>
             <TouchableOpacity
               onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                 setReplyingMessage(undefined);
               }}
               className="ml-3 h-6 w-6 items-center justify-center rounded-full bg-gray-200 active:bg-gray-300"
@@ -3094,29 +3368,80 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         statusBarTranslucent
         onRequestClose={handleCloseMedia}
       >
-        <SafeAreaView className="flex-1 bg-black" edges={ROOT_SAFE_AREA_EDGES}>
-          <TouchableOpacity
-            className="absolute right-4 top-4 z-10 h-11 w-11 items-center justify-center rounded-full bg-black/60"
-            activeOpacity={0.8}
-            onPress={handleCloseMedia}
-          >
-            <X size={23} color="#ffffff" />
-          </TouchableOpacity>
-          {viewerMediaItems.length > 1 && (
-            <View className="absolute left-4 top-4 z-10 rounded-full bg-white/20 px-4 py-2">
-              <Text className="text-sm font-semibold text-white">
-                {viewerMediaIndex + 1}/{viewerMediaItems.length}
-              </Text>
-            </View>
-          )}
-          {viewerMedia?.type === 'image' ? (
-            <SwipeToCloseImageViewer uri={viewerMedia.uri} onClose={handleCloseMedia} />
-          ) : viewerMedia?.type === 'video' ? (
-            <ChatVideoViewer uri={viewerMedia.uri} onClose={handleCloseMedia} />
-          ) : null}
+        <SafeAreaView className="flex-1 bg-black" edges={['top', 'bottom']}>
+          {/* Header Row - positioned safely under status bar */}
+          <View className="flex-row items-center justify-between px-4 py-3 z-10">
+            {viewerMediaItems.length > 1 ? (
+              <View className="rounded-full bg-white/20 px-4 py-2">
+                <Text className="text-sm font-semibold text-white">
+                  {viewerMediaIndex + 1}/{viewerMediaItems.length}
+                </Text>
+              </View>
+            ) : (
+              <View />
+            )}
+            <TouchableOpacity
+              className="h-11 w-11 items-center justify-center rounded-full bg-black/60"
+              activeOpacity={0.8}
+              onPress={handleCloseMedia}
+            >
+              <X size={23} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Media Slider (Horizontal FlatList) for swiping */}
+          <View className="flex-1">
+            <FlatList
+              ref={mediaListRef}
+              data={viewerMediaItems}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item, index) => `${item.uri}-${index}`}
+              getItemLayout={(data, index) => {
+                const screenWidth = Dimensions.get('window').width;
+                return {
+                  length: screenWidth,
+                  offset: screenWidth * index,
+                  index,
+                };
+              }}
+              onMomentumScrollEnd={(event) => {
+                const slideSize = event.nativeEvent.layoutMeasurement.width;
+                if (slideSize <= 0) return;
+                const offset = event.nativeEvent.contentOffset.x;
+                const index = Math.round(offset / slideSize);
+                if (index >= 0 && index < viewerMediaItems.length && index !== viewerMediaIndex) {
+                  setViewerMediaIndex(index);
+                }
+              }}
+              renderItem={({ item }) => {
+                const screenWidth = Dimensions.get('window').width;
+                return (
+                  <View style={{ width: screenWidth, flex: 1 }}>
+                    {item.type === 'image' ? (
+                      <SwipeToCloseContainer onClose={handleCloseMedia}>
+                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                          <Image
+                            source={{ uri: item.uri }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      </SwipeToCloseContainer>
+                    ) : item.type === 'video' ? (
+                      <ChatVideoViewer uri={item.uri} onClose={handleCloseMedia} />
+                    ) : null}
+                  </View>
+                );
+              }}
+            />
+          </View>
+
+          {/* Navigation Chevrons */}
           {viewerMediaIndex > 0 && (
             <TouchableOpacity
-              className="absolute left-4 top-1/2 h-14 w-14 items-center justify-center rounded-full bg-white/20 -translate-y-1/2"
+              className="absolute left-4 top-1/2 h-14 w-14 items-center justify-center rounded-full bg-white/20 -translate-y-1/2 z-10"
               activeOpacity={0.8}
               onPress={() => setViewerMediaIndex(i => i - 1)}
             >
@@ -3125,7 +3450,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           )}
           {viewerMediaIndex < viewerMediaItems.length - 1 && (
             <TouchableOpacity
-              className="absolute right-4 top-1/2 h-14 w-14 items-center justify-center rounded-full bg-white/20 -translate-y-1/2"
+              className="absolute right-4 top-1/2 h-14 w-14 items-center justify-center rounded-full bg-white/20 -translate-y-1/2 z-10"
               activeOpacity={0.8}
               onPress={() => setViewerMediaIndex(i => i + 1)}
             >
@@ -3156,7 +3481,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               <Text className="text-center text-sm font-semibold text-gray-500 mb-6">
                 Tùy chọn tin nhắn
               </Text>
-              
+
               <TouchableOpacity
                 className="flex-row items-center rounded-xl bg-gray-50 px-4 py-4 mb-3 active:bg-gray-100"
                 onPress={handleSelectOptionReply}

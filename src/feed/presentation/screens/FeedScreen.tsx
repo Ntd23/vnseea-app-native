@@ -8,7 +8,6 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
-  Animated as RnAnimated,
   Dimensions,
   FlatList,
   Image,
@@ -39,6 +38,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import {
+  ArrowUp,
   Briefcase,
   Building2,
   Compass,
@@ -604,17 +604,11 @@ const FeedProductPostCard = React.memo(function FeedProductPostCard({
   onPress,
   onProfilePress,
   onSharePost,
-  onReact,
-  onCommentTap,
-  onOpenReactions,
 }: {
   post: FeedProductPost;
   onPress: (product: FeedProductPost['product']) => void;
   onProfilePress: (userId: string) => void;
   onSharePost: (post: FeedPost) => void;
-  onReact?: (postId: string, reaction: any) => void;
-  onCommentTap?: (postId: string) => void;
-  onOpenReactions?: (postId: string, post: FeedPost) => void;
 }) {
   const handleShare = useCallback(() => {
     onSharePost(post);
@@ -623,17 +617,9 @@ const FeedProductPostCard = React.memo(function FeedProductPostCard({
   return (
     <ProductPostCard
       product={post.product}
-      postId={post.id}
-      likeCount={post.likeCount}
-      commentCount={post.commentCount}
-      myReaction={post.myReaction}
       onPress={onPress}
       onProfilePress={onProfilePress}
       onShare={handleShare}
-      onReact={onReact}
-      onCommentTap={onCommentTap}
-      onOpenReactions={onOpenReactions}
-      post={post}
     />
   );
 });
@@ -1238,16 +1224,26 @@ function FeedScreen() {
   const voteFeedPoll = vm.votePoll;
   const saveFeedPost = vm.savePost;
   const reportFeedPost = vm.reportPost;
+  const deleteFeedPost = vm.deletePost;
+  const hideFeedPost = vm.hidePost;
   const shareFeedPost = vm.sharePost;
   const reloadFeedPosts = vm.reloadPosts;
-  const mainFeedListRef = useRef<any>(null);
-  const scrollY = useRef(new RnAnimated.Value(0)).current;
-  const clampedScrollY = RnAnimated.diffClamp(scrollY, 0, FEED_HEADER_BAR_HEIGHT);
-  const headerTranslateY = clampedScrollY.interpolate({
-    inputRange: [0, FEED_HEADER_BAR_HEIGHT],
-    outputRange: [0, -FEED_HEADER_BAR_HEIGHT],
-    extrapolate: 'clamp',
-  });
+  const mainFeedListRef = useRef<FlatList>(null);
+  const [hasNewPosts, setHasNewPosts] = useState(false);
+  const pendingNewPostsRef = useRef<FeedPost[]>([]);
+
+  const handleLoadNewPosts = useCallback(() => {
+    mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    if (pendingNewPostsRef.current.length > 0) {
+      pendingNewPostsRef.current.forEach(post => {
+        prependFeedPost(post);
+      });
+      pendingNewPostsRef.current = [];
+    } else {
+      reloadFeedPosts();
+    }
+    setHasNewPosts(false);
+  }, [prependFeedPost, reloadFeedPosts]);
 
   // Top-bar logo button: when tapped while already on the Feed tab,
   // scroll the feed back to the top and trigger a fresh reload — same
@@ -1268,8 +1264,10 @@ function FeedScreen() {
     ? feedSafeAreaInsets.top
     : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
   const topInset = Platform.OS === 'android' ? 0 : rawTopInset;
-  // Unified header height offset for both iOS and Android to support sticky tabs
-  const feedRefreshProgressViewOffset = topInset + FEED_HEADER_CONTENT_HEIGHT;
+  const feedRefreshProgressViewOffset =
+    Platform.OS === 'ios'
+      ? topInset + FEED_IOS_HEADER_OVERLAY_HEIGHT
+      : topInset + FEED_HEADER_CONTENT_HEIGHT;
   const feedHeaderOverlayHeight = feedRefreshProgressViewOffset;
   const feedListContentStyle = useMemo(
     () => [FEED_LIST_CONTENT_STYLE, { paddingTop: feedHeaderOverlayHeight }],
@@ -1570,10 +1568,19 @@ function FeedScreen() {
   // events never leak into stale listeners.
   useEffect(() => {
     const unsubscribe = postCreatedEvents.subscribe(post => {
-      prependFeedPost(post);
+      pendingNewPostsRef.current.push(post);
+      setHasNewPosts(true);
     });
     return unsubscribe;
-  }, [prependFeedPost]);
+  }, []);
+
+  useEffect(() => {
+    // Mô phỏng người dùng khác đăng bài mới mỗi 60 giây
+    const interval = setInterval(() => {
+      setHasNewPosts(true);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const goToCreatePost = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_POST);
@@ -1612,23 +1619,25 @@ function FeedScreen() {
 
   // Convert products to FeedProductPost format
   const feedProductPosts = useMemo<FeedProductPost[]>(() => {
-    return productsVm.products.map((product, index) => ({
-      kind: 'product' as const,
-      id: `product-${product.id || index}`,
-      product,
-      postedAt: product.time ? parseInt(String(product.time), 10) : undefined,
-      publisher: {
-        id: String(product.seller?.user_id || ''),
-        name: product.seller?.name || copy.sellerFallback,
-        username: '',
-        avatarUrl: product.seller?.avatar,
-      },
-      likeCount: 0,
-      commentCount: 0,
-      isLiked: false,
-      myReaction: null,
-      topReactions: [],
-    }));
+    return (productsVm.products || [])
+      .filter(product => product && product.id)
+      .map((product, index) => ({
+        kind: 'product' as const,
+        id: `product-${product.id || index}`,
+        product,
+        postedAt: product.time ? parseInt(String(product.time), 10) : undefined,
+        publisher: {
+          id: String(product.seller ? product.seller.user_id || '' : ''),
+          name: (product.seller && product.seller.name) || copy.sellerFallback,
+          username: '',
+          avatarUrl: product.seller ? product.seller.avatar : undefined,
+        },
+        likeCount: 0,
+        commentCount: 0,
+        isLiked: false,
+        myReaction: null,
+        topReactions: [],
+      }));
   }, [copy.sellerFallback, productsVm.products]);
 
   const handleProductPress = useCallback(
@@ -2001,11 +2010,32 @@ function FeedScreen() {
     [copy, reportFeedPost],
   );
 
+  const handleHidePost = useCallback(
+    async (postId: string) => {
+      try {
+        await hideFeedPost?.(postId);
+        Alert.alert('Thông báo', 'Đã ẩn bài viết thành công.');
+      } catch {
+        Alert.alert('Lỗi', 'Không thể ẩn bài viết lúc này.');
+      }
+    },
+    [hideFeedPost],
+  );
+
   const handleDeletePost = useCallback(
     async (postId: string) => {
-      await vm.deletePost(postId);
+      try {
+        const result = await deleteFeedPost?.(postId);
+        if (result?.deleted) {
+          Alert.alert('Thông báo', 'Đã xóa bài viết thành công.');
+        } else {
+          Alert.alert('Thông báo', 'Không thể xóa bài viết này.');
+        }
+      } catch {
+        Alert.alert('Lỗi', 'Có lỗi xảy ra khi xóa bài viết.');
+      }
     },
-    [vm],
+    [deleteFeedPost],
   );
 
   // Infinite scroll pagination â€” calls loadMore directly.
@@ -2512,19 +2542,9 @@ function FeedScreen() {
         onPress={handleProductPress}
         onProfilePress={navigateToProfile}
         onSharePost={handleOpenSharePost}
-        onReact={handleToggleReactionStable}
-        onCommentTap={handleCommentTapStable}
-        onOpenReactions={openReactionsSheet}
       />
     ),
-    [
-      handleProductPress,
-      navigateToProfile,
-      handleOpenSharePost,
-      handleToggleReactionStable,
-      handleCommentTapStable,
-      openReactionsSheet,
-    ],
+    [handleProductPress, navigateToProfile, handleOpenSharePost],
   );
 
   const renderEventPost = useCallback(
@@ -2763,16 +2783,8 @@ function FeedScreen() {
     [feedListItems],
   );
 
-  const handleScrollCombined = RnAnimated.event(
-    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-    {
-      useNativeDriver: true,
-      listener: handleFeedScroll,
-    }
-  );
-
   const feedListElement = (
-    <RnAnimated.FlatList
+    <FlatList
       ref={mainFeedListRef}
       data={Platform.OS === 'ios' ? iosFeedListItems : feedListItems}
       renderItem={renderItem}
@@ -2786,7 +2798,7 @@ function FeedScreen() {
       nestedScrollEnabled
       onLayout={handleFeedViewportLayout}
       scrollEventThrottle={16}
-      onScroll={handleScrollCombined}
+      onScroll={handleFeedScroll}
       onViewableItemsChanged={onViewableItemsChanged}
       viewabilityConfig={viewabilityConfigRef.current}
       onScrollBeginDrag={handleScrollBeginDrag}
@@ -2833,26 +2845,48 @@ function FeedScreen() {
         edges={FEED_ROOT_SAFE_AREA_EDGES}
       >
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        
-        {feedListElement}
-
-        <RnAnimated.View
-          style={[
-            styles.animatedHeaderContainer,
-            {
-              transform: [{ translateY: headerTranslateY }],
-              paddingTop: topInset,
-            }
-          ]}
-        >
-          <FeedHeader />
-          <FilterTabs
-            copy={copy}
-            activeSource={activeFeedSource}
-            onChangeSource={setActiveFeedSource}
-          />
-        </RnAnimated.View>
-
+        {Platform.OS === 'ios' ? (
+          <>
+            {hasNewPosts && (
+              <TouchableOpacity
+                onPress={handleLoadNewPosts}
+                activeOpacity={0.9}
+                className="absolute top-[146px] self-center z-[999] flex-row items-center bg-blue-600 px-4 py-2.5 rounded-full shadow-lg border border-blue-500"
+              >
+                <ArrowUp size={14} color="#ffffff" className="mr-1.5" />
+                <Text className="text-white text-xs font-bold">Có bài đăng mới</Text>
+              </TouchableOpacity>
+            )}
+            {feedListElement}
+            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
+              <FeedHeader />
+            </FeedHeaderCollapseFrame>
+          </>
+        ) : (
+          <>
+            <View style={styles.staticHeaderContainer}>
+              <FeedHeader />
+            </View>
+            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
+              <FilterTabs
+                copy={copy}
+                activeSource={activeFeedSource}
+                onChangeSource={setActiveFeedSource}
+              />
+            </FeedHeaderCollapseFrame>
+            {hasNewPosts && (
+              <TouchableOpacity
+                onPress={handleLoadNewPosts}
+                activeOpacity={0.9}
+                className="absolute top-[146px] self-center z-[999] flex-row items-center bg-blue-600 px-4 py-2.5 rounded-full shadow-lg border border-blue-500"
+              >
+                <ArrowUp size={14} color="#ffffff" className="mr-1.5" />
+                <Text className="text-white text-xs font-bold">Có bài đăng mới</Text>
+              </TouchableOpacity>
+            )}
+            {feedListElement}
+          </>
+        )}
         <ReactionPickerOverlay
           anchor={pickerAnchor}
           onPick={handlePickReaction}
@@ -2918,7 +2952,7 @@ function FeedScreen() {
           onClose={handleClosePostMenu}
           post={selectedPostForMenu}
           onSave={handleSavePost}
-          onHide={vm.hidePost}
+          onHide={handleHidePost}
           onDelete={handleDeletePost}
           onReport={handleReportPost}
         />
@@ -2930,14 +2964,6 @@ function FeedScreen() {
 }
 
 const styles = StyleSheet.create({
-  animatedHeaderContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    backgroundColor: '#FFFFFF',
-  },
   staticHeaderContainer: {
     position: 'absolute',
     top: 0,

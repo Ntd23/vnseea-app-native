@@ -16,7 +16,7 @@ export function AudioPlayer({
   uri,
   pending = false,
   compact = false,
-  accentColor = '#2563eb',
+  accentColor = '#0084FF',
 }: Props) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
@@ -30,7 +30,7 @@ export function AudioPlayer({
     durationMs > 0 ? Math.min(1, Math.max(0, positionMs / durationMs)) : 0;
 
   return (
-    <View style={[styles.container, compact && styles.containerCompact]}>
+    <View style={styles.container}>
       <VideoPlayer
         source={{ uri }}
         paused={!isPlaying}
@@ -42,30 +42,36 @@ export function AudioPlayer({
         }}
         style={styles.hiddenPlayer}
       />
+
+      {/* Blue circular Play/Pause Button */}
       <TouchableOpacity
-        activeOpacity={0.75}
+        activeOpacity={0.85}
         disabled={pending}
         onPress={togglePlayback}
-        style={[styles.playButton, { backgroundColor: `${accentColor}18` }]}
+        style={styles.playButton}
       >
         {pending ? (
-          <Music2 size={17} color={accentColor} />
+          <Music2 size={15} color="#ffffff" />
         ) : isPlaying ? (
-          <Pause size={17} color={accentColor} fill={accentColor} />
+          <Pause size={15} color="#ffffff" fill="#ffffff" />
         ) : (
-          <Play size={17} color={accentColor} fill={accentColor} />
+          <Play size={15} color="#ffffff" fill="#ffffff" style={{ marginLeft: 2 }} />
         )}
       </TouchableOpacity>
+
+      {/* Row containing waveform and duration */}
       <View style={styles.body}>
-        <AudioWaveform
-          progress={progress}
-          color={accentColor}
-          inactiveColor="#bfdbfe"
-          height={compact ? 18 : 22}
-          barCount={compact ? 22 : 28}
-        />
+        <View style={styles.waveformContainer}>
+          <AudioWaveform
+            progress={progress}
+            color="#09090b" // Zinc-900 / black
+            inactiveColor="#CBD5E1" // Slate-300
+            height={20}
+            barCount={20}
+          />
+        </View>
         <Text style={styles.duration}>
-          {pending ? 'Đang gửi...' : formatAudioDuration(durationMs || positionMs)}
+          {pending ? '...' : formatAudioDuration(durationMs || positionMs)}
         </Text>
       </View>
     </View>
@@ -74,17 +80,13 @@ export function AudioPlayer({
 
 const styles = StyleSheet.create({
   container: {
-    minWidth: 190,
+    width: 230,
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
-    backgroundColor: '#eff6ff',
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-  },
-  containerCompact: {
-    minWidth: 150,
-    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9', // light grey-purple
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   hiddenPlayer: {
     position: 'absolute',
@@ -98,14 +100,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 17,
+    backgroundColor: '#0084FF', // Messenger blue
   },
   body: {
-    marginLeft: 9,
+    marginLeft: 10,
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  waveformContainer: {
+    flex: 1,
+    marginRight: 8,
   },
   duration: {
-    marginTop: 4,
-    color: '#64748b',
+    color: '#64748B', // Slate-500
     fontSize: 11,
+    fontWeight: '600',
   },
 });
