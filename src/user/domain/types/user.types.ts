@@ -170,6 +170,9 @@ export type MapPlacePrediction = {
   description: string;
   mainText: string;
   secondaryText?: string;
+  types?: string[];
+  lat?: number;
+  lng?: number;
 };
 
 export type MapRouteInput = {

@@ -116,7 +116,7 @@ export function useUserViewModel() {
     (input?: { lat?: number; lng?: number; limit?: number }) =>
       runUserAction(async () => {
         const pages = await repository.getNearbyPages({
-          distance: 1,
+          distance: 3,
           limit: input?.limit ?? 30,
           lat: input?.lat,
           lng: input?.lng,
