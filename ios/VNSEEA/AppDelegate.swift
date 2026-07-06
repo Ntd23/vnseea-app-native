@@ -6,6 +6,7 @@ import ReactAppDependencyProvider
 import livekit_react_native
 import PushKit
 import AVFoundation
+import GoogleMaps
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
@@ -18,6 +19,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    setupGoogleMaps()
     LivekitReactNative.setup()
     setupNativeCallNotifications()
 
@@ -37,6 +39,21 @@ class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate {
     )
 
     return true
+  }
+
+  private func setupGoogleMaps() {
+    let iosMapsKey = RNCConfig.env(for: "GOOGLE_MAPS_IOS_API_KEY")?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let sharedMapsKey = RNCConfig.env(for: "GOOGLE_MAPS_API_KEY")?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let mapsKey = iosMapsKey.isEmpty ? sharedMapsKey : iosMapsKey
+
+    guard !mapsKey.isEmpty else {
+      NSLog("[VNSEEA_MAP_DEBUG] google_maps_ios_api_key_missing")
+      return
+    }
+
+    GMSServices.provideAPIKey(mapsKey)
   }
 
   private func setupNativeCallNotifications() {
