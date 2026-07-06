@@ -222,12 +222,20 @@ function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
   const description = String(record.description ?? '');
   if (!placeId || !description) return null;
 
+  let types: string[] | undefined;
+  if (Array.isArray(record.types)) {
+    types = record.types.map(String);
+  }
+
   return {
     source: 'google',
     placeId,
     description,
     mainText: String(record.main_text || description),
     secondaryText: String(record.secondary_text || ''),
+    types,
+    lat: record.lat !== undefined && record.lat !== null ? Number(record.lat) : undefined,
+    lng: record.lng !== undefined && record.lng !== null ? Number(record.lng) : undefined,
   };
 }
 
