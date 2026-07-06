@@ -401,16 +401,20 @@ export function useMessagesViewModel() {
   }, []);
 
   const createLabel = useCallback(
-    async (name: string, color: string) => {
+    async (name: string, color: string): Promise<string | null> => {
       const normalizedName = name.trim();
-      if (!normalizedName) return false;
+      if (!normalizedName) return null;
 
       setState(prev => ({ ...prev, isLoadingLabels: true, error: null }));
 
       try {
         await repository.createLabel(normalizedName, color);
+        const labelsList = await repository.listLabels();
+        const newLabel = labelsList.find(
+          l => l.name.trim().toLowerCase() === normalizedName.toLowerCase()
+        );
         await loadLabels();
-        return true;
+        return newLabel ? newLabel.id : null;
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : 'Khong tao duoc nhan';
@@ -419,7 +423,7 @@ export function useMessagesViewModel() {
           error: errorMessage,
           isLoadingLabels: false,
         }));
-        return false;
+        return null;
       }
     },
     [loadLabels],
