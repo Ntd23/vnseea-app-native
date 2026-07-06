@@ -59,6 +59,7 @@ export type PhotoViewerState = {
 } | null;
 
 const PHOTO_VIEWER_IMAGE_HEIGHT_RATIO = 0.62;
+const PHOTO_VIEWER_COMMENT_SHEET_DELAY_MS = Platform.OS === 'ios' ? 240 : 0;
 
 // Local copy of the reaction emoji → image map. Kept inline here
 // (instead of importing from FeedScreen) so this component has zero
@@ -175,6 +176,9 @@ export function PhotoViewerModal({
   const [topBarHeight, setTopBarHeight] = useState(0);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  const commentOpenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const [pickerAnchor, setPickerAnchor] = useState<{
     postId: string;
@@ -219,6 +223,15 @@ export function PhotoViewerModal({
     }
   }, [state, translateY, openProgress, openScale, contentOpacity]);
 
+  useEffect(() => {
+    return () => {
+      if (commentOpenTimeoutRef.current) {
+        clearTimeout(commentOpenTimeoutRef.current);
+        commentOpenTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   const animateClose = useCallback(() => {
     // Snappy close: opacity fade fast + scale-down
     contentOpacity.value = withTiming(0, {
@@ -251,7 +264,7 @@ export function PhotoViewerModal({
     if (livePost) {
       setIsFollowedLocally(livePost.publisher.isFollowing);
     }
-  }, [livePost?.publisher.isFollowing, livePost?.id]);
+  }, [livePost]);
 
   const handleLocalPickReaction = useCallback(
     (reaction: ReactionType) => {
@@ -292,10 +305,17 @@ export function PhotoViewerModal({
     if (!livePost) return;
     const postId = livePost.id;
     setPickerAnchor(null);
-    // Open the comment sheet on top of the viewer so the user stays
-    // in the modal flow instead of losing context.
-    onCommentTap(postId);
-  }, [livePost, onCommentTap]);
+    if (commentOpenTimeoutRef.current) {
+      clearTimeout(commentOpenTimeoutRef.current);
+    }
+    // iOS cannot reliably stack the comments Modal over this native photo
+    // Modal. Close the viewer first, then open comments after dismissal.
+    onClose();
+    commentOpenTimeoutRef.current = setTimeout(() => {
+      commentOpenTimeoutRef.current = null;
+      onCommentTap(postId);
+    }, PHOTO_VIEWER_COMMENT_SHEET_DELAY_MS);
+  }, [livePost, onClose, onCommentTap]);
 
   const handleTopBarLayout = useCallback((event: LayoutChangeEvent) => {
     const nextHeight = event.nativeEvent.layout.height;
@@ -834,4 +854,3 @@ export function PhotoViewerModal({
     </Modal>
   );
 }
-

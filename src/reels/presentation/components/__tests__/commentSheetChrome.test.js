@@ -64,7 +64,14 @@ describe('iOS comment sheet chrome', () => {
       "const sheetBottomPadding = Platform.OS === 'ios' ? 0 : Math.max(insets.bottom, 10);",
     );
     expect(source).toContain(
-      "const composerBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 0;",
+      "const composerBottomPadding = Platform.OS === 'ios'",
+    );
+    expect(source).toContain('isKeyboardVisible ? 6 : Math.max(insets.bottom, 10)');
+    expect(source).toContain('Keyboard.addListener');
+    expect(source).toContain("'keyboardWillShow'");
+    expect(source).toContain("'keyboardWillHide'");
+    expect(source).toContain(
+      'return () => {',
     );
     expect(source).toContain('paddingBottom: sheetBottomPadding');
     expect(source).toContain(
