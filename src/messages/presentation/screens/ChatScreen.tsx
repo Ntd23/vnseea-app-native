@@ -1206,8 +1206,13 @@ function SwipeToCloseContainer({
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
+        const { dx, dy } = gestureState;
+        return Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx);
+      },
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
         const { dx, dy } = gestureState;
         return Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx);
       },
@@ -2212,6 +2217,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   const recorder = useAudioRecorder();
   const flatListRef = useRef<FlatList<ChatMessageListItem>>(null);
+  const mediaListRef = useRef<FlatList>(null);
   const previousLatestMessageIdRef = useRef<string | undefined>(undefined);
   const didScrollInitialRef = useRef(false);
   const pendingInitialScrollRef = useRef(false);
@@ -2246,6 +2252,18 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     [],
   );
   const viewerMedia = viewerMediaItems[viewerMediaIndex];
+
+  useEffect(() => {
+    if (viewerMediaItems.length > 0 && viewerMediaIndex >= 0 && viewerMediaIndex < viewerMediaItems.length) {
+      const timer = setTimeout(() => {
+        mediaListRef.current?.scrollToIndex({
+          index: viewerMediaIndex,
+          animated: false,
+        });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [viewerMediaIndex, viewerMediaItems.length]);
   const scrollToLatest = useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
       flatListRef.current?.scrollToOffset({ offset: 0, animated });
@@ -2999,15 +3017,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               >
                 <Info size={21} color="#0000ff" />
               </TouchableOpacity>
-              {groupInfo?.isOwner ? (
-                <TouchableOpacity
-                  className="h-10 w-10 items-center justify-center rounded-full"
-                  activeOpacity={0.75}
-                  onPress={handleClearGroupHistory}
-                >
-                  <Trash2 size={20} color="#ef4444" />
-                </TouchableOpacity>
-              ) : null}
             </>
           ) : null}
         </View>
@@ -3359,29 +3368,80 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         statusBarTranslucent
         onRequestClose={handleCloseMedia}
       >
-        <SafeAreaView className="flex-1 bg-black" edges={ROOT_SAFE_AREA_EDGES}>
-          <TouchableOpacity
-            className="absolute right-4 top-4 z-10 h-11 w-11 items-center justify-center rounded-full bg-black/60"
-            activeOpacity={0.8}
-            onPress={handleCloseMedia}
-          >
-            <X size={23} color="#ffffff" />
-          </TouchableOpacity>
-          {viewerMediaItems.length > 1 && (
-            <View className="absolute left-4 top-4 z-10 rounded-full bg-white/20 px-4 py-2">
-              <Text className="text-sm font-semibold text-white">
-                {viewerMediaIndex + 1}/{viewerMediaItems.length}
-              </Text>
-            </View>
-          )}
-          {viewerMedia?.type === 'image' ? (
-            <SwipeToCloseImageViewer uri={viewerMedia.uri} onClose={handleCloseMedia} />
-          ) : viewerMedia?.type === 'video' ? (
-            <ChatVideoViewer uri={viewerMedia.uri} onClose={handleCloseMedia} />
-          ) : null}
+        <SafeAreaView className="flex-1 bg-black" edges={['top', 'bottom']}>
+          {/* Header Row - positioned safely under status bar */}
+          <View className="flex-row items-center justify-between px-4 py-3 z-10">
+            {viewerMediaItems.length > 1 ? (
+              <View className="rounded-full bg-white/20 px-4 py-2">
+                <Text className="text-sm font-semibold text-white">
+                  {viewerMediaIndex + 1}/{viewerMediaItems.length}
+                </Text>
+              </View>
+            ) : (
+              <View />
+            )}
+            <TouchableOpacity
+              className="h-11 w-11 items-center justify-center rounded-full bg-black/60"
+              activeOpacity={0.8}
+              onPress={handleCloseMedia}
+            >
+              <X size={23} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Media Slider (Horizontal FlatList) for swiping */}
+          <View className="flex-1">
+            <FlatList
+              ref={mediaListRef}
+              data={viewerMediaItems}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item, index) => `${item.uri}-${index}`}
+              getItemLayout={(data, index) => {
+                const screenWidth = Dimensions.get('window').width;
+                return {
+                  length: screenWidth,
+                  offset: screenWidth * index,
+                  index,
+                };
+              }}
+              onMomentumScrollEnd={(event) => {
+                const slideSize = event.nativeEvent.layoutMeasurement.width;
+                if (slideSize <= 0) return;
+                const offset = event.nativeEvent.contentOffset.x;
+                const index = Math.round(offset / slideSize);
+                if (index >= 0 && index < viewerMediaItems.length && index !== viewerMediaIndex) {
+                  setViewerMediaIndex(index);
+                }
+              }}
+              renderItem={({ item }) => {
+                const screenWidth = Dimensions.get('window').width;
+                return (
+                  <View style={{ width: screenWidth, flex: 1 }}>
+                    {item.type === 'image' ? (
+                      <SwipeToCloseContainer onClose={handleCloseMedia}>
+                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                          <Image
+                            source={{ uri: item.uri }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      </SwipeToCloseContainer>
+                    ) : item.type === 'video' ? (
+                      <ChatVideoViewer uri={item.uri} onClose={handleCloseMedia} />
+                    ) : null}
+                  </View>
+                );
+              }}
+            />
+          </View>
+
+          {/* Navigation Chevrons */}
           {viewerMediaIndex > 0 && (
             <TouchableOpacity
-              className="absolute left-4 top-1/2 h-14 w-14 items-center justify-center rounded-full bg-white/20 -translate-y-1/2"
+              className="absolute left-4 top-1/2 h-14 w-14 items-center justify-center rounded-full bg-white/20 -translate-y-1/2 z-10"
               activeOpacity={0.8}
               onPress={() => setViewerMediaIndex(i => i - 1)}
             >
@@ -3390,7 +3450,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           )}
           {viewerMediaIndex < viewerMediaItems.length - 1 && (
             <TouchableOpacity
-              className="absolute right-4 top-1/2 h-14 w-14 items-center justify-center rounded-full bg-white/20 -translate-y-1/2"
+              className="absolute right-4 top-1/2 h-14 w-14 items-center justify-center rounded-full bg-white/20 -translate-y-1/2 z-10"
               activeOpacity={0.8}
               onPress={() => setViewerMediaIndex(i => i + 1)}
             >

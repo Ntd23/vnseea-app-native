@@ -1246,14 +1246,15 @@ export function createMessagesRepository(): MessagesRepository {
       return mapGroupInfo({ data: response.data ?? [] });
     },
     async getGroupSharedAssets(groupId: string) {
-      const response = await apiBridge.post<GroupSharedAssets>(
+      const response = await apiBridge.post<any>(
         apiRoutes.messages.groupChat,
         {
           type: 'shared_assets',
           id: groupId,
         },
       );
-      return mapSharedAssets(response as unknown as RawRecord);
+      const rawData = response?.data || response;
+      return mapSharedAssets(rawData as unknown as RawRecord);
     },
 
     async listLabels() {
