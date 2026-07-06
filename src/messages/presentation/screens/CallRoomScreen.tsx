@@ -306,7 +306,7 @@ function VideoRoom({ peerName }: { peerName: string }) {
             streamURL={localVideoStreamUrl}
             style={styles.localVideo}
             objectFit="cover"
-            mirror
+            mirror={session?.localCameraFacingMode === 'user'}
             zOrder={1}
           />
         ) : (

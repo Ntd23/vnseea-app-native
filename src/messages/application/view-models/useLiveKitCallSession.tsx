@@ -96,6 +96,7 @@ type LiveKitCallSession = {
   elapsedSeconds: number;
   localVideoStreamUrl: string;
   localVideoRenderKey: number;
+  localCameraFacingMode: 'user' | 'environment';
   remoteVideoStreamUrl: string;
   hasRemoteParticipant: boolean;
   isLocalMicrophoneEnabled: boolean;
@@ -1416,6 +1417,7 @@ function buildInitialSession(
     elapsedSeconds: 0,
     localVideoStreamUrl: '',
     localVideoRenderKey: 0,
+    localCameraFacingMode: 'user',
     remoteVideoStreamUrl: '',
     hasRemoteParticipant: false,
     isLocalMicrophoneEnabled: true,
@@ -1662,6 +1664,7 @@ function LiveKitMediaBridge({
     onMediaState({
       isLocalMicrophoneEnabled: isMicrophoneEnabled,
       isLocalCameraEnabled: isCameraEnabled,
+      localCameraFacingMode: cameraFacingModeRef.current,
     });
   }, [isCameraEnabled, isMicrophoneEnabled, onMediaState]);
 
@@ -1751,12 +1754,21 @@ function LiveKitMediaBridge({
         await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
       },
       toggleCamera: async () => {
-        await localParticipant.setCameraEnabled(!isCameraEnabled);
+        if (isCameraEnabled) {
+          await localParticipant.setCameraEnabled(false);
+          return;
+        }
+
+        await localParticipant.setCameraEnabled(true, {
+          facingMode: cameraFacingModeRef.current,
+        });
       },
       switchCamera: async () => {
         if (callType !== 'video') return;
         if (!isCameraEnabled) {
-          await localParticipant.setCameraEnabled(true);
+          await localParticipant.setCameraEnabled(true, {
+            facingMode: cameraFacingModeRef.current,
+          });
         }
 
         const nextFacingMode =
@@ -1789,6 +1801,9 @@ function LiveKitMediaBridge({
           localCameraTrack.mediaStreamTrack?._switchCamera?.();
         }
         cameraFacingModeRef.current = nextFacingMode;
+        onMediaState({
+          localCameraFacingMode: nextFacingMode,
+        });
 
         const refreshLocalPreview = () => {
           const nextPublication = localParticipant.getTrackPublication(
