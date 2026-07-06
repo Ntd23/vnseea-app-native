@@ -1,7 +1,7 @@
 // Description: Renders the VNSEEA notifications tab with section grouping,
 // tabs (All / Unread), filter sheet, animated cards, and i18n.
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
   ActivityIndicator,
@@ -41,6 +41,7 @@ import {
   publishNativeTabScrollBehavior,
   publishNativeTabScrollIntent,
 } from '../../../navigation/nativeTabScrollPublisher';
+import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 
 type NotificationsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -252,17 +253,18 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
 function NotificationsScreen() {
   const navigation = useNavigation<NotificationsNav>();
   const {
+    bottomContentPadding,
+    scrollIndicatorBottomInset,
+  } = useMainTabContentInsets();
+  const {
     notifications,
     filteredNotifications,
-    unreadCount,
     error,
     isLoading,
     isRefreshing,
     isLoadingMore,
     hasMore,
     pendingActions,
-    activeTab,
-    setActiveTab,
     activeFilter,
     setActiveFilter,
     language,
@@ -271,7 +273,6 @@ function NotificationsScreen() {
     refresh,
     loadMore,
     markAsSeen,
-    markAllAsSeen,
     deleteNotification,
     acceptGroupChatInvitation,
     rejectGroupChatInvitation,
@@ -284,6 +285,10 @@ function NotificationsScreen() {
   const hasNotificationsRef = useRef(hasNotifications);
   const nativeTabScrollPublisherStateRef = useRef(
     createNativeTabScrollPublisherState(),
+  );
+  const iosNotificationsListContentStyle = useMemo(
+    () => ({ paddingBottom: bottomContentPadding }),
+    [bottomContentPadding],
   );
 
   useEffect(() => {
@@ -527,7 +532,9 @@ function NotificationsScreen() {
       ListHeaderComponent={notificationsListHeaderComponent}
       ListEmptyComponent={notificationsListEmptyComponent}
       ListFooterComponent={notificationsListFooterComponent}
-      contentContainerClassName="px-4 pb-10 pt-3"
+      contentContainerClassName="px-4 pt-3"
+      contentContainerStyle={iosNotificationsListContentStyle}
+      scrollIndicatorInsets={{ bottom: scrollIndicatorBottomInset }}
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl

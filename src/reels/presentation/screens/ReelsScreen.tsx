@@ -69,6 +69,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import { isReelItemActive } from './reelsPlayback';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { publishNativeTabScrollBehavior } from '../../../navigation/nativeTabScrollPublisher';
+import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 
 const VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 80,
@@ -96,6 +97,7 @@ export default function ReelsScreen() {
   const route = useRoute<any>();
   const isFocusedScreen = useIsFocused();
   const insets = useSafeAreaInsets();
+  const { bottomContentPadding } = useMainTabContentInsets();
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
     return reelsStorage.getBoolean('reels.autoScroll') ?? false;
   });
@@ -406,7 +408,7 @@ export default function ReelsScreen() {
         });
       });
     }
-  }, [autoScrollEnabled, vm.activeIndex, vm.items, vm.setActiveIndex]);
+  }, [autoScrollEnabled, vm]);
 
   const handleOpenProfile = useCallback((userId: string) => {
     setSelectedPublisherId(userId);
@@ -477,6 +479,7 @@ export default function ReelsScreen() {
           initialSeekTime={initialSeekTime}
           autoScrollEnabled={autoScrollEnabled}
           onVideoEnd={handleVideoEnd}
+          bottomOverlayInset={bottomContentPadding}
         />
       );
     },
@@ -499,6 +502,7 @@ export default function ReelsScreen() {
       route.params?.seekTime,
       autoScrollEnabled,
       handleVideoEnd,
+      bottomContentPadding,
     ],
   );
 

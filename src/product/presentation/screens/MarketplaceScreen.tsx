@@ -1,6 +1,6 @@
 // Description: Displays Marketplace products with searchable filter controls.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LayoutAnimation, Platform as RNPlatform, UIManager } from 'react-native';
+import { LayoutAnimation } from 'react-native';
 import {
   Platform,
   ActivityIndicator,
@@ -20,8 +20,8 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import {
   ArrowLeft,
   RotateCcw,
@@ -39,7 +39,6 @@ import {
   Image as ImageIcon,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
-import type { RootStackParamList } from '../../../navigation/types';
 import { useMarketplaceViewModel } from '../../application/view-models/useMarketplaceViewModel';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductItem } from '../../domain/types/product.types';
@@ -50,8 +49,6 @@ import {
   publishNativeTabScrollBehavior,
   publishNativeTabScrollIntent,
 } from '../../../navigation/nativeTabScrollPublisher';
-
-type MarketplaceNav = NativeStackNavigationProp<RootStackParamList>;
 
 const MARKETPLACE_COLUMN_STYLE = {
   justifyContent: 'space-between',
@@ -396,6 +393,10 @@ function DistancePickerModal({
 function MarketplaceScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const {
+    bottomContentPadding,
+    scrollIndicatorBottomInset,
+  } = useMainTabContentInsets();
   const vm = useMarketplaceViewModel();
  // Repository for direct product operations (e.g. quick add-to-cart
  // from the marketplace card).
@@ -453,7 +454,7 @@ function MarketplaceScreen() {
     } else {
       vm.setDistance(15);
     }
-  }, [vm.distance, vm.setDistance]);
+  }, [vm]);
 
   const categoryOptions = useMemo(() => {
     return [
@@ -621,7 +622,7 @@ function MarketplaceScreen() {
  console.warn('[MarketplaceScreen] addToCart failed', error);
  }
  },
- [repository, runCartAnimation, showCartToast, vm.updateCartCount],
+ [repository, runCartAnimation, showCartToast, vm],
  );
 
  // Open a chat thread with the product seller. Mirrors the handler
@@ -1004,6 +1005,13 @@ function MarketplaceScreen() {
   );
 
   const marketplaceListHeaderComponent = marketplaceHeader;
+  const marketplaceListContentStyle = useMemo(
+    () =>
+      Platform.OS === 'ios'
+        ? { paddingBottom: bottomContentPadding }
+        : undefined,
+    [bottomContentPadding],
+  );
 
   return (
     <SafeAreaView
@@ -1019,7 +1027,15 @@ function MarketplaceScreen() {
         renderItem={renderProduct}
         numColumns={2}
         columnWrapperStyle={MARKETPLACE_COLUMN_STYLE}
-        contentContainerClassName="gap-3 pb-10 pt-1"
+        contentContainerClassName={
+          Platform.OS === 'ios' ? 'gap-3 pt-1' : 'gap-3 pb-10 pt-1'
+        }
+        contentContainerStyle={marketplaceListContentStyle}
+        scrollIndicatorInsets={
+          Platform.OS === 'ios'
+            ? { bottom: scrollIndicatorBottomInset }
+            : undefined
+        }
         ListHeaderComponent={marketplaceListHeaderComponent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
