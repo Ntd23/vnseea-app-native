@@ -655,6 +655,15 @@ export function useFeedViewModel() {
     }
   }, [commitFeedSources, prefetchNextPage, scheduleVideoBuffer]);
 
+  const peekLatestPosts = useCallback(async (limit = PAGE_SIZE) => {
+    const posts = await repository.getAllPosts(
+      limit,
+      undefined,
+      feedSourceRef.current,
+    );
+    return sortByTime(posts).slice(0, limit);
+  }, []);
+
   const selectFeedSource = useCallback(
     (nextSource: FeedSource | 'photos') => {
       const nextApiSource = nextSource === 'photos' ? 'all' : nextSource;
@@ -711,7 +720,9 @@ export function useFeedViewModel() {
           const mergedVideo = [...videoPostsRef.current, ...newVideo];
 
 
-          commitFeedSources(mergedLight, mergedVideo, { deferDuringScroll: true });
+          // Append paged posts immediately so fast scrolling never reaches a
+          // visible end gap while waiting for scroll-idle commit flushing.
+          commitFeedSources(mergedLight, mergedVideo);
           scheduleVideoBuffer(mergedLight.length);
           setTimeout(() => prefetchNextPage(), 0);
           return;
@@ -794,7 +805,9 @@ export function useFeedViewModel() {
         const mergedLight = [...currentLightPosts, ...newPosts];
         const mergedVideo = videoPostsRef.current;
 
-        commitFeedSources(mergedLight, mergedVideo, { deferDuringScroll: true });
+        // Append paged posts immediately so fast scrolling never reaches a
+        // visible end gap while waiting for scroll-idle commit flushing.
+        commitFeedSources(mergedLight, mergedVideo);
         scheduleVideoBuffer(mergedLight.length);
         if (!page.nextCursor || !advancedCursor) {
           hasReachedNetworkEndRef.current = page.reachedEnd || !page.nextCursor;
@@ -1086,6 +1099,7 @@ export function useFeedViewModel() {
     hasLoadedOnce,
     error,
     reloadPosts: loadPosts,
+    peekLatestPosts,
     loadMorePosts,
     setScrollBusy,
     prependPost,

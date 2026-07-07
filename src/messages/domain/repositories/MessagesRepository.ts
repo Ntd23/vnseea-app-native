@@ -105,6 +105,8 @@ export interface MessagesRepository {
 
   leaveGroup(groupId: string): Promise<void>;
 
+  deleteGroup(groupId: string): Promise<void>;
+
   editGroup(
     groupId: string,
     input: { name?: string; avatar?: MessageAttachment },

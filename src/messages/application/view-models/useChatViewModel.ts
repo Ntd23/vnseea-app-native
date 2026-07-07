@@ -61,6 +61,7 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.message === right.message &&
     left.media === right.media &&
     left.mediaType === right.mediaType &&
+    left.thumbnail === right.thumbnail &&
     left.time === right.time &&
     left.isSentByMe === right.isSentByMe &&
     left.seen === right.seen &&
@@ -75,9 +76,12 @@ function areMessageArraysSame(left: MessageItem[], right: MessageItem[]) {
 }
 
 function getGroupRoomId(chat: ChatItem) {
-  const groupId =
-    chat.groupId || chat.chatId || chat.userId || chat.id.replace(/^group:/, '');
+  const groupId = getRawGroupId(chat);
   return groupId ? `group${groupId}` : '';
+}
+
+function getRawGroupId(chat: ChatItem) {
+  return chat.groupId || chat.chatId || chat.userId || chat.id.replace(/^group:/, '');
 }
 
 function getTypingRecipientId(chat: ChatItem) {
@@ -378,7 +382,7 @@ export function useChatViewModel(chat: ChatItem) {
 
   const loadGroupInfo = useCallback(async () => {
     if (chat.chatType !== 'group') return null;
-    const groupId = chat.groupId || chat.userId;
+    const groupId = getRawGroupId(chat);
 
     setIsLoadingGroupInfo(true);
     setError(null);
@@ -395,7 +399,7 @@ export function useChatViewModel(chat: ChatItem) {
     } finally {
       setIsLoadingGroupInfo(false);
     }
-  }, [chat.chatType, chat.groupId, chat.userId]);
+  }, [chat]);
 
   const searchAddableUsers = useCallback(
     async (keyword: string) => {
@@ -403,45 +407,42 @@ export function useChatViewModel(chat: ChatItem) {
 
       setIsLoadingAddableUsers(true);
       try {
-        const users = await repository.searchAddableUsers(
-          chat.groupId || chat.userId,
-          keyword,
-        );
+        const users = await repository.searchAddableUsers(getRawGroupId(chat), keyword);
         setAddableUsers(users);
         return users;
       } finally {
         setIsLoadingAddableUsers(false);
       }
     },
-    [chat.chatType, chat.groupId, chat.userId],
+    [chat],
   );
 
   const addGroupUsers = useCallback(
     async (userIds: string[]) => {
       if (chat.chatType !== 'group' || userIds.length === 0) return false;
 
-      await repository.addGroupUsers(chat.groupId || chat.userId, userIds);
+      await repository.addGroupUsers(getRawGroupId(chat), userIds);
       await loadGroupInfo();
       return true;
     },
-    [chat.chatType, chat.groupId, chat.userId, loadGroupInfo],
+    [chat, loadGroupInfo],
   );
 
   const removeGroupUser = useCallback(
     async (userId: string) => {
       if (chat.chatType !== 'group') return false;
 
-      await repository.removeGroupUser(chat.groupId || chat.userId, userId);
+      await repository.removeGroupUser(getRawGroupId(chat), userId);
       await loadGroupInfo();
       return true;
     },
-    [chat.chatType, chat.groupId, chat.userId, loadGroupInfo],
+    [chat, loadGroupInfo],
   );
 
   const clearGroupHistory = useCallback(async () => {
     if (chat.chatType !== 'group') return false;
 
-    await repository.clearGroupHistory(chat.groupId || chat.userId);
+    await repository.clearGroupHistory(getRawGroupId(chat));
     setMessages([]);
     setGroupSharedAssetsOverride({
       media: [],
@@ -449,27 +450,31 @@ export function useChatViewModel(chat: ChatItem) {
       links: [],
     });
     return true;
-  }, [chat.chatType, chat.groupId, chat.userId]);
+  }, [chat]);
 
   const leaveGroup = useCallback(async () => {
     if (chat.chatType !== 'group') return false;
 
-    await repository.leaveGroup(chat.groupId || chat.userId);
+    await repository.leaveGroup(getRawGroupId(chat));
     return true;
-  }, [chat.chatType, chat.groupId, chat.userId]);
+  }, [chat]);
+
+  const deleteGroup = useCallback(async () => {
+    if (chat.chatType !== 'group') return false;
+
+    await repository.deleteGroup(getRawGroupId(chat));
+    return true;
+  }, [chat]);
 
   const editGroup = useCallback(
     async (input: { name?: string; avatar?: MessageAttachment }) => {
       if (chat.chatType !== 'group') return null;
 
-      const info = await repository.editGroup(
-        chat.groupId || chat.userId,
-        input,
-      );
+      const info = await repository.editGroup(getRawGroupId(chat), input);
       setGroupInfo(info);
       return info;
     },
-    [chat.chatType, chat.groupId, chat.userId],
+    [chat],
   );
 
   useEffect(() => {
@@ -637,6 +642,7 @@ export function useChatViewModel(chat: ChatItem) {
     removeGroupUser,
     clearGroupHistory,
     leaveGroup,
+    deleteGroup,
     editGroup,
   };
 }

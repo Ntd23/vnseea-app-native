@@ -175,6 +175,7 @@ export function PhotoViewerModal({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [topBarHeight, setTopBarHeight] = useState(0);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(0);
+  const [isViewerChromeReady, setIsViewerChromeReady] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const commentOpenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -201,27 +202,47 @@ export function PhotoViewerModal({
 
   // Sync page on mount + animate open with snappy fade + scale
   useEffect(() => {
-    if (state) {
-      setCurrentIndex(state.initialIndex);
-      translateY.value = 0;
-      openProgress.value = 0;
-      openScale.value = 0.96;
-      contentOpacity.value = 0;
-      // Open animation: snappy fade-in + scale-up (parallel, native driver)
-      openProgress.value = withTiming(1, {
-        duration: 160,
-        easing: Easing.out(Easing.cubic),
-      });
-      openScale.value = withTiming(1, {
-        duration: 160,
-        easing: Easing.out(Easing.quad),
-      });
-      contentOpacity.value = withTiming(1, {
-        duration: 180,
-        easing: Easing.out(Easing.cubic),
-      });
+    setTopBarHeight(0);
+    setBottomPanelHeight(0);
+    setIsViewerChromeReady(false);
+    contentOpacity.value = 0;
+
+    if (!state) {
+      return;
     }
+
+    setCurrentIndex(state.initialIndex);
+    translateY.value = 0;
+    openProgress.value = 0;
+    openScale.value = 0.96;
+    // Open animation: background + scale start immediately. Content fades
+    // after header/footer have measured so the first visible frame is stable.
+    openProgress.value = withTiming(1, {
+      duration: 160,
+      easing: Easing.out(Easing.cubic),
+    });
+    openScale.value = withTiming(1, {
+      duration: 160,
+      easing: Easing.out(Easing.quad),
+    });
   }, [state, translateY, openProgress, openScale, contentOpacity]);
+
+  useEffect(() => {
+    if (!state || isViewerChromeReady) return;
+    if (topBarHeight <= 0 || bottomPanelHeight <= 0) return;
+
+    setIsViewerChromeReady(true);
+    contentOpacity.value = withTiming(1, {
+      duration: 120,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [
+    bottomPanelHeight,
+    contentOpacity,
+    isViewerChromeReady,
+    state,
+    topBarHeight,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -403,7 +424,7 @@ export function PhotoViewerModal({
   if (!state || !livePost) return null;
   const { post } = state;
   const total = post.photos.length;
-  const hasMeasuredViewerChrome = topBarHeight > 0 && bottomPanelHeight > 0;
+  const hasMeasuredViewerChrome = isViewerChromeReady;
   const fallbackPhotoViewportHeight =
     SCREEN_H * PHOTO_VIEWER_IMAGE_HEIGHT_RATIO;
   const photoViewportTop = hasMeasuredViewerChrome

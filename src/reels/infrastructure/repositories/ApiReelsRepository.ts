@@ -294,7 +294,7 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
     // legacy boolean for installs that only have simple likes.
     isLiked:
       myReaction !== null || readBool(raw, 'isLiked', 'postReacted'),
-    isSaved: readBool(raw, 'isSaved'),
+    isSaved: readBool(raw, 'isSaved', 'is_saved', 'is_post_saved', 'postSaved'),
     myReaction,
     raw,
   };
@@ -678,11 +678,20 @@ export function createReelsRepository(): ReelsRepository {
       const response = await backendApi.post<{
         api_status: number | string;
         action?: string;
+        message?: string;
         code?: number;
       }>(apiRoutes.feed.postActions, { post_id: postId, action: 'save' });
-      // action is 'saved post' or 'unsaved post'
-      const isSaved = (response.action ?? '').includes('unsaved') === false &&
-        (response.action ?? '').includes('save');
+
+      const ok = String(response.api_status) === '200' || response.code === 0 || response.code === 1;
+      if (!ok) {
+        throw new Error(response.message ?? 'Khong luu duoc video.');
+      }
+
+      // Backend returns code=1 + "saved post" or code=0 + "unsaved post".
+      const action = (response.action ?? '').toLowerCase();
+      const isSaved =
+        response.code === 1 ||
+        (response.code !== 0 && action.includes('saved') && !action.includes('unsaved'));
       return { isSaved };
     },
 

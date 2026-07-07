@@ -21,34 +21,48 @@ export function AudioPlayer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
   const [positionMs, setPositionMs] = useState(0);
+  const canPlay = Boolean(uri) && !pending;
+  const shouldMountPlayer = Boolean(uri) && (isPlaying || positionMs > 0);
 
   const togglePlayback = useCallback(() => {
-    if (!pending) setIsPlaying(current => !current);
-  }, [pending]);
+    if (canPlay) setIsPlaying(current => !current);
+  }, [canPlay]);
 
   const progress =
     durationMs > 0 ? Math.min(1, Math.max(0, positionMs / durationMs)) : 0;
+  const displayDuration = durationMs || positionMs;
 
   return (
-    <View style={styles.container}>
-      <VideoPlayer
-        source={{ uri }}
-        paused={!isPlaying}
-        onLoad={event => setDurationMs(event.duration * 1000)}
-        onProgress={event => setPositionMs(event.currentTime * 1000)}
-        onEnd={() => {
-          setIsPlaying(false);
-          setPositionMs(0);
-        }}
-        style={styles.hiddenPlayer}
-      />
+    <View
+      style={[
+        styles.container,
+        compact ? styles.containerCompact : styles.containerRegular,
+      ]}
+    >
+      {shouldMountPlayer ? (
+        <VideoPlayer
+          source={{ uri }}
+          paused={!isPlaying}
+          onLoad={event => setDurationMs(event.duration * 1000)}
+          onProgress={event => setPositionMs(event.currentTime * 1000)}
+          onEnd={() => {
+            setIsPlaying(false);
+            setPositionMs(0);
+          }}
+          onError={() => {
+            setIsPlaying(false);
+            setPositionMs(0);
+          }}
+          style={styles.hiddenPlayer}
+        />
+      ) : null}
 
       {/* Blue circular Play/Pause Button */}
       <TouchableOpacity
         activeOpacity={0.85}
-        disabled={pending}
+        disabled={!canPlay}
         onPress={togglePlayback}
-        style={styles.playButton}
+        style={[styles.playButton, { backgroundColor: accentColor }]}
       >
         {pending ? (
           <Music2 size={15} color="#ffffff" />
@@ -61,17 +75,23 @@ export function AudioPlayer({
 
       {/* Row containing waveform and duration */}
       <View style={styles.body}>
+        <View style={styles.titleRow}>
+          <Music2 size={12} color="#64748B" />
+          <Text style={styles.title} numberOfLines={1}>
+            Tin nhắn thoại
+          </Text>
+        </View>
         <View style={styles.waveformContainer}>
           <AudioWaveform
             progress={progress}
-            color="#09090b" // Zinc-900 / black
-            inactiveColor="#CBD5E1" // Slate-300
-            height={20}
-            barCount={20}
+            color={accentColor}
+            inactiveColor="#CBD5E1"
+            height={compact ? 18 : 22}
+            barCount={compact ? 22 : 28}
           />
         </View>
         <Text style={styles.duration}>
-          {pending ? '...' : formatAudioDuration(durationMs || positionMs)}
+          {pending ? '...' : formatAudioDuration(displayDuration)}
         </Text>
       </View>
     </View>
@@ -80,13 +100,20 @@ export function AudioPlayer({
 
 const styles = StyleSheet.create({
   container: {
-    width: 230,
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9', // light grey-purple
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 9,
+  },
+  containerCompact: {
+    width: 230,
+  },
+  containerRegular: {
+    width: 270,
   },
   hiddenPlayer: {
     position: 'absolute',
@@ -95,25 +122,33 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   playButton: {
-    height: 34,
-    width: 34,
+    height: 38,
+    width: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 17,
-    backgroundColor: '#0084FF', // Messenger blue
+    borderRadius: 19,
   },
   body: {
     marginLeft: 10,
     flex: 1,
+    justifyContent: 'center',
+  },
+  titleRow: {
+    marginBottom: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+  },
+  title: {
+    marginLeft: 4,
+    color: '#475569',
+    fontSize: 11,
+    fontWeight: '700',
   },
   waveformContainer: {
-    flex: 1,
-    marginRight: 8,
+    height: 22,
   },
   duration: {
+    marginTop: 3,
     color: '#64748B', // Slate-500
     fontSize: 11,
     fontWeight: '600',

@@ -5,25 +5,34 @@ import {
   setUnreadBadgeCounts,
   useUnreadBadgeCounts,
 } from '../../../shared-kernel/application/stores/unreadBadgeStore';
+import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
 
 const POLL_INTERVAL_MS = 30000;
 
 export function useNotificationBadgeViewModel() {
   const repository = useMemo(() => createNotificationsRepository(), []);
+  const messagesRepository = useMemo(() => createMessagesRepository(), []);
   const { notificationCount, messageCount } = useUnreadBadgeCounts();
 
   const refresh = useCallback(async () => {
     try {
-      const counts = await repository.getUnreadCounts();
+      const [counts, unreadChats] = await Promise.all([
+        repository.getUnreadCounts(),
+        messagesRepository.getUnreadChats().catch(() => []),
+      ]);
+      const chatUnreadCount = unreadChats.reduce(
+        (total, chat) => total + chat.unreadCount,
+        0,
+      );
       setUnreadBadgeCounts({
         notificationCount: counts.notificationCount,
-        messageCount: counts.messageCount,
+        messageCount: Math.max(counts.messageCount, chatUnreadCount),
       });
     } catch (error) {
       console.warn('[useNotificationBadgeViewModel] refresh failed', error);
     }
-  }, [repository]);
+  }, [messagesRepository, repository]);
 
   useEffect(() => {
     refresh().catch(() => undefined);

@@ -115,6 +115,8 @@ export interface ReelComment {
   postOwner: boolean;
   /** Optional inline image (`c_file` in WoWonder) — full URL ready to render. */
   imageUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
   /** Optional audio recording (`record` in WoWonder) ready to play. */
   audioUrl?: string;
   /**
