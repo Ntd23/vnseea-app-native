@@ -1,10 +1,12 @@
 // Description: Provides chat message and group chat state for the Messages presentation layer.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ChatItem,
   GroupAddableUser,
   GroupChatInfo,
   GroupSharedAssets,
+  GroupSharedMedia,
+  GroupSharedLink,
   MessageAttachment,
   MessageItem,
 } from '../../domain/types/messages.types';
@@ -146,7 +148,7 @@ function mergeMessages(...messageLists: MessageItem[][]) {
 export function useChatViewModel(chat: ChatItem) {
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [groupInfo, setGroupInfo] = useState<GroupChatInfo | null>(null);
-  const [groupSharedAssets, setGroupSharedAssets] =
+  const [groupSharedAssetsOverride, setGroupSharedAssetsOverride] =
     useState<GroupSharedAssets | null>(null);
   const [addableUsers, setAddableUsers] = useState<GroupAddableUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -382,12 +384,8 @@ export function useChatViewModel(chat: ChatItem) {
     setError(null);
 
     try {
-      const [info, assets] = await Promise.all([
-        repository.getGroupInfo(groupId),
-        repository.getGroupSharedAssets(groupId).catch(() => null),
-      ]);
+      const info = await repository.getGroupInfo(groupId);
       setGroupInfo(info);
-      if (assets) setGroupSharedAssets(assets);
       return info;
     } catch (err) {
       setError(
@@ -445,7 +443,7 @@ export function useChatViewModel(chat: ChatItem) {
 
     await repository.clearGroupHistory(chat.groupId || chat.userId);
     setMessages([]);
-    setGroupSharedAssets({
+    setGroupSharedAssetsOverride({
       media: [],
       files: [],
       links: [],
@@ -576,6 +574,41 @@ export function useChatViewModel(chat: ChatItem) {
 
     return () => clearInterval(interval);
   }, [refreshLatest]);
+
+  // Build shared assets from loaded messages
+  const URL_REGEX = /https?:\/\/[^\s)>]+/gi;
+  const groupSharedAssetsFromMessages = useMemo<GroupSharedAssets>(() => {
+    const media: GroupSharedMedia[] = [];
+    const links: GroupSharedLink[] = [];
+    for (const msg of messages) {
+      if (msg.media) {
+        if (msg.mediaType === 'image' || msg.mediaType === 'video') {
+          media.push({
+            id: msg.id,
+            uri: msg.media,
+            mediaType: msg.mediaType,
+            time: msg.time,
+          });
+        }
+      }
+      if (msg.message) {
+        const urls = msg.message.match(URL_REGEX);
+        if (urls) {
+          for (const url of urls) {
+            links.push({
+              id: `${msg.id}-${url}`,
+              url,
+              title: url,
+              time: msg.time,
+            });
+          }
+        }
+      }
+    }
+    return { media, files: [], links };
+  }, [messages]);
+
+  const groupSharedAssets = groupSharedAssetsOverride ?? groupSharedAssetsFromMessages;
 
   return {
     messages,
