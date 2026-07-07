@@ -69,7 +69,7 @@ import {
   type MediaType,
 } from 'react-native-image-picker';
 import VideoPlayer from 'react-native-video';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useChatViewModel } from '../../application/view-models/useChatViewModel';
@@ -2154,6 +2154,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const { chat } = route.params;
   const language = useAppLanguage();
   const copy = CHAT_COPY[language];
+  const insets = useSafeAreaInsets();
   const {
     messages,
     groupInfo,
@@ -2214,6 +2215,15 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const chatInputBarStyle = useMemo(
+    () => ({
+      paddingBottom:
+        Platform.OS === 'ios' && !isKeyboardVisible
+          ? Math.max(insets.bottom + 6, 12)
+          : 8,
+    }),
+    [insets.bottom, isKeyboardVisible],
+  );
 
   const recorder = useAudioRecorder();
   const flatListRef = useRef<FlatList<ChatMessageListItem>>(null);
@@ -3279,7 +3289,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         ) : null}
 
         {/* Input Bar */}
-        <View className="flex-row items-end border-t border-gray-200 bg-white px-3 py-2">
+        <View
+          className="flex-row items-end border-t border-gray-200 bg-white px-3 py-2"
+          style={chatInputBarStyle}
+        >
           <TouchableOpacity
             className="mr-2 h-10 w-10 items-center justify-center rounded-full"
             activeOpacity={0.7}

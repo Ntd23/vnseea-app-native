@@ -65,6 +65,7 @@ import {
   publishNativeTabScrollBehavior,
   publishNativeTabScrollIntent,
 } from '../../../navigation/nativeTabScrollPublisher';
+import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { FeedShareBottomSheet } from '../components/FeedShareBottomSheet';
 import PostReactionsSheet from '../components/PostReactionsSheet';
@@ -1228,6 +1229,10 @@ function FeedScreen() {
   const copy = FEED_COPY[language];
   const vm = useFeedViewModel();
   const feedSafeAreaInsets = useSafeAreaInsets();
+  const {
+    bottomContentPadding,
+    scrollIndicatorBottomInset,
+  } = useMainTabContentInsets();
   // Top-bar logo: FeedScreen only acts on the scroll-to-top event when it
   // is the currently focused tab. Declared up here so the hook order
   // matches the rest of FeedScreen (no conditional hooks below).
@@ -1285,8 +1290,16 @@ function FeedScreen() {
       : topInset + FEED_HEADER_CONTENT_HEIGHT;
   const feedHeaderOverlayHeight = feedRefreshProgressViewOffset;
   const feedListContentStyle = useMemo(
-    () => [FEED_LIST_CONTENT_STYLE, { paddingTop: feedHeaderOverlayHeight }],
-    [feedHeaderOverlayHeight],
+    () => [
+      FEED_LIST_CONTENT_STYLE,
+      {
+        paddingTop: feedHeaderOverlayHeight,
+        ...(Platform.OS === 'ios'
+          ? { paddingBottom: bottomContentPadding }
+          : null),
+      },
+    ],
+    [bottomContentPadding, feedHeaderOverlayHeight],
   );
 
   const gestureX = useSharedValue(0);
@@ -2829,6 +2842,11 @@ function FeedScreen() {
       onEndReachedThreshold={0.75}
       ListFooterComponent={ListFooterComponent}
       contentContainerStyle={feedListContentStyle}
+      scrollIndicatorInsets={
+        Platform.OS === 'ios'
+          ? { bottom: scrollIndicatorBottomInset }
+          : undefined
+      }
       refreshControl={
         <RefreshControl
           refreshing={

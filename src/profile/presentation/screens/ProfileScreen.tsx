@@ -35,11 +35,6 @@ import {
   Sparkles,
   Verified,
   MessageCircle,
-  Play,
-  ChevronRight,
-  Video,
-  Image as ImageIcon,
-  Calendar,
   ShoppingCart,
 
   Copy,
@@ -60,6 +55,7 @@ import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 're
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
@@ -124,12 +120,6 @@ const PROFILE_POST_PAGE_SIZE = 20;
 
 function isProfileFeedPost(post: FeedPost): post is ProfileFeedPost {
   return post.kind === 'text' || post.kind === 'video' || post.kind === 'poll';
-}
-
-function getActiveTimeValue(lastSeenText?: string | null): string {
-  const value = String(lastSeenText ?? '').trim();
-  if (!value) return '--';
-  return value.replace(/^active\s+/i, '').replace(/^hoạt động\s+/i, '');
 }
 
 function getStoryTimeText(story: StoryItem | null | undefined, lang: AppLanguage): string {
@@ -972,6 +962,10 @@ function ProfileScreen() {
   const postCardCopy = POST_CARD_COPY[language];
   const pokeCopy = getPokeCopy(language);
   const insets = useSafeAreaInsets();
+  const {
+    bottomContentPadding,
+    scrollIndicatorBottomInset,
+  } = useMainTabContentInsets();
   const safeTopInset = insets.top > 0 ? insets.top : (Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 44);
   const navigation = useNavigation<ProfileNav>();
   const route = useRoute<ProfileRoute>();
@@ -1968,6 +1962,11 @@ function ProfileScreen() {
     }
   }, [storyOptionsSheet, handleNavigateToProfile]);
 
+  const profilePostsListContentStyle = useMemo(
+    () => ({ paddingBottom: bottomContentPadding }),
+    [bottomContentPadding],
+  );
+
   if (isLoading && !profile) {
     return <FullProfileSkeleton />;
   }
@@ -2770,7 +2769,8 @@ function ProfileScreen() {
       ListEmptyComponent={profilePostsEmptyComponent}
       ListFooterComponent={profilePostsFooterComponent}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: 40 }}
+      contentContainerStyle={profilePostsListContentStyle}
+      scrollIndicatorInsets={{ bottom: scrollIndicatorBottomInset }}
       onLayout={handleProfileViewportLayout}
       onScroll={handleProfileScroll}
       onMomentumScrollEnd={handleProfileScrollEnd}

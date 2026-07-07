@@ -23,6 +23,23 @@ describe('iOS Google Maps provider for nearby address search', () => {
     );
   });
 
+  it('keeps iOS map header overlays below the safe area', () => {
+    const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
+
+    expect(source).toContain('useSafeAreaInsets');
+    expect(source).toContain('const insets = useSafeAreaInsets();');
+    expect(source).toContain('exploreTopControlsStyle');
+    expect(source).toContain('routePreviewCardStyle');
+    expect(source).toContain('suggestionPanelStyle');
+    expect(source).toContain('navigationBannerStyle');
+    expect(source).toContain('top: insets.top +');
+    expect(source).not.toContain("top: Platform.OS === 'android' ? 26 : 10");
+    expect(source).not.toContain("top: Platform.OS === 'android' ? 28 : 12");
+    expect(source).not.toContain("top: Platform.OS === 'android' ? 90 : 76");
+    expect(source).not.toContain("top: Platform.OS === 'android' ? 144 : 128");
+    expect(source).not.toContain("top: Platform.OS === 'android' ? 22 : 12");
+  });
+
   it('links Google Maps SDK for iOS and initializes it from react-native-config', () => {
     const podfile = read('ios/Podfile');
     const appDelegate = read('ios/VNSEEA/AppDelegate.swift');

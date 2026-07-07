@@ -2,13 +2,13 @@ const fs = require('fs');
 const path = require('path');
 
 describe('PhotoViewerModal comment transition', () => {
-  const source = fs.readFileSync(
-    path.join(process.cwd(), 'src/feed/presentation/screens/FeedScreen.tsx'),
+  const photoViewerSource = fs.readFileSync(
+    path.join(
+      process.cwd(),
+      'src/shared-kernel/presentation/components/PhotoViewerModal.tsx',
+    ),
     'utf8',
   );
-  const photoViewerStart = source.indexOf('export function PhotoViewerModal');
-  const photoViewerEnd = source.indexOf('const VideoReactionSummary');
-  const photoViewerSource = source.slice(photoViewerStart, photoViewerEnd);
 
   test('closes the native photo modal before opening the comments sheet', () => {
     expect(photoViewerSource).not.toContain(
@@ -16,7 +16,10 @@ describe('PhotoViewerModal comment transition', () => {
     );
     expect(photoViewerSource).toContain('handleCommentPress');
     expect(photoViewerSource).toMatch(
-      /handleCommentPress[\s\S]*onClose\(\)[\s\S]*setTimeout[\s\S]*onCommentTap\(postId\)/,
+      /handleCommentPress[\s\S]*onClose\(\)[\s\S]*setTimeout\(\(\) => \{[\s\S]*onCommentTap\(postId\)/,
+    );
+    expect(photoViewerSource).not.toContain(
+      '// Open the comment sheet on top of the viewer',
     );
   });
 

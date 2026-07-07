@@ -51,8 +51,6 @@ import {
   Heart,
   MessageCircle,
   Play,
-  Volume2,
-  VolumeX,
   Forward,
 } from 'lucide-react-native';
 import type { ReactionType, ReelsItem } from '../../domain/types/reels.types';
@@ -141,6 +139,7 @@ interface Props {
   initialSeekTime?: number;
   autoScrollEnabled: boolean;
   onVideoEnd?: (index: number) => void;
+  bottomOverlayInset?: number;
 }
 
 function formatCount(n: number): string {
@@ -164,7 +163,6 @@ function ReelItemBase({
   isCurrent,
   shouldMount,
   isMuted,
-  onToggleMute,
   onReaction,
   onSave,
   onOpenComments,
@@ -175,6 +173,7 @@ function ReelItemBase({
   initialSeekTime,
   autoScrollEnabled,
   onVideoEnd,
+  bottomOverlayInset = 0,
   index = 0,
 }: Props) {
   const insets = useSafeAreaInsets();
@@ -271,7 +270,7 @@ function ReelItemBase({
       }
     }
     prevIsCurrentRef.current = isCurrent;
-  }, [isCurrent, isReady, initialSeekTime, item.id]);
+  }, [isCurrent, isReady, initialSeekTime, item.id, seekTime]);
 
   useEffect(() => {
     return () => {
@@ -422,9 +421,10 @@ function ReelItemBase({
     return () => clearTimeout(handle);
   }, [hasError, item.id, onUnavailable]);
 
-  // Bottom safe-area offset so action buttons clear the home indicator.
-  const railBottom = Math.max(insets.bottom + 28, 44);
-  const infoBottom = Math.max(insets.bottom + 12, 24);
+  // Bottom safe-area offset so action buttons clear the home indicator and iOS tab bar.
+  const protectedBottom = Math.max(bottomOverlayInset, insets.bottom);
+  const railBottom = Math.max(protectedBottom + 28, 44);
+  const infoBottom = Math.max(protectedBottom + 12, 24);
 
   // Each reel needs a unique SVG gradient ID — if two SVGs share the same
   // id the wrong gradient can bleed across items.
@@ -733,7 +733,7 @@ function ReelItemBase({
       {/* ── Progress bar/seekbar ── */}
       {duration > 0 && (
         <View
-          style={styles.progressBarContainer}
+          style={[styles.progressBarContainer, { bottom: protectedBottom }]}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -1184,6 +1184,7 @@ export const ReelItem = memo(ReelItemBase, (prev, next) => {
     prev.height === next.height &&
     prev.scrollY === next.scrollY &&
     prev.index === next.index &&
-    prev.autoScrollEnabled === next.autoScrollEnabled
+    prev.autoScrollEnabled === next.autoScrollEnabled &&
+    prev.bottomOverlayInset === next.bottomOverlayInset
   );
 });

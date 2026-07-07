@@ -34,7 +34,10 @@ import MapView, {
   type Region,
   type UserLocationChangeEvent,
 } from 'react-native-maps';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
@@ -1050,6 +1053,7 @@ function SearchSuggestionRow({
 
 export default function NearbyUsersScreen() {
   const navigation = useNavigation<NearbyNav>();
+  const insets = useSafeAreaInsets();
   const {
     clearPlacePredictions,
     currentUser,
@@ -1135,6 +1139,41 @@ export default function NearbyUsersScreen() {
   const [searchMessage, setSearchMessage] = useState('');
   const googleMapId = apiConfig.googleMapsMapId.trim();
   const hasGoogleMapId = googleMapId.length > 0;
+
+  const exploreTopControlsStyle = useMemo(
+    () => [
+      styles.exploreTopControls,
+      Platform.OS === 'ios' ? { top: insets.top + 8 } : null,
+    ],
+    [insets.top],
+  );
+
+  const routePreviewCardStyle = useMemo(
+    () => [
+      styles.routePreviewCard,
+      Platform.OS === 'ios' ? { top: insets.top + 10 } : null,
+    ],
+    [insets.top],
+  );
+
+  const suggestionPanelStyle = useMemo(
+    () => [
+      styles.suggestionPanel,
+      isSearchFocused ? styles.suggestionPanelFocused : null,
+      Platform.OS === 'ios'
+        ? { top: insets.top + (isSearchFocused ? 72 : 124) }
+        : null,
+    ],
+    [insets.top, isSearchFocused],
+  );
+
+  const navigationBannerStyle = useMemo(
+    () => [
+      styles.navigationBanner,
+      Platform.OS === 'ios' ? { top: insets.top + 10 } : null,
+    ],
+    [insets.top],
+  );
 
   const suggestions = useMemo<SuggestionItem[]>(() => {
     const normalizedQuery = normalizeSearchText(query);
@@ -2889,7 +2928,7 @@ export default function NearbyUsersScreen() {
       </MapView>
 
       {!isNavigating && !isRoutePreview && !isFullScreen ? (
-        <View style={styles.exploreTopControls}>
+        <View style={exploreTopControlsStyle}>
           <View style={styles.exploreSearchRow}>
             <Animated.View
               pointerEvents={isSearchFocused ? 'none' : 'auto'}
@@ -3009,7 +3048,7 @@ export default function NearbyUsersScreen() {
       ) : null}
 
       {isRoutePreview && selectedPoint ? (
-        <View style={styles.routePreviewCard}>
+        <View style={routePreviewCardStyle}>
           <View style={styles.routePreviewRows}>
             <View style={styles.routeDotColumn}>
               <View style={styles.routeOriginDot} />
@@ -3050,7 +3089,7 @@ export default function NearbyUsersScreen() {
       ) : null}
 
       {isNavigating && shouldShowRoute && activeDestination ? (
-        <View style={styles.navigationBanner}>
+        <View style={navigationBannerStyle}>
           <View style={styles.navigationBannerIcon}>
             <ManeuverIcon
               maneuver={turnInstruction?.maneuver ?? 'straight'}
@@ -3079,12 +3118,7 @@ export default function NearbyUsersScreen() {
       ) : null}
 
       {shouldShowSuggestionPanel ? (
-        <View
-          style={[
-            styles.suggestionPanel,
-            isSearchFocused && styles.suggestionPanelFocused,
-          ]}
-        >
+        <View style={suggestionPanelStyle}>
           <ScrollView
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={suggestions.length > 4}
@@ -3941,7 +3975,7 @@ const styles = StyleSheet.create({
   },
   exploreTopControls: {
     position: 'absolute',
-    top: Platform.OS === 'android' ? 26 : 10,
+    top: Platform.OS === 'android' ? 26 : 0,
     right: 14,
     left: 14,
     zIndex: 31,
@@ -4007,7 +4041,7 @@ const styles = StyleSheet.create({
   },
   routePreviewCard: {
     position: 'absolute',
-    top: Platform.OS === 'android' ? 28 : 12,
+    top: Platform.OS === 'android' ? 28 : 0,
     right: 14,
     left: 14,
     zIndex: 31,
@@ -4916,7 +4950,7 @@ const styles = StyleSheet.create({
   },
   navigationBanner: {
     position: 'absolute',
-    top: Platform.OS === 'android' ? 22 : 12,
+    top: Platform.OS === 'android' ? 22 : 0,
     right: 10,
     left: 10,
     zIndex: 28,
@@ -4978,7 +5012,7 @@ const styles = StyleSheet.create({
   },
   suggestionPanel: {
     position: 'absolute',
-    top: Platform.OS === 'android' ? 144 : 128,
+    top: Platform.OS === 'android' ? 144 : 0,
     right: 14,
     left: 14,
     zIndex: 30,
@@ -4991,7 +5025,7 @@ const styles = StyleSheet.create({
     elevation: 7,
   },
   suggestionPanelFocused: {
-    top: Platform.OS === 'android' ? 90 : 76,
+    top: Platform.OS === 'android' ? 90 : 0,
   },
   topControls: {
     position: 'absolute',

@@ -43,13 +43,10 @@ import {
   Alert,
   Animated,
   Image,
-  Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   ToastAndroid,
   TouchableOpacity,
   useWindowDimensions,
@@ -61,7 +58,7 @@ import type {
   NativeStackNavigationProp,
   NativeStackScreenProps,
 } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import ReanimatedAnimated, {
   Easing,
@@ -71,7 +68,7 @@ import ReanimatedAnimated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { ChevronDown, MoreHorizontal, Repeat, ThumbsUp } from 'lucide-react-native';
+import { ChevronDown, MoreHorizontal, ThumbsUp } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
@@ -128,6 +125,8 @@ function formatRelativeTime(timestamp?: number) {
 function StoryViewerScreen({ route }: Props) {
   const navigation = useNavigation<Nav>();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const storySafeAreaInsets = useSafeAreaInsets();
+  const storyHeaderSafeTop = Math.max(storySafeAreaInsets.top, 8);
 
   // Support BOTH: new API (stories array passed directly) AND old API
   // (stories list + initialUserIndex). This keeps backwards compat while
@@ -178,17 +177,6 @@ function StoryViewerScreen({ route }: Props) {
   // Set by VideoPlayer's onLoad — null while waiting for metadata so we
   // know NOT to start the progress timer yet for video segments.
   const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
-  const [replyText, setReplyText] = useState('');
-
-  const handleSendReply = useCallback(() => {
-    if (!replyText.trim()) return;
-    Alert.alert('Đã gửi', `Đã gửi phản hồi: "${replyText.trim()}"`);
-    setReplyText('');
-    Keyboard.dismiss();
-  }, [replyText]);
-
-  const handleInputFocus = useCallback(() => setIsPaused(true), []);
-  const handleInputBlur = useCallback(() => setIsPaused(false), []);
 
   const currentStory = stories[userIndex] ?? null;
   const segments = currentStory?.media ?? [];
@@ -761,7 +749,10 @@ function StoryViewerScreen({ route }: Props) {
           ) : null}
 
           {/* ── Top overlay: progress bars + header + tags ──────────────────── */}
-          <View style={styles.topOverlay} pointerEvents="box-none">
+          <View
+            style={[styles.topOverlay, { top: storyHeaderSafeTop }]}
+            pointerEvents="box-none"
+          >
             {/* Progress bars — one per segment (Facebook style: each segment has its own bar) */}
             <View style={styles.progressRow}>
               {segments.map((_, idx) => {

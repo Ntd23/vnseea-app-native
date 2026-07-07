@@ -34,6 +34,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -309,7 +310,8 @@ function ReelCommentsSheetBase({
   }, [navigation]);
   const insets = useSafeAreaInsets();
   const sheetBottomPadding = Platform.OS === 'ios' ? 0 : Math.max(insets.bottom, 10);
-  const composerBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 0;
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const composerBottomPadding = Platform.OS === 'ios' ? (isKeyboardVisible ? 6 : Math.max(insets.bottom, 10)) : 0;
   const wavRecorder = useWavAudioRecorder();
   const {
     isRecording: isWavRecording,
@@ -320,6 +322,24 @@ function ReelCommentsSheetBase({
   } = wavRecorder;
   const [draft, setDraft] = useState('');
   const inputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') {
+      return undefined;
+    }
+
+    const showSubscription = Keyboard.addListener('keyboardWillShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardWillHide', () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (replyingTo && inputRef.current) {
