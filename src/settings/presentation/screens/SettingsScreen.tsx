@@ -3228,7 +3228,6 @@ function PrivacySettingsCard() {
 }
 
 function LoginSessionsCard() {
-  const navigation = useNavigation<SettingsNav>();
   const { logout } = useAuthViewModel();
   const [sessions, setSessions] = useState<LoginSessionRecord[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
@@ -3266,11 +3265,7 @@ function LoginSessionsCard() {
         error,
       );
     }
-    navigation.reset({
-      index: 0,
-      routes: [{ name: ROUTES.LOGIN }],
-    });
-  }, [logout, navigation]);
+  }, [logout]);
 
   const deleteSession = useCallback(
     async (sessionId: string | number | undefined) => {
@@ -4340,10 +4335,6 @@ function SettingsScreen() {
       if (id === 'logout') {
         try {
           await logout();
-          navigation.reset({
-            index: 0,
-            routes: [{ name: ROUTES.LOGIN }],
-          });
         } catch (error) {
           Alert.alert(
             'Đăng xuất',

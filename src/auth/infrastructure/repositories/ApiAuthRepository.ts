@@ -20,6 +20,8 @@ import type {
   RegisterInput,
 } from '../../domain/types/auth.types';
 
+const AUTH_DEBUG_PREFIX = '[VNSEEA_AUTH_DEBUG]';
+
 type AuthResponse = {
   api_status: number | string;
   access_token?: string;
@@ -37,6 +39,34 @@ type CurrentUserResponse = {
 };
 
 const AUTH_DEVICE_TYPE = 'phone';
+
+function authDebugError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+
+  return {
+    message: String(error),
+  };
+}
+
+function logAuthDebug(event: string, data: Record<string, unknown> = {}) {
+  try {
+    console.log(
+      AUTH_DEBUG_PREFIX,
+      JSON.stringify({
+        event,
+        at: new Date().toISOString(),
+        ...data,
+      }),
+    );
+  } catch (error) {
+    console.log(AUTH_DEBUG_PREFIX, event, authDebugError(error));
+  }
+}
 
 function mapAuthResponse(response: AuthResponse): AuthResult {
   console.log(
@@ -142,14 +172,39 @@ export function createAuthRepository(): AuthRepository {
     },
 
     async logout() {
+      const activeSession = sessionStorage.getSession();
+      const hadAccessToken = Boolean(activeSession?.accessToken);
+
+      logAuthDebug('auth_logout_start', {
+        hadAccessToken,
+        userId: activeSession?.userId ?? '',
+      });
+
       try {
-        if (sessionStorage.getAccessToken()) {
+        if (hadAccessToken) {
           await apiBridge.post(apiRoutes.auth.logout);
+          logAuthDebug('auth_logout_backend_success', {
+            userId: activeSession?.userId ?? '',
+          });
+        } else {
+          logAuthDebug('auth_logout_backend_skipped', {
+            reason: 'missing_access_token',
+          });
         }
+      } catch (error) {
+        logAuthDebug('auth_logout_backend_error', {
+          userId: activeSession?.userId ?? '',
+          error: authDebugError(error),
+        });
+        console.warn('[Auth] Backend logout failed; continuing local cleanup', error);
       } finally {
         disconnectLiveKitCallRealtime();
         logoutPushUser();
         sessionStorage.clearSession();
+        logAuthDebug('auth_logout_local_cleanup_done', {
+          hadAccessToken,
+          userId: activeSession?.userId ?? '',
+        });
       }
     },
 
