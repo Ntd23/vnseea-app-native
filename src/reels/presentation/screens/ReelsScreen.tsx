@@ -43,7 +43,13 @@ import {
   type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+  useNavigationState,
+  useRoute,
+  useIsFocused,
+} from '@react-navigation/native';
 import { useEffect } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -66,7 +72,11 @@ import { ReelPublisherOverlay } from '../components/ReelPublisherOverlay';
 import { ReelsFilterTabs, type ReelsFilterSource } from '../components/ReelsFilterTabs';
 import { REELS_COPY } from '../../application/i18n/reelsCopy';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { isReelItemActive } from './reelsPlayback';
+import {
+  isNavigationRouteSelected,
+  isReelItemActive,
+  shouldMountReelVideoPlayer,
+} from './reelsPlayback';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { publishNativeTabScrollBehavior } from '../../../navigation/nativeTabScrollPublisher';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
@@ -96,6 +106,10 @@ export default function ReelsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const isFocusedScreen = useIsFocused();
+  const isSelectedRoute = useNavigationState(state =>
+    isNavigationRouteSelected(state, route.key, route.name),
+  );
+  const isPlaybackRouteFocused = isFocusedScreen && isSelectedRoute;
   const insets = useSafeAreaInsets();
   const { bottomContentPadding } = useMainTabContentInsets();
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
@@ -442,13 +456,17 @@ export default function ReelsScreen() {
 
   const renderItem = useCallback(
     ({ item, index }: { item: ReelsItem; index: number }) => {
-      const distance = Math.abs(index - vm.activeIndex);
-      const shouldMount = distance <= preloadRadius;
+      const shouldMount = shouldMountReelVideoPlayer({
+        isPlaybackRouteFocused,
+        index,
+        activeIndex: vm.activeIndex,
+        preloadRadius,
+      });
       const isCurrent = index === vm.activeIndex;
       // A reel only counts as "active" when this screen has focus —
       // when the user switches tabs, every reel becomes inactive (paused).
       const isActive = isReelItemActive({
-        isScreenFocused: isFocusedScreen,
+        isScreenFocused: isPlaybackRouteFocused,
         isCommentsOpen: vm.isCommentsOpen,
         index,
         activeIndex: vm.activeIndex,
@@ -494,7 +512,7 @@ export default function ReelsScreen() {
       handleOpenProfile,
       itemHeight,
       isMuted,
-      isFocusedScreen,
+      isPlaybackRouteFocused,
       handleToggleMute,
       scrollY,
       preloadRadius,
@@ -724,7 +742,7 @@ export default function ReelsScreen() {
             autoScrollEnabled,
             isMuted,
             activeIndex: vm.activeIndex,
-            isFocusedScreen,
+            isPlaybackRouteFocused,
           }}
           // Only supply `initialScrollIndex` when we have a real
           // deeplink — leaving it `undefined` for normal visits keeps
