@@ -75,6 +75,7 @@ import {
   Minus,
   Maximize2,
   Minimize2,
+  Scissors,
 } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -167,6 +168,8 @@ type SelectedPoint = {
   coordinate: LatLng;
   distanceMeters?: number;
   types?: string[];
+  icon?: string;
+  iconBackgroundColor?: string;
 };
 
 type RouteOption = MapRoute & {
@@ -880,9 +883,22 @@ function normalizeSearchText(value: string | undefined | null) {
     .trim();
 }
 
+const DefaultPlaceDotIcon = (props: { size: number; color: string }) => {
+  return (
+    <View
+      style={{
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: props.color || '#FFFFFF',
+      }}
+    />
+  );
+};
+
 function getGooglePlaceIcon(types?: string[]) {
   if (!types || !Array.isArray(types)) {
-    return { Icon: MapPin, color: '#1E70E6', bg: '#EFF6FF' };
+    return { Icon: DefaultPlaceDotIcon, color: '#64748B', bg: '#F1F5F9' };
   }
 
   // 1. Cafe / Coffee
@@ -930,50 +946,43 @@ function getGooglePlaceIcon(types?: string[]) {
     return { Icon: Plane, color: '#2563EB', bg: '#EFF6FF' };
   }
 
-  return { Icon: MapPin, color: '#1E70E6', bg: '#EFF6FF' };
+  // 10. Beauty salon / Hair care / Spa
+  if (types.some(t => ['beauty_salon', 'hair_care', 'spa'].includes(t))) {
+    return { Icon: Scissors, color: '#D946EF', bg: '#FDF4FF' };
+  }
+
+  return { Icon: DefaultPlaceDotIcon, color: '#64748B', bg: '#F1F5F9' };
 }
 
 function getPlaceIconAndColor(types?: string[], searchKeyword?: string) {
-  const normKeyword = searchKeyword ? normalizeSearchText(searchKeyword) : '';
-
-  if (
-    normKeyword.includes('an') ||
-    normKeyword.includes('hang') ||
-    normKeyword.includes('food') ||
-    normKeyword.includes('restaurant') ||
-    normKeyword.includes('com') ||
-    normKeyword.includes('pho') ||
-    normKeyword.includes('bun') ||
-    normKeyword.includes('lau') ||
-    normKeyword.includes('nuong') ||
-    normKeyword.includes('banh') ||
-    normKeyword.includes('buffet') ||
-    normKeyword.includes('nha hang')
-  ) {
-    return { Icon: Utensils, color: '#1E70E6', bg: '#EFF6FF' };
-  }
-  if (
-    normKeyword.includes('cafe') ||
-    normKeyword.includes('phe') ||
-    normKeyword.includes('coffee') ||
-    normKeyword.includes('tra') ||
-    normKeyword.includes('sua') ||
-    normKeyword.includes('nuoc') ||
-    normKeyword.includes('uong')
-  ) {
-    return { Icon: Coffee, color: '#8B4513', bg: '#FDF5E6' };
-  }
-  if (
-    normKeyword.includes('toc') ||
-    normKeyword.includes('salon') ||
-    normKeyword.includes('barber') ||
-    normKeyword.includes('spa') ||
-    normKeyword.includes('cat toc')
-  ) {
-    return { Icon: ShoppingBag, color: '#D97706', bg: '#FEF3C7' };
+  // 1. Prioritize Google's actual types returned by the API (100% accurate classification)
+  const googleStyle = getGooglePlaceIcon(types);
+  if (googleStyle.Icon !== DefaultPlaceDotIcon) {
+    return googleStyle;
   }
 
-  return getGooglePlaceIcon(types);
+  // 2. Fallback: Only if Google returned a generic type (e.g. establishment), matching exact words of the keyword
+  if (searchKeyword) {
+    const clean = normalizeSearchText(searchKeyword);
+    const words = clean.split(/\s+/);
+
+    const isFood = words.some(w => ['an', 'hang', 'food', 'restaurant', 'com', 'pho', 'bun', 'lau', 'nuong', 'banh', 'buffet', 'nha hang'].includes(w));
+    if (isFood) {
+      return { Icon: Utensils, color: '#ff9c40ff', bg: '#EFF6FF' };
+    }
+
+    const isCafe = words.some(w => ['cafe', 'coffee', 'tra', 'sua', 'nuoc', 'uong'].includes(w));
+    if (isCafe) {
+      return { Icon: Coffee, color: '#8B4513', bg: '#FDF5E6' };
+    }
+
+    const isSalon = words.some(w => ['toc', 'salon', 'barber', 'spa', 'cat toc'].includes(w));
+    if (isSalon) {
+      return { Icon: Scissors, color: '#D946EF', bg: '#FDF4FF' };
+    }
+  }
+
+  return googleStyle;
 }
 
 function suggestionSubtitle(item: SuggestionItem) {
@@ -995,9 +1004,9 @@ function SearchSuggestionRow({
   const subtitle = suggestionSubtitle(item);
   const distanceLabel = item.kind === 'page' ? formatDistance(item.page.distanceMeters) : undefined;
 
-  let googlePlaceStyle = { Icon: MapPin, color: '#0000FF', bg: '#f0f3ff' };
+  let googlePlaceStyle: { Icon: any; color: string; bg: string } = { Icon: DefaultPlaceDotIcon, color: '#64748B', bg: '#F1F5F9' };
   if (item.kind === 'google') {
-    googlePlaceStyle = getGooglePlaceIcon(item.prediction.types);
+    googlePlaceStyle = getPlaceIconAndColor(item.prediction.types, item.prediction.mainText);
   }
 
   return (
@@ -1062,6 +1071,8 @@ export default function NearbyUsersScreen() {
   const currentRegionRef = useRef<Region>(DEFAULT_REGION);
   const [searchResults, setSearchResults] = useState<SuggestionItem[]>([]);
   const [isSearchResultsVisible, setIsSearchResultsVisible] = useState(false);
+  const searchResultsScrollRef = useRef<ScrollView>(null);
+  const itemOffsets = useRef<{ [key: string]: number }>({});
   const isNavigatingRef = useRef(false);
   const lastRoutedOriginRef = useRef<LatLng | null>(null);
   const lastSpokenInstructionRef = useRef('');
@@ -1410,6 +1421,22 @@ export default function NearbyUsersScreen() {
   useEffect(() => {
     selectedPointTitleRef.current = selectedPoint?.title;
   }, [selectedPoint?.title]);
+
+  useEffect(() => {
+    if (selectedPoint && searchResultsScrollRef.current) {
+      const matched = searchResults.find(item => 
+        item.id === selectedPoint.id || 
+        `google:${item.id}` === selectedPoint.id ||
+        (selectedPoint.source === 'google' && item.kind === 'google' && selectedPoint.id.replace('google:', '') === item.prediction.placeId)
+      );
+      if (matched) {
+        const yOffset = itemOffsets.current[matched.id];
+        if (typeof yOffset === 'number') {
+          searchResultsScrollRef.current.scrollTo({ y: Math.max(0, yOffset - 10), animated: true });
+        }
+      }
+    }
+  }, [selectedPoint, searchResults]);
 
   const resetRouteState = useCallback(() => {
     routeRequestIdRef.current += 1;
@@ -1896,6 +1923,8 @@ export default function NearbyUsersScreen() {
               address: details.location || item.prediction.description,
               coordinate: details.coordinate,
               types: item.prediction.types,
+              icon: details.icon,
+              iconBackgroundColor: details.iconBackgroundColor,
             });
           } else {
             Alert.alert('Không lấy được tọa độ', 'Không tìm thấy tọa độ của địa chỉ này.');
@@ -1918,21 +1947,38 @@ export default function NearbyUsersScreen() {
       setIsSearchFocused(false);
       Keyboard.dismiss();
       setIsLoadingRoutes(true);
+      setSelectedPoint(null);
+      resetRouteState();
 
       try {
         const current = currentLocationRef.current;
+        const mapCenter = currentRegionRef.current;
+        const searchLat = mapCenter ? mapCenter.latitude : current?.latitude;
+        const searchLng = mapCenter ? mapCenter.longitude : current?.longitude;
+
+        // Calculate dynamic search radius based on visible region
+        const delta = mapCenter ? mapCenter.latitudeDelta : 0.03;
+        const visibleRadius = Math.max(3000, Math.min(50000, (delta * 111111) / 2));
+
         const result = await searchNearbyPagesAndPlaces({
           query: trimmed,
-          lat: current?.latitude,
-          lng: current?.longitude,
-          limit: 20,
+          lat: searchLat,
+          lng: searchLng,
+          radius: Math.round(visibleRadius),
+          limit: 30, // Get more results to show a rich list!
         });
 
-        const pageSuggestions = result.pages.map(page => ({
-          id: page.id,
-          kind: 'page' as const,
-          page,
-        }));
+        const pageSuggestions = result.pages
+          .map(page => ({
+            id: page.id,
+            kind: 'page' as const,
+            page,
+          }))
+          .filter(item => {
+            if (!searchLat || !searchLng) return true;
+            const dist = item.page.coordinate ? distanceMeters({ latitude: searchLat, longitude: searchLng }, item.page.coordinate) : undefined;
+            return dist === undefined || dist <= visibleRadius;
+          });
 
         // Resolve coordinates for Google predictions missing lat/lng
         const resolvedPredictions = await Promise.all(
@@ -1948,6 +1994,8 @@ export default function NearbyUsersScreen() {
                   ...pred,
                   lat: details.coordinate.latitude,
                   lng: details.coordinate.longitude,
+                  icon: details.icon,
+                  iconBackgroundColor: details.iconBackgroundColor,
                 };
               }
             } catch {
@@ -1957,11 +2005,20 @@ export default function NearbyUsersScreen() {
           }),
         );
 
-        const googleSuggestions = resolvedPredictions.map(pred => ({
-          id: pred.placeId,
-          kind: 'google' as const,
-          prediction: pred,
-        }));
+        const googleSuggestions = resolvedPredictions
+          .map(pred => ({
+            id: pred.placeId,
+            kind: 'google' as const,
+            prediction: pred,
+          }))
+          .filter(item => {
+            if (!searchLat || !searchLng) return true;
+            if (typeof item.prediction.lat === 'number' && typeof item.prediction.lng === 'number') {
+              const dist = distanceMeters({ latitude: searchLat, longitude: searchLng }, { latitude: item.prediction.lat, longitude: item.prediction.lng });
+              return dist <= visibleRadius;
+            }
+            return false;
+          });
 
         const sortedPages = [...pageSuggestions].sort((left, right) => {
           const leftPinned = left.page.isPinned || left.page.mapPinApproved;
@@ -2022,6 +2079,8 @@ export default function NearbyUsersScreen() {
               longitude: item.prediction.lng,
             },
             types: item.prediction.types,
+            icon: item.prediction.icon,
+            iconBackgroundColor: item.prediction.iconBackgroundColor,
           });
         } else {
           try {
@@ -2036,6 +2095,8 @@ export default function NearbyUsersScreen() {
                 address: details.location || item.prediction.description,
                 coordinate: details.coordinate,
                 types: item.prediction.types,
+                icon: details.icon,
+                iconBackgroundColor: details.iconBackgroundColor,
               });
             }
           } catch (err) {
@@ -2058,7 +2119,11 @@ export default function NearbyUsersScreen() {
 
   const handleMapPress = useCallback(() => {
     dismissSearchInput();
-  }, [dismissSearchInput]);
+    if (selectedPoint && !isNavigating && !isRoutePreview) {
+      setSelectedPoint(null);
+      resetRouteState();
+    }
+  }, [dismissSearchInput, selectedPoint, isNavigating, isRoutePreview, resetRouteState]);
 
   const handleMapPanDrag = useCallback(() => {
     dismissSearchInput();
@@ -2634,14 +2699,20 @@ export default function NearbyUsersScreen() {
               {(() => {
                 const isGoogle = selectedPoint.source === 'google';
                 const styleObj = isGoogle ? getPlaceIconAndColor(selectedPoint.types, query) : { color: '#16A34A', Icon: null };
-                const categoryColor = styleObj.color;
+                const categoryColor = selectedPoint.iconBackgroundColor || styleObj.color;
                 const Icon = styleObj.Icon;
 
                 return (
                   <View style={[styles.selectedPin, isGoogle && styles.googleMarker]}>
                     <View style={[styles.selectedPinTail, { backgroundColor: categoryColor }]} />
                     <View style={[styles.selectedPinHead, { backgroundColor: categoryColor }]}>
-                      {isGoogle && Icon ? (
+                      {isGoogle && selectedPoint.icon ? (
+                        <Image
+                          source={{ uri: selectedPoint.icon }}
+                          style={{ width: 16, height: 16, tintColor: '#FFFFFF' }}
+                          resizeMode="contain"
+                        />
+                      ) : isGoogle && Icon ? (
                         <Icon size={16} color="#FFFFFF" />
                       ) : (
                         <View style={styles.selectedPinCore} />
@@ -2747,6 +2818,15 @@ export default function NearbyUsersScreen() {
       {/* Render search results markers on the map */}
       {isSearchResultsVisible &&
         searchResults.map(item => {
+          // Hide marker if it's currently selected to avoid double overlapping icons
+          const isSelected = selectedPoint && (
+            selectedPoint.id === item.id ||
+            selectedPoint.id === `google:${item.id}` ||
+            (selectedPoint.source === 'google' && item.kind === 'google' && selectedPoint.id.replace('google:', '') === item.prediction.placeId)
+          );
+
+          if (isSelected) return null;
+
           let coordinate: LatLng | null = null;
           let title = '';
 
@@ -2789,10 +2869,18 @@ export default function NearbyUsersScreen() {
                 <View
                   style={[
                     styles.googleCircleMarker,
-                    { backgroundColor: googleIconStyle?.color || '#1E70E6' },
+                    { backgroundColor: item.prediction.iconBackgroundColor || googleIconStyle?.color || '#1E70E6' },
                   ]}
                 >
-                  <MarkerIcon size={15} color="#FFFFFF" />
+                  {item.prediction.icon ? (
+                    <Image
+                      source={{ uri: item.prediction.icon }}
+                      style={{ width: 15, height: 15, tintColor: '#FFFFFF' }}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <MarkerIcon size={15} color="#FFFFFF" />
+                  )}
                 </View>
               )}
             </Marker>
@@ -2834,6 +2922,8 @@ export default function NearbyUsersScreen() {
                   if (text.trim().length === 0) {
                     setSearchResults([]);
                     setIsSearchResultsVisible(false);
+                    setSelectedPoint(null);
+                    resetRouteState();
                   }
                 }}
                 onFocus={() => setIsSearchFocused(true)}
@@ -2849,6 +2939,8 @@ export default function NearbyUsersScreen() {
                     setIsSearchFocused(false);
                     setSearchResults([]);
                     setIsSearchResultsVisible(false);
+                    setSelectedPoint(null);
+                    resetRouteState();
                     Keyboard.dismiss();
                   }}
                 >
@@ -3456,6 +3548,7 @@ export default function NearbyUsersScreen() {
           </View>
 
           <ScrollView
+            ref={searchResultsScrollRef}
             style={styles.searchResultsList}
             contentContainerStyle={styles.searchResultsListContent}
             showsVerticalScrollIndicator={true}
@@ -3518,62 +3611,76 @@ export default function NearbyUsersScreen() {
                     styles.resultCard,
                     isPinned && styles.resultCardPinned,
                   ]}
+                  onLayout={event => {
+                    itemOffsets.current[item.id] = event.nativeEvent.layout.y;
+                  }}
                 >
-                  <View style={styles.resultCardHeaderRow}>
-                    {item.kind === 'page' ? (
-                      <Image
-                        source={{ uri: avatarUrl || FALLBACK_AVATAR }}
-                        style={styles.resultCardAvatarImage}
-                      />
-                    ) : (
-                      <View
-                        style={[
-                          styles.resultCardIconBg,
-                          { backgroundColor: googleIconStyle?.bg || '#F1F5F9' },
-                        ]}
-                      >
-                        {IconComponent ? (
-                          <IconComponent size={22} color={googleIconStyle?.color} />
-                        ) : null}
-                      </View>
-                    )}
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => handleSelectSearchResult(item)}
+                  >
+                    <View style={styles.resultCardHeaderRow}>
+                      {item.kind === 'page' ? (
+                        <Image
+                          source={{ uri: avatarUrl || FALLBACK_AVATAR }}
+                          style={styles.resultCardAvatarImage}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            styles.resultCardIconBg,
+                            { backgroundColor: item.prediction.iconBackgroundColor || googleIconStyle?.bg || '#F1F5F9' },
+                          ]}
+                        >
+                          {item.prediction.icon ? (
+                            <Image
+                              source={{ uri: item.prediction.icon }}
+                              style={{ width: 22, height: 22 }}
+                              resizeMode="contain"
+                            />
+                          ) : IconComponent ? (
+                            <IconComponent size={22} color={googleIconStyle?.color || '#1E70E6'} />
+                          ) : null}
+                        </View>
+                      )}
 
-                    <View style={styles.resultCardTextBody}>
-                      <View style={styles.resultCardTitleLine}>
-                        <Text style={styles.resultCardTitleText} numberOfLines={1}>
-                          {title}
+                      <View style={styles.resultCardTextBody}>
+                        <View style={styles.resultCardTitleLine}>
+                          <Text style={styles.resultCardTitleText} numberOfLines={1}>
+                            {title}
+                          </Text>
+                          {isPinned ? (
+                            <View style={styles.pinnedBadge}>
+                              <Text style={styles.pinnedBadgeText}>Được ghim</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <Text style={styles.resultCardSubtitleText} numberOfLines={1}>
+                          {subtitle}
                         </Text>
-                        {isPinned ? (
-                          <View style={styles.pinnedBadge}>
-                            <Text style={styles.pinnedBadgeText}>Được ghim</Text>
-                          </View>
-                        ) : null}
                       </View>
-                      <Text style={styles.resultCardSubtitleText} numberOfLines={1}>
-                        {subtitle}
-                      </Text>
                     </View>
-                  </View>
 
-                  <View style={styles.resultCardBadgeRow}>
-                    {distMeters !== undefined ? (
-                      <View style={styles.resultCardDistanceBadge}>
-                        <Text style={styles.resultCardDistanceText}>
-                          {formatDistance(distMeters)}
+                    <View style={styles.resultCardBadgeRow}>
+                      {distMeters !== undefined ? (
+                        <View style={styles.resultCardDistanceBadge}>
+                          <Text style={styles.resultCardDistanceText}>
+                            {formatDistance(distMeters)}
+                          </Text>
+                        </View>
+                      ) : null}
+                      <View style={styles.resultCardCoordinateBadge}>
+                        <MapPin size={13} color="#64748B" />
+                        <Text style={styles.resultCardCoordinateText} numberOfLines={1}>
+                          {subtitle}
                         </Text>
                       </View>
-                    ) : null}
-                    <View style={styles.resultCardCoordinateBadge}>
-                      <MapPin size={13} color="#64748B" />
-                      <Text style={styles.resultCardCoordinateText} numberOfLines={1}>
-                        {subtitle}
-                      </Text>
                     </View>
-                  </View>
 
-                  <Text style={styles.resultCardAddressText} numberOfLines={2}>
-                    {addressText}
-                  </Text>
+                    <Text style={styles.resultCardAddressText} numberOfLines={2}>
+                      {addressText}
+                    </Text>
+                  </TouchableOpacity>
 
                   <View style={styles.resultCardButtonsRow}>
                     <TouchableOpacity

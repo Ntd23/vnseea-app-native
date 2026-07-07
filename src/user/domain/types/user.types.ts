@@ -152,6 +152,8 @@ export type NearbyPlace = {
     latitude: number;
     longitude: number;
   };
+  icon?: string;
+  iconBackgroundColor?: string;
 };
 
 export type NearbyPlacesInput = Pick<
@@ -173,6 +175,8 @@ export type MapPlacePrediction = {
   types?: string[];
   lat?: number;
   lng?: number;
+  icon?: string;
+  iconBackgroundColor?: string;
 };
 
 export type MapRouteInput = {

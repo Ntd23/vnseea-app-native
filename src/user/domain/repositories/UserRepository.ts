@@ -28,6 +28,7 @@ export interface UserRepository {
     query: string;
     lat?: number;
     lng?: number;
+    radius?: number;
   }): Promise<MapPlacePrediction[]>;
   getPlaceDetails(placeId: string): Promise<NearbyPlace | null>;
   getRoute(input: MapRouteInput): Promise<MapRoute>;

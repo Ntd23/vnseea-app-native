@@ -130,7 +130,7 @@ export function useUserViewModel() {
   );
 
   const searchNearbyPagesAndPlaces = useCallback(
-    (input: { query: string; lat?: number; lng?: number; limit?: number }) =>
+    (input: { query: string; lat?: number; lng?: number; limit?: number; radius?: number }) =>
       runUserAction(async () => {
         if (input.query.trim().length < 3) {
           setNearbyPlaces([]);
