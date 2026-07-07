@@ -157,6 +157,11 @@ import {
 } from '../../../funding';
 import type { FundingItem } from '../../../funding/domain/types/funding.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  getFeedVideoActiveUpdate,
+  pickFeedVideoAutoplayCandidate,
+  pickFeedViewableVideoId,
+} from './feedVideoAutoplay';
 
 const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
@@ -1347,16 +1352,10 @@ function FeedScreen() {
     publishFeedActiveVideo(videoId);
   }, []);
 
-  const pickViewableFeedVideoId = useCallback(() => {
-    const viewableVideo = latestViewableFeedItemsRef.current.find(
-      item =>
-        item.isViewable &&
-        item.item?.type === 'post' &&
-        item.item.post?.kind === 'video',
-    );
-
-    return viewableVideo ? String(viewableVideo.item.post.id) : null;
-  }, []);
+  const pickViewableFeedVideoId = useCallback(
+    () => pickFeedViewableVideoId(latestViewableFeedItemsRef.current),
+    [],
+  );
 
   const setFeedVideoRef = useCallback(
     (postId: string, node: React.ElementRef<typeof View> | null) => {
@@ -1378,30 +1377,21 @@ function FeedScreen() {
       feedMeasureRequestRef.current = requestId;
       const viewportHeight =
         feedViewportHeightRef.current || Dimensions.get('window').height;
-      const viewportCenter = viewportHeight * 0.52;
       let remaining = entries.length;
-      let nextVideoId: string | null = null;
-      let bestDistance = Number.POSITIVE_INFINITY;
+      const candidates: Array<{ id: string; y: number; height: number }> = [];
 
       entries.forEach(([videoId, node]) => {
         node.measureInWindow((_x, y, _width, height) => {
           if (feedMeasureRequestRef.current !== requestId) return;
-
-          const visibleHeight = Math.min(y + height, viewportHeight) - Math.max(y, 0);
-          if (visibleHeight > 0) {
-            const visibleRatio = visibleHeight / Math.max(height, 1);
-            if (visibleRatio >= 0.22 || visibleHeight >= 150) {
-              const distance = Math.abs(y + height / 2 - viewportCenter);
-              if (distance < bestDistance) {
-                bestDistance = distance;
-                nextVideoId = videoId;
-              }
-            }
-          }
+          candidates.push({ id: videoId, y, height });
 
           remaining -= 1;
           if (remaining === 0) {
-            const fallbackVideoId = nextVideoId ?? pickViewableFeedVideoId();
+            const fallbackVideoId =
+              pickFeedVideoAutoplayCandidate({
+                candidates,
+                viewportHeight,
+              }) ?? pickViewableFeedVideoId();
 
             if (commitImmediately || !isScrollingRef.current) {
               if (fallbackVideoId !== activeVideoIdRef.current) {
@@ -1968,30 +1958,36 @@ function FeedScreen() {
 
   // Viewability config for FlatList autoplay
   const viewabilityConfigRef = useRef({
-    itemVisiblePercentThreshold: 25,
+    itemVisiblePercentThreshold: 50,
     minimumViewTime: 80,
   });
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: any[] }) => {
       latestViewableFeedItemsRef.current = viewableItems;
-      const viewableVideo = viewableItems.find(
-        item =>
-          item.isViewable &&
-          item.item?.type === 'post' &&
-          item.item.post?.kind === 'video',
-      );
-
-      const nextVideoId = viewableVideo
-        ? String(viewableVideo.item.post.id)
-        : null;
+      const update = getFeedVideoActiveUpdate({
+        activeVideoId: activeVideoIdRef.current,
+        isScrolling: isScrollingRef.current,
+        viewableItems,
+      });
 
       if (isScrollingRef.current) {
-        pendingActiveVideoIdRef.current = nextVideoId;
+        pendingActiveVideoIdRef.current = update.pendingActiveVideoId;
+        if (
+          update.nextActiveVideoId !== undefined &&
+          update.nextActiveVideoId !== activeVideoIdRef.current
+        ) {
+          setActiveFeedVideo(update.nextActiveVideoId);
+        }
         return;
       }
 
-      setActiveFeedVideo(nextVideoId);
+      if (
+        update.nextActiveVideoId !== undefined &&
+        update.nextActiveVideoId !== activeVideoIdRef.current
+      ) {
+        setActiveFeedVideo(update.nextActiveVideoId);
+      }
     },
     [setActiveFeedVideo],
   );

@@ -495,11 +495,14 @@ export function formatPostTime(timestamp: number | undefined, copy: FeedCopy) {
 
 type FeedActiveVideoListener = (activeVideoId: string | null) => void;
 type FeedScrollBusyListener = (isBusy: boolean) => void;
+type FeedVideoMutedListener = (isMuted: boolean) => void;
 
 export let feedActiveVideoIdSnapshot: string | null = null;
 const feedActiveVideoListeners = new Set<FeedActiveVideoListener>();
 let feedScrollBusySnapshot = false;
 const feedScrollBusyListeners = new Set<FeedScrollBusyListener>();
+export let feedVideoMutedSnapshot = true;
+const feedVideoMutedListeners = new Set<FeedVideoMutedListener>();
 
 export function publishFeedActiveVideo(videoId: string | null) {
   if (feedActiveVideoIdSnapshot === videoId) return;
@@ -536,6 +539,12 @@ export function publishFeedScrollBusy(isBusy: boolean) {
   feedScrollBusyListeners.forEach(listener => listener(isBusy));
 }
 
+export function publishFeedVideoMuted(isMuted: boolean) {
+  if (feedVideoMutedSnapshot === isMuted) return;
+  feedVideoMutedSnapshot = isMuted;
+  feedVideoMutedListeners.forEach(listener => listener(isMuted));
+}
+
 export function useFeedScrollBusy() {
   const [isBusy, setIsBusy] = useState(feedScrollBusySnapshot);
 
@@ -555,6 +564,31 @@ export function useFeedScrollBusy() {
   }, []);
 
   return isBusy;
+}
+
+function useFeedVideoMuted() {
+  const [isMuted, setIsMuted] = useState(feedVideoMutedSnapshot);
+
+  useEffect(() => {
+    const listener: FeedVideoMutedListener = nextMuted => {
+      setIsMuted(previousMuted =>
+        previousMuted === nextMuted ? previousMuted : nextMuted,
+      );
+    };
+
+    feedVideoMutedListeners.add(listener);
+    setIsMuted(previousMuted =>
+      previousMuted === feedVideoMutedSnapshot
+        ? previousMuted
+        : feedVideoMutedSnapshot,
+    );
+
+    return () => {
+      feedVideoMutedListeners.delete(listener);
+    };
+  }, []);
+
+  return isMuted;
 }
 
 const Avatar = React.memo(function Avatar({
@@ -1123,11 +1157,12 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
   const liveMediaActive = useLiveMediaActive();
+  const isScrollBusy = useFeedScrollBusy();
   const isActive = controlledIsActive !== undefined
     ? controlledIsActive
     : (isScreenFocused !== false && trackedIsActive);
   const [manuallyPaused, setManuallyPaused] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const muted = useFeedVideoMuted();
   const [aspectRatio, setAspectRatio] = useState(16 / 9); // Default landscape
   const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
@@ -1202,8 +1237,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     currentTimeRef.current = resumeTime;
     setVideoPlaybackTime(post.id, resumeTime);
 
-    // Immediately mute/pause the video on home feed before navigating
-    setMuted(true);
+    // Immediately pause the video on home feed before navigating.
     setManuallyPaused(true);
 
     // `source: 'home'` tells ReelsScreen where the user came from so
@@ -1228,7 +1262,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   useEffect(() => {
     if (isActive) {
-      setMuted(false);
       const savedTime = getVideoPlaybackTime(post.id, currentTimeRef.current);
       currentTimeRef.current = savedTime;
       if (savedTime > 0.05) {
@@ -1238,9 +1271,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           setSeekTime(savedTime);
         }
       }
-    } else {
-      setMuted(true);
-      // Keep isReady and hasRenderedFrame so the video first frame stays visible when paused
     }
   }, [isActive, isReady, post.id]);
 
@@ -1252,7 +1282,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     }
   }, [isActive, isReady, seekTime]);
 
-  const playing = shouldMountVideo && !manuallyPaused && isActive;
+  const playing = shouldMountVideo && !manuallyPaused && isActive && !isScrollBusy;
   const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
 
   // Need an on-screen position for the "ThĂ­ch" button so the picker
@@ -1444,7 +1474,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           {/* Mute toggle â€” top-right when playing */}
           {playing ? (
             <TouchableOpacity
-              onPress={() => setMuted(m => !m)}
+              onPress={() => publishFeedVideoMuted(!muted)}
               activeOpacity={0.85}
               style={{
                 position: 'absolute',
