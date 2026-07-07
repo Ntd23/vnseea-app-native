@@ -1,5 +1,6 @@
-    <?php
-    // +------------------------------------------------------------------------+
+<?php
+// English description: Handles mobile wallet transfers, wallet top-up callbacks, and wallet-backed payments.
+// +------------------------------------------------------------------------+
     // | @author Deen Doughouz (DoughouzForest)
     // | @author_url 1: http://www.hisotechgroup.com
     // | @author_url 2: http://codecanyon.net/user/doughouzforest
@@ -19,70 +20,166 @@
                             'pay',
                         );
 
+    function Wo_ApiWalletHasTransactionExtraColumn() {
+        global $sqlConnect;
+        static $has_extra = null;
+
+        if ($has_extra !== null) {
+            return $has_extra;
+        }
+
+        $query = mysqli_query($sqlConnect, "SHOW COLUMNS FROM " . T_PAYMENT_TRANSACTIONS . " LIKE 'extra'");
+        $has_extra = ($query && mysqli_num_rows($query) > 0);
+        return $has_extra;
+    }
+
+    function Wo_ApiWalletInsertTransferTransaction($user_id, $kind, $amount, $notes, $extra) {
+        global $sqlConnect;
+
+        $safe_user_id = (int) $user_id;
+        $safe_kind = mysqli_real_escape_string($sqlConnect, (string) $kind);
+        $safe_amount = (float) $amount;
+        $safe_notes = mysqli_real_escape_string($sqlConnect, (string) $notes);
+
+        if (Wo_ApiWalletHasTransactionExtraColumn()) {
+            $safe_extra = mysqli_real_escape_string($sqlConnect, json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            return mysqli_query($sqlConnect, "INSERT INTO " . T_PAYMENT_TRANSACTIONS . " (`userid`, `kind`, `amount`, `notes`, `extra`) VALUES ({$safe_user_id}, '{$safe_kind}', {$safe_amount}, '{$safe_notes}', '{$safe_extra}')");
+        }
+
+        return mysqli_query($sqlConnect, "INSERT INTO " . T_PAYMENT_TRANSACTIONS . " (`userid`, `kind`, `amount`, `notes`) VALUES ({$safe_user_id}, '{$safe_kind}', {$safe_amount}, '{$safe_notes}')");
+    }
+
 
 
     if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 
-        if ($_POST['type'] == 'send') {
+            if ($_POST['type'] == 'send') {
 
-            $user_id  = (!empty($_POST['user_id']) && is_numeric($_POST['user_id'])) ? $_POST['user_id'] : 0;
-            $amount   = (!empty($_POST['amount']) && is_numeric($_POST['amount'])) ? $_POST['amount'] : 0;
-            $userdata = $db->where('user_id', $user_id)->where('active', '1')->getOne(T_USERS);
-            $wallet   = $wo['user']['wallet'];
-            if (empty($user_id) || empty($amount) || empty($userdata) || empty(floatval($wallet)) || $amount < 0) {
-                $error_code    = 5;
-                $error_message = 'Please check your details.';
-            } else if ($wallet < $amount) {
-                $error_code    = 6;
-                $error_message = 'The amount exceded your current wallet!';
+        $user_id  = (!empty($_POST['user_id']) && is_numeric($_POST['user_id'])) ? (int) $_POST['user_id'] : 0;
+        $amount   = (!empty($_POST['amount']) && is_numeric($_POST['amount'])) ? (float) $_POST['amount'] : 0;
+        $sender_id = (int) $wo['user']['user_id'];
+        $userdata = Wo_UserData($user_id);
+        $sender = Wo_UserData($sender_id);
+        $points = isset($sender['points']) ? (float) $sender['points'] : 0;
+
+        if (empty($user_id) || empty($amount) || empty($userdata) || empty($sender) || $amount <= 0) {
+            $error_code    = 5;
+            $error_message = 'Please check your details.';
+        } else if ($user_id === $sender_id) {
+            $error_code    = 5;
+            $error_message = 'Please check your details.';
+        } else if (!empty($userdata['banned']) || empty($userdata['active'])) {
+            $error_code    = 5;
+            $error_message = 'Please check your details.';
+        } else if ($points < $amount) {
+            $error_code    = 6;
+            $error_message = 'The amount exceded your current VNSEEA balance!';
         } else {
-            $amount          = ($amount <= $wallet) ? $amount : $wallet;
-            $up_data1        = array(
-                'wallet' => sprintf('%.2f', $userdata->wallet + $amount)
-            );
-            $up_data2        = array(
-                'wallet' => sprintf('%.2f', $wallet - $amount)
-            );
-            $notif_msg       = $wo['lang']['sent_you'];
-
-            $db->where('user_id', $user_id)->update(T_USERS, $up_data1);
-            $db->where('user_id', $wo['user']['user_id'])->update(T_USERS, $up_data2);
-
-            cache($wo['user']['user_id'], 'users', 'delete');
-            cache($user_id, 'users', 'delete');
-
-            // Insert transaction history for sender (SENT)
-            $sender_extra = json_encode(array(
-                'recipient_id' => (int) $user_id,
-                'recipient_name' => $userdata->username,
-                'note' => 'Sent VNSEEA'
-            ));
-            mysqli_query($sqlConnect, "INSERT INTO " . T_PAYMENT_TRANSACTIONS . " (`userid`, `kind`, `amount`, `notes`, `extra`) VALUES ({$wo['user']['user_id']}, 'SENT', {$amount}, 'Sent VNSEEA', '{$sender_extra}')");
-
-            // Insert transaction history for recipient (RECEIVED)
-            $recipient_extra = json_encode(array(
-                'sender_id' => (int) $wo['user']['user_id'],
-                'sender_name' => $wo['user']['username'],
-                'note' => 'Received VNSEEA'
-            ));
-            mysqli_query($sqlConnect, "INSERT INTO " . T_PAYMENT_TRANSACTIONS . " (`userid`, `kind`, `amount`, `notes`, `extra`) VALUES ({$user_id}, 'RECEIVED', {$amount}, 'Received VNSEEA', '{$recipient_extra}')");
-
-            $notification_data_array = array(
+            $amount = (float) (($amount <= $points) ? $amount : $points);
+            $recipient_full_name = trim((string)($userdata['first_name'] ?? '') . ' ' . (string)($userdata['last_name'] ?? ''));
+            $sender_full_name = trim((string)($sender['first_name'] ?? '') . ' ' . (string)($sender['last_name'] ?? ''));
+            $recipient_name = $recipient_full_name !== ''
+                ? $recipient_full_name
+                : (!empty($userdata['name']) ? $userdata['name'] : $userdata['username']);
+            $sender_name = $sender_full_name !== ''
+                ? $sender_full_name
+                : (!empty($sender['name']) ? $sender['name'] : $sender['username']);
+            $transfer_note = !empty($_POST['note']) ? trim((string)$_POST['note']) : '';
+            $sender_note = $transfer_note !== ''
+                ? $transfer_note
+                : 'VNSEEA của bạn đã được gửi thành công đến ' . $recipient_name;
+            $recipient_note = $transfer_note !== ''
+                ? $transfer_note
+                : 'Nhận VNSEEA từ ' . $sender_name;
+            $extra = array(
+                'note' => $transfer_note,
+                'sender_id' => $sender_id,
+                'sender_name' => $sender_name,
                 'recipient_id' => $user_id,
-                'type' => 'sent_u_money',
-                'user_id' => $wo['user']['user_id'],
-                'text' => "$notif_msg $amount VNSEEA!",
-                'url' => 'index.php?link1=wallet'
+                'recipient_name' => $recipient_name,
+                'points' => $amount,
+                'action' => 'transfer',
+                'type' => 'vnseea_transfer'
             );
-            Wo_RegisterNotification($notification_data_array);
 
-            $response_data = array(
-                                    'api_status' => 200,
-                                    'message' => "Money successfully sent."
-                                );
+            mysqli_begin_transaction($sqlConnect);
+            $update_sender = mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `points` = `points` - {$amount} WHERE `user_id` = {$sender_id} AND `points` >= {$amount}");
+            if (!$update_sender || mysqli_affected_rows($sqlConnect) !== 1) {
+                mysqli_rollback($sqlConnect);
+                $response_data = array(
+                    'api_status' => 400,
+                    'errors' => array(
+                        'error_id' => '6',
+                        'error_text' => 'Transaction failed. Please check your balance.'
+                    )
+                );
+            } else {
+                $update_recipient = mysqli_query($sqlConnect, "UPDATE " . T_USERS . " SET `points` = `points` + {$amount} WHERE `user_id` = {$user_id}");
+                if (!$update_recipient || mysqli_affected_rows($sqlConnect) !== 1) {
+                    mysqli_rollback($sqlConnect);
+                    $response_data = array(
+                        'api_status' => 400,
+                        'errors' => array(
+                            'error_id' => '5',
+                            'error_text' => 'Please check your details.'
+                        )
+                    );
+                } else {
+                    $insert_received = Wo_ApiWalletInsertTransferTransaction($user_id, 'POINTS_EARNED', $amount, $recipient_note, $extra);
+                    $insert_sent = Wo_ApiWalletInsertTransferTransaction($sender_id, 'POINTS_DEDUCT', $amount, $sender_note, $extra);
+                    if (!$insert_received || !$insert_sent) {
+                        $insert_error = mysqli_error($sqlConnect);
+                        mysqli_rollback($sqlConnect);
+                        $response_data = array(
+                            'api_status' => 400,
+                            'errors' => array(
+                                'error_id' => '7',
+                                'error_text' => 'Transaction history failed.'
+                            )
+                        );
+                        error_log('[wallet-api] transaction_insert_failed ' . $insert_error);
+                        return;
+                    }
+                    mysqli_commit($sqlConnect);
+
+                    cache($user_id, 'users', 'delete');
+                    cache($sender_id, 'users', 'delete');
+                    $sender_points_row = mysqli_fetch_assoc(mysqli_query($sqlConnect, "SELECT `points` FROM " . T_USERS . " WHERE `user_id` = {$sender_id} LIMIT 1"));
+                    $recipient_points_row = mysqli_fetch_assoc(mysqli_query($sqlConnect, "SELECT `points` FROM " . T_USERS . " WHERE `user_id` = {$user_id} LIMIT 1"));
+
+                    $notif_msg = $wo['lang']['sent_you'];
+                    $notification_data_array = array(
+                        'recipient_id' => $user_id,
+                        'type' => 'sent_u_money',
+                        'user_id' => $sender_id,
+                        'text' => "$notif_msg $amount VNSEEA!",
+                        'url' => 'index.php?link1=wallet'
+                    );
+                    Wo_RegisterNotification($notification_data_array);
+
+                    $response_data = array(
+                        'api_status' => 200,
+                        'status' => 200,
+                        'message' => 'VNSEEA của bạn đã được gửi thành công đến ' . $recipient_name,
+                        'recipient_id' => (int) $userdata['user_id'],
+                        'recipient_name' => (string) $recipient_name,
+                        'sender_balance' => isset($sender_points_row['points']) ? (float) $sender_points_row['points'] : 0,
+                        'recipient_balance' => isset($recipient_points_row['points']) ? (float) $recipient_points_row['points'] : 0,
+                        'sender_points' => isset($sender_points_row['points']) ? (float) $sender_points_row['points'] : 0,
+                        'recipient_points' => isset($recipient_points_row['points']) ? (float) $recipient_points_row['points'] : 0,
+                        'currency' => 'VNSEEA',
+                        'tx' => array(
+                            'kind' => 'POINTS_DEDUCT',
+                            'amount' => (float) $amount,
+                            'notes' => $recipient_name,
+                            'transaction_dt' => date('Y-m-d H:i:s')
+                        ),
+                        'should_close_qr' => true
+                    );
+                }
+            }
         }
-
-
+    }        
         if ($_POST['type'] == 'top_up') {
             if (!empty($_POST['user_id']) && is_numeric($_POST['user_id']) && $_POST['user_id'] > 0 && !empty($_POST['amount']) && is_numeric($_POST['amount']) && $_POST['amount'] > 0) {
                 $user   = Wo_UserData(Wo_Secure($_POST['user_id']));

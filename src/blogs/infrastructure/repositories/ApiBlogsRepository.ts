@@ -3,13 +3,14 @@ import { apiRoutes } from '../../../shared-kernel/application/constants/route-re
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import type { BlogsRepository, BlogCreateData, BlogCreateResult } from '../../domain/repositories/BlogsRepository';
-import type { BlogsItem } from '../../domain/types/blogs.types';
+import type { BlogCategoryOption, BlogsItem } from '../../domain/types/blogs.types';
 
 type RawRecord = Record<string, unknown>;
 
 type ArticlesResponse = {
   api_status: number | string;
   articles?: RawRecord[];
+  blog_categories?: Record<string, unknown> | unknown[];
   message?: string;
   errors?: {
     error_text?: string;
@@ -110,6 +111,37 @@ function mapError(error: unknown) {
 
 export function createBlogsRepository(): BlogsRepository {
   return {
+    async getCategories() {
+      if (cachedBlogCategories.length > 0) {
+        return cachedBlogCategories;
+      }
+
+      try {
+        const response = await apiBridge.post<ArticlesResponse>(
+          apiRoutes.blogs.get,
+          { limit: 1 },
+        );
+
+        if (!isSuccess(response.api_status)) {
+          throw new Error(
+            response.errors?.error_text ||
+              response.message ||
+              'Unable to load blog categories.',
+          );
+        }
+
+        const rawArticles = Array.isArray(response.articles)
+          ? response.articles
+          : [];
+        const items = rawArticles.map(mapArticle).filter(article => article.id);
+        const categories = normalizeBlogCategories(response.blog_categories);
+        updateCachedCategories(categories.length > 0 ? categories : categoriesFromArticles(items));
+        return cachedBlogCategories;
+      } catch (error) {
+        console.warn('[ApiBlogsRepository] get categories failed', error);
+        return cachedBlogCategories;
+      }
+    },
     async getArticles(options = {}) {
       const limit = options.limit ?? 20;
 
@@ -140,10 +172,13 @@ export function createBlogsRepository(): BlogsRepository {
           ? response.articles
           : [];
         const items = rawArticles.map(mapArticle).filter(article => article.id);
+        const categories = normalizeBlogCategories(response.blog_categories);
+        updateCachedCategories(categories.length > 0 ? categories : categoriesFromArticles(items));
         const lastArticle = items[items.length - 1];
 
         return {
           items,
+          categories: cachedBlogCategories,
           nextOffset: lastArticle?.id || null,
           hasMore: rawArticles.length >= limit && Boolean(lastArticle?.id),
         };

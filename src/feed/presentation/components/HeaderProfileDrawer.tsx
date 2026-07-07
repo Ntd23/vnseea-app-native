@@ -15,6 +15,7 @@ import {
   Vibration,
   View,
   Alert,
+  Linking,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -72,8 +73,13 @@ import {
   Repeat,
   Keyboard,
   Globe,
+  ShoppingBag,
+  Tv,
+  CreditCard,
+  TrendingUp,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import type { SettingsPanelRouteParam } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { useAppTheme } from '../../../shared-kernel/application/hooks/useAppTheme';
@@ -89,7 +95,7 @@ const FALLBACK_AVATAR = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 
 const DRAWER_COPY = {
   vi: {
-    menuTitle: 'Cá nhân & Cài đặt',
+    menuTitle: 'Menu',
     roleAdmin: 'Quản trị viên',
     rolePro: 'Thành viên Pro',
     roleMember: 'Thành viên',
@@ -183,7 +189,7 @@ const DRAWER_COPY = {
     catSystem: 'Hệ thống',
   },
   en: {
-    menuTitle: 'Profile & Settings',
+    menuTitle: 'Menu',
     roleAdmin: 'Administrator',
     rolePro: 'Pro Member',
     roleMember: 'Member',
@@ -563,10 +569,14 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
           } catch (e) {
             console.warn('[HeaderProfileDrawer] Logout failed', e);
           }
+          navigation.reset({
+            index: 0,
+            routes: [{ name: ROUTES.LOGIN }],
+          });
         },
       },
     ]);
-  }, [logout, handleClose, copy]);
+  }, [logout, handleClose, copy, navigation]);
 
   // Inline language toggle (drawer row + two pill buttons).
   // The user no longer has to navigate into a separate screen to
@@ -673,257 +683,179 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             scrollEventThrottle={32}
             removeClippedSubviews
           >
-            {/* User Profile Card */}
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={handleOpenProfile}
-              accessibilityRole="button"
-              accessibilityLabel={profile?.name || 'VNSEEA'}
-            >
-              <View style={styles.profileCard}>
-                <View style={styles.profileMain}>
-                  <View style={styles.profileText}>
-                    <Text style={styles.profileName} numberOfLines={1}>
-                      {profile?.name || 'VNSEEA'}
-                    </Text>
-                    <Text style={styles.profileUsername} numberOfLines={1}>
-                      @{profile?.username || 'user'}
-                    </Text>
-                    <View style={[styles.roleBadge, roleStyle]}>
-                      <Text style={[styles.roleText, roleTextStyle]}>
-                        {roleLabel}
-                      </Text>
-                    </View>
-                  </View>
-                  <Image
-                    source={{ uri: profile?.avatarUrl || FALLBACK_AVATAR }}
-                    style={styles.avatar as any}
-                  />
-                </View>
+            {/* User Profile & Wallet Block */}
+            <View style={styles.topMenuBlock}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleOpenProfile}
+                style={styles.topProfileButton}
+              >
+                <Text style={styles.topProfileName} numberOfLines={1}>
+                  {profile?.name || 'VNSEEA'}
+                </Text>
+                <Image
+                  source={{ uri: profile?.avatarUrl || FALLBACK_AVATAR }}
+                  style={styles.topProfileAvatar as any}
+                />
+              </TouchableOpacity>
 
-                {/* Wallet widget */}
-                <View style={styles.statsRow}>
-                  <View style={styles.statBox}>
-                    <View style={styles.statIconBgWallet}>
-                      <Wallet size={16} color="#0052ff" strokeWidth={2.2} />
-                    </View>
-                    <View style={styles.statTexts}>
-                      <Text style={styles.statLabel}>{copy.walletLabel}</Text>
-                      <Text style={styles.statVal} numberOfLines={1}>
-                        {`${(Number(walletOverview?.balance) || 0).toLocaleString('vi-VN')} VNSEEA`}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
+                  handleClose();
+                  navigation.navigate(ROUTES.MY_BALANCE);
+                }}
+                style={styles.topWalletButton}
+              >
+                <Wallet size={16} color="#64748b" strokeWidth={2.2} />
+                <Text style={styles.topWalletText} numberOfLines={1}>
+                  {`Ví VNSEEA: ${(Number(walletOverview?.balance) || 0).toLocaleString('vi-VN')} VNSEEA`}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-            <Text style={styles.zoneLabel}>{copy.sectionContent}</Text>
-            <MenuRow
+                        <MenuRow
              title={copy.featMapAddress}
-             icon={<Map size={18} color="#0052ff" />}
+             icon={<MapPin size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'mapAddress' })}
             />
             <MenuRow
              title={copy.featPages}
-             icon={<Flag size={18} color="#0052ff" />}
+             icon={<Flag size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'pages' })}
             />
             <MenuRow
              title={copy.featMyProducts}
-             icon={<Briefcase size={18} color="#0052ff" />}
+             icon={<ShoppingBag size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'myProducts' })}
             />
             <MenuRow
              title={copy.featMarket}
-             icon={<Store size={18} color="#0052ff" />}
+             icon={<Store size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'market' })}
             />
             <MenuRow
              title={copy.featBlogs}
-             icon={<FileText size={18} color="#0052ff" />}
+             icon={<FileText size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'blogs' })}
             />
             <MenuRow
              title={copy.featMyArticles}
-             icon={<Newspaper size={18} color="#0052ff" />}
+             icon={<FileText size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'myArticles' })}
             />
             <MenuRow
              title={copy.featMovies}
-             icon={<Film size={18} color="#0052ff" />}
+             icon={<Film size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'movies' })}
             />
             <MenuRow
              title={copy.featEvents}
-             icon={<Calendar size={18} color="#0052ff" />}
+             icon={<Calendar size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'events' })}
             />
             <MenuRow
              title={copy.featGroups}
-             icon={<Users size={18} color="#0052ff" />}
+             icon={<Users size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'groups' })}
             />
             <MenuRow
              title={copy.featForums}
-             icon={<MessageSquare size={18} color="#0052ff" />}
+             icon={<MessageSquare size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'forum' })}
             />
             <MenuRow
              title={copy.featAds}
-             icon={<Megaphone size={18} color="#0052ff" />}
+             icon={<Megaphone size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'ads' })}
             />
             <MenuRow
              title={copy.featAlbums}
-             icon={<Images size={18} color="#0052ff" />}
+             icon={<LucideImage size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'albums' })}
             />
             <MenuRow
              title={copy.featPhotos}
-             icon={<LucideImage size={18} color="#0052ff" />}
+             icon={<Tv size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'photos' })}
             />
             <MenuRow
              title={copy.featReels}
-             icon={<Video size={18} color="#0052ff" />}
+             icon={<Video size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'reels' })}
             />
             <MenuRow
              title={copy.featSaved}
-             icon={<Bookmark size={18} color="#0052ff" />}
+             icon={<Bookmark size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'saved' })}
             />
             <MenuRow
-             title={copy.featPoke}
-             icon={<Pointer size={18} color="#0052ff" />}
-             onPress={() => handleItemPress({ type: 'feature', feature: 'poke' })}
-            />
-            <MenuRow
              title={copy.featExplore}
-             icon={<Compass size={18} color="#0052ff" />}
+             icon={<Compass size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'explore' })}
             />
             <MenuRow
              title={copy.featPopular}
-             icon={<Flame size={18} color="#0052ff" />}
+             icon={<TrendingUp size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'popular' })}
             />
             <MenuRow
              title={copy.featJobs}
-             icon={<Briefcase size={18} color="#0052ff" />}
+             icon={<Briefcase size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'jobs' })}
             />
             <MenuRow
              title={copy.featPopularThings}
-             icon={<LayoutGrid size={18} color="#0052ff" />}
+             icon={<Users size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'common' })}
             />
             <MenuRow
              title={copy.featFunding}
-             icon={<HeartHandshake size={18} color="#0052ff" />}
+             icon={<HeartHandshake size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'funding' })}
             />
             <MenuRow
              title={copy.featMemories}
-             icon={<Clock size={18} color="#0052ff" />}
+             icon={<Clock size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'memories' })}
             />
             <MenuRow
              title={copy.featOffers}
-             icon={<Tag size={18} color="#0052ff" />}
+             icon={<Tag size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'offers' })}
             />
-            <Text style={styles.zoneLabel}>{copy.sectionAccount}</Text>
+
+            <View style={styles.separator} />
+
             <MenuRow
              title={copy.settingsLabel}
-             icon={<Settings size={18} color="#0052ff" />}
+             icon={<Settings size={18} color="#64748b" />}
              onPress={() => handleItemPress({ type: 'feature', feature: 'settings' })}
             />
+            <MenuRow
+             title={copy.subscriptionsLabel}
+             icon={<CreditCard size={18} color="#64748b" />}
+             onPress={() => Linking.openURL(apiConfig.webBaseUrl + '/go-pro').catch(() => undefined)}
+            />
+
+            {isAdmin && (
+              <>
+                <View style={styles.separator} />
+                <MenuRow
+                 title={copy.adminAreaLabel}
+                 icon={<LayoutGrid size={18} color="#64748b" />}
+                 onPress={() => handleItemPress({ type: 'feature', feature: 'admin' })}
+                />
+              </>
+            )}
+
+            <View style={styles.separator} />
+
             <MenuRow
              title={copy.logoutLabel}
              icon={<LogOut size={18} color="#ef4444" />}
              onPress={handleLogout}
             />
-            <Text style={styles.zoneLabel}>{copy.sectionMore}</Text>
-            <MenuRow
-             title={copy.switchAccountLabel}
-             icon={<Repeat size={18} color="#0052ff" />}
-             onPress={() => handleItemPress({ type: 'feature', feature: 'switchAccount' })}
-            />
-            <View style={styles.row}>
-             <View style={styles.rowLeft}>
-             <View style={styles.rowIconBg}>
-             <Moon size={18} color="#0052ff" />
-             </View>
-             <Text style={styles.rowTitle}>{copy.nightModeLabel}</Text>
-             </View>
-             <View style={styles.langPillRow}>
-             <TouchableOpacity
-             activeOpacity={0.8}
-             onPress={() => handleThemeChange('light')}
-             style={[
-             styles.langPill,
-             currentTheme === 'light' ? styles.langPillActive : styles.langPillInactive,
-             ]}
-             >
-             <Text style={[
-             styles.langPillText,
-             currentTheme === 'light' ? styles.langPillTextActive : styles.langPillTextInactive,
-             ]}>Sáng
-            </Text>
-             </TouchableOpacity>
-             <TouchableOpacity
-             activeOpacity={0.8}
-             onPress={() => handleThemeChange('dark')}
-             style={[
-             styles.langPill,
-             currentTheme === 'dark' ? styles.langPillActive : styles.langPillInactive,
-             ]}
-             >
-             <Text style={[
-             styles.langPillText,
-             currentTheme === 'dark' ? styles.langPillTextActive : styles.langPillTextInactive,
-             ]}>Tối</Text>
-             </TouchableOpacity>
-             </View>
-            </View>
-            <View style={styles.row}>
-             <View style={styles.rowLeft}>
-             <View style={styles.rowIconBg}>
-             <Globe size={18} color="#0052ff" />
-             </View>
-             <Text style={styles.rowTitle}>{copy.languageLabel}</Text>
-             </View>
-             <View style={styles.langPillRow}>
-             <TouchableOpacity
-             activeOpacity={0.8}
-             onPress={() => handleLanguageChange('vi')}
-             style={[
-             styles.langPill,
-             currentLanguage === 'vi' ? styles.langPillActive : styles.langPillInactive,
-             ]}
-             >
-             <Text style={[
-             styles.langPillText,
-             currentLanguage === 'vi' ? styles.langPillTextActive : styles.langPillTextInactive,
-             ]}>VI</Text>
-             </TouchableOpacity>
-             <TouchableOpacity
-             activeOpacity={0.8}
-             onPress={() => handleLanguageChange('en')}
-             style={[
-             styles.langPill,
-             currentLanguage === 'en' ? styles.langPillActive : styles.langPillInactive,
-             ]}
-             >
-             <Text style={[
-             styles.langPillText,
-             currentLanguage === 'en' ? styles.langPillTextActive : styles.langPillTextInactive,
-             ]}>EN</Text>
-             </TouchableOpacity>
-             </View>
-            </View>
           </ScrollView>
           </View>
         ) : null}
@@ -1235,5 +1167,47 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     marginLeft: 8,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#e2e8f0',
+    marginVertical: 10,
+    marginHorizontal: 16,
+  },
+  topMenuBlock: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  topProfileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  topProfileName: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1e293b',
+  },
+  topProfileAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#cbd5e1',
+  },
+  topWalletButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    marginTop: 4,
+    gap: 10,
+  },
+  topWalletText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748b',
   },
 });

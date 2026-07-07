@@ -12,6 +12,8 @@ import {
   type ListRenderItemInfo,
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   ArrowLeft,
@@ -183,6 +185,7 @@ function BlogsScreen() {
   const [searchText, setSearchText] = useState('');
   const [language] = useState<AppLanguage>(languageStorage.getLanguage());
   const copy = getBlogsCopy(language);
+  const categoryOptions = [{ id: 'all', label: copy.categoryAll }, ...vm.categories];
   const previousParams = useRef<{ category?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined>(undefined);
   const {
     handleCategoryChange,
@@ -288,59 +291,10 @@ function BlogsScreen() {
   );
 
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
-
-      <View className="surface-topbar px-4 pb-3 pt-2">
-        <View className="mb-3 flex-row items-center justify-between">
-          <View className="flex-row items-center">
-            <TouchableOpacity
-              className="h-10 w-10 items-center justify-center rounded-full"
-              activeOpacity={0.8}
-              onPress={() => navigation.goBack()}
-            >
-              <ArrowLeft size={22} color="#0F172A" />
-            </TouchableOpacity>
-            <Text className="ml-3 text-heading">{copy.blogsTitle}</Text>
-          </View>
-
-          <View className="flex-row items-center gap-2">
-            <TouchableOpacity
-              className="h-10 w-10 items-center justify-center rounded-full"
-              activeOpacity={0.8}
-              onPress={openCreateBlog}
-            >
-              <Plus size={20} color={BRAND} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="h-10 w-10 items-center justify-center rounded-full"
-              activeOpacity={0.8}
-              onPress={openFilter}
-            >
-              <Filter size={20} color={BRAND} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View className="flex-row items-center gap-2 rounded-xl bg-slate-100 px-3 py-2">
-          <Search size={18} color="#64748B" />
-          <TextInput
-            className="flex-1 text-body-primary"
-            placeholder={copy.searchPlaceholder}
-            placeholderTextColor="#94A3B8"
-            value={searchText}
-            onChangeText={handleSearchChange}
-          />
-          {searchText.length > 0 && (
-            <TouchableOpacity
-              className="h-6 w-6 items-center justify-center rounded-full"
-              activeOpacity={0.7}
-              onPress={clearSearch}
-            >
-              <X size={16} color="#64748B" />
-            </TouchableOpacity>
-          )}
-        </View>
+    <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+      {/* ── Feed Header ────────────────────────────────────────── */}
+      <View style={{ zIndex: 10, elevation: 5, backgroundColor: '#ffffff' }}>
+        <FeedHeader />
       </View>
 
       <FlatList
@@ -348,7 +302,7 @@ function BlogsScreen() {
         data={vm.articles}
         keyExtractor={item => item.id}
         renderItem={renderArticle}
-        contentContainerClassName="px-4 pb-10 pt-5"
+        contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -361,15 +315,108 @@ function BlogsScreen() {
         onEndReached={vm.loadMore}
         onEndReachedThreshold={0.45}
         ListHeaderComponent={
-          <View className="preview-panel mb-5 flex-row items-center p-4">
-            <View className="icon-chip h-14 w-14 items-center justify-center">
-              <FileText size={28} color={BRAND} />
-            </View>
-            <View className="ml-4 flex-1">
-              <Text className="text-heading">{copy.newestArticles}</Text>
-              <Text className="mt-1 text-body-secondary">
-                {copy.communityContent}
+          <View>
+            {/* 1. Purple-Blue Gradient Header Banner */}
+            <View style={{ height: 160, position: 'relative', overflow: 'hidden', justifyContent: 'center', paddingHorizontal: 20 }}>
+              <Svg pointerEvents="none" height="100%" width="100%" style={{ position: 'absolute', left: 0, top: 0 }}>
+                <Defs>
+                  <LinearGradient id="blogsGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <Stop offset="0%" stopColor="#1e3a8a" />
+                    <Stop offset="50%" stopColor="#3b82f6" />
+                    <Stop offset="100%" stopColor="#7c3aed" />
+                  </LinearGradient>
+                </Defs>
+                <Rect width="100%" height="100%" fill="url(#blogsGrad)" />
+              </Svg>
+
+              <Text style={{ fontSize: 28, fontWeight: '800', color: '#ffffff', lineHeight: 36, marginBottom: 12 }}>
+                {`Các bài báo gần\nđây nhất`}
               </Text>
+
+              {/* My articles toggle button */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  handleMyPostsOnlyChange(!vm.myPostsOnly);
+                  loadFirstPage(false);
+                }}
+                style={{
+                  alignSelf: 'flex-start',
+                  backgroundColor: vm.myPostsOnly ? '#f59e0b' : '#fef3c7',
+                  borderRadius: 12,
+                  paddingHorizontal: 20,
+                  paddingVertical: 8,
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '700', color: vm.myPostsOnly ? '#ffffff' : '#78350f' }}>
+                  {copy.myPosts}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* White spacer under gradient banner */}
+            <View style={{ height: 16 }} />
+
+            {/* 2. Search Input bar */}
+            <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, rounded: 12, borderRadius: 12, backgroundColor: '#f1f5f9', px: 3, paddingHorizontal: 12, py: 2, paddingVertical: 8 }}>
+                <Search size={18} color="#64748B" />
+                <TextInput
+                  style={{ flex: 1, color: '#0f172a', fontSize: 15, paddingVertical: 2, marginLeft: 6 }}
+                  placeholder={copy.searchPlaceholder}
+                  placeholderTextColor="#94A3B8"
+                  value={searchText}
+                  onChangeText={handleSearchChange}
+                />
+                {searchText.length > 0 && (
+                  <TouchableOpacity
+                    className="h-6 w-6 items-center justify-center rounded-full"
+                    activeOpacity={0.7}
+                    onPress={clearSearch}
+                  >
+                    <X size={16} color="#64748B" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            {/* 3. Category pills grid */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, marginBottom: 20 }}>
+              {categoryOptions.map((cat) => {
+                const isSelected = cat.id === 'all'
+                  ? !vm.selectedCategory
+                  : vm.selectedCategory === cat.id;
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (cat.id === 'all' || isSelected) {
+                        handleCategoryChange(null);
+                      } else {
+                        handleCategoryChange(cat.id);
+                      }
+                      loadFirstPage(false);
+                    }}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 16,
+                      backgroundColor: isSelected ? '#0052ff' : '#eff4fc',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: '700',
+                        color: isSelected ? '#ffffff' : '#1e3a8a',
+                      }}
+                    >
+                      {cat.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         }
@@ -387,13 +434,13 @@ function BlogsScreen() {
         }
         ListFooterComponent={
           vm.isLoadingMore ? (
-            <View className="py-4">
+            <View style={{ py: 16, paddingVertical: 16 }}>
               <ActivityIndicator color={BRAND} />
             </View>
           ) : null
         }
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

@@ -144,8 +144,12 @@ export function createAuthRepository(): AuthRepository {
     async logout() {
       try {
         if (sessionStorage.getAccessToken()) {
-          await apiBridge.post(apiRoutes.auth.logout);
+          await apiBridge.post(apiRoutes.auth.logout).catch(err => {
+            console.warn('[ApiAuthRepository] Backend logout failed:', err);
+          });
         }
+      } catch (err) {
+        // safety catch
       } finally {
         disconnectLiveKitCallRealtime();
         logoutPushUser();

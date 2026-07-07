@@ -32,6 +32,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useEarningsViewModel } from '../../application/view-models/useEarningsViewModel';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import type { RootStackParamList } from '../../../navigation/types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
@@ -60,36 +61,36 @@ type ParsedTransferQr = {
 
 const BALANCE_COPY = {
   vi: {
-    header: 'Sá»‘ dÆ° cá»§a tÃ´i',
-    balanceLabel: 'Sá»‘ dÆ° VNSEEA',
-    sendBtn: 'Gá»­i VNSEEA',
-    qrBtn: 'MÃ£ QR chuyá»ƒn VNSEEA',
-    transactionsTitle: 'Giao dá»‹ch',
-    dateLabel: 'NgÃ y',
-    amountLabel: 'Sá»‘ lÆ°á»£ng',
-    loading: 'Äang táº£i...',
-    errorOccurred: 'ÄÃ£ xáº£y ra lá»—i',
-    retry: 'Thá»­ láº¡i',
-    sendModalTitle: 'Gá»­i VNSEEA',
-    infoBoxText: 'Báº¡n cÃ³ thá»ƒ gá»­i VNSEEA cho ngÆ°á»i khÃ¡c.',
-    amountInputLabel: 'Sá»‘ VNSEEA',
-    recipientLabel: 'Gá»­i Ä‘áº¿n',
-    scanQrBtn: 'QuÃ©t QR',
-    searchPlaceholder: 'TÃ¬m kiáº¿m báº±ng tÃªn ngÆ°á»i dÃ¹ng hoáº·c email',
-    confirmSend: 'Tiáº¿p tá»¥c',
-    cancel: 'Há»§y',
-    qrModalTitle: 'QR chuyá»ƒn VNSEEA',
-    qrAmountLabel: 'Sá»‘ VNSEEA (tÃ¹y chá»n)',
-    qrAmountHint: 'Äá»ƒ trá»‘ng náº¿u muá»‘n ngÆ°á»i gá»­i tá»± nháº­p.',
-    qrDesc: 'ÄÆ°a mÃ£ nÃ y cho ngÆ°á»i gá»­i Ä‘á»ƒ há» quÃ©t vÃ  chuyá»ƒn VNSEEA cho báº¡n',
-    successSend: 'Gá»­i VNSEEA thÃ nh cÃ´ng!',
-    insufficientBalance: 'Sá»‘ dÆ° vÃ­ khÃ´ng Ä‘á»§!',
-    invalidAmount: 'Sá»‘ lÆ°á»£ng khÃ´ng há»£p lá»‡!',
-    selectRecipient: 'Vui lÃ²ng chá»n ngÆ°á»i nháº­n!',
-    cameraPermissionTitle: 'Quyá»n truy cáº­p Camera',
-    cameraPermissionDesc: 'á»¨ng dá»¥ng cáº§n quyá»n Camera Ä‘á»ƒ quÃ©t mÃ£ QR chuyá»ƒn tiá»n.',
-    scannerTitle: 'QuÃ©t mÃ£ QR chuyá»ƒn VNSEEA',
-    userNotFound: 'KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng nÃ y!',
+    header: 'SÃ¡Â»â€˜ dÃ†Â° cÃ¡Â»Â§a tÃƒÂ´i',
+    balanceLabel: 'SÃ¡Â»â€˜ dÃ†Â° VNSEEA',
+    sendBtn: 'GÃ¡Â»Â­i VNSEEA',
+    qrBtn: 'MÃƒÂ£ QR chuyÃ¡Â»Æ’n VNSEEA',
+    transactionsTitle: 'Giao dÃ¡Â»â€¹ch',
+    dateLabel: 'NgÃƒÂ y',
+    amountLabel: 'SÃ¡Â»â€˜ lÃ†Â°Ã¡Â»Â£ng',
+    loading: 'Ãƒâ€žÃ‚Âang tÃƒÂ¡Ã‚ÂºÃ‚Â£i...',
+    errorOccurred: 'Ãƒâ€žÃ‚ÂÃƒÆ’Ã‚Â£ xÃƒÂ¡Ã‚ÂºÃ‚Â£y ra lÃƒÂ¡Ã‚Â»Ã¢â‚¬â€i',
+    retry: 'ThÃƒÂ¡Ã‚Â»Ã‚Â­ lÃƒÂ¡Ã‚ÂºÃ‚Â¡i',
+    sendModalTitle: 'GÃƒÂ¡Ã‚Â»Ã‚Â­i VNSEEA',
+    infoBoxText: 'BÃƒÂ¡Ã‚ÂºÃ‚Â¡n cÃƒÆ’Ã‚Â³ thÃƒÂ¡Ã‚Â»Ã†â€™ gÃƒÂ¡Ã‚Â»Ã‚Â­i VNSEEA cho ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi khÃƒÆ’Ã‚Â¡c.',
+    amountInputLabel: 'SÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœ VNSEEA',
+    recipientLabel: 'GÃƒÂ¡Ã‚Â»Ã‚Â­i Ãƒâ€žÃ¢â‚¬ËœÃƒÂ¡Ã‚ÂºÃ‚Â¿n',
+    scanQrBtn: 'QuÃƒÂ©t QR',
+    searchPlaceholder: 'TÃƒÆ’Ã‚Â¬m kiÃƒÂ¡Ã‚ÂºÃ‚Â¿m bÃƒÂ¡Ã‚ÂºÃ‚Â±ng tÃƒÆ’Ã‚Âªn ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi dÃƒÆ’Ã‚Â¹ng hoÃƒÂ¡Ã‚ÂºÃ‚Â·c email',
+    confirmSend: 'TiÃ¡ÂºÂ¿p tÃ¡Â»Â¥c',
+    cancel: 'HÃ¡Â»Â§y',
+    qrModalTitle: 'QR chuyÃ¡Â»Æ’n VNSEEA',
+    qrAmountLabel: 'SÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœ VNSEEA (tÃƒÆ’Ã‚Â¹y chÃƒÂ¡Ã‚Â»Ã‚Ân)',
+    qrAmountHint: 'Ãƒâ€žÃ‚ÂÃƒÂ¡Ã‚Â»Ã†â€™ trÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœng nÃƒÂ¡Ã‚ÂºÃ‚Â¿u muÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœn ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi gÃƒÂ¡Ã‚Â»Ã‚Â­i tÃƒÂ¡Ã‚Â»Ã‚Â± nhÃƒÂ¡Ã‚ÂºÃ‚Â­p.',
+    qrDesc: 'Ãƒâ€žÃ‚ÂÃƒâ€ Ã‚Â°a mÃƒÆ’Ã‚Â£ nÃƒÆ’Ã‚Â y cho ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi gÃƒÂ¡Ã‚Â»Ã‚Â­i Ãƒâ€žÃ¢â‚¬ËœÃƒÂ¡Ã‚Â»Ã†â€™ hÃƒÂ¡Ã‚Â»Ã‚Â quÃƒÆ’Ã‚Â©t vÃƒÆ’Ã‚Â  chuyÃƒÂ¡Ã‚Â»Ã†â€™n VNSEEA cho bÃƒÂ¡Ã‚ÂºÃ‚Â¡n',
+    successSend: 'GÃƒÂ¡Ã‚Â»Ã‚Â­i VNSEEA thÃƒÆ’Ã‚Â nh cÃƒÆ’Ã‚Â´ng!',
+    insufficientBalance: 'SÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœ dÃƒâ€ Ã‚Â° vÃƒÆ’Ã‚Â­ khÃƒÆ’Ã‚Â´ng Ãƒâ€žÃ¢â‚¬ËœÃƒÂ¡Ã‚Â»Ã‚Â§!',
+    invalidAmount: 'SÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœ lÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Â£ng khÃƒÆ’Ã‚Â´ng hÃƒÂ¡Ã‚Â»Ã‚Â£p lÃƒÂ¡Ã‚Â»Ã¢â‚¬Â¡!',
+    selectRecipient: 'Vui lÃƒÆ’Ã‚Â²ng chÃƒÂ¡Ã‚Â»Ã‚Ân ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi nhÃƒÂ¡Ã‚ÂºÃ‚Â­n!',
+    cameraPermissionTitle: 'QuyÃƒÂ¡Ã‚Â»Ã‚Ân truy cÃƒÂ¡Ã‚ÂºÃ‚Â­p Camera',
+    cameraPermissionDesc: 'ÃƒÂ¡Ã‚Â»Ã‚Â¨ng dÃƒÂ¡Ã‚Â»Ã‚Â¥ng cÃƒÂ¡Ã‚ÂºÃ‚Â§n quyÃƒÂ¡Ã‚Â»Ã‚Ân Camera Ãƒâ€žÃ¢â‚¬ËœÃƒÂ¡Ã‚Â»Ã†â€™ quÃƒÆ’Ã‚Â©t mÃƒÆ’Ã‚Â£ QR chuyÃƒÂ¡Ã‚Â»Ã†â€™n tiÃƒÂ¡Ã‚Â»Ã‚Ân.',
+    scannerTitle: 'QuÃƒÂ©t mÃƒÂ£ QR chuyÃ¡Â»Æ’n VNSEEA',
+    userNotFound: 'KhÃƒÆ’Ã‚Â´ng tÃƒÆ’Ã‚Â¬m thÃƒÂ¡Ã‚ÂºÃ‚Â¥y ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi dÃƒÆ’Ã‚Â¹ng nÃƒÆ’Ã‚Â y!',
   },
   en: {
     header: 'My Balance',
@@ -202,8 +203,12 @@ function parseQueryParams(query: string, parsed: ParsedTransferQr) {
       const key = safeDecode(separatorIndex >= 0 ? pair.slice(0, separatorIndex) : pair).toLowerCase();
       const value = safeDecode(separatorIndex >= 0 ? pair.slice(separatorIndex + 1) : '').trim();
 
-      if (key === 'user_id' || key === 'userid' || key === 'uid' || key === 'id') {
-        parsed.userId = value;
+      if (key === 'user_id' || key === 'userid' || key === 'uid' || key === 'id' || key === 'to') {
+        if (/^\d+$/.test(value)) {
+          parsed.userId = value;
+        } else {
+          parsed.username = normalizeRecipientQuery(value);
+        }
       }
       if (key === 'username' || key === 'user' || key === 'u') {
         parsed.username = normalizeRecipientQuery(value);
@@ -215,34 +220,60 @@ function parseQueryParams(query: string, parsed: ParsedTransferQr) {
 }
 
 function parseTransferQrPayload(code: string): ParsedTransferQr {
-  const cleanCode = stripWrappingQuotes(code);
+  const cleanCode = stripWrappingQuotes(code).trim();
   const parsed: ParsedTransferQr = { userId: '', username: '', amount: '' };
 
   if (!cleanCode) return parsed;
 
-  // Handle WoWonder pipe-delimited QR format: POINS|TO=5|AMOUNT=100
-  if (cleanCode.includes('|')) {
-    const parts = cleanCode.split('|');
-    parts.forEach(part => {
-      const [key, val] = part.split('=');
-      if (!key || val === undefined) return;
-      const k = key.trim().toUpperCase();
-      const v = val.trim();
-      if (k === 'TO') {
-        // TO value can be user_id (numeric) or username
-        if (/^\d+$/.test(v)) {
-          parsed.userId = v;
+  // JSON format support (e.g. {"type":"wallet","to":5,"amount":100})
+  if (cleanCode.startsWith('{')) {
+    try {
+      const json = JSON.parse(cleanCode);
+      const type = String(json.type || '');
+      if (type === 'wallet' || type === 'send') {
+        const toVal = String(json.to || '');
+        if (/^\d+$/.test(toVal)) {
+          parsed.userId = toVal;
         } else {
-          parsed.username = normalizeRecipientQuery(v);
+          parsed.username = normalizeRecipientQuery(toVal);
         }
+        if (json.amount !== undefined && json.amount !== null) {
+          parsed.amount = String(json.amount);
+        }
+        return parsed;
       }
-      if (k === 'AMOUNT' || k === 'AMT') {
-        parsed.amount = v;
-      }
-    });
-    return parsed;
+    } catch (e) {
+      // ignore
+    }
   }
 
+  // Pipe or comma format support (e.g. WALLET|to=5|amount=12.00 or WALLET|to=5,amount=2)
+  if (cleanCode.includes('|') || cleanCode.includes(',')) {
+    const parts = cleanCode.split(/[|,]+/);
+    const prefix = parts.shift()?.toUpperCase();
+    if (prefix === 'WALLET' || prefix === 'POINTS') {
+      parts.forEach(part => {
+        const separatorIndex = part.indexOf('=');
+        if (separatorIndex > -1) {
+          const key = part.slice(0, separatorIndex).trim().toUpperCase();
+          const val = part.slice(separatorIndex + 1).trim();
+          if (key === 'TO') {
+            if (/^\d+$/.test(val)) {
+              parsed.userId = val;
+            } else {
+              parsed.username = normalizeRecipientQuery(val);
+            }
+          }
+          if (key === 'AMOUNT' || key === 'AMT' || key === 'POINTS') {
+            parsed.amount = val;
+          }
+        }
+      });
+      return parsed;
+    }
+  }
+
+  // Fallback to query params or profile URLs
   const query = cleanCode.includes('?') ? cleanCode.split('?').slice(1).join('?').split('#')[0] : '';
   if (query) {
     parseQueryParams(query, parsed);
@@ -313,8 +344,10 @@ function MyBalanceScreen() {
     const normalizedUsername = normalizeRecipientQuery(payload.username).toLowerCase();
     if (normalizedUserId <= 0 && !normalizedUsername) {
       Alert.alert(
-        isVi ? 'Thông báo' : 'Notice',
-        isVi ? 'Mã QR không chứa thông tin người nhận!' : 'QR Code does not contain recipient info!',
+        isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Notice',
+        isVi 
+          ? 'MÃƒÂ£ QR khÃƒÂ´ng chÃ¡Â»Â©a thÃƒÂ´ng tin ngÃ†Â°Ã¡Â»Âi nhÃ¡ÂºÂ­n!\nPayload: ' + JSON.stringify(payload)
+          : 'QR Code does not contain recipient info!\nPayload: ' + JSON.stringify(payload),
       );
       return;
     }
@@ -358,11 +391,11 @@ function MyBalanceScreen() {
           setSendAmount(payload.amount);
         }
       } else {
-        Alert.alert(isVi ? 'Thông báo' : 'Notice', copy.userNotFound);
+        Alert.alert(isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Notice', copy.userNotFound);
       }
     } catch (err: any) {
       console.warn('[MyBalanceScreen] Failed to fetch recipient from scanned QR', err);
-      Alert.alert(isVi ? 'Lỗi' : 'Error', err?.message || 'Network error');
+      Alert.alert(isVi ? 'LÃ¡Â»â€”i' : 'Error', err?.message || 'Network error');
     } finally {
       setIsSearching(false);
     }
@@ -370,19 +403,19 @@ function MyBalanceScreen() {
   // Send money execution
   const handleConfirmSend = useCallback(async () => {
     if (!selectedRecipient) {
-      Alert.alert(isVi ? 'ThÃ´ng bÃ¡o' : 'Warning', copy.selectRecipient);
+      Alert.alert(isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Warning', copy.selectRecipient);
       return;
     }
 
     const numericAmount = Number(sendAmount);
     if (Number.isNaN(numericAmount) || numericAmount <= 0) {
-      Alert.alert(isVi ? 'ThÃ´ng bÃ¡o' : 'Warning', copy.invalidAmount);
+      Alert.alert(isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Warning', copy.invalidAmount);
       return;
     }
 
     const balance = walletOverview?.balance ?? 0;
     if (numericAmount > balance) {
-      Alert.alert(isVi ? 'ThÃ´ng bÃ¡o' : 'Warning', copy.insufficientBalance);
+      Alert.alert(isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Warning', copy.insufficientBalance);
       return;
     }
 
@@ -395,7 +428,7 @@ function MyBalanceScreen() {
       });
 
       if (response && response.api_status === 200) {
-        Alert.alert(isVi ? 'ThÃ nh cÃ´ng' : 'Success', copy.successSend);
+        Alert.alert(isVi ? 'ThÃƒÂ nh cÃƒÂ´ng' : 'Success', copy.successSend);
         setIsSendModalVisible(false);
         // Reset form
         setSearchQuery('');
@@ -404,10 +437,10 @@ function MyBalanceScreen() {
         setSendAmount('');
         reload();
       } else {
-        Alert.alert(isVi ? 'Lá»—i' : 'Error', response?.message || 'Server error');
+        Alert.alert(isVi ? 'LÃ¡Â»â€”i' : 'Error', response?.message || 'Server error');
       }
     } catch (err: any) {
-      Alert.alert(isVi ? 'Lá»—i' : 'Error', err?.message || 'Network error');
+      Alert.alert(isVi ? 'LÃ¡Â»â€”i' : 'Error', err?.message || 'Network error');
     } finally {
       setIsSubmitting(false);
     }
@@ -456,9 +489,9 @@ function MyBalanceScreen() {
       (scannedCurrentUserId > 0 && currentUserId > 0 && scannedCurrentUserId === currentUserId)
     ) {
       Alert.alert(
-        isVi ? 'ThÃ´ng bÃ¡o' : 'Notice',
+        isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Notice',
         isVi
-          ? 'Báº¡n khÃ´ng thá»ƒ tá»± gá»­i VNSEEA cho chÃ­nh mÃ¬nh!'
+          ? 'BÃ¡ÂºÂ¡n khÃƒÂ´ng thÃ¡Â»Æ’ tÃ¡Â»Â± gÃ¡Â»Â­i VNSEEA cho chÃƒÂ­nh mÃƒÂ¬nh!'
           : 'You cannot send VNSEEA to yourself!',
       );
       return;
@@ -470,8 +503,10 @@ function MyBalanceScreen() {
     }
 
     Alert.alert(
-      isVi ? 'ThÃ´ng bÃ¡o' : 'Notice',
-      isVi ? 'MÃ£ QR khÃ´ng chá»©a thÃ´ng tin ngÆ°á»i nháº­n!' : 'QR Code does not contain recipient info!',
+      isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Notice',
+      isVi 
+        ? 'MÃƒÂ£ QR khÃƒÂ´ng hÃ¡Â»Â£p lÃ¡Â»â€¡ hoÃ¡ÂºÂ·c khÃƒÂ´ng chÃ¡Â»Â©a thÃƒÂ´ng tin ngÃ†Â°Ã¡Â»Âi nhÃ¡ÂºÂ­n!\nDÃ¡Â»Â¯ liÃ¡Â»â€¡u quÃƒÂ©t Ã„â€˜Ã†Â°Ã¡Â»Â£c: "' + code + '"'
+        : 'Invalid QR or QR does not contain recipient info!\nScanned data: "' + code + '"',
     );
   }, [fetchAndSetRecipientFromQr, isVi, username, walletOverview?.currentUser?.id]);
   if (isLoading && !walletOverview) {
@@ -527,10 +562,17 @@ function MyBalanceScreen() {
 
 
 
-  // Generate QR payload: encodes user id, username, and optional pre-filled amount.
-  const currentUserId = walletOverview?.currentUser?.id || '';
-  const qrPayload = `vnseea://transfer?user_id=${encodeURIComponent(String(currentUserId))}&username=${encodeURIComponent(username)}${qrAmount ? `&amount=${encodeURIComponent(qrAmount)}` : ''}`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+  // Match the Nuxt wallet QR flow: /requests.php?f=qrcode&s=wallet-qr-code&to=<user_id>&amount=<amount>
+  const currentUserId = Number(walletOverview?.currentUser?.id || 0);
+  const normalizedQrAmount = Number(qrAmount);
+  const normalizedQrAmountText = Number.isFinite(normalizedQrAmount) && normalizedQrAmount > 0
+    ? normalizedQrAmount.toFixed(2)
+    : '';
+  const qrPayload = `WALLET|to=${String(currentUserId)}${normalizedQrAmountText ? `|amount=${normalizedQrAmountText}` : ''}`;
+  const baseUrl = apiConfig.webBaseUrl.replace(/\/+$/, '');
+  const qrCodeUrl = `${baseUrl}/requests.php?f=qrcode&s=wallet-qr-code&to=${encodeURIComponent(String(currentUserId))}${
+    normalizedQrAmountText ? `&amount=${encodeURIComponent(normalizedQrAmountText)}` : ''
+  }`;
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
@@ -594,7 +636,16 @@ function MyBalanceScreen() {
               {/* QR Code Button */}
               <TouchableOpacity
                 activeOpacity={0.82}
-                onPress={() => setIsQrModalVisible(true)}
+                onPress={() => {
+                  if (!currentUserId) {
+                    Alert.alert(
+                      isVi ? '\u0054h\u00f4ng b\u00e1o' : 'Notice',
+                      isVi ? 'Kh\u00f4ng l\u1ea5y \u0111\u01b0\u1ee3c ID ng\u01b0\u1eddi d\u00f9ng \u0111\u1ec3 t\u1ea1o m\u00e3 QR VNSEEA.' : 'Unable to resolve user ID for VNSEEA QR.',
+                    );
+                    return;
+                  }
+                  setIsQrModalVisible(true);
+                }}
                 className="w-72 h-12 flex-row items-center justify-center bg-blue-600 rounded-2xl"
               >
                 <QrCode size={18} color="#ffffff" style={{ marginRight: 8 }} />
@@ -610,37 +661,50 @@ function MyBalanceScreen() {
             </View>
           </View>
         }
-        renderItem={({ item }) => (
-          <View
-            className="mx-4 mt-3 bg-white border border-slate-100 rounded-2xl p-5"
-            style={{
-              shadowColor: '#000000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.02,
-              shadowRadius: 4,
-              elevation: 1,
-            }}
-          >
-            {/* Transaction Title */}
-            <Text className="text-[15px] font-bold text-slate-800 leading-tight mb-4">
-              {item.notes || (item.kind === 'SENT' ? 'ÄÃ£ gá»­i VNSEEA' : 'Nháº­n VNSEEA')}
-            </Text>
-
-            {/* Transaction Date */}
-            <View className="flex-row justify-between items-center mb-3">
-              <Text className="text-xs font-bold text-slate-400">{copy.dateLabel}</Text>
-              <Text className="text-xs font-bold text-slate-600">{item.transactionDt}</Text>
-            </View>
-
-            {/* Transaction Quantity */}
-            <View className="flex-row justify-between items-center">
-              <Text className="text-xs font-bold text-slate-400">{copy.amountLabel}</Text>
-              <Text className="text-sm font-extrabold text-slate-900">
-                {formatNumber(item.amount)} VNSEEA
+        renderItem={({ item }) => {
+          const isSent = item.kind === 'SENT' || item.kind === 'PURCHASE';
+          const isReceived = item.kind === 'RECEIVED' || item.kind === 'WALLET' || item.kind === 'POINTS_EARNED';
+          const sign = isSent ? '-' : isReceived ? '+' : '';
+          const amountColor = isSent ? '#ef4444' : isReceived ? '#22c55e' : '#0f172a';
+          return (
+            <View
+              className="mx-4 mt-3 bg-white border border-slate-100 rounded-2xl p-5"
+              style={{
+                shadowColor: '#000000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.02,
+                shadowRadius: 4,
+                elevation: 1,
+              }}
+            >
+              {/* Transaction Title */}
+              <Text className="text-[15px] font-bold text-slate-800 leading-tight mb-1">
+                {item.notes || (isSent ? 'Ã„ÂÃƒÂ£ gÃ¡Â»Â­i VNSEEA' : isReceived ? 'NhÃ¡ÂºÂ­n VNSEEA' : item.kind)}
               </Text>
+
+              {/* Counterparty */}
+              {item.counterpartyName ? (
+                <Text className="text-xs font-semibold text-slate-400 mb-3">
+                  {isSent ? 'Ã„ÂÃ¡ÂºÂ¿n: ' : 'TÃ¡Â»Â«: '}{item.counterpartyName}
+                </Text>
+              ) : <View className="mb-3" />}
+
+              {/* Transaction Date */}
+              <View className="flex-row justify-between items-center mb-3">
+                <Text className="text-xs font-bold text-slate-400">{copy.dateLabel}</Text>
+                <Text className="text-xs font-bold text-slate-600">{item.transactionDt}</Text>
+              </View>
+
+              {/* Transaction Quantity */}
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs font-bold text-slate-400">{copy.amountLabel}</Text>
+                <Text style={{ color: amountColor }} className="text-sm font-extrabold">
+                  {sign}{formatNumber(item.amount)} VNSEEA
+                </Text>
+              </View>
             </View>
-          </View>
-        )}
+          );
+        }}
       />
 
       {/* Send money Modal */}
@@ -889,6 +953,9 @@ function MyBalanceScreen() {
             {/* User credentials summary below QR */}
             <Text className="text-center text-sm font-extrabold text-slate-400 mt-6">
               @{username}
+            </Text>
+            <Text selectable className="text-center text-[11px] font-semibold text-slate-400 mt-2">
+              {qrPayload}
             </Text>
           </ScrollView>
         </SafeAreaView>

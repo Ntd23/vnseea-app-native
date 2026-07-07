@@ -1,6 +1,11 @@
 // Blogs domain types
 // Port từ: client/src/blogs/domain/types/
 
+export interface BlogCategoryOption {
+  id: string;
+  label: string;
+}
+
 export interface BlogsItem {
   id: string;
   title: string;
@@ -31,6 +36,7 @@ export interface BlogsListOptions {
 
 export interface BlogsListPage {
   items: BlogsItem[];
+  categories?: BlogCategoryOption[];
   nextOffset: string | null;
   hasMore: boolean;
 }
