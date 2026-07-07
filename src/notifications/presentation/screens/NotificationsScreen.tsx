@@ -42,6 +42,7 @@ import {
   publishNativeTabScrollIntent,
 } from '../../../navigation/nativeTabScrollPublisher';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 type NotificationsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -153,7 +154,7 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
   // Handle poke notifications first - navigate to profile
   if (includesAny(type, ['poke', 'poked'])) {
     if (item.notifierId) {
-      navigation.navigate(ROUTES.PROFILE, { userId: item.notifierId } as any);
+      navigateToUserProfile(navigation, item.notifierId);
     }
     return;
   }
@@ -210,7 +211,7 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
     case 'visited_profile':
     case 'accepted_request':
       if (item.notifierId) {
-        navigation.navigate(ROUTES.PROFILE, { userId: item.notifierId } as any);
+        navigateToUserProfile(navigation, item.notifierId);
       }
       break;
     case 'liked_post':

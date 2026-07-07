@@ -28,7 +28,7 @@ export type MainTabParamList = {
   [ROUTES.MARKETPLACE]: undefined;
   [ROUTES.NEARBY_USERS]: undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
-  [ROUTES.PROFILE]: { userId?: string } | undefined;
+  [ROUTES.PROFILE]: undefined;
   [ROUTES.SETTINGS]:
     | {
         initialPanel?: SettingsPanelRouteParam;
@@ -81,7 +81,8 @@ export type RootStackParamList = {
     postId: string;
     post?: FeedPost;
   };
-  [ROUTES.PROFILE]: { userId?: string } | undefined;
+  [ROUTES.PROFILE]: undefined;
+  [ROUTES.USER_PROFILE]: { userId: string };
   [ROUTES.PROFILE_FRIENDS]: {
     userId: string;
     title?: string;

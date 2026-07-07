@@ -26,6 +26,7 @@ import type { ReelsItem } from '../../domain/types/reels.types';
 import type { UserProfile } from '../../../user/domain/types/user.types';
 import { useNavigation } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -170,7 +171,7 @@ export function ReelPublisherOverlay({
   const handleViewFullProfile = useCallback(() => {
     if (!profile) return;
     onClose();
-    navigation.navigate(ROUTES.PROFILE, { userId: String(profile.id) });
+    navigateToUserProfile(navigation, String(profile.id));
   }, [profile, navigation, onClose]);
 
   // Compute total likes of loaded reels

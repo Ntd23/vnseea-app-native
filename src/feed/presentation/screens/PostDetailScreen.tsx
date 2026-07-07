@@ -64,6 +64,7 @@ import {
   ReactionPickerOverlay,
   FEED_COPY,
 } from '../components/PostCards';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -864,40 +865,10 @@ function PostDetailScreen() {
     : 0;
 
   // ── Action handlers ─────────────────────────────────────────────────
-  // ROUTES.PROFILE is registered BOTH as a root Stack.Screen AND as
-  // the Profile tab inside MainTabs (see routeRegistry.tsx). Calling
-  // `navigation.navigate(ROUTES.PROFILE, ...)` from this root-stack
-  // screen would push a fresh ProfileScreen instance on top of the
-  // stack instead of switching to the existing Profile tab — which
-  // feels like "tap doesn't navigate" because the tab bar below stays
-  // pinned to whichever tab the user was on.
-  //
-  // We resolve the parent navigator (MainTabs) and dispatch through
-  // it so React Navigation actually switches the tab. `getParent()`
-  // returns undefined if there's no parent (e.g. during deep link
-  // setup tests) — we fall back to the local navigate in that case so
-  // the user still reaches a profile screen.
   const navigateToProfile = useCallback(
     (userId: string) => {
       if (!userId) return;
-      const parent = navigation.getParent();
-      if (parent) {
-        // The parent navigator is the root NativeStack which only
-        // exposes MAIN_TABS as a typed param list. Cast to `never`
-        // for the route name and nested object so TS doesn't try to
-        // reconcile the deeply nested tab param types — the runtime
-        // path is correct and matches React Navigation's
-        // "navigate to a screen inside a nested navigator" contract.
-        parent.navigate(
-          ROUTES.MAIN_TABS,
-          {
-            screen: ROUTES.PROFILE,
-            params: { userId },
-          },
-        );
-        return;
-      }
-      navigation.navigate(ROUTES.PROFILE, { userId });
+      navigateToUserProfile(navigation, userId);
     },
     [navigation],
   );
