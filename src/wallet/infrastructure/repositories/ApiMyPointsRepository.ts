@@ -276,6 +276,10 @@ export function createMyPointsRepository(): MyPointsRepository {
         walletCurrencySymbol: config.walletCurrencySymbol,
         displayCurrency: config.displayCurrency,
         displayCurrencySymbol: config.displayCurrencySymbol,
+        commentsPoint: user?.points_config && 'comments_point' in user.points_config ? Math.trunc(toNumber(user.points_config.comments_point)) : 0,
+        createPostPoint: user?.points_config && 'create_post_point' in user.points_config ? Math.trunc(toNumber(user.points_config.create_post_point)) : 0,
+        reactionPoint: user?.points_config && 'reaction_point' in user.points_config ? Math.trunc(toNumber(user.points_config.reaction_point)) : 0,
+        createBlogPoint: user?.points_config && 'create_blog_point' in user.points_config ? Math.trunc(toNumber(user.points_config.create_blog_point)) : 0,
         history,
       };
     },

@@ -99,9 +99,9 @@ export function AddressAutocomplete({
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalQuery, setModalQuery] = useState(value);
   const [errorMessage, setErrorMessage] = useState('');
-  const [debounceTimer, setDebounceTimer] = useState<ReturnType<
-    typeof setTimeout
-  > | null>(null);
+  
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestQueryRef = useRef(value);
   const modalInputRef = useRef<TextInput>(null);
 
   const handleModalShow = useCallback(() => {
@@ -121,9 +121,12 @@ export function AddressAutocomplete({
 
   const fetchPredictions = useCallback(
     async (input: string) => {
-      if (!input.trim() || input.trim().length < 3) {
-        setPredictions([]);
-        setErrorMessage('');
+      const trimmedInput = input.trim();
+      if (!trimmedInput || trimmedInput.length < 3) {
+        if (latestQueryRef.current.trim().length < 3) {
+          setPredictions([]);
+          setErrorMessage('');
+        }
         return;
       }
 
@@ -134,9 +137,14 @@ export function AddressAutocomplete({
           apiRoutes.user.mapDiscovery,
           {
             type: 'place_autocomplete',
-            query: input.trim(),
+            query: trimmedInput,
           },
         );
+
+        // Prevent race condition: only update state if this matches the latest typed input
+        if (input !== latestQueryRef.current) {
+          return;
+        }
 
         if (data.predictions && Array.isArray(data.predictions)) {
           setPredictions(data.predictions);
@@ -150,16 +158,22 @@ export function AddressAutocomplete({
           setErrorMessage(copy.empty);
         }
       } catch (error) {
+        if (input !== latestQueryRef.current) {
+          return;
+        }
         setPredictions([]);
         setErrorMessage(getErrorMessage(error));
       } finally {
-        setIsLoading(false);
+        if (input === latestQueryRef.current) {
+          setIsLoading(false);
+        }
       }
     },
     [getErrorMessage, copy.empty],
   );
 
   const openModal = useCallback(() => {
+    latestQueryRef.current = value;
     setModalQuery(value);
     setIsModalVisible(true);
     setErrorMessage('');
@@ -177,18 +191,17 @@ export function AddressAutocomplete({
     (text: string) => {
       setModalQuery(text);
       onChangeText(text);
+      latestQueryRef.current = text;
 
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
       }
 
-      const timer = setTimeout(() => {
+      debounceTimerRef.current = setTimeout(() => {
         fetchPredictions(text);
       }, debounceMs);
-
-      setDebounceTimer(timer);
     },
-    [debounceMs, debounceTimer, fetchPredictions, onChangeText],
+    [debounceMs, fetchPredictions, onChangeText],
   );
 
   const handleSelectPrediction = useCallback(

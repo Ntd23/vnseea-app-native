@@ -3,12 +3,13 @@ import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Linking,
+  Platform,
   ScrollView,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import ReactNativeBlobUtil from 'react-native-blob-util';
 import {
   ArrowLeft,
   Download,
@@ -22,10 +23,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import axios from 'axios';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
-import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import apiClient from '../../../shared-kernel/infrastructure/api/client';
 
 import type { RootStackParamList } from '../../../navigation/types';
 
@@ -141,28 +140,14 @@ function MyInfoScreen() {
       );
       const dataValue = selectedKeys.join(',');
 
-      const token = sessionStorage.getAccessToken();
-      const params = new URLSearchParams();
-      params.append('server_key', apiConfig.serverKey);
-      if (token) {
-        params.append('access_token', token);
-      }
-      params.append('data', dataValue);
-
-      // Call the v2 API endpoint which returns { api_status, message, link }
-      const response = await axios.post<DownloadInfoResponse>(
-        `${apiConfig.apiBaseUrl}/download_info`,
-        params.toString(),
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          timeout: 30000,
-        },
+      // apiClient auto-injects server_key and access_token
+      const response = await apiClient.post<DownloadInfoResponse>(
+        'download_info',
+        { data: dataValue },
       );
 
       const payload = response.data ?? {};
-      if (payload.api_status !== 200 || !payload.link) {
+      if (!payload.link) {
         throw new Error(
           payload.message ||
             (isVi
@@ -192,17 +177,55 @@ function MyInfoScreen() {
     }
   }, [isVi, selections]);
 
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const handleDownloadFile = useCallback(async () => {
     if (!downloadLink) return;
+    setIsDownloading(true);
     try {
-      await Linking.openURL(downloadLink);
+      const fileName = `my_info_${Date.now()}.html`;
+      const { dirs } = ReactNativeBlobUtil.fs;
+      const downloadDir =
+        Platform.OS === 'android' ? dirs.DownloadDir : dirs.DocumentDir;
+      const filePath = `${downloadDir}/${fileName}`;
+
+      const res = await ReactNativeBlobUtil.config({
+        path: filePath,
+        fileCache: true,
+        addAndroidDownloads: {
+          useDownloadManager: true,
+          notification: true,
+          title: fileName,
+          description: isVi
+            ? 'Đang tải xuống thông tin của bạn...'
+            : 'Downloading your information...',
+          mime: 'text/html',
+          mediaScannable: true,
+        },
+      }).fetch('GET', downloadLink);
+
+      const savedPath = res.path();
+
+      Alert.alert(
+        isVi ? 'Tải xuống thành công' : 'Download complete',
+        isVi
+          ? `Tệp đã được lưu vào thư mục Tải xuống.`
+          : `File saved to Downloads folder.`,
+      );
+
+      // Reset state after successful download
+      setIsFileReady(false);
+      setReadyMessage('');
+      setDownloadLink('');
     } catch {
       Alert.alert(
         isVi ? 'Không thể tải xuống' : 'Unable to download',
         isVi
-          ? 'Không mở được tệp tải xuống. Vui lòng thử lại.'
-          : 'Could not open the download file. Please try again.',
+          ? 'Không thể tải tệp xuống. Vui lòng thử lại.'
+          : 'Could not download the file. Please try again.',
       );
+    } finally {
+      setIsDownloading(false);
     }
   }, [downloadLink, isVi]);
 
@@ -260,8 +283,11 @@ function MyInfoScreen() {
             </Text>
             <TouchableOpacity
               activeOpacity={0.86}
+              disabled={isDownloading}
               onPress={handleDownloadFile}
-              className="h-12 flex-row items-center justify-center rounded-xl bg-blue-600 px-8"
+              className={`h-12 flex-row items-center justify-center rounded-xl px-8 ${
+                isDownloading ? 'bg-blue-300' : 'bg-blue-600'
+              }`}
               style={{
                 shadowColor: '#2563eb',
                 shadowOffset: { width: 0, height: 4 },
@@ -270,9 +296,19 @@ function MyInfoScreen() {
                 elevation: 3,
               }}
             >
-              <Download size={18} color="#ffffff" />
+              {isDownloading ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Download size={18} color="#ffffff" />
+              )}
               <Text className="ml-2 text-[15px] font-extrabold text-white">
-                {isVi ? 'Tải xuống' : 'Download'}
+                {isDownloading
+                  ? isVi
+                    ? 'Đang tải...'
+                    : 'Downloading...'
+                  : isVi
+                    ? 'Tải xuống'
+                    : 'Download'}
               </Text>
             </TouchableOpacity>
           </View>

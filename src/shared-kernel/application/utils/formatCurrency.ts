@@ -1,6 +1,5 @@
-// Description: Formats monetary values consistently across application screens.
-// Brand currency: the app uses `VNSEEA` everywhere instead of `VND` so the
-// label is treated as part of the brand (no symbol glyph like `\u0111`).
+// Brand currency: the app uses `VND` everywhere instead of `VNSEEA`
+// label is treated as part of the brand.
 
 type CurrencyFormatOptions = {
   locale?: string;
@@ -12,8 +11,7 @@ function normalizedCurrency(value: string) {
 }
 
 // True when the currency coming from the backend is the legacy
-// Vietnamese \u0111\u1ed3ng (VND) or carries the \u20ab / \u0111 glyph. We treat that
-// case as the brand currency and display it as `VNSEEA`.
+// Vietnamese \u0111\u1ed3ng (VND) or carries the \u20ab / \u0111 glyph.
 function isVnd(currency: string, symbol: string) {
   const code = normalizedCurrency(currency);
   const normalizedSymbol = symbol.trim();
@@ -31,8 +29,7 @@ function currencySuffix(
   showCodeWhenNoSymbol: boolean,
 ) {
   if (isVnd(currency, symbol)) {
-    // Brand label \u2014 replaces the historical `\u0111` symbol.
-    return 'VNSEEA';
+    return 'VND';
   }
 
   const trimmedSymbol = symbol.trim();
@@ -45,7 +42,7 @@ function currencySuffix(
 
 export function formatCurrency(
   amount: number,
-  currency = 'VNSEEA',
+  currency = 'VND',
   currencySymbol = '',
   options: CurrencyFormatOptions = {},
 ) {
