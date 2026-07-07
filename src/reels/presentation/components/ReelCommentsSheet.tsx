@@ -44,6 +44,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,9 +56,11 @@ import {
   ImagePlus,
   Mic,
   Music2,
+  RotateCcw,
   SendHorizonal,
   Square,
   ThumbsUp,
+  Trash2,
   X,
 } from 'lucide-react-native';
 import {
@@ -199,6 +203,17 @@ const REACTION_COLOR: Record<ReactionType, string> = {
 const PICKER_PILL_WIDTH = 282;
 const PICKER_PILL_HEIGHT = 52;
 const PICKER_GAP_ABOVE_BUTTON = 8;
+const COMMENT_IMAGE_MAX_WIDTH = 190;
+const COMMENT_IMAGE_MAX_HEIGHT = 210;
+const COMMENT_IMAGE_FALLBACK_WIDTH = 180;
+const COMMENT_IMAGE_FALLBACK_HEIGHT = 140;
+const COMMENT_DELETE_ANIMATION_MS = 220;
+const SHEET_OPEN_SPRING = {
+  damping: 20,
+  stiffness: 210,
+  mass: 0.85,
+};
+const SHEET_CLOSE_DURATION_MS = 170;
 
 interface Props {
   visible: boolean;
@@ -274,6 +289,25 @@ function formatRelativeTime(timestamp?: number, language: 'vi' | 'en' = 'vi') {
   }
 }
 
+function fitCommentImageSize(width?: number, height?: number) {
+  if (!width || !height || width <= 0 || height <= 0) {
+    return {
+      width: COMMENT_IMAGE_FALLBACK_WIDTH,
+      height: COMMENT_IMAGE_FALLBACK_HEIGHT,
+    };
+  }
+
+  const scale = Math.min(
+    COMMENT_IMAGE_MAX_WIDTH / width,
+    COMMENT_IMAGE_MAX_HEIGHT / height,
+  );
+
+  return {
+    width: Math.max(96, Math.round(width * scale)),
+    height: Math.max(96, Math.round(height * scale)),
+  };
+}
+
 function ReelCommentsSheetBase({
   visible,
   comments,
@@ -304,6 +338,7 @@ function ReelCommentsSheetBase({
   const copy = COMMENTS_COPY[language];
   const navigation = useNavigation<any>();
   const isScreenFocused = useIsFocused();
+  const screenHeight = Dimensions.get('window').height;
 
   const handlePressProfile = useCallback((userId: string) => {
     navigation.navigate(ROUTES.PROFILE, { userId });
@@ -322,6 +357,8 @@ function ReelCommentsSheetBase({
   } = wavRecorder;
   const [draft, setDraft] = useState('');
   const inputRef = useRef<TextInput>(null);
+  const commentsListRef = useRef<FlatList<ReelComment>>(null);
+  const autoScrollToEndUntilRef = useRef(0);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') {
@@ -354,6 +391,11 @@ function ReelCommentsSheetBase({
   const [pendingImage, setPendingImage] =
     useState<CommentImageAttachment | null>(null);
   const [photoPickerVisible, setPhotoPickerVisible] = useState(false);
+  const [actionMenuComment, setActionMenuComment] = useState<ReelComment | null>(null);
+  const [inlineDeleteCommentId, setInlineDeleteCommentId] = useState<string | null>(null);
+  const [deletingCommentIds, setDeletingCommentIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [pendingAudio, setPendingAudio] =
     useState<CommentAudioAttachment | null>(null);
   // Which comment-image URL is open in the full-screen viewer (null = closed).
@@ -387,6 +429,9 @@ function ReelCommentsSheetBase({
       setPendingAudio(null);
       setImageViewerUri(null);
       setPhotoPickerVisible(false);
+      autoScrollToEndUntilRef.current = 0;
+      setInlineDeleteCommentId(null);
+      setDeletingCommentIds(new Set());
     }
   }, [cancelWavRecording, visible]);
 
@@ -394,13 +439,13 @@ function ReelCommentsSheetBase({
     if (visible) {
       isClosingRef.current = false;
       setIsMounted(true);
+      openProgress.stopAnimation();
+      panY.stopAnimation();
       openProgress.setValue(0);
       panY.setValue(0);
       Animated.spring(openProgress, {
         toValue: 1,
-        damping: 18,
-        stiffness: 180,
-        mass: 0.8,
+        ...SHEET_OPEN_SPRING,
         useNativeDriver: true,
       }).start();
       return;
@@ -414,7 +459,7 @@ function ReelCommentsSheetBase({
 
     Animated.timing(openProgress, {
       toValue: 0,
-      duration: 150,
+      duration: SHEET_CLOSE_DURATION_MS,
       useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished) {
@@ -437,7 +482,7 @@ function ReelCommentsSheetBase({
   const sheetTranslateY = Animated.add(
     openProgress.interpolate({
       inputRange: [0, 1],
-      outputRange: [500, 0],
+      outputRange: [screenHeight, 0],
     }),
     panY
   );
@@ -447,6 +492,27 @@ function ReelCommentsSheetBase({
     outputRange: [0.985, 1],
   });
 
+  const handleRequestClose = useCallback(() => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    Keyboard.dismiss();
+    Animated.parallel([
+      Animated.timing(openProgress, {
+        toValue: 0,
+        duration: SHEET_CLOSE_DURATION_MS,
+        useNativeDriver: true,
+      }),
+      Animated.timing(panY, {
+        toValue: 0,
+        duration: SHEET_CLOSE_DURATION_MS,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setScrollEnabled(true);
+      onClose();
+    });
+  }, [onClose, openProgress, panY]);
+
   const title = useMemo(() => {
     return copy.commentsTitle;
   }, [copy.commentsTitle]);
@@ -455,6 +521,22 @@ function ReelCommentsSheetBase({
     const count = Math.max(commentCount, comments.length);
     return count > 0 ? formatCount(count) : null;
   }, [commentCount, comments.length]);
+
+  const scrollCommentsToEnd = useCallback((animated = true) => {
+    commentsListRef.current?.scrollToEnd({ animated });
+  }, []);
+
+  const scheduleCommentsAutoScrollToEnd = useCallback(() => {
+    autoScrollToEndUntilRef.current = Date.now() + 900;
+    requestAnimationFrame(() => scrollCommentsToEnd(true));
+    setTimeout(() => scrollCommentsToEnd(false), 80);
+    setTimeout(() => scrollCommentsToEnd(false), 260);
+  }, [scrollCommentsToEnd]);
+
+  const handleCommentsContentSizeChange = useCallback(() => {
+    if (Date.now() > autoScrollToEndUntilRef.current) return;
+    requestAnimationFrame(() => scrollCommentsToEnd(false));
+  }, [scrollCommentsToEnd]);
 
   const handleSubmit = useCallback(() => {
     const trimmed = draft.trim();
@@ -477,6 +559,7 @@ function ReelCommentsSheetBase({
       onCancelReply();
     } else {
       onSubmit(trimmed, image, audio);
+      scheduleCommentsAutoScrollToEnd();
     }
   }, [
     draft,
@@ -486,6 +569,7 @@ function ReelCommentsSheetBase({
     onSubmitReply,
     replyingTo,
     onCancelReply,
+    scheduleCommentsAutoScrollToEnd,
   ]);
 
   const handlePickAudio = useCallback(async () => {
@@ -578,21 +662,13 @@ function ReelCommentsSheetBase({
     (comment: ReelComment) => {
       if (comment.isSending) return;
       if (comment.isFailed) {
-        Alert.alert(
-          copy.failedCommentTitle,
-          copy.failedCommentMsg,
-          [
-            { text: copy.cancel, style: 'cancel' },
-            {
-              text: copy.delete,
-              style: 'destructive',
-              onPress: () => onDeleteFailedComment(comment),
-            },
-            {
-              text: copy.retry,
-              onPress: () => onRetryFailedComment(comment),
-            },
-          ],
+        setActionMenuComment(comment);
+        return;
+      }
+      if (comment.owner) {
+        setActionMenuComment(null);
+        setInlineDeleteCommentId(current =>
+          current === comment.id ? null : comment.id,
         );
         return;
       }
@@ -613,6 +689,90 @@ function ReelCommentsSheetBase({
       );
     },
     [onDelete, onDeleteFailedComment, onRetryFailedComment, copy],
+  );
+
+  const handleInlineDeleteComment = useCallback((commentId: string) => {
+    setInlineDeleteCommentId(current => (current === commentId ? null : current));
+    setDeletingCommentIds(current => {
+      const next = new Set(current);
+      next.add(commentId);
+      return next;
+    });
+    setTimeout(() => {
+      onDelete(commentId);
+      setDeletingCommentIds(current => {
+        const next = new Set(current);
+        next.delete(commentId);
+        return next;
+      });
+    }, COMMENT_DELETE_ANIMATION_MS);
+  }, [onDelete]);
+
+  const handleCloseActionMenu = useCallback(() => {
+    setActionMenuComment(null);
+  }, []);
+
+  const handleDeleteActionMenuComment = useCallback(() => {
+    const comment = actionMenuComment;
+    if (!comment) return;
+    setActionMenuComment(null);
+    if (comment.isFailed) {
+      onDeleteFailedComment(comment);
+      return;
+    }
+    onDelete(comment.id);
+  }, [actionMenuComment, onDelete, onDeleteFailedComment]);
+
+  const handleRetryActionMenuComment = useCallback(() => {
+    const comment = actionMenuComment;
+    if (!comment) return;
+    setActionMenuComment(null);
+    onRetryFailedComment(comment);
+  }, [actionMenuComment, onRetryFailedComment]);
+
+  const actionMenuPreview = useMemo(() => {
+    if (!actionMenuComment) return '';
+    const text = actionMenuComment.text.trim();
+    if (text.length > 80) return `${text.slice(0, 80)}...`;
+    if (text.length > 0) return text;
+    if (actionMenuComment.imageUrl || actionMenuComment.pendingImageUri) {
+      return language === 'en' ? 'Photo comment' : 'Bình luận ảnh';
+    }
+    if (actionMenuComment.audioUrl || actionMenuComment.pendingAudioUri) {
+      return language === 'en' ? 'Voice comment' : 'Bình luận giọng nói';
+    }
+    return '';
+  }, [actionMenuComment, language]);
+
+  const actionMenuTitle = actionMenuComment?.isFailed
+    ? copy.failedCommentTitle
+    : copy.yourCommentTitle;
+
+  const actionMenuMessage = actionMenuComment?.isFailed
+    ? copy.failedCommentMsg
+    : actionMenuPreview;
+
+  const actionMenuFootnote = actionMenuComment?.isFailed
+    ? actionMenuPreview
+    : '';
+
+  const actionMenuCopy = useMemo(
+    () => ({
+      cancel: copy.cancel,
+      delete: copy.delete,
+      footnote: actionMenuFootnote,
+      message: actionMenuMessage,
+      retry: copy.retry,
+      title: actionMenuTitle,
+    }),
+    [
+      actionMenuFootnote,
+      actionMenuMessage,
+      actionMenuTitle,
+      copy.cancel,
+      copy.delete,
+      copy.retry,
+    ],
   );
 
   // Called from the "Thích" button on every comment row when long-pressed.
@@ -666,6 +826,9 @@ function ReelCommentsSheetBase({
           onOpenImage={handleOpenImage}
           replyingToCommentId={replyingTo?.commentId}
           onPressProfile={handlePressProfile}
+          inlineDeleteCommentId={inlineDeleteCommentId}
+          deletingCommentIds={deletingCommentIds}
+          onInlineDelete={handleInlineDeleteComment}
         />
       );
     },
@@ -673,6 +836,9 @@ function ReelCommentsSheetBase({
       handleLongPressRow,
       handleOpenImage,
       handleOpenPicker,
+      handleInlineDeleteComment,
+      inlineDeleteCommentId,
+      deletingCommentIds,
       loadingRepliesIds,
       onCollapseReplies,
       onLoadReplies,
@@ -685,6 +851,13 @@ function ReelCommentsSheetBase({
   );
 
   const keyExtractor = useCallback((item: ReelComment) => item.id, []);
+
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      listScrollOffset.current = event.nativeEvent.contentOffset.y;
+    },
+    [],
+  );
 
   const replyingSnippet = useMemo(() => {
     if (!replyingTo) return '';
@@ -707,13 +880,15 @@ function ReelCommentsSheetBase({
       transparent
       animationType="none"
       statusBarTranslucent
-      onRequestClose={onClose}
+      hardwareAccelerated
+      presentationStyle="overFullScreen"
+      onRequestClose={handleRequestClose}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.modalRoot}
       >
-        <Pressable style={styles.backdropPressable} onPress={onClose}>
+        <Pressable style={styles.backdropPressable} onPress={handleRequestClose}>
           <Animated.View
             style={[styles.backdrop, { opacity: backdropOpacity }]}
           />
@@ -754,8 +929,8 @@ function ReelCommentsSheetBase({
               if (dy > 120) {
                 isClosingRef.current = true;
                 Animated.timing(panY, {
-                  toValue: Dimensions.get('window').height,
-                  duration: 200,
+                  toValue: screenHeight,
+                  duration: SHEET_CLOSE_DURATION_MS,
                   useNativeDriver: true,
                 }).start(() => {
                   setScrollEnabled(true);
@@ -799,7 +974,7 @@ function ReelCommentsSheetBase({
               <View style={[styles.headerSide, styles.headerCloseSide]}>
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={onClose}
+                  onPress={handleRequestClose}
                   style={styles.closeButton}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
@@ -829,21 +1004,27 @@ function ReelCommentsSheetBase({
             </View>
           ) : (
             <FlatList
+              ref={commentsListRef}
               data={comments}
               keyExtractor={keyExtractor}
               renderItem={renderThread}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               showsVerticalScrollIndicator={false}
               scrollEnabled={scrollEnabled}
+              initialNumToRender={10}
+              maxToRenderPerBatch={8}
+              updateCellsBatchingPeriod={40}
+              windowSize={7}
+              removeClippedSubviews={false}
+              onContentSizeChange={handleCommentsContentSizeChange}
               contentContainerStyle={[
                 styles.listContent,
                 comments.length === 0 ? styles.emptyListContent : null,
               ]}
               onEndReached={onEndReached}
               onEndReachedThreshold={0.6}
-              onScroll={(e) => {
-                listScrollOffset.current = e.nativeEvent.contentOffset.y;
-              }}
+              onScroll={handleListScroll}
               scrollEventThrottle={16}
               ListEmptyComponent={
                 <View style={styles.emptyBox}>
@@ -1041,128 +1222,43 @@ function ReelCommentsSheetBase({
         onClose={() => setImageViewerUri(null)}
       />
 
-      {/* Modern Photo Picker Bottom Sheet (Absolute Overlay instead of nested Modal to prevent Navigation Context loss) */}
-      {photoPickerVisible && (
-        <View 
-          style={{ 
-            position: 'absolute', 
-            top: 0, 
-            left: 0, 
-            right: 0, 
-            bottom: 0, 
-            backgroundColor: 'rgba(0, 0, 0, 0.4)', 
-            justifyContent: 'flex-end',
-            zIndex: 9999,
-          }}
-        >
-          <Pressable 
-            style={{ flex: 1 }} 
-            onPress={() => setPhotoPickerVisible(false)} 
-          />
-          <View 
-            style={{
-              backgroundColor: '#ffffff',
-              borderTopLeftRadius: 28,
-              borderTopRightRadius: 28,
-              paddingHorizontal: 24,
-              paddingTop: 16,
-              paddingBottom: 32,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: -10 },
-              shadowOpacity: 0.1,
-              shadowRadius: 10,
-              elevation: 20,
-            }}
-          >
-            {/* Grabber */}
-            <View style={{ alignItems: 'center', marginBottom: 20 }}>
-              <View style={{ width: 40, height: 4, borderRadius: 999, backgroundColor: '#E2E8F0' }} />
-            </View>
+      <CommentActionSheet
+        visible={Boolean(actionMenuComment)}
+        copy={actionMenuCopy}
+        showRetry={Boolean(actionMenuComment?.isFailed)}
+        onClose={handleCloseActionMenu}
+        onDelete={handleDeleteActionMenuComment}
+        onRetry={handleRetryActionMenuComment}
+      />
 
-            {/* Title */}
-            <Text style={{ textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: '#1E293B', marginBottom: 24 }}>
-              {copy.pickPhotoTitle}
-            </Text>
-
-            {/* Options */}
-            <View>
-              <Pressable
-                style={({ pressed }) => ({
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  backgroundColor: pressed ? '#EFF6FF' : '#F8FAFC',
-                  borderRadius: 16,
-                  padding: 16,
-                  marginBottom: 12,
-                })}
-                onPress={async () => {
-                  setPhotoPickerVisible(false);
-                  const result = await launchCamera({
-                    mediaType: 'photo' as MediaType,
-                    quality: 0.8,
-                    saveToPhotos: false,
-                    includeBase64: false,
-                  });
-                  handleImagePickerResult(result);
-                }}
-              >
-                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-                  <Camera size={20} color="#2563eb" />
-                </View>
-                <Text style={{ fontSize: 16, fontWeight: '600', color: '#1E293B' }}>
-                  {copy.takePhoto}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={({ pressed }) => ({
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  backgroundColor: pressed ? '#EEF2FF' : '#F8FAFC',
-                  borderRadius: 16,
-                  padding: 16,
-                  marginBottom: 12,
-                })}
-                onPress={async () => {
-                  setPhotoPickerVisible(false);
-                  const result = await launchImageLibrary({
-                    mediaType: 'photo' as MediaType,
-                    selectionLimit: 1,
-                    quality: 0.8,
-                    includeBase64: false,
-                  });
-                  handleImagePickerResult(result);
-                }}
-              >
-                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-                  <ImagePlus size={20} color="#4f46e5" />
-                </View>
-                <Text style={{ fontSize: 16, fontWeight: '600', color: '#1E293B' }}>
-                  {copy.chooseFromLibrary}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={({ pressed }) => ({
-                  marginTop: 8,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderWidth: 1,
-                  borderColor: '#E2E8F0',
-                  borderRadius: 16,
-                  paddingVertical: 14,
-                  backgroundColor: pressed ? '#F1F5F9' : 'transparent',
-                })}
-                onPress={() => setPhotoPickerVisible(false)}
-              >
-                <Text style={{ fontSize: 16, fontWeight: '600', color: '#64748B' }}>
-                  {copy.cancel}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      )}
+      <CommentPhotoPickerSheet
+        visible={photoPickerVisible}
+        title={copy.pickPhotoTitle}
+        takePhotoLabel={copy.takePhoto}
+        chooseFromLibraryLabel={copy.chooseFromLibrary}
+        cancelLabel={copy.cancel}
+        onClose={() => setPhotoPickerVisible(false)}
+        onTakePhoto={async () => {
+          setPhotoPickerVisible(false);
+          const result = await launchCamera({
+            mediaType: 'photo' as MediaType,
+            quality: 0.8,
+            saveToPhotos: false,
+            includeBase64: false,
+          });
+          handleImagePickerResult(result);
+        }}
+        onChooseFromLibrary={async () => {
+          setPhotoPickerVisible(false);
+          const result = await launchImageLibrary({
+            mediaType: 'photo' as MediaType,
+            selectionLimit: 1,
+            quality: 0.8,
+            includeBase64: false,
+          });
+          handleImagePickerResult(result);
+        }}
+      />
     </Modal>
   );
 }
@@ -1171,6 +1267,181 @@ interface ReplyBannerProps {
   replyingTo: { commentId: string; username: string } | null;
   snippet: string;
   onCancelReply: () => void;
+}
+
+interface CommentActionSheetProps {
+  visible: boolean;
+  copy: {
+    cancel: string;
+    delete: string;
+    footnote: string;
+    message: string;
+    retry: string;
+    title: string;
+  };
+  showRetry: boolean;
+  onClose: () => void;
+  onDelete: () => void;
+  onRetry: () => void;
+}
+
+interface CommentPhotoPickerSheetProps {
+  visible: boolean;
+  title: string;
+  takePhotoLabel: string;
+  chooseFromLibraryLabel: string;
+  cancelLabel: string;
+  onClose: () => void;
+  onTakePhoto: () => void;
+  onChooseFromLibrary: () => void;
+}
+
+function CommentPhotoPickerSheet({
+  visible,
+  title,
+  takePhotoLabel,
+  chooseFromLibraryLabel,
+  cancelLabel,
+  onClose,
+  onTakePhoto,
+  onChooseFromLibrary,
+}: CommentPhotoPickerSheetProps) {
+  if (!visible) return null;
+
+  return (
+    <View style={styles.actionSheetLayer} pointerEvents="box-none">
+      <Pressable style={styles.actionSheetBackdrop} onPress={onClose} />
+      <View style={styles.actionSheetCard}>
+        <View style={styles.actionSheetGrabber} />
+        <View style={styles.actionSheetHeader}>
+          <Text style={styles.actionSheetTitle} numberOfLines={1}>
+            {title}
+          </Text>
+        </View>
+
+        <Pressable
+          onPress={onTakePhoto}
+          style={({ pressed }) => [
+            styles.actionSheetOption,
+            styles.actionSheetNeutralOption,
+            pressed && styles.actionSheetOptionPressed,
+          ]}
+        >
+          <View style={[styles.actionSheetIcon, styles.actionSheetPhotoIcon]}>
+            <Camera size={18} color="#2563eb" />
+          </View>
+          <Text style={styles.actionSheetOptionText} numberOfLines={1}>
+            {takePhotoLabel}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={onChooseFromLibrary}
+          style={({ pressed }) => [
+            styles.actionSheetOption,
+            styles.actionSheetNeutralOption,
+            pressed && styles.actionSheetOptionPressed,
+          ]}
+        >
+          <View style={[styles.actionSheetIcon, styles.actionSheetLibraryIcon]}>
+            <ImagePlus size={18} color="#4f46e5" />
+          </View>
+          <Text style={styles.actionSheetOptionText} numberOfLines={1}>
+            {chooseFromLibraryLabel}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={onClose}
+          style={({ pressed }) => [
+            styles.actionSheetCancel,
+            pressed && styles.actionSheetOptionPressed,
+          ]}
+        >
+          <Text style={styles.actionSheetCancelText}>{cancelLabel}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function CommentActionSheet({
+  visible,
+  copy,
+  showRetry,
+  onClose,
+  onDelete,
+  onRetry,
+}: CommentActionSheetProps) {
+  if (!visible) return null;
+
+  return (
+    <View style={styles.actionSheetLayer} pointerEvents="box-none">
+      <Pressable style={styles.actionSheetBackdrop} onPress={onClose} />
+      <View style={styles.actionSheetCard}>
+        <View style={styles.actionSheetGrabber} />
+        <View style={styles.actionSheetHeader}>
+          <Text style={styles.actionSheetTitle} numberOfLines={1}>
+            {copy.title}
+          </Text>
+          {copy.message ? (
+            <Text style={styles.actionSheetMessage} numberOfLines={2}>
+              {copy.message}
+            </Text>
+          ) : null}
+          {copy.footnote ? (
+            <Text style={styles.actionSheetFootnote} numberOfLines={1}>
+              {copy.footnote}
+            </Text>
+          ) : null}
+        </View>
+
+        {showRetry ? (
+          <Pressable
+            onPress={onRetry}
+            style={({ pressed }) => [
+              styles.actionSheetOption,
+              styles.actionSheetPrimaryOption,
+              pressed && styles.actionSheetOptionPressed,
+            ]}
+          >
+            <View style={[styles.actionSheetIcon, styles.actionSheetPrimaryIcon]}>
+              <RotateCcw size={18} color="#0866ff" />
+            </View>
+            <Text style={styles.actionSheetPrimaryText} numberOfLines={1}>
+              {copy.retry}
+            </Text>
+          </Pressable>
+        ) : null}
+
+        <Pressable
+          onPress={onDelete}
+          style={({ pressed }) => [
+            styles.actionSheetOption,
+            styles.actionSheetDangerOption,
+            pressed && styles.actionSheetOptionPressed,
+          ]}
+        >
+          <View style={[styles.actionSheetIcon, styles.actionSheetDangerIcon]}>
+            <Trash2 size={18} color="#ef4444" />
+          </View>
+          <Text style={styles.actionSheetDangerText} numberOfLines={1}>
+            {copy.delete}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={onClose}
+          style={({ pressed }) => [
+            styles.actionSheetCancel,
+            pressed && styles.actionSheetOptionPressed,
+          ]}
+        >
+          <Text style={styles.actionSheetCancelText}>{copy.cancel}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
 function ReplyBanner({ replyingTo, snippet, onCancelReply }: ReplyBannerProps) {
@@ -1371,6 +1642,9 @@ interface ThreadProps {
   onOpenImage: (uri: string) => void;
   replyingToCommentId?: string | null;
   onPressProfile: (userId: string) => void;
+  inlineDeleteCommentId: string | null;
+  deletingCommentIds: Set<string>;
+  onInlineDelete: (commentId: string) => void;
 }
 
 function CommentThreadBase({
@@ -1387,6 +1661,9 @@ function CommentThreadBase({
   onOpenImage,
   replyingToCommentId,
   onPressProfile,
+  inlineDeleteCommentId,
+  deletingCommentIds,
+  onInlineDelete,
 }: ThreadProps) {
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
@@ -1419,6 +1696,9 @@ function CommentThreadBase({
         onOpenImage={onOpenImage}
         isReplyingToThis={replyingToCommentId === comment.id}
         onPressProfile={onPressProfile}
+        showInlineDelete={inlineDeleteCommentId === comment.id}
+        isDeleting={deletingCommentIds.has(comment.id)}
+        onInlineDelete={onInlineDelete}
       />
 
       {comment.replyCount > 0 || isExpanded ? (
@@ -1464,6 +1744,9 @@ function CommentThreadBase({
               onOpenImage={onOpenImage}
               isReplyingToThis={replyingToCommentId === reply.id}
               onPressProfile={onPressProfile}
+              showInlineDelete={inlineDeleteCommentId === reply.id}
+              isDeleting={deletingCommentIds.has(reply.id)}
+              onInlineDelete={onInlineDelete}
             />
           ))}
         </View>
@@ -1495,6 +1778,9 @@ interface RowProps {
   onOpenImage: (uri: string) => void;
   isReplyingToThis?: boolean;
   onPressProfile: (userId: string) => void;
+  showInlineDelete: boolean;
+  isDeleting: boolean;
+  onInlineDelete: (commentId: string) => void;
 }
 
 function CommentRow({
@@ -1507,6 +1793,9 @@ function CommentRow({
   onOpenImage,
   isReplyingToThis,
   onPressProfile,
+  showInlineDelete,
+  isDeleting,
+  onInlineDelete,
 }: RowProps) {
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
@@ -1516,6 +1805,37 @@ function CommentRow({
   const isReply = depth === 'reply';
   const isSending = comment.isSending;
   const isFailed = comment.isFailed;
+  const commentImageUri = comment.pendingImageUri ?? comment.imageUrl ?? null;
+  const commentImageKnownSize = useMemo(
+    () => fitCommentImageSize(comment.imageWidth, comment.imageHeight),
+    [comment.imageHeight, comment.imageWidth],
+  );
+  const [commentImageSize, setCommentImageSize] = useState(() =>
+    commentImageKnownSize,
+  );
+
+  useEffect(() => {
+    setCommentImageSize(commentImageKnownSize);
+  }, [commentImageKnownSize]);
+
+  useEffect(() => {
+    if (!commentImageUri || (comment.imageWidth && comment.imageHeight)) return;
+
+    let cancelled = false;
+    Image.getSize(
+      commentImageUri,
+      (width, height) => {
+        if (!cancelled) {
+          setCommentImageSize(fitCommentImageSize(width, height));
+        }
+      },
+      () => undefined,
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [comment.imageHeight, comment.imageWidth, commentImageUri]);
 
   // Ref + position handler for the "Thích" button — we need its on-screen
   // coords to anchor the picker pill correctly.
@@ -1547,6 +1867,11 @@ function CommentRow({
     onLongPressRow(comment);
   }, [comment, onLongPressRow, isSending]);
 
+  const handleInlineDeletePress = useCallback(() => {
+    if (isDeleting) return;
+    onInlineDelete(comment.id);
+  }, [comment.id, isDeleting, onInlineDelete]);
+
   // Pick the label / colour for the "Thích" button based on the viewer's
   // current reaction. Defaults to gray "Thích" with a thumbs-up icon.
   const myReaction = comment.myReaction;
@@ -1561,6 +1886,8 @@ function CommentRow({
 
   // Pulse highlight animation when this comment is being replied to
   const highlightAnim = useRef(new Animated.Value(0)).current;
+  const deleteAnim = useRef(new Animated.Value(isDeleting ? 1 : 0)).current;
+  const inlineDeleteAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (isReplyingToThis) {
@@ -1583,6 +1910,26 @@ function CommentRow({
     }
   }, [isReplyingToThis, highlightAnim]);
 
+  useEffect(() => {
+    Animated.timing(deleteAnim, {
+      toValue: isDeleting ? 1 : 0,
+      duration: COMMENT_DELETE_ANIMATION_MS,
+      useNativeDriver: true,
+    }).start();
+  }, [deleteAnim, isDeleting]);
+
+  useEffect(() => {
+    if (!showInlineDelete) return;
+    inlineDeleteAnim.setValue(0);
+    Animated.spring(inlineDeleteAnim, {
+      toValue: 1,
+      damping: 14,
+      stiffness: 220,
+      mass: 0.7,
+      useNativeDriver: true,
+    }).start();
+  }, [inlineDeleteAnim, showInlineDelete]);
+
   const bubbleBg = highlightAnim.interpolate({
     inputRange: [0, 1],
     outputRange:
@@ -1591,8 +1938,50 @@ function CommentRow({
         : ['#f0f2f5', '#e0f2fe'],
   });
 
+  const deleteRowStyle = {
+    opacity: deleteAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [1, 0],
+    }),
+    transform: [
+      {
+        translateX: deleteAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, -28],
+        }),
+      },
+      {
+        scale: deleteAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 0.96],
+        }),
+      },
+    ],
+  };
+
+  const inlineDeleteStyle = {
+    opacity: inlineDeleteAnim,
+    transform: [
+      {
+        translateY: inlineDeleteAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-4, 0],
+        }),
+      },
+      {
+        scale: inlineDeleteAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.96, 1],
+        }),
+      },
+    ],
+  };
+
   return (
-    <View style={[styles.commentRow, isReply && styles.commentRowReply]}>
+    <Animated.View
+      style={[styles.commentRow, isReply && styles.commentRowReply, deleteRowStyle]}
+      pointerEvents={isDeleting ? 'none' : 'auto'}
+    >
       {isReply ? <View style={styles.branchLine} pointerEvents="none" /> : null}
       <TouchableOpacity onPress={handleProfilePress} activeOpacity={0.85}>
         <Image
@@ -1632,20 +2021,21 @@ function CommentRow({
                 upload is in flight so the bubble shows the picked file
                 INSTANTLY, then falls back to the CDN URL the server
                 returns. Tap to open in full-screen viewer. */}
-            {comment.pendingImageUri || comment.imageUrl ? (
+            {commentImageUri ? (
               <Pressable
                 onPress={() => {
-                  const uri = comment.pendingImageUri ?? comment.imageUrl;
-                  if (uri) onOpenImage(uri);
+                  onOpenImage(commentImageUri);
                 }}
-                style={styles.commentImageWrap}
+                style={[styles.commentImageWrap, commentImageSize]}
               >
                 <Image
-                  source={{
-                    uri: comment.pendingImageUri ?? comment.imageUrl,
-                  }}
+                  source={{ uri: commentImageUri }}
                   style={styles.commentImage}
-                  resizeMode="cover"
+                  resizeMode="contain"
+                  onLoad={event => {
+                    const { width, height } = event.nativeEvent.source;
+                    setCommentImageSize(fitCommentImageSize(width, height));
+                  }}
                 />
                 {/* Subtle loading indicator overlay while uploading */}
                 {isSending && comment.pendingImageUri ? (
@@ -1739,8 +2129,26 @@ function CommentRow({
             ) : null}
           </View>
         )}
+        {showInlineDelete && comment.owner && !isSending && !isFailed ? (
+          <Animated.View style={[styles.inlineDeleteRow, inlineDeleteStyle]}>
+            <Pressable
+              onPress={handleInlineDeletePress}
+              disabled={isDeleting}
+              style={({ pressed }) => [
+                styles.inlineDeleteButton,
+                pressed && styles.inlineDeleteButtonPressed,
+              ]}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <View style={styles.inlineDeleteIcon}>
+                <Trash2 size={14} color="#ef4444" />
+              </View>
+              <Text style={styles.inlineDeleteText}>{copy.delete}</Text>
+            </Pressable>
+          </Animated.View>
+        ) : null}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -2000,8 +2408,8 @@ const styles = StyleSheet.create({
   },
   commentImageWrap: {
     marginTop: 6,
-    width: 220,
-    height: 165,
+    width: COMMENT_IMAGE_FALLBACK_WIDTH,
+    height: COMMENT_IMAGE_FALLBACK_HEIGHT,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#e5e7eb',
@@ -2098,6 +2506,39 @@ const styles = StyleSheet.create({
   actionTime: {
     color: '#65676b',
     fontSize: 12,
+  },
+  inlineDeleteRow: {
+    alignSelf: 'flex-start',
+    marginLeft: 12,
+    marginTop: 6,
+  },
+  inlineDeleteButton: {
+    minHeight: 34,
+    borderRadius: 999,
+    backgroundColor: '#fff1f2',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#fecdd3',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  inlineDeleteButtonPressed: {
+    opacity: 0.72,
+  },
+  inlineDeleteIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#ffe4e6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 7,
+  },
+  inlineDeleteText: {
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: '800',
   },
   sendingText: {
     color: '#65676b',
@@ -2364,6 +2805,146 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // Comment action popup
+  actionSheetLayer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    justifyContent: 'flex-end',
+    zIndex: 10000,
+  },
+  actionSheetBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.32)',
+  },
+  actionSheetCard: {
+    marginHorizontal: 12,
+    marginBottom: Platform.OS === 'ios' ? 14 : 10,
+    alignSelf: 'stretch',
+    borderRadius: 22,
+    backgroundColor: '#fff',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 14,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.16,
+    shadowRadius: 28,
+    elevation: 18,
+  },
+  actionSheetGrabber: {
+    alignSelf: 'center',
+    width: 38,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: '#e2e8f0',
+    marginBottom: 12,
+  },
+  actionSheetHeader: {
+    paddingHorizontal: 4,
+    paddingBottom: 10,
+  },
+  actionSheetTitle: {
+    color: '#0f172a',
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  actionSheetMessage: {
+    color: '#64748b',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  actionSheetFootnote: {
+    color: '#94a3b8',
+    fontSize: 12,
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  actionSheetOption: {
+    minHeight: 54,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    paddingHorizontal: 14,
+    marginTop: 8,
+  },
+  actionSheetNeutralOption: {
+    backgroundColor: '#f8fafc',
+  },
+  actionSheetPrimaryOption: {
+    backgroundColor: '#eef6ff',
+  },
+  actionSheetDangerOption: {
+    backgroundColor: '#fff1f2',
+  },
+  actionSheetOptionPressed: {
+    opacity: 0.72,
+  },
+  actionSheetIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    flexShrink: 0,
+  },
+  actionSheetPhotoIcon: {
+    backgroundColor: '#eff6ff',
+  },
+  actionSheetLibraryIcon: {
+    backgroundColor: '#eef2ff',
+  },
+  actionSheetPrimaryIcon: {
+    backgroundColor: '#dbeafe',
+  },
+  actionSheetDangerIcon: {
+    backgroundColor: '#ffe4e6',
+  },
+  actionSheetPrimaryText: {
+    flex: 1,
+    color: '#0866ff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  actionSheetDangerText: {
+    flex: 1,
+    color: '#ef4444',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  actionSheetOptionText: {
+    flex: 1,
+    color: '#1e293b',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  actionSheetCancel: {
+    minHeight: 50,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e2e8f0',
+  },
+  actionSheetCancelText: {
+    color: '#334155',
+    fontSize: 15,
+    fontWeight: '800',
   },
 
   // ── Reaction picker ─────────────────────────────────────────────────

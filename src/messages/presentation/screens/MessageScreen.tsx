@@ -57,15 +57,13 @@ import {
 
   FileText,
 
-  Film,
-
   ImageIcon,
+
+  Link2,
 
   MessageCircle,
 
   Mic,
-
-  Package,
 
   Phone,
 
@@ -216,6 +214,10 @@ const MESSAGE_COPY: Record<
 
     sentStickerMe: string;
 
+    sentLink: string;
+
+    sentLinkMe: string;
+
     mePrefix: string;
 
     broadcastLabel: string;
@@ -356,6 +358,10 @@ const MESSAGE_COPY: Record<
 
     sentStickerMe: 'Bạn đã gửi nhãn dán',
 
+    sentLink: 'Liên kết',
+
+    sentLinkMe: 'Bạn đã gửi liên kết',
+
     mePrefix: 'Bạn',
 
     broadcastLabel: 'Nhãn',
@@ -494,6 +500,10 @@ const MESSAGE_COPY: Record<
 
     sentStickerMe: 'You sent a sticker',
 
+    sentLink: 'Link',
+
+    sentLinkMe: 'You sent a link',
+
     mePrefix: 'You',
 
     broadcastLabel: 'Label',
@@ -608,6 +618,23 @@ function formatTime(timestamp: number, copy: typeof MESSAGE_COPY.vi): string {
 
 }
 
+const MESSAGE_LIST_URL_REGEX =
+  /(?:https?:\/\/|www\.)[^\s<>"']+|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"']*)?/i;
+
+function extractMessageListUrl(value: string) {
+  return value.match(MESSAGE_LIST_URL_REGEX)?.[0] ?? '';
+}
+
+function getLinkHost(value: string) {
+  const rawUrl = extractMessageListUrl(value);
+  if (!rawUrl) return '';
+
+  return rawUrl
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .split(/[/?#]/)[0];
+}
+
 // Get message preview icon and text based on message kind
 
 function getMessagePreview(
@@ -680,7 +707,7 @@ function getMessagePreview(
 
       return {
 
-        icon: <Mic size={14} color="#64748b" />,
+        icon: <FileText size={14} color="#64748b" />,
 
         text: isFromMe ? copy.sentFileMe : copy.sentFile,
 
@@ -705,6 +732,20 @@ function getMessagePreview(
         text: isFromMe ? copy.sentStickerMe : copy.sentSticker,
 
       };
+
+    case 'link': {
+
+      const host = getLinkHost(lastMessage);
+
+      return {
+
+        icon: <Link2 size={14} color="#2563eb" />,
+
+        text: `${isFromMe ? copy.sentLinkMe : copy.sentLink}${host ? ` · ${host}` : ''}`,
+
+      };
+
+    }
 
     case 'text':
 
@@ -940,26 +981,6 @@ function ChatLabelBadges({ labels }: { labels?: MessageLabel[] }) {
 
 }
 
-function LastMessagePreviewIcon({ kind }: { kind?: ChatPreviewKind }) {
-
-  if (kind === 'audio_call') return <Phone size={14} color="#2563EB" />;
-
-  if (kind === 'video_call') return <Video size={14} color="#2563EB" />;
-
-  if (kind === 'image') return <ImageIcon size={14} color="#16A34A" />;
-
-  if (kind === 'video') return <Film size={14} color="#7C3AED" />;
-
-  if (kind === 'audio') return <Mic size={14} color="#EA580C" />;
-
-  if (kind === 'file') return <FileText size={14} color="#64748B" />;
-
-  if (kind === 'product') return <Package size={14} color="#0891B2" />;
-
-  return null;
-
-}
-
 function getVisibleLastMessage(
 
   chat: ChatItem,
@@ -977,6 +998,14 @@ function getVisibleLastMessage(
   if (chat.lastMessageKind === 'video_call') {
 
     return chat.chatType === 'group' ? copy.groupVideoCall : copy.videoCall;
+
+  }
+
+  if (chat.lastMessageKind === 'link') {
+
+    const host = getLinkHost(chat.lastMessage);
+
+    return `${copy.sentLink}${host ? ` · ${host}` : ''}`;
 
   }
 
@@ -1037,6 +1066,10 @@ function ChatListItem({
     copy,
 
   );
+  const messagePreviewText =
+    chat.lastMessageKind === 'audio_call' || chat.lastMessageKind === 'video_call'
+      ? getVisibleLastMessage(chat, copy)
+      : messagePreview.text;
 
   return (
 
@@ -1184,7 +1217,15 @@ function ChatListItem({
 
           <View className="flex-1 flex-row items-center">
 
-            <LastMessagePreviewIcon kind={chat.lastMessageKind} />
+            {messagePreview.icon ? (
+
+              <View style={{ marginRight: 6 }}>
+
+                {messagePreview.icon}
+
+              </View>
+
+            ) : null}
 
             <Text
 
@@ -1192,7 +1233,7 @@ function ChatListItem({
 
                 chat.lastMessageKind && chat.lastMessageKind !== 'text'
 
-                  ? 'ml-1.5'
+                  ? ''
 
                   : ''
 
@@ -1200,9 +1241,13 @@ function ChatListItem({
 
                 chat.unreadCount > 0
 
-                  ? 'font-medium text-gray-800'
+                  ? chat.lastMessageKind === 'link'
+                    ? 'font-semibold text-blue-700'
+                    : 'font-medium text-gray-800'
 
-                  : 'text-gray-500'
+                  : chat.lastMessageKind === 'link'
+                    ? 'text-blue-600'
+                    : 'text-gray-500'
 
               }`}
 
@@ -1210,7 +1255,7 @@ function ChatListItem({
 
             >
 
-              {getVisibleLastMessage(chat)}
+              {messagePreviewText}
 
             </Text>
 

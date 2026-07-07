@@ -137,8 +137,7 @@ interface Props {
   scrollY?: SharedValue<number>;
   index?: number;
   initialSeekTime?: number;
-  autoScrollEnabled: boolean;
-  onVideoEnd?: (index: number) => void;
+  onVideoEnd?: (index: number) => boolean;
   bottomOverlayInset?: number;
 }
 
@@ -171,7 +170,6 @@ function ReelItemBase({
   onUnavailable,
   onFollow,
   initialSeekTime,
-  autoScrollEnabled,
   onVideoEnd,
   bottomOverlayInset = 0,
   index = 0,
@@ -195,6 +193,18 @@ function ReelItemBase({
   const [currentTime, setCurrentTime] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekProgress, setSeekProgress] = useState(0);
+  const onVideoEndRef = useRef(onVideoEnd);
+  onVideoEndRef.current = onVideoEnd;
+
+  const resetPlaybackToStart = useCallback((seekPlayer = true) => {
+    if (seekPlayer && videoRef.current) {
+      videoRef.current.seek(0);
+    }
+    currentTimeRef.current = 0;
+    setCurrentTime(0);
+    setSeekProgress(0);
+    setVideoPlaybackTime(item.id, 0);
+  }, [item.id]);
 
   const handleTouchStart = useCallback((event: any) => {
     if (duration <= 0) return;
@@ -267,10 +277,12 @@ function ReelItemBase({
         } else {
           setSeekTime(targetTime);
         }
+      } else if (isReady && videoRef.current) {
+        resetPlaybackToStart(true);
       }
     }
     prevIsCurrentRef.current = isCurrent;
-  }, [isCurrent, isReady, initialSeekTime, item.id, seekTime]);
+  }, [isCurrent, isReady, initialSeekTime, item.id, resetPlaybackToStart, seekTime]);
 
   useEffect(() => {
     return () => {
@@ -478,16 +490,11 @@ function ReelItemBase({
             }
           }}
           onEnd={() => {
-            if (autoScrollEnabled) {
-              setVideoPlaybackTime(item.id, 0);
-              // Auto-scroll ON -> ask parent to jump to the next reel.
-              onVideoEnd?.(index);
-            } else if (videoRef.current) {
-              // Auto-scroll OFF -> loop the current reel by seeking to 0.
-              videoRef.current.seek(0);
-              currentTimeRef.current = 0;
-              setCurrentTime(0);
-              setVideoPlaybackTime(item.id, 0);
+            const didAdvance = onVideoEndRef.current?.(index) ?? false;
+            if (didAdvance) {
+              resetPlaybackToStart(false);
+            } else {
+              resetPlaybackToStart(true);
             }
           }}
           onError={() => {
@@ -1184,7 +1191,6 @@ export const ReelItem = memo(ReelItemBase, (prev, next) => {
     prev.height === next.height &&
     prev.scrollY === next.scrollY &&
     prev.index === next.index &&
-    prev.autoScrollEnabled === next.autoScrollEnabled &&
     prev.bottomOverlayInset === next.bottomOverlayInset
   );
 });

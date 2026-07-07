@@ -131,11 +131,28 @@ describe('FeedHeader platform chrome', () => {
       /Platform\.OS === 'ios'\s*\?\s*\(\s*<>\s*\{feedListElement\}\s*<FeedHeaderCollapseFrame hidden=\{isFeedChromeHidden\}>\s*<FeedHeader \/>/s,
     );
     expect(feedScreenSource).toMatch(
-      /:\s*\(\s*<>\s*<View style=\{styles\.staticHeaderContainer\}>\s*<FeedHeader \/>/s,
+      /:\s*\(\s*<>\s*<FeedHeaderCollapseFrame\s+hidden=\{isFeedChromeHidden\}\s+height=\{FEED_HEADER_CONTENT_HEIGHT\}\s+top=\{topInset\}\s+translateDistance=\{FEED_HEADER_CONTENT_HEIGHT\}\s*>/s,
     );
     expect(feedScreenSource).toMatch(
-      /<FeedHeaderCollapseFrame hidden=\{isFeedChromeHidden\}>\s*<FilterTabs/s,
+      /translateDistance=\{FEED_HEADER_CONTENT_HEIGHT\}\s*>\s*<FeedHeader \/>\s*<FilterTabs/s,
     );
+    expect(feedScreenSource).not.toContain('styles.staticHeaderContainer');
+  });
+
+  it('keeps Android feed chrome from double-padding under the status bar', () => {
+    const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
+
+    expect(feedScreenSource).toContain('function getFeedChromeTopInset(rawTopInset: number)');
+    expect(feedScreenSource).toContain("if (Platform.OS === 'android') return 0");
+    expect(feedScreenSource).toContain('return rawTopInset');
+    expect(feedScreenSource).toContain('const topInset = getFeedChromeTopInset(rawTopInset)');
+    expect(feedScreenSource).toContain('top={topInset}');
+    expect(feedScreenSource).toContain('translucent={false}');
+    expect(feedScreenSource).toContain('const feedHeaderOverlayHeight = feedRefreshProgressViewOffset');
+    expect(feedScreenSource).toContain('const newPostsButtonTop = feedHeaderOverlayHeight + 12');
+    expect(feedScreenSource).toContain('style={{ top: newPostsButtonTop }}');
+    expect(feedScreenSource).not.toContain('const topInset = rawTopInset');
+    expect(feedScreenSource).not.toContain("const topInset = Platform.OS === 'android' ? 0 : rawTopInset");
   });
 
   it('keeps native iOS bottom tabs configured to minimize on scroll down', () => {

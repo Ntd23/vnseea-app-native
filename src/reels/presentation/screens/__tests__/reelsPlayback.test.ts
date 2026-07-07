@@ -5,10 +5,19 @@ describe('reels playback state', () => {
     expect(
       isReelItemActive({
         isScreenFocused: false,
-        isCommentsOpen: false,
         index: 0,
         activeIndex: 0,
       }),
     ).toBe(false);
+  });
+
+  it('keeps the active reel playing while comments are open', () => {
+    expect(
+      isReelItemActive({
+        isScreenFocused: true,
+        index: 0,
+        activeIndex: 0,
+      }),
+    ).toBe(true);
   });
 });

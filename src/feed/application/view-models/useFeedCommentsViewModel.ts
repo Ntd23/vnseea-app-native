@@ -223,6 +223,8 @@ export function useFeedCommentsViewModel({
         // while the upload is in flight. Swapped out for `imageUrl` (CDN
         // URL) once the server response lands.
         pendingImageUri: image?.uri,
+        imageWidth: image?.width,
+        imageHeight: image?.height,
         pendingAudioUri: audio?.uri,
       };
 
@@ -240,11 +242,18 @@ export function useFeedCommentsViewModel({
           image,
           audio,
         );
+        const resolvedComment: ReelComment = image
+          ? {
+              ...createdComment,
+              imageWidth: createdComment.imageWidth ?? image.width,
+              imageHeight: createdComment.imageHeight ?? image.height,
+            }
+          : createdComment;
         // Replace the temp comment with the actual one from server
         setComments(prev =>
-          prev.map(c => (c.id === tempId ? createdComment : c)),
+          prev.map(c => (c.id === tempId ? resolvedComment : c)),
         );
-        return createdComment;
+        return resolvedComment;
       } catch (caught) {
         // Mark as failed in comments list (keep `pendingImageUri` so the
         // user can see what they tried to send and retry).
@@ -546,6 +555,8 @@ export function useFeedCommentsViewModel({
         postOwner: false,
         isSending: true,
         pendingImageUri: image?.uri,
+        imageWidth: image?.width,
+        imageHeight: image?.height,
       };
 
       // Add the optimistic reply instantly
@@ -565,20 +576,27 @@ export function useFeedCommentsViewModel({
 
       try {
         const created = await repository.addReply(commentId, trimmed, image);
+        const resolvedReply: ReelComment = image
+          ? {
+              ...created,
+              imageWidth: created.imageWidth ?? image.width,
+              imageHeight: created.imageHeight ?? image.height,
+            }
+          : created;
         // Replace temp reply with actual one
         setRepliesById(prev => ({
           ...prev,
           [commentId]: (prev[commentId] ?? []).map(r =>
-            r.id === tempId ? created : r,
+            r.id === tempId ? resolvedReply : r,
           ),
         }));
 
         replyOffsetsRef.current[commentId] = Math.max(
           replyOffsetsRef.current[commentId] ?? 0,
-          Number(created.id) || 0,
+          Number(resolvedReply.id) || 0,
         );
 
-        return created;
+        return resolvedReply;
       } catch (caught) {
         // Mark as failed in replies list
         setRepliesById(prev => ({

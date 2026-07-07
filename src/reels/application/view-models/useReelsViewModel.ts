@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { createReelsRepository } from '../../infrastructure/repositories/ApiReelsRepository';
+import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import { createAuthRepository } from '../../../auth/infrastructure/repositories/ApiAuthRepository';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -24,8 +25,10 @@ import type {
   ReelsItem,
 } from '../../domain/types/reels.types';
 import type { FeedVideoPost } from '../../../feed/domain/types/feed.types';
+import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 
 const repository = createReelsRepository();
+const feedRepository = createFeedRepository();
 
 const mapFeedVideoToReel = (post: FeedVideoPost): ReelsItem => {
   return {
@@ -55,6 +58,22 @@ const COMMENT_PAGE_SIZE = 20;
 
 type LoadPhase = 'idle' | 'initial' | 'refreshing' | 'loading-more';
 type CommentPhase = 'idle' | 'loading' | 'loading-more' | 'submitting';
+
+function getReelSortTimestamp(item?: ReelsItem | null) {
+  const value = Number(item?.postedAt);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function getReelSortId(item?: ReelsItem | null) {
+  const value = Number(item?.id);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function compareReelsNewestFirst(a: ReelsItem, b: ReelsItem) {
+  const timeDelta = getReelSortTimestamp(b) - getReelSortTimestamp(a);
+  if (timeDelta !== 0) return timeDelta;
+  return getReelSortId(b) - getReelSortId(a);
+}
 
 export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPost }) {
   const [items, setItems] = useState<ReelsItem[]>([]);
@@ -345,6 +364,37 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
     }
   }, [hasMore, filterUnavailable]);
 
+  const peekLatestReels = useCallback(async (limit = PAGE_SIZE) => {
+    const page = await repository.fetchReels({ limit });
+    return filterUnavailable(page.items)
+      .slice()
+      .sort(compareReelsNewestFirst);
+  }, [filterUnavailable]);
+
+  const prependReels = useCallback((newItems: ReelsItem[]) => {
+    if (newItems.length === 0) return;
+
+    const playableItems = filterUnavailable(newItems)
+      .filter(item => Boolean(item?.id && item.videoUrl))
+      .slice()
+      .sort(compareReelsNewestFirst);
+
+    if (playableItems.length === 0) return;
+
+    setItems(prev => {
+      const seen = new Set(prev.map(item => item.id));
+      const fresh = playableItems.filter(item => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+
+      if (fresh.length === 0) return prev;
+      return [...fresh, ...prev];
+    });
+    setActiveIndex(0);
+  }, [filterUnavailable]);
+
   /**
    * Called by `ReelItem` when its VideoPlayer reports a decode error.
    *
@@ -518,7 +568,12 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
     );
 
     try {
-      await repository.toggleSave(postId);
+      const result = await repository.toggleSave(postId);
+      setItems(prev =>
+        prev.map(item =>
+          item.id === postId ? { ...item, isSaved: result.isSaved } : item,
+        ),
+      );
     } catch {
       if (snapshot) {
         const original = snapshot;
@@ -634,6 +689,8 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
         postOwner: false,
         isSending: true,
         pendingImageUri: image?.uri,
+        imageWidth: image?.width,
+        imageHeight: image?.height,
         pendingAudioUri: audio?.uri,
       };
 
@@ -656,11 +713,18 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
           image,
           audio,
         );
+        const resolvedComment: ReelComment = image
+          ? {
+              ...createdComment,
+              imageWidth: createdComment.imageWidth ?? image.width,
+              imageHeight: createdComment.imageHeight ?? image.height,
+            }
+          : createdComment;
         // Replace the temp comment with the actual one from server
         setComments(prev =>
-          prev.map(c => (c.id === tempId ? createdComment : c)),
+          prev.map(c => (c.id === tempId ? resolvedComment : c)),
         );
-        return createdComment;
+        return resolvedComment;
       } catch (caught) {
         // Mark as failed in comments list
         setComments(prev =>
@@ -1022,6 +1086,8 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
         postOwner: false,
         isSending: true,
         pendingImageUri: image?.uri,
+        imageWidth: image?.width,
+        imageHeight: image?.height,
       };
 
       // Add the optimistic reply instantly
@@ -1043,11 +1109,18 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
 
       try {
         const created = await repository.addReply(commentId, trimmed, image);
+        const resolvedReply: ReelComment = image
+          ? {
+              ...created,
+              imageWidth: created.imageWidth ?? image.width,
+              imageHeight: created.imageHeight ?? image.height,
+            }
+          : created;
         // Replace temp reply with the actual one from server
         setRepliesById(prev => ({
           ...prev,
           [commentId]: (prev[commentId] ?? []).map(r =>
-            r.id === tempId ? created : r,
+            r.id === tempId ? resolvedReply : r,
           ),
         }));
 
@@ -1055,10 +1128,10 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
         // doesn't refetch this same reply.
         replyOffsetsRef.current[commentId] = Math.max(
           replyOffsetsRef.current[commentId] ?? 0,
-          Number(created.id) || 0,
+          Number(resolvedReply.id) || 0,
         );
 
-        return created;
+        return resolvedReply;
       } catch (caught) {
         // Mark as failed in replies list
         setRepliesById(prev => ({
@@ -1188,6 +1261,10 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
     }
   }, []);
 
+  const sharePost = useCallback((input: SharePostInput) => {
+    return feedRepository.sharePost(input);
+  }, []);
+
   // Initial load on mount
   useEffect(() => {
     loadInitial();
@@ -1215,6 +1292,8 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
     replyingTo,
     setActiveIndex,
     setInitialVideo,
+    peekLatestReels,
+    prependReels,
     refresh,
     loadMore,
     retry: loadInitial,
@@ -1241,5 +1320,6 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
     retryFailedComment,
     deleteFailedComment,
     followPublisher,
+    sharePost,
   };
 }

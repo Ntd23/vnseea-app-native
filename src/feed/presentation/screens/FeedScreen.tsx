@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Dimensions,
   FlatList,
   Image,
@@ -15,7 +16,6 @@ import {
   Platform,
   RefreshControl,
   StatusBar,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -162,8 +162,19 @@ const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const FEED_EARLY_LOAD_DISTANCE_MULTIPLIER = 2.25;
 const FEED_EARLY_LOAD_MIN_DISTANCE = 1600;
-const IMAGE_PREFETCH_LOOKAHEAD = 5;
-const MAX_IMAGE_PREFETCH_URLS = 8;
+const FEED_NEW_POST_PROBE_INTERVAL_MS = 30000;
+const FEED_NEW_POST_PROBE_LIMIT = 8;
+const INITIAL_IMAGE_PREFETCH_ITEMS = 8;
+const IMAGE_PREFETCH_LOOKAHEAD = 14;
+const IMAGE_PREFETCH_BEHIND = 2;
+const MAX_IMAGE_PREFETCH_URLS = 20;
+const IMAGE_PREFETCH_BATCH_SIZE = 4;
+const IMAGE_PREFETCH_BATCH_DELAY_MS = 90;
+const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = 8;
+const FEED_LIST_INITIAL_RENDER_COUNT = 6;
+const FEED_LIST_RENDER_BATCH_SIZE = 6;
+const FEED_LIST_WINDOW_SIZE = 9;
+const FEED_LIST_BATCHING_PERIOD_MS = 40;
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: 24,
 };
@@ -195,6 +206,63 @@ function logFeedLiveDebug(event: string, data: Record<string, unknown> = {}) {
 }
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
+
+function getFeedChromeTopInset(rawTopInset: number) {
+  if (Platform.OS === 'android') return 0;
+  return rawTopInset;
+}
+
+function canPostAppearInFeedSource(
+  post: FeedPost,
+  source: FeedSource | 'photos',
+): boolean {
+  if (source === 'photos') {
+    return (
+      post.kind === 'text' &&
+      Array.isArray(post.photos) &&
+      post.photos.length > 0
+    );
+  }
+
+  if (source === 'following') {
+    return Boolean(post.publisher?.isFollowing);
+  }
+
+  return true;
+}
+
+function getFeedPostTimestamp(post?: FeedPost | null) {
+  const value = Number(post?.postedAt);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function getFeedPostNumericId(post?: FeedPost | null) {
+  const value = Number(post?.id);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function isPostNewerThanFeedTop(
+  post: FeedPost,
+  currentPosts: FeedPost[],
+): boolean {
+  const topPost = currentPosts[0];
+  if (!topPost) return false;
+
+  const postTime = getFeedPostTimestamp(post);
+  const topTime = getFeedPostTimestamp(topPost);
+
+  if (postTime > 0 && topTime > 0 && postTime !== topTime) {
+    return postTime > topTime;
+  }
+
+  const postId = getFeedPostNumericId(post);
+  const topId = getFeedPostNumericId(topPost);
+  if (postId > 0 && topId > 0 && postId !== topId) {
+    return postId > topId;
+  }
+
+  return postTime > topTime;
+}
 
 const images = {
   me: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw',
@@ -357,13 +425,31 @@ type FeedMediaImageProps = {
 
 const FEED_MEDIA_PLACEHOLDER_STYLE = { backgroundColor: '#E5E7EB' };
 
-const FeedMediaImage = React.memo(function FeedMediaImage({
+const FeedMediaImageBase = React.memo(function FeedMediaImageBase({
   uri,
   className,
   style,
   resizeMode = 'cover',
-  deferWhileScrolling = true,
-}: FeedMediaImageProps) {
+}: Omit<FeedMediaImageProps, 'deferWhileScrolling'>) {
+  return (
+    <Image
+      source={{ uri }}
+      className={className}
+      style={style}
+      resizeMode={resizeMode}
+      fadeDuration={0}
+      resizeMethod="resize"
+      progressiveRenderingEnabled
+    />
+  );
+});
+
+const DeferredFeedMediaImage = React.memo(function DeferredFeedMediaImage({
+  uri,
+  className,
+  style,
+  resizeMode = 'cover',
+}: Omit<FeedMediaImageProps, 'deferWhileScrolling'>) {
   const isScrollBusy = useFeedScrollBusy();
   const [hasLoaded, setHasLoaded] = useState(false);
 
@@ -371,7 +457,7 @@ const FeedMediaImage = React.memo(function FeedMediaImage({
     setHasLoaded(false);
   }, [uri]);
 
-  if (deferWhileScrolling && isScrollBusy && !hasLoaded) {
+  if (isScrollBusy && !hasLoaded) {
     return (
       <View
         className={className}
@@ -390,6 +476,34 @@ const FeedMediaImage = React.memo(function FeedMediaImage({
       resizeMethod="resize"
       progressiveRenderingEnabled
       onLoad={() => setHasLoaded(true)}
+    />
+  );
+});
+
+const FeedMediaImage = React.memo(function FeedMediaImage({
+  uri,
+  className,
+  style,
+  resizeMode = 'cover',
+  deferWhileScrolling = false,
+}: FeedMediaImageProps) {
+  if (deferWhileScrolling) {
+    return (
+      <DeferredFeedMediaImage
+        uri={uri}
+        className={className}
+        style={style}
+        resizeMode={resizeMode}
+      />
+    );
+  }
+
+  return (
+    <FeedMediaImageBase
+      uri={uri}
+      className={className}
+      style={style}
+      resizeMode={resizeMode}
     />
   );
 });
@@ -1187,6 +1301,66 @@ type FeedListItem =
       currencySymbol: string;
     };
 
+function isRemoteFeedImageUrl(url?: string): url is string {
+  return typeof url === 'string' && /^https?:\/\//i.test(url);
+}
+
+function collectFeedPostImageUrls(post: FeedPost): string[] {
+  const urls: string[] = [];
+
+  if (isRemoteFeedImageUrl(post.publisher?.avatarUrl)) {
+    urls.push(post.publisher.avatarUrl);
+  }
+
+  if (post.kind === 'text') {
+    post.photos?.slice(0, 4).forEach(photo => {
+      if (isRemoteFeedImageUrl(photo)) urls.push(photo);
+    });
+
+    if (isRemoteFeedImageUrl(post.linkPreview?.image)) {
+      urls.push(post.linkPreview.image);
+    }
+    return urls;
+  }
+
+  if (post.kind === 'video') {
+    if (isRemoteFeedImageUrl(post.thumbnailUrl)) {
+      urls.push(post.thumbnailUrl);
+    }
+    return urls;
+  }
+
+  if (post.kind === 'product') {
+    post.product?.images?.slice(0, 3).forEach((image: any) => {
+      if (isRemoteFeedImageUrl(image?.image)) urls.push(image.image);
+    });
+    return urls;
+  }
+
+  if (post.kind === 'event') {
+    const cover = post.event.event_cover || post.event.cover;
+    if (isRemoteFeedImageUrl(cover)) urls.push(cover);
+    return urls;
+  }
+
+  if (post.kind === 'job') {
+    if (isRemoteFeedImageUrl(post.job.image)) urls.push(post.job.image);
+    if (isRemoteFeedImageUrl(post.job.page?.avatar)) {
+      urls.push(post.job.page.avatar);
+    }
+    if (isRemoteFeedImageUrl(post.job.page?.cover)) {
+      urls.push(post.job.page.cover);
+    }
+    return urls;
+  }
+
+  if (post.kind === 'ad' && isRemoteFeedImageUrl(post.mediaUrl)) {
+    urls.push(post.mediaUrl);
+  }
+
+  return urls;
+}
+
 // Section wrapper â€” header + empty/loading/error states + list of cards.
 
 function interleaveSupplementalPosts(
@@ -1248,22 +1422,89 @@ function FeedScreen() {
   const hideFeedPost = vm.hidePost;
   const shareFeedPost = vm.sharePost;
   const reloadFeedPosts = vm.reloadPosts;
+  const peekLatestFeedPosts = vm.peekLatestPosts;
   const mainFeedListRef = useRef<FlatList>(null);
   const [hasNewPosts, setHasNewPosts] = useState(false);
   const pendingNewPostsRef = useRef<FeedPost[]>([]);
+  const feedPostsRef = useRef<FeedPost[]>(feedPosts);
+  const activeFeedSource = vm.feedSource;
+  const activeFeedSourceRef = useRef<FeedSource | 'photos'>(activeFeedSource);
+  const isFeedTabFocusedRef = useRef(isFeedTabFocused);
+  const isFeedLoadingRef = useRef(vm.isLoading);
+  const hasFeedLoadedOnceRef = useRef(vm.hasLoadedOnce);
+  const isCheckingLatestPostsRef = useRef(false);
+
+  useEffect(() => {
+    isFeedTabFocusedRef.current = isFeedTabFocused;
+    isFeedLoadingRef.current = vm.isLoading;
+    hasFeedLoadedOnceRef.current = vm.hasLoadedOnce;
+  }, [isFeedTabFocused, vm.hasLoadedOnce, vm.isLoading]);
+
+  const enqueueNewPostCandidates = useCallback((
+    posts: FeedPost[],
+    options: { requireNewerThanFeedTop?: boolean } = {},
+  ) => {
+    if (posts.length === 0) return;
+
+    const currentPosts = feedPostsRef.current;
+    const visibleIds = new Set(feedPostsRef.current.map(item => item.id));
+    const pendingIds = new Set(pendingNewPostsRef.current.map(item => item.id));
+    const nextPosts = posts
+      .filter(post => {
+        if (!post?.id) return false;
+        if (!canPostAppearInFeedSource(post, activeFeedSourceRef.current)) {
+          return false;
+        }
+        if (visibleIds.has(post.id) || pendingIds.has(post.id)) return false;
+        if (
+          options.requireNewerThanFeedTop &&
+          !isPostNewerThanFeedTop(post, currentPosts)
+        ) {
+          return false;
+        }
+
+        pendingIds.add(post.id);
+        return true;
+      })
+      .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+
+    if (nextPosts.length === 0) return;
+
+    pendingNewPostsRef.current.push(...nextPosts);
+    setHasNewPosts(true);
+  }, []);
+
+  useEffect(() => {
+    feedPostsRef.current = feedPosts;
+
+    if (!hasNewPosts || pendingNewPostsRef.current.length === 0) return;
+
+    const visibleIds = new Set(feedPosts.map(post => post.id));
+    pendingNewPostsRef.current = pendingNewPostsRef.current.filter(
+      post =>
+        post?.id &&
+        !visibleIds.has(post.id) &&
+        isPostNewerThanFeedTop(post, feedPosts),
+    );
+
+    if (pendingNewPostsRef.current.length === 0) {
+      setHasNewPosts(false);
+    }
+  }, [feedPosts, hasNewPosts]);
 
   const handleLoadNewPosts = useCallback(() => {
     mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: true });
-    if (pendingNewPostsRef.current.length > 0) {
-      pendingNewPostsRef.current.forEach(post => {
-        prependFeedPost(post);
-      });
-      pendingNewPostsRef.current = [];
-    } else {
-      reloadFeedPosts();
-    }
+    const visibleIds = new Set(feedPostsRef.current.map(post => post.id));
+    const pendingPosts = pendingNewPostsRef.current.filter(
+      post => post?.id && !visibleIds.has(post.id),
+    );
+
+    pendingPosts.slice().reverse().forEach(post => {
+      prependFeedPost(post);
+    });
+    pendingNewPostsRef.current = [];
     setHasNewPosts(false);
-  }, [prependFeedPost, reloadFeedPosts]);
+  }, [prependFeedPost]);
 
   // Top-bar logo button: when tapped while already on the Feed tab,
   // scroll the feed back to the top and trigger a fresh reload — same
@@ -1278,17 +1519,69 @@ function FeedScreen() {
     });
   }, [isFeedTabFocused, reloadFeedPosts]);
   const setFeedScrollBusy = vm.setScrollBusy;
-  const activeFeedSource = vm.feedSource;
   const setActiveFeedSource = vm.setFeedSource;
+  useEffect(() => {
+    activeFeedSourceRef.current = activeFeedSource;
+    pendingNewPostsRef.current = [];
+    setHasNewPosts(false);
+  }, [activeFeedSource]);
+
+  const checkForRemoteNewPosts = useCallback(async () => {
+    if (!isFeedTabFocusedRef.current) return;
+    if (!hasFeedLoadedOnceRef.current || isFeedLoadingRef.current) return;
+    if (AppState.currentState !== 'active') return;
+    if (isCheckingLatestPostsRef.current) return;
+
+    isCheckingLatestPostsRef.current = true;
+    try {
+      const latestPosts = await peekLatestFeedPosts(FEED_NEW_POST_PROBE_LIMIT);
+      enqueueNewPostCandidates(latestPosts, {
+        requireNewerThanFeedTop: true,
+      });
+    } catch (caught) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.warn('[FeedScreen] latest post probe failed', caught);
+      }
+    } finally {
+      isCheckingLatestPostsRef.current = false;
+    }
+  }, [enqueueNewPostCandidates, peekLatestFeedPosts]);
+
+  useEffect(() => {
+    if (!isFeedTabFocused) return undefined;
+
+    const firstProbe = setTimeout(() => {
+      void checkForRemoteNewPosts();
+    }, 1200);
+    const interval = setInterval(() => {
+      void checkForRemoteNewPosts();
+    }, FEED_NEW_POST_PROBE_INTERVAL_MS);
+
+    return () => {
+      clearTimeout(firstProbe);
+      clearInterval(interval);
+    };
+  }, [checkForRemoteNewPosts, isFeedTabFocused]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') {
+        void checkForRemoteNewPosts();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [checkForRemoteNewPosts]);
   const rawTopInset = feedSafeAreaInsets.top > 0
     ? feedSafeAreaInsets.top
     : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
-  const topInset = Platform.OS === 'android' ? 0 : rawTopInset;
+  const topInset = getFeedChromeTopInset(rawTopInset);
   const feedRefreshProgressViewOffset =
     Platform.OS === 'ios'
       ? topInset + FEED_IOS_HEADER_OVERLAY_HEIGHT
       : topInset + FEED_HEADER_CONTENT_HEIGHT;
   const feedHeaderOverlayHeight = feedRefreshProgressViewOffset;
+  const newPostsButtonTop = feedHeaderOverlayHeight + 12;
   const feedListContentStyle = useMemo(
     () => [
       FEED_LIST_CONTENT_STYLE,
@@ -1313,6 +1606,14 @@ function FeedScreen() {
   const activeVideoIdRef = useRef<string | null>(feedActiveVideoIdSnapshot);
   const pendingActiveVideoIdRef = useRef<string | null>(null);
   const latestViewableFeedItemsRef = useRef<any[]>([]);
+  const feedListItemsRef = useRef<FeedListItem[]>([]);
+  const feedListItemIndexByIdRef = useRef<Map<string, number>>(new Map());
+  const prefetchedImageUrlsRef = useRef<Set<string>>(new Set());
+  const queuedImagePrefetchUrlsRef = useRef<Set<string>>(new Set());
+  const pendingImagePrefetchUrlsRef = useRef<string[]>([]);
+  const imagePrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const feedVideoRefsRef = useRef(
     new Map<string, React.ElementRef<typeof View>>(),
   );
@@ -1566,6 +1867,12 @@ function FeedScreen() {
       supplementalInteractionRef.current?.cancel();
       supplementalLoadTimersRef.current.forEach(timer => clearTimeout(timer));
       supplementalLoadTimersRef.current = [];
+      if (imagePrefetchTimerRef.current) {
+        clearTimeout(imagePrefetchTimerRef.current);
+        imagePrefetchTimerRef.current = null;
+      }
+      pendingImagePrefetchUrlsRef.current = [];
+      queuedImagePrefetchUrlsRef.current.clear();
       activeVideoIdRef.current = null;
       publishFeedActiveVideo(null);
       publishFeedScrollBusy(false);
@@ -1590,25 +1897,14 @@ function FeedScreen() {
     }
   }, [isFocused, setActiveFeedVideo, measureActiveFeedVideoOnScreen]);
 
-  // Subscribe to the global "post created" event so the home feed gets
-  // an instant prepend the moment CreatePostScreen finishes. We mount
-  // ONCE per FeedScreen instance and unsubscribe on unmount so dropped
-  // events never leak into stale listeners.
+  // Subscribe to local post-created events and place them in the same
+  // pending queue used by the remote latest-post probe.
   useEffect(() => {
     const unsubscribe = postCreatedEvents.subscribe(post => {
-      pendingNewPostsRef.current.push(post);
-      setHasNewPosts(true);
+      enqueueNewPostCandidates([post]);
     });
     return unsubscribe;
-  }, []);
-
-  useEffect(() => {
-    // Mô phỏng người dùng khác đăng bài mới mỗi 60 giây
-    const interval = setInterval(() => {
-      setHasNewPosts(true);
-    }, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  }, [enqueueNewPostCandidates]);
 
   const goToCreatePost = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_POST);
@@ -1966,6 +2262,123 @@ function FeedScreen() {
     }
   }, [commentVm]);
 
+  const scheduleImagePrefetchFlush = useCallback(() => {
+    if (imagePrefetchTimerRef.current) return;
+
+    imagePrefetchTimerRef.current = setTimeout(() => {
+      imagePrefetchTimerRef.current = null;
+      const nextUrls = pendingImagePrefetchUrlsRef.current.splice(
+        0,
+        IMAGE_PREFETCH_BATCH_SIZE,
+      );
+
+      nextUrls.forEach(url => {
+        queuedImagePrefetchUrlsRef.current.delete(url);
+        Image.prefetch(url).catch(() => {
+          prefetchedImageUrlsRef.current.delete(url);
+        });
+      });
+
+      if (pendingImagePrefetchUrlsRef.current.length > 0) {
+        scheduleImagePrefetchFlush();
+      }
+    }, IMAGE_PREFETCH_BATCH_DELAY_MS);
+  }, []);
+
+  const prefetchFeedImagesInRange = useCallback(
+    (startIndex: number, endIndex: number) => {
+      const items = feedListItemsRef.current;
+      if (items.length === 0) return;
+
+      const start = Math.max(0, startIndex);
+      const end = Math.min(items.length, Math.max(start, endIndex));
+      if (start >= end) return;
+
+      const urlsToPrefetch: string[] = [];
+      for (let index = start; index < end; index += 1) {
+        const item = items[index];
+        if (item?.type !== 'post') continue;
+
+        for (const url of collectFeedPostImageUrls(item.post)) {
+          if (prefetchedImageUrlsRef.current.has(url)) continue;
+          if (queuedImagePrefetchUrlsRef.current.has(url)) continue;
+
+          prefetchedImageUrlsRef.current.add(url);
+          queuedImagePrefetchUrlsRef.current.add(url);
+          urlsToPrefetch.push(url);
+          if (urlsToPrefetch.length >= MAX_IMAGE_PREFETCH_URLS) break;
+        }
+
+        if (urlsToPrefetch.length >= MAX_IMAGE_PREFETCH_URLS) break;
+      }
+
+      pendingImagePrefetchUrlsRef.current.push(...urlsToPrefetch);
+      scheduleImagePrefetchFlush();
+    },
+    [scheduleImagePrefetchFlush],
+  );
+
+  const prefetchFeedImagesAroundVisibleItems = useCallback(
+    (viewableItems: any[]) => {
+      const items = feedListItemsRef.current;
+      if (items.length === 0 || viewableItems.length === 0) return;
+
+      let furthestVisibleIndex = -1;
+      viewableItems.forEach(viewable => {
+        if (!viewable?.isViewable) return;
+
+        const itemId = viewable.item?.id;
+        const index =
+          typeof viewable.index === 'number'
+            ? viewable.index
+            : typeof itemId === 'string'
+              ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
+              : -1;
+
+        if (index > furthestVisibleIndex) {
+          furthestVisibleIndex = index;
+        }
+      });
+
+      if (furthestVisibleIndex < 0) return;
+
+      prefetchFeedImagesInRange(
+        furthestVisibleIndex - IMAGE_PREFETCH_BEHIND,
+        furthestVisibleIndex + IMAGE_PREFETCH_LOOKAHEAD + 1,
+      );
+    },
+    [prefetchFeedImagesInRange],
+  );
+
+  const maybeLoadMoreFeedAroundVisibleItems = useCallback((viewableItems: any[]) => {
+    const items = feedListItemsRef.current;
+    if (items.length === 0 || viewableItems.length === 0) return;
+
+    let furthestVisibleIndex = -1;
+    viewableItems.forEach(viewable => {
+      if (!viewable?.isViewable) return;
+
+      const itemId = viewable.item?.id;
+      const index =
+        typeof viewable.index === 'number'
+          ? viewable.index
+          : typeof itemId === 'string'
+            ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
+            : -1;
+
+      if (index > furthestVisibleIndex) {
+        furthestVisibleIndex = index;
+      }
+    });
+
+    if (furthestVisibleIndex < 0) return;
+
+    const remainingItems = items.length - furthestVisibleIndex - 1;
+    if (remainingItems <= FEED_LOAD_MORE_LOOKAHEAD_ITEMS) {
+      triggerLoadMoreRef.current();
+    }
+  }, []);
+
   // Viewability config for FlatList autoplay
   const viewabilityConfigRef = useRef({
     itemVisiblePercentThreshold: 25,
@@ -1975,6 +2388,8 @@ function FeedScreen() {
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: any[] }) => {
       latestViewableFeedItemsRef.current = viewableItems;
+      prefetchFeedImagesAroundVisibleItems(viewableItems);
+      maybeLoadMoreFeedAroundVisibleItems(viewableItems);
       const viewableVideo = viewableItems.find(
         item =>
           item.isViewable &&
@@ -1993,7 +2408,11 @@ function FeedScreen() {
 
       setActiveFeedVideo(nextVideoId);
     },
-    [setActiveFeedVideo],
+    [
+      maybeLoadMoreFeedAroundVisibleItems,
+      prefetchFeedImagesAroundVisibleItems,
+      setActiveFeedVideo,
+    ],
   );
 
   // â”€â”€ Post menu state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2402,6 +2821,24 @@ function FeedScreen() {
   ]);
 
   useEffect(() => {
+    const renderedItems =
+      Platform.OS === 'ios'
+        ? ([{ type: 'intro', id: 'feed-intro' }, ...feedListItems] as FeedListItem[])
+        : feedListItems;
+
+    feedListItemsRef.current = renderedItems;
+    feedListItemIndexByIdRef.current = new Map(
+      renderedItems.map((item, index) => [item.id, index]),
+    );
+    prefetchFeedImagesInRange(0, INITIAL_IMAGE_PREFETCH_ITEMS);
+    prefetchFeedImagesAroundVisibleItems(latestViewableFeedItemsRef.current);
+  }, [
+    feedListItems,
+    prefetchFeedImagesAroundVisibleItems,
+    prefetchFeedImagesInRange,
+  ]);
+
+  useEffect(() => {
     const videoIds = new Set(
       feedListItems
         .filter(
@@ -2423,86 +2860,8 @@ function FeedScreen() {
   }, [feedListItems, setActiveFeedVideo]);
 
   // â”€â”€ Smart image prefetch â€” only the next ~10 upcoming items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Instead of prefetching ALL images (which wastes bandwidth and CPU on
-  // content the user may never scroll to), we track a "high-water mark"
-  // and only prefetch images for the items just beyond what's been seen.
-  const prefetchedCountRef = useRef(0);
-  const feedTopPostId = mergedPosts[0]?.id;
-
-  useEffect(() => {
-    prefetchedCountRef.current = 0;
-  }, [feedTopPostId]);
-
-  useEffect(() => {
-    if (mergedPosts.length === 0) return;
-
-    const start = prefetchedCountRef.current;
-    const end = Math.min(mergedPosts.length, start + IMAGE_PREFETCH_LOOKAHEAD);
-    if (start >= end) return; // Nothing new to prefetch
-
-    const urlsToPrefetch: string[] = [];
-    for (let i = start; i < end; i++) {
-      const post = mergedPosts[i];
-      if (!post) continue;
-
-      // Avatar
-      if (post.publisher?.avatarUrl?.startsWith('http')) {
-        urlsToPrefetch.push(post.publisher.avatarUrl);
-      }
-      // Photos (text posts)
-      if (post.kind === 'text') {
-        post.photos?.slice(0, 4).forEach(photo => {
-          if (photo?.startsWith('http')) urlsToPrefetch.push(photo);
-        });
-      }
-      // Product images
-      if (post.kind === 'product') {
-        const prod = post.product;
-        if (prod?.images) {
-          prod.images.slice(0, 2).forEach((imgObj: any) => {
-            if (imgObj?.image?.startsWith?.('http'))
-              urlsToPrefetch.push(imgObj.image);
-          });
-        }
-      }
-      // Video thumbnails
-      if (post.kind === 'video' && post.thumbnailUrl?.startsWith('http')) {
-        urlsToPrefetch.push(post.thumbnailUrl);
-      }
-      // Event cover images
-      if (post.kind === 'event') {
-        const cover = post.event.event_cover || post.event.cover;
-        if (cover?.startsWith('http')) urlsToPrefetch.push(cover);
-      }
-      if (post.kind === 'job') {
-        if (post.job.image?.startsWith('http'))
-          urlsToPrefetch.push(post.job.image);
-        if (post.job.page?.avatar?.startsWith('http'))
-          urlsToPrefetch.push(post.job.page.avatar);
-        if (post.job.page?.cover?.startsWith('http'))
-          urlsToPrefetch.push(post.job.page.cover);
-      }
-      if (post.kind === 'ad') {
-        if (post.mediaUrl?.startsWith('http'))
-          urlsToPrefetch.push(post.mediaUrl);
-        if (post.publisher.avatarUrl?.startsWith('http'))
-          urlsToPrefetch.push(post.publisher.avatarUrl);
-      }
-    }
-
-    prefetchedCountRef.current = end;
-
-    // Deduplicate and prefetch in idle time - limit to avoid network/CPU spikes
-    const unique = Array.from(new Set(urlsToPrefetch)).slice(
-      0,
-      MAX_IMAGE_PREFETCH_URLS,
-    );
-    // Prefetch fewer at a time to avoid overwhelming the device
-    unique.slice(0, 4).forEach(url => {
-      Image.prefetch(url).catch(() => {});
-    });
-  }, [mergedPosts]);
-
+  // Image prefetching is driven by FlatList viewability above so upcoming
+  // media enters cache before scroll.
   // Separate memoized render functions for each type - prevents full re-render
   const renderVideoPost = useCallback(
     ({ item }: { item: FeedVideoPost }) => (
@@ -2823,6 +3182,11 @@ function FeedScreen() {
       renderItem={renderItem}
       keyExtractor={keyExtractor}
       extraData={language}
+      initialNumToRender={FEED_LIST_INITIAL_RENDER_COUNT}
+      maxToRenderPerBatch={FEED_LIST_RENDER_BATCH_SIZE}
+      updateCellsBatchingPeriod={FEED_LIST_BATCHING_PERIOD_MS}
+      windowSize={FEED_LIST_WINDOW_SIZE}
+      removeClippedSubviews={Platform.OS === 'android'}
       ListHeaderComponent={
         Platform.OS === 'ios' ? undefined : androidListHeaderComponent
       }
@@ -2882,14 +3246,19 @@ function FeedScreen() {
         style={FEED_SAFE_AREA_STYLE}
         edges={FEED_ROOT_SAFE_AREA_EDGES}
       >
-        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <FocusAwareStatusBar
+          barStyle="dark-content"
+          backgroundColor="#FFFFFF"
+          translucent={false}
+        />
         {Platform.OS === 'ios' ? (
           <>
             {hasNewPosts && (
               <TouchableOpacity
                 onPress={handleLoadNewPosts}
                 activeOpacity={0.9}
-                className="absolute top-[146px] self-center z-[999] flex-row items-center bg-blue-600 px-4 py-2.5 rounded-full shadow-lg border border-blue-500"
+                style={{ top: newPostsButtonTop }}
+                className="absolute self-center z-[999] flex-row items-center bg-blue-600 px-4 py-2.5 rounded-full shadow-lg border border-blue-500"
               >
                 <ArrowUp size={14} color="#ffffff" className="mr-1.5" />
                 <Text className="text-white text-xs font-bold">Có bài đăng mới</Text>
@@ -2902,10 +3271,13 @@ function FeedScreen() {
           </>
         ) : (
           <>
-            <View style={styles.staticHeaderContainer}>
+            <FeedHeaderCollapseFrame
+              hidden={isFeedChromeHidden}
+              height={FEED_HEADER_CONTENT_HEIGHT}
+              top={topInset}
+              translateDistance={FEED_HEADER_CONTENT_HEIGHT}
+            >
               <FeedHeader />
-            </View>
-            <FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>
               <FilterTabs
                 copy={copy}
                 activeSource={activeFeedSource}
@@ -2916,7 +3288,8 @@ function FeedScreen() {
               <TouchableOpacity
                 onPress={handleLoadNewPosts}
                 activeOpacity={0.9}
-                className="absolute top-[146px] self-center z-[999] flex-row items-center bg-blue-600 px-4 py-2.5 rounded-full shadow-lg border border-blue-500"
+                style={{ top: newPostsButtonTop }}
+                className="absolute self-center z-[999] flex-row items-center bg-blue-600 px-4 py-2.5 rounded-full shadow-lg border border-blue-500"
               >
                 <ArrowUp size={14} color="#ffffff" className="mr-1.5" />
                 <Text className="text-white text-xs font-bold">Có bài đăng mới</Text>
@@ -3000,15 +3373,5 @@ function FeedScreen() {
     </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  staticHeaderContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 30,
-  },
-});
 
 export default FeedScreen;

@@ -43,6 +43,7 @@ export interface LabelRecipient {
 
 export type ChatPreviewKind =
   | 'text'
+  | 'link'
   | 'image'
   | 'video'
   | 'audio'
@@ -61,6 +62,7 @@ export interface MessageItem {
   callEvent?: MessageCallEvent;
   media?: string;
   mediaType?: 'image' | 'video' | 'audio' | 'file';
+  thumbnail?: string;
   time: number;
   isSentByMe: boolean;
   seen: number;

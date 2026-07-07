@@ -45,7 +45,12 @@ import {
 
   Star,
 } from 'lucide-react-native';
-import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+  useRoute,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -67,6 +72,8 @@ import {
 import {
   FEED_COPY as POST_CARD_COPY,
   HomeVideoPostCard,
+  publishFeedActiveVideo,
+  publishFeedScrollBusy,
   ReactionPickerOverlay,
   TextPostCard,
 } from '../../../feed/presentation/components/PostCards';
@@ -117,9 +124,57 @@ const FRIEND_TILE_WIDTH = Math.floor((SCREEN_WIDTH / 2 - 32 - 6) / 2);
 const PROFILE_FRIENDS_PAGE_WIDTH = FRIEND_TILE_WIDTH * 2 + 6;
 const PROFILE_STORY_MAX_AGE_SECONDS = 24 * 60 * 60;
 const PROFILE_POST_PAGE_SIZE = 20;
+const PROFILE_POST_INITIAL_RENDER_COUNT = 10;
+const PROFILE_POST_RENDER_BATCH_SIZE = 8;
+const PROFILE_POST_WINDOW_SIZE = 13;
+const PROFILE_POST_BATCHING_PERIOD_MS = 24;
+const PROFILE_POST_MEDIA_PREFETCH_LOOKAHEAD = 12;
+const PROFILE_POST_MEDIA_PREFETCH_LIMIT = 18;
 
 function isProfileFeedPost(post: FeedPost): post is ProfileFeedPost {
   return post.kind === 'text' || post.kind === 'video' || post.kind === 'poll';
+}
+
+function isRemoteProfileMediaUrl(url?: string): url is string {
+  return typeof url === 'string' && /^https?:\/\//i.test(url);
+}
+
+function collectProfilePostMediaUrls(post: ProfileFeedPost) {
+  const urls: string[] = [];
+
+  if (isRemoteProfileMediaUrl(post.publisher.avatarUrl)) {
+    urls.push(post.publisher.avatarUrl);
+  }
+
+  if (post.kind === 'text') {
+    post.photos.slice(0, 4).forEach(photo => {
+      if (isRemoteProfileMediaUrl(photo)) urls.push(photo);
+    });
+
+    if (isRemoteProfileMediaUrl(post.linkPreview?.image)) {
+      urls.push(post.linkPreview.image);
+    }
+
+    if (isRemoteProfileMediaUrl(post.sharedFrom?.publisherAvatar)) {
+      urls.push(post.sharedFrom.publisherAvatar);
+    }
+
+    post.sharedFrom?.photos?.slice(0, 2).forEach(photo => {
+      if (isRemoteProfileMediaUrl(photo)) urls.push(photo);
+    });
+  }
+
+  if (post.kind === 'video') {
+    if (isRemoteProfileMediaUrl(post.thumbnailUrl)) {
+      urls.push(post.thumbnailUrl);
+    }
+
+    if (isRemoteProfileMediaUrl(post.linkPreview?.image)) {
+      urls.push(post.linkPreview.image);
+    }
+  }
+
+  return urls;
 }
 
 function getStoryTimeText(story: StoryItem | null | undefined, lang: AppLanguage): string {
@@ -969,6 +1024,7 @@ function ProfileScreen() {
   const safeTopInset = insets.top > 0 ? insets.top : (Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 44);
   const navigation = useNavigation<ProfileNav>();
   const route = useRoute<ProfileRoute>();
+  const isProfileFocused = useIsFocused();
   const {
     profile,
     followers,
@@ -1000,12 +1056,8 @@ function ProfileScreen() {
   const [hasMorePosts, setHasMorePosts] = useState(false);
   const [postsCursor, setPostsCursor] = useState<string | undefined>(undefined);
   const isLoadingMorePostsRef = React.useRef(false);
-  const [activeProfileVideoId, setActiveProfileVideoIdState] = useState<string | null>(null);
   const activeProfileVideoIdRef = useRef<string | null>(null);
-  const profileVideoLayoutsRef = useRef(
-    new Map<string, { y: number; height: number }>(),
-  );
-  const profilePostsListOffsetYRef = useRef(0);
+  const profilePrefetchedMediaUrlsRef = useRef<Set<string>>(new Set());
   const profileScrollYRef = useRef(0);
   const profileViewportHeightRef = useRef(0);
   const nativeTabScrollPublisherStateRef = useRef(
@@ -1098,73 +1150,10 @@ function ProfileScreen() {
   );
 
   const setActiveProfileVideoId = useCallback((nextVideoId: string | null) => {
+    publishFeedActiveVideo(nextVideoId);
     if (activeProfileVideoIdRef.current === nextVideoId) return;
     activeProfileVideoIdRef.current = nextVideoId;
-    setActiveProfileVideoIdState(nextVideoId);
   }, []);
-
-  const updateActiveProfileVideoFromScroll = useCallback(
-    (scrollY: number, viewportHeight: number) => {
-      if (viewportHeight <= 0 || profileVideoLayoutsRef.current.size === 0) {
-        setActiveProfileVideoId(null);
-        return;
-      }
-
-      const viewportTop = scrollY;
-      const viewportBottom = scrollY + viewportHeight;
-      const viewportCenter = scrollY + viewportHeight * 0.52;
-      let nextVideoId: string | null = null;
-      let bestDistance = Number.POSITIVE_INFINITY;
-
-      profileVideoLayoutsRef.current.forEach((layout, videoId) => {
-        const absoluteY = profilePostsListOffsetYRef.current + layout.y;
-        const itemTop = absoluteY;
-        const itemBottom = absoluteY + layout.height;
-        const visibleHeight =
-          Math.min(itemBottom, viewportBottom) - Math.max(itemTop, viewportTop);
-
-        if (visibleHeight <= 0) return;
-
-        const visibleRatio = visibleHeight / Math.max(layout.height, 1);
-        if (visibleRatio < 0.28 && visibleHeight < 180) return;
-
-        const itemCenter = absoluteY + layout.height / 2;
-        const distance = Math.abs(itemCenter - viewportCenter);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          nextVideoId = videoId;
-        }
-      });
-
-      setActiveProfileVideoId(nextVideoId);
-    },
-    [setActiveProfileVideoId],
-  );
-
-  const handleProfileVideoLayout = useCallback(
-    (postId: string, event: LayoutChangeEvent) => {
-      const { y, height } = event.nativeEvent.layout;
-      if (height <= 0) return;
-
-      profileVideoLayoutsRef.current.set(postId, { y, height });
-      updateActiveProfileVideoFromScroll(
-        profileScrollYRef.current,
-        profileViewportHeightRef.current,
-      );
-    },
-    [updateActiveProfileVideoFromScroll],
-  );
-
-  const handleProfilePostsListLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      profilePostsListOffsetYRef.current = event.nativeEvent.layout.y;
-      updateActiveProfileVideoFromScroll(
-        profileScrollYRef.current,
-        profileViewportHeightRef.current,
-      );
-    },
-    [updateActiveProfileVideoFromScroll],
-  );
 
   const profilePostsViewabilityConfigRef = useRef({
     itemVisiblePercentThreshold: 28,
@@ -1192,12 +1181,6 @@ function ProfileScreen() {
         .filter((post): post is FeedVideoPost => post.kind === 'video')
         .map(post => post.id),
     );
-
-    Array.from(profileVideoLayoutsRef.current.keys()).forEach(videoId => {
-      if (!videoIds.has(videoId)) {
-        profileVideoLayoutsRef.current.delete(videoId);
-      }
-    });
 
     if (
       activeProfileVideoIdRef.current &&
@@ -1237,13 +1220,14 @@ function ProfileScreen() {
     setIsPokeLoading(false);
     setStoryOptionsSheet(null);
     setSharingPost(undefined);
-    setActiveProfileVideoIdState(null);
+    setActiveProfileVideoId(null);
+    profilePrefetchedMediaUrlsRef.current.clear();
 
     loadProfile({
       userId: nextUserId,
       includeFriends: true,
     }).catch(() => undefined);
-  }, [route.params?.userId, loadProfile]);
+  }, [route.params?.userId, loadProfile, setActiveProfileVideoId]);
 
   useFocusEffect(useCallback(() => {
     loadProfile({
@@ -1254,15 +1238,13 @@ function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      updateActiveProfileVideoFromScroll(
-        profileScrollYRef.current,
-        profileViewportHeightRef.current,
-      );
+      publishFeedScrollBusy(false);
 
       return () => {
+        publishFeedScrollBusy(false);
         setActiveProfileVideoId(null);
       };
-    }, [setActiveProfileVideoId, updateActiveProfileVideoFromScroll]),
+    }, [setActiveProfileVideoId]),
   );
 
   // Load User Posts
@@ -1313,6 +1295,33 @@ function ProfileScreen() {
       cancelled = true;
     };
   }, [feedRepo, targetUserId]);
+
+  useEffect(() => {
+    if (posts.length === 0) return;
+
+    const urlsToPrefetch: string[] = [];
+    for (
+      let index = 0;
+      index < Math.min(posts.length, PROFILE_POST_MEDIA_PREFETCH_LOOKAHEAD);
+      index += 1
+    ) {
+      for (const url of collectProfilePostMediaUrls(posts[index])) {
+        if (profilePrefetchedMediaUrlsRef.current.has(url)) continue;
+
+        profilePrefetchedMediaUrlsRef.current.add(url);
+        urlsToPrefetch.push(url);
+        if (urlsToPrefetch.length >= PROFILE_POST_MEDIA_PREFETCH_LIMIT) break;
+      }
+
+      if (urlsToPrefetch.length >= PROFILE_POST_MEDIA_PREFETCH_LIMIT) break;
+    }
+
+    urlsToPrefetch.forEach(url => {
+      Image.prefetch(url).catch(() => {
+        profilePrefetchedMediaUrlsRef.current.delete(url);
+      });
+    });
+  }, [posts]);
 
   // Load User Active Story
   useEffect(() => {
@@ -1646,10 +1655,6 @@ function ProfileScreen() {
           contentOffset.y,
         );
       }
-      updateActiveProfileVideoFromScroll(
-        contentOffset.y,
-        layoutMeasurement.height,
-      );
       if (
         contentSize.height - (contentOffset.y + layoutMeasurement.height) <
         480
@@ -1657,7 +1662,7 @@ function ProfileScreen() {
         handleLoadMorePosts();
       }
     },
-    [handleLoadMorePosts, updateActiveProfileVideoFromScroll],
+    [handleLoadMorePosts],
   );
 
   const handleProfileScrollEnd = useCallback(
@@ -1665,24 +1670,21 @@ function ProfileScreen() {
       const { contentOffset, layoutMeasurement } = event.nativeEvent;
       profileScrollYRef.current = contentOffset.y;
       profileViewportHeightRef.current = layoutMeasurement.height;
-      updateActiveProfileVideoFromScroll(
-        contentOffset.y,
-        layoutMeasurement.height,
-      );
+      publishFeedScrollBusy(false);
     },
-    [updateActiveProfileVideoFromScroll],
+    [],
   );
 
   const handleProfileViewportLayout = useCallback(
     (event: LayoutChangeEvent) => {
       profileViewportHeightRef.current = event.nativeEvent.layout.height;
-      updateActiveProfileVideoFromScroll(
-        profileScrollYRef.current,
-        event.nativeEvent.layout.height,
-      );
     },
-    [updateActiveProfileVideoFromScroll],
+    [],
   );
+
+  const handleProfileScrollBegin = useCallback(() => {
+    publishFeedScrollBusy(true);
+  }, []);
 
   // Avatar Press Handler
   const handleAvatarPress = () => {
@@ -1965,6 +1967,89 @@ function ProfileScreen() {
   const profilePostsListContentStyle = useMemo(
     () => ({ paddingBottom: bottomContentPadding }),
     [bottomContentPadding],
+  );
+
+  const renderProfilePostContent = useCallback((post: ProfileFeedPost) => {
+    if (post.kind === 'video') {
+      return (
+        <View key={`video-${post.id}`}>
+          <HomeVideoPostCard
+            post={post}
+            copy={postCardCopy}
+            onReact={handleSetPostReaction}
+            onOpenPicker={handleOpenPicker}
+            onCommentTap={commentVm.openComments}
+            onShare={handleOpenSharePost}
+            isScreenFocused={isProfileFocused}
+            gestureX={gestureX}
+            gestureY={gestureY}
+            gestureActive={gestureActive}
+            navigateToProfile={handleNavigateToProfile}
+            onOpenReactions={openReactionsSheet}
+          />
+        </View>
+      );
+    }
+
+    if (post.kind === 'poll') {
+      return (
+        <PollPostCard
+          key={`poll-${post.id}`}
+          post={post}
+          onVote={handleVotePoll}
+          onReact={handleSetPostReaction}
+          onOpenPicker={handleOpenPicker}
+          onCommentTap={commentVm.openComments}
+          onShare={handleOpenSharePost}
+          onProfilePress={handleNavigateToProfile}
+          currentUserAvatar={avatarUrl}
+        />
+      );
+    }
+
+    return (
+      <TextPostCard
+        key={`text-${post.id}`}
+        post={post}
+        copy={postCardCopy}
+        onReact={handleSetPostReaction}
+        onOpenPicker={handleOpenPicker}
+        onCommentTap={commentVm.openComments}
+        onPhotoPress={handlePhotoPress}
+        onShare={handleOpenSharePost}
+        gestureX={gestureX}
+        gestureY={gestureY}
+        gestureActive={gestureActive}
+        navigateToProfile={handleNavigateToProfile}
+        onOpenReactions={openReactionsSheet}
+      />
+    );
+  }, [
+    avatarUrl,
+    commentVm.openComments,
+    gestureActive,
+    gestureX,
+    gestureY,
+    handleNavigateToProfile,
+    handleOpenPicker,
+    handleOpenSharePost,
+    handlePhotoPress,
+    handleSetPostReaction,
+    handleVotePoll,
+    isProfileFocused,
+    openReactionsSheet,
+    postCardCopy,
+  ]);
+
+  const renderProfilePostItem = useCallback(
+    ({ item }: ListRenderItemInfo<ProfileFeedPost>) =>
+      renderProfilePostContent(item),
+    [renderProfilePostContent],
+  );
+
+  const profilePostKeyExtractor = useCallback(
+    (post: ProfileFeedPost) => `${post.kind}-${post.id}`,
+    [],
   );
 
   if (isLoading && !profile) {
@@ -2672,70 +2757,6 @@ function ProfileScreen() {
     </>
   );
 
-  const renderProfilePostContent = (post: ProfileFeedPost) => {
-    if (post.kind === 'video') {
-      return (
-        <View
-          key={`video-${post.id}`}
-          onLayout={event => handleProfileVideoLayout(post.id, event)}
-        >
-          <HomeVideoPostCard
-            post={post}
-            copy={postCardCopy}
-            onReact={handleSetPostReaction}
-            onOpenPicker={handleOpenPicker}
-            onCommentTap={commentVm.openComments}
-            onShare={handleOpenSharePost}
-            isActive={activeProfileVideoId === post.id}
-            gestureX={gestureX}
-            gestureY={gestureY}
-            gestureActive={gestureActive}
-            navigateToProfile={handleNavigateToProfile}
-            onOpenReactions={openReactionsSheet}
-          />
-        </View>
-      );
-    }
-
-    if (post.kind === 'poll') {
-      return (
-        <PollPostCard
-          key={`poll-${post.id}`}
-          post={post}
-          onVote={handleVotePoll}
-          onReact={handleSetPostReaction}
-          onOpenPicker={handleOpenPicker}
-          onCommentTap={commentVm.openComments}
-          onShare={handleOpenSharePost}
-          onProfilePress={handleNavigateToProfile}
-          currentUserAvatar={avatarUrl}
-        />
-      );
-    }
-
-    return (
-      <TextPostCard
-        key={`text-${post.id}`}
-        post={post}
-        copy={postCardCopy}
-        onReact={handleSetPostReaction}
-        onOpenPicker={handleOpenPicker}
-        onCommentTap={commentVm.openComments}
-        onPhotoPress={handlePhotoPress}
-        onShare={handleOpenSharePost}
-        gestureX={gestureX}
-        gestureY={gestureY}
-        gestureActive={gestureActive}
-        navigateToProfile={handleNavigateToProfile}
-        onOpenReactions={openReactionsSheet}
-      />
-    );
-  };
-
-  const renderProfilePostItem = ({
-    item,
-  }: ListRenderItemInfo<ProfileFeedPost>) => renderProfilePostContent(item);
-
   const profilePostsEmptyComponent =
     isPostsLoading && posts.length === 0 ? (
       <View>
@@ -2763,7 +2784,7 @@ function ProfileScreen() {
   const profilePostsListElement = (
     <FlatList
       data={posts}
-      keyExtractor={post => `${post.kind}-${post.id}`}
+      keyExtractor={profilePostKeyExtractor}
       renderItem={renderProfilePostItem}
       ListHeaderComponent={profileContentHeader}
       ListEmptyComponent={profilePostsEmptyComponent}
@@ -2773,46 +2794,28 @@ function ProfileScreen() {
       scrollIndicatorInsets={{ bottom: scrollIndicatorBottomInset }}
       onLayout={handleProfileViewportLayout}
       onScroll={handleProfileScroll}
+      onScrollBeginDrag={handleProfileScrollBegin}
+      onMomentumScrollBegin={handleProfileScrollBegin}
       onMomentumScrollEnd={handleProfileScrollEnd}
       onScrollEndDrag={handleProfileScrollEnd}
-      scrollEventThrottle={Platform.OS === 'ios' ? 16 : 32}
+      scrollEventThrottle={16}
       onEndReached={handleLoadMorePosts}
       onEndReachedThreshold={0.35}
       onViewableItemsChanged={onProfilePostViewableItemsChanged}
       viewabilityConfig={profilePostsViewabilityConfigRef.current}
+      initialNumToRender={PROFILE_POST_INITIAL_RENDER_COUNT}
+      maxToRenderPerBatch={PROFILE_POST_RENDER_BATCH_SIZE}
+      updateCellsBatchingPeriod={PROFILE_POST_BATCHING_PERIOD_MS}
+      windowSize={PROFILE_POST_WINDOW_SIZE}
+      removeClippedSubviews={false}
     />
-  );
-
-  const profileScrollElement = (
-    <ScrollView
-      className="flex-1"
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: 40 }}
-      onLayout={handleProfileViewportLayout}
-      onScroll={handleProfileScroll}
-      onMomentumScrollEnd={handleProfileScrollEnd}
-      onScrollEndDrag={handleProfileScrollEnd}
-      scrollEventThrottle={32}
-    >
-      {profileContentHeader}
-
-      {/* Posts List */}
-      {profilePostsEmptyComponent ? (
-        profilePostsEmptyComponent
-      ) : (
-        <View onLayout={handleProfilePostsListLayout}>
-          {posts.map(post => renderProfilePostContent(post))}
-        </View>
-      )}
-      {profilePostsFooterComponent}
-    </ScrollView>
   );
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={profileMainStyles.container}>
         <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
-        {Platform.OS === 'ios' ? profilePostsListElement : profileScrollElement}
+        {profilePostsListElement}
         <EditProfileActionSheet
           visible={editSheetVisible}
           onClose={() => {

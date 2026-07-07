@@ -40,6 +40,7 @@ const DISCOVERY_BATCH_SIZE = 12;
 const CHAT_PAGE_SIZE = 50;
 const MAX_CACHED_CHAT_PAGES = 5;
 const RECALLED_MESSAGE_PREFIX = '__VNSEEA_MESSAGE_RECALLED__';
+const GROUP_VOICE_MESSAGE_MARKER = '\u200b\u200c\u200d\u2060';
 let discoveryCache:
   | {
       sessionUserId: string;
@@ -136,11 +137,14 @@ function cleanText(value: string): string {
     .replace(/&#x27;/gi, "'")
     .trim();
 }
+function stripGroupVoiceMessageMarker(value: string): string {
+  return value.replace(GROUP_VOICE_MESSAGE_MARKER, '').trim();
+}
 function isRecalledMessageText(value: string): boolean {
   return cleanText(value).startsWith(RECALLED_MESSAGE_PREFIX);
 }
 function normalizeMessageText(value: string, hasMedia: boolean): string {
-  const text = cleanText(value);
+  const text = stripGroupVoiceMessageMarker(cleanText(value));
   if (!text) return '';
   if (isRecalledMessageText(text)) {
     return hasMedia ? '' : 'Tin nhắn đã thu hồi';
@@ -159,6 +163,19 @@ function readMessageMedia(raw: Record<string, unknown>): string {
     'file',
     'uri',
     'url',
+  );
+}
+function readMessageThumbnail(raw: Record<string, unknown>): string {
+  return readString(
+    raw,
+    'thumbnail',
+    'thumb',
+    'poster',
+    'video_thumb',
+    'videoThumb',
+    'postFileThumb',
+    'media_thumb',
+    'mediaThumb',
   );
 }
 function getJsonTextCandidates(value: string): string[] {
@@ -298,6 +315,14 @@ type MessagePreview = {
   text: string;
   kind: ChatPreviewKind;
 };
+
+const WEB_URL_PATTERN =
+  /(?:https?:\/\/|www\.)[^\s<>"']+|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"']*)?/i;
+
+function hasWebUrl(value: string): boolean {
+  return WEB_URL_PATTERN.test(value);
+}
+
 function getCallPreview(callEvent: MessageCallEvent): MessagePreview {
   if (callEvent.isGroupCall) {
     return callEvent.callType === 'video'
@@ -316,8 +341,14 @@ function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
     return { text: 'Đã gửi một nhãn dán', kind: 'sticker' };
   }
   const media = readMessageMedia(raw);
+  const plainText = readString(raw, 'or_text');
+  const decryptedText = decryptMessageText(
+    readString(raw, 'text'),
+    readNumber(raw, 'time'),
+  );
+  const messageText = plainText ? plainText : decryptedText;
   if (media) {
-    const mediaType = readMediaType(raw);
+    const mediaType = readMediaType(raw, messageText);
     if (mediaType === 'image') {
       return { text: 'Đã gửi một ảnh', kind: 'image' };
     }
@@ -329,13 +360,8 @@ function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
     }
     return { text: 'Đã gửi một tệp', kind: 'file' };
   }
-  const plainText = readString(raw, 'or_text');
-  const decryptedText = decryptMessageText(
-    readString(raw, 'text'),
-    readNumber(raw, 'time'),
-  );
   const previewText = normalizeMessageText(
-    plainText ? plainText : decryptedText,
+    messageText,
     false,
   );
   const sessionUserId = sessionStorage.getSession()?.userId ?? '';
@@ -343,7 +369,12 @@ function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
     parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
     parseCallEvent(previewText, sessionUserId);
   if (callEvent) return getCallPreview(callEvent);
-  if (previewText) return { text: previewText, kind: 'text' };
+  if (previewText) {
+    return {
+      text: previewText,
+      kind: hasWebUrl(previewText) ? 'link' : 'text',
+    };
+  }
   // WoWonder encrypts `last_message.text` in `/api/get_chats` with
   // AES-128-ECB. Do not leak the encoded payload into the conversation list.
   return {
@@ -362,7 +393,13 @@ function readGroupUnreadCount(raw: RawRecord, groupId: string): number {
   if (directCount > 0) return directCount;
 
   const unreadByGroup = asRecord(raw.unread_by_group);
-  return groupId && unreadByGroup ? readNumber(unreadByGroup, groupId) : 0;
+  const groupedCount = groupId && unreadByGroup ? readNumber(unreadByGroup, groupId) : 0;
+  if (groupedCount > 0) return groupedCount;
+
+  const unreadGroupIds = Array.isArray(raw.last_seen)
+    ? raw.last_seen.map(value => String(value))
+    : [];
+  return groupId && unreadGroupIds.includes(String(groupId)) ? 1 : 0;
 }
 
 function readGroupOnline(raw: RawRecord): boolean {
@@ -704,6 +741,19 @@ async function fetchUnreadUserChats() {
     .filter(chat => chat.chatType === 'user' && chat.unreadCount > 0)
     .sort((left, right) => right.lastMessageTime - left.lastMessageTime);
 }
+
+async function fetchUnreadChats() {
+  const [userChats, groupChats] = await Promise.all([
+    fetchUnreadUserChats(),
+    fetchGroupChats().catch(() => []),
+  ]);
+
+  return mergeChats(
+    userChats,
+    groupChats.filter(chat => chat.unreadCount > 0),
+  );
+}
+
 async function fetchFriendsList(forceRefresh = false): Promise<{ following: Set<string>; followers: Set<string> }> {
   const sessionUserId = sessionStorage.getSession()?.userId;
   if (!sessionUserId) return { following: new Set(), followers: new Set() };
@@ -879,7 +929,8 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
     message: callEvent ? '' : displayMessage,
     callEvent,
     media,
-    mediaType: readMediaType(raw),
+    mediaType: readMediaType(raw, decodedMessage),
+    thumbnail: readMessageThumbnail(raw) || undefined,
     time: readNumber(raw, 'time'),
     isSentByMe: callEvent ? callEvent.isInitiator : (fromId === sessionUserId),
     seen: readNumber(raw, 'seen'),
@@ -1012,6 +1063,7 @@ function mapSharedAssets(raw: RawRecord): GroupSharedAssets {
 }
 function readMediaType(
   raw: Record<string, unknown>,
+  decodedMessage = '',
 ): 'image' | 'video' | 'audio' | 'file' | undefined {
   const explicitType = readString(
     raw,
@@ -1025,6 +1077,14 @@ function readMediaType(
   const responseType = readString(raw, 'type')
     .toLowerCase()
     .replace(/^(left|right)_/, '');
+  const originalMediaName = readString(
+    raw,
+    'mediaFileName',
+    'media_file_name',
+    'file_name',
+    'filename',
+    'name',
+  ).toLowerCase();
   const media = readString(
     raw,
     'extension',
@@ -1052,6 +1112,12 @@ function readMediaType(
   if (responseType === 'image') return 'image';
   if (responseType === 'video') return 'video';
   if (responseType === 'file') return 'file';
+  if (decodedMessage.includes(GROUP_VOICE_MESSAGE_MARKER)) {
+    return 'audio';
+  }
+  if (/^(voice|audio|recording|record)[-_ ]/.test(originalMediaName)) {
+    return 'audio';
+  }
   if (/\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(media)) return 'image';
   if (/\.(mp3|wav|ogg|m4a)(\?|$)/i.test(media)) return 'audio';
   if (/\.(mp4|mov|avi|mkv)(\?|$)/i.test(media)) return 'video';
@@ -1093,7 +1159,7 @@ export function createMessagesRepository(): MessagesRepository {
       return createGroupChatRequest(input);
     },
     async getUnreadChats() {
-      return fetchUnreadUserChats();
+      return fetchUnreadChats();
     },
     async getMessages(chat: ChatItem | string, options?: GetMessagesOptions) {
       const target = getChatTarget(chat);
@@ -1137,15 +1203,19 @@ export function createMessagesRepository(): MessagesRepository {
       const messageHashId = `${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 10)}`;
+      const textPayload =
+        target.type === 'group' && attachment?.mediaType === 'audio'
+          ? [message, GROUP_VOICE_MESSAGE_MARKER].filter(Boolean).join('\n')
+          : message;
       const userPayload = {
         user_id: target.id,
-        text: message,
+        text: textPayload,
         message_hash_id: messageHashId,
       };
       const groupPayload = {
         type: 'send',
         id: target.id,
-        text: message,
+        text: textPayload,
         message_hash_id: messageHashId,
       };
       const route =
@@ -1157,7 +1227,11 @@ export function createMessagesRepository(): MessagesRepository {
         ? await apiBridge.multipart<SendMessageResponse>(route, {
             ...payload,
             ...(attachment.mediaType
-              ? { message_type: attachment.mediaType }
+              ? {
+                  message_type: attachment.mediaType,
+                  media_type: attachment.mediaType,
+                  type_two: attachment.mediaType,
+                }
               : {}),
             file: attachment,
           })
@@ -1225,6 +1299,12 @@ export function createMessagesRepository(): MessagesRepository {
     async leaveGroup(groupId: string) {
       await apiBridge.post(apiRoutes.messages.groupChat, {
         type: 'leave',
+        id: groupId,
+      });
+    },
+    async deleteGroup(groupId: string) {
+      await apiBridge.post(apiRoutes.messages.groupChat, {
+        type: 'delete',
         id: groupId,
       });
     },

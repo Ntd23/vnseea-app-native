@@ -31,6 +31,7 @@ export interface ReelsCopy {
  // Auto-scroll toggle button
  autoOn: string;
  autoOff: string;
+ newVideoButton: string;
 }
 
 export const REELS_COPY: Record<AppLanguage, ReelsCopy> = {
@@ -46,8 +47,9 @@ export const REELS_COPY: Record<AppLanguage, ReelsCopy> = {
  noReels: 'Chưa có reel nào',
  beFirst: 'Hãy là người đầu tiên đăng một video Reel!',
  postReel: 'Đăng Reel',
- autoOn: 'Tự động: Bật',
- autoOff: 'Tự động: Tắt',
+ autoOn: 'Tự chuyển: Bật',
+ autoOff: 'Tự chuyển: Tắt',
+ newVideoButton: 'C\u00f3 video m\u1edbi',
  },
  en: {
  filterAll: 'All',
@@ -61,8 +63,9 @@ export const REELS_COPY: Record<AppLanguage, ReelsCopy> = {
  noReels: 'No reels yet',
  beFirst: 'Be the first one to post a Reel!',
  postReel: 'Post Reel',
- autoOn: 'Auto: On',
- autoOff: 'Auto: Off',
+ autoOn: 'Auto next: On',
+ autoOff: 'Auto next: Off',
+ newVideoButton: 'New video',
  },
 };
 

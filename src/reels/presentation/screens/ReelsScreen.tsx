@@ -31,6 +31,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Dimensions,
   FlatList,
   LayoutChangeEvent,
@@ -55,7 +56,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { ChevronLeft, RotateCcw, ChevronsDown, VolumeX, Volume2 } from 'lucide-react-native';
+import { ArrowUp, ChevronLeft, RotateCcw, ChevronsDown, VolumeX, Volume2 } from 'lucide-react-native';
 import { createMMKV } from 'react-native-mmkv';
 import { useReelsViewModel } from '../../application/view-models/useReelsViewModel';
 import type { ReelsItem } from '../../domain/types/reels.types';
@@ -63,13 +64,16 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { ReelItem } from '../components/ReelItem';
 import { ReelCommentsSheet } from '../components/ReelCommentsSheet';
 import { ReelPublisherOverlay } from '../components/ReelPublisherOverlay';
-import { ReelsFilterTabs, type ReelsFilterSource } from '../components/ReelsFilterTabs';
 import { REELS_COPY } from '../../application/i18n/reelsCopy';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { isReelItemActive } from './reelsPlayback';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { publishNativeTabScrollBehavior } from '../../../navigation/nativeTabScrollPublisher';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
+import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
+import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
+import type { FeedPost, FeedVideoPost } from '../../../feed/domain/types/feed.types';
+import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 
 const VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 80,
@@ -81,6 +85,8 @@ const NATIVE_TAB_SCROLL_DOWN_THRESHOLD = 8;
 const NATIVE_TAB_SCROLL_UP_THRESHOLD = 1;
 const NATIVE_TAB_SCROLL_BEHAVIOR_NONE = 0;
 const NATIVE_TAB_SCROLL_BEHAVIOR_ON_SCROLL_DOWN = 1;
+const REELS_NEW_VIDEO_PROBE_INTERVAL_MS = 30000;
+const REELS_NEW_VIDEO_PROBE_LIMIT = 6;
 
 // Screen width — used by the swipe-back gesture to compute the dismiss
 // threshold and target translation.
@@ -88,7 +94,97 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as any;
 
+function getReelTimestamp(item?: ReelsItem | null) {
+  const value = Number(item?.postedAt);
+  return Number.isFinite(value) ? value : 0;
+}
 
+function getReelNumericId(item?: ReelsItem | null) {
+  const value = Number(item?.id);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function compareReelsNewestFirst(a: ReelsItem, b: ReelsItem) {
+  const timeDelta = getReelTimestamp(b) - getReelTimestamp(a);
+  if (timeDelta !== 0) return timeDelta;
+  return getReelNumericId(b) - getReelNumericId(a);
+}
+
+function isReelNewerThanTop(item: ReelsItem, currentItems: ReelsItem[]) {
+  const topItem = currentItems[0];
+  if (!topItem) return false;
+
+  const itemTime = getReelTimestamp(item);
+  const topTime = getReelTimestamp(topItem);
+  if (itemTime > 0 && topTime > 0 && itemTime !== topTime) {
+    return itemTime > topTime;
+  }
+
+  const itemId = getReelNumericId(item);
+  const topId = getReelNumericId(topItem);
+  if (itemId > 0 && topId > 0 && itemId !== topId) {
+    return itemId > topId;
+  }
+
+  return false;
+}
+
+function mapFeedVideoPostToReel(post: FeedVideoPost): ReelsItem {
+  return {
+    id: post.id,
+    videoUrl: post.videoUrl,
+    thumbnailUrl: post.thumbnailUrl,
+    caption: post.caption,
+    postedAt: post.postedAt,
+    publisher: {
+      userId: post.publisher.id,
+      username: post.publisher.username,
+      name: post.publisher.name,
+      avatarUrl: post.publisher.avatarUrl,
+      isVerified: false,
+      isFollowing: post.publisher.isFollowing,
+    },
+    likeCount: post.likeCount,
+    commentCount: post.commentCount,
+    viewCount: post.viewCount ?? 0,
+    isLiked: post.isLiked,
+    isSaved: post.isSaved ?? false,
+    myReaction: post.myReaction,
+    raw: post,
+  };
+}
+
+function getFeedPrivacyFromReel(privacy?: number): FeedVideoPost['privacy'] {
+  if (privacy === 1) return 'friends';
+  if (privacy === 2) return 'only_me';
+  return 'public';
+}
+
+function mapReelToFeedVideoPost(item: ReelsItem): FeedVideoPost {
+  return {
+    kind: 'video',
+    id: item.id,
+    caption: item.caption,
+    videoUrl: item.videoUrl ?? '',
+    thumbnailUrl: item.thumbnailUrl,
+    postedAt: item.postedAt,
+    likeCount: item.likeCount,
+    commentCount: item.commentCount,
+    isLiked: item.isLiked,
+    myReaction: item.myReaction,
+    topReactions: item.myReaction ? [item.myReaction] : [],
+    privacy: getFeedPrivacyFromReel(item.privacy),
+    publisher: {
+      id: item.publisher.userId,
+      name: item.publisher.name,
+      username: item.publisher.username,
+      avatarUrl: item.publisher.avatarUrl,
+      isFollowing: item.publisher.isFollowing,
+    },
+    viewCount: item.viewCount,
+    isSaved: item.isSaved,
+  };
+}
 
 const reelsStorage = createMMKV({ id: 'vnseea-reels-settings' });
 
@@ -99,18 +195,14 @@ export default function ReelsScreen() {
   const insets = useSafeAreaInsets();
   const { bottomContentPadding } = useMainTabContentInsets();
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
-    return reelsStorage.getBoolean('reels.autoScroll') ?? false;
+    return reelsStorage.getBoolean('reels.autoScroll') ?? true;
   });
-
- // Filter tab the user is currently on. We render 'videos' as the
- // active tab because Reels IS the videos destination, but we keep
- // the data filter independent (default 'all' = show every reel).
- const [activeFilter, setActiveFilter] = useState<ReelsFilterSource>('videos');
-
+  const autoScrollEnabledRef = useRef(autoScrollEnabled);
 
   const toggleAutoScroll = useCallback(() => {
     setAutoScrollEnabled(prev => {
       const next = !prev;
+      autoScrollEnabledRef.current = next;
       reelsStorage.set('reels.autoScroll', next);
       return next;
     });
@@ -156,6 +248,184 @@ export default function ReelsScreen() {
     [], // intentional: only seed once on first mount
   );
   const vm = useReelsViewModel(seededInitial);
+  const activeIndexRef = useRef(vm.activeIndex);
+  const itemsLengthRef = useRef(vm.items.length);
+  const hasMoreRef = useRef(vm.hasMore);
+  const isLoadingMoreRef = useRef(vm.isLoadingMore);
+  const isCommentsOpenRef = useRef(vm.isCommentsOpen);
+  const isShareSheetOpenRef = useRef(false);
+  const loadMoreRef = useRef(vm.loadMore);
+  const setReelsActiveIndexRef = useRef(vm.setActiveIndex);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [sharingPost, setSharingPost] = useState<FeedPost | undefined>(undefined);
+  const [hasNewReels, setHasNewReels] = useState(false);
+  const pendingNewReelsRef = useRef<ReelsItem[]>([]);
+  const reelsItemsRef = useRef<ReelsItem[]>(vm.items);
+  const isReelsFocusedRef = useRef(isFocusedScreen);
+  const isReelsLoadingRef = useRef(vm.isInitialLoading || vm.isRefreshing);
+  const hasReelsLoadedOnceRef = useRef(vm.items.length > 0);
+  const isCheckingLatestReelsRef = useRef(false);
+
+  useEffect(() => {
+    autoScrollEnabledRef.current = autoScrollEnabled;
+    activeIndexRef.current = vm.activeIndex;
+    itemsLengthRef.current = vm.items.length;
+    hasMoreRef.current = vm.hasMore;
+    isLoadingMoreRef.current = vm.isLoadingMore;
+    isCommentsOpenRef.current = vm.isCommentsOpen;
+    loadMoreRef.current = vm.loadMore;
+    setReelsActiveIndexRef.current = vm.setActiveIndex;
+    isReelsFocusedRef.current = isFocusedScreen;
+    isReelsLoadingRef.current = vm.isInitialLoading || vm.isRefreshing;
+    if (vm.items.length > 0 && !vm.isInitialLoading) {
+      hasReelsLoadedOnceRef.current = true;
+    }
+  }, [
+    autoScrollEnabled,
+    isFocusedScreen,
+    vm.activeIndex,
+    vm.hasMore,
+    vm.isCommentsOpen,
+    vm.isInitialLoading,
+    vm.isLoadingMore,
+    vm.isRefreshing,
+    vm.items.length,
+    vm.loadMore,
+    vm.setActiveIndex,
+  ]);
+
+  useEffect(() => {
+    isShareSheetOpenRef.current = shareModalVisible;
+  }, [shareModalVisible]);
+
+  const enqueueNewReelCandidates = useCallback((
+    items: ReelsItem[],
+    options: { requireNewerThanTop?: boolean } = {},
+  ) => {
+    if (items.length === 0) return;
+
+    const currentItems = reelsItemsRef.current;
+    const visibleIds = new Set(currentItems.map(item => item.id));
+    const pendingIds = new Set(pendingNewReelsRef.current.map(item => item.id));
+    const nextItems = items
+      .filter(item => {
+        if (!item?.id || !item.videoUrl) return false;
+        if (visibleIds.has(item.id) || pendingIds.has(item.id)) return false;
+        if (
+          options.requireNewerThanTop &&
+          !isReelNewerThanTop(item, currentItems)
+        ) {
+          return false;
+        }
+
+        pendingIds.add(item.id);
+        return true;
+      })
+      .sort(compareReelsNewestFirst);
+
+    if (nextItems.length === 0) return;
+
+    pendingNewReelsRef.current.push(...nextItems);
+    setHasNewReels(true);
+  }, []);
+
+  useEffect(() => {
+    reelsItemsRef.current = vm.items;
+
+    if (!hasNewReels || pendingNewReelsRef.current.length === 0) return;
+
+    const visibleIds = new Set(vm.items.map(item => item.id));
+    pendingNewReelsRef.current = pendingNewReelsRef.current.filter(
+      item =>
+        item?.id &&
+        !visibleIds.has(item.id) &&
+        (vm.items.length === 0 || isReelNewerThanTop(item, vm.items)),
+    );
+
+    if (pendingNewReelsRef.current.length === 0) {
+      setHasNewReels(false);
+    }
+  }, [vm.items, hasNewReels]);
+
+  const handleOpenNewReels = useCallback(() => {
+    const currentItems = reelsItemsRef.current;
+    const visibleIds = new Set(currentItems.map(item => item.id));
+    const pendingItems = pendingNewReelsRef.current
+      .filter(
+        item =>
+          item?.id &&
+          item.videoUrl &&
+          !visibleIds.has(item.id) &&
+          (currentItems.length === 0 || isReelNewerThanTop(item, currentItems)),
+      )
+      .sort(compareReelsNewestFirst);
+
+    pendingNewReelsRef.current = [];
+    setHasNewReels(false);
+
+    if (pendingItems.length === 0) return;
+
+    vm.prependReels(pendingItems);
+    activeIndexRef.current = 0;
+    setReelsActiveIndexRef.current(0);
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToIndex({ index: 0, animated: true });
+    });
+  }, [vm.prependReels]);
+
+  const checkForRemoteNewReels = useCallback(async () => {
+    if (!isReelsFocusedRef.current) return;
+    if (!hasReelsLoadedOnceRef.current || isReelsLoadingRef.current) return;
+    if (AppState.currentState !== 'active') return;
+    if (isCheckingLatestReelsRef.current) return;
+
+    isCheckingLatestReelsRef.current = true;
+    try {
+      const latestItems = await vm.peekLatestReels(REELS_NEW_VIDEO_PROBE_LIMIT);
+      enqueueNewReelCandidates(latestItems, {
+        requireNewerThanTop: true,
+      });
+    } catch (caught) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.warn('[ReelsScreen] latest reel probe failed', caught);
+      }
+    } finally {
+      isCheckingLatestReelsRef.current = false;
+    }
+  }, [enqueueNewReelCandidates, vm.peekLatestReels]);
+
+  useEffect(() => {
+    if (!isFocusedScreen) return undefined;
+
+    const firstProbe = setTimeout(() => {
+      void checkForRemoteNewReels();
+    }, 1200);
+    const interval = setInterval(() => {
+      void checkForRemoteNewReels();
+    }, REELS_NEW_VIDEO_PROBE_INTERVAL_MS);
+
+    return () => {
+      clearTimeout(firstProbe);
+      clearInterval(interval);
+    };
+  }, [checkForRemoteNewReels, isFocusedScreen]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') {
+        void checkForRemoteNewReels();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [checkForRemoteNewReels]);
+
+  useEffect(() => {
+    return postCreatedEvents.subscribe(post => {
+      if (post.kind !== 'video' || !post.videoUrl) return;
+      enqueueNewReelCandidates([mapFeedVideoPostToReel(post)]);
+    });
+  }, [enqueueNewReelCandidates]);
 
   // Tracks which `initialVideoId` we've already handled, so a new
   // tap on a different video (from Home feed, Page detail, etc.)
@@ -396,23 +666,48 @@ export default function ReelsScreen() {
   const handleToggleMute = useCallback(() => setIsMuted(m => !m), []);
 
   const handleVideoEnd = useCallback((index: number) => {
-    if (!autoScrollEnabled) return;
-    if (index !== vm.activeIndex) return;
-    if (index < vm.items.length - 1) {
-      const nextIndex = index + 1;
-      vm.setActiveIndex(nextIndex);
-      requestAnimationFrame(() => {
-        flatListRef.current?.scrollToIndex({
-          index: nextIndex,
-          animated: true,
-        });
-      });
+    if (!autoScrollEnabledRef.current) return false;
+    if (index !== activeIndexRef.current) return false;
+    if (isCommentsOpenRef.current || isShareSheetOpenRef.current) return false;
+
+    if (index >= itemsLengthRef.current - 1) {
+      if (hasMoreRef.current && !isLoadingMoreRef.current) {
+        loadMoreRef.current();
+      }
+      return false;
     }
-  }, [autoScrollEnabled, vm]);
+
+    const nextIndex = index + 1;
+    activeIndexRef.current = nextIndex;
+    setReelsActiveIndexRef.current(nextIndex);
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToIndex({
+        index: nextIndex,
+        animated: true,
+      });
+    });
+    return true;
+  }, []);
 
   const handleOpenProfile = useCallback((userId: string) => {
     setSelectedPublisherId(userId);
   }, []);
+
+  const handleOpenShareReel = useCallback((item: ReelsItem) => {
+    setSharingPost(mapReelToFeedVideoPost(item));
+    setShareModalVisible(true);
+  }, []);
+
+  const handleCloseShareModal = useCallback(() => {
+    setShareModalVisible(false);
+    setTimeout(() => {
+      setSharingPost(undefined);
+    }, 300);
+  }, []);
+
+  const handleInternalSharePost = useCallback((input: SharePostInput) => {
+    return vm.sharePost(input);
+  }, [vm.sharePost]);
 
   const handlePlayPublisherReel = useCallback((reelId: string, rawPost: any) => {
     if (rawPost) {
@@ -449,7 +744,6 @@ export default function ReelsScreen() {
       // when the user switches tabs, every reel becomes inactive (paused).
       const isActive = isReelItemActive({
         isScreenFocused: isFocusedScreen,
-        isCommentsOpen: vm.isCommentsOpen,
         index,
         activeIndex: vm.activeIndex,
       });
@@ -470,6 +764,7 @@ export default function ReelsScreen() {
           onToggleMute={handleToggleMute}
           onReaction={vm.toggleReaction}
           onSave={vm.toggleSave}
+          onShare={handleOpenShareReel}
           onOpenComments={vm.openComments}
           onUnavailable={vm.markUnavailable}
           onFollow={vm.followPublisher}
@@ -477,7 +772,6 @@ export default function ReelsScreen() {
           scrollY={scrollY}
           index={index}
           initialSeekTime={initialSeekTime}
-          autoScrollEnabled={autoScrollEnabled}
           onVideoEnd={handleVideoEnd}
           bottomOverlayInset={bottomContentPadding}
         />
@@ -485,13 +779,13 @@ export default function ReelsScreen() {
     },
     [
       vm.activeIndex,
-      vm.isCommentsOpen,
       vm.toggleReaction,
       vm.toggleSave,
       vm.openComments,
       vm.markUnavailable,
       vm.followPublisher,
       handleOpenProfile,
+      handleOpenShareReel,
       itemHeight,
       isMuted,
       isFocusedScreen,
@@ -500,7 +794,6 @@ export default function ReelsScreen() {
       preloadRadius,
       initialVideoId,
       route.params?.seekTime,
-      autoScrollEnabled,
       handleVideoEnd,
       bottomContentPadding,
     ],
@@ -554,28 +847,6 @@ export default function ReelsScreen() {
     const rootNavigator = navigation.getParent() ?? navigation;
     rootNavigator.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
   }, [navigation]);
-
-  // Filter tab handler — placed AFTER navigateToFeed because it
-  // references that function. Order: update active state first
-  // so the UI flips immediately, then run navigation side-effect.
-  const handleFilterChange = useCallback((next: ReelsFilterSource) => {
-  if (next === 'videos') {
-  setActiveFilter('videos');
-  return;
-  }
-  if (next === 'all' || next === 'photos') {
-  navigateToFeed();
-  return;
-  }
-  if (next === 'locations') {
-  navigation.navigate(ROUTES.NEARBY_USERS);
-  return;
-  }
-  if (next === 'market') {
-  navigation.navigate(ROUTES.MARKETPLACE);
-  return;
-  }
-  }, [navigateToFeed, navigation]);
 
   const goBackToFeed = useCallback(() => {
     // Prefer goBack when this screen sits on top of a stack — it POPS
@@ -721,7 +992,6 @@ export default function ReelsScreen() {
           renderItem={renderItem}
           getItemLayout={getItemLayout}
           extraData={{
-            autoScrollEnabled,
             isMuted,
             activeIndex: vm.activeIndex,
             isFocusedScreen,
@@ -776,26 +1046,22 @@ export default function ReelsScreen() {
           }
         />
 
-        {/* Floating back button. Lives outside the list so it stays put
-            while the user swipes through reels. Uses `goBackToFeed` —
-            NOT `navigateToFeed` — so it pops the Reels screen off the
-            stack and returns to wherever the user came from (Home,
-            Page Detail, Profile, Saved, My Videos…). Only falls back
-            to a Home tab-switch when there's nothing to pop (e.g.
-            Reels was launched as the very first tab). */}
-        {/* Filter tabs bar — sits ABOVE the back/auto/mute header so the
-         user can hop to other sections (Locations, Market) without
-         leaving the video surface. Dark capsule to match the video bg. */}
-        <ReelsFilterTabs
-         copy={copy}
-         activeSource={activeFilter}
-         onChangeSource={handleFilterChange}
-         topInset={Math.max(insets.top, 12)}
-         style={styles.filterBarOffset}
-         />
+        {hasNewReels ? (
+          <TouchableOpacity
+            onPress={handleOpenNewReels}
+            activeOpacity={0.9}
+            style={[
+              styles.newReelsButton,
+              { top: Math.max(insets.top, 12) + 54 },
+            ]}
+          >
+            <ArrowUp size={15} color="#fff" />
+            <Text style={styles.newReelsButtonText}>{copy.newVideoButton}</Text>
+          </TouchableOpacity>
+        ) : null}
 
-        {/* Floating Header Overlay — shifted down to clear the filter bar. */}
-        <View style={[styles.headerOverlay, { top: Math.max(insets.top, 12) + 64 }]}>
+        {/* Floating controls: back, auto-scroll, and sound. */}
+        <View style={[styles.headerOverlay, { top: Math.max(insets.top, 12) + 4 }]}>
           {/* Left: Back button (if stack navigator has back capability) */}
           {!isIosTabRoute ? (
             <TouchableOpacity
@@ -865,6 +1131,13 @@ export default function ReelsScreen() {
           onDeleteFailedComment={vm.deleteFailedComment}
         />
 
+        <FeedShareBottomSheet
+          visible={shareModalVisible}
+          onClose={handleCloseShareModal}
+          post={sharingPost}
+          onInternalShare={handleInternalSharePost}
+        />
+
         <ReelPublisherOverlay
           visible={selectedPublisherId !== null}
           userId={selectedPublisherId}
@@ -895,7 +1168,6 @@ export default function ReelsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   list: { flex: 1, backgroundColor: '#000' },
- filterBarOffset: { position: 'absolute', left: 0, right: 0, top: 0, zIndex: 11 },
   headerOverlay: {
     position: 'absolute',
     left: 12,
@@ -934,6 +1206,31 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+    marginLeft: 6,
+  },
+  newReelsButton: {
+    position: 'absolute',
+    alignSelf: 'center',
+    zIndex: 12,
+    minHeight: 38,
+    borderRadius: 19,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0866ff',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  newReelsButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
     marginLeft: 6,
   },
   fullCenter: {

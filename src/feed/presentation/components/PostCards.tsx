@@ -129,6 +129,47 @@ const IOS_PHOTO_GRID_TILE_STYLE: ViewStyle | undefined =
   Platform.OS === 'ios' ? { borderRadius: 12 } : undefined;
 const IOS_PHOTO_GRID_FRAME_STYLE: ViewStyle | undefined =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
+const MEDIA_ASPECT_RATIO_CACHE_LIMIT = 350;
+const MEDIA_ASPECT_RATIO_CACHE = new Map<string, number>();
+
+function clampAspectRatio(
+  ratio: number,
+  minRatio: number,
+  maxRatio: number,
+  fallback: number,
+) {
+  if (!Number.isFinite(ratio) || ratio <= 0) return fallback;
+  return Math.max(minRatio, Math.min(maxRatio, ratio));
+}
+
+function getCachedMediaAspectRatio(
+  uri: string | undefined,
+  minRatio: number,
+  maxRatio: number,
+  fallback: number,
+) {
+  if (!uri) return fallback;
+  return clampAspectRatio(
+    MEDIA_ASPECT_RATIO_CACHE.get(uri) ?? fallback,
+    minRatio,
+    maxRatio,
+    fallback,
+  );
+}
+
+function cacheMediaAspectRatio(uri: string, width: number, height: number) {
+  if (width <= 0 || height <= 0) return;
+  if (
+    !MEDIA_ASPECT_RATIO_CACHE.has(uri) &&
+    MEDIA_ASPECT_RATIO_CACHE.size >= MEDIA_ASPECT_RATIO_CACHE_LIMIT
+  ) {
+    const oldestUri = MEDIA_ASPECT_RATIO_CACHE.keys().next().value;
+    if (oldestUri) {
+      MEDIA_ASPECT_RATIO_CACHE.delete(oldestUri);
+    }
+  }
+  MEDIA_ASPECT_RATIO_CACHE.set(uri, width / height);
+}
 
 // â”€â”€ FeedCopy type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export type FeedCopy = {
@@ -164,6 +205,8 @@ export type FeedCopy = {
   youAndOthers: (count: string) => string;
   feelingPrefix: string;
   photoCount: (count: number) => string;
+  captionShowMore?: string;
+  captionShowLess?: string;
   sponsored: string;
   adVideo: string;
   videoUnavailable: string;
@@ -386,6 +429,8 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     youAndOthers: count => `You and ${count} others`,
     feelingPrefix: 'is feeling',
     photoCount: count => `${count} photos`,
+    captionShowMore: 'See more',
+    captionShowLess: 'Show less',
     sponsored: 'Sponsored',
     adVideo: 'Video ad',
     videoUnavailable: 'Video unavailable',
@@ -588,13 +633,31 @@ type FeedMediaImageProps = {
 
 const FEED_MEDIA_PLACEHOLDER_STYLE = { backgroundColor: '#E5E7EB' };
 
-const FeedMediaImage = React.memo(function FeedMediaImage({
+const FeedMediaImageBase = React.memo(function FeedMediaImageBase({
   uri,
   className,
   style,
   resizeMode = 'cover',
-  deferWhileScrolling = true,
-}: FeedMediaImageProps) {
+}: Omit<FeedMediaImageProps, 'deferWhileScrolling'>) {
+  return (
+    <Image
+      source={{ uri }}
+      className={className}
+      style={style}
+      resizeMode={resizeMode}
+      fadeDuration={0}
+      resizeMethod="resize"
+      progressiveRenderingEnabled
+    />
+  );
+});
+
+const DeferredFeedMediaImage = React.memo(function DeferredFeedMediaImage({
+  uri,
+  className,
+  style,
+  resizeMode = 'cover',
+}: Omit<FeedMediaImageProps, 'deferWhileScrolling'>) {
   const isScrollBusy = useFeedScrollBusy();
   const [hasLoaded, setHasLoaded] = useState(false);
 
@@ -602,7 +665,7 @@ const FeedMediaImage = React.memo(function FeedMediaImage({
     setHasLoaded(false);
   }, [uri]);
 
-  if (deferWhileScrolling && isScrollBusy && !hasLoaded) {
+  if (isScrollBusy && !hasLoaded) {
     return (
       <View
         className={className}
@@ -621,6 +684,34 @@ const FeedMediaImage = React.memo(function FeedMediaImage({
       resizeMethod="resize"
       progressiveRenderingEnabled
       onLoad={() => setHasLoaded(true)}
+    />
+  );
+});
+
+const FeedMediaImage = React.memo(function FeedMediaImage({
+  uri,
+  className,
+  style,
+  resizeMode = 'cover',
+  deferWhileScrolling = false,
+}: FeedMediaImageProps) {
+  if (deferWhileScrolling) {
+    return (
+      <DeferredFeedMediaImage
+        uri={uri}
+        className={className}
+        style={style}
+        resizeMode={resizeMode}
+      />
+    );
+  }
+
+  return (
+    <FeedMediaImageBase
+      uri={uri}
+      className={className}
+      style={style}
+      resizeMode={resizeMode}
     />
   );
 });
@@ -1122,13 +1213,16 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
+  const isScrollBusy = useFeedScrollBusy();
   const liveMediaActive = useLiveMediaActive();
   const isActive = controlledIsActive !== undefined
     ? controlledIsActive
     : (isScreenFocused !== false && trackedIsActive);
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [muted, setMuted] = useState(true);
-  const [aspectRatio, setAspectRatio] = useState(16 / 9); // Default landscape
+  const [aspectRatio, setAspectRatio] = useState(() =>
+    getCachedMediaAspectRatio(post.thumbnailUrl, 0.75, 16 / 9, 16 / 9),
+  );
   const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
@@ -1156,22 +1250,32 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   // Measure thumbnail size on mount to avoid layout jumps
   useEffect(() => {
-    if (post.thumbnailUrl) {
-      Image.getSize(
-        post.thumbnailUrl,
-        (width, height) => {
-          if (width > 0 && height > 0) {
-            const ratio = width / height;
-            // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
-            const clampedRatio = Math.max(0.75, Math.min(16 / 9, ratio));
-            setAspectRatio(clampedRatio);
-          }
-        },
-        (err) => {
-          console.warn('[HomeVideoPostCard] getSize failed for thumbnail:', err);
-        }
+    const thumbnailUrl = post.thumbnailUrl;
+    if (!thumbnailUrl) return;
+
+    const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(thumbnailUrl);
+    if (cachedRatio) {
+      setAspectRatio(
+        clampAspectRatio(cachedRatio, 0.75, 16 / 9, 16 / 9),
       );
+      return;
     }
+
+    Image.getSize(
+      thumbnailUrl,
+      (width, height) => {
+        if (width > 0 && height > 0) {
+          cacheMediaAspectRatio(thumbnailUrl, width, height);
+            // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
+          setAspectRatio(
+            clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
+          );
+        }
+      },
+      (err) => {
+        console.warn('[HomeVideoPostCard] getSize failed for thumbnail:', err);
+      },
+    );
   }, [post.thumbnailUrl]);
 
   // Refine aspect ratio when actual video loads
@@ -1183,12 +1287,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     if (size) {
       const { width, height } = size;
       if (width > 0 && height > 0) {
-        const ratio = width / height;
-        const clampedRatio = Math.max(0.75, Math.min(16 / 9, ratio));
-        setAspectRatio(clampedRatio);
+        cacheMediaAspectRatio(videoUrl || post.id, width, height);
+        setAspectRatio(
+          clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
+        );
       }
     }
-  }, []);
+  }, [post.id, videoUrl]);
 
   // Profile tap handler
   const handleProfilePress = useCallback(() => {
@@ -1222,9 +1327,11 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [navigation, post]);
 
   // ── Mount strategy ──
-  // Mount the video player immediately so the first frame renders (paused)
-  // like Facebook, but only trigger playing state when the card is active.
-  const shouldMountVideo = isScreenFocused !== false && canAttemptVideo;
+  // Keep native decoders mounted only for the active feed video. Inactive
+  // cards keep the same thumbnail surface, which is much cheaper during
+  // fast flings through mixed media feeds.
+  const shouldMountVideo =
+    isScreenFocused !== false && canAttemptVideo && isActive;
 
   useEffect(() => {
     if (isActive) {
@@ -1252,7 +1359,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     }
   }, [isActive, isReady, seekTime]);
 
-  const playing = shouldMountVideo && !manuallyPaused && isActive;
+  const playing = shouldMountVideo && !manuallyPaused && !isScrollBusy;
   const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
 
   // Need an on-screen position for the "ThĂ­ch" button so the picker
@@ -1297,7 +1404,11 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           </Text>
         ) : null}
         {post.caption ? (
-          <Text className="text-body-primary">{post.caption}</Text>
+          <ExpandablePostCaption
+            text={post.caption}
+            copy={copy}
+            collapsible={Boolean(post.thumbnailUrl || post.videoUrl)}
+          />
         ) : null}
       </FeedCardContent>
       <FeedMediaFrame style={{ aspectRatio }}>
@@ -1589,6 +1700,75 @@ const PostHeader = React.memo(function PostHeader({
   );
 });
 
+const COLLAPSED_CAPTION_LINES = 3;
+const COLLAPSED_CAPTION_CHAR_LIMIT = 170;
+
+const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
+  text,
+  copy,
+  collapsible,
+}: {
+  text: string;
+  copy: FeedCopy;
+  collapsible: boolean;
+}) {
+  const normalizedText = useMemo(() => text.trim(), [text]);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [layoutCanCollapse, setLayoutCanCollapse] = useState(false);
+  const textSuggestsOverflow =
+    normalizedText.length > COLLAPSED_CAPTION_CHAR_LIMIT ||
+    normalizedText.split(/\r\n|\r|\n/).length > COLLAPSED_CAPTION_LINES;
+  const canCollapse = collapsible && (textSuggestsOverflow || layoutCanCollapse);
+
+  useEffect(() => {
+    setIsExpanded(false);
+    setLayoutCanCollapse(false);
+  }, [normalizedText, collapsible]);
+
+  const handleTextLayout = useCallback(
+    (event: any) => {
+      if (!collapsible || isExpanded) return;
+      if (
+        Array.isArray(event?.nativeEvent?.lines) &&
+        event.nativeEvent.lines.length > COLLAPSED_CAPTION_LINES
+      ) {
+        setLayoutCanCollapse(true);
+      }
+    },
+    [collapsible, isExpanded],
+  );
+
+  if (!normalizedText) return null;
+
+  return (
+    <View>
+      <Text
+        className="text-body-primary"
+        numberOfLines={
+          canCollapse && !isExpanded ? COLLAPSED_CAPTION_LINES : undefined
+        }
+        onTextLayout={handleTextLayout}
+      >
+        {normalizedText}
+      </Text>
+      {canCollapse ? (
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={() => setIsExpanded(current => !current)}
+          className="mt-1 self-start"
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        >
+          <Text className="text-sm font-bold text-[#0866ff]">
+            {isExpanded
+              ? copy.captionShowLess ?? '\u1ea8n b\u1edbt'
+              : copy.captionShowMore ?? 'Xem th\u00eam'}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+});
+
 const SinglePostImage = React.memo(function SinglePostImage({
   uri,
   onPress,
@@ -1596,19 +1776,26 @@ const SinglePostImage = React.memo(function SinglePostImage({
   uri: string;
   onPress: () => void;
 }) {
-  const [aspectRatio, setAspectRatio] = useState(4 / 3);
+  const [aspectRatio, setAspectRatio] = useState(() =>
+    getCachedMediaAspectRatio(uri, 0.75, 1.91, 4 / 3),
+  );
 
   useEffect(() => {
     if (!uri) return;
+    const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(uri);
+    if (cachedRatio) {
+      setAspectRatio(clampAspectRatio(cachedRatio, 0.75, 1.91, 4 / 3));
+      return;
+    }
+
     Image.getSize(
       uri,
       (width, height) => {
         if (width > 0 && height > 0) {
-          const ratio = width / height;
           // Clamp aspect ratio to resemble Facebook:
           // Facebook caps portrait to 4:5 (0.8) and landscape to 1.91:1
-          const clampedRatio = Math.max(0.75, Math.min(1.91, ratio));
-          setAspectRatio(clampedRatio);
+          cacheMediaAspectRatio(uri, width, height);
+          setAspectRatio(clampAspectRatio(width / height, 0.75, 1.91, 4 / 3));
         }
       },
       (err) => {
@@ -1767,7 +1954,11 @@ export const TextPostCard = React.memo(function TextPostCard({
           </Text>
         ) : null}
         {post.caption ? (
-          <Text className="text-body-primary">{post.caption}</Text>
+          <ExpandablePostCaption
+            text={post.caption}
+            copy={copy}
+            collapsible={totalPhotos > 0}
+          />
         ) : null}
         {post.feeling ? (
           <Text className="mt-1 text-caption-secondary">
