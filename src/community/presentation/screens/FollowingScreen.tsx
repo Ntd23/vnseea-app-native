@@ -12,8 +12,8 @@ import { ArrowLeft, UserCheck, UserPlus } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import { useFollowingViewModel } from '../../application/view-models/useFollowingViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
@@ -28,7 +28,6 @@ function FollowingScreen() {
     activeTab,
     error,
     isLoading,
-    isRefreshing,
     isLoadingMore,
     hasMore,
     loadFirstPage,
@@ -130,7 +129,7 @@ function FollowingScreen() {
               key={item.id}
               className="surface-card mb-3 flex-row items-center p-4"
               activeOpacity={0.86}
-              onPress={() => navigation.navigate(ROUTES.PROFILE, { userId: item.id })}
+              onPress={() => navigateToUserProfile(navigation, item.id)}
             >
               <Image
                 source={{ uri: item.avatarUrl }}

@@ -29,7 +29,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, Heart, UserPlus, X } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { usePostReactionsViewModel } from '../../application/view-models/usePostReactionsViewModel';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -39,6 +38,7 @@ import { apiRoutes } from '../../../shared-kernel/application/constants/route-re
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { PostReactionUser } from '../../domain/types/reactions.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 const BRAND = '#0000ff';
 
@@ -343,16 +343,12 @@ function PostReactionsSheetBase({ visible, postId, onClose }: Props) {
     outputRange: [0.985, 1],
   });
 
-  // Open the tapped user's Profile screen. The sheet lives inside a
-  // Modal stack, so its `useNavigation()` resolves to a navigator that
-  // already has `ROUTES.PROFILE` registered in the parent stack — we
-  // just call `navigate` directly without the `getParent()` dance the
-  // old full-screen PostReactionsScreen used. Mirrors the working
-  // pattern in `ReelCommentsSheet.handlePressProfile`.
+  // Profile navigation goes through the shared helper so own profile uses
+  // the tab route and other users open in the root stack above tabs.
   const navigateToProfile = useCallback(
     (userId: string) => {
       if (!userId) return;
-      navigation.navigate(ROUTES.PROFILE, { userId });
+      navigateToUserProfile(navigation, userId);
     },
     [navigation],
   );

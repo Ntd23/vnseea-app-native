@@ -15,10 +15,14 @@ describe('Home feed video autoplay safety', () => {
     expect(feedScreenSource).not.toContain("feedPosts.find(p => p.kind === 'video')");
   });
 
-  it('keeps home feed video unmuted by default', () => {
+  it('uses shared muted autoplay state instead of local-only unmute behavior', () => {
     const postCardsSource = read('src/feed/presentation/components/PostCards.tsx');
 
-    expect(postCardsSource).toContain('const [muted, setMuted] = useState(false)');
-    expect(postCardsSource).toContain('onPress={() => setMuted(m => !m)}');
+    expect(postCardsSource).toContain('export let feedVideoMutedSnapshot = true');
+    expect(postCardsSource).toContain('function useFeedVideoMuted()');
+    expect(postCardsSource).toContain('publishFeedVideoMuted(!muted)');
+    expect(postCardsSource).not.toContain('setMuted(false)');
+    expect(postCardsSource).not.toContain('setMuted(true)');
+    expect(postCardsSource).not.toContain('const [muted, setMuted] = useState(');
   });
 });

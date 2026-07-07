@@ -10,6 +10,7 @@ export const ROUTES = {
   REELS: 'Reels',
   NOTIFICATIONS: 'Notifications',
   PROFILE: 'Profile',
+  USER_PROFILE: 'UserProfile',
   PROFILE_FRIENDS: 'ProfileFriends',
   MY_PHOTOS: 'MyPhotos',
   ALBUMS: 'Albums',

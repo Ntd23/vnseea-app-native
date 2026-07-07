@@ -569,14 +569,10 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
           } catch (e) {
             console.warn('[HeaderProfileDrawer] Logout failed', e);
           }
-          navigation.reset({
-            index: 0,
-            routes: [{ name: ROUTES.LOGIN }],
-          });
         },
       },
     ]);
-  }, [logout, handleClose, copy, navigation]);
+  }, [logout, handleClose, copy]);
 
   // Inline language toggle (drawer row + two pill buttons).
   // The user no longer has to navigate into a separate screen to
