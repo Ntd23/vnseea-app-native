@@ -1,7 +1,7 @@
 // Description: Manages real WoWonder article list loading with search and filter.
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createBlogsRepository } from '../../infrastructure/repositories/ApiBlogsRepository';
-import type { BlogsItem } from '../../domain/types/blogs.types';
+import type { BlogCategoryOption, BlogsItem } from '../../domain/types/blogs.types';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 
 const PAGE_SIZE = 20;
@@ -10,6 +10,7 @@ export function useBlogsViewModel() {
   const repository = useMemo(() => createBlogsRepository(), []);
   const { user } = useCurrentUserViewModel();
   const [articles, setArticles] = useState<BlogsItem[]>([]);
+  const [categories, setCategories] = useState<BlogCategoryOption[]>([]);
   const [nextOffset, setNextOffset] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,6 +35,9 @@ export function useBlogsViewModel() {
         });
         console.log('[useBlogsViewModel] Articles loaded:', result.items.length);
         setArticles(result.items);
+        if (result.categories && result.categories.length > 0) {
+          setCategories(result.categories);
+        }
         setNextOffset(result.nextOffset);
         setHasMore(result.hasMore);
       } catch (err) {
@@ -54,6 +58,14 @@ export function useBlogsViewModel() {
     [repository, selectedCategory],
   );
 
+    const loadCategories = useCallback(async () => {
+    const result = await repository.getCategories();
+    setCategories(result);
+  }, [repository]);
+
+  useEffect(() => {
+    void loadCategories();
+  }, [loadCategories]);
   const refresh = useCallback(() => loadFirstPage(true), [loadFirstPage]);
 
   const loadMore = useCallback(async () => {
@@ -161,6 +173,7 @@ export function useBlogsViewModel() {
   }, []);
 
   return {
+    categories,
     articles: filteredArticles,
     error,
     isLoading,

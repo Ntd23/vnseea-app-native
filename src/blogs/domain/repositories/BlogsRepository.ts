@@ -3,6 +3,7 @@
 
 import type {
   BlogsItem,
+  BlogCategoryOption,
   BlogsListOptions,
   BlogsListPage,
 } from '../types/blogs.types';
@@ -28,6 +29,7 @@ export interface BlogCreateResult {
 }
 
 export interface BlogsRepository {
+  getCategories(): Promise<BlogCategoryOption[]>;
   getArticles(options?: BlogsListOptions): Promise<BlogsListPage>;
   getArticleById(blogId: string | number): Promise<BlogsItem>;
   createBlog(data: BlogCreateData): Promise<BlogCreateResult>;

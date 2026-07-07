@@ -4340,16 +4340,13 @@ function SettingsScreen() {
       if (id === 'logout') {
         try {
           await logout();
-          navigation.reset({
-            index: 0,
-            routes: [{ name: ROUTES.LOGIN }],
-          });
         } catch (error) {
-          Alert.alert(
-            'Đăng xuất',
-            error instanceof Error ? error.message : String(error),
-          );
+          console.warn('[SettingsScreen] Logout api error:', error);
         }
+        navigation.reset({
+          index: 0,
+          routes: [{ name: ROUTES.LOGIN }],
+        });
       }
     },
     [logout, navigation, navigateToPanel],

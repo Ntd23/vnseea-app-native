@@ -47,7 +47,13 @@ else {
             if ($kind == 'RECEIVED' && !empty($extra['sender_id'])) {
                 $counterparty_id = (int) $extra['sender_id'];
             }
+            elseif ($kind == 'POINTS_EARNED' && !empty($extra['sender_id']) && (!empty($extra['action']) && $extra['action'] == 'transfer')) {
+                $counterparty_id = (int) $extra['sender_id'];
+            }
             elseif ($kind == 'SENT' && !empty($extra['recipient_id'])) {
+                $counterparty_id = (int) $extra['recipient_id'];
+            }
+            elseif ($kind == 'POINTS_DEDUCT' && !empty($extra['recipient_id']) && (!empty($extra['action']) && $extra['action'] == 'transfer')) {
                 $counterparty_id = (int) $extra['recipient_id'];
             }
 
@@ -85,13 +91,19 @@ else {
             elseif ($kind == 'RECEIVED' && !empty($extra['sender_name'])) {
                 $counterparty_name = strip_tags((string) $extra['sender_name']);
             }
+            elseif ($kind == 'POINTS_EARNED' && !empty($extra['sender_name']) && (!empty($extra['action']) && $extra['action'] == 'transfer')) {
+                $counterparty_name = strip_tags((string) $extra['sender_name']);
+            }
             elseif ($kind == 'SENT' && !empty($extra['recipient_name'])) {
+                $counterparty_name = strip_tags((string) $extra['recipient_name']);
+            }
+            elseif ($kind == 'POINTS_DEDUCT' && !empty($extra['recipient_name']) && (!empty($extra['action']) && $extra['action'] == 'transfer')) {
                 $counterparty_name = strip_tags((string) $extra['recipient_name']);
             }
 
             $notes = !empty($transaction['notes']) ? strip_tags((string) $transaction['notes']) : '';
-            if (($kind == 'RECEIVED' || $kind == 'SENT') && array_key_exists('note', $extra)) {
-                $notes = !empty($extra['note']) ? strip_tags((string) $extra['note']) : '';
+            if (($kind == 'RECEIVED' || $kind == 'SENT') && !empty($extra['note'])) {
+                $notes = strip_tags((string) $extra['note']);
             }
 
             $transactions[] = array(
@@ -138,7 +150,9 @@ else {
 
     $response_data = array(
         'api_status' => 200,
-        'balance' => isset($wo['user']['wallet']) ? (float) $wo['user']['wallet'] : 0,
+        'wallet' => isset($wo['user']['wallet']) ? (float) $wo['user']['wallet'] : 0,
+        'points' => isset($wo['user']['points']) ? (float) $wo['user']['points'] : 0,
+        'balance' => isset($wo['user']['points']) ? (float) $wo['user']['points'] : 0,
         'withdrawable_balance' => isset($wo['user']['balance']) ? (float) $wo['user']['balance'] : 0,
         'currency' => $currency,
         'currency_symbol' => $currency_symbol,

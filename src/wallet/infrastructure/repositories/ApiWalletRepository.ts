@@ -8,6 +8,8 @@ import type { WalletOverview, Transaction, TopupMethod, CurrentUser } from '../.
 interface BackendWalletResponse {
   api_status: number | string;
   balance: number;
+  wallet?: number | string;
+  points?: number | string;
   withdrawable_balance: number;
   currency: string;
   currency_symbol: string;
@@ -31,7 +33,8 @@ interface BackendWalletResponse {
   }>;
   can_withdraw: boolean;
   current_user: {
-    id: number;
+    id?: number | string;
+    user_id?: number | string;
     name: string;
     username: string;
     avatar: string;
@@ -64,11 +67,16 @@ function mapTopupMethod(raw: BackendWalletResponse['topup_methods'][0]): TopupMe
 
 function mapCurrentUser(raw: BackendWalletResponse['current_user']): CurrentUser {
   return {
-    id: raw.id,
+    id: toNumber(raw.id ?? raw.user_id),
     name: raw.name,
     username: raw.username,
     avatar: raw.avatar,
   };
+}
+
+function toNumber(value: unknown): number {
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : 0;
 }
 
 export function createWalletRepository(): WalletRepository {
@@ -79,7 +87,7 @@ export function createWalletRepository(): WalletRepository {
       );
 
       return {
-        balance: response.balance,
+        balance: toNumber(response.points ?? response.balance),
         withdrawableBalance: response.withdrawable_balance,
         currency: response.currency,
         currencySymbol: response.currency_symbol,
