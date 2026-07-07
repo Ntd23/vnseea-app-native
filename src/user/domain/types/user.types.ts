@@ -175,6 +175,7 @@ export type MapPlacePrediction = {
   types?: string[];
   lat?: number;
   lng?: number;
+  distanceMeters?: number;
   icon?: string;
   iconBackgroundColor?: string;
 };

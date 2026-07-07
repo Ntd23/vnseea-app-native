@@ -111,10 +111,14 @@ const ACCENT = '#EF4444';
 const FALLBACK_AVATAR = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 const NAVIGATION_CAMERA_PITCH = 60;
 const NAVIGATION_CAMERA_ZOOM = 19.25;
+const NAVIGATION_CAMERA_HEADING = 0;
 const ROUTE_CONNECTOR_MIN_METERS = 5;
 const ROUTE_LOOKAHEAD_MIN_METERS = 14;
 const ROUTE_LOOKAHEAD_MAX_METERS = 58;
+const OFF_ROUTE_DISTANCE_METERS = 45;
+const REROUTE_COOLDOWN_MS = 12000;
 const LOCATION_RECENTER_DISTANCE_METERS = 50000;
+const SEARCH_RADIUS_METERS = 3000;
 const MAX_VISIBLE_PAGE_MARKERS = 64;
 const IDLE_LOCATION_STATE_MIN_METERS = 8;
 const NAVIGATION_LOCATION_STATE_MIN_METERS = 2;
@@ -122,6 +126,7 @@ const IDLE_LOCATION_STATE_MIN_MS = 1400;
 const NAVIGATION_LOCATION_STATE_MIN_MS = 650;
 const HEADING_STATE_MIN_DEGREES = 4;
 const HEADING_STATE_MIN_MS = 120;
+const NAVIGATION_MOVING_SPEED_MPS = 0.8;
 const SHOW_APP_DISCOVERY_PLACES_ON_MAP = true;
 const HIDE_GOOGLE_DISCOVERY_PLACES = false;
 const pagesRepository = createPagesRepository();
@@ -471,14 +476,12 @@ function normalizeRoutePath(
 
   const start = normalized[0];
   const end = normalized[normalized.length - 1];
-  const startsNearDestination =
-    distanceMeters(start, destination) < distanceMeters(start, origin);
-  const endsNearOrigin =
-    distanceMeters(end, origin) < distanceMeters(start, origin);
+  const forwardScore =
+    distanceMeters(start, origin) + distanceMeters(end, destination);
+  const reverseScore =
+    distanceMeters(start, destination) + distanceMeters(end, origin);
 
-  return startsNearDestination || endsNearOrigin
-    ? [...normalized].reverse()
-    : normalized;
+  return reverseScore < forwardScore ? [...normalized].reverse() : normalized;
 }
 
 function buildNavigationPath(origin: LatLng, routePath: LatLng[]) {
@@ -552,6 +555,23 @@ function navigationCameraCenter(origin: LatLng, routePath: LatLng[]) {
   return pointAlongRoute(path, lookAheadDistance) || origin;
 }
 
+function navigationRouteHeading(
+  origin: LatLng,
+  routePath: LatLng[],
+  destination: LatLng,
+) {
+  const cameraCenter = navigationCameraCenter(origin, routePath);
+  if (distanceMeters(origin, cameraCenter) > 2) {
+    return bearingBetween(origin, cameraCenter);
+  }
+
+  return initialRouteHeading(
+    buildNavigationPath(origin, routePath),
+    origin,
+    destination,
+  );
+}
+
 function initialRouteHeading(
   path: LatLng[],
   origin: LatLng,
@@ -578,6 +598,45 @@ function initialRouteHeading(
   }
 
   return bearingBetween(origin, destination);
+}
+
+function validHeading(heading: number | null | undefined): heading is number {
+  return (
+    typeof heading === 'number' &&
+    Number.isFinite(heading) &&
+    heading >= 0 &&
+    heading <= 360
+  );
+}
+
+function resolveNavigationHeading({
+  deviceHeading,
+  gpsHeading,
+  routeHeading,
+  userSpeed,
+}: {
+  deviceHeading: number | null;
+  gpsHeading: number | null;
+  routeHeading: number | null;
+  userSpeed: number;
+}) {
+  if (userSpeed > NAVIGATION_MOVING_SPEED_MPS && validHeading(gpsHeading)) {
+    return gpsHeading;
+  }
+
+  if (validHeading(deviceHeading)) {
+    return deviceHeading;
+  }
+
+  if (validHeading(gpsHeading)) {
+    return gpsHeading;
+  }
+
+  if (validHeading(routeHeading)) {
+    return routeHeading;
+  }
+
+  return 0;
 }
 
 function normalizeBearingDelta(fromBearing: number, toBearing: number) {
@@ -647,6 +706,48 @@ function nearestRouteIndex(path: LatLng[], location: LatLng) {
     }
   });
   return nearestIndex;
+}
+
+function distanceToRouteSegment(point: LatLng, start: LatLng, end: LatLng) {
+  const latitudeScale = 111320;
+  const longitudeScale =
+    111320 * Math.cos(((point.latitude + start.latitude + end.latitude) / 3 * Math.PI) / 180);
+  const px = point.longitude * longitudeScale;
+  const py = point.latitude * latitudeScale;
+  const sx = start.longitude * longitudeScale;
+  const sy = start.latitude * latitudeScale;
+  const ex = end.longitude * longitudeScale;
+  const ey = end.latitude * latitudeScale;
+  const dx = ex - sx;
+  const dy = ey - sy;
+  const lengthSquared = dx * dx + dy * dy;
+
+  if (lengthSquared <= 0) {
+    return distanceMeters(point, start);
+  }
+
+  const t = Math.max(0, Math.min(1, ((px - sx) * dx + (py - sy) * dy) / lengthSquared));
+  const projection = {
+    latitude: (sy + dy * t) / latitudeScale,
+    longitude: (sx + dx * t) / longitudeScale,
+  };
+
+  return distanceMeters(point, projection);
+}
+
+function distanceToRoutePath(point: LatLng, path: LatLng[]) {
+  if (path.length === 0) return Number.POSITIVE_INFINITY;
+  if (path.length === 1) return distanceMeters(point, path[0]);
+
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < path.length; index += 1) {
+    nearestDistance = Math.min(
+      nearestDistance,
+      distanceToRouteSegment(point, path[index - 1], path[index]),
+    );
+  }
+
+  return nearestDistance;
 }
 
 function routeDistanceFromIndex(path: LatLng[], startIndex: number) {
@@ -886,6 +987,67 @@ function normalizeSearchText(value: string | undefined | null) {
     .trim();
 }
 
+function getGoogleCategorySearchQuery(value: string) {
+  const normalized = normalizeSearchText(value);
+
+  if (
+    /\b(quan an|nha hang|do an|an uong|mon an|food|restaurant|com|pho|bun|lau|nuong|buffet)\b/.test(
+      normalized,
+    )
+  ) {
+    return 'restaurant';
+  }
+
+  if (
+    /\b(cafe|ca phe|coffee|tra sua|tra|nuoc|do uong|uong)\b/.test(
+      normalized,
+    )
+  ) {
+    return 'cafe';
+  }
+
+  return undefined;
+}
+
+function getSuggestionDistanceMeters(item: SuggestionItem) {
+  if (item.kind === 'page') {
+    return item.page.distanceMeters ?? Number.POSITIVE_INFINITY;
+  }
+
+  return item.prediction.distanceMeters ?? Number.POSITIVE_INFINITY;
+}
+
+function getSuggestionGroupPriority(item: SuggestionItem) {
+  if (item.kind === 'page') {
+    return item.page.isPinned || item.page.mapPinApproved ? 1 : 2;
+  }
+
+  return 3;
+}
+
+function sortSearchSuggestions(left: SuggestionItem, right: SuggestionItem) {
+  const priorityLeft = getSuggestionGroupPriority(left);
+  const priorityRight = getSuggestionGroupPriority(right);
+
+  if (priorityLeft !== priorityRight) {
+    return priorityLeft - priorityRight;
+  }
+
+  return getSuggestionDistanceMeters(left) - getSuggestionDistanceMeters(right);
+}
+
+function findClosestSuggestion(items: SuggestionItem[]) {
+  return items.reduce<SuggestionItem | null>((closest, item) => {
+    if (!closest) {
+      return item;
+    }
+
+    return getSuggestionDistanceMeters(item) < getSuggestionDistanceMeters(closest)
+      ? item
+      : closest;
+  }, null);
+}
+
 const DefaultPlaceDotIcon = (props: { size: number; color: string }) => {
   return (
     <View
@@ -958,31 +1120,33 @@ function getGooglePlaceIcon(types?: string[]) {
 }
 
 function getPlaceIconAndColor(types?: string[], searchKeyword?: string) {
-  // 1. Prioritize Google's actual types returned by the API (100% accurate classification)
-  const googleStyle = getGooglePlaceIcon(types);
-  if (googleStyle.Icon !== DefaultPlaceDotIcon) {
-    return googleStyle;
-  }
-
-  // 2. Fallback: Only if Google returned a generic type (e.g. establishment), matching exact words of the keyword
   if (searchKeyword) {
     const clean = normalizeSearchText(searchKeyword);
     const words = clean.split(/\s+/);
+
+    const isCafe =
+      clean.includes('ca phe') ||
+      words.some(w =>
+        ['cafe', 'coffee', 'tra', 'sua', 'nuoc', 'uong'].includes(w),
+      );
+    if (isCafe) {
+      return { Icon: Coffee, color: '#8B4513', bg: '#FDF5E6' };
+    }
 
     const isFood = words.some(w => ['an', 'hang', 'food', 'restaurant', 'com', 'pho', 'bun', 'lau', 'nuong', 'banh', 'buffet', 'nha hang'].includes(w));
     if (isFood) {
       return { Icon: Utensils, color: '#ff9c40ff', bg: '#EFF6FF' };
     }
 
-    const isCafe = words.some(w => ['cafe', 'coffee', 'tra', 'sua', 'nuoc', 'uong'].includes(w));
-    if (isCafe) {
-      return { Icon: Coffee, color: '#8B4513', bg: '#FDF5E6' };
-    }
-
     const isSalon = words.some(w => ['toc', 'salon', 'barber', 'spa', 'cat toc'].includes(w));
     if (isSalon) {
       return { Icon: Scissors, color: '#D946EF', bg: '#FDF4FF' };
     }
+  }
+
+  const googleStyle = getGooglePlaceIcon(types);
+  if (googleStyle.Icon !== DefaultPlaceDotIcon) {
+    return googleStyle;
   }
 
   return googleStyle;
@@ -1079,6 +1243,8 @@ export default function NearbyUsersScreen() {
   const itemOffsets = useRef<{ [key: string]: number }>({});
   const isNavigatingRef = useRef(false);
   const lastRoutedOriginRef = useRef<LatLng | null>(null);
+  const activeRoutePathRef = useRef<LatLng[]>([]);
+  const lastRerouteAtRef = useRef(0);
   const lastSpokenInstructionRef = useRef('');
   const selectedPointTitleRef = useRef<string | undefined>(undefined);
   const lastNavigationCameraHeadingRef = useRef<{
@@ -1206,20 +1372,9 @@ export default function NearbyUsersScreen() {
       prediction: pred,
     }));
 
-    // Sort page suggestions: Pinned/Approved pages first, then regular pages by distance
-    const sortedPages = [...pageSuggestions].sort((left, right) => {
-      const leftPinned = left.page.isPinned || left.page.mapPinApproved;
-      const rightPinned = right.page.isPinned || right.page.mapPinApproved;
-      if (leftPinned !== rightPinned) {
-        return leftPinned ? -1 : 1;
-      }
-      const leftDist = left.page.distanceMeters ?? Infinity;
-      const rightDist = right.page.distanceMeters ?? Infinity;
-      return leftDist - rightDist;
-    });
-
-    // Combine: sorted pages first, then other Google Map predictions
-    return [...sortedPages, ...googleSuggestions].slice(0, 15);
+    return [...pageSuggestions, ...googleSuggestions]
+      .sort(sortSearchSuggestions)
+      .slice(0, 15);
   }, [nearbyPlaces, placePredictions, query]);
 
   const shouldShowSuggestionPanel =
@@ -1417,9 +1572,12 @@ export default function NearbyUsersScreen() {
     }
     return routeDistance(buildNavigationPath(origin, activeRoute));
   }, [activeRoute, currentLocation, selectedDistance, shouldShowRoute]);
-  const currentUserMarkerHeading =
-    deviceHeading ??
-    (shouldShowRoute && routeHeading !== null ? routeHeading : currentHeading);
+  const currentUserMarkerHeading = resolveNavigationHeading({
+    deviceHeading,
+    gpsHeading: lastHeadingStateRef.current === null ? null : currentHeading,
+    routeHeading: shouldShowRoute ? routeHeading : null,
+    userSpeed,
+  });
   const turnInstruction = useMemo(
     () =>
       isNavigating && shouldShowRoute
@@ -1481,6 +1639,8 @@ export default function NearbyUsersScreen() {
     routeRequestIdRef.current += 1;
     activeDestinationRef.current = null;
     isNavigatingRef.current = false;
+    activeRoutePathRef.current = [];
+    lastRerouteAtRef.current = 0;
     setActiveDestination(null);
     setActiveRoute([]);
     setActiveRouteConnector([]);
@@ -1505,7 +1665,7 @@ export default function NearbyUsersScreen() {
     mapRef.current?.animateCamera(
       {
         pitch: 0,
-        heading: 0,
+        heading: NAVIGATION_CAMERA_HEADING,
       },
       { duration: 450 },
     );
@@ -1546,25 +1706,25 @@ export default function NearbyUsersScreen() {
       return;
     }
 
-    lastNavigationCameraHeadingRef.current = {
-      heading: routeHeading,
-      center: location,
-      updatedAt: now,
-    };
     const cameraCenter = navigationCameraCenter(location, activeRoute);
-    const nextHeading =
+    const nextRouteHeading =
       activeDestination !== null
-        ? initialRouteHeading(
-            buildNavigationPath(location, activeRoute),
+        ? navigationRouteHeading(
             location,
+            activeRoute,
             activeDestination,
           )
         : routeHeading ?? currentHeading;
-    setRouteHeading(nextHeading);
+    lastNavigationCameraHeadingRef.current = {
+      heading: NAVIGATION_CAMERA_HEADING,
+      center: location,
+      updatedAt: now,
+    };
+    setRouteHeading(nextRouteHeading);
     mapRef.current?.animateCamera(
       {
         center: cameraCenter,
-        heading: nextHeading,
+        heading: NAVIGATION_CAMERA_HEADING,
         pitch: NAVIGATION_CAMERA_PITCH,
         zoom: NAVIGATION_CAMERA_ZOOM,
       },
@@ -1618,10 +1778,14 @@ export default function NearbyUsersScreen() {
         shouldShowRoute && activeRoute.length > 1
           ? navigationCameraCenter(location, activeRoute)
           : location;
+      const nextHeading =
+        shouldShowRoute && activeDestination !== null
+          ? NAVIGATION_CAMERA_HEADING
+          : routeHeading ?? currentHeading;
       mapRef.current?.animateCamera(
         {
           center: cameraCenter,
-          heading: routeHeading ?? currentHeading,
+          heading: nextHeading,
           pitch: NAVIGATION_CAMERA_PITCH,
           zoom: NAVIGATION_CAMERA_ZOOM,
         },
@@ -1637,7 +1801,14 @@ export default function NearbyUsersScreen() {
         350,
       );
     }
-  }, [activeRoute, currentHeading, isNavigating, routeHeading, shouldShowRoute]);
+  }, [
+    activeDestination,
+    activeRoute,
+    currentHeading,
+    isNavigating,
+    routeHeading,
+    shouldShowRoute,
+  ]);
 
   const handleRegionChangeComplete = useCallback((region: Region) => {
     currentRegionRef.current = region;
@@ -1670,7 +1841,7 @@ export default function NearbyUsersScreen() {
   const resetMapHeading = useCallback(() => {
     mapRef.current?.animateCamera(
       {
-        heading: 0,
+        heading: NAVIGATION_CAMERA_HEADING,
         pitch: isNavigating && shouldShowRoute ? NAVIGATION_CAMERA_PITCH : 0,
       },
       { duration: 320 },
@@ -1709,6 +1880,7 @@ export default function NearbyUsersScreen() {
 
       activeDestinationRef.current = destination;
       isNavigatingRef.current = navigating;
+      activeRoutePathRef.current = routePath;
       setActiveRoute(routePath);
       setActiveRouteConnector(routeConnector);
       setActiveDestination(destination);
@@ -1721,23 +1893,18 @@ export default function NearbyUsersScreen() {
       lastRoutedOriginRef.current = origin;
 
       if (navigationPath.length > 1 && navigating) {
-        const routeBearing = initialRouteHeading(
-          navigationPath,
-          origin,
-          destination,
-        );
-        const heading = routeBearing;
+        const heading = navigationRouteHeading(origin, routePath, destination);
         const cameraCenter = navigationCameraCenter(origin, routePath);
         const navigationCamera = {
           center: cameraCenter,
-          heading,
+          heading: NAVIGATION_CAMERA_HEADING,
           pitch: NAVIGATION_CAMERA_PITCH,
           zoom: NAVIGATION_CAMERA_ZOOM,
         };
 
-        setRouteHeading(routeBearing);
+        setRouteHeading(heading);
         lastNavigationCameraHeadingRef.current = {
-          heading,
+          heading: NAVIGATION_CAMERA_HEADING,
           center: origin,
           updatedAt: Date.now(),
         };
@@ -1802,7 +1969,9 @@ export default function NearbyUsersScreen() {
 
       const requestId = routeRequestIdRef.current + 1;
       routeRequestIdRef.current = requestId;
-      setIsLoadingRoutes(true);
+      if (source !== 'auto') {
+        setIsLoadingRoutes(true);
+      }
       try {
         const routes = await getRoutes({
           originLat: origin.latitude,
@@ -1833,6 +2002,10 @@ export default function NearbyUsersScreen() {
         if (routeRequestIdRef.current !== requestId) {
           return;
         }
+        if (source === 'auto') {
+          console.warn('[Navigation] auto reroute failed');
+          return;
+        }
         setIsLoadingRoutes(false);
         resetRouteState();
         Alert.alert(
@@ -1840,7 +2013,7 @@ export default function NearbyUsersScreen() {
           'VNSEEA chưa lấy được đường đi trong app. Bạn thử lại sau nhé.',
         );
       } finally {
-        if (routeRequestIdRef.current === requestId) {
+        if (routeRequestIdRef.current === requestId && source !== 'auto') {
           setIsLoadingRoutes(false);
         }
       }
@@ -1991,32 +2164,53 @@ export default function NearbyUsersScreen() {
 
       try {
         const current = currentLocationRef.current;
-        const mapCenter = currentRegionRef.current;
-        const searchLat = mapCenter ? mapCenter.latitude : current?.latitude;
-        const searchLng = mapCenter ? mapCenter.longitude : current?.longitude;
+        if (!current) {
+          Alert.alert(
+            'Chưa xác định vị trí',
+            'VNSEEA cần vị trí hiện tại của bạn để tìm trong phạm vi 3km.',
+          );
+          return;
+        }
 
-        // Calculate dynamic search radius based on visible region
-        const delta = mapCenter ? mapCenter.latitudeDelta : 0.03;
-        const visibleRadius = Math.max(3000, Math.min(50000, (delta * 111111) / 2));
+        const searchLat = current?.latitude;
+        const searchLng = current?.longitude;
+        const searchOrigin =
+          searchLat !== undefined && searchLng !== undefined
+            ? { latitude: searchLat, longitude: searchLng }
+            : null;
 
         const result = await searchNearbyPagesAndPlaces({
           query: trimmed,
+          googleQuery: getGoogleCategorySearchQuery(trimmed),
           lat: searchLat,
           lng: searchLng,
-          radius: Math.round(visibleRadius),
+          radius: SEARCH_RADIUS_METERS,
           limit: 30, // Get more results to show a rich list!
         });
 
         const pageSuggestions = result.pages
-          .map(page => ({
-            id: page.id,
-            kind: 'page' as const,
-            page,
-          }))
+          .map(page => {
+            const distance =
+              searchOrigin && page.coordinate
+                ? distanceMeters(searchOrigin, page.coordinate)
+                : page.distanceMeters;
+
+            return {
+              id: page.id,
+              kind: 'page' as const,
+              page: {
+                ...page,
+                distanceMeters:
+                  typeof distance === 'number' && Number.isFinite(distance)
+                    ? distance
+                    : page.distanceMeters,
+              },
+            };
+          })
           .filter(item => {
-            if (!searchLat || !searchLng) return true;
-            const dist = item.page.coordinate ? distanceMeters({ latitude: searchLat, longitude: searchLng }, item.page.coordinate) : undefined;
-            return dist === undefined || dist <= visibleRadius;
+            if (!searchOrigin) return true;
+            const dist = item.page.distanceMeters;
+            return dist === undefined || dist <= SEARCH_RADIUS_METERS;
           });
 
         // Resolve coordinates for Google predictions missing lat/lng
@@ -2045,51 +2239,68 @@ export default function NearbyUsersScreen() {
         );
 
         const googleSuggestions = resolvedPredictions
-          .map(pred => ({
-            id: pred.placeId,
-            kind: 'google' as const,
-            prediction: pred,
-          }))
+          .map(pred => {
+            const distance =
+              searchOrigin &&
+              typeof pred.lat === 'number' &&
+              typeof pred.lng === 'number'
+                ? distanceMeters(searchOrigin, {
+                    latitude: pred.lat,
+                    longitude: pred.lng,
+                  })
+                : pred.distanceMeters;
+
+            return {
+              id: pred.placeId,
+              kind: 'google' as const,
+              prediction: {
+                ...pred,
+                distanceMeters:
+                  typeof distance === 'number' && Number.isFinite(distance)
+                    ? distance
+                    : pred.distanceMeters,
+              },
+            };
+          })
           .filter(item => {
-            if (!searchLat || !searchLng) return true;
-            if (typeof item.prediction.lat === 'number' && typeof item.prediction.lng === 'number') {
-              const dist = distanceMeters({ latitude: searchLat, longitude: searchLng }, { latitude: item.prediction.lat, longitude: item.prediction.lng });
-              return dist <= visibleRadius;
-            }
-            return false;
+            if (!searchOrigin) return true;
+            const dist = item.prediction.distanceMeters;
+            return dist !== undefined && dist <= SEARCH_RADIUS_METERS;
           });
 
-        const sortedPages = [...pageSuggestions].sort((left, right) => {
-          const leftPinned = left.page.isPinned || left.page.mapPinApproved;
-          const rightPinned = right.page.isPinned || right.page.mapPinApproved;
-          if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
-          const leftDist = left.page.distanceMeters ?? Infinity;
-          const rightDist = right.page.distanceMeters ?? Infinity;
-          return leftDist - rightDist;
-        });
-
-        const combined = [...sortedPages, ...googleSuggestions];
+        const combined = [...pageSuggestions, ...googleSuggestions].sort(
+          sortSearchSuggestions,
+        );
         setSearchResults(combined);
         setIsSearchResultsVisible(combined.length > 0);
 
-        if (combined.length > 0) {
-          const first = combined[0];
-          let coord: LatLng | null = null;
-          if (first.kind === 'page' && first.page.coordinate) {
-            coord = first.page.coordinate;
-          } else if (first.kind === 'google' && typeof first.prediction.lat === 'number' && typeof first.prediction.lng === 'number') {
-            coord = { latitude: first.prediction.lat, longitude: first.prediction.lng };
-          }
-
-          if (coord) {
-            mapRef.current?.animateToRegion(
-              {
-                ...coord,
-                latitudeDelta: 0.015,
-                longitudeDelta: 0.015,
+        const closest = findClosestSuggestion(combined);
+        if (closest) {
+          if (closest.kind === 'page') {
+            selectPage(closest.page);
+          } else if (
+            typeof closest.prediction.lat === 'number' &&
+            typeof closest.prediction.lng === 'number'
+          ) {
+            selectPoint({
+              id: closest.prediction.placeId,
+              source: 'google',
+              title: closest.prediction.mainText,
+              subtitle:
+                closest.prediction.secondaryText ||
+                closest.prediction.description,
+              address:
+                closest.prediction.secondaryText ||
+                closest.prediction.description,
+              coordinate: {
+                latitude: closest.prediction.lat,
+                longitude: closest.prediction.lng,
               },
-              450,
-            );
+              distanceMeters: closest.prediction.distanceMeters,
+              types: closest.prediction.types,
+              icon: closest.prediction.icon,
+              iconBackgroundColor: closest.prediction.iconBackgroundColor,
+            });
           }
         }
       } catch {
@@ -2098,7 +2309,7 @@ export default function NearbyUsersScreen() {
         setIsLoadingRoutes(false);
       }
     },
-    [getPlaceDetails, searchNearbyPagesAndPlaces],
+    [getPlaceDetails, searchNearbyPagesAndPlaces, selectPage, selectPoint],
   );
 
   const handleSelectSearchResult = useCallback(
@@ -2269,8 +2480,14 @@ export default function NearbyUsersScreen() {
 
       const latestActiveDestination = activeDestinationRef.current;
       if (!latestActiveDestination || !isNavigatingRef.current) return;
-      const lastOrigin = lastRoutedOriginRef.current;
-      if (!lastOrigin || distanceMeters(lastOrigin, location) > 30) {
+      const activePath = activeRoutePathRef.current;
+      const offRouteDistance = distanceToRoutePath(location, activePath);
+      const shouldReroute =
+        activePath.length < 2 ||
+        offRouteDistance > OFF_ROUTE_DISTANCE_METERS;
+
+      if (shouldReroute && now - lastRerouteAtRef.current >= REROUTE_COOLDOWN_MS) {
+        lastRerouteAtRef.current = now;
         loadRouteOptions(
           latestActiveDestination,
           true,
@@ -2525,8 +2742,10 @@ export default function NearbyUsersScreen() {
       const current = currentLocationRef.current;
       searchNearbyPagesAndPlaces({
         query: trimmed,
+        googleQuery: getGoogleCategorySearchQuery(trimmed),
         lat: current?.latitude,
         lng: current?.longitude,
+        radius: SEARCH_RADIUS_METERS,
         limit: 20,
       })
         .then(result => {
@@ -2652,13 +2871,17 @@ export default function NearbyUsersScreen() {
             anchor={{ x: 0.5, y: 0.5 }}
             coordinate={currentLocation}
             flat
-            rotation={userSpeed > 0.8 ? currentUserMarkerHeading : 0}
+            rotation={
+              userSpeed > NAVIGATION_MOVING_SPEED_MPS
+                ? currentUserMarkerHeading
+                : 0
+            }
             tracksViewChanges={false}
             zIndex={20}
             onPress={selectCurrentUser}
           >
             <View style={styles.currentUserMarker}>
-              {userSpeed > 0.8 ? (
+              {userSpeed > NAVIGATION_MOVING_SPEED_MPS ? (
                 <View style={styles.currentUserPuck}>
                   <View style={styles.currentUserArrow}>
                     <View style={styles.currentUserArrowTail} />
@@ -2738,14 +2961,18 @@ export default function NearbyUsersScreen() {
               {(() => {
                 const isGoogle = selectedPoint.source === 'google';
                 const styleObj = isGoogle ? getPlaceIconAndColor(selectedPoint.types, query) : { color: '#16A34A', Icon: null };
-                const categoryColor = selectedPoint.iconBackgroundColor || styleObj.color;
+                const shouldUseGoogleIcon =
+                  isGoogle && styleObj.Icon === DefaultPlaceDotIcon;
+                const categoryColor = shouldUseGoogleIcon
+                  ? selectedPoint.iconBackgroundColor || styleObj.color
+                  : styleObj.color;
                 const Icon = styleObj.Icon;
 
                 return (
                   <View style={[styles.selectedPin, isGoogle && styles.googleMarker]}>
                     <View style={[styles.selectedPinTail, { backgroundColor: categoryColor }]} />
                     <View style={[styles.selectedPinHead, { backgroundColor: categoryColor }]}>
-                      {isGoogle && selectedPoint.icon ? (
+                      {isGoogle && shouldUseGoogleIcon && selectedPoint.icon ? (
                         <Image
                           source={{ uri: selectedPoint.icon }}
                           style={{ width: 16, height: 16, tintColor: '#FFFFFF' }}
@@ -2885,6 +3112,9 @@ export default function NearbyUsersScreen() {
 
           const googleIconStyle = item.kind === 'google' ? getPlaceIconAndColor(item.prediction.types, query) : null;
           const MarkerIcon = googleIconStyle ? googleIconStyle.Icon : MapPin;
+          const shouldUseGoogleIcon =
+            item.kind === 'google' &&
+            googleIconStyle?.Icon === DefaultPlaceDotIcon;
 
           return (
             <Marker
@@ -2908,10 +3138,16 @@ export default function NearbyUsersScreen() {
                 <View
                   style={[
                     styles.googleCircleMarker,
-                    { backgroundColor: item.prediction.iconBackgroundColor || googleIconStyle?.color || '#1E70E6' },
+                    {
+                      backgroundColor: shouldUseGoogleIcon
+                        ? item.prediction.iconBackgroundColor ||
+                          googleIconStyle?.color ||
+                          '#1E70E6'
+                        : googleIconStyle?.color || '#1E70E6',
+                    },
                   ]}
                 >
-                  {item.prediction.icon ? (
+                  {shouldUseGoogleIcon && item.prediction.icon ? (
                     <Image
                       source={{ uri: item.prediction.icon }}
                       style={{ width: 15, height: 15, tintColor: '#FFFFFF' }}
@@ -3386,21 +3622,27 @@ export default function NearbyUsersScreen() {
                 className="h-14 w-14 rounded-2xl bg-slate-100"
               />
             ) : (
-              <View
-                style={{
-                  backgroundColor: getGooglePlaceIcon(selectedPoint.types).bg,
-                  width: 56,
-                  height: 56,
-                  borderRadius: 16,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                {(() => {
-                  const { Icon, color } = getGooglePlaceIcon(selectedPoint.types);
-                  return <Icon size={24} color={color} />;
-                })()}
-              </View>
+              (() => {
+                const { Icon, bg, color } = getPlaceIconAndColor(
+                  selectedPoint.types,
+                  query,
+                );
+
+                return (
+                  <View
+                    style={{
+                      backgroundColor: bg,
+                      width: 56,
+                      height: 56,
+                      borderRadius: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Icon size={24} color={color} />
+                  </View>
+                );
+              })()
             )}
             <View className="ml-3 flex-1">
               <Text
@@ -3618,6 +3860,9 @@ export default function NearbyUsersScreen() {
               const distMeters = (coordinate && currentLocation) ? distanceMeters(currentLocation, coordinate) : (item.kind === 'page' ? item.page.distanceMeters : undefined);
               const googleIconStyle = item.kind === 'google' ? getPlaceIconAndColor(types, query) : null;
               const IconComponent = googleIconStyle ? googleIconStyle.Icon : null;
+              const shouldUseGoogleIcon =
+                item.kind === 'google' &&
+                googleIconStyle?.Icon === DefaultPlaceDotIcon;
 
               const onDetailsOrShare = () => {
                 if (item.kind === 'page') {
@@ -3663,10 +3908,16 @@ export default function NearbyUsersScreen() {
                         <View
                           style={[
                             styles.resultCardIconBg,
-                            { backgroundColor: item.prediction.iconBackgroundColor || googleIconStyle?.bg || '#F1F5F9' },
+                            {
+                              backgroundColor: shouldUseGoogleIcon
+                                ? item.prediction.iconBackgroundColor ||
+                                  googleIconStyle?.bg ||
+                                  '#F1F5F9'
+                                : googleIconStyle?.bg || '#F1F5F9',
+                            },
                           ]}
                         >
-                          {item.prediction.icon ? (
+                          {shouldUseGoogleIcon && item.prediction.icon ? (
                             <Image
                               source={{ uri: item.prediction.icon }}
                               style={{ width: 22, height: 22 }}
