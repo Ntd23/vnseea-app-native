@@ -38,6 +38,17 @@ function isAlreadyInCartError(error: unknown) {
     error.message.toLowerCase().includes('already in cart');
 }
 
+function normalizeProductsResponse(response: ProductsResponse): ProductsResponse {
+  return {
+    ...response,
+    products: Array.isArray(response.products) ? response.products : [],
+    products_categories:
+      response.products_categories && typeof response.products_categories === 'object'
+        ? response.products_categories
+        : {},
+  };
+}
+
 async function increaseExistingCartQuantity(productId: number, qty: number) {
   const cartProducts = await getCartProducts();
   const cartProduct = cartProducts.find(product => {
@@ -105,7 +116,7 @@ export function createProductRepository(): ProductRepository {
           product_id: input?.product_id,
         },
       );
-      return response;
+      return normalizeProductsResponse(response);
     },
 
     async getMyProducts() {
@@ -113,7 +124,7 @@ export function createProductRepository(): ProductRepository {
         api_status: number;
         products: ProductsResponse['products'];
       }>(apiRoutes.products.get, {});
-      return { products: response.products };
+      return { products: Array.isArray(response.products) ? response.products : [] };
     },
 
     async addToCart(productId, qty = 1) {
@@ -165,7 +176,8 @@ export function createProductRepository(): ProductRepository {
         { limit: 1 },
       );
 
-      const categories = Object.entries(response.products_categories || {}).map(
+      const normalized = normalizeProductsResponse(response);
+      const categories = Object.entries(normalized.products_categories || {}).map(
         ([id, subs]) => ({
           id: parseInt(id, 10),
           lang_key: '',

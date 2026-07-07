@@ -1,5 +1,5 @@
 // Description: Displays Marketplace products with searchable filter controls.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutAnimation } from 'react-native';
 import {
   Platform,
@@ -19,9 +19,10 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { NavigationContext } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
+import { navigationRef } from '../../../navigation/navigationRef';
 import {
   ArrowLeft,
   RotateCcw,
@@ -391,7 +392,7 @@ function DistancePickerModal({
 }
 
 function MarketplaceScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useContext(NavigationContext);
   const insets = useSafeAreaInsets();
   const {
     bottomContentPadding,
@@ -464,14 +465,6 @@ function MarketplaceScreen() {
   }, [vm.categories]);
 
   useEffect(() => {
-    if (Platform.OS !== 'ios') return undefined;
-
-    return () => {
-      publishNativeTabScrollBehavior('onScrollDown');
-    };
-  }, []);
-
-  useEffect(() => {
     return () => {
       if (toastTimeoutRef.current) {
         clearTimeout(toastTimeoutRef.current);
@@ -479,23 +472,58 @@ function MarketplaceScreen() {
     };
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (Platform.OS !== 'ios') return undefined;
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
 
-      return () => {
-        publishNativeTabScrollBehavior('onScrollDown');
+    return () => {
+      publishNativeTabScrollBehavior('onScrollDown');
+    };
+  }, []);
+
+  const navigate = useCallback(
+    (routeName: string, params?: object) => {
+      if (navigation) {
+        const screenNavigation = navigation as unknown as {
+          navigate: (name: string, params?: object) => void;
+        };
+        screenNavigation.navigate(routeName, params);
+        return;
+      }
+      if (!navigationRef.isReady()) return;
+      const rootNavigation = navigationRef as unknown as {
+        navigate: (name: string, params?: object) => void;
       };
-    }, []),
+      rootNavigation.navigate(routeName, params);
+    },
+    [navigation],
   );
 
-  const handleMyProducts = useCallback(() => {
-    navigation.navigate(ROUTES.MY_PRODUCTS);
+  const goBack = useCallback(() => {
+    if (navigation) {
+      const screenNavigation = navigation as unknown as {
+        goBack: () => void;
+      };
+      screenNavigation.goBack();
+      return;
+    }
+    if (!navigationRef.isReady()) return;
+    if (navigationRef.canGoBack()) {
+      navigationRef.goBack();
+      return;
+    }
+    const rootNavigation = navigationRef as unknown as {
+      navigate: (name: string) => void;
+    };
+    rootNavigation.navigate(ROUTES.MAIN_TABS);
   }, [navigation]);
 
+  const handleMyProducts = useCallback(() => {
+    navigate(ROUTES.MY_PRODUCTS);
+  }, [navigate]);
+
   const handleOpenCart = useCallback(() => {
-    navigation.navigate(ROUTES.CART);
-  }, [navigation]);
+    navigate(ROUTES.CART);
+  }, [navigate]);
 
   const showCartToast = useCallback(
     (productName: string) => {
@@ -595,12 +623,12 @@ function MarketplaceScreen() {
 
   const handleProductPress = useCallback(
     (product: ProductItem) => {
-      navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+      navigate(ROUTES.PRODUCT_DETAIL, {
         productId: product.id,
         product,
       });
     },
-    [navigation],
+    [navigate],
   );
 
  // Quick add-to-cart from the marketplace card. It keeps the user on
@@ -632,7 +660,7 @@ function MarketplaceScreen() {
     (product: ProductItem) => {
     const seller = product.seller;
     if (!seller?.user_id) return;
-    navigation.navigate(ROUTES.CHAT, {
+    navigate(ROUTES.CHAT, {
     chat: {
     id: String(seller.user_id),
     chatId: String(seller.user_id),
@@ -651,7 +679,7 @@ function MarketplaceScreen() {
     product,
     });
     },
-    [navigation],
+    [navigate],
   );
 
 
@@ -730,6 +758,19 @@ function MarketplaceScreen() {
           ) : null}
         </View>
         <TouchableOpacity
+          className={`h-10 w-10 items-center justify-center rounded-2xl border ${
+            hasActiveFilters
+              ? 'border-red-200 bg-red-50/60'
+              : 'border-slate-200/50 bg-slate-50/50 opacity-40'
+          }`}
+          activeOpacity={0.8}
+          disabled={!hasActiveFilters}
+          onPress={vm.resetFilters}
+          hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+        >
+          <RotateCcw size={16} color={hasActiveFilters ? '#EF4444' : '#64748B'} />
+        </TouchableOpacity>
+        <TouchableOpacity
           className="h-10 px-3.5 flex-row items-center justify-center rounded-2xl bg-[#0F56FB] gap-1.5 shadow-sm shadow-blue-200/50"
           activeOpacity={0.85}
           onPress={() => {
@@ -769,6 +810,17 @@ function MarketplaceScreen() {
               <X size={14} color="#64748B" />
             </TouchableOpacity>
           ) : null}
+          <TouchableOpacity
+            className={`ml-2 h-8 w-8 items-center justify-center rounded-full ${
+              hasActiveFilters ? 'bg-red-50' : 'bg-slate-200/40 opacity-40'
+            }`}
+            activeOpacity={0.8}
+            disabled={!hasActiveFilters}
+            hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+            onPress={vm.resetFilters}
+          >
+            <RotateCcw size={15} color={hasActiveFilters ? '#EF4444' : '#64748B'} />
+          </TouchableOpacity>
         </View>
 
         {/* Row 2: Sort and Category Dropdowns */}
@@ -817,7 +869,7 @@ function MarketplaceScreen() {
         {/* Row 3: Distance Dropdown */}
         <TouchableOpacity
           className={`flex-row items-center justify-between rounded-2xl border px-3.5 py-3 ${
-            vm.distance !== undefined && vm.distance !== 15
+            vm.distance !== undefined
               ? 'border-blue-200 bg-blue-50/60'
               : 'border-slate-200/50 bg-slate-50/50'
           }`}
@@ -825,20 +877,20 @@ function MarketplaceScreen() {
           onPress={() => setDistanceModalVisible(true)}
         >
           <View className="flex-row items-center gap-2">
-            <MapPin size={15} color={vm.distance !== undefined && vm.distance !== 15 ? '#0F56FB' : '#64748B'} />
+            <MapPin size={15} color={vm.distance !== undefined ? '#0F56FB' : '#64748B'} />
             <Text
               className={`text-sm font-semibold ${
-                vm.distance !== undefined && vm.distance !== 15 ? 'text-[#0F56FB]' : 'text-slate-700'
+                vm.distance !== undefined ? 'text-[#0F56FB]' : 'text-slate-700'
               }`}
             >
               {currentDistanceLabel}
             </Text>
           </View>
-          <ChevronDown size={14} color={vm.distance !== undefined && vm.distance !== 15 ? '#0F56FB' : '#64748B'} />
+          <ChevronDown size={14} color={vm.distance !== undefined ? '#0F56FB' : '#64748B'} />
         </TouchableOpacity>
 
         {/* Row 4: Nearby stores button and Reset button */}
-        <View className="flex-row gap-2.5 mt-0.5">
+        <View style={{ display: 'none' }}>
           <TouchableOpacity
             className={`flex-1 h-11 items-center justify-center rounded-2xl flex-row gap-2 shadow-sm ${
               vm.distance === 15
@@ -882,7 +934,7 @@ function MarketplaceScreen() {
         <TouchableOpacity
           className="h-10 flex-1 items-center justify-center"
           activeOpacity={0.75}
-          onPress={() => navigation.navigate(ROUTES.FEED)}
+          onPress={() => navigate(ROUTES.FEED)}
         >
           <Compass
             size={24}
@@ -897,7 +949,7 @@ function MarketplaceScreen() {
         <TouchableOpacity
           className="h-10 flex-1 items-center justify-center"
           activeOpacity={0.75}
-          onPress={() => navigation.navigate(ROUTES.NEARBY_USERS)}
+          onPress={() => navigate(ROUTES.NEARBY_USERS)}
         >
           <MapPin
             size={24}
@@ -913,7 +965,7 @@ function MarketplaceScreen() {
           className="h-10 flex-1 items-center justify-center"
           activeOpacity={0.75}
           onPress={() => {
-            navigation.navigate(ROUTES.FEED, { filter: 'photos' });
+            navigate(ROUTES.FEED, { filter: 'photos' });
           }}
         >
           <ImageIcon
@@ -929,7 +981,7 @@ function MarketplaceScreen() {
         <TouchableOpacity
           className="h-10 flex-1 items-center justify-center"
           activeOpacity={0.75}
-          onPress={() => navigation.navigate(ROUTES.REELS)}
+          onPress={() => navigate(ROUTES.REELS)}
         >
           <Video
             size={24}
@@ -962,7 +1014,7 @@ function MarketplaceScreen() {
           className="h-10 w-10 items-center justify-center rounded-full"
           activeOpacity={0.8}
           hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
-          onPress={() => navigation.goBack()}
+          onPress={goBack}
         >
           <ArrowLeft size={22} color="#1E293B" />
         </TouchableOpacity>
@@ -1000,7 +1052,18 @@ function MarketplaceScreen() {
         </TouchableOpacity>
       </View>
       {marketplaceTopTabs}
-      {filtersCollapsed ? collapsedBar : fullBar}
+      <View
+        pointerEvents={filtersCollapsed ? 'auto' : 'none'}
+        style={filtersCollapsed ? undefined : { display: 'none' }}
+      >
+        {collapsedBar}
+      </View>
+      <View
+        pointerEvents={filtersCollapsed ? 'none' : 'auto'}
+        style={filtersCollapsed ? { display: 'none' } : undefined}
+      >
+        {fullBar}
+      </View>
     </View>
   );
 

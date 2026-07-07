@@ -236,9 +236,148 @@ function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
     types,
     lat: record.lat !== undefined && record.lat !== null ? Number(record.lat) : undefined,
     lng: record.lng !== undefined && record.lng !== null ? Number(record.lng) : undefined,
+    distanceMeters: record.distance_meters !== undefined && record.distance_meters !== null ? Number(record.distance_meters) : undefined,
     icon: record.icon !== undefined && record.icon !== null ? String(record.icon) : undefined,
     iconBackgroundColor: record.icon_background_color !== undefined && record.icon_background_color !== null ? String(record.icon_background_color) : undefined,
   };
+}
+
+function distanceMetersBetween(
+  origin: { latitude: number; longitude: number },
+  destination: { latitude: number; longitude: number },
+) {
+  const earthRadius = 6371000;
+  const latFrom = (origin.latitude * Math.PI) / 180;
+  const lngFrom = (origin.longitude * Math.PI) / 180;
+  const latTo = (destination.latitude * Math.PI) / 180;
+  const lngTo = (destination.longitude * Math.PI) / 180;
+  const latDelta = latTo - latFrom;
+  const lngDelta = lngTo - lngFrom;
+  const angle =
+    2 *
+    Math.asin(
+      Math.sqrt(
+        Math.sin(latDelta / 2) ** 2 +
+          Math.cos(latFrom) * Math.cos(latTo) * Math.sin(lngDelta / 2) ** 2,
+      ),
+    );
+
+  return earthRadius * angle;
+}
+
+function mapGoogleNearbyPrediction(
+  record: RawApiRecord,
+  origin?: { latitude: number; longitude: number },
+): MapPlacePrediction | null {
+  const placeId = String(record.place_id ?? '');
+  const name = String(record.name ?? '');
+  const location = asRecord(asRecord(record.geometry)?.location);
+  const lat = Number(location?.lat);
+  const lng = Number(location?.lng);
+
+  if (!placeId || !name || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+
+  let types: string[] | undefined;
+  if (Array.isArray(record.types)) {
+    types = record.types.map(String);
+  }
+
+  const coordinate = { latitude: lat, longitude: lng };
+
+  return {
+    source: 'google',
+    placeId,
+    description: String(record.vicinity || record.formatted_address || name),
+    mainText: name,
+    secondaryText: String(record.vicinity || record.formatted_address || ''),
+    types,
+    lat,
+    lng,
+    distanceMeters: origin
+      ? distanceMetersBetween(origin, coordinate)
+      : undefined,
+    icon:
+      record.icon !== undefined && record.icon !== null
+        ? String(record.icon)
+        : undefined,
+    iconBackgroundColor:
+      record.icon_background_color !== undefined &&
+      record.icon_background_color !== null
+        ? String(record.icon_background_color)
+        : undefined,
+  };
+}
+
+function mergePlacePredictions(
+  primary: MapPlacePrediction[],
+  secondary: MapPlacePrediction[],
+) {
+  const seen = new Set<string>();
+  const merged: MapPlacePrediction[] = [];
+
+  [...primary, ...secondary].forEach(item => {
+    if (seen.has(item.placeId)) return;
+    seen.add(item.placeId);
+    merged.push(item);
+  });
+
+  return merged;
+}
+
+async function getDirectGoogleNearbyPredictions(input: {
+  query: string;
+  lat?: number;
+  lng?: number;
+  radius?: number;
+}) {
+  if (
+    !apiConfig.googleMapsApiKey ||
+    !['restaurant', 'cafe'].includes(input.query) ||
+    typeof input.lat !== 'number' ||
+    typeof input.lng !== 'number'
+  ) {
+    return [];
+  }
+
+  const origin = { latitude: input.lat, longitude: input.lng };
+  const params = new URLSearchParams({
+    location: `${input.lat.toFixed(6)},${input.lng.toFixed(6)}`,
+    radius: String(Math.min(Math.max(input.radius ?? 3000, 1), 3000)),
+    type: input.query,
+    language: 'vi',
+    key: apiConfig.googleMapsApiKey,
+  });
+
+  try {
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`,
+    );
+    const data = (await response.json()) as {
+      status?: string;
+      error_message?: string;
+      results?: RawApiRecord[];
+    };
+
+    console.warn('=== GOOGLE DIRECT NEARBY DEBUG ===', {
+      query: input.query,
+      status: data.status,
+      error: data.error_message,
+      count: data.results?.length ?? 0,
+    });
+
+    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      return [];
+    }
+
+    return (data.results ?? [])
+      .map(record => mapGoogleNearbyPrediction(record, origin))
+      .filter(Boolean) as MapPlacePrediction[];
+  } catch (error) {
+    console.warn('=== GOOGLE DIRECT NEARBY ERROR ===', String(error));
+    return [];
+  }
 }
 
 function mapGooglePlace(record: RawApiRecord | undefined): NearbyPlace | null {
@@ -494,16 +633,28 @@ export function createUserRepository(): UserRepository {
       );
 
       console.warn('=== GOOGLE API DEBUG ===', {
+        query: input.query.trim(),
         nearby_status: response.debug_nearby_status,
         nearby_error: response.debug_nearby_error,
+        detected_type: response.debug_detected_type,
+        nearby_count: response.debug_nearby_count,
         autocomplete_status: response.debug_autocomplete_status,
         autocomplete_error: response.debug_autocomplete_error,
         predictions_count: response.predictions?.length,
       });
 
-      return (response.predictions ?? [])
+      const backendPredictions = (response.predictions ?? [])
         .map(mapPlacePrediction)
         .filter(Boolean) as MapPlacePrediction[];
+
+      const directNearbyPredictions = await getDirectGoogleNearbyPredictions(
+        input,
+      );
+
+      return mergePlacePredictions(
+        directNearbyPredictions,
+        backendPredictions,
+      );
     },
 
     async getPlaceDetails(placeId: string) {

@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 import {
   languageStorage,
   type AppLanguage,
@@ -10,11 +10,20 @@ export function useAppLanguage(): AppLanguage {
     languageStorage.getLanguage(),
   );
 
-  useFocusEffect(
-    useCallback(() => {
+  useEffect(() => {
+    const syncLanguage = () => {
       setLanguage(languageStorage.getLanguage());
-    }, []),
-  );
+    };
+
+    syncLanguage();
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') {
+        syncLanguage();
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   return language;
 }

@@ -41,6 +41,7 @@ import type { PagesFilter, PagesItem } from '../../domain/types/pages.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type PagesNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -414,29 +415,15 @@ function PageCard({
   const language = useAppLanguage();
   const copy = COPY[language] ?? COPY.vi;
   const showActiveBadge = Number(page.pageId) % 2 === 0;
-  const overlayText = (page.pageTitle || '').trim();
 
   return (
     <Animated.View
       entering={FadeInDown.delay(80 + index * 60).duration(420)}
       style={styles.cardContainer}
     >
-      {/* Cover with action buttons + optional text overlay */}
+      {/* Cover with action buttons */}
       <View style={styles.coverWrapper}>
         <PageCover page={page} />
-
-        {overlayText ? (
-          <View pointerEvents="none" style={styles.coverOverlay}>
-            <Text
-              style={styles.coverOverlayText}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              allowFontScaling={false}
-            >
-              {overlayText.toUpperCase()}
-            </Text>
-          </View>
-        ) : null}
 
         {/* Top-right: edit + view page */}
         <View style={styles.coverActions}>
@@ -582,6 +569,7 @@ function PagesScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <FeedHeader />
 
       {/* Header */}
       <View style={styles.header}>
@@ -676,36 +664,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   header: {
-    height: 72,
+    height: 64,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#EEF1FA',
+    borderBottomColor: '#f1f5f9',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
   },
   headerCircleBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
     elevation: 2,
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '800',
     color: TEXT,
   },
   headerRight: {
@@ -714,16 +704,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerCreateBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: BRAND,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: BRAND,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.22,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 3,
   },
   list: {
