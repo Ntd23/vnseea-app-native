@@ -1372,7 +1372,7 @@ export default function NearbyUsersScreen() {
     [routeOptions, selectedRouteId],
   );
   const activeRouteDistance = useMemo(() => {
-    const origin = currentLocationRef.current;
+    const origin = currentLocation;
     if (!origin || !shouldShowRoute) {
       return selectedDistance;
     }
@@ -1738,7 +1738,7 @@ export default function NearbyUsersScreen() {
         });
       }
     },
-    [deviceHeading, voiceGuidanceEnabled],
+    [voiceGuidanceEnabled],
   );
 
   const loadRouteOptions = useCallback(
@@ -1929,7 +1929,7 @@ export default function NearbyUsersScreen() {
           } else {
             Alert.alert('Không lấy được tọa độ', 'Không tìm thấy tọa độ của địa chỉ này.');
           }
-        } catch (err) {
+        } catch {
           Alert.alert('Lỗi', 'Không thể lấy thông tin địa điểm.');
         } finally {
           setIsLoadingRoutes(false);
@@ -2053,7 +2053,7 @@ export default function NearbyUsersScreen() {
             );
           }
         }
-      } catch (err) {
+      } catch {
         Alert.alert('Lỗi', 'Không thể thực hiện tìm kiếm.');
       } finally {
         setIsLoadingRoutes(false);
@@ -2099,7 +2099,7 @@ export default function NearbyUsersScreen() {
                 iconBackgroundColor: details.iconBackgroundColor,
               });
             }
-          } catch (err) {
+          } catch {
             Alert.alert('Lỗi', 'Không thể lấy thông tin địa điểm.');
           } finally {
             setIsLoadingRoutes(false);
@@ -2568,7 +2568,7 @@ export default function NearbyUsersScreen() {
 
       <MapView
         ref={mapRef}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        provider={PROVIDER_GOOGLE}
         initialRegion={DEFAULT_REGION}
         googleMapId={
           hasGoogleMapId && !HIDE_GOOGLE_DISCOVERY_PLACES
