@@ -191,6 +191,7 @@ export function createStackRoutes(
     { name: ROUTES.REELS, component: ReelsScreen },
     { name: ROUTES.POST_DETAIL, component: PostDetailScreen },
     { name: ROUTES.PROFILE, component: ProfileScreen },
+    { name: ROUTES.USER_PROFILE, component: ProfileScreen },
     { name: ROUTES.PROFILE_FRIENDS, component: ProfileFriendsScreen },
     { name: ROUTES.MY_PHOTOS, component: MyPhotosScreen },
     { name: ROUTES.ALBUMS, component: AlbumsScreen },

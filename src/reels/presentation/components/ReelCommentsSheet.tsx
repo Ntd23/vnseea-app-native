@@ -88,7 +88,7 @@ import {
   CommentSheetReactionPickerSurface,
 } from './CommentSheetChrome';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
-import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 
@@ -306,7 +306,7 @@ function ReelCommentsSheetBase({
   const isScreenFocused = useIsFocused();
 
   const handlePressProfile = useCallback((userId: string) => {
-    navigation.navigate(ROUTES.PROFILE, { userId });
+    navigateToUserProfile(navigation, userId);
   }, [navigation]);
   const insets = useSafeAreaInsets();
   const sheetBottomPadding = Platform.OS === 'ios' ? 0 : Math.max(insets.bottom, 10);

@@ -55,6 +55,7 @@ import {
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import type {
   FeedPollPost,
   FeedPost,
@@ -1357,7 +1358,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   const handleNavigateToProfile = useCallback(
     (userId: string) => {
       if (!userId) return;
-      navigation.navigate(ROUTES.PROFILE, { userId });
+      navigateToUserProfile(navigation, userId);
     },
     [navigation],
   );

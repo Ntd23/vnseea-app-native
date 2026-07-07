@@ -72,6 +72,7 @@ import VideoPlayer from 'react-native-video';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import { useChatViewModel } from '../../application/view-models/useChatViewModel';
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
@@ -2959,7 +2960,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 setIsGroupInfoVisible(true);
                 loadGroupInfo().catch(() => undefined);
               } else if (chat.chatType === 'user') {
-                navigation.navigate(ROUTES.PROFILE, { userId: chat.userId });
+                navigateToUserProfile(navigation, chat.userId);
               }
             }}
           >

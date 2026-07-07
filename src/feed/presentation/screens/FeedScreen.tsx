@@ -162,6 +162,7 @@ import {
   pickFeedVideoAutoplayCandidate,
   pickFeedViewableVideoId,
 } from './feedVideoAutoplay';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
@@ -1607,7 +1608,7 @@ function FeedScreen() {
   // Navigate to user profile
   const navigateToProfile = useCallback(
     (userId: string) => {
-      navigation.navigate(ROUTES.PROFILE, { userId });
+      navigateToUserProfile(navigation, userId);
     },
     [navigation],
   );

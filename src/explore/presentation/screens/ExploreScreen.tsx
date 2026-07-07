@@ -68,6 +68,7 @@ import {
 import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import { useMyGroupsViewModel } from '../../../community';
 import { useMyPagesViewModel } from '../../../pages';
 import HashtagCard from '../components/HashtagCard';
@@ -877,7 +878,7 @@ function ExploreScreen() {
 
   const navigateToProfile = useCallback(
     (userId: string) => {
-      navigation.navigate(ROUTES.PROFILE, { userId });
+      navigateToUserProfile(navigation, userId);
     },
     [navigation],
   );

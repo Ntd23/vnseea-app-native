@@ -36,6 +36,7 @@ import type { TrendingHashtag } from '../../../explore/domain/types/explore.type
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 type SearchNav = NativeStackNavigationProp<RootStackParamList>;
 type SearchRoute = RouteProp<RootStackParamList, typeof ROUTES.SEARCH>;
@@ -414,7 +415,7 @@ function SearchScreen() {
           key={`user-${user.userId}`}
           user={user}
           copy={copy}
-          onPress={() => navigation.navigate(ROUTES.PROFILE, { userId: user.userId })}
+          onPress={() => navigateToUserProfile(navigation, user.userId)}
           onFollow={() => toggleFollow(user.userId, user.isFollowing)}
         />
       ))}
