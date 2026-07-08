@@ -36,12 +36,55 @@ export function setVideoPlaybackTime(
 
 export function isReelItemActive({
   isScreenFocused,
+  isCommentsOpen,
   index,
   activeIndex,
 }: {
   isScreenFocused: boolean;
+  isCommentsOpen: boolean;
   index: number;
   activeIndex: number;
 }) {
-  return isScreenFocused && index === activeIndex;
+  return isScreenFocused && !isCommentsOpen && index === activeIndex;
+}
+
+type NavigationRouteLike = {
+  key?: string;
+  name?: string;
+};
+
+type NavigationStateLike = {
+  index?: number;
+  routes?: NavigationRouteLike[];
+};
+
+export function isNavigationRouteSelected(
+  state: NavigationStateLike | null | undefined,
+  routeKey: string | null | undefined,
+  routeName: string | null | undefined,
+) {
+  if (!state || !Array.isArray(state.routes)) return false;
+  const activeIndex = typeof state.index === 'number' ? state.index : 0;
+  const activeRoute = state.routes[activeIndex];
+  if (!activeRoute) return false;
+
+  if (routeKey && activeRoute.key) {
+    return activeRoute.key === routeKey;
+  }
+
+  return Boolean(routeName && activeRoute.name === routeName);
+}
+
+export function shouldMountReelVideoPlayer({
+  isPlaybackRouteFocused,
+  index,
+  activeIndex,
+  preloadRadius,
+}: {
+  isPlaybackRouteFocused: boolean;
+  index: number;
+  activeIndex: number;
+  preloadRadius: number;
+}) {
+  return isPlaybackRouteFocused && Math.abs(index - activeIndex) <= preloadRadius;
 }

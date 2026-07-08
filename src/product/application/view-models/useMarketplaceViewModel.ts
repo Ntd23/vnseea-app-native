@@ -58,12 +58,12 @@ function normalizeCategoriesMap(
 }
 
 function buildCategoryOptions(
- products: ProductItem[],
+ products: ProductItem[] | undefined,
  categoriesById: Record<string, string>,
 ) {
  const categories = new Map<number, string>();
 
- products.forEach(product => {
+ (Array.isArray(products) ? products : []).forEach(product => {
  if (product.category) {
  const fromApi = categoriesById[String(product.category)];
  const label =
@@ -84,7 +84,7 @@ function buildCategoryOptions(
 
 function mergeCategoryOptions(
  currentCategories: MarketplaceCategoryOption[],
- products: ProductItem[],
+ products: ProductItem[] | undefined,
  categoriesById: Record<string, string>,
 ) {
  const categories = new Map<number, string>();
@@ -146,12 +146,16 @@ export function useMarketplaceViewModel() {
  repository.getCartCount().catch(() => 0),
  ]);
 
- setProducts(response.products);
+ const responseProducts = Array.isArray(response.products)
+ ? response.products
+ : [];
+
+ setProducts(responseProducts);
  syncCartCount(nextCartCount);
  setCategories(currentCategories =>
  mergeCategoryOptions(
  currentCategories,
- response.products,
+ responseProducts,
  normalizeCategoriesMap(response.products_categories),
  ),
  );
@@ -160,7 +164,7 @@ export function useMarketplaceViewModel() {
  ? isDistanceAvailable(response.distance_filter_available)
  : true,
  );
- setIsAllLoaded(response.products.length < PAGE_SIZE);
+ setIsAllLoaded(responseProducts.length < PAGE_SIZE);
  } catch (caughtError) {
  setError(
  caughtError instanceof Error
@@ -192,11 +196,15 @@ export function useMarketplaceViewModel() {
  distance,
  });
 
+ const responseProducts = Array.isArray(response.products)
+ ? response.products
+ : [];
+
  setProducts(currentProducts => {
  const existingIds = new Set(
  currentProducts.map(product => product.id),
  );
- const nextProducts = response.products.filter(
+ const nextProducts = responseProducts.filter(
  product => !existingIds.has(product.id),
  );
  return [...currentProducts, ...nextProducts];
@@ -204,7 +212,7 @@ export function useMarketplaceViewModel() {
  setCategories(currentCategories =>
  mergeCategoryOptions(
  currentCategories,
- response.products,
+ responseProducts,
  normalizeCategoriesMap(response.products_categories),
  ),
  );
@@ -213,7 +221,7 @@ export function useMarketplaceViewModel() {
  ? isDistanceAvailable(response.distance_filter_available)
  : true,
  );
- setIsAllLoaded(response.products.length < PAGE_SIZE);
+ setIsAllLoaded(responseProducts.length < PAGE_SIZE);
  } catch (caughtError) {
  setError(
  caughtError instanceof Error

@@ -58,6 +58,11 @@ else {
         }
     }
 
+    // Ghi log tìm kiếm QR vào cache/search_qr_log.txt để kiểm tra
+    $log_file = dirname(dirname(dirname(__DIR__))) . '/cache/search_qr_log.txt';
+    $log_data = date('Y-m-d H:i:s') . " | CurrentUser: " . (isset($wo['user']['user_id']) ? $wo['user']['user_id'] : 'none') . " | Query: " . $keyword . " | Results Count: " . count($users) . " | Results: " . json_encode($users, JSON_UNESCAPED_UNICODE) . "\n";
+    @file_put_contents($log_file, $log_data, FILE_APPEND);
+
     $response_data = array(
         'api_status' => 200,
         'items' => $users

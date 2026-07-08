@@ -55,6 +55,7 @@ import {
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import type {
   FeedPollPost,
   FeedPost,
@@ -93,6 +94,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 // the import surface.
 import PageShareActionSheet from '../components/PageShareActionSheet';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type PageDetailProps = NativeStackScreenProps<
   RootStackParamList,
@@ -1357,7 +1359,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   const handleNavigateToProfile = useCallback(
     (userId: string) => {
       if (!userId) return;
-      navigation.navigate(ROUTES.PROFILE, { userId });
+      navigateToUserProfile(navigation, userId);
     },
     [navigation],
   );
@@ -1691,14 +1693,59 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   return (
     <View className="flex-1 surface-base">
       <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+      <FeedHeader />
 
-      {/* Header Back / More buttons have been moved INSIDE the
-          PageHero (ListHeader) at dòng ~331, anchored to the cover
-          image so they sit on top of the cover and scroll with it —
-          the user wants them to "ride" the cover, not float above
-          every tab. The screen-level absolutely-positioned overlay
-          was removed because it intercepted taps even when no cover
-          was visible, and it visually conflicted with the cover. */}
+      {/* Standard sticky AppBar */}
+      <View
+        style={{
+          backgroundColor: '#ffffff',
+          borderBottomWidth: 1,
+          borderBottomColor: '#f1f5f9',
+        }}
+      >
+        <View
+          style={{
+            height: 56,
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 16,
+          }}
+        >
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: '#ffffff',
+              borderWidth: 1,
+              borderColor: '#f1f5f9',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: 12,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 4,
+              elevation: 2,
+            }}
+          >
+            <ArrowLeft size={22} color="#0F172A" />
+          </TouchableOpacity>
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: '800',
+              color: '#0F172A',
+              flex: 1,
+            }}
+            numberOfLines={1}
+          >
+            {vm.page.pageTitle || vm.page.pageName || copy.defaultTitle}
+          </Text>
+        </View>
+      </View>
 
       <FlatList
         className="flex-1"

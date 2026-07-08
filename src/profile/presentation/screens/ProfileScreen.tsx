@@ -112,10 +112,14 @@ import type {
 } from '../../../stories/domain/types/stories.types';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
 type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
-type ProfileRoute = RouteProp<RootStackParamList, typeof ROUTES.PROFILE>;
+type ProfileRoute = RouteProp<
+  RootStackParamList,
+  typeof ROUTES.PROFILE | typeof ROUTES.USER_PROFILE
+>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PROFILE_POST_MEDIA_HEIGHT = Math.min(320, Math.round(SCREEN_WIDTH * 0.62));
@@ -1268,14 +1272,11 @@ function ProfileScreen() {
   }, [posts, setActiveProfileVideoId]);
 
   // ── Re-fetch when the route's userId changes ──────────────────────
-  // `navigation.navigate(ROUTES.PROFILE, { userId })` from sibling
-  // screens (e.g. PostDetail → comment publisher) does NOT remount
-  // this component, and React Navigation only fires `useFocusEffect`
-  // on blur→focus, NOT on params-only changes. Without this effect
-  // the screen keeps showing the previous user's profile even
-  // though the URL says otherwise. We compare the new param against
-  // the last value we acted on (stored in a ref) and reset derived
-  // state + reload when they differ.
+  // Opening another user's profile from sibling screens does not
+  // remount this component, and React Navigation only fires
+  // `useFocusEffect` on blur -> focus, not params-only changes.
+  // Compare the new param against the last value we acted on and
+  // reset derived state + reload when they differ.
   const lastLoadedUserIdRef = useRef<string | undefined>(route.params?.userId);
   useEffect(() => {
     const nextUserId = route.params?.userId;
@@ -1589,7 +1590,7 @@ function ProfileScreen() {
   }, []);
 
   const handleNavigateToProfile = useCallback((userId: string) => {
-    navigation.navigate(ROUTES.PROFILE, { userId });
+    navigateToUserProfile(navigation, userId);
   }, [navigation]);
 
   const handleOpenFriendsList = useCallback(() => {

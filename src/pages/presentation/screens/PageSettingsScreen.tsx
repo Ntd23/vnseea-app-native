@@ -41,6 +41,7 @@ import { usePageSettingsViewModel } from '../../application/view-models/usePageS
 import { usePagesCopy } from '../../application/i18n/pagesCopy';
 import { ctaRequiresPhone, ctaRequiresUrl } from '../../application/mappers/pageSettingsMapper';
 import type { PageCtaTarget } from '../../domain/types/pageSettings.types';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type PageSettingsProps = NativeStackScreenProps<
   RootStackParamList,
@@ -150,20 +151,53 @@ function PageSettingsScreen({ navigation, route }: PageSettingsProps) {
       edges={ROOT_SAFE_AREA_EDGES}
       className="flex-1 bg-[#f1f4fb]"
     >
-      {/* Header */}
-      <View className="flex-row items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
+      <FeedHeader />
+      {/* Standard sticky AppBar */}
+      <View
+        style={{
+          height: 64,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          backgroundColor: '#ffffff',
+          borderBottomWidth: 1,
+          borderBottomColor: '#f1f5f9',
+        }}
+      >
         <TouchableOpacity
           onPress={handleBack}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           activeOpacity={0.7}
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: '#ffffff',
+            borderWidth: 1,
+            borderColor: '#f1f5f9',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: 12,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            elevation: 2,
+          }}
           accessibilityLabel={copy.settingsBack}
         >
           <ArrowLeft size={22} color="#0F172A" />
         </TouchableOpacity>
-        <Text className="text-[17px] font-bold text-slate-900">
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: '800',
+            color: '#0F172A',
+            flex: 1,
+          }}
+          numberOfLines={1}
+        >
           {copy.settingsTitle}
         </Text>
-        <View style={{ width: 22 }} />
       </View>
 
       <KeyboardAvoidingView

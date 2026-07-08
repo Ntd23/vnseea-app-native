@@ -28,18 +28,28 @@ function LiveKitMiniCallBar() {
 
   useEffect(() => {
     const updateCurrentRoute = () => {
+      if (!navigationRef.isReady()) {
+        setCurrentRouteName('');
+        return;
+      }
+
       setCurrentRouteName(String(navigationRef.getCurrentRoute()?.name ?? ''));
     };
 
     updateCurrentRoute();
-    const stateUnsubscribe = navigationRef.addListener(
-      'state',
-      updateCurrentRoute,
-    );
-    const readyInterval = setInterval(updateCurrentRoute, 500);
+    let stateUnsubscribe: (() => void) | undefined;
+    const subscribeWhenReady = () => {
+      if (stateUnsubscribe || !navigationRef.isReady()) return;
+      stateUnsubscribe = navigationRef.addListener('state', updateCurrentRoute);
+    };
+    subscribeWhenReady();
+    const readyInterval = setInterval(() => {
+      subscribeWhenReady();
+      updateCurrentRoute();
+    }, 500);
 
     return () => {
-      stateUnsubscribe();
+      stateUnsubscribe?.();
       clearInterval(readyInterval);
     };
   }, []);

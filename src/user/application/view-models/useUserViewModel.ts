@@ -130,7 +130,14 @@ export function useUserViewModel() {
   );
 
   const searchNearbyPagesAndPlaces = useCallback(
-    (input: { query: string; lat?: number; lng?: number; limit?: number; radius?: number }) =>
+    (input: {
+      query: string;
+      googleQuery?: string;
+      lat?: number;
+      lng?: number;
+      limit?: number;
+      radius?: number;
+    }) =>
       runUserAction(async () => {
         if (input.query.trim().length < 3) {
           setNearbyPlaces([]);
@@ -141,12 +148,15 @@ export function useUserViewModel() {
         const [pagesResult, predictionsResult] = await Promise.allSettled([
           repository.getNearbyPages({
             keyword: input.query,
-            distance: 50,
+            distance: 3,
             limit: input.limit ?? 20,
             lat: input.lat,
             lng: input.lng,
           }),
-          repository.getPlacePredictions(input),
+          repository.getPlacePredictions({
+            ...input,
+            query: input.googleQuery ?? input.query,
+          }),
         ]);
         const pages =
           pagesResult.status === 'fulfilled' ? pagesResult.value : [];

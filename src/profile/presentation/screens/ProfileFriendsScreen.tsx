@@ -35,6 +35,7 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import type { UserProfile } from '../../../user/domain/types/user.types';
 import { createUserRepository } from '../../../user/infrastructure/repositories/ApiUserRepository';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 type ProfileFriendsRoute = RouteProp<
   RootStackParamList,
@@ -223,12 +224,12 @@ export default function ProfileFriendsScreen() {
       navigation.goBack();
       return;
     }
-    navigation.navigate(ROUTES.PROFILE, { userId });
+    navigateToUserProfile(navigation, userId);
   }, [navigation, userId]);
 
   const handleOpenProfile = useCallback(
     (friendId: string) => {
-      navigation.navigate(ROUTES.PROFILE, { userId: friendId });
+      navigateToUserProfile(navigation, friendId);
     },
     [navigation],
   );

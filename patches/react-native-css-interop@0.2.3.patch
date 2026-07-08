@@ -33,3 +33,45 @@ index c91ba6adf049dd5c6eec1ec8301ecc0802f41bfc..6dbd1edd230593a1d4bb8b552bf7d69d
              });
          }).then((css) => {
              debug(`virtualStyles.initial ${platform}`);
+diff --git a/dist/runtime/native/render-component.js b/dist/runtime/native/render-component.js
+index 9f4966b..9c1f1b3 100644
+--- a/dist/runtime/native/render-component.js
++++ b/dist/runtime/native/render-component.js
+@@ -133,8 +133,13 @@ function stringify(object) {
+         seen.add(value);
+         const newValue = Array.isArray(value) ? [] : {};
+-        for (const entry of Object.entries(value)) {
+-            newValue[entry[0]] = replace(entry[0], entry[1]);
++        for (const key of Object.keys(value)) {
++            try {
++                newValue[key] = replace(key, value[key]);
++            }
++            catch (error) {
++                newValue[key] = `[Throws: ${error?.message ?? String(error)}]`;
++            }
+         }
+         seen.delete(value);
+         return newValue;
+     }, 2);
+ }
+diff --git a/src/runtime/native/render-component.tsx b/src/runtime/native/render-component.tsx
+index 1c71c6e..94d0be2 100644
+--- a/src/runtime/native/render-component.tsx
++++ b/src/runtime/native/render-component.tsx
+@@ -253,8 +253,12 @@ function stringify(object: any) {
+ 
+       const newValue: any = Array.isArray(value) ? [] : {};
+ 
+-      for (const entry of Object.entries(value)) {
+-        newValue[entry[0]] = replace(entry[0], entry[1]);
++      for (const key of Object.keys(value)) {
++        try {
++          newValue[key] = replace(key, value[key]);
++        } catch (error: any) {
++          newValue[key] = `[Throws: ${error?.message ?? String(error)}]`;
++        }
+       }
+ 
+       seen.delete(value);
+ 
+       return newValue;

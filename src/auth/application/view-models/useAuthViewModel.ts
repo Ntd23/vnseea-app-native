@@ -1,5 +1,7 @@
 // Description: Coordinates auth screen state with the auth repository.
 import { useCallback, useState } from 'react';
+import { ROUTES } from '../../../navigation/constants/routes';
+import { navigationRef } from '../../../navigation/navigationRef';
 import { createAuthRepository } from '../../infrastructure/repositories/ApiAuthRepository';
 import type {
   AuthResult,
@@ -9,6 +11,7 @@ import type {
 } from '../../domain/types/auth.types';
 
 const repository = createAuthRepository();
+const AUTH_DEBUG_PREFIX = '[VNSEEA_AUTH_DEBUG]';
 
 function toErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
@@ -16,6 +19,36 @@ function toErrorMessage(error: unknown) {
   }
 
   return String(error);
+}
+
+function logAuthDebug(event: string, data: Record<string, unknown> = {}) {
+  try {
+    console.log(
+      AUTH_DEBUG_PREFIX,
+      JSON.stringify({
+        event,
+        at: new Date().toISOString(),
+        ...data,
+      }),
+    );
+  } catch {
+    console.log(AUTH_DEBUG_PREFIX, event);
+  }
+}
+
+function resetNavigationToLogin() {
+  if (!navigationRef.isReady()) {
+    logAuthDebug('auth_logout_navigation_reset_skipped', {
+      reason: 'navigation_not_ready',
+    });
+    return;
+  }
+
+  navigationRef.reset({
+    index: 0,
+    routes: [{ name: ROUTES.LOGIN }],
+  });
+  logAuthDebug('auth_logout_navigation_reset');
 }
 
 export function useAuthViewModel() {
@@ -62,10 +95,10 @@ export function useAuthViewModel() {
     [runAuthAction],
   );
 
-  const logout = useCallback(
-    () => runAuthAction(() => repository.logout()),
-    [runAuthAction],
-  );
+  const logout = useCallback(async () => {
+    await runAuthAction(() => repository.logout());
+    resetNavigationToLogin();
+  }, [runAuthAction]);
 
   return {
     isLoading,

@@ -38,13 +38,13 @@ export function subscribeNavigationHeading(
   const emitter = new NativeEventEmitter(headingModule);
   let subscription: EmitterSubscription | undefined;
 
-  headingModule.start();
   subscription = emitter.addListener(EVENT_NAME, (event: HeadingEvent) => {
     const heading = Number(event.heading);
     if (Number.isFinite(heading)) {
       onHeading(((heading % 360) + 360) % 360);
     }
   });
+  headingModule.start();
 
   return () => {
     subscription?.remove();
