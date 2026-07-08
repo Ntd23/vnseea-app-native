@@ -74,6 +74,7 @@ import {
   HomeVideoPostCard,
   publishFeedActiveVideo,
   publishFeedScrollBusy,
+  publishFeedWarmVideoIds,
   ReactionPickerOverlay,
   TextPostCard,
 } from '../../../feed/presentation/components/PostCards';
@@ -130,6 +131,9 @@ const PROFILE_POST_WINDOW_SIZE = 13;
 const PROFILE_POST_BATCHING_PERIOD_MS = 24;
 const PROFILE_POST_MEDIA_PREFETCH_LOOKAHEAD = 12;
 const PROFILE_POST_MEDIA_PREFETCH_LIMIT = 18;
+const PROFILE_POST_VIDEO_WARM_BEHIND_ITEMS = 1;
+const PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS = 8;
+const PROFILE_POST_VIDEO_WARM_MAX_COUNT = 4;
 
 function isProfileFeedPost(post: FeedPost): post is ProfileFeedPost {
   return post.kind === 'text' || post.kind === 'video' || post.kind === 'poll';
@@ -1051,6 +1055,7 @@ function ProfileScreen() {
   const [isLoadingCover, setIsLoadingCover] = useState(false);
 
   const [posts, setPosts] = useState<ProfileFeedPost[]>([]);
+  const profilePostsRef = useRef<ProfileFeedPost[]>([]);
   const [isPostsLoading, setIsPostsLoading] = useState(false);
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
   const [hasMorePosts, setHasMorePosts] = useState(false);
@@ -1162,6 +1167,7 @@ function ProfileScreen() {
 
   const onProfilePostViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const currentPosts = profilePostsRef.current;
       const visibleVideo = viewableItems.find(
         item =>
           item.isViewable &&
@@ -1172,10 +1178,81 @@ function ProfileScreen() {
           ? String((visibleVideo.item as ProfileFeedPost).id)
           : null,
       );
+
+      if (currentPosts.length === 0) {
+        publishFeedWarmVideoIds([]);
+        return;
+      }
+
+      let firstVisibleIndex = Number.POSITIVE_INFINITY;
+      let furthestVisibleIndex = -1;
+      viewableItems.forEach(viewable => {
+        if (!viewable?.isViewable) return;
+
+        const index =
+          typeof viewable.index === 'number'
+            ? viewable.index
+            : currentPosts.findIndex(
+                post =>
+                  post.id === (viewable.item as ProfileFeedPost | undefined)?.id,
+              );
+
+        if (index < 0) return;
+        if (index < firstVisibleIndex) firstVisibleIndex = index;
+        if (index > furthestVisibleIndex) furthestVisibleIndex = index;
+      });
+
+      if (furthestVisibleIndex < 0) {
+        publishFeedWarmVideoIds([]);
+        return;
+      }
+
+      const warmVideoIds: string[] = [];
+      const start = Math.max(
+        0,
+        firstVisibleIndex - PROFILE_POST_VIDEO_WARM_BEHIND_ITEMS,
+      );
+      const end = Math.min(
+        currentPosts.length,
+        furthestVisibleIndex + PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS + 1,
+      );
+
+      for (let index = start; index < end; index += 1) {
+        const post = currentPosts[index];
+        if (post.kind !== 'video') continue;
+
+        warmVideoIds.push(post.id);
+        if (warmVideoIds.length >= PROFILE_POST_VIDEO_WARM_MAX_COUNT) break;
+      }
+
+      publishFeedWarmVideoIds(warmVideoIds);
     },
   ).current;
 
   useEffect(() => {
+    profilePostsRef.current = posts;
+
+    if (posts.length === 0) {
+      publishFeedWarmVideoIds([]);
+      return;
+    }
+
+    if (profileScrollYRef.current <= 24) {
+      const initialWarmVideoIds: string[] = [];
+      for (
+        let index = 0;
+        index < Math.min(posts.length, PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS + 1);
+        index += 1
+      ) {
+        const post = posts[index];
+        if (post.kind !== 'video') continue;
+
+        initialWarmVideoIds.push(post.id);
+        if (initialWarmVideoIds.length >= PROFILE_POST_VIDEO_WARM_MAX_COUNT) break;
+      }
+      publishFeedWarmVideoIds(initialWarmVideoIds);
+    }
+
     const videoIds = new Set(
       posts
         .filter((post): post is FeedVideoPost => post.kind === 'video')
@@ -1221,6 +1298,7 @@ function ProfileScreen() {
     setStoryOptionsSheet(null);
     setSharingPost(undefined);
     setActiveProfileVideoId(null);
+    publishFeedWarmVideoIds([]);
     profilePrefetchedMediaUrlsRef.current.clear();
 
     loadProfile({
@@ -1243,6 +1321,7 @@ function ProfileScreen() {
       return () => {
         publishFeedScrollBusy(false);
         setActiveProfileVideoId(null);
+        publishFeedWarmVideoIds([]);
       };
     }, [setActiveProfileVideoId]),
   );

@@ -539,10 +539,13 @@ export function formatPostTime(timestamp: number | undefined, copy: FeedCopy) {
 }
 
 type FeedActiveVideoListener = (activeVideoId: string | null) => void;
+type FeedWarmVideoListener = (warmVideoIds: ReadonlySet<string>) => void;
 type FeedScrollBusyListener = (isBusy: boolean) => void;
 
 export let feedActiveVideoIdSnapshot: string | null = null;
 const feedActiveVideoListeners = new Set<FeedActiveVideoListener>();
+export let feedWarmVideoIdsSnapshot = new Set<string>();
+const feedWarmVideoListeners = new Set<FeedWarmVideoListener>();
 let feedScrollBusySnapshot = false;
 const feedScrollBusyListeners = new Set<FeedScrollBusyListener>();
 
@@ -573,6 +576,47 @@ function useFeedVideoActivity(videoId: string) {
   }, [videoId]);
 
   return isActive;
+}
+
+function areWarmVideoIdsEqual(nextIds: Set<string>) {
+  if (feedWarmVideoIdsSnapshot.size !== nextIds.size) return false;
+
+  for (const videoId of nextIds) {
+    if (!feedWarmVideoIdsSnapshot.has(videoId)) return false;
+  }
+
+  return true;
+}
+
+export function publishFeedWarmVideoIds(videoIds: Iterable<string>) {
+  const nextIds = new Set(videoIds);
+  if (areWarmVideoIdsEqual(nextIds)) return;
+
+  feedWarmVideoIdsSnapshot = nextIds;
+  feedWarmVideoListeners.forEach(listener => listener(feedWarmVideoIdsSnapshot));
+}
+
+function useFeedVideoWarm(videoId: string) {
+  const [isWarm, setIsWarm] = useState(
+    () => feedWarmVideoIdsSnapshot.has(videoId),
+  );
+
+  useEffect(() => {
+    const listener: FeedWarmVideoListener = nextWarmVideoIds => {
+      const nextIsWarm = nextWarmVideoIds.has(videoId);
+      setIsWarm(prev => (prev === nextIsWarm ? prev : nextIsWarm));
+    };
+
+    feedWarmVideoListeners.add(listener);
+    const nextIsWarm = feedWarmVideoIdsSnapshot.has(videoId);
+    setIsWarm(prev => (prev === nextIsWarm ? prev : nextIsWarm));
+
+    return () => {
+      feedWarmVideoListeners.delete(listener);
+    };
+  }, [videoId]);
+
+  return isWarm;
 }
 
 export function publishFeedScrollBusy(isBusy: boolean) {
@@ -1213,11 +1257,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
+  const trackedIsWarm = useFeedVideoWarm(post.id);
   const isScrollBusy = useFeedScrollBusy();
   const liveMediaActive = useLiveMediaActive();
   const isActive = controlledIsActive !== undefined
     ? controlledIsActive
     : (isScreenFocused !== false && trackedIsActive);
+  const isWarm = isScreenFocused !== false && trackedIsWarm;
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const [muted, setMuted] = useState(true);
   const [aspectRatio, setAspectRatio] = useState(() =>
@@ -1327,11 +1373,11 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [navigation, post]);
 
   // ── Mount strategy ──
-  // Keep native decoders mounted only for the active feed video. Inactive
-  // cards keep the same thumbnail surface, which is much cheaper during
-  // fast flings through mixed media feeds.
+  // Mount active videos and a small warm-ahead set. Warm videos decode a
+  // tiny muted slice so the card has a real frame before the user reaches it,
+  // without keeping every rendered video alive.
   const shouldMountVideo =
-    isScreenFocused !== false && canAttemptVideo && isActive;
+    isScreenFocused !== false && canAttemptVideo && (isActive || isWarm);
 
   useEffect(() => {
     if (isActive) {
@@ -1359,7 +1405,17 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     }
   }, [isActive, isReady, seekTime]);
 
-  const playing = shouldMountVideo && !manuallyPaused && !isScrollBusy;
+  const warmPlaying =
+    shouldMountVideo &&
+    isWarm &&
+    !isActive &&
+    !isScrollBusy &&
+    !hasRenderedFrame;
+  const playing =
+    shouldMountVideo &&
+    !manuallyPaused &&
+    !isScrollBusy &&
+    (isActive || warmPlaying);
   const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
 
   // Need an on-screen position for the "ThĂ­ch" button so the picker

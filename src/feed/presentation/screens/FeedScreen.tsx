@@ -132,6 +132,7 @@ import {
   HomeVideoPostCard,
   publishFeedActiveVideo,
   publishFeedScrollBusy,
+  publishFeedWarmVideoIds,
   ReactionPickerOverlay,
   TextPostCard,
   useFeedScrollBusy,
@@ -171,6 +172,9 @@ const MAX_IMAGE_PREFETCH_URLS = 20;
 const IMAGE_PREFETCH_BATCH_SIZE = 4;
 const IMAGE_PREFETCH_BATCH_DELAY_MS = 90;
 const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = 8;
+const FEED_VIDEO_WARM_BEHIND_ITEMS = 1;
+const FEED_VIDEO_WARM_AHEAD_ITEMS = 6;
+const FEED_VIDEO_WARM_MAX_COUNT = 4;
 const FEED_LIST_INITIAL_RENDER_COUNT = 6;
 const FEED_LIST_RENDER_BATCH_SIZE = 6;
 const FEED_LIST_WINDOW_SIZE = 9;
@@ -1875,6 +1879,7 @@ function FeedScreen() {
       queuedImagePrefetchUrlsRef.current.clear();
       activeVideoIdRef.current = null;
       publishFeedActiveVideo(null);
+      publishFeedWarmVideoIds([]);
       publishFeedScrollBusy(false);
       publishNativeTabScrollBehavior('onScrollDown');
     };
@@ -1892,10 +1897,15 @@ function FeedScreen() {
   useEffect(() => {
     if (!isFocused) {
       setActiveFeedVideo(null);
+      publishFeedWarmVideoIds([]);
     } else {
       measureActiveFeedVideoOnScreen(true);
     }
-  }, [isFocused, setActiveFeedVideo, measureActiveFeedVideoOnScreen]);
+  }, [
+    isFocused,
+    setActiveFeedVideo,
+    measureActiveFeedVideoOnScreen,
+  ]);
 
   // Subscribe to local post-created events and place them in the same
   // pending queue used by the remote latest-post probe.
@@ -2379,6 +2389,54 @@ function FeedScreen() {
     }
   }, []);
 
+  const publishWarmFeedVideosAroundVisibleItems = useCallback((viewableItems: any[]) => {
+    const items = feedListItemsRef.current;
+    if (items.length === 0) {
+      publishFeedWarmVideoIds([]);
+      return;
+    }
+
+    let firstVisibleIndex = Number.POSITIVE_INFINITY;
+    let furthestVisibleIndex = -1;
+    viewableItems.forEach(viewable => {
+      if (!viewable?.isViewable) return;
+
+      const itemId = viewable.item?.id;
+      const index =
+        typeof viewable.index === 'number'
+          ? viewable.index
+          : typeof itemId === 'string'
+            ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
+            : -1;
+
+      if (index < 0) return;
+      if (index < firstVisibleIndex) firstVisibleIndex = index;
+      if (index > furthestVisibleIndex) furthestVisibleIndex = index;
+    });
+
+    if (furthestVisibleIndex < 0) {
+      publishFeedWarmVideoIds([]);
+      return;
+    }
+
+    const warmVideoIds: string[] = [];
+    const start = Math.max(0, firstVisibleIndex - FEED_VIDEO_WARM_BEHIND_ITEMS);
+    const end = Math.min(
+      items.length,
+      furthestVisibleIndex + FEED_VIDEO_WARM_AHEAD_ITEMS + 1,
+    );
+
+    for (let index = start; index < end; index += 1) {
+      const item = items[index];
+      if (item?.type !== 'post' || item.post.kind !== 'video') continue;
+
+      warmVideoIds.push(item.post.id);
+      if (warmVideoIds.length >= FEED_VIDEO_WARM_MAX_COUNT) break;
+    }
+
+    publishFeedWarmVideoIds(warmVideoIds);
+  }, []);
+
   // Viewability config for FlatList autoplay
   const viewabilityConfigRef = useRef({
     itemVisiblePercentThreshold: 25,
@@ -2390,6 +2448,7 @@ function FeedScreen() {
       latestViewableFeedItemsRef.current = viewableItems;
       prefetchFeedImagesAroundVisibleItems(viewableItems);
       maybeLoadMoreFeedAroundVisibleItems(viewableItems);
+      publishWarmFeedVideosAroundVisibleItems(viewableItems);
       const viewableVideo = viewableItems.find(
         item =>
           item.isViewable &&
@@ -2411,6 +2470,7 @@ function FeedScreen() {
     [
       maybeLoadMoreFeedAroundVisibleItems,
       prefetchFeedImagesAroundVisibleItems,
+      publishWarmFeedVideosAroundVisibleItems,
       setActiveFeedVideo,
     ],
   );
@@ -2832,10 +2892,28 @@ function FeedScreen() {
     );
     prefetchFeedImagesInRange(0, INITIAL_IMAGE_PREFETCH_ITEMS);
     prefetchFeedImagesAroundVisibleItems(latestViewableFeedItemsRef.current);
+    if (latestViewableFeedItemsRef.current.length > 0) {
+      publishWarmFeedVideosAroundVisibleItems(latestViewableFeedItemsRef.current);
+    } else {
+      const initialWarmVideoIds: string[] = [];
+      for (
+        let index = 0;
+        index < Math.min(renderedItems.length, FEED_VIDEO_WARM_AHEAD_ITEMS + 1);
+        index += 1
+      ) {
+        const item = renderedItems[index];
+        if (item?.type !== 'post' || item.post.kind !== 'video') continue;
+
+        initialWarmVideoIds.push(item.post.id);
+        if (initialWarmVideoIds.length >= FEED_VIDEO_WARM_MAX_COUNT) break;
+      }
+      publishFeedWarmVideoIds(initialWarmVideoIds);
+    }
   }, [
     feedListItems,
     prefetchFeedImagesAroundVisibleItems,
     prefetchFeedImagesInRange,
+    publishWarmFeedVideosAroundVisibleItems,
   ]);
 
   useEffect(() => {
