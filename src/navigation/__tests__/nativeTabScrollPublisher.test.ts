@@ -2,12 +2,17 @@ import {
   createNativeTabScrollPublisherState,
   getNextNativeTabScrollPublisherState,
   publishNativeTabScrollBehavior,
+  publishNativeTabScrollIntent,
 } from '../nativeTabScrollPublisher';
-import { nativeTabMinimizeBehavior } from '../nativeTabMinimizeBehavior';
+import {
+  nativeTabBarPresentation,
+  nativeTabMinimizeBehavior,
+} from '../nativeTabMinimizeBehavior';
 
 describe('native tab scroll publisher', () => {
   beforeEach(() => {
     nativeTabMinimizeBehavior.reset();
+    nativeTabBarPresentation.reset();
   });
 
   it('publishes onScrollDown after enough downward scroll', () => {
@@ -74,5 +79,27 @@ describe('native tab scroll publisher', () => {
 
     unsubscribe();
     expect(received).toEqual(['none']);
+  });
+
+  it('drives custom iOS tab chrome compact state from actual scroll intent', () => {
+    const stateRef = {
+      current: createNativeTabScrollPublisherState(),
+    };
+
+    expect(nativeTabBarPresentation.getPresentation()).toBe('expanded');
+
+    publishNativeTabScrollIntent(stateRef, 12);
+    expect(nativeTabBarPresentation.getPresentation()).toBe('minimized');
+
+    publishNativeTabScrollIntent(stateRef, 10);
+    expect(nativeTabBarPresentation.getPresentation()).toBe('expanded');
+  });
+
+  it('does not compact the custom tab chrome when only restoring native behavior mode', () => {
+    expect(nativeTabBarPresentation.getPresentation()).toBe('expanded');
+
+    publishNativeTabScrollBehavior('onScrollDown');
+
+    expect(nativeTabBarPresentation.getPresentation()).toBe('expanded');
   });
 });

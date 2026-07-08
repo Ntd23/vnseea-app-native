@@ -1,5 +1,5 @@
 import { ROUTES } from '../constants/routes';
-import { createReelsNavigationTarget } from '../reelsNavigation';
+import { createReelsNavigationTarget, navigateToReels } from '../reelsNavigation';
 
 describe('reels navigation target', () => {
   const params = {
@@ -24,6 +24,21 @@ describe('reels navigation target', () => {
         screen: ROUTES.REELS,
         params,
       },
+    });
+  });
+
+  it('navigates through MainTabs instead of pushing the legacy root Reels route', () => {
+    const navigation = {
+      navigate: jest.fn(),
+      push: jest.fn(),
+    };
+
+    navigateToReels(navigation, params, 'ios');
+
+    expect(navigation.push).not.toHaveBeenCalled();
+    expect(navigation.navigate).toHaveBeenCalledWith(ROUTES.MAIN_TABS, {
+      screen: ROUTES.REELS,
+      params,
     });
   });
 });

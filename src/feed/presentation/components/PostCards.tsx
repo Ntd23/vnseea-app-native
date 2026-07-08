@@ -1344,13 +1344,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     // Immediately pause the video on home feed before navigating.
     setManuallyPaused(true);
 
-    // `source: 'home'` tells ReelsScreen where the user came from so
-    // the back button can return to this exact list (instead of
-    // jumping to the Feed tab). HomeVideoPostCard is also reused
-    // inside PageDetailScreen, but the back FAB on Reels already
-    // does a `goBack()` first which pops the actual stack — so
-    // 'home' is a safe default even when the card is rendered inside
-    // a different surface.
+    // `source: 'home'` preserves the selected feed video context when
+    // the Reels tab opens from a post card.
     navigateToReels(navigation, {
       initialVideoId: post.id,
       post,

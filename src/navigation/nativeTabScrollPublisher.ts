@@ -1,5 +1,6 @@
 import type { MutableRefObject } from 'react';
 import {
+  nativeTabBarPresentation,
   nativeTabMinimizeBehavior,
   type NativeTabMinimizeBehavior,
 } from './nativeTabMinimizeBehavior';
@@ -128,6 +129,14 @@ export function publishNativeTabScrollBehavior(
   return true;
 }
 
+export function publishNativeTabScrollPresentation(
+  behavior: NativeTabMinimizeBehavior,
+) {
+  nativeTabBarPresentation.setPresentation(
+    behavior === 'onScrollDown' ? 'minimized' : 'expanded',
+  );
+}
+
 export function publishNativeTabScrollIntent(
   stateRef: MutableRefObject<NativeTabScrollPublisherState>,
   rawY: number,
@@ -136,6 +145,7 @@ export function publishNativeTabScrollIntent(
   stateRef.current = result.state;
 
   if (result.behavior) {
+    publishNativeTabScrollPresentation(result.behavior);
     publishNativeTabScrollBehavior(result.behavior);
   }
 
