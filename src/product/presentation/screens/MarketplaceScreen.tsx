@@ -55,6 +55,10 @@ const MARKETPLACE_COLUMN_STYLE = {
   justifyContent: 'space-between',
   paddingHorizontal: 16,
 } as const;
+const MARKETPLACE_HEADER_ELEVATION_STYLE =
+  Platform.OS === 'android'
+    ? { zIndex: 30, elevation: 12 }
+    : { zIndex: 30 };
 
 type CartAnimationState = {
   id: number;
@@ -525,6 +529,16 @@ function MarketplaceScreen() {
     navigate(ROUTES.CART);
   }, [navigate]);
 
+  const handleOpenFeed = useCallback(
+    (params?: { filter?: 'photos' }) => {
+      navigate(ROUTES.MAIN_TABS, {
+        screen: ROUTES.FEED,
+        params,
+      });
+    },
+    [navigate],
+  );
+
   const showCartToast = useCallback(
     (productName: string) => {
       if (toastTimeoutRef.current) {
@@ -934,7 +948,7 @@ function MarketplaceScreen() {
         <TouchableOpacity
           className="h-10 flex-1 items-center justify-center"
           activeOpacity={0.75}
-          onPress={() => navigate(ROUTES.FEED)}
+          onPress={() => handleOpenFeed()}
         >
           <Compass
             size={24}
@@ -965,7 +979,7 @@ function MarketplaceScreen() {
           className="h-10 flex-1 items-center justify-center"
           activeOpacity={0.75}
           onPress={() => {
-            navigate(ROUTES.FEED, { filter: 'photos' });
+            handleOpenFeed({ filter: 'photos' });
           }}
         >
           <ImageIcon
@@ -1005,9 +1019,14 @@ function MarketplaceScreen() {
   );
 
   const marketplaceHeader = (
-    <View className="bg-white border-b border-slate-100">
+    <View
+      className="bg-white border-b border-slate-100"
+      pointerEvents="box-none"
+      style={MARKETPLACE_HEADER_ELEVATION_STYLE}
+    >
       <View
         className="surface-topbar flex-row items-center px-4 pt-3 pb-2"
+        pointerEvents="box-none"
         style={Platform.OS === 'ios' ? { paddingTop: insets.top + 12 } : undefined}
       >
         <TouchableOpacity
@@ -1051,7 +1070,7 @@ function MarketplaceScreen() {
           </Text>
         </TouchableOpacity>
       </View>
-      {marketplaceTopTabs}
+      <View pointerEvents="auto">{marketplaceTopTabs}</View>
       <View
         pointerEvents={filtersCollapsed ? 'auto' : 'none'}
         style={filtersCollapsed ? undefined : { display: 'none' }}
@@ -1067,7 +1086,11 @@ function MarketplaceScreen() {
     </View>
   );
 
-  const marketplaceListHeaderComponent = marketplaceHeader;
+  const renderHeaderOutsideList = Platform.OS === 'android';
+  const marketplaceListHeaderComponent = renderHeaderOutsideList
+    ? null
+    : marketplaceHeader;
+  const marketplaceStickyHeaderIndices = renderHeaderOutsideList ? undefined : [0];
   const marketplaceListContentStyle = useMemo(
     () =>
       Platform.OS === 'ios'
@@ -1083,6 +1106,7 @@ function MarketplaceScreen() {
     >
       <FocusAwareStatusBar barStyle="dark-content" />
       {null}
+      {renderHeaderOutsideList ? marketplaceHeader : null}
 
       <FlatList
         data={vm.products}
@@ -1102,7 +1126,7 @@ function MarketplaceScreen() {
         ListHeaderComponent={marketplaceListHeaderComponent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        stickyHeaderIndices={[0]}
+        stickyHeaderIndices={marketplaceStickyHeaderIndices}
         onScroll={handleMarketplaceScroll}
         scrollEventThrottle={16}
         onEndReached={vm.loadMore}

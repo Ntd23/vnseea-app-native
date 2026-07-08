@@ -45,6 +45,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { FeedCopy } from '../../../feed/presentation/components/PostCards';
 import { FEED_COPY } from '../../../feed/presentation/components/PostCards';
 import type { FeedPost, FeedTextPost } from '../../../feed/domain/types/feed.types';
+import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ReactionPickerOverlay } from '../../../feed/presentation/components/PostCards';
 
@@ -52,6 +53,7 @@ import { useAppLanguage } from '../../application/hooks/useAppLanguage';
 import { createProfileRepository } from '../../../profile/infrastructure/repositories/ApiProfileRepository';
 import { sessionStorage } from '../../infrastructure/storage/sessionStorage';
 import FocusAwareStatusBar from './FocusAwareStatusBar';
+import { ShareActionSheet } from './ShareActionSheet';
 
 export type PhotoViewerState = {
   post: FeedTextPost;
@@ -59,7 +61,18 @@ export type PhotoViewerState = {
 } | null;
 
 const PHOTO_VIEWER_IMAGE_HEIGHT_RATIO = 0.62;
-const PHOTO_VIEWER_COMMENT_SHEET_DELAY_MS = Platform.OS === 'ios' ? 240 : 0;
+const PHOTO_VIEWER_CHROME_MEASURE_TOLERANCE = 24;
+const PHOTO_VIEWER_TOP_SAFE_PADDING_FALLBACK = 16;
+const PHOTO_VIEWER_TOP_VERTICAL_PADDING = 6;
+const PHOTO_VIEWER_PROGRESS_BLOCK_HEIGHT = 19;
+const PHOTO_VIEWER_COUNTER_ROW_HEIGHT = 40;
+const PHOTO_VIEWER_BOTTOM_BASE_HEIGHT = 131;
+const PHOTO_VIEWER_BOTTOM_CAPTION_LINE_HEIGHT = 22;
+const PHOTO_VIEWER_BOTTOM_CAPTION_MARGIN = 16;
+const PHOTO_VIEWER_BOTTOM_PANEL_MAX_HEIGHT = 360;
+const PHOTO_VIEWER_BOTTOM_PANEL_MAX_HEIGHT_RATIO = 0.42;
+const PHOTO_VIEWER_PROFILE_CLOSE_DELAY_MS = 80;
+const PHOTO_VIEWER_INTERACTION_LOCK_MS = 350;
 
 // Local copy of the reaction emoji → image map. Kept inline here
 // (instead of importing from FeedScreen) so this component has zero
@@ -89,23 +102,52 @@ function formatPhotoViewerPostTime(timestamp: number | undefined, copy: FeedCopy
   );
 }
 
+function getStableChromeHeight(measuredHeight: number, estimatedHeight: number) {
+  if (measuredHeight <= 0) return estimatedHeight;
+  return Math.abs(measuredHeight - estimatedHeight) >
+    PHOTO_VIEWER_CHROME_MEASURE_TOLERANCE
+    ? measuredHeight
+    : estimatedHeight;
+}
+
 const PhotoViewerImage = React.memo(function PhotoViewerImage({
   url,
   width,
   height,
+  isActive,
+  onToggleChrome,
+  onZoomChange,
 }: {
   url: string;
   width: number;
   height: number;
+  isActive: boolean;
+  onToggleChrome: () => void;
+  onZoomChange: (isZoomed: boolean) => void;
 }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
 
   useEffect(() => {
     setIsLoaded(false);
     setHasError(false);
     setShowSpinner(false);
+    scale.value = 1;
+    savedScale.value = 1;
+    translateX.value = 0;
+    translateY.value = 0;
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
+    if (isActive) {
+      onZoomChange(false);
+    }
 
     // Only show spinner if the image takes longer than 150ms to load
     const timer = setTimeout(() => {
@@ -113,15 +155,131 @@ const PhotoViewerImage = React.memo(function PhotoViewerImage({
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [url]);
+  }, [
+    isActive,
+    onZoomChange,
+    savedScale,
+    savedTranslateX,
+    savedTranslateY,
+    scale,
+    translateX,
+    translateY,
+    url,
+  ]);
+
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate(event => {
+      'worklet';
+      const nextScale = savedScale.value * event.scale;
+      scale.value = Math.max(1, Math.min(nextScale, 4));
+    })
+    .onEnd(() => {
+      'worklet';
+      if (scale.value <= 1.01) {
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+        if (isActive) {
+          runOnJS(onZoomChange)(false);
+        }
+        return;
+      }
+
+      savedScale.value = Math.min(scale.value, 4);
+      if (isActive) {
+        runOnJS(onZoomChange)(true);
+      }
+    });
+
+  const panGesture = Gesture.Pan()
+    .manualActivation(true)
+    .onTouchesMove((_event, manager) => {
+      'worklet';
+      if (scale.value > 1.01) {
+        manager.activate();
+      } else {
+        manager.fail();
+      }
+    })
+    .onUpdate(event => {
+      'worklet';
+      if (scale.value <= 1.01) return;
+      translateX.value = savedTranslateX.value + event.translationX;
+      translateY.value = savedTranslateY.value + event.translationY;
+    })
+    .onEnd(() => {
+      'worklet';
+      if (scale.value <= 1.01) {
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+        return;
+      }
+
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    });
+
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .maxDistance(18)
+    .onEnd(() => {
+      'worklet';
+      if (scale.value > 1.01) {
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+        if (isActive) {
+          runOnJS(onZoomChange)(false);
+        }
+      } else {
+        scale.value = withSpring(2);
+        savedScale.value = 2;
+        if (isActive) {
+          runOnJS(onZoomChange)(true);
+        }
+      }
+    });
+
+  const singleTapGesture = Gesture.Tap()
+    .numberOfTaps(1)
+    .maxDuration(220)
+    .maxDistance(12)
+    .onEnd(() => {
+      'worklet';
+      runOnJS(onToggleChrome)();
+    });
+
+  const composedGesture = Gesture.Simultaneous(
+    pinchGesture,
+    panGesture,
+    Gesture.Exclusive(doubleTapGesture, singleTapGesture),
+  );
+
+  const animatedImageStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
 
   return (
-    <View
+    <GestureDetector gesture={composedGesture}>
+      <View
       style={{
         width,
         height,
         justifyContent: 'center',
         alignItems: 'center',
+        overflow: 'hidden',
       }}
     >
       {!isLoaded && !hasError && showSpinner ? (
@@ -136,9 +294,9 @@ const PhotoViewerImage = React.memo(function PhotoViewerImage({
           Không tải được ảnh
         </Text>
       ) : (
-        <Image
+        <Animated.Image
           source={{ uri: url }}
-          style={{ width: '100%', height: '100%' }}
+          style={[{ width: '100%', height: '100%' }, animatedImageStyle]}
           resizeMode="contain"
           fadeDuration={0}
           resizeMethod="resize"
@@ -150,7 +308,8 @@ const PhotoViewerImage = React.memo(function PhotoViewerImage({
           }}
         />
       )}
-    </View>
+      </View>
+    </GestureDetector>
   );
 });
 
@@ -160,6 +319,9 @@ export function PhotoViewerModal({
   onClose,
   onReact,
   onCommentTap,
+  onProfilePress,
+  onInternalShare,
+  onShared,
   posts,
 }: {
   state: PhotoViewerState;
@@ -167,6 +329,9 @@ export function PhotoViewerModal({
   onClose: () => void;
   onReact: (postId: string, reaction: ReactionType) => void;
   onCommentTap: (postId: string) => void;
+  onProfilePress?: (userId: string) => void;
+  onInternalShare?: (input: SharePostInput) => Promise<FeedPost>;
+  onShared?: (post: FeedPost) => void;
   posts: FeedPost[];
 }) {
   const language = useAppLanguage();
@@ -176,10 +341,22 @@ export function PhotoViewerModal({
   const [topBarHeight, setTopBarHeight] = useState(0);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(0);
   const [isViewerChromeReady, setIsViewerChromeReady] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
-  const commentOpenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+  const [isChromeVisible, setIsChromeVisible] = useState(true);
+  const [isPhotoZoomed, setIsPhotoZoomed] = useState(false);
+  const [isShareSheetVisible, setIsShareSheetVisible] = useState(false);
+  const [localReactionPostId, setLocalReactionPostId] = useState<string | null>(
     null,
   );
+  const [localReaction, setLocalReaction] = useState<ReactionType | null>(null);
+  const [localLikeCount, setLocalLikeCount] = useState(0);
+  const flatListRef = useRef<FlatList>(null);
+  const profileOpenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const interactionUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const transitionLockRef = useRef(false);
 
   const [pickerAnchor, setPickerAnchor] = useState<{
     postId: string;
@@ -199,13 +376,20 @@ export function PhotoViewerModal({
   const openProgress = useSharedValue(0);
   const openScale = useSharedValue(0.92);
   const contentOpacity = useSharedValue(0);
+  const chromeOpacity = useSharedValue(1);
 
   // Sync page on mount + animate open with snappy fade + scale
   useEffect(() => {
     setTopBarHeight(0);
     setBottomPanelHeight(0);
     setIsViewerChromeReady(false);
+    setIsChromeVisible(true);
+    setIsPhotoZoomed(false);
+    setIsShareSheetVisible(false);
+    setLocalReactionPostId(null);
+    transitionLockRef.current = false;
     contentOpacity.value = 0;
+    chromeOpacity.value = 1;
 
     if (!state) {
       return;
@@ -225,7 +409,14 @@ export function PhotoViewerModal({
       duration: 160,
       easing: Easing.out(Easing.quad),
     });
-  }, [state, translateY, openProgress, openScale, contentOpacity]);
+  }, [
+    state,
+    translateY,
+    openProgress,
+    openScale,
+    contentOpacity,
+    chromeOpacity,
+  ]);
 
   useEffect(() => {
     if (!state || isViewerChromeReady) return;
@@ -246,9 +437,13 @@ export function PhotoViewerModal({
 
   useEffect(() => {
     return () => {
-      if (commentOpenTimeoutRef.current) {
-        clearTimeout(commentOpenTimeoutRef.current);
-        commentOpenTimeoutRef.current = null;
+      if (profileOpenTimeoutRef.current) {
+        clearTimeout(profileOpenTimeoutRef.current);
+        profileOpenTimeoutRef.current = null;
+      }
+      if (interactionUnlockTimeoutRef.current) {
+        clearTimeout(interactionUnlockTimeoutRef.current);
+        interactionUnlockTimeoutRef.current = null;
       }
     };
   }, []);
@@ -284,16 +479,51 @@ export function PhotoViewerModal({
   useEffect(() => {
     if (livePost) {
       setIsFollowedLocally(livePost.publisher.isFollowing);
+      setLocalReactionPostId(livePost.id);
+      setLocalReaction(livePost.myReaction);
+      setLocalLikeCount(livePost.likeCount);
     }
   }, [livePost]);
 
-  const handleLocalPickReaction = useCallback(
+  const applyReaction = useCallback(
     (reaction: ReactionType) => {
       if (!livePost) return;
-      onReact(livePost.id, reaction);
+
+      const hasLocalState = localReactionPostId === livePost.id;
+      const previousReaction = hasLocalState
+        ? localReaction
+        : livePost.myReaction;
+      const previousLikeCount = hasLocalState
+        ? localLikeCount
+        : livePost.likeCount;
+      const nextReaction = previousReaction === reaction ? null : reaction;
+      const nextLikeCount =
+        !previousReaction && nextReaction
+          ? previousLikeCount + 1
+          : previousReaction && !nextReaction
+            ? Math.max(0, previousLikeCount - 1)
+            : previousLikeCount;
+
       setPickerAnchor(null);
+      setLocalReactionPostId(livePost.id);
+      setLocalReaction(nextReaction);
+      setLocalLikeCount(nextLikeCount);
+      onReact(livePost.id, reaction);
     },
-    [livePost, onReact],
+    [
+      livePost,
+      localLikeCount,
+      localReaction,
+      localReactionPostId,
+      onReact,
+    ],
+  );
+
+  const handleLocalPickReaction = useCallback(
+    (reaction: ReactionType) => {
+      applyReaction(reaction);
+    },
+    [applyReaction],
   );
 
   const handleLikeLongPress = useCallback(
@@ -322,21 +552,71 @@ export function PhotoViewerModal({
     animateClose();
   }, [animateClose]);
 
+  const lockInteractionBriefly = useCallback(() => {
+    transitionLockRef.current = true;
+    if (interactionUnlockTimeoutRef.current) {
+      clearTimeout(interactionUnlockTimeoutRef.current);
+    }
+    interactionUnlockTimeoutRef.current = setTimeout(() => {
+      interactionUnlockTimeoutRef.current = null;
+      transitionLockRef.current = false;
+    }, PHOTO_VIEWER_INTERACTION_LOCK_MS);
+  }, []);
+
   const handleCommentPress = useCallback(() => {
     if (!livePost) return;
+    if (transitionLockRef.current) return;
+    lockInteractionBriefly();
     const postId = livePost.id;
     setPickerAnchor(null);
-    if (commentOpenTimeoutRef.current) {
-      clearTimeout(commentOpenTimeoutRef.current);
+    onCommentTap(postId);
+  }, [livePost, lockInteractionBriefly, onCommentTap]);
+
+  const handleSharePress = useCallback(() => {
+    if (!livePost) return;
+    if (transitionLockRef.current) return;
+    lockInteractionBriefly();
+    setPickerAnchor(null);
+    setIsShareSheetVisible(true);
+  }, [livePost, lockInteractionBriefly]);
+
+  const handlePublisherPress = useCallback(() => {
+    const publisherId = livePost?.publisher.id;
+    if (!publisherId || !onProfilePress) return;
+    if (transitionLockRef.current) return;
+    lockInteractionBriefly();
+
+    setPickerAnchor(null);
+    if (profileOpenTimeoutRef.current) {
+      clearTimeout(profileOpenTimeoutRef.current);
     }
-    // iOS cannot reliably stack the comments Modal over this native photo
-    // Modal. Close the viewer first, then open comments after dismissal.
-    onClose();
-    commentOpenTimeoutRef.current = setTimeout(() => {
-      commentOpenTimeoutRef.current = null;
-      onCommentTap(postId);
-    }, PHOTO_VIEWER_COMMENT_SHEET_DELAY_MS);
-  }, [livePost, onClose, onCommentTap]);
+    onProfilePress(publisherId);
+    profileOpenTimeoutRef.current = setTimeout(() => {
+      profileOpenTimeoutRef.current = null;
+      onClose();
+    }, PHOTO_VIEWER_PROFILE_CLOSE_DELAY_MS);
+  }, [livePost?.publisher.id, lockInteractionBriefly, onClose, onProfilePress]);
+
+  const handleCloseShareSheet = useCallback(() => {
+    setIsShareSheetVisible(false);
+    transitionLockRef.current = false;
+  }, []);
+
+  const handleToggleChrome = useCallback(() => {
+    setPickerAnchor(null);
+    setIsChromeVisible(previous => {
+      const next = !previous;
+      chromeOpacity.value = withTiming(next ? 1 : 0, {
+        duration: 150,
+        easing: Easing.out(Easing.cubic),
+      });
+      return next;
+    });
+  }, [chromeOpacity]);
+
+  const handlePhotoZoomChange = useCallback((nextIsZoomed: boolean) => {
+    setIsPhotoZoomed(nextIsZoomed);
+  }, []);
 
   const handleTopBarLayout = useCallback((event: LayoutChangeEvent) => {
     const nextHeight = event.nativeEvent.layout.height;
@@ -346,13 +626,21 @@ export function PhotoViewerModal({
   }, []);
 
   const handleBottomPanelLayout = useCallback((event: LayoutChangeEvent) => {
-    const nextHeight = event.nativeEvent.layout.height;
+    const bottomPanelMaxHeight = Math.min(
+      PHOTO_VIEWER_BOTTOM_PANEL_MAX_HEIGHT,
+      SCREEN_H * PHOTO_VIEWER_BOTTOM_PANEL_MAX_HEIGHT_RATIO,
+    );
+    const nextHeight = Math.min(
+      event.nativeEvent.layout.height,
+      bottomPanelMaxHeight,
+    );
     setBottomPanelHeight(previousHeight =>
       Math.abs(previousHeight - nextHeight) < 0.5 ? previousHeight : nextHeight,
     );
-  }, []);
+  }, [SCREEN_H]);
 
   const panGesture = Gesture.Pan()
+    .enabled(!isPhotoZoomed)
     .activeOffsetY([-10, 10])
     .failOffsetX([-15, 15])
     .onUpdate(event => {
@@ -421,18 +709,79 @@ export function PhotoViewerModal({
     };
   });
 
+  const chromeAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: chromeOpacity.value,
+  }));
+
   if (!state || !livePost) return null;
   const { post } = state;
-  const total = post.photos.length;
-  const hasMeasuredViewerChrome = isViewerChromeReady;
+  const viewerPhotos =
+    livePost.photos && livePost.photos.length > 0
+      ? livePost.photos
+      : post.photos;
+  const total = viewerPhotos.length;
+  const safeTotal = Math.max(total, 1);
+  const displayIndex = Math.min(currentIndex, safeTotal - 1) + 1;
+  const counterLabel = `${displayIndex} / ${safeTotal}`;
+  const hasLocalReactionState = localReactionPostId === livePost.id;
+  const displayReaction = hasLocalReactionState
+    ? localReaction
+    : livePost.myReaction;
+  const displayLikeCount = hasLocalReactionState
+    ? localLikeCount
+    : livePost.likeCount;
+  const bottomPanelMaxHeight = Math.min(
+    PHOTO_VIEWER_BOTTOM_PANEL_MAX_HEIGHT,
+    SCREEN_H * PHOTO_VIEWER_BOTTOM_PANEL_MAX_HEIGHT_RATIO,
+  );
+  const estimatedTopBarHeight =
+    Math.max(insets.top, PHOTO_VIEWER_TOP_SAFE_PADDING_FALLBACK) +
+    PHOTO_VIEWER_TOP_VERTICAL_PADDING +
+    (total > 1 ? PHOTO_VIEWER_PROGRESS_BLOCK_HEIGHT : 0) +
+    PHOTO_VIEWER_COUNTER_ROW_HEIGHT;
+  const caption = livePost.caption?.trim() ?? '';
+  const estimatedCaptionCharsPerLine = Math.max(
+    24,
+    Math.floor((SCREEN_W - 32) / 12),
+  );
+  const estimatedCaptionLines =
+    caption.length > 0
+      ? Math.min(
+          4,
+          Math.max(1, Math.ceil(caption.length / estimatedCaptionCharsPerLine)),
+        )
+      : 0;
+  const estimatedBottomPanelHeight = Math.min(
+    bottomPanelMaxHeight,
+    PHOTO_VIEWER_BOTTOM_BASE_HEIGHT +
+      Math.max(insets.bottom, 16) +
+      12 +
+      (estimatedCaptionLines > 0
+        ? estimatedCaptionLines * PHOTO_VIEWER_BOTTOM_CAPTION_LINE_HEIGHT +
+          PHOTO_VIEWER_BOTTOM_CAPTION_MARGIN
+        : 0),
+  );
+  const stableTopBarHeight = getStableChromeHeight(
+    topBarHeight,
+    estimatedTopBarHeight,
+  );
+  const stableBottomPanelHeight = Math.min(
+    bottomPanelMaxHeight,
+    getStableChromeHeight(bottomPanelHeight, estimatedBottomPanelHeight),
+  );
+  const photoViewportTop = isChromeVisible ? stableTopBarHeight : 0;
+  const availablePhotoViewportHeight =
+    isChromeVisible
+      ? SCREEN_H - stableTopBarHeight - stableBottomPanelHeight
+      : SCREEN_H;
   const fallbackPhotoViewportHeight =
     SCREEN_H * PHOTO_VIEWER_IMAGE_HEIGHT_RATIO;
-  const photoViewportTop = hasMeasuredViewerChrome
-    ? topBarHeight
-    : (SCREEN_H - fallbackPhotoViewportHeight) / 2;
-  const photoViewportHeight = hasMeasuredViewerChrome
-    ? Math.max(1, SCREEN_H - topBarHeight - bottomPanelHeight)
-    : fallbackPhotoViewportHeight;
+  const photoViewportHeight = Math.max(
+    1,
+    availablePhotoViewportHeight > 0
+      ? availablePhotoViewportHeight
+      : fallbackPhotoViewportHeight,
+  );
 
   return (
     <Modal
@@ -448,17 +797,21 @@ export function PhotoViewerModal({
           <Animated.View style={containerStyle}>
             <Animated.View style={[contentStyle, { flex: 1 }]}>
               {/* Top bar: progress segments + page counter + close */}
-              <View
+              <Animated.View
+                pointerEvents={isChromeVisible ? 'auto' : 'none'}
                 onLayout={handleTopBarLayout}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  zIndex: 30,
-                  paddingTop: Math.max(insets.top, 16) + 6,
-                  paddingHorizontal: 16,
-                }}
+                style={[
+                  {
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 30,
+                    paddingTop: Math.max(insets.top, 16) + 6,
+                    paddingHorizontal: 16,
+                  },
+                  chromeAnimatedStyle,
+                ]}
               >
                 {total > 1 && (
                   <View
@@ -493,13 +846,17 @@ export function PhotoViewerModal({
                   }}
                 >
                   <Text
+                    numberOfLines={1}
+                    allowFontScaling={false}
                     style={{
                       color: '#ffffff',
                       fontSize: 16,
                       fontWeight: '700',
+                      lineHeight: 22,
+                      minWidth: 72,
                     }}
                   >
-                    {total > 1 ? `${currentIndex + 1} / ${total}` : '1 / 1'}
+                    {counterLabel}
                   </Text>
 
                   <Pressable
@@ -519,7 +876,7 @@ export function PhotoViewerModal({
                     <X size={20} color="#ffffff" />
                   </Pressable>
                 </View>
-              </View>
+              </Animated.View>
 
               {/* Horizontally paginated photo list */}
               <View
@@ -533,10 +890,12 @@ export function PhotoViewerModal({
               >
                 <FlatList
                   ref={flatListRef}
-                  data={post.photos}
+                  data={viewerPhotos}
                   horizontal
                   pagingEnabled
+                  scrollEnabled={!isPhotoZoomed}
                   showsHorizontalScrollIndicator={false}
+                  extraData={`${photoViewportHeight}-${isPhotoZoomed}-${currentIndex}`}
                   initialScrollIndex={state.initialIndex}
                   getItemLayout={(_, index) => ({
                     length: SCREEN_W,
@@ -560,33 +919,43 @@ export function PhotoViewerModal({
                       e.nativeEvent.contentOffset.x / SCREEN_W,
                     );
                     setCurrentIndex(idx);
+                    setIsPhotoZoomed(false);
                   }}
                   keyExtractor={(url, i) => `viewer-${i}-${url}`}
-                  renderItem={({ item: url }) => (
+                  renderItem={({ item: url, index }) => (
                     <PhotoViewerImage
                       url={url}
                       width={SCREEN_W}
                       height={photoViewportHeight}
+                      isActive={index === currentIndex}
+                      onToggleChrome={handleToggleChrome}
+                      onZoomChange={handlePhotoZoomChange}
                     />
                   )}
                 />
               </View>
 
               {/* Bottom overlay: caption, publisher, action capsules */}
-              <View
+              <Animated.View
+                pointerEvents={isChromeVisible ? 'auto' : 'none'}
                 onLayout={handleBottomPanelLayout}
-                style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  backgroundColor: '#1E1B1B',
-                  borderTopLeftRadius: 24,
-                  borderTopRightRadius: 24,
-                  paddingHorizontal: 16,
-                  paddingTop: 10,
-                  paddingBottom: Math.max(insets.bottom, 16) + 12,
-                }}
+                style={[
+                  {
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    backgroundColor: '#1E1B1B',
+                    borderTopLeftRadius: 24,
+                    borderTopRightRadius: 24,
+                    maxHeight: bottomPanelMaxHeight,
+                    overflow: 'hidden',
+                    paddingHorizontal: 16,
+                    paddingTop: 10,
+                    paddingBottom: Math.max(insets.bottom, 16) + 12,
+                  },
+                  chromeAnimatedStyle,
+                ]}
               >
                 <View
                   style={{
@@ -621,11 +990,16 @@ export function PhotoViewerModal({
                     marginBottom: 16,
                   }}
                 >
-                  <View
+                  <GHTouchableOpacity
+                    activeOpacity={0.78}
+                    onPress={handlePublisherPress}
+                    disabled={!onProfilePress || !livePost.publisher.id}
                     style={{
                       flexDirection: 'row',
                       alignItems: 'center',
-                      flex: 1,
+                      flexGrow: 1,
+                      flexShrink: 1,
+                      minWidth: 0,
                     }}
                   >
                     {livePost.publisher.avatarUrl ? (
@@ -649,7 +1023,7 @@ export function PhotoViewerModal({
                         }}
                       />
                     )}
-                    <View style={{ flex: 1 }}>
+                    <View style={{ flexShrink: 1, minWidth: 0 }}>
                       <Text
                         style={{
                           color: '#ffffff',
@@ -691,7 +1065,7 @@ export function PhotoViewerModal({
                         <Globe size={11} color="rgba(255, 255, 255, 0.5)" />
                       </View>
                     </View>
-                  </View>
+                  </GHTouchableOpacity>
 
                   {/* Follow button only shown when not own post and not followed yet */}
                   {(() => {
@@ -742,7 +1116,7 @@ export function PhotoViewerModal({
                   >
                     {/* Like capsule */}
                     <GHTouchableOpacity
-                      onPress={() => onReact(livePost.id, 'like')}
+                      onPress={() => applyReaction('like')}
                       onLongPress={() => handleLikeLongPress(false)}
                       delayLongPress={400}
                       activeOpacity={0.75}
@@ -755,9 +1129,9 @@ export function PhotoViewerModal({
                         paddingVertical: 9,
                       }}
                     >
-                      {livePost.myReaction ? (
+                      {displayReaction ? (
                         <Image
-                          source={REACTION_IMAGES[livePost.myReaction]}
+                          source={REACTION_IMAGES[displayReaction]}
                           style={{ width: 18, height: 18 }}
                           resizeMode="contain"
                         />
@@ -772,7 +1146,7 @@ export function PhotoViewerModal({
                           fontWeight: '600',
                         }}
                       >
-                        {livePost.likeCount}
+                        {displayLikeCount}
                       </Text>
                     </GHTouchableOpacity>
 
@@ -804,6 +1178,7 @@ export function PhotoViewerModal({
 
                     {/* Share capsule */}
                     <GHTouchableOpacity
+                      onPress={handleSharePress}
                       activeOpacity={0.75}
                       style={{
                         flexDirection: 'row',
@@ -830,7 +1205,7 @@ export function PhotoViewerModal({
 
                   {/* Quick like blue circle button */}
                   <GHTouchableOpacity
-                    onPress={() => onReact(livePost.id, 'like')}
+                    onPress={() => applyReaction('like')}
                     onLongPress={() => handleLikeLongPress(true)}
                     delayLongPress={400}
                     activeOpacity={0.75}
@@ -838,16 +1213,16 @@ export function PhotoViewerModal({
                       width: 42,
                       height: 42,
                       borderRadius: 21,
-                      backgroundColor: livePost.myReaction
+                      backgroundColor: displayReaction
                         ? 'rgba(255, 255, 255, 0.12)'
                         : '#0866FF',
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
                   >
-                    {livePost.myReaction ? (
+                    {displayReaction ? (
                       <Image
-                        source={REACTION_IMAGES[livePost.myReaction]}
+                        source={REACTION_IMAGES[displayReaction]}
                         style={{ width: 24, height: 24 }}
                         resizeMode="contain"
                       />
@@ -856,7 +1231,7 @@ export function PhotoViewerModal({
                     )}
                   </GHTouchableOpacity>
                 </View>
-              </View>
+              </Animated.View>
 
               {/* Reaction picker overlay for long-press on like */}
               <ReactionPickerOverlay
@@ -872,6 +1247,13 @@ export function PhotoViewerModal({
           </Animated.View>
         </GestureDetector>
       </GestureHandlerRootView>
+      <ShareActionSheet
+        visible={isShareSheetVisible}
+        onClose={handleCloseShareSheet}
+        post={livePost}
+        onInternalShare={onInternalShare}
+        onShared={onShared}
+      />
     </Modal>
   );
 }

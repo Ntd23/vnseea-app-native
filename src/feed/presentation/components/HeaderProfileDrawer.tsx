@@ -79,6 +79,7 @@ import {
   TrendingUp,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToOwnProfile } from '../../../navigation/profileNavigation';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import type { SettingsPanelRouteParam } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -609,7 +610,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
 
   const handleOpenProfile = useCallback(() => {
     handleClose();
-    navigation.navigate(ROUTES.PROFILE);
+    navigateToOwnProfile(navigation);
   }, [handleClose, navigation]);
 
   if (!shouldRender) return null;

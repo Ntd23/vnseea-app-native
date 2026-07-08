@@ -1413,6 +1413,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     isScreenFocused !== false && canAttemptVideo && (isActive || isWarm);
 
   useEffect(() => {
+    if (shouldMountVideo) return;
+
+    setIsReady(false);
+    setHasRenderedFrame(false);
+  }, [shouldMountVideo]);
+
+  useEffect(() => {
     if (isActive) {
       const savedTime = getVideoPlaybackTime(post.id, currentTimeRef.current);
       currentTimeRef.current = savedTime;

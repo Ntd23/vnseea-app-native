@@ -14,11 +14,9 @@ import {
   Alert,
   ActivityIndicator,
   StatusBar,
-  type ListRenderItemInfo,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  type ViewToken,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -56,6 +54,11 @@ import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
+import {
+  FlashList,
+  type ListRenderItemInfo as FlashListRenderItemInfo,
+  type ViewToken as FlashListViewToken,
+} from '@shopify/flash-list';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -105,6 +108,7 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
+import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type {
   StoryItem,
@@ -129,15 +133,12 @@ const FRIEND_TILE_WIDTH = Math.floor((SCREEN_WIDTH / 2 - 32 - 6) / 2);
 const PROFILE_FRIENDS_PAGE_WIDTH = FRIEND_TILE_WIDTH * 2 + 6;
 const PROFILE_STORY_MAX_AGE_SECONDS = 24 * 60 * 60;
 const PROFILE_POST_PAGE_SIZE = 20;
-const PROFILE_POST_INITIAL_RENDER_COUNT = 10;
-const PROFILE_POST_RENDER_BATCH_SIZE = 8;
-const PROFILE_POST_WINDOW_SIZE = 13;
-const PROFILE_POST_BATCHING_PERIOD_MS = 24;
+const PROFILE_POST_DRAW_DISTANCE = 1800;
 const PROFILE_POST_MEDIA_PREFETCH_LOOKAHEAD = 12;
 const PROFILE_POST_MEDIA_PREFETCH_LIMIT = 18;
 const PROFILE_POST_VIDEO_WARM_BEHIND_ITEMS = 1;
-const PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS = 8;
-const PROFILE_POST_VIDEO_WARM_MAX_COUNT = 4;
+const PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS = 4;
+const PROFILE_POST_VIDEO_WARM_MAX_COUNT = 1;
 
 function isProfileFeedPost(post: FeedPost): post is ProfileFeedPost {
   return post.kind === 'text' || post.kind === 'video' || post.kind === 'poll';
@@ -1170,7 +1171,7 @@ function ProfileScreen() {
   });
 
   const onProfilePostViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    ({ viewableItems }: { viewableItems: FlashListViewToken<ProfileFeedPost>[] }) => {
       const currentPosts = profilePostsRef.current;
       const visibleVideo = viewableItems.find(
         item =>
@@ -1211,6 +1212,9 @@ function ProfileScreen() {
         return;
       }
 
+      const activeVideoId = visibleVideo?.item
+        ? String(visibleVideo.item.id)
+        : activeProfileVideoIdRef.current;
       const warmVideoIds: string[] = [];
       const start = Math.max(
         0,
@@ -1224,6 +1228,7 @@ function ProfileScreen() {
       for (let index = start; index < end; index += 1) {
         const post = currentPosts[index];
         if (post.kind !== 'video') continue;
+        if (post.id === activeVideoId) continue;
 
         warmVideoIds.push(post.id);
         if (warmVideoIds.length >= PROFILE_POST_VIDEO_WARM_MAX_COUNT) break;
@@ -1243,6 +1248,7 @@ function ProfileScreen() {
 
     if (profileScrollYRef.current <= 24) {
       const initialWarmVideoIds: string[] = [];
+      const activeVideoId = activeProfileVideoIdRef.current;
       for (
         let index = 0;
         index < Math.min(posts.length, PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS + 1);
@@ -1250,6 +1256,7 @@ function ProfileScreen() {
       ) {
         const post = posts[index];
         if (post.kind !== 'video') continue;
+        if (post.id === activeVideoId) continue;
 
         initialWarmVideoIds.push(post.id);
         if (initialWarmVideoIds.length >= PROFILE_POST_VIDEO_WARM_MAX_COUNT) break;
@@ -1588,6 +1595,11 @@ function ProfileScreen() {
     setShareModalVisible(false);
     setSharingPost(undefined);
   }, []);
+
+  const handleInternalSharePost = useCallback(
+    (input: SharePostInput) => feedRepo.sharePost(input),
+    [feedRepo],
+  );
 
   const handleNavigateToProfile = useCallback((userId: string) => {
     navigateToUserProfile(navigation, userId);
@@ -2122,13 +2134,18 @@ function ProfileScreen() {
   ]);
 
   const renderProfilePostItem = useCallback(
-    ({ item }: ListRenderItemInfo<ProfileFeedPost>) =>
+    ({ item }: FlashListRenderItemInfo<ProfileFeedPost>) =>
       renderProfilePostContent(item),
     [renderProfilePostContent],
   );
 
   const profilePostKeyExtractor = useCallback(
     (post: ProfileFeedPost) => `${post.kind}-${post.id}`,
+    [],
+  );
+
+  const profilePostItemType = useCallback(
+    (post: ProfileFeedPost) => post.kind,
     [],
   );
 
@@ -2862,9 +2879,11 @@ function ProfileScreen() {
   ) : null;
 
   const profilePostsListElement = (
-    <FlatList
+    <FlashList
+      style={profileMainStyles.postsList}
       data={posts}
       keyExtractor={profilePostKeyExtractor}
+      getItemType={profilePostItemType}
       renderItem={renderProfilePostItem}
       ListHeaderComponent={profileContentHeader}
       ListEmptyComponent={profilePostsEmptyComponent}
@@ -2883,11 +2902,9 @@ function ProfileScreen() {
       onEndReachedThreshold={0.35}
       onViewableItemsChanged={onProfilePostViewableItemsChanged}
       viewabilityConfig={profilePostsViewabilityConfigRef.current}
-      initialNumToRender={PROFILE_POST_INITIAL_RENDER_COUNT}
-      maxToRenderPerBatch={PROFILE_POST_RENDER_BATCH_SIZE}
-      updateCellsBatchingPeriod={PROFILE_POST_BATCHING_PERIOD_MS}
-      windowSize={PROFILE_POST_WINDOW_SIZE}
-      removeClippedSubviews={false}
+      drawDistance={PROFILE_POST_DRAW_DISTANCE}
+      maxItemsInRecyclePool={12}
+      maintainVisibleContentPosition={{ disabled: true }}
     />
   );
 
@@ -2975,6 +2992,8 @@ function ProfileScreen() {
           onClose={handleClosePhotoViewer}
           onReact={handleSetPostReaction}
           onCommentTap={commentVm.openComments}
+          onProfilePress={handleNavigateToProfile}
+          onInternalShare={handleInternalSharePost}
           posts={posts}
         />
         <ReelCommentsSheet
@@ -2995,6 +3014,7 @@ function ProfileScreen() {
           onSubmitReply={commentVm.submitReply}
           onSetReaction={commentVm.setCommentReaction}
           onDelete={commentVm.deleteComment}
+          onEdit={commentVm.editComment}
           onLoadReplies={commentVm.loadReplies}
           onCollapseReplies={commentVm.collapseReplies}
           onStartReply={commentVm.startReplyTo}
@@ -3017,6 +3037,9 @@ const profileMainStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F0F2F5',
+  },
+  postsList: {
+    flex: 1,
   },
   coverContainer: {
     position: 'relative',

@@ -15,7 +15,11 @@ import type { EventsItem } from '../events/domain/types/events.types';
 import type { UserProfile } from '../user/domain/types/user.types';
 
 export type MainTabParamList = {
-  [ROUTES.FEED]: undefined;
+  [ROUTES.FEED]:
+    | {
+        filter?: 'photos';
+      }
+    | undefined;
   [ROUTES.EXPLORE]: undefined;
   [ROUTES.REELS]:
     | {

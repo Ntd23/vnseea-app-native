@@ -16,7 +16,7 @@ describe('reels playback state', () => {
     ).toBe(false);
   });
 
-  it('keeps reels paused while comments are open', () => {
+  it('keeps the active reel playing while comments are open', () => {
     expect(
       isReelItemActive({
         isScreenFocused: true,
@@ -24,7 +24,7 @@ describe('reels playback state', () => {
         index: 0,
         activeIndex: 0,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('does not mount reel video players while the native iOS Video tab is background-mounted', () => {

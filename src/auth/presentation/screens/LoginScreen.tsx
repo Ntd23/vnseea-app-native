@@ -12,8 +12,9 @@ import React, {
 import {
   Alert,
   Animated as RNAnimated,
-  KeyboardAvoidingView,
   Keyboard,
+  KeyboardAvoidingView,
+  type KeyboardEvent,
   LayoutChangeEvent,
   Platform,
   ScrollView,
@@ -69,6 +70,8 @@ function LoginScreen() {
     password: 0,
   });
   const focusedFieldRef = useRef<LoginFieldKey | null>(null);
+  const keyboardBottomInsetRef = useRef(0);
+  const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
   const cardOpacity = useRef(new RNAnimated.Value(0)).current;
   const cardTranslateY = useRef(new RNAnimated.Value(26)).current;
   const heroScale = useRef(new RNAnimated.Value(0.96)).current;
@@ -118,23 +121,48 @@ function LoginScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  const scrollToField = useCallback((field: LoginFieldKey) => {
+  const scrollToField = useCallback((field: LoginFieldKey, delay = 90) => {
     focusedFieldRef.current = field;
-    const targetY = Math.max(0, cardYRef.current + fieldYRef.current[field] - 24);
+    const keyboardIsOpen = keyboardBottomInsetRef.current > 0;
+    const fieldTopOffset = field === 'password' && keyboardIsOpen ? 112 : 48;
+    const targetY = Math.max(
+      0,
+      cardYRef.current + fieldYRef.current[field] - fieldTopOffset,
+    );
 
     setTimeout(() => {
       scrollRef.current?.scrollTo({ y: targetY, animated: true });
-    }, 90);
+    }, delay);
   }, []);
 
   useEffect(() => {
-    const subscription = Keyboard.addListener('keyboardDidShow', () => {
-      if (focusedFieldRef.current) {
-        scrollToField(focusedFieldRef.current);
-      }
-    });
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-    return () => subscription.remove();
+    const handleKeyboardShow = (event: KeyboardEvent) => {
+      const nextInset =
+        Platform.OS === 'android'
+          ? Math.max(0, event.endCoordinates?.height ?? 0)
+          : 0;
+      keyboardBottomInsetRef.current = nextInset;
+      setKeyboardBottomInset(nextInset);
+      if (focusedFieldRef.current) {
+        scrollToField(focusedFieldRef.current, Platform.OS === 'android' ? 140 : 40);
+      }
+    };
+
+    const handleKeyboardHide = () => {
+      keyboardBottomInsetRef.current = 0;
+      setKeyboardBottomInset(0);
+    };
+
+    const showSubscription = Keyboard.addListener(showEvent, handleKeyboardShow);
+    const hideSubscription = Keyboard.addListener(hideEvent, handleKeyboardHide);
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
   }, [scrollToField]);
 
   const handleCardLayout = useCallback((event: LayoutChangeEvent) => {
@@ -199,14 +227,21 @@ function LoginScreen() {
 
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
           ref={scrollRef}
           className="flex-1"
-          contentContainerClassName="flex-grow bg-[#F8FBFF] pb-4"
-          automaticallyAdjustKeyboardInsets
+          contentContainerClassName="flex-grow bg-[#F8FBFF]"
+          contentContainerStyle={{
+            paddingBottom:
+              Platform.OS === 'android' && keyboardBottomInset > 0
+                ? keyboardBottomInset + 32
+                : 16,
+          }}
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           contentInsetAdjustmentBehavior="never"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

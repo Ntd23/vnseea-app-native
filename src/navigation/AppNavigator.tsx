@@ -2,6 +2,7 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import { ROUTES } from './constants/routes';
 import { createStackRoutes } from './routeRegistry';
 import type { RootStackParamList } from './types';
@@ -23,6 +24,17 @@ const SCREENS_WITHOUT_DEFAULT_ANIMATION: ReadonlySet<string> = new Set([
   ROUTES.REELS,
 ]);
 
+const PROFILE_PUSH_ROUTES: ReadonlySet<string> = new Set([
+  ROUTES.PROFILE,
+  ROUTES.USER_PROFILE,
+]);
+
+const PROFILE_PUSH_OPTIONS: NativeStackNavigationOptions = {
+  animation: 'ios_from_right',
+  animationTypeForReplace: 'push',
+  gestureEnabled: true,
+};
+
 function AppNavigator() {
   const initialRouteName = sessionStorage.getAccessToken()
     ? ROUTES.MAIN_TABS
@@ -43,11 +55,11 @@ function AppNavigator() {
             // Per-route animation override. The default for the
             // custom-animated set is fade (used by the story
             // viewers so their internal gesture is not raced by a
-            // native push/pop). REELS overrides to slide_from_right
-            // so it slides in from the right edge when launched
-            // from Home - no more flash on tap.
+            // native push/pop). REELS opens without a native transition
+            // so a tapped feed video can keep the experience feeling
+            // continuous and start playback immediately.
             const animation = name === ROUTES.REELS
-              ? 'slide_from_right'
+              ? 'none'
               : 'fade';
             return (
               <Stack.Screen
@@ -55,6 +67,16 @@ function AppNavigator() {
                 name={name}
                 component={component}
                 options={{ animation }}
+              />
+            );
+          }
+          if (PROFILE_PUSH_ROUTES.has(name)) {
+            return (
+              <Stack.Screen
+                key={name}
+                name={name}
+                component={component}
+                options={PROFILE_PUSH_OPTIONS}
               />
             );
           }

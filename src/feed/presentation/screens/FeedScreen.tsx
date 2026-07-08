@@ -15,7 +15,6 @@ import {
   Linking,
   Platform,
   RefreshControl,
-  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -74,7 +73,9 @@ import {
   useFocusEffect,
   useIsFocused,
   useNavigation,
+  useRoute,
 } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   SafeAreaView,
@@ -83,7 +84,10 @@ import {
   type Edge,
 } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
-import type { RootStackParamList } from '../../../navigation/types';
+import type {
+  MainTabParamList,
+  RootStackParamList,
+} from '../../../navigation/types';
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
 import { feedLogoEvents } from '../../application/events/feedLogoEvents';
@@ -118,6 +122,7 @@ import {
 import { PollPostCard } from '../components/PollPostCard';
 import { FeedHeader } from '../components/FeedHeader';
 import { FeedHeaderCollapseFrame } from '../components/FeedHeaderCollapseFrame';
+import { resolveFeedChromeTopInset } from '../components/feedHeaderInsets';
 import { HomeFeedIntro } from '../components/HomeFeedIntro';
 import {
   createFeedChromeCollapseState,
@@ -179,8 +184,8 @@ const IMAGE_PREFETCH_BATCH_SIZE = 4;
 const IMAGE_PREFETCH_BATCH_DELAY_MS = 90;
 const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = 8;
 const FEED_VIDEO_WARM_BEHIND_ITEMS = 1;
-const FEED_VIDEO_WARM_AHEAD_ITEMS = 6;
-const FEED_VIDEO_WARM_MAX_COUNT = 4;
+const FEED_VIDEO_WARM_AHEAD_ITEMS = 4;
+const FEED_VIDEO_WARM_MAX_COUNT = 1;
 const FEED_LIST_INITIAL_RENDER_COUNT = 6;
 const FEED_LIST_RENDER_BATCH_SIZE = 6;
 const FEED_LIST_WINDOW_SIZE = 9;
@@ -198,7 +203,9 @@ const FEED_SAFE_AREA_CLASS_NAME =
 const FEED_SAFE_AREA_STYLE =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
-  Platform.OS === 'ios' ? ['left', 'right'] : ['left', 'right', 'bottom'];
+  Platform.OS === 'ios'
+    ? ['left', 'right']
+    : ['top', 'left', 'right', 'bottom'];
 const FEED_LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 
 function logFeedLiveDebug(event: string, data: Record<string, unknown> = {}) {
@@ -216,11 +223,6 @@ function logFeedLiveDebug(event: string, data: Record<string, unknown> = {}) {
 }
 
 type FeedNav = NativeStackNavigationProp<RootStackParamList>;
-
-function getFeedChromeTopInset(rawTopInset: number) {
-  if (Platform.OS === 'android') return 0;
-  return rawTopInset;
-}
 
 function canPostAppearInFeedSource(
   post: FeedPost,
@@ -1409,6 +1411,7 @@ function interleaveSupplementalPosts(
 
 function FeedScreen() {
   const navigation = useNavigation<FeedNav>();
+  const route = useRoute<RouteProp<MainTabParamList, typeof ROUTES.FEED>>();
   const language = useAppLanguage();
   const copy = FEED_COPY[language];
   const vm = useFeedViewModel();
@@ -1531,6 +1534,13 @@ function FeedScreen() {
   const setFeedScrollBusy = vm.setScrollBusy;
   const setActiveFeedSource = vm.setFeedSource;
   useEffect(() => {
+    if (route.params?.filter !== 'photos') return;
+    setActiveFeedSource('photos');
+    mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    (navigation as any).setParams?.({ filter: undefined });
+  }, [navigation, route.params?.filter, setActiveFeedSource]);
+
+  useEffect(() => {
     activeFeedSourceRef.current = activeFeedSource;
     pendingNewPostsRef.current = [];
     setHasNewPosts(false);
@@ -1582,10 +1592,10 @@ function FeedScreen() {
 
     return () => subscription.remove();
   }, [checkForRemoteNewPosts]);
-  const rawTopInset = feedSafeAreaInsets.top > 0
-    ? feedSafeAreaInsets.top
-    : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
-  const topInset = getFeedChromeTopInset(rawTopInset);
+  const topInset = resolveFeedChromeTopInset(
+    feedSafeAreaInsets.top,
+    initialWindowMetrics?.insets?.top,
+  );
   const feedRefreshProgressViewOffset =
     Platform.OS === 'ios'
       ? topInset + FEED_IOS_HEADER_OVERLAY_HEIGHT
@@ -2410,6 +2420,16 @@ function FeedScreen() {
       return;
     }
 
+    const nextActiveVideoId = viewableItems.find(
+      viewable =>
+        viewable?.isViewable &&
+        viewable.item?.type === 'post' &&
+        viewable.item.post.kind === 'video',
+    )?.item?.post?.id;
+    const activeVideoId =
+      typeof nextActiveVideoId === 'string'
+        ? nextActiveVideoId
+        : activeVideoIdRef.current;
     const warmVideoIds: string[] = [];
     const start = Math.max(0, firstVisibleIndex - FEED_VIDEO_WARM_BEHIND_ITEMS);
     const end = Math.min(
@@ -2420,6 +2440,7 @@ function FeedScreen() {
     for (let index = start; index < end; index += 1) {
       const item = items[index];
       if (item?.type !== 'post' || item.post.kind !== 'video') continue;
+      if (item.post.id === activeVideoId) continue;
 
       warmVideoIds.push(item.post.id);
       if (warmVideoIds.length >= FEED_VIDEO_WARM_MAX_COUNT) break;
@@ -2893,6 +2914,7 @@ function FeedScreen() {
       publishWarmFeedVideosAroundVisibleItems(latestViewableFeedItemsRef.current);
     } else {
       const initialWarmVideoIds: string[] = [];
+      const activeVideoId = activeVideoIdRef.current;
       for (
         let index = 0;
         index < Math.min(renderedItems.length, FEED_VIDEO_WARM_AHEAD_ITEMS + 1);
@@ -2900,6 +2922,7 @@ function FeedScreen() {
       ) {
         const item = renderedItems[index];
         if (item?.type !== 'post' || item.post.kind !== 'video') continue;
+        if (item.post.id === activeVideoId) continue;
 
         initialWarmVideoIds.push(item.post.id);
         if (initialWarmVideoIds.length >= FEED_VIDEO_WARM_MAX_COUNT) break;
@@ -3348,9 +3371,9 @@ function FeedScreen() {
           <>
             <FeedHeaderCollapseFrame
               hidden={isFeedChromeHidden}
-              height={FEED_HEADER_CONTENT_HEIGHT}
-              top={topInset}
-              translateDistance={FEED_HEADER_CONTENT_HEIGHT}
+              height={feedHeaderOverlayHeight}
+              top={0}
+              translateDistance={feedHeaderOverlayHeight}
             >
               <FeedHeader />
               <FilterTabs
@@ -3389,6 +3412,9 @@ function FeedScreen() {
           onClose={handleClosePhotoViewer}
           onReact={handleToggleReactionStable}
           onCommentTap={handleCommentTapStable}
+          onProfilePress={navigateToProfile}
+          onInternalShare={handleInternalSharePost}
+          onShared={prependFeedPost}
           posts={feedPosts}
         />
         <ReelCommentsSheet
@@ -3411,6 +3437,7 @@ function FeedScreen() {
           onSubmitReply={commentVm.submitReply}
           onSetReaction={commentVm.setCommentReaction}
           onDelete={commentVm.deleteComment}
+          onEdit={commentVm.editComment}
           onLoadReplies={commentVm.loadReplies}
           onCollapseReplies={commentVm.collapseReplies}
           onStartReply={commentVm.startReplyTo}
