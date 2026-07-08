@@ -1625,11 +1625,12 @@ function CommentActionSheet({
               onPress={onRetry}
               style={({ pressed }) => [
                 styles.commentActionTile,
+                styles.commentActionPrimaryTile,
                 pressed && styles.actionSheetOptionPressed,
               ]}
             >
-              <View style={styles.commentActionIcon}>
-                <RotateCcw size={30} color="#0866ff" />
+              <View style={[styles.commentActionIcon, styles.commentActionPrimaryIcon]}>
+                <RotateCcw size={24} color="#0866ff" />
               </View>
               <Text style={styles.commentActionPrimaryText} numberOfLines={1}>
                 {copy.retry}
@@ -1642,11 +1643,12 @@ function CommentActionSheet({
               onPress={onEdit}
               style={({ pressed }) => [
                 styles.commentActionTile,
+                styles.commentActionNeutralTile,
                 pressed && styles.actionSheetOptionPressed,
               ]}
             >
-              <View style={styles.commentActionIcon}>
-                <Pencil size={30} color="#667085" />
+              <View style={[styles.commentActionIcon, styles.commentActionNeutralIcon]}>
+                <Pencil size={24} color="#4f5f82" />
               </View>
               <Text style={styles.commentActionText} numberOfLines={1}>
                 {copy.edit}
@@ -1659,11 +1661,12 @@ function CommentActionSheet({
               onPress={onReport}
               style={({ pressed }) => [
                 styles.commentActionTile,
+                styles.commentActionDangerTile,
                 pressed && styles.actionSheetOptionPressed,
               ]}
             >
-              <View style={styles.commentActionIcon}>
-                <Flag size={30} color="#ef4444" />
+              <View style={[styles.commentActionIcon, styles.commentActionDangerIcon]}>
+                <Flag size={24} color="#ef4444" />
               </View>
               <Text style={styles.commentActionDangerText} numberOfLines={1}>
                 {copy.report}
@@ -1676,11 +1679,12 @@ function CommentActionSheet({
               onPress={onDelete}
               style={({ pressed }) => [
                 styles.commentActionTile,
+                styles.commentActionDangerTile,
                 pressed && styles.actionSheetOptionPressed,
               ]}
             >
-              <View style={styles.commentActionIcon}>
-                <Trash2 size={30} color="#ef4444" />
+              <View style={[styles.commentActionIcon, styles.commentActionDangerIcon]}>
+                <Trash2 size={24} color="#ef4444" />
               </View>
               <Text style={styles.commentActionDangerText} numberOfLines={1}>
                 {copy.delete}
@@ -3117,14 +3121,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.32)',
   },
   actionSheetCard: {
-    marginHorizontal: 16,
+    marginHorizontal: 18,
     marginBottom: Platform.OS === 'ios' ? 14 : 56,
     alignSelf: 'stretch',
-    borderRadius: 18,
+    borderRadius: 20,
     backgroundColor: '#fff',
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
     shadowColor: '#0f172a',
     shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.16,
@@ -3133,27 +3137,27 @@ const styles = StyleSheet.create({
   },
   actionSheetGrabber: {
     alignSelf: 'center',
-    width: 38,
+    width: 42,
     height: 4,
     borderRadius: 999,
     backgroundColor: '#e2e8f0',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   actionSheetHeader: {
-    paddingHorizontal: 8,
-    paddingBottom: 12,
+    paddingHorizontal: 10,
+    paddingBottom: 6,
   },
   actionSheetTitle: {
     color: '#0f172a',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     textAlign: 'center',
   },
   actionSheetMessage: {
-    color: '#111827',
-    fontSize: 16,
-    lineHeight: 22,
-    marginTop: 8,
+    color: '#334155',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 6,
     textAlign: 'center',
   },
   actionSheetFootnote: {
@@ -3187,41 +3191,64 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 34,
-    paddingTop: 2,
-    paddingBottom: 18,
+    gap: 18,
+    paddingTop: 10,
+    paddingBottom: 14,
   },
   commentActionTile: {
-    minWidth: 104,
-    minHeight: 86,
-    borderRadius: 18,
+    minWidth: 92,
+    minHeight: 78,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  commentActionNeutralTile: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+  },
+  commentActionPrimaryTile: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+  },
+  commentActionDangerTile: {
+    backgroundColor: '#fff7f8',
+    borderColor: '#fecdd3',
   },
   commentActionIcon: {
-    width: 42,
-    height: 42,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 5,
+    marginBottom: 6,
+  },
+  commentActionNeutralIcon: {
+    backgroundColor: '#eef2ff',
+  },
+  commentActionPrimaryIcon: {
+    backgroundColor: '#dbeafe',
+  },
+  commentActionDangerIcon: {
+    backgroundColor: '#ffe4e6',
   },
   commentActionPrimaryText: {
     color: '#0866ff',
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '800',
     textAlign: 'center',
   },
   commentActionText: {
-    color: '#667085',
-    fontSize: 16,
+    color: '#475569',
+    fontSize: 13,
     fontWeight: '800',
     textAlign: 'center',
   },
   commentActionDangerText: {
-    color: '#c44f5d',
-    fontSize: 16,
+    color: '#dc2626',
+    fontSize: 13,
     fontWeight: '800',
     textAlign: 'center',
   },
@@ -3265,17 +3292,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   actionSheetCancel: {
-    minHeight: 56,
-    borderRadius: 12,
+    minHeight: 46,
+    width: '100%',
+    alignSelf: 'stretch',
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
-    backgroundColor: '#eef1fb',
+    marginTop: 0,
+    backgroundColor: '#f1f5f9',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e2e8f0',
   },
   actionSheetCancelText: {
     color: '#111827',
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '800',
+    textAlign: 'center',
   },
 
   // ── Reaction picker ─────────────────────────────────────────────────
