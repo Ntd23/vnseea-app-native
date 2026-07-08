@@ -22,8 +22,9 @@ import {
   ImagePlus,
   X,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -35,6 +36,7 @@ import { AddressAutocomplete } from '../../../shared-kernel/presentation/compone
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CreateJobNav = NativeStackNavigationProp<RootStackParamList>;
+type CreateJobRoute = RouteProp<RootStackParamList, typeof ROUTES.CREATE_JOB>;
 
 const BRAND = '#0000ff';
 
@@ -74,7 +76,10 @@ function DropdownField({
 
 function CreateJobScreen() {
   const navigation = useNavigation<CreateJobNav>();
+  const route = useRoute<CreateJobRoute>();
   const { createJob, isLoading, error, clearError, myPages, isLoadingPages } = useCreateJobViewModel();
+  const initialPageId = route.params?.pageId ? String(route.params.pageId) : '';
+  const initialPageName = route.params?.pageName || '';
 
   // Form state
   const [jobTitle, setJobTitle] = useState('');
@@ -85,7 +90,8 @@ function CreateJobScreen() {
   const [minimumSalary, setMinimumSalary] = useState('');
   const [maximumSalary, setMaximumSalary] = useState('');
   const [salaryDate, setSalaryDate] = useState('');
-  const [selectedPageId, setSelectedPageId] = useState('');
+  const [selectedPageId, setSelectedPageId] = useState(initialPageId);
+  const [selectedPageName, setSelectedPageName] = useState(initialPageName);
   const [thumbnail, setThumbnail] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [imageType, setImageType] = useState<'cover' | 'upload'>('cover');
 
@@ -502,6 +508,7 @@ function CreateJobScreen() {
                     activeOpacity={0.8}
                     onPress={() => {
                       setSelectedPageId(String(page.page_id));
+                      setSelectedPageName(page.page_title || page.page_name || '');
                       setShowPageModal(false);
                     }}
                   >

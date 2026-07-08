@@ -61,6 +61,8 @@ import {
 
   Link2,
 
+  ListChecks,
+
   MessageCircle,
 
   Mic,
@@ -2147,471 +2149,288 @@ function MessageLabelsModal({
   }, [labelColor, labelName, onCreate]);
 
   return (
-
     <Modal
-
       visible={visible}
-
       transparent
-
       animationType="fade"
-
       onRequestClose={onClose}
-
     >
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.4)' }}>
+        <View style={{ width: '90%', maxHeight: '82%', borderRadius: 20, backgroundColor: '#FFFFFF', overflow: 'hidden' }}>
+          <View className="px-5 pt-4 pb-6" style={{ maxHeight: '100%' }}>
 
-      <View className="flex-1 justify-end bg-black/30">
-
-        <Pressable className="max-h-[88%] rounded-t-[28px] bg-white" onPress={() => {}}>
-
-          <View className="px-5 pt-4 pb-6">
-
+            {/* Header */}
             <View className="mb-4 flex-row items-center justify-between">
-
               <Text className="text-lg font-bold text-slate-900">
-
-                {copy.broadcastLabel}
-
+                Thẻ phân loại
               </Text>
-
               <TouchableOpacity
-
-                className="h-9 w-9 items-center justify-center rounded-full bg-slate-100"
-
                 onPress={onClose}
-
+                activeOpacity={0.7}
               >
-
-                <X size={20} color="#334155" />
-
+                <X size={20} color="#64748B" />
               </TouchableOpacity>
-
             </View>
 
-            <View className="mb-5 flex-row rounded-2xl bg-slate-100 p-1">
-
+            {/* Custom Tab Bar */}
+            <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', marginBottom: 20 }}>
               {(
-
                 [
-
                   ['assign', copy.assignLabels],
-
                   ['manage', copy.manageLabels],
-
                 ] as const
-
-              ).map(([key, title]) => (
-
-                <TouchableOpacity
-
-                  key={key}
-
-                  className={`flex-1 items-center justify-center rounded-xl py-3 ${
-
-                    activeTab === key ? 'bg-white' : 'bg-transparent'
-
-                  }`}
-
-                  onPress={() => setActiveTab(key)}
-
-                  activeOpacity={0.8}
-
-                >
-
-                  <Text
-
-                    className={`font-bold ${
-
-                      activeTab === key ? 'text-blue-600' : 'text-slate-500'
-
-                    }`}
-
+              ).map(([key, title]) => {
+                const isActive = activeTab === key;
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={{
+                      flex: 1,
+                      alignItems: 'center',
+                      paddingVertical: 12,
+                      borderBottomWidth: isActive ? 2 : 0,
+                      borderBottomColor: isActive ? '#3B82F6' : 'transparent',
+                    }}
+                    onPress={() => setActiveTab(key)}
+                    activeOpacity={0.8}
                   >
-
-                    {title}
-
-                  </Text>
-
-                </TouchableOpacity>
-
-              ))}
-
+                    <Text
+                      style={{
+                        fontWeight: '700',
+                        fontSize: 14,
+                        color: isActive ? '#3B82F6' : '#64748B',
+                      }}
+                    >
+                      {title}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
-            {activeTab === 'assign' ? (
-
-              <ScrollView showsVerticalScrollIndicator={false}>
-
-                <Text className="mb-3 text-sm font-bold text-slate-700">
-
-                  {copy.yourLabelList}
-
-                </Text>
-
-                <View className="overflow-hidden rounded-2xl border border-slate-100">
-
-                  {labels.length === 0 ? (
-
-                    <View className="items-center py-10">
-
-                      <View className="mb-3 h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-
-                        <Tag size={24} color="#94a3b8" />
-
-                      </View>
-
-                      <Text className="text-sm text-slate-500">{copy.noLabelsYet}</Text>
-
-                    </View>
-
-                  ) : (
-
-                    labels.map(label => {
-
-                      const attached = attachedLabelIds.has(label.id);
-
-                      return (
-
-                        <View
-
-                          key={label.id}
-
-                          className="flex-row items-center border-b border-slate-100 px-4 py-3.5"
-
-                        >
-
-                          <View
-
-                            className="mr-3 h-4 w-4 rounded-full"
-
-                            style={{ backgroundColor: label.color }}
-
-                          />
-
-                          <Text className="flex-1 text-base font-semibold text-slate-700">
-
-                            {label.name}
-
-                          </Text>
-
-                          <TouchableOpacity
-
-                            className={`rounded-xl px-4 py-2 ${
-
-                              attached ? 'bg-slate-100' : 'bg-blue-500'
-
-                            }`}
-
-                            disabled={!chat || isLoading}
-
-                            activeOpacity={0.8}
-
-                            onPress={() => {
-
-                              if (!chat) return;
-
-                              const action = attached ? onDetach : onAttach;
-
-                              action(chat.userId, label.id).then((success: boolean) => {
-                                if (success) {
-                                  showToast({ message: attached ? 'Da go nhan!' : 'Da gan nhan!', type: 'success' });
-                                }
-                              }).catch(() => undefined);
-
-                            }}
-
-                          >
-
-                            <Text
-
-                              className={`font-bold ${
-
-                                attached ? 'text-slate-600' : 'text-white'
-
-                              }`}
-
-                            >
-
-                              {attached ? copy.remove : copy.attach}
-
-                            </Text>
-
-                          </TouchableOpacity>
-
-                        </View>
-
-                      );
-
-                    })
-
-                  )}
-
-                </View>
-
-                <Text className="mt-4 text-xs text-slate-400">
-
-                  {copy.manageTip}
-
-                </Text>
-
-              </ScrollView>
-
-            ) : (
-
-              <ScrollView showsVerticalScrollIndicator={false}>
-
-                <View className="mb-4 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-4">
-
+            {/* Scrollable Content */}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {activeTab === 'assign' ? (
+                <>
                   <Text className="mb-3 text-sm font-bold text-slate-700">
-
-                    {copy.createNewLabelTitle}
-
+                    Danh sách thẻ của bạn
                   </Text>
 
-                  <Text className="mb-1.5 text-xs font-bold uppercase text-slate-500">
+                  <View className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
+                    {labels.length === 0 ? (
+                      <View className="items-center py-10">
+                        <View className="mb-3 h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+                          <Tag size={24} color="#94a3b8" />
+                        </View>
+                        <Text className="text-sm text-slate-500">{copy.noLabelsYet}</Text>
+                      </View>
+                    ) : (
+                      labels.map(label => {
+                        const attached = attachedLabelIds.has(label.id);
+                        return (
+                          <View
+                            key={label.id}
+                            className="flex-row items-center border-b border-slate-100 px-4 py-3"
+                          >
+                            <View
+                              className="mr-3 h-4 w-4 rounded-full"
+                              style={{ backgroundColor: label.color }}
+                            />
+                            <Text className="flex-1 text-base font-semibold text-slate-700">
+                              {label.name}
+                            </Text>
+                            <TouchableOpacity
+                              style={{
+                                backgroundColor: attached ? '#F1F5F9' : '#3B82F6',
+                                borderRadius: 8,
+                                paddingHorizontal: 16,
+                                paddingVertical: 8,
+                              }}
+                              disabled={!chat || isLoading}
+                              activeOpacity={0.8}
+                              onPress={() => {
+                                if (!chat) return;
+                                const action = attached ? onDetach : onAttach;
+                                action(chat.userId, label.id).then((success) => {
+                                  if (success) {
+                                    showToast({ message: attached ? 'Da go nhan!' : 'Da gan nhan!', type: 'success' });
+                                  }
+                                }).catch(() => undefined);
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: attached ? '#64748B' : '#FFFFFF',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                {attached ? 'Gỡ' : 'Gán'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })
+                    )}
+                  </View>
 
-                    {copy.labelNameTitle}
+                  <Text style={{ fontSize: 12, color: '#64748B', marginTop: 12 }}>
+                    Mẹo: nhấn "Gán/Gỡ" để áp dụng cho đối tượng hiện tại.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text className="mb-3 text-sm font-bold text-slate-700">
+                    Danh sách thẻ của bạn
+                  </Text>
 
+                  {/* List of Your Labels */}
+                  <View className="overflow-hidden rounded-2xl border border-slate-100 mb-6 bg-white">
+                    {labels.length === 0 ? (
+                      <View className="items-center py-10">
+                        <View className="mb-3 h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+                          <Tag size={24} color="#94a3b8" />
+                        </View>
+                        <Text className="text-sm text-slate-500">{copy.noLabelsYet}</Text>
+                      </View>
+                    ) : (
+                      labels.map(label => (
+                        <View
+                          key={label.id}
+                          className="flex-row items-center border-b border-slate-100 px-4 py-3"
+                        >
+                          <View
+                            className="mr-3 h-4 w-4 rounded-full"
+                            style={{ backgroundColor: label.color }}
+                          />
+                          <Text className="flex-1 text-base font-semibold text-slate-700">
+                            {label.name}
+                          </Text>
+                          <TouchableOpacity
+                            style={{
+                              backgroundColor: '#FEE2E2',
+                              borderRadius: 8,
+                              paddingHorizontal: 16,
+                              paddingVertical: 8,
+                            }}
+                            disabled={isLoading}
+                            activeOpacity={0.8}
+                            onPress={async () => {
+                              try {
+                                const success = await onDelete(label.id);
+                                if (success) {
+                                  showToast({ message: 'Da xoa nhan thanh cong!', type: 'success' });
+                                }
+                              } catch (err) {}
+                            }}
+                          >
+                            <Text style={{ color: '#EF4444', fontWeight: 'bold' }}>Xoá</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))
+                    )}
+                  </View>
+
+                  {/* Create New Label Form */}
+                  <Text className="mb-3 text-sm font-bold text-slate-700">
+                    Tạo thẻ mới
                   </Text>
 
                   <TextInput
-
-                    className="mb-4 h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-base text-slate-900"
-
+                    style={{
+                      height: 44,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: '#E2E8F0',
+                      backgroundColor: '#FFFFFF',
+                      paddingHorizontal: 14,
+                      fontSize: 15,
+                      color: '#0F172A',
+                      marginBottom: 12,
+                    }}
                     placeholder={copy.labelNamePlaceholder}
-
                     placeholderTextColor="#94a3b8"
-
                     value={labelName}
-
                     onChangeText={setLabelName}
-
                   />
 
-                  <Text className="mb-2 text-xs font-bold uppercase text-slate-500">
-
-                    {copy.labelColorTitle}
-
-                  </Text>
-
-                  <TouchableOpacity
-
-                    className="mb-3 flex-row items-center justify-between rounded-xl border border-slate-200 bg-white p-3"
-
-                    activeOpacity={0.8}
-
-                    onPress={() => setShowColorPicker(v => !v)}
-
-                  >
-
-                    <View className="flex-row items-center">
-
-                      <View
-
-                        className="mr-3 h-8 w-8 rounded-lg"
-
-                        style={{
-
-                          backgroundColor: hexOK(labelColor) ? labelColor : DEFAULT_LABEL_COLOR,
-
-                          shadowColor: labelColor,
-
-                          shadowOffset: { width: 0, height: 2 },
-
-                          shadowOpacity: 0.25,
-
-                          shadowRadius: 4,
-
-                          elevation: 3,
-
-                        }}
-
-                      />
-
-                      <Text className="font-semibold text-slate-700">
-
-                        {hexOK(labelColor) ? labelColor.toUpperCase() : DEFAULT_LABEL_COLOR.toUpperCase()}
-
-                      </Text>
-
-                    </View>
-
-                    <View className="flex-row items-center">
-
-                      <Text className="mr-2 text-xs text-slate-400">
-
-                        {showColorPicker ? 'Ẩn' : 'Chọn màu'}
-
-                      </Text>
-
-                      <ChevronDown
-
-                        size={16}
-
-                        color="#64748b"
-
-                      />
-
-                    </View>
-
-                  </TouchableOpacity>
+                  {/* Side-by-side color picker indicator & Create button */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    <TouchableOpacity
+                      style={{
+                        width: 70,
+                        height: 36,
+                        borderRadius: 6,
+                        backgroundColor: hexOK(labelColor) ? labelColor : DEFAULT_LABEL_COLOR,
+                        borderWidth: 1,
+                        borderColor: '#E2E8F0',
+                      }}
+                      activeOpacity={0.8}
+                      onPress={() => setShowColorPicker(v => !v)}
+                    />
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: '#3B82F6',
+                        borderRadius: 6,
+                        paddingHorizontal: 20,
+                        height: 36,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      }}
+                      disabled={!labelName.trim() || isLoading}
+                      activeOpacity={0.8}
+                      onPress={() => handleCreate().catch(() => undefined)}
+                    >
+                      {isLoading ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                      ) : (
+                        <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 }}>Tạo</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
 
                   {showColorPicker && (
-
-                    <View className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
-
+                    <View className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 mb-4">
                       <ColorPicker
-
                         value={labelColor}
-
                         onChange={setLabelColor}
-
                         label={copy.labelColorTitle}
-
                       />
-
                     </View>
-
                   )}
 
-                  <TouchableOpacity
-
-                    className={`mt-3 items-center justify-center rounded-xl py-3 ${
-
-                      labelName.trim() && !isLoading
-
-                        ? 'bg-blue-500'
-
-                        : 'bg-slate-300'
-
-                    }`}
-
-                    disabled={!labelName.trim() || isLoading}
-
-                    activeOpacity={0.8}
-
-                    onPress={() => handleCreate().catch(() => undefined)}
-
-                  >
-
-                    {isLoading ? (
-
-                      <ActivityIndicator size="small" color="#ffffff" />
-
-                    ) : (
-
-                      <Text className="font-bold text-white">{copy.createButton}</Text>
-
-                    )}
-
-                  </TouchableOpacity>
-
-                </View>
-
-                <Text className="mb-3 text-sm font-bold text-slate-700">
-
-                  {copy.manageYourLabels}
-
-                </Text>
-
-                <View className="overflow-hidden rounded-2xl border border-slate-100">
-
-                  {labels.length === 0 ? (
-
-                    <View className="items-center py-10">
-
-                      <View className="mb-3 h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-
-                        <Tag size={24} color="#94a3b8" />
-
-                      </View>
-
-                      <Text className="text-sm text-slate-500">{copy.noLabelsYet}</Text>
-
-                    </View>
-
-                  ) : (
-
-                    labels.map(label => (
-
-                      <View
-
-                        key={label.id}
-
-                        className="flex-row items-center border-b border-slate-100 px-4 py-3.5"
-
-                      >
-
-                        <View
-
-                          className="mr-3 h-4 w-4 rounded-full"
-
-                          style={{ backgroundColor: label.color }}
-
-                        />
-
-                        <Text className="flex-1 text-base font-semibold text-slate-700">
-
-                          {label.name}
-
-                        </Text>
-
-                        <TouchableOpacity
-
-                          className="rounded-xl bg-red-50 px-4 py-2"
-
-                          disabled={isLoading}
-
-                          activeOpacity={0.8}
-
-                          onPress={async () => {
-                            try {
-                              const success = await onDelete(label.id);
-                              if (success) {
-                                showToast({ message: 'Da xoa nhan thanh cong!', type: 'success' });
-                              }
-                            } catch (err) {}
-                          }}
-
-                        >
-
-                          <Text className="font-bold text-red-500">{copy.delete}</Text>
-
-                        </TouchableOpacity>
-
-                      </View>
-
-                    ))
-
-                  )}
-
-                </View>
-
-              </ScrollView>
-
-            )}
+                  <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
+                    Bạn có thể xoá thẻ trong danh sách phía trên.
+                  </Text>
+                </>
+              )}
+            </ScrollView>
 
             {isLoading && (
-
               <View className="mt-4 flex-row justify-center">
-
                 <ActivityIndicator size="small" color="#2563eb" />
-
               </View>
-
             )}
 
+            {/* Bottom Footer Close Button */}
+            <View style={{ borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 16, marginTop: 16, flexDirection: 'row', justifyContent: 'flex-end' }}>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#E2E8F0',
+                  borderRadius: 8,
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                }}
+                onPress={onClose}
+              >
+                <Text style={{ color: '#334155', fontWeight: '700', fontSize: 14 }}>Đóng</Text>
+              </TouchableOpacity>
+            </View>
+
           </View>
-
-        </Pressable>
-
+        </View>
       </View>
-
     </Modal>
-
-  );
-
-}
+  );}
 
 // Main screen
 
@@ -2711,6 +2530,8 @@ function MessageScreen() {
 
     sendBulkMessages,
 
+    markAllAsRead,
+
     createLabel,
 
     deleteLabel,
@@ -2760,6 +2581,24 @@ function MessageScreen() {
     activeFilter === 'users' ? screenWidth : activeFilter === 'groups' ? screenWidth * 2 : 0
 
   ).current;
+
+  const hasUnreadChats = useMemo(
+    () => chats.some(chat => chat.unreadCount > 0),
+    [chats],
+  );
+
+  const handleMarkAllAsRead = useCallback(async () => {
+    if (!hasUnreadChats) {
+      showToast({ message: 'Không có tin nhắn chưa đọc.', type: 'warning' });
+      return;
+    }
+
+    const ok = await markAllAsRead();
+    showToast({
+      message: ok ? 'Đã đánh dấu là đã đọc.' : 'Không đánh dấu đã đọc được.',
+      type: ok ? 'success' : 'error',
+    });
+  }, [hasUnreadChats, markAllAsRead]);
 
   const isProgrammaticScrollRef = useRef(false);
 
@@ -4129,11 +3968,12 @@ function MessageScreen() {
 
             })}
 
-            onPress={() => navigation.navigate(ROUTES.CREATE_GROUP_CHAT)}
+            onPress={handleMarkAllAsRead}
+            disabled={!hasUnreadChats}
 
           >
 
-            <Users size={24} color="#ffffff" />
+            <ListChecks size={24} color="#ffffff" />
 
           </Pressable>
 

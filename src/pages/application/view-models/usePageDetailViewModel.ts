@@ -17,23 +17,14 @@ import type {
 
 export type PageDetailTab =
   | 'posts'
-  | 'about'
-  | 'followers'
-  | 'reviews'
-  | 'admins';
-
-/**
- * Post-type filter for the "posts" tab. 'all' shows every post kind
- * (text + video + poll); the more specific values narrow to one
- * shape. The filter is client-side because the backend's
- * `get_page_posts` endpoint does not accept a `postType` parameter,
- * so we apply it in the ViewModel from the already-fetched master
- * list — keeps the network cost flat and the UI snappy.
- */
-export type PagePostFilter = 'all' | 'text' | 'video';
+  | 'info'
+  | 'photos'
+  | 'videos'
+  | 'music';
 
 const PAGE_POST_LIMIT = 12;
 const PAGE_REVIEW_LIMIT = 20;
+const SUGGESTED_PAGE_LIMIT = 4;
 
 const pagesRepository = createPagesRepository();
 const feedRepository = createFeedRepository();
@@ -79,13 +70,11 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
   const initialPageKey = useMemo(() => getPageKey(initialPage), [initialPage]);
   const [page, setPage] = useState<PagesItem>(initialPage);
   const [activeTab, setActiveTab] = useState<PageDetailTab>('posts');
-  // Client-side filter on the posts tab — see PagePostFilter above.
-  // Resets to 'all' whenever we switch pages so the user always lands
-  // on the full list.
-  const [postFilter, setPostFilter] = useState<PagePostFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [postCursor, setPostCursor] = useState<string | undefined>();
   const [postsReachedEnd, setPostsReachedEnd] = useState(false);
+  const [suggestedPages, setSuggestedPages] = useState<PagesItem[]>([]);
   const [followers, setFollowers] = useState<PageUser[]>([]);
   const [admins, setAdmins] = useState<PageUser[]>([]);
   const [reviews, setReviews] = useState<PageReview[]>([]);
@@ -109,11 +98,12 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
 
   const loadSecondaryData = useCallback(async (targetPage: PagesItem) => {
     const pageId = targetPage.pageId;
-    const [followersResult, adminsResult, reviewsResult] =
+    const [followersResult, adminsResult, reviewsResult, suggestedResult] =
       await Promise.allSettled([
         pagesRepository.getPageFollowers(pageId),
         pagesRepository.getPageAdmins(pageId),
         pagesRepository.getPageReviews(pageId, { limit: PAGE_REVIEW_LIMIT }),
+        pagesRepository.getSuggestedPages({ limit: SUGGESTED_PAGE_LIMIT }),
       ]);
 
     if (followersResult.status === 'fulfilled') {
@@ -128,6 +118,13 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
       setReviews(reviewsResult.value.items);
       setReviewCursor(reviewsResult.value.nextOffset);
       setReviewsHasMore(reviewsResult.value.hasMore);
+    }
+    if (suggestedResult.status === 'fulfilled') {
+      setSuggestedPages(
+        suggestedResult.value.items.filter(
+          suggested => String(suggested.pageId) !== String(pageId),
+        ),
+      );
     }
   }, []);
 
@@ -503,6 +500,55 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
     [currentPageId],
   );
 
+  const toggleSuggestedPageLike = useCallback(async (pageId: string | number) => {
+    const previousPages = suggestedPages;
+    const target = suggestedPages.find(
+      item => String(item.pageId) === String(pageId),
+    );
+    if (!target) return;
+
+    const nextLiked = !target.isLiked;
+    setSuggestedPages(current =>
+      current.map(item =>
+        String(item.pageId) === String(pageId)
+          ? {
+              ...item,
+              isLiked: nextLiked,
+              likes: Math.max(0, (item.likes ?? 0) + (nextLiked ? 1 : -1)),
+            }
+          : item,
+      ),
+    );
+
+    try {
+      const result = await pagesRepository.toggleLikePage(pageId);
+      setSuggestedPages(current =>
+        current.map(item =>
+          String(item.pageId) === String(pageId)
+            ? {
+                ...item,
+                isLiked: result.isLiked,
+                likes: Math.max(
+                  0,
+                  (target.likes ?? item.likes ?? 0) +
+                    (result.isLiked === target.isLiked
+                      ? 0
+                      : result.isLiked
+                        ? 1
+                        : -1),
+                ),
+              }
+            : item,
+        ),
+      );
+    } catch (err) {
+      setSuggestedPages(previousPages);
+      setError(
+        err instanceof Error ? err.message : 'Không thể thích trang này.',
+      );
+    }
+  }, [suggestedPages]);
+
   const updatePageAvatar = useCallback(
     async (file: { uri: string; name?: string; type?: string }) => {
       if (!currentPageId) return;
@@ -559,12 +605,13 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
     setFollowers([]);
     setAdmins([]);
     setReviews([]);
+    setSuggestedPages([]);
     setPostCursor(undefined);
     setPostsReachedEnd(false);
     // Reset the post-type filter whenever the page changes so the
     // user lands on the full mixed list, not a stale narrow filter
     // carried over from a different page.
-    setPostFilter('all');
+    setSearchQuery('');
     void loadPage(false);
   }, [initialPageKey, initialPage, loadPage]);
 
@@ -574,27 +621,47 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
   // active so the work doesn't run while the user is on
   // followers/reviews/admins.
   const postCounts = useMemo(() => {
-    let text = 0;
-    let video = 0;
+    let photos = 0;
+    let videos = 0;
     for (const post of posts) {
-      if (post.kind === 'text') text += 1;
-      else if (post.kind === 'video') video += 1;
+      if (post.kind === 'text' && post.photos.length > 0) photos += 1;
+      else if (post.kind === 'video') videos += 1;
     }
-    return { all: posts.length, text, video };
+    return { all: posts.length, photos, videos, music: 0 };
   }, [posts]);
 
   // Apply the active filter to produce the list the FlatList will
   // render. Falls back to the full list if the filter is 'all'.
   const displayedPosts = useMemo(() => {
-    if (postFilter === 'all') return posts;
-    if (postFilter === 'text') {
-      return posts.filter(post => post.kind === 'text');
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const filteredByTab = posts.filter(post => {
+      if (activeTab === 'photos') {
+        return post.kind === 'text' && post.photos.length > 0;
+      }
+      if (activeTab === 'videos') {
+        return post.kind === 'video';
+      }
+      if (activeTab === 'info' || activeTab === 'music') {
+        return false;
+      }
+      return true;
+    });
+
+    if (!normalizedQuery) {
+      return filteredByTab;
     }
-    if (postFilter === 'video') {
-      return posts.filter(post => post.kind === 'video');
-    }
-    return posts;
-  }, [posts, postFilter]);
+
+    return filteredByTab.filter(post => {
+      if (post.kind !== 'text' && post.kind !== 'video' && post.kind !== 'poll') {
+        return false;
+      }
+      const caption = post.caption ?? '';
+      const publisherName = post.publisher?.name ?? '';
+      return `${caption} ${publisherName} ${post.id}`
+        .toLowerCase()
+        .includes(normalizedQuery);
+    });
+  }, [activeTab, posts, searchQuery]);
 
   return {
     activeTab,
@@ -614,11 +681,11 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
     loadMoreReviews,
     page,
     posts,
-    // Filter state + derived values for the "posts" tab UI.
-    postFilter,
-    setPostFilter,
+    searchQuery,
+    setSearchQuery,
     displayedPosts,
     postCounts,
+    suggestedPages,
     ratePage,
     refresh,
     reportPage,
@@ -630,6 +697,7 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
     updatePostCommentCount,
     toggleFollow,
     toggleLike,
+    toggleSuggestedPageLike,
     votePoll,
     inviteUser,
     updatePageAvatar,

@@ -119,6 +119,7 @@ import { PollPostCard } from '../components/PollPostCard';
 import { FeedHeader } from '../components/FeedHeader';
 import { FeedHeaderCollapseFrame } from '../components/FeedHeaderCollapseFrame';
 import { HomeFeedIntro } from '../components/HomeFeedIntro';
+import { FeedSourceFilterBar } from '../components/FeedSourceFilterBar';
 import {
   createFeedChromeCollapseState,
   getNextFeedChromeCollapseState,
@@ -320,85 +321,82 @@ function FilterTabs({
   onChangeSource: (source: FeedSource | 'photos') => void;
 }) {
   const navigation = useNavigation<any>();
-
-  return (
-    <View className="bg-white px-4 pb-2 pt-2">
-      <View className="min-h-[50px] flex-row items-center justify-around rounded-[16px] border border-[#e3e8f2] bg-white px-4 shadow-sm">
-        {/* Tất cả */}
-        <TouchableOpacity
-          className="h-10 flex-1 items-center justify-center"
-          activeOpacity={0.75}
-          onPress={() => onChangeSource('all')}
-        >
+  const items = useMemo(
+    () => [
+      {
+        key: 'all',
+        accessibilityLabel: 'All',
+        icon: (active: boolean) => (
           <Compass
             size={24}
-            color={activeSource === 'all' ? '#0758ff' : '#9ca3af'}
-            strokeWidth={activeSource === 'all' ? 2.5 : 2.0}
+            color={active ? '#0758ff' : '#9ca3af'}
+            strokeWidth={active ? 2.5 : 2.0}
           />
-        </TouchableOpacity>
-
-        <View className="h-7 w-px bg-[#dfe4ef]" />
-
-        {/* Bản đồ địa chỉ */}
-        <TouchableOpacity
-          className="h-10 flex-1 items-center justify-center"
-          activeOpacity={0.75}
-          onPress={() => navigation.navigate(ROUTES.NEARBY_USERS)}
-        >
+        ),
+      },
+      {
+        key: 'nearby',
+        accessibilityLabel: 'Nearby',
+        icon: () => (
           <MapPin
             size={24}
             color="#9ca3af"
             strokeWidth={2.0}
           />
-        </TouchableOpacity>
-
-        <View className="h-7 w-px bg-[#dfe4ef]" />
-
-        {/* Ảnh */}
-        <TouchableOpacity
-          className="h-10 flex-1 items-center justify-center"
-          activeOpacity={0.75}
-          onPress={() => onChangeSource('photos')}
-        >
+        ),
+        onPress: () => navigation.navigate(ROUTES.NEARBY_USERS),
+      },
+      {
+        key: 'photos',
+        accessibilityLabel: 'Photos',
+        icon: (active: boolean) => (
           <ImageIcon
             size={24}
-            color={activeSource === 'photos' ? '#0758ff' : '#9ca3af'}
-            strokeWidth={activeSource === 'photos' ? 2.5 : 2.0}
+            color={active ? '#0758ff' : '#9ca3af'}
+            strokeWidth={active ? 2.5 : 2.0}
           />
-        </TouchableOpacity>
-
-        <View className="h-7 w-px bg-[#dfe4ef]" />
-
-        {/* Video */}
-        <TouchableOpacity
-          className="h-10 flex-1 items-center justify-center"
-          activeOpacity={0.75}
-          onPress={() => navigation.navigate(ROUTES.REELS)}
-        >
+        ),
+      },
+      {
+        key: 'videos',
+        accessibilityLabel: 'Video',
+        icon: () => (
           <Video
             size={24}
             color="#9ca3af"
             strokeWidth={2.0}
           />
-        </TouchableOpacity>
-
-        <View className="h-7 w-px bg-[#dfe4ef]" />
-
-        {/* Thị trường */}
-        <TouchableOpacity
-          className="h-10 flex-1 items-center justify-center"
-          activeOpacity={0.75}
-          onPress={() => navigation.navigate(ROUTES.MARKETPLACE)}
-        >
+        ),
+        onPress: () => navigation.navigate(ROUTES.REELS),
+      },
+      {
+        key: 'marketplace',
+        accessibilityLabel: 'Marketplace',
+        icon: () => (
           <ShoppingBag
             size={24}
             color="#9ca3af"
             strokeWidth={2.0}
           />
-        </TouchableOpacity>
-      </View>
-    </View>
+        ),
+        onPress: () => navigation.navigate(ROUTES.MARKETPLACE),
+      },
+    ],
+    [navigation],
   );
+
+  return (
+    <FeedSourceFilterBar
+      activeKey={activeSource}
+      items={items}
+      onChange={key => {
+        if (key === 'all' || key === 'photos') {
+          onChangeSource(key);
+        }
+      }}
+    />
+  );
+
 }
 
 function formatCount(count: number) {

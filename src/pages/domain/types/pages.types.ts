@@ -7,6 +7,9 @@ export interface PagesItem {
   pageTitle: string;
   pageDescription?: string;
   pageCategory?: string;
+  company?: string;
+  phone?: string;
+  website?: string;
   address?: string;
   placeId?: string;
   lat?: number;
@@ -26,6 +29,17 @@ export interface PagesItem {
   isLiked?: boolean;
   isRated?: boolean;
   verified?: boolean;
+  callActionType?: string;
+  callActionUrl?: string;
+  allowPost?: boolean;
+  facebook?: string;
+  twitter?: string;
+  instgram?: string;
+  vk?: string;
+  linkedin?: string;
+  youtube?: string;
+  backgroundImage?: string;
+  backgroundImageStatus?: 'defualt' | 'my_background' | string;
   ownerId?: string;
   owner?: PageUser;
   adminInfo?: unknown;
@@ -72,16 +86,41 @@ export interface PageReviewsPage {
   hasMore: boolean;
 }
 
+export interface PagePrivileges {
+  general: boolean;
+  info: boolean;
+  social: boolean;
+  avatar: boolean;
+  design: boolean;
+  admins: boolean;
+  analytics: boolean;
+  delete_page: boolean;
+}
+
 export interface CreatePageDraft {
   pageTitle: string;
   pageName: string;
   pageDescription: string;
   pageAddress: string;
   pageCategory: string;
+  company?: string;
+  phone?: string;
+  website?: string;
   pageSubCategory?: string;
   placeId?: string;
   lat?: number;
   lng?: number;
   mapPinStatus?: 'none' | 'pending' | 'approved' | 'rejected' | string;
   mapPinRequested?: boolean;
+  callActionType?: string;
+  callActionUrl?: string;
+  allowPost?: boolean;
+  verified?: boolean;
+  facebook?: string;
+  twitter?: string;
+  instgram?: string;
+  vk?: string;
+  linkedin?: string;
+  youtube?: string;
+  backgroundImageStatus?: 'defualt' | 'my_background' | string;
 }

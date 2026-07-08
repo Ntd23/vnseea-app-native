@@ -518,7 +518,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             navigation.navigate(ROUTES.MY_PRODUCTS);
             return;
           case 'myArticles':
-            navigation.navigate(ROUTES.BLOGS);
+            navigation.navigate(ROUTES.MY_ARTICLES);
             return;
           case 'forum':
             navigation.navigate(ROUTES.FORUM);
@@ -834,18 +834,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
              onPress={() => Linking.openURL(apiConfig.webBaseUrl + '/go-pro').catch(() => undefined)}
             />
 
-            {isAdmin && (
-              <>
-                <View style={styles.separator} />
-                <MenuRow
-                 title={copy.adminAreaLabel}
-                 icon={<LayoutGrid size={18} color="#64748b" />}
-                 onPress={() => handleItemPress({ type: 'feature', feature: 'admin' })}
-                />
-              </>
-            )}
-
-            <View style={styles.separator} />
+            {/* <View style={styles.separator} /> */}
 
             <MenuRow
              title={copy.logoutLabel}
