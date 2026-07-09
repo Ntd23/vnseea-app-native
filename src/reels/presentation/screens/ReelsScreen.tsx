@@ -80,7 +80,10 @@ import {
   shouldMountReelVideoPlayer,
 } from './reelsPlayback';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { publishNativeTabScrollBehavior } from '../../../navigation/nativeTabScrollPublisher';
+import {
+  publishNativeTabScrollBehavior,
+  publishNativeTabScrollPresentation,
+} from '../../../navigation/nativeTabScrollPublisher';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
@@ -572,9 +575,12 @@ export default function ReelsScreen() {
 
   const publishNativeTabScrollBehaviorFromWorklet = useCallback(
     (behavior: 0 | 1) => {
-      publishNativeTabScrollBehavior(
-        behavior === NATIVE_TAB_SCROLL_BEHAVIOR_NONE ? 'none' : 'onScrollDown',
-      );
+      const nextBehavior =
+        behavior === NATIVE_TAB_SCROLL_BEHAVIOR_NONE
+          ? 'none'
+          : 'onScrollDown';
+      publishNativeTabScrollPresentation(nextBehavior);
+      publishNativeTabScrollBehavior(nextBehavior);
     },
     [],
   );

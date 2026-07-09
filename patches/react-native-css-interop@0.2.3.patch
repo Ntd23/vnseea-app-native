@@ -37,7 +37,7 @@ diff --git a/dist/runtime/native/render-component.js b/dist/runtime/native/rende
 index 9f4966b..9c1f1b3 100644
 --- a/dist/runtime/native/render-component.js
 +++ b/dist/runtime/native/render-component.js
-@@ -133,8 +133,13 @@ function stringify(object) {
+@@ -133,9 +133,14 @@ function stringify(object) {
          seen.add(value);
          const newValue = Array.isArray(value) ? [] : {};
 -        for (const entry of Object.entries(value)) {
@@ -58,7 +58,7 @@ diff --git a/src/runtime/native/render-component.tsx b/src/runtime/native/render
 index 1c71c6e..94d0be2 100644
 --- a/src/runtime/native/render-component.tsx
 +++ b/src/runtime/native/render-component.tsx
-@@ -253,8 +253,12 @@ function stringify(object: any) {
+@@ -253,10 +253,14 @@ function stringify(object: any) {
  
        const newValue: any = Array.isArray(value) ? [] : {};
  
