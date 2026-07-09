@@ -4,13 +4,18 @@ import React
 @objc(VNSEEAIosLiquidTabBar)
 class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
   private let tabBar = UITabBar()
+  private let compactFallbackBackgroundView = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+  private let compactFallbackDefaultWidth: CGFloat = 88
+  private let compactFallbackHeight: CGFloat = 54
+  private let compactFallbackCornerRadius: CGFloat = 27
+  private let compactFallbackDefaultIconCenterY: CGFloat = 25
   private var tabBarItems: [UITabBarItem] = []
   private var compactTabBarItems: [UITabBarItem] = []
   private var tabBarItemTitles: [String?] = []
   private lazy var expandedAppearance: UITabBarAppearance =
-    makeTransparentTabBarAppearance(hidesTitle: false)
+    makePlatformTabBarAppearance(hidesTitle: false, usesCompactFallbackBackground: false)
   private lazy var compactAppearance: UITabBarAppearance =
-    makeTransparentTabBarAppearance(hidesTitle: true)
+    makePlatformTabBarAppearance(hidesTitle: true, usesCompactFallbackBackground: true)
 
   @objc var items: NSArray = [] {
     didSet {
@@ -30,6 +35,12 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
     }
   }
 
+  @objc var compactFallbackWidth: NSNumber = 88 {
+    didSet {
+      layoutCompactFallbackBackground()
+    }
+  }
+
   @objc var onTabPress: RCTBubblingEventBlock?
 
   override init(frame: CGRect) {
@@ -45,6 +56,7 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
   override func layoutSubviews() {
     super.layoutSubviews()
     tabBar.frame = bounds
+    layoutCompactFallbackBackground()
     applyCompactTitleVisibility()
   }
 
@@ -54,23 +66,44 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
 
     tabBar.delegate = self
     tabBar.isTranslucent = true
-    tabBar.backgroundColor = .clear
-    tabBar.backgroundImage = UIImage()
-    tabBar.shadowImage = UIImage()
+    configurePlatformTabBarBackground()
     tabBar.clipsToBounds = false
+
+    compactFallbackBackgroundView.isHidden = true
+    compactFallbackBackgroundView.isUserInteractionEnabled = false
+    compactFallbackBackgroundView.backgroundColor = .clear
+    compactFallbackBackgroundView.layer.cornerRadius = compactFallbackCornerRadius
+    compactFallbackBackgroundView.clipsToBounds = true
 
     tabBar.standardAppearance = expandedAppearance
     tabBar.scrollEdgeAppearance = expandedAppearance
 
+    addSubview(compactFallbackBackgroundView)
     addSubview(tabBar)
   }
 
-  private func makeTransparentTabBarAppearance(hidesTitle: Bool) -> UITabBarAppearance {
+  private func configurePlatformTabBarBackground() {
+    if #available(iOS 26.0, *) {
+      tabBar.backgroundColor = .clear
+      tabBar.backgroundImage = UIImage()
+      tabBar.shadowImage = UIImage()
+    } else if compact.boolValue {
+      tabBar.backgroundColor = .clear
+      tabBar.backgroundImage = UIImage()
+      tabBar.shadowImage = UIImage()
+    } else {
+      tabBar.backgroundColor = nil
+      tabBar.backgroundImage = nil
+      tabBar.shadowImage = nil
+    }
+  }
+
+  private func makePlatformTabBarAppearance(
+    hidesTitle: Bool,
+    usesCompactFallbackBackground: Bool
+  ) -> UITabBarAppearance {
     let appearance = UITabBarAppearance()
-    appearance.configureWithTransparentBackground()
-    appearance.backgroundEffect = nil
-    appearance.backgroundColor = .clear
-    appearance.shadowColor = .clear
+    configurePlatformAppearanceBackground(appearance, usesCompactFallbackBackground: usesCompactFallbackBackground)
 
     if hidesTitle {
       configureHiddenTitleAppearance(appearance.stackedLayoutAppearance)
@@ -79,6 +112,92 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
     }
 
     return appearance
+  }
+
+  private func configurePlatformAppearanceBackground(
+    _ appearance: UITabBarAppearance,
+    usesCompactFallbackBackground: Bool
+  ) {
+    if #available(iOS 26.0, *) {
+      appearance.configureWithTransparentBackground()
+      appearance.backgroundEffect = nil
+      appearance.backgroundColor = .clear
+      appearance.shadowColor = .clear
+    } else if usesCompactFallbackBackground {
+      appearance.configureWithTransparentBackground()
+      appearance.backgroundEffect = nil
+      appearance.backgroundColor = .clear
+      appearance.shadowColor = .clear
+    } else {
+      appearance.configureWithDefaultBackground()
+    }
+  }
+
+  private func layoutCompactFallbackBackground() {
+    tabBar.layoutIfNeeded()
+    let iconCenter = compactFallbackIconCenter()
+    let fallbackWidth = compactFallbackResolvedWidth()
+    let originX = iconCenter.x - fallbackWidth / 2
+    let originY = iconCenter.y - compactFallbackHeight / 2
+    compactFallbackBackgroundView.frame = CGRect(
+      x: originX,
+      y: originY,
+      width: compactFallbackResolvedWidth(),
+      height: compactFallbackHeight
+    )
+  }
+
+  private func compactFallbackResolvedWidth() -> CGFloat {
+    max(compactFallbackDefaultWidth, CGFloat(truncating: compactFallbackWidth))
+  }
+
+  private func compactFallbackIconCenter() -> CGPoint {
+    let imageViews = visibleTabBarImageViews(in: tabBar).filter { imageView in
+      let size = imageView.bounds.size
+      return size.width >= 12 && size.height >= 12 && size.width <= 48 && size.height <= 48
+    }
+    let targetCenterX = tabBar.bounds.midX
+    let selectedIconView = imageViews.min { lhs, rhs in
+      let lhsCenter = lhs.convert(CGPoint(x: lhs.bounds.midX, y: lhs.bounds.midY), to: tabBar)
+      let rhsCenter = rhs.convert(CGPoint(x: rhs.bounds.midX, y: rhs.bounds.midY), to: tabBar)
+      return abs(lhsCenter.x - targetCenterX) < abs(rhsCenter.x - targetCenterX)
+    }
+
+    guard let imageView = selectedIconView else {
+      return CGPoint(x: bounds.midX, y: compactFallbackDefaultIconCenterY)
+    }
+
+    return imageView.convert(CGPoint(x: imageView.bounds.midX, y: imageView.bounds.midY), to: self)
+  }
+
+  private func visibleTabBarImageViews(in view: UIView) -> [UIImageView] {
+    var imageViews: [UIImageView] = []
+    if let imageView = view as? UIImageView,
+       imageView.image != nil,
+       !imageView.isHidden,
+       imageView.alpha > 0.01,
+       imageView.bounds.width > 0,
+       imageView.bounds.height > 0 {
+      imageViews.append(imageView)
+    }
+
+    for subview in view.subviews {
+      imageViews.append(contentsOf: visibleTabBarImageViews(in: subview))
+    }
+
+    return imageViews
+  }
+
+  private func updateCompactFallbackBackgroundVisibility() {
+    compactFallbackBackgroundView.isHidden = !shouldShowCompactFallbackBackground()
+  }
+
+  private func shouldShowCompactFallbackBackground() -> Bool {
+    if #available(iOS 26.0, *) {
+      return false
+    }
+
+    return compact.boolValue
   }
 
   private func configureHiddenTitleAppearance(_ itemAppearance: UITabBarItemAppearance) {
@@ -172,6 +291,7 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
     let selectedItem = tabBarItems[index]
     let selectedCompactItem = compactTabBarItems[index]
     restoreExpandedItemTitles()
+    configurePlatformTabBarBackground()
     if compact.boolValue {
       hideCompactItemTitle(selectedCompactItem)
       tabBar.standardAppearance = compactAppearance
@@ -191,8 +311,12 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
       tabBar.selectedItem = selectedItem
     }
     tabBar.setNeedsLayout()
+    layoutCompactFallbackBackground()
+    updateCompactFallbackBackgroundVisibility()
     applyCompactTitleVisibility()
     DispatchQueue.main.async { [weak self] in
+      self?.layoutCompactFallbackBackground()
+      self?.updateCompactFallbackBackgroundVisibility()
       self?.applyCompactTitleVisibility()
     }
     setNeedsLayout()

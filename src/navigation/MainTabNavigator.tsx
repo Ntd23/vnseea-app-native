@@ -42,10 +42,9 @@ const BRAND_COLOR = '#2563FF';
 const BRAND_LIGHT_BG = 'rgba(37, 99, 255, 0.08)';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const IOS_NATIVE_TAB_BAR_BASE_HEIGHT = 49;
-const IOS_NATIVE_TAB_BAR_COMPACT_SCALE_X = 0.70;
-const IOS_NATIVE_TAB_BAR_COMPACT_SCALE_Y = 0.82;
-const IOS_NATIVE_TAB_BAR_COMPACT_RIGHT = 0;
-const IOS_NATIVE_TAB_BAR_COMPACT_ACTIVE_ITEM_WIDTH = 0;
+const IOS_NATIVE_TAB_BAR_COMPACT_SCALE_X = 0.60;
+const IOS_NATIVE_TAB_BAR_COMPACT_RIGHT = 24;
+const IOS_NATIVE_TAB_BAR_COMPACT_ACTIVE_ITEM_WIDTH = 66;
 
 type IosLiquidTabItem = {
   key: string;
@@ -64,6 +63,7 @@ type NativeIosLiquidTabBarProps = {
     }>,
   ) => void;
   compact?: boolean;
+  compactFallbackWidth?: number;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -293,31 +293,17 @@ function IosLiquidTabBar({
   const tabBarHeight = IOS_NATIVE_TAB_BAR_BASE_HEIGHT + insets.bottom;
   const tabBarPresentation = useNativeTabBarPresentation();
   const compactVisualWidth = SCREEN_WIDTH * IOS_NATIVE_TAB_BAR_COMPACT_SCALE_X;
-  const compactScaleX = compactVisualWidth / SCREEN_WIDTH;
+  const compactHostCenterX = SCREEN_WIDTH - compactVisualWidth / 2;
   const compactItemTargetRightEdge = SCREEN_WIDTH - IOS_NATIVE_TAB_BAR_COMPACT_RIGHT;
   const compactItemTargetCenterX = compactItemTargetRightEdge - IOS_NATIVE_TAB_BAR_COMPACT_ACTIVE_ITEM_WIDTH / 2;
-  const compactTranslateX = compactItemTargetCenterX - SCREEN_WIDTH / 2;
+  const compactTranslateX = compactItemTargetCenterX - compactHostCenterX;
+  const tabBarAnimatedWidth = compactProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [SCREEN_WIDTH, compactVisualWidth],
+  });
   const tabBarCompactTranslateX = compactProgress.interpolate({
     inputRange: [0, 1],
     outputRange: [0, compactTranslateX],
-  });
-  const tabBarCompactTranslateY = compactProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [
-      0,
-      Math.max(
-        0,
-        (tabBarHeight * (1 - IOS_NATIVE_TAB_BAR_COMPACT_SCALE_Y)) / 2 - 4,
-      ),
-    ],
-  });
-  const tabBarCompactScaleX = compactProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, compactScaleX],
-  });
-  const tabBarCompactScaleY = compactProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, IOS_NATIVE_TAB_BAR_COMPACT_SCALE_Y],
   });
 
   useEffect(() => {
@@ -339,7 +325,7 @@ function IosLiquidTabBar({
     Animated.timing(compactProgress, {
       toValue: tabBarPresentation === 'minimized' ? 1 : 0,
       duration: tabBarPresentation === 'minimized' ? 220 : 180,
-      useNativeDriver: true,
+      useNativeDriver: false,
     }).start();
   }, [compactProgress, tabBarPresentation]);
 
@@ -401,15 +387,11 @@ function IosLiquidTabBar({
       style={[
         styles.iosLiquidTabBarHost,
         {
-          width: SCREEN_WIDTH,
+          width: tabBarAnimatedWidth,
           height: tabBarHeight,
           transform: [
-            { scaleX: tabBarCompactScaleX },
-            { scaleY: tabBarCompactScaleY },
             { translateX: tabBarCompactTranslateX },
-            {
-              translateY: Animated.add(translateY, tabBarCompactTranslateY),
-            },
+            { translateY },
           ],
         },
       ]}
@@ -419,6 +401,7 @@ function IosLiquidTabBar({
         selectedIndex={state.index}
         onTabPress={handleTabPress}
         compact={tabBarPresentation === 'minimized'}
+        compactFallbackWidth={compactVisualWidth}
         style={StyleSheet.absoluteFill}
       />
     </Animated.View>

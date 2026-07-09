@@ -70,16 +70,22 @@ describe('iOS paged bottom tab navigator', () => {
     expect(swift).toContain('tabBar.frame = bounds');
   });
 
-  it('keeps the native iOS UITabBar background transparent', () => {
+  it('uses iOS 26 liquid glass and the native default fallback on earlier iOS versions', () => {
     const swift = read('ios/VNSEEA/VNSEEAIosLiquidTabBar.swift');
 
+    expect(swift).toContain('configurePlatformTabBarBackground()');
+    expect(swift).toContain('configurePlatformAppearanceBackground(appearance, usesCompactFallbackBackground: usesCompactFallbackBackground)');
+    expect(swift).toContain('if #available(iOS 26.0, *)');
     expect(swift).toContain('appearance.configureWithTransparentBackground()');
     expect(swift).toContain('appearance.backgroundEffect = nil');
     expect(swift).toContain('appearance.backgroundColor = .clear');
     expect(swift).toContain('appearance.shadowColor = .clear');
+    expect(swift).toContain('appearance.configureWithDefaultBackground()');
+    expect(swift).toContain('if usesCompactFallbackBackground');
     expect(swift).toContain('tabBar.backgroundImage = UIImage()');
     expect(swift).toContain('tabBar.shadowImage = UIImage()');
-    expect(swift).not.toContain('configureWithDefaultBackground()');
+    expect(swift).toContain('tabBar.backgroundImage = nil');
+    expect(swift).toContain('tabBar.shadowImage = nil');
   });
 
   it('overlays the iOS liquid tab bar above transparent pager content', () => {
@@ -112,20 +118,54 @@ describe('iOS paged bottom tab navigator', () => {
     expect(source).toContain("tabBarPresentation === 'minimized'");
     expect(source).toContain('compactProgress');
     expect(source).toContain('tabBarCompactTranslateX');
-    expect(source).toContain('tabBarCompactScaleX');
-    expect(source).toContain('tabBarCompactScaleY');
-    expect(source).toContain('Animated.add(translateY, tabBarCompactTranslateY)');
+    expect(source).toContain('tabBarAnimatedWidth');
+    expect(source).toContain('compactFallbackWidth?: number;');
+    expect(source).toContain('compactFallbackWidth={compactVisualWidth}');
+    expect(source).not.toContain('tabBarCompactScaleX');
+    expect(source).not.toContain('tabBarCompactScaleY');
+    expect(source).not.toContain('tabBarCompactTranslateY');
+    expect(source).toContain('{ translateY }');
     expect(source).not.toContain('IOS_NATIVE_TAB_BAR_COMPACT_WIDTH');
     expect(source).not.toContain('tabBarAnimatedHeight');
-    expect(source).not.toContain('width: tabBarWidth');
     expect(source).not.toContain('height: tabBarAnimatedHeight');
+    expect(source).toContain('width: tabBarAnimatedWidth');
     expect(source).toContain('compact={tabBarPresentation === \'minimized\'}');
     expect(swift).toContain('@objc var compact: NSNumber');
     expect(swift).toContain('private var tabBarItemTitles: [String?] = []');
     expect(swift).toContain('private var compactTabBarItems: [UITabBarItem] = []');
     expect(swift).toContain('private lazy var expandedAppearance: UITabBarAppearance');
     expect(swift).toContain('private lazy var compactAppearance: UITabBarAppearance');
-    expect(swift).toContain('makeTransparentTabBarAppearance(hidesTitle: true)');
+    expect(swift).toContain('makePlatformTabBarAppearance(hidesTitle: false, usesCompactFallbackBackground: false)');
+    expect(swift).toContain('makePlatformTabBarAppearance(hidesTitle: true, usesCompactFallbackBackground: true)');
+    expect(swift).toContain('private let compactFallbackBackgroundView = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))');
+    expect(swift).toContain('private let compactFallbackDefaultWidth: CGFloat = 88');
+    expect(swift).toContain('private let compactFallbackHeight: CGFloat = 54');
+    expect(swift).toContain('@objc var compactFallbackWidth: NSNumber = 88');
+    expect(swift).toContain('compactFallbackBackgroundView.frame = CGRect(');
+    expect(swift).toContain('width: compactFallbackResolvedWidth()');
+    expect(swift).toContain('private func compactFallbackResolvedWidth() -> CGFloat');
+    expect(swift).toContain('max(compactFallbackDefaultWidth, CGFloat(truncating: compactFallbackWidth))');
+    expect(swift).toContain('private let compactFallbackCornerRadius: CGFloat = 27');
+    expect(swift).toContain('private let compactFallbackDefaultIconCenterY: CGFloat = 25');
+    expect(swift).toContain('compactFallbackBackgroundView.isHidden = true');
+    expect(swift).toContain('compactFallbackBackgroundView.isUserInteractionEnabled = false');
+    expect(swift).toContain('compactFallbackBackgroundView.layer.cornerRadius = compactFallbackCornerRadius');
+    expect(swift).toContain('compactFallbackBackgroundView.clipsToBounds = true');
+    expect(swift).toContain('addSubview(compactFallbackBackgroundView)');
+    expect(swift).toContain('layoutCompactFallbackBackground()');
+    expect(swift).toContain('let iconCenter = compactFallbackIconCenter()');
+    expect(swift).toContain('let fallbackWidth = compactFallbackResolvedWidth()');
+    expect(swift).toContain('let originX = iconCenter.x - fallbackWidth / 2');
+    expect(swift).toContain('let originY = iconCenter.y - compactFallbackHeight / 2');
+    expect(swift).toContain('private func compactFallbackIconCenter() -> CGPoint');
+    expect(swift).toContain('visibleTabBarImageViews(in: tabBar)');
+    expect(swift).toContain('imageView.convert(CGPoint(x: imageView.bounds.midX, y: imageView.bounds.midY), to: self)');
+    expect(swift).toContain('private func visibleTabBarImageViews(in view: UIView) -> [UIImageView]');
+    expect(swift).not.toContain('let topAlignedHeight = min(bounds.height, 64)');
+    expect(swift).toContain('updateCompactFallbackBackgroundVisibility()');
+    expect(swift).toContain('private func shouldShowCompactFallbackBackground() -> Bool');
+    expect(swift).toContain('return compact.boolValue');
+    expect(swift).toContain('compactFallbackBackgroundView.isHidden = !shouldShowCompactFallbackBackground()');
     expect(swift).toContain('configureHiddenTitleAppearance(appearance.stackedLayoutAppearance)');
     expect(swift).toContain('configureHiddenTitleAppearance(appearance.inlineLayoutAppearance)');
     expect(swift).toContain('configureHiddenTitleAppearance(appearance.compactInlineLayoutAppearance)');
@@ -161,6 +201,7 @@ describe('iOS paged bottom tab navigator', () => {
     expect(swift).toContain('label.alpha = hidden ? 0 : 1');
     expect(swift).toContain('for subview in view.subviews');
     expect(bridge).toContain('RCT_EXPORT_VIEW_PROPERTY(compact, NSNumber)');
+    expect(bridge).toContain('RCT_EXPORT_VIEW_PROPERTY(compactFallbackWidth, NSNumber)');
   });
 
   it('anchors the compact iOS liquid tab bar by the active item target right edge', () => {
@@ -174,11 +215,15 @@ describe('iOS paged bottom tab navigator', () => {
       hostSource.indexOf('],', hostSource.indexOf('transform: [')) + 2,
     );
 
-    expect(source).toContain('const IOS_NATIVE_TAB_BAR_COMPACT_SCALE_X = 0.70;');
-    expect(source).toContain('const IOS_NATIVE_TAB_BAR_COMPACT_RIGHT = 0;');
-    expect(source).toContain('const IOS_NATIVE_TAB_BAR_COMPACT_ACTIVE_ITEM_WIDTH = 0;');
+    expect(source).toContain('const IOS_NATIVE_TAB_BAR_COMPACT_SCALE_X =');
+    expect(source).not.toContain('IOS_NATIVE_TAB_BAR_COMPACT_SCALE_Y');
+    expect(source).toContain('const IOS_NATIVE_TAB_BAR_COMPACT_RIGHT =');
+    expect(source).toContain('const IOS_NATIVE_TAB_BAR_COMPACT_ACTIVE_ITEM_WIDTH =');
     expect(hostSource).toContain(
       'const compactVisualWidth = SCREEN_WIDTH * IOS_NATIVE_TAB_BAR_COMPACT_SCALE_X;',
+    );
+    expect(hostSource).toContain(
+      'const compactHostCenterX = SCREEN_WIDTH - compactVisualWidth / 2;',
     );
     expect(hostSource).toContain(
       'const compactItemTargetRightEdge = SCREEN_WIDTH - IOS_NATIVE_TAB_BAR_COMPACT_RIGHT;',
@@ -187,14 +232,15 @@ describe('iOS paged bottom tab navigator', () => {
       'const compactItemTargetCenterX = compactItemTargetRightEdge - IOS_NATIVE_TAB_BAR_COMPACT_ACTIVE_ITEM_WIDTH / 2;',
     );
     expect(hostSource).toContain(
-      'const compactTranslateX = compactItemTargetCenterX - SCREEN_WIDTH / 2;',
+      'const compactTranslateX = compactItemTargetCenterX - compactHostCenterX;',
     );
+    expect(hostSource).toContain('const tabBarAnimatedWidth = compactProgress.interpolate({');
+    expect(hostSource).toContain('outputRange: [SCREEN_WIDTH, compactVisualWidth]');
+    expect(hostSource).toContain('useNativeDriver: false');
     expect(hostSource).toContain('outputRange: [0, compactTranslateX]');
-    expect(transformBlock.indexOf('{ scaleX: tabBarCompactScaleX }')).toBeGreaterThanOrEqual(0);
+    expect(transformBlock).not.toContain('scaleX');
+    expect(transformBlock).not.toContain('scaleY');
     expect(transformBlock.indexOf('{ translateX: tabBarCompactTranslateX }')).toBeGreaterThanOrEqual(0);
-    expect(transformBlock.indexOf('{ scaleX: tabBarCompactScaleX }')).toBeLessThan(
-      transformBlock.indexOf('{ translateX: tabBarCompactTranslateX }'),
-    );
   });
 
   it('does not keep the old manual iOS pan wrapper in MainTabNavigator', () => {
