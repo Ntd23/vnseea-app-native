@@ -4,6 +4,8 @@ import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import type { PagesRepository } from '../../domain/repositories/PagesRepository';
 import type {
+  CreatePageDraft,
+  PagePrivileges,
   PageReview,
   PageUser,
   PagesItem,
@@ -175,6 +177,61 @@ function mapPinRequestPayload(draft: {
   };
 }
 
+function mapPageSettingsPayload(draft: CreatePageDraft) {
+  const canPost = draft.allowPost ? 1 : 0;
+  return {
+    call_action_type: draft.callActionType,
+    call_action_type_url: draft.callActionUrl,
+    users_post: canPost,
+    verified: draft.verified ? 2 : 0,
+  };
+}
+
+function mapPageGeneralUpdatePayload(pageId: string, draft: CreatePageDraft) {
+  return {
+    page_id: pageId,
+    page_name: draft.pageName,
+    page_title: draft.pageTitle,
+    page_category: draft.pageCategory,
+    page_sub_category: draft.pageSubCategory,
+    ...mapPageSettingsPayload(draft),
+  };
+}
+
+function mapPageProfileUpdatePayload(pageId: string, draft: CreatePageDraft) {
+  return {
+    page_id: pageId,
+    website: draft.website,
+    page_description: draft.pageDescription,
+    company: draft.company,
+    address: draft.pageAddress,
+    phone: draft.phone,
+    page_place_id: draft.placeId,
+    page_lat: draft.lat,
+    page_lng: draft.lng,
+    map_pin_requested: draft.mapPinRequested ? 1 : 0,
+  };
+}
+
+function mapPageSocialUpdatePayload(pageId: string, draft: CreatePageDraft) {
+  return {
+    page_id: pageId,
+    facebook: draft.facebook,
+    twitter: draft.twitter,
+    instgram: draft.instgram,
+    vk: draft.vk,
+    linkedin: draft.linkedin,
+    youtube: draft.youtube,
+  };
+}
+
+function mapPageDesignUpdatePayload(pageId: string, draft: CreatePageDraft) {
+  return {
+    page_id: pageId,
+    background_image_status: draft.backgroundImageStatus || 'defualt',
+  };
+}
+
 function mapPage(raw: RawPage | undefined): PagesItem {
   const pageId = readString(raw, 'page_id') || readString(raw, 'id');
   const pageName = readString(raw, 'page_name') || readString(raw, 'username');
@@ -197,6 +254,9 @@ function mapPage(raw: RawPage | undefined): PagesItem {
       readString(raw, 'page_description') || readString(raw, 'about'),
     pageCategory:
       readString(raw, 'page_category') || readString(raw, 'category'),
+    company: readString(raw, 'company', 'company_name'),
+    phone: readString(raw, 'phone', 'phone_number'),
+    website: readString(raw, 'website', 'web_site'),
     address: readString(raw, 'address'),
     placeId: readString(raw, 'place_id') || readString(raw, 'placeId'),
     lat: readNumber(raw, 'lat'),
@@ -218,6 +278,38 @@ function mapPage(raw: RawPage | undefined): PagesItem {
     isLiked: readBoolean(raw, 'is_liked'),
     isRated: readBoolean(raw, 'is_rated'),
     verified: readBoolean(raw, 'verified') || readString(raw, 'verified') === '1',
+    callActionType: readString(
+      raw,
+      'call_action_type',
+      'call_action',
+      'call_to_action',
+      'call_action_text',
+    ),
+    callActionUrl: readString(
+      raw,
+      'call_action_url',
+      'call_action_type_url',
+      'call_to_action_url',
+      'call_url',
+      'website',
+    ),
+    allowPost: readBoolean(
+      raw,
+      'allow_post',
+      'users_post',
+      'users_can_post',
+      'can_post',
+    ),
+    facebook: readString(raw, 'facebook'),
+    twitter: readString(raw, 'twitter'),
+    instgram: readString(raw, 'instgram', 'instagram'),
+    vk: readString(raw, 'vk'),
+    linkedin: readString(raw, 'linkedin'),
+    youtube: readString(raw, 'youtube'),
+    backgroundImage: normalizeUrl(readString(raw, 'background_image')),
+    backgroundImageStatus: readString(raw, 'background_image_status') === '1'
+      ? 'my_background'
+      : 'defualt',
     ownerId,
     owner:
       mapPageUser(ownerRaw) ??
@@ -647,6 +739,7 @@ export function createPagesRepository(): PagesRepository {
             address: draft.pageAddress,
             page_category: draft.pageCategory,
             page_sub_category: draft.pageSubCategory,
+            ...mapPageSettingsPayload(draft),
           },
         );
       } catch (error) {
@@ -710,25 +803,21 @@ export function createPagesRepository(): PagesRepository {
       };
     },
 
-    async updatePage(pageId, draft) {
+    async updatePage(pageId, draft, section = 'general') {
       let response: UpdatePageResponse;
+      const payload =
+        section === 'profile'
+          ? mapPageProfileUpdatePayload(pageId, draft)
+          : section === 'social'
+            ? mapPageSocialUpdatePayload(pageId, draft)
+            : section === 'design'
+              ? mapPageDesignUpdatePayload(pageId, draft)
+          : mapPageGeneralUpdatePayload(pageId, draft);
 
       try {
         response = await apiBridge.post<UpdatePageResponse>(
           apiRoutes.pages.update,
-          {
-            page_id: pageId,
-            page_name: draft.pageName,
-            page_title: draft.pageTitle,
-            page_description: draft.pageDescription,
-            address: draft.pageAddress,
-            place_id: draft.placeId,
-            lat: draft.lat,
-            lng: draft.lng,
-            ...mapPinRequestPayload(draft),
-            page_category: draft.pageCategory,
-            page_sub_category: draft.pageSubCategory,
-          },
+          payload,
         );
       } catch (error) {
         console.warn('[ApiPagesRepository] update page failed', error);
@@ -751,6 +840,9 @@ export function createPagesRepository(): PagesRepository {
           pageTitle: draft.pageTitle,
           pageDescription: draft.pageDescription,
           pageCategory: draft.pageCategory,
+          company: draft.company,
+          phone: draft.phone,
+          website: draft.website,
           address: draft.pageAddress,
           placeId: draft.placeId,
           lat: draft.lat,
@@ -758,6 +850,17 @@ export function createPagesRepository(): PagesRepository {
           mapPinStatus: nextMapPinStatus(draft),
           mapPinRequested: draft.mapPinRequested,
           mapPinApproved: nextMapPinStatus(draft) === 'approved',
+          callActionType: draft.callActionType,
+          callActionUrl: draft.callActionUrl,
+          allowPost: draft.allowPost,
+          verified: draft.verified,
+          facebook: draft.facebook,
+          twitter: draft.twitter,
+          instgram: draft.instgram,
+          vk: draft.vk,
+          linkedin: draft.linkedin,
+          youtube: draft.youtube,
+          backgroundImageStatus: draft.backgroundImageStatus,
         },
         message: response.message,
       };
@@ -804,6 +907,44 @@ export function createPagesRepository(): PagesRepository {
           message || `Không thể cập nhật ${field === 'avatar' ? 'ảnh đại diện' : 'ảnh bìa'} trang.`,
         );
       }
+    },
+
+    async deletePage(pageId, password) {
+      const response = await apiBridge.post<PageActionResponse>(
+        apiRoutes.pages.delete,
+        {
+          page_id: pageId,
+          password,
+        },
+      );
+      assertActionSuccess(response, response.errors?.error_text || response.message || 'Không thể xóa trang.');
+    },
+
+    async updatePagePrivileges(pageId, userId, privileges) {
+      const payload: Record<keyof PagePrivileges | 'page_id' | 'user_id', string | number> = {
+        page_id: pageId,
+        user_id: userId,
+        general: privileges.general ? 1 : 0,
+        info: privileges.info ? 1 : 0,
+        social: privileges.social ? 1 : 0,
+        avatar: privileges.avatar ? 1 : 0,
+        design: privileges.design ? 1 : 0,
+        admins: privileges.admins ? 1 : 0,
+        analytics: privileges.analytics ? 1 : 0,
+        delete_page: privileges.delete_page ? 1 : 0,
+      };
+
+      const response = await apiBridge.post<PageActionResponse>(
+        apiRoutes.pages.privileges,
+        payload,
+      );
+
+      assertActionSuccess(
+        response,
+        response.errors?.error_text ||
+          response.message ||
+          'KhÃ´ng thá»ƒ cáº­p nháº­t quyá»n quáº£n trá»‹.',
+      );
     },
   };
 }

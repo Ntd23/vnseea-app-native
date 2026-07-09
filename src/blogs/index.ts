@@ -5,6 +5,7 @@ export { createBlogsRepository } from './infrastructure/repositories/ApiBlogsRep
 export { useBlogsViewModel } from './application/view-models/useBlogsViewModel';
 export { useBlogDetailViewModel } from './application/view-models/useBlogDetailViewModel';
 export { default as BlogsScreen } from './presentation/screens/BlogsScreen';
+export { default as MyArticlesScreen } from './presentation/screens/MyArticlesScreen';
 export { default as BlogFilterCategoryScreen } from './presentation/screens/BlogFilterCategoryScreen';
 export { default as BlogDetailScreen } from './presentation/screens/BlogDetailScreen';
 export { default as CreateBlogScreen } from './presentation/screens/CreateBlogScreen';

@@ -58,7 +58,7 @@ export function useBlogsViewModel() {
     [repository, selectedCategory],
   );
 
-    const loadCategories = useCallback(async () => {
+  const loadCategories = useCallback(async () => {
     const result = await repository.getCategories();
     setCategories(result);
   }, [repository]);
@@ -66,6 +66,7 @@ export function useBlogsViewModel() {
   useEffect(() => {
     void loadCategories();
   }, [loadCategories]);
+
   const refresh = useCallback(() => loadFirstPage(true), [loadFirstPage]);
 
   const loadMore = useCallback(async () => {
@@ -116,14 +117,6 @@ export function useBlogsViewModel() {
     console.log('[useBlogsViewModel] filteredArticles called, isLoading:', isLoading, 'articles.length:', articles.length);
     let result = articles;
 
-    // Filter by category (client-side since API doesn't support it)
-    if (selectedCategory) {
-      console.log('[useBlogsViewModel] Filtering by category:', selectedCategory);
-      console.log('[useBlogsViewModel] Available categories in articles:', [...new Set(result.map(a => a.category))]);
-      result = result.filter(article => article.category === selectedCategory || article.categoryId === selectedCategory);
-      console.log('[useBlogsViewModel] Articles after category filter:', result.length);
-    }
-
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -154,7 +147,7 @@ export function useBlogsViewModel() {
 
     console.log('[useBlogsViewModel] Final filteredArticles.length:', result.length);
     return result;
-  }, [articles, searchQuery, sortBy, myPostsOnly, selectedCategory, isLoading, user]);
+  }, [articles, searchQuery, sortBy, myPostsOnly, isLoading, user]);
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query);

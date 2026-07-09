@@ -1,5 +1,4 @@
-// Blogs domain types
-// Port từ: client/src/blogs/domain/types/
+// Description: Defines blog article, comment, category, and pagination types.
 
 export interface BlogCategoryOption {
   id: string;
@@ -8,6 +7,7 @@ export interface BlogCategoryOption {
 
 export interface BlogsItem {
   id: string;
+  postId?: string;
   title: string;
   description?: string;
   content?: string;
@@ -18,6 +18,19 @@ export interface BlogsItem {
   postedAt?: number;
   postedLabel?: string;
   views?: number;
+  author: {
+    id: string;
+    name: string;
+    username?: string;
+    avatarUrl?: string;
+  };
+  raw?: unknown;
+}
+
+export interface BlogComment {
+  id: string;
+  text: string;
+  createdAt?: string;
   author: {
     id: string;
     name: string;
