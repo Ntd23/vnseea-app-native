@@ -45,6 +45,7 @@ import {
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import { useSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 
@@ -419,7 +420,10 @@ function MyProductsScreen() {
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" />
+      <FeedHeader />
 
+      {/* Tạm thời comment title Sản phẩm của tôi ở đầu trang theo yêu cầu */}
+      {/* 
       <View className="surface-topbar flex-row items-center px-4 py-3">
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"
@@ -440,6 +444,7 @@ function MyProductsScreen() {
           </Text>
         </View>
       </View>
+      */}
 
       {!targetUserId && (
         <View className="mx-4 my-2.5 rounded-2xl bg-white p-3 border border-slate-100 shadow-sm">
@@ -528,6 +533,8 @@ function MyProductsScreen() {
 
       {vm.activeTab === 'products' ? (
         <>
+          {/* Tạm thời comment tìm kiếm và bộ lọc ở tab Sản phẩm của tôi theo yêu cầu */}
+          {/*
           <View className="gap-3 px-4 py-4">
             <SearchFilterRow
               value={vm.productSearch}
@@ -572,6 +579,7 @@ function MyProductsScreen() {
               </View>
             ) : null}
           </View>
+          */}
           <FlatList
             data={vm.filteredProducts}
             keyExtractor={item => String(item.id)}
@@ -606,6 +614,8 @@ function MyProductsScreen() {
 
       {vm.activeTab === 'purchased' ? (
         <>
+          {/* Tạm thời comment tìm kiếm và bộ lọc ở tab Đã mua theo yêu cầu */}
+          {/*
           <View className="gap-3 px-4 py-4">
             <SearchFilterRow
               value={vm.purchasedSearch}
@@ -630,6 +640,7 @@ function MyProductsScreen() {
               </View>
             ) : null}
           </View>
+          */}
           <FlatList
             data={vm.purchasedItems}
             keyExtractor={item => item.id}
@@ -661,6 +672,8 @@ function MyProductsScreen() {
 
       {vm.activeTab === 'orders' ? (
         <>
+          {/* Tạm thời comment tìm kiếm và bộ lọc ở tab Đơn hàng theo yêu cầu */}
+          {/*
           <View className="gap-3 px-4 py-4">
             <SearchFilterRow
               value={vm.ordersSearch}
@@ -685,6 +698,7 @@ function MyProductsScreen() {
               </View>
             ) : null}
           </View>
+          */}
           <FlatList
             data={vm.orderItems}
             keyExtractor={item => item.id}

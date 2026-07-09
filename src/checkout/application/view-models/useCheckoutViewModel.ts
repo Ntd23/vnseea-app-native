@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createCheckoutRepository } from '../../infrastructure/repositories/ApiCheckoutRepository';
 import { createUserRepository } from '../../../user/infrastructure/repositories/ApiUserRepository';
+import { createProductRepository } from '../../../product/infrastructure/repositories/ApiProductRepository';
+import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import type { UserProfile } from '../../../user/domain/types/user.types';
 import type {
   CheckoutSummary,
@@ -89,11 +91,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     };
   }, [options.selectedProductIds, summary]);
 
-  const canPay = Boolean(
-    selectedSummary &&
-      walletBalance &&
-      walletBalance.wallet >= selectedSummary.total,
-  );
+  const canPay = Boolean(selectedSummary);
 
   const itemCount = selectedSummary?.items.reduce(
     (count, item) => count + item.quantity,
@@ -264,12 +262,8 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
       setStep('confirm');
       return;
     }
-    if (!canPay) {
-      setPaymentError('Số dư ví không đủ để thanh toán đơn hàng này.');
-      return;
-    }
     setConfirmVisible(true);
-  }, [canPay, selectedAddress, selectedAddressId]);
+  }, [selectedAddress, selectedAddressId]);
 
   const pay = useCallback(async () => {
     const addressId = selectedAddressId || selectedAddress?.id;
@@ -278,29 +272,76 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
       setStep('confirm');
       return false;
     }
+    if (!selectedSummary || selectedSummary.items.length === 0) {
+      setPaymentError('Giỏ hàng trống.');
+      return false;
+    }
 
     setIsPaying(true);
     setPaymentError(null);
     setSuccessMessage(null);
 
     try {
-      const result = await repository.buy(addressId, options.selectedProductIds);
-      setConfirmVisible(false);
-      if (result.success) {
-        setSuccessMessage(result.message);
-        setSuccessVisible(true);
-        setSyncedCartCount(undefined, -itemCount);
-      } else {
-        setPaymentError(result.message);
+      const productRepository = createProductRepository();
+      const messagesRepository = createMessagesRepository();
+
+      // 1. Fetch product details to get seller information
+      const itemsWithSellers = await Promise.all(
+        selectedSummary.items.map(async (item) => {
+          try {
+            const productRes = await productRepository.getProducts({ product_id: item.productId });
+            const seller = productRes.products?.[0]?.seller;
+            return { item, sellerUserId: seller?.user_id };
+          } catch (e) {
+            console.warn(`Failed to fetch seller for product ${item.productId}:`, e);
+            return { item, sellerUserId: null };
+          }
+        })
+      );
+
+      // Validate that we found at least one seller to contact
+      const validOrders = itemsWithSellers.filter(x => x.sellerUserId);
+      if (validOrders.length === 0) {
+        throw new Error('Không thể tìm thấy thông tin người bán cho các sản phẩm này.');
       }
+
+      // 2. Send messages to sellers
+      const addressString = [
+        selectedAddress?.address,
+        selectedAddress?.city,
+        selectedAddress?.country,
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      await Promise.all(
+        validOrders.map(async ({ item, sellerUserId }) => {
+          const moneyFormatted = `${Math.round(item.price).toLocaleString('vi-VN')} ${item.currencySymbol}`;
+          const messageText = `Tôi muốn đặt mua sản phẩm:\n👉 *${item.name}*\n💰 Giá: *${moneyFormatted}*\n📦 Số lượng: *${item.quantity}*\n🆔 ID: *${item.productId}*\n📷 Ảnh: ${item.image || ''}\n\nThông tin người mua:\n👤 Tên: *${selectedAddress?.name || ''}*\n📞 SĐT: *${selectedAddress?.phone || ''}*\n📍 Địa chỉ: *${addressString}*`;
+
+          await messagesRepository.sendMessage(String(sellerUserId), messageText);
+        })
+      );
+
+      // 3. Remove items from the cart
+      await Promise.all(
+        selectedSummary.items.map(item => repository.removeItem(item.productId))
+      );
+
+      // 4. Update UI state
+      setConfirmVisible(false);
+      setSuccessMessage('Đơn hàng đã được đặt thành công và gửi thông tin đến người bán.');
+      setSuccessVisible(true);
+      setSyncedCartCount(undefined, -itemCount);
+
       await load();
       setStep('payment');
-      return result.success;
+      return true;
     } catch (caughtError) {
       setPaymentError(
         messageFromError(
           caughtError,
-          'Không thể thanh toán. Vui lòng kiểm tra số dư ví hoặc thử lại.',
+          'Không thể đặt hàng. Vui lòng kiểm tra lại kết nối.',
         ),
       );
       setConfirmVisible(false);
@@ -309,7 +350,7 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
     } finally {
       setIsPaying(false);
     }
-  }, [load, options.selectedProductIds, selectedAddress, selectedAddressId]);
+  }, [load, options.selectedProductIds, selectedAddress, selectedAddressId, selectedSummary, itemCount]);
 
   return {
     addressError,

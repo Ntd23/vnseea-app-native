@@ -48,6 +48,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductImage, ProductItem } from '../../domain/types/product.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { useSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 
 type ProductDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.PRODUCT_DETAIL>;
@@ -533,6 +534,7 @@ function MissingProductFallback({
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" />
+      <FeedHeader />
       <View className="flex-row items-center border-b border-slate-200 bg-white px-4 py-3">
         <TouchableOpacity
           activeOpacity={0.8}
@@ -839,6 +841,7 @@ function ProductDetailContent({
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" />
+      <FeedHeader />
 
       <View className="relative flex-row items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
         <TouchableOpacity

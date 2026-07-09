@@ -1,4 +1,4 @@
-// Description: Renders the VNSEEA nine-step create product wizard with API integration.
+// Description: Renders the VNSEEA single-page create/edit product form.
 import React, { useCallback } from 'react';
 import {
   Alert,
@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from 'react-native';
 import {
   launchImageLibrary,
@@ -26,6 +27,13 @@ import {
   MapPin,
   Package,
   X,
+  Laptop,
+  Shirt,
+  Heart,
+  Utensils,
+  Target,
+  GraduationCap,
+  Sparkles,
 } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -34,6 +42,7 @@ import { useProductViewModel } from '../../application/view-models/useProductVie
 import type { ProductFormData } from '../../application/view-models/useProductViewModel';
 import { ROUTES } from '../../../navigation/constants/routes';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type CreateProductNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -158,76 +167,175 @@ const steps: StepConfig[] = [
   },
 ];
 
+// Reusable custom layout components for the premium single-page form
+function OptionPill({
+  label,
+  selected,
+  onPress,
+  icon,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.8}
+      onPress={onPress}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 99,
+        borderWidth: 1,
+        borderColor: selected ? '#0000FF' : '#e2e8f0',
+        backgroundColor: selected ? '#eef2ff' : '#ffffff',
+        marginRight: 8,
+        marginBottom: 8,
+      }}
+    >
+      {icon ? <View style={{ marginRight: 6 }}>{icon}</View> : null}
+      <Text
+        style={{
+          fontSize: 13,
+          fontWeight: '700',
+          color: selected ? '#0000FF' : '#475569',
+        }}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function FormCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View
+      style={{
+        backgroundColor: '#ffffff',
+        borderRadius: 24,
+        padding: 20,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.02,
+        shadowRadius: 8,
+        elevation: 2,
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 15,
+          fontWeight: '800',
+          color: '#0f172a',
+          marginBottom: 16,
+        }}
+      >
+        {title}
+      </Text>
+      {children}
+    </View>
+  );
+}
+
+function FieldWrapper({
+  label,
+  error,
+  children,
+  icon,
+}: {
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <View style={{ marginBottom: 16 }}>
+      <Text
+        style={{
+          fontSize: 13,
+          fontWeight: '700',
+          color: '#475569',
+          marginBottom: 8,
+        }}
+      >
+        {label}
+      </Text>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          minHeight: 52,
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: error ? '#ef4444' : '#e2e8f0',
+          backgroundColor: '#f8fafc',
+          paddingHorizontal: 16,
+        }}
+      >
+        {icon ? <View style={{ marginRight: 10 }}>{icon}</View> : null}
+        {children}
+      </View>
+      {error ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+          <AlertCircle size={14} color="#ef4444" />
+          <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
+            {error}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const getCategoryIcon = (id: string, selected: boolean) => {
+  const color = selected ? '#0000FF' : '#64748B';
+  switch (id) {
+    case '1': return <Laptop size={16} color={color} />;
+    case '2':
+    case '3': return <Shirt size={16} color={color} />;
+    case '4': return <Heart size={16} color={color} />;
+    case '5': return <Utensils size={16} color={color} />;
+    case '6': return <Sparkles size={16} color={color} />;
+    case '7': return <Target size={16} color={color} />;
+    case '8': return <GraduationCap size={16} color={color} />;
+    default: return <Package size={16} color={color} />;
+  }
+};
+
 export default function CreateProductScreen() {
   const navigation = useNavigation<CreateProductNav>();
   const route = useRoute<any>();
   const editingProduct = route.params?.product;
 
   const {
-    step,
     formData,
     errors,
-    totalSteps,
     updateFormData,
     addImage,
     removeImage,
-    nextStep,
-    prevStep,
     isLoading,
     submitError,
     submitSuccess,
     submitProduct,
     resetForm,
-  } = useProductViewModel();
+    isEditing,
+  } = useProductViewModel(editingProduct);
 
-  // ALL hooks must be called unconditionally before any early returns
   const handleBack = useCallback(() => {
-    if (step > 0) {
-      prevStep();
-    } else {
-      Alert.alert(
-        'Hủy tạo sản phẩm',
-        'Bạn có chắc muốn hủy? Thông tin đã nhập sẽ không được lưu.',
-        [
-          { text: 'Không', style: 'cancel' },
-          { text: 'Có', style: 'destructive', onPress: () => navigation.goBack() },
-        ],
-      );
-    }
-  }, [step, prevStep, navigation]);
-
-  const handleNext = useCallback(() => {
-    if (step === totalSteps - 1) {
-      submitProduct();
-    } else {
-      nextStep();
-    }
-  }, [step, totalSteps, nextStep, submitProduct]);
-
-  const currentStep = steps[step];
-  const progressValue = Math.round(((step + 1) / totalSteps) * 100);
-  const IconComponent = currentStep.iconComponent;
-
-  // Get current field value
-  const getFieldValue = (): string => {
-    const value = formData[currentStep.field];
-    if (currentStep.field === 'images') {
-      return '';
-    }
-    return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
-  };
-
-  const handleSelectOption = useCallback(
-    (optionId: string) => {
-      if (currentStep.field === 'product_category' || currentStep.field === 'currency') {
-        updateFormData(currentStep.field, optionId);
-      } else if (currentStep.field === 'product_type') {
-        updateFormData(currentStep.field, parseInt(optionId, 10));
-      }
-      nextStep();
-    },
-    [currentStep.field, updateFormData, nextStep],
-  );
+    Alert.alert(
+      isEditing ? 'Hủy chỉnh sửa' : 'Hủy tạo sản phẩm',
+      'Bạn có chắc muốn hủy? Thông tin đã nhập sẽ không được lưu.',
+      [
+        { text: 'Không', style: 'cancel' },
+        { text: 'Có', style: 'destructive', onPress: () => navigation.goBack() },
+      ],
+    );
+  }, [navigation, isEditing]);
 
   const handleAddImage = useCallback(async () => {
     try {
@@ -265,31 +373,21 @@ export default function CreateProductScreen() {
     [removeImage],
   );
 
-  const getSelectedOption = (field: keyof ProductFormData, optionId: string): boolean => {
-    if (field === 'product_category') {
-      return formData.product_category === optionId;
-    }
-    if (field === 'product_type') {
-      return formData.product_type === parseInt(optionId, 10);
-    }
-    if (field === 'currency') {
-      return formData.currency === optionId;
-    }
-    return false;
-  };
-
   // SUCCESS STATE - Conditional JSX return AFTER all hooks
   if (submitSuccess) {
     return (
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
         <FocusAwareStatusBar barStyle="dark-content" />
+        <FeedHeader />
         <View className="flex-1 items-center justify-center px-6">
           <View className="h-20 w-20 items-center justify-center rounded-full bg-green-100">
             <CheckCircle2 size={50} color="#22c55e" />
           </View>
-          <Text className="mt-6 text-heading">Đăng sản phẩm thành công!</Text>
+          <Text className="mt-6 text-heading">
+            {isEditing ? 'Cập nhật sản phẩm thành công!' : 'Đăng sản phẩm thành công!'}
+          </Text>
           <Text className="mt-2 text-center text-body-secondary">
-            Sản phẩm của bạn đã được đăng tải thành công.
+            Sản phẩm của bạn đã được cập nhật/đăng tải thành công.
           </Text>
           <View className="mt-8 w-full gap-3">
             <TouchableOpacity
@@ -298,18 +396,20 @@ export default function CreateProductScreen() {
               onPress={() => navigation.goBack()}
             >
               <Text className="text-title-primary text-inverse">
-                Quay lại trang chủ
+                Quay lại trang trước
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              className="btn-secondary min-h-[54px]"
-              activeOpacity={0.9}
-              onPress={resetForm}
-            >
-              <Text className="text-title-primary">
-                Tạo thêm sản phẩm khác
-              </Text>
-            </TouchableOpacity>
+            {!isEditing && (
+              <TouchableOpacity
+                className="btn-secondary min-h-[54px]"
+                activeOpacity={0.9}
+                onPress={resetForm}
+              >
+                <Text className="text-title-primary">
+                  Tạo thêm sản phẩm khác
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </SafeAreaView>
@@ -319,180 +419,341 @@ export default function CreateProductScreen() {
   // MAIN FORM STATE
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
-      <View className="surface-brand h-16 flex-row items-center justify-between px-4">
+      <FocusAwareStatusBar barStyle="dark-content" />
+      <FeedHeader />
+
+      {/* Header Bar */}
+      <View
+        style={{
+          height: 64,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          backgroundColor: '#ffffff',
+          borderBottomWidth: 1,
+          borderBottomColor: '#f1f5f9',
+        }}
+      >
         <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          activeOpacity={0.8}
           onPress={handleBack}
+          activeOpacity={0.7}
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: '#ffffff',
+            borderWidth: 1,
+            borderColor: '#f1f5f9',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: 12,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            elevation: 2,
+          }}
         >
-          <ArrowLeft size={22} color="#FFFFFF" />
+          <ArrowLeft size={22} color="#0f172a" />
         </TouchableOpacity>
-        <Text className="text-heading text-inverse">Tạo sản phẩm mới</Text>
-        <Text className="text-title-primary text-inverse">{`Bước ${step + 1}/${totalSteps}`}</Text>
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: '800',
+            color: '#0f172a',
+            flex: 1,
+          }}
+          numberOfLines={1}
+        >
+          {isEditing ? 'Sửa sản phẩm' : 'Tạo sản phẩm mới'}
+        </Text>
       </View>
 
       <KeyboardAvoidingView
-        className="flex-1"
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-5 pb-8 pt-5"
-          showsVerticalScrollIndicator={false}
+          style={{ flex: 1, backgroundColor: '#f8fafc' }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 20, paddingBottom: 100 }}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <View className="mb-6">
-            <View className="progress-track">
-              <View className="progress-fill" style={{ width: `${progressValue}%` }} />
+          {/* Card 1: Thông tin cơ bản */}
+          <FormCard title="Thông tin cơ bản">
+             {/* Tên sản phẩm */}
+             <FieldWrapper label="Tên sản phẩm" error={errors.product_title} icon={<Package size={20} color="#64748b" />}>
+               <TextInput
+                 style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600' }}
+                 placeholder="Nhập tên sản phẩm"
+                 placeholderTextColor="#94a3b8"
+                 value={formData.product_title}
+                 onChangeText={val => updateFormData('product_title', val)}
+               />
+             </FieldWrapper>
+
+             {/* Giá & Tiền tệ */}
+             <View style={{ flexDirection: 'row', gap: 12 }}>
+               <View style={{ flex: 1.2 }}>
+                 <FieldWrapper label="Giá sản phẩm (VND)" error={errors.product_price} icon={<DollarSign size={20} color="#64748b" />}>
+                   <TextInput
+                     style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600' }}
+                     placeholder="0"
+                     placeholderTextColor="#94a3b8"
+                     keyboardType="numeric"
+                     value={formData.product_price}
+                     onChangeText={val => updateFormData('product_price', val)}
+                   />
+                 </FieldWrapper>
+               </View>
+
+               <View style={{ flex: 0.8 }}>
+                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 }}>
+                   Tiền tệ
+                 </Text>
+                 <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                   {['VNSEEA', 'USD', 'EUR'].map(curr => {
+                     const isCurrSelected = formData.currency === curr;
+                     return (
+                       <TouchableOpacity
+                         key={curr}
+                         onPress={() => updateFormData('currency', curr)}
+                         style={{
+                           paddingHorizontal: 10,
+                           paddingVertical: 8,
+                           borderRadius: 12,
+                           borderWidth: 1,
+                           borderColor: isCurrSelected ? '#0000FF' : '#e2e8f0',
+                           backgroundColor: isCurrSelected ? '#eef2ff' : '#ffffff',
+                           marginRight: 4,
+                           marginBottom: 6,
+                         }}
+                       >
+                         <Text style={{ fontSize: 11, fontWeight: '700', color: isCurrSelected ? '#0000FF' : '#475569' }}>
+                           {curr}
+                         </Text>
+                       </TouchableOpacity>
+                     );
+                   })}
+                 </View>
+               </View>
+             </View>
+
+             {/* Số lượng */}
+             <FieldWrapper label="Tổng số lượng đơn vị" error={errors.units}>
+               <TextInput
+                 style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600' }}
+                 placeholder="Nhập số lượng (vd: 100)"
+                 placeholderTextColor="#94a3b8"
+                 keyboardType="numeric"
+                 value={formData.units !== undefined ? String(formData.units) : ''}
+                 onChangeText={val => updateFormData('units', val ? parseInt(val, 10) : undefined)}
+               />
+             </FieldWrapper>
+          </FormCard>
+
+          {/* Card 2: Phân loại & Vị trí */}
+          <FormCard title="Phân loại & Địa điểm">
+             {/* Danh mục */}
+             <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 }}>
+               Chọn danh mục
+             </Text>
+             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 }}>
+               {steps[3].options?.map(option => {
+                 const isSel = formData.product_category === option.id;
+                 return (
+                   <OptionPill
+                     key={option.id}
+                     label={option.name}
+                     selected={isSel}
+                     onPress={() => updateFormData('product_category', option.id)}
+                     icon={getCategoryIcon(option.id, isSel)}
+                   />
+                 );
+               })}
+             </View>
+             {errors.product_category ? (
+               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: -6, marginBottom: 12 }}>
+                 <AlertCircle size={14} color="#ef4444" />
+                 <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
+                   {errors.product_category}
+                 </Text>
+               </View>
+             ) : null}
+
+             {/* Tình trạng */}
+             <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 }}>
+               Tình trạng sản phẩm
+             </Text>
+             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 }}>
+               {steps[5].options?.map(option => {
+                 const isSel = String(formData.product_type) === option.id;
+                 return (
+                   <OptionPill
+                     key={option.id}
+                     label={option.name}
+                     selected={isSel}
+                     onPress={() => updateFormData('product_type', parseInt(option.id, 10))}
+                   />
+                 );
+               })}
+             </View>
+
+             {/* Vị trí */}
+             <FieldWrapper label="Địa điểm (Tỉnh/Thành phố)" error={errors.product_location} icon={<MapPin size={20} color="#64748b" />}>
+               <TextInput
+                 style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600' }}
+                 placeholder="Chọn hoặc nhập tỉnh/thành phố"
+                 placeholderTextColor="#94a3b8"
+                 value={formData.product_location}
+                 onChangeText={val => updateFormData('product_location', val)}
+               />
+             </FieldWrapper>
+          </FormCard>
+
+          {/* Card 3: Mô tả */}
+          <FormCard title="Mô tả sản phẩm">
+             <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 }}>
+               Mô tả chi tiết
+             </Text>
+             <View
+               style={{
+                 minHeight: 120,
+                 borderRadius: 16,
+                 borderWidth: 1,
+                 borderColor: errors.product_description ? '#ef4444' : '#e2e8f0',
+                 backgroundColor: '#f8fafc',
+                 paddingHorizontal: 16,
+                 paddingVertical: 12,
+               }}
+             >
+               <TextInput
+                 style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600', textAlignVertical: 'top' }}
+                 placeholder="Nhập mô tả chi tiết về sản phẩm của bạn..."
+                 placeholderTextColor="#94a3b8"
+                 multiline
+                 value={formData.product_description}
+                 onChangeText={val => updateFormData('product_description', val)}
+               />
+             </View>
+             {errors.product_description ? (
+               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                 <AlertCircle size={14} color="#ef4444" />
+                 <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
+                   {errors.product_description}
+                 </Text>
+               </View>
+             ) : null}
+          </FormCard>
+
+          {/* Card 4: Hình ảnh */}
+          <FormCard title="Hình ảnh sản phẩm">
+             {formData.images.length > 0 && (
+               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+                 {formData.images.map((image, idx) => (
+                   <View key={idx} style={{ position: 'relative' }}>
+                     <Image
+                       source={{ uri: image.uri }}
+                       style={{ width: 80, height: 80, borderRadius: 16 }}
+                       resizeMode="cover"
+                     />
+                     <TouchableOpacity
+                       onPress={() => handleRemoveImage(idx)}
+                       style={{
+                         position: 'absolute',
+                         top: -6,
+                         right: -6,
+                         width: 22,
+                         height: 22,
+                         borderRadius: 11,
+                         backgroundColor: '#ef4444',
+                         alignItems: 'center',
+                         justifyContent: 'center',
+                         borderWidth: 1.5,
+                         borderColor: '#ffffff',
+                       }}
+                     >
+                       <X size={12} color="#FFFFFF" />
+                     </TouchableOpacity>
+                   </View>
+                 ))}
+               </View>
+             )}
+
+             <TouchableOpacity
+               onPress={handleAddImage}
+               activeOpacity={0.8}
+               style={{
+                 minHeight: 120,
+                 borderRadius: 16,
+                 borderWidth: 1,
+                 borderStyle: 'dashed',
+                 borderColor: '#0000FF',
+                 backgroundColor: '#f8fafc',
+                 alignItems: 'center',
+                 justifyContent: 'center',
+                 padding: 16,
+               }}
+             >
+               <ImagePlus size={36} color="#0000FF" />
+               <Text style={{ marginTop: 8, fontSize: 14, fontWeight: '700', color: '#0000FF' }}>
+                 Chọn hình ảnh
+               </Text>
+               <Text style={{ marginTop: 4, fontSize: 11, fontWeight: '500', color: '#64748b' }}>
+                 JPG, PNG hoặc ảnh chụp trực tiếp từ thiết bị
+               </Text>
+             </TouchableOpacity>
+             {errors.images ? (
+               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                 <AlertCircle size={14} color="#ef4444" />
+                 <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
+                   {errors.images}
+                 </Text>
+               </View>
+             ) : null}
+          </FormCard>
+
+          {/* Hộp lỗi submit */}
+          {submitError ? (
+            <View style={{ borderRadius: 16, backgroundColor: '#fef2f2', paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16 }}>
+              <Text style={{ textAlign: 'center', fontSize: 13, fontWeight: '600', color: '#ef4444' }}>{submitError}</Text>
             </View>
-            <Text className="mt-2 text-right text-caption-secondary">
-              {progressValue}% hoàn thành
-            </Text>
-          </View>
-
-          <View className="surface-card p-5">
-            <View className="mb-5 flex-row items-center">
-              <View className="icon-chip h-14 w-14 items-center justify-center">
-                <Package size={28} color="#0000FF" />
-              </View>
-              <View className="ml-4 flex-1">
-                <Text className="text-display">{currentStep.title}</Text>
-                <Text className="mt-1 text-body-secondary">{currentStep.helper}</Text>
-              </View>
-            </View>
-
-            {/* Upload Images Step */}
-            {currentStep.upload ? (
-              <View>
-                {/* Image Grid */}
-                {formData.images.length > 0 && (
-                  <View className="mb-4 flex-row flex-wrap gap-2">
-                    {formData.images.map((image, index) => (
-                      <View key={index} className="relative">
-                        <Image
-                          source={{ uri: image.uri }}
-                          className="h-20 w-20 rounded-xl"
-                          resizeMode="cover"
-                        />
-                        <TouchableOpacity
-                          className="absolute -top-2 -right-2 h-6 w-6 items-center justify-center rounded-full bg-red-500"
-                          onPress={() => handleRemoveImage(index)}
-                        >
-                          <X size={14} color="#FFFFFF" />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </View>
-                )}
-
-                <TouchableOpacity
-                  className="preview-panel min-h-[160px] items-center justify-center border border-dashed border-[#0000ff] p-6"
-                  activeOpacity={0.85}
-                  onPress={handleAddImage}
-                >
-                  <ImagePlus size={46} color="#0000FF" />
-                  <Text className="mt-4 text-title-primary text-brand">
-                    Chọn hình ảnh
-                  </Text>
-                  <Text className="mt-2 text-center text-caption-secondary">
-                    JPG, PNG hoặc ảnh chụp trực tiếp từ thiết bị.
-                  </Text>
-                </TouchableOpacity>
-
-                {errors.images && (
-                  <View className="mt-3 flex-row items-center">
-                    <AlertCircle size={16} color="#ef4444" />
-                    <Text className="ml-2 text-sm text-red-500">{errors.images}</Text>
-                  </View>
-                )}
-              </View>
-            ) : currentStep.options ? (
-              // Select Options Step (Category/Type/Currency)
-              <View className="gap-3">
-                {currentStep.options.map((option, index) => {
-                  const isSelected = getSelectedOption(currentStep.field, option.id);
-
-                  return (
-                    <TouchableOpacity
-                      key={option.id || `option-${index}`}
-                      className={`input-shell min-h-[54px] flex-row items-center justify-between px-4 ${
-                        isSelected ? 'border-[#0000ff] border-2' : ''
-                      }`}
-                      activeOpacity={0.8}
-                      onPress={() => handleSelectOption(option.id)}
-                    >
-                      <Text className="text-title-primary">{option.name}</Text>
-                      {isSelected && <CheckCircle2 size={21} color="#0000FF" />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : (
-              // Text Input Step
-              <View>
-                <Text className="mb-2 text-label-primary text-slate-500">
-                  {currentStep.label}
-                </Text>
-                <View
-                  className={`input-shell flex-row items-center px-4 ${
-                    currentStep.multiline
-                      ? 'min-h-[180px] items-start py-3'
-                      : 'min-h-[54px]'
-                  } ${errors[currentStep.field as keyof typeof errors] ? 'border-red-500 border' : ''}`}
-                >
-                  {IconComponent && <IconComponent size={20} color="#64748B" />}
-                  <TextInput
-                    className={`flex-1 text-body-primary ${IconComponent ? 'ml-3' : ''}`}
-                    placeholder={currentStep.placeholder}
-                    placeholderTextColor="#94A3B8"
-                    keyboardType={currentStep.keyboard === 'numeric' ? 'numeric' : 'default'}
-                    multiline={currentStep.multiline}
-                    textAlignVertical={currentStep.multiline ? 'top' : 'center'}
-                    value={getFieldValue()}
-                    onChangeText={(text) => updateFormData(currentStep.field, text)}
-                  />
-                  {currentStep.select && <ChevronDown size={20} color="#64748B" />}
-                </View>
-                {errors[currentStep.field as keyof typeof errors] && (
-                  <View className="mt-2 flex-row items-center">
-                    <AlertCircle size={14} color="#ef4444" />
-                    <Text className="ml-2 text-sm text-red-500">
-                      {errors[currentStep.field as keyof typeof errors]}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-
-            <View className="form-note-panel mt-6 flex-row items-start p-4">
-              <Info size={20} color="#64748B" />
-              <Text className="ml-3 flex-1 text-caption-secondary">
-                Bạn có thể quay lại các bước trước để chỉnh sửa trước khi đăng sản phẩm.
-              </Text>
-            </View>
-          </View>
-
-          {/* Error Message */}
-          {submitError && (
-            <View className="mt-4 rounded-xl bg-red-50 px-4 py-3">
-              <Text className="text-center text-sm text-red-600">{submitError}</Text>
-            </View>
-          )}
+          ) : null}
         </ScrollView>
 
-        <View className="px-5 pb-6">
+        {/* Nút bấm Submit cố định ở dưới */}
+        <View
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: '#ffffff',
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+            borderTopWidth: 1,
+            borderTopColor: '#f1f5f9',
+          }}
+        >
           <TouchableOpacity
-            className="btn-primary min-h-[54px]"
-            activeOpacity={0.9}
-            onPress={handleNext}
+            onPress={submitProduct}
             disabled={isLoading}
+            activeOpacity={0.8}
+            style={{
+              minHeight: 52,
+              borderRadius: 99,
+              backgroundColor: '#0000FF',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: isLoading ? 0.6 : 1,
+            }}
           >
             {isLoading ? (
-              <Text className="text-title-primary text-inverse">Đang xử lý...</Text>
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text className="text-title-primary text-inverse">
-                {step === totalSteps - 1 ? 'Hoàn tất' : 'Tiếp tục'}
+              <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '800' }}>
+                {isEditing ? 'Cập nhật sản phẩm' : 'Đăng sản phẩm'}
               </Text>
             )}
           </TouchableOpacity>

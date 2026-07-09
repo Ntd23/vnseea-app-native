@@ -25,6 +25,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import type { CheckoutItem } from '../../domain/types/checkout.types';
 import { useCheckoutViewModel } from '../../application/view-models/useCheckoutViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type CartNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -140,7 +141,10 @@ function CartScreen() {
   useEffect(() => {
     if (!items.length) {
       initializedSelectionRef.current = false;
-      setSelectedIds([]);
+      setSelectedIds(current => {
+        if (current.length === 0) return current;
+        return [];
+      });
       return;
     }
 
@@ -148,9 +152,17 @@ function CartScreen() {
       const availableIds = new Set(items.map(item => item.productId));
       if (!initializedSelectionRef.current) {
         initializedSelectionRef.current = true;
-        return items.map(item => item.productId);
+        const next = items.map(item => item.productId);
+        if (current.length === next.length && current.every((id, idx) => next[idx] === id)) {
+          return current;
+        }
+        return next;
       }
-      return current.filter(id => availableIds.has(id));
+      const next = current.filter(id => availableIds.has(id));
+      if (current.length === next.length && current.every((id, idx) => next[idx] === id)) {
+        return current;
+      }
+      return next;
     });
   }, [items]);
 
@@ -185,6 +197,7 @@ function CartScreen() {
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" />
+      <FeedHeader />
       <View className="flex-row items-center border-b border-slate-200 bg-white px-4 py-3">
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"

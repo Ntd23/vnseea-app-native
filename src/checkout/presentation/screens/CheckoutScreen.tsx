@@ -28,6 +28,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import type { CheckoutItem } from '../../domain/types/checkout.types';
 import { useCheckoutViewModel } from '../../application/view-models/useCheckoutViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type CheckoutNav = NativeStackNavigationProp<RootStackParamList>;
 type CheckoutRoute = RouteProp<RootStackParamList, typeof ROUTES.CHECKOUT>;
@@ -72,7 +73,6 @@ function OrderLine({ item }: { item: CheckoutItem }) {
 function ConfirmPurchaseModal({
   visible,
   itemCount,
-  wallet,
   total,
   currencySymbol,
   isPaying,
@@ -81,7 +81,6 @@ function ConfirmPurchaseModal({
 }: {
   visible: boolean;
   itemCount: number;
-  wallet: number;
   total: number;
   currencySymbol: string;
   isPaying: boolean;
@@ -96,21 +95,15 @@ function ConfirmPurchaseModal({
             <ShieldCheck size={30} color="#0000FF" />
           </View>
           <Text className="mt-5 text-center text-xl font-extrabold text-slate-950">
-            Xác nhận thanh toán
+            Xác nhận đặt đơn
           </Text>
           <Text className="mt-3 text-center text-sm font-medium leading-6 text-slate-500">
-            Kiểm tra kỹ sản phẩm, địa chỉ giao hàng và số dư ví trước khi xác nhận.
+            Đơn hàng của bạn sẽ được gửi tới người bán qua tin nhắn để xác nhận giao dịch.
           </Text>
           <View className="mt-6 rounded-2xl bg-slate-50 px-4 py-4">
             <View className="flex-row justify-between py-2">
               <Text className="text-sm font-semibold text-slate-500">Sản phẩm</Text>
               <Text className="text-sm font-extrabold text-slate-900">{itemCount}</Text>
-            </View>
-            <View className="flex-row justify-between py-2">
-              <Text className="text-sm font-semibold text-slate-500">Số dư ví</Text>
-              <Text className="text-sm font-extrabold text-[#0000ff]">
-                {formatMoney(wallet, currencySymbol)}
-              </Text>
             </View>
             <View className="mt-2 flex-row justify-between border-t border-slate-100 pt-4">
               <Text className="text-base font-extrabold text-slate-950">
@@ -142,7 +135,7 @@ function ConfirmPurchaseModal({
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <Text className="text-base font-extrabold text-white">
-                  Xác nhận
+                  Xác nhận đặt đơn
                 </Text>
               )}
             </TouchableOpacity>
@@ -168,11 +161,10 @@ function PaymentSuccessModal({
             <CheckCircle2 size={32} color="#16A34A" />
           </View>
           <Text className="mt-5 text-center text-xl font-extrabold text-slate-950">
-            Thanh toán thành công
+            Đặt đơn hàng thành công
           </Text>
           <Text className="mt-3 text-center text-sm font-medium leading-6 text-slate-500">
-            Đơn hàng của bạn đã được ghi nhận. Bạn có thể theo dõi trạng thái
-            trong tab Đã mua.
+            Đơn hàng đã được ghi nhận và gửi thông tin sản phẩm cùng thông tin của bạn tới người bán qua tin nhắn.
           </Text>
           <TouchableOpacity
             className="mt-6 min-h-[48px] items-center justify-center rounded-full bg-[#0000ff]"
@@ -180,7 +172,7 @@ function PaymentSuccessModal({
             onPress={onTrackOrder}
           >
             <Text className="text-base font-extrabold text-white">
-              Theo dõi đơn hàng
+              Xem tin nhắn
             </Text>
           </TouchableOpacity>
         </View>
@@ -212,7 +204,7 @@ function CheckoutScreen() {
 
   const handleTrackOrder = useCallback(() => {
     vm.closeSuccess();
-    navigation.navigate(ROUTES.MY_PRODUCTS, { initialTab: 'purchased' });
+    navigation.navigate(ROUTES.MESSAGES);
   }, [navigation, vm]);
 
   const handleChangeAddress = useCallback(() => {
@@ -229,6 +221,7 @@ function CheckoutScreen() {
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" />
+      <FeedHeader />
       <View className="flex-row items-center border-b border-slate-200 bg-white px-4 py-3">
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"
@@ -403,17 +396,6 @@ function CheckoutScreen() {
                   Thêm địa chỉ giao hàng
                 </Text>
               </TouchableOpacity>
-            ) : !vm.canPay ? (
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={handleDeposit}
-                className="min-h-[50px] flex-row items-center justify-center rounded-full bg-[#0000ff] px-5"
-              >
-                <Wallet size={19} color="#FFFFFF" />
-                <Text className="ml-2 text-base font-extrabold text-white">
-                  Nạp thêm {formatMoney(missingAmount, currencySymbol)}
-                </Text>
-              </TouchableOpacity>
             ) : (
               <TouchableOpacity
                 activeOpacity={0.9}
@@ -429,7 +411,7 @@ function CheckoutScreen() {
                   <>
                     <CreditCard size={19} color="#FFFFFF" />
                     <Text className="ml-2 text-base font-extrabold text-white">
-                      Thanh toán bằng ví
+                      Đặt đơn hàng
                     </Text>
                   </>
                 )}
@@ -440,7 +422,6 @@ function CheckoutScreen() {
           <ConfirmPurchaseModal
             visible={vm.confirmVisible}
             itemCount={vm.itemCount}
-            wallet={wallet}
             total={summary.total}
             currencySymbol={currencySymbol}
             isPaying={vm.isPaying}
