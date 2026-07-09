@@ -34,6 +34,7 @@ import {
   useHomeGreetingDismissal,
   useHomeStoriesRail,
 } from './HomeFeedIntro.shared';
+import { ComposerCard } from './ComposerCard';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GREETING_DISMISS_DISTANCE = 90;
@@ -324,6 +325,8 @@ function HomeStoriesRail({
 
 export function HomeFeedIntro({
   onCreatePostPress,
+  onCreatePostPressAction,
+  onPressAvatar,
   userId,
   avatarUrl,
   userName,
@@ -335,9 +338,12 @@ export function HomeFeedIntro({
   return (
     <View style={styles.root}>
       <HomeStoriesRail avatarUrl={avatarUrl} copy={copy} />
-      <HomeComposerCard
-        onCreatePostPress={onCreatePostPress}
+      <ComposerCard
+        onPress={onCreatePostPress}
+        onPressAction={onCreatePostPressAction}
+        onPressAvatar={onPressAvatar}
         avatarUrl={avatarUrl}
+        displayName={userName}
         copy={copy}
       />
       {isGreetingVisible ? (

@@ -186,10 +186,13 @@ if (empty($error_code)) {
 
 			$array        = array(
                 0,
-                2
+                1
             );
-            if (isset($_POST['verified']) && in_array($_POST['verified'], $array, true)) {
-                $page_data['verified'] = $_POST['verified'];
+            if (isset($_POST['verified']) && is_numeric($_POST['verified'])) {
+                $verified_value = (int) $_POST['verified'];
+                if (in_array($verified_value, $array, true)) {
+                    $page_data['verified'] = $verified_value;
+                }
             }
 
             if (!empty($_POST['website'])) {
@@ -236,22 +239,26 @@ if (empty($error_code)) {
                 }
             }
             $array       = array(0,1);
-            $page_data['users_post'] = 0;
-            if (isset($_POST['users_post'])) {
-                if (in_array($_POST['users_post'], $array, true)) {
-                    $page_data['users_post'] = Wo_Secure($_POST['users_post']);
+            if (isset($_POST['users_post']) && is_numeric($_POST['users_post'])) {
+                $users_post_value = (int) $_POST['users_post'];
+                if (in_array($users_post_value, $array, true)) {
+                    $page_data['users_post'] = $users_post_value;
                 }
             }
 
-            $page_data['sub_category'] = '';
-            if (!empty($_POST['page_sub_category']) && !empty($wo['page_sub_categories'][$_POST['page_category']])) {
+            if (isset($_POST['page_sub_category'])) {
+                $page_data['sub_category'] = '';
+            }
+            if (!empty($_POST['page_sub_category']) && !empty($_POST['page_category']) && !empty($wo['page_sub_categories'][$_POST['page_category']])) {
                 foreach ($wo['page_sub_categories'][$_POST['page_category']] as $key => $value) {
                     if ($value['id'] == $_POST['page_sub_category']) {
                         $page_data['sub_category'] = $value['id'];
                     }
                 }
             }
-            unset($page_data['page_sub_category']);
+            if (isset($page_data['page_sub_category'])) {
+                unset($page_data['page_sub_category']);
+            }
             
             $fields = Wo_GetCustomFields('page'); 
             if (!empty($fields)) {

@@ -494,6 +494,7 @@ const categoryMap: Record<string, string> = {
 
 function PageCard({
   page,
+  onEdit,
   onOpen,
   index,
 }: {
@@ -548,7 +549,11 @@ function PageCard({
       </View>
 
       {/* Page Title */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 16 }}>
+      <TouchableOpacity
+        activeOpacity={0.78}
+        onPress={onOpen}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 16 }}
+      >
         <Text
           style={{
             fontSize: 16,
@@ -563,7 +568,7 @@ function PageCard({
         {page.verified ? (
           <BadgeCheck size={18} color="#0084FF" fill="#0084FF" />
         ) : null}
-      </View>
+      </TouchableOpacity>
 
       {/* Like count: 👍 {count} những người như thế này */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
@@ -586,7 +591,7 @@ function PageCard({
       {/* Circular Blue Action Button */}
       <TouchableOpacity
         activeOpacity={0.82}
-        onPress={onOpen}
+        onPress={onEdit || onOpen}
         style={{
           width: 44,
           height: 44,

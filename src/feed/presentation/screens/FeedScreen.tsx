@@ -124,6 +124,8 @@ import { FeedHeader } from '../components/FeedHeader';
 import { FeedHeaderCollapseFrame } from '../components/FeedHeaderCollapseFrame';
 import { resolveFeedChromeTopInset } from '../components/feedHeaderInsets';
 import { HomeFeedIntro } from '../components/HomeFeedIntro';
+import { CreatePostModal } from './CreatePostScreen';
+import { navigateToOwnProfile } from '../../../navigation/profileNavigation';
 import { FeedSourceFilterBar } from '../components/FeedSourceFilterBar';
 import {
   createFeedChromeCollapseState,
@@ -1915,9 +1917,14 @@ function FeedScreen() {
     return unsubscribe;
   }, [enqueueNewPostCandidates]);
 
-  const goToCreatePost = useCallback(() => {
-    navigation.navigate(ROUTES.CREATE_POST);
-  }, [navigation]);
+  const [composerModalVisible, setComposerModalVisible] = useState(false);
+  const [composerInitialAction, setComposerInitialAction] = useState<'photo' | 'video' | 'product' | 'poll' | undefined>(undefined);
+
+  const goToCreatePost = useCallback((action?: any) => {
+    const cleanAction = typeof action === 'string' ? action : undefined;
+    setComposerInitialAction(cleanAction as any);
+    setComposerModalVisible(true);
+  }, []);
 
   // Navigate to user profile
   const navigateToProfile = useCallback(
@@ -3186,6 +3193,8 @@ function FeedScreen() {
       <View>
         <HomeFeedIntro
           onCreatePostPress={goToCreatePost}
+          onCreatePostPressAction={goToCreatePost}
+          onPressAvatar={() => navigateToOwnProfile(navigation)}
           userId={userVm.user?.userId}
           avatarUrl={userVm.user?.avatar}
           userName={userVm.user?.name}
@@ -3196,6 +3205,7 @@ function FeedScreen() {
     [
       copy,
       goToCreatePost,
+      navigation,
       userVm.user?.userId,
       userVm.user?.avatar,
       userVm.user?.name,
@@ -3467,7 +3477,13 @@ function FeedScreen() {
           onDelete={handleDeletePost}
           onReport={handleReportPost}
         />
-        {/* â”€â”€ Toast Notification â”€â”€ */}
+        {/* ── Post Composer Modal ── */}
+        <CreatePostModal
+          visible={composerModalVisible}
+          onClose={() => setComposerModalVisible(false)}
+          initialAction={composerInitialAction}
+        />
+        {/* ── Toast Notification ── */}
         <ToastContainer />
       </SafeAreaView>
     </GestureHandlerRootView>

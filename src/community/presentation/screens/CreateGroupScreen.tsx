@@ -8,6 +8,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  Pressable,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -27,6 +28,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useCommunityViewModel } from '../../application/view-models/useCommunityViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import type {

@@ -170,7 +170,6 @@ const DRAWER_COPY = {
  sectionAccount: 'Cài đặt',
  sectionMore: 'Khác',
  switchAccountLabel: 'Chuyển tài khoản',
- languageLabel: 'Ngôn ngữ',
  languageChangeVi: 'Đã đổi sang Tiếng Việt',
  languageChangeEn: 'Đã đổi sang Tiếng Anh',
  nightModeLabel: 'Chế độ',
@@ -580,7 +579,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
   // change the locale - tap VI or EN right here in the menu.
   const handleLanguageChange = useCallback(
    (next: 'vi' | 'en') => {
-   if (next === language) return;
+   if (next === currentLanguage) return;
    setLanguage(next);
    // Keep the i18next instance in sync with the MMKV store so any
    // consumer using useTranslation re-renders immediately.
@@ -590,7 +589,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
    next === 'vi' ? copy.languageChangeVi : copy.languageChangeEn,
    );
    },
-   [copy.languageChangeEn, copy.languageChangeVi, language, setLanguage],
+   [copy.languageChangeEn, copy.languageChangeVi, currentLanguage, setLanguage],
 );
 
   // Inline theme toggle (drawer row + two pill buttons).
@@ -834,6 +833,10 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
              icon={<CreditCard size={18} color="#64748b" />}
              onPress={() => Linking.openURL(apiConfig.webBaseUrl + '/go-pro').catch(() => undefined)}
             />
+            <LanguageRow
+             currentLanguage={currentLanguage}
+             onChange={handleLanguageChange}
+            />
 
             {/* <View style={styles.separator} /> */}
 
@@ -885,6 +888,68 @@ const MenuRow = React.memo(function MenuRow({
       </View>
       <ChevronRight size={16} color="#94a3b8" strokeWidth={2.5} />
     </TouchableOpacity>
+  );
+});
+
+const LanguageRow = React.memo(function LanguageRow({
+  currentLanguage,
+  onChange,
+}: {
+  currentLanguage: 'vi' | 'en';
+  onChange: (language: 'vi' | 'en') => void;
+}) {
+  const handlePress = useCallback(
+    (language: 'vi' | 'en') => {
+      Vibration.vibrate(8);
+      onChange(language);
+    },
+    [onChange],
+  );
+
+  return (
+    <View style={styles.row}>
+      <View style={styles.rowLeft}>
+        <View style={styles.rowIconBg}>
+          <Languages size={18} color="#64748b" />
+        </View>
+      </View>
+      <View style={styles.langPillRow}>
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={() => handlePress('vi')}
+          style={[
+            styles.langPill,
+            currentLanguage === 'vi' ? styles.langPillActive : styles.langPillInactive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.langPillText,
+              currentLanguage === 'vi' ? styles.langPillTextActive : styles.langPillTextInactive,
+            ]}
+          >
+            Tiếng Việt
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={() => handlePress('en')}
+          style={[
+            styles.langPill,
+            currentLanguage === 'en' ? styles.langPillActive : styles.langPillInactive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.langPillText,
+              currentLanguage === 'en' ? styles.langPillTextActive : styles.langPillTextInactive,
+            ]}
+          >
+            Tiếng Anh
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 });
 
@@ -1092,9 +1157,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   langPill: {
-    minWidth: 44,
+    minWidth: 76,
     height: 32,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 8,
     borderWidth: 2,
     alignItems: 'center',

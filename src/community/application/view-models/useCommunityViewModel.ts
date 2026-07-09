@@ -1,4 +1,4 @@
-// Community - useCommunityViewModel ViewModel
+// Description: Provides create and edit group actions for the community screens.
 // Port từ: client/src/community/application/view-models/
 
 import { useState, useCallback } from 'react';
@@ -6,6 +6,7 @@ import { createCommunityRepository } from '../../infrastructure/repositories/Api
 import type {
   CreateGroupDraft,
   GroupItem,
+  UpdateGroupDraft,
 } from '../../domain/types/community.types';
 
 const repository = createCommunityRepository();
@@ -36,6 +37,10 @@ function validateCreateGroupDraft(draft: CreateGroupDraft): string | null {
   }
 
   return null;
+}
+
+function validateUpdateGroupDraft(draft: UpdateGroupDraft): string | null {
+  return validateCreateGroupDraft(draft);
 }
 
 export function useCommunityViewModel() {
@@ -78,6 +83,81 @@ export function useCommunityViewModel() {
     }
   }, []);
 
+  const updateGroup = useCallback(async (groupId: string | number, draft: UpdateGroupDraft) => {
+    const validationError = validateUpdateGroupDraft(draft);
+
+    if (validationError) {
+      setError(validationError);
+      return null;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const result = await repository.updateGroup(groupId, {
+        ...draft,
+        groupName: draft.groupName.trim(),
+        groupTitle: draft.groupTitle.trim(),
+        about: draft.about.trim(),
+      });
+      return result.group;
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Không thể cập nhật nhóm. Vui lòng thử lại.';
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const updateGroupMedia = useCallback(
+    (
+      groupId: string | number,
+      field: 'avatar' | 'cover',
+      file: { uri: string; name?: string; type?: string },
+    ) => repository.updateGroupMedia(groupId, field, file),
+    [],
+  );
+
+  const getGroupMembers = useCallback(
+    (groupId: string | number) => repository.getGroupMembers(groupId),
+    [],
+  );
+
+  const removeGroupMember = useCallback(async (groupId: string | number, userId: string | number) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await repository.removeGroupMember(groupId, userId);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Không thể xóa thành viên khỏi nhóm.';
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const deleteGroup = useCallback(async (groupId: string | number, password: string) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await repository.deleteGroup(groupId, password);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Không thể xóa nhóm. Vui lòng thử lại.';
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const clearError = useCallback(() => {
     setError(null);
   }, []);
@@ -88,6 +168,11 @@ export function useCommunityViewModel() {
     error,
     createdGroup,
     createGroup,
+    updateGroup,
+    updateGroupMedia,
+    getGroupMembers,
+    removeGroupMember,
+    deleteGroup,
     clearError,
   };
 }

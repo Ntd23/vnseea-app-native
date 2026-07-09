@@ -227,6 +227,7 @@ export function createStackRoutes(
     { name: ROUTES.EVENT_DETAIL, component: EventDetailScreen },
     { name: ROUTES.CREATE_POLL, component: CreatePollScreen },
     { name: ROUTES.CREATE_GROUP, component: CreateGroupScreen },
+    { name: ROUTES.EDIT_GROUP, component: CreateGroupScreen },
     { name: ROUTES.EXPLORE_GROUPS, component: ExploreGroupsScreen },
     { name: ROUTES.GROUP_DETAIL, component: GroupDetailScreen },
     { name: ROUTES.EVENTS, component: EventsScreen },

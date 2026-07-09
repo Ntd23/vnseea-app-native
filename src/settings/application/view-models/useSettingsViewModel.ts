@@ -1,5 +1,5 @@
 // Description: Provides settings screen data with real user profile from WoWonder API.
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   FeatureGridItem,
   SettingsMenuItem,
@@ -417,6 +417,8 @@ export function useSettingsViewModel() {
   const [language, setLanguageState] = useState<AppLanguage>(() =>
     languageStorage.getLanguage(),
   );
+
+  useEffect(() => languageStorage.subscribe(setLanguageState), []);
 
   const setLanguage = useCallback((nextLanguage: AppLanguage) => {
     languageStorage.setLanguage(nextLanguage);

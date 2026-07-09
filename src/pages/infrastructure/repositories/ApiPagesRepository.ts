@@ -136,6 +136,20 @@ function readMapPinStatus(raw: RawPage | undefined) {
   return readString(raw, 'map_pin_status') || readString(raw, 'mapPinStatus');
 }
 
+function readBackgroundImageStatus(raw: RawPage | undefined) {
+  const value = raw?.background_image_status;
+  if (value === 1 || value === true) {
+    return 'my_background';
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === '1' || normalized === 'true' || normalized === 'my_background') {
+      return 'my_background';
+    }
+  }
+  return 'defualt';
+}
+
 function nextMapPinStatus(draft: {
   mapPinRequested?: boolean;
   mapPinStatus?: string;
@@ -183,7 +197,7 @@ function mapPageSettingsPayload(draft: CreatePageDraft) {
     call_action_type: draft.callActionType,
     call_action_type_url: draft.callActionUrl,
     users_post: canPost,
-    verified: draft.verified ? 2 : 0,
+    verified: draft.verified ? 1 : 0,
   };
 }
 
@@ -307,9 +321,7 @@ function mapPage(raw: RawPage | undefined): PagesItem {
     linkedin: readString(raw, 'linkedin'),
     youtube: readString(raw, 'youtube'),
     backgroundImage: normalizeUrl(readString(raw, 'background_image')),
-    backgroundImageStatus: readString(raw, 'background_image_status') === '1'
-      ? 'my_background'
-      : 'defualt',
+    backgroundImageStatus: readBackgroundImageStatus(raw),
     ownerId,
     owner:
       mapPageUser(ownerRaw) ??
