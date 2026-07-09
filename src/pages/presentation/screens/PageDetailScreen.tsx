@@ -2130,6 +2130,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onSubmitReply={commentVm.submitReply}
         onSetReaction={commentVm.setCommentReaction}
         onDelete={commentVm.deleteComment}
+        onEdit={commentVm.editComment}
         onLoadReplies={commentVm.loadReplies}
         onCollapseReplies={commentVm.collapseReplies}
         onStartReply={commentVm.startReplyTo}
@@ -2149,6 +2150,8 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onClose={handleClosePhotoViewer}
         onReact={vm.togglePostReaction}
         onCommentTap={handleOpenComments}
+        onProfilePress={handleNavigateToProfile}
+        onInternalShare={handleInternalSharePost}
         posts={vm.posts}
       />
     </View>

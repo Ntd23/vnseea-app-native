@@ -7,23 +7,17 @@ describe('reels navigation target', () => {
     source: 'saved' as const,
   };
 
-  it('opens Reels through MainTabs on iOS so the native Video tab remains visible', () => {
+  it('opens Reels through the root stack on iOS for instant full-screen playback', () => {
     expect(createReelsNavigationTarget('ios', params)).toEqual({
-      name: ROUTES.MAIN_TABS,
-      params: {
-        screen: ROUTES.REELS,
-        params,
-      },
+      name: ROUTES.REELS,
+      params,
     });
   });
 
-  it('opens Reels through MainTabs on Android so the custom Reels tab remains selected', () => {
+  it('opens Reels through the root stack on Android for instant full-screen playback', () => {
     expect(createReelsNavigationTarget('android', params)).toEqual({
-      name: ROUTES.MAIN_TABS,
-      params: {
-        screen: ROUTES.REELS,
-        params,
-      },
+      name: ROUTES.REELS,
+      params,
     });
   });
 });

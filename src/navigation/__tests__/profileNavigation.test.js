@@ -50,6 +50,7 @@ describe('profile navigation route separation', () => {
     expect(helperSource).toContain('export function navigateToUserProfile');
     expect(helperSource).toContain('ROUTES.USER_PROFILE');
     expect(helperSource).toContain('ROUTES.PROFILE');
+    expect(helperSource).toContain('pushProfileRoute');
 
     for (const filePath of filesToScan) {
       const source = read(filePath);
@@ -58,10 +59,19 @@ describe('profile navigation route separation', () => {
     }
   });
 
-  it('keeps drawer own-profile navigation on the Profile tab without params', () => {
+  it('uses the shared profile helper from the drawer too', () => {
     const drawerSource = read('src/feed/presentation/components/HeaderProfileDrawer.tsx');
 
-    expect(drawerSource).toContain('navigation.navigate(ROUTES.PROFILE)');
+    expect(drawerSource).toContain('navigateToOwnProfile(navigation)');
     expect(drawerSource).not.toContain('navigation.navigate(ROUTES.USER_PROFILE)');
+  });
+
+  it('uses a right-to-left root-stack transition for profile screens', () => {
+    const appNavigatorSource = read('src/navigation/AppNavigator.tsx');
+
+    expect(appNavigatorSource).toContain('PROFILE_PUSH_ROUTES');
+    expect(appNavigatorSource).toContain('ROUTES.PROFILE');
+    expect(appNavigatorSource).toContain('ROUTES.USER_PROFILE');
+    expect(appNavigatorSource).toContain("animation: 'ios_from_right'");
   });
 });

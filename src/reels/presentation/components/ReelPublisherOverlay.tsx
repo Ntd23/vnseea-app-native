@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
   FlatList,
   Image,
+  LayoutChangeEvent,
   Modal,
   Platform,
   SafeAreaView,
@@ -20,6 +21,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react-native';
+import VideoPlayer from 'react-native-video';
 import { createProfileRepository } from '../../../profile/infrastructure/repositories/ApiProfileRepository';
 import { createReelsRepository } from '../../infrastructure/repositories/ApiReelsRepository';
 import type { ReelsItem } from '../../domain/types/reels.types';
@@ -32,12 +34,15 @@ import type { ChatItem } from '../../../messages/domain/types/messages.types';
 const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
+const GRID_COLUMNS = 3;
+const GRID_GAP = 1;
 
 interface Props {
   visible: boolean;
   userId: string | null;
+  currentReelId?: string | null;
   onClose: () => void;
-  onPlayReel: (reelId: string, rawPost: any) => void;
+  onPlayReel: (reel: ReelsItem) => void;
   onFollowToggled?: (userId: string, isFollowing: boolean) => void;
 }
 
@@ -51,9 +56,87 @@ function formatStat(count: number): string {
   return String(count);
 }
 
+const NON_VIDEO_FILE_EXT_PATTERN = /\.(?:jpe?g|png|gif|webp|bmp|heic|heif)(?:[?#].*)?$/i;
+
+function hasPlayableVideoUrl(url: string | undefined) {
+  const trimmed = url?.trim();
+  if (!trimmed) return false;
+  return !NON_VIDEO_FILE_EXT_PATTERN.test(trimmed);
+}
+
+function getPlayablePublisherReels(items: ReelsItem[] | undefined) {
+  if (!Array.isArray(items)) return [];
+
+  const seen = new Set<string>();
+  return items.filter(item => {
+    const videoUrl = item.videoUrl?.trim();
+    if (!videoUrl || !hasPlayableVideoUrl(videoUrl)) return false;
+
+    const key = videoUrl.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+const ReelGridPreview = memo(function ReelGridPreview({
+  item,
+}: {
+  item: ReelsItem;
+}) {
+  const [videoReady, setVideoReady] = useState(false);
+  const [videoFailed, setVideoFailed] = useState(false);
+  const thumbnailUrl = item.thumbnailUrl?.trim();
+  const videoUrl = item.videoUrl?.trim();
+  const shouldUsePausedVideo = Boolean(!thumbnailUrl && videoUrl && !videoFailed);
+
+  return (
+    <View pointerEvents="none" style={styles.gridPreview}>
+      {thumbnailUrl ? (
+        <Image
+          source={{ uri: thumbnailUrl }}
+          style={styles.gridThumb}
+          resizeMode="cover"
+        />
+      ) : null}
+
+      {shouldUsePausedVideo ? (
+        <VideoPlayer
+          source={{ uri: videoUrl }}
+          style={[styles.gridThumb, videoReady ? null : styles.hiddenVideo]}
+          resizeMode="cover"
+          paused
+          muted
+          controls={false}
+          repeat={false}
+          playInBackground={false}
+          playWhenInactive={false}
+          useTextureView={false}
+          onReadyForDisplay={() => setVideoReady(true)}
+          onError={() => setVideoFailed(true)}
+        />
+      ) : null}
+
+      {!thumbnailUrl && (!shouldUsePausedVideo || !videoReady) ? (
+        <View style={styles.gridFallback}>
+          <Image
+            source={{ uri: item.publisher.avatarUrl || AVATAR_FALLBACK }}
+            style={styles.gridFallbackAvatar}
+          />
+        </View>
+      ) : null}
+
+      <View pointerEvents="none" style={styles.playOverlay}>
+        <Play size={18} color="#fff" fill="#fff" />
+      </View>
+    </View>
+  );
+});
+
 export function ReelPublisherOverlay({
   visible,
   userId,
+  currentReelId,
   onClose,
   onPlayReel,
   onFollowToggled,
@@ -64,6 +147,13 @@ export function ReelPublisherOverlay({
   const [reels, setReels] = useState<ReelsItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [gridWidth, setGridWidth] = useState(SCREEN_W);
+
+  const gridItemWidth = Math.max(
+    0,
+    (gridWidth - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS,
+  );
+  const gridItemHeight = Math.round(gridItemWidth * 1.35);
 
   const loadData = useCallback(async () => {
     if (!userId) return;
@@ -79,7 +169,7 @@ export function ReelPublisherOverlay({
         setFollowersCount(profileRes.followers?.length ?? 0);
       }
       if (reelsRes?.items) {
-        setReels(reelsRes.items);
+        setReels(getPlayablePublisherReels(reelsRes.items));
       }
     } catch (err) {
       console.error('[ReelPublisherOverlay] Error loading publisher data:', err);
@@ -177,25 +267,42 @@ export function ReelPublisherOverlay({
   // Compute total likes of loaded reels
   const totalLikes = reels.reduce((sum, item) => sum + (item.likeCount || 0), 0);
 
-  const renderGridItem = ({ item }: { item: ReelsItem }) => {
+  const handleGridLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextWidth = Math.floor(event.nativeEvent.layout.width);
+    if (nextWidth <= 0) return;
+    setGridWidth(prev => (prev === nextWidth ? prev : nextWidth));
+  }, []);
+
+  const renderGridItem = ({ item, index }: { item: ReelsItem; index: number }) => {
+    const isCurrent = currentReelId != null && String(item.id) === String(currentReelId);
+    const columnIndex = index % GRID_COLUMNS;
+
     return (
       <TouchableOpacity
         activeOpacity={0.8}
         onPress={() => {
+          onPlayReel(item);
           onClose();
-          onPlayReel(item.id, item.raw);
         }}
-        style={styles.gridItem}
+        style={[
+          styles.gridItem,
+          {
+            width: gridItemWidth,
+            height: gridItemHeight,
+            marginRight: columnIndex === GRID_COLUMNS - 1 ? 0 : GRID_GAP,
+            marginBottom: GRID_GAP,
+          },
+        ]}
       >
-        <Image
-          source={{ uri: item.thumbnailUrl || AVATAR_FALLBACK }}
-          style={styles.gridThumb}
-          resizeMode="cover"
-        />
-        <View style={styles.viewCountContainer}>
-          <Play size={10} color="#fff" fill="#fff" style={styles.viewCountIcon} />
-          <Text style={styles.viewCountText}>{formatStat(item.viewCount || 0)}</Text>
-        </View>
+        <ReelGridPreview item={item} />
+        {isCurrent ? (
+          <>
+            <View pointerEvents="none" style={styles.currentVideoBorder} />
+            <View pointerEvents="none" style={styles.currentVideoBadge}>
+              <Text style={styles.currentVideoBadgeText}>Đang xem</Text>
+            </View>
+          </>
+        ) : null}
       </TouchableOpacity>
     );
   };
@@ -299,14 +406,21 @@ export function ReelPublisherOverlay({
                   <Text style={styles.emptyText}>Chưa có video nào</Text>
                 </View>
               ) : (
-                <FlatList
-                  data={reels}
-                  renderItem={renderGridItem}
-                  keyExtractor={item => item.id}
-                  numColumns={3}
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.gridList}
-                />
+                <View style={styles.gridContainer} onLayout={handleGridLayout}>
+                  <FlatList
+                    data={reels}
+                    renderItem={renderGridItem}
+                    keyExtractor={item => item.id}
+                    numColumns={GRID_COLUMNS}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.gridList}
+                    initialNumToRender={9}
+                    maxToRenderPerBatch={6}
+                    windowSize={5}
+                    removeClippedSubviews
+                    extraData={`${currentReelId ?? ''}:${gridItemWidth}`}
+                  />
+                </View>
               )}
             </View>
           ) : (
@@ -475,39 +589,82 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  gridContainer: {
+    flex: 1,
+    width: '100%',
+  },
   gridList: {
-    paddingHorizontal: 10,
     paddingBottom: 20,
   },
   gridItem: {
-    width: (SCREEN_W - 26) / 3,
-    height: ((SCREEN_W - 26) / 3) * 1.35,
-    margin: 1,
     backgroundColor: '#222',
     position: 'relative',
+    overflow: 'hidden',
+  },
+  gridPreview: {
+    flex: 1,
+    backgroundColor: '#111',
   },
   gridThumb: {
     width: '100%',
     height: '100%',
   },
-  viewCountContainer: {
+  hiddenVideo: {
+    opacity: 0,
+  },
+  gridFallback: {
     position: 'absolute',
-    bottom: 6,
-    left: 6,
-    flexDirection: 'row',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
+    justifyContent: 'center',
+    backgroundColor: '#202026',
   },
-  viewCountIcon: {
-    marginRight: 3,
+  gridFallbackAvatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    opacity: 0.55,
   },
-  viewCountText: {
+  playOverlay: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 38,
+    height: 38,
+    marginLeft: -19,
+    marginTop: -19,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.36)',
+  },
+  currentVideoBorder: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    bottom: 4,
+    left: 4,
+    borderWidth: 2,
+    borderColor: '#fff',
+    borderRadius: 3,
+  },
+  currentVideoBadge: {
+    position: 'absolute',
+    left: 10,
+    top: 10,
+    maxWidth: '72%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(8, 102, 255, 0.92)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  currentVideoBadgeText: {
     color: '#fff',
-    fontSize: 9,
-    fontWeight: '600',
+    fontSize: 10,
+    fontWeight: '700',
   },
   emptyContainer: {
     flex: 1,

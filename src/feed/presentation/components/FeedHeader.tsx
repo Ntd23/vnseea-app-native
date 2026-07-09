@@ -3,8 +3,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
-  Platform,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -32,6 +30,7 @@ import { useUnreadBadgeCounts } from '../../../shared-kernel/application/stores/
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useNotificationBadgeViewModel } from '../../../notifications';
 import { HeaderProfileDrawer } from './HeaderProfileDrawer';
+import { resolveFeedChromeTopInset } from './feedHeaderInsets';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
 const HEADER_BAR_HEIGHT = 68;
@@ -39,10 +38,10 @@ const HEADER_BAR_HEIGHT = 68;
 export const FeedHeader = React.memo(function FeedHeader() {
   const navigation = useNavigation<FeedHeaderNav>();
   const insets = useSafeAreaInsets();
-  const rawTopInset = insets.top > 0
-    ? insets.top
-    : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
-  const topInset = Platform.OS === 'android' ? 0 : rawTopInset;
+  const topInset = resolveFeedChromeTopInset(
+    insets.top,
+    initialWindowMetrics?.insets?.top,
+  );
   const { messageCount, notificationCount } = useUnreadBadgeCounts();
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
   const { user } = useCurrentUserViewModel();
@@ -242,7 +241,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
   },
   brandRow: {
     flexDirection: 'row',
@@ -254,7 +253,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 6,
     height: 37,
-    minWidth: 120,
+    minWidth: 110,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#0000ff',
@@ -264,11 +263,11 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   logoImage: {
-    width: 108,
+    width: 100,
     height: '100%',
   },
   textLogoPill: {
-    minWidth: 120,
+    minWidth: 110,
     height: 37,
     borderRadius: 11,
     backgroundColor: '#1200ff',
@@ -281,7 +280,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   brandText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
     color: '#ffffff',
     letterSpacing: 1,
