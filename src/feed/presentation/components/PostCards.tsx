@@ -117,7 +117,12 @@ export const VIDEO_BUFFER_CONFIG = {
   maxBufferMs: 5000,
   bufferForPlaybackMs: 500,
   bufferForPlaybackAfterRebufferMs: 2000,
+  backBufferDurationMs: 8000,
+  initialBitrate: 850_000,
 };
+const VIDEO_STARTUP_MAX_BITRATE = 850_000;
+const VIDEO_SETTLED_MAX_BITRATE = 0;
+const VIDEO_QUALITY_RAMP_DELAY_MS = 1200;
 const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const IMAGE_PREFETCH_LOOKAHEAD = 5;
@@ -549,7 +554,7 @@ export let feedWarmVideoIdsSnapshot = new Set<string>();
 const feedWarmVideoListeners = new Set<FeedWarmVideoListener>();
 let feedScrollBusySnapshot = false;
 const feedScrollBusyListeners = new Set<FeedScrollBusyListener>();
-export let feedVideoMutedSnapshot = true;
+export let feedVideoMutedSnapshot = false;
 const feedVideoMutedListeners = new Set<FeedVideoMutedListener>();
 
 export function publishFeedActiveVideo(videoId: string | null) {
@@ -1292,7 +1297,6 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
   const trackedIsWarm = useFeedVideoWarm(post.id);
-  const isScrollBusy = useFeedScrollBusy();
   const liveMediaActive = useLiveMediaActive();
   const isActive = controlledIsActive !== undefined
     ? controlledIsActive
@@ -1305,28 +1309,65 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   );
   const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
+  const frameCoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const qualityRampTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
   const [isReady, setIsReady] = useState(false);
   const [hasRenderedFrame, setHasRenderedFrame] = useState(false);
+  const [isFrameCoverVisible, setFrameCoverVisible] = useState(true);
   const [hasVideoError, setHasVideoError] = useState(false);
+  const [maxVideoBitRate, setMaxVideoBitRate] = useState(
+    VIDEO_STARTUP_MAX_BITRATE,
+  );
   const videoUrl = post.videoUrl.trim();
   const hasVideoUrl = videoUrl.length > 0;
   const canAttemptVideo = hasVideoUrl && !hasVideoError;
 
+  const clearVideoQualityRamp = useCallback(() => {
+    if (!qualityRampTimeoutRef.current) return;
+    clearTimeout(qualityRampTimeoutRef.current);
+    qualityRampTimeoutRef.current = null;
+  }, []);
+
+  const scheduleVideoQualityRamp = useCallback(() => {
+    clearVideoQualityRamp();
+    qualityRampTimeoutRef.current = setTimeout(() => {
+      qualityRampTimeoutRef.current = null;
+      setMaxVideoBitRate(VIDEO_SETTLED_MAX_BITRATE);
+    }, VIDEO_QUALITY_RAMP_DELAY_MS);
+  }, [clearVideoQualityRamp]);
+
   useEffect(() => {
     const savedTime = getVideoPlaybackTime(post.id, 0);
+    if (frameCoverTimeoutRef.current) {
+      clearTimeout(frameCoverTimeoutRef.current);
+      frameCoverTimeoutRef.current = null;
+    }
+    clearVideoQualityRamp();
     currentTimeRef.current = savedTime;
     setSeekTime(savedTime > 0.05 ? savedTime : undefined);
+    setManuallyPaused(false);
     setIsReady(false);
     setHasRenderedFrame(false);
+    setFrameCoverVisible(true);
     setHasVideoError(false);
-  }, [post.id, post.videoUrl]);
+    setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
+  }, [clearVideoQualityRamp, post.id, post.videoUrl]);
 
   useEffect(() => {
     return () => {
+      if (frameCoverTimeoutRef.current) {
+        clearTimeout(frameCoverTimeoutRef.current);
+        frameCoverTimeoutRef.current = null;
+      }
+      clearVideoQualityRamp();
       setVideoPlaybackTime(post.id, currentTimeRef.current);
     };
-  }, [post.id]);
+  }, [clearVideoQualityRamp, post.id]);
 
   // Measure thumbnail size on mount to avoid layout jumps
   useEffect(() => {
@@ -1360,9 +1401,14 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   // Refine aspect ratio when actual video loads
   const handleVideoLoad = useCallback((data: any) => {
+    if (frameCoverTimeoutRef.current) {
+      clearTimeout(frameCoverTimeoutRef.current);
+      frameCoverTimeoutRef.current = null;
+    }
     setHasVideoError(false);
     setIsReady(true);
     setHasRenderedFrame(false);
+    setFrameCoverVisible(true);
     const size = data?.naturalSize ?? data;
     if (size) {
       const { width, height } = size;
@@ -1374,6 +1420,26 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       }
     }
   }, [post.id, videoUrl]);
+
+  const revealVideoFrame = useCallback(() => {
+    setIsReady(true);
+    setHasRenderedFrame(true);
+    if (isActive) {
+      scheduleVideoQualityRamp();
+    }
+    if (!post.thumbnailUrl) {
+      setFrameCoverVisible(false);
+      return;
+    }
+
+    if (frameCoverTimeoutRef.current) {
+      clearTimeout(frameCoverTimeoutRef.current);
+    }
+    frameCoverTimeoutRef.current = setTimeout(() => {
+      frameCoverTimeoutRef.current = null;
+      setFrameCoverVisible(false);
+    }, 90);
+  }, [isActive, post.thumbnailUrl, scheduleVideoQualityRamp]);
 
   // Profile tap handler
   const handleProfilePress = useCallback(() => {
@@ -1412,12 +1478,16 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
     setIsReady(false);
     setHasRenderedFrame(false);
-  }, [shouldMountVideo]);
+    setFrameCoverVisible(true);
+    clearVideoQualityRamp();
+    setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
+  }, [clearVideoQualityRamp, shouldMountVideo]);
 
   useEffect(() => {
     if (isActive) {
       const savedTime = getVideoPlaybackTime(post.id, currentTimeRef.current);
       currentTimeRef.current = savedTime;
+      setManuallyPaused(false);
       if (savedTime > 0.05) {
         if (isReady && videoRef.current) {
           videoRef.current.seek(savedTime);
@@ -1427,6 +1497,25 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       }
     }
   }, [isActive, isReady, post.id]);
+
+  useEffect(() => {
+    if (!isActive) {
+      clearVideoQualityRamp();
+      setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
+      return;
+    }
+
+    if (hasRenderedFrame) {
+      scheduleVideoQualityRamp();
+    }
+
+    return clearVideoQualityRamp;
+  }, [
+    clearVideoQualityRamp,
+    hasRenderedFrame,
+    isActive,
+    scheduleVideoQualityRamp,
+  ]);
 
   useEffect(() => {
     if (isActive && isReady && seekTime !== undefined && videoRef.current) {
@@ -1440,12 +1529,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     shouldMountVideo &&
     isWarm &&
     !isActive &&
-    !isScrollBusy &&
     !hasRenderedFrame;
   const playing =
     shouldMountVideo &&
     !manuallyPaused &&
-    !isScrollBusy &&
     (isActive || warmPlaying);
   const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
 
@@ -1522,9 +1609,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 source={videoSource}
                 style={[
                   StyleSheet.absoluteFill,
-                  post.thumbnailUrl && !hasRenderedFrame
-                    ? { opacity: 0 }
-                    : null,
+                  isFrameCoverVisible ? { opacity: 0 } : null,
                 ]}
                 resizeMode="contain"
                 paused={!playing}
@@ -1535,14 +1620,12 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 disableAudioSessionManagement={Platform.OS === 'ios' && liveMediaActive}
                 playInBackground={false}
                 playWhenInactive={false}
-                // Match Reels' renderer. Some Android codecs/CDN videos render
-                // black on TextureView but play correctly on SurfaceView.
-                useTextureView={false}
+                // Feed/profile cards need TextureView on Android so the
+                // thumbnail cover can mask the first decoded black frame.
+                useTextureView={Platform.OS === 'android'}
                 bufferConfig={VIDEO_BUFFER_CONFIG}
-                onReadyForDisplay={() => {
-                  setIsReady(true);
-                  setHasRenderedFrame(true);
-                }}
+                maxBitRate={maxVideoBitRate}
+                onReadyForDisplay={revealVideoFrame}
                 onLoad={handleVideoLoad}
                 onProgress={data => {
                   const nextTime = data?.currentTime;
@@ -1555,7 +1638,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   currentTimeRef.current = nextTime;
                   setVideoPlaybackTime(post.id, nextTime);
                   if (!hasRenderedFrame && nextTime > 0.05) {
-                    setHasRenderedFrame(true);
+                    revealVideoFrame();
                   }
                 }}
                 poster={post.thumbnailUrl}
@@ -1572,7 +1655,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   );
                 }}
               />
-              {post.thumbnailUrl && !hasRenderedFrame ? (
+              {post.thumbnailUrl && isFrameCoverVisible ? (
                 <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                   <FeedMediaImage
                     uri={post.thumbnailUrl}
@@ -1580,6 +1663,29 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                     resizeMode="cover"
                     deferWhileScrolling={false}
                   />
+                </View>
+              ) : !post.thumbnailUrl && isFrameCoverVisible ? (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    StyleSheet.absoluteFill,
+                    {
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#020617',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color: '#FFFFFF',
+                      fontSize: 22,
+                      fontWeight: '700',
+                      opacity: 0.8,
+                    }}
+                  >
+                    {'\u25B6'}
+                  </Text>
                 </View>
               ) : null}
             </View>
