@@ -87,12 +87,6 @@ export const FeedHeader = React.memo(function FeedHeader() {
           style={styles.headerGlassDock}
         >
           <View style={styles.brandRow}>
-            <HeaderGlassActionButton
-              accessibilityLabel="Profile Menu"
-              onPress={handleOpenFutureDrawer}
-            >
-              <Menu size={19} color="#002fff" strokeWidth={2.55} />
-            </HeaderGlassActionButton>
             <TouchableOpacity
               activeOpacity={0.82}
               style={styles.brandLogoTouchable}
@@ -133,6 +127,12 @@ export const FeedHeader = React.memo(function FeedHeader() {
               }
             >
               <MessageCircle size={19} color="#002fff" strokeWidth={2.55} />
+            </HeaderGlassActionButton>
+            <HeaderGlassActionButton
+              accessibilityLabel="Profile Menu"
+              onPress={handleOpenFutureDrawer}
+            >
+              <Menu size={19} color="#002fff" strokeWidth={2.55} />
             </HeaderGlassActionButton>
           </View>
         </AdaptiveGlassSurface>
@@ -178,7 +178,6 @@ const styles = StyleSheet.create({
   brandLogoTouchable: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 10,
   },
   logoPill: {
     backgroundColor: '#002fff',

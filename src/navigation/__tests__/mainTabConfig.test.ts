@@ -47,7 +47,7 @@ describe('main tab platform configuration', () => {
     ]);
   });
 
-  it('uses localized labels, SF Symbol options, and notification badge formatting for native iOS tabs', () => {
+  it('uses localized labels, SF Symbol options, and badge formatting for native iOS tabs', () => {
     expect(createIosNativeTabOptions(ROUTES.FEED, 0, 'vi')).toMatchObject({
       tabBarLabel: 'Trang chủ',
       tabBarIcon: {
@@ -56,8 +56,9 @@ describe('main tab platform configuration', () => {
       },
     });
 
-    expect(createIosNativeTabOptions(ROUTES.MARKETPLACE, 0, 'vi')).toMatchObject({
+    expect(createIosNativeTabOptions(ROUTES.MARKETPLACE, 0, 'vi', 4)).toMatchObject({
       tabBarLabel: 'Mua sắm',
+      tabBarBadge: 4,
       tabBarIcon: {
         type: 'sfSymbol',
         name: 'cart.fill',

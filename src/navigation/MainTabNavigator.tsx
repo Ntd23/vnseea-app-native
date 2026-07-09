@@ -30,6 +30,7 @@ import { useNotificationBadgeViewModel } from '../notifications';
 import { tabBarVisibility } from './tabBarVisibility';
 import { nativeTabBarPresentation } from './nativeTabMinimizeBehavior';
 import { useAppLanguage } from '../shared-kernel/application/hooks/useAppLanguage';
+import { useSyncedCartCount } from '../shared-kernel/application/state/cartCountSync';
 import {
   createIosNativeTabOptions,
   getCustomTabRoutes,
@@ -280,6 +281,7 @@ function IosLiquidTabBar({
 }: MaterialTopTabBarProps) {
   const { notificationCount: notificationBadgeCount } =
     useNotificationBadgeViewModel();
+  const { cartCount } = useSyncedCartCount(0);
   const language = useAppLanguage();
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(0)).current;
@@ -303,19 +305,22 @@ function IosLiquidTabBar({
   const items = useMemo(
     () =>
       IOS_NATIVE_TAB_ROUTES.map(({ name, accessibilityLabel }) => {
-        const options = createIosNativeTabOptions(
-          name,
-          notificationBadgeCount,
-          language,
-        );
+          const options = createIosNativeTabOptions(
+            name,
+            notificationBadgeCount,
+            language,
+            cartCount,
+          );
         const label =
           typeof options.tabBarLabel === 'string'
             ? options.tabBarLabel
             : accessibilityLabel;
-        const badgeValue =
-          typeof options.tabBarBadge === 'string'
-            ? options.tabBarBadge
-            : undefined;
+          const badgeValue =
+            typeof options.tabBarBadge === 'number'
+              ? String(options.tabBarBadge)
+              : typeof options.tabBarBadge === 'string'
+                ? options.tabBarBadge
+                : undefined;
 
         return {
           key: name,
@@ -325,7 +330,7 @@ function IosLiquidTabBar({
           badgeValue,
         };
       }),
-    [language, notificationBadgeCount],
+    [cartCount, language, notificationBadgeCount],
   );
 
   const handleTabPress = useCallback(

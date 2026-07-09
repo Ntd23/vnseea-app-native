@@ -37,6 +37,11 @@ describe('iOS paged bottom tab navigator', () => {
     expect(iosTabBarSource).not.toContain('glassBackground');
     expect(source).toContain('useSafeAreaInsets');
     expect(source).toContain('notificationBadgeCount');
+    expect(source).toContain('useSyncedCartCount');
+    expect(source).toContain('const { cartCount } = useSyncedCartCount(0);');
+    expect(source).toContain('cartCount,');
+    expect(source).toContain('typeof options.tabBarBadge === \'number\'');
+    expect(source).toContain('String(options.tabBarBadge)');
     expect(source).toContain('navigation.navigate(route.name)');
   });
 
