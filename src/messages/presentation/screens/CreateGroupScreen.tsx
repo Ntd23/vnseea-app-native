@@ -10,12 +10,10 @@ import {
   KeyboardAvoidingView,
   LayoutAnimation,
   Platform,
-  Modal,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import {
@@ -34,9 +32,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../../navigation/types';
+import { ROUTES } from '../../../navigation/constants/routes';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useGroupChatViewModel } from '../../application/view-models/useGroupChatViewModel';
-import type { GroupChatUser } from '../../domain/types/groupChat.types';
+import type { GroupChatItem, GroupChatUser } from '../../domain/types/groupChat.types';
+import type { ChatItem } from '../../domain/types/messages.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type CreateGroupNav = NativeStackNavigationProp<RootStackParamList>;
@@ -47,6 +47,25 @@ const BRAND_MEDIUM = 'rgba(0, 0, 255, 0.15)';
 const MAX_GROUP_NAME = 25;
 const MIN_GROUP_NAME = 4;
 const MAX_MEMBERS = 50;
+
+function mapCreatedGroupToChat(group: GroupChatItem): ChatItem {
+  const chatId = String(group.id);
+  return {
+    id: `group:${chatId}`,
+    chatId,
+    chatType: 'group',
+    groupId: String(group.id),
+    userId: chatId,
+    username: '',
+    name: group.group_name || 'Nhóm chat',
+    avatar: group.avatar || '',
+    lastMessage: group.last_message?.text ?? '',
+    lastMessageTime: Number(group.last_message?.time ?? 0),
+    unreadCount: 0,
+    isOnline: false,
+    isVerified: false,
+  };
+}
 
 // Animated checkbox component
 function AnimatedCheckbox({
@@ -311,7 +330,6 @@ export default function CreateGroupScreen() {
   const [selectedUsers, setSelectedUsers] = useState<GroupChatUser[]>([]);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [filteredFriends, setFilteredFriends] = useState<GroupChatUser[]>([]);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Animation values
   const headerOpacity = useRef(new Animated.Value(0)).current;
@@ -408,11 +426,6 @@ export default function CreateGroupScreen() {
       return;
     }
 
-    if (userIds.length < 1) {
-      Alert.alert('Lá»—i', 'KhĂ´ng tĂ¬m tháº¥y thĂ nh viĂªn há»£p lá»‡ Ä‘á»ƒ táº¡o nhĂ³m.');
-      return;
-    }
-
     try {
       const result = await createGroup({
         groupName: groupName.trim(),
@@ -421,12 +434,9 @@ export default function CreateGroupScreen() {
       });
 
       if (result) {
-        setShowSuccessModal(true);
-        // Auto close after 2 seconds
-        setTimeout(() => {
-          setShowSuccessModal(false);
-          navigation.goBack();
-        }, 2000);
+        navigation.replace(ROUTES.CHAT, {
+          chat: mapCreatedGroupToChat(result),
+        });
       }
     } catch {
       Alert.alert('Lỗi', 'Không thể tạo nhóm. Vui lòng thử lại.');
@@ -683,36 +693,6 @@ export default function CreateGroupScreen() {
           </View>
         </Animated.ScrollView>
       </KeyboardAvoidingView>
-
-      {/* Success Modal */}
-      <Modal
-        visible={showSuccessModal}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-      >
-        <TouchableWithoutFeedback onPress={() => {}}>
-          <View className="flex-1 items-center justify-center bg-black/50">
-            <View className="mx-8 items-center rounded-2xl bg-white p-8">
-              <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-green-100">
-                <Check size={40} color="#10b981" strokeWidth={3} />
-              </View>
-              <Text className="text-[20px] font-bold text-slate-800">
-                Tạo nhóm thành công!
-              </Text>
-              <Text className="mt-2 text-center text-[14px] text-slate-500">
-                Nhóm chat đã được tạo và sẵn sàng trò chuyện
-              </Text>
-              <Text className="mt-1 text-center text-[12px] text-slate-400">
-                Thành viên được mời cần chấp nhận lời mời trước khi nhóm hiển thị ở máy của họ.
-              </Text>
-              <View className="mt-6 h-8 w-8 items-center justify-center">
-                <ActivityIndicator size="small" color={BRAND} />
-              </View>
-            </View>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
     </SafeAreaView>
   );
 }

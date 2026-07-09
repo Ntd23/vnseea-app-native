@@ -71,7 +71,7 @@ function mapGroupChatItem(raw: any): GroupChatItem {
     : { notify: 'yes', call_chat: 'yes', archive: 'no', fav: 'no', pin: 'no' };
 
   return {
-    id: Number(raw?.id ?? 0),
+    id: Number(raw?.id ?? raw?.group_id ?? 0),
     user_id: Number(raw?.user_id ?? 0),
     group_name: String(raw?.group_name ?? ''),
     avatar: normalizeUrl(String(raw?.avatar ?? '')),
