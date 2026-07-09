@@ -389,7 +389,7 @@ export function useMessagesViewModel() {
       }));
     } catch (err) {
       const errorMessage =
-        err instanceof Error ? err.message : 'Khong tai duoc danh sach nhan';
+        err instanceof Error ? err.message : 'Không tải được danh sách tin nhắn';
       setState(prev => ({
         ...prev,
         error: errorMessage,
@@ -633,6 +633,34 @@ export function useMessagesViewModel() {
     [],
   );
 
+  const markAllAsRead = useCallback(async () => {
+    const unreadChats = state.chats.filter(chat => chat.unreadCount > 0);
+    if (unreadChats.length === 0) return true;
+
+    const unreadUserChats = unreadChats.filter(chat => chat.chatType === 'user');
+
+    setState(prev => ({
+      ...prev,
+      chats: prev.chats.map(chat =>
+        chat.unreadCount > 0 ? { ...chat, unreadCount: 0 } : chat,
+      ),
+      error: null,
+    }));
+
+    try {
+      await Promise.all(
+        unreadUserChats.map(chat => repository.markAsSeen(chat.userId)),
+      );
+      return true;
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Không đánh dấu được tin nhắn là đã đọc';
+      setState(prev => ({ ...prev, error: errorMessage }));
+      await loadChats(false, { includeDiscovery: false, forceRefresh: true });
+      return false;
+    }
+  }, [loadChats, state.chats]);
+
   // Clear selected chat
   const clearSelectedChat = useCallback(() => {
     setState(prev => ({
@@ -719,6 +747,7 @@ export function useMessagesViewModel() {
     loadMessages,
     sendMessage,
     sendBulkMessages,
+    markAllAsRead,
     clearSelectedChat,
     clearError,
   };

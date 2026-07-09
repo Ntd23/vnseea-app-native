@@ -1,12 +1,13 @@
 // Description: Animates feed chrome sections in and out while preserving overlay layout.
 import React, { useEffect } from 'react';
-import { Platform, StatusBar, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets, initialWindowMetrics } from 'react-native-safe-area-context';
+import { resolveFeedChromeTopInset } from './feedHeaderInsets';
 
 const FEED_FILTER_HEIGHT = 66;
 const FEED_HEADER_BAR_HEIGHT = 68;
@@ -28,10 +29,10 @@ export function FeedHeaderCollapseFrame({
   translateDistance,
 }: FeedHeaderCollapseFrameProps) {
   const insets = useSafeAreaInsets();
-  const rawTopInset = insets.top > 0
-    ? insets.top
-    : (initialWindowMetrics?.insets?.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 47));
-  const topInset = Platform.OS === 'android' ? 0 : rawTopInset;
+  const topInset = resolveFeedChromeTopInset(
+    insets.top,
+    initialWindowMetrics?.insets?.top,
+  );
   const expandedHeight = height ?? FEED_FILTER_HEIGHT;
   const collapseDistance = translateDistance ?? expandedHeight;
   const progress = useSharedValue(hidden ? 0 : 1);

@@ -1,9 +1,9 @@
 import { ROUTES } from './constants/routes';
-import { Platform } from 'react-native';
 import { sessionStorage } from '../shared-kernel/infrastructure/storage/sessionStorage';
 
 type NavigateLike = {
   navigate: (...args: any[]) => void;
+  push?: (...args: any[]) => void;
   getParent?: () => NavigateLike | undefined;
 };
 
@@ -24,17 +24,22 @@ function getRootNavigator(navigation: NavigateLike): NavigateLike {
   return current;
 }
 
-export function navigateToOwnProfile(navigation: NavigateLike) {
-  const rootNavigator = getRootNavigator(navigation);
-
-  if (Platform.OS !== 'ios') {
-    rootNavigator.navigate(ROUTES.PROFILE);
+function pushProfileRoute(
+  navigation: NavigateLike,
+  routeName: typeof ROUTES.PROFILE | typeof ROUTES.USER_PROFILE,
+  params?: { userId: string },
+) {
+  if (typeof navigation.push === 'function') {
+    navigation.push(routeName, params);
     return;
   }
 
-  rootNavigator.navigate(ROUTES.MAIN_TABS, {
-    screen: ROUTES.PROFILE,
-  });
+  navigation.navigate(routeName, params);
+}
+
+export function navigateToOwnProfile(navigation: NavigateLike) {
+  const rootNavigator = getRootNavigator(navigation);
+  pushProfileRoute(rootNavigator, ROUTES.PROFILE);
 }
 
 export function navigateToUserProfile(
@@ -51,5 +56,5 @@ export function navigateToUserProfile(
   }
 
   const rootNavigator = getRootNavigator(navigation);
-  rootNavigator.navigate(ROUTES.USER_PROFILE, { userId: targetUserId });
+  pushProfileRoute(rootNavigator, ROUTES.USER_PROFILE, { userId: targetUserId });
 }

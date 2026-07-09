@@ -76,7 +76,9 @@ function compareReelsNewestFirst(a: ReelsItem, b: ReelsItem) {
 }
 
 export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPost }) {
-  const [items, setItems] = useState<ReelsItem[]>([]);
+  const [items, setItems] = useState<ReelsItem[]>(() =>
+    initialVideo ? [mapFeedVideoToReel(initialVideo.post)] : [],
+  );
   // Seed the ref synchronously from the constructor argument so the
   // initial-load `loadInitial()` (which fires in a useEffect on mount)
   // can see the deeplinked / clicked video BEFORE the network round-trip
@@ -282,14 +284,12 @@ export function useReelsViewModel(initialVideo?: { id: string; post: FeedVideoPo
 
       if (initialVideoInfoRef.current) {
         const { id, post } = initialVideoInfoRef.current;
-        const index = nextItems.findIndex(item => String(item.id) === String(id));
-        if (index === -1) {
-          const mapped = mapFeedVideoToReel(post);
-          nextItems = [mapped, ...nextItems];
-          targetActiveIndex = 0;
-        } else {
-          targetActiveIndex = index;
-        }
+        const mapped = mapFeedVideoToReel(post);
+        nextItems = [
+          mapped,
+          ...nextItems.filter(item => String(item.id) !== String(id)),
+        ];
+        targetActiveIndex = 0;
         initialVideoInfoRef.current = null; // consumed
       }
 

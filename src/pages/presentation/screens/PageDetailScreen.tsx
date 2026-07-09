@@ -31,15 +31,19 @@ import {
   ArrowLeft,
   BadgeCheck,
   Bell,
+  Briefcase,
   Camera,
   Check,
   ChevronRight,
   Edit3,
+  FileText,
   Flag,
+  Gift,
   Globe2,
   Heart,
   Image as ImageIcon,
   MapPin,
+  Music,
   Tag,
   MessageCircle,
   MoreHorizontal,
@@ -70,6 +74,7 @@ import {
   ReactionPickerOverlay,
   TextPostCard,
 } from '../../../feed/presentation/components/PostCards';
+import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
 import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
 import {
   PhotoViewerModal,
@@ -93,8 +98,9 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 // work currently in flight (offers, etc.) doesn't collide with
 // the import surface.
 import PageShareActionSheet from '../components/PageShareActionSheet';
+import PageDetailMenuActionSheet from '../components/PageDetailMenuActionSheet';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { FeedSourceFilterBar } from '../../../feed/presentation/components/FeedSourceFilterBar';
 
 type PageDetailProps = NativeStackScreenProps<
   RootStackParamList,
@@ -165,6 +171,85 @@ const PAGE_DETAIL_COPY = {
     tabAdmins: 'Admins',
     followersTitle: 'followers',
     adminsTitle: 'admins',
+  },
+};
+
+const PAGE_DETAIL_UI_COPY = {
+  vi: {
+    likesLabel: 'Lượt thích',
+    followersLabel: 'Theo dõi',
+    postsLabel: 'Bài viết',
+    createPostBtn: 'Hôm nay bạn thế nào?',
+    createJobBtn: 'Tạo Công Việc',
+    offersBtn: 'Lời Đề Nghị',
+    editBtn: 'Chỉnh Sửa',
+    likeBtn: 'Thích',
+    likedBtn: 'Đã thích',
+    followBtn: 'Theo dõi',
+    followingBtn: 'Đang theo dõi',
+    inviteBtn: 'Mời',
+    inviteRow: 'Mời bạn bè thích Trang này',
+    shareBtn: 'Chia sẻ',
+    reportBtn: 'Báo cáo',
+    cancelBtn: 'Hủy',
+    reportTitle: 'Báo cáo trang',
+    reportMessage: 'Bạn muốn gửi báo cáo trang này?',
+    reportSent: 'Đã gửi',
+    reportSentMsg: 'Báo cáo đã được gửi.',
+    reportFailed: 'Không gửi được',
+    emptyPosts: 'vẫn chưa đăng bất cứ điều gì',
+    emptyPhotos: 'Trang này chưa có ảnh.',
+    emptyVideos: 'Trang này chưa có video.',
+    emptyMusic: 'Trang này chưa có nhạc.',
+    searchPosts: 'Tìm kiếm các bài viết',
+    infoTitle: 'Thông tin',
+    aboutTitle: 'Về',
+    suggestedTitle: 'Các trang bạn có thể thích',
+    weekDelta: '+0 Tuần này',
+    defaultTitle: 'Trang',
+    tabPosts: 'Bài viết',
+    tabInfo: 'Thông tin',
+    tabPhotos: 'Ảnh',
+    tabVideos: 'Video',
+    tabMusic: 'Nhạc',
+  },
+  en: {
+    likesLabel: 'Likes',
+    followersLabel: 'Followers',
+    postsLabel: 'Posts',
+    createPostBtn: 'What is on your mind?',
+    createJobBtn: 'Create Job',
+    offersBtn: 'Offers',
+    editBtn: 'Edit',
+    likeBtn: 'Like',
+    likedBtn: 'Liked',
+    followBtn: 'Follow',
+    followingBtn: 'Following',
+    inviteBtn: 'Invite',
+    inviteRow: 'Invite friends to like this Page',
+    shareBtn: 'Share',
+    reportBtn: 'Report',
+    cancelBtn: 'Cancel',
+    reportTitle: 'Report Page',
+    reportMessage: 'Do you want to report this page?',
+    reportSent: 'Sent',
+    reportSentMsg: 'Report has been sent.',
+    reportFailed: 'Failed to send',
+    emptyPosts: 'has not posted anything yet',
+    emptyPhotos: 'This page has no photos.',
+    emptyVideos: 'This page has no videos.',
+    emptyMusic: 'This page has no music.',
+    searchPosts: 'Search posts',
+    infoTitle: 'Information',
+    aboutTitle: 'About',
+    suggestedTitle: 'Pages you may like',
+    weekDelta: '+0 this week',
+    defaultTitle: 'Page',
+    tabPosts: 'Posts',
+    tabInfo: 'Info',
+    tabPhotos: 'Photos',
+    tabVideos: 'Videos',
+    tabMusic: 'Music',
   },
 };
 
@@ -336,8 +421,9 @@ function PageHero({
   onFollow,
   onShare,
   canManagePage,
-  onCreatePost,
-  onCreateOffer,
+  onCreateJob,
+  onOpenOffers,
+  onEditPage,
   onChangeAvatar,
   onChangeCover,
   isUploadingAvatar = false,
@@ -353,8 +439,9 @@ function PageHero({
   onFollow: () => void;
   onShare: () => void;
   canManagePage?: boolean;
-  onCreatePost?: () => void;
-  onCreateOffer?: () => void;
+  onCreateJob?: () => void;
+  onOpenOffers?: () => void;
+  onEditPage?: () => void;
   onChangeAvatar?: () => void;
   onChangeCover?: () => void;
   isUploadingAvatar?: boolean;
@@ -454,7 +541,7 @@ function PageHero({
       {/* Page Content Detail */}
       <View className="px-4 pb-5">
         {/* Avatar Container with Overlap */}
-        <View className="-mt-16 flex-row items-end justify-between mb-4">
+        <View className="-mt-16 mb-4 items-center">
           <View className="relative">
             <PageAvatar page={page} size={100} />
             {canManagePage && onChangeAvatar ? (
@@ -476,8 +563,8 @@ function PageHero({
 
         {/* Title and Handle (Inline badge check) */}
         <Animated.View entering={FadeInDown.delay(50).duration(400)}>
-          <View className="flex-row items-center flex-wrap">
-            <Text className="text-2xl font-bold text-slate-900 mr-2">
+          <View className="flex-row items-center justify-center flex-wrap">
+            <Text className="mr-2 text-center text-2xl font-bold text-slate-900">
               {title}
             </Text>
             {page.mapPinApproved ? (
@@ -485,50 +572,52 @@ function PageHero({
             ) : null}
           </View>
           {handle ? (
-            <Text className="mt-1 text-sm font-semibold text-slate-400">{handle}</Text>
-          ) : null}
-          {page.pageDescription ? (
-            <Text className="mt-2 text-sm text-slate-600 leading-relaxed font-medium" numberOfLines={4}>
-              {page.pageDescription}
-            </Text>
+            <Text className="mt-1 text-center text-sm font-semibold text-slate-400">{handle}</Text>
           ) : null}
         </Animated.View>
 
-        {/* Metrics Section (White rounded card with thin border) */}
-        <Animated.View entering={FadeInDown.delay(100).duration(400)}>
-          <View className="mt-4 flex-row justify-around rounded-2xl bg-white border border-slate-100 py-4 shadow-sm">
-            <Metric value={formatCount(page.likes)} label={copy.likesLabel} />
-            <Metric value={formatCount(page.followersCount)} label={copy.followersLabel} />
-            <Metric value={formatCount(page.postCount)} label={copy.postsLabel} />
-          </View>
-        </Animated.View>
-
-        {/* Create Post Button (Full width blue capsule button) */}
         {canManagePage ? (
           <Animated.View
-            entering={FadeInDown.delay(150).duration(400)}
-            className="mt-4 flex-row gap-2"
+            entering={FadeInDown.delay(100).duration(400)}
+            className="mt-4 items-center gap-2"
           >
-            <ScaleButton onPress={onCreatePost} style={{ flex: 1 }}>
-              <View className="min-h-[48px] flex-row items-center justify-center rounded-2xl bg-[#002fff] px-3 shadow-sm">
-                <Edit3 size={18} color="#FFFFFF" />
-                <Text className="ml-2 text-sm font-bold text-white" numberOfLines={1}>
-                  {copy.createPostBtn}
+            <ScaleButton onPress={onCreateJob}>
+              <View className="min-h-[34px] flex-row items-center justify-center rounded-lg bg-green-100 px-4">
+                <Briefcase size={16} color="#22C55E" />
+                <Text className="ml-2 text-sm font-bold text-green-600" numberOfLines={1}>
+                  {copy.createJobBtn}
                 </Text>
               </View>
             </ScaleButton>
-            <ScaleButton onPress={onCreateOffer} style={{ flex: 1 }}>
-              <View className="min-h-[48px] flex-row items-center justify-center rounded-2xl border border-[#002fff] bg-white px-3">
-                <Tag size={18} color="#002fff" />
-                <Text className="ml-2 text-sm font-bold text-[#002fff]" numberOfLines={1}>
-                  {copy.createOfferBtn}
+            <ScaleButton onPress={onOpenOffers}>
+              <View className="min-h-[34px] flex-row items-center justify-center rounded-lg bg-sky-100 px-4">
+                <Gift size={16} color="#0EA5E9" />
+                <Text className="ml-2 text-sm font-bold text-sky-600" numberOfLines={1}>
+                  {copy.offersBtn}
+                </Text>
+              </View>
+            </ScaleButton>
+            <ScaleButton onPress={onEditPage}>
+              <View className="min-h-[34px] flex-row items-center justify-center rounded-lg bg-slate-100 px-4">
+                <Edit3 size={15} color="#475569" />
+                <Text className="ml-2 text-sm font-bold text-slate-700" numberOfLines={1}>
+                  {copy.editBtn}
                 </Text>
               </View>
             </ScaleButton>
           </Animated.View>
         ) : null}
 
-        {/* Actions Row (Liked, Following, Invite, Share) */}
+        <Animated.View entering={FadeInDown.delay(150).duration(400)}>
+          <View className="mt-5 flex-row items-center">
+            <ThumbsUp size={14} color="#64748B" fill="#64748B" />
+            <Text className="ml-1 text-xs font-medium text-slate-500">
+              {formatCount(page.likes)} những người như thế này
+            </Text>
+          </View>
+        </Animated.View>
+
+        {!canManagePage ? (
         <Animated.View entering={FadeInDown.delay(200).duration(400)}>
           <View className="mt-4 flex-row gap-2">
             <ActionButton
@@ -569,6 +658,7 @@ function PageHero({
             />
           </View>
         </Animated.View>
+        ) : null}
       </View>
     </View>
   );
@@ -632,68 +722,201 @@ const POST_FILTER_TABS: Array<{
   { id: 'video', labelKey: 'filterVideo', countKey: 'video' },
 ];
 
-function PostFilterChips({
-  active,
-  counts,
-  copy,
-  onChange,
+function PostSearchBox({
+  value,
+  placeholder,
+  onChangeText,
 }: {
-  active: 'all' | 'text' | 'video';
-  counts: { all: number; text: number; video: number };
-  copy: { filterAll: string; filterText: string; filterVideo: string };
-  onChange: (next: 'all' | 'text' | 'video') => void;
+  value: string;
+  placeholder: string;
+  onChangeText: (text: string) => void;
 }) {
   return (
-    <View className="mt-3 flex-row gap-2 bg-white px-3 pb-2 pt-1">
-      {POST_FILTER_TABS.map(({ id, labelKey, countKey }) => {
-        const isActive = active === id;
-        const count = counts[countKey];
-        const label = copy[labelKey];
-        return (
-          <TouchableOpacity
-            key={id}
-            className={`min-h-[34px] flex-row items-center rounded-full border px-3 ${
-              isActive
-                ? 'border-[#002fff] bg-[#eef2ff]'
-                : 'border-slate-200 bg-white'
-            }`}
-            activeOpacity={0.8}
-            onPress={() => onChange(id)}
-          >
-            <Text
-              className={`text-caption-primary font-bold ${
-                isActive ? 'text-[#002fff]' : 'text-slate-600'
-              }`}
-              numberOfLines={1}
-            >
-              {label}
-            </Text>
-            <View
-              className={`ml-1.5 min-w-[20px] items-center justify-center rounded-full px-1.5 py-0.5 ${
-                isActive ? 'bg-[#002fff]' : 'bg-slate-100'
-              }`}
-            >
-              <Text
-                className={`text-[11px] font-bold ${
-                  isActive ? 'text-white' : 'text-slate-500'
-                }`}
-                numberOfLines={1}
-              >
-                {count}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        );
-      })}
+    <View className="mx-4 mt-3 flex-row items-center rounded-2xl border border-slate-100 bg-slate-50 px-3.5 py-1">
+      <Search size={18} color="#94A3B8" />
+      <TextInput
+        style={{ flex: 1, marginLeft: 8, fontSize: 14, color: '#1E293B', paddingVertical: 8 }}
+        value={value}
+        placeholder={placeholder}
+        placeholderTextColor="#94A3B8"
+        onChangeText={onChangeText}
+      />
     </View>
   );
 }
 
-function InfoRow({ icon, label }: { icon: React.ReactNode; label: string }) {
+const PAGE_CATEGORY_LABELS: Record<string, string> = {
+  '1': 'Ô tô và Xe cộ',
+  '2': 'Hài kịch',
+  '3': 'Kinh tế và Thương mại',
+  '4': 'Giáo dục',
+  '5': 'Giải trí',
+  '6': 'Phim & Hoạt hình',
+  '7': 'Khoa học và Công nghệ',
+  '8': 'Cách sống',
+  '9': 'Du lịch và Sự kiện',
+  '10': 'Thời trang',
+  '11': 'Thể thao',
+};
+
+function getPageCategoryLabel(page: PagesItem) {
+  return PAGE_CATEGORY_LABELS[page.pageCategory || ''] || page.pageCategory || '';
+}
+
+function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
-    <View className="flex-row items-center rounded-2xl bg-white px-4 py-4">
+    <View className="flex-row items-center border-b border-slate-100 bg-white px-4 py-3">
+      <View className="mr-2 h-6 w-6 items-center justify-center rounded-full bg-[#0000FF]">
+        {icon}
+      </View>
+      <Text className="text-base font-bold text-slate-900">{title}</Text>
+    </View>
+  );
+}
+
+function InvitePageRow({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      className="mt-3 flex-row items-center bg-white px-4 py-3"
+      activeOpacity={0.85}
+      onPress={onPress}
+    >
+      <UserPlus size={17} color="#EC4899" />
+      <Text className="ml-2 text-sm font-medium text-slate-600">{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function InfoRow({
+  icon,
+  label,
+  trailing,
+  onPress,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  trailing?: React.ReactNode;
+  onPress?: () => void;
+}) {
+  const content = (
+    <>
       {icon}
       <Text className="ml-3 flex-1 text-body-primary">{label}</Text>
+      {trailing}
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity
+        className="flex-row items-center border-b border-slate-100 bg-white px-4 py-3"
+        activeOpacity={0.85}
+        onPress={onPress}
+      >
+        {content}
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <View className="flex-row items-center border-b border-slate-100 bg-white px-4 py-3">
+      {content}
+    </View>
+  );
+}
+
+function PageInfoSections({
+  page,
+  copy,
+  onOpenOffers,
+  onCreateJob,
+}: {
+  page: PagesItem;
+  copy: typeof PAGE_DETAIL_UI_COPY.vi;
+  onOpenOffers: () => void;
+  onCreateJob: () => void;
+}) {
+  const categoryLabel = getPageCategoryLabel(page);
+
+  return (
+    <View className="mt-3">
+      <SectionHeader icon={<FileText size={14} color="#FFFFFF" />} title={copy.infoTitle} />
+      <View className="bg-white">
+        <InfoRow
+          icon={<ThumbsUp size={18} color="#64748B" fill="#64748B" />}
+          label={`${formatCount(page.likes)} những người như thế này`}
+          trailing={<Text className="text-sm font-semibold text-green-600">{copy.weekDelta}</Text>}
+        />
+        <InfoRow icon={<FileText size={18} color="#64748B" />} label={`${formatCount(page.postCount)} bài viết`} />
+        <InfoRow icon={<Briefcase size={18} color="#64748B" />} label="Việc làm" onPress={onCreateJob} />
+        <InfoRow icon={<Gift size={18} color="#64748B" />} label="Lời đề nghị" onPress={onOpenOffers} />
+        {categoryLabel ? <InfoRow icon={<Tag size={18} color="#64748B" />} label={categoryLabel} /> : null}
+        {page.address ? <InfoRow icon={<MapPin size={18} color="#64748B" />} label={page.address} /> : null}
+      </View>
+
+      <View className="mt-3">
+        <SectionHeader icon={<Flag size={14} color="#FFFFFF" />} title={copy.aboutTitle} />
+        <Text className="bg-white px-4 py-4 text-sm leading-6 text-slate-700">
+          {page.pageDescription || page.pageTitle || page.pageName || copy.defaultTitle}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function SuggestedPagesSection({
+  pages,
+  copy,
+  onOpenPage,
+  onLikePage,
+}: {
+  pages: PagesItem[];
+  copy: typeof PAGE_DETAIL_UI_COPY.vi;
+  onOpenPage: (page: PagesItem) => void;
+  onLikePage: (pageId: string | number) => void;
+}) {
+  if (pages.length === 0) return null;
+
+  return (
+    <View className="mt-3 bg-white pb-3">
+      <SectionHeader icon={<Flag size={14} color="#FFFFFF" />} title={copy.suggestedTitle} />
+      {pages.map(page => {
+        const categoryLabel = getPageCategoryLabel(page);
+        return (
+          <View key={String(page.pageId || page.id)} className="border-b border-slate-100 pb-3">
+            <TouchableOpacity activeOpacity={0.9} onPress={() => onOpenPage(page)}>
+              <View className="h-28 bg-slate-200">
+                {page.cover ? <Image source={{ uri: page.cover }} className="h-full w-full" resizeMode="cover" /> : null}
+              </View>
+              <View className="flex-row px-4 pt-3">
+                <PageAvatar page={page} size={42} />
+                <View className="ml-3 flex-1">
+                  <Text className="text-sm font-bold text-slate-900" numberOfLines={1}>
+                    {page.pageTitle || page.pageName || copy.defaultTitle}
+                  </Text>
+                  {categoryLabel ? (
+                    <Text className="mt-0.5 text-xs text-slate-500" numberOfLines={1}>
+                      {categoryLabel}
+                    </Text>
+                  ) : null}
+                  <Text className="mt-1 text-xs text-slate-500">
+                    {formatCount(page.likes)} những người như thế này
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="mx-4 mt-3 h-10 items-center justify-center rounded-lg bg-[#0000FF]"
+              activeOpacity={0.86}
+              onPress={() => onLikePage(page.pageId)}
+            >
+              <Text className="text-sm font-bold text-white">
+                {page.isLiked ? copy.likedBtn : copy.likeBtn}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -1258,6 +1481,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   const vm = usePageDetailViewModel(route.params.page);
   const didFocusRef = useRef(false);
   const [inviteVisible, setInviteVisible] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
   // Page-share modal — separate from `inviteVisible` so the offers
   // work happening in this file (and any other modal work) can
   // mount and unmount freely without colliding with the share state.
@@ -1319,17 +1543,70 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     Boolean(adminInfo && Object.keys(adminInfo).length > 0);
 
   const language = useAppLanguage();
-  const copy = PAGE_DETAIL_COPY[language] || PAGE_DETAIL_COPY.vi;
+  const copy = PAGE_DETAIL_UI_COPY[language] || PAGE_DETAIL_UI_COPY.vi;
   const postCardCopy = POST_CARD_COPY[language];
   const insets = useSafeAreaInsets();
 
-  const tabs = useMemo(() => [
-    { id: 'posts' as PageDetailTab, label: copy.tabPosts },
-    { id: 'about' as PageDetailTab, label: copy.tabAbout },
-    { id: 'followers' as PageDetailTab, label: copy.tabFollowers },
-    { id: 'reviews' as PageDetailTab, label: copy.tabReviews },
-    { id: 'admins' as PageDetailTab, label: copy.tabAdmins },
-  ], [copy]);
+  const filterItems = useMemo(
+    () => [
+      {
+        key: 'posts' as PageDetailTab,
+        accessibilityLabel: 'All',
+        icon: (active: boolean) => (
+          <FileText
+            size={22}
+            color={active ? '#002fff' : '#9ca3af'}
+            strokeWidth={active ? 2.5 : 2.0}
+          />
+        ),
+      },
+      {
+        key: 'info' as PageDetailTab,
+        accessibilityLabel: 'Info',
+        icon: (active: boolean) => (
+          <FileText
+            size={22}
+            color={active ? '#002fff' : '#9ca3af'}
+            strokeWidth={active ? 2.5 : 2.0}
+          />
+        ),
+      },
+      {
+        key: 'photos' as PageDetailTab,
+        accessibilityLabel: 'Photos',
+        icon: (active: boolean) => (
+          <ImageIcon
+            size={22}
+            color={active ? '#002fff' : '#9ca3af'}
+            strokeWidth={active ? 2.5 : 2.0}
+          />
+        ),
+      },
+      {
+        key: 'videos' as PageDetailTab,
+        accessibilityLabel: 'Videos',
+        icon: (active: boolean) => (
+          <Play
+            size={22}
+            color={active ? '#002fff' : '#9ca3af'}
+            strokeWidth={active ? 2.5 : 2.0}
+          />
+        ),
+      },
+      {
+        key: 'music' as PageDetailTab,
+        accessibilityLabel: 'Music',
+        icon: (active: boolean) => (
+          <Music
+            size={22}
+            color={active ? '#002fff' : '#9ca3af'}
+            strokeWidth={active ? 2.5 : 2.0}
+          />
+        ),
+      },
+    ],
+    [],
+  );
 
   useEffect(() => {
     if (inviteVisible) {
@@ -1444,12 +1721,46 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     navigation.navigate(ROUTES.CREATE_POST, { page: vm.page });
   }, [navigation, vm.page]);
 
-  const handleCreateOffer = useCallback(() => {
-    navigation.navigate(ROUTES.CREATE_OFFER, {
-      pageId: Number(vm.page.pageId),
-      pageName: vm.page.pageTitle,
+  const handleCreateJob = useCallback(() => {
+    navigation.navigate(ROUTES.CREATE_JOB, {
+      pageId: String(vm.page.pageId),
+      pageName: vm.page.pageTitle || vm.page.pageName,
     });
-  }, [navigation, vm.page.pageId, vm.page.pageTitle]);
+  }, [navigation, vm.page.pageId, vm.page.pageName, vm.page.pageTitle]);
+
+  const handleOpenOffers = useCallback(() => {
+    navigation.navigate(ROUTES.PAGE_OFFERS, {
+      pageId: Number(vm.page.pageId),
+      pageName: vm.page.pageTitle || vm.page.pageName,
+      isOwner: canManagePage,
+    });
+  }, [canManagePage, navigation, vm.page.pageId, vm.page.pageName, vm.page.pageTitle]);
+
+  const handleEditPage = useCallback(() => {
+    navigation.navigate(ROUTES.EDIT_PAGE, { page: vm.page });
+  }, [navigation, vm.page]);
+
+  const handleReportFromMenu = useCallback(
+    async () => {
+      await vm.reportPage('Báo cáo từ ứng dụng');
+      Alert.alert(copy.reportSent, copy.reportSentMsg);
+    },
+    [copy.reportSent, copy.reportSentMsg, vm],
+  );
+
+  const handleOpenPageSettings = useCallback(
+    (pageId: string) => {
+      navigation.navigate(ROUTES.PAGE_SETTINGS, { pageId, page: vm.page });
+    },
+    [navigation, vm.page],
+  );
+
+  const handleOpenSuggestedPage = useCallback(
+    (page: PagesItem) => {
+      navigation.push(ROUTES.PAGE_DETAIL, { page });
+    },
+    [navigation],
+  );
 
   const handleReport = useCallback(() => {
     Alert.alert(copy.reportTitle, copy.reportMessage, [
@@ -1532,8 +1843,9 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onFollow={vm.toggleFollow}
         onShare={handleShare}
         canManagePage={canManagePage}
-        onCreatePost={handleCreatePost}
-        onCreateOffer={handleCreateOffer}
+        onCreateJob={handleCreateJob}
+        onOpenOffers={handleOpenOffers}
+        onEditPage={handleEditPage}
         onChangeAvatar={handleChangeAvatar}
         onChangeCover={handleChangeCover}
         isUploadingAvatar={vm.isUploadingAvatar}
@@ -1544,21 +1856,30 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         // absolute overlay) so they ride the cover as the user
         // scrolls up/down.
         onBack={() => navigation.goBack()}
-        onMore={handleReport}
+        onMore={() => setMenuVisible(true)}
         copy={copy}
+      />
+      <InvitePageRow label={copy.inviteRow} onPress={() => setInviteVisible(true)} />
+      <ComposerCard
+        onPress={handleCreatePost}
+        avatarUrl={vm.page.avatar}
+        copy={postCardCopy}
       />
       {vm.error ? (
         <View className="mx-4 mt-3 rounded-2xl bg-red-50 px-4 py-3">
           <Text className="text-caption-primary text-red-600">{vm.error}</Text>
         </View>
       ) : null}
-      <Tabs activeTab={vm.activeTab} onChange={vm.setActiveTab} tabs={tabs} />
-      {vm.activeTab === 'posts' ? (
-        <PostFilterChips
-          active={vm.postFilter}
-          counts={vm.postCounts}
-          copy={copy}
-          onChange={vm.setPostFilter}
+      <FeedSourceFilterBar
+        activeKey={vm.activeTab}
+        items={filterItems}
+        onChange={vm.setActiveTab}
+      />
+      {vm.activeTab === 'posts' || vm.activeTab === 'photos' || vm.activeTab === 'videos' ? (
+        <PostSearchBox
+          value={vm.searchQuery}
+          placeholder="Tìm kiếm các bài viết"
+          onChangeText={vm.setSearchQuery}
         />
       ) : null}
     </>
@@ -1658,26 +1979,34 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
 
   const footer = (
     <>
-      {vm.activeTab === 'posts' && vm.isLoadingPostsMore ? (
+      {(vm.activeTab === 'posts' || vm.activeTab === 'photos' || vm.activeTab === 'videos') &&
+      vm.isLoadingPostsMore ? (
         <View className="py-4">
           <ActivityIndicator color="#002fff" />
         </View>
       ) : null}
-      {vm.activeTab === 'about' ? <AboutTab page={vm.page} /> : null}
-      {vm.activeTab === 'followers' ? (
-        <UsersTab title={copy.followersTitle} users={vm.followers} />
+      {vm.activeTab === 'music' ? (
+        <View className="px-4 py-6">
+          <Text className="rounded-2xl bg-white px-4 py-8 text-center text-body-secondary">
+            {copy.emptyMusic}
+          </Text>
+        </View>
       ) : null}
-      {vm.activeTab === 'admins' ? (
-        <UsersTab title={copy.adminsTitle} users={vm.admins} />
-      ) : null}
-      {vm.activeTab === 'reviews' ? (
-        <ReviewsTab
-          reviews={vm.reviews}
-          hasMore={vm.reviewsHasMore}
-          isLoadingMore={vm.isLoadingReviewsMore}
-          onLoadMore={vm.loadMoreReviews}
-          onRate={vm.ratePage}
-        />
+      {vm.activeTab === 'posts' || vm.activeTab === 'info' ? (
+        <>
+          <PageInfoSections
+            page={vm.page}
+            copy={copy}
+            onOpenOffers={handleOpenOffers}
+            onCreateJob={handleCreateJob}
+          />
+          <SuggestedPagesSection
+            pages={vm.suggestedPages}
+            copy={copy}
+            onOpenPage={handleOpenSuggestedPage}
+            onLikePage={vm.toggleSuggestedPageLike}
+          />
+        </>
       ) : null}
     </>
   );
@@ -1693,78 +2022,34 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   return (
     <View className="flex-1 surface-base">
       <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
-      <FeedHeader />
-
-      {/* Standard sticky AppBar */}
-      <View
-        style={{
-          backgroundColor: '#ffffff',
-          borderBottomWidth: 1,
-          borderBottomColor: '#f1f5f9',
-        }}
-      >
-        <View
-          style={{
-            height: 56,
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: 16,
-          }}
-        >
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.7}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              backgroundColor: '#ffffff',
-              borderWidth: 1,
-              borderColor: '#f1f5f9',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginRight: 12,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.04,
-              shadowRadius: 4,
-              elevation: 2,
-            }}
-          >
-            <ArrowLeft size={22} color="#0F172A" />
-          </TouchableOpacity>
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '800',
-              color: '#0F172A',
-              flex: 1,
-            }}
-            numberOfLines={1}
-          >
-            {vm.page.pageTitle || vm.page.pageName || copy.defaultTitle}
-          </Text>
-        </View>
-      </View>
 
       <FlatList
         className="flex-1"
-        data={vm.activeTab === 'posts' ? vm.displayedPosts : []}
+        data={vm.displayedPosts}
         keyExtractor={item => `${item.kind}:${item.id}`}
         renderItem={renderPost}
         ListHeaderComponent={listHeader}
         ListFooterComponent={footer}
         ListEmptyComponent={
-          vm.activeTab === 'posts' ? (
-            <View className="px-4 py-10">
-              {vm.isLoading ? (
-                <ActivityIndicator color="#002fff" />
-              ) : (
-                <Text className="rounded-2xl bg-white px-4 py-8 text-center text-body-secondary">
-                  {copy.emptyPosts}
+          vm.activeTab === 'posts' || vm.activeTab === 'photos' || vm.activeTab === 'videos' ? (
+          <View className="px-4 py-10">
+            {vm.isLoading ? (
+              <ActivityIndicator color="#002fff" />
+            ) : (
+              <View className="items-center bg-white px-4 py-12">
+                <View className="h-16 w-16 items-center justify-center rounded-full bg-slate-100">
+                  <Flag size={28} color="#94A3B8" />
+                </View>
+                <Text className="mt-3 text-center text-sm text-slate-500">
+                  {vm.activeTab === 'photos'
+                    ? copy.emptyPhotos
+                    : vm.activeTab === 'videos'
+                      ? copy.emptyVideos
+                      : `${vm.page.pageName || vm.page.pageTitle || copy.defaultTitle} ${copy.emptyPosts}`}
                 </Text>
-              )}
-            </View>
+              </View>
+            )}
+          </View>
           ) : null
         }
         contentContainerClassName="pb-10"
@@ -1777,7 +2062,11 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
             colors={['#002fff']}
           />
         }
-        onEndReached={vm.activeTab === 'posts' ? vm.loadMorePosts : undefined}
+        onEndReached={
+          vm.activeTab === 'posts' || vm.activeTab === 'photos' || vm.activeTab === 'videos'
+            ? vm.loadMorePosts
+            : undefined
+        }
         onEndReachedThreshold={0.55}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
@@ -1800,6 +2089,14 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         visible={shareSheetVisible}
         onClose={() => setShareSheetVisible(false)}
         page={vm.page}
+      />
+      <PageDetailMenuActionSheet
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        page={vm.page}
+        isOwnerOrAdmin={canManagePage}
+        onReport={handleReportFromMenu}
+        onOpenSettings={handleOpenPageSettings}
       />
       <ReactionPickerOverlay
         anchor={pickerAnchor}
@@ -1833,6 +2130,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onSubmitReply={commentVm.submitReply}
         onSetReaction={commentVm.setCommentReaction}
         onDelete={commentVm.deleteComment}
+        onEdit={commentVm.editComment}
         onLoadReplies={commentVm.loadReplies}
         onCollapseReplies={commentVm.collapseReplies}
         onStartReply={commentVm.startReplyTo}
@@ -1852,6 +2150,8 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onClose={handleClosePhotoViewer}
         onReact={vm.togglePostReaction}
         onCommentTap={handleOpenComments}
+        onProfilePress={handleNavigateToProfile}
+        onInternalShare={handleInternalSharePost}
         posts={vm.posts}
       />
     </View>

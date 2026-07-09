@@ -15,7 +15,11 @@ import type { EventsItem } from '../events/domain/types/events.types';
 import type { UserProfile } from '../user/domain/types/user.types';
 
 export type MainTabParamList = {
-  [ROUTES.FEED]: undefined;
+  [ROUTES.FEED]:
+    | {
+        filter?: 'photos';
+      }
+    | undefined;
   [ROUTES.EXPLORE]: undefined;
   [ROUTES.REELS]:
     | {
@@ -155,14 +159,16 @@ export type RootStackParamList = {
   [ROUTES.BOOSTED]: undefined;
   [ROUTES.POPULAR]: undefined;
   [ROUTES.BLOGS]: { category?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined;
+  [ROUTES.MY_ARTICLES]: undefined;
   [ROUTES.BLOG_FILTER_CATEGORY]: { currentCategory?: string; searchQuery?: string; sortBy?: string; myPostsOnly?: boolean } | undefined;
   [ROUTES.BLOG_DETAIL]: { blogId: string };
   [ROUTES.CREATE_BLOG]: undefined;
+  [ROUTES.EDIT_BLOG]: { blogId: string };
   [ROUTES.MOVIES]: undefined;
   [ROUTES.CREATE_MOVIE]: undefined;
   [ROUTES.JOBS]: undefined;
   [ROUTES.JOB_DETAIL]: { jobId?: string; job?: any };
-  [ROUTES.CREATE_JOB]: undefined;
+  [ROUTES.CREATE_JOB]: { pageId?: string; pageName?: string } | undefined;
   [ROUTES.EARNINGS]: undefined;
   [ROUTES.AFFILIATES]: undefined;
   [ROUTES.INVITE_FRIENDS]: undefined;

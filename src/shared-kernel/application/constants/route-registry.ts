@@ -109,6 +109,8 @@ export const apiRoutes = {
     reviews: 'page_reviews',
     rate: 'rate_page',
     report: 'report_page',
+    delete: 'delete_page',
+    privileges: 'update_privileges',
   },
   offers: {
     get: 'offer',
@@ -125,6 +127,8 @@ export const apiRoutes = {
     get: 'get-articles',
     getById: 'get-blog-by-id',
     create: 'create-blog',
+    delete: 'delete-my-blog',
+    comments: 'blogs',
   },
   photos: {
     getUserAlbums: 'get-user-albums',

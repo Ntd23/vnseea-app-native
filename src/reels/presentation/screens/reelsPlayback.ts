@@ -36,7 +36,6 @@ export function setVideoPlaybackTime(
 
 export function isReelItemActive({
   isScreenFocused,
-  isCommentsOpen,
   index,
   activeIndex,
 }: {
@@ -45,7 +44,7 @@ export function isReelItemActive({
   index: number;
   activeIndex: number;
 }) {
-  return isScreenFocused && !isCommentsOpen && index === activeIndex;
+  return isScreenFocused && index === activeIndex;
 }
 
 type NavigationRouteLike = {

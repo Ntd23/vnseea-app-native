@@ -34,10 +34,12 @@ import {
   AppState,
   Dimensions,
   FlatList,
+  Image,
   LayoutChangeEvent,
   Platform,
   RefreshControl,
   StyleSheet,
+  StatusBar,
   Text,
   TouchableOpacity,
   View,
@@ -100,12 +102,16 @@ const NATIVE_TAB_SCROLL_BEHAVIOR_NONE = 0;
 const NATIVE_TAB_SCROLL_BEHAVIOR_ON_SCROLL_DOWN = 1;
 const REELS_NEW_VIDEO_PROBE_INTERVAL_MS = 30000;
 const REELS_NEW_VIDEO_PROBE_LIMIT = 6;
+const REELS_HEADER_TOP_GAP = 10;
+const REELS_NEW_BUTTON_HEADER_GAP = 50;
+const REELS_HEADER_LAYER_Z = 10030;
 
 // Screen width — used by the swipe-back gesture to compute the dismiss
 // threshold and target translation.
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as any;
+const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 function getReelTimestamp(item?: ReelsItem | null) {
   const value = Number(item?.postedAt);
@@ -210,6 +216,13 @@ export default function ReelsScreen() {
   );
   const isPlaybackRouteFocused = isFocusedScreen && isSelectedRoute;
   const insets = useSafeAreaInsets();
+  const reelsTopInset = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
+    12,
+  );
+  const reelsHeaderTop = reelsTopInset + REELS_HEADER_TOP_GAP;
+  const newReelsButtonTop = reelsHeaderTop + REELS_NEW_BUTTON_HEADER_GAP;
   const { bottomContentPadding } = useMainTabContentInsets();
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
     return reelsStorage.getBoolean('reels.autoScroll') ?? true;
@@ -232,8 +245,13 @@ export default function ReelsScreen() {
 
   const initialVideoId = route.params?.initialVideoId;
   const initialPost = route.params?.post;
+  const initialLaunchCoverUri =
+    typeof initialPost?.thumbnailUrl === 'string' &&
+    initialPost.thumbnailUrl.length > 0
+      ? initialPost.thumbnailUrl
+      : undefined;
+  const [launchCoverUri] = useState(initialLaunchCoverUri);
   const flatListRef = useRef<FlatList>(null);
-  const entryProgress = useSharedValue(1);
   // Index for the FlatList's `initialScrollIndex` prop. We set this
   // exactly ONCE — after the ViewModel finishes merging the deeplinked
   // video into the first reels page — and never touch it again. Using
@@ -500,10 +518,6 @@ export default function ReelsScreen() {
     // don't loop on the next render.
     consumedInitialVideoIdRef.current = String(initialVideoId);
 
-    // Trigger cinematic entry animation when landing on the deeplinked reel.
-    entryProgress.value = 0;
-    entryProgress.value = withTiming(1, { duration: 350 });
-
     // Clear navigation params so the deep-link doesn't re-trigger on
     // subsequent renders / focus changes.
     navigation.setParams({ initialVideoId: undefined, post: undefined, seekTime: undefined });
@@ -516,7 +530,6 @@ export default function ReelsScreen() {
     vm.setActiveIndex,
     vm,
     navigation,
-    entryProgress,
   ]);
 
   // When the screen loses focus (user goes back to feed), clear the
@@ -531,6 +544,12 @@ export default function ReelsScreen() {
   const [viewportHeight, setViewportHeight] = useState(
     () => Dimensions.get('window').height,
   );
+  const [hasMeasuredViewport, setHasMeasuredViewport] = useState(false);
+  const [isLaunchCoverVisible, setIsLaunchCoverVisible] = useState(
+    () => Boolean(launchCoverUri),
+  );
+  const launchCoverOpacity = useSharedValue(launchCoverUri ? 1 : 0);
+  const launchCoverScale = useSharedValue(launchCoverUri ? 1.01 : 1);
   const itemHeight = viewportHeight;
 
   const [isMuted, setIsMuted] = useState(false); // start unmuted by default
@@ -729,18 +748,32 @@ export default function ReelsScreen() {
     return vm.sharePost(input);
   }, [vm.sharePost]);
 
-  const handlePlayPublisherReel = useCallback((reelId: string, rawPost: any) => {
-    if (rawPost) {
-      vm.setInitialVideo(reelId, rawPost);
+  const handlePlayPublisherReel = useCallback((reel: ReelsItem) => {
+    const existingIndex = vm.items.findIndex(
+      item => String(item.id) === String(reel.id),
+    );
+    const targetIndex = existingIndex >= 0 ? existingIndex : 0;
+
+    if (existingIndex >= 0) {
+      activeIndexRef.current = targetIndex;
+      vm.setActiveIndex(targetIndex);
+    } else {
+      activeIndexRef.current = 0;
+      vm.prependReels([reel]);
       vm.setActiveIndex(0);
-      requestAnimationFrame(() => {
-        flatListRef.current?.scrollToIndex({ index: 0, animated: false });
-      });
     }
-  }, [vm]);
+
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToIndex({
+        index: targetIndex,
+        animated: false,
+      });
+    });
+  }, [vm.items, vm.prependReels, vm.setActiveIndex]);
 
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     const nextHeight = Math.round(event.nativeEvent.layout.height);
+    setHasMeasuredViewport(true);
     setViewportHeight(prev => (prev === nextHeight ? prev : nextHeight));
   }, []);
 
@@ -748,6 +781,8 @@ export default function ReelsScreen() {
     () => vm.items.find(item => item.id === vm.selectedCommentPostId) ?? null,
     [vm.items, vm.selectedCommentPostId],
   );
+  const isPublisherOverlayOpen = selectedPublisherId !== null;
+  const currentReelId = vm.items[vm.activeIndex]?.id ?? null;
 
   const handleRetryComments = useCallback(() => {
     if (vm.selectedCommentPostId) {
@@ -767,7 +802,7 @@ export default function ReelsScreen() {
       // A reel only counts as "active" when this screen has focus —
       // when the user switches tabs, every reel becomes inactive (paused).
       const isActive = isReelItemActive({
-        isScreenFocused: isPlaybackRouteFocused,
+        isScreenFocused: isPlaybackRouteFocused && !isPublisherOverlayOpen,
         isCommentsOpen: vm.isCommentsOpen,
         index,
         activeIndex: vm.activeIndex,
@@ -814,6 +849,7 @@ export default function ReelsScreen() {
       handleOpenShareReel,
       itemHeight,
       isMuted,
+      isPublisherOverlayOpen,
       isPlaybackRouteFocused,
       handleToggleMute,
       scrollY,
@@ -889,7 +925,7 @@ export default function ReelsScreen() {
   const swipeBackGesture = useMemo(
     () =>
       Gesture.Pan()
-        .hitSlop({ left: 0, width: 70 })
+        .hitSlop({ left: 0, width: 12 })
         .activeOffsetX([15, 999])
         .failOffsetY([-15, 15])
         .enabled(!isIosTabRoute && !vm.isCommentsOpen)
@@ -924,19 +960,40 @@ export default function ReelsScreen() {
   );
 
   const screenAnimatedStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(entryProgress.value, [0, 1], [0.5, 1]);
-    const scale = interpolate(entryProgress.value, [0, 1], [0.92, 1]);
-    const translateY = interpolate(entryProgress.value, [0, 1], [250, 0]);
-
     return {
-      opacity,
       transform: [
         { translateX: screenDismissX.value },
-        { translateY },
-        { scale },
       ],
     };
   });
+
+  const launchCoverAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: launchCoverOpacity.value,
+    transform: [{ scale: launchCoverScale.value }],
+  }));
+
+  useEffect(() => {
+    if (!isLaunchCoverVisible || !hasMeasuredViewport || vm.items.length === 0) {
+      return undefined;
+    }
+
+    const timeout = setTimeout(() => {
+      launchCoverScale.value = withTiming(1.035, { duration: 220 });
+      launchCoverOpacity.value = withTiming(0, { duration: 180 }, finished => {
+        if (finished) {
+          runOnJS(setIsLaunchCoverVisible)(false);
+        }
+      });
+    }, 90);
+
+    return () => clearTimeout(timeout);
+  }, [
+    hasMeasuredViewport,
+    isLaunchCoverVisible,
+    launchCoverOpacity,
+    launchCoverScale,
+    vm.items.length,
+  ]);
 
   const backIndicatorStyle = useAnimatedStyle(() => {
     const threshold = SCREEN_WIDTH * 0.32;
@@ -1021,6 +1078,7 @@ export default function ReelsScreen() {
             isMuted,
             activeIndex: vm.activeIndex,
             isPlaybackRouteFocused,
+            isPublisherOverlayOpen,
           }}
           // Only supply `initialScrollIndex` when we have a real
           // deeplink — leaving it `undefined` for normal visits keeps
@@ -1072,13 +1130,27 @@ export default function ReelsScreen() {
           }
         />
 
+        {isLaunchCoverVisible && launchCoverUri ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.launchCover, launchCoverAnimatedStyle]}
+          >
+            <AnimatedImage
+              source={{ uri: launchCoverUri }}
+              style={styles.launchCoverImage}
+              resizeMode="cover"
+            />
+            <View style={styles.launchCoverShade} />
+          </Animated.View>
+        ) : null}
+
         {hasNewReels ? (
           <TouchableOpacity
             onPress={handleOpenNewReels}
             activeOpacity={0.9}
             style={[
               styles.newReelsButton,
-              { top: Math.max(insets.top, 12) + 54 },
+              { top: newReelsButtonTop },
             ]}
           >
             <ArrowUp size={15} color="#fff" />
@@ -1087,13 +1159,18 @@ export default function ReelsScreen() {
         ) : null}
 
         {/* Floating controls: back, auto-scroll, and sound. */}
-        <View style={[styles.headerOverlay, { top: Math.max(insets.top, 12) + 4 }]}>
+        <View
+          pointerEvents="box-none"
+          collapsable={false}
+          style={[styles.headerOverlay, { top: reelsHeaderTop }]}
+        >
           {/* Left: Back button (if stack navigator has back capability) */}
           {!isIosTabRoute ? (
             <TouchableOpacity
-              onPress={goBackToFeed}
+              delayPressIn={0}
+              onPressIn={goBackToFeed}
               style={styles.headerButton}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
             >
               <ChevronLeft size={26} color="#fff" />
             </TouchableOpacity>
@@ -1102,14 +1179,15 @@ export default function ReelsScreen() {
           )}
 
           {/* Right: Auto scroll toggle + Mute button */}
-          <View style={styles.headerRightRow}>
+          <View pointerEvents="box-none" style={styles.headerRightRow}>
             <TouchableOpacity
-              onPress={toggleAutoScroll}
+              delayPressIn={0}
+              onPressIn={toggleAutoScroll}
               style={[
                 styles.headerCapsuleButton,
                 autoScrollEnabled && styles.headerButtonActive,
               ]}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              hitSlop={{ top: 16, bottom: 16, left: 14, right: 14 }}
             >
               <ChevronsDown size={18} color="#fff" />
               <Text style={styles.headerButtonText}>
@@ -1118,9 +1196,10 @@ export default function ReelsScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={handleToggleMute}
+              delayPressIn={0}
+              onPressIn={handleToggleMute}
               style={styles.headerButton}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
             >
               {isMuted ? (
                 <VolumeX size={20} color="#fff" />
@@ -1149,6 +1228,7 @@ export default function ReelsScreen() {
           onSubmitReply={vm.submitReply}
           onSetReaction={vm.setCommentReaction}
           onDelete={vm.deleteComment}
+          onEdit={vm.editComment}
           onLoadReplies={vm.loadReplies}
           onCollapseReplies={vm.collapseReplies}
           onStartReply={vm.startReplyTo}
@@ -1167,6 +1247,7 @@ export default function ReelsScreen() {
         <ReelPublisherOverlay
           visible={selectedPublisherId !== null}
           userId={selectedPublisherId}
+          currentReelId={currentReelId}
           onClose={() => setSelectedPublisherId(null)}
           onPlayReel={handlePlayPublisherReel}
           onFollowToggled={(userId, isFollowing) => {
@@ -1194,31 +1275,59 @@ export default function ReelsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   list: { flex: 1, backgroundColor: '#000' },
+  launchCover: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: '#000',
+    overflow: 'hidden',
+    zIndex: 5,
+  },
+  launchCoverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  launchCoverShade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+  },
   headerOverlay: {
     position: 'absolute',
     left: 12,
     right: 12,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    zIndex: 10,
+    zIndex: REELS_HEADER_LAYER_Z,
+    elevation: 32,
   },
   headerButton: {
-    height: 40,
-    width: 40,
-    borderRadius: 20,
+    height: 44,
+    width: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: REELS_HEADER_LAYER_Z + 1,
+    elevation: 33,
   },
   headerCapsuleButton: {
-    height: 40,
-    borderRadius: 20,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
+    zIndex: REELS_HEADER_LAYER_Z + 1,
+    elevation: 33,
   },
   headerButtonActive: {
     backgroundColor: '#0866ff',

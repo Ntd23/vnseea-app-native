@@ -4448,7 +4448,7 @@ function SettingsScreen() {
       }
 
       if (id === 'my-articles') {
-        navigation.navigate(ROUTES.BLOGS as never);
+        navigation.navigate(ROUTES.MY_ARTICLES as never);
         return;
       }
 

@@ -1,6 +1,7 @@
 // Description: Defines repository contracts for page listing, creation, and editing.
 import type {
   CreatePageDraft,
+  PagePrivileges,
   PageReview,
   PageReviewsPage,
   PageUser,
@@ -13,6 +14,8 @@ export interface CreatePageResult {
   page: PagesItem;
   message?: string;
 }
+
+export type UpdatePageSection = 'general' | 'profile' | 'social' | 'design';
 
 export interface PagesRepository {
   getMyPages(options?: PagesListOptions): Promise<PagesListPage>;
@@ -48,10 +51,20 @@ export interface PagesRepository {
     text: string;
   }): Promise<void>;
   createPage(draft: CreatePageDraft): Promise<CreatePageResult>;
-  updatePage(pageId: string, draft: CreatePageDraft): Promise<CreatePageResult>;
+  updatePage(
+    pageId: string,
+    draft: CreatePageDraft,
+    section?: UpdatePageSection,
+  ): Promise<CreatePageResult>;
   updatePageMedia(
     pageId: string,
-    field: 'avatar' | 'cover',
+    field: 'avatar' | 'cover' | 'background_image',
     file: { uri: string; name?: string; type?: string },
   ): Promise<PagesItem>;
+  updatePagePrivileges(
+    pageId: string,
+    userId: string,
+    privileges: PagePrivileges,
+  ): Promise<void>;
+  deletePage(pageId: string, password: string): Promise<void>;
 }

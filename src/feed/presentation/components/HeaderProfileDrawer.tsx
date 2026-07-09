@@ -79,6 +79,7 @@ import {
   TrendingUp,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToOwnProfile } from '../../../navigation/profileNavigation';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import type { SettingsPanelRouteParam } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -518,7 +519,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             navigation.navigate(ROUTES.MY_PRODUCTS);
             return;
           case 'myArticles':
-            navigation.navigate(ROUTES.BLOGS);
+            navigation.navigate(ROUTES.MY_ARTICLES);
             return;
           case 'forum':
             navigation.navigate(ROUTES.FORUM);
@@ -609,7 +610,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
 
   const handleOpenProfile = useCallback(() => {
     handleClose();
-    navigation.navigate(ROUTES.PROFILE);
+    navigateToOwnProfile(navigation);
   }, [handleClose, navigation]);
 
   if (!shouldRender) return null;
@@ -834,18 +835,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
              onPress={() => Linking.openURL(apiConfig.webBaseUrl + '/go-pro').catch(() => undefined)}
             />
 
-            {isAdmin && (
-              <>
-                <View style={styles.separator} />
-                <MenuRow
-                 title={copy.adminAreaLabel}
-                 icon={<LayoutGrid size={18} color="#64748b" />}
-                 onPress={() => handleItemPress({ type: 'feature', feature: 'admin' })}
-                />
-              </>
-            )}
-
-            <View style={styles.separator} />
+            {/* <View style={styles.separator} /> */}
 
             <MenuRow
              title={copy.logoutLabel}

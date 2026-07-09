@@ -7,7 +7,7 @@ describe('reels navigation target', () => {
     source: 'saved' as const,
   };
 
-  it('opens Reels through MainTabs on iOS so the native Video tab remains visible', () => {
+  it('opens Reels through MainTabs on iOS so the bottom bar stays visible', () => {
     expect(createReelsNavigationTarget('ios', params)).toEqual({
       name: ROUTES.MAIN_TABS,
       params: {
@@ -17,7 +17,7 @@ describe('reels navigation target', () => {
     });
   });
 
-  it('opens Reels through MainTabs on Android so the custom Reels tab remains selected', () => {
+  it('opens Reels through MainTabs on Android for a consistent tab entrypoint', () => {
     expect(createReelsNavigationTarget('android', params)).toEqual({
       name: ROUTES.MAIN_TABS,
       params: {

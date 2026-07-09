@@ -2,6 +2,7 @@
 import React, { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
+  Animated as RNAnimated,
   FlatList,
   Image,
   RefreshControl,
@@ -27,7 +28,10 @@ import {
   BadgeCheck,
   MoreHorizontal,
   ChevronRight,
+  Tag,
+  FileText,
 } from 'lucide-react-native';
+import { ScrollView as RNScrollView } from 'react-native';
 import Animated, {
   FadeInDown,
   useAnimatedStyle,
@@ -83,8 +87,8 @@ const COPY: Record<
   vi: {
     headerTitle: 'Trang',
     myPagesLabel: 'Trang của tôi',
-    suggestedLabel: 'Đề xuất',
-    likedLabel: 'Đã yêu thích',
+    suggestedLabel: 'Các trang được đề xuất',
+    likedLabel: 'Các trang được yêu thích',
     myPagesTitle: 'Trang của bạn',
     myPagesSubtitle: 'Quản lý các trang bạn đã tạo hoặc đang là quản trị viên.',
     suggestedTitle: 'Trang được đề xuất',
@@ -109,8 +113,8 @@ const COPY: Record<
   en: {
     headerTitle: 'Pages',
     myPagesLabel: 'My Pages',
-    suggestedLabel: 'Suggested',
-    likedLabel: 'Liked',
+    suggestedLabel: 'Các trang được đề xuất',
+    likedLabel: 'Các trang được yêu thích',
     myPagesTitle: 'Your Pages',
     myPagesSubtitle: 'Manage pages you created or where you are an admin.',
     suggestedTitle: 'Suggested Pages',
@@ -279,42 +283,121 @@ function EmptyState({
 function FilterTabs({
   activeFilter,
   onChange,
+  onCreate,
 }: {
   activeFilter: PagesFilter;
   onChange: (filter: PagesFilter) => void;
+  onCreate: () => void;
 }) {
   const language = useAppLanguage();
   const copy = COPY[language] ?? COPY.vi;
 
-  return (
-    <View style={styles.tabsContainer}>
-      {FILTERS.map(filter => {
-        const isActive = filter === activeFilter;
-        const label =
-          filter === 'mine'
-            ? copy.myPagesLabel
-            : filter === 'suggested'
-            ? copy.suggestedLabel
-            : copy.likedLabel;
+  const [contentWidth, setContentWidth] = React.useState(0);
+  const [width, setWidth] = React.useState(0);
+  const scrollX = React.useRef(new RNAnimated.Value(0)).current;
 
-        return (
-          <PressScale
-            key={filter}
-            onPress={() => onChange(filter)}
-            style={styles.tabItem}
-            contentStyle={styles.tabItemContent}
-          >
-            <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-              {label}
-            </Text>
-            {isActive ? (
-              <View style={styles.tabIndicator} />
-            ) : (
-              <View style={styles.tabIndicatorPlaceholder} />
+  const showIndicator = contentWidth > width && width > 0;
+  const thumbWidth = showIndicator ? Math.max(20, (width / contentWidth) * width) : 0;
+
+  return (
+    <View style={{ height: 56, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ flex: 1, height: '100%', justifyContent: 'center' }}>
+          <RNScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            onContentSizeChange={(w) => setContentWidth(w)}
+            onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+            onScroll={RNAnimated.event(
+              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+              { useNativeDriver: false }
             )}
-          </PressScale>
-        );
-      })}
+            scrollEventThrottle={16}
+            contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 4 }}
+            style={{ flex: 1 }}
+          >
+            {FILTERS.map(filter => {
+              const isActive = filter === activeFilter;
+              const label =
+                filter === 'mine'
+                  ? copy.myPagesLabel
+                  : filter === 'suggested'
+                  ? copy.suggestedLabel
+                  : copy.likedLabel;
+
+              return (
+                <TouchableOpacity
+                  key={filter}
+                  activeOpacity={0.84}
+                  onPress={() => onChange(filter)}
+                  style={{
+                    height: '100%',
+                    justifyContent: 'center',
+                    paddingHorizontal: 12,
+                    borderBottomWidth: 3,
+                    borderBottomColor: isActive ? BRAND : 'transparent',
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: isActive ? '#111827' : '#64748B',
+                      fontSize: 13,
+                      fontWeight: isActive ? '800' : '700',
+                    }}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </RNScrollView>
+
+          {/* Custom Scroll Indicator (Full-width, positioned above the active line) */}
+          {showIndicator && (
+            <View style={{ position: 'absolute', bottom: 4, left: 0, right: 0, height: 2, backgroundColor: '#F1F5F9', pointerEvents: 'none' }}>
+              <RNAnimated.View
+                style={{
+                  width: thumbWidth,
+                  height: '100%',
+                  backgroundColor: '#94A3B8',
+                  borderRadius: 1,
+                  transform: [
+                    {
+                      translateX: scrollX.interpolate({
+                        inputRange: [0, Math.max(1, contentWidth - width)],
+                        outputRange: [0, width - thumbWidth],
+                        extrapolate: 'clamp',
+                      }),
+                    },
+                  ],
+                }}
+              />
+            </View>
+          )}
+        </View>
+
+        <TouchableOpacity
+          activeOpacity={0.86}
+          onPress={onCreate}
+          style={{
+            marginRight: 8,
+            minHeight: 34,
+            borderRadius: 6,
+            backgroundColor: BRAND,
+            paddingHorizontal: 10,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            shadowColor: BRAND,
+            shadowOpacity: 0.22,
+            shadowRadius: 6,
+            elevation: 2,
+          }}
+        >
+          <Plus size={14} color="#FFFFFF" />
+          <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '900' }}>Tạo ra</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -395,13 +478,23 @@ function PageInfoRow({
 }
 
 // TODO: extract to src/pages/presentation/components/PageCard.tsx if reused
+const categoryMap: Record<string, string> = {
+  '1': 'Xe cộ',
+  '2': 'Hài hước',
+  '3': 'Kinh tế',
+  '4': 'Giáo dục',
+  '5': 'Giải trí',
+  '6': 'Phim ảnh',
+  '7': 'Công nghệ',
+  '8': 'Ẩm thực',
+  '9': 'Du lịch',
+  '10': 'Thời trang',
+  '11': 'Thể thao',
+};
+
 function PageCard({
   page,
-  onEdit,
   onOpen,
-  onMore,
-  onPressLikes,
-  onPressAddress,
   index,
 }: {
   page: PagesItem;
@@ -412,85 +505,105 @@ function PageCard({
   onPressAddress?: () => void;
   index: number;
 }) {
-  const language = useAppLanguage();
-  const copy = COPY[language] ?? COPY.vi;
-  const showActiveBadge = Number(page.pageId) % 2 === 0;
+  const categoryLabel = categoryMap[page.pageCategory || ''] || page.pageCategory || '';
 
   return (
     <Animated.View
       entering={FadeInDown.delay(80 + index * 60).duration(420)}
-      style={styles.cardContainer}
+      style={{
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        paddingVertical: 28,
+        paddingHorizontal: 20,
+        alignItems: 'center',
+        marginBottom: 16,
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+      }}
     >
-      {/* Cover with action buttons */}
-      <View style={styles.coverWrapper}>
-        <PageCover page={page} />
-
-        {/* Top-right: edit + view page */}
-        <View style={styles.coverActions}>
-          {onEdit ? (
-            <PressScale onPress={onEdit} contentStyle={styles.editBtn}>
-              <Edit3 size={18} color={TEXT} />
-            </PressScale>
-          ) : null}
-          <PressScale onPress={onOpen} contentStyle={styles.viewPageBtn}>
-            <ExternalLink size={16} color="#FFFFFF" />
-            <Text style={styles.viewPageText} numberOfLines={1}>
-              {copy.viewPage}
-            </Text>
-          </PressScale>
-        </View>
-
-        {/* Top-left: more menu (optional) */}
-        {onMore ? (
-          <PressScale onPress={onMore} contentStyle={styles.coverMoreBtn}>
-            <MoreHorizontal size={20} color="#FFFFFF" />
-          </PressScale>
-        ) : null}
-
-        {/* Avatar overlap bottom-left */}
-        <View style={styles.avatarWrap}>
-          <PageAvatar page={page} />
-          {showActiveBadge ? <View style={styles.activeBadge} /> : null}
-        </View>
+      {/* Orange flag in beige circle, or page avatar */}
+      <View
+        style={{
+          width: 80,
+          height: 80,
+          borderRadius: 40,
+          backgroundColor: '#FFF0E5',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+        }}
+      >
+        {page.avatar ? (
+          <Image
+            source={{ uri: page.avatar }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        ) : (
+          <Flag size={36} color="#FF8A00" fill="#FF8A00" />
+        )}
       </View>
 
-      {/* Info section */}
-      <View style={styles.infoContainer}>
-        <View style={styles.titleTextRow}>
-          <Text style={styles.titleText} numberOfLines={1}>
-            {page.pageTitle || page.pageName || 'Trang'}
-          </Text>
-          {page.verified ? (
-            <BadgeCheck size={18} color="#0000FF" fill="#0000FF" />
-          ) : null}
-        </View>
-
-        {page.pageName ? (
-          <Text style={styles.handleText}>@{page.pageName}</Text>
+      {/* Page Title */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 16 }}>
+        <Text
+          style={{
+            fontSize: 16,
+            fontWeight: '800',
+            color: '#111827',
+            textAlign: 'center',
+          }}
+          numberOfLines={1}
+        >
+          {page.pageTitle || page.pageName || 'Trang'}
+        </Text>
+        {page.verified ? (
+          <BadgeCheck size={18} color="#0084FF" fill="#0084FF" />
         ) : null}
-
-        {page.pageDescription ? (
-          <Text style={styles.descriptionText} numberOfLines={2}>
-            {page.pageDescription}
-          </Text>
-        ) : null}
-
-        {/* Info grid: 2 cells with chevron */}
-        <View style={styles.infoGrid}>
-          <PageInfoRow
-            icon={<ThumbsUp size={16} color={BRAND} fill={BRAND + '20'} />}
-            label={copy.likesCardLabel}
-            value={`${formatCount(page.likes)} ${copy.likesSuffix}`}
-            onPress={onPressLikes}
-          />
-          <PageInfoRow
-            icon={<MapPin size={16} color={MUTED} />}
-            label={copy.addressCardLabel}
-            value={page.address?.trim() || '—'}
-            onPress={page.address ? onPressAddress : undefined}
-          />
-        </View>
       </View>
+
+      {/* Like count: 👍 {count} những người như thế này */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
+        <ThumbsUp size={14} color="#64748B" fill="#64748B" />
+        <Text style={{ fontSize: 13, color: '#64748B', fontWeight: '500' }}>
+          {`${page.likes || 0} những người như thế này`}
+        </Text>
+      </View>
+
+      {/* Category: 🏷️ {label} */}
+      {categoryLabel ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+          <Tag size={14} color="#64748B" />
+          <Text style={{ fontSize: 13, color: '#64748B', fontWeight: '500' }}>
+            {categoryLabel}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Circular Blue Action Button */}
+      <TouchableOpacity
+        activeOpacity={0.82}
+        onPress={onOpen}
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          backgroundColor: '#0084FF',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginTop: 18,
+          shadowColor: '#0084FF',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.2,
+          shadowRadius: 6,
+          elevation: 2,
+        }}
+      >
+        <FileText size={20} color="#FFFFFF" />
+      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -567,28 +680,15 @@ function PagesScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <FeedHeader />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <PressScale onPress={() => navigation.goBack()} style={styles.headerCircleBtn}>
-            <ArrowLeft size={22} color={TEXT} />
-          </PressScale>
-          <Text style={styles.headerTitle}>{copy.headerTitle}</Text>
-        </View>
-
-        <View style={styles.headerRight}>
-          <PressScale onPress={() => navigation.navigate(ROUTES.SEARCH)} style={styles.headerCircleBtn}>
-            <Search size={20} color={TEXT} />
-          </PressScale>
-          <PressScale onPress={handleCreate} style={styles.headerCreateBtn}>
-            <Plus size={22} color="#FFFFFF" />
-          </PressScale>
-        </View>
-      </View>
+      <FilterTabs
+        activeFilter={vm.activeFilter}
+        onChange={vm.setActiveFilter}
+        onCreate={handleCreate}
+      />
 
       <FlatList
         style={styles.list}
@@ -607,33 +707,6 @@ function PagesScreen() {
         }
         onEndReached={vm.loadMore}
         onEndReachedThreshold={0.45}
-        ListHeaderComponent={
-          <>
-            {/* Banner Card */}
-            <Animated.View
-              entering={FadeInDown.delay(50).duration(350)}
-              style={styles.bannerCard}
-            >
-              <View style={styles.bannerLeft}>
-                <View style={styles.bannerIconCircle}>
-                  <Flag size={20} color={BRAND} fill={BRAND + '20'} />
-                </View>
-                <Text style={styles.bannerTitle}>{activeCopy.title}</Text>
-                <Text style={styles.bannerSubtitle}>{activeCopy.subtitle}</Text>
-              </View>
-              <Image
-                source={require('../../../assets/pages_banner_illustration.png')}
-                style={styles.bannerIllustration}
-                resizeMode="contain"
-              />
-            </Animated.View>
-
-            <FilterTabs
-              activeFilter={vm.activeFilter}
-              onChange={vm.setActiveFilter}
-            />
-          </>
-        }
         ListEmptyComponent={
           vm.isLoading ? (
             <PagesSkeleton />
@@ -654,7 +727,7 @@ function PagesScreen() {
           ) : null
         }
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -1129,3 +1202,4 @@ const styles = StyleSheet.create({
 });
 
 export default PagesScreen;
+

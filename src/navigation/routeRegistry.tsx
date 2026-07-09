@@ -37,6 +37,7 @@ import {
   BlogFilterCategoryScreen,
   BlogsScreen,
   CreateBlogScreen,
+  MyArticlesScreen,
 } from '../blogs';
 import { BoostedScreen } from '../boosted';
 import { CreatePageScreen, PageDetailScreen, PageSettingsScreen, PagesScreen } from '../pages';
@@ -236,9 +237,11 @@ export function createStackRoutes(
     { name: ROUTES.BOOSTED, component: BoostedScreen },
     { name: ROUTES.POPULAR, component: PopularScreen },
     { name: ROUTES.BLOGS, component: BlogsScreen },
+    { name: ROUTES.MY_ARTICLES, component: MyArticlesScreen },
     { name: ROUTES.BLOG_FILTER_CATEGORY, component: BlogFilterCategoryScreen },
     { name: ROUTES.BLOG_DETAIL, component: BlogDetailScreen },
     { name: ROUTES.CREATE_BLOG, component: CreateBlogScreen },
+    { name: ROUTES.EDIT_BLOG, component: CreateBlogScreen },
     { name: ROUTES.MOVIES, component: MoviesScreen },
     { name: ROUTES.CREATE_MOVIE, component: CreateMovieScreen },
     { name: ROUTES.JOBS, component: JobsScreen },
