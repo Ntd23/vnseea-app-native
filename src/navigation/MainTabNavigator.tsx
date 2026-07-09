@@ -27,6 +27,7 @@ import { ROUTES } from './constants/routes';
 import { IOS_NATIVE_TAB_ROUTES, TAB_ROUTES } from './routeRegistry';
 import type { MainTabParamList } from './types';
 import { useNotificationBadgeViewModel } from '../notifications';
+import { iosPagerSwipeLock } from './iosPagerSwipeLock';
 import { tabBarVisibility } from './tabBarVisibility';
 import { nativeTabBarPresentation } from './nativeTabMinimizeBehavior';
 import { useAppLanguage } from '../shared-kernel/application/hooks/useAppLanguage';
@@ -382,6 +383,16 @@ function renderIosPagerTabBar(props: MaterialTopTabBarProps) {
 }
 
 function IosHybridPagedTabNavigator() {
+  const [isIosPagerSwipeEnabled, setIsIosPagerSwipeEnabled] = useState(
+    () => !iosPagerSwipeLock.getLocked(),
+  );
+
+  useEffect(() => {
+    return iosPagerSwipeLock.subscribe(locked => {
+      setIsIosPagerSwipeEnabled(!locked);
+    });
+  }, []);
+
   return (
     <IosPagerTab.Navigator
       style={styles.iosPagerRoot}
@@ -391,7 +402,7 @@ function IosHybridPagedTabNavigator() {
       keyboardDismissMode="on-drag"
       initialLayout={{ width: SCREEN_WIDTH }}
       screenOptions={{
-        swipeEnabled: true,
+        swipeEnabled: isIosPagerSwipeEnabled,
         lazy: true,
         lazyPreloadDistance: 1,
         sceneStyle: styles.iosPagerScene,

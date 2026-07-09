@@ -80,11 +80,7 @@ import {
   shouldMountReelVideoPlayer,
 } from './reelsPlayback';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import {
-  publishNativeTabScrollBehavior,
-  publishNativeTabScrollPresentation,
-} from '../../../navigation/nativeTabScrollPublisher';
-import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
+import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
 import type { FeedPost, FeedVideoPost } from '../../../feed/domain/types/feed.types';
@@ -96,10 +92,6 @@ const VIEWABILITY_CONFIG = {
 };
 
 const PRELOAD_RADIUS = 1; // mount video for current ± this many neighbors
-const NATIVE_TAB_SCROLL_DOWN_THRESHOLD = 8;
-const NATIVE_TAB_SCROLL_UP_THRESHOLD = 1;
-const NATIVE_TAB_SCROLL_BEHAVIOR_NONE = 0;
-const NATIVE_TAB_SCROLL_BEHAVIOR_ON_SCROLL_DOWN = 1;
 const REELS_NEW_VIDEO_PROBE_INTERVAL_MS = 30000;
 const REELS_NEW_VIDEO_PROBE_LIMIT = 6;
 const REELS_HEADER_TOP_GAP = 10;
@@ -223,7 +215,6 @@ export default function ReelsScreen() {
   );
   const reelsHeaderTop = reelsTopInset + REELS_HEADER_TOP_GAP;
   const newReelsButtonTop = reelsHeaderTop + REELS_NEW_BUTTON_HEADER_GAP;
-  const { bottomContentPadding } = useMainTabContentInsets();
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
     return reelsStorage.getBoolean('reels.autoScroll') ?? true;
   });
@@ -406,7 +397,7 @@ export default function ReelsScreen() {
     requestAnimationFrame(() => {
       flatListRef.current?.scrollToIndex({ index: 0, animated: true });
     });
-  }, [vm.prependReels]);
+  }, [vm]);
 
   const checkForRemoteNewReels = useCallback(async () => {
     if (!isReelsFocusedRef.current) return;
@@ -427,7 +418,7 @@ export default function ReelsScreen() {
     } finally {
       isCheckingLatestReelsRef.current = false;
     }
-  }, [enqueueNewReelCandidates, vm.peekLatestReels]);
+  }, [enqueueNewReelCandidates, vm]);
 
   useEffect(() => {
     if (!isFocusedScreen) return undefined;
@@ -566,106 +557,14 @@ export default function ReelsScreen() {
   const screenDismissX = useSharedValue(0);
 
   const scrollY = useSharedValue(0);
-  const nativeTabScrollLastY = useSharedValue(0);
-  const nativeTabScrollDownwardDelta = useSharedValue(0);
-  const nativeTabScrollUpwardDelta = useSharedValue(0);
-  const nativeTabScrollLastBehavior = useSharedValue(
-    NATIVE_TAB_SCROLL_BEHAVIOR_ON_SCROLL_DOWN,
-  );
-
-  const publishNativeTabScrollBehaviorFromWorklet = useCallback(
-    (behavior: 0 | 1) => {
-      const nextBehavior =
-        behavior === NATIVE_TAB_SCROLL_BEHAVIOR_NONE
-          ? 'none'
-          : 'onScrollDown';
-      publishNativeTabScrollPresentation(nextBehavior);
-      publishNativeTabScrollBehavior(nextBehavior);
-    },
-    [],
-  );
 
   const handleScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
       if (event && event.contentOffset) {
-        const currentY = event.contentOffset.y;
-        scrollY.value = currentY;
-
-        if (!isIosTabRoute) {
-          return;
-        }
-
-        if (currentY < 0) {
-          nativeTabScrollLastY.value = 0;
-          nativeTabScrollDownwardDelta.value = 0;
-          nativeTabScrollUpwardDelta.value = 0;
-
-          if (
-            nativeTabScrollLastBehavior.value !==
-            NATIVE_TAB_SCROLL_BEHAVIOR_NONE
-          ) {
-            nativeTabScrollLastBehavior.value =
-              NATIVE_TAB_SCROLL_BEHAVIOR_NONE;
-            runOnJS(publishNativeTabScrollBehaviorFromWorklet)(
-              NATIVE_TAB_SCROLL_BEHAVIOR_NONE,
-            );
-          }
-          return;
-        }
-
-        const nextY = Math.max(0, currentY);
-        const delta = nextY - nativeTabScrollLastY.value;
-        nativeTabScrollLastY.value = nextY;
-
-        if (delta > 0) {
-          nativeTabScrollDownwardDelta.value += delta;
-          nativeTabScrollUpwardDelta.value = 0;
-
-          if (
-            nativeTabScrollDownwardDelta.value >=
-              NATIVE_TAB_SCROLL_DOWN_THRESHOLD &&
-            nativeTabScrollLastBehavior.value !==
-              NATIVE_TAB_SCROLL_BEHAVIOR_ON_SCROLL_DOWN
-          ) {
-            nativeTabScrollDownwardDelta.value = 0;
-            nativeTabScrollLastBehavior.value =
-              NATIVE_TAB_SCROLL_BEHAVIOR_ON_SCROLL_DOWN;
-            runOnJS(publishNativeTabScrollBehaviorFromWorklet)(
-              NATIVE_TAB_SCROLL_BEHAVIOR_ON_SCROLL_DOWN,
-            );
-          }
-          return;
-        }
-
-        if (delta < 0) {
-          nativeTabScrollUpwardDelta.value += Math.abs(delta);
-          nativeTabScrollDownwardDelta.value = 0;
-
-          if (
-            nativeTabScrollUpwardDelta.value >=
-              NATIVE_TAB_SCROLL_UP_THRESHOLD &&
-            nativeTabScrollLastBehavior.value !==
-              NATIVE_TAB_SCROLL_BEHAVIOR_NONE
-          ) {
-            nativeTabScrollUpwardDelta.value = 0;
-            nativeTabScrollLastBehavior.value =
-              NATIVE_TAB_SCROLL_BEHAVIOR_NONE;
-            runOnJS(publishNativeTabScrollBehaviorFromWorklet)(
-              NATIVE_TAB_SCROLL_BEHAVIOR_NONE,
-            );
-          }
-        }
+        scrollY.value = event.contentOffset.y;
       }
     },
   });
-
-  useEffect(() => {
-    if (!isIosTabRoute) return undefined;
-
-    return () => {
-      publishNativeTabScrollBehavior('onScrollDown');
-    };
-  }, [isIosTabRoute]);
 
   // Also resets the swipe-back transform to 0. Without this, the second
   // visit to Reels renders blank: a successful dismiss leaves dragX at
@@ -676,10 +575,13 @@ export default function ReelsScreen() {
     useCallback(() => {
       dragX.value = 0;
       screenDismissX.value = 0;
+      if (isIosTabRoute) {
+        tabBarVisibility.setVisible(false);
+      }
 
       return () => {
         if (isIosTabRoute) {
-          publishNativeTabScrollBehavior('onScrollDown');
+          tabBarVisibility.setVisible(true);
         }
       };
     }, [dragX, screenDismissX, isIosTabRoute]),
@@ -746,7 +648,7 @@ export default function ReelsScreen() {
 
   const handleInternalSharePost = useCallback((input: SharePostInput) => {
     return vm.sharePost(input);
-  }, [vm.sharePost]);
+  }, [vm]);
 
   const handlePlayPublisherReel = useCallback((reel: ReelsItem) => {
     const existingIndex = vm.items.findIndex(
@@ -769,7 +671,7 @@ export default function ReelsScreen() {
         animated: false,
       });
     });
-  }, [vm.items, vm.prependReels, vm.setActiveIndex]);
+  }, [vm]);
 
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     const nextHeight = Math.round(event.nativeEvent.layout.height);
@@ -833,7 +735,6 @@ export default function ReelsScreen() {
           index={index}
           initialSeekTime={initialSeekTime}
           onVideoEnd={handleVideoEnd}
-          bottomOverlayInset={bottomContentPadding}
         />
       );
     },
@@ -857,7 +758,6 @@ export default function ReelsScreen() {
       initialVideoId,
       route.params?.seekTime,
       handleVideoEnd,
-      bottomContentPadding,
     ],
   );
 
@@ -1184,15 +1084,12 @@ export default function ReelsScreen() {
               delayPressIn={0}
               onPressIn={toggleAutoScroll}
               style={[
-                styles.headerCapsuleButton,
+                styles.headerButton,
                 autoScrollEnabled && styles.headerButtonActive,
               ]}
-              hitSlop={{ top: 16, bottom: 16, left: 14, right: 14 }}
+              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
             >
-              <ChevronsDown size={18} color="#fff" />
-              <Text style={styles.headerButtonText}>
-                {autoScrollEnabled ? copy.autoOn : copy.autoOff}
-              </Text>
+              <ChevronsDown size={20} color="#fff" />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1318,17 +1215,6 @@ const styles = StyleSheet.create({
     zIndex: REELS_HEADER_LAYER_Z + 1,
     elevation: 33,
   },
-  headerCapsuleButton: {
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    paddingHorizontal: 14,
-    zIndex: REELS_HEADER_LAYER_Z + 1,
-    elevation: 33,
-  },
   headerButtonActive: {
     backgroundColor: '#0866ff',
   },
@@ -1336,12 +1222,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  headerButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 6,
   },
   newReelsButton: {
     position: 'absolute',

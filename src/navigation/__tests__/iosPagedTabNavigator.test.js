@@ -14,7 +14,9 @@ describe('iOS paged bottom tab navigator', () => {
     expect(source).toContain('const IosPagerTab = createMaterialTopTabNavigator<MainTabParamList>()');
     expect(source).toContain('function IosHybridPagedTabNavigator()');
     expect(source).toContain("tabBarPosition=\"bottom\"");
-    expect(source).toContain('swipeEnabled: true');
+    expect(source).toContain('const [isIosPagerSwipeEnabled, setIsIosPagerSwipeEnabled]');
+    expect(source).toContain('iosPagerSwipeLock.subscribe');
+    expect(source).toContain('swipeEnabled: isIosPagerSwipeEnabled');
     expect(source).toContain('keyboardDismissMode="on-drag"');
     expect(source).toContain('lazy: true');
     expect(source).toContain('lazyPreloadDistance: 1');
