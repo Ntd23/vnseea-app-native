@@ -29,6 +29,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { useMyGroupsViewModel } from '../../application/view-models/useMyGroupsViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type {
   GroupItem,
   GroupsFilter,
@@ -38,57 +39,102 @@ type ExploreGroupsNav = NativeStackNavigationProp<RootStackParamList>;
 
 const BRAND = '#0000FF';
 
-const FILTERS: Array<{
-  id: GroupsFilter;
-  label: string;
-  title: string;
-  subtitle: string;
-}> = [
-  {
-    id: 'mine',
-    label: 'Nhóm của tôi',
-    title: 'Nhóm của bạn',
-    subtitle: 'Quản lý các nhóm bạn đã tạo hoặc đang là quản trị viên.',
+const EXPLORE_GROUPS_COPY = {
+  vi: {
+    tabMine: 'Nhóm của tôi',
+    tabSuggested: 'Đề xuất',
+    tabJoined: 'Đã tham gia',
+    titleMine: 'Nhóm của bạn',
+    subtitleMine: 'Quản lý các nhóm bạn đã tạo hoặc đang là quản trị viên.',
+    titleSuggested: 'Nhóm được đề xuất',
+    subtitleSuggested: 'Khám phá các cộng đồng phù hợp để tham gia.',
+    titleJoined: 'Nhóm đã tham gia',
+    subtitleJoined: 'Các cộng đồng bạn đang theo dõi sẽ hiển thị tại đây.',
+    emptyTitleSuggested: 'Chưa có nhóm đề xuất',
+    emptySubtitleSuggested: 'Hiện chưa có cộng đồng phù hợp để đề xuất cho bạn.',
+    emptyActionRetry: 'Thử lại',
+    emptyTitleJoined: 'Bạn chưa tham gia nhóm nào',
+    emptySubtitleJoined: 'Các nhóm bạn tham gia sẽ xuất hiện trong mục này.',
+    emptyTitleMine: 'Bạn chưa có nhóm nào',
+    emptySubtitleMine: 'Những nhóm bạn tạo hoặc quản lý sẽ hiển thị ở đây.',
+    emptyActionCreate: 'Tạo nhóm mới',
+    btnCreate: 'Tạo ra',
+    btnEdit: 'Chỉnh sửa',
+    btnView: 'Xem nhóm',
+    membersSuffix: 'Các thành viên',
   },
-  {
-    id: 'suggested',
-    label: 'Đề xuất',
-    title: 'Nhóm được đề xuất',
-    subtitle: 'Khám phá các cộng đồng phù hợp để tham gia.',
-  },
-  {
-    id: 'joined',
-    label: 'Đã tham gia',
-    title: 'Nhóm đã tham gia',
-    subtitle: 'Các cộng đồng bạn đang theo dõi sẽ hiển thị tại đây.',
-  },
-];
+  en: {
+    tabMine: 'My Groups',
+    tabSuggested: 'Suggested',
+    tabJoined: 'Joined',
+    titleMine: 'Your Groups',
+    subtitleMine: 'Manage groups you created or admin.',
+    titleSuggested: 'Suggested Groups',
+    subtitleSuggested: 'Discover communities to join.',
+    titleJoined: 'Joined Groups',
+    subtitleJoined: 'Communities you follow will display here.',
+    emptyTitleSuggested: 'No suggested groups',
+    emptySubtitleSuggested: 'There are currently no matching communities to suggest to you.',
+    emptyActionRetry: 'Retry',
+    emptyTitleJoined: 'You haven\'t joined any groups',
+    emptySubtitleJoined: 'Groups you join will appear in this section.',
+    emptyTitleMine: 'You don\'t have any groups',
+    emptySubtitleMine: 'Groups you create or manage will be shown here.',
+    emptyActionCreate: 'Create new group',
+    btnCreate: 'Create',
+    btnEdit: 'Edit',
+    btnView: 'View Group',
+    membersSuffix: 'Members',
+  }
+};
 
-function getFilterCopy(filter: GroupsFilter) {
-  return FILTERS.find(item => item.id === filter) ?? FILTERS[0];
+function getFilterCopy(filter: GroupsFilter, copy: any) {
+  switch (filter) {
+    case 'mine':
+      return {
+        id: 'mine',
+        label: copy.tabMine,
+        title: copy.titleMine,
+        subtitle: copy.subtitleMine,
+      };
+    case 'suggested':
+      return {
+        id: 'suggested',
+        label: copy.tabSuggested,
+        title: copy.titleSuggested,
+        subtitle: copy.subtitleSuggested,
+      };
+    case 'joined':
+      return {
+        id: 'joined',
+        label: copy.tabJoined,
+        title: copy.titleJoined,
+        subtitle: copy.subtitleJoined,
+      };
+  }
 }
 
-function getEmptyCopy(filter: GroupsFilter) {
+function getEmptyCopy(filter: GroupsFilter, copy: any) {
   if (filter === 'suggested') {
     return {
-      title: 'Chưa có nhóm đề xuất',
-      subtitle: 'Hiện chưa có cộng đồng phù hợp để đề xuất cho bạn.',
-      action: 'Thử lại',
+      title: copy.emptyTitleSuggested,
+      subtitle: copy.emptySubtitleSuggested,
+      action: copy.emptyActionRetry,
     };
   }
 
   if (filter === 'joined') {
     return {
-      title: 'Bạn chưa tham gia nhóm nào',
-      subtitle: 'Các nhóm bạn tham gia sẽ xuất hiện trong mục này.',
-      action: 'Thử lại',
+      title: copy.emptyTitleJoined,
+      subtitle: copy.emptySubtitleJoined,
+      action: copy.emptyActionRetry,
     };
   }
 
   return {
-    title: 'Bạn chưa có nhóm nào',
-    subtitle: 'Những nhóm bạn tạo hoặc quản lý sẽ hiển thị ở đây.',
-    action: 'Tạo nhóm mới',
+    title: copy.emptyTitleMine,
+    subtitle: copy.emptySubtitleMine,
+    action: copy.emptyActionCreate,
   };
 }
 
@@ -122,13 +168,15 @@ function EmptyState({
   error,
   onCreate,
   onRetry,
+  copy,
 }: {
   filter: GroupsFilter;
   error: string | null;
   onCreate: () => void;
   onRetry: () => void;
+  copy: any;
 }) {
-  const emptyCopy = getEmptyCopy(filter);
+  const emptyCopy = getEmptyCopy(filter, copy);
   const showCreateAction = !error && filter === 'mine';
 
   return (
@@ -169,10 +217,12 @@ function FilterTabs({
   activeFilter,
   onChange,
   onCreate,
+  copy,
 }: {
   activeFilter: GroupsFilter;
   onChange: (filter: GroupsFilter) => void;
   onCreate: () => void;
+  copy: any;
 }) {
   const [contentWidth, setContentWidth] = React.useState(0);
   const [width, setWidth] = React.useState(0);
@@ -217,7 +267,7 @@ function FilterTabs({
                   fontWeight: activeFilter === 'mine' ? '800' : '700',
                 }}
               >
-                Nhóm của tôi
+                {copy.tabMine}
               </Text>
             </TouchableOpacity>
 
@@ -240,7 +290,30 @@ function FilterTabs({
                   fontWeight: activeFilter === 'suggested' ? '800' : '700',
                 }}
               >
-                Các nhóm được đề xuất
+                {copy.titleSuggested}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Tab: Các nhóm đã tham gia */}
+            <TouchableOpacity
+              activeOpacity={0.84}
+              onPress={() => onChange('joined')}
+              style={{
+                height: '100%',
+                justifyContent: 'center',
+                paddingHorizontal: 12,
+                borderBottomWidth: 3,
+                borderBottomColor: activeFilter === 'joined' ? '#002fff' : 'transparent',
+              }}
+            >
+              <Text
+                style={{
+                  color: activeFilter === 'joined' ? '#0f172a' : '#64748b',
+                  fontSize: 13,
+                  fontWeight: activeFilter === 'joined' ? '800' : '700',
+                }}
+              >
+                {copy.titleJoined}
               </Text>
             </TouchableOpacity>
           </ScrollView>
@@ -285,7 +358,7 @@ function FilterTabs({
           }}
         >
           <Plus size={14} color="#ffffff" />
-          <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '900' }}>Tạo ra</Text>
+          <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '900' }}>{copy.btnCreate}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -328,9 +401,19 @@ function GroupCover({ group }: { group: GroupItem }) {
   );
 }
 
-function GroupCard({ group, onOpen }: { group: GroupItem; onOpen: () => void }) {
+function GroupCard({
+  group,
+  onOpenProfile,
+  onAction,
+  copy,
+}: {
+  group: GroupItem;
+  onOpenProfile: () => void;
+  onAction: () => void;
+  copy: any;
+}) {
   const handleAction = () => {
-    onOpen();
+    onAction();
   };
 
   return (
@@ -350,7 +433,11 @@ function GroupCard({ group, onOpen }: { group: GroupItem; onOpen: () => void }) 
       }}
     >
       {/* Cover Image - 1:1 Aspect Ratio (Square) */}
-      <View style={{ aspectRatio: 1, backgroundColor: '#ffe4e6' }}>
+      <TouchableOpacity
+        activeOpacity={0.86}
+        onPress={onOpenProfile}
+        style={{ aspectRatio: 1, backgroundColor: '#ffe4e6' }}
+      >
         {group.cover ? (
           <Image
             source={{ uri: group.cover }}
@@ -368,16 +455,18 @@ function GroupCard({ group, onOpen }: { group: GroupItem; onOpen: () => void }) 
             <Users size={80} color="#f43f5e" strokeWidth={1.5} />
           </View>
         )}
-      </View>
+      </TouchableOpacity>
 
       {/* Info and Full-width Button */}
       <View style={{ padding: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: '700', color: '#0f172a' }} numberOfLines={1}>
-          {group.groupTitle || group.groupName || 'Nhóm'}
-        </Text>
+        <TouchableOpacity activeOpacity={0.82} onPress={onOpenProfile}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#0f172a' }} numberOfLines={1}>
+            {group.groupTitle || group.groupName || 'Nhóm'}
+          </Text>
+        </TouchableOpacity>
         
         <Text style={{ fontSize: 13, color: '#64748b', marginTop: 4, marginBottom: 12 }}>
-          {formatCount(group.members)} Các thành viên
+          {formatCount(group.members)} {copy.membersSuffix}
         </Text>
 
         {/* Full-width Button */}
@@ -393,7 +482,7 @@ function GroupCard({ group, onOpen }: { group: GroupItem; onOpen: () => void }) 
           }}
         >
           <Text style={{ fontSize: 14, fontWeight: '600', color: '#0f172a' }}>
-            {group.isOwner ? 'Chỉnh sửa' : 'Xem nhóm'}
+            {group.isOwner ? copy.btnEdit : copy.btnView}
           </Text>
         </TouchableOpacity>
       </View>
@@ -402,9 +491,11 @@ function GroupCard({ group, onOpen }: { group: GroupItem; onOpen: () => void }) 
 }
 
 function ExploreGroupsScreen() {
+  const language = useAppLanguage();
+  const copy = EXPLORE_GROUPS_COPY[language] ?? EXPLORE_GROUPS_COPY.vi;
   const navigation = useNavigation<ExploreGroupsNav>();
   const vm = useMyGroupsViewModel();
-  const activeCopy = getFilterCopy(vm.activeFilter);
+  const activeCopy = getFilterCopy(vm.activeFilter, copy);
 
   useFocusEffect(
     useCallback(() => {
@@ -416,15 +507,29 @@ function ExploreGroupsScreen() {
     navigation.navigate(ROUTES.CREATE_GROUP);
   }, [navigation]);
 
-  const handleOpenGroup = useCallback((group: GroupItem) => {
-    navigation.navigate(group.isOwner ? ROUTES.EDIT_GROUP : ROUTES.GROUP_DETAIL, { group });
+  const handleOpenGroupProfile = useCallback((group: GroupItem) => {
+    navigation.navigate(ROUTES.GROUP_DETAIL, { group });
+  }, [navigation]);
+
+  const handleGroupAction = useCallback((group: GroupItem) => {
+    if (group.isOwner) {
+      navigation.navigate(ROUTES.EDIT_GROUP, { group });
+      return;
+    }
+
+    navigation.navigate(ROUTES.GROUP_DETAIL, { group });
   }, [navigation]);
 
   const renderGroup = useCallback(
     ({ item }: ListRenderItemInfo<GroupItem>) => (
-      <GroupCard group={item} onOpen={() => handleOpenGroup(item)} />
+      <GroupCard
+        group={item}
+        onOpenProfile={() => handleOpenGroupProfile(item)}
+        onAction={() => handleGroupAction(item)}
+        copy={copy}
+      />
     ),
-    [handleOpenGroup],
+    [copy, handleGroupAction, handleOpenGroupProfile],
   );
 
   return (
@@ -437,6 +542,7 @@ function ExploreGroupsScreen() {
         activeFilter={vm.activeFilter}
         onChange={vm.setActiveFilter}
         onCreate={handleCreate}
+        copy={copy}
       />
 
       <FlatList
@@ -465,6 +571,7 @@ function ExploreGroupsScreen() {
               error={vm.error}
               onCreate={handleCreate}
               onRetry={vm.retry}
+              copy={copy}
             />
           )
         }

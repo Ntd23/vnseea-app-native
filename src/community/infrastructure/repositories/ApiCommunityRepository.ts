@@ -318,7 +318,7 @@ export function createCommunityRepository(): CommunityRepository {
           throw new Error(
             response.errors?.error_text ||
               response.message ||
-              'KhÃ´ng thá»ƒ táº£i thÃ nh viÃªn nhÃ³m.',
+              'Không thấy thành viên nhóm',
           );
         }
 
@@ -330,7 +330,7 @@ export function createCommunityRepository(): CommunityRepository {
         throw new Error(
           error instanceof Error
             ? error.message
-            : 'KhÃ´ng thá»ƒ táº£i thÃ nh viÃªn nhÃ³m.',
+            : 'Không thấy thành viên nhóm',
         );
       }
     },

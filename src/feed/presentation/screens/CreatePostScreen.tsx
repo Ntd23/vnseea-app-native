@@ -1656,14 +1656,18 @@ const ComposerActionTray = React.memo(({
 export interface CreatePostModalProps {
   visible: boolean;
   onClose: () => void;
+  onCreated?: () => void;
   page?: PagesItem;
+  groupId?: string;
   initialAction?: 'photo' | 'video' | 'product' | 'poll';
 }
 
 export function CreatePostModal({
   visible,
   onClose,
+  onCreated,
   page,
+  groupId,
   initialAction,
 }: CreatePostModalProps) {
   const navigation = useNavigation<Nav>();
@@ -1671,11 +1675,14 @@ export function CreatePostModal({
   const language = useAppLanguage();
   const copy = CREATE_POST_COPY[language];
   const targetPage = page ?? route.params?.page;
+  const targetGroupId = groupId ?? route.params?.groupId;
 
   const vm = useCreatePostViewModel({
     pageId: targetPage?.pageId,
+    groupId: targetGroupId,
     onCreated: post => {
       postCreatedEvents.emit(post);
+      onCreated?.();
       onClose();
     },
   });
@@ -1906,11 +1913,8 @@ export function CreatePostModal({
   }, [handlePickAudio, handleToggleAudioRecording, wavRecorder.isRecording, copy]);
 
   const handleSubmit = useCallback(async () => {
-    const result = await vmRef.current.submit();
-    if (result) {
-      onClose();
-    }
-  }, [onClose]);
+    await vmRef.current.submit();
+  }, []);
 
   const handleMoreNavigate = useCallback(
     (route: RootStackRouteName) => {
@@ -2515,6 +2519,7 @@ function CreatePostScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const targetPage = route.params?.page;
+  const targetGroupId = route.params?.groupId;
   const initialAction = route.params?.initialAction;
 
   return (
@@ -2522,6 +2527,7 @@ function CreatePostScreen() {
       visible={true}
       onClose={() => navigation.goBack()}
       page={targetPage}
+      groupId={targetGroupId}
       initialAction={initialAction}
     />
   );

@@ -24,6 +24,10 @@ const SCREENS_WITHOUT_DEFAULT_ANIMATION: ReadonlySet<string> = new Set([
   ROUTES.REELS,
 ]);
 
+const TRANSPARENT_MODAL_ROUTES: ReadonlySet<string> = new Set([
+  ROUTES.CREATE_POST,
+]);
+
 const PROFILE_PUSH_ROUTES: ReadonlySet<string> = new Set([
   ROUTES.PROFILE,
   ROUTES.USER_PROFILE,
@@ -47,6 +51,19 @@ function AppNavigator() {
         screenOptions={{ headerShown: false }}
       >
         {STACK_ROUTES.map(({ name, component }) => {
+          if (TRANSPARENT_MODAL_ROUTES.has(name)) {
+            return (
+              <Stack.Screen
+                key={name}
+                name={name}
+                component={component}
+                options={{
+                  presentation: 'transparentModal',
+                  animation: 'fade',
+                }}
+              />
+            );
+          }
           // Custom-animated screens get `fade` for both push/pop so the
           // screen-specific gesture can drive the visible motion. The
           // single shared fade keeps both transitions identical and
