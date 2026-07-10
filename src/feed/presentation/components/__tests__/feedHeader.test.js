@@ -264,4 +264,16 @@ describe('FeedHeader platform chrome', () => {
       expect(source).toContain("messageCount > 99 ? '99+' : messageCount");
     }
   });
+
+  it('places the iOS profile menu action after the messages action', () => {
+    const iosSource = read('src/feed/presentation/components/FeedHeader.ios.tsx');
+
+    expect(iosSource.indexOf('accessibilityLabel="Messages"')).toBeGreaterThan(-1);
+    expect(iosSource.indexOf('accessibilityLabel="Profile Menu"')).toBeGreaterThan(
+      iosSource.indexOf('accessibilityLabel="Messages"'),
+    );
+    expect(iosSource.indexOf('<Menu size={19} color="#002fff" strokeWidth={2.55} />')).toBeGreaterThan(
+      iosSource.indexOf('<MessageCircle size={19} color="#002fff" strokeWidth={2.55} />'),
+    );
+  });
 });

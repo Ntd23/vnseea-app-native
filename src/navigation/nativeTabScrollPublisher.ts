@@ -4,6 +4,7 @@ import {
   nativeTabMinimizeBehavior,
   type NativeTabMinimizeBehavior,
 } from './nativeTabMinimizeBehavior';
+import { tabBarVisibility } from './tabBarVisibility';
 
 const NATIVE_TAB_SCROLL_DOWN_THRESHOLD = 8;
 const NATIVE_TAB_SCROLL_UP_THRESHOLD = 1;
@@ -13,6 +14,7 @@ export type NativeTabScrollPublisherState = {
   downwardDelta: number;
   upwardDelta: number;
   lastPublishedBehavior: NativeTabMinimizeBehavior | null;
+  hasObservedScroll: boolean;
 };
 
 type NativeTabScrollPublisherResult = {
@@ -29,6 +31,7 @@ export function createNativeTabScrollPublisherState(
     downwardDelta: 0,
     upwardDelta: 0,
     lastPublishedBehavior,
+    hasObservedScroll: initialY > 0 || lastPublishedBehavior !== null,
   };
 }
 
@@ -66,6 +69,19 @@ export function getNextNativeTabScrollPublisherState(
   }
 
   const y = Math.max(0, rawY);
+
+  if (!state.hasObservedScroll) {
+    return {
+      state: {
+        ...state,
+        lastY: y,
+        downwardDelta: 0,
+        upwardDelta: 0,
+        hasObservedScroll: true,
+      },
+    };
+  }
+
   const delta = y - state.lastY;
 
   if (delta > 0) {
@@ -132,9 +148,8 @@ export function publishNativeTabScrollBehavior(
 export function publishNativeTabScrollPresentation(
   behavior: NativeTabMinimizeBehavior,
 ) {
-  nativeTabBarPresentation.setPresentation(
-    behavior === 'onScrollDown' ? 'minimized' : 'expanded',
-  );
+  nativeTabBarPresentation.setPresentation('expanded');
+  tabBarVisibility.setVisible(behavior !== 'onScrollDown');
 }
 
 export function publishNativeTabScrollIntent(

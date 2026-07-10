@@ -73,7 +73,11 @@ import {
   type MediaType,
 } from 'react-native-image-picker';
 import VideoPlayer from 'react-native-video';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+  type Edge,
+} from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
@@ -141,6 +145,11 @@ const IMAGE_GALLERY_WIDTH = Math.min(Dimensions.get('window').width - 92, 332);
 const IMAGE_GALLERY_GAP = 3;
 const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
 const VIDEO_PREVIEW_HEIGHT = Math.round(IMAGE_GALLERY_WIDTH * 0.74);
+const GROUP_INFO_MODAL_SAFE_AREA_EDGES: Edge[] =
+  Platform.OS === 'ios' ? ['left', 'right'] : ROOT_SAFE_AREA_EDGES;
+const GROUP_INFO_DISMISS_SWIPE_DISTANCE = 72;
+const GROUP_INFO_DISMISS_SWIPE_START_DISTANCE = 18;
+const GROUP_INFO_DISMISS_SWIPE_HORIZONTAL_RATIO = 1.35;
 
 const CHAT_COPY: Record<
   AppLanguage,
@@ -2215,6 +2224,7 @@ function GroupInfoModal({
   onClearHistory,
   onLeaveGroup,
   onRemoveMember,
+  topInset,
   copy,
 }: {
   visible: boolean;
@@ -2246,17 +2256,65 @@ function GroupInfoModal({
   onClearHistory: () => void;
   onLeaveGroup: () => void;
   onRemoveMember: (member: GroupChatMember) => void;
+  topInset: number;
   copy: typeof CHAT_COPY.vi;
 }) {
   const isMembersOpen = expandedSections.has('members');
   const isMediaOpen = expandedSections.has('media');
   const isFilesOpen = expandedSections.has('files');
   const isLinksOpen = expandedSections.has('links');
+  const groupInfoDismissPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) => {
+          if (Platform.OS !== 'ios') return false;
+
+          const horizontalDistance = Math.abs(gestureState.dx);
+          const verticalDistance = Math.abs(gestureState.dy);
+
+          return (
+            horizontalDistance > GROUP_INFO_DISMISS_SWIPE_START_DISTANCE &&
+            horizontalDistance >
+              verticalDistance * GROUP_INFO_DISMISS_SWIPE_HORIZONTAL_RATIO
+          );
+        },
+        onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+          if (Platform.OS !== 'ios') return false;
+
+          const horizontalDistance = Math.abs(gestureState.dx);
+          const verticalDistance = Math.abs(gestureState.dy);
+
+          return (
+            horizontalDistance > GROUP_INFO_DISMISS_SWIPE_START_DISTANCE &&
+            horizontalDistance >
+              verticalDistance * GROUP_INFO_DISMISS_SWIPE_HORIZONTAL_RATIO
+          );
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          const horizontalDistance = Math.abs(gestureState.dx);
+          const verticalDistance = Math.abs(gestureState.dy);
+
+          if (
+            horizontalDistance >= GROUP_INFO_DISMISS_SWIPE_DISTANCE &&
+            horizontalDistance >
+              verticalDistance * GROUP_INFO_DISMISS_SWIPE_HORIZONTAL_RATIO
+          ) {
+            onClose();
+          }
+        },
+      }),
+    [onClose],
+  );
 
   return (
     <>
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView className="flex-1 bg-white" edges={ROOT_SAFE_AREA_EDGES}>
+      <SafeAreaView
+        className="flex-1 bg-white"
+        edges={GROUP_INFO_MODAL_SAFE_AREA_EDGES}
+        style={Platform.OS === 'ios' ? { paddingTop: topInset } : undefined}
+        {...groupInfoDismissPanResponder.panHandlers}
+      >
         <View className="flex-row items-center justify-between border-b border-gray-100 px-5 py-4">
           <Text className="text-lg font-bold text-gray-950">Thông tin</Text>
           <TouchableOpacity
@@ -3581,15 +3639,25 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     ],
   );
 
+  const conversationProfileTargetId = useMemo(() => {
+    if (chat.chatType !== 'user') return '';
+    return chat.participantId || chat.userId || chat.chatId || '';
+  }, [chat.chatId, chat.chatType, chat.participantId, chat.userId]);
+
   const handleOpenConversationInfo = useCallback(() => {
     if (chat.chatType === 'group') {
       handleOpenGroupInfo();
       return;
     }
-    if (chat.chatType === 'user') {
-      navigateToUserProfile(navigation, chat.userId);
+    if (chat.chatType === 'user' && conversationProfileTargetId) {
+      navigateToUserProfile(navigation, conversationProfileTargetId);
     }
-  }, [chat.chatType, chat.userId, handleOpenGroupInfo, navigation]);
+  }, [
+    chat.chatType,
+    conversationProfileTargetId,
+    handleOpenGroupInfo,
+    navigation,
+  ]);
 
   const conversationSubtitle = useMemo(() => {
     if (chat.chatType === 'group') {
@@ -3665,44 +3733,47 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       >
         {/* Header */}
         <View className="flex-row items-center border-b border-gray-200 px-3 py-2">
+          {Platform.OS !== 'ios' && (
+            <TouchableOpacity
+              className="h-10 w-10 items-center justify-center rounded-full"
+              activeOpacity={0.7}
+              onPress={() => navigation.goBack()}
+            >
+              <ArrowLeft size={22} color="#050505" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.7}
-            onPress={() => navigation.goBack()}
-          >
-            <ArrowLeft size={22} color="#050505" />
-          </TouchableOpacity>
-          <TouchableOpacity
+            className="flex-1 flex-row items-center"
             activeOpacity={0.7}
             onPress={handleOpenConversationInfo}
           >
             <Image
               source={{ uri: chat.avatar }}
-              className="ml-1 h-11 w-11 rounded-full"
+              className="h-11 w-11 rounded-full"
             />
+            <View className="ml-3 flex-1">
+              <Text
+                className="text-base font-bold text-gray-900"
+                numberOfLines={1}
+              >
+                {chat.name}
+              </Text>
+              <Text className="text-xs text-gray-500" numberOfLines={1}>
+                {conversationSubtitle}
+              </Text>
+              <Text style={{ display: 'none' }}>
+                {chat.chatType === 'group'
+                  ? `${groupInfo?.memberCount ?? ''} ${
+                      language === 'vi' ? 'thành viên' : 'members'
+                    }`
+                  : chat.isOnline
+                  ? language === 'vi'
+                    ? 'Đang hoạt động'
+                    : 'Active now'
+                  : `@${chat.username}`}
+              </Text>
+            </View>
           </TouchableOpacity>
-          <View className="ml-3 flex-1">
-            <Text
-              className="text-base font-bold text-gray-900"
-              numberOfLines={1}
-            >
-              {chat.name}
-            </Text>
-            <Text className="text-xs text-gray-500" numberOfLines={1}>
-              {conversationSubtitle}
-            </Text>
-            <Text style={{ display: 'none' }}>
-              {chat.chatType === 'group'
-                ? `${groupInfo?.memberCount ?? ''} ${
-                    language === 'vi' ? 'thành viên' : 'members'
-                  }`
-                : chat.isOnline
-                ? language === 'vi'
-                  ? 'Đang hoạt động'
-                  : 'Active now'
-                : `@${chat.username}`}
-            </Text>
-          </View>
           {conversationHeaderActions.map(action => (
             <TouchableOpacity
               key={action.key}
@@ -4093,6 +4164,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         onClearHistory={handleClearGroupHistory}
         onLeaveGroup={handleLeaveGroup}
         onRemoveMember={handleRemoveGroupMember}
+        topInset={insets.top}
         copy={copy}
       />
       <Modal
