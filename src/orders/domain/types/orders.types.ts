@@ -20,6 +20,10 @@ export interface OrdersItem {
   statusLabel: string;
   date: string;
   lines: OrderLineItem[];
+  buyerUserId?: number;
+  buyerName?: string;
+  buyerUsername?: string;
+  buyerAvatar?: string;
 }
 
 export interface OrdersPage {
@@ -32,4 +36,6 @@ export interface OrderLineItem {
   total: string;
   status: OrderStatus;
   statusLabel: string;
+  shop?: string;
+  price?: number;
 }

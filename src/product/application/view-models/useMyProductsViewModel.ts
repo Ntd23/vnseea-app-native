@@ -1,5 +1,6 @@
 // Description: Coordinates the My Products marketplace hub with real marketplace orders.
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert } from 'react-native';
 import { createOrdersRepository } from '../../../orders/infrastructure/repositories/ApiOrdersRepository';
 import type {
   OrdersItem,
@@ -171,6 +172,65 @@ export function useMyProductsViewModel(targetUserId?: number) {
     [ordersSearch, ordersStatus, sellerOrders],
   );
 
+  const deletePurchasedOrder = useCallback(async (orderId: string) => {
+    try {
+      const order = purchasedOrders.find(o => o.id === orderId);
+      if (order && order.status === 'placed') {
+        try {
+          await ordersRepository.changeOrderStatus(order.id, 'canceled');
+        } catch (e) {
+          console.warn('Could not cancel order on server:', e);
+        }
+      }
+      setPurchasedOrders(prev => prev.filter(o => o.id !== orderId));
+      Alert.alert('Thành công', 'Đã xóa đơn mua hàng thành công.');
+    } catch (err) {
+      Alert.alert('Thất bại', 'Không thể xóa đơn mua hàng.');
+    }
+  }, [purchasedOrders]);
+
+  const updateOrderStatus = useCallback(async (orderId: string, status: OrderStatus) => {
+    try {
+      await ordersRepository.changeOrderStatus(orderId, status);
+      setSellerOrders(prev =>
+        prev.map(o => {
+          if (o.id === orderId) {
+            return {
+              ...o,
+              status,
+              statusLabel: status === 'placed' ? 'Chờ xác nhận'
+                : status === 'accepted' ? 'Đã xác nhận'
+                : status === 'packed' ? 'Đã đóng gói'
+                : status === 'shipped' ? 'Đang giao'
+                : status === 'delivered' ? 'Đã giao'
+                : status === 'canceled' ? 'Đã hủy' : 'Không rõ',
+            };
+          }
+          return o;
+        })
+      );
+      setPurchasedOrders(prev =>
+        prev.map(o => {
+          if (o.id === orderId) {
+            return {
+              ...o,
+              status,
+              statusLabel: status === 'placed' ? 'Chờ xác nhận'
+                : status === 'accepted' ? 'Đã xác nhận'
+                : status === 'packed' ? 'Đã đóng gói'
+                : status === 'shipped' ? 'Đang giao'
+                : status === 'delivered' ? 'Đã giao'
+                : status === 'canceled' ? 'Đã hủy' : 'Không rõ',
+            };
+          }
+          return o;
+        })
+      );
+    } catch (err) {
+      throw err;
+    }
+  }, []);
+
   const reload = useCallback(() => {
     loadProducts().catch(() => undefined);
     loadOrders().catch(() => undefined);
@@ -204,5 +264,7 @@ export function useMyProductsViewModel(targetUserId?: number) {
     setPurchasedStatus,
     setSelectedCategoryId: setCategoryId,
     toggleFilters: () => setFiltersVisible(isVisible => !isVisible),
+    deletePurchasedOrder,
+    updateOrderStatus,
   };
 }

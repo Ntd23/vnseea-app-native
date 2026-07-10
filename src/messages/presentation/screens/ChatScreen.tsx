@@ -807,6 +807,44 @@ function parseProductInquiry(messageText: string) {
   }
 }
 
+function parseOrderInquiry(messageText: string) {
+  if (!messageText) return null;
+  const isOrderMsg = messageText.includes('Tôi muốn đặt mua sản phẩm:') || 
+                     messageText.includes('TĂ´i muá»‘n Ä‘áº·t mua') ||
+                     messageText.includes('muá»‘n Ä‘áº·t mua sáº£n pháº©m');
+  if (!isOrderMsg) {
+    return null;
+  }
+
+  try {
+    // Robust regexes that handle both Mojibake and standard Vietnamese
+    const nameMatch = messageText.match(/\*(.*?)\*/);
+    const priceMatch = messageText.match(/(?:Giá|GiĂ¡|Gi\u00e1):\s*\*(.*?)\*/);
+    const qtyMatch = messageText.match(/(?:Số lượng|Sá»‘ l\u01b0\u1ee3ng|l\u01b0\u1ee3ng):\s*\*(.*?)\*/);
+    const idMatch = messageText.match(/(?:ID):\s*\*(.*?)\*/);
+    const imageMatch = messageText.match(/(?:Ảnh|áº¢nh|Anh):\s*(\S+)/);
+    const nameBuyerMatch = messageText.match(/(?:Tên|TĂŞn|T\u00ean):\s*\*(.*?)\*/);
+    const phoneBuyerMatch = messageText.match(/(?:SĐT|SÄ\u0110T|SDT):\s*\*(.*?)\*/);
+    const addressBuyerMatch = messageText.match(/(?:Địa chỉ|Äá»‹a chá»‰|Dia chi):\s*\*(.*?)\*/);
+
+    if (!nameMatch) return null;
+
+    return {
+      name: nameMatch[1],
+      price: priceMatch ? priceMatch[1] : '',
+      quantity: qtyMatch ? qtyMatch[1] : '1',
+      id: idMatch ? idMatch[1] : '',
+      image: imageMatch ? imageMatch[1] : '',
+      buyerName: nameBuyerMatch ? nameBuyerMatch[1] : '',
+      buyerPhone: phoneBuyerMatch ? phoneBuyerMatch[1] : '',
+      buyerAddress: addressBuyerMatch ? addressBuyerMatch[1] : '',
+    };
+  } catch (e) {
+    console.warn('Error parsing order inquiry:', e);
+    return null;
+  }
+}
+
 type ReplyMediaType = 'image' | 'video' | 'audio' | 'file';
 
 type ParsedReplyMessage = {
@@ -1073,6 +1111,95 @@ function ProductInquiryBubble({
   );
 }
 
+function OrderInquiryBubble({
+  order,
+  isSentByMe,
+}: {
+  order: {
+    name: string;
+    price: string;
+    quantity: string;
+    id?: string;
+    image?: string;
+    buyerName: string;
+    buyerPhone: string;
+    buyerAddress: string;
+  };
+  isSentByMe: boolean;
+}) {
+  const cardBg = 'bg-white';
+  const cardBorder = 'border-slate-200';
+  const nameColor = 'text-slate-800';
+  const priceColor = 'text-blue-600';
+  const navigation = useNavigation<any>();
+
+  const handlePressProduct = () => {
+    if (order.id) {
+      navigation.navigate(ROUTES.PRODUCT_DETAIL, {
+        productId: Number(order.id),
+      });
+    }
+  };
+
+  return (
+    <View className={`w-[260px] rounded-3xl border overflow-hidden ${cardBg} ${cardBorder} shadow-md`}>
+      {/* Header Banner */}
+      <View className="bg-blue-600 px-3.5 py-2.5 flex-row items-center justify-between" style={{ backgroundColor: '#0000ff' }}>
+        <Text className="text-[12px] font-extrabold text-white uppercase tracking-wider">📦 ĐƠN HÀNG MỚI</Text>
+        <Text className="text-[11px] text-blue-100 font-bold">ID: #{order.id}</Text>
+      </View>
+
+      {/* Product Row */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={handlePressProduct}
+        className="p-3 flex-row border-b border-slate-100"
+      >
+        {!!order.image && (
+          <Image
+            source={{ uri: order.image }}
+            className="w-14 h-14 rounded-lg bg-slate-100 mr-3"
+            resizeMode="cover"
+          />
+        )}
+        <View className="flex-1 justify-center">
+          <Text className={`text-[13px] font-bold leading-4 ${nameColor}`} numberOfLines={2}>
+            {order.name}
+          </Text>
+          <View className="flex-row items-center justify-between mt-1">
+            <Text className={`text-[12px] font-extrabold ${priceColor}`}>
+              {order.price}
+            </Text>
+            <Text className="text-[11px] font-medium text-slate-500">
+              x{order.quantity}
+            </Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* Buyer Details */}
+      <View className="p-3.5 bg-slate-50">
+        <Text className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Thông tin nhận hàng</Text>
+        
+        <View className="flex-row items-start mb-1.5" style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 }}>
+          <Text className="text-[12px] text-slate-500 w-20 font-semibold" style={{ width: 80 }}>Người nhận:</Text>
+          <Text className="text-[12px] text-slate-800 flex-1 font-bold">{order.buyerName}</Text>
+        </View>
+
+        <View className="flex-row items-start mb-1.5" style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 }}>
+          <Text className="text-[12px] text-slate-500 w-20 font-semibold" style={{ width: 80 }}>Điện thoại:</Text>
+          <Text className="text-[12px] text-slate-800 flex-1 font-bold">{order.buyerPhone}</Text>
+        </View>
+
+        <View className="flex-row items-start" style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+          <Text className="text-[12px] text-slate-500 w-20 font-semibold" style={{ width: 80 }}>Địa chỉ:</Text>
+          <Text className="text-[12px] text-slate-700 flex-1 font-semibold leading-4">{order.buyerAddress}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function MessageBubble({
   message,
   avatar,
@@ -1107,9 +1234,12 @@ function MessageBubble({
     Boolean(message.media) &&
     ['image', 'video', 'audio'].includes(message.mediaType ?? '');
 
+  const orderInquiry = parseOrderInquiry(message.message);
   const productInquiry = parseProductInquiry(message.message);
   const replyInfo = parseMessageReply(message.message);
-  const visibleMessageText = productInquiry
+  const visibleMessageText = orderInquiry
+    ? ''
+    : productInquiry
     ? productInquiry.userMessage || 'Mặt hàng này còn không bạn yêu?'
     : replyInfo
     ? replyInfo.replyText
@@ -1263,124 +1393,143 @@ function MessageBubble({
             </TouchableOpacity>
           )}
 
-          {/* Product Inquiry Card (outside bubble) */}
-          {!!productInquiry && (
-            <View className="mb-2 shadow-sm">
-              <ProductInquiryBubble
-                product={productInquiry}
+          {/* Order Inquiry Card (renders instead of the main text bubble) */}
+          {!!orderInquiry ? (
+            <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`} style={{ maxWidth: 260 }}>
+              <OrderInquiryBubble
+                order={orderInquiry}
                 isSentByMe={isSentByMe ?? false}
               />
+              <Text
+                className={`text-[9.5px] mt-1 ${
+                  isSentByMe ? 'text-gray-400 text-right' : 'text-gray-400 text-left'
+                }`}
+              >
+                {formatMessageTime(message.time)}
+              </Text>
             </View>
-          )}
+          ) : (
+            <>
+              {/* Product Inquiry Card (outside bubble) */}
+              {!!productInquiry && (
+                <View className="mb-2 shadow-sm">
+                  <ProductInquiryBubble
+                    product={productInquiry}
+                    isSentByMe={isSentByMe ?? false}
+                  />
+                </View>
+              )}
 
-          {/* Main Bubble */}
-          <View
-            className={`${
-              message.callEvent
-                ? ''
-                : `${isSentByMe ? 'self-end' : 'self-start'} ${
-                    isMediaOnly || hasMessageMedia
-                      ? ''
-                      : replyInfo
-                      ? isSentByMe
-                        ? 'rounded-2xl rounded-br-md border border-sky-200 bg-sky-100 px-3 py-2'
-                        : 'rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2'
-                      : isSentByMe
-                      ? 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
-                      : 'rounded-2xl rounded-bl-md bg-gray-100 px-3 py-2'
-                  }`
-            } ${
-              message.deliveryState === 'sending' ? 'opacity-70' : ''
-            }`}
-          >
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onLongPress={() => onLongPress?.(message)}
-              delayLongPress={350}
-            >
-              {message.callEvent ? (
-                <CallEventContent message={message} onRecall={onRecallCall} />
-              ) : (
-                <>
-                  <MessageMedia message={message} onOpenMedia={onOpenMedia} />
-                  {!!replyInfo ? (
-                    hasMessageMedia ? (
-                      <View
-                        className={`mt-1 rounded-2xl px-3 py-2 ${
-                          isSentByMe
-                            ? 'rounded-br-md border border-sky-200 bg-sky-100'
-                            : 'rounded-bl-md border border-gray-200 bg-white'
-                        }`}
-                        style={styles.mediaCaptionBubble}
-                      >
-                        <TouchableOpacity
-                          activeOpacity={0.85}
-                          onPress={() => replyInfo!.originalMessageId && onPressReply?.(replyInfo!.originalMessageId)}
-                        >
-                          <ReplyMessageBubble reply={replyInfo} isSentByMe={isSentByMe ?? false} />
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <TouchableOpacity
-                        activeOpacity={0.85}
-                        onPress={() => replyInfo!.originalMessageId && onPressReply?.(replyInfo!.originalMessageId)}
-                      >
-                        <ReplyMessageBubble reply={replyInfo} isSentByMe={isSentByMe ?? false} />
-                      </TouchableOpacity>
-                    )
-                  ) : (
-                    !!visibleMessageText && (
-                      hasMessageMedia ? (
-                        <View
-                          className={`mt-1 rounded-2xl px-3 py-2 ${
-                            isSentByMe
-                              ? 'rounded-br-md bg-blue-600'
-                              : 'rounded-bl-md border border-gray-200 bg-white'
-                          }`}
-                          style={styles.mediaCaptionBubble}
-                        >
-                          <LinkifiedText
-                            text={visibleMessageText}
-                            className={messageTextClassName}
-                            linkColor={messageLinkColor}
-                          />
-                        </View>
-                      ) : (
-                        <LinkifiedText
-                          text={visibleMessageText}
-                          className={messageTextClassName}
-                          linkColor={messageLinkColor}
-                        />
-                      )
-                    )
-                  )}
-                </>
-              )}
-              {!message.callEvent && (
-                <Text
-                  className={`mt-1 text-right text-[10px] ${
-                    message.deliveryState === 'failed'
-                      ? isMediaOnly
-                        ? 'text-red-600'
-                        : 'text-red-100'
-                      : isMediaOnly
-                      ? 'text-gray-500'
-                      : usesLightReplyBubble || hasMessageMedia
-                      ? 'text-gray-500'
-                      : isSentByMe
-                      ? 'text-blue-100'
-                      : 'text-gray-500'
-                  }`}
+              {/* Main Bubble */}
+              <View
+                className={`${
+                  message.callEvent
+                    ? ''
+                    : `${isSentByMe ? 'self-end' : 'self-start'} ${
+                        isMediaOnly || hasMessageMedia
+                          ? ''
+                          : replyInfo
+                          ? isSentByMe
+                            ? 'rounded-2xl rounded-br-md border border-sky-200 bg-sky-100 px-3 py-2'
+                            : 'rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2'
+                          : isSentByMe
+                          ? 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
+                          : 'rounded-2xl rounded-bl-md bg-gray-100 px-3 py-2'
+                      }`
+                } ${
+                  message.deliveryState === 'sending' ? 'opacity-70' : ''
+                }`}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onLongPress={() => onLongPress?.(message)}
+                  delayLongPress={350}
                 >
-                  {message.deliveryState === 'sending'
-                    ? 'Đang gửi...'
-                    : message.deliveryState === 'failed'
-                    ? 'Gửi thất bại'
-                    : formatMessageTime(message.time)}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
+                  {message.callEvent ? (
+                    <CallEventContent message={message} onRecall={onRecallCall} />
+                  ) : (
+                    <>
+                      <MessageMedia message={message} onOpenMedia={onOpenMedia} />
+                      {!!replyInfo ? (
+                        hasMessageMedia ? (
+                          <View
+                            className={`mt-1 rounded-2xl px-3 py-2 ${
+                              isSentByMe
+                                ? 'rounded-br-md border border-sky-200 bg-sky-100'
+                                : 'rounded-bl-md border border-gray-200 bg-white'
+                            }`}
+                            style={styles.mediaCaptionBubble}
+                          >
+                            <TouchableOpacity
+                              activeOpacity={0.85}
+                              onPress={() => replyInfo!.originalMessageId && onPressReply?.(replyInfo!.originalMessageId)}
+                            >
+                              <ReplyMessageBubble reply={replyInfo} isSentByMe={isSentByMe ?? false} />
+                            </TouchableOpacity>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => replyInfo!.originalMessageId && onPressReply?.(replyInfo!.originalMessageId)}
+                          >
+                            <ReplyMessageBubble reply={replyInfo} isSentByMe={isSentByMe ?? false} />
+                          </TouchableOpacity>
+                        )
+                      ) : (
+                        !!visibleMessageText && (
+                          hasMessageMedia ? (
+                            <View
+                              className={`mt-1 rounded-2xl px-3 py-2 ${
+                                isSentByMe
+                                  ? 'rounded-br-md bg-blue-600'
+                                  : 'rounded-bl-md border border-gray-200 bg-white'
+                              }`}
+                              style={styles.mediaCaptionBubble}
+                            >
+                              <LinkifiedText
+                                text={visibleMessageText}
+                                className={messageTextClassName}
+                                linkColor={messageLinkColor}
+                              />
+                            </View>
+                          ) : (
+                            <LinkifiedText
+                              text={visibleMessageText}
+                              className={messageTextClassName}
+                              linkColor={messageLinkColor}
+                            />
+                          )
+                        )
+                      )}
+                    </>
+                  )}
+                  {!message.callEvent && (
+                    <Text
+                      className={`mt-1 text-right text-[10px] ${
+                        message.deliveryState === 'failed'
+                          ? isMediaOnly
+                            ? 'text-red-600'
+                            : 'text-red-100'
+                          : isMediaOnly
+                          ? 'text-gray-500'
+                          : usesLightReplyBubble || hasMessageMedia
+                          ? 'text-gray-500'
+                          : isSentByMe
+                          ? 'text-blue-100'
+                          : 'text-gray-500'
+                      }`}
+                    >
+                      {message.deliveryState === 'sending'
+                        ? 'Đang gửi...'
+                        : message.deliveryState === 'failed'
+                        ? 'Gửi thất bại'
+                        : formatMessageTime(message.time)}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
 
         {!isSentByMe && message.mediaType === 'audio' && (
