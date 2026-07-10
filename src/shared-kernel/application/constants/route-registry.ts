@@ -120,6 +120,11 @@ export const apiRoutes = {
   },
   groups: {
     create: 'create-group',
+    update: 'update-group-data',
+    getById: 'get-group-data',
+    delete: 'delete_group',
+    members: 'get_group_members',
+    removeMember: 'delete_group_member',
     getMine: 'get-my-groups',
     recommended: 'fetch-recommended',
   },

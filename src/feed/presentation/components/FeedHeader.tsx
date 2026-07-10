@@ -126,7 +126,7 @@ export const FeedHeader = React.memo(function FeedHeader() {
               onPress={() => navigation.navigate(ROUTES.SEARCH)}
               style={styles.headerIcon}
             >
-              <Search size={19} color="#0758ff" strokeWidth={2.4} />
+              <Search size={19} color="#64748b" strokeWidth={2.4} />
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.75}
@@ -137,7 +137,7 @@ export const FeedHeader = React.memo(function FeedHeader() {
               }
               style={[styles.headerIcon, styles.messageButton]}
             >
-              <Bell size={19} color="#0758ff" strokeWidth={2.35} />
+              <Bell size={19} color="#64748b" strokeWidth={2.35} />
               {notificationCount > 0 ? (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>
@@ -151,7 +151,7 @@ export const FeedHeader = React.memo(function FeedHeader() {
               onPress={() => navigation.navigate(ROUTES.MESSAGES)}
               style={[styles.headerIcon, styles.messageButton]}
             >
-              <MessageCircle size={19} color="#0758ff" strokeWidth={2.35} />
+              <MessageCircle size={19} color="#64748b" strokeWidth={2.35} />
               {messageCount > 0 ? (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>
@@ -185,7 +185,7 @@ export const FeedHeader = React.memo(function FeedHeader() {
                     },
                   ]}
                 >
-                  <CircleUser size={19} color="#0758ff" strokeWidth={2.2} />
+                  <CircleUser size={19} color="#64748b" strokeWidth={2.2} />
                 </Animated.View>
                 {avatarUrl ? (
                   <Animated.View
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     minWidth: 110,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#0000ff',
+    shadowColor: '#64748b',
     shadowOffset: { width: 0, height: 7 },
     shadowOpacity: 0.16,
     shadowRadius: 12,

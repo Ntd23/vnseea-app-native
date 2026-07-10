@@ -146,6 +146,8 @@ function DefaultGreetingCard({
 
 export function HomeFeedIntro({
   onCreatePostPress,
+  onCreatePostPressAction,
+  onPressAvatar,
   avatarUrl,
   userName,
   copy,
@@ -155,7 +157,10 @@ export function HomeFeedIntro({
       <DefaultStoriesRow avatarUrl={avatarUrl} copy={copy} />
       <ComposerCard
         onPress={onCreatePostPress}
+        onPressAction={onCreatePostPressAction}
+        onPressAvatar={onPressAvatar}
         avatarUrl={avatarUrl}
+        displayName={userName}
         copy={copy}
       />
       <DefaultGreetingCard userName={userName} copy={copy} />

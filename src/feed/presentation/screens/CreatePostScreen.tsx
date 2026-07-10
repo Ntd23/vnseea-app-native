@@ -26,6 +26,7 @@ import {
   TouchableWithoutFeedback,
   useWindowDimensions,
   View,
+  KeyboardAvoidingView,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
 import {
@@ -55,6 +56,8 @@ import {
   BarChart3,
   Radio,
   FilePlus2,
+  ShoppingCart,
+  CreditCard,
 } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -73,6 +76,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 import CreateActionSheet, {
   CREATE_ACTIONS,
 } from '../../../shared-kernel/presentation/components/CreateActionSheet';
+import type { PagesItem } from '../../../pages/domain/types/pages.types';
 import type { RootStackRouteName } from '../../../navigation/types';
 import type {
   PostFeeling,
@@ -119,7 +123,7 @@ const CREATE_POST_COPY = {
     limitMsg: 'Tối đa {max} ảnh.',
     libraryError: 'Không mở được thư viện',
     addPost: 'Thêm vào bài viết',
-    photo: 'Ảnh',
+    photo: 'Hình ảnh',
     feeling: 'Cảm xúc',
     audio: 'Âm thanh',
     video: 'Video',
@@ -129,11 +133,11 @@ const CREATE_POST_COPY = {
     videoErrorTip: 'Vui lòng thử lại.',
     addVideo: 'Thêm video',
     done: 'Hoàn tất',
-    privacyPublic: 'Tất cả mọi người',
+    privacyPublic: 'Đã kiếm tiền',
     privacyFollowing: 'Những người tôi theo dõi',
     privacyFollowers: 'Mọi người theo dõi tôi',
     privacyOnlyMe: 'Chỉ mình tôi',
-    privacyAnonymous: 'Ẩn danh',
+    privacyAnonymous: 'Vô danh',
     privacyPublicDesc: 'Bất kỳ ai cũng có thể xem',
     privacyFollowingDesc: 'Chỉ những người bạn đang theo dõi',
     privacyFollowersDesc: 'Chỉ những người đang theo dõi bạn',
@@ -147,7 +151,7 @@ const CREATE_POST_COPY = {
     postAsPage: 'Đăng với tư cách Trang',
     poll: 'Thăm dò',
     product: 'Sản phẩm',
-    live: 'Live',
+    live: 'Trực tiếp',
     page: 'Trang',
   },
   en: {
@@ -178,7 +182,7 @@ const CREATE_POST_COPY = {
     limitMsg: 'Maximum {max} photos.',
     libraryError: 'Cannot open library',
     addPost: 'Add to your post',
-    photo: 'Photo',
+    photo: 'Photos',
     feeling: 'Feeling',
     audio: 'Audio',
     video: 'Video',
@@ -188,7 +192,7 @@ const CREATE_POST_COPY = {
     videoErrorTip: 'Please try again.',
     addVideo: 'Add video',
     done: 'Done',
-    privacyPublic: 'Everyone',
+    privacyPublic: 'Monetized',
     privacyFollowing: 'People I follow',
     privacyFollowers: 'People following me',
     privacyOnlyMe: 'Only me',
@@ -815,6 +819,12 @@ const CaptionComposer = React.memo(({
     },
   ], [copy, onPickPhotos, onPickVideo, onCreateProduct, onCreatePoll]);
 
+  const isVi = copy.photo === 'Ảnh';
+  const photoLabel = isVi ? 'Đăng tải hình ảnh' : 'Upload photos';
+  const videoLabel = isVi ? 'Tải đoạn phim lên' : 'Upload video';
+  const productLabel = isVi ? 'Bán sản phẩm' : 'Sell product';
+  const pollLabel = isVi ? 'Tạo cuộc thăm dò ý kiến' : 'Create poll';
+
   return (
     <View
       style={{
@@ -875,39 +885,86 @@ const CaptionComposer = React.memo(({
         <CharacterCounter length={text.length} />
       </View>
 
-      <View className="mt-4 border-t border-slate-100 pt-3">
-        <View className="flex-row items-center justify-between">
-          {actionButtons.map(button => {
-            const Icon = button.Icon;
-            return (
-              <TouchableOpacity
-                key={button.key}
-                activeOpacity={0.72}
-                onPress={button.onPress}
-                className="flex-1 items-center justify-center"
-              >
-                <View
-                  style={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: 21,
-                    backgroundColor: button.iconBg,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginBottom: 6,
-                  }}
-                >
-                  <Icon size={20} color={button.iconColor} strokeWidth={2.25} />
-                </View>
-                <Text
-                  numberOfLines={1}
-                  style={{ fontSize: 12, fontWeight: '600', color: '#475569' }}
-                >
-                  {button.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+      {/* Redesigned 2x2 grid of buttons */}
+      <View className="mt-4 border-t border-slate-100 pt-4">
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onPickPhotos}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#f1f5f9',
+              borderRadius: 20,
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+            }}
+          >
+            <ImageIcon size={18} color="#3b82f6" strokeWidth={2.5} />
+            <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#475569' }} numberOfLines={1}>
+              {photoLabel}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onPickVideo}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#f1f5f9',
+              borderRadius: 20,
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+            }}
+          >
+            <VideoIcon size={18} color="#22c55e" strokeWidth={2.5} />
+            <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#475569' }} numberOfLines={1}>
+              {videoLabel}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onCreateProduct}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#f1f5f9',
+              borderRadius: 20,
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+            }}
+          >
+            <ShoppingCart size={18} color="#f97316" strokeWidth={2.5} />
+            <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#475569' }} numberOfLines={1}>
+              {productLabel}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onCreatePoll}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#f1f5f9',
+              borderRadius: 20,
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+            }}
+          >
+            <BarChart3 size={18} color="#0d9488" strokeWidth={2.5} />
+            <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#475569' }} numberOfLines={1}>
+              {pollLabel}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
@@ -1596,17 +1653,30 @@ const ComposerActionTray = React.memo(({
   );
 });
 
-function CreatePostScreen() {
+export interface CreatePostModalProps {
+  visible: boolean;
+  onClose: () => void;
+  page?: PagesItem;
+  initialAction?: 'photo' | 'video' | 'product' | 'poll';
+}
+
+export function CreatePostModal({
+  visible,
+  onClose,
+  page,
+  initialAction,
+}: CreatePostModalProps) {
   const navigation = useNavigation<Nav>();
   const route = useRoute<CreatePostRoute>();
   const language = useAppLanguage();
   const copy = CREATE_POST_COPY[language];
-  const targetPage = route.params?.page;
+  const targetPage = page ?? route.params?.page;
 
   const vm = useCreatePostViewModel({
     pageId: targetPage?.pageId,
     onCreated: post => {
       postCreatedEvents.emit(post);
+      onClose();
     },
   });
   const wavRecorder = useWavAudioRecorder();
@@ -1619,6 +1689,7 @@ function CreatePostScreen() {
     (language === 'vi' ? 'Bạn' : 'You');
   const avatarUrl = targetPage?.avatar || profile?.avatarUrl;
 
+  const [privacyMenuVisible, setPrivacyMenuVisible] = useState(false);
   const [privacySheetVisible, setPrivacySheetVisible] = useState(false);
   const [feelingSheetVisible, setFeelingSheetVisible] = useState(false);
   const [moreSheetVisible, setMoreSheetVisible] = useState(false);
@@ -1837,9 +1908,9 @@ function CreatePostScreen() {
   const handleSubmit = useCallback(async () => {
     const result = await vmRef.current.submit();
     if (result) {
-      navigation.goBack();
+      onClose();
     }
-  }, [navigation]);
+  }, [onClose]);
 
   const handleMoreNavigate = useCallback(
     (route: RootStackRouteName) => {
@@ -1912,18 +1983,18 @@ function CreatePostScreen() {
       Boolean(vmRef.current.draft.audio) ||
       Boolean(vmRef.current.draft.video);
     if (!hasContent) {
-      navigation.goBack();
+      onClose();
       return;
     }
     Keyboard.dismiss();
     setDiscardDialogVisible(true);
-  }, [navigation]);
+  }, [onClose]);
 
   const handleConfirmDiscard = useCallback(() => {
     setDiscardDialogVisible(false);
     vmRef.current.reset();
-    navigation.goBack();
-  }, [navigation]);
+    onClose();
+  }, [onClose]);
 
   const handleRemovePhoto = useCallback((uri: string) => {
     vmRef.current.removePhoto(uri);
@@ -1971,127 +2042,488 @@ function CreatePostScreen() {
     stableMoreNavigate(ROUTES.CREATE_POLL);
   }, [stableMoreNavigate]);
 
+  const initialActionVal = initialAction ?? route.params?.initialAction;
+
+  useEffect(() => {
+    if (initialActionVal) {
+      if (route.params?.initialAction) {
+        navigation.setParams({ initialAction: undefined } as any);
+      }
+      setTimeout(() => {
+        if (initialActionVal === 'photo') {
+          handlePickPhotos().catch(() => undefined);
+        } else if (initialActionVal === 'video') {
+          handlePickVideo().catch(() => undefined);
+        } else if (initialActionVal === 'product') {
+          handleCreateProduct();
+        } else if (initialActionVal === 'poll') {
+          handleCreatePoll();
+        }
+      }, 300);
+    }
+  }, [
+    initialActionVal,
+    handlePickPhotos,
+    handlePickVideo,
+    handleCreateProduct,
+    handleCreatePoll,
+    navigation,
+    route.params?.initialAction,
+  ]);
+
+  useEffect(() => {
+    if (visible) {
+      const timer = setTimeout(() => {
+        textInputRef.current?.blur();
+        textInputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [visible]);
+
   return (
-    <SafeAreaView style={{ backgroundColor: '#f4f7fa' }} className="flex-1" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f4f7fa" />
-
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <View className="flex-1">
-          {/* Header */}
-          <CreatePostHeader
-            onDiscard={handleDiscard}
-            onSubmit={handleSubmit}
-            onLivePress={() => (navigation as any).replace(ROUTES.GO_LIVE)}
-            canSubmit={vm.canSubmit}
-            isSubmitting={vm.isSubmitting}
-            isProcessingPhotos={isProcessingPhotos}
-            copy={copy}
-          />
-
-          <ScrollView
-            ref={scrollViewRef}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 24, 60) }}
-            className="flex-1"
-            showsVerticalScrollIndicator={false}
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+            justifyContent: 'flex-end',
+          }}
+          onPress={handleDiscard}
+        >
+          <Pressable
+            style={{
+              backgroundColor: '#ffffff',
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingHorizontal: 16,
+              paddingTop: 16,
+              paddingBottom: Math.max(insets.bottom, 16),
+            }}
+            onPress={(e) => e.stopPropagation()}
           >
-            {/* Viewer + privacy card */}
-            <AuthorPrivacyCard
-              avatarUrl={avatarUrl}
-              displayName={displayName}
-              feeling={vm.draft.feeling}
-              feelingLabel={currentFeelingLabel}
-              targetPage={targetPage}
-              currentPrivacy={vm.draft.privacy}
-              privacyOptions={privacyOptions}
-              onSelectPrivacy={stableSetPrivacy}
-              copy={copy}
-            />
+            {/* Row 1: Avatar, TextInput, Smiley face icon */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+               <Image source={{ uri: avatarUrl || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw' }} style={{ width: 40, height: 40, borderRadius: 20 }} resizeMode="cover" />
+              <TextInput
+                ref={textInputRef}
+                value={vm.draft.text}
+                onChangeText={stableSetText}
+                placeholder="Hôm nay bạn thế nào ?"
+                placeholderTextColor="#94a3b8"
+                multiline
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
+                style={{
+                  flex: 1,
+                  marginLeft: 12,
+                  marginRight: 8,
+                  fontSize: 16,
+                  color: '#0f172a',
+                  maxHeight: 120,
+                  padding: 0,
+                  textAlignVertical: 'top',
+                }}
+              />
+              <TouchableOpacity onPress={() => setFeelingSheetVisible(true)}>
+                <Smile size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
 
-            {/* Caption Input card */}
-            <CaptionComposer
-              textInputRef={textInputRef}
-              text={vm.draft.text}
-              onChangeText={stableSetText}
-              onFocus={handleInputFocus}
-              onBlur={handleInputBlur}
-              placeholder={copy.placeholder}
-              onInsertChar={insertCaptionChar}
-              onFeelingPress={() => setFeelingSheetVisible(true)}
-              copy={copy}
-              onPickPhotos={handlePickPhotos}
-              onPickVideo={handlePickVideo}
-              onCreateProduct={handleCreateProduct}
-              onCreatePoll={handleCreatePoll}
-            />
+            <View style={{ height: 1, backgroundColor: '#f1f5f9', marginBottom: 12 }} />
 
-            {/* Photos Preview Strip */}
-            {!vm.draft.video ? (
-              <MediaPreviewStrip
-                photos={vm.draft.photos}
-                onRemovePhoto={handleRemovePhoto}
-                onClearPhotos={handleClearPhotos}
-                onPickPhotos={handlePickPhotos}
-                isProcessing={isProcessingPhotos}
-                maxPhotos={Math.min(vm.maxPhotos, COMPOSER_PHOTO_LIMIT)}
+            {/* Content Previews ScrollView */}
+            <ScrollView
+              ref={scrollViewRef}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              style={{ maxHeight: 200, marginBottom: 8 }}
+            >
+              {/* Feeling Preview Chip */}
+              {vm.draft.feeling && (
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  alignSelf: 'flex-start',
+                  backgroundColor: '#f1f5f9',
+                  borderRadius: 16,
+                  paddingVertical: 6,
+                  paddingHorizontal: 12,
+                  marginBottom: 8,
+                }}>
+                  <Text style={{ fontSize: 18, marginRight: 6 }}>{vm.draft.feeling.emoji}</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569' }}>
+                    {language === 'vi' ? 'Đang cảm thấy' : 'Feeling'} {currentFeelingLabel}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={stableClearFeeling}
+                    style={{ marginLeft: 8, padding: 2 }}
+                    activeOpacity={0.7}
+                  >
+                    <X size={14} color="#94a3b8" />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Photos Preview Strip */}
+              {!vm.draft.video ? (
+                <MediaPreviewStrip
+                  photos={vm.draft.photos}
+                  onRemovePhoto={handleRemovePhoto}
+                  onClearPhotos={handleClearPhotos}
+                  onPickPhotos={handlePickPhotos}
+                  isProcessing={isProcessingPhotos}
+                  maxPhotos={Math.min(vm.maxPhotos, COMPOSER_PHOTO_LIMIT)}
+                  copy={copy}
+                />
+              ) : null}
+
+              {/* Audio Preview Card */}
+              <AudioPreviewCard
+                isRecording={wavRecorder.isRecording}
+                durationMs={wavRecorder.durationMs}
+                audio={vm.draft.audio}
+                onCancelRecording={handleCancelAudioRecording}
+                onStopRecording={handleToggleAudioRecording}
+                onRemoveAudio={handleRemoveAudio}
                 copy={copy}
               />
-            ) : null}
 
-            {/* Audio Preview Card */}
-            <AudioPreviewCard
-              isRecording={wavRecorder.isRecording}
-              durationMs={wavRecorder.durationMs}
-              audio={vm.draft.audio}
-              onCancelRecording={handleCancelAudioRecording}
-              onStopRecording={handleToggleAudioRecording}
-              onRemoveAudio={handleRemoveAudio}
-              copy={copy}
-            />
+              {/* Video Preview Card */}
+              {vm.draft.video ? (
+                <VideoPreviewCard
+                  video={vm.draft.video}
+                  onRemove={handleRemoveVideo}
+                  copy={copy}
+                  isKeyboardActive={isKeyboardActive}
+                />
+              ) : null}
 
-            {/* Video Preview Card */}
-            {vm.draft.video ? (
-              <VideoPreviewCard
-                video={vm.draft.video}
-                onRemove={handleRemoveVideo}
-                copy={copy}
-                isKeyboardActive={isKeyboardActive}
-              />
-            ) : null}
+              {/* Error banner */}
+              {vm.error ? (
+                <View className="rounded-lg bg-red-50 px-3 py-2">
+                  <Text style={{ color: '#B91C1C', fontSize: 13 }}>{vm.error}</Text>
+                </View>
+              ) : null}
+            </ScrollView>
 
-            {/* Error banner */}
-            {vm.error ? (
-              <View className="mx-4 mt-4 rounded-lg bg-red-50 px-3 py-2">
-                <Text style={{ color: '#B91C1C', fontSize: 13 }}>{vm.error}</Text>
+            {/* Row 2: 4 Action Buttons side-by-side */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
+              {/* Button 1: Image */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handlePickPhotos}
+                style={{ flex: 1, alignItems: 'center' }}
+              >
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+                  <ImageIcon size={20} color="#3b82f6" strokeWidth={2.5} />
+                </View>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: '#475569', textAlign: 'center' }} numberOfLines={1}>
+                  {copy.photo}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Button 2: Video */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handlePickVideo}
+                style={{ flex: 1, alignItems: 'center' }}
+              >
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+                  <VideoIcon size={20} color="#22c55e" strokeWidth={2.5} />
+                </View>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: '#475569', textAlign: 'center' }} numberOfLines={1}>
+                  {copy.video}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Button 3: Product */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleCreateProduct}
+                style={{ flex: 1, alignItems: 'center' }}
+              >
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff7ed', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+                  <ShoppingCart size={20} color="#f97316" strokeWidth={2.5} />
+                </View>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: '#475569', textAlign: 'center' }} numberOfLines={1}>
+                  {copy.product}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Button 4: Poll */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleCreatePoll}
+                style={{ flex: 1, alignItems: 'center' }}
+              >
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#f0fdfa', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+                  <BarChart3 size={20} color="#0d9488" strokeWidth={2.5} />
+                </View>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: '#475569', textAlign: 'center' }} numberOfLines={1}>
+                  {copy.poll}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Row 3: Bottom action buttons */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              {/* Dropdown: Đã kiếm tiền (or privacy selector) */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setPrivacyMenuVisible(true)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: '#e2e8f0',
+                  borderRadius: 20,
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                }}
+              >
+                {vm.draft.privacy === 'public' && <CreditCard size={16} color="#64748b" style={{ marginRight: 6 }} />}
+                {(vm.draft.privacy === 'following' || vm.draft.privacy === 'followers') && <Users size={16} color="#64748b" style={{ marginRight: 6 }} />}
+                {vm.draft.privacy === 'anonymous' && <EyeOff size={16} color="#64748b" style={{ marginRight: 6 }} />}
+                
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569', marginRight: 4 }}>
+                  {vm.draft.privacy === 'public' && copy.privacyPublic}
+                  {vm.draft.privacy === 'following' && copy.privacyFollowing}
+                  {vm.draft.privacy === 'followers' && copy.privacyFollowers}
+                  {vm.draft.privacy === 'anonymous' && copy.privacyAnonymous}
+                </Text>
+                <ChevronDown size={14} color="#64748b" />
+              </TouchableOpacity>
+
+              {/* Button: Trực tiếp */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  onClose();
+                  setTimeout(() => {
+                    navigation.navigate(ROUTES.GO_LIVE);
+                  }, 300);
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: '#e2e8f0',
+                  borderRadius: 20,
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                  marginLeft: 8,
+                }}
+              >
+                <VideoIcon size={16} color="#ef4444" style={{ marginRight: 6 }} />
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569' }}>
+                  {copy.live}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Button: Chia sẻ */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleSubmit}
+                disabled={vm.isSubmitting || isProcessingPhotos}
+                style={{
+                  backgroundColor: '#0758ff',
+                  borderRadius: 20,
+                  paddingVertical: 9,
+                  paddingHorizontal: 20,
+                  marginLeft: 'auto',
+                  opacity: (vm.isSubmitting || isProcessingPhotos) ? 0.6 : 1,
+                }}
+              >
+                {vm.isSubmitting ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#ffffff' }}>
+                    {copy.post}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+
+        {privacyMenuVisible && (
+          <Modal
+            transparent
+            visible={privacyMenuVisible}
+            animationType="fade"
+            onRequestClose={() => setPrivacyMenuVisible(false)}
+          >
+            <Pressable
+              style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.1)' }}
+              onPress={() => setPrivacyMenuVisible(false)}
+            >
+              <View
+                style={{
+                  position: 'absolute',
+                  bottom: insets.bottom + 58,
+                  left: 16,
+                  width: 220,
+                  backgroundColor: '#ffffff',
+                  borderRadius: 16,
+                  paddingVertical: 8,
+                  shadowColor: '#000000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 12,
+                  elevation: 5,
+                  borderWidth: 1,
+                  borderColor: '#e2e8f0',
+                }}
+              >
+                {/* Option 1: Những người tôi theo dõi */}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    stableSetPrivacy('following');
+                    setPrivacyMenuVisible(false);
+                  }}
+                  style={{
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    backgroundColor: vm.draft.privacy === 'following' ? '#3b82f6' : 'transparent',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: vm.draft.privacy === 'following' ? '#ffffff' : '#334155',
+                    }}
+                  >
+                    {copy.privacyFollowing}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Option 2: Mọi người theo dõi tôi */}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    stableSetPrivacy('followers');
+                    setPrivacyMenuVisible(false);
+                  }}
+                  style={{
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    backgroundColor: vm.draft.privacy === 'followers' ? '#3b82f6' : 'transparent',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: vm.draft.privacy === 'followers' ? '#ffffff' : '#334155',
+                    }}
+                  >
+                    {copy.privacyFollowers}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Option 3: Vô danh */}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    stableSetPrivacy('anonymous');
+                    setPrivacyMenuVisible(false);
+                  }}
+                  style={{
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    backgroundColor: vm.draft.privacy === 'anonymous' ? '#3b82f6' : 'transparent',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: vm.draft.privacy === 'anonymous' ? '#ffffff' : '#334155',
+                    }}
+                  >
+                    {copy.privacyAnonymous}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Option 4: Đã kiếm tiền */}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    stableSetPrivacy('public');
+                    setPrivacyMenuVisible(false);
+                  }}
+                  style={{
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    backgroundColor: vm.draft.privacy === 'public' ? '#3b82f6' : 'transparent',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: vm.draft.privacy === 'public' ? '#ffffff' : '#334155',
+                    }}
+                  >
+                    {copy.privacyPublic}
+                  </Text>
+                </TouchableOpacity>
               </View>
-            ) : null}
-          </ScrollView>
-        </View>
-      </TouchableWithoutFeedback>
+            </Pressable>
+          </Modal>
+        )}
 
+        <FeelingPickerSheet
+          visible={feelingSheetVisible}
+          current={vm.draft.feeling}
+          onClose={() => setFeelingSheetVisible(false)}
+          onPick={stableSetFeeling}
+          onClear={stableClearFeeling}
+          options={translatedFeelings}
+          title={copy.feelingsTitle}
+          clearLabel={copy.feelingsClear}
+        />
 
-      <FeelingPickerSheet
-        visible={feelingSheetVisible}
-        current={vm.draft.feeling}
-        onClose={() => setFeelingSheetVisible(false)}
-        onPick={stableSetFeeling}
-        onClear={stableClearFeeling}
-        options={translatedFeelings}
-        title={copy.feelingsTitle}
-        clearLabel={copy.feelingsClear}
-      />
+        <DiscardPostDialog
+          visible={discardDialogVisible}
+          title={copy.discardTitle}
+          message={copy.discardMessage}
+          cancelLabel={copy.discardCancel}
+          confirmLabel={copy.discardConfirm}
+          onCancel={() => setDiscardDialogVisible(false)}
+          onConfirm={handleConfirmDiscard}
+        />
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
 
-      <DiscardPostDialog
-        visible={discardDialogVisible}
-        title={copy.discardTitle}
-        message={copy.discardMessage}
-        cancelLabel={copy.discardCancel}
-        confirmLabel={copy.discardConfirm}
-        onCancel={() => setDiscardDialogVisible(false)}
-        onConfirm={handleConfirmDiscard}
-      />
+function CreatePostScreen() {
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const targetPage = route.params?.page;
+  const initialAction = route.params?.initialAction;
 
-    </SafeAreaView>
+  return (
+    <CreatePostModal
+      visible={true}
+      onClose={() => navigation.goBack()}
+      page={targetPage}
+      initialAction={initialAction}
+    />
   );
 }
 

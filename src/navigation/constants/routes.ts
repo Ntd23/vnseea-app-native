@@ -46,6 +46,7 @@ export const ROUTES = {
   EVENT_DETAIL: 'EventDetail',
   CREATE_POLL: 'CreatePoll',
   CREATE_GROUP: 'CreateGroup',
+  EDIT_GROUP: 'EditGroup',
   EXPLORE_GROUPS: 'ExploreGroups',
   GROUP_DETAIL: 'GroupDetail',
   EVENTS: 'Events',

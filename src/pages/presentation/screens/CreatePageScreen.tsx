@@ -68,6 +68,8 @@ import type {
 } from '../../domain/types/pages.types';
 
 type CreatePageNav = NativeStackNavigationProp<RootStackParamList>;
+type PageMediaField = 'avatar' | 'cover' | 'background_image';
+type PickedPageMedia = { uri: string; name: string; type: string };
 
 type PageCategory = {
   id: string;
@@ -609,6 +611,7 @@ function CreatePageScreen() {
   const [activeEditTab, setActiveEditTab] = useState<PageEditTab>('general');
   const [deletePassword, setDeletePassword] = useState('');
   const [pickedMediaNames, setPickedMediaNames] = useState<Record<string, string>>({});
+  const [pickedMediaFiles, setPickedMediaFiles] = useState<Partial<Record<PageMediaField, PickedPageMedia>>>({});
   const [selectedAdmin, setSelectedAdmin] = useState<PageUser | null>(null);
   const [adminPrivileges, setAdminPrivileges] = useState<PagePrivileges>(DEFAULT_PAGE_PRIVILEGES);
 
@@ -715,7 +718,33 @@ function CreatePageScreen() {
 
   const handleSubmit = useCallback(async () => {
     if (isEditing && activeEditTab === 'media') {
-      showToast({ message: 'Chọn ảnh để cập nhật ngay.', type: 'info' });
+      if (!editingPage?.pageId) {
+        return;
+      }
+      const selectedMedia = [
+        ['cover', pickedMediaFiles.cover],
+        ['avatar', pickedMediaFiles.avatar],
+      ] as const;
+      const filesToUpload = selectedMedia.filter(([, file]) => Boolean(file));
+      if (filesToUpload.length === 0) {
+        setLocalError('Vui lòng chọn ảnh đại diện hoặc ảnh bìa trước khi lưu.');
+        return;
+      }
+      try {
+        for (const [field, file] of filesToUpload) {
+          if (!file) continue;
+          await pagesVm.updatePageMedia(editingPage.pageId, field, file);
+        }
+        showToast({ message: 'Đã lưu hình đại diện và ảnh bìa.', type: 'success' });
+      } catch (err) {
+        showToast({
+          message:
+            err instanceof Error
+              ? err.message
+              : 'Không thể lưu hình đại diện hoặc ảnh bìa.',
+          type: 'error',
+        });
+      }
       return;
     }
     if (isEditing && activeEditTab === 'stats') {
@@ -771,6 +800,18 @@ function CreatePageScreen() {
     setLocalError(null);
 
     try {
+      if (
+        isEditing &&
+        activeEditTab === 'style' &&
+        editingPage?.pageId &&
+        pickedMediaFiles.background_image
+      ) {
+        await pagesVm.updatePageMedia(
+          editingPage.pageId,
+          'background_image',
+          pickedMediaFiles.background_image,
+        );
+      }
       const savedPage =
         isEditing && editingPage?.pageId
           ? await pagesVm.updatePage(
@@ -793,6 +834,9 @@ function CreatePageScreen() {
         message: isEditing ? 'Cập nhật trang thành công!' : 'Tạo trang thành công!',
         type: 'success',
       });
+      if (isEditing) {
+        return;
+      }
       setTimeout(() => {
         navigation.goBack();
       }, 1000);
@@ -817,10 +861,11 @@ function CreatePageScreen() {
     deletePassword,
     selectedAdmin,
     adminPrivileges,
+    pickedMediaFiles,
   ]);
 
   const submitLabel = isEditing
-    ? (language === 'vi' ? 'Cập nhật trang' : 'Update Page')
+    ? (language === 'vi' ? 'Lưu' : 'Save')
     : (language === 'vi' ? 'Tạo trang' : 'Create Page');
 
 
@@ -837,9 +882,8 @@ function CreatePageScreen() {
     pagesVm.loadPageAdmins(editingPage.pageId).catch(() => undefined);
   }, [activeEditTab, editingPage?.pageId, isEditing, pagesVm.loadPageAdmins]);
 
-  const pickAndUploadPageMedia = useCallback(
-    async (field: 'avatar' | 'cover' | 'background_image') => {
-      if (!editingPage?.pageId) return;
+  const pickPageMedia = useCallback(
+    async (field: PageMediaField) => {
       try {
         const result = await launchImageLibrary({
           mediaType: 'photo',
@@ -849,24 +893,28 @@ function CreatePageScreen() {
         const asset = result.assets[0];
         if (!asset.uri) return;
         const name = asset.fileName || `${field}_${Date.now()}.jpg`;
-        await pagesVm.updatePageMedia(editingPage.pageId, field, {
-          uri: asset.uri,
-          name,
-          type: asset.type || 'image/jpeg',
-        });
+        setPickedMediaFiles(prev => ({
+          ...prev,
+          [field]: {
+            uri: asset.uri || '',
+            name,
+            type: asset.type || 'image/jpeg',
+          },
+        }));
         setPickedMediaNames(prev => ({ ...prev, [field]: name }));
+        setLocalError(null);
+        pagesVm.clearError();
         if (field === 'background_image') {
           updateDraft('backgroundImageStatus', 'my_background');
         }
-        showToast({ message: 'Đã cập nhật ảnh.', type: 'success' });
       } catch (err) {
         Alert.alert(
           'Lỗi',
-          err instanceof Error ? err.message : 'Không thể cập nhật ảnh.',
+          err instanceof Error ? err.message : 'Không thể chọn ảnh.',
         );
       }
     },
-    [editingPage?.pageId, pagesVm, updateDraft],
+    [pagesVm, updateDraft],
   );
 
   const renderEditGeneralTab = () => {
@@ -1168,46 +1216,150 @@ function CreatePageScreen() {
     field: 'avatar' | 'cover' | 'background_image',
     label: string,
     currentUri?: string,
-  ) => (
-    <View style={{ marginBottom: 18 }}>
-      <EditFieldLabel>{label}</EditFieldLabel>
-      <TouchableOpacity
-        activeOpacity={0.84}
-        onPress={() => pickAndUploadPageMedia(field)}
-        style={{
-          minHeight: field === 'avatar' ? 108 : 150,
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: '#D8DEE8',
-          backgroundColor: '#f8fafc',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-        }}
-      >
-        {currentUri && field !== 'background_image' ? (
-          <Image
-            source={{ uri: currentUri }}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-          />
-        ) : (
-          <>
-            <ImageIcon size={28} color="#64748b" />
-            <Text style={{ marginTop: 8, color: '#64748b', fontSize: 13, fontWeight: '700' }}>
-              {pickedMediaNames[field] || 'Thả hình ảnh ở đây HOẶC Duyệt để tải lên'}
-            </Text>
-          </>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
+  ) => {
+    const pickerHeight = field === 'avatar' ? 108 : field === 'background_image' ? 150 : 150;
+
+    return (
+      <View style={{ marginBottom: 18 }}>
+        <EditFieldLabel>{label}</EditFieldLabel>
+        <TouchableOpacity
+          activeOpacity={0.84}
+          onPress={() => pickPageMedia(field)}
+          style={{
+            height: pickerHeight,
+            maxHeight: pickerHeight,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: '#D8DEE8',
+            backgroundColor: '#f8fafc',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
+        >
+          {pickedMediaFiles[field]?.uri || currentUri ? (
+            <Image
+              source={{ uri: pickedMediaFiles[field]?.uri || currentUri || '' }}
+              style={{ width: '100%', height: pickerHeight }}
+              resizeMode="cover"
+            />
+          ) : (
+            <>
+              <ImageIcon size={28} color="#64748b" />
+              <Text style={{ marginTop: 8, color: '#64748b', fontSize: 13, fontWeight: '700' }}>
+                {pickedMediaNames[field] || 'Thả hình ảnh ở đây HOẶC Duyệt để tải lên'}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const renderEditMediaTab = () => (
-    <>
-      {renderMediaPicker('cover', 'Ảnh bìa', editingPage?.cover)}
-      {renderMediaPicker('avatar', 'Ảnh đại diện', editingPage?.avatar)}
-    </>
+    <View style={{ marginBottom: 18 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: 14,
+        }}
+      >
+        <View
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: 12,
+            backgroundColor: BRAND,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: 8,
+          }}
+        >
+          <ImageIcon size={14} color="#ffffff" strokeWidth={2.5} />
+        </View>
+        <Text style={{ color: '#0f172a', fontSize: 15, fontWeight: '900' }}>
+          Hình đại diện & Ảnh bìa
+        </Text>
+      </View>
+
+      <View
+        style={{
+          minHeight: 260,
+          borderTopWidth: 1,
+          borderTopColor: '#e2e8f0',
+          paddingTop: 16,
+          alignItems: 'center',
+        }}
+      >
+        <TouchableOpacity
+          activeOpacity={0.84}
+          onPress={() => pickPageMedia('cover')}
+          style={{
+            width: '100%',
+            height: 178,
+            borderRadius: 8,
+            backgroundColor: '#f1f3f5',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
+        >
+          {pickedMediaFiles.cover?.uri || editingPage?.cover ? (
+            <Image
+              source={{ uri: pickedMediaFiles.cover?.uri || editingPage?.cover || '' }}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="cover"
+            />
+          ) : (
+            <ImageIcon size={24} color="#334155" />
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.84}
+          onPress={() => pickPageMedia('avatar')}
+          style={{
+            width: 128,
+            height: 128,
+            borderRadius: 64,
+            marginTop: -58,
+            backgroundColor: '#f1f3f5',
+            borderWidth: 4,
+            borderColor: '#ffffff',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
+        >
+          {pickedMediaFiles.avatar?.uri || editingPage?.avatar ? (
+            <Image
+              source={{ uri: pickedMediaFiles.avatar?.uri || editingPage?.avatar || '' }}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="cover"
+            />
+          ) : (
+            <Camera size={24} color="#334155" fill="#334155" />
+          )}
+        </TouchableOpacity>
+
+        {pickedMediaNames.cover || pickedMediaNames.avatar ? (
+          <Text
+            style={{
+              marginTop: 12,
+              color: '#64748b',
+              fontSize: 12,
+              fontWeight: '700',
+              textAlign: 'center',
+            }}
+          >
+            {[pickedMediaNames.cover, pickedMediaNames.avatar]
+              .filter(Boolean)
+              .join(' • ')}
+          </Text>
+        ) : null}
+      </View>
+    </View>
   );
 
   const renderEditDesignTab = () => (

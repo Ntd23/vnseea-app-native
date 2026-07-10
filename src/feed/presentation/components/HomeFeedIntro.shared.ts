@@ -20,6 +20,8 @@ const homeIntroStorage = createMMKV({ id: 'vnseea-home-intro' });
 
 export type HomeFeedIntroProps = {
   onCreatePostPress: () => void;
+  onCreatePostPressAction?: (action: 'photo' | 'video' | 'product' | 'poll') => void;
+  onPressAvatar?: () => void;
   userId?: string;
   avatarUrl?: string;
   userName?: string;

@@ -1,8 +1,8 @@
-// Community API Repository (Infrastructure)
+// Description: Implements community group API calls for listing, creating, editing, media updates, and deletion.
 // Port từ: client/src/community/infrastructure/repositories/
 
 import type { CommunityRepository } from '../../domain/repositories/CommunityRepository';
-import type { GroupItem } from '../../domain/types/community.types';
+import type { GroupItem, GroupMember, UpdateGroupDraft } from '../../domain/types/community.types';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
@@ -22,6 +22,37 @@ type CreateGroupResponse = {
 type GroupsListResponse = {
   api_status: number | string;
   data?: RawGroup[];
+  message?: string;
+  errors?: {
+    error_id?: number | string;
+    error_text?: string;
+  };
+};
+
+type GroupDetailResponse = {
+  api_status: number | string;
+  group_data?: RawGroup;
+  message?: string;
+  errors?: {
+    error_id?: number | string;
+    error_text?: string;
+  };
+};
+
+type GroupMembersResponse = {
+  api_status: number | string;
+  users?: RawGroup[];
+  message?: string;
+  errors?: {
+    error_id?: number | string;
+    error_text?: string;
+  };
+};
+
+type UpdateGroupResponse = {
+  api_status?: number | string;
+  status?: number | string;
+  group_data?: RawGroup;
   message?: string;
   errors?: {
     error_id?: number | string;
@@ -70,6 +101,7 @@ function mapGroup(raw: RawGroup | undefined): GroupItem {
     about: readString(raw, 'about'),
     category: readString(raw, 'category_id') || readString(raw, 'category'),
     privacy: readString(raw, 'privacy') === '2' ? 'private' : 'public',
+    joinPrivacy: readString(raw, 'join_privacy') === '2' ? 'approval' : 'open',
     avatar: normalizeUrl(readString(raw, 'avatar')),
     cover: normalizeUrl(readString(raw, 'cover')),
     url:
@@ -86,8 +118,49 @@ function mapGroup(raw: RawGroup | undefined): GroupItem {
   };
 }
 
+function mapGroupMember(raw: RawGroup | undefined): GroupMember {
+  const userId = readString(raw, 'user_id') || readString(raw, 'id');
+  const username = readString(raw, 'username');
+  const firstName = readString(raw, 'first_name');
+  const lastName = readString(raw, 'last_name');
+  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+  const name =
+    readString(raw, 'name') ||
+    fullName ||
+    username ||
+    `#${userId}`;
+
+  return {
+    id: userId || username || name,
+    userId,
+    username,
+    name,
+    avatar: normalizeUrl(readString(raw, 'avatar')),
+    isAdmin: readBoolean(raw, 'is_admin') ?? false,
+    isFollowing: readBoolean(raw, 'is_following') ?? false,
+    raw,
+  };
+}
+
 function isSuccess(status: number | string | undefined) {
   return status === 200 || status === '200';
+}
+
+function isUpdateSuccess(response: UpdateGroupResponse) {
+  return isSuccess(response.api_status) || isSuccess(response.status);
+}
+
+function mapUpdateGroupPayload(groupId: string | number, draft: UpdateGroupDraft) {
+  return {
+    group_id: String(groupId),
+    group_name: draft.groupName,
+    group_title: draft.groupTitle,
+    about: draft.about,
+    category: draft.category,
+    privacy: draft.privacy === 'private' ? '2' : '1',
+    join_privacy: draft.joinPrivacy === 'approval' ? '2' : '1',
+    group_sub_category: draft.groupSubCategory,
+  };
 }
 
 function mapCreateGroupError(error: unknown) {
@@ -227,6 +300,59 @@ export function createCommunityRepository(): CommunityRepository {
       }
     },
 
+    async getGroupMembers(groupId, options = {}) {
+      const limit = options.limit ?? 20;
+      const offset = options.offset ? String(options.offset) : '0';
+
+      try {
+        const response = await apiBridge.post<GroupMembersResponse>(
+          apiRoutes.groups.members,
+          {
+            group_id: String(groupId),
+            limit,
+            offset,
+          },
+        );
+
+        if (!isSuccess(response.api_status)) {
+          throw new Error(
+            response.errors?.error_text ||
+              response.message ||
+              'KhÃ´ng thá»ƒ táº£i thÃ nh viÃªn nhÃ³m.',
+          );
+        }
+
+        return (response.users ?? [])
+          .map(mapGroupMember)
+          .filter(member => member.userId || member.username);
+      } catch (error) {
+        console.warn('[ApiCommunityRepository] get group members failed', error);
+        throw new Error(
+          error instanceof Error
+            ? error.message
+            : 'KhÃ´ng thá»ƒ táº£i thÃ nh viÃªn nhÃ³m.',
+        );
+      }
+    },
+
+    async removeGroupMember(groupId, userId) {
+      const response = await apiBridge.post<UpdateGroupResponse>(
+        apiRoutes.groups.removeMember,
+        {
+          group_id: String(groupId),
+          user_id: String(userId),
+        },
+      );
+
+      if (!isUpdateSuccess(response)) {
+        throw new Error(
+          response.errors?.error_text ||
+            response.message ||
+            'Không thể xóa thành viên khỏi nhóm.',
+        );
+      }
+    },
+
     async createGroup(draft) {
       let response: CreateGroupResponse;
 
@@ -259,6 +385,93 @@ export function createCommunityRepository(): CommunityRepository {
         group: mapGroup(response.group_data),
         message: response.message,
       };
+    },
+
+    async updateGroup(groupId, draft) {
+      let response: UpdateGroupResponse;
+
+      try {
+        response = await apiBridge.post<UpdateGroupResponse>(
+          apiRoutes.groups.update,
+          mapUpdateGroupPayload(groupId, draft),
+        );
+      } catch (error) {
+        console.warn('[ApiCommunityRepository] update group failed', error);
+        throw new Error(mapCreateGroupError(error));
+      }
+
+      if (!isUpdateSuccess(response)) {
+        throw new Error(
+          response.errors?.error_text ||
+            response.message ||
+            'Không thể cập nhật nhóm. Vui lòng thử lại.',
+        );
+      }
+
+      return {
+        group: {
+          id: String(groupId),
+          groupId: String(groupId),
+          groupName: draft.groupName,
+          groupTitle: draft.groupTitle,
+          about: draft.about,
+          category: draft.category,
+          privacy: draft.privacy,
+          joinPrivacy: draft.joinPrivacy,
+        },
+        message: response.message,
+      };
+    },
+
+    async updateGroupMedia(groupId, field, file) {
+      const response = await apiBridge.multipart<UpdateGroupResponse>(
+        apiRoutes.groups.update,
+        {
+          group_id: String(groupId),
+          [field]: {
+            uri: file.uri,
+            name: file.name || `${field}_${Date.now()}.jpg`,
+            type: file.type || 'image/jpeg',
+          },
+        },
+      );
+
+      if (!isUpdateSuccess(response)) {
+        throw new Error(
+          response.errors?.error_text ||
+            response.message ||
+            `Không thể cập nhật ${field === 'avatar' ? 'ảnh đại diện' : 'ảnh bìa'} nhóm.`,
+        );
+      }
+
+      const updatedGroup = await apiBridge.post<GroupDetailResponse>(
+        apiRoutes.groups.getById,
+        { group_id: String(groupId) },
+      );
+
+      if (isSuccess(updatedGroup.api_status) && updatedGroup.group_data) {
+        return mapGroup(updatedGroup.group_data);
+      }
+
+      return { id: String(groupId), groupId: String(groupId), groupName: '', groupTitle: '', privacy: 'public' };
+    },
+
+    async deleteGroup(groupId, password) {
+      const response = await apiBridge.post<UpdateGroupResponse>(
+        apiRoutes.groups.delete,
+        {
+          group_id: String(groupId),
+          password,
+        },
+      );
+
+      if (!isUpdateSuccess(response)) {
+        throw new Error(
+          response.errors?.error_text ||
+            response.message ||
+            'Không thể xóa nhóm. Vui lòng thử lại.',
+        );
+      }
     },
   };
 }

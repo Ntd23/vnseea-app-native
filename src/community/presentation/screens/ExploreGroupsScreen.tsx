@@ -2,10 +2,11 @@
 import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Image,
-  Linking,
   RefreshControl,
+  ScrollView,
   Text,
   TouchableOpacity,
   View,
@@ -27,6 +28,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useMyGroupsViewModel } from '../../application/view-models/useMyGroupsViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import type {
   GroupItem,
   GroupsFilter,
@@ -166,41 +168,126 @@ function EmptyState({
 function FilterTabs({
   activeFilter,
   onChange,
+  onCreate,
 }: {
   activeFilter: GroupsFilter;
   onChange: (filter: GroupsFilter) => void;
+  onCreate: () => void;
 }) {
-  return (
-    <View className="mb-4 flex-row rounded-2xl bg-slate-100 p-1">
-      {FILTERS.map(filter => {
-        const isActive = filter.id === activeFilter;
+  const [contentWidth, setContentWidth] = React.useState(0);
+  const [width, setWidth] = React.useState(0);
+  const scrollX = React.useRef(new Animated.Value(0)).current;
 
-        return (
-          <TouchableOpacity
-            key={filter.id}
-            className="min-h-[40px] flex-1 items-center justify-center rounded-xl px-2"
-            style={
-              isActive
-                ? {
-                    backgroundColor: '#FFFFFF',
-                    borderColor: '#E2E8F0',
-                    borderWidth: 1,
-                  }
-                : undefined
-            }
-            activeOpacity={0.82}
-            onPress={() => onChange(filter.id)}
+  const showIndicator = contentWidth > width && width > 0;
+  const thumbWidth = showIndicator ? Math.max(20, (width / contentWidth) * width) : 0;
+
+  return (
+    <View style={{ height: 56, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', backgroundColor: '#FFFFFF' }}>
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ flex: 1, height: '100%', justifyContent: 'center' }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            onContentSizeChange={(w) => setContentWidth(w)}
+            onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+              { useNativeDriver: false }
+            )}
+            scrollEventThrottle={16}
+            contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 4 }}
+            style={{ flex: 1 }}
           >
-            <Text
-              className="text-caption-primary"
-              style={{ color: isActive ? BRAND : '#64748B' }}
-              numberOfLines={1}
+            {/* Tab: Nhóm của tôi */}
+            <TouchableOpacity
+              activeOpacity={0.84}
+              onPress={() => onChange('mine')}
+              style={{
+                height: '100%',
+                justifyContent: 'center',
+                paddingHorizontal: 12,
+                borderBottomWidth: 3,
+                borderBottomColor: activeFilter === 'mine' ? '#002fff' : 'transparent',
+              }}
             >
-              {filter.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+              <Text
+                style={{
+                  color: activeFilter === 'mine' ? '#0f172a' : '#64748b',
+                  fontSize: 13,
+                  fontWeight: activeFilter === 'mine' ? '800' : '700',
+                }}
+              >
+                Nhóm của tôi
+              </Text>
+            </TouchableOpacity>
+
+            {/* Tab: Các nhóm được đề xuất */}
+            <TouchableOpacity
+              activeOpacity={0.84}
+              onPress={() => onChange('suggested')}
+              style={{
+                height: '100%',
+                justifyContent: 'center',
+                paddingHorizontal: 12,
+                borderBottomWidth: 3,
+                borderBottomColor: activeFilter === 'suggested' ? '#002fff' : 'transparent',
+              }}
+            >
+              <Text
+                style={{
+                  color: activeFilter === 'suggested' ? '#0f172a' : '#64748b',
+                  fontSize: 13,
+                  fontWeight: activeFilter === 'suggested' ? '800' : '700',
+                }}
+              >
+                Các nhóm được đề xuất
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+
+          {/* Custom Scroll Indicator */}
+          {showIndicator && (
+            <View style={{ position: 'absolute', bottom: 4, left: 0, right: 0, height: 2, backgroundColor: '#F1F5F9', pointerEvents: 'none' }}>
+              <Animated.View
+                style={{
+                  width: thumbWidth,
+                  height: '100%',
+                  backgroundColor: '#94A3B8',
+                  borderRadius: 1,
+                  transform: [
+                    {
+                      translateX: scrollX.interpolate({
+                        inputRange: [0, Math.max(1, contentWidth - width)],
+                        outputRange: [0, width - thumbWidth],
+                        extrapolate: 'clamp',
+                      }),
+                    },
+                  ],
+                }}
+              />
+            </View>
+          )}
+        </View>
+
+        {/* Button: + Tạo ra */}
+        <TouchableOpacity
+          activeOpacity={0.86}
+          onPress={onCreate}
+          style={{
+            marginRight: 16,
+            minHeight: 34,
+            borderRadius: 6,
+            backgroundColor: '#002fff',
+            paddingHorizontal: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          <Plus size={14} color="#ffffff" />
+          <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '900' }}>Tạo ra</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -242,76 +329,73 @@ function GroupCover({ group }: { group: GroupItem }) {
 }
 
 function GroupCard({ group, onOpen }: { group: GroupItem; onOpen: () => void }) {
-  const privacyLabel = group.privacy === 'private' ? 'Riêng tư' : 'Công khai';
+  const handleAction = () => {
+    onOpen();
+  };
 
   return (
-    <View className="surface-card mb-4 overflow-hidden">
-      <GroupCover group={group} />
+    <View 
+      style={{
+        backgroundColor: '#ffffff',
+        borderRadius: 16,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        marginBottom: 16,
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.03,
+        shadowRadius: 6,
+        elevation: 2,
+      }}
+    >
+      {/* Cover Image - 1:1 Aspect Ratio (Square) */}
+      <View style={{ aspectRatio: 1, backgroundColor: '#ffe4e6' }}>
+        {group.cover ? (
+          <Image
+            source={{ uri: group.cover }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        ) : group.avatar ? (
+          <Image
+            source={{ uri: group.avatar }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffe4e6' }}>
+            <Users size={80} color="#f43f5e" strokeWidth={1.5} />
+          </View>
+        )}
+      </View>
 
-      <View className="px-4 pb-4">
-        <View className="-mt-8 flex-row items-end justify-between">
-          <GroupAvatar group={group} />
-          <TouchableOpacity
-            className="rounded-full bg-[#0000FF] px-4 py-2"
-            activeOpacity={0.85}
-            onPress={onOpen}
-          >
-            <View className="flex-row items-center">
-              <ExternalLink size={16} color="#FFFFFF" />
-              <Text className="ml-2 text-caption-primary text-inverse">
-                Xem nhóm
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <Text className="mt-3 text-title-primary" numberOfLines={2}>
+      {/* Info and Full-width Button */}
+      <View style={{ padding: 16 }}>
+        <Text style={{ fontSize: 18, fontWeight: '700', color: '#0f172a' }} numberOfLines={1}>
           {group.groupTitle || group.groupName || 'Nhóm'}
         </Text>
+        
+        <Text style={{ fontSize: 13, color: '#64748b', marginTop: 4, marginBottom: 12 }}>
+          {formatCount(group.members)} Các thành viên
+        </Text>
 
-        {group.groupName ? (
-          <Text className="mt-1 text-caption-secondary" numberOfLines={1}>
-            @{group.groupName}
+        {/* Full-width Button */}
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={handleAction}
+          style={{
+            backgroundColor: '#e2e8f0',
+            borderRadius: 8,
+            height: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Text style={{ fontSize: 14, fontWeight: '600', color: '#0f172a' }}>
+            {group.isOwner ? 'Chỉnh sửa' : 'Xem nhóm'}
           </Text>
-        ) : null}
-
-        {group.about ? (
-          <Text className="mt-3 text-body-secondary" numberOfLines={3}>
-            {group.about}
-          </Text>
-        ) : null}
-
-        <View className="mt-4 flex-row flex-wrap gap-3">
-          <View className="flex-row items-center rounded-full bg-slate-100 px-3 py-2">
-            {group.privacy === 'private' ? (
-              <Lock size={15} color="#64748B" />
-            ) : (
-              <Users size={15} color="#64748B" />
-            )}
-            <Text className="ml-2 text-caption-secondary">{privacyLabel}</Text>
-          </View>
-
-          <View className="flex-row items-center rounded-full bg-slate-100 px-3 py-2">
-            <Users size={15} color={BRAND} />
-            <Text className="ml-2 text-caption-primary">
-              {formatCount(group.members)} thành viên
-            </Text>
-          </View>
-
-          {group.isOwner ? (
-            <View className="flex-row items-center rounded-full bg-blue-50 px-3 py-2">
-              <Text className="text-caption-primary text-brand">
-                Bạn quản lý
-              </Text>
-            </View>
-          ) : group.isJoined ? (
-            <View className="flex-row items-center rounded-full bg-blue-50 px-3 py-2">
-              <Text className="text-caption-primary text-brand">
-                Đã tham gia
-              </Text>
-            </View>
-          ) : null}
-        </View>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -333,9 +417,8 @@ function ExploreGroupsScreen() {
   }, [navigation]);
 
   const handleOpenGroup = useCallback((group: GroupItem) => {
-    if (!group.url) return;
-    void Linking.openURL(group.url);
-  }, []);
+    navigation.navigate(group.isOwner ? ROUTES.EDIT_GROUP : ROUTES.GROUP_DETAIL, { group });
+  }, [navigation]);
 
   const renderGroup = useCallback(
     ({ item }: ListRenderItemInfo<GroupItem>) => (
@@ -345,76 +428,34 @@ function ExploreGroupsScreen() {
   );
 
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
 
-      <View className="surface-topbar h-16 flex-row items-center justify-between px-4">
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-            onPress={() => navigation.goBack()}
-          >
-            <ArrowLeft size={22} color="#0F172A" />
-          </TouchableOpacity>
-          <Text className="ml-3 text-heading">Nhóm</Text>
-        </View>
-
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-            onPress={() => navigation.navigate(ROUTES.SEARCH)}
-          >
-            <Search size={21} color={BRAND} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            activeOpacity={0.8}
-            onPress={handleCreate}
-          >
-            <Plus size={23} color={BRAND} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      {/* Sticky Tab Bar Header */}
+      <FilterTabs
+        activeFilter={vm.activeFilter}
+        onChange={vm.setActiveFilter}
+        onCreate={handleCreate}
+      />
 
       <FlatList
         className="flex-1"
         data={vm.groups}
         keyExtractor={item => String(item.id)}
         renderItem={renderGroup}
-        contentContainerClassName="px-4 pb-10 pt-5"
+        contentContainerClassName="px-4 pb-10 pt-4"
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={vm.isRefreshing}
             onRefresh={vm.refresh}
-            tintColor={BRAND}
-            colors={[BRAND]}
+            tintColor="#002fff"
+            colors={['#002fff']}
           />
         }
         onEndReached={vm.loadMore}
         onEndReachedThreshold={0.45}
-        ListHeaderComponent={
-          <>
-            <View className="preview-panel mb-5 flex-row items-center p-4">
-              <View className="icon-chip h-14 w-14 items-center justify-center">
-                <Users size={28} color={BRAND} />
-              </View>
-              <View className="ml-4 flex-1">
-                <Text className="text-heading">{activeCopy.title}</Text>
-                <Text className="mt-1 text-body-secondary">
-                  {activeCopy.subtitle}
-                </Text>
-              </View>
-            </View>
-
-            <FilterTabs
-              activeFilter={vm.activeFilter}
-              onChange={vm.setActiveFilter}
-            />
-          </>
-        }
         ListEmptyComponent={
           vm.isLoading ? (
             <GroupsSkeleton />
@@ -430,12 +471,12 @@ function ExploreGroupsScreen() {
         ListFooterComponent={
           vm.isLoadingMore ? (
             <View className="py-4">
-              <ActivityIndicator color={BRAND} />
+              <ActivityIndicator color="#002fff" />
             </View>
           ) : null
         }
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

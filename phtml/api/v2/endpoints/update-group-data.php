@@ -1,4 +1,5 @@
 <?php
+// English description: Updates authenticated group profile data for mobile API requests.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -31,6 +32,10 @@ if (empty($error_code)) {
 		if (isset($group_data['server_key'])) {
 			unset($group_data['server_key']);
 		}
+        $posted_group_sub_category = isset($group_data['group_sub_category']) ? $group_data['group_sub_category'] : null;
+        if (isset($group_data['group_sub_category'])) {
+            unset($group_data['group_sub_category']);
+        }
 		if (!empty($group_data['group_name'])) {
 			$is_exist = Wo_IsNameExist($group_data['group_name'], 0);
 		    if (in_array(true, $is_exist) && $group_data['group_name'] != $group['group_name']) {
@@ -88,15 +93,16 @@ if (empty($error_code)) {
                 }
             }
 
-            $group_data['sub_category'] = '';
-	        if (!empty($_POST['group_sub_category']) && !empty($wo['group_sub_categories'][$_POST['category']])) {
+            if ($posted_group_sub_category !== null) {
+                $group_data['sub_category'] = '';
+            }
+	        if (!empty($posted_group_sub_category) && !empty($_POST['category']) && !empty($wo['group_sub_categories'][$_POST['category']])) {
 	            foreach ($wo['group_sub_categories'][$_POST['category']] as $key => $value) {
-	                if ($value['id'] == $_POST['group_sub_category']) {
+	                if ($value['id'] == $posted_group_sub_category) {
 	                    $group_data['sub_category'] = $value['id'];
 	                }
 	            }
 	        }
-	        unset($group_data['group_sub_category']);
 
 	        $fields = Wo_GetCustomFields('group'); 
 	        if (!empty($fields)) {

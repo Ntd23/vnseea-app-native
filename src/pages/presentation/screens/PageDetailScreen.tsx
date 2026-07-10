@@ -75,7 +75,9 @@ import {
   TextPostCard,
 } from '../../../feed/presentation/components/PostCards';
 import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
+import { CreatePostModal } from '../../../feed/presentation/screens/CreatePostScreen';
 import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import {
   PhotoViewerModal,
   type PhotoViewerState,
@@ -478,64 +480,6 @@ function PageHero({
           </View>
         )}
 
-        {/* Back + More buttons — anchored to the cover image at the
-            top-left / top-right. They scroll WITH the cover because
-            they live inside the ListHeader (PageHero), not above the
-            FlatList. We pass the screen's safe-area insets down so
-            they sit just under the status bar on every device. */}
-        {onBack ? (
-          <TouchableOpacity
-            className="absolute h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200"
-            style={{
-              top: insets.top + 8,
-              left: 16,
-              shadowColor: '#0F172A',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.18,
-              shadowRadius: 8,
-              elevation: 4,
-            }}
-            activeOpacity={0.8}
-            onPress={onBack}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <ArrowLeft size={22} color="#0F172A" />
-          </TouchableOpacity>
-        ) : null}
-        {onMore ? (
-          <TouchableOpacity
-            className="absolute h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200"
-            style={{
-              top: insets.top + 8,
-              right: 16,
-              shadowColor: '#0F172A',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.18,
-              shadowRadius: 8,
-              elevation: 4,
-            }}
-            activeOpacity={0.8}
-            onPress={onMore}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <MoreHorizontal size={22} color="#0F172A" />
-          </TouchableOpacity>
-        ) : null}
-
-        {canManagePage && onChangeCover ? (
-          <TouchableOpacity
-            className="absolute bottom-4 right-4 h-9 w-9 items-center justify-center rounded-full bg-white shadow-md border border-slate-100"
-            activeOpacity={0.8}
-            onPress={onChangeCover}
-            disabled={isUploadingCover}
-          >
-            {isUploadingCover ? (
-              <ActivityIndicator size="small" color="#0F172A" />
-            ) : (
-              <Camera size={18} color="#0F172A" />
-            )}
-          </TouchableOpacity>
-        ) : null}
       </View>
 
       {/* Page Content Detail */}
@@ -544,20 +488,6 @@ function PageHero({
         <View className="-mt-16 mb-4 items-center">
           <View className="relative">
             <PageAvatar page={page} size={100} />
-            {canManagePage && onChangeAvatar ? (
-              <TouchableOpacity
-                className="absolute bottom-0 right-0 h-8 w-8 items-center justify-center rounded-full bg-white shadow-md border border-slate-100"
-                activeOpacity={0.8}
-                onPress={onChangeAvatar}
-                disabled={isUploadingAvatar}
-              >
-                {isUploadingAvatar ? (
-                  <ActivityIndicator size="small" color="#0F172A" />
-                ) : (
-                  <Camera size={15} color="#0F172A" />
-                )}
-              </TouchableOpacity>
-            ) : null}
           </View>
         </View>
 
@@ -1717,9 +1647,14 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     setShareSheetVisible(true);
   }, []);
 
-  const handleCreatePost = useCallback(() => {
-    navigation.navigate(ROUTES.CREATE_POST, { page: vm.page });
-  }, [navigation, vm.page]);
+  const [composerModalVisible, setComposerModalVisible] = useState(false);
+  const [composerInitialAction, setComposerInitialAction] = useState<'photo' | 'video' | 'product' | 'poll' | undefined>(undefined);
+
+  const handleCreatePost = useCallback((action?: any) => {
+    const cleanAction = typeof action === 'string' ? action : undefined;
+    setComposerInitialAction(cleanAction as any);
+    setComposerModalVisible(true);
+  }, []);
 
   const handleCreateJob = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_JOB, {
@@ -1862,7 +1797,9 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
       <InvitePageRow label={copy.inviteRow} onPress={() => setInviteVisible(true)} />
       <ComposerCard
         onPress={handleCreatePost}
+        onPressAction={handleCreatePost}
         avatarUrl={vm.page.avatar}
+        displayName={vm.page.pageTitle || 'Quản trị'}
         copy={postCardCopy}
       />
       {vm.error ? (
@@ -2021,7 +1958,9 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
 
   return (
     <View className="flex-1 surface-base">
-      <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+      <FocusAwareStatusBar barStyle="dark-content" />
+
+      <FeedHeader />
 
       <FlatList
         className="flex-1"
@@ -2144,6 +2083,12 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onClose={handleClosePostShare}
         post={sharingPost}
         onInternalShare={handleInternalSharePost}
+      />
+      <CreatePostModal
+        visible={composerModalVisible}
+        onClose={() => setComposerModalVisible(false)}
+        page={vm.page}
+        initialAction={composerInitialAction}
       />
       <PhotoViewerModal
         state={photoViewer}

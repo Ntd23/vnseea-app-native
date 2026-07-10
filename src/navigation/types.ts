@@ -149,6 +149,7 @@ export type RootStackParamList = {
   [ROUTES.EVENT_DETAIL]: { event: EventsItem };
   [ROUTES.CREATE_POLL]: undefined;
   [ROUTES.CREATE_GROUP]: undefined;
+  [ROUTES.EDIT_GROUP]: { group: GroupItem };
   [ROUTES.EXPLORE_GROUPS]: undefined;
   [ROUTES.GROUP_DETAIL]: { group?: GroupItem } | undefined;
   [ROUTES.EVENTS]: undefined;
@@ -189,7 +190,7 @@ export type RootStackParamList = {
   [ROUTES.AD_DETAILS]: { ad: AdItem };
   [ROUTES.CREATE_AD]: { ad?: AdItem } | undefined;
   [ROUTES.CREATE_REEL]: undefined;
-  [ROUTES.CREATE_POST]: { page?: PagesItem } | undefined;
+  [ROUTES.CREATE_POST]: { page?: PagesItem; initialAction?: 'photo' | 'video' | 'product' | 'poll' } | undefined;
   [ROUTES.CREATE_STORY]: undefined;
   /**
    * Pass the full stories list + the user-index to open at. The viewer
