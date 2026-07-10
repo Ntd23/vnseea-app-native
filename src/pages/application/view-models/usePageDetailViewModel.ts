@@ -15,12 +15,7 @@ import type {
   PagesItem,
 } from '../../domain/types/pages.types';
 
-export type PageDetailTab =
-  | 'posts'
-  | 'info'
-  | 'photos'
-  | 'videos'
-  | 'music';
+export type PageDetailTab = 'all' | 'photos';
 
 const PAGE_POST_LIMIT = 12;
 const PAGE_REVIEW_LIMIT = 20;
@@ -69,7 +64,7 @@ function withPageOwner(page: PagesItem, admins: PageUser[]) {
 export function usePageDetailViewModel(initialPage: PagesItem) {
   const initialPageKey = useMemo(() => getPageKey(initialPage), [initialPage]);
   const [page, setPage] = useState<PagesItem>(initialPage);
-  const [activeTab, setActiveTab] = useState<PageDetailTab>('posts');
+  const [activeTab, setActiveTab] = useState<PageDetailTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [postCursor, setPostCursor] = useState<string | undefined>();
@@ -370,6 +365,80 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
     );
   }, []);
 
+  const updatePostById = useCallback(
+    (
+      postId: string,
+      updater: (post: FeedPost) => FeedPost,
+    ) => {
+      setPosts(current =>
+        current.map(post => (post.id === postId ? updater(post) : post)),
+      );
+    },
+    [],
+  );
+
+  const editPost = useCallback(
+    async (postId: string, text: string) => {
+      const target = posts.find(post => post.id === postId);
+      if (!target) return;
+      if (target.kind !== 'text' && target.kind !== 'video' && target.kind !== 'poll') {
+        return;
+      }
+
+      await feedRepository.editPost(postId, {
+        text,
+        privacy: target.privacy,
+      });
+      updatePostById(postId, post => ({
+        ...post,
+        caption: text,
+      }));
+    },
+    [posts, updatePostById],
+  );
+
+  const deletePost = useCallback(async (postId: string) => {
+    const result = await feedRepository.deletePost(postId);
+    if (!result.deleted) {
+      throw new Error('Không xóa được bài viết.');
+    }
+    setPosts(current => current.filter(post => post.id !== postId));
+    setPage(current => ({
+      ...current,
+      postCount: Math.max(0, (current.postCount ?? 0) - 1),
+    }));
+  }, []);
+
+  const togglePostComments = useCallback(async (postId: string) => {
+    return feedRepository.togglePostComments(postId);
+  }, []);
+
+  const pinPost = useCallback(
+    async (postId: string) => {
+      if (!currentPageId) {
+        throw new Error('Không tìm thấy trang để ghim bài viết.');
+      }
+
+      const result = await feedRepository.pinPost(postId, {
+        type: 'page',
+        ownerId: String(currentPageId),
+      });
+
+      if (result.pinned) {
+        setPosts(current => {
+          const pinnedPost = current.find(post => post.id === postId);
+          if (!pinnedPost) {
+            return current;
+          }
+          return [pinnedPost, ...current.filter(post => post.id !== postId)];
+        });
+      }
+
+      return result;
+    },
+    [currentPageId],
+  );
+
   const togglePostReaction = useCallback(
     async (postId: string, nextReaction: ReactionType) => {
       let snapshot: FeedPost | undefined;
@@ -638,12 +707,6 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
       if (activeTab === 'photos') {
         return post.kind === 'text' && post.photos.length > 0;
       }
-      if (activeTab === 'videos') {
-        return post.kind === 'video';
-      }
-      if (activeTab === 'info' || activeTab === 'music') {
-        return false;
-      }
       return true;
     });
 
@@ -684,7 +747,10 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
     searchQuery,
     setSearchQuery,
     displayedPosts,
+    deletePost,
+    editPost,
     postCounts,
+    pinPost,
     suggestedPages,
     ratePage,
     refresh,
@@ -693,6 +759,7 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
     reviewsHasMore,
     setActiveTab,
     sharePost: feedRepository.sharePost,
+    togglePostComments,
     togglePostReaction,
     updatePostCommentCount,
     toggleFollow,

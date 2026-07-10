@@ -60,6 +60,7 @@ function AppNavigator() {
                 options={{
                   presentation: 'transparentModal',
                   animation: 'fade',
+                  contentStyle: { backgroundColor: 'transparent' },
                 }}
               />
             );

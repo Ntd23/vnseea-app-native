@@ -63,6 +63,7 @@ import {
   HomeVideoPostCard,
   ReactionPickerOverlay,
   FEED_COPY,
+  renderPostTextTokens,
 } from '../components/PostCards';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
@@ -153,7 +154,7 @@ function PostBody({ post }: { post: FeedTextPost | FeedVideoPost }) {
       <View className="px-4 pb-4">
         {post.caption ? (
           <Text className="text-body-primary" selectable>
-            {post.caption}
+            {renderPostTextTokens(post.caption, post.mentionNames)}
           </Text>
         ) : null}
         {post.thumbnailUrl || post.videoUrl ? (
@@ -184,7 +185,7 @@ function PostBody({ post }: { post: FeedTextPost | FeedVideoPost }) {
     <View className="px-4 pb-4">
       {post.caption ? (
         <Text className="text-body-primary" selectable>
-          {post.caption}
+          {renderPostTextTokens(post.caption, post.mentionNames)}
         </Text>
       ) : null}
       {post.photos && post.photos.length > 0 ? (
@@ -240,7 +241,7 @@ function SharedFromCard({ source }: { source: NonNullable<FeedTextPost['sharedFr
           className="px-4 pb-3 text-body-secondary"
           numberOfLines={4}
         >
-          {source.caption}
+          {renderPostTextTokens(source.caption, source.mentionNames)}
         </Text>
       ) : null}
     </View>

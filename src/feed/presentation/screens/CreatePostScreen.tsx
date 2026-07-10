@@ -85,6 +85,7 @@ import type {
   PostVideoAttachment,
   PostAudioAttachment,
 } from '../../domain/types/feed.types';
+import type { ReelCaptionSuggestion } from '../../../reels/domain/types/reels.types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CreatePostRoute = RouteProp<RootStackParamList, typeof ROUTES.CREATE_POST>;
@@ -324,6 +325,222 @@ function assetToVideoAttachment(asset: Asset): PostVideoAttachment | null {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────
+const TOKEN_BLUE = '#0000ff';
+const COMPOSER_TOKEN_PATTERN = /([@#][^\s@#.,!?;:()[\]{}"']+)/g;
+
+function renderHighlightedText(value: string) {
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  COMPOSER_TOKEN_PATTERN.lastIndex = 0;
+  while ((match = COMPOSER_TOKEN_PATTERN.exec(value)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(value.slice(lastIndex, match.index));
+    }
+    nodes.push(
+      <Text key={`${match[0]}-${match.index}`} style={{ color: TOKEN_BLUE }}>
+        {match[0]}
+      </Text>,
+    );
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < value.length) {
+    nodes.push(value.slice(lastIndex));
+  }
+
+  return nodes.length > 0 ? nodes : value;
+}
+
+function HighlightedComposerInput({
+  inputRef,
+  value,
+  onChangeText,
+  placeholder,
+  onFocus,
+  onBlur,
+}: {
+  inputRef: React.RefObject<TextInput | null>;
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder: string;
+  onFocus: () => void;
+  onBlur: () => void;
+}) {
+  const hasValue = value.length > 0;
+  const textStyle = {
+    fontSize: 16,
+    lineHeight: 22,
+    padding: 0,
+  };
+
+  return (
+    <View
+      style={{
+        flex: 1,
+        marginLeft: 12,
+        marginRight: 8,
+        minHeight: 42,
+        maxHeight: 120,
+      }}
+    >
+      {hasValue ? (
+        <Text
+          pointerEvents="none"
+          style={{
+            ...textStyle,
+            color: '#0f172a',
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            zIndex: 2,
+            elevation: 2,
+          }}
+        >
+          {renderHighlightedText(value)}
+        </Text>
+      ) : null}
+      <TextInput
+        ref={inputRef}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#94a3b8"
+        multiline
+        scrollEnabled
+        cursorColor={TOKEN_BLUE}
+        selectionColor={TOKEN_BLUE}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        style={{
+          ...textStyle,
+          backgroundColor: 'transparent',
+          color: hasValue ? 'transparent' : '#0f172a',
+          minHeight: 42,
+          maxHeight: 120,
+          textAlignVertical: 'top',
+          zIndex: 1,
+        }}
+      />
+    </View>
+  );
+}
+
+function CaptionSuggestionBar({
+  isVisible,
+  isLoading,
+  suggestions,
+  loadingLabel,
+  onPick,
+}: {
+  isVisible: boolean;
+  isLoading: boolean;
+  suggestions: ReelCaptionSuggestion[];
+  loadingLabel: string;
+  onPick: (suggestion: ReelCaptionSuggestion) => void;
+}) {
+  if (!isVisible) return null;
+
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        top: 48,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+        elevation: 50,
+        maxHeight: 220,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: '#cbd5e1',
+        backgroundColor: '#ffffff',
+        overflow: 'hidden',
+      }}
+    >
+      <ScrollView
+        showsVerticalScrollIndicator
+        keyboardShouldPersistTaps="always"
+        contentContainerStyle={{
+          paddingVertical: 4,
+        }}
+      >
+        {isLoading && suggestions.length === 0 ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 }}>
+            <ActivityIndicator color={TOKEN_BLUE} size="small" />
+            <Text style={{ marginLeft: 8, fontSize: 13, color: '#64748b', fontWeight: '600' }}>
+              {loadingLabel}
+            </Text>
+          </View>
+        ) : (
+          suggestions.map(suggestion => {
+            const isMention = suggestion.kind === 'mention';
+            return (
+              <TouchableOpacity
+                key={`${suggestion.kind}-${suggestion.id}-${suggestion.value}`}
+                activeOpacity={0.75}
+                onPress={() => onPick(suggestion)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#f1f5f9',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+                {isMention && suggestion.avatarUrl ? (
+                  <Image
+                    source={{ uri: suggestion.avatarUrl }}
+                    style={{ width: 34, height: 34, borderRadius: 17, marginRight: 10 }}
+                  />
+                ) : (
+                  <View
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 17,
+                      marginRight: 10,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isMention ? '#eff6ff' : '#eef2ff',
+                    }}
+                  >
+                    <Text style={{ color: TOKEN_BLUE, fontWeight: '800', fontSize: 13 }}>
+                      {isMention ? '@' : '#'}
+                    </Text>
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: isMention ? '#0f172a' : TOKEN_BLUE,
+                      fontSize: 14,
+                      fontWeight: '800',
+                    }}
+                  >
+                    {isMention ? suggestion.label : suggestion.value}
+                  </Text>
+                  {suggestion.subtitle ? (
+                    <Text numberOfLines={1} style={{ color: '#64748b', fontSize: 11 }}>
+                      {suggestion.subtitle}
+                    </Text>
+                  ) : null}
+                </View>
+                <ChevronRight size={18} color={TOKEN_BLUE} />
+              </TouchableOpacity>
+            );
+          })
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
 function PrivacyPickerSheet({
   visible,
   current,
@@ -1681,7 +1898,9 @@ export function CreatePostModal({
     pageId: targetPage?.pageId,
     groupId: targetGroupId,
     onCreated: post => {
-      postCreatedEvents.emit(post);
+      if (!targetGroupId) {
+        postCreatedEvents.emit(post);
+      }
       onCreated?.();
       onClose();
     },
@@ -2116,32 +2335,73 @@ export function CreatePostModal({
             }}
             onPress={(e) => e.stopPropagation()}
           >
-            {/* Row 1: Avatar, TextInput, Smiley face icon */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-               <Image source={{ uri: avatarUrl || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw' }} style={{ width: 40, height: 40, borderRadius: 20 }} resizeMode="cover" />
-              <TextInput
-                ref={textInputRef}
-                value={vm.draft.text}
-                onChangeText={stableSetText}
-                placeholder="Hôm nay bạn thế nào ?"
-                placeholderTextColor="#94a3b8"
-                multiline
-                onFocus={handleInputFocus}
-                onBlur={handleInputBlur}
-                style={{
-                  flex: 1,
-                  marginLeft: 12,
-                  marginRight: 8,
-                  fontSize: 16,
-                  color: '#0f172a',
-                  maxHeight: 120,
-                  padding: 0,
-                  textAlignVertical: 'top',
-                }}
+            <View style={{ position: 'relative', zIndex: 20, elevation: 20 }}>
+              {/* Row 1: Avatar, highlighted text input, hashtag/mention shortcuts */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                 <Image source={{ uri: avatarUrl || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw' }} style={{ width: 40, height: 40, borderRadius: 20 }} resizeMode="cover" />
+                <HighlightedComposerInput
+                  inputRef={textInputRef}
+                  value={vm.draft.text}
+                  onChangeText={stableSetText}
+                  placeholder="Hôm nay bạn thế nào ?"
+                  onFocus={handleInputFocus}
+                  onBlur={handleInputBlur}
+                />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => insertCaptionChar('#')}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#f1f5f9',
+                    }}
+                  >
+                    <Hash size={18} color="#64748b" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => insertCaptionChar('@')}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#f1f5f9',
+                    }}
+                  >
+                    <AtSign size={18} color="#64748b" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => setFeelingSheetVisible(true)}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Smile size={22} color="#64748b" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <CaptionSuggestionBar
+                isVisible={
+                  vm.isCaptionSuggestionActive &&
+                  (vm.isLoadingCaptionSuggestions || vm.captionSuggestions.length > 0)
+                }
+                isLoading={vm.isLoadingCaptionSuggestions}
+                suggestions={vm.captionSuggestions}
+                loadingLabel={copy.suggestionsLoading}
+                onPick={vm.applyCaptionSuggestion}
               />
-              <TouchableOpacity onPress={() => setFeelingSheetVisible(true)}>
-                <Smile size={24} color="#64748b" />
-              </TouchableOpacity>
             </View>
 
             <View style={{ height: 1, backgroundColor: '#f1f5f9', marginBottom: 12 }} />

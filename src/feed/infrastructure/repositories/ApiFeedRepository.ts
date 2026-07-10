@@ -24,7 +24,10 @@ import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { getShareableUrl } from '../../../shared-kernel/application/view-models/useShareViewModel';
-import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type {
+  ReactionType,
+  ReelCaptionSuggestion,
+} from '../../../reels/domain/types/reels.types';
 import { reelsReactionsStorage } from '../../../reels/infrastructure/storage/reelsReactionsStorage';
 import type {
   FeedSource,
@@ -310,8 +313,9 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
   return {
     kind: 'poll',
     id: postId,
-    caption: cleanCaption(readString(raw, 'postText')) || undefined,
-    pollQuestion: cleanCaption(readString(raw, 'postText')) || undefined,
+    caption: readPostCaption(raw) || undefined,
+    mentionNames: readPostMentionNames(raw),
+    pollQuestion: readPostCaption(raw) || undefined,
     options,
     votedId,
     totalVotes,
@@ -377,6 +381,44 @@ function normalizeMediaUrl(url: string | undefined): string | undefined {
   return `${_siteRoot}/${trimmed.replace(/^\/+/, '')}`;
 }
 
+function mapFollowingMention(raw: Record<string, unknown>): ReelCaptionSuggestion | null {
+  const username = readString(raw, 'username', 'user_name');
+  if (!username) return null;
+
+  const firstName = readString(raw, 'first_name');
+  const lastName = readString(raw, 'last_name');
+  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+  const label =
+    firstName ||
+    fullName ||
+    readString(raw, 'name', 'full_name') ||
+    username;
+  const displayHandle = (firstName || username).replace(/\s+/g, '_');
+
+  return {
+    id: readString(raw, 'user_id', 'id') || username,
+    kind: 'mention',
+    label,
+    value: `@${displayHandle}`,
+    backendValue: `@${username}`,
+    subtitle: `@${username}`,
+    avatarUrl:
+      normalizeMediaUrl(readString(raw, 'avatar', 'profile_picture')) ||
+      undefined,
+  };
+}
+
+function matchesMentionQuery(suggestion: ReelCaptionSuggestion, query: string) {
+  const normalized = query.trim().replace(/^@/, '').toLowerCase();
+  if (!normalized) return true;
+  return (
+    suggestion.label.toLowerCase().includes(normalized) ||
+    suggestion.value.toLowerCase().includes(normalized) ||
+    (suggestion.backendValue ?? '').toLowerCase().includes(normalized) ||
+    (suggestion.subtitle ?? '').toLowerCase().includes(normalized)
+  );
+}
+
 function normalizePlayableMediaUrl(url: string | undefined): string | undefined {
   const normalized = normalizeMediaUrl(url);
   if (!normalized) return undefined;
@@ -414,6 +456,27 @@ function cleanCaption(raw: string) {
     .replace(/#\[\d+\]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function readPostCaption(raw: Record<string, unknown>) {
+  return cleanCaption(readString(raw, 'Orginaltext', 'postText_API', 'postText'));
+}
+
+function readPostMentionNames(raw: Record<string, unknown>) {
+  const mentions = raw.mentions_users;
+  if (!mentions || typeof mentions !== 'object' || Array.isArray(mentions)) {
+    return undefined;
+  }
+
+  const names = Array.from(
+    new Set(
+      Object.values(mentions)
+        .map(value => cleanCaption(typeof value === 'string' ? value : ''))
+        .filter(Boolean),
+    ),
+  ).sort((left, right) => right.length - left.length);
+
+  return names.length > 0 ? names : undefined;
 }
 
 function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
@@ -479,7 +542,8 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
   return {
     kind: 'video',
     id: postId,
-    caption: cleanCaption(readString(raw, 'postText')) || undefined,
+    caption: readPostCaption(raw) || undefined,
+    mentionNames: readPostMentionNames(raw),
     // Some endpoints return full Wo_GetMedia URLs, others still return
     // relative media paths. normalizePlayableMediaUrl handles both.
     videoUrl,
@@ -743,7 +807,8 @@ function mapSharedFrom(raw: Record<string, unknown>) {
 
   return {
     id: readString(shared, 'id', 'post_id'),
-    caption: cleanCaption(readString(shared, 'postText')) || undefined,
+    caption: readPostCaption(shared) || undefined,
+    mentionNames: readPostMentionNames(shared),
     publisherName,
     publisherAvatar:
       readString(publisher, 'avatar', 'profile_picture') || undefined,
@@ -879,13 +944,13 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
   const sharedFrom = mapSharedFrom(raw);
   const photos = extractPhotoUrls(raw);
   const sharedPhotos = sharedFrom?.photos ?? [];
-  const caption =
-    cleanCaption(readString(raw, 'postText')) || sharedFrom?.caption || undefined;
+  const caption = readPostCaption(raw) || sharedFrom?.caption || undefined;
 
   return {
     kind: 'text',
     id: postId,
     caption,
+    mentionNames: readPostMentionNames(raw),
     photos: photos.length > 0 ? photos : sharedPhotos,
     audioUrl: AUDIO_URL_PATTERN.test(readString(raw, 'postFile'))
       ? readString(raw, 'postFile')
@@ -1609,6 +1674,10 @@ function mixAdsIntoPosts(posts: FeedPost[]): FeedPost[] {
   return mixed.sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
 }
 
+function isGroupRawPost(raw: Record<string, unknown>): boolean {
+  return readNumber(raw, 'group_id', 'groupId') > 0;
+}
+
 function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
   const posts: FeedPost[] = [];
   // Per-classifier counters. Tells us which branch a row went down
@@ -1616,6 +1685,11 @@ function mapLightRawFeedPosts(raw: Array<Record<string, unknown>>): FeedPost[] {
   // see exactly where raw posts get filtered out.
   const buckets = { ad: 0, poll: 0, text: 0, video: 0, dropped: 0 };
   for (const item of raw) {
+    if (isGroupRawPost(item)) {
+      buckets.dropped += 1;
+      continue;
+    }
+
     if (looksLikeAd(item)) {
       posts.push(mapAdPost(item));
       buckets.ad += 1;
@@ -1672,6 +1746,10 @@ export function createFeedRepository(): FeedRepository {
       );
       const posts: FeedPost[] = [];
       for (const item of page.posts) {
+        if (isGroupRawPost(item)) {
+          continue;
+        }
+
         if (looksLikeAd(item)) {
           posts.push(mapAdPost(item));
         } else if (looksLikeVideo(item)) {
@@ -1700,6 +1778,10 @@ export function createFeedRepository(): FeedRepository {
       );
       const posts: FeedPost[] = [];
       for (const item of page.posts) {
+        if (isGroupRawPost(item)) {
+          continue;
+        }
+
         if (looksLikeAd(item)) {
           posts.push(mapAdPost(item));
         } else if (looksLikePoll(item)) {
@@ -1794,6 +1876,7 @@ export function createFeedRepository(): FeedRepository {
         source,
       );
       return page.posts
+        .filter(item => !isGroupRawPost(item))
         .filter(looksLikeVideo)
         .map(mapVideoPost)
         .slice(0, limit);
@@ -1805,7 +1888,10 @@ export function createFeedRepository(): FeedRepository {
       source: FeedSource = 'all',
     ) {
       const page = await fetchRawFeedPosts(limit, afterPostId, source);
-      return page.posts.filter(looksLikeTextOrPhoto).map(mapTextPost);
+      return page.posts
+        .filter(item => !isGroupRawPost(item))
+        .filter(looksLikeTextOrPhoto)
+        .map(mapTextPost);
     },
 
     async getHashtagPosts(tag: string, limit = 20, afterPostId?: string) {
@@ -1956,6 +2042,28 @@ export function createFeedRepository(): FeedRepository {
       return { postId: post.id, post };
     },
 
+    async searchMentionSuggestions(query: string): Promise<ReelCaptionSuggestion[]> {
+      const sessionUserId = sessionStorage.getSession()?.userId;
+      if (!sessionUserId) return [];
+
+      const response = await backendApi.post<{
+        api_status: number | string;
+        data?: {
+          following?: Array<Record<string, unknown>>;
+        };
+      }>(apiRoutes.social.friends, {
+        user_id: sessionUserId,
+        type: 'following',
+        limit: 50,
+      });
+
+      return (response.data?.following ?? [])
+        .map(mapFollowingMention)
+        .filter((item): item is ReelCaptionSuggestion => Boolean(item))
+        .filter(item => matchesMentionQuery(item, query))
+        .slice(0, 8);
+    },
+
     async setReaction(postId, reaction) {
       // Same contract as Reels' `setReaction`:
       //   POST /api/post-actions { action: 'reaction', post_id, reaction: '1..6' }
@@ -2079,6 +2187,45 @@ export function createFeedRepository(): FeedRepository {
       };
     },
 
+    async getGroupPosts(groupId, limit = 20, afterPostId) {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        data?: Array<Record<string, unknown>>;
+      }>(apiRoutes.feed.posts, {
+        type: 'get_group_posts',
+        id: groupId,
+        limit,
+        ...(afterPostId ? { after_post_id: afterPostId } : {}),
+      });
+
+      const rawItems = response.data ?? [];
+      const posts = rawItems
+        .filter(item => !looksLikeAd(item))
+        .map(item => {
+          try {
+            return mapProfilePost(item);
+          } catch (err) {
+            console.warn('[ApiFeedRepository] skip group post', {
+              groupId,
+              postId: readString(item, 'id', 'post_id'),
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return null;
+          }
+        })
+        .filter(
+          (post): post is FeedTextPost | FeedVideoPost | FeedPollPost =>
+            post !== null,
+        )
+        .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+
+      return {
+        posts,
+        nextCursor: getOldestFeedPostId(posts),
+        reachedEnd: rawItems.length < limit,
+      };
+    },
+
     async savePost(postId: string): Promise<{ saved: boolean }> {
       const response = await backendApi.post<{
         api_status: number | string;
@@ -2134,6 +2281,73 @@ export function createFeedRepository(): FeedRepository {
       }
 
       return { deleted };
+    },
+
+    async editPost(
+      postId: string,
+      input: { text: string; privacy?: PostPrivacy },
+    ): Promise<{ edited: boolean }> {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        action?: string;
+        message?: string;
+      }>(apiRoutes.feed.postActions, {
+        action: 'edit',
+        post_id: postId,
+        text: input.text,
+        privacy_type: PRIVACY_TO_WIRE[input.privacy ?? 'public'] ?? '0',
+      });
+
+      const edited = String(response.api_status) === '200' &&
+        (response.action ?? '').includes('edited');
+      if (!edited) {
+        throw new Error(response.message ?? 'Không chỉnh sửa được bài viết.');
+      }
+
+      return { edited };
+    },
+
+    async togglePostComments(postId: string): Promise<{ enabled: boolean }> {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        code?: number;
+        action?: string;
+        message?: string;
+      }>(apiRoutes.feed.postActions, {
+        action: 'disable_comments',
+        post_id: postId,
+      });
+
+      const ok = String(response.api_status) === '200';
+      if (!ok) {
+        throw new Error(response.message ?? 'Không cập nhật được bình luận.');
+      }
+
+      return { enabled: Number(response.code ?? 0) === 1 };
+    },
+
+    async pinPost(
+      postId: string,
+      input: { type: 'profile' | 'page' | 'group' | 'event'; ownerId: string },
+    ): Promise<{ pinned: boolean }> {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        code?: number;
+        action?: string;
+        message?: string;
+      }>(apiRoutes.feed.postActions, {
+        action: 'pin_post',
+        post_id: postId,
+        pin_type: input.type,
+        pin_owner_id: input.ownerId,
+      });
+
+      const ok = String(response.api_status) === '200';
+      if (!ok) {
+        throw new Error(response.message ?? 'Không ghim được bài viết.');
+      }
+
+      return { pinned: Number(response.code ?? 0) === 1 };
     },
 
     async sharePost(input: SharePostInput): Promise<FeedPost> {

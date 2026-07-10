@@ -1,4 +1,5 @@
 <?php
+// English description: Handles authenticated post actions for mobile API clients.
 // +------------------------------------------------------------------------+
 // | @author Deen Doughouz (DoughouzForest)
 // | @author_url 1: http://www.hisotechgroup.com
@@ -17,7 +18,7 @@ if (empty($_POST['post_id'])) {
 } else if (empty($_POST['action'])) {
     $error_code    = 5;
     $error_message = 'action (POST) is missing';
-} else if (!in_array($_POST['action'], array('edit', 'delete', 'comment', 'like', 'dislike', 'wonder','report','save','disable_comments','reaction','boost'))) {
+} else if (!in_array($_POST['action'], array('edit', 'delete', 'comment', 'like', 'dislike', 'wonder','report','save','disable_comments','reaction','boost','pin_post'))) {
 	$error_code    = 6;
     $error_message = 'Undefined action value';
 }
@@ -160,6 +161,30 @@ if (empty($error_code)) {
 			$error_code    = 7;
 		    $error_message = 'You are not the post owner';
 		}
+	}  else if ($_POST['action'] == 'pin_post') {
+		$post_id = Wo_Secure($_POST['post_id']);
+		$pin_type = 'profile';
+		$pin_owner_id = $wo['user']['user_id'];
+		$types_array = array('profile', 'page', 'group', 'event');
+		if (!empty($_POST['pin_type']) && in_array($_POST['pin_type'], $types_array)) {
+			$pin_type = Wo_Secure($_POST['pin_type']);
+		}
+		if (!empty($_POST['pin_owner_id']) && is_numeric($_POST['pin_owner_id'])) {
+			$pin_owner_id = Wo_Secure($_POST['pin_owner_id']);
+		}
+		$pin_result = Wo_PinPost($post_id, $pin_type, $pin_owner_id);
+		if ($pin_result == 'unpin') {
+            $code = 0;
+            $action = 'post unpinned';
+		}
+		else if ($pin_result == 'pin') {
+            $code = 1;
+            $action = 'post pinned';
+		}
+		else{
+			$error_code    = 7;
+		    $error_message = 'You are not allowed to pin this post';
+		}
 	}  else if ($_POST['action'] == 'reaction') {
 		$reactions_types = array_keys($wo['reactions_types']);
 		$post_id = Wo_Secure($_POST['post_id']);
@@ -226,6 +251,9 @@ if (empty($error_code)) {
 			$response_data['code'] = $code;
 		}
 		if ($_POST['action'] == 'boost') {
+			$response_data['code'] = $code;
+		}
+		if ($_POST['action'] == 'pin_post') {
 			$response_data['code'] = $code;
 		}
 	}

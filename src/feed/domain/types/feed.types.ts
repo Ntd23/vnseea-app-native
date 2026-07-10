@@ -127,6 +127,7 @@ export interface FeedTextPost {
   kind: 'text';
   id: string;
   caption?: string;
+  mentionNames?: string[];
   photos: string[];
   audioUrl?: string;
   postedAt?: number;
@@ -162,6 +163,7 @@ export interface FeedTextPost {
   sharedFrom?: {
     id: string;
     caption?: string;
+    mentionNames?: string[];
     publisherName: string;
     publisherAvatar?: string;
     postedAt?: number;
@@ -180,6 +182,7 @@ export interface FeedVideoPost {
   kind: 'video';
   id: string;
   caption?: string;
+  mentionNames?: string[];
   videoUrl: string;
   thumbnailUrl?: string;
   postedAt?: number;
@@ -218,6 +221,7 @@ export interface FeedVideoPost {
   sharedFrom?: {
     id: string;
     caption?: string;
+    mentionNames?: string[];
     publisherName: string;
     publisherAvatar?: string;
     postedAt?: number;
@@ -295,6 +299,7 @@ export interface FeedPollPost {
   kind: 'poll';
   id: string;
   caption?: string;
+  mentionNames?: string[];
   pollQuestion?: string;
   options: PollOption[];
   votedId: string | null; // null = chưa vote, otherwise option id đã vote

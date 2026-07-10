@@ -25,12 +25,6 @@ import type {
   PostPrivacy,
   PostVideoAttachment,
 } from '../../domain/types/feed.types';
-// Reuse the reel composer's caption suggestion plumbing — same backend
-// endpoints (`apiRoutes.user.suggestions` / `apiRoutes.search.all` /
-// `apiRoutes.reels.hashtagSuggestions`) and the exact same mapping logic.
-// Sharing the implementation keeps mention/hashtag UX consistent across
-// both composers without duplicating ~80 lines of repo plumbing.
-import { createReelsRepository } from '../../../reels/infrastructure/repositories/ApiReelsRepository';
 import type {
   ReelCaptionSuggestion,
   ReelCaptionSuggestionKind,
@@ -39,7 +33,6 @@ import type {
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
 const repository = createFeedRepository();
-const suggestionsRepo = createReelsRepository();
 
 // ── Caption mention/hashtag helpers (mirror useCreateReelViewModel) ──────
 
@@ -88,6 +81,21 @@ function serializeTextForBackend(
     (next, r) => next.split(r.displayValue).join(r.backendValue),
     text,
   );
+}
+
+function normalizePickedCaptionValue(suggestion: ReelCaptionSuggestion) {
+  if (suggestion.kind === 'mention') {
+    return suggestion.value.startsWith('@')
+      ? suggestion.value
+      : `@${suggestion.value}`;
+  }
+
+  const rawValue = suggestion.value || suggestion.label;
+  const normalized = rawValue
+    .replace(/^#/, '')
+    .trim()
+    .replace(/\s+/g, '');
+  return normalized ? `#${normalized}` : '#';
 }
 
 // Reasonable defaults so the screen can render without first-touch
@@ -262,9 +270,10 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
 
         const before = text.slice(0, activeToken.start);
         const after = text.slice(activeToken.end).trimStart();
+        const pickedValue = normalizePickedCaptionValue(suggestion);
         // Append a trailing space so the user can keep typing without
         // the suggestion bar immediately re-opening on the same token.
-        const nextText = `${before}${suggestion.value} ${after}`;
+        const nextText = `${before}${pickedValue} ${after}`;
         return { ...prev, text: nextText };
       });
 
@@ -304,7 +313,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
   // keystroke. Cancelled cleanly when the effect re-runs.
   useEffect(() => {
     const activeToken = getActiveCaptionToken(draft.text);
-    if (!activeToken) {
+    if (!activeToken || activeToken.kind === 'hashtag') {
       setCaptionSuggestions([]);
       setIsLoadingCaptionSuggestions(false);
       setIsCaptionSuggestionActive(false);
@@ -317,8 +326,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
 
     const timeoutId = setTimeout(async () => {
       try {
-        const suggestions = await suggestionsRepo.searchCaptionSuggestions(
-          activeToken.kind,
+        const suggestions = await repository.searchMentionSuggestions(
           activeToken.query,
         );
         if (!cancelled) setCaptionSuggestions(suggestions);

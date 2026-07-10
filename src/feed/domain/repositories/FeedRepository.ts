@@ -1,7 +1,10 @@
 // Description: Declares feed repository contracts for source-filtered home feed loading and post actions.
 // Port from: client/src/feed/domain/repositories/
 
-import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type {
+  ReactionType,
+  ReelCaptionSuggestion,
+} from '../../../reels/domain/types/reels.types';
 import type {
   CreatePostDraft,
   CreatePostResult,
@@ -9,6 +12,7 @@ import type {
   FeedPost,
   FeedTextPost,
   FeedVideoPost,
+  PostPrivacy,
 } from '../types/feed.types';
 import type {
   PostReactionCount,
@@ -159,6 +163,13 @@ export interface FeedRepository {
    * optimistically prepend it to the feed without a refetch.
    */
   createPost(draft: CreatePostDraft): Promise<CreatePostResult>;
+
+  /**
+   * Search people the current viewer follows for composer @mentions.
+   * Hashtags keep using the hashtag endpoint; mentions are follow-scoped.
+   */
+  searchMentionSuggestions(query: string): Promise<ReelCaptionSuggestion[]>;
+
   getUserPosts(
     userId: string,
     limit?: number,
@@ -167,6 +178,12 @@ export interface FeedRepository {
 
   getPagePosts(
     pageId: string,
+    limit?: number,
+    afterPostId?: string,
+  ): Promise<FeedPostsPage<FeedTextPost | FeedVideoPost | FeedPollPost>>;
+
+  getGroupPosts(
+    groupId: string,
     limit?: number,
     afterPostId?: string,
   ): Promise<FeedPostsPage<FeedTextPost | FeedVideoPost | FeedPollPost>>;
@@ -203,6 +220,28 @@ export interface FeedRepository {
    * Delete a post via WoWonder's post-actions endpoint.
    */
   deletePost(postId: string): Promise<{ deleted: boolean }>;
+
+  /**
+   * Edit the text/caption of an existing post via WoWonder's post-actions endpoint.
+   */
+  editPost(
+    postId: string,
+    input: { text: string; privacy?: PostPrivacy },
+  ): Promise<{ edited: boolean }>;
+
+  /**
+   * Toggle comment availability for a post via WoWonder's post-actions endpoint.
+   * Returns whether comments are enabled after the toggle.
+   */
+  togglePostComments(postId: string): Promise<{ enabled: boolean }>;
+
+  /**
+   * Toggle pinned state for a post in a profile, page, group, or event context.
+   */
+  pinPost(
+    postId: string,
+    input: { type: 'profile' | 'page' | 'group' | 'event'; ownerId: string },
+  ): Promise<{ pinned: boolean }>;
 
   /**
    * Share an existing post internally to timeline, an owned page, or an owned group.
