@@ -8,18 +8,32 @@ import {
   nativeTabBarPresentation,
   nativeTabMinimizeBehavior,
 } from '../nativeTabMinimizeBehavior';
+import { tabBarVisibility } from '../tabBarVisibility';
 
 describe('native tab scroll publisher', () => {
   beforeEach(() => {
     nativeTabMinimizeBehavior.reset();
     nativeTabBarPresentation.reset();
+    tabBarVisibility.setVisible(true);
   });
 
-  it('publishes onScrollDown after enough downward scroll', () => {
+  it('seeds the first scroll sample without publishing hidden tab state', () => {
     const result = getNextNativeTabScrollPublisherState(
       createNativeTabScrollPublisherState(),
       12,
     );
+
+    expect(result.behavior).toBeUndefined();
+    expect(result.state.lastY).toBe(12);
+    expect(result.state.downwardDelta).toBe(0);
+  });
+
+  it('publishes onScrollDown after enough real downward scroll', () => {
+    const seeded = getNextNativeTabScrollPublisherState(
+      createNativeTabScrollPublisherState(),
+      12,
+    );
+    const result = getNextNativeTabScrollPublisherState(seeded.state, 24);
 
     expect(result.behavior).toBe('onScrollDown');
     expect(result.state.downwardDelta).toBe(0);
@@ -36,13 +50,14 @@ describe('native tab scroll publisher', () => {
   });
 
   it('does not publish for small jitter deltas', () => {
-    const result = getNextNativeTabScrollPublisherState(
+    const seeded = getNextNativeTabScrollPublisherState(
       createNativeTabScrollPublisherState(),
       3,
     );
+    const result = getNextNativeTabScrollPublisherState(seeded.state, 5);
 
     expect(result.behavior).toBeUndefined();
-    expect(result.state.downwardDelta).toBe(3);
+    expect(result.state.downwardDelta).toBe(2);
   });
 
   it('publishes none during top bounce', () => {
@@ -61,10 +76,12 @@ describe('native tab scroll publisher', () => {
       12,
     );
     const second = getNextNativeTabScrollPublisherState(first.state, 24);
+    const third = getNextNativeTabScrollPublisherState(second.state, 36);
 
-    expect(first.behavior).toBe('onScrollDown');
-    expect(second.behavior).toBeUndefined();
-    expect(second.state.lastPublishedBehavior).toBe('onScrollDown');
+    expect(first.behavior).toBeUndefined();
+    expect(second.behavior).toBe('onScrollDown');
+    expect(third.behavior).toBeUndefined();
+    expect(third.state.lastPublishedBehavior).toBe('onScrollDown');
   });
 
   it('dedupes writes to the global native tab behavior store', () => {
@@ -81,18 +98,25 @@ describe('native tab scroll publisher', () => {
     expect(received).toEqual(['none']);
   });
 
-  it('drives custom iOS tab chrome compact state from actual scroll intent', () => {
+  it('drives custom iOS tab chrome visibility from actual scroll intent', () => {
     const stateRef = {
       current: createNativeTabScrollPublisherState(),
     };
 
     expect(nativeTabBarPresentation.getPresentation()).toBe('expanded');
+    expect(tabBarVisibility.getVisible()).toBe(true);
 
     publishNativeTabScrollIntent(stateRef, 12);
-    expect(nativeTabBarPresentation.getPresentation()).toBe('minimized');
+    expect(nativeTabBarPresentation.getPresentation()).toBe('expanded');
+    expect(tabBarVisibility.getVisible()).toBe(true);
+
+    publishNativeTabScrollIntent(stateRef, 24);
+    expect(nativeTabBarPresentation.getPresentation()).toBe('expanded');
+    expect(tabBarVisibility.getVisible()).toBe(false);
 
     publishNativeTabScrollIntent(stateRef, 10);
     expect(nativeTabBarPresentation.getPresentation()).toBe('expanded');
+    expect(tabBarVisibility.getVisible()).toBe(true);
   });
 
   it('does not compact the custom tab chrome when only restoring native behavior mode', () => {

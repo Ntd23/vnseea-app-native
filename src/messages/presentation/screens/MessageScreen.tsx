@@ -164,6 +164,8 @@ const MESSAGE_COPY: Record<
 
     createStory: string;
 
+    createGroupChat: string;
+
     retry: string;
 
     errorTitle: string;
@@ -299,6 +301,8 @@ const MESSAGE_COPY: Record<
     searchPlaceholder: 'Tìm kiếm',
 
     createStory: 'Tạo tin',
+
+    createGroupChat: 'Tạo nhóm chat',
 
     retry: 'Thử lại',
 
@@ -441,6 +445,8 @@ const MESSAGE_COPY: Record<
     searchPlaceholder: 'Search',
 
     createStory: 'Create story',
+
+    createGroupChat: 'Create group chat',
 
     retry: 'Try again',
 
@@ -2600,6 +2606,10 @@ function MessageScreen() {
     });
   }, [hasUnreadChats, markAllAsRead]);
 
+  const handleCreateGroupChat = useCallback(() => {
+    navigation.navigate(ROUTES.CREATE_GROUP_CHAT);
+  }, [navigation]);
+
   const isProgrammaticScrollRef = useRef(false);
 
   const handleTabPress = useCallback((filter: ChatFilter) => {
@@ -3884,6 +3894,22 @@ function MessageScreen() {
 
                 />
 
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  accessibilityLabel={copy.createGroupChat}
+                  accessibilityRole="button"
+                  onPress={handleCreateGroupChat}
+                  style={styles.groupsCreateCta}
+                >
+                  <View style={styles.groupsCreateCtaIcon}>
+                    <Users size={18} color="#2563eb" />
+                  </View>
+                  <Text style={styles.groupsCreateCtaText}>
+                    {copy.createGroupChat}
+                  </Text>
+                  <Plus size={18} color="#2563eb" />
+                </TouchableOpacity>
+
               </View>
 
             }
@@ -4532,6 +4558,62 @@ const styles = StyleSheet.create({
     fontWeight: '700',
 
     color: '#ffffff',
+
+  },
+
+  groupsCreateCta: {
+
+    marginHorizontal: 16,
+
+    marginBottom: 12,
+
+    minHeight: 52,
+
+    borderRadius: 16,
+
+    borderWidth: 1,
+
+    borderColor: '#dbeafe',
+
+    backgroundColor: '#eff6ff',
+
+    flexDirection: 'row',
+
+    alignItems: 'center',
+
+    paddingHorizontal: 14,
+
+    paddingVertical: 10,
+
+  },
+
+  groupsCreateCtaIcon: {
+
+    width: 34,
+
+    height: 34,
+
+    borderRadius: 17,
+
+    backgroundColor: '#dbeafe',
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    marginRight: 10,
+
+  },
+
+  groupsCreateCtaText: {
+
+    flex: 1,
+
+    color: '#1e3a8a',
+
+    fontSize: 14,
+
+    fontWeight: '800',
 
   },
 

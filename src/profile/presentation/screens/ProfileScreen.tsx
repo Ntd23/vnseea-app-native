@@ -136,9 +136,9 @@ const PROFILE_POST_PAGE_SIZE = 20;
 const PROFILE_POST_DRAW_DISTANCE = 1800;
 const PROFILE_POST_MEDIA_PREFETCH_LOOKAHEAD = 12;
 const PROFILE_POST_MEDIA_PREFETCH_LIMIT = 18;
-const PROFILE_POST_VIDEO_WARM_BEHIND_ITEMS = 1;
-const PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS = 4;
-const PROFILE_POST_VIDEO_WARM_MAX_COUNT = 1;
+const PROFILE_POST_VIDEO_WARM_BEHIND_ITEMS = 6;
+const PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS = 8;
+const PROFILE_POST_VIDEO_WARM_MAX_COUNT = 3;
 
 function isProfileFeedPost(post: FeedPost): post is ProfileFeedPost {
   return post.kind === 'text' || post.kind === 'video' || post.kind === 'poll';
@@ -1216,16 +1216,37 @@ function ProfileScreen() {
         ? String(visibleVideo.item.id)
         : activeProfileVideoIdRef.current;
       const warmVideoIds: string[] = [];
-      const start = Math.max(
-        0,
-        firstVisibleIndex - PROFILE_POST_VIDEO_WARM_BEHIND_ITEMS,
-      );
-      const end = Math.min(
-        currentPosts.length,
-        furthestVisibleIndex + PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS + 1,
-      );
+      const candidateIndices: number[] = [];
+      const pushCandidateIndex = (index: number) => {
+        if (
+          index < 0 ||
+          index >= currentPosts.length ||
+          candidateIndices.includes(index)
+        ) {
+          return;
+        }
 
-      for (let index = start; index < end; index += 1) {
+        candidateIndices.push(index);
+      };
+
+      for (let index = firstVisibleIndex; index <= furthestVisibleIndex; index += 1) {
+        pushCandidateIndex(index);
+      }
+
+      const maxWarmOffset = Math.max(
+        PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS,
+        PROFILE_POST_VIDEO_WARM_BEHIND_ITEMS,
+      );
+      for (let offset = 1; offset <= maxWarmOffset; offset += 1) {
+        if (offset <= PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS) {
+          pushCandidateIndex(furthestVisibleIndex + offset);
+        }
+        if (offset <= PROFILE_POST_VIDEO_WARM_BEHIND_ITEMS) {
+          pushCandidateIndex(firstVisibleIndex - offset);
+        }
+      }
+
+      for (const index of candidateIndices) {
         const post = currentPosts[index];
         if (post.kind !== 'video') continue;
         if (post.id === activeVideoId) continue;

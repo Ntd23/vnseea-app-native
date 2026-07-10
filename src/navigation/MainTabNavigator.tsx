@@ -27,12 +27,11 @@ import { ROUTES } from './constants/routes';
 import { IOS_NATIVE_TAB_ROUTES, TAB_ROUTES } from './routeRegistry';
 import type { MainTabParamList } from './types';
 import { useNotificationBadgeViewModel } from '../notifications';
+import { iosPagerSwipeLock } from './iosPagerSwipeLock';
 import { tabBarVisibility } from './tabBarVisibility';
-import {
-  nativeTabBarPresentation,
-  useNativeTabBarPresentation,
-} from './nativeTabMinimizeBehavior';
+import { nativeTabBarPresentation } from './nativeTabMinimizeBehavior';
 import { useAppLanguage } from '../shared-kernel/application/hooks/useAppLanguage';
+import { useSyncedCartCount } from '../shared-kernel/application/state/cartCountSync';
 import {
   createIosNativeTabOptions,
   getCustomTabRoutes,
@@ -42,9 +41,6 @@ const BRAND_COLOR = '#2563FF';
 const BRAND_LIGHT_BG = 'rgba(37, 99, 255, 0.08)';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const IOS_NATIVE_TAB_BAR_BASE_HEIGHT = 49;
-const IOS_NATIVE_TAB_BAR_COMPACT_SCALE_X = 0.60;
-const IOS_NATIVE_TAB_BAR_COMPACT_RIGHT = 24;
-const IOS_NATIVE_TAB_BAR_COMPACT_ACTIVE_ITEM_WIDTH = 66;
 
 type IosLiquidTabItem = {
   key: string;
@@ -286,25 +282,11 @@ function IosLiquidTabBar({
 }: MaterialTopTabBarProps) {
   const { notificationCount: notificationBadgeCount } =
     useNotificationBadgeViewModel();
+  const { cartCount } = useSyncedCartCount(0);
   const language = useAppLanguage();
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(0)).current;
-  const compactProgress = useRef(new Animated.Value(0)).current;
   const tabBarHeight = IOS_NATIVE_TAB_BAR_BASE_HEIGHT + insets.bottom;
-  const tabBarPresentation = useNativeTabBarPresentation();
-  const compactVisualWidth = SCREEN_WIDTH * IOS_NATIVE_TAB_BAR_COMPACT_SCALE_X;
-  const compactHostCenterX = SCREEN_WIDTH - compactVisualWidth / 2;
-  const compactItemTargetRightEdge = SCREEN_WIDTH - IOS_NATIVE_TAB_BAR_COMPACT_RIGHT;
-  const compactItemTargetCenterX = compactItemTargetRightEdge - IOS_NATIVE_TAB_BAR_COMPACT_ACTIVE_ITEM_WIDTH / 2;
-  const compactTranslateX = compactItemTargetCenterX - compactHostCenterX;
-  const tabBarAnimatedWidth = compactProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [SCREEN_WIDTH, compactVisualWidth],
-  });
-  const tabBarCompactTranslateX = compactProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, compactTranslateX],
-  });
 
   useEffect(() => {
     tabBarVisibility.setVisible(true);
@@ -321,30 +303,25 @@ function IosLiquidTabBar({
     });
   }, [tabBarHeight, translateY]);
 
-  useEffect(() => {
-    Animated.timing(compactProgress, {
-      toValue: tabBarPresentation === 'minimized' ? 1 : 0,
-      duration: tabBarPresentation === 'minimized' ? 220 : 180,
-      useNativeDriver: false,
-    }).start();
-  }, [compactProgress, tabBarPresentation]);
-
   const items = useMemo(
     () =>
       IOS_NATIVE_TAB_ROUTES.map(({ name, accessibilityLabel }) => {
-        const options = createIosNativeTabOptions(
-          name,
-          notificationBadgeCount,
-          language,
-        );
+          const options = createIosNativeTabOptions(
+            name,
+            notificationBadgeCount,
+            language,
+            cartCount,
+          );
         const label =
           typeof options.tabBarLabel === 'string'
             ? options.tabBarLabel
             : accessibilityLabel;
-        const badgeValue =
-          typeof options.tabBarBadge === 'string'
-            ? options.tabBarBadge
-            : undefined;
+          const badgeValue =
+            typeof options.tabBarBadge === 'number'
+              ? String(options.tabBarBadge)
+              : typeof options.tabBarBadge === 'string'
+                ? options.tabBarBadge
+                : undefined;
 
         return {
           key: name,
@@ -354,18 +331,13 @@ function IosLiquidTabBar({
           badgeValue,
         };
       }),
-    [language, notificationBadgeCount],
+    [cartCount, language, notificationBadgeCount],
   );
 
   const handleTabPress = useCallback(
     (event: NativeSyntheticEvent<{ index: number }>) => {
       const route = state.routes[event.nativeEvent.index];
       if (!route) {
-        return;
-      }
-
-      if (tabBarPresentation === 'minimized') {
-        nativeTabBarPresentation.setPresentation('expanded');
         return;
       }
 
@@ -379,7 +351,7 @@ function IosLiquidTabBar({
         navigation.navigate(route.name);
       }
     },
-    [navigation, state.index, state.routes, tabBarPresentation],
+    [navigation, state.index, state.routes],
   );
 
   return (
@@ -387,10 +359,9 @@ function IosLiquidTabBar({
       style={[
         styles.iosLiquidTabBarHost,
         {
-          width: tabBarAnimatedWidth,
+          width: SCREEN_WIDTH,
           height: tabBarHeight,
           transform: [
-            { translateX: tabBarCompactTranslateX },
             { translateY },
           ],
         },
@@ -400,8 +371,7 @@ function IosLiquidTabBar({
         items={items}
         selectedIndex={state.index}
         onTabPress={handleTabPress}
-        compact={tabBarPresentation === 'minimized'}
-        compactFallbackWidth={compactVisualWidth}
+        compact={false}
         style={StyleSheet.absoluteFill}
       />
     </Animated.View>
@@ -413,6 +383,16 @@ function renderIosPagerTabBar(props: MaterialTopTabBarProps) {
 }
 
 function IosHybridPagedTabNavigator() {
+  const [isIosPagerSwipeEnabled, setIsIosPagerSwipeEnabled] = useState(
+    () => !iosPagerSwipeLock.getLocked(),
+  );
+
+  useEffect(() => {
+    return iosPagerSwipeLock.subscribe(locked => {
+      setIsIosPagerSwipeEnabled(!locked);
+    });
+  }, []);
+
   return (
     <IosPagerTab.Navigator
       style={styles.iosPagerRoot}
@@ -422,7 +402,7 @@ function IosHybridPagedTabNavigator() {
       keyboardDismissMode="on-drag"
       initialLayout={{ width: SCREEN_WIDTH }}
       screenOptions={{
-        swipeEnabled: true,
+        swipeEnabled: isIosPagerSwipeEnabled,
         lazy: true,
         lazyPreloadDistance: 1,
         sceneStyle: styles.iosPagerScene,

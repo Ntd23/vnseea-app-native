@@ -12,6 +12,7 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
   private var tabBarItems: [UITabBarItem] = []
   private var compactTabBarItems: [UITabBarItem] = []
   private var tabBarItemTitles: [String?] = []
+  private var lastAppliedExpandedLayoutWidth: CGFloat = 0
   private lazy var expandedAppearance: UITabBarAppearance =
     makePlatformTabBarAppearance(hidesTitle: false, usesCompactFallbackBackground: false)
   private lazy var compactAppearance: UITabBarAppearance =
@@ -56,6 +57,7 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
   override func layoutSubviews() {
     super.layoutSubviews()
     tabBar.frame = bounds
+    refreshExpandedLayoutForCurrentWidthIfNeeded()
     layoutCompactFallbackBackground()
     applyCompactTitleVisibility()
   }
@@ -68,6 +70,9 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
     tabBar.isTranslucent = true
     configurePlatformTabBarBackground()
     tabBar.clipsToBounds = false
+    tabBar.itemPositioning = .fill
+    tabBar.itemWidth = 0
+    tabBar.itemSpacing = 0
 
     compactFallbackBackgroundView.isHidden = true
     compactFallbackBackgroundView.isUserInteractionEnabled = false
@@ -131,6 +136,48 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
     } else {
       appearance.configureWithDefaultBackground()
     }
+  }
+
+  private func refreshExpandedLayoutForCurrentWidthIfNeeded() {
+    guard !compact.boolValue, bounds.width > 0 else {
+      return
+    }
+
+    guard abs(bounds.width - lastAppliedExpandedLayoutWidth) > 0.5 else {
+      return
+    }
+
+    applyExpandedItemsForCurrentLayout(forceLayout: true)
+  }
+
+  private func applyExpandedItemsForCurrentLayout(forceLayout: Bool) {
+    guard bounds.width > 0 else {
+      return
+    }
+
+    let index = selectedIndex.intValue
+    guard index >= 0, index < tabBarItems.count else {
+      tabBar.selectedItem = nil
+      return
+    }
+
+    restoreExpandedItemTitles()
+    tabBar.standardAppearance = expandedAppearance
+    tabBar.scrollEdgeAppearance = expandedAppearance
+    for item in compactTabBarItems {
+      item.standardAppearance = nil
+      item.scrollEdgeAppearance = nil
+    }
+    tabBar.items = tabBarItems
+    tabBar.selectedItem = tabBarItems[index]
+    lastAppliedExpandedLayoutWidth = bounds.width
+
+    if forceLayout {
+      tabBar.setNeedsLayout()
+      tabBar.layoutIfNeeded()
+    }
+
+    setTabBarLabelsHidden(false, in: tabBar)
   }
 
   private func layoutCompactFallbackBackground() {
@@ -263,6 +310,7 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
     tabBarItems = nextItems
     compactTabBarItems = nextCompactItems
     tabBarItemTitles = nextTitles
+    lastAppliedExpandedLayoutWidth = 0
     updateDisplayedItems()
   }
 
@@ -288,11 +336,24 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
       return
     }
 
-    let selectedItem = tabBarItems[index]
     let selectedCompactItem = compactTabBarItems[index]
     restoreExpandedItemTitles()
     configurePlatformTabBarBackground()
+    if !compact.boolValue && bounds.width <= 0 {
+      tabBar.standardAppearance = expandedAppearance
+      tabBar.scrollEdgeAppearance = expandedAppearance
+      for item in compactTabBarItems {
+        item.standardAppearance = nil
+        item.scrollEdgeAppearance = nil
+      }
+      updateCompactFallbackBackgroundVisibility()
+      applyCompactTitleVisibility()
+      setNeedsLayout()
+      return
+    }
+
     if compact.boolValue {
+      lastAppliedExpandedLayoutWidth = 0
       hideCompactItemTitle(selectedCompactItem)
       tabBar.standardAppearance = compactAppearance
       tabBar.scrollEdgeAppearance = compactAppearance
@@ -301,14 +362,7 @@ class VNSEEAIosLiquidTabBar: UIView, UITabBarDelegate {
       tabBar.items = [selectedCompactItem]
       tabBar.selectedItem = selectedCompactItem
     } else {
-      tabBar.standardAppearance = expandedAppearance
-      tabBar.scrollEdgeAppearance = expandedAppearance
-      for item in compactTabBarItems {
-        item.standardAppearance = nil
-        item.scrollEdgeAppearance = nil
-      }
-      tabBar.items = tabBarItems
-      tabBar.selectedItem = selectedItem
+      applyExpandedItemsForCurrentLayout(forceLayout: true)
     }
     tabBar.setNeedsLayout()
     layoutCompactFallbackBackground()

@@ -31,36 +31,7 @@ $required_fields =  array(
                         'search',
                         'join',
                         'destruct_at',
-                        'clear_history',
-                        'shared_assets',
                     );
-function Wo_ApiGroupChatMediaKind($media) {
-    $media = strtolower((string) $media);
-    if (preg_match('/\.(jpg|jpeg|png|gif|webp)(\?|$)/i', $media)) {
-        return 'image';
-    }
-    if (preg_match('/\.(mp4|mov|avi|mkv|webm)(\?|$)/i', $media)) {
-        return 'video';
-    }
-    return 'file';
-}
-
-function Wo_ApiGroupChatExtractLinks($text) {
-    $links = array();
-    preg_match_all('/(https?:\/\/[^\s<]+|www\.[^\s<]+)/i', (string) $text, $matches);
-    foreach ($matches[0] as $link) {
-        $url = trim($link);
-        if ($url === '') {
-            continue;
-        }
-        if (stripos($url, 'www.') === 0) {
-            $url = 'https://' . $url;
-        }
-        $links[] = $url;
-    }
-    return array_unique($links);
-}
-
 if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     if ($_POST['type'] == 'join') {
         if (empty($_POST['id']) || !is_numeric($_POST['id']) || $_POST['id'] < 1) {
@@ -180,7 +151,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             if (!empty($_POST['group_type'])) {
                 $type    = Wo_Secure($_POST['group_type']);
             }
-            $id      = Wo_CreateGChat($name, $users,$type);
+            $id      = Wo_CreateGChat($name, $users, $type, true);
             
             if (isset($_FILES["avatar"]["tmp_name"])) {
                 $fileInfo      = array(
@@ -396,12 +367,20 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             if (!empty($group_tab)) {
                 if ($group_tab['user_id'] == $wo['user']['id']) {
                     foreach ($users as $key => $user) {
-                        if (!Wo_IsGChatMemeberExists($id, $user)) {
-                            $active = 0;
-                            if ($group_tab['type'] == 'channel' || $group_tab['type'] == 'secret') {
-                                $active = 1;
+                        $user = Wo_Secure($user);
+                        if (empty($user) || !is_numeric($user) || $user < 1) {
+                            continue;
+                        }
+
+                        $member_query = mysqli_query($sqlConnect, "SELECT `id`,`active` FROM " . T_GROUP_CHAT_USERS . " WHERE `group_id` = $id AND `user_id` = $user LIMIT 1");
+                        if ($member_query && mysqli_num_rows($member_query) > 0) {
+                            $member_row = mysqli_fetch_assoc($member_query);
+                            if ((int) $member_row['active'] !== 1) {
+                                @mysqli_query($sqlConnect, "UPDATE " . T_GROUP_CHAT_USERS . " SET `active` = '1', `last_seen` = '0' WHERE `group_id` = $id AND `user_id` = $user");
                             }
-                            @mysqli_query($sqlConnect, "INSERT INTO " . T_GROUP_CHAT_USERS . " (`id`,`user_id`,`group_id`,`active`) VALUES (null,$user,$id,'".$active."')");
+                        }
+                        else if (!Wo_IsGChatMemeberExists($id, $user)) {
+                            @mysqli_query($sqlConnect, "INSERT INTO " . T_GROUP_CHAT_USERS . " (`id`,`user_id`,`group_id`,`active`,`last_seen`) VALUES (null,$user,$id,'1','0')");
                         }
                     }
                     $response_data = array(
@@ -461,7 +440,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             }
 
             $existing_ids = array();
-            $existing_query = mysqli_query($sqlConnect, "SELECT `user_id` FROM " . T_GROUP_CHAT_USERS . " WHERE `group_id` = {$group_id}");
+            $existing_query = mysqli_query($sqlConnect, "SELECT `user_id` FROM " . T_GROUP_CHAT_USERS . " WHERE `group_id` = {$group_id} AND `active` = '1'");
             if ($existing_query && mysqli_num_rows($existing_query) > 0) {
                 while ($existing_row = mysqli_fetch_assoc($existing_query)) {
                     $existing_ids[(int) $existing_row['user_id']] = true;
@@ -470,56 +449,6 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 
             $existing_ids[(int) $wo['user']['id']] = true;
             $candidate_users = array();
-            $seen_candidate_ids = array();
-
-            if (!empty($users) && is_array($users)) {
-                foreach ($users as $candidate) {
-                    if (!empty($candidate['user_id'])) {
-                        $seen_candidate_ids[(int) $candidate['user_id']] = true;
-                    }
-                }
-            }
-
-            $safe_keyword = mysqli_real_escape_string($sqlConnect, $keyword);
-            $keyword_sql = '';
-            if ($safe_keyword !== '') {
-                $keyword_sql = " AND (u.`username` LIKE '%" . $safe_keyword . "%' OR CONCAT(u.`first_name`, ' ', u.`last_name`) LIKE '%" . $safe_keyword . "%') ";
-            }
-            $follow_query = mysqli_query($sqlConnect, "SELECT DISTINCT u.`user_id` FROM " . T_FOLLOWERS . " f INNER JOIN " . T_USERS . " u ON u.`user_id` = CASE WHEN f.`follower_id` = '" . Wo_Secure($wo['user']['id']) . "' THEN f.`following_id` ELSE f.`follower_id` END WHERE (f.`follower_id` = '" . Wo_Secure($wo['user']['id']) . "' OR f.`following_id` = '" . Wo_Secure($wo['user']['id']) . "') AND (f.`active` = '1' OR f.`active` IS NULL) AND u.`active` = '1' AND u.`user_id` <> '" . Wo_Secure($wo['user']['id']) . "' " . $keyword_sql . " ORDER BY u.`first_name`, u.`username` LIMIT " . intval($search_limit));
-            if ($follow_query && mysqli_num_rows($follow_query) > 0) {
-                if (empty($users) || !is_array($users)) {
-                    $users = array();
-                }
-                while ($follow_row = mysqli_fetch_assoc($follow_query)) {
-                    $follow_user_id = (int) $follow_row['user_id'];
-                    if ($follow_user_id < 1 || !empty($seen_candidate_ids[$follow_user_id])) {
-                        continue;
-                    }
-                    $follow_user = Wo_UserData($follow_user_id);
-                    if (!empty($follow_user)) {
-                        $users[] = $follow_user;
-                        $seen_candidate_ids[$follow_user_id] = true;
-                    }
-                }
-            }
-
-            if (empty($users) || !is_array($users)) {
-                $safe_keyword = mysqli_real_escape_string($sqlConnect, $keyword);
-                $keyword_sql = '';
-                if ($safe_keyword !== '') {
-                    $keyword_sql = " AND (u.`username` LIKE '%" . $safe_keyword . "%' OR CONCAT(u.`first_name`, ' ', u.`last_name`) LIKE '%" . $safe_keyword . "%') ";
-                }
-                $fallback_query = mysqli_query($sqlConnect, "SELECT u.`user_id` FROM " . T_FOLLOWERS . " f INNER JOIN " . T_USERS . " u ON u.`user_id` = f.`following_id` WHERE f.`follower_id` = '" . Wo_Secure($wo['user']['id']) . "' AND (f.`active` = '1' OR f.`active` IS NULL) AND u.`active` = '1' " . $keyword_sql . " ORDER BY u.`first_name`, u.`username` LIMIT " . intval($search_limit));
-                $users = array();
-                if ($fallback_query && mysqli_num_rows($fallback_query) > 0) {
-                    while ($fallback_row = mysqli_fetch_assoc($fallback_query)) {
-                        $fallback_user = Wo_UserData($fallback_row['user_id']);
-                        if (!empty($fallback_user)) {
-                            $users[] = $fallback_user;
-                        }
-                    }
-                }
-            }
 
             if (!empty($users) && is_array($users)) {
                 foreach ($users as $candidate) {
@@ -1122,103 +1051,6 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 'api_status' => 200,
                 'data' => $group_data
             );
-        }
-        else{
-            $error_code    = 4;
-            $error_message = 'id can not be empty';
-        }
-    }
-    if ($_POST['type'] == 'clear_history') {
-        if (!empty($_POST['id']) && is_numeric($_POST['id']) && $_POST['id'] > 0) {
-            $id = Wo_Secure($_POST['id']);
-            $group_tab = Wo_GroupTabData($id);
-            if (!empty($group_tab) && (Wo_IsGChatMemeberExists($id, $wo['user']['id']) || $group_tab['user_id'] == $wo['user']['id'])) {
-                if ($group_tab['user_id'] != $wo['user']['id']) {
-                    $error_code    = 11;
-                    $error_message = 'sorry you are not the group owner';
-                }
-                else if (Wo_ClearGChat($id) === true) {
-                    $response_data = array(
-                        'api_status' => 200,
-                        'message_data' => 'group history successfully cleared'
-                    );
-                }
-                else{
-                    $error_code    = 8;
-                    $error_message = 'group history could not be cleared';
-                }
-            }
-            else{
-                $error_code    = 13;
-                $error_message = 'sorry you are not a group memeber';
-            }
-        }
-        else{
-            $error_code    = 4;
-            $error_message = 'id can not be empty';
-        }
-    }
-    if ($_POST['type'] == 'shared_assets') {
-        if (!empty($_POST['id']) && is_numeric($_POST['id']) && $_POST['id'] > 0) {
-            $group_id = Wo_Secure($_POST['id']);
-            $group_tab = Wo_GroupTabData($group_id);
-            if (!empty($group_tab) && (Wo_IsGChatMemeberExists($group_id, $wo['user']['id']) || $group_tab['user_id'] == $wo['user']['id'])) {
-                $limit = 60;
-                if (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limit'] > 0) {
-                    $limit = min(100, max(1, intval($_POST['limit'])));
-                }
-
-                $media = array();
-                $files = array();
-                $links = array();
-                $query = mysqli_query($sqlConnect, "SELECT `id`,`text`,`media`,`mediaFileName`,`time` FROM " . T_MESSAGES . " WHERE `group_id` = '" . Wo_Secure($group_id) . "' AND ((`media` <> '' AND `media` IS NOT NULL) OR (`text` <> '' AND `text` IS NOT NULL)) ORDER BY `id` DESC LIMIT " . intval($limit));
-                if ($query && mysqli_num_rows($query) > 0) {
-                    while ($message = mysqli_fetch_assoc($query)) {
-                        $message_id = (string) $message['id'];
-                        $message_time = intval($message['time']);
-                        if (!empty($message['media'])) {
-                            $media_url = Wo_GetMedia($message['media']);
-                            $kind = Wo_ApiGroupChatMediaKind($message['media']);
-                            if ($kind === 'image' || $kind === 'video') {
-                                $media[] = array(
-                                    'id' => $message_id,
-                                    'uri' => $media_url,
-                                    'media_type' => $kind,
-                                    'time' => $message_time
-                                );
-                            }
-                            else{
-                                $files[] = array(
-                                    'id' => $message_id,
-                                    'uri' => $media_url,
-                                    'name' => !empty($message['mediaFileName']) ? $message['mediaFileName'] : basename($message['media']),
-                                    'time' => $message_time
-                                );
-                            }
-                        }
-
-                        foreach (Wo_ApiGroupChatExtractLinks($message['text']) as $index => $url) {
-                            $links[] = array(
-                                'id' => $message_id . '-' . $index,
-                                'url' => $url,
-                                'title' => $url,
-                                'time' => $message_time
-                            );
-                        }
-                    }
-                }
-
-                $response_data = array(
-                    'api_status' => 200,
-                    'media' => $media,
-                    'files' => $files,
-                    'links' => $links
-                );
-            }
-            else{
-                $error_code    = 13;
-                $error_message = 'sorry you are not a group memeber';
-            }
         }
         else{
             $error_code    = 4;

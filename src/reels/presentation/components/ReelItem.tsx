@@ -61,6 +61,11 @@ import {
   getVideoPlaybackTime,
   setVideoPlaybackTime,
 } from '../screens/reelsPlayback';
+import { iosPagerSwipeLock } from '../../../navigation/iosPagerSwipeLock';
+import {
+  getReelVideoFitMode,
+  getReelVideoNaturalAspectRatio,
+} from './reelVideoFit';
 
 const REEL_ITEM_COPY = {
   vi: {
@@ -193,8 +198,13 @@ function ReelItemBase({
   const [currentTime, setCurrentTime] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekProgress, setSeekProgress] = useState(0);
+  const [videoNaturalAspectRatio, setVideoNaturalAspectRatio] = useState<
+    number | undefined
+  >(undefined);
   const onVideoEndRef = useRef(onVideoEnd);
   onVideoEndRef.current = onVideoEnd;
+  const suppressNextEndRef = useRef(false);
+  const endSuppressionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resetPlaybackToStart = useCallback((seekPlayer = true) => {
     if (seekPlayer && videoRef.current) {
@@ -206,8 +216,40 @@ function ReelItemBase({
     setVideoPlaybackTime(item.id, 0);
   }, [item.id]);
 
+  const clearEndSuppression = useCallback(() => {
+    suppressNextEndRef.current = false;
+    if (endSuppressionTimerRef.current !== null) {
+      clearTimeout(endSuppressionTimerRef.current);
+      endSuppressionTimerRef.current = null;
+    }
+  }, []);
+
+  const startEndSuppression = useCallback(() => {
+    suppressNextEndRef.current = true;
+    if (endSuppressionTimerRef.current !== null) {
+      clearTimeout(endSuppressionTimerRef.current);
+    }
+    endSuppressionTimerRef.current = setTimeout(() => {
+      suppressNextEndRef.current = false;
+      endSuppressionTimerRef.current = null;
+    }, 900);
+  }, []);
+
+  const lockIosPagerSwipe = useCallback(() => {
+    if (Platform.OS === 'ios') {
+      iosPagerSwipeLock.setLocked(true);
+    }
+  }, []);
+
+  const unlockIosPagerSwipe = useCallback(() => {
+    if (Platform.OS === 'ios') {
+      iosPagerSwipeLock.setLocked(false);
+    }
+  }, []);
+
   const handleTouchStart = useCallback((event: any) => {
     if (duration <= 0) return;
+    lockIosPagerSwipe();
     const touchX = event.nativeEvent.pageX;
     const progress = Math.min(1, Math.max(0, touchX / SCREEN_W));
     setIsSeeking(true);
@@ -215,7 +257,7 @@ function ReelItemBase({
     if (videoRef.current) {
       videoRef.current.seek(progress * duration);
     }
-  }, [duration]);
+  }, [duration, lockIosPagerSwipe]);
 
   const handleTouchMove = useCallback((event: any) => {
     if (duration <= 0 || !isSeeking) return;
@@ -228,6 +270,7 @@ function ReelItemBase({
   }, [duration, isSeeking]);
 
   const handleTouchEnd = useCallback(() => {
+    unlockIosPagerSwipe();
     if (duration <= 0) return;
     setIsSeeking(false);
     if (videoRef.current) {
@@ -237,7 +280,19 @@ function ReelItemBase({
       currentTimeRef.current = targetTime;
       setVideoPlaybackTime(item.id, targetTime);
     }
-  }, [duration, item.id, seekProgress]);
+  }, [duration, item.id, seekProgress, unlockIosPagerSwipe]);
+
+  const handleTouchCancel = useCallback(() => {
+    setIsSeeking(false);
+    unlockIosPagerSwipe();
+  }, [unlockIosPagerSwipe]);
+
+  useEffect(() => {
+    return () => {
+      unlockIosPagerSwipe();
+      clearEndSuppression();
+    };
+  }, [clearEndSuppression, unlockIosPagerSwipe]);
 
   useEffect(() => {
     const targetTime =
@@ -246,6 +301,7 @@ function ReelItemBase({
         : getVideoPlaybackTime(item.id, 0);
 
     currentTimeRef.current = targetTime;
+    setVideoNaturalAspectRatio(undefined);
     if (targetTime > 0.05) {
       setSeekTime(targetTime);
     } else {
@@ -278,11 +334,20 @@ function ReelItemBase({
           setSeekTime(targetTime);
         }
       } else if (isReady && videoRef.current) {
+        startEndSuppression();
         resetPlaybackToStart(true);
       }
     }
     prevIsCurrentRef.current = isCurrent;
-  }, [isCurrent, isReady, initialSeekTime, item.id, resetPlaybackToStart, seekTime]);
+  }, [
+    isCurrent,
+    isReady,
+    initialSeekTime,
+    item.id,
+    resetPlaybackToStart,
+    seekTime,
+    startEndSuppression,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -437,6 +502,10 @@ function ReelItemBase({
   const protectedBottom = Math.max(bottomOverlayInset, insets.bottom);
   const railBottom = Math.max(protectedBottom + 28, 44);
   const infoBottom = Math.max(protectedBottom + 12, 24);
+  const videoFitMode = getReelVideoFitMode(videoNaturalAspectRatio);
+  const videoResizeMode = videoFitMode === 'blurContain' ? 'contain' : 'cover';
+  const posterResizeMode = videoResizeMode;
+  const usesBlurContainVideo = videoFitMode === 'blurContain';
 
   // Each reel needs a unique SVG gradient ID — if two SVGs share the same
   // id the wrong gradient can bleed across items.
@@ -445,8 +514,18 @@ function ReelItemBase({
   return (
     <Animated.View style={[styles.reelRoot, { height }, animatedStyle]}>
 
-      {/* ── Thumbnail / poster ───────────────────────────────────────── */}
-      {item.thumbnailUrl ? (
+      {/* ── Thumbnail / poster background ────────────────────────────── */}
+      {item.thumbnailUrl && usesBlurContainVideo ? (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <Image
+            source={{ uri: item.thumbnailUrl }}
+            style={[StyleSheet.absoluteFill, styles.blurredVideoBackground]}
+            resizeMode="cover"
+            blurRadius={28}
+          />
+          <View style={styles.blurredVideoScrim} />
+        </View>
+      ) : item.thumbnailUrl ? (
         <Image
           source={{ uri: item.thumbnailUrl }}
           style={StyleSheet.absoluteFill}
@@ -460,7 +539,7 @@ function ReelItemBase({
           ref={videoRef}
           source={{ uri: item.videoUrl }}
           style={StyleSheet.absoluteFill}
-          resizeMode="contain"
+          resizeMode={videoResizeMode}
           // Don't use `repeat` prop here. When autoScrollEnabled flips
  // false → true mid-playback, react-native-video doesn't reliably
  // turn off the active loop, so onEnd never fires and the user
@@ -477,6 +556,8 @@ function ReelItemBase({
           onReadyForDisplay={() => setIsReady(true)}
           onLoad={(data) => {
             setIsReady(true);
+            const naturalAspectRatio = getReelVideoNaturalAspectRatio(data);
+            setVideoNaturalAspectRatio(naturalAspectRatio);
             if (data?.duration) {
               setDuration(data.duration);
             }
@@ -484,15 +565,24 @@ function ReelItemBase({
           onProgress={(data) => {
             if (!isSeeking && data?.currentTime !== undefined) {
               const nextTime = data.currentTime;
+              if (nextTime > 0.25) {
+                clearEndSuppression();
+              }
               setCurrentTime(nextTime);
               currentTimeRef.current = nextTime;
               setVideoPlaybackTime(item.id, nextTime);
             }
           }}
           onEnd={() => {
+            if (suppressNextEndRef.current) {
+              clearEndSuppression();
+              resetPlaybackToStart(true);
+              return;
+            }
             const didAdvance = onVideoEndRef.current?.(index) ?? false;
             if (didAdvance) {
-              resetPlaybackToStart(false);
+              startEndSuppression();
+              resetPlaybackToStart(true);
             } else {
               resetPlaybackToStart(true);
             }
@@ -502,6 +592,16 @@ function ReelItemBase({
             setIsReady(true);
           }}
         />
+      ) : null}
+
+      {item.thumbnailUrl && shouldMount && !isReady ? (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <Image
+            source={{ uri: item.thumbnailUrl }}
+            style={StyleSheet.absoluteFill}
+            resizeMode={posterResizeMode}
+          />
+        </View>
       ) : null}
 
       {/* ── Tap surface ─────────────────────────────────────────────────
@@ -741,9 +841,12 @@ function ReelItemBase({
       {duration > 0 && (
         <View
           style={[styles.progressBarContainer, { bottom: protectedBottom }]}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderGrant={handleTouchStart}
+          onResponderMove={handleTouchMove}
+          onResponderRelease={handleTouchEnd}
+          onResponderTerminate={handleTouchCancel}
         >
           <View style={[
             styles.progressTrack,
@@ -893,6 +996,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     left: 0,
+  },
+  blurredVideoBackground: {
+    opacity: 0.72,
+    transform: [{ scale: 1.08 }],
+  },
+  blurredVideoScrim: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0,0,0,0.34)',
   },
   // Center play / error overlay
   centerOverlay: {
