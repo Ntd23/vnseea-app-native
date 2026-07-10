@@ -288,10 +288,14 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
       // 1. Fetch product details to get seller information
       const itemsWithSellers = await Promise.all(
         selectedSummary.items.map(async (item) => {
+          if (item.sellerUserId) {
+            return { item, sellerUserId: item.sellerUserId };
+          }
           try {
             const productRes = await productRepository.getProducts({ product_id: item.productId });
-            const seller = productRes.products?.[0]?.seller;
-            return { item, sellerUserId: seller?.user_id };
+            const product = productRes.products?.[0];
+            const sellerUserId = product?.user_id || product?.seller?.user_id;
+            return { item, sellerUserId };
           } catch (e) {
             console.warn(`Failed to fetch seller for product ${item.productId}:`, e);
             return { item, sellerUserId: null };
@@ -319,14 +323,30 @@ export function useCheckoutViewModel(options: CheckoutViewModelOptions = {}) {
           const moneyFormatted = `${Math.round(item.price).toLocaleString('vi-VN')} ${item.currencySymbol}`;
           const messageText = `Tôi muốn đặt mua sản phẩm:\n👉 *${item.name}*\n💰 Giá: *${moneyFormatted}*\n📦 Số lượng: *${item.quantity}*\n🆔 ID: *${item.productId}*\n📷 Ảnh: ${item.image || ''}\n\nThông tin người mua:\n👤 Tên: *${selectedAddress?.name || ''}*\n📞 SĐT: *${selectedAddress?.phone || ''}*\n📍 Địa chỉ: *${addressString}*`;
 
-          await messagesRepository.sendMessage(String(sellerUserId), messageText);
+          // Skip sending direct chat message to self to avoid WoWonder 400 "Something went wrong" error
+          if (currentUserProfile?.id && String(sellerUserId) === String(currentUserProfile.id)) {
+            console.log(`Skipping sending order chat to self (userId: ${sellerUserId})`);
+            return;
+          }
+
+          try {
+            await messagesRepository.sendMessage(String(sellerUserId), messageText);
+          } catch (chatError) {
+            console.warn(`Failed to send order chat message to seller ${sellerUserId}:`, chatError);
+            // Ignore sending failure to ensure order proceeds
+          }
         })
       );
 
-      // 3. Remove items from the cart
-      await Promise.all(
-        selectedSummary.items.map(item => repository.removeItem(item.productId))
-      );
+      // 3. Remove items from the cart sequentially to avoid concurrent API lock/session conflicts
+      for (const item of selectedSummary.items) {
+        try {
+          await repository.removeItem(item.productId);
+        } catch (removeError) {
+          console.warn(`Failed to remove item ${item.productId} from cart:`, removeError);
+          // If removal fails, do not block the success UX
+        }
+      }
 
       // 4. Update UI state
       setConfirmVisible(false);

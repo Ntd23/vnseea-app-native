@@ -61,42 +61,42 @@ type ParsedTransferQr = {
 
 const BALANCE_COPY = {
   vi: {
-    header: 'SÃ¡Â»â€˜ dÃ†Â° cÃ¡Â»Â§a tÃƒÂ´i',
-    balanceLabel: 'SÃ¡Â»â€˜ dÃ†Â° VNSEEA',
-    sendBtn: 'GÃ¡Â»Â­i VNSEEA',
-    qrBtn: 'MÃƒÂ£ QR chuyÃ¡Â»Æ’n VNSEEA',
-    transactionsTitle: 'Giao dÃ¡Â»â€¹ch',
-    dateLabel: 'NgÃƒÂ y',
-    amountLabel: 'SÃ¡Â»â€˜ lÃ†Â°Ã¡Â»Â£ng',
-    loading: 'Ãƒâ€žÃ‚Âang tÃƒÂ¡Ã‚ÂºÃ‚Â£i...',
-    errorOccurred: 'Ãƒâ€žÃ‚ÂÃƒÆ’Ã‚Â£ xÃƒÂ¡Ã‚ÂºÃ‚Â£y ra lÃƒÂ¡Ã‚Â»Ã¢â‚¬â€i',
-    retry: 'ThÃƒÂ¡Ã‚Â»Ã‚Â­ lÃƒÂ¡Ã‚ÂºÃ‚Â¡i',
-    sendModalTitle: 'GÃƒÂ¡Ã‚Â»Ã‚Â­i VNSEEA',
-    infoBoxText: 'BÃƒÂ¡Ã‚ÂºÃ‚Â¡n cÃƒÆ’Ã‚Â³ thÃƒÂ¡Ã‚Â»Ã†â€™ gÃƒÂ¡Ã‚Â»Ã‚Â­i VNSEEA cho ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi khÃƒÆ’Ã‚Â¡c.',
-    amountInputLabel: 'SÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœ VNSEEA',
-    recipientLabel: 'GÃƒÂ¡Ã‚Â»Ã‚Â­i Ãƒâ€žÃ¢â‚¬ËœÃƒÂ¡Ã‚ÂºÃ‚Â¿n',
-    scanQrBtn: 'QuÃƒÂ©t QR',
-    searchPlaceholder: 'TÃƒÆ’Ã‚Â¬m kiÃƒÂ¡Ã‚ÂºÃ‚Â¿m bÃƒÂ¡Ã‚ÂºÃ‚Â±ng tÃƒÆ’Ã‚Âªn ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi dÃƒÆ’Ã‚Â¹ng hoÃƒÂ¡Ã‚ÂºÃ‚Â·c email',
-    confirmSend: 'TiÃ¡ÂºÂ¿p tÃ¡Â»Â¥c',
-    cancel: 'HÃ¡Â»Â§y',
-    qrModalTitle: 'QR chuyÃ¡Â»Æ’n VNSEEA',
-    qrAmountLabel: 'SÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœ VNSEEA (tÃƒÆ’Ã‚Â¹y chÃƒÂ¡Ã‚Â»Ã‚Ân)',
-    qrAmountHint: 'Ãƒâ€žÃ‚ÂÃƒÂ¡Ã‚Â»Ã†â€™ trÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœng nÃƒÂ¡Ã‚ÂºÃ‚Â¿u muÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœn ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi gÃƒÂ¡Ã‚Â»Ã‚Â­i tÃƒÂ¡Ã‚Â»Ã‚Â± nhÃƒÂ¡Ã‚ÂºÃ‚Â­p.',
-    qrDesc: 'Ãƒâ€žÃ‚ÂÃƒâ€ Ã‚Â°a mÃƒÆ’Ã‚Â£ nÃƒÆ’Ã‚Â y cho ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi gÃƒÂ¡Ã‚Â»Ã‚Â­i Ãƒâ€žÃ¢â‚¬ËœÃƒÂ¡Ã‚Â»Ã†â€™ hÃƒÂ¡Ã‚Â»Ã‚Â quÃƒÆ’Ã‚Â©t vÃƒÆ’Ã‚Â  chuyÃƒÂ¡Ã‚Â»Ã†â€™n VNSEEA cho bÃƒÂ¡Ã‚ÂºÃ‚Â¡n',
-    successSend: 'GÃƒÂ¡Ã‚Â»Ã‚Â­i VNSEEA thÃƒÆ’Ã‚Â nh cÃƒÆ’Ã‚Â´ng!',
-    insufficientBalance: 'SÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœ dÃƒâ€ Ã‚Â° vÃƒÆ’Ã‚Â­ khÃƒÆ’Ã‚Â´ng Ãƒâ€žÃ¢â‚¬ËœÃƒÂ¡Ã‚Â»Ã‚Â§!',
-    invalidAmount: 'SÃƒÂ¡Ã‚Â»Ã¢â‚¬Ëœ lÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Â£ng khÃƒÆ’Ã‚Â´ng hÃƒÂ¡Ã‚Â»Ã‚Â£p lÃƒÂ¡Ã‚Â»Ã¢â‚¬Â¡!',
-    selectRecipient: 'Vui lÃƒÆ’Ã‚Â²ng chÃƒÂ¡Ã‚Â»Ã‚Ân ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi nhÃƒÂ¡Ã‚ÂºÃ‚Â­n!',
-    cameraPermissionTitle: 'QuyÃƒÂ¡Ã‚Â»Ã‚Ân truy cÃƒÂ¡Ã‚ÂºÃ‚Â­p Camera',
-    cameraPermissionDesc: 'ÃƒÂ¡Ã‚Â»Ã‚Â¨ng dÃƒÂ¡Ã‚Â»Ã‚Â¥ng cÃƒÂ¡Ã‚ÂºÃ‚Â§n quyÃƒÂ¡Ã‚Â»Ã‚Ân Camera Ãƒâ€žÃ¢â‚¬ËœÃƒÂ¡Ã‚Â»Ã†â€™ quÃƒÆ’Ã‚Â©t mÃƒÆ’Ã‚Â£ QR chuyÃƒÂ¡Ã‚Â»Ã†â€™n tiÃƒÂ¡Ã‚Â»Ã‚Ân.',
-    scannerTitle: 'QuÃƒÂ©t mÃƒÂ£ QR chuyÃ¡Â»Æ’n VNSEEA',
-    userNotFound: 'KhÃƒÆ’Ã‚Â´ng tÃƒÆ’Ã‚Â¬m thÃƒÂ¡Ã‚ÂºÃ‚Â¥y ngÃƒâ€ Ã‚Â°ÃƒÂ¡Ã‚Â»Ã‚Âi dÃƒÆ’Ã‚Â¹ng nÃƒÆ’Ã‚Â y!',
+    header: 'Số dư của tôi',
+    balanceLabel: 'Số dư VNSEEA',
+    sendBtn: 'Gửi VNSEEA',
+    qrBtn: 'Mã QR nhận VNSEEA',
+    transactionsTitle: 'Lịch sử giao dịch',
+    dateLabel: 'Ngày giao dịch',
+    amountLabel: 'Số VNSEEA',
+    loading: 'Đang tải...',
+    errorOccurred: 'Đã xảy ra lỗi',
+    retry: 'Thử lại',
+    sendModalTitle: 'Gửi VNSEEA',
+    infoBoxText: 'Bạn có thể chuyển khoản VNSEEA trực tiếp đến ví của người dùng khác một cách nhanh chóng.',
+    amountInputLabel: 'Số lượng VNSEEA',
+    recipientLabel: 'Người nhận',
+    scanQrBtn: 'Quét mã QR',
+    searchPlaceholder: 'Tìm theo tên tài khoản hoặc email...',
+    confirmSend: 'Xác nhận chuyển',
+    cancel: 'Hủy bỏ',
+    qrModalTitle: 'Mã QR nhận VNSEEA',
+    qrAmountLabel: 'Số VNSEEA cần nhận (tùy chọn)',
+    qrAmountHint: 'Để trống nếu muốn người gửi tự nhập số tiền.',
+    qrDesc: 'Đưa mã QR này cho người gửi quét để thực hiện chuyển VNSEEA đến ví của bạn',
+    successSend: 'Chuyển VNSEEA thành công!',
+    insufficientBalance: 'Số dư ví không đủ để thực hiện giao dịch!',
+    invalidAmount: 'Số lượng VNSEEA chuyển không hợp lệ!',
+    selectRecipient: 'Vui lòng chọn người nhận tiền!',
+    cameraPermissionTitle: 'Quyền sử dụng Camera',
+    cameraPermissionDesc: 'Ứng dụng cần quyền truy cập Camera để quét mã QR chuyển tiền.',
+    scannerTitle: 'Quét mã QR nhận VNSEEA',
+    userNotFound: 'Không tìm thấy tài khoản người dùng tương ứng!',
   },
   en: {
     header: 'My Balance',
     balanceLabel: 'VNSEEA Balance',
     sendBtn: 'Send VNSEEA',
-    qrBtn: 'VNSEEA Transfer QR Code',
+    qrBtn: 'Receive VNSEEA QR Code',
     transactionsTitle: 'Transactions',
     dateLabel: 'Date',
     amountLabel: 'Amount',
@@ -104,24 +104,24 @@ const BALANCE_COPY = {
     errorOccurred: 'An error occurred',
     retry: 'Retry',
     sendModalTitle: 'Send VNSEEA',
-    infoBoxText: 'You can send VNSEEA to other users.',
+    infoBoxText: 'You can transfer VNSEEA directly to another user\'s wallet instantly.',
     amountInputLabel: 'VNSEEA Amount',
     recipientLabel: 'Send to',
     scanQrBtn: 'Scan QR',
     searchPlaceholder: 'Search by username or email',
     confirmSend: 'Continue',
     cancel: 'Cancel',
-    qrModalTitle: 'VNSEEA Transfer QR',
+    qrModalTitle: 'VNSEEA Receive QR',
     qrAmountLabel: 'VNSEEA Amount (optional)',
     qrAmountHint: 'Leave blank if you want the sender to input the amount.',
-    qrDesc: 'Show this code to the sender to scan and transfer VNSEEA to you',
+    qrDesc: 'Show this QR code to the sender to transfer VNSEEA to your wallet',
     successSend: 'VNSEEA sent successfully!',
     insufficientBalance: 'Insufficient balance!',
     invalidAmount: 'Invalid amount!',
     selectRecipient: 'Please select a recipient!',
     cameraPermissionTitle: 'Camera Permission',
     cameraPermissionDesc: 'The app needs Camera permission to scan transaction QR codes.',
-    scannerTitle: 'Scan VNSEEA Transfer QR',
+    scannerTitle: 'Scan VNSEEA QR Code',
     userNotFound: 'User not found!',
   },
 };
@@ -183,8 +183,33 @@ function extractProfileUsernameFromUrl(value: string) {
   const urlParts = pathOnly.split('/').filter(Boolean);
   const rawLastPart = safeDecode(urlParts[urlParts.length - 1] || '').trim();
 
-  if (!rawLastPart.startsWith('@')) return '';
-  return normalizeRecipientQuery(rawLastPart);
+  if (!rawLastPart) return '';
+  
+  // Ignore system paths
+  const systemPaths = new Set([
+    'requests.php',
+    'index.php',
+    'wallet',
+    'marketplace',
+    'messages',
+    'settings',
+    'admin-cp',
+    'posts',
+    'funding',
+    'offers',
+    'create-product',
+    'welcome',
+    'register',
+    'login',
+  ]);
+  
+  const lastPartLower = rawLastPart.toLowerCase();
+  if (systemPaths.has(lastPartLower)) return '';
+  
+  // If it starts with @, strip @
+  return rawLastPart.startsWith('@') 
+    ? normalizeRecipientQuery(rawLastPart)
+    : rawLastPart;
 }
 
 function readQrCodeValue(event: any) {
@@ -251,7 +276,7 @@ function parseTransferQrPayload(code: string): ParsedTransferQr {
   if (cleanCode.includes('|') || cleanCode.includes(',')) {
     const parts = cleanCode.split(/[|,]+/);
     const prefix = parts.shift()?.toUpperCase();
-    if (prefix === 'WALLET' || prefix === 'POINTS') {
+    if (prefix === 'WALLET' || prefix === 'POINTS' || prefix === 'VNSEEA_POINTS') {
       parts.forEach(part => {
         const separatorIndex = part.indexOf('=');
         if (separatorIndex > -1) {
@@ -679,13 +704,13 @@ function MyBalanceScreen() {
             >
               {/* Transaction Title */}
               <Text className="text-[15px] font-bold text-slate-800 leading-tight mb-1">
-                {item.notes || (isSent ? 'Ã„ÂÃƒÂ£ gÃ¡Â»Â­i VNSEEA' : isReceived ? 'NhÃ¡ÂºÂ­n VNSEEA' : item.kind)}
+                {item.notes || (isSent ? 'Ã„ÂÃƒÂ£ gÃ¡Â»Â­i VNSEEA' : isReceived ? 'Nhận VNSEEA' : item.kind)}
               </Text>
 
               {/* Counterparty */}
               {item.counterpartyName ? (
                 <Text className="text-xs font-semibold text-slate-400 mb-3">
-                  {isSent ? 'Ã„ÂÃ¡ÂºÂ¿n: ' : 'TÃ¡Â»Â«: '}{item.counterpartyName}
+                  {isSent ? 'Ã„ÂÃ¡ÂºÂ¿n: ' : 'Từ: '}{item.counterpartyName}
                 </Text>
               ) : <View className="mb-3" />}
 

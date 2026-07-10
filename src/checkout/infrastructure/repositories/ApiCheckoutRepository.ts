@@ -88,6 +88,7 @@ function mapCheckoutItem(raw: RawProduct): CheckoutItem {
   const quantity = Math.max(1, numberValue(raw.units) || 1);
   const price = numberValue(raw.price);
   const productId = numberValue(raw.product_id) || numberValue(raw.id);
+  const sellerUserId = numberValue((raw as any).user_id) || numberValue((raw as any).seller?.user_id) || undefined;
 
   return {
     id: String(productId),
@@ -99,6 +100,7 @@ function mapCheckoutItem(raw: RawProduct): CheckoutItem {
     total: price * quantity,
     currencySymbol:
       stringValue(raw.currency_symbol) || stringValue(raw.currency_code) || 'VNSEEA',
+    sellerUserId,
   };
 }
 

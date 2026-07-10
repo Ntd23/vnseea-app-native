@@ -9,6 +9,7 @@ export interface CheckoutItem {
   quantity: number;
   total: number;
   currencySymbol: string;
+  sellerUserId?: number;
 }
 
 export interface DeliveryAddress {

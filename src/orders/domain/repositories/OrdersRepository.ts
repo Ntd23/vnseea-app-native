@@ -8,4 +8,5 @@ export interface OrdersRepository {
     offset?: number;
   }): Promise<OrdersPage>;
   getSellerOrders(input?: { limit?: number; offset?: number }): Promise<OrdersPage>;
+  changeOrderStatus(hashId: string, status: string): Promise<void>;
 }

@@ -121,14 +121,23 @@ function mapOrder(raw: RawMarketOrder, mode: 'purchased' | 'seller'): OrdersItem
   const code = stringValue(raw.order_hash_id) || stringValue(firstOrder?.hash_id);
   const lines = (raw.orders ?? []).map((order, index) => {
     const lineStatus = statusValue(order.status);
+    const lineShop = stringValue(order.product?.user_data?.name) || stringValue(order.product?.user_data?.username) || 'Shop';
+    const linePrice = numberValue(mode === 'seller' ? order.final_price : order.price);
     return {
       id: stringValue(order.id) || stringValue(order.hash_id) || `${code}-${index}`,
       product: stringValue(order.product?.name) || 'Sản phẩm marketplace',
       total: formatMoney(mode === 'seller' ? order.final_price : order.price),
       status: lineStatus,
       statusLabel: statusLabel(lineStatus),
+      shop: lineShop,
+      price: linePrice,
     };
   });
+
+  const buyerUserId = numberValue((firstOrder as any)?.user_id) || numberValue((firstOrder as any)?.buyer?.user_id) || numberValue((firstOrder as any)?.buyer?.id) || undefined;
+  const buyerName = stringValue((firstOrder as any)?.buyer?.name) || stringValue((firstOrder as any)?.buyer?.username) || undefined;
+  const buyerUsername = stringValue((firstOrder as any)?.buyer?.username) || undefined;
+  const buyerAvatar = stringValue((firstOrder as any)?.buyer?.avatar) || undefined;
 
   return {
     id: stringValue(raw.id) || code,
@@ -140,6 +149,10 @@ function mapOrder(raw: RawMarketOrder, mode: 'purchased' | 'seller'): OrdersItem
     statusLabel: statusLabel(status),
     date: stringValue(raw.date) || stringValue(raw.time),
     lines,
+    buyerUserId,
+    buyerName,
+    buyerUsername,
+    buyerAvatar,
   };
 }
 
@@ -170,6 +183,13 @@ export function createOrdersRepository(): OrdersRepository {
     },
     getSellerOrders(input) {
       return getMarketOrders('orders', input);
+    },
+    async changeOrderStatus(hashId, status) {
+      await apiBridge.post(apiRoutes.products.market, {
+        type: 'change_status',
+        hash_id: hashId,
+        status,
+      });
     },
   };
 }
