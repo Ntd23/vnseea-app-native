@@ -21,10 +21,10 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
     normalizeLiveKitData(data, notification.title)
     val eventType = data.optString(LiveKitCallNativeActions.EXTRA_EVENT_TYPE)
     val status = data.optString("status")
+    val callId = data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)
     if (shouldDismissIncomingCall(eventType, status)) {
       event.preventDefault()
       val context: Context = event.context ?: return
-      val callId = data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)
       Log.i("LiveKitCallPush", "dismiss incoming call event_type=$eventType status=$status call_id=$callId")
       LiveKitCallNativeActions.dismissIncomingCall(context, callId)
       return
@@ -39,6 +39,10 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
     }
     event.preventDefault()
     val context: Context = event.context ?: return
+    if (LiveKitCallNativeActions.isIncomingCallHandledRecently(context, callId)) {
+      Log.i("LiveKitCallPush", "ignored handled incoming push call_id=$callId")
+      return
+    }
     Log.i("LiveKitCallPush", "show fullscreen call event_type=$eventType call_id=${data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)}")
     LiveKitCallNotifier.show(context, data)
   }
@@ -97,7 +101,10 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
       normalizedEvent == "livekit_call_cancelled" ||
       normalizedEvent == "livekit_call_canceled" ||
       normalizedEvent == "livekit_call_declined" ||
+      normalizedEvent == "livekit_call_answered" ||
       normalizedEvent == "livekit_group_call_closed" ||
+      normalizedEvent == "livekit_group_call_answered" ||
+      normalizedStatus == "answered" ||
       normalizedStatus == "ended" ||
       normalizedStatus == "cancelled" ||
       normalizedStatus == "canceled" ||

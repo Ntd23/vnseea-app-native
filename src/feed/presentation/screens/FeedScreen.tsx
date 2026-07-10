@@ -189,6 +189,8 @@ const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = 8;
 const FEED_VIDEO_WARM_BEHIND_ITEMS = 6;
 const FEED_VIDEO_WARM_AHEAD_ITEMS = 8;
 const FEED_VIDEO_WARM_MAX_COUNT = 3;
+const FEED_VIDEO_VIEWABLE_PERCENT = 55;
+const FEED_VIDEO_ACTIVE_DWELL_MS = 240;
 const FEED_LIST_INITIAL_RENDER_COUNT = 6;
 const FEED_LIST_RENDER_BATCH_SIZE = 6;
 const FEED_LIST_WINDOW_SIZE = 9;
@@ -1625,6 +1627,10 @@ function FeedScreen() {
   // Viewport tracking & Autoplay logic for video cards.
   const activeVideoIdRef = useRef<string | null>(feedActiveVideoIdSnapshot);
   const pendingActiveVideoIdRef = useRef<string | null>(null);
+  const pendingDwellVideoIdRef = useRef<string | null>(null);
+  const activeVideoDwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const latestViewableFeedItemsRef = useRef<any[]>([]);
   const feedListItemsRef = useRef<FeedListItem[]>([]);
   const feedListItemIndexByIdRef = useRef<Map<string, number>>(new Map());
@@ -1667,6 +1673,45 @@ function FeedScreen() {
     activeVideoIdRef.current = videoId;
     publishFeedActiveVideo(videoId);
   }, []);
+
+  const clearActiveVideoDwellTimer = useCallback(() => {
+    if (!activeVideoDwellTimerRef.current) return;
+    clearTimeout(activeVideoDwellTimerRef.current);
+    activeVideoDwellTimerRef.current = null;
+    pendingDwellVideoIdRef.current = null;
+  }, []);
+
+  const scheduleActiveFeedVideo = useCallback(
+    (videoId: string | null, commitImmediately = false) => {
+      if (videoId === activeVideoIdRef.current) {
+        clearActiveVideoDwellTimer();
+        return;
+      }
+
+      if (commitImmediately || videoId === null) {
+        clearActiveVideoDwellTimer();
+        setActiveFeedVideo(videoId);
+        return;
+      }
+
+      if (
+        pendingDwellVideoIdRef.current === videoId &&
+        activeVideoDwellTimerRef.current
+      ) {
+        return;
+      }
+
+      clearActiveVideoDwellTimer();
+      pendingDwellVideoIdRef.current = videoId;
+      activeVideoDwellTimerRef.current = setTimeout(() => {
+        activeVideoDwellTimerRef.current = null;
+        if (pendingDwellVideoIdRef.current !== videoId) return;
+        pendingDwellVideoIdRef.current = null;
+        setActiveFeedVideo(videoId);
+      }, FEED_VIDEO_ACTIVE_DWELL_MS);
+    },
+    [clearActiveVideoDwellTimer, setActiveFeedVideo],
+  );
 
   const pickViewableFeedVideoId = useCallback(
     () => pickFeedViewableVideoId(latestViewableFeedItemsRef.current),
@@ -1711,7 +1756,7 @@ function FeedScreen() {
 
             if (commitImmediately || !isScrollingRef.current) {
               if (fallbackVideoId !== activeVideoIdRef.current) {
-                setActiveFeedVideo(fallbackVideoId);
+                scheduleActiveFeedVideo(fallbackVideoId, commitImmediately);
               }
               pendingActiveVideoIdRef.current = null;
               return;
@@ -1722,7 +1767,7 @@ function FeedScreen() {
         });
       });
     },
-    [pickViewableFeedVideoId, setActiveFeedVideo],
+    [pickViewableFeedVideoId, scheduleActiveFeedVideo],
   );
 
   const handleFeedViewportLayout = useCallback(
@@ -1754,13 +1799,13 @@ function FeedScreen() {
       pickViewableFeedVideoId() ?? pendingActiveVideoIdRef.current;
     pendingActiveVideoIdRef.current = null;
     if (pendingVideoId !== activeVideoIdRef.current) {
-      setActiveFeedVideo(pendingVideoId);
+      scheduleActiveFeedVideo(pendingVideoId);
     }
-    measureActiveFeedVideoOnScreen(true);
+    measureActiveFeedVideoOnScreen(false);
   }, [
     measureActiveFeedVideoOnScreen,
     pickViewableFeedVideoId,
-    setActiveFeedVideo,
+    scheduleActiveFeedVideo,
     setFeedScrollBusy,
   ]);
 
@@ -1833,7 +1878,7 @@ function FeedScreen() {
       feedScrollYRef.current = contentOffset.y;
       feedViewportHeightRef.current = layoutMeasurement.height;
       if (velocityY < 0.05 && !isMomentumScrollingRef.current) {
-        measureActiveFeedVideoOnScreen(true);
+        measureActiveFeedVideoOnScreen(false);
       }
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
@@ -1853,7 +1898,7 @@ function FeedScreen() {
       const { contentOffset, layoutMeasurement } = event.nativeEvent;
       feedScrollYRef.current = contentOffset.y;
       feedViewportHeightRef.current = layoutMeasurement.height;
-      measureActiveFeedVideoOnScreen(true);
+      measureActiveFeedVideoOnScreen(false);
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
         scrollEndTimeoutRef.current = null;
@@ -1869,6 +1914,7 @@ function FeedScreen() {
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
       }
+      clearActiveVideoDwellTimer();
       supplementalInteractionRef.current?.cancel();
       supplementalLoadTimersRef.current.forEach(timer => clearTimeout(timer));
       supplementalLoadTimersRef.current = [];
@@ -1884,7 +1930,7 @@ function FeedScreen() {
       publishFeedScrollBusy(false);
       publishNativeTabScrollBehavior('onScrollDown');
     };
-  }, []);
+  }, [clearActiveVideoDwellTimer]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1897,6 +1943,7 @@ function FeedScreen() {
   const isFocused = useIsFocused();
   useEffect(() => {
     if (!isFocused) {
+      clearActiveVideoDwellTimer();
       setActiveFeedVideo(null);
       publishFeedWarmVideoIds([]);
     } else {
@@ -1904,6 +1951,7 @@ function FeedScreen() {
     }
   }, [
     isFocused,
+    clearActiveVideoDwellTimer,
     setActiveFeedVideo,
     measureActiveFeedVideoOnScreen,
   ]);
@@ -2480,8 +2528,8 @@ function FeedScreen() {
 
   // Viewability config for FlatList autoplay
   const viewabilityConfigRef = useRef({
-    itemVisiblePercentThreshold: 50,
-    minimumViewTime: 80,
+    itemVisiblePercentThreshold: FEED_VIDEO_VIEWABLE_PERCENT,
+    minimumViewTime: 0,
   });
 
   const onViewableItemsChanged = useCallback(
@@ -2502,7 +2550,7 @@ function FeedScreen() {
           update.nextActiveVideoId !== undefined &&
           update.nextActiveVideoId !== activeVideoIdRef.current
         ) {
-          setActiveFeedVideo(update.nextActiveVideoId);
+          scheduleActiveFeedVideo(update.nextActiveVideoId);
         }
         return;
       }
@@ -2511,14 +2559,14 @@ function FeedScreen() {
         update.nextActiveVideoId !== undefined &&
         update.nextActiveVideoId !== activeVideoIdRef.current
       ) {
-        setActiveFeedVideo(update.nextActiveVideoId);
+        scheduleActiveFeedVideo(update.nextActiveVideoId);
       }
     },
     [
       maybeLoadMoreFeedAroundVisibleItems,
       prefetchFeedImagesAroundVisibleItems,
       publishWarmFeedVideosAroundVisibleItems,
-      setActiveFeedVideo,
+      scheduleActiveFeedVideo,
     ],
   );
 

@@ -11,6 +11,9 @@ import java.net.URL
 import java.net.URLEncoder
 
 object LiveKitCallNativeActions {
+  private const val HANDLED_INCOMING_CALLS_PREFS = "vnseea_handled_incoming_calls"
+  private const val HANDLED_INCOMING_CALL_TTL_MS = 2 * 60 * 1000L
+
   const val EXTRA_EVENT_TYPE = "event_type"
   const val EXTRA_CALL_ID = "call_id"
   const val EXTRA_CALL_TYPE = "call_type"
@@ -35,8 +38,42 @@ object LiveKitCallNativeActions {
   const val EXTRA_NATIVE_ACTION = "vnseea_call_action"
   const val ACTION_DISMISS_INCOMING_CALL = "com.vnseea.android.call.DISMISS_INCOMING_CALL"
 
+  fun markIncomingCallHandled(context: Context, callId: String?) {
+    if (callId.isNullOrBlank()) return
+    val now = System.currentTimeMillis()
+    val prefs = context.applicationContext.getSharedPreferences(
+      HANDLED_INCOMING_CALLS_PREFS,
+      Context.MODE_PRIVATE,
+    )
+    val editor = prefs.edit().putLong(callId, now)
+    for ((key, value) in prefs.all) {
+      val handledAt = value as? Long ?: continue
+      if (now - handledAt > HANDLED_INCOMING_CALL_TTL_MS) {
+        editor.remove(key)
+      }
+    }
+    editor.apply()
+  }
+
+  fun isIncomingCallHandledRecently(context: Context, callId: String?): Boolean {
+    if (callId.isNullOrBlank()) return false
+    val prefs = context.applicationContext.getSharedPreferences(
+      HANDLED_INCOMING_CALLS_PREFS,
+      Context.MODE_PRIVATE,
+    )
+    val handledAt = prefs.getLong(callId, 0L)
+    if (handledAt <= 0L) return false
+
+    val ageMs = System.currentTimeMillis() - handledAt
+    if (ageMs in 0..HANDLED_INCOMING_CALL_TTL_MS) return true
+
+    prefs.edit().remove(callId).apply()
+    return false
+  }
+
   fun dismissIncomingCall(context: Context, callId: String?) {
     if (callId.isNullOrBlank()) return
+    markIncomingCallHandled(context, callId)
     val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
     manager?.cancel(callId.hashCode())
     context.sendBroadcast(Intent(ACTION_DISMISS_INCOMING_CALL).apply {

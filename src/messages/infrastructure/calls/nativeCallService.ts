@@ -313,8 +313,11 @@ function readPushClosedLiveKitCallId(payload: unknown) {
     eventType === 'livekit_call_cancelled' ||
     eventType === 'livekit_call_canceled' ||
     eventType === 'livekit_call_declined' ||
-    eventType === 'livekit_group_call_closed';
+    eventType === 'livekit_call_answered' ||
+    eventType === 'livekit_group_call_closed' ||
+    eventType === 'livekit_group_call_answered';
   const isClosedStatus = [
+    'answered',
     'ended',
     'cancelled',
     'canceled',

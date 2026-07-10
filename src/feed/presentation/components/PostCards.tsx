@@ -123,6 +123,8 @@ export const VIDEO_BUFFER_CONFIG = {
 const VIDEO_STARTUP_MAX_BITRATE = 850_000;
 const VIDEO_SETTLED_MAX_BITRATE = 0;
 const VIDEO_QUALITY_RAMP_DELAY_MS = 1200;
+const VIDEO_WARM_PREVIEW_SECONDS = 2;
+const PREPARED_VIDEO_KEEP_ALIVE_LIMIT = 10;
 const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const IMAGE_PREFETCH_LOOKAHEAD = 5;
@@ -545,6 +547,9 @@ export function formatPostTime(timestamp: number | undefined, copy: FeedCopy) {
 
 type FeedActiveVideoListener = (activeVideoId: string | null) => void;
 type FeedWarmVideoListener = (warmVideoIds: ReadonlySet<string>) => void;
+type FeedPreparedVideoListener = (
+  preparedVideoIds: ReadonlySet<string>,
+) => void;
 type FeedScrollBusyListener = (isBusy: boolean) => void;
 type FeedVideoMutedListener = (isMuted: boolean) => void;
 
@@ -552,6 +557,9 @@ export let feedActiveVideoIdSnapshot: string | null = null;
 const feedActiveVideoListeners = new Set<FeedActiveVideoListener>();
 export let feedWarmVideoIdsSnapshot = new Set<string>();
 const feedWarmVideoListeners = new Set<FeedWarmVideoListener>();
+export let feedPreparedVideoIdsSnapshot = new Set<string>();
+const feedPreparedVideoListeners = new Set<FeedPreparedVideoListener>();
+const preparedVideoLru: string[] = [];
 let feedScrollBusySnapshot = false;
 const feedScrollBusyListeners = new Set<FeedScrollBusyListener>();
 export let feedVideoMutedSnapshot = false;
@@ -604,6 +612,28 @@ export function publishFeedWarmVideoIds(videoIds: Iterable<string>) {
   feedWarmVideoListeners.forEach(listener => listener(feedWarmVideoIdsSnapshot));
 }
 
+function publishPreparedVideoIds() {
+  feedPreparedVideoIdsSnapshot = new Set(preparedVideoLru);
+  feedPreparedVideoListeners.forEach(listener =>
+    listener(feedPreparedVideoIdsSnapshot),
+  );
+}
+
+function markFeedPreparedVideo(videoId: string) {
+  const existingIndex = preparedVideoLru.indexOf(videoId);
+  if (existingIndex >= 0) {
+    preparedVideoLru.splice(existingIndex, 1);
+  }
+
+  preparedVideoLru.push(videoId);
+
+  while (preparedVideoLru.length > PREPARED_VIDEO_KEEP_ALIVE_LIMIT) {
+    preparedVideoLru.shift();
+  }
+
+  publishPreparedVideoIds();
+}
+
 function useFeedVideoWarm(videoId: string) {
   const [isWarm, setIsWarm] = useState(
     () => feedWarmVideoIdsSnapshot.has(videoId),
@@ -625,6 +655,29 @@ function useFeedVideoWarm(videoId: string) {
   }, [videoId]);
 
   return isWarm;
+}
+
+function useFeedPreparedVideoKeepAlive(videoId: string) {
+  const [isPrepared, setIsPrepared] = useState(
+    () => feedPreparedVideoIdsSnapshot.has(videoId),
+  );
+
+  useEffect(() => {
+    const listener: FeedPreparedVideoListener = nextPreparedVideoIds => {
+      const nextIsPrepared = nextPreparedVideoIds.has(videoId);
+      setIsPrepared(prev => (prev === nextIsPrepared ? prev : nextIsPrepared));
+    };
+
+    feedPreparedVideoListeners.add(listener);
+    const nextIsPrepared = feedPreparedVideoIdsSnapshot.has(videoId);
+    setIsPrepared(prev => (prev === nextIsPrepared ? prev : nextIsPrepared));
+
+    return () => {
+      feedPreparedVideoListeners.delete(listener);
+    };
+  }, [videoId]);
+
+  return isPrepared;
 }
 
 export function publishFeedScrollBusy(isBusy: boolean) {
@@ -1253,6 +1306,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   hasDragged,
   navigateToProfile,
   onOpenPostMenu,
+  keepPreparedVideoMounted = false,
 }: {
   post: FeedVideoPost;
   copy?: FeedCopy;
@@ -1277,6 +1331,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   hasDragged?: any;
   navigateToProfile: (userId: string) => void;
   onOpenPostMenu?: (post: FeedPost) => void;
+  keepPreparedVideoMounted?: boolean;
 }) {
   const language = useAppLanguage();
   const copy = providedCopy ?? FEED_COPY[language];
@@ -1297,6 +1352,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const navigation = useNavigation<any>();
   const trackedIsActive = useFeedVideoActivity(post.id);
   const trackedIsWarm = useFeedVideoWarm(post.id);
+  const isPreparedKeptAlive = useFeedPreparedVideoKeepAlive(post.id);
   const liveMediaActive = useLiveMediaActive();
   const isActive = controlledIsActive !== undefined
     ? controlledIsActive
@@ -1304,8 +1360,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const isWarm = isScreenFocused !== false && trackedIsWarm;
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const muted = useFeedVideoMuted();
+  const videoUrl = post.videoUrl.trim();
+  const videoPreviewCacheKey = post.thumbnailUrl || videoUrl || post.id;
   const [aspectRatio, setAspectRatio] = useState(() =>
-    getCachedMediaAspectRatio(post.thumbnailUrl, 0.75, 16 / 9, 16 / 9),
+    getCachedMediaAspectRatio(videoPreviewCacheKey, 0.75, 16 / 9, 16 / 9),
   );
   const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
@@ -1318,14 +1376,16 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
   const [isReady, setIsReady] = useState(false);
   const [hasRenderedFrame, setHasRenderedFrame] = useState(false);
+  const [warmPreviewReady, setWarmPreviewReady] = useState(false);
   const [isFrameCoverVisible, setFrameCoverVisible] = useState(true);
   const [hasVideoError, setHasVideoError] = useState(false);
   const [maxVideoBitRate, setMaxVideoBitRate] = useState(
     VIDEO_STARTUP_MAX_BITRATE,
   );
-  const videoUrl = post.videoUrl.trim();
   const hasVideoUrl = videoUrl.length > 0;
   const canAttemptVideo = hasVideoUrl && !hasVideoError;
+  const hasUserWatchedRef = useRef(getVideoPlaybackTime(post.id, 0) > 0.05);
+  const warmPreviewTimeRef = useRef(0);
 
   const clearVideoQualityRamp = useCallback(() => {
     if (!qualityRampTimeoutRef.current) return;
@@ -1349,14 +1409,20 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     }
     clearVideoQualityRamp();
     currentTimeRef.current = savedTime;
+    hasUserWatchedRef.current = savedTime > 0.05;
+    warmPreviewTimeRef.current = 0;
+    setAspectRatio(
+      getCachedMediaAspectRatio(videoPreviewCacheKey, 0.75, 16 / 9, 16 / 9),
+    );
     setSeekTime(savedTime > 0.05 ? savedTime : undefined);
     setManuallyPaused(false);
     setIsReady(false);
     setHasRenderedFrame(false);
+    setWarmPreviewReady(false);
     setFrameCoverVisible(true);
     setHasVideoError(false);
     setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
-  }, [clearVideoQualityRamp, post.id, post.videoUrl]);
+  }, [clearVideoQualityRamp, post.id, post.videoUrl, videoPreviewCacheKey]);
 
   useEffect(() => {
     return () => {
@@ -1365,7 +1431,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         frameCoverTimeoutRef.current = null;
       }
       clearVideoQualityRamp();
-      setVideoPlaybackTime(post.id, currentTimeRef.current);
+      if (hasUserWatchedRef.current) {
+        setVideoPlaybackTime(post.id, currentTimeRef.current);
+      }
     };
   }, [clearVideoQualityRamp, post.id]);
 
@@ -1408,22 +1476,26 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     setHasVideoError(false);
     setIsReady(true);
     setHasRenderedFrame(false);
+    setWarmPreviewReady(false);
     setFrameCoverVisible(true);
     const size = data?.naturalSize ?? data;
     if (size) {
       const { width, height } = size;
       if (width > 0 && height > 0) {
-        cacheMediaAspectRatio(videoUrl || post.id, width, height);
+        cacheMediaAspectRatio(videoPreviewCacheKey, width, height);
         setAspectRatio(
           clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
         );
       }
     }
-  }, [post.id, videoUrl]);
+  }, [videoPreviewCacheKey]);
 
   const revealVideoFrame = useCallback(() => {
     setIsReady(true);
     setHasRenderedFrame(true);
+    if (keepPreparedVideoMounted) {
+      markFeedPreparedVideo(post.id);
+    }
     if (isActive) {
       scheduleVideoQualityRamp();
     }
@@ -1439,7 +1511,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       frameCoverTimeoutRef.current = null;
       setFrameCoverVisible(false);
     }, 90);
-  }, [isActive, post.thumbnailUrl, scheduleVideoQualityRamp]);
+  }, [
+    isActive,
+    keepPreparedVideoMounted,
+    post.id,
+    post.thumbnailUrl,
+    scheduleVideoQualityRamp,
+  ]);
 
   // Profile tap handler
   const handleProfilePress = useCallback(() => {
@@ -1449,7 +1527,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [navigateToProfile, post.publisher.id]);
 
   const handleVideoPress = useCallback(() => {
-    const resumeTime = getVideoPlaybackTime(post.id, currentTimeRef.current);
+    const resumeFallback = hasUserWatchedRef.current
+      ? currentTimeRef.current
+      : 0;
+    const resumeTime = getVideoPlaybackTime(post.id, resumeFallback);
     currentTimeRef.current = resumeTime;
     setVideoPlaybackTime(post.id, resumeTime);
 
@@ -1471,13 +1552,18 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // tiny muted slice so the card has a real frame before the user reaches it,
   // without keeping every rendered video alive.
   const shouldMountVideo =
-    isScreenFocused !== false && canAttemptVideo && (isActive || isWarm);
+    isScreenFocused !== false &&
+    canAttemptVideo &&
+    (isActive ||
+      isWarm ||
+      (keepPreparedVideoMounted && isPreparedKeptAlive && hasRenderedFrame));
 
   useEffect(() => {
     if (shouldMountVideo) return;
 
     setIsReady(false);
     setHasRenderedFrame(false);
+    setWarmPreviewReady(false);
     setFrameCoverVisible(true);
     clearVideoQualityRamp();
     setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
@@ -1487,6 +1573,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     if (isActive) {
       const savedTime = getVideoPlaybackTime(post.id, currentTimeRef.current);
       currentTimeRef.current = savedTime;
+      hasUserWatchedRef.current = true;
       setManuallyPaused(false);
       if (savedTime > 0.05) {
         if (isReady && videoRef.current) {
@@ -1494,9 +1581,15 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         } else {
           setSeekTime(savedTime);
         }
+      } else if (
+        isReady &&
+        videoRef.current &&
+        (warmPreviewReady || warmPreviewTimeRef.current > 0.05)
+      ) {
+        videoRef.current.seek(0);
       }
     }
-  }, [isActive, isReady, post.id]);
+  }, [isActive, isReady, post.id, warmPreviewReady]);
 
   useEffect(() => {
     if (!isActive) {
@@ -1529,7 +1622,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     shouldMountVideo &&
     isWarm &&
     !isActive &&
-    !hasRenderedFrame;
+    (keepPreparedVideoMounted
+      ? !warmPreviewReady
+      : !hasRenderedFrame);
   const playing =
     shouldMountVideo &&
     !manuallyPaused &&
@@ -1635,8 +1730,19 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   ) {
                     return;
                   }
-                  currentTimeRef.current = nextTime;
-                  setVideoPlaybackTime(post.id, nextTime);
+                  if (isActive) {
+                    hasUserWatchedRef.current = true;
+                    currentTimeRef.current = nextTime;
+                    setVideoPlaybackTime(post.id, nextTime);
+                  } else {
+                    warmPreviewTimeRef.current = nextTime;
+                    if (
+                      keepPreparedVideoMounted &&
+                      nextTime >= VIDEO_WARM_PREVIEW_SECONDS
+                    ) {
+                      setWarmPreviewReady(true);
+                    }
+                  }
                   if (!hasRenderedFrame && nextTime > 0.05) {
                     revealVideoFrame();
                   }
@@ -1647,6 +1753,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   setHasVideoError(true);
                   setIsReady(false);
                   setHasRenderedFrame(false);
+                  setWarmPreviewReady(false);
                   console.warn(
                     '[HomeVideoPostCard] video error',
                     post.id,
