@@ -126,16 +126,18 @@ export type UseCreatePostOptions = {
    */
   onCreated?: (post: FeedPost) => void;
   pageId?: string;
+  groupId?: string;
 };
 
 export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
-  const { onCreated, pageId } = options;
+  const { onCreated, pageId, groupId } = options;
   const language = useAppLanguage();
   const copy = useMemo(() => VIEW_MODEL_COPY[language], [language]);
 
   const [draft, setDraft] = useState<CreatePostDraft>({
     ...DEFAULT_DRAFT,
     pageId,
+    groupId,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

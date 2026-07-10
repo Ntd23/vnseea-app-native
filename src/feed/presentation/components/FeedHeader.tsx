@@ -215,12 +215,10 @@ export const FeedHeader = React.memo(function FeedHeader() {
           </View>
         </View>
       </View>
-      {hasOpenedMenu ? (
-        <HeaderProfileDrawer
-          visible={menuVisible}
-          onClose={handleCloseMenu}
-        />
-      ) : null}
+      <HeaderProfileDrawer
+        visible={menuVisible}
+        onClose={handleCloseMenu}
+      />
     </>
   );
 });
