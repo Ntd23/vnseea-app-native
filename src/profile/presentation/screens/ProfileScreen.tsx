@@ -5,6 +5,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -20,11 +21,16 @@ import {
 } from 'react-native';
 import {
   ArrowLeft,
-  Briefcase,
+  CalendarDays,
   Camera,
   Clock,
+  FileText,
+  Globe2,
+  Heart,
+  MapPin,
   MoreHorizontal,
   PlusCircle,
+  Repeat2,
   Search,
   User,
   UserPlus,
@@ -34,6 +40,7 @@ import {
   Verified,
   MessageCircle,
   ShoppingCart,
+  X,
 
   Copy,
 
@@ -41,7 +48,6 @@ import {
 
   SlidersHorizontal as Sliders,
 
-  Star,
 } from 'lucide-react-native';
 import {
   useFocusEffect,
@@ -75,6 +81,8 @@ import {
 import {
   FEED_COPY as POST_CARD_COPY,
   HomeVideoPostCard,
+  formatCount,
+  formatPostTime,
   publishFeedActiveVideo,
   publishFeedScrollBusy,
   publishFeedWarmVideoIds,
@@ -95,6 +103,7 @@ import { StoryOptionsSheet } from '../../../shared-kernel/presentation/component
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getPokeCopy } from '../../../poke/application/i18n/pokeCopy';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { COUNTRY_OPTIONS } from '../../../settings/domain/constants/countries';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import {
@@ -139,6 +148,106 @@ const PROFILE_POST_MEDIA_PREFETCH_LIMIT = 18;
 const PROFILE_POST_VIDEO_WARM_BEHIND_ITEMS = 6;
 const PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS = 8;
 const PROFILE_POST_VIDEO_WARM_MAX_COUNT = 3;
+const COUNTRY_NAME_BY_ID = new Map(
+  COUNTRY_OPTIONS.map(country => [country.id, country.name]),
+);
+
+type ProfileFriendsTab = 'following' | 'followers';
+type ProfileActivityItem = {
+  id: string;
+  Icon: typeof Clock;
+  title: string;
+  subtitle: string;
+  color: string;
+  backgroundColor: string;
+};
+
+function cleanProfileValue(value: unknown) {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  if (!text || text === '0' || text.toLowerCase() === 'null') return '';
+  return text;
+}
+
+function getCountryDisplayName(countryId: unknown) {
+  const id = cleanProfileValue(countryId);
+  if (!id) return '';
+  return COUNTRY_NAME_BY_ID.get(id) ?? id;
+}
+
+function getGenderDisplayText(
+  genderText: unknown,
+  gender: unknown,
+  language: AppLanguage,
+) {
+  const explicitText = cleanProfileValue(genderText);
+  if (explicitText) return explicitText;
+
+  const value = cleanProfileValue(gender).toLowerCase();
+  if (!value) return '';
+  if (value === 'male') return language === 'vi' ? 'Nam' : 'Male';
+  if (value === 'female') return language === 'vi' ? 'Nữ' : 'Female';
+  return cleanProfileValue(gender);
+}
+
+function formatBirthdayText(value: unknown, language: AppLanguage) {
+  const text = cleanProfileValue(value);
+  if (!text) return '';
+
+  const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(text);
+  if (!isoMatch) return text;
+
+  const [, year, month, day] = isoMatch;
+  return language === 'vi'
+    ? `${Number(day)}/${Number(month)}/${year}`
+    : `${Number(month)}/${Number(day)}/${year}`;
+}
+
+function getActivityDisplayText(
+  lastSeenText: unknown,
+  language: AppLanguage,
+  activeNow: string,
+) {
+  const text = cleanProfileValue(lastSeenText);
+  if (!text) return activeNow;
+
+  const normalized = text.toLowerCase();
+  if (
+    normalized === 'now' ||
+    normalized === 'bây giờ' ||
+    normalized.includes('active now') ||
+    normalized.includes('vừa xong')
+  ) {
+    return activeNow;
+  }
+
+  return language === 'vi' ? `Hoạt động ${text}` : `Active ${text}`;
+}
+
+function getProfilePostKindLabel(post: ProfileFeedPost, language: AppLanguage) {
+  if (post.kind === 'video') return language === 'vi' ? 'video' : 'video';
+  if (post.kind === 'poll') return language === 'vi' ? 'bình chọn' : 'poll';
+  if (post.photos.length > 0) return language === 'vi' ? 'ảnh' : 'photo post';
+  return language === 'vi' ? 'bài viết' : 'post';
+}
+
+function getProfilePostPreviewText(post: ProfileFeedPost, language: AppLanguage) {
+  const caption =
+    post.kind === 'poll'
+      ? post.pollQuestion
+      : cleanProfileValue(post.caption);
+
+  if (caption) return caption;
+  if (post.kind === 'video') return language === 'vi' ? 'Video đã đăng' : 'Posted video';
+  if (post.kind === 'poll') return language === 'vi' ? 'Bình chọn đã đăng' : 'Posted poll';
+  if (post.photos.length > 0) {
+    return language === 'vi'
+      ? `${post.photos.length} ảnh đã đăng`
+      : `${post.photos.length} posted photos`;
+  }
+
+  return language === 'vi' ? 'Bài viết mới' : 'New post';
+}
 
 function isProfileFeedPost(post: FeedPost): post is ProfileFeedPost {
   return post.kind === 'text' || post.kind === 'video' || post.kind === 'poll';
@@ -277,8 +386,8 @@ const PROFILE_COPY: Record<AppLanguage, {
 }> = {
   vi: {
     userFallback: 'Người dùng',
-    dashboard: 'Bảng điều khiển',
-    addToStory: 'Thêm vào tin',
+    dashboard: 'Chỉnh sửa',
+    addToStory: 'Các hoạt động',
     cartLabel: 'Giỏ hàng',
     followed: 'Đã theo dõi',
     message: 'Nhắn tin',
@@ -341,8 +450,8 @@ const PROFILE_COPY: Record<AppLanguage, {
     pokeError: 'Không thể chọc người dùng này lúc này.',
   },en: {
     userFallback: 'User',
-    dashboard: 'Dashboard',
-    addToStory: 'Add to story',
+    dashboard: 'Edit',
+    addToStory: 'Activities',
     cartLabel: 'Cart',
     followed: 'Following',
     message: 'Message',
@@ -1077,6 +1186,9 @@ function ProfileScreen() {
   const [userStory, setUserStory] = useState<StoryItem | null>(null);
   const [allStories, setAllStories] = useState<StoryItem[]>([]);
   const [isStoryLoading, setIsStoryLoading] = useState(false);
+  const [profileFriendsTab, setProfileFriendsTab] =
+    useState<ProfileFriendsTab>('following');
+  const [isActivitiesSheetVisible, setActivitiesSheetVisible] = useState(false);
   const [isConnectLoading, setIsConnectLoading] = useState(false);
   const [isPokeLoading, setIsPokeLoading] = useState(false);
   const [photoViewer, setPhotoViewer] = useState<PhotoViewerState>(null);
@@ -1496,12 +1608,226 @@ function ProfileScreen() {
   const username = profile?.username ? `@${profile.username}` : '';
   const coverUrl = profile?.coverUrl ?? FALLBACK_COVER;
   const avatarUrl = profile?.avatarUrl ?? FALLBACK_AVATAR;
-  const followerCount = followers.length;
-  const followingCount = following.length;
+  const activeProfileFriends =
+    profileFriendsTab === 'following' ? following : followers;
+  const activeProfileFriendsCount = activeProfileFriends.length;
   const profileFriends = useMemo(
-    () => followers.filter(friend => friend.id).slice(0, 5),
-    [followers],
+    () => activeProfileFriends.filter(friend => friend.id).slice(0, 5),
+    [activeProfileFriends],
   );
+  const profilePostCountText = useMemo(() => {
+    const suffix = hasMorePosts ? '+' : '';
+    return language === 'vi'
+      ? `${posts.length}${suffix} bài viết`
+      : `${posts.length}${suffix} posts`;
+  }, [hasMorePosts, language, posts.length]);
+  const profileDetailItems = useMemo(() => {
+    const items: Array<{
+      key: string;
+      Icon: typeof Clock;
+      text: string;
+    }> = [
+      {
+        key: 'activity',
+        Icon: Clock,
+        text: getActivityDisplayText(profile?.lastSeenText, language, copy.activeNow),
+      },
+      {
+        key: 'posts',
+        Icon: FileText,
+        text: profilePostCountText,
+      },
+    ];
+
+    const genderText = getGenderDisplayText(
+      profile?.genderText,
+      profile?.gender,
+      language,
+    );
+    if (genderText) {
+      items.push({
+        key: 'gender',
+        Icon: User,
+        text: language === 'vi' ? `Giới tính: ${genderText}` : `Gender: ${genderText}`,
+      });
+    }
+
+    const birthdayText = formatBirthdayText(profile?.birthday, language);
+    if (birthdayText) {
+      items.push({
+        key: 'birthday',
+        Icon: CalendarDays,
+        text: language === 'vi' ? `Sinh nhật: ${birthdayText}` : `Birthday: ${birthdayText}`,
+      });
+    }
+
+    const countryText = getCountryDisplayName(profile?.countryId);
+    if (countryText) {
+      items.push({
+        key: 'country',
+        Icon: Globe2,
+        text: language === 'vi' ? `Sống ở ${countryText}` : `Lives in ${countryText}`,
+      });
+    }
+
+    const addressText = cleanProfileValue(profile?.address);
+    if (addressText) {
+      items.push({
+        key: 'address',
+        Icon: MapPin,
+        text: addressText,
+      });
+    }
+
+    return items;
+  }, [
+    copy.activeNow,
+    language,
+    profile?.address,
+    profile?.birthday,
+    profile?.countryId,
+    profile?.gender,
+    profile?.genderText,
+    profile?.lastSeenText,
+    profilePostCountText,
+  ]);
+  const profileActivityItems = useMemo<ProfileActivityItem[]>(() => {
+    const actorName = displayName || copy.userFallback;
+    const actorLabel = isOwnProfile
+      ? language === 'vi'
+        ? 'Bạn'
+        : 'You'
+      : actorName;
+    const items: ProfileActivityItem[] = [];
+
+    if (following.length > 0) {
+      items.push({
+        id: 'following-summary',
+        Icon: UserCheck,
+        title:
+          language === 'vi'
+            ? `${actorLabel} đang theo dõi ${formatCount(following.length)} người`
+            : `${actorLabel} follows ${formatCount(following.length)} people`,
+        subtitle:
+          language === 'vi'
+            ? 'Hoạt động kết nối'
+            : 'Connection activity',
+        color: '#1877F2',
+        backgroundColor: '#E7F3FF',
+      });
+    }
+
+    if (followers.length > 0) {
+      items.push({
+        id: 'followers-summary',
+        Icon: Users,
+        title:
+          language === 'vi'
+            ? `${formatCount(followers.length)} người đang theo dõi ${isOwnProfile ? 'bạn' : actorName}`
+            : `${formatCount(followers.length)} followers`,
+        subtitle:
+          language === 'vi'
+            ? 'Tương tác cộng đồng'
+            : 'Community activity',
+        color: '#0F766E',
+        backgroundColor: '#CCFBF1',
+      });
+    }
+
+    [...posts]
+      .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0))
+      .slice(0, 12)
+      .forEach(post => {
+        const postKind = getProfilePostKindLabel(post, language);
+        const preview = getProfilePostPreviewText(post, language);
+        const timeText = formatPostTime(post.postedAt, postCardCopy);
+        const targetText =
+          language === 'vi' ? `trên ${postKind}` : `on this ${postKind}`;
+
+        items.push({
+          id: `posted-${post.id}`,
+          Icon: FileText,
+          title:
+            language === 'vi'
+              ? `${actorLabel} đã đăng ${postKind}`
+              : `${actorLabel} posted a ${postKind}`,
+          subtitle: `${preview} · ${timeText}`,
+          color: '#1D4ED8',
+          backgroundColor: '#DBEAFE',
+        });
+
+        if (isOwnProfile && post.myReaction) {
+          items.push({
+            id: `reacted-${post.id}`,
+            Icon: Heart,
+            title:
+              language === 'vi'
+                ? `${actorLabel} đã thả ${postCardCopy.reactionLabel[post.myReaction].toLowerCase()} ${targetText}`
+                : `${actorLabel} reacted ${postCardCopy.reactionLabel[post.myReaction]} ${targetText}`,
+            subtitle: `${preview} · ${timeText}`,
+            color: '#E11D48',
+            backgroundColor: '#FFE4E6',
+          });
+        }
+
+        if (post.likeCount > 0) {
+          items.push({
+            id: `reactions-${post.id}`,
+            Icon: Heart,
+            title:
+              language === 'vi'
+                ? `${postKind} nhận ${formatCount(post.likeCount)} cảm xúc`
+                : `${postKind} received ${formatCount(post.likeCount)} reactions`,
+            subtitle: `${preview} · ${timeText}`,
+            color: '#E11D48',
+            backgroundColor: '#FFE4E6',
+          });
+        }
+
+        if (post.commentCount > 0) {
+          items.push({
+            id: `comments-${post.id}`,
+            Icon: MessageCircle,
+            title:
+              language === 'vi'
+                ? `${postKind} có ${formatCount(post.commentCount)} bình luận`
+                : `${postKind} has ${formatCount(post.commentCount)} comments`,
+            subtitle: `${preview} · ${timeText}`,
+            color: '#7C3AED',
+            backgroundColor: '#F3E8FF',
+          });
+        }
+
+        const shareCount =
+          'shareCount' in post && typeof post.shareCount === 'number'
+            ? post.shareCount
+            : 0;
+        if (shareCount > 0) {
+          items.push({
+            id: `shares-${post.id}`,
+            Icon: Repeat2,
+            title:
+              language === 'vi'
+                ? `${postKind} được chia sẻ ${formatCount(shareCount)} lần`
+                : `${postKind} was shared ${formatCount(shareCount)} times`,
+            subtitle: `${preview} · ${timeText}`,
+            color: '#EA580C',
+            backgroundColor: '#FFEDD5',
+          });
+        }
+      });
+
+    return items.slice(0, 32);
+  }, [
+    copy.userFallback,
+    displayName,
+    followers.length,
+    following.length,
+    isOwnProfile,
+    language,
+    postCardCopy,
+    posts,
+  ]);
   const storyPreviewUrl = getStoryPreviewUrl(userStory, avatarUrl);
   const shouldShowStorySection = Boolean(userStory) || isStoryLoading || isOwnProfile;
   const relationshipState =
@@ -1630,10 +1956,23 @@ function ProfileScreen() {
     if (!targetUserId) return;
     navigation.navigate(ROUTES.PROFILE_FRIENDS, {
       userId: String(targetUserId),
-      title: copy.friends,
-      initialFriends: profileFriends,
+      title:
+        profileFriendsTab === 'following'
+          ? language === 'vi'
+            ? 'Đang theo dõi'
+            : 'Following'
+          : language === 'vi'
+            ? 'Người theo dõi'
+            : 'Followers',
+      initialFriends: activeProfileFriends.filter(friend => friend.id),
     });
-  }, [copy.friends, navigation, profileFriends, targetUserId]);
+  }, [
+    activeProfileFriends,
+    language,
+    navigation,
+    profileFriendsTab,
+    targetUserId,
+  ]);
 
   const handleVotePoll = useCallback(async (postId: string, optionId: string) => {
     let snapshot: FeedPollPost | undefined;
@@ -1936,9 +2275,29 @@ function ProfileScreen() {
     });
   }, [allStories, copy.stories, navigation, userStory]);
 
-  const handleOpenDashboard = () => {
-    navigation.navigate(ROUTES.USER_DASHBOARD);
-  };
+  const handleOpenSettings = useCallback(() => {
+    navigation.navigate(ROUTES.MAIN_TABS, {
+      screen: ROUTES.SETTINGS,
+      params: {
+        initialPanel: 'main',
+        fromProfile: true,
+        returnProfilePreview: {
+          displayName: displayName || copy.userFallback,
+          username,
+          avatarUrl,
+          coverUrl,
+        },
+      },
+    });
+  }, [avatarUrl, copy.userFallback, coverUrl, displayName, navigation, username]);
+
+  const handleOpenActivities = useCallback(() => {
+    setActivitiesSheetVisible(true);
+  }, []);
+
+  const handleCloseActivities = useCallback(() => {
+    setActivitiesSheetVisible(false);
+  }, []);
 
   const handleOpenCart = () => {
     // Khi ở own profile → sản phẩm của mình (không truyền userId)
@@ -2386,20 +2745,20 @@ function ProfileScreen() {
                   <TouchableOpacity
                     style={profileMainStyles.dashboardButton}
                     activeOpacity={0.85}
-                    onPress={handleOpenDashboard}
+                    onPress={handleOpenSettings}
                   >
-                    <Briefcase size={16} color="#FFFFFF" />
+                    <Edit size={16} color="#FFFFFF" />
                     <Text style={profileMainStyles.dashboardButtonText}>
-                      Dashboard
+                      {copy.dashboard}
                     </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     style={profileMainStyles.storyAddButton}
                     activeOpacity={0.85}
-                    onPress={handleCreateStory}
+                    onPress={handleOpenActivities}
                   >
-                    <PlusCircle size={16} color="#1877F2" />
+                    <Sparkles size={16} color="#1877F2" />
                     <Text style={profileMainStyles.storyAddButtonText}>
                       {copy.addToStory}
                     </Text>
@@ -2696,36 +3055,20 @@ function ProfileScreen() {
                   </TouchableOpacity>
                 </View>
 
-                <View className="flex-row items-center mb-1.5">
-                  <User size={13} color="#65676B" />
-                  <Text className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]" numberOfLines={1}>
-                    {profile?.pro ? copy.vipMember : copy.member}
-                  </Text>
-                </View>
-                <View className="flex-row items-center mb-1.5">
-                  <Clock size={13} color="#65676B" />
-                  <Text className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]" numberOfLines={1}>
-                    {profile?.lastSeenText ?? copy.activeNow}
-                  </Text>
-                </View>
-                <View className="flex-row items-center mb-1.5">
-                  <Users size={13} color="#65676B" />
-                  <Text className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]" numberOfLines={1}>
-                    {followerCount} {language === 'vi' ? 'người theo dõi' : 'followers'}
-                  </Text>
-                </View>
-                <View className="flex-row items-center mb-1.5">
-                  <UserCheck size={13} color="#65676B" />
-                  <Text className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]" numberOfLines={1}>
-                    Đang theo {followingCount} người
-                  </Text>
-                </View>
-                <View className="flex-row items-center mb-1.5">
-                  <Star size={13} color="#65676B" />
-                  <Text className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]" numberOfLines={1}>
-                    {Number(profile?.points ?? 0)} điểm thưởng
-                  </Text>
-                </View>
+                {profileDetailItems.map(item => {
+                  const DetailIcon = item.Icon;
+                  return (
+                    <View key={item.key} className="mb-1.5 flex-row items-center">
+                      <DetailIcon size={13} color="#65676B" />
+                      <Text
+                        className="ml-1.5 flex-1 text-[12px] font-medium text-[#1E293B]"
+                        numberOfLines={2}
+                      >
+                        {item.text}
+                      </Text>
+                    </View>
+                  );
+                })}
 
                 <TouchableOpacity
                   className="mt-1 h-7 items-center justify-center rounded-md bg-[#E7F3FF]"
@@ -2751,8 +3094,50 @@ function ProfileScreen() {
                     </Text>
                   </TouchableOpacity>
                 </View>
+                <View style={profileMainStyles.friendFilterRow}>
+                  {(['following', 'followers'] as const).map(tab => {
+                    const isActiveTab = profileFriendsTab === tab;
+                    const label =
+                      tab === 'following'
+                        ? language === 'vi'
+                          ? 'Đang theo dõi'
+                          : 'Following'
+                        : language === 'vi'
+                          ? 'Người theo dõi'
+                          : 'Followers';
+
+                    return (
+                      <TouchableOpacity
+                        key={tab}
+                        activeOpacity={0.82}
+                        onPress={() => setProfileFriendsTab(tab)}
+                        style={[
+                          profileMainStyles.friendFilterChip,
+                          isActiveTab && profileMainStyles.friendFilterChipActive,
+                        ]}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            profileMainStyles.friendFilterText,
+                            isActiveTab && profileMainStyles.friendFilterTextActive,
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
                 <Text className="mb-2 text-[11px] text-[#65676B]">
-                  {followerCount} {language === 'vi' ? 'người bạn' : 'friends'}
+                  {activeProfileFriendsCount}{' '}
+                  {profileFriendsTab === 'following'
+                    ? language === 'vi'
+                      ? 'người đang theo dõi'
+                      : 'following'
+                    : language === 'vi'
+                      ? 'người theo dõi'
+                      : 'followers'}
                 </Text>
 
                 {profileFriends.length > 0 ? (
@@ -2830,7 +3215,13 @@ function ProfileScreen() {
                 ) : (
                   <View className="rounded-md bg-[#F8FAFC] px-2 py-3 items-center justify-center">
                     <Text className="text-[10px] text-[#65676B] text-center">
-                      {language === 'vi' ? 'Chưa có bạn bè' : 'No friends'}
+                      {profileFriendsTab === 'following'
+                        ? language === 'vi'
+                          ? 'Chưa theo dõi ai'
+                          : 'Not following anyone'
+                        : language === 'vi'
+                          ? 'Chưa có người theo dõi'
+                          : 'No followers yet'}
                     </Text>
                   </View>
                 )}
@@ -3048,6 +3439,137 @@ function ProfileScreen() {
           onClose={handleCloseShareModal}
           post={sharingPost}
         />
+        <Modal
+          visible={isActivitiesSheetVisible}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={handleCloseActivities}
+        >
+          <View style={profileMainStyles.activitiesModalRoot}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={handleCloseActivities}
+              style={StyleSheet.absoluteFill}
+            />
+            <View
+              style={[
+                profileMainStyles.activitiesSheet,
+                { paddingBottom: Math.max(insets.bottom, 16) },
+              ]}
+            >
+              <View style={profileMainStyles.activitiesHandle} />
+              <View style={profileMainStyles.activitiesHeader}>
+                <View style={profileMainStyles.activitiesAvatarWrap}>
+                  <Image
+                    source={{ uri: avatarUrl }}
+                    style={profileMainStyles.activitiesAvatar}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={profileMainStyles.activitiesTitle}>
+                    {language === 'vi' ? 'Các hoạt động' : 'Activities'}
+                  </Text>
+                  <Text style={profileMainStyles.activitiesSubtitle} numberOfLines={1}>
+                    {displayName || copy.userFallback}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  onPress={handleCloseActivities}
+                  style={profileMainStyles.activitiesCloseButton}
+                >
+                  <X size={20} color="#0F172A" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={profileMainStyles.activitiesSummaryRow}>
+                <View style={profileMainStyles.activitiesSummaryPill}>
+                  <Text style={profileMainStyles.activitiesSummaryValue}>
+                    {formatCount(posts.length)}
+                  </Text>
+                  <Text style={profileMainStyles.activitiesSummaryLabel}>
+                    {language === 'vi' ? 'Bài viết' : 'Posts'}
+                  </Text>
+                </View>
+                <View style={profileMainStyles.activitiesSummaryPill}>
+                  <Text style={profileMainStyles.activitiesSummaryValue}>
+                    {formatCount(
+                      posts.reduce((total, post) => total + post.likeCount, 0),
+                    )}
+                  </Text>
+                  <Text style={profileMainStyles.activitiesSummaryLabel}>
+                    {language === 'vi' ? 'Cảm xúc' : 'Reactions'}
+                  </Text>
+                </View>
+                <View style={profileMainStyles.activitiesSummaryPill}>
+                  <Text style={profileMainStyles.activitiesSummaryValue}>
+                    {formatCount(
+                      posts.reduce((total, post) => total + post.commentCount, 0),
+                    )}
+                  </Text>
+                  <Text style={profileMainStyles.activitiesSummaryLabel}>
+                    {language === 'vi' ? 'Bình luận' : 'Comments'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={profileMainStyles.activitiesSourceText}>
+                {language === 'vi'
+                  ? 'Tổng hợp từ dữ liệu hồ sơ đang tải'
+                  : 'Built from the currently loaded profile data'}
+              </Text>
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={profileMainStyles.activitiesListContent}
+              >
+                {profileActivityItems.length > 0 ? (
+                  profileActivityItems.map(item => {
+                    const ActivityIcon = item.Icon;
+                    return (
+                      <View key={item.id} style={profileMainStyles.activityRow}>
+                        <View
+                          style={[
+                            profileMainStyles.activityIcon,
+                            { backgroundColor: item.backgroundColor },
+                          ]}
+                        >
+                          <ActivityIcon size={17} color={item.color} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={profileMainStyles.activityTitle}>
+                            {item.title}
+                          </Text>
+                          <Text
+                            style={profileMainStyles.activitySubtitle}
+                            numberOfLines={2}
+                          >
+                            {item.subtitle}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <View style={profileMainStyles.activitiesEmptyState}>
+                    <Sparkles size={24} color="#1877F2" />
+                    <Text style={profileMainStyles.activitiesEmptyTitle}>
+                      {language === 'vi'
+                        ? 'Chưa có hoạt động'
+                        : 'No activities yet'}
+                    </Text>
+                    <Text style={profileMainStyles.activitiesEmptyText}>
+                      {language === 'vi'
+                        ? 'Khi hồ sơ có bài viết, cảm xúc hoặc bình luận, chúng sẽ xuất hiện ở đây.'
+                        : 'Posts, reactions, and comments will appear here when available.'}
+                    </Text>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
         <ToastContainer />
       </View>
     </GestureHandlerRootView>
@@ -3275,6 +3797,34 @@ const profileMainStyles = StyleSheet.create({
     marginTop: -8,
     marginBottom: 10,
   },
+  friendFilterRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 8,
+  },
+  friendFilterChip: {
+    flex: 1,
+    minHeight: 26,
+    borderRadius: 9999,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  friendFilterChipActive: {
+    backgroundColor: '#E7F3FF',
+    borderColor: '#B9DBFF',
+  },
+  friendFilterText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  friendFilterTextActive: {
+    color: '#1877F2',
+  },
   friendsRow: {
     flexDirection: 'row',
     gap: 10,
@@ -3332,6 +3882,156 @@ const profileMainStyles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#CBD5E1',
     opacity: 0.5,
+  },
+  activitiesModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.44)',
+  },
+  activitiesSheet: {
+    maxHeight: '78%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 18,
+  },
+  activitiesHandle: {
+    width: 48,
+    height: 5,
+    borderRadius: 9999,
+    backgroundColor: '#CBD5E1',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  activitiesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  activitiesAvatarWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    padding: 2,
+    backgroundColor: '#E7F3FF',
+  },
+  activitiesAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
+    backgroundColor: '#E2E8F0',
+  },
+  activitiesTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  activitiesSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  activitiesCloseButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  activitiesSummaryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+  },
+  activitiesSummaryPill: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  activitiesSummaryValue: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#1877F2',
+  },
+  activitiesSummaryLabel: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  activitiesSourceText: {
+    marginTop: 10,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  activitiesListContent: {
+    paddingTop: 12,
+    paddingBottom: 8,
+    gap: 10,
+  },
+  activityRow: {
+    flexDirection: 'row',
+    gap: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+  },
+  activityIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  activitySubtitle: {
+    marginTop: 3,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    lineHeight: 15,
+  },
+  activitiesEmptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 34,
+  },
+  activitiesEmptyTitle: {
+    marginTop: 10,
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  activitiesEmptyText: {
+    marginTop: 6,
+    maxWidth: 280,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
+    color: '#64748B',
   },
   postsHeader: {
     backgroundColor: '#FFFFFF',

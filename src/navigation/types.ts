@@ -37,6 +37,13 @@ export type MainTabParamList = {
     | {
         initialPanel?: SettingsPanelRouteParam;
         fromDashboard?: boolean;
+        fromProfile?: boolean;
+        returnProfilePreview?: {
+          displayName?: string;
+          username?: string;
+          avatarUrl?: string;
+          coverUrl?: string;
+        };
       }
     | undefined;
 };

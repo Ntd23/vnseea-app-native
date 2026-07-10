@@ -1,12 +1,16 @@
 // Description: Renders the main settings tab with profile, feature shortcuts, and settings menu.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Dimensions,
+  Easing,
   FlatList,
   Image,
   Linking,
   Modal,
+  PanResponder,
   Platform,
   ScrollView,
   Switch,
@@ -93,7 +97,7 @@ import {
   Gift,
   Settings as SettingsIcon,
 } from 'lucide-react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { CommonActions, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -609,6 +613,187 @@ const settingsHeaderIconStyle = {
   shadowOpacity: 0.08,
   shadowRadius: 4,
   elevation: 2,
+};
+
+const settingsProfileBackRowStyle = {
+  minHeight: 54,
+  paddingHorizontal: 16,
+  flexDirection: 'row' as const,
+  alignItems: 'center' as const,
+  backgroundColor: '#ffffff',
+  borderBottomWidth: 1,
+  borderBottomColor: '#eef2ff',
+};
+
+const settingsProfileBackButtonStyle = {
+  width: 42,
+  height: 42,
+  borderRadius: 21,
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+  backgroundColor: '#f8fafc',
+};
+
+const settingsProfileBackTitleStyle = {
+  flex: 1,
+  textAlign: 'center' as const,
+  fontSize: 20,
+  fontWeight: '900' as const,
+  color: '#0f172a',
+};
+
+const settingsProfileBackSpacerStyle = {
+  width: 42,
+};
+
+const SETTINGS_BACK_SWIPE_EDGE_WIDTH = 28;
+const SETTINGS_SCREEN_WIDTH = Dimensions.get('window').width;
+
+const settingsSwipeRootStyle = {
+  flex: 1,
+  backgroundColor: '#eef2ff',
+};
+
+const settingsCurrentScreenStyle = {
+  flex: 1,
+  backgroundColor: '#f8fafc',
+};
+
+const settingsCurrentScreenRaisedStyle = {
+  shadowColor: '#020617',
+  shadowOffset: { width: -8, height: 0 },
+  shadowOpacity: 0.16,
+  shadowRadius: 18,
+  elevation: 18,
+};
+
+const settingsReturnPreviewStyle = {
+  position: 'absolute' as const,
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+  backgroundColor: '#ffffff',
+};
+
+const settingsReturnPreviewCoverStyle = {
+  height: 260,
+  backgroundColor: '#dbeafe',
+};
+
+const settingsReturnPreviewCoverImageStyle = {
+  width: '100%' as const,
+  height: '100%' as const,
+};
+
+const settingsReturnPreviewShadeStyle = {
+  position: 'absolute' as const,
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+  backgroundColor: 'rgba(15, 23, 42, 0.28)',
+};
+
+const settingsReturnPreviewCardStyle = {
+  marginTop: -42,
+  marginHorizontal: 20,
+  borderRadius: 24,
+  backgroundColor: '#ffffff',
+  paddingHorizontal: 18,
+  paddingTop: 56,
+  paddingBottom: 18,
+  shadowColor: '#020617',
+  shadowOffset: { width: 0, height: 10 },
+  shadowOpacity: 0.12,
+  shadowRadius: 18,
+  elevation: 10,
+};
+
+const settingsReturnPreviewAvatarStyle = {
+  position: 'absolute' as const,
+  top: -54,
+  left: 18,
+  width: 96,
+  height: 96,
+  borderRadius: 48,
+  borderWidth: 4,
+  borderColor: '#ffffff',
+  backgroundColor: '#e2e8f0',
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+};
+
+const settingsReturnPreviewKickerStyle = {
+  fontSize: 12,
+  fontWeight: '800' as const,
+  color: '#2563eb',
+};
+
+const settingsReturnPreviewNameStyle = {
+  marginTop: 5,
+  fontSize: 27,
+  fontWeight: '900' as const,
+  color: '#0f172a',
+};
+
+const settingsReturnPreviewUsernameStyle = {
+  marginTop: 3,
+  fontSize: 14,
+  fontWeight: '700' as const,
+  color: '#64748b',
+};
+
+const settingsReturnPreviewPillRowStyle = {
+  marginTop: 18,
+  flexDirection: 'row' as const,
+  gap: 8,
+};
+
+const settingsReturnPreviewPillStyle = {
+  flex: 1,
+  height: 44,
+  borderRadius: 16,
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+  backgroundColor: '#eff6ff',
+};
+
+const settingsReturnPreviewPillTextStyle = {
+  fontSize: 12,
+  fontWeight: '900' as const,
+  color: '#1877f2',
+};
+
+const settingsReturnPreviewSectionStyle = {
+  marginTop: 16,
+  marginHorizontal: 20,
+  borderRadius: 22,
+  backgroundColor: '#ffffff',
+  padding: 16,
+};
+
+const settingsReturnPreviewLineWideStyle = {
+  width: '72%' as const,
+  height: 16,
+  borderRadius: 8,
+  backgroundColor: '#e2e8f0',
+};
+
+const settingsReturnPreviewLineStyle = {
+  marginTop: 12,
+  width: '92%' as const,
+  height: 12,
+  borderRadius: 6,
+  backgroundColor: '#f1f5f9',
+};
+
+const settingsReturnPreviewLineShortStyle = {
+  marginTop: 10,
+  width: '58%' as const,
+  height: 12,
+  borderRadius: 6,
+  backgroundColor: '#f1f5f9',
 };
 
 function numberFromApi(value: unknown) {
@@ -4032,11 +4217,35 @@ function SettingsScreen() {
   const { logoUrl, siteName, imageErrorCount, notifyImageError } =
     useAuthBranding();
   const { messageCount } = useUnreadBadgeCounts();
-  const showDashboardBack =
-    activePanel !== 'main' && Boolean(route.params?.fromDashboard);
-
   const isVi = language === 'vi';
   const dashboardCopy = isVi ? DASHBOARD_COPY.vi : DASHBOARD_COPY.en;
+  const profileReturnPreview = route.params?.returnProfilePreview;
+  const profileBackTranslateX = useRef(new Animated.Value(0)).current;
+  const [isProfileBackPreviewVisible, setProfileBackPreviewVisible] =
+    useState(false);
+  const openedFromProfile = Boolean(route.params?.fromProfile);
+  const showDashboardBack =
+    activePanel !== 'main' &&
+    (Boolean(route.params?.fromDashboard) || openedFromProfile);
+  const showProfileBackRow = openedFromProfile && activePanel === 'main';
+  const profileBackPreviewName =
+    profileReturnPreview?.displayName || profile?.name || dashboardCopy.profile;
+  const profileBackPreviewUsername =
+    profileReturnPreview?.username || profile?.username || '';
+  const profileBackPreviewAvatar =
+    profileReturnPreview?.avatarUrl || profile?.avatarUrl;
+  const profileBackPreviewCover =
+    profileReturnPreview?.coverUrl || profile?.coverUrl;
+  const profileBackPreviewOpacity = profileBackTranslateX.interpolate({
+    inputRange: [0, 48, SETTINGS_SCREEN_WIDTH],
+    outputRange: [0, 0.72, 1],
+    extrapolate: 'clamp',
+  });
+  const profileBackPreviewScale = profileBackTranslateX.interpolate({
+    inputRange: [0, SETTINGS_SCREEN_WIDTH],
+    outputRange: [0.975, 1],
+    extrapolate: 'clamp',
+  });
 
   const dashboardItems = useMemo(() => [
     {
@@ -4221,6 +4430,97 @@ function SettingsScreen() {
   const handleDashboardBack = useCallback(() => {
     setActivePanel('main');
   }, []);
+
+  const completeProfileSettingsBack = useCallback(() => {
+    const parentNavigation = navigation.getParent();
+    const rootNavigation =
+      parentNavigation?.getParent?.() ?? parentNavigation ?? navigation;
+
+    if (rootNavigation.canGoBack()) {
+      rootNavigation.goBack();
+      return;
+    }
+
+    rootNavigation.dispatch(CommonActions.navigate(ROUTES.PROFILE));
+  }, [navigation]);
+
+  const resetProfileBackPreview = useCallback(() => {
+    Animated.spring(profileBackTranslateX, {
+      toValue: 0,
+      useNativeDriver: true,
+      damping: 22,
+      stiffness: 240,
+    }).start(() => {
+      setProfileBackPreviewVisible(false);
+    });
+  }, [profileBackTranslateX]);
+
+  const runProfileBackAnimation = useCallback(() => {
+    if (!openedFromProfile) return;
+
+    setProfileBackPreviewVisible(true);
+    Animated.timing(profileBackTranslateX, {
+      toValue: SETTINGS_SCREEN_WIDTH,
+      duration: 190,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      profileBackTranslateX.setValue(0);
+      setProfileBackPreviewVisible(false);
+      completeProfileSettingsBack();
+    });
+  }, [completeProfileSettingsBack, openedFromProfile, profileBackTranslateX]);
+
+  const handleProfileSettingsBack = useCallback(() => {
+    if (activePanel !== 'main') {
+      setActivePanel('main');
+      return;
+    }
+
+    runProfileBackAnimation();
+  }, [activePanel, runProfileBackAnimation]);
+
+  const profileBackSwipeResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_event, gestureState) =>
+          openedFromProfile &&
+          activePanel === 'main' &&
+          gestureState.x0 <= SETTINGS_BACK_SWIPE_EDGE_WIDTH &&
+          gestureState.dx > 12 &&
+          Math.abs(gestureState.dy) < 18,
+        onPanResponderGrant: () => {
+          setProfileBackPreviewVisible(true);
+          profileBackTranslateX.stopAnimation();
+        },
+        onPanResponderMove: (_event, gestureState) => {
+          const nextValue = Math.min(
+            SETTINGS_SCREEN_WIDTH,
+            Math.max(0, gestureState.dx),
+          );
+          profileBackTranslateX.setValue(nextValue);
+        },
+        onPanResponderRelease: (_event, gestureState) => {
+          const shouldGoBack =
+            gestureState.dx > SETTINGS_SCREEN_WIDTH * 0.28 ||
+            gestureState.vx > 0.55;
+          if (shouldGoBack) {
+            runProfileBackAnimation();
+          } else {
+            resetProfileBackPreview();
+          }
+        },
+        onPanResponderTerminate: resetProfileBackPreview,
+      }),
+    [
+      activePanel,
+      openedFromProfile,
+      profileBackTranslateX,
+      resetProfileBackPreview,
+      runProfileBackAnimation,
+    ],
+  );
 
   useEffect(() => {
     const requestedPanel = route.params?.initialPanel;
@@ -4516,7 +4816,84 @@ function SettingsScreen() {
   );
 
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
+    <View style={settingsSwipeRootStyle}>
+      {openedFromProfile ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            settingsReturnPreviewStyle,
+            {
+              opacity: profileBackPreviewOpacity,
+              transform: [{ scale: profileBackPreviewScale }],
+            },
+          ]}
+        >
+          <View style={settingsReturnPreviewCoverStyle}>
+            {profileBackPreviewCover ? (
+              <Image
+                source={{ uri: profileBackPreviewCover }}
+                style={settingsReturnPreviewCoverImageStyle}
+                resizeMode="cover"
+              />
+            ) : null}
+            <View style={settingsReturnPreviewShadeStyle} />
+          </View>
+          <View style={settingsReturnPreviewCardStyle}>
+            {profileBackPreviewAvatar ? (
+              <Image
+                source={{ uri: profileBackPreviewAvatar }}
+                style={settingsReturnPreviewAvatarStyle}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={settingsReturnPreviewAvatarStyle}>
+                <User size={36} color="#64748b" />
+              </View>
+            )}
+            <Text style={settingsReturnPreviewKickerStyle}>
+              {isVi ? 'Đang quay lại hồ sơ' : 'Returning to profile'}
+            </Text>
+            <Text style={settingsReturnPreviewNameStyle} numberOfLines={1}>
+              {profileBackPreviewName}
+            </Text>
+            {profileBackPreviewUsername ? (
+              <Text style={settingsReturnPreviewUsernameStyle} numberOfLines={1}>
+                {profileBackPreviewUsername}
+              </Text>
+            ) : null}
+            <View style={settingsReturnPreviewPillRowStyle}>
+              <View style={settingsReturnPreviewPillStyle}>
+                <Text style={settingsReturnPreviewPillTextStyle}>
+                  {isVi ? 'Hồ sơ' : 'Profile'}
+                </Text>
+              </View>
+              <View style={settingsReturnPreviewPillStyle}>
+                <Text style={settingsReturnPreviewPillTextStyle}>
+                  {isVi ? 'Bài viết' : 'Posts'}
+                </Text>
+              </View>
+            </View>
+          </View>
+          <View style={settingsReturnPreviewSectionStyle}>
+            <View style={settingsReturnPreviewLineWideStyle} />
+            <View style={settingsReturnPreviewLineStyle} />
+            <View style={settingsReturnPreviewLineShortStyle} />
+          </View>
+        </Animated.View>
+      ) : null}
+
+      <Animated.View
+        style={[
+          settingsCurrentScreenStyle,
+          isProfileBackPreviewVisible && settingsCurrentScreenRaisedStyle,
+          { transform: [{ translateX: profileBackTranslateX }] },
+        ]}
+        {...profileBackSwipeResponder.panHandlers}
+      >
+        <SafeAreaView
+          className="flex-1 surface-base"
+          edges={['top']}
+        >
       <FocusAwareStatusBar barStyle="dark-content" />
 
       {/* Top App Bar */}
@@ -4628,6 +5005,23 @@ function SettingsScreen() {
           </>
         )}
       </View>
+
+      {showProfileBackRow ? (
+        <View style={settingsProfileBackRowStyle}>
+          <TouchableOpacity
+            activeOpacity={0.82}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={handleProfileSettingsBack}
+            style={settingsProfileBackButtonStyle}
+          >
+            <ArrowLeft size={23} color="#0f172a" />
+          </TouchableOpacity>
+          <Text style={settingsProfileBackTitleStyle} numberOfLines={1}>
+            {isVi ? 'Cài đặt chung' : 'General settings'}
+          </Text>
+          <View style={settingsProfileBackSpacerStyle} />
+        </View>
+      ) : null}
 
       {activePanel !== 'main' ? (
         <ScrollView
@@ -5046,7 +5440,9 @@ function SettingsScreen() {
           ))}
         </ScrollView>
       )}
-    </SafeAreaView>
+        </SafeAreaView>
+      </Animated.View>
+    </View>
   );
 }
 
