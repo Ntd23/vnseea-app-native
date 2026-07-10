@@ -184,9 +184,9 @@ const MAX_IMAGE_PREFETCH_URLS = 20;
 const IMAGE_PREFETCH_BATCH_SIZE = 4;
 const IMAGE_PREFETCH_BATCH_DELAY_MS = 90;
 const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = 8;
-const FEED_VIDEO_WARM_BEHIND_ITEMS = 1;
-const FEED_VIDEO_WARM_AHEAD_ITEMS = 4;
-const FEED_VIDEO_WARM_MAX_COUNT = 1;
+const FEED_VIDEO_WARM_BEHIND_ITEMS = 6;
+const FEED_VIDEO_WARM_AHEAD_ITEMS = 8;
+const FEED_VIDEO_WARM_MAX_COUNT = 3;
 const FEED_LIST_INITIAL_RENDER_COUNT = 6;
 const FEED_LIST_RENDER_BATCH_SIZE = 6;
 const FEED_LIST_WINDOW_SIZE = 9;
@@ -2429,13 +2429,37 @@ function FeedScreen() {
         ? nextActiveVideoId
         : activeVideoIdRef.current;
     const warmVideoIds: string[] = [];
-    const start = Math.max(0, firstVisibleIndex - FEED_VIDEO_WARM_BEHIND_ITEMS);
-    const end = Math.min(
-      items.length,
-      furthestVisibleIndex + FEED_VIDEO_WARM_AHEAD_ITEMS + 1,
-    );
+    const candidateIndices: number[] = [];
+    const pushCandidateIndex = (index: number) => {
+      if (
+        index < 0 ||
+        index >= items.length ||
+        candidateIndices.includes(index)
+      ) {
+        return;
+      }
 
-    for (let index = start; index < end; index += 1) {
+      candidateIndices.push(index);
+    };
+
+    for (let index = firstVisibleIndex; index <= furthestVisibleIndex; index += 1) {
+      pushCandidateIndex(index);
+    }
+
+    const maxWarmOffset = Math.max(
+      FEED_VIDEO_WARM_AHEAD_ITEMS,
+      FEED_VIDEO_WARM_BEHIND_ITEMS,
+    );
+    for (let offset = 1; offset <= maxWarmOffset; offset += 1) {
+      if (offset <= FEED_VIDEO_WARM_AHEAD_ITEMS) {
+        pushCandidateIndex(furthestVisibleIndex + offset);
+      }
+      if (offset <= FEED_VIDEO_WARM_BEHIND_ITEMS) {
+        pushCandidateIndex(firstVisibleIndex - offset);
+      }
+    }
+
+    for (const index of candidateIndices) {
       const item = items[index];
       if (item?.type !== 'post' || item.post.kind !== 'video') continue;
       if (item.post.id === activeVideoId) continue;

@@ -1,6 +1,5 @@
 // Description: Displays Marketplace products with searchable filter controls.
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { LayoutAnimation } from 'react-native';
 import {
   Platform,
   ActivityIndicator,
@@ -59,6 +58,16 @@ const MARKETPLACE_HEADER_ELEVATION_STYLE =
   Platform.OS === 'android'
     ? { zIndex: 30, elevation: 12 }
     : { zIndex: 30 };
+const FILTER_PANEL_FULL_HEIGHT = 206;
+const FILTER_PANEL_COLLAPSED_HEIGHT = 72;
+const FILTER_COLLAPSE_THRESHOLD = 132;
+const FILTER_EXPAND_THRESHOLD = 72;
+const FILTER_PANEL_CHILD_STYLE = {
+  left: 0,
+  position: 'absolute',
+  right: 0,
+  top: 0,
+} as const;
 
 type CartAnimationState = {
   id: number;
@@ -414,6 +423,8 @@ function MarketplaceScreen() {
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastTranslateY = useRef(new Animated.Value(12)).current;
   const cartScale = useRef(new Animated.Value(1)).current;
+  const filterPanelProgress = useRef(new Animated.Value(0)).current;
+  const filterAnimationRef = useRef<ReturnType<typeof Animated.timing> | null>(null);
   const hasActiveFilters = Boolean(vm.categoryId || vm.distance || vm.orderBy);
 
   const [sortModalVisible, setSortModalVisible] = useState(false);
@@ -427,15 +438,74 @@ function MarketplaceScreen() {
  // + category + distance + nearby + reset) and keep only the top app
  // bar plus a compact sticky search/handle bar. Scrolling back up
  // re-expands it.
- const [filtersCollapsed, setFiltersCollapsed] = useState(false);
- const lastScrollYRef = useRef(0);
- const COLLAPSE_THRESHOLD = 120;
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const filtersCollapsedRef = useRef(false);
+  const lastScrollYRef = useRef(0);
   // Collapsible filter panel state. When the user scrolls the product
   // list down we collapse the filter chip bar (search + sort + category
   // + distance + nearby + reset) and keep only the top app bar visible.
   // A small sticky "Search + Bộ lọc" handle stays so the user can
   // either type a query or tap the toggle to expand the panel again.
   
+
+  const filterPanelAnimatedStyle = useMemo(
+    () => ({
+      height: filterPanelProgress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [FILTER_PANEL_FULL_HEIGHT, FILTER_PANEL_COLLAPSED_HEIGHT],
+      }),
+      overflow: 'hidden' as const,
+    }),
+    [filterPanelProgress],
+  );
+
+  const fullBarAnimatedStyle = useMemo(
+    () => ({
+      opacity: filterPanelProgress.interpolate({
+        inputRange: [0, 0.45, 1],
+        outputRange: [1, 0, 0],
+      }),
+      transform: [
+        {
+          translateY: filterPanelProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, -10],
+          }),
+        },
+        {
+          scale: filterPanelProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 0.985],
+          }),
+        },
+      ],
+    }),
+    [filterPanelProgress],
+  );
+
+  const collapsedBarAnimatedStyle = useMemo(
+    () => ({
+      opacity: filterPanelProgress.interpolate({
+        inputRange: [0, 0.5, 1],
+        outputRange: [0, 0, 1],
+      }),
+      transform: [
+        {
+          translateY: filterPanelProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [8, 0],
+          }),
+        },
+        {
+          scale: filterPanelProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.98, 1],
+          }),
+        },
+      ],
+    }),
+    [filterPanelProgress],
+  );
 
   const currentSortLabel = useMemo(() => {
     const option = SORT_OPTIONS.find(opt => opt.value === vm.orderBy);
@@ -473,6 +543,7 @@ function MarketplaceScreen() {
       if (toastTimeoutRef.current) {
         clearTimeout(toastTimeoutRef.current);
       }
+      filterAnimationRef.current?.stop();
     };
   }, []);
 
@@ -581,6 +652,28 @@ function MarketplaceScreen() {
       }, 1800);
     },
     [toastOpacity, toastTranslateY],
+  );
+
+  const animateFiltersCollapsed = useCallback(
+    (collapsed: boolean) => {
+      if (filtersCollapsedRef.current === collapsed) return;
+
+      filtersCollapsedRef.current = collapsed;
+      setFiltersCollapsed(collapsed);
+      filterAnimationRef.current?.stop();
+      filterAnimationRef.current = Animated.timing(filterPanelProgress, {
+        toValue: collapsed ? 1 : 0,
+        duration: collapsed ? 150 : 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      });
+      filterAnimationRef.current.start(({ finished }) => {
+        if (finished) {
+          filterAnimationRef.current = null;
+        }
+      });
+    },
+    [filterPanelProgress],
   );
 
   const runCartAnimation = useCallback(
@@ -720,22 +813,18 @@ function MarketplaceScreen() {
       const delta = y - lastY;
       lastScrollYRef.current = y;
 
-      // Collapse the filter chip bar when scrolling DOWN past the
-      // threshold; re-expand it when scrolling back UP. We only call
-      // LayoutAnimation when the state actually flips so the panel
-      // doesn't animate on every frame.
-      if (delta > 0 && y > COLLAPSE_THRESHOLD) {
-        setFiltersCollapsed(prev => {
-          if (prev) return prev;
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          return true;
-        });
-      } else if (delta < -2 && y < COLLAPSE_THRESHOLD) {
-        setFiltersCollapsed(prev => {
-          if (!prev) return prev;
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          return false;
-        });
+      if (
+        !filtersCollapsedRef.current &&
+        delta > 4 &&
+        y > FILTER_COLLAPSE_THRESHOLD
+      ) {
+        animateFiltersCollapsed(true);
+      } else if (
+        filtersCollapsedRef.current &&
+        delta < -6 &&
+        y < FILTER_EXPAND_THRESHOLD
+      ) {
+        animateFiltersCollapsed(false);
       }
 
       if (Platform.OS === 'ios') {
@@ -745,7 +834,7 @@ function MarketplaceScreen() {
         );
       }
     },
-    [],
+    [animateFiltersCollapsed],
   );
 
   const collapsedBar = (
@@ -759,6 +848,8 @@ function MarketplaceScreen() {
             placeholderTextColor="#94A3B8"
             value={vm.keyword}
             onChangeText={vm.setKeyword}
+            autoCapitalize="none"
+            autoCorrect={false}
             returnKeyType="search"
           />
           {vm.keyword ? (
@@ -787,10 +878,7 @@ function MarketplaceScreen() {
         <TouchableOpacity
           className="h-10 px-3.5 flex-row items-center justify-center rounded-2xl bg-[#0F56FB] gap-1.5 shadow-sm shadow-blue-200/50"
           activeOpacity={0.85}
-          onPress={() => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setFiltersCollapsed(false);
-          }}
+          onPress={() => animateFiltersCollapsed(false)}
           hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
         >
           <SlidersHorizontal size={15} color="#FFFFFF" />
@@ -812,6 +900,8 @@ function MarketplaceScreen() {
             placeholderTextColor="#94A3B8"
             value={vm.keyword}
             onChangeText={vm.setKeyword}
+            autoCapitalize="none"
+            autoCorrect={false}
             returnKeyType="search"
           />
           {vm.keyword ? (
@@ -1071,18 +1161,20 @@ function MarketplaceScreen() {
         </TouchableOpacity>
       </View>
       <View pointerEvents="auto">{marketplaceTopTabs}</View>
-      <View
-        pointerEvents={filtersCollapsed ? 'auto' : 'none'}
-        style={filtersCollapsed ? undefined : { display: 'none' }}
-      >
-        {collapsedBar}
-      </View>
-      <View
-        pointerEvents={filtersCollapsed ? 'none' : 'auto'}
-        style={filtersCollapsed ? { display: 'none' } : undefined}
-      >
-        {fullBar}
-      </View>
+      <Animated.View pointerEvents="box-none" style={filterPanelAnimatedStyle}>
+        <Animated.View
+          pointerEvents={filtersCollapsed ? 'none' : 'auto'}
+          style={[FILTER_PANEL_CHILD_STYLE, fullBarAnimatedStyle]}
+        >
+          {fullBar}
+        </Animated.View>
+        <Animated.View
+          pointerEvents={filtersCollapsed ? 'auto' : 'none'}
+          style={[FILTER_PANEL_CHILD_STYLE, collapsedBarAnimatedStyle]}
+        >
+          {collapsedBar}
+        </Animated.View>
+      </Animated.View>
     </View>
   );
 
@@ -1131,6 +1223,11 @@ function MarketplaceScreen() {
         scrollEventThrottle={16}
         onEndReached={vm.loadMore}
         onEndReachedThreshold={0.35}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        updateCellsBatchingPeriod={32}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={
           <RefreshControl
             refreshing={vm.isRefreshing}
