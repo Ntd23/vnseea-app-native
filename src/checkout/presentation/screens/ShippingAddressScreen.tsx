@@ -26,6 +26,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import type { DeliveryAddress } from '../../domain/types/checkout.types';
 import { useCheckoutViewModel } from '../../application/view-models/useCheckoutViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 
 type ShippingAddressNav = NativeStackNavigationProp<RootStackParamList>;
@@ -185,6 +186,7 @@ function ShippingAddressScreen() {
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" />
+      <FeedHeader />
       <View className="flex-row items-center border-b border-slate-200 bg-white px-4 py-3">
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"

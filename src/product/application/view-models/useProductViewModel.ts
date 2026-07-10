@@ -103,6 +103,37 @@ export function useProductViewModel(initialProduct?: ProductItem) {
     }));
   }, []);
 
+  const validateAll = useCallback((formData: ProductFormData): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.product_title.trim()) {
+      errors.product_title = 'Vui lòng nhập tên sản phẩm';
+    }
+
+    if (!formData.product_price) {
+      errors.product_price = 'Vui lòng nhập giá sản phẩm';
+    } else if (isNaN(Number(formData.product_price)) || Number(formData.product_price) <= 0) {
+      errors.product_price = 'Giá phải lớn hơn 0';
+    }
+
+    if (!formData.product_category) {
+      errors.product_category = 'Vui lòng chọn danh mục';
+    }
+
+    if (!formData.product_description.trim()) {
+      errors.product_description = 'Vui lòng nhập mô tả sản phẩm';
+    } else if (formData.product_description.length < 10) {
+      errors.product_description = 'Mô tả phải ít nhất 10 ký tự';
+    }
+
+    if (formData.images.length === 0 && !hasExistingImages) {
+      errors.images = 'Vui lòng thêm ít nhất 1 hình ảnh';
+    }
+
+    setState(prev => ({ ...prev, errors }));
+    return Object.keys(errors).length === 0;
+  }, [hasExistingImages]);
+
   const validateStep = useCallback((step: number, formData: ProductFormData): boolean => {
     const errors: Record<string, string> = {};
 
@@ -160,7 +191,7 @@ export function useProductViewModel(initialProduct?: ProductItem) {
   }, []);
 
   const submitProduct = useCallback(async () => {
-    if (!validateStep(state.step, state.formData)) {
+    if (!validateAll(state.formData)) {
       return;
     }
 
@@ -211,7 +242,7 @@ export function useProductViewModel(initialProduct?: ProductItem) {
     } finally {
       setIsLoading(false);
     }
-  }, [initialProduct, isEditing, state, validateStep]);
+  }, [initialProduct, isEditing, state, validateAll]);
 
   const resetForm = useCallback(() => {
     setState({
@@ -237,6 +268,7 @@ export function useProductViewModel(initialProduct?: ProductItem) {
     updateFormData,
     addImage,
     removeImage,
+    validateForm: validateAll,
 
     // Navigation
     nextStep,
@@ -252,7 +284,6 @@ export function useProductViewModel(initialProduct?: ProductItem) {
     resetForm,
   };
 }
-
 // Hook for fetching products
 export function useProductsViewModel() {
   const [products, setProducts] = useState<ProductItem[]>([]);

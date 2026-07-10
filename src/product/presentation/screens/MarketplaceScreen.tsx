@@ -44,6 +44,7 @@ import { createProductRepository } from '../../infrastructure/repositories/ApiPr
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import {
   createNativeTabScrollPublisherState,
   publishNativeTabScrollBehavior,
@@ -1117,7 +1118,6 @@ function MarketplaceScreen() {
       <View
         className="surface-topbar flex-row items-center px-4 pt-3 pb-2"
         pointerEvents="box-none"
-        style={Platform.OS === 'ios' ? { paddingTop: insets.top + 12 } : undefined}
       >
         <TouchableOpacity
           className="h-10 w-10 items-center justify-center rounded-full"
@@ -1160,21 +1160,20 @@ function MarketplaceScreen() {
           </Text>
         </TouchableOpacity>
       </View>
-      <View pointerEvents="auto">{marketplaceTopTabs}</View>
-      <Animated.View pointerEvents="box-none" style={filterPanelAnimatedStyle}>
-        <Animated.View
-          pointerEvents={filtersCollapsed ? 'none' : 'auto'}
-          style={[FILTER_PANEL_CHILD_STYLE, fullBarAnimatedStyle]}
-        >
-          {fullBar}
-        </Animated.View>
-        <Animated.View
-          pointerEvents={filtersCollapsed ? 'auto' : 'none'}
-          style={[FILTER_PANEL_CHILD_STYLE, collapsedBarAnimatedStyle]}
-        >
-          {collapsedBar}
-        </Animated.View>
-      </Animated.View>
+      {/* Tạm thời comment thanh tab icons ở trên đầu trang Cửa hàng theo yêu cầu */}
+      {/* <View pointerEvents="auto">{marketplaceTopTabs}</View> */}
+      <View
+        pointerEvents={filtersCollapsed ? 'auto' : 'none'}
+        style={filtersCollapsed ? undefined : { display: 'none' }}
+      >
+        {collapsedBar}
+      </View>
+      <View
+        pointerEvents={filtersCollapsed ? 'none' : 'auto'}
+        style={filtersCollapsed ? { display: 'none' } : undefined}
+      >
+        {fullBar}
+      </View>
     </View>
   );
 
@@ -1194,10 +1193,10 @@ function MarketplaceScreen() {
   return (
     <SafeAreaView
       className="flex-1 surface-base"
-      edges={Platform.OS === 'ios' ? ['left', 'right'] : ['top']}
+      edges={Platform.OS === 'ios' ? ['top', 'left', 'right'] : ['top']}
     >
       <FocusAwareStatusBar barStyle="dark-content" />
-      {null}
+      <FeedHeader />
       {renderHeaderOutsideList ? marketplaceHeader : null}
 
       <FlatList

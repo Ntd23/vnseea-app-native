@@ -30,6 +30,7 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { useProductsViewModel } from '../../application/view-models/useProductViewModel';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductItem } from '../../domain/types/product.types';
@@ -416,6 +417,7 @@ export default function SellerStoreScreen() {
   return (
     <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" />
+      <FeedHeader />
 
       {/* Header Bar */}
       <View className="relative flex-row items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
