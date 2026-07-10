@@ -136,5 +136,6 @@ $response_data = array(
     'products' => $products,
     'products_categories' => $wo['products_categories'],
     'products_sub_categories' => $wo['products_sub_categories'],
-    'distance_filter_available' => $can_filter_distance ? 1 : 0
+    'distance_filter_available' => $can_filter_distance ? 1 : 0,
+    'currencies' => !empty($wo['currencies']) ? $wo['currencies'] : null
 );

@@ -59,7 +59,7 @@ const MARKETPLACE_HEADER_ELEVATION_STYLE =
   Platform.OS === 'android'
     ? { zIndex: 30, elevation: 12 }
     : { zIndex: 30 };
-const FILTER_PANEL_FULL_HEIGHT = 206;
+const FILTER_PANEL_FULL_HEIGHT = 264;
 const FILTER_PANEL_COLLAPSED_HEIGHT = 72;
 const FILTER_COLLAPSE_THRESHOLD = 132;
 const FILTER_EXPAND_THRESHOLD = 72;
@@ -994,40 +994,22 @@ function MarketplaceScreen() {
           <ChevronDown size={14} color={vm.distance !== undefined ? '#0F56FB' : '#64748B'} />
         </TouchableOpacity>
 
-        {/* Row 4: Nearby stores button and Reset button */}
-        <View style={{ display: 'none' }}>
-          <TouchableOpacity
-            className={`flex-1 h-11 items-center justify-center rounded-2xl flex-row gap-2 shadow-sm ${
-              vm.distance === 15
-                ? 'bg-[#0F56FB] border border-[#0F56FB] shadow-blue-200/50'
-                : 'bg-slate-50 border border-slate-200/50 shadow-slate-100/20'
-            }`}
-            activeOpacity={0.85}
-            onPress={handleNearbyStoresToggle}
-          >
-            <MapPin size={15} color={vm.distance === 15 ? '#FFFFFF' : '#64748B'} />
-            <Text
-              className={`font-bold text-sm ${
-                vm.distance === 15 ? 'text-white' : 'text-slate-700'
-              }`}
-            >
-              Cửa hàng lân cận (15 km)
+        {/* Row 4: Cửa hàng lân cận (Go to Map) */}
+        <TouchableOpacity
+          className="flex-row items-center justify-between rounded-2xl border border-[#5252ff]/20 bg-[#5252ff]/5 px-3.5 py-3 mt-1.5"
+          activeOpacity={0.8}
+          onPress={() => navigate(ROUTES.NEARBY_USERS)}
+        >
+          <View className="flex-row items-center gap-2">
+            <Compass size={15} color="#5252ff" />
+            <Text className="text-sm font-bold text-[#5252ff]">
+              Cửa hàng lân cận
             </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            className={`h-11 w-11 items-center justify-center rounded-2xl border ${
-              hasActiveFilters
-                ? 'border-red-200 bg-red-50/60'
-                : 'border-slate-200/50 bg-slate-50/50 opacity-40'
-            }`}
-            activeOpacity={0.8}
-            disabled={!hasActiveFilters}
-            onPress={vm.resetFilters}
-          >
-            <RotateCcw size={16} color={hasActiveFilters ? '#EF4444' : '#64748B'} />
-          </TouchableOpacity>
-        </View>
+          </View>
+          <Text className="text-xs font-bold text-[#5252ff] bg-white px-2.5 py-1 rounded-full border border-[#5252ff]/10">
+            Xem bản đồ
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
