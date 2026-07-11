@@ -69,5 +69,6 @@ $response_data      = array(
     'config' => $get_config,
     'group_categories' => $wo['group_categories'],
     'group_sub_categories' => $wo['group_sub_categories'],
-    'public_config' => $public_config
+    'public_config' => $public_config,
+    'currencies' => !empty($wo['currencies']) ? $wo['currencies'] : null
 );

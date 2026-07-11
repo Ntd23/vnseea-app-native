@@ -1,5 +1,5 @@
 // Description: Renders the VNSEEA single-page create/edit product form.
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Image,
@@ -11,6 +11,8 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
+  Modal,
+  FlatList,
 } from 'react-native';
 import {
   launchImageLibrary,
@@ -34,13 +36,18 @@ import {
   Target,
   GraduationCap,
   Sparkles,
+  ShoppingBag,
+  Check,
 } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useProductViewModel } from '../../application/view-models/useProductViewModel';
 import type { ProductFormData } from '../../application/view-models/useProductViewModel';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
@@ -99,6 +106,7 @@ const steps: StepConfig[] = [
     select: true,
     field: 'currency',
     options: [
+      { id: 'VND', name: 'VND - Việt Nam Đồng' },
       { id: 'VNSEEA', name: 'VNSEEA' },
       { id: 'USD', name: 'USD - Đô la Mỹ' },
       { id: 'EUR', name: 'EUR - Euro' },
@@ -167,99 +175,23 @@ const steps: StepConfig[] = [
   },
 ];
 
-// Reusable custom layout components for the premium single-page form
-function OptionPill({
-  label,
-  selected,
-  onPress,
-  icon,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={onPress}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 99,
-        borderWidth: 1,
-        borderColor: selected ? '#0000FF' : '#e2e8f0',
-        backgroundColor: selected ? '#eef2ff' : '#ffffff',
-        marginRight: 8,
-        marginBottom: 8,
-      }}
-    >
-      {icon ? <View style={{ marginRight: 6 }}>{icon}</View> : null}
-      <Text
-        style={{
-          fontSize: 13,
-          fontWeight: '700',
-          color: selected ? '#0000FF' : '#475569',
-        }}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-function FormCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View
-      style={{
-        backgroundColor: '#ffffff',
-        borderRadius: 24,
-        padding: 20,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.02,
-        shadowRadius: 8,
-        elevation: 2,
-      }}
-    >
-      <Text
-        style={{
-          fontSize: 15,
-          fontWeight: '800',
-          color: '#0f172a',
-          marginBottom: 16,
-        }}
-      >
-        {title}
-      </Text>
-      {children}
-    </View>
-  );
-}
-
+// Reusable custom layout components for the premium form
 function FieldWrapper({
   label,
   error,
   children,
-  icon,
 }: {
   label: string;
   error?: string;
   children: React.ReactNode;
-  icon?: React.ReactNode;
 }) {
   return (
-    <View style={{ marginBottom: 16 }}>
+    <View style={{ marginBottom: 18 }}>
       <Text
         style={{
-          fontSize: 13,
-          fontWeight: '700',
-          color: '#475569',
+          fontSize: 14,
+          fontWeight: '800',
+          color: '#0f172a',
           marginBottom: 8,
         }}
       >
@@ -273,11 +205,10 @@ function FieldWrapper({
           borderRadius: 16,
           borderWidth: 1,
           borderColor: error ? '#ef4444' : '#e2e8f0',
-          backgroundColor: '#f8fafc',
+          backgroundColor: '#ffffff',
           paddingHorizontal: 16,
         }}
       >
-        {icon ? <View style={{ marginRight: 10 }}>{icon}</View> : null}
         {children}
       </View>
       {error ? (
@@ -292,20 +223,148 @@ function FieldWrapper({
   );
 }
 
-const getCategoryIcon = (id: string, selected: boolean) => {
-  const color = selected ? '#0000FF' : '#64748B';
-  switch (id) {
-    case '1': return <Laptop size={16} color={color} />;
-    case '2':
-    case '3': return <Shirt size={16} color={color} />;
-    case '4': return <Heart size={16} color={color} />;
-    case '5': return <Utensils size={16} color={color} />;
-    case '6': return <Sparkles size={16} color={color} />;
-    case '7': return <Target size={16} color={color} />;
-    case '8': return <GraduationCap size={16} color={color} />;
-    default: return <Package size={16} color={color} />;
-  }
-};
+function SelectorTrigger({
+  label,
+  valueLabel,
+  placeholder,
+  onPress,
+  error,
+}: {
+  label: string;
+  valueLabel?: string;
+  placeholder?: string;
+  onPress: () => void;
+  error?: string;
+}) {
+  return (
+    <View style={{ marginBottom: 18 }}>
+      <Text
+        style={{
+          fontSize: 14,
+          fontWeight: '800',
+          color: '#0f172a',
+          marginBottom: 8,
+        }}
+      >
+        {label}
+      </Text>
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={onPress}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          minHeight: 52,
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: error ? '#ef4444' : '#e2e8f0',
+          backgroundColor: '#ffffff',
+          paddingHorizontal: 16,
+        }}
+      >
+        <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: valueLabel ? '#0f172a' : '#94a3b8' }}>
+          {valueLabel || placeholder || ''}
+        </Text>
+        <ChevronDown size={20} color="#64748b" />
+      </TouchableOpacity>
+      {error ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+          <AlertCircle size={14} color="#ef4444" />
+          <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
+            {error}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+interface BottomSheetOption {
+  id: string | number;
+  name: string;
+}
+
+function BottomSheetSelector<T>({
+  visible,
+  title,
+  options,
+  selectedValue,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  options: BottomSheetOption[];
+  selectedValue: T;
+  onSelect: (value: T) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        activeOpacity={1}
+        style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.4)' }}
+        onPress={onClose}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          style={{ backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 40, paddingTop: 20, maxHeight: '60%' }}
+        >
+          {/* Handle bar indicator */}
+          <View style={{ height: 6, width: 48, borderRadius: 99, backgroundColor: '#e2e8f0', alignSelf: 'center', marginBottom: 16 }} />
+
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', marginBottom: 8 }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#0f172a' }}>{title}</Text>
+            <TouchableOpacity
+              style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}
+              activeOpacity={0.8}
+              onPress={onClose}
+            >
+              <X size={16} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+
+          <FlatList
+            data={options}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={({ item }) => {
+              const isSelected = String(item.id) === String(selectedValue);
+              return (
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#f8fafc' }}
+                  className="py-4"
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    onSelect(item.id as any);
+                    onClose();
+                  }}
+                >
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: isSelected ? '#5252ff' : '#334155' }}>
+                    {item.name}
+                  </Text>
+                  {isSelected ? <Check size={18} color="#5252ff" /> : null}
+                </TouchableOpacity>
+              );
+            }}
+            showsVerticalScrollIndicator={false}
+          />
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+const CONDITIONS_LIST = [
+  { id: '0', name: 'Mới' },
+  { id: '1', name: 'Đã sử dụng' },
+];
 
 export default function CreateProductScreen() {
   const navigation = useNavigation<CreateProductNav>();
@@ -325,6 +384,172 @@ export default function CreateProductScreen() {
     resetForm,
     isEditing,
   } = useProductViewModel(editingProduct);
+
+  const [categoriesList, setCategoriesList] = useState<Array<{ id: string; name: string }>>([
+    { id: '1', name: 'Điện tử tiêu dùng' },
+    { id: '2', name: 'Thời trang nam' },
+    { id: '3', name: 'Thời trang nữ' },
+    { id: '4', name: 'Mẹ và bé' },
+    { id: '5', name: 'Nhà cửa và đời sống' },
+    { id: '6', name: 'Sức khỏe và làm đẹp' },
+    { id: '7', name: 'Thể thao và du lịch' },
+    { id: '8', name: 'Sách và văn phòng phẩm' },
+    { id: '9', name: 'Ô tô & Xe cộ' },
+  ]);
+
+  const [currenciesList, setCurrenciesList] = useState<Array<{ id: string; name: string }>>([
+    { id: 'VND', name: 'VND (₫)' },
+    { id: 'VNSEEA', name: 'VNSEEA' },
+    { id: 'USD', name: 'USD ($)' },
+    { id: 'EUR', name: 'EUR (€)' },
+  ]);
+
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [conditionModalVisible, setConditionModalVisible] = useState(false);
+  const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
+
+  // Dynamic API Fetching for Categories & Currencies
+  React.useEffect(() => {
+    let isMounted = true;
+
+    const fetchApiData = async () => {
+      const parseCurrencies = (raw: unknown): Array<{ id: string; name: string }> => {
+        if (!raw) return [];
+        console.log('[CreateProductScreen] Parsing currencies from raw data:', typeof raw, Array.isArray(raw));
+        if (Array.isArray(raw)) {
+          return raw.map(curr => {
+            const id = String(curr?.id || curr?.code || curr?.text || '');
+            const name = String(curr?.name || id);
+            const symbol = String(curr?.symbol || '');
+            return {
+              id,
+              name: symbol ? `${id} (${symbol})` : name,
+            };
+          }).filter(c => c.id);
+        }
+        if (typeof raw === 'object' && raw !== null) {
+          return Object.entries(raw).map(([code, val]) => {
+            if (typeof val === 'object' && val !== null) {
+              const symbol = String((val as any).symbol || '');
+              const text = String((val as any).text || (val as any).name || code);
+              return {
+                id: code,
+                name: symbol ? `${code} (${symbol})` : text,
+              };
+            }
+            return {
+              id: code,
+              name: `${code} (${String(val)})`,
+            };
+          }).filter(c => c.id);
+        }
+        return [];
+      };
+
+      // 1. Fetch categories & currencies from get-products response
+      try {
+        const repo = createProductRepository();
+        const resProducts = await repo.getProducts({ limit: 1 });
+
+        const normalizeCategories = (raw: unknown): Record<string, string> => {
+          if (!raw || typeof raw !== 'object') return {};
+          const out: Record<string, string> = {};
+          Object.entries(raw as Record<string, unknown>).forEach(([key, value]) => {
+            if (typeof value === 'string') {
+              out[key] = value;
+            } else if (Array.isArray(value)) {
+              const first = value.find(entry => entry && typeof entry === 'object');
+              if (first && typeof (first as { lang?: unknown }).lang === 'string') {
+                out[key] = (first as { lang: string }).lang;
+              }
+            }
+          });
+          return out;
+        };
+
+        const categoriesMap = normalizeCategories(resProducts.products_categories);
+        const cats = Object.entries(categoriesMap).map(([id, name]) => ({
+          id,
+          name,
+        }));
+
+        if (isMounted && cats.length > 0) {
+          setCategoriesList(cats);
+        }
+
+        if (isMounted && resProducts.currencies) {
+          const currs = parseCurrencies(resProducts.currencies);
+          console.log('[CreateProductScreen] Currencies loaded from products API:', currs);
+          if (currs.length > 0) {
+            setCurrenciesList(currs);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch categories & currencies from products API', err);
+      }
+
+      // 2. Fetch site currencies from get-site-settings (main WoWonder config)
+      try {
+        const response = await apiBridge.post<any>('get-site-settings', {});
+        if (isMounted && response?.currencies) {
+          const currs = parseCurrencies(response.currencies);
+          console.log('[CreateProductScreen] Currencies loaded from site settings envelope:', currs);
+          if (currs.length > 0) {
+            setCurrenciesList(currs);
+          }
+        } else if (isMounted && response?.config) {
+          const config = response.config;
+          let currencySymbols: Record<string, string> = {};
+
+          if (typeof config.currency_symbol_array === 'string') {
+            try {
+              currencySymbols = JSON.parse(config.currency_symbol_array);
+            } catch (e) {}
+          } else if (config.currency_symbol_array && typeof config.currency_symbol_array === 'object') {
+            currencySymbols = config.currency_symbol_array;
+          }
+
+          if (Object.keys(currencySymbols).length > 0) {
+            const list = Object.entries(currencySymbols).map(([code, symbol]) => ({
+              id: code,
+              name: `${code} (${symbol})`,
+            }));
+            console.log('[CreateProductScreen] Currencies loaded from site settings config.currency_symbol_array:', list);
+            setCurrenciesList(list);
+          } else if (typeof config.currency === 'string' && typeof config.currency_symbol === 'string') {
+            setCurrenciesList([
+              { id: config.currency, name: `${config.currency} (${config.currency_symbol})` }
+            ]);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch site settings currencies', err);
+      }
+
+      // 3. Fallback: Fetch currencies from settings-monetization if the above was empty
+      try {
+        const resMonetization = await apiBridge.post<{
+          api_status: number;
+          currencies?: any[];
+        }>('settings-monetization');
+
+        if (isMounted && resMonetization && resMonetization.currencies) {
+          const currs = parseCurrencies(resMonetization.currencies);
+          console.log('[CreateProductScreen] Currencies loaded from monetization API:', currs);
+          if (currs.length > 0) {
+            setCurrenciesList(prev => prev.length <= 3 ? currs : prev);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch currencies from monetization API', err);
+      }
+    };
+
+    fetchApiData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleBack = useCallback(() => {
     Alert.alert(
@@ -373,7 +598,7 @@ export default function CreateProductScreen() {
     [removeImage],
   );
 
-  // SUCCESS STATE - Conditional JSX return AFTER all hooks
+  // SUCCESS STATE
   if (submitSuccess) {
     return (
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
@@ -416,57 +641,43 @@ export default function CreateProductScreen() {
     );
   }
 
+  const selectedCategoryName = categoriesList.find(opt => String(opt.id) === String(formData.product_category))?.name || 'Chọn danh mục';
+  const selectedConditionName = CONDITIONS_LIST.find(opt => String(opt.id) === String(formData.product_type))?.name || 'Mới';
+  const selectedCurrencyName = currenciesList.find(opt => String(opt.id) === String(formData.currency))?.name || 'VND (₫)';
+
   // MAIN FORM STATE
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" />
-      <FeedHeader />
+    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      <FocusAwareStatusBar barStyle="light-content" />
 
-      {/* Header Bar */}
-      <View
-        style={{
-          height: 64,
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 16,
-          backgroundColor: '#ffffff',
-          borderBottomWidth: 1,
-          borderBottomColor: '#f1f5f9',
-        }}
-      >
+      {/* Curved Wave Header */}
+      <View style={{ backgroundColor: '#5252ff', paddingTop: 20, paddingBottom: 28, position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
         <TouchableOpacity
-          onPress={handleBack}
           activeOpacity={0.7}
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 20,
-            backgroundColor: '#ffffff',
-            borderWidth: 1,
-            borderColor: '#f1f5f9',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginRight: 12,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.04,
-            shadowRadius: 4,
-            elevation: 2,
-          }}
+          onPress={handleBack}
+          style={{ position: 'absolute', right: 20, top: 20, height: 32, width: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.2)' }}
         >
-          <ArrowLeft size={22} color="#0f172a" />
+          <X size={18} color="#ffffff" />
         </TouchableOpacity>
-        <Text
-          style={{
-            fontSize: 18,
-            fontWeight: '800',
-            color: '#0f172a',
-            flex: 1,
-          }}
-          numberOfLines={1}
-        >
-          {isEditing ? 'Sửa sản phẩm' : 'Tạo sản phẩm mới'}
-        </Text>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ height: 36, width: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.2)', marginRight: 10 }}>
+            <ShoppingBag size={18} color="#ffffff" />
+          </View>
+          <Text style={{ fontSize: 18, fontWeight: '900', color: '#ffffff' }}>
+            {isEditing ? 'Cập nhật sản phẩm' : 'Bán sản phẩm mới'}
+          </Text>
+        </View>
+
+        {/* SVG Wave bottom decoration */}
+        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 16 }}>
+          <Svg height="100%" width="100%" viewBox="0 0 1440 320" preserveAspectRatio="none">
+            <Path
+              d="M0,160 C480,260 960,260 1440,160 L1440,320 L0,320 Z"
+              fill="#ffffff"
+            />
+          </Svg>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -474,244 +685,185 @@ export default function CreateProductScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          style={{ flex: 1, backgroundColor: '#f8fafc' }}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 20, paddingBottom: 100 }}
+          style={{ flex: 1, backgroundColor: '#ffffff' }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 10, paddingBottom: 120 }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Card 1: Thông tin cơ bản */}
-          <FormCard title="Thông tin cơ bản">
-             {/* Tên sản phẩm */}
-             <FieldWrapper label="Tên sản phẩm" error={errors.product_title} icon={<Package size={20} color="#64748b" />}>
-               <TextInput
-                 style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600' }}
-                 placeholder="Nhập tên sản phẩm"
-                 placeholderTextColor="#94a3b8"
-                 value={formData.product_title}
-                 onChangeText={val => updateFormData('product_title', val)}
-               />
-             </FieldWrapper>
+          {/* Tên sản phẩm */}
+          <FieldWrapper label="Tên" error={errors.product_title}>
+            <TextInput
+              style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600', height: '100%' }}
+              placeholder="Tên sản phẩm"
+              placeholderTextColor="#94a3b8"
+              value={formData.product_title}
+              onChangeText={val => updateFormData('product_title', val)}
+            />
+          </FieldWrapper>
 
-             {/* Giá & Tiền tệ */}
-             <View style={{ flexDirection: 'row', gap: 12 }}>
-               <View style={{ flex: 1.2 }}>
-                 <FieldWrapper label="Giá sản phẩm (VND)" error={errors.product_price} icon={<DollarSign size={20} color="#64748b" />}>
-                   <TextInput
-                     style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600' }}
-                     placeholder="0"
-                     placeholderTextColor="#94a3b8"
-                     keyboardType="numeric"
-                     value={formData.product_price}
-                     onChangeText={val => updateFormData('product_price', val)}
-                   />
-                 </FieldWrapper>
-               </View>
+          {/* Giá bán */}
+          <FieldWrapper label="Giá bán" error={errors.product_price}>
+            <TextInput
+              style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600', height: '100%' }}
+              placeholder="0.00"
+              placeholderTextColor="#94a3b8"
+              keyboardType="numeric"
+              value={formData.product_price}
+              onChangeText={val => updateFormData('product_price', val)}
+            />
+          </FieldWrapper>
 
-               <View style={{ flex: 0.8 }}>
-                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 }}>
-                   Tiền tệ
-                 </Text>
-                 <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                   {['VNSEEA', 'USD', 'EUR'].map(curr => {
-                     const isCurrSelected = formData.currency === curr;
-                     return (
-                       <TouchableOpacity
-                         key={curr}
-                         onPress={() => updateFormData('currency', curr)}
-                         style={{
-                           paddingHorizontal: 10,
-                           paddingVertical: 8,
-                           borderRadius: 12,
-                           borderWidth: 1,
-                           borderColor: isCurrSelected ? '#0000FF' : '#e2e8f0',
-                           backgroundColor: isCurrSelected ? '#eef2ff' : '#ffffff',
-                           marginRight: 4,
-                           marginBottom: 6,
-                         }}
-                       >
-                         <Text style={{ fontSize: 11, fontWeight: '700', color: isCurrSelected ? '#0000FF' : '#475569' }}>
-                           {curr}
-                         </Text>
-                       </TouchableOpacity>
-                     );
-                   })}
-                 </View>
-               </View>
-             </View>
+          {/* Mô tả */}
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: '800',
+              color: '#0f172a',
+              marginBottom: 8,
+            }}
+          >
+            Sự mô tả
+          </Text>
+          <View
+            style={{
+              minHeight: 120,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: errors.product_description ? '#ef4444' : '#e2e8f0',
+              backgroundColor: '#ffffff',
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              marginBottom: 18,
+            }}
+          >
+            <TextInput
+              style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600', textAlignVertical: 'top' }}
+              placeholder="Vui lòng mô tả sản phẩm của bạn."
+              placeholderTextColor="#94a3b8"
+              multiline
+              value={formData.product_description}
+              onChangeText={val => updateFormData('product_description', val)}
+            />
+          </View>
+          {errors.product_description ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: -12, marginBottom: 18 }}>
+              <AlertCircle size={14} color="#ef4444" />
+              <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
+                {errors.product_description}
+              </Text>
+            </View>
+          ) : null}
 
-             {/* Số lượng */}
-             <FieldWrapper label="Tổng số lượng đơn vị" error={errors.units}>
-               <TextInput
-                 style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600' }}
-                 placeholder="Nhập số lượng (vd: 100)"
-                 placeholderTextColor="#94a3b8"
-                 keyboardType="numeric"
-                 value={formData.units !== undefined ? String(formData.units) : ''}
-                 onChangeText={val => updateFormData('units', val ? parseInt(val, 10) : undefined)}
-               />
-             </FieldWrapper>
-          </FormCard>
+          {/* Loại (Category) Bottom Sheet Trigger */}
+          <SelectorTrigger
+            label="Loại"
+            valueLabel={formData.product_category ? selectedCategoryName : undefined}
+            placeholder="Chọn danh mục"
+            onPress={() => setCategoryModalVisible(true)}
+            error={errors.product_category}
+          />
 
-          {/* Card 2: Phân loại & Vị trí */}
-          <FormCard title="Phân loại & Địa điểm">
-             {/* Danh mục */}
-             <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 }}>
-               Chọn danh mục
-             </Text>
-             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 }}>
-               {steps[3].options?.map(option => {
-                 const isSel = formData.product_category === option.id;
-                 return (
-                   <OptionPill
-                     key={option.id}
-                     label={option.name}
-                     selected={isSel}
-                     onPress={() => updateFormData('product_category', option.id)}
-                     icon={getCategoryIcon(option.id, isSel)}
-                   />
-                 );
-               })}
-             </View>
-             {errors.product_category ? (
-               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: -6, marginBottom: 12 }}>
-                 <AlertCircle size={14} color="#ef4444" />
-                 <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
-                   {errors.product_category}
-                 </Text>
-               </View>
-             ) : null}
+          {/* Loại hình (Condition) Bottom Sheet Trigger */}
+          <SelectorTrigger
+            label="Loại hình"
+            valueLabel={selectedConditionName}
+            onPress={() => setConditionModalVisible(true)}
+          />
 
-             {/* Tình trạng */}
-             <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 }}>
-               Tình trạng sản phẩm
-             </Text>
-             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 }}>
-               {steps[5].options?.map(option => {
-                 const isSel = String(formData.product_type) === option.id;
-                 return (
-                   <OptionPill
-                     key={option.id}
-                     label={option.name}
-                     selected={isSel}
-                     onPress={() => updateFormData('product_type', parseInt(option.id, 10))}
-                   />
-                 );
-               })}
-             </View>
+          {/* Địa điểm */}
+          <FieldWrapper label="Địa điểm" error={errors.product_location}>
+            <TextInput
+              style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600', height: '100%' }}
+              placeholder="Địa điểm"
+              placeholderTextColor="#94a3b8"
+              value={formData.product_location}
+              onChangeText={val => updateFormData('product_location', val)}
+            />
+          </FieldWrapper>
 
-             {/* Vị trí */}
-             <FieldWrapper label="Địa điểm (Tỉnh/Thành phố)" error={errors.product_location} icon={<MapPin size={20} color="#64748b" />}>
-               <TextInput
-                 style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600' }}
-                 placeholder="Chọn hoặc nhập tỉnh/thành phố"
-                 placeholderTextColor="#94a3b8"
-                 value={formData.product_location}
-                 onChangeText={val => updateFormData('product_location', val)}
-               />
-             </FieldWrapper>
-          </FormCard>
+          {/* Tiền tệ Bottom Sheet Trigger */}
+          <SelectorTrigger
+            label="Tiền tệ"
+            valueLabel={selectedCurrencyName}
+            onPress={() => setCurrencyModalVisible(true)}
+          />
 
-          {/* Card 3: Mô tả */}
-          <FormCard title="Mô tả sản phẩm">
-             <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 }}>
-               Mô tả chi tiết
-             </Text>
-             <View
-               style={{
-                 minHeight: 120,
-                 borderRadius: 16,
-                 borderWidth: 1,
-                 borderColor: errors.product_description ? '#ef4444' : '#e2e8f0',
-                 backgroundColor: '#f8fafc',
-                 paddingHorizontal: 16,
-                 paddingVertical: 12,
-               }}
-             >
-               <TextInput
-                 style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600', textAlignVertical: 'top' }}
-                 placeholder="Nhập mô tả chi tiết về sản phẩm của bạn..."
-                 placeholderTextColor="#94a3b8"
-                 multiline
-                 value={formData.product_description}
-                 onChangeText={val => updateFormData('product_description', val)}
-               />
-             </View>
-             {errors.product_description ? (
-               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                 <AlertCircle size={14} color="#ef4444" />
-                 <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
-                   {errors.product_description}
-                 </Text>
-               </View>
-             ) : null}
-          </FormCard>
+          {/* Tổng số đơn vị mặt hàng */}
+          <FieldWrapper label="Tổng số đơn vị mặt hàng" error={errors.units}>
+            <TextInput
+              style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600', height: '100%' }}
+              placeholder="Số lượng khả dụng"
+              placeholderTextColor="#94a3b8"
+              keyboardType="numeric"
+              value={formData.units !== undefined ? String(formData.units) : ''}
+              onChangeText={val => updateFormData('units', val ? parseInt(val, 10) : undefined)}
+            />
+          </FieldWrapper>
 
-          {/* Card 4: Hình ảnh */}
-          <FormCard title="Hình ảnh sản phẩm">
-             {formData.images.length > 0 && (
-               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-                 {formData.images.map((image, idx) => (
-                   <View key={idx} style={{ position: 'relative' }}>
-                     <Image
-                       source={{ uri: image.uri }}
-                       style={{ width: 80, height: 80, borderRadius: 16 }}
-                       resizeMode="cover"
-                     />
-                     <TouchableOpacity
-                       onPress={() => handleRemoveImage(idx)}
-                       style={{
-                         position: 'absolute',
-                         top: -6,
-                         right: -6,
-                         width: 22,
-                         height: 22,
-                         borderRadius: 11,
-                         backgroundColor: '#ef4444',
-                         alignItems: 'center',
-                         justifyContent: 'center',
-                         borderWidth: 1.5,
-                         borderColor: '#ffffff',
-                       }}
-                     >
-                       <X size={12} color="#FFFFFF" />
-                     </TouchableOpacity>
-                   </View>
-                 ))}
-               </View>
-             )}
+          {/* Hình ảnh */}
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: '800',
+              color: '#0f172a',
+              marginBottom: 12,
+            }}
+          >
+            Hình ảnh
+          </Text>
 
-             <TouchableOpacity
-               onPress={handleAddImage}
-               activeOpacity={0.8}
-               style={{
-                 minHeight: 120,
-                 borderRadius: 16,
-                 borderWidth: 1,
-                 borderStyle: 'dashed',
-                 borderColor: '#0000FF',
-                 backgroundColor: '#f8fafc',
-                 alignItems: 'center',
-                 justifyContent: 'center',
-                 padding: 16,
-               }}
-             >
-               <ImagePlus size={36} color="#0000FF" />
-               <Text style={{ marginTop: 8, fontSize: 14, fontWeight: '700', color: '#0000FF' }}>
-                 Chọn hình ảnh
-               </Text>
-               <Text style={{ marginTop: 4, fontSize: 11, fontWeight: '500', color: '#64748b' }}>
-                 JPG, PNG hoặc ảnh chụp trực tiếp từ thiết bị
-               </Text>
-             </TouchableOpacity>
-             {errors.images ? (
-               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-                 <AlertCircle size={14} color="#ef4444" />
-                 <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
-                   {errors.images}
-                 </Text>
-               </View>
-             ) : null}
-          </FormCard>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+            {formData.images.map((image, idx) => (
+              <View key={idx} style={{ position: 'relative' }}>
+                <Image
+                  source={{ uri: image.uri }}
+                  style={{ width: 88, height: 88, borderRadius: 16 }}
+                  resizeMode="cover"
+                />
+                <TouchableOpacity
+                  onPress={() => handleRemoveImage(idx)}
+                  style={{
+                    position: 'absolute',
+                    top: -6,
+                    right: -6,
+                    width: 22,
+                    height: 22,
+                    borderRadius: 11,
+                    backgroundColor: '#ef4444',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1.5,
+                    borderColor: '#ffffff',
+                  }}
+                >
+                  <X size={12} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            ))}
+
+            <TouchableOpacity
+              onPress={handleAddImage}
+              activeOpacity={0.8}
+              style={{
+                width: 88,
+                height: 88,
+                borderRadius: 16,
+                backgroundColor: '#f1f5f9',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <ImagePlus size={24} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+          {errors.images ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: -6, marginBottom: 18 }}>
+              <AlertCircle size={14} color="#ef4444" />
+              <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
+                {errors.images}
+              </Text>
+            </View>
+          ) : null}
 
           {/* Hộp lỗi submit */}
           {submitError ? (
@@ -729,9 +881,9 @@ export default function CreateProductScreen() {
             left: 0,
             right: 0,
             backgroundColor: '#ffffff',
-            paddingHorizontal: 16,
+            paddingHorizontal: 20,
             paddingTop: 12,
-            paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+            paddingBottom: Platform.OS === 'ios' ? 28 : 16,
             borderTopWidth: 1,
             borderTopColor: '#f1f5f9',
           }}
@@ -743,7 +895,7 @@ export default function CreateProductScreen() {
             style={{
               minHeight: 52,
               borderRadius: 99,
-              backgroundColor: '#0000FF',
+              backgroundColor: '#5252ff',
               alignItems: 'center',
               justifyContent: 'center',
               opacity: isLoading ? 0.6 : 1,
@@ -752,13 +904,43 @@ export default function CreateProductScreen() {
             {isLoading ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '800' }}>
+              <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '900' }}>
                 {isEditing ? 'Cập nhật sản phẩm' : 'Đăng sản phẩm'}
               </Text>
             )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Categories Bottom Sheet */}
+      <BottomSheetSelector
+        visible={categoryModalVisible}
+        title="Chọn danh mục"
+        options={categoriesList}
+        selectedValue={formData.product_category}
+        onSelect={(val) => updateFormData('product_category', val)}
+        onClose={() => setCategoryModalVisible(false)}
+      />
+
+      {/* Conditions Bottom Sheet */}
+      <BottomSheetSelector
+        visible={conditionModalVisible}
+        title="Chọn tình trạng"
+        options={CONDITIONS_LIST}
+        selectedValue={formData.product_type}
+        onSelect={(val) => updateFormData('product_type', Number(val))}
+        onClose={() => setConditionModalVisible(false)}
+      />
+
+      {/* Currencies Bottom Sheet */}
+      <BottomSheetSelector
+        visible={currencyModalVisible}
+        title="Chọn tiền tệ"
+        options={currenciesList}
+        selectedValue={formData.currency}
+        onSelect={(val) => updateFormData('currency', val)}
+        onClose={() => setCurrencyModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }

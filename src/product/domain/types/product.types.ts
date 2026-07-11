@@ -57,6 +57,7 @@ export interface ProductsResponse {
   products: ProductItem[];
   products_categories: Record<string, ProductSubCategory[]>;
   distance_filter_available: boolean | number;
+  currencies?: Record<string, { text: string; symbol: string } | string>;
 }
 
 export interface CreateProductResponse {
