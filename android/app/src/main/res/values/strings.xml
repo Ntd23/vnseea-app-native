@@ -1,3 +1,14 @@
 <resources>
     <string name="app_name">VNSEEA</string>
+    <string name="incoming_call_channel_name">VNSEEA calls</string>
+    <string name="incoming_call_channel_description">Incoming VNSEEA calls</string>
+    <string name="incoming_call_subtext">Incoming call</string>
+    <string name="incoming_call_audio">Incoming audio call</string>
+    <string name="incoming_call_video">Incoming video call</string>
+    <string name="incoming_group_call_audio">Incoming group audio call</string>
+    <string name="incoming_group_call_video">Incoming group video call</string>
+    <string name="incoming_call_answer">Answer</string>
+    <string name="incoming_call_decline">Decline</string>
+    <string name="incoming_call_default_caller">VNSEEA</string>
+    <string name="incoming_call_default_group">Group</string>
 </resources>

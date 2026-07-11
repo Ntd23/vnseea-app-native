@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
@@ -21,7 +22,13 @@ object LiveKitCallNotifier {
   private const val INCOMING_CALL_RINGTONE_RES_NAME = "incoming_call_ringtone"
 
   fun show(context: Context, data: JSONObject) {
-    Log.i("LiveKitCallPush", "build notification call_id=${data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)} event_type=${data.optString(LiveKitCallNativeActions.EXTRA_EVENT_TYPE)}")
+    val callId = data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)
+    Log.i("LiveKitCallPush", "build notification call_id=$callId event_type=${data.optString(LiveKitCallNativeActions.EXTRA_EVENT_TYPE)}")
+    if (LiveKitCallNativeActions.isIncomingCallHandledRecently(context, callId)) {
+      Log.i("LiveKitCallPush", "ignored handled incoming call_id=$callId")
+      return
+    }
+
     val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     val ringtoneUri = incomingCallRingtoneUri(context)
     val ringtoneAttributes = AudioAttributes.Builder()
@@ -32,10 +39,10 @@ object LiveKitCallNotifier {
       manager.createNotificationChannel(
         NotificationChannel(
           CHANNEL_ID,
-          "VNSEEA calls",
+          context.getString(R.string.incoming_call_channel_name),
           NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-          description = "Incoming VNSEEA calls"
+          description = context.getString(R.string.incoming_call_channel_description)
           lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
           enableVibration(true)
           vibrationPattern = longArrayOf(0, 700, 350, 700)
@@ -44,7 +51,6 @@ object LiveKitCallNotifier {
       )
     }
 
-    val callId = data.optString(LiveKitCallNativeActions.EXTRA_CALL_ID)
     val notificationId = callId.hashCode()
     val fullScreenIntent = Intent(context, IncomingCallActivity::class.java).apply {
       flags =
@@ -74,23 +80,36 @@ object LiveKitCallNotifier {
 
     val isGroupCall = data.optString(LiveKitCallNativeActions.EXTRA_EVENT_TYPE) == "livekit_group_call"
     val callerName = if (isGroupCall) {
-      data.optString(LiveKitCallNativeActions.EXTRA_GROUP_NAME).ifBlank { "Nhom" }
+      data.optString(LiveKitCallNativeActions.EXTRA_GROUP_NAME)
+        .ifBlank { context.getString(R.string.incoming_call_default_group) }
     } else {
-      data.optString(LiveKitCallNativeActions.EXTRA_NAME).ifBlank { "VNSEEA" }
+      data.optString(LiveKitCallNativeActions.EXTRA_NAME)
+        .ifBlank { context.getString(R.string.incoming_call_default_caller) }
     }
     val text = if (data.optString(LiveKitCallNativeActions.EXTRA_CALL_TYPE) == "audio") {
-      if (isGroupCall) "Cuoc goi nhom thoai den" else "Cuoc goi thoai den"
+      if (isGroupCall) {
+        context.getString(R.string.incoming_group_call_audio)
+      } else {
+        context.getString(R.string.incoming_call_audio)
+      }
     } else {
-      if (isGroupCall) "Cuoc goi nhom video den" else "Cuoc goi video den"
+      if (isGroupCall) {
+        context.getString(R.string.incoming_group_call_video)
+      } else {
+        context.getString(R.string.incoming_call_video)
+      }
     }
 
     val notification = NotificationCompat.Builder(context, CHANNEL_ID)
       .setSmallIcon(R.mipmap.ic_launcher)
       .setContentTitle(callerName)
       .setContentText(text)
+      .setSubText(context.getString(R.string.incoming_call_subtext))
+      .setStyle(NotificationCompat.BigTextStyle().bigText(text))
       .setCategory(NotificationCompat.CATEGORY_CALL)
       .setPriority(NotificationCompat.PRIORITY_MAX)
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+      .setColor(Color.rgb(79, 70, 229))
       .setOngoing(true)
       .setAutoCancel(false)
       .setTimeoutAfter(43_000)
@@ -99,8 +118,8 @@ object LiveKitCallNotifier {
       .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
       .setSound(ringtoneUri)
       .addAction(
-        0,
-        "Decline",
+        R.drawable.ic_call_phone_modern,
+        context.getString(R.string.incoming_call_decline),
         PendingIntent.getBroadcast(
           context,
           notificationId + 1,
@@ -109,8 +128,8 @@ object LiveKitCallNotifier {
         ),
       )
       .addAction(
-        0,
-        "Answer",
+        R.drawable.ic_call_phone_modern,
+        context.getString(R.string.incoming_call_answer),
         PendingIntent.getActivity(
           context,
           notificationId + 2,

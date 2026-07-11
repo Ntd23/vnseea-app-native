@@ -1,0 +1,13 @@
+<resources>
+    <string name="incoming_call_channel_name">Cuộc gọi VNSEEA</string>
+    <string name="incoming_call_channel_description">Thông báo cuộc gọi đến trên VNSEEA</string>
+    <string name="incoming_call_subtext">Cuộc gọi đến</string>
+    <string name="incoming_call_audio">Cuộc gọi thoại đến</string>
+    <string name="incoming_call_video">Cuộc gọi video đến</string>
+    <string name="incoming_group_call_audio">Cuộc gọi thoại nhóm đến</string>
+    <string name="incoming_group_call_video">Cuộc gọi video nhóm đến</string>
+    <string name="incoming_call_answer">Trả lời</string>
+    <string name="incoming_call_decline">Từ chối</string>
+    <string name="incoming_call_default_caller">VNSEEA</string>
+    <string name="incoming_call_default_group">Nhóm</string>
+</resources>

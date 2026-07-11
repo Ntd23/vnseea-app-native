@@ -36,6 +36,10 @@ class VnseeaCallIntentModule(
       promise.resolve(null)
       return
     }
+    val callId = extras.getString(LiveKitCallNativeActions.EXTRA_CALL_ID).orEmpty()
+    if (expectedAction == "answer" || expectedAction == "message") {
+      LiveKitCallNativeActions.dismissIncomingCall(appContext, callId)
+    }
     val map: WritableMap = Arguments.createMap()
     for (key in listOf(
       LiveKitCallNativeActions.EXTRA_EVENT_TYPE,
@@ -76,6 +80,20 @@ class VnseeaCallIntentModule(
   @ReactMethod
   fun showIncomingCall(callData: com.facebook.react.bridge.ReadableMap, promise: Promise) {
     try {
+      val callId = try {
+        if (callData.hasKey(LiveKitCallNativeActions.EXTRA_CALL_ID)) {
+          callData.getString(LiveKitCallNativeActions.EXTRA_CALL_ID).orEmpty()
+        } else {
+          ""
+        }
+      } catch (_: Throwable) {
+        ""
+      }
+      if (LiveKitCallNativeActions.isIncomingCallHandledRecently(appContext, callId)) {
+        promise.resolve(false)
+        return
+      }
+
       val intent = Intent(appContext, IncomingCallActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or
           Intent.FLAG_ACTIVITY_CLEAR_TOP or

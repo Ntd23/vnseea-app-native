@@ -168,6 +168,14 @@ const CALL_MEDIA_ENABLE_TIMEOUT_MS = 7_000;
 const CALLKIT_AUDIO_SESSION_WAIT_MS = 6_000;
 const CALL_AUDIO_STATS_PROBE_INTERVAL_MS = 1_000;
 const CALL_AUDIO_STATS_PROBE_SAMPLES = 6;
+const TERMINAL_CALL_STATUSES = new Set([
+  'cancelled',
+  'ended',
+  'no_answer',
+  'missed',
+  'declined',
+  'finished',
+]);
 const CALL_AUDIO_ZERO_RTP_RECOVERY_SAMPLE = 3;
 const REMOTE_SUBSCRIPTION_TIMEOUT_MS = 2_000;
 const LIVEKIT_ROOM_OPTIONS = {
@@ -239,6 +247,10 @@ function logCallDebug(event: string, data: Record<string, unknown> = {}) {
   } catch {
     console.log(CALL_DEBUG_PREFIX, event, data);
   }
+}
+
+function isTerminalCallStatus(status?: string) {
+  return Boolean(status && TERMINAL_CALL_STATUSES.has(status));
 }
 
 type IosVoiceAudioContext = {
@@ -4010,6 +4022,12 @@ export function LiveKitCallSessionProvider({
               callType: params.callType,
             })
             .catch(() => null);
+          if (status && (status.finished || isTerminalCallStatus(status.status))) {
+            closeSentRef.current = true;
+            finishSession();
+            return true;
+          }
+
           if (status && status.status === 'answered') {
             await joinAnsweredOutgoingCall(
               nextCallId,
@@ -4376,9 +4394,7 @@ export function LiveKitCallSessionProvider({
           return;
         }
 
-        // Handle terminal statuses that indicate the call was cancelled/ended
-        const terminalStatuses = ['cancelled', 'ended', 'no_answer', 'missed', 'declined'];
-        if (status.status && terminalStatuses.includes(status.status)) {
+        if (isTerminalCallStatus(status.status)) {
           closeSentRef.current = true;
           finishSession();
           return;
@@ -4450,6 +4466,12 @@ export function LiveKitCallSessionProvider({
           callType: current.callType,
         })
         .then(status => {
+          if (status && (status.finished || isTerminalCallStatus(status.status))) {
+            closeSentRef.current = true;
+            finishSession();
+            return true;
+          }
+
           if (status && status.status === 'answered') {
             return joinAnsweredOutgoingCall(
               current.callId,
@@ -4464,7 +4486,7 @@ export function LiveKitCallSessionProvider({
     });
 
     return () => subscription.remove();
-  }, [joinAnsweredOutgoingCall, repository]);
+  }, [finishSession, joinAnsweredOutgoingCall, repository]);
 
   useEffect(() => {
     return () => {

@@ -35,6 +35,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.vnseea.android.MainActivity
+import com.vnseea.android.R
 import java.net.URL
 import java.util.Calendar
 
@@ -77,11 +78,12 @@ class IncomingCallActivity : Activity() {
     }
     val callerBackgroundUrl = callerBackgroundUrl(isGroupCall, avatarUrl)
     val isAudioCall = extra(LiveKitCallNativeActions.EXTRA_CALL_TYPE) == "audio"
-    val title = if (isAudioCall) {
-      "\u260e Cu\u1ed9c g\u1ecdi tho\u1ea1i"
+    val titleText = if (isAudioCall) {
+      "Cu\u1ed9c g\u1ecdi tho\u1ea1i"
     } else {
-      "\u25a0 Cu\u1ed9c g\u1ecdi video"
+      "Cu\u1ed9c g\u1ecdi video"
     }
+    val titleIcon = if (isAudioCall) R.drawable.ic_call_phone_modern else R.drawable.ic_call_video_modern
     val callDescription = if (isAudioCall) {
       "B\u1ea1n \u0111ang c\u00f3 cu\u1ed9c g\u1ecdi tho\u1ea1i \u0111\u1ebfn"
     } else {
@@ -143,30 +145,19 @@ class IncomingCallActivity : Activity() {
     val content = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_HORIZONTAL
-      setPadding(dp(28), dp(76), dp(28), dp(34))
+      setPadding(dp(24), dp(76), dp(24), dp(28))
       layoutParams = FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT,
       )
     }
 
-    content.addView(TextView(this).apply {
-      text = title
-      textSize = 21f
-      typeface = Typeface.DEFAULT_BOLD
-      setTextColor(Color.WHITE)
-      gravity = Gravity.CENTER
-      includeFontPadding = false
-      layoutParams = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-      )
-    })
+    content.addView(callTitleView(titleText, titleIcon))
 
     content.addView(TextView(this).apply {
       text = "\u0110ang g\u1ecdi \u0111\u1ebfn..."
-      textSize = 15f
-      setTextColor(Color.rgb(186, 201, 225))
+      textSize = 16f
+      setTextColor(Color.rgb(198, 210, 231))
       gravity = Gravity.CENTER
       includeFontPadding = false
       layoutParams = LinearLayout.LayoutParams(
@@ -181,7 +172,7 @@ class IncomingCallActivity : Activity() {
 
     content.addView(TextView(this).apply {
       text = callerName
-      textSize = 32f
+      textSize = 34f
       typeface = Typeface.DEFAULT_BOLD
       setTextColor(Color.WHITE)
       gravity = Gravity.CENTER
@@ -333,6 +324,40 @@ class IncomingCallActivity : Activity() {
     }.start()
   }
 
+  private fun callTitleView(title: String, iconRes: Int): LinearLayout {
+    return LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER
+      layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+      )
+      addView(FrameLayout(this@IncomingCallActivity).apply {
+        background = ovalBorder(Color.argb(52, 255, 255, 255), Color.argb(82, 255, 255, 255), dp(1))
+        elevation = dp(5).toFloat()
+        layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+        addView(iconView(iconRes, dp(19)).apply {
+          layoutParams = FrameLayout.LayoutParams(dp(19), dp(19), Gravity.CENTER)
+        })
+      })
+      addView(TextView(this@IncomingCallActivity).apply {
+        text = title
+        textSize = 25f
+        typeface = Typeface.DEFAULT_BOLD
+        setTextColor(Color.WHITE)
+        gravity = Gravity.CENTER
+        includeFontPadding = false
+        maxLines = 1
+        layoutParams = LinearLayout.LayoutParams(
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+          leftMargin = dp(12)
+        }
+      })
+    }
+  }
+
   private fun callerBackgroundUrl(isGroupCall: Boolean, avatarUrl: String): String {
     val candidates = if (isGroupCall) {
       listOf(
@@ -391,17 +416,31 @@ class IncomingCallActivity : Activity() {
     return RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
   }
 
-  private fun statusPill(): TextView {
-    return TextView(this).apply {
-      text = "\u25cf  Online"
-      textSize = 14f
-      setTextColor(Color.WHITE)
+  private fun statusPill(): LinearLayout {
+    return LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER
-      includeFontPadding = false
-      background = roundRect(Color.argb(48, 255, 255, 255), dp(22))
-      layoutParams = LinearLayout.LayoutParams(dp(110), dp(38)).apply {
+      setPadding(dp(18), 0, dp(18), 0)
+      background = roundRectBorder(Color.argb(46, 255, 255, 255), dp(22), Color.argb(46, 255, 255, 255), dp(1))
+      layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        dp(38),
+      ).apply {
         topMargin = dp(18)
       }
+      addView(View(this@IncomingCallActivity).apply {
+        background = oval(Color.rgb(34, 197, 94))
+        layoutParams = LinearLayout.LayoutParams(dp(9), dp(9)).apply {
+          rightMargin = dp(10)
+        }
+      })
+      addView(TextView(this@IncomingCallActivity).apply {
+        text = "Online"
+        textSize = 14f
+        setTextColor(Color.WHITE)
+        gravity = Gravity.CENTER
+        includeFontPadding = false
+      })
     }
   }
 
@@ -415,36 +454,37 @@ class IncomingCallActivity : Activity() {
       ).apply {
         bottomMargin = dp(44)
       }
-      addView(utilityButton("\u2026", "Nh\u1eafn tin").apply {
+      addView(utilityButton(R.drawable.ic_call_message_modern, "Nh\u1eafn tin").apply {
         setOnClickListener { openMessageThread() }
       })
-      addView(utilityButton("\u266a", "T\u1eaft chu\u00f4ng").apply {
+      addView(utilityButton(R.drawable.ic_call_volume_off_modern, "T\u1eaft chu\u00f4ng").apply {
         setOnClickListener {
           stopRingtone()
           alpha = 0.72f
+          (getChildAt(0) as? FrameLayout)?.background =
+            ovalBorder(Color.argb(66, 34, 197, 94), Color.argb(104, 255, 255, 255), dp(1))
           (getChildAt(1) as? TextView)?.text = "\u0110\u00e3 t\u1eaft"
         }
       })
     }
   }
 
-  private fun utilityButton(icon: String, label: String): LinearLayout {
+  private fun utilityButton(iconRes: Int, label: String): LinearLayout {
     return LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
       layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-      addView(TextView(this@IncomingCallActivity).apply {
-        text = icon
-        textSize = 30f
-        typeface = Typeface.DEFAULT_BOLD
-        setTextColor(Color.WHITE)
-        gravity = Gravity.CENTER
-        background = oval(Color.argb(46, 255, 255, 255))
-        layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
+      addView(FrameLayout(this@IncomingCallActivity).apply {
+        background = ovalBorder(Color.argb(52, 255, 255, 255), Color.argb(58, 255, 255, 255), dp(1))
+        elevation = dp(6).toFloat()
+        layoutParams = LinearLayout.LayoutParams(dp(76), dp(76))
+        addView(iconView(iconRes, dp(28)).apply {
+          layoutParams = FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER)
+        })
       })
       addView(TextView(this@IncomingCallActivity).apply {
         text = label
-        textSize = 14f
+        textSize = 14.5f
         setTextColor(Color.rgb(232, 237, 247))
         gravity = Gravity.CENTER
         includeFontPadding = false
@@ -452,7 +492,7 @@ class IncomingCallActivity : Activity() {
           ViewGroup.LayoutParams.WRAP_CONTENT,
           ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply {
-          topMargin = dp(14)
+          topMargin = dp(12)
         }
       })
     }
@@ -462,28 +502,29 @@ class IncomingCallActivity : Activity() {
     val container = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(16), 0, dp(16), 0)
+      setPadding(dp(4), 0, dp(4), 0)
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       ).apply {
-        bottomMargin = dp(40)
+        bottomMargin = dp(34)
       }
     }
 
-    // 1. Decline Button
-    val declineBtn = TextView(this).apply {
-      text = "\u260e" // Phone icon
-      textSize = 24f
-      typeface = Typeface.DEFAULT_BOLD
-      setTextColor(Color.WHITE)
-      gravity = Gravity.CENTER
-      background = oval(Color.rgb(239, 57, 62)) // Red color
-      elevation = dp(4).toFloat()
-      layoutParams = LinearLayout.LayoutParams(dp(64), dp(64)).apply {
-        rightMargin = dp(20)
+    val declineBtn = FrameLayout(this).apply {
+      background = gradientOval(Color.rgb(255, 74, 87), Color.rgb(223, 39, 52))
+      elevation = dp(10).toFloat()
+      layoutParams = LinearLayout.LayoutParams(dp(68), dp(68)).apply {
+        rightMargin = dp(18)
       }
+      addView(iconView(R.drawable.ic_call_phone_modern, dp(29)).apply {
+        layoutParams = FrameLayout.LayoutParams(dp(29), dp(29), Gravity.CENTER)
+      })
       setOnClickListener {
+        LiveKitCallNativeActions.markIncomingCallHandled(
+          this@IncomingCallActivity,
+          extra(LiveKitCallNativeActions.EXTRA_CALL_ID),
+        )
         stopRingtone()
         cancelNotification()
         LiveKitCallNativeActions.postAction(
@@ -496,45 +537,59 @@ class IncomingCallActivity : Activity() {
     }
     container.addView(declineBtn)
 
-    // 2. Slide to Answer
     val sliderTrack = FrameLayout(this).apply {
-      background = roundRect(Color.argb(50, 255, 255, 255), dp(32))
+      background = gradientRoundRect(
+        Color.argb(76, 255, 255, 255),
+        Color.argb(42, 255, 255, 255),
+        dp(34),
+        Color.argb(58, 255, 255, 255),
+        dp(1),
+      )
+      elevation = dp(8).toFloat()
       layoutParams = LinearLayout.LayoutParams(
         0,
-        dp(64),
+        dp(68),
         1f
       )
     }
 
     val promptText = TextView(this).apply {
       text = "Tr\u01b0\u1ee3t \u0111\u1ec3 tr\u1ea3 l\u1eddi" // "Trượt để trả lời"
-      textSize = 14f
+      textSize = 14.5f
+      typeface = Typeface.DEFAULT_BOLD
       setTextColor(Color.WHITE)
       gravity = Gravity.CENTER
       layoutParams = FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT
       ).apply {
-        leftMargin = dp(48) // Offset to not overlap with handle initially
-        rightMargin = dp(12)
+        leftMargin = dp(58)
+        rightMargin = dp(42)
       }
     }
     sliderTrack.addView(promptText)
 
-    val handle = TextView(this).apply {
-      text = if (isAudioCall) "\u260e" else "\u25a0"
-      textSize = 22f
-      typeface = Typeface.DEFAULT_BOLD
-      setTextColor(Color.WHITE)
-      gravity = Gravity.CENTER
-      background = oval(Color.rgb(77, 213, 66)) // Green color
+    val arrow = iconView(R.drawable.ic_call_arrow_right_modern, dp(18)).apply {
+      alpha = 0.58f
+      layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply {
+        rightMargin = dp(18)
+      }
+    }
+    sliderTrack.addView(arrow)
+
+    val handle = FrameLayout(this).apply {
+      background = gradientOval(Color.rgb(60, 222, 91), Color.rgb(22, 180, 86))
+      elevation = dp(10).toFloat()
       layoutParams = FrameLayout.LayoutParams(
-        dp(56),
-        dp(56),
+        dp(58),
+        dp(58),
         Gravity.LEFT or Gravity.CENTER_VERTICAL
       ).apply {
-        leftMargin = dp(4)
+        leftMargin = dp(5)
       }
+      addView(iconView(if (isAudioCall) R.drawable.ic_call_phone_modern else R.drawable.ic_call_video_modern, dp(27)).apply {
+        layoutParams = FrameLayout.LayoutParams(dp(27), dp(27), Gravity.CENTER)
+      })
     }
     sliderTrack.addView(handle)
 
@@ -545,7 +600,7 @@ class IncomingCallActivity : Activity() {
     handle.setOnTouchListener(object : View.OnTouchListener {
       override fun onTouch(v: View, event: MotionEvent): Boolean {
         if (isAnswered) return false
-        val maxSlide = sliderTrack.width - v.width - dp(8)
+        val maxSlide = (sliderTrack.width - v.width - dp(10)).coerceAtLeast(1)
 
         when (event.action) {
           MotionEvent.ACTION_DOWN -> {
@@ -563,6 +618,7 @@ class IncomingCallActivity : Activity() {
 
             val progress = nextTranslationX / maxSlide
             promptText.alpha = 1f - progress
+            arrow.alpha = 0.58f * (1f - progress)
             return true
           }
           MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -572,6 +628,10 @@ class IncomingCallActivity : Activity() {
                 .translationX(maxSlide.toFloat())
                 .setDuration(120L)
                 .withEndAction {
+                  LiveKitCallNativeActions.markIncomingCallHandled(
+                    this@IncomingCallActivity,
+                    extra(LiveKitCallNativeActions.EXTRA_CALL_ID),
+                  )
                   stopRingtone()
                   cancelNotification()
                   LiveKitCallNativeActions.postAction(
@@ -596,6 +656,10 @@ class IncomingCallActivity : Activity() {
                 .alpha(1f)
                 .setDuration(220L)
                 .start()
+              arrow.animate()
+                .alpha(0.58f)
+                .setDuration(220L)
+                .start()
             }
             return true
           }
@@ -609,6 +673,10 @@ class IncomingCallActivity : Activity() {
   }
 
   private fun openMessageThread() {
+    LiveKitCallNativeActions.markIncomingCallHandled(
+      this,
+      extra(LiveKitCallNativeActions.EXTRA_CALL_ID),
+    )
     stopRingtone()
     cancelNotification()
     LiveKitCallNativeActions.postAction(
@@ -666,6 +734,49 @@ class IncomingCallActivity : Activity() {
       shape = GradientDrawable.RECTANGLE
       cornerRadius = radius.toFloat()
       setColor(color)
+    }
+  }
+
+  private fun roundRectBorder(color: Int, radius: Int, strokeColor: Int, strokeWidth: Int): GradientDrawable {
+    return GradientDrawable().apply {
+      shape = GradientDrawable.RECTANGLE
+      cornerRadius = radius.toFloat()
+      setColor(color)
+      setStroke(strokeWidth, strokeColor)
+    }
+  }
+
+  private fun gradientOval(startColor: Int, endColor: Int): GradientDrawable {
+    return GradientDrawable(
+      GradientDrawable.Orientation.TL_BR,
+      intArrayOf(startColor, endColor),
+    ).apply {
+      shape = GradientDrawable.OVAL
+    }
+  }
+
+  private fun gradientRoundRect(
+    startColor: Int,
+    endColor: Int,
+    radius: Int,
+    strokeColor: Int,
+    strokeWidth: Int,
+  ): GradientDrawable {
+    return GradientDrawable(
+      GradientDrawable.Orientation.LEFT_RIGHT,
+      intArrayOf(startColor, endColor),
+    ).apply {
+      shape = GradientDrawable.RECTANGLE
+      cornerRadius = radius.toFloat()
+      setStroke(strokeWidth, strokeColor)
+    }
+  }
+
+  private fun iconView(iconRes: Int, size: Int): ImageView {
+    return ImageView(this).apply {
+      setImageResource(iconRes)
+      scaleType = ImageView.ScaleType.CENTER_INSIDE
+      layoutParams = ViewGroup.LayoutParams(size, size)
     }
   }
 
