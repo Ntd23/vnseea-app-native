@@ -8,7 +8,10 @@ export type SearchFilter = {
   keyword?: string;
   gender?: string;
   country?: string;
-  verified?: boolean;
+  verified?: boolean | 'on' | 'off';
+  status?: 'on' | 'off';
+  image?: 'on' | 'off';
+  filterByAge?: 'yes' | 'no';
   distance?: number;
   ageFrom?: number;
   ageTo?: number;
@@ -31,6 +34,7 @@ export type SearchResult = {
   followersCount?: number;
   mutualFriends?: number;
   distance?: number;
+  postCount?: number;
 };
 
 export type GlobalSearchTab =

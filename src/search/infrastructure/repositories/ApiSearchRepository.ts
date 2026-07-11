@@ -77,6 +77,9 @@ function readBoolean(raw: RawRecord | undefined, key: string): boolean | undefin
 }
 
 function mapUserToSearchResult(user: RawRecord): SearchResult {
+  const details = user.details && typeof user.details === 'object'
+    ? user.details as RawRecord
+    : undefined;
   return {
     userId: String(user.user_id ?? user.id ?? ''),
     username: String(user.username ?? ''),
@@ -96,6 +99,7 @@ function mapUserToSearchResult(user: RawRecord): SearchResult {
     followersCount: user.followers_count ? Number(user.followers_count) : undefined,
     mutualFriends: user.mutual_friends ? Number(user.mutual_friends) : undefined,
     distance: user.distance ? Number(user.distance) : undefined,
+    postCount: readNumber(details, 'post_count') ?? readNumber(user, 'post_count'),
   };
 }
 
@@ -257,7 +261,10 @@ async function searchUsersPagesGroups(
   if (filter.keyword) payload.search_key = filter.keyword;
   if (filter.gender) payload.gender = filter.gender;
   if (filter.country) payload.country = filter.country;
-  if (filter.verified) payload.verified = '1';
+  if (filter.verified) payload.verified = filter.verified === true ? 'on' : filter.verified;
+  if (filter.status) payload.status = filter.status;
+  if (filter.image) payload.image = filter.image;
+  if (filter.filterByAge) payload.filterbyage = filter.filterByAge;
   if (filter.ageFrom) payload.age_from = filter.ageFrom;
   if (filter.ageTo) payload.age_to = filter.ageTo;
 
@@ -325,6 +332,11 @@ export function createSearchRepository(): SearchRepository {
         ...social,
         hashtags,
       };
+    },
+
+    async discover(filter: SearchFilter): Promise<SearchResponse> {
+      const social = await searchUsersPagesGroups(filter);
+      return { ...social, hashtags: [] };
     },
 
     async searchUsers(filter: SearchFilter): Promise<SearchResponse> {
@@ -411,6 +423,26 @@ export function createSearchRepository(): SearchRepository {
 
     async unfollowUser(userId: string): Promise<FollowResponse> {
       return this.followUser(userId);
+    },
+
+    async toggleGroupJoin(groupId: string) {
+      const response = await apiBridge.post<{
+        api_status: number | string;
+        join_status?: string;
+      }>(apiRoutes.groups.join, { group_id: groupId });
+      const status = response.join_status ?? '';
+      return {
+        isJoined: status === 'joined',
+        requested: status === 'requested',
+      };
+    },
+
+    async togglePageLike(pageId: string) {
+      const response = await apiBridge.post<{
+        api_status: number | string;
+        like_status?: string;
+      }>(apiRoutes.pages.like, { page_id: pageId });
+      return { isLiked: response.like_status === 'liked' };
     },
   };
 }

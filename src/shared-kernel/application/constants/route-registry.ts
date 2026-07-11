@@ -90,6 +90,8 @@ export const apiRoutes = {
     get: 'get-events',
     create: 'create-event',
     actions: 'events',
+    going: 'go-to-event',
+    interested: 'interest-event',
   },
   ads: {
     main: 'ads',
@@ -127,6 +129,7 @@ export const apiRoutes = {
     removeMember: 'delete_group_member',
     getMine: 'get-my-groups',
     recommended: 'fetch-recommended',
+    join: 'join-group',
   },
   blogs: {
     get: 'get-articles',

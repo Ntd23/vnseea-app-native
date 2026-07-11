@@ -33,6 +33,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import {
   languageStorage,
   type AppLanguage,
@@ -247,6 +248,55 @@ function CreateEventScreen() {
     }
   }
 
+  const handleSubmit = () => {
+    if (!formData.name.trim()) {
+      showToast({ message: copy.errorNameRequired || 'Vui lòng nhập tên sự kiện.', type: 'error' });
+      return;
+    }
+    if (formData.name.trim().length < 5) {
+      showToast({ message: 'Tên sự kiện phải có ít nhất 5 ký tự.', type: 'error' });
+      return;
+    }
+    if (!formData.location.trim()) {
+      showToast({ message: copy.errorLocationRequired || 'Vui lòng nhập địa điểm.', type: 'error' });
+      return;
+    }
+    if (!formData.startDate) {
+      showToast({ message: copy.errorStartDateRequired || 'Vui lòng chọn ngày bắt đầu.', type: 'error' });
+      return;
+    }
+    if (!formData.startTime) {
+      showToast({ message: copy.errorStartTimeRequired || 'Vui lòng chọn giờ bắt đầu.', type: 'error' });
+      return;
+    }
+    if (!formData.endDate) {
+      showToast({ message: copy.errorEndDateRequired || 'Vui lòng chọn ngày kết thúc.', type: 'error' });
+      return;
+    }
+    if (!formData.endTime) {
+      showToast({ message: copy.errorEndTimeRequired || 'Vui lòng chọn giờ kết thúc.', type: 'error' });
+      return;
+    }
+    if (!formData.description.trim()) {
+      showToast({ message: copy.errorDescriptionRequired || 'Vui lòng nhập mô tả.', type: 'error' });
+      return;
+    }
+    if (formData.description.trim().length < 10) {
+      showToast({ message: 'Mô tả sự kiện phải có ít nhất 10 ký tự.', type: 'error' });
+      return;
+    }
+
+    const startAt = new Date(formData.startDate);
+    startAt.setHours(formData.startTime.getHours(), formData.startTime.getMinutes(), 0, 0);
+    const endAt = new Date(formData.endDate);
+    endAt.setHours(formData.endTime.getHours(), formData.endTime.getMinutes(), 0, 0);
+    if (endAt.getTime() < startAt.getTime()) {
+      showToast({ message: 'Thời gian kết thúc phải sau thời gian bắt đầu.', type: 'error' });
+      return;
+    }
+    submitEvent();
+  };
+
   function submitEvent() {
     // Call API to create event
     const dateToString = (date: Date | null): string => {
@@ -280,7 +330,7 @@ function CreateEventScreen() {
 
     const submitAction: Promise<{ success: boolean; error?: string }> = isEditing && editingEvent?.id
       ? updateEvent(editingEvent.id, eventData)
-      : createEvent(eventData).then(success => ({ success }));
+      : createEvent(eventData);
 
     submitAction.then(result => {
       console.log('[CreateEventScreen] Submit event result:', result.success);
@@ -578,74 +628,299 @@ function CreateEventScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
-      <View className="surface-brand h-16 flex-row items-center justify-between px-4">
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          activeOpacity={0.8}
-          onPress={back}
-        >
-          <ArrowLeft size={22} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text className="text-heading text-inverse">
-          {isEditing ? copy.editEvent : copy.createEvent}
-        </Text>
-        <Text className="text-title-primary text-inverse">{`${copy.step} ${step + 1}/6`}</Text>
-      </View>
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
 
       <ScrollView
-        className="flex-1"
-        contentContainerClassName="px-5 pb-8 pt-5"
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="mb-6">
-          <View className="progress-track">
-            <View className="progress-fill" style={{ width: progress as any }} />
+        {/* Section Header */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: '#f1f5f9',
+          }}
+        >
+          <View
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              backgroundColor: '#002fff',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <CalendarDays size={16} color="#FFFFFF" />
           </View>
-          <Text className="mt-2 text-right text-caption-secondary">
-            {progress} {copy.completed}
+          <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a', marginLeft: 10 }}>
+            {isEditing ? copy.editEventTitle : copy.createEventTitle}
           </Text>
         </View>
 
-        <View className="surface-card p-5">
-          <View className="mb-5 flex-row items-center">
-            <View className="icon-chip h-14 w-14 items-center justify-center">
-              {getStepIcon()}
-            </View>
-            <View className="ml-4 flex-1">
-              <Text className="text-display">{getStepTitle()}</Text>
-              <Text className="mt-1 text-body-secondary">{getStepHelper()}</Text>
-            </View>
+        <View style={{ paddingHorizontal: 16 }}>
+          {/* Tên */}
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 8 }}>
+              {language === 'vi' ? 'Tên' : 'Name'}
+            </Text>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                height: 50,
+                backgroundColor: '#ffffff',
+                color: '#0f172a',
+                fontSize: 15,
+              }}
+              placeholder={copy.eventNamePlaceholder}
+              placeholderTextColor="#94A3B8"
+              value={formData.name}
+              onChangeText={(text) => setFormData(prev => ({ ...prev, name: text }))}
+            />
           </View>
 
-          {renderStepContent()}
-
-          <View className="form-note-panel mt-6 flex-row items-start p-4">
-            <Info size={20} color="#64748B" />
-            <Text className="ml-3 flex-1 text-caption-secondary">
-              {copy.infoNote}
+          {/* Địa điểm */}
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 8 }}>
+              {language === 'vi' ? 'Địa điểm' : 'Location'}
             </Text>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                height: 50,
+                backgroundColor: '#ffffff',
+                color: '#0f172a',
+                fontSize: 15,
+              }}
+              placeholder={copy.selectLocation || 'Chọn địa điểm'}
+              placeholderTextColor="#94A3B8"
+              value={formData.location}
+              onChangeText={(text) => setFormData(prev => ({ ...prev, location: text }))}
+            />
+          </View>
+
+          {/* Khi nào sự kiện này sẽ bắt đầu? */}
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 8 }}>
+              {language === 'vi' ? 'Khi nào sự kiện này sẽ bắt đầu?' : 'When will this event start?'}
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setShowStartDatePicker(true)}
+              style={{
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                height: 50,
+                backgroundColor: '#ffffff',
+                justifyContent: 'center',
+                marginBottom: 8,
+              }}
+            >
+              <Text style={{ fontSize: 15, color: formData.startDate ? '#0f172a' : '#94a3b8' }}>
+                {formData.startDate ? formatDate(formData.startDate) : (copy.selectDate || 'Chọn ngày')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setShowStartTimePicker(true)}
+              style={{
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                height: 50,
+                backgroundColor: '#ffffff',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 15, color: formData.startTime ? '#0f172a' : '#94a3b8' }}>
+                {formData.startTime ? formatTime(formData.startTime) : (copy.selectTime || 'Chọn giờ')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Khi nào sự kiện này sẽ kết thúc? */}
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 8 }}>
+              {language === 'vi' ? 'Khi nào sự kiện này sẽ kết thúc?' : 'When will this event end?'}
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setShowEndDatePicker(true)}
+              style={{
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                height: 50,
+                backgroundColor: '#ffffff',
+                justifyContent: 'center',
+                marginBottom: 8,
+              }}
+            >
+              <Text style={{ fontSize: 15, color: formData.endDate ? '#0f172a' : '#94a3b8' }}>
+                {formData.endDate ? formatDate(formData.endDate) : (copy.selectDate || 'Chọn ngày')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setShowEndTimePicker(true)}
+              style={{
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                height: 50,
+                backgroundColor: '#ffffff',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 15, color: formData.endTime ? '#0f172a' : '#94a3b8' }}>
+                {formData.endTime ? formatTime(formData.endTime) : (copy.selectTime || 'Chọn giờ')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Sự mô tả */}
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 8 }}>
+              {language === 'vi' ? 'Sự mô tả' : 'Description'}
+            </Text>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                height: 120,
+                backgroundColor: '#ffffff',
+                color: '#0f172a',
+                fontSize: 15,
+                textAlignVertical: 'top',
+                paddingTop: 12,
+              }}
+              placeholder={copy.descriptionPlaceholder}
+              placeholderTextColor="#94A3B8"
+              multiline
+              value={formData.description}
+              onChangeText={(text) => setFormData(prev => ({ ...prev, description: text }))}
+            />
+          </View>
+
+          {/* Ảnh */}
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 8 }}>
+              {language === 'vi' ? 'Ảnh' : 'Image'}
+            </Text>
+            <TouchableOpacity
+              onPress={handleSelectImage}
+              activeOpacity={0.8}
+              style={{
+                height: 180,
+                borderRadius: 12,
+                borderWidth: imagePreview ? 0 : 1,
+                borderStyle: 'dashed',
+                borderColor: '#94a3b8',
+                backgroundColor: '#f8fafc',
+                justifyContent: 'center',
+                alignItems: 'center',
+                overflow: 'hidden',
+              }}
+            >
+              {imagePreview ? (
+                <View style={{ width: '100%', height: '100%', position: 'relative' }}>
+                  <Image source={{ uri: imagePreview }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                  <TouchableOpacity
+                    onPress={() => {
+                      setImagePreview(null);
+                      setFormData(prev => ({ ...prev, image: null }));
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: 10,
+                      top: 10,
+                      width: 30,
+                      height: 30,
+                      borderRadius: 15,
+                      backgroundColor: 'rgba(0,0,0,0.5)',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <X size={16} color="#ffffff" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={{ alignItems: 'center' }}>
+                  <ImagePlus size={32} color="#94a3b8" />
+                  <Text style={{ marginTop: 8, fontSize: 13, color: '#64748b', fontWeight: '500' }}>
+                    {copy.selectImage || 'Chọn ảnh'}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.8}
+              style={{
+                flex: 1,
+                height: 52,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                backgroundColor: '#ffffff',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#475569' }}>
+                {language === 'vi' ? 'Quay lại' : 'Back'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleSubmit}
+              activeOpacity={0.8}
+              disabled={isCreating || isUpdating}
+              style={{
+                flex: 1,
+                height: 52,
+                borderRadius: 12,
+                backgroundColor: '#002fff',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {isCreating || isUpdating ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#ffffff' }}>
+                  {isEditing ? (copy.saveChanges || 'Lưu thay đổi') : (copy.createEvent || 'Tạo sự kiện')}
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
-
-      <View className="px-5 pb-6">
-        <TouchableOpacity
-          className="btn-primary min-h-[54px]"
-          activeOpacity={0.9}
-          onPress={next}
-          disabled={isCreating || isUpdating}
-        >
-          {isCreating || isUpdating ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text className="text-title-primary text-inverse">
-              {step === 5 ? (isEditing ? copy.saveChanges : copy.complete) : copy.next}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
 
       {/* Start Date Picker Modal (iOS) */}
       {showStartDatePicker && Platform.OS === 'ios' && (
@@ -678,7 +953,7 @@ function CreateEventScreen() {
         <DateTimePicker
           value={formData.startDate || new Date()}
           mode="date"
-          display="default"
+          display="spinner"
           onChange={handleStartDateChange}
           minimumDate={new Date()}
         />
@@ -714,7 +989,7 @@ function CreateEventScreen() {
         <DateTimePicker
           value={formData.startTime || new Date()}
           mode="time"
-          display="default"
+          display="spinner"
           onChange={handleStartTimeChange}
         />
       )}
@@ -750,7 +1025,7 @@ function CreateEventScreen() {
         <DateTimePicker
           value={formData.endDate || new Date()}
           mode="date"
-          display="default"
+          display="spinner"
           onChange={handleEndDateChange}
           minimumDate={formData.startDate || new Date()}
         />
@@ -786,14 +1061,14 @@ function CreateEventScreen() {
         <DateTimePicker
           value={formData.endTime || new Date()}
           mode="time"
-          display="default"
+          display="spinner"
           onChange={handleEndTimeChange}
         />
       )}
 
       {/* Toast Notification */}
       <ToastContainer />
-    </SafeAreaView>
+    </View>
   );
 }
 

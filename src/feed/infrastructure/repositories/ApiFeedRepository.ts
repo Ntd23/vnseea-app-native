@@ -1962,6 +1962,10 @@ export function createFeedRepository(): FeedRepository {
         payload.group_id = draft.groupId;
       }
 
+      if (draft.eventId) {
+        payload.event_id = draft.eventId;
+      }
+
       // Text — only send if non-empty after trim. WoWonder treats
       // whitespace-only `postText` as "no text" so we mirror that.
       const trimmedText = draft.text.trim();
@@ -2207,6 +2211,45 @@ export function createFeedRepository(): FeedRepository {
           } catch (err) {
             console.warn('[ApiFeedRepository] skip group post', {
               groupId,
+              postId: readString(item, 'id', 'post_id'),
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return null;
+          }
+        })
+        .filter(
+          (post): post is FeedTextPost | FeedVideoPost | FeedPollPost =>
+            post !== null,
+        )
+        .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+
+      return {
+        posts,
+        nextCursor: getOldestFeedPostId(posts),
+        reachedEnd: rawItems.length < limit,
+      };
+    },
+
+    async getEventPosts(eventId, limit = 20, afterPostId) {
+      const response = await backendApi.post<{
+        api_status: number | string;
+        data?: Array<Record<string, unknown>>;
+      }>(apiRoutes.feed.posts, {
+        type: 'get_event_posts',
+        id: eventId,
+        limit,
+        ...(afterPostId ? { after_post_id: afterPostId } : {}),
+      });
+
+      const rawItems = response.data ?? [];
+      const posts = rawItems
+        .filter(item => !looksLikeAd(item))
+        .map(item => {
+          try {
+            return mapProfilePost(item);
+          } catch (err) {
+            console.warn('[ApiFeedRepository] skip event post', {
+              eventId,
               postId: readString(item, 'id', 'post_id'),
               error: err instanceof Error ? err.message : String(err),
             });

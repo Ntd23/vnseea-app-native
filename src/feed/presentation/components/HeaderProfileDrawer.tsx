@@ -527,7 +527,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             navigation.navigate(ROUTES.REELS);
             return;
           case 'explore':
-            navigation.navigate(ROUTES.EXPLORE);
+            navigation.navigate(ROUTES.SEARCH, { discovery: true });
             return;
           case 'common':
             openSettingsPanel('general-common');
