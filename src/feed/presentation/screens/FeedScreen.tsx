@@ -40,15 +40,12 @@ import {
   ArrowUp,
   Briefcase,
   Building2,
-  Compass,
   Globe,
-  Image as ImageIcon,
   Lock,
   MapPin,
   Megaphone,
   Plus,
   Radio,
-  ShoppingBag,
   ThumbsUp,
   Users,
   Video,
@@ -126,7 +123,7 @@ import { resolveFeedChromeTopInset } from '../components/feedHeaderInsets';
 import { HomeFeedIntro } from '../components/HomeFeedIntro';
 import { CreatePostModal } from './CreatePostScreen';
 import { navigateToOwnProfile } from '../../../navigation/profileNavigation';
-import { FeedSourceFilterBar } from '../components/FeedSourceFilterBar';
+import { FeedFilterTabs } from '../components/FeedFilterTabs';
 import {
   createFeedChromeCollapseState,
   getNextFeedChromeCollapseState,
@@ -320,94 +317,6 @@ const Avatar = React.memo(function Avatar({
     />
   );
 });
-
-function FilterTabs({
-  copy: _copy,
-  activeSource,
-  onChangeSource,
-}: {
-  copy: FeedCopy;
-  activeSource: FeedSource | 'photos';
-  onChangeSource: (source: FeedSource | 'photos') => void;
-}) {
-  const navigation = useNavigation<any>();
-  const items = useMemo(
-    () => [
-      {
-        key: 'all',
-        accessibilityLabel: 'All',
-        icon: (active: boolean) => (
-          <Compass
-            size={24}
-            color={active ? '#0758ff' : '#9ca3af'}
-            strokeWidth={active ? 2.5 : 2.0}
-          />
-        ),
-      },
-      {
-        key: 'nearby',
-        accessibilityLabel: 'Nearby',
-        icon: () => (
-          <MapPin
-            size={24}
-            color="#9ca3af"
-            strokeWidth={2.0}
-          />
-        ),
-        onPress: () => navigation.navigate(ROUTES.NEARBY_USERS),
-      },
-      {
-        key: 'photos',
-        accessibilityLabel: 'Photos',
-        icon: (active: boolean) => (
-          <ImageIcon
-            size={24}
-            color={active ? '#0758ff' : '#9ca3af'}
-            strokeWidth={active ? 2.5 : 2.0}
-          />
-        ),
-      },
-      {
-        key: 'videos',
-        accessibilityLabel: 'Video',
-        icon: () => (
-          <Video
-            size={24}
-            color="#9ca3af"
-            strokeWidth={2.0}
-          />
-        ),
-        onPress: () => navigation.navigate(ROUTES.REELS),
-      },
-      {
-        key: 'marketplace',
-        accessibilityLabel: 'Marketplace',
-        icon: () => (
-          <ShoppingBag
-            size={24}
-            color="#9ca3af"
-            strokeWidth={2.0}
-          />
-        ),
-        onPress: () => navigation.navigate(ROUTES.MARKETPLACE),
-      },
-    ],
-    [navigation],
-  );
-
-  return (
-    <FeedSourceFilterBar
-      activeKey={activeSource}
-      items={items}
-      onChange={key => {
-        if (key === 'all' || key === 'photos') {
-          onChangeSource(key);
-        }
-      }}
-    />
-  );
-
-}
 
 function formatCount(count: number) {
   if (!Number.isFinite(count) || count <= 0) return '0';
@@ -3456,8 +3365,7 @@ function FeedScreen() {
               translateDistance={feedHeaderOverlayHeight}
             >
               <FeedHeader />
-              <FilterTabs
-                copy={copy}
+              <FeedFilterTabs
                 activeSource={activeFeedSource}
                 onChangeSource={setActiveFeedSource}
               />

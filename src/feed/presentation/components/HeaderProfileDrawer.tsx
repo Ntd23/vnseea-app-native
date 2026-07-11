@@ -584,10 +584,10 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
    // Keep the i18next instance in sync with the MMKV store so any
    // consumer using useTranslation re-renders immediately.
    changeLocale(next);
-   Alert.alert(
-   next === 'vi' ? 'Ngôn ngơ / Language' : 'Language / Ngôn ngơ',
-   next === 'vi' ? copy.languageChangeVi : copy.languageChangeEn,
-   );
+    Alert.alert(
+      next === 'vi' ? 'Ngôn ngữ / Language' : 'Language / Ngôn ngữ',
+      next === 'vi' ? copy.languageChangeVi : copy.languageChangeEn,
+    );
    },
    [copy.languageChangeEn, copy.languageChangeVi, currentLanguage, setLanguage],
 );

@@ -138,6 +138,45 @@ const IOS_PHOTO_GRID_FRAME_STYLE: ViewStyle | undefined =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 const MEDIA_ASPECT_RATIO_CACHE_LIMIT = 350;
 const MEDIA_ASPECT_RATIO_CACHE = new Map<string, number>();
+const POST_TOKEN_BLUE = '#0000ff';
+const POST_TOKEN_FALLBACK = String.raw`[@#][^\s@#.,!?;:()[\]{}"']+`;
+
+function escapeTokenPattern(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function renderPostTextTokens(text: string, mentionNames: string[] = []) {
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  const knownMentions = mentionNames
+    .map(name => name.trim().replace(/^@/, ''))
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length)
+    .map(name => `@${escapeTokenPattern(name)}(?=$|\\s|[.,!?;:()[\\]{}"'#@])`);
+  const tokenPattern = new RegExp(
+    `(${[...knownMentions, POST_TOKEN_FALLBACK].join('|')})`,
+    'g',
+  );
+
+  while ((match = tokenPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+    nodes.push(
+      <Text key={`${match[0]}-${match.index}`} style={{ color: POST_TOKEN_BLUE }}>
+        {match[0]}
+      </Text>,
+    );
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes.length > 0 ? nodes : text;
+}
 
 function clampAspectRatio(
   ratio: number,
@@ -197,6 +236,10 @@ export type FeedCopy = {
   library: string;
   tag: string;
   feeling: string;
+  photo?: string;
+  video?: string;
+  product?: string;
+  poll?: string;
   storiesTitle: string;
   seeAll: string;
   createStory: string;
@@ -309,6 +352,10 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     library: 'Ảnh/video',
     tag: 'Gắn thẻ',
     feeling: 'Cảm xúc',
+    photo: 'Hình ảnh',
+    video: 'Video',
+    product: 'Sản phẩm',
+    poll: 'Thăm dò',
     storiesTitle: 'Tin tức mới',
     seeAll: 'Xem tất cả',
     createStory: 'Tạo tin',
@@ -420,6 +467,10 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     library: 'Photo/video',
     tag: 'Tag',
     feeling: 'Feeling',
+    photo: 'Photos',
+    video: 'Videos',
+    product: 'Product',
+    poll: 'Poll',
     storiesTitle: 'Latest stories',
     seeAll: 'See all',
     createStory: 'Create story',
@@ -1675,6 +1726,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         {post.caption ? (
           <ExpandablePostCaption
             text={post.caption}
+            mentionNames={post.mentionNames}
             copy={copy}
             collapsible={Boolean(post.thumbnailUrl || post.videoUrl)}
           />
@@ -2005,10 +2057,12 @@ const COLLAPSED_CAPTION_CHAR_LIMIT = 170;
 
 const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
   text,
+  mentionNames,
   copy,
   collapsible,
 }: {
   text: string;
+  mentionNames?: string[];
   copy: FeedCopy;
   collapsible: boolean;
 }) {
@@ -2049,7 +2103,7 @@ const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
         }
         onTextLayout={handleTextLayout}
       >
-        {normalizedText}
+        {renderPostTextTokens(normalizedText, mentionNames)}
       </Text>
       {canCollapse ? (
         <TouchableOpacity
@@ -2256,6 +2310,7 @@ export const TextPostCard = React.memo(function TextPostCard({
         {post.caption ? (
           <ExpandablePostCaption
             text={post.caption}
+            mentionNames={post.mentionNames}
             copy={copy}
             collapsible={totalPhotos > 0}
           />

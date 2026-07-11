@@ -32,6 +32,7 @@ import {
   FeedGlassActionBar,
   FeedGlassActionButton,
 } from './FeedCardChrome';
+import { renderPostTextTokens } from './PostCards';
 
 interface PollPostCardProps {
   post: FeedPollPost;
@@ -410,7 +411,7 @@ export const PollPostCard = React.memo(function PollPostCard({
           className="px-3 pb-3"
         >
           <Text className="text-body-primary font-medium text-[16px] text-[#050505]" numberOfLines={4}>
-            {post.pollQuestion}
+            {renderPostTextTokens(post.pollQuestion, post.mentionNames)}
           </Text>
         </TouchableOpacity>
       )}

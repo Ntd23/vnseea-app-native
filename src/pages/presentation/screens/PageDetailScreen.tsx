@@ -41,9 +41,7 @@ import {
   Gift,
   Globe2,
   Heart,
-  Image as ImageIcon,
   MapPin,
-  Music,
   Tag,
   MessageCircle,
   MoreHorizontal,
@@ -87,9 +85,6 @@ import { ShareActionSheet } from '../../../shared-kernel/presentation/components
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { usePageDetailViewModel } from '../../application/view-models/usePageDetailViewModel';
-import type {
-  PageDetailTab,
-} from '../../application/view-models/usePageDetailViewModel';
 import type { PageReview, PageUser, PagesItem } from '../../domain/types/pages.types';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 // Dedicated page-only share sheet. Distinct from the shared
@@ -101,8 +96,9 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 // the import surface.
 import PageShareActionSheet from '../components/PageShareActionSheet';
 import PageDetailMenuActionSheet from '../components/PageDetailMenuActionSheet';
+import { PagePostMenuActionSheet } from '../components/PagePostMenuActionSheet';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedSourceFilterBar } from '../../../feed/presentation/components/FeedSourceFilterBar';
+import { FeedFilterTabs } from '../../../feed/presentation/components/FeedFilterTabs';
 
 type PageDetailProps = NativeStackScreenProps<
   RootStackParamList,
@@ -214,6 +210,20 @@ const PAGE_DETAIL_UI_COPY = {
     tabPhotos: 'Ảnh',
     tabVideos: 'Video',
     tabMusic: 'Nhạc',
+    editPostTitle: 'Chỉnh sửa bài',
+    editPostPlaceholder: 'Nội dung bài viết',
+    editPostCancel: 'Hủy',
+    editPostSave: 'Lưu',
+    editPostSaving: 'Đang lưu...',
+    editPostEmpty: 'Nội dung bài viết không được để trống.',
+    commentsEnabledTitle: 'Đã bật nhận xét',
+    commentsEnabledMessage: 'Người dùng có thể bình luận về bài viết này.',
+    commentsDisabledTitle: 'Đã tắt nhận xét',
+    commentsDisabledMessage: 'Người dùng không thể bình luận về bài viết này.',
+    pinnedTitle: 'Đã ghim bài đăng',
+    pinnedMessage: 'Bài đăng đã được ghim lên đầu trang.',
+    unpinnedTitle: 'Đã bỏ ghim bài đăng',
+    unpinnedMessage: 'Bài đăng không còn được ghim trong trang.',
   },
   en: {
     likesLabel: 'Likes',
@@ -252,6 +262,20 @@ const PAGE_DETAIL_UI_COPY = {
     tabPhotos: 'Photos',
     tabVideos: 'Videos',
     tabMusic: 'Music',
+    editPostTitle: 'Edit post',
+    editPostPlaceholder: 'Post content',
+    editPostCancel: 'Cancel',
+    editPostSave: 'Save',
+    editPostSaving: 'Saving...',
+    editPostEmpty: 'Post content cannot be empty.',
+    commentsEnabledTitle: 'Comments enabled',
+    commentsEnabledMessage: 'Users can comment on this post.',
+    commentsDisabledTitle: 'Comments disabled',
+    commentsDisabledMessage: 'Users cannot comment on this post.',
+    pinnedTitle: 'Post pinned',
+    pinnedMessage: 'The post was pinned to the top of this page.',
+    unpinnedTitle: 'Post unpinned',
+    unpinnedMessage: 'The post is no longer pinned on this page.',
   },
 };
 
@@ -593,41 +617,6 @@ function PageHero({
     </View>
   );
 }
-function Tabs({
-  activeTab,
-  onChange,
-  tabs,
-}: {
-  activeTab: PageDetailTab;
-  onChange: (tab: PageDetailTab) => void;
-  tabs: Array<{ id: PageDetailTab; label: string }>;
-}) {
-  return (
-    <View className="mt-2 flex-row bg-white px-2">
-      {tabs.map(tab => {
-        const active = activeTab === tab.id;
-        return (
-          <TouchableOpacity
-            key={tab.id}
-            className="min-h-[48px] flex-1 items-center justify-center border-b-2"
-            style={{ borderBottomColor: active ? '#002fff' : 'transparent' }}
-            activeOpacity={0.8}
-            onPress={() => onChange(tab.id)}
-          >
-            <Text
-              className="text-caption-primary font-bold"
-              style={{ color: active ? '#002fff' : '#64748B' }}
-              numberOfLines={1}
-            >
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
 /**
  * Post-type filter chips for the "posts" tab.
  *
@@ -1418,6 +1407,12 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
   const [postShareVisible, setPostShareVisible] = useState(false);
   const [sharingPost, setSharingPost] = useState<FeedPost | undefined>();
+  const [postMenuVisible, setPostMenuVisible] = useState(false);
+  const [selectedPostForMenu, setSelectedPostForMenu] = useState<FeedPost | null>(null);
+  const [editingPost, setEditingPost] = useState<FeedTextPost | FeedVideoPost | FeedPollPost | null>(null);
+  const [editPostText, setEditPostText] = useState('');
+  const [editPostError, setEditPostError] = useState<string | null>(null);
+  const [isSavingEditedPost, setIsSavingEditedPost] = useState(false);
   const [pickerAnchor, setPickerAnchor] = useState<{
     postId: string;
     x: number;
@@ -1476,67 +1471,6 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   const copy = PAGE_DETAIL_UI_COPY[language] || PAGE_DETAIL_UI_COPY.vi;
   const postCardCopy = POST_CARD_COPY[language];
   const insets = useSafeAreaInsets();
-
-  const filterItems = useMemo(
-    () => [
-      {
-        key: 'posts' as PageDetailTab,
-        accessibilityLabel: 'All',
-        icon: (active: boolean) => (
-          <FileText
-            size={22}
-            color={active ? '#002fff' : '#9ca3af'}
-            strokeWidth={active ? 2.5 : 2.0}
-          />
-        ),
-      },
-      {
-        key: 'info' as PageDetailTab,
-        accessibilityLabel: 'Info',
-        icon: (active: boolean) => (
-          <FileText
-            size={22}
-            color={active ? '#002fff' : '#9ca3af'}
-            strokeWidth={active ? 2.5 : 2.0}
-          />
-        ),
-      },
-      {
-        key: 'photos' as PageDetailTab,
-        accessibilityLabel: 'Photos',
-        icon: (active: boolean) => (
-          <ImageIcon
-            size={22}
-            color={active ? '#002fff' : '#9ca3af'}
-            strokeWidth={active ? 2.5 : 2.0}
-          />
-        ),
-      },
-      {
-        key: 'videos' as PageDetailTab,
-        accessibilityLabel: 'Videos',
-        icon: (active: boolean) => (
-          <Play
-            size={22}
-            color={active ? '#002fff' : '#9ca3af'}
-            strokeWidth={active ? 2.5 : 2.0}
-          />
-        ),
-      },
-      {
-        key: 'music' as PageDetailTab,
-        accessibilityLabel: 'Music',
-        icon: (active: boolean) => (
-          <Music
-            size={22}
-            color={active ? '#002fff' : '#9ca3af'}
-            strokeWidth={active ? 2.5 : 2.0}
-          />
-        ),
-      },
-    ],
-    [],
-  );
 
   useEffect(() => {
     if (inviteVisible) {
@@ -1614,6 +1548,10 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     (input: SharePostInput) => vm.sharePost(input),
     [vm],
   );
+
+  const handlePostShared = useCallback(() => {
+    void vm.refresh();
+  }, [vm]);
 
   const handlePhotoPress = useCallback(
     (post: FeedTextPost, photoIndex: number) => {
@@ -1695,6 +1633,103 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
       navigation.push(ROUTES.PAGE_DETAIL, { page });
     },
     [navigation],
+  );
+
+  const handleOpenPostMenu = useCallback((post: FeedPost) => {
+    setSelectedPostForMenu(post);
+    setPostMenuVisible(true);
+  }, []);
+
+  const handleClosePostMenu = useCallback(() => {
+    setPostMenuVisible(false);
+    setTimeout(() => setSelectedPostForMenu(null), 200);
+  }, []);
+
+  const handleEditPost = useCallback((post: FeedPost) => {
+    if (post.kind !== 'text' && post.kind !== 'video' && post.kind !== 'poll') {
+      return;
+    }
+
+    setEditingPost(post);
+    setEditPostText(post.caption ?? (post.kind === 'poll' ? post.pollQuestion ?? '' : ''));
+    setEditPostError(null);
+  }, []);
+
+  const handleCloseEditPost = useCallback(() => {
+    if (isSavingEditedPost) {
+      return;
+    }
+
+    setEditingPost(null);
+    setEditPostText('');
+    setEditPostError(null);
+  }, [isSavingEditedPost]);
+
+  const handleSaveEditedPost = useCallback(async () => {
+    if (!editingPost) {
+      return;
+    }
+
+    const nextText = editPostText.trim();
+    if (!nextText) {
+      setEditPostError(copy.editPostEmpty);
+      return;
+    }
+
+    setIsSavingEditedPost(true);
+    setEditPostError(null);
+    try {
+      await vm.editPost(editingPost.id, nextText);
+      setEditingPost(null);
+      setEditPostText('');
+    } catch (err) {
+      setEditPostError(
+        err instanceof Error ? err.message : 'Không chỉnh sửa được bài viết.',
+      );
+    } finally {
+      setIsSavingEditedPost(false);
+    }
+  }, [copy.editPostEmpty, editPostText, editingPost, vm]);
+
+  const handleDeletePost = useCallback(
+    async (post: FeedPost) => {
+      await vm.deletePost(post.id);
+    },
+    [vm],
+  );
+
+  const handleTogglePostComments = useCallback(
+    async (post: FeedPost) => {
+      const result = await vm.togglePostComments(post.id);
+      Alert.alert(
+        result.enabled ? copy.commentsEnabledTitle : copy.commentsDisabledTitle,
+        result.enabled ? copy.commentsEnabledMessage : copy.commentsDisabledMessage,
+      );
+    },
+    [
+      copy.commentsDisabledMessage,
+      copy.commentsDisabledTitle,
+      copy.commentsEnabledMessage,
+      copy.commentsEnabledTitle,
+      vm,
+    ],
+  );
+
+  const handlePinPost = useCallback(
+    async (post: FeedPost) => {
+      const result = await vm.pinPost(post.id);
+      Alert.alert(
+        result.pinned ? copy.pinnedTitle : copy.unpinnedTitle,
+        result.pinned ? copy.pinnedMessage : copy.unpinnedMessage,
+      );
+    },
+    [
+      copy.pinnedMessage,
+      copy.pinnedTitle,
+      copy.unpinnedMessage,
+      copy.unpinnedTitle,
+      vm,
+    ],
   );
 
   const handleReport = useCallback(() => {
@@ -1807,18 +1842,15 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
           <Text className="text-caption-primary text-red-600">{vm.error}</Text>
         </View>
       ) : null}
-      <FeedSourceFilterBar
-        activeKey={vm.activeTab}
-        items={filterItems}
-        onChange={vm.setActiveTab}
+      <FeedFilterTabs
+        activeSource={vm.activeTab}
+        onChangeSource={vm.setActiveTab}
       />
-      {vm.activeTab === 'posts' || vm.activeTab === 'photos' || vm.activeTab === 'videos' ? (
-        <PostSearchBox
-          value={vm.searchQuery}
-          placeholder="Tìm kiếm các bài viết"
-          onChangeText={vm.setSearchQuery}
-        />
-      ) : null}
+      <PostSearchBox
+        value={vm.searchQuery}
+        placeholder="Tìm kiếm các bài viết"
+        onChangeText={vm.setSearchQuery}
+      />
     </>
   );
 
@@ -1843,6 +1875,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
             gestureStartY={gestureStartY}
             hasDragged={hasDragged}
             onOpenReactions={openReactionsSheet}
+            onOpenPostMenu={handleOpenPostMenu}
           />
         );
       }
@@ -1865,6 +1898,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
             gestureStartY={gestureStartY}
             hasDragged={hasDragged}
             onOpenReactions={openReactionsSheet}
+            onOpenPostMenu={handleOpenPostMenu}
           />
         );
       }
@@ -1887,6 +1921,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
             gestureStartX={gestureStartX}
             gestureStartY={gestureStartY}
             hasDragged={hasDragged}
+            onMorePress={handleOpenPostMenu}
           />
         );
       }
@@ -1903,6 +1938,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
       handleNavigateToProfile,
       handleOpenComments,
       handleOpenPost,
+      handleOpenPostMenu,
       handleOpenPostShare,
       handleOpenReactionPicker,
       handlePhotoPress,
@@ -1916,20 +1952,12 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
 
   const footer = (
     <>
-      {(vm.activeTab === 'posts' || vm.activeTab === 'photos' || vm.activeTab === 'videos') &&
-      vm.isLoadingPostsMore ? (
+      {vm.isLoadingPostsMore ? (
         <View className="py-4">
           <ActivityIndicator color="#002fff" />
         </View>
       ) : null}
-      {vm.activeTab === 'music' ? (
-        <View className="px-4 py-6">
-          <Text className="rounded-2xl bg-white px-4 py-8 text-center text-body-secondary">
-            {copy.emptyMusic}
-          </Text>
-        </View>
-      ) : null}
-      {vm.activeTab === 'posts' || vm.activeTab === 'info' ? (
+      {vm.activeTab === 'all' ? (
         <>
           <PageInfoSections
             page={vm.page}
@@ -1970,7 +1998,6 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         ListHeaderComponent={listHeader}
         ListFooterComponent={footer}
         ListEmptyComponent={
-          vm.activeTab === 'posts' || vm.activeTab === 'photos' || vm.activeTab === 'videos' ? (
           <View className="px-4 py-10">
             {vm.isLoading ? (
               <ActivityIndicator color="#002fff" />
@@ -1982,14 +2009,11 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
                 <Text className="mt-3 text-center text-sm text-slate-500">
                   {vm.activeTab === 'photos'
                     ? copy.emptyPhotos
-                    : vm.activeTab === 'videos'
-                      ? copy.emptyVideos
-                      : `${vm.page.pageName || vm.page.pageTitle || copy.defaultTitle} ${copy.emptyPosts}`}
+                    : `${vm.page.pageName || vm.page.pageTitle || copy.defaultTitle} ${copy.emptyPosts}`}
                 </Text>
               </View>
             )}
           </View>
-          ) : null
         }
         contentContainerClassName="pb-10"
         showsVerticalScrollIndicator={false}
@@ -2001,11 +2025,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
             colors={['#002fff']}
           />
         }
-        onEndReached={
-          vm.activeTab === 'posts' || vm.activeTab === 'photos' || vm.activeTab === 'videos'
-            ? vm.loadMorePosts
-            : undefined
-        }
+        onEndReached={vm.loadMorePosts}
         onEndReachedThreshold={0.55}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
@@ -2037,6 +2057,70 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onReport={handleReportFromMenu}
         onOpenSettings={handleOpenPageSettings}
       />
+      <PagePostMenuActionSheet
+        visible={postMenuVisible}
+        post={selectedPostForMenu}
+        onClose={handleClosePostMenu}
+        onEdit={handleEditPost}
+        onDelete={handleDeletePost}
+        onToggleComments={handleTogglePostComments}
+        onPin={handlePinPost}
+      />
+      <Modal
+        visible={editingPost !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseEditPost}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={handleCloseEditPost}
+          style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.45)' }}
+        />
+        <View className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-white px-4 pb-6 pt-4">
+          <Text className="text-xl font-bold text-slate-900">{copy.editPostTitle}</Text>
+          <TextInput
+            value={editPostText}
+            onChangeText={setEditPostText}
+            multiline
+            textAlignVertical="top"
+            editable={!isSavingEditedPost}
+            placeholder={copy.editPostPlaceholder}
+            placeholderTextColor="#94A3B8"
+            className="mt-4 min-h-[150px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900"
+          />
+          {editPostError ? (
+            <Text className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-center text-sm font-semibold text-red-600">
+              {editPostError}
+            </Text>
+          ) : null}
+          <View className="mt-5 flex-row items-center justify-between">
+            <TouchableOpacity
+              disabled={isSavingEditedPost}
+              onPress={handleCloseEditPost}
+              className="min-h-[46px] flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white"
+              activeOpacity={0.78}
+            >
+              <Text className="text-base font-bold text-slate-600">{copy.editPostCancel}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={isSavingEditedPost}
+              onPress={() => void handleSaveEditedPost()}
+              className="ml-3 min-h-[46px] flex-1 items-center justify-center rounded-xl bg-[#0000ff]"
+              activeOpacity={0.82}
+            >
+              {isSavingEditedPost ? (
+                <View className="flex-row items-center">
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text className="ml-2 text-base font-bold text-white">{copy.editPostSaving}</Text>
+                </View>
+              ) : (
+                <Text className="text-base font-bold text-white">{copy.editPostSave}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       <ReactionPickerOverlay
         anchor={pickerAnchor}
         onPick={handlePickReaction}
@@ -2083,12 +2167,14 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
         onClose={handleClosePostShare}
         post={sharingPost}
         onInternalShare={handleInternalSharePost}
+        onShared={handlePostShared}
       />
       <CreatePostModal
         visible={composerModalVisible}
         onClose={() => setComposerModalVisible(false)}
         page={vm.page}
         initialAction={composerInitialAction}
+        onCreated={vm.refresh}
       />
       <PhotoViewerModal
         state={photoViewer}

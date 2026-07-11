@@ -45,6 +45,14 @@ export interface FeedCopy {
    * tab — "chưa có ai thả cảm xúc" vs "chưa ai thả Yêu thích".
    */
   reactionsEmptyForTab: (tab: PostReactionTab) => string;
+  composerPlaceholder?: string;
+  library?: string;
+  tag?: string;
+  feeling?: string;
+  photo?: string;
+  video?: string;
+  product?: string;
+  poll?: string;
 }
 
 const TAB_LABEL_VI: Record<Exclude<PostReactionTab, 'all'>, string> = {
