@@ -1,4 +1,4 @@
-// Description: Advertising screen showing the current user's real ad campaigns.
+// English description: Displays the user's wallet balance and advertising campaigns.
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   BarChart3,
   CalendarDays,
+  CreditCard,
   Edit,
   Eye,
   Megaphone,
@@ -28,6 +29,8 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { useAdvertisingViewModel } from '../../application/view-models/useAdvertisingViewModel';
 import type { AdItem } from '../../../advertising/domain/types/ads.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import {
   languageStorage,
   type AppLanguage,
@@ -105,7 +108,7 @@ function AdCampaignCard({
       ) : mediaUrl ? (
         <View className="h-40 w-full items-center justify-center bg-slate-900">
           <Video size={38} color="#ffffff" />
-          <Text className="mt-2 text-sm font-semibold text-white">Quảng cáo video</Text>
+          <Text className="mt-2 text-sm font-semibold text-white">{copy.adVideo || "Quảng cáo video"}</Text>
         </View>
       ) : null}
 
@@ -216,10 +219,48 @@ function AdCampaignCard({
   );
 }
 
+function CampaignTableRow({
+  ad,
+  onEdit,
+  onDelete,
+  onViewDetails,
+  copy,
+}: {
+  ad: AdItem;
+  onEdit: (ad: AdItem) => void;
+  onDelete: (ad: AdItem) => void;
+  onViewDetails: (ad: AdItem) => void;
+  copy: Record<string, string>;
+}) {
+  const status = getStatus(ad, copy);
+  return (
+    <TouchableOpacity
+      activeOpacity={0.75}
+      onPress={() => onViewDetails(ad)}
+      className="min-h-[54px] flex-row items-center border-b border-[#e5e7eb] bg-white">
+      <Text className="w-12 px-2 text-xs text-[#475569]">{ad.id}</Text>
+      <Text className="w-40 px-2 text-xs text-[#475569]" numberOfLines={2}>{ad.name}</Text>
+      <Text className="w-24 px-2 text-xs text-[#475569]">{getBiddingLabel(ad.bidding, copy)}</Text>
+      <Text className="w-20 px-2 text-center text-xs text-[#475569]">{formatNumber(ad.clicks)}</Text>
+      <Text className="w-20 px-2 text-center text-xs text-[#475569]">{formatNumber(ad.views)}</Text>
+      <Text className="w-24 px-2 text-xs font-semibold" style={{ color: status.color }}>{status.label}</Text>
+      <Text className="w-24 px-2 text-xs text-[#475569]">{getAppearsLabel(ad.appears, copy)}</Text>
+      <View className="w-28 flex-row justify-center gap-4 px-2">
+        <TouchableOpacity onPress={() => onEdit(ad)} hitSlop={8}>
+          <Edit size={17} color="#2563eb" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => onDelete(ad)} hitSlop={8}>
+          <Trash2 size={17} color="#ef4444" />
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 function AdvertisingScreen() {
   const navigation = useNavigation<any>();
-  const { ads, isLoading, isRefreshing, error, fetchAds, refresh, deleteAd } = useAdvertisingViewModel();
-  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const { ads, options, isLoading, isRefreshing, error, fetchAds, refresh, deleteAd } = useAdvertisingViewModel();
+  const language = useAppLanguage();
   const copy = getAdvertisingCopy(language);
 
   useFocusEffect(
@@ -238,49 +279,32 @@ function AdvertisingScreen() {
 
   const handleDelete = useCallback((ad: AdItem) => {
     Alert.alert(
-      'Xóa quảng cáo',
-      `Bạn có chắc chắn muốn xóa chiến dịch "${ad.headline || ad.name}" không? Hành động này không thể hoàn tác.`,
+      copy.deleteConfirmTitle || 'Xóa quảng cáo',
+      (copy.deleteConfirmMessage || 'Bạn có chắc chắn muốn xóa chiến dịch "{name}" không? Hành động này không thể hoàn tác.').replace('{name}', ad.headline || ad.name || ''),
       [
-        { text: 'Hủy', style: 'cancel' },
+        { text: copy.cancel || 'Hủy', style: 'cancel' },
         {
-          text: 'Xóa',
+          text: copy.delete || 'Xóa',
           style: 'destructive',
           onPress: async () => {
             const res = await deleteAd(ad.id);
             if (res.success) {
-              Alert.alert('Thành công', copy.deleteSuccess);
+              Alert.alert(copy.success || 'Thành công', copy.deleteSuccess);
             } else {
-              Alert.alert('Thất bại', res.error || copy.deleteFailed);
+              Alert.alert(copy.failed || 'Thất bại', res.error || copy.deleteFailed);
             }
           },
         },
       ]
     );
-  }, [deleteAd, copy.deleteFailed, copy.deleteSuccess]);
+  }, [deleteAd, copy]);
 
   const isEmpty = !isLoading && ads.length === 0;
 
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" />
-
-      <View className="surface-topbar flex-row items-center justify-between px-4 py-3">
-        <TouchableOpacity
-          activeOpacity={0.8}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          onPress={() => navigation.goBack()}>
-          <ArrowLeft size={22} color={BRAND} />
-        </TouchableOpacity>
-
-        <Text className="text-title-primary text-[#1a1c1e]">{copy.advertisingTitle}</Text>
-
-        <TouchableOpacity
-          activeOpacity={0.8}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          onPress={() => navigation.navigate(ROUTES.CREATE_AD)}>
-          <Text className="text-body-primary font-semibold text-[#0000e6]">{copy.createAd}</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
 
       <ScrollView
         className="flex-1"
@@ -289,57 +313,84 @@ function AdvertisingScreen() {
           <RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={BRAND} />
         }
         showsVerticalScrollIndicator={false}>
+        <View className="bg-[#eef3ff] px-3 pb-4 pt-3">
+          <View className="rounded-md bg-[#0000ff] px-4 py-4">
+            <Text className="text-sm text-white/80">{copy.walletBalance || "Số Dư VNSEEA"}</Text>
+            <Text className="mt-1 text-[27px] font-normal text-white">
+              {formatNumber(options?.walletBalance)} {options?.currencySymbol || 'VNSEEA'}
+            </Text>
+          </View>
+
+          <View className="mt-3 bg-white">
+            <TouchableOpacity className="min-h-[52px] flex-row items-center border-l-2 border-[#0000ff] px-4">
+              <Megaphone size={18} color="#111827" />
+              <Text className="ml-3 text-sm font-semibold text-[#111827]">{copy.campaigns || "Các Chiến Dịch"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="min-h-[52px] flex-row items-center border-t border-[#f1f5f9] px-4"
+              onPress={() => navigation.navigate(ROUTES.MY_POINTS)}>
+              <CreditCard size={18} color="#8b8b8b" />
+              <Text className="ml-3 text-sm text-[#8b8b8b]">{copy.walletTitle || "VNSEEA"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="min-h-[52px] flex-row items-center border-t border-[#f1f5f9] px-4"
+              onPress={() => navigation.navigate(ROUTES.CREATE_AD)}>
+              <Plus size={18} color="#8b8b8b" />
+              <Text className="ml-3 text-sm text-[#8b8b8b]">{copy.newCampaign || "Chiến Dịch Mới"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View className="mt-4 min-h-[52px] flex-row items-center border-b border-[#dbe2ef] bg-white px-4">
+          <Megaphone size={18} color="#0000ff" />
+          <Text className="ml-2 text-sm font-semibold text-[#111827]">{copy.campaigns || "Các chiến dịch"}</Text>
+        </View>
         {isLoading && ads.length === 0 ? (
           <View className="flex-1 items-center justify-center px-8 py-20">
             <ActivityIndicator size="large" color={BRAND} />
             <Text className="mt-4 text-sm text-[#64748b]">{copy.loadingAds}</Text>
           </View>
         ) : isEmpty ? (
-          <View className="flex-1 items-center justify-center px-8 py-20">
-            <View className="mb-6 h-28 w-28 items-center justify-center rounded-full bg-[#f1f5f9]">
-              <Megaphone size={48} color="#94a3b8" />
-            </View>
-
-            <Text className="text-heading mb-3 text-center text-[#1a1c1e]">
-              {copy.noAds}
-            </Text>
-
-            <Text className="text-body-secondary mb-8 text-center leading-6 text-[#64748b]">
-              {error || copy.noAdsDesc}
-            </Text>
-
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => navigation.navigate(ROUTES.CREATE_AD)}
-              className="btn-primary flex-row items-center gap-2 px-8 py-4">
-              <Plus size={18} color="#ffffff" />
-              <Text className="text-body-primary font-semibold text-white">
-                {copy.createNewAd}
-              </Text>
-            </TouchableOpacity>
+          <View className="items-center bg-white px-8 py-16">
+            <Megaphone size={38} color="#94a3b8" />
+            <Text className="mt-3 text-sm text-[#64748b]">{error || copy.noAdsDesc}</Text>
           </View>
         ) : (
-          <View className="px-5 pb-8 pt-4">
+          <View className="pb-8">
             {!!error && (
               <View className="mb-3 rounded-2xl bg-red-50 px-4 py-3">
                 <Text className="text-sm text-red-700">{error}</Text>
               </View>
             )}
 
-            {ads.map(ad => (
-              <AdCampaignCard
-                key={String(ad.id)}
-                ad={ad}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onViewDetails={handleViewDetails}
-                copy={copy}
-              />
-            ))}
+            <ScrollView horizontal showsHorizontalScrollIndicator>
+              <View className="w-[748px]">
+                <View className="min-h-[58px] flex-row items-center bg-[#e8efff]">
+                  <Text className="w-12 px-2 text-center text-xs font-semibold">{copy.id || "ID"}</Text>
+                  <Text className="w-40 px-2 text-center text-xs font-semibold">{copy.companyName || "Công ty"}</Text>
+                  <Text className="w-24 px-2 text-center text-xs font-semibold">{copy.bidding || "Đấu thầu"}</Text>
+                  <Text className="w-20 px-2 text-center text-xs font-semibold">{copy.clicksCount || "Số lần nhấp"}</Text>
+                  <Text className="w-20 px-2 text-center text-xs font-semibold">{copy.viewsLabel || "Lượt xem"}</Text>
+                  <Text className="w-24 px-2 text-center text-xs font-semibold">{copy.status || "Trạng thái"}</Text>
+                  <Text className="w-24 px-2 text-center text-xs font-semibold">{copy.positionLabel || "Vị trí"}</Text>
+                  <Text className="w-28 px-2 text-center text-xs font-semibold">{copy.actions || "Thao tác"}</Text>
+                </View>
+                {ads.map(ad => (
+                  <CampaignTableRow
+                    key={String(ad.id)}
+                    ad={ad}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onViewDetails={handleViewDetails}
+                    copy={copy}
+                  />
+                ))}
+              </View>
+            </ScrollView>
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

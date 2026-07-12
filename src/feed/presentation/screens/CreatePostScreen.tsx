@@ -1876,6 +1876,7 @@ export interface CreatePostModalProps {
   onCreated?: () => void;
   page?: PagesItem;
   groupId?: string;
+  eventId?: string;
   initialAction?: 'photo' | 'video' | 'product' | 'poll';
 }
 
@@ -1885,6 +1886,7 @@ export function CreatePostModal({
   onCreated,
   page,
   groupId,
+  eventId,
   initialAction,
 }: CreatePostModalProps) {
   const navigation = useNavigation<Nav>();
@@ -1897,8 +1899,9 @@ export function CreatePostModal({
   const vm = useCreatePostViewModel({
     pageId: targetPage?.pageId,
     groupId: targetGroupId,
+    eventId,
     onCreated: post => {
-      if (!targetGroupId) {
+      if (!targetGroupId && !eventId) {
         postCreatedEvents.emit(post);
       }
       onCreated?.();

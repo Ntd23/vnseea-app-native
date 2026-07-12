@@ -1,7 +1,6 @@
-// Jobs Repository Interface
 // English description: Defines the contract for jobs data access.
 
-import type { CreateJobPayload, CreateJobResponse, JobsItem, JobType } from '../types/jobs.types';
+import type { CreateJobPayload, CreateJobResponse, JobsItem, JobsMetadata, JobType } from '../types/jobs.types';
 
 export interface JobsRepository {
   /**
@@ -9,6 +8,8 @@ export interface JobsRepository {
    * @param options - search options including keyword, category, job_type, pagination
    */
   searchJobs(options?: JobsSearchOptions): Promise<JobsItem[]>;
+
+  getMetadata(): Promise<JobsMetadata>;
 
   /**
    * Get jobs for a specific page
@@ -23,12 +24,15 @@ export interface JobsRepository {
    * @param payload - job creation data
    */
   createJob(payload: CreateJobPayload): Promise<CreateJobResponse>;
+
+  deleteJob(postId: string | number): Promise<boolean>;
 }
 
 export interface JobsSearchOptions {
   keyword?: string;
   categoryId?: string | number;
   jobType?: JobType;
+  distance?: number;
   limit?: number;
   offset?: number;
 }

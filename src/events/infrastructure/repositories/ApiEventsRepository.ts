@@ -1,3 +1,4 @@
+// Description: Connects React Native event screens to the existing backend API.
 // Events API Repository (Infrastructure)
 // Port từ: client/src/events/infrastructure/repositories/
 
@@ -8,6 +9,8 @@ import type {
   EventsRepository,
   EventFormData,
   CreateEventResult,
+  EventGoingResult,
+  EventInterestedResult,
 } from '../../domain/repositories/EventsRepository';
 
 type EventResponse = {
@@ -16,6 +19,13 @@ type EventResponse = {
   data?: EventsItem | EventsItem[];
   message?: string;
   message_data?: string;
+  error_message?: string;
+  errors?: {
+    error_text?: string;
+    message?: string;
+  };
+  go_status?: string;
+  interest_status?: string;
 };
 
 type EventsListResponse = {
@@ -26,12 +36,25 @@ type EventsListResponse = {
 
 function extractEventsList(response: any, optionKey: string): EventsItem[] {
   if (!response) return [];
-  // Handle different key naming conventions returned by the WoWonder API for get-events options
-  return response.events || response[optionKey] || response.data || [];
+  const tabItems = response[optionKey];
+  if (Array.isArray(tabItems)) return tabItems;
+  if (Array.isArray(response.events)) return response.events;
+  return Array.isArray(response.data) ? response.data : [];
 }
 
 function isSuccess(response: { api_status: number | string }) {
   return response.api_status === 200 || response.api_status === '200';
+}
+
+function getEventErrorMessage(response: EventResponse) {
+  return (
+    response.errors?.error_text ??
+    response.errors?.message ??
+    response.error_message ??
+    response.message ??
+    response.message_data ??
+    `API error: ${response.api_status}`
+  );
 }
 
 function formatDateForApi(dateStr: string): string {
@@ -80,7 +103,7 @@ export function createEventsRepository(): EventsRepository {
         return [];
       } catch (error) {
         console.error('[ApiEventsRepository] getAll error:', error);
-        return [];
+        throw error;
       }
     },
 
@@ -108,7 +131,7 @@ export function createEventsRepository(): EventsRepository {
         return [];
       } catch (error) {
         console.error('[ApiEventsRepository] getMyEvents error:', error);
-        return [];
+        throw error;
       }
     },
 
@@ -120,12 +143,12 @@ export function createEventsRepository(): EventsRepository {
         );
 
         if (isSuccess(response)) {
-          return extractEventsList(response, 'events'); // WoWonder typically returns under 'events' or 'going'
+          return extractEventsList(response, 'going');
         }
         return [];
       } catch (error) {
         console.error('[ApiEventsRepository] getGoingEvents error:', error);
-        return [];
+        throw error;
       }
     },
 
@@ -137,12 +160,12 @@ export function createEventsRepository(): EventsRepository {
         );
 
         if (isSuccess(response)) {
-          return extractEventsList(response, 'events');
+          return extractEventsList(response, 'interested');
         }
         return [];
       } catch (error) {
         console.error('[ApiEventsRepository] getInterestedEvents error:', error);
-        return [];
+        throw error;
       }
     },
 
@@ -154,12 +177,12 @@ export function createEventsRepository(): EventsRepository {
         );
 
         if (isSuccess(response)) {
-          return extractEventsList(response, 'events');
+          return extractEventsList(response, 'invited');
         }
         return [];
       } catch (error) {
         console.error('[ApiEventsRepository] getInvitedEvents error:', error);
-        return [];
+        throw error;
       }
     },
 
@@ -171,12 +194,12 @@ export function createEventsRepository(): EventsRepository {
         );
 
         if (isSuccess(response)) {
-          return extractEventsList(response, 'events');
+          return extractEventsList(response, 'past');
         }
         return [];
       } catch (error) {
         console.error('[ApiEventsRepository] getPastEvents error:', error);
-        return [];
+        throw error;
       }
     },
 
@@ -199,53 +222,34 @@ export function createEventsRepository(): EventsRepository {
 
     async createEvent(data: EventFormData): Promise<CreateEventResult> {
       const eventData = toEventPayload(data);
+      const payload = {
+        ...eventData,
+        ...(data.image
+          ? {
+              event_cover: {
+                uri: data.image,
+                name: 'event_cover.jpg',
+                type: 'image/jpeg',
+              },
+            }
+          : {}),
+      };
 
-      if (data.image) {
-        // Upload with image using multipart
-        // NOTE: multipart will build FormData from eventData object
-        console.log('[ApiEventsRepository] Creating event WITH image...');
-        const response = await apiBridge.multipart<EventResponse>(
-          apiRoutes.events.create,
-          {
-            ...eventData,
-            event_cover: {
-              uri: data.image,
-              name: 'event_cover.jpg',
-              type: 'image/jpeg',
-            },
-          },
-        );
+      // The Nuxt event bridge submits every create request as FormData.
+      // Use the same wire format for RN, with event_cover remaining optional.
+      const response = await apiBridge.multipart<EventResponse>(
+        apiRoutes.events.create,
+        payload,
+      );
 
-        console.log('[ApiEventsRepository] Response:', response);
-
-        if (isSuccess(response)) {
-          return {
-            eventId: response.event_id ?? 0,
-            event: response.data as EventsItem,
-          };
-        }
-        console.error('[ApiEventsRepository] API error:', response);
-        throw new Error(response.message ?? `API error: ${response.api_status}`);
-      } else {
-        // Upload without image
-        console.log('[ApiEventsRepository] Creating event WITHOUT image...');
-        console.log('[ApiEventsRepository] Event data:', eventData);
-        const response = await apiBridge.post<EventResponse>(
-          apiRoutes.events.create,
-          eventData,
-        );
-
-        console.log('[ApiEventsRepository] Response:', response);
-
-        if (isSuccess(response)) {
-          return {
-            eventId: response.event_id ?? 0,
-            event: response.data as EventsItem,
-          };
-        }
-        console.error('[ApiEventsRepository] API error:', response);
-        throw new Error(response.message ?? `API error: ${response.api_status}`);
+      if (isSuccess(response)) {
+        return {
+          eventId: response.event_id ?? 0,
+          event: response.data as EventsItem,
+        };
       }
+
+      throw new Error(getEventErrorMessage(response));
     },
 
     async updateEvent(id: string | number, data: EventFormData): Promise<EventsItem> {
@@ -301,6 +305,30 @@ export function createEventsRepository(): EventsRepository {
       }
 
       throw new Error(response.message ?? response.message_data ?? 'Không xóa được sự kiện.');
+    },
+
+    async toggleGoing(id: string | number): Promise<EventGoingResult> {
+      const response = await apiBridge.post<EventResponse>(apiRoutes.events.going, {
+        event_id: id,
+      });
+
+      if (!isSuccess(response)) {
+        throw new Error(getEventErrorMessage(response));
+      }
+
+      return { isGoing: response.go_status === 'going' };
+    },
+
+    async toggleInterested(id: string | number): Promise<EventInterestedResult> {
+      const response = await apiBridge.post<EventResponse>(apiRoutes.events.interested, {
+        event_id: id,
+      });
+
+      if (!isSuccess(response)) {
+        throw new Error(getEventErrorMessage(response));
+      }
+
+      return { isInterested: response.interest_status === 'interested' };
     },
   };
 }

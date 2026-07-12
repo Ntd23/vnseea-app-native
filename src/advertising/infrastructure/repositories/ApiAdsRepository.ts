@@ -1,9 +1,17 @@
-// Ads API Repository (Infrastructure)
+// English description: Maps advertising API responses to the app domain model.
 
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import type { AdsRepository } from '../../domain/repositories/AdsRepository';
-import type { AdItem, AdFormData, CreateAdResult, AdDailyStats } from '../../domain/types/ads.types';
+import type {
+  AdItem,
+  AdFormData,
+  CreateAdResult,
+  AdDailyStats,
+  AdOption,
+  AdPageOption,
+  AdsOptions,
+} from '../../domain/types/ads.types';
 
 const ADS_ROUTE = apiRoutes.ads.main;
 
@@ -12,6 +20,81 @@ type AdsResponse = {
   data?: AdItem | AdItem[] | { ad: AdItem; clicks: Array<{ DateOnly: string; ADClicks: number; Spend: number }>; views: Array<{ DateOnly: string; ADviews: number; Spend: number }> };
   message?: string;
 };
+
+type RawOptionsResponse = {
+  api_status: number | string;
+  data?: {
+    audience?: unknown;
+    genders?: unknown;
+    pages?: unknown;
+    placements?: unknown;
+    prices?: {
+      clicks?: number | string;
+      views?: number | string;
+      currency?: string;
+      currency_symbol?: string;
+    };
+  };
+};
+
+type RawWalletResponse = {
+  wallet?: number | string;
+};
+
+function toNumber(value: unknown): number {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function normalizeOptions(value: unknown): AdOption[] {
+  if (Array.isArray(value)) {
+    return value.map((item, index) => {
+      if (item && typeof item === 'object') {
+        const record = item as Record<string, unknown>;
+        return {
+          value: String(record.id ?? record.value ?? index),
+          label: String(record.name ?? record.label ?? record.text ?? record.id ?? index),
+        };
+      }
+      return { value: String(index), label: String(item) };
+    }).filter(item => item.value !== '0');
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== '0')
+      .map(([key, label]) => ({
+        value: key,
+        label: typeof label === 'object' && label !== null
+          ? String((label as Record<string, unknown>).name ?? (label as Record<string, unknown>).label ?? key)
+          : String(label),
+      }));
+  }
+
+  return [];
+}
+
+function normalizePages(value: unknown): AdPageOption[] {
+  const rows = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object'
+      ? Object.values(value as Record<string, unknown>)
+      : [];
+
+  return rows.flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const page = item as Record<string, unknown>;
+    const id = page.page_id ?? page.id;
+    const name = page.page_name ?? page.username;
+    if (id === undefined || name === undefined) return [];
+    return [{
+      id: String(id),
+      name: String(name),
+      title: String(page.page_title ?? page.name ?? name),
+      avatar: page.avatar ? String(page.avatar) : undefined,
+    }];
+  });
+}
 
 export function createAdsRepository(): AdsRepository {
   return {
@@ -34,7 +117,7 @@ export function createAdsRepository(): AdsRepository {
       };
 
       // Add optional fields
-      if (data.pageId) payload.page = data.pageId;
+      if (data.pageName) payload.page = data.pageName;
       if (data.startDate) payload.start = data.startDate;
       if (data.endDate) payload.end = data.endDate;
       if (data.budget) payload.budget = data.budget;
@@ -150,6 +233,42 @@ export function createAdsRepository(): AdsRepository {
       }
     },
 
+    async getOptions(): Promise<AdsOptions> {
+      const optionsResponse = await apiBridge.post<RawOptionsResponse>(ADS_ROUTE, {
+        type: 'fetch_options',
+      });
+      let walletResponse: RawWalletResponse = {};
+      try {
+        walletResponse = await apiBridge.get<RawWalletResponse>(apiRoutes.wallet.overview);
+      } catch (error) {
+        console.warn('[ApiAdsRepository] wallet balance unavailable:', error);
+      }
+
+      if (optionsResponse.api_status !== 200 && optionsResponse.api_status !== '200') {
+        throw new Error('Không tải được tùy chọn quảng cáo.');
+      }
+
+      const data = optionsResponse.data ?? {};
+      const pages = normalizePages(data.pages);
+      const genders = normalizeOptions(data.genders);
+      const backendPlacements = normalizeOptions(data.placements);
+
+      return {
+        audience: normalizeOptions(data.audience),
+        genders: [
+          { value: 'all', label: 'Tất cả' },
+          ...genders.filter(item => item.value !== 'all'),
+        ],
+        pages,
+        placements: backendPlacements,
+        clickPrice: toNumber(data.prices?.clicks),
+        viewPrice: toNumber(data.prices?.views),
+        currency: data.prices?.currency ?? 'VNSEEA',
+        currencySymbol: data.prices?.currency_symbol ?? 'VNSEEA',
+        walletBalance: toNumber(walletResponse.wallet),
+      };
+    },
+
     async updateAd(id: number, data: Partial<AdFormData>): Promise<boolean> {
       try {
         const payload: Record<string, unknown> = {
@@ -165,7 +284,7 @@ export function createAdsRepository(): AdsRepository {
         if (data.gender) payload.gender = data.gender;
         if (data.bidding) payload.bidding = data.bidding;
         if (data.appears) payload.appears = data.appears;
-        if (data.pageId) payload.page = data.pageId;
+        if (data.pageName) payload.page = data.pageName;
         if (data.startDate) payload.start = data.startDate;
         if (data.endDate) payload.end = data.endDate;
         if (data.budget) payload.budget = data.budget;

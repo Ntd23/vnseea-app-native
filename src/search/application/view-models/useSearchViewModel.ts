@@ -141,6 +141,58 @@ export function useSearchViewModel() {
     [repository],
   );
 
+  const discover = useCallback(async (filter: SearchFilter = {}) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await repository.discover(filter);
+      setResults(response);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không thể tải dữ liệu khám phá.');
+      setResults(EMPTY_RESULTS);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [repository]);
+
+  const toggleGroupJoin = useCallback(async (groupId: string, current: boolean) => {
+    setResults(previous => ({
+      ...previous,
+      groups: previous.groups.map(group => group.groupId === groupId ? { ...group, isJoined: !current } : group),
+    }));
+    try {
+      const result = await repository.toggleGroupJoin(groupId);
+      setResults(previous => ({
+        ...previous,
+        groups: previous.groups.map(group => group.groupId === groupId ? { ...group, isJoined: result.isJoined || result.requested } : group),
+      }));
+    } catch {
+      setResults(previous => ({
+        ...previous,
+        groups: previous.groups.map(group => group.groupId === groupId ? { ...group, isJoined: current } : group),
+      }));
+    }
+  }, [repository]);
+
+  const togglePageLike = useCallback(async (pageId: string, current: boolean) => {
+    setResults(previous => ({
+      ...previous,
+      pages: previous.pages.map(page => page.pageId === pageId ? { ...page, isLiked: !current } : page),
+    }));
+    try {
+      const result = await repository.togglePageLike(pageId);
+      setResults(previous => ({
+        ...previous,
+        pages: previous.pages.map(page => page.pageId === pageId ? { ...page, isLiked: result.isLiked } : page),
+      }));
+    } catch {
+      setResults(previous => ({
+        ...previous,
+        pages: previous.pages.map(page => page.pageId === pageId ? { ...page, isLiked: current } : page),
+      }));
+    }
+  }, [repository]);
+
   const clearSearch = useCallback(() => {
     setSearchQuery('');
     setResults(EMPTY_RESULTS);
@@ -164,7 +216,10 @@ export function useSearchViewModel() {
     error,
     searchAll,
     searchUsers,
+    discover,
     toggleFollow,
+    toggleGroupJoin,
+    togglePageLike,
     clearSearch,
   };
 }

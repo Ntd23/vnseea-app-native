@@ -1,7 +1,7 @@
-// Ads ViewModel
+// English description: Coordinates advertising campaign loading and mutations.
 import { useState, useCallback } from 'react';
 import { createAdsRepository } from '../../infrastructure/repositories/ApiAdsRepository';
-import type { AdItem, AdFormData } from '../../domain/types/ads.types';
+import type { AdItem, AdFormData, AdsOptions } from '../../domain/types/ads.types';
 
 const repository = createAdsRepository();
 
@@ -11,6 +11,7 @@ export function useAdsViewModel() {
   const [isCreating, setIsCreating] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [options, setOptions] = useState<AdsOptions | null>(null);
 
   const fetchMyAds = useCallback(async () => {
     setIsLoading(true);
@@ -22,6 +23,19 @@ export function useAdsViewModel() {
       setError(err instanceof Error ? err.message : 'Không tải được danh sách quảng cáo');
     } finally {
       setIsLoading(false);
+    }
+  }, []);
+
+  const fetchOptions = useCallback(async () => {
+    setError(null);
+    try {
+      const data = await repository.getOptions();
+      setOptions(data);
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Không tải được tùy chọn quảng cáo.';
+      setError(message);
+      return null;
     }
   }, []);
 
@@ -79,7 +93,9 @@ export function useAdsViewModel() {
     isCreating,
     isUpdating,
     error,
+    options,
     fetchMyAds,
+    fetchOptions,
     createAd,
     updateAd,
     deleteAd,

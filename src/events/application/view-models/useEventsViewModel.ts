@@ -1,3 +1,4 @@
+// Description: Coordinates event tab lists, mutation state, and RSVP actions for React Native screens.
 // Events - useEventsViewModel ViewModel
 // Port từ: client/src/events/application/view-models/
 
@@ -5,6 +6,14 @@ import { useState, useCallback } from 'react';
 import { createEventsRepository } from '../../infrastructure/repositories/ApiEventsRepository';
 import type { EventsItem } from '../../domain/types/events.types';
 import type { EventFormData } from '../../domain/repositories/EventsRepository';
+
+export type EventsTab =
+  | 'browse'
+  | 'going'
+  | 'invited'
+  | 'interested'
+  | 'past'
+  | 'mine';
 
 const repository = createEventsRepository();
 
@@ -94,19 +103,50 @@ export function useEventsViewModel() {
     }
   }, []);
 
-  const createEvent = useCallback(async (data: EventFormData): Promise<boolean> => {
+  const loadEventsTab = useCallback(async (tab: EventsTab) => {
+    switch (tab) {
+      case 'going':
+        await fetchGoingEvents();
+        return;
+      case 'invited':
+        await fetchInvitedEvents();
+        return;
+      case 'interested':
+        await fetchInterestedEvents();
+        return;
+      case 'past':
+        await fetchPastEvents();
+        return;
+      case 'mine':
+        await fetchMyEvents();
+        return;
+      default:
+        await fetchEvents();
+    }
+  }, [
+    fetchEvents,
+    fetchGoingEvents,
+    fetchInterestedEvents,
+    fetchInvitedEvents,
+    fetchMyEvents,
+    fetchPastEvents,
+  ]);
+
+  const createEvent = useCallback(async (
+    data: EventFormData,
+  ): Promise<{ success: boolean; error?: string }> => {
     setIsCreating(true);
     setError(null);
     try {
       const result = await repository.createEvent(data);
       // Prepend new event to the list
       setEvents(prev => [result.event, ...prev]);
-      return true;
+      return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.log('[useEventsViewModel] Create event error:', errorMessage);
       setError(errorMessage);
-      return false;
+      return { success: false, error: errorMessage };
     } finally {
       setIsCreating(false);
     }
@@ -153,6 +193,42 @@ export function useEventsViewModel() {
     }
   }, []);
 
+  const toggleGoing = useCallback(async (
+    id: string | number,
+  ): Promise<{ success: boolean; isGoing?: boolean; error?: string }> => {
+    try {
+      const result = await repository.toggleGoing(id);
+      setEvents(previous => previous.map(event => (
+        String(event.id) === String(id)
+          ? { ...event, is_going: result.isGoing }
+          : event
+      )));
+      return { success: true, isGoing: result.isGoing };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  }, []);
+
+  const toggleInterested = useCallback(async (
+    id: string | number,
+  ): Promise<{ success: boolean; isInterested?: boolean; error?: string }> => {
+    try {
+      const result = await repository.toggleInterested(id);
+      setEvents(previous => previous.map(event => (
+        String(event.id) === String(id)
+          ? { ...event, is_interested: result.isInterested }
+          : event
+      )));
+      return { success: true, isInterested: result.isInterested };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  }, []);
+
   return {
     events,
     isLoading,
@@ -166,8 +242,11 @@ export function useEventsViewModel() {
     fetchInterestedEvents,
     fetchInvitedEvents,
     fetchPastEvents,
+    loadEventsTab,
     createEvent,
     updateEvent,
     deleteEvent,
+    toggleGoing,
+    toggleInterested,
   };
 }

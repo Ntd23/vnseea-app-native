@@ -5,6 +5,17 @@ import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/
 export const EVENTS_COPY: Record<AppLanguage, Record<string, string>> = {
   vi: {
     // Events Screen
+    tabBrowse: 'Duyệt qua các sự kiện',
+    tabGoing: 'Tôi sẽ tham gia',
+    tabInvited: 'Được mời',
+    tabInterested: 'Đang quan tâm',
+    tabPast: 'Đã diễn ra',
+    tabMine: 'Sự kiện của tôi',
+    createShort: 'Tạo ra',
+    join: 'Tham gia',
+    joined: 'Đã tham gia',
+    interest: 'Quan tâm đến',
+    rsvpUpdated: 'Đã cập nhật trạng thái sự kiện.',
     eventsTitle: 'Sự kiện',
     searchPlaceholder: 'Tìm kiếm sự kiện...',
     myEvents: 'Sự kiện của tôi',
@@ -101,6 +112,17 @@ export const EVENTS_COPY: Record<AppLanguage, Record<string, string>> = {
   },
   en: {
     // Events Screen
+    tabBrowse: 'Browse events',
+    tabGoing: 'Going',
+    tabInvited: 'Invited',
+    tabInterested: 'Interested',
+    tabPast: 'Past',
+    tabMine: 'My events',
+    createShort: 'Create',
+    join: 'Going',
+    joined: 'Going',
+    interest: 'Interested',
+    rsvpUpdated: 'Event status updated.',
     eventsTitle: 'Events',
     searchPlaceholder: 'Search events...',
     myEvents: 'My Events',

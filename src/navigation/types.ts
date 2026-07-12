@@ -115,7 +115,7 @@ export type RootStackParamList = {
   [ROUTES.CALLS]: undefined;
   [ROUTES.CALL_ROOM]: LiveKitCallRouteParams;
   [ROUTES.GROUP_CALL_ROOM]: GroupLiveKitCallRouteParams;
-  [ROUTES.SEARCH]: { q?: string } | undefined;
+  [ROUTES.SEARCH]: { q?: string; discovery?: boolean } | undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
   [ROUTES.NEARBY_USERS]: undefined;
   [ROUTES.SAVED_POSTS]: undefined;

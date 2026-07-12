@@ -1,3 +1,4 @@
+// Description: Defines event listing, creation, editing, deletion, and RSVP repository operations.
 // Events Repository Interface
 // Port từ: client/src/events/domain/repositories/
 
@@ -19,6 +20,14 @@ export interface CreateEventResult {
   event: EventsItem;
 }
 
+export interface EventGoingResult {
+  isGoing: boolean;
+}
+
+export interface EventInterestedResult {
+  isInterested: boolean;
+}
+
 export interface EventsRepository {
   getAll(): Promise<EventsItem[]>;
   getMyEvents(): Promise<EventsItem[]>;
@@ -30,4 +39,6 @@ export interface EventsRepository {
   createEvent(data: EventFormData): Promise<CreateEventResult>;
   updateEvent(id: string | number, data: EventFormData): Promise<EventsItem>;
   deleteEvent(id: string | number): Promise<boolean>;
+  toggleGoing(id: string | number): Promise<EventGoingResult>;
+  toggleInterested(id: string | number): Promise<EventInterestedResult>;
 }

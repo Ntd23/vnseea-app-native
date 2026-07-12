@@ -19,18 +19,43 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { RootStackParamList } from '../../../navigation/types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 type SearchFilterNav = NativeStackNavigationProp<RootStackParamList>;
 
+const FILTER_COPY = {
+  vi: {
+    title: 'Bộ lọc',
+    gender: 'Giới tính',
+    genders: ['Tất cả', 'Nữ', 'Nam'],
+    age: 'Tuổi',
+    ageEnabledText: 'Đã bật bộ lọc theo tuổi. Các cài đặt khoảng tuổi chi tiết sẽ hiển thị ở bước tiếp theo.',
+    applyFilter: 'Áp dụng bộ lọc',
+    location: 'Vị trí',
+    verified: 'Đã xác minh',
+    status: 'Trạng thái',
+    avatar: 'Ảnh đại diện',
+    all: 'Tất cả',
+  },
+  en: {
+    title: 'Filters',
+    gender: 'Gender',
+    genders: ['All', 'Female', 'Male'],
+    age: 'Age',
+    ageEnabledText: 'Age filtering enabled. Detailed age range settings will show in the next step.',
+    applyFilter: 'Apply filters',
+    location: 'Location',
+    verified: 'Verified',
+    status: 'Status',
+    avatar: 'Profile Picture',
+    all: 'All',
+  },
+};
+
 const genders = ['Tất cả', 'Nữ', 'Nam'];
-const rows = [
-  { label: 'Vị trí', value: 'Tất cả', Icon: MapPin },
-  { label: 'Đã xác minh', value: 'Tất cả', Icon: BadgeCheck },
-  { label: 'Trạng thái', value: 'Tất cả', Icon: Globe2 },
-  { label: 'Ảnh đại diện', value: 'Tất cả', Icon: ImageIcon },
-];
+
 
 function FilterRow({
   label,
@@ -60,8 +85,18 @@ function FilterRow({
 
 function SearchFilterScreen() {
   const navigation = useNavigation<SearchFilterNav>();
-  const [gender, setGender] = useState(genders[0]);
+  const language = useAppLanguage();
+  const copy = FILTER_COPY[language] || FILTER_COPY.vi;
+  const gendersList = copy.genders;
+  const [gender, setGender] = useState(gendersList[0]);
   const [ageEnabled, setAgeEnabled] = useState(false);
+
+  const rows = [
+    { label: copy.location, value: copy.all, Icon: MapPin },
+    { label: copy.verified, value: copy.all, Icon: BadgeCheck },
+    { label: copy.status, value: copy.all, Icon: Globe2 },
+    { label: copy.avatar, value: copy.all, Icon: ImageIcon },
+  ];
 
   return (
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
@@ -75,7 +110,7 @@ function SearchFilterScreen() {
         >
           <ArrowLeft size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text className="text-heading text-inverse">Bộ lọc</Text>
+        <Text className="text-heading text-inverse">{copy.title}</Text>
       </View>
 
       <ScrollView
@@ -86,11 +121,11 @@ function SearchFilterScreen() {
         <View className="surface-card mb-5 p-5">
           <View className="mb-5 flex-row items-center">
             <UserRound size={28} color="#0000ff" strokeWidth={1.8} />
-            <Text className="ml-4 text-heading">Giới tính</Text>
+            <Text className="ml-4 text-heading">{copy.gender}</Text>
           </View>
 
           <View className="flex-row gap-3">
-            {genders.map(item => (
+            {gendersList.map(item => (
               <TouchableOpacity
                 key={item}
                 className={`min-h-[44px] flex-1 items-center justify-center rounded-full border ${
@@ -117,7 +152,7 @@ function SearchFilterScreen() {
           <View className="flex-row items-center justify-between">
             <View className="flex-row items-center">
               <Cake size={28} color="#0000ff" strokeWidth={1.8} />
-              <Text className="ml-4 text-heading">Tuổi</Text>
+              <Text className="ml-4 text-heading">{copy.age}</Text>
             </View>
             <TouchableOpacity
               className={`h-8 w-14 rounded-full px-1 ${
@@ -133,7 +168,7 @@ function SearchFilterScreen() {
           </View>
           {ageEnabled ? (
             <Text className="mt-4 text-body-secondary">
-              Đã bật bộ lọc theo tuổi. Các cài đặt khoảng tuổi chi tiết sẽ hiển thị ở bước tiếp theo.
+              {copy.ageEnabledText}
             </Text>
           ) : null}
         </View>
@@ -148,7 +183,7 @@ function SearchFilterScreen() {
           className="btn-primary min-h-[56px] rounded-[18px]"
           activeOpacity={0.9}
         >
-          <Text className="text-title-primary text-inverse">Áp dụng bộ lọc</Text>
+          <Text className="text-title-primary text-inverse">{copy.applyFilter}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

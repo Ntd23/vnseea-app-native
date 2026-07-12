@@ -188,6 +188,12 @@ export interface FeedRepository {
     afterPostId?: string,
   ): Promise<FeedPostsPage<FeedTextPost | FeedVideoPost | FeedPollPost>>;
 
+  getEventPosts(
+    eventId: string,
+    limit?: number,
+    afterPostId?: string,
+  ): Promise<FeedPostsPage<FeedTextPost | FeedVideoPost | FeedPollPost>>;
+
   /**
    * Fetch text/photo posts that contain a hashtag. Uses WoWonder's
    * `/api/posts` endpoint with `type=hashtag` and `hash=<tag>`.

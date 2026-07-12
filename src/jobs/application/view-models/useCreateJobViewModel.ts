@@ -1,11 +1,21 @@
 // Description: Handles job creation form logic and user pages loading.
 import { useCallback, useEffect, useState } from 'react';
 import { createJobsRepository } from '../../infrastructure/repositories/ApiJobsRepository';
-import type { CreateJobPayload, JobsItem } from '../../domain/types/jobs.types';
+import type { CreateJobPayload, JobsMetadata } from '../../domain/types/jobs.types';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 
 const repository = createJobsRepository();
+const EMPTY_METADATA: JobsMetadata = {
+  types: [],
+  categories: [],
+  salaryDates: [],
+  currencies: [],
+  questionTypes: [],
+  imageTypes: [],
+  canCreate: false,
+  ownedPages: [],
+};
 
 interface MyPage {
   page_id: string | number;
@@ -26,6 +36,7 @@ export function useCreateJobViewModel() {
   const [error, setError] = useState<string | null>(null);
   const [myPages, setMyPages] = useState<MyPage[]>([]);
   const [isLoadingPages, setIsLoadingPages] = useState(true);
+  const [metadata, setMetadata] = useState<JobsMetadata>(EMPTY_METADATA);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -49,6 +60,7 @@ export function useCreateJobViewModel() {
 
   useEffect(() => {
     loadMyPages();
+    void repository.getMetadata().then(setMetadata);
   }, [loadMyPages]);
 
   const createJob = useCallback(async (payload: CreateJobPayload) => {
@@ -76,6 +88,7 @@ export function useCreateJobViewModel() {
     error,
     clearError,
     myPages,
+    metadata,
     isLoadingPages,
     refreshPages: loadMyPages,
   };

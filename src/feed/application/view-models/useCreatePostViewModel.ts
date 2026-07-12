@@ -135,10 +135,11 @@ export type UseCreatePostOptions = {
   onCreated?: (post: FeedPost) => void;
   pageId?: string;
   groupId?: string;
+  eventId?: string;
 };
 
 export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
-  const { onCreated, pageId, groupId } = options;
+  const { onCreated, pageId, groupId, eventId } = options;
   const language = useAppLanguage();
   const copy = useMemo(() => VIEW_MODEL_COPY[language], [language]);
 
@@ -146,6 +147,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     ...DEFAULT_DRAFT,
     pageId,
     groupId,
+    eventId,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -299,13 +301,13 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
   /** Wipe everything back to the default draft. Called after a successful
    * submit and when the user explicitly discards. */
   const reset = useCallback(() => {
-    setDraft({ ...DEFAULT_DRAFT, pageId });
+    setDraft({ ...DEFAULT_DRAFT, pageId, groupId, eventId });
     setError(null);
     setIsSubmitting(false);
     setCaptionSuggestions([]);
     setIsCaptionSuggestionActive(false);
     setCaptionMentionReplacements([]);
-  }, [pageId]);
+  }, [eventId, groupId, pageId]);
 
   // ── Debounced suggestion fetcher ──────────────────────────────────
   // Watches `draft.text` and pulls suggestions whenever the trailing
@@ -406,7 +408,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
         postedAt: result.post.postedAt || Math.floor(Date.now() / 1000),
       };
       onCreated?.(createdPost);
-      setDraft({ ...DEFAULT_DRAFT, pageId });
+      setDraft({ ...DEFAULT_DRAFT, pageId, groupId, eventId });
       return result;
     } catch (caught) {
       const message =
@@ -418,7 +420,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [captionMentionReplacements, draft, onCreated, pageId, validate, copy]);
+  }, [captionMentionReplacements, copy, draft, eventId, groupId, onCreated, pageId, validate]);
 
   return {
     // State

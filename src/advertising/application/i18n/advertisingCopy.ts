@@ -132,6 +132,18 @@ export const ADVERTISING_COPY: Record<AppLanguage, Record<string, string>> = {
     clicksLabel: 'Lượt nhấp',
     spentLabel: 'Đã chi',
     noChartData: 'Chưa có dữ liệu thống kê',
+    walletBalance: 'Số dư VNSEEA',
+    campaigns: 'Các chiến dịch',
+    newCampaign: 'Chiến dịch mới',
+    bidding: 'Đấu thầu',
+    clicksCount: 'Số lần nhấp',
+    status: 'Trạng thái',
+    actions: 'Thao tác',
+    success: 'Thành công',
+    failed: 'Thất bại',
+    cancel: 'Hủy',
+    walletTitle: 'VNSEEA',
+    id: 'ID',
   },
   en: {
     // Create Ad Screen

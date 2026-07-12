@@ -103,6 +103,7 @@ export interface CreatePostDraft {
   feeling?: PostFeeling;
   pageId?: string;
   groupId?: string;
+  eventId?: string;
 }
 /**
  * What the repository returns after a successful create. We always get
