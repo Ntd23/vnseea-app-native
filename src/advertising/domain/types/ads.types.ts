@@ -1,8 +1,21 @@
-// Advertising domain types
-// Based on WoWonder ads.php API
+// English description: Defines advertising campaign data and backend option types.
 
 export type AdBiddingType = 'clicks' | 'views';
-export type AdAppearsType = 'post' | 'sidebar' | 'video' | 'story' | 'timeline' | 'groups' | 'pages' | 'messages';
+export type AdAppearsType =
+  | 'entire'
+  | 'post'
+  | 'sidebar'
+  | 'jobs'
+  | 'forum'
+  | 'movies'
+  | 'offer'
+  | 'funding'
+  | 'story'
+  | 'video'
+  | 'timeline'
+  | 'groups'
+  | 'pages'
+  | 'messages';
 export type AdGender = 'male' | 'female' | 'all';
 
 export interface AdFormData {
@@ -19,9 +32,34 @@ export interface AdFormData {
   appears: AdAppearsType;
   location?: string;
   pageId?: string;        // Optional page ID
+  pageName?: string;      // Optional page slug expected by the backend
   startDate?: string;     // Format: YYYY-MM-DD
   endDate?: string;      // Format: YYYY-MM-DD
   budget?: number;
+}
+
+export interface AdOption {
+  value: string;
+  label: string;
+}
+
+export interface AdPageOption {
+  id: string;
+  name: string;
+  title: string;
+  avatar?: string;
+}
+
+export interface AdsOptions {
+  audience: AdOption[];
+  genders: AdOption[];
+  pages: AdPageOption[];
+  placements: AdOption[];
+  clickPrice: number;
+  viewPrice: number;
+  currency: string;
+  currencySymbol: string;
+  walletBalance: number;
 }
 
 export interface AdItem {

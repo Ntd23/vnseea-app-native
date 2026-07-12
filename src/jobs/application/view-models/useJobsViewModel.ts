@@ -1,11 +1,20 @@
-// Jobs ViewModel
 // English description: Coordinates jobs screen state with the jobs repository.
 import { useCallback, useEffect, useState } from 'react';
-import type { JobsItem, JobType } from '../../domain/types/jobs.types';
+import type { JobsItem, JobsMetadata, JobType } from '../../domain/types/jobs.types';
 import { createJobsRepository } from '../../infrastructure/repositories/ApiJobsRepository';
 import type { JobsSearchOptions } from '../../domain/repositories/JobsRepository';
 
 const repository = createJobsRepository();
+const EMPTY_METADATA: JobsMetadata = {
+  types: [],
+  categories: [],
+  salaryDates: [],
+  currencies: [],
+  questionTypes: [],
+  imageTypes: [],
+  canCreate: false,
+  ownedPages: [],
+};
 
 export function useJobsViewModel() {
   const [jobs, setJobs] = useState<JobsItem[]>([]);
@@ -13,6 +22,9 @@ export function useJobsViewModel() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [activeOptions, setActiveOptions] = useState<JobsSearchOptions>({});
+  const [metadata, setMetadata] = useState<JobsMetadata>(EMPTY_METADATA);
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
 
   const loadJobs = useCallback(async (options?: JobsSearchOptions) => {
     setIsLoading(true);
@@ -20,6 +32,7 @@ export function useJobsViewModel() {
 
     try {
       const result = await repository.searchJobs(options);
+      setActiveOptions(options ?? {});
       setJobs(result);
       setHasMore(result.length >= (options?.limit ?? 20));
     } catch (caughtError) {
@@ -43,7 +56,7 @@ export function useJobsViewModel() {
       const offset = Number(lastJob.id);
 
       const result = await repository.searchJobs({
-        keyword: '',
+        ...activeOptions,
         limit: 20,
         offset: offset,
       });
@@ -59,19 +72,28 @@ export function useJobsViewModel() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [hasMore, isLoadingMore, jobs]);
+  }, [activeOptions, hasMore, isLoadingMore, jobs]);
 
-  const searchJobs = useCallback(async (keyword: string, jobType?: JobType) => {
+  const searchJobs = useCallback(async (
+    keyword: string,
+    jobType?: JobType,
+    categoryId?: string | number,
+    distance?: number,
+  ) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const result = await repository.searchJobs({
+      const options: JobsSearchOptions = {
         keyword,
         jobType,
+        categoryId,
+        distance,
         limit: 20,
         offset: 0,
-      });
+      };
+      const result = await repository.searchJobs(options);
+      setActiveOptions(options);
       setJobs(result);
       setHasMore(result.length >= 20);
     } catch (caughtError) {
@@ -86,15 +108,35 @@ export function useJobsViewModel() {
   }, []);
 
   const refresh = useCallback(async () => {
-    await loadJobs();
-  }, [loadJobs]);
+    await loadJobs(activeOptions);
+  }, [activeOptions, loadJobs]);
+
+  const deleteJob = useCallback(async (job: JobsItem) => {
+    if (!job.post_id) {
+      throw new Error('Không tìm thấy bài đăng của việc làm.');
+    }
+
+    setDeletingJobId(String(job.id));
+    try {
+      const deleted = await repository.deleteJob(job.post_id);
+      if (!deleted) {
+        throw new Error('Không thể xóa việc làm.');
+      }
+      setJobs(current => current.filter(item => String(item.id) !== String(job.id)));
+    } finally {
+      setDeletingJobId(null);
+    }
+  }, []);
 
   useEffect(() => {
     loadJobs();
+    void repository.getMetadata().then(setMetadata);
   }, [loadJobs]);
 
   return {
     jobs,
+    metadata,
+    deletingJobId,
     isLoading,
     isLoadingMore,
     error,
@@ -102,6 +144,7 @@ export function useJobsViewModel() {
     loadJobs,
     loadMore,
     searchJobs,
+    deleteJob,
     refresh,
   };
 }

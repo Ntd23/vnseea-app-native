@@ -1,7 +1,7 @@
 // Description: Loads the current user's ad campaigns for the Settings advertising screen.
 import { useCallback, useState } from 'react';
 import { createAdsRepository } from '../../../advertising/infrastructure/repositories/ApiAdsRepository';
-import type { AdItem } from '../../../advertising/domain/types/ads.types';
+import type { AdItem, AdsOptions } from '../../../advertising/domain/types/ads.types';
 
 const repository = createAdsRepository();
 
@@ -11,6 +11,7 @@ export function useAdvertisingViewModel() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [options, setOptions] = useState<AdsOptions | null>(null);
 
   const fetchAds = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
     if (mode === 'refresh') {
@@ -23,6 +24,11 @@ export function useAdvertisingViewModel() {
     try {
       const data = await repository.getMyAds();
       setAds(data);
+      try {
+        setOptions(await repository.getOptions());
+      } catch (optionError) {
+        console.warn('[useAdvertisingViewModel] ad options unavailable:', optionError);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không tải được danh sách quảng cáo.');
     } finally {
@@ -58,6 +64,7 @@ export function useAdvertisingViewModel() {
     isRefreshing,
     isDeleting,
     error,
+    options,
     fetchAds,
     refresh,
     deleteAd,

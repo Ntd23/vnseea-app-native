@@ -93,6 +93,10 @@ export const apiRoutes = {
     going: 'go-to-event',
     interested: 'interest-event',
   },
+  jobs: {
+    main: 'job',
+    metadata: 'jobs-meta',
+  },
   ads: {
     main: 'ads',
   },

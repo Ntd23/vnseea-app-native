@@ -31,6 +31,9 @@ import {
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getAdvertisingCopy } from '../../application/i18n/advertisingCopy';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { Pressable } from 'react-native';
 import type { AdDailyStats } from '../../domain/types/ads.types';
 import { createAdsRepository } from '../../infrastructure/repositories/ApiAdsRepository';
 
@@ -45,51 +48,51 @@ function formatNumber(value: number | string | undefined) {
   return numeric.toLocaleString('vi-VN');
 }
 
-function getStatus(status: string) {
+function getStatus(status: string, copy: Record<string, string>) {
   if (status === '1') {
-    return { label: 'Đang chạy', color: '#16a34a', bg: '#dcfce7' };
+    return { label: copy.statusRunning || 'Đang chạy', color: '#16a34a', bg: '#dcfce7' };
   }
   if (status === '2') {
-    return { label: 'Tạm dừng', color: '#ca8a04', bg: '#fef9c3' };
+    return { label: copy.statusPaused || 'Tạm dừng', color: '#ca8a04', bg: '#fef9c3' };
   }
-  return { label: 'Đang chờ', color: '#64748b', bg: '#f1f5f9' };
+  return { label: copy.statusPending || 'Đang chờ', color: '#64748b', bg: '#f1f5f9' };
 }
 
-function getAppearsLabel(value: string) {
+function getAppearsLabel(value: string, copy: Record<string, string>) {
   switch (value) {
     case 'post':
-      return 'Bài viết';
+      return copy.positionPost || 'Bài viết';
     case 'sidebar':
-      return 'Thanh bên';
+      return copy.positionSidebar || 'Thanh bên';
     case 'video':
-      return 'Video';
+      return copy.positionVideo || 'Video';
     case 'story':
-      return 'Story';
+      return copy.positionStory || 'Story';
     case 'timeline':
-      return 'Timeline';
+      return copy.positionTimeline || 'Timeline';
     case 'groups':
-      return 'Nhóm';
+      return copy.positionGroups || 'Nhóm';
     case 'pages':
-      return 'Trang';
+      return copy.positionPages || 'Trang';
     case 'messages':
-      return 'Tin nhắn';
+      return copy.positionMessages || 'Tin nhắn';
     default:
-      return value || 'Quảng cáo';
+      return value || (copy.advertisingTitle || 'Quảng cáo');
   }
 }
 
-function getBiddingLabel(value: string) {
-  return value === 'views' ? 'Theo lượt xem' : 'Theo lượt nhấp';
+function getBiddingLabel(value: string, copy: Record<string, string>) {
+  return value === 'views' ? (copy.biddingViews || 'Theo lượt xem') : (copy.biddingClicks || 'Theo lượt nhấp');
 }
 
-function getGenderLabel(value: string) {
+function getGenderLabel(value: string, copy: Record<string, string>) {
   switch (value) {
     case 'male':
-      return 'Nam';
+      return copy.genderMale || 'Nam';
     case 'female':
-      return 'Nữ';
+      return copy.genderFemale || 'Nữ';
     case 'all':
-      return 'Tất cả';
+      return copy.genderAll || 'Tất cả';
     default:
       return value;
   }
@@ -165,7 +168,7 @@ function AdDetailsScreen() {
   const navigation = useNavigation<AdDetailsNav>();
   const route = useRoute<AdDetailsRoute>();
   const ad = route.params?.ad;
-  const [language] = useState<AppLanguage>(languageStorage.getLanguage());
+  const language = useAppLanguage();
   const copy = getAdvertisingCopy(language);
   const [dailyStats, setDailyStats] = useState<AdDailyStats[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
@@ -207,42 +210,74 @@ function AdDetailsScreen() {
     );
   }
 
-  const status = getStatus(ad.status);
+  const status = getStatus(ad.status, copy);
   const hasImage = Boolean(ad.ad_media && !isVideoMedia(ad.ad_media));
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" />
-
-      {/* Header */}
-      <View className="h-14 flex-row items-center justify-between border-b border-slate-200 px-4">
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <ArrowLeft size={22} color="#1a1c1e" />
-        </TouchableOpacity>
-        <Text className="text-title-primary text-[#1a1c1e]">{copy.adDetailsTitle}</Text>
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          onPress={() => navigation.navigate(ROUTES.CREATE_AD, { ad })}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Edit size={20} color="#1d4ed8" />
-        </TouchableOpacity>
-      </View>
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        {/* Ad Media */}
-        {hasImage ? (
-          <Image source={{ uri: ad.ad_media }} className="h-56 w-full bg-slate-100" resizeMode="cover" />
-        ) : ad.ad_media ? (
-          <View className="h-56 w-full items-center justify-center bg-slate-900">
-            <BarChart3 size={48} color="#ffffff" />
-            <Text className="mt-2 text-sm font-semibold text-white">{copy.adVideo}</Text>
-          </View>
-        ) : null}
+        <View style={{ position: 'relative' }}>
+          {/* Ad Media */}
+          {hasImage ? (
+            <Image source={{ uri: ad.ad_media }} className="h-56 w-full bg-slate-100" resizeMode="cover" />
+          ) : ad.ad_media ? (
+            <View className="h-56 w-full items-center justify-center bg-slate-900">
+              <BarChart3 size={48} color="#ffffff" />
+              <Text className="mt-2 text-sm font-semibold text-white">{copy.adVideo}</Text>
+            </View>
+          ) : (
+            <View style={{ height: 20 }} />
+          )}
+
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: 12,
+              zIndex: 10,
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: 'rgba(255,255,255,0.85)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.2,
+              shadowRadius: 1.41,
+              elevation: 2,
+            }}
+          >
+            <ArrowLeft size={20} color="#1a1c1e" />
+          </Pressable>
+
+          <Pressable
+            onPress={() => navigation.navigate(ROUTES.CREATE_AD, { ad })}
+            style={{
+              position: 'absolute',
+              right: 12,
+              top: 12,
+              zIndex: 10,
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: 'rgba(255,255,255,0.85)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.2,
+              shadowRadius: 1.41,
+              elevation: 2,
+            }}
+          >
+            <Edit size={18} color="#1d4ed8" />
+          </Pressable>
+        </View>
 
         {/* Basic Info */}
         <View className="px-5 py-6">
@@ -263,13 +298,13 @@ function AdDetailsScreen() {
           {/* Tags */}
           <View className="mb-6 flex-row flex-wrap gap-2">
             <View className="rounded-full bg-[#eef2ff] px-3 py-1">
-              <Text className="text-xs font-semibold text-[#3730a3]">{getAppearsLabel(ad.appears)}</Text>
+              <Text className="text-xs font-semibold text-[#3730a3]">{getAppearsLabel(ad.appears, copy)}</Text>
             </View>
             <View className="rounded-full bg-[#f1f5f9] px-3 py-1">
-              <Text className="text-xs font-semibold text-[#475569]">{getBiddingLabel(ad.bidding)}</Text>
+              <Text className="text-xs font-semibold text-[#475569]">{getBiddingLabel(ad.bidding, copy)}</Text>
             </View>
             <View className="rounded-full bg-[#ecfeff] px-3 py-1">
-              <Text className="text-xs font-semibold text-[#0891b2]">{getGenderLabel(ad.gender)}</Text>
+              <Text className="text-xs font-semibold text-[#0891b2]">{getGenderLabel(ad.gender, copy)}</Text>
             </View>
           </View>
 
@@ -347,7 +382,7 @@ function AdDetailsScreen() {
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

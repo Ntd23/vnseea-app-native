@@ -1,4 +1,3 @@
-// Jobs domain types
 // English description: Defines job item types from the WoWonder job API.
 
 export interface JobsItem {
@@ -11,15 +10,22 @@ export interface JobsItem {
   minimum?: number;
   maximum?: number;
   salary_date?: string;
+  salary_date_label?: string;
   job_type: string;
+  job_type_label?: string;
   category: string;
+  category_label?: string;
   currency?: string;
+  currency_symbol?: string;
   image: string;
   image_type?: string;
   page_id: string | number;
   user_id: string | number;
   time: number;
   post_id?: string | number;
+  apply?: boolean;
+  apply_count?: number;
+  url?: string;
   page?: {
     page_id: string | number;
     page_title: string;
@@ -96,6 +102,11 @@ export interface CreateJobPayload {
   maximum?: number;
   salaryDate?: string;
   currency?: string;
+  questions?: Array<{
+    prompt: string;
+    type: 'free_text_question' | 'yes_no_question' | 'multiple_choice_question';
+    answers?: string[];
+  }>;
   imageType?: 'cover' | 'upload';
   thumbnail?: {
     uri: string;
@@ -110,4 +121,38 @@ export interface CreateJobResponse {
   data?: JobsItem;
   message?: string;
   errors?: Array<{ error_text?: string }>;
+}
+
+export interface JobsSelectOption {
+  value: string;
+  label: string;
+  symbol?: string;
+}
+
+export interface JobsMetadata {
+  types: JobsSelectOption[];
+  categories: JobsSelectOption[];
+  salaryDates: JobsSelectOption[];
+  currencies: JobsSelectOption[];
+  questionTypes: JobsSelectOption[];
+  imageTypes: JobsSelectOption[];
+  canCreate: boolean;
+  ownedPages: Array<{
+    page_id: string | number;
+    page_name: string;
+    page_title: string;
+    cover?: string;
+  }>;
+}
+
+export interface JobsMetadataResponse {
+  api_status: number | string;
+  types?: JobsSelectOption[];
+  categories?: JobsSelectOption[];
+  salary_dates?: JobsSelectOption[];
+  currencies?: JobsSelectOption[];
+  question_types?: JobsSelectOption[];
+  image_types?: JobsSelectOption[];
+  can_create?: boolean;
+  owned_pages?: JobsMetadata['ownedPages'];
 }

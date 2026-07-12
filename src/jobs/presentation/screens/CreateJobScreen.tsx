@@ -1,5 +1,5 @@
-// Description: Màn hình tạo việc làm mới với form nhập thông tin và gọi API create job.
-import React, { useCallback, useState } from 'react';
+// English description: Renders the native form for creating a job through the existing backend API.
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,24 +14,23 @@ import {
 } from 'react-native';
 import {
   ArrowLeft,
-  Briefcase,
-  Camera,
   ChevronDown,
-  DollarSign,
-  FileText,
   ImagePlus,
+  PlusCircle,
   X,
 } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { getJobsCopy } from '../../application/i18n/jobsCopy';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useCreateJobViewModel } from '../../application/view-models/useCreateJobViewModel';
 import type { JobType } from '../../domain/types/jobs.types';
-import { JOB_TYPE_VIETNAMESE, JOB_CATEGORIES, SALARY_DATE_OPTIONS } from '../../domain/types/jobs.types';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
@@ -40,7 +39,11 @@ type CreateJobRoute = RouteProp<RootStackParamList, typeof ROUTES.CREATE_JOB>;
 
 const BRAND = '#0000ff';
 
-const JOB_TYPES: JobType[] = ['full_time', 'part_time', 'internship', 'volunteer', 'contract'];
+type JobQuestionDraft = {
+  prompt: string;
+  type: 'free_text_question' | 'yes_no_question' | 'multiple_choice_question';
+  answers: string;
+};
 
 function DropdownField({
   label,
@@ -77,9 +80,10 @@ function DropdownField({
 function CreateJobScreen() {
   const navigation = useNavigation<CreateJobNav>();
   const route = useRoute<CreateJobRoute>();
-  const { createJob, isLoading, error, clearError, myPages, isLoadingPages } = useCreateJobViewModel();
+  const language = useAppLanguage();
+  const copy = getJobsCopy(language);
+  const { createJob, isLoading, myPages, metadata } = useCreateJobViewModel();
   const initialPageId = route.params?.pageId ? String(route.params.pageId) : '';
-  const initialPageName = route.params?.pageName || '';
 
   // Form state
   const [jobTitle, setJobTitle] = useState('');
@@ -90,16 +94,54 @@ function CreateJobScreen() {
   const [minimumSalary, setMinimumSalary] = useState('');
   const [maximumSalary, setMaximumSalary] = useState('');
   const [salaryDate, setSalaryDate] = useState('');
+  const [currency, setCurrency] = useState('');
   const [selectedPageId, setSelectedPageId] = useState(initialPageId);
-  const [selectedPageName, setSelectedPageName] = useState(initialPageName);
   const [thumbnail, setThumbnail] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [imageType, setImageType] = useState<'cover' | 'upload'>('cover');
+  const [questions, setQuestions] = useState<JobQuestionDraft[]>([]);
 
   // Modal state
   const [showJobTypeModal, setShowJobTypeModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showSalaryDateModal, setShowSalaryDateModal] = useState(false);
-  const [showPageModal, setShowPageModal] = useState(false);
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const [questionTypeIndex, setQuestionTypeIndex] = useState<number | null>(null);
+  const jobTypeLabels = useMemo(
+    () => Object.fromEntries(metadata.types.map(option => [option.value, option.label])),
+    [metadata.types],
+  );
+  const categoryLabels = useMemo(
+    () => Object.fromEntries(metadata.categories.map(option => [option.value, option.label])),
+    [metadata.categories],
+  );
+  const salaryDateLabels = useMemo(
+    () => Object.fromEntries(metadata.salaryDates.map(option => [option.value, option.label])),
+    [metadata.salaryDates],
+  );
+  const currencyLabels = useMemo(
+    () => Object.fromEntries(metadata.currencies.map(option => [option.value, `${option.label}${option.symbol ? ` (${option.symbol})` : ''}`])),
+    [metadata.currencies],
+  );
+  const selectedPage = useMemo(
+    () => myPages.find(page => String(page.page_id) === selectedPageId),
+    [myPages, selectedPageId],
+  );
+  const previewImage = thumbnail?.uri || (imageType === 'cover' ? selectedPage?.cover : '') || '';
+
+  useEffect(() => {
+    if (!selectedPageId && myPages[0]) {
+      setSelectedPageId(String(myPages[0].page_id));
+    }
+  }, [myPages, selectedPageId]);
+
+  useEffect(() => {
+    if (!currency && metadata.currencies[0]) {
+      setCurrency(metadata.currencies[0].value);
+    }
+    if (!salaryDate && metadata.salaryDates[0]) {
+      setSalaryDate(metadata.salaryDates[0].value);
+    }
+  }, [currency, metadata.currencies, metadata.salaryDates, salaryDate]);
 
   const handlePickThumbnail = useCallback(async () => {
     try {
@@ -132,23 +174,23 @@ function CreateJobScreen() {
   const handleSubmit = useCallback(async () => {
     // Validation
     if (!jobTitle.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập tiêu đề công việc');
+      Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.errorTitleRequired || 'Vui lòng nhập tiêu đề công việc');
       return;
     }
     if (!description.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập mô tả công việc');
+      Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.errorDescriptionRequired || 'Vui lòng nhập mô tả công việc');
       return;
     }
     if (!location.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập địa điểm');
+      Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.errorLocationRequired || 'Vui lòng nhập địa điểm');
       return;
     }
     if (!category) {
-      Alert.alert('Lỗi', 'Vui lòng chọn danh mục');
+      Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.errorSelectCategory || 'Vui lòng chọn danh mục');
       return;
     }
     if (!selectedPageId) {
-      Alert.alert('Lỗi', 'Vui lòng chọn Trang để đăng việc làm');
+      Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', language === 'vi' ? 'Vui lòng chọn Trang để đăng việc làm' : 'Please select a Page to post this job');
       return;
     }
 
@@ -163,6 +205,16 @@ function CreateJobScreen() {
         minimum: minimumSalary ? Number(minimumSalary) : undefined,
         maximum: maximumSalary ? Number(maximumSalary) : undefined,
         salaryDate: salaryDate || undefined,
+        currency: currency || undefined,
+        questions: questions
+          .filter(question => question.prompt.trim())
+          .map(question => ({
+            prompt: question.prompt.trim(),
+            type: question.type,
+            answers: question.type === 'multiple_choice_question'
+              ? question.answers.split(',').map(answer => answer.trim()).filter(Boolean)
+              : undefined,
+          })),
         imageType,
         thumbnail: thumbnail ?? undefined,
       });
@@ -174,43 +226,16 @@ function CreateJobScreen() {
         },
       ]);
     } catch (err: any) {
-      Alert.alert('Lỗi', err?.message || 'Không thể tạo việc làm. Vui lòng thử lại.');
+      Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', err?.message || (copy.saveError || 'Không thể tạo việc làm. Vui lòng thử lại.'));
     }
-  }, [jobTitle, description, location, jobType, category, selectedPageId, minimumSalary, maximumSalary, salaryDate, imageType, thumbnail, createJob, navigation]);
+  }, [jobTitle, description, location, jobType, category, selectedPageId, minimumSalary, maximumSalary, salaryDate, currency, questions, imageType, thumbnail, createJob, navigation]);
 
   const hasFormData = jobTitle || description || location || category || selectedPageId;
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" />
-
-      {/* Header */}
-      <View className="h-14 flex-row items-center justify-between border-b border-slate-200 bg-white px-4">
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          activeOpacity={0.8}
-          onPress={() => navigation.goBack()}
-        >
-          <ArrowLeft size={24} color="#0F172A" />
-        </TouchableOpacity>
-        <Text className="text-lg font-bold text-slate-900">Tạo việc làm</Text>
-        <TouchableOpacity
-          className={`h-10 min-w-[60px] items-center justify-center rounded-full px-4 ${
-            hasFormData && !isLoading ? 'bg-blue-600' : 'bg-slate-200'
-          }`}
-          activeOpacity={hasFormData && !isLoading ? 0.8 : 1}
-          disabled={!hasFormData || isLoading}
-          onPress={handleSubmit}
-        >
-          {isLoading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Text className={`text-sm font-semibold ${hasFormData ? 'text-white' : 'text-slate-400'}`}>
-              Đăng
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
+    <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
 
       <KeyboardAvoidingView
         className="flex-1"
@@ -222,61 +247,21 @@ function CreateJobScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Page Selection */}
-          <View className="mb-6">
-            <Text className="mb-1.5 text-sm font-medium text-slate-700">Trang đăng việc *</Text>
-            <TouchableOpacity
-              className="flex-row items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3"
-              activeOpacity={0.8}
-              onPress={() => setShowPageModal(true)}
-            >
-              {selectedPageId ? (
-                <Text className="text-slate-900">Đã chọn trang</Text>
-              ) : (
-                <Text className="text-slate-400">Chọn trang để đăng việc làm</Text>
-              )}
-              <ChevronDown size={20} color="#94A3B8" />
-            </TouchableOpacity>
-            {myPages.length > 0 && (
-              <Text className="mt-1 text-xs text-slate-500">
-                Bạn có {myPages.length} trang. Chỉ trang của bạn mới có thể tạo việc làm.
-              </Text>
-            )}
-          </View>
-
           {/* Job Title */}
           <View className="mb-4">
-            <Text className="mb-1.5 text-sm font-medium text-slate-700">Tiêu đề *</Text>
+            <Text className="mb-1.5 text-sm font-bold text-slate-700">{copy.jobTitleLabel || "Chức danh công việc"}</Text>
             <TextInput
               className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900"
-              placeholder="VD: Senior React Native Developer"
+              placeholder={copy.jobTitlePlaceholder || "Chức danh công việc"}
               placeholderTextColor="#94A3B8"
               value={jobTitle}
               onChangeText={setJobTitle}
             />
           </View>
 
-          {/* Job Type */}
-          <DropdownField
-            label="Loại công việc"
-            value={jobType}
-            options={JOB_TYPE_VIETNAMESE}
-            onPress={() => setShowJobTypeModal(true)}
-            placeholder="Chọn loại công việc"
-          />
-
-          {/* Category */}
-          <DropdownField
-            label="Danh mục"
-            value={category}
-            options={JOB_CATEGORIES}
-            onPress={() => setShowCategoryModal(true)}
-            placeholder="Chọn danh mục"
-          />
-
           {/* Location with Google Places Autocomplete */}
           <View className="mb-4 z-50">
-            <Text className="mb-1.5 text-sm font-medium text-slate-700">Địa điểm *</Text>
+            <Text className="mb-1.5 text-sm font-bold text-slate-700">{copy.locationLabel || "Địa điểm"}</Text>
             <AddressAutocomplete
               value={location}
               onChangeText={setLocation}
@@ -284,30 +269,27 @@ function CreateJobScreen() {
                 // When user selects a place, update the location
                 setLocation(place.mainText);
               }}
-              placeholder="VD: Quận 1, TP. HCM"
+              placeholder={language === "vi" ? "VD: Quận 1, TP. HCM" : "e.g. District 1, HCMC"}
             />
           </View>
 
-          {/* Salary */}
           <View className="mb-4">
-            <Text className="mb-1.5 text-sm font-medium text-slate-700">Mức lương (triệu VNĐ)</Text>
+            <Text className="mb-1.5 text-sm font-bold text-slate-700">{copy.salary || "Mức lương"}</Text>
             <View className="flex-row gap-3">
-              <View className="flex-1 flex-row items-center rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <DollarSign size={18} color="#94A3B8" />
+              <View className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-3">
                 <TextInput
-                  className="ml-2 flex-1 text-slate-900"
-                  placeholder="Từ"
+                  className="p-0 text-slate-900"
+                  placeholder={copy.salaryMinPlaceholder || "VND Tối thiểu"}
                   placeholderTextColor="#94A3B8"
                   value={minimumSalary}
                   onChangeText={setMinimumSalary}
                   keyboardType="numeric"
                 />
               </View>
-              <View className="flex-1 flex-row items-center rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <DollarSign size={18} color="#94A3B8" />
+              <View className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-3">
                 <TextInput
-                  className="ml-2 flex-1 text-slate-900"
-                  placeholder="Đến"
+                  className="p-0 text-slate-900"
+                  placeholder={copy.salaryMaxPlaceholder || "VND Tối đa"}
                   placeholderTextColor="#94A3B8"
                   value={maximumSalary}
                   onChangeText={setMaximumSalary}
@@ -315,74 +297,153 @@ function CreateJobScreen() {
                 />
               </View>
             </View>
+            <View className="mt-2 flex-row gap-3">
+              <TouchableOpacity className="min-h-[44px] flex-1 flex-row items-center rounded-xl border border-slate-200 bg-white px-3" onPress={() => setShowCurrencyModal(true)}>
+                <Text className="flex-1 text-[14px] text-slate-700" numberOfLines={1}>{currencyLabels[currency] || (language === 'vi' ? 'Tiền tệ' : 'Currency')}</Text>
+                <ChevronDown size={18} color="#64748B" />
+              </TouchableOpacity>
+              <TouchableOpacity className="min-h-[44px] flex-1 flex-row items-center rounded-xl border border-slate-200 bg-white px-3" onPress={() => setShowSalaryDateModal(true)}>
+                <Text className="flex-1 text-[14px] text-slate-700" numberOfLines={1}>{salaryDateLabels[salaryDate] || (language === 'vi' ? 'Chu kỳ' : 'Period')}</Text>
+                <ChevronDown size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Salary Date */}
           <DropdownField
-            label="Chu kỳ trả lương"
-            value={salaryDate}
-            options={SALARY_DATE_OPTIONS}
-            onPress={() => setShowSalaryDateModal(true)}
-            placeholder="Chọn chu kỳ"
+            label={copy.jobType || "Loại công việc"}
+            value={jobType}
+            options={jobTypeLabels}
+            onPress={() => setShowJobTypeModal(true)}
+            placeholder={language === 'vi' ? 'Chọn loại công việc' : 'Select job type'}
+          />
+
+          <DropdownField
+            label={copy.category || "Loại"}
+            value={category}
+            options={categoryLabels}
+            onPress={() => setShowCategoryModal(true)}
+            placeholder={language === 'vi' ? 'Chọn loại' : 'Select category'}
           />
 
           {/* Description */}
           <View className="mb-4">
-            <Text className="mb-1.5 text-sm font-medium text-slate-700">Mô tả công việc *</Text>
+            <Text className="mb-1.5 text-sm font-bold text-slate-700">{copy.jobDescriptionLabel || "Sự mô tả"}</Text>
             <TextInput
-              className="min-h-[150px] rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900"
-              placeholder="Mô tả chi tiết về công việc, yêu cầu, quyền lợi..."
+              className="min-h-[130px] rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900"
+              placeholder={copy.jobDescriptionPlaceholder || "Mô tả các trách nhiệm và kỹ năng ưu tiên cho công việc này"}
               placeholderTextColor="#94A3B8"
               value={description}
               onChangeText={setDescription}
               multiline
               textAlignVertical="top"
             />
+            <Text className="mt-1 text-[11px] text-slate-400">{copy.jobDescriptionPlaceholder || "Mô tả các trách nhiệm và kỹ năng ưu tiên cho công việc này"}</Text>
           </View>
 
-          {/* Thumbnail */}
-          <View className="mb-6">
-            <Text className="mb-1.5 text-sm font-medium text-slate-700">Hình ảnh</Text>
-            {thumbnail ? (
-              <View className="relative overflow-hidden rounded-2xl border border-slate-200">
-                <Image
-                  source={{ uri: thumbnail.uri }}
-                  className="h-40 w-full"
-                  resizeMode="cover"
-                />
+          <View className="mb-5">
+            <Text className="mb-2 text-sm font-bold text-slate-700">{language === "vi" ? "Câu hỏi tuyển dụng" : "Screening Questions"}</Text>
+            {questions.map((question, index) => (
+              <View key={`question-${index}`} className="mb-3 rounded-md bg-slate-100 p-3">
+                <View className="mb-2 flex-row items-center justify-between">
+                  <Text className="text-[13px] font-bold text-slate-700">{language === "vi" ? "Câu hỏi" : "Question"} {index + 1}</Text>
+                  <TouchableOpacity
+                    className="h-7 w-7 items-center justify-center rounded-full bg-slate-200"
+                    onPress={() => setQuestions(current => current.filter((_, itemIndex) => itemIndex !== index))}
+                  >
+                    <X size={15} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity
-                  className="absolute right-2 top-2 h-8 w-8 items-center justify-center rounded-full bg-black/50"
-                  activeOpacity={0.8}
-                  onPress={handleRemoveThumbnail}
+                  className="min-h-[44px] flex-row items-center rounded-md border border-slate-200 bg-white px-3"
+                  onPress={() => setQuestionTypeIndex(index)}
                 >
-                  <X size={16} color="#FFFFFF" />
+                  <Text className="flex-1 text-[13px] text-slate-600">
+                    {metadata.questionTypes.find(option => option.value === question.type)?.label || question.type}
+                  </Text>
+                  <ChevronDown size={17} color="#64748B" />
+                </TouchableOpacity>
+                <TextInput
+                  className="mt-3 min-h-[58px] rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900"
+                  placeholder={language === "vi" ? "Nhập câu hỏi" : "Enter question"}
+                  placeholderTextColor="#94A3B8"
+                  value={question.prompt}
+                  onChangeText={prompt => setQuestions(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, prompt } : item))}
+                  multiline
+                  textAlignVertical="top"
+                />
+                {question.type === 'multiple_choice_question' ? (
+                  <TextInput
+                    className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-3 text-slate-900"
+                    placeholder={language === "vi" ? "Các lựa chọn, cách nhau bằng dấu phẩy" : "Options, separated by commas"}
+                    placeholderTextColor="#94A3B8"
+                    value={question.answers}
+                    onChangeText={answers => setQuestions(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, answers } : item))}
+                  />
+                ) : null}
+              </View>
+            ))}
+            {questions.length < 3 ? (
+              <TouchableOpacity
+                className="min-h-[42px] flex-row items-center justify-center border border-slate-300 bg-slate-50"
+                onPress={() => setQuestions(current => [...current, {
+                  prompt: '',
+                  type: 'free_text_question',
+                  answers: '',
+                }])}
+              >
+                <PlusCircle size={16} color="#64748B" />
+                <Text className="ml-1 text-[13px] font-semibold text-slate-600">{language === "vi" ? "Thêm câu hỏi" : "Add Question"}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View className="mb-6">
+            <Text className="mb-2 text-sm font-bold leading-5 text-slate-700">
+              {language === "vi" ? "Thêm hình ảnh để giúp các ứng viên thấy được việc làm tại vị trí này như thế nào." : "Add an image to help candidates see what it is like to work in this position."}
+            </Text>
+            <View className="overflow-hidden rounded-md bg-slate-200">
+              {previewImage ? (
+                <Image source={{ uri: previewImage }} className="h-48 w-full" resizeMode="cover" />
+              ) : (
+                <View className="h-48 items-center justify-center">
+                  <ImagePlus size={38} color="#94A3B8" />
+                </View>
+              )}
+              <View className="absolute bottom-2 left-2 right-2 overflow-hidden rounded-md">
+                <TouchableOpacity className="min-h-[42px] items-center justify-center bg-white/90" onPress={handlePickThumbnail}>
+                  <Text className="text-[13px] font-bold text-slate-700">{language === "vi" ? "Duyệt để tải lên" : "Browse to upload"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="mt-px min-h-[42px] items-center justify-center bg-white/90"
+                  onPress={() => {
+                    setThumbnail(null);
+                    setImageType('cover');
+                  }}
+                >
+                  <Text className="text-[13px] font-bold text-slate-700">{language === "vi" ? "Sử dụng ảnh bìa" : "Use cover image"}</Text>
                 </TouchableOpacity>
               </View>
-            ) : (
-              <TouchableOpacity
-                className="h-32 items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white"
-                activeOpacity={0.8}
-                onPress={handlePickThumbnail}
-              >
-                <ImagePlus size={32} color="#94A3B8" />
-                <Text className="mt-2 text-sm text-slate-500">Thêm hình ảnh (tùy chọn)</Text>
+            </View>
+            {thumbnail ? (
+              <TouchableOpacity className="mt-2 self-end" onPress={handleRemoveThumbnail}>
+                <Text className="text-[12px] font-semibold text-red-500">{language === "vi" ? "Xóa ảnh đã chọn" : "Remove selected image"}</Text>
               </TouchableOpacity>
+            ) : (
+              null
             )}
-            <TouchableOpacity
-              className="mt-2 flex-row items-center justify-center"
-              activeOpacity={0.8}
-              onPress={handlePickThumbnail}
-            >
-              <Camera size={16} color={BRAND} />
-              <Text className="ml-2 text-sm text-brand">Hoặc dùng ảnh bìa trang</Text>
-            </TouchableOpacity>
           </View>
 
-          {/* Info */}
-          <View className="rounded-xl bg-slate-100 p-4">
-            <Text className="text-sm text-slate-500">
-              💡 Việc làm sẽ được đăng dưới dạng bài viết trên trang bạn chọn. Bạn cần là chủ sở hữu trang mới có thể tạo việc làm.
-            </Text>
+          <View className="flex-row justify-end border-t border-slate-200 pt-4">
+            <TouchableOpacity className="mr-3 min-h-[44px] justify-center px-3" onPress={() => navigation.goBack()}>
+              <Text className="font-semibold text-slate-500">{language === "vi" ? "Quay lại" : "Back"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className={`min-h-[44px] min-w-[110px] items-center justify-center rounded-md ${hasFormData && !isLoading ? 'bg-[#0000ff]' : 'bg-slate-300'}`}
+              disabled={!hasFormData || isLoading}
+              onPress={handleSubmit}
+            >
+              {isLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text className="font-bold text-white">{copy.submitCreate || 'Đăng tin'}</Text>}
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -396,8 +457,10 @@ function CreateJobScreen() {
             onPress={() => setShowJobTypeModal(false)}
           />
           <View className="rounded-t-3xl bg-white p-6">
-            <Text className="mb-4 text-lg font-bold text-slate-900">Chọn loại công việc</Text>
-            {JOB_TYPES.map((type) => (
+            <Text className="mb-4 text-lg font-bold text-slate-900">{language === "vi" ? "Chọn loại công việc" : "Select Job Type"}</Text>
+            {metadata.types.map(option => {
+              const type = option.value as JobType;
+              return (
               <TouchableOpacity
                 key={type}
                 className={`flex-row items-center justify-between py-3 ${
@@ -410,11 +473,12 @@ function CreateJobScreen() {
                 }}
               >
                 <Text className={`text-base ${jobType === type ? 'font-semibold text-blue-600' : 'text-slate-700'}`}>
-                  {JOB_TYPE_VIETNAMESE[type]}
+                  {option.label}
                 </Text>
                 {jobType === type && <View className="h-2 w-2 rounded-full bg-blue-600" />}
               </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
         </View>
       )}
@@ -428,9 +492,9 @@ function CreateJobScreen() {
             onPress={() => setShowCategoryModal(false)}
           />
           <View className="max-h-[70%] rounded-t-3xl bg-white p-6">
-            <Text className="mb-4 text-lg font-bold text-slate-900">Chọn danh mục</Text>
+            <Text className="mb-4 text-lg font-bold text-slate-900">{language === "vi" ? "Chọn danh mục" : "Select Category"}</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
-              {Object.entries(JOB_CATEGORIES).map(([key, label]) => (
+              {metadata.categories.map(({ value: key, label }) => (
                 <TouchableOpacity
                   key={key}
                   className={`flex-row items-center justify-between py-3 ${
@@ -462,8 +526,8 @@ function CreateJobScreen() {
             onPress={() => setShowSalaryDateModal(false)}
           />
           <View className="rounded-t-3xl bg-white p-6">
-            <Text className="mb-4 text-lg font-bold text-slate-900">Chu kỳ trả lương</Text>
-            {Object.entries(SALARY_DATE_OPTIONS).map(([key, label]) => (
+            <Text className="mb-4 text-lg font-bold text-slate-900">{language === "vi" ? "Chu kỳ trả lương" : "Salary Period"}</Text>
+            {metadata.salaryDates.map(({ value: key, label }) => (
               <TouchableOpacity
                 key={key}
                 className={`flex-row items-center justify-between py-3 ${
@@ -485,54 +549,62 @@ function CreateJobScreen() {
         </View>
       )}
 
-      {/* Page Selection Modal */}
-      {showPageModal && (
+      {showCurrencyModal && (
         <View className="absolute inset-0 bg-black/50" style={{ zIndex: 100 }}>
           <TouchableOpacity
             className="flex-1"
             activeOpacity={1}
-            onPress={() => setShowPageModal(false)}
+            onPress={() => setShowCurrencyModal(false)}
           />
           <View className="max-h-[70%] rounded-t-3xl bg-white p-6">
-            <Text className="mb-4 text-lg font-bold text-slate-900">Chọn trang</Text>
-            {isLoadingPages ? (
-              <ActivityIndicator size="large" color={BRAND} />
-            ) : myPages.length > 0 ? (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {myPages.map((page) => (
-                  <TouchableOpacity
-                    key={page.page_id}
-                    className={`flex-row items-center gap-3 py-3 ${
-                      selectedPageId === String(page.page_id) ? 'border-b border-slate-100' : ''
-                    }`}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      setSelectedPageId(String(page.page_id));
-                      setSelectedPageName(page.page_title || page.page_name || '');
-                      setShowPageModal(false);
-                    }}
-                  >
-                    <View className="h-10 w-10 items-center justify-center rounded-full bg-slate-200">
-                      <Briefcase size={20} color="#64748B" />
-                    </View>
-                    <View className="flex-1">
-                      <Text className={`text-base ${selectedPageId === String(page.page_id) ? 'font-semibold text-blue-600' : 'text-slate-700'}`}>
-                        {page.page_title}
-                      </Text>
-                      <Text className="text-xs text-slate-500">@{page.page_name}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            ) : (
-              <Text className="text-center text-slate-500">
-                Bạn chưa có trang nào. Vui lòng tạo trang trước.
-              </Text>
-            )}
+            <Text className="mb-4 text-lg font-bold text-slate-900">{language === "vi" ? "Chọn tiền tệ" : "Select Currency"}</Text>
+            <ScrollView showsVerticalScrollIndicator persistentScrollbar>
+              {metadata.currencies.map(option => (
+                <TouchableOpacity
+                  key={option.value}
+                  className="flex-row items-center justify-between border-b border-slate-100 py-3"
+                  onPress={() => {
+                    setCurrency(option.value);
+                    setShowCurrencyModal(false);
+                  }}
+                >
+                  <Text className={`text-base ${currency === option.value ? 'font-semibold text-blue-600' : 'text-slate-700'}`}>
+                    {option.label}{option.symbol ? ` (${option.symbol})` : ''}
+                  </Text>
+                  {currency === option.value ? <View className="h-2 w-2 rounded-full bg-blue-600" /> : null}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </View>
       )}
-    </SafeAreaView>
+
+      {questionTypeIndex !== null && questions[questionTypeIndex] ? (
+        <View className="absolute inset-0 bg-black/50" style={{ zIndex: 100 }}>
+          <TouchableOpacity className="flex-1" activeOpacity={1} onPress={() => setQuestionTypeIndex(null)} />
+          <View className="rounded-t-3xl bg-white p-6">
+            <Text className="mb-4 text-lg font-bold text-slate-900">{language === "vi" ? "Loại câu hỏi" : "Question Type"}</Text>
+            {metadata.questionTypes.map(option => (
+              <TouchableOpacity
+                key={option.value}
+                className="flex-row items-center justify-between border-b border-slate-100 py-3"
+                onPress={() => {
+                  setQuestions(current => current.map((question, index) => index === questionTypeIndex
+                    ? { ...question, type: option.value as JobQuestionDraft['type'] }
+                    : question));
+                  setQuestionTypeIndex(null);
+                }}
+              >
+                <Text className={`text-base ${questions[questionTypeIndex]?.type === option.value ? 'font-semibold text-blue-600' : 'text-slate-700'}`}>
+                  {option.label}
+                </Text>
+                {questions[questionTypeIndex]?.type === option.value ? <View className="h-2 w-2 rounded-full bg-blue-600" /> : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
