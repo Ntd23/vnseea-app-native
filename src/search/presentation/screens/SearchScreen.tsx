@@ -5,6 +5,7 @@ import {
   FlatList,
   Image,
   Modal,
+  Platform,
   ScrollView,
   Text,
   TextInput,
@@ -858,7 +859,10 @@ function SearchScreen() {
         : results.pages;
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#eef3ff' }}>
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: '#eef3ff' }}
+        edges={Platform.OS === 'ios' ? ['top'] : []}
+      >
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
         <FeedHeader />
 
@@ -977,12 +981,15 @@ function SearchScreen() {
             });
           }}
         />
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F0F2F5' }}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: '#F0F2F5' }}
+      edges={Platform.OS === 'ios' ? ['top'] : []}
+    >
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <FeedHeader />
 
@@ -1068,7 +1075,7 @@ function SearchScreen() {
           </View>
         ) : null}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

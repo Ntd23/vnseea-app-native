@@ -613,7 +613,7 @@ const feedPreparedVideoListeners = new Set<FeedPreparedVideoListener>();
 const preparedVideoLru: string[] = [];
 let feedScrollBusySnapshot = false;
 const feedScrollBusyListeners = new Set<FeedScrollBusyListener>();
-export let feedVideoMutedSnapshot = false;
+export let feedVideoMutedSnapshot = true;
 const feedVideoMutedListeners = new Set<FeedVideoMutedListener>();
 
 export function publishFeedActiveVideo(videoId: string | null) {
