@@ -58,7 +58,7 @@ import {
   GroupDetailScreen,
 } from '../community';
 import { CreateFundingScreen, FundingDetailScreen, FundingScreen } from '../funding';
-import { CreateMovieScreen, MoviesScreen } from '../movies';
+import { CreateMovieScreen, MovieDetailScreen, MoviesScreen } from '../movies';
 import { CreateJobScreen, JobDetailScreen, JobsScreen } from '../jobs';
 import {
   AvatarViewerScreen,
@@ -244,6 +244,7 @@ export function createStackRoutes(
     { name: ROUTES.CREATE_BLOG, component: CreateBlogScreen },
     { name: ROUTES.EDIT_BLOG, component: CreateBlogScreen },
     { name: ROUTES.MOVIES, component: MoviesScreen },
+    { name: ROUTES.MOVIE_DETAIL, component: MovieDetailScreen },
     { name: ROUTES.CREATE_MOVIE, component: CreateMovieScreen },
     { name: ROUTES.JOBS, component: JobsScreen },
     { name: ROUTES.JOB_DETAIL, component: JobDetailScreen },

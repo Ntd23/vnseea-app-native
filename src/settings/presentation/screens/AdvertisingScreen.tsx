@@ -328,7 +328,7 @@ function AdvertisingScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               className="min-h-[52px] flex-row items-center border-t border-[#f1f5f9] px-4"
-              onPress={() => navigation.navigate(ROUTES.MY_POINTS)}>
+              onPress={() => navigation.navigate(ROUTES.MY_BALANCE)}>
               <CreditCard size={18} color="#8b8b8b" />
               <Text className="ml-3 text-sm text-[#8b8b8b]">{copy.walletTitle || "VNSEEA"}</Text>
             </TouchableOpacity>

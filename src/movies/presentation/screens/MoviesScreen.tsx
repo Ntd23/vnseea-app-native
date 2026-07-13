@@ -1,21 +1,28 @@
-// Description: Renders VNSEEA movies grid with API data, category filters and beautiful card layout.
-import React from 'react';
+// English description: Renders the API-backed movie catalog with phtml-style filters.
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
   Image,
+  Modal,
   RefreshControl,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity as Pressable,
   View,
 } from 'react-native';
 import {
   ArrowLeft,
+  Check,
   Clapperboard,
+  Film,
+  Funnel,
   Play,
   Plus,
   Star,
+  Sparkles,
+  TrendingUp,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -25,6 +32,11 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { useMoviesViewModel } from '../../application/view-models/useMoviesViewModel';
 import type { MovieItem } from '../../domain/types/movies.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  MOVIE_COUNTRY_KEYS,
+  MOVIE_GENRE_KEYS,
+} from '../../domain/types/movies.types';
+import { languageStorage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 
 type MoviesNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -349,4 +361,214 @@ function MoviesScreen() {
   );
 }
 
-export default MoviesScreen;
+type MovieSort = 'new' | 'recommended' | 'watched';
+
+const VI_GENRES: Record<string, string> = {
+  action: 'Hành động', comedy: 'Hài', drama: 'Chính kịch', horror: 'Kinh dị',
+  mythological: 'Thần thoại', war: 'Chiến tranh', adventure: 'Phiêu lưu',
+  family: 'Gia đình', sport: 'Thể thao', animation: 'Hoạt hình', crime: 'Tội phạm',
+  fantasy: 'Giả tưởng', musical: 'Nhạc kịch', romance: 'Tình cảm', thriller: 'Giật gân',
+  history: 'Lịch sử', documentary: 'Tài liệu', tvshow: 'TV Show',
+};
+
+const VI_COUNTRIES: Record<string, string> = {
+  'united-states': 'Hoa Kỳ', china: 'Trung Quốc', india: 'Ấn Độ', iran: 'Iran',
+  japan: 'Nhật Bản', turkey: 'Thổ Nhĩ Kỳ', russia: 'Nga', france: 'Pháp',
+  'united-kingdom': 'Anh', vietnam: 'Việt Nam',
+};
+
+function CatalogMovieCard({ movie }: { movie: MovieItem }) {
+  const navigation = useNavigation<any>();
+  const rating = Number(movie.rating ?? 0);
+  return (
+    <Pressable
+      activeOpacity={0.85}
+      className="mb-5"
+      style={{ width: CARD_WIDTH }}
+      onPress={() => navigation.navigate(ROUTES.MOVIE_DETAIL, { movie })}>
+      <View
+        className="overflow-hidden rounded-[4px] bg-white"
+        style={{ elevation: 3, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 4 }}>
+        <Image
+          source={{ uri: movie.cover }}
+          className="w-full bg-[#e5e7eb]"
+          style={{ height: CARD_WIDTH * 1.45 }}
+          resizeMode="cover"
+        />
+        <View className="absolute left-2 top-2 flex-row items-center rounded-full bg-[#8b8b8b]/90 px-1.5 py-1">
+          <Star size={13} color="#ffffff" fill="#ffffff" />
+          <Text className="ml-0.5 text-xs font-semibold text-white">
+            {Number.isFinite(rating) ? rating.toFixed(rating % 1 === 0 ? 0 : 1) : '0'}
+          </Text>
+        </View>
+      </View>
+      <Text className="mt-3 text-center text-sm font-semibold text-[#374151]" numberOfLines={1}>
+        {movie.name || movie.title || 'Không có tiêu đề'}
+      </Text>
+      <Text className="mt-1 text-center text-xs text-[#64748b]" numberOfLines={1}>
+        {VI_GENRES[String(movie.genre ?? '').toLowerCase()] || movie.genre || movie.category || ''}
+      </Text>
+    </Pressable>
+  );
+}
+
+function MoviesCatalogScreen() {
+  const navigation = useNavigation<MoviesNav>();
+  const {
+    movies,
+    isLoading,
+    error,
+    activeGenre,
+    setActiveGenre,
+    activeCountry,
+    setActiveCountry,
+    reload,
+  } = useMoviesViewModel();
+  const isVi = languageStorage.getLanguage() === 'vi';
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<MovieSort>('new');
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const visibleMovies = useMemo(() => {
+    const keyword = search.trim().toLocaleLowerCase();
+    let items = movies.filter(movie => {
+      if (!keyword) return true;
+      return [movie.name, movie.title, movie.genre, movie.country, movie.release]
+        .some(value => String(value ?? '').toLocaleLowerCase().includes(keyword));
+    });
+
+    const currentYear = String(new Date().getFullYear());
+    if (sort === 'recommended') {
+      const recommended = items.filter(movie =>
+        String(movie.release ?? '') === currentYear
+        || ['hd', 'dvd', 'hd-tv'].includes(String(movie.quality ?? '').toLowerCase()),
+      );
+      if (recommended.length > 0) items = recommended;
+    }
+
+    return [...items].sort((left, right) =>
+      sort === 'watched'
+        ? Number(right.views ?? 0) - Number(left.views ?? 0)
+        : Number(right.id ?? 0) - Number(left.id ?? 0),
+    );
+  }, [movies, search, sort]);
+
+  const tabs: Array<{ key: MovieSort; label: string; Icon: typeof Film }> = [
+    { key: 'new', label: isVi ? 'Mới' : 'New', Icon: Film },
+    { key: 'recommended', label: isVi ? 'Khuyến khích' : 'Recommended', Icon: Sparkles },
+    { key: 'watched', label: isVi ? 'Xem nhiều nhất' : 'Most watched', Icon: TrendingUp },
+  ];
+
+  const genres = [
+    { value: 'Tất cả', label: isVi ? 'Tất cả' : 'All' },
+    ...MOVIE_GENRE_KEYS.map(value => ({ value, label: isVi ? VI_GENRES[value] : value })),
+  ];
+  const countries = [
+    { value: 'Tất cả', label: isVi ? 'Tất cả' : 'All' },
+    ...MOVIE_COUNTRY_KEYS.map(value => ({ value, label: isVi ? VI_COUNTRIES[value] : value })),
+  ];
+
+  return (
+    <SafeAreaView className="flex-1 bg-[#eaf0ff]" edges={['top']}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <View className="h-12 flex-row items-center border-b border-[#e5e7eb] bg-white px-3">
+        <Pressable onPress={() => navigation.goBack()} hitSlop={10}>
+          <ArrowLeft size={22} color="#0000ff" />
+        </Pressable>
+        <Text className="ml-3 text-base font-semibold text-[#111827]">{isVi ? 'Phim' : 'Movies'}</Text>
+      </View>
+
+      <View className="bg-white px-3 pb-4 pt-3">
+        <View className="flex-row items-center gap-2">
+          <TextInput
+            className="h-11 flex-1 rounded-[5px] bg-[#eeeeee] px-3 text-sm text-[#111827]"
+            placeholder={isVi ? 'Tìm kiếm' : 'Search'}
+            placeholderTextColor="#9ca3af"
+            value={search}
+            onChangeText={setSearch}
+          />
+          <Pressable
+            className="h-11 w-11 items-center justify-center rounded-full bg-[#eef1f5]"
+            onPress={() => setFilterOpen(true)}>
+            <Funnel size={19} color="#475569" />
+          </Pressable>
+        </View>
+
+        <View className="mt-3 flex-row flex-wrap justify-center gap-3">
+          {tabs.map(({ key, label, Icon }) => {
+            const active = sort === key;
+            return (
+              <Pressable
+                key={key}
+                className={`min-h-[38px] flex-row items-center rounded-full border px-4 ${active ? 'border-[#0000ff] bg-[#eef2ff]' : 'border-[#e5e7eb] bg-white'}`}
+                onPress={() => setSort(key)}>
+                <Icon size={14} color={active ? '#0000ff' : '#475569'} />
+                <Text className={`ml-2 text-xs font-semibold ${active ? 'text-[#0000ff]' : 'text-[#475569]'}`}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 28, paddingTop: 20 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={reload} colors={[BRAND]} tintColor={BRAND} />}>
+        {isLoading && movies.length === 0 ? (
+          <LoadingState />
+        ) : error ? (
+          <ErrorState error={error} onRetry={reload} />
+        ) : visibleMovies.length === 0 ? (
+          <EmptyState onRetry={() => { setSearch(''); setActiveGenre('Tất cả'); setActiveCountry('Tất cả'); }} />
+        ) : (
+          <View className="flex-row flex-wrap justify-between">
+            {visibleMovies.map(movie => <CatalogMovieCard key={String(movie.id)} movie={movie} />)}
+          </View>
+        )}
+      </ScrollView>
+
+      <Modal visible={filterOpen} transparent animationType="slide" onRequestClose={() => setFilterOpen(false)}>
+        <View className="flex-1 justify-end bg-black/35">
+          <Pressable className="flex-1" onPress={() => setFilterOpen(false)} />
+          <View className="h-[72%] rounded-t-2xl bg-white pb-5">
+            <View className="items-center py-3"><View className="h-1.5 w-12 rounded-full bg-[#cbd5e1]" /></View>
+            <Text className="border-b border-[#e5e7eb] px-4 pb-3 text-base font-semibold text-[#111827]">{isVi ? 'Bộ lọc phim' : 'Movie filters'}</Text>
+            <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: 30 }} showsVerticalScrollIndicator persistentScrollbar>
+              <Text className="mb-2 text-sm font-semibold text-[#374151]">{isVi ? 'Thể loại' : 'Genre'}</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {genres.map(item => {
+                  const active = activeGenre === item.value;
+                  return (
+                    <Pressable key={item.value} className={`flex-row items-center border px-3 py-2 ${active ? 'border-[#0000ff] bg-[#eef2ff]' : 'border-[#e5e7eb]'}`} onPress={() => setActiveGenre(item.value)}>
+                      {active && <Check size={14} color="#0000ff" />}
+                      <Text className={`text-xs ${active ? 'ml-1 text-[#0000ff]' : 'text-[#475569]'}`}>{item.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text className="mb-2 mt-6 text-sm font-semibold text-[#374151]">{isVi ? 'Quốc gia' : 'Country'}</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {countries.map(item => {
+                  const active = activeCountry === item.value;
+                  return (
+                    <Pressable key={item.value} className={`flex-row items-center border px-3 py-2 ${active ? 'border-[#0000ff] bg-[#eef2ff]' : 'border-[#e5e7eb]'}`} onPress={() => setActiveCountry(item.value)}>
+                      {active && <Check size={14} color="#0000ff" />}
+                      <Text className={`text-xs ${active ? 'ml-1 text-[#0000ff]' : 'text-[#475569]'}`}>{item.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
+            <Pressable className="mx-4 h-11 items-center justify-center rounded-[5px] bg-[#0000ff]" onPress={() => setFilterOpen(false)}>
+              <Text className="font-semibold text-white">{isVi ? 'Áp dụng' : 'Apply'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+export default MoviesCatalogScreen;

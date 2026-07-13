@@ -1,5 +1,4 @@
-// Movies - useMoviesViewModel ViewModel
-// Port từ: client/src/movies/application/view-models/
+// English description: Loads API-backed movies with genre and country filters.
 
 import { useState, useCallback, useEffect } from 'react';
 import { createMoviesRepository } from '../../infrastructure/repositories/ApiMoviesRepository';
@@ -12,20 +11,26 @@ export function useMoviesViewModel() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeGenre, setActiveGenre] = useState<string>('Tất cả');
+  const [activeCountry, setActiveCountry] = useState<string>('Tất cả');
 
   const loadMovies = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const genreParam = activeGenre === 'Tất cả' ? undefined : activeGenre;
-      const data = await repository.getMovies({ limit: 26, genre: genreParam });
+      const countryParam = activeCountry === 'Tất cả' ? undefined : activeCountry;
+      const data = await repository.getMovies({
+        limit: 26,
+        genre: genreParam,
+        country: countryParam,
+      });
       setMovies(data);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Lỗi khi tải phim');
     } finally {
       setIsLoading(false);
     }
-  }, [activeGenre]);
+  }, [activeCountry, activeGenre]);
 
   useEffect(() => {
     loadMovies();
@@ -37,6 +42,8 @@ export function useMoviesViewModel() {
     error,
     activeGenre,
     setActiveGenre,
+    activeCountry,
+    setActiveCountry,
     reload: loadMovies,
   };
 }

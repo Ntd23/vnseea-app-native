@@ -173,6 +173,7 @@ export type RootStackParamList = {
   [ROUTES.CREATE_BLOG]: undefined;
   [ROUTES.EDIT_BLOG]: { blogId: string };
   [ROUTES.MOVIES]: undefined;
+  [ROUTES.MOVIE_DETAIL]: { movie: import('../movies/domain/types/movies.types').MovieItem };
   [ROUTES.CREATE_MOVIE]: undefined;
   [ROUTES.JOBS]: undefined;
   [ROUTES.JOB_DETAIL]: { jobId?: string; job?: any };

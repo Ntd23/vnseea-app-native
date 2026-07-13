@@ -1,10 +1,10 @@
-// Movies Repository Interface
-// Port từ: client/src/movies/domain/repositories/
+// English description: Declares movie listing, creation, and comment operations.
 
 import type {
   CreateMovieInput,
   CreateMovieResponse,
   MovieItem,
+  MovieComment,
 } from '../types/movies.types';
 
 export interface MoviesRepository {
@@ -16,4 +16,6 @@ export interface MoviesRepository {
   }): Promise<MovieItem[]>;
 
   createMovie(input: CreateMovieInput): Promise<CreateMovieResponse>;
+  getComments(movieId: number | string): Promise<MovieComment[]>;
+  addComment(movieId: number | string, text: string): Promise<MovieComment | null>;
 }
