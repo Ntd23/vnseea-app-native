@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useForumViewModel } from '../../application/view-models/useForumViewModel';
@@ -63,7 +64,10 @@ export default function ForumScreen() {
   }
 
   return (
-    <View className="flex-1 bg-white">
+    <SafeAreaView
+      className="flex-1 bg-white"
+      edges={['top']}
+    >
       {/* Header */}
       <View className="bg-blue-600 p-4">
         <Text className="text-white text-xl font-bold">{copy.title}</Text>
@@ -119,6 +123,6 @@ export default function ForumScreen() {
           </View>
         )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }

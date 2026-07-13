@@ -28,7 +28,7 @@ import type { JobsItem } from '../../domain/types/jobs.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getJobsCopy } from '../../application/i18n/jobsCopy';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { createJobsRepository } from '../../infrastructure/repositories/ApiJobsRepository';
 
 type JobDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -128,7 +128,7 @@ function JobDetailScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#eef3ff' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
         <View className="bg-white px-4 pb-5 pt-10" style={{ position: 'relative' }}>

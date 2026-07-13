@@ -27,7 +27,7 @@ import {
   Quote,
   X,
 } from 'lucide-react-native';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import type { RootStackParamList } from '../../../navigation/types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { createBlogsRepository } from '../../infrastructure/repositories/ApiBlogsRepository';
@@ -304,7 +304,7 @@ function CreateBlogScreen() {
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={{ zIndex: 10, elevation: 5, backgroundColor: '#FFFFFF' }}>
-        <FeedHeader />
+        <SafeAreaFeedHeader />
       </View>
 
       {isLoadingArticle ? (
