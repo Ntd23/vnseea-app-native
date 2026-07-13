@@ -5,6 +5,7 @@ import type {
   CreateMovieResponse,
   MovieItem,
   MovieComment,
+  MovieFilterMetadata,
 } from '../types/movies.types';
 
 export interface MoviesRepository {
@@ -14,6 +15,7 @@ export interface MoviesRepository {
     genre?: string;
     country?: string;
   }): Promise<MovieItem[]>;
+  getFilterMetadata(): Promise<MovieFilterMetadata>;
 
   createMovie(input: CreateMovieInput): Promise<CreateMovieResponse>;
   getComments(movieId: number | string): Promise<MovieComment[]>;

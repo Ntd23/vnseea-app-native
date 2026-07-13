@@ -1,16 +1,21 @@
-// Forum API Repository (Infrastructure)
+// Description: Maps the existing forum API to catalog, member, search, thread, and reply domain operations.
 // Port từ: client/src/forum/infrastructure/repositories/
 
 import type { ForumRepository } from '../../domain/repositories/ForumRepository';
 import type {
   ForumCatalog,
   ForumCatalogQuery,
+  ForumMember,
+  ForumMemberList,
+  ForumMemberQuery,
   ForumMutationResult,
   ForumReplyPayload,
   ForumThreadDetail,
   ForumThreadList,
   ForumThreadPayload,
   ForumThreadQuery,
+  ForumSearchQuery,
+  ForumSearchResult,
 } from '../../domain/types/forum.types';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -19,10 +24,14 @@ type BackendForumResponse = {
   api_status?: number | string;
   can_create?: boolean;
   sections?: any[];
+  search_sections?: any[];
   forum?: any;
   threads?: any[];
   thread?: any;
   reply?: any;
+  replies?: any[];
+  members?: any[];
+  total_members?: number | string;
   has_more?: boolean;
   next_offset?: number | string | null;
   errors?: {
@@ -107,6 +116,18 @@ const mapSection = (item: any) => {
   };
 };
 
+const mapMember = (item: any): ForumMember => ({
+  id: asNumber(item.user_id || item.id),
+  username: asString(item.username),
+  name: asString(item.name || item.first_name) || asString(item.username),
+  avatarUrl: asString(item.avatar),
+  joined: asNumber(item.joined),
+  lastSeen: asNumber(item.lastseen),
+  postCount: asNumber(item.forum_posts),
+  referrals: asNumber(item.referrer),
+  isAdmin: asBoolean(item.admin),
+});
+
 const mapReply = (item: any) => {
   const user = (item.user_data ?? {}) as any;
   const author = asString(user.name || user.username) || 'Member';
@@ -182,9 +203,62 @@ export function createForumRepository(): ForumRepository {
 
       return {
         sections: (response.sections ?? []).map(mapSection),
+        searchSections: (
+          response.search_sections?.length
+            ? response.search_sections
+            : response.sections ?? []
+        ).map(mapSection),
         canCreate: Boolean(response.can_create),
         hasMore: Boolean(response.has_more),
         nextOffset: response.next_offset ? asNumber(response.next_offset) : null,
+      };
+    },
+
+    async getForumMembers(query: ForumMemberQuery): Promise<ForumMemberList> {
+      const response = await apiBridge.post<BackendForumResponse>(
+        apiRoutes.forum.main,
+        {
+          action: 'members',
+          keyword: query.q || '',
+          key: query.key || '',
+          offset: query.offset || 0,
+          limit: query.limit || 10,
+        },
+      );
+
+      if (response.api_status !== 200 && response.api_status !== '200') {
+        throw new Error(response.errors?.error_text || 'Unable to load forum members.');
+      }
+
+      return {
+        members: (response.members ?? []).map(mapMember).filter(member => member.id),
+        totalMembers: asNumber(response.total_members),
+        hasMore: Boolean(response.has_more),
+        nextOffset: response.next_offset ? asNumber(response.next_offset) : null,
+      };
+    },
+
+    async searchForum(query: ForumSearchQuery): Promise<ForumSearchResult> {
+      const response = await apiBridge.post<BackendForumResponse>(
+        apiRoutes.forum.main,
+        {
+          action: 'search',
+          search_terms: query.terms.trim(),
+          search_in: query.scope,
+          search_only: query.searchContent ? 1 : 0,
+          section: query.sectionId || 0,
+          limit: query.limit || 20,
+        },
+      );
+
+      if (response.api_status !== 200 && response.api_status !== '200') {
+        throw new Error(response.errors?.error_text || 'Unable to search the forum.');
+      }
+
+      return {
+        sections: (response.sections ?? []).map(mapSection),
+        threads: (response.threads ?? []).map(mapThread),
+        replies: (response.replies ?? []).map(mapReply),
       };
     },
 
@@ -244,6 +318,27 @@ export function createForumRepository(): ForumRepository {
         canCreate: Boolean(response.can_create),
         hasMore: Boolean(response.has_more),
         nextOffset: response.next_offset ? asNumber(response.next_offset) : null,
+      };
+    },
+
+    async getMyForumMessages(query: ForumCatalogQuery): Promise<ForumSearchResult> {
+      const response = await apiBridge.post<BackendForumResponse>(
+        apiRoutes.forum.main,
+        {
+          action: 'my_messages',
+          offset: query.offset || 0,
+          limit: query.limit || 20,
+        },
+      );
+
+      if (response.api_status !== 200 && response.api_status !== '200') {
+        throw new Error(response.errors?.error_text || 'Unable to load your forum messages.');
+      }
+
+      return {
+        sections: [],
+        threads: [],
+        replies: (response.replies ?? []).map(mapReply),
       };
     },
 

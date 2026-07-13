@@ -60,10 +60,14 @@ function getNestedPhotoUrl(value: unknown) {
 
   return readString(
     value as RawRecord,
-    'image',
     'image_org',
+    'image',
+    'postFile',
+    'postFileThumb',
+    'url_image',
     'url',
     'source',
+    'src',
     'filename',
   );
 }
@@ -189,12 +193,17 @@ export function createPhotosRepository(): PhotosRepository {
           const postId = readString(raw, 'id', 'post_id');
           const albumName = cleanCaption(readString(raw, 'album_name', 'postText')) || 'Album không tên';
 
-          // Get cover image from photo_album or postPhoto
+          // Wo_GetUserAlbums exposes the same cover used by phtml as first_image.
           const photoAlbum = Array.isArray(raw.photo_album) ? raw.photo_album : [];
           const firstPhoto = photoAlbum[0];
-          let coverUrl = normalizeUrl(getNestedPhotoUrl(firstPhoto));
+          let coverUrl = normalizeUrl(readString(raw, 'first_image'));
           if (!coverUrl) {
-            coverUrl = normalizeUrl(readString(raw, 'postPhoto', 'postFile'));
+            coverUrl = normalizeUrl(getNestedPhotoUrl(firstPhoto));
+          }
+          if (!coverUrl) {
+            coverUrl = normalizeUrl(
+              readString(raw, 'postPhoto', 'postFile', 'postFileThumb', 'url_image'),
+            );
           }
           if (!coverUrl) {
             coverUrl = normalizeUrl(readString(raw, 'avatar', 'cover'));

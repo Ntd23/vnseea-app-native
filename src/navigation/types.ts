@@ -13,6 +13,7 @@ import type { FeedPost } from '../feed/domain/types/feed.types';
 import type { AdItem } from '../advertising/domain/types/ads.types';
 import type { EventsItem } from '../events/domain/types/events.types';
 import type { UserProfile } from '../user/domain/types/user.types';
+import type { OrdersItem } from '../orders/domain/types/orders.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]:
@@ -103,6 +104,7 @@ export type RootStackParamList = {
   [ROUTES.ALBUMS]: undefined;
   [ROUTES.CREATE_ALBUM]: undefined;
   [ROUTES.MY_VIDEOS]: undefined;
+  [ROUTES.WATCH]: undefined;
   [ROUTES.MESSAGES]: undefined;
   [ROUTES.CREATE_GROUP_CHAT]: undefined;
   [ROUTES.CHAT]: { chat: ChatItem; product?: ProductItem };
@@ -132,6 +134,7 @@ export type RootStackParamList = {
         userId?: string;
       }
     | undefined;
+  [ROUTES.ORDER_DETAIL]: { order: OrdersItem };
   [ROUTES.PRODUCT_DETAIL]: {
     productId: number;
     product?: ProductItem;

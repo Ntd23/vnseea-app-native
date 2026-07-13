@@ -5,11 +5,18 @@ import type { OrdersRepository } from '../../domain/repositories/OrdersRepositor
 import type {
   OrdersItem,
   OrdersPage,
+  OrderShippingAddress,
   OrderStatus,
 } from '../../domain/types/orders.types';
 
+type RawProductImage = {
+  image?: unknown;
+  image_org?: unknown;
+};
+
 type RawOrderProduct = {
   name?: unknown;
+  images?: RawProductImage[];
   user_data?: {
     name?: unknown;
     username?: unknown;
@@ -22,6 +29,17 @@ type RawSubOrder = {
   status?: unknown;
   price?: unknown;
   final_price?: unknown;
+  units?: unknown;
+  address_id?: unknown;
+  address?: {
+    name?: unknown;
+    phone?: unknown;
+    address?: unknown;
+    city?: unknown;
+    state?: unknown;
+    country?: unknown;
+    zip?: unknown;
+  };
   product?: RawOrderProduct;
   buyer?: {
     name?: unknown;
@@ -89,6 +107,25 @@ function formatMoney(value: unknown) {
   return `${amount.toLocaleString('vi-VN')} đ`;
 }
 
+function productImage(product?: RawOrderProduct) {
+  const image = product?.images?.[0];
+  return stringValue(image?.image) || stringValue(image?.image_org) || undefined;
+}
+
+function shippingAddress(order?: RawSubOrder): OrderShippingAddress | undefined {
+  if (!order?.address) return undefined;
+
+  return {
+    name: stringValue(order.address.name),
+    phone: stringValue(order.address.phone),
+    address: stringValue(order.address.address),
+    city: stringValue(order.address.city),
+    state: stringValue(order.address.state),
+    country: stringValue(order.address.country),
+    zip: stringValue(order.address.zip),
+  };
+}
+
 function productTitle(raw: RawMarketOrder) {
   const firstOrder = raw.orders?.[0];
   return (
@@ -131,6 +168,8 @@ function mapOrder(raw: RawMarketOrder, mode: 'purchased' | 'seller'): OrdersItem
       statusLabel: statusLabel(lineStatus),
       shop: lineShop,
       price: linePrice,
+      image: productImage(order.product),
+      quantity: Math.max(1, numberValue(order.units)),
     };
   });
 
@@ -145,6 +184,7 @@ function mapOrder(raw: RawMarketOrder, mode: 'purchased' | 'seller'): OrdersItem
     shop: shopName(raw, mode),
     product: productTitle(raw),
     total: formatMoney(mode === 'seller' ? raw.final_price : raw.price),
+    amount: numberValue(mode === 'seller' ? raw.final_price : raw.price),
     status,
     statusLabel: statusLabel(status),
     date: stringValue(raw.date) || stringValue(raw.time),
@@ -153,6 +193,8 @@ function mapOrder(raw: RawMarketOrder, mode: 'purchased' | 'seller'): OrdersItem
     buyerName,
     buyerUsername,
     buyerAvatar,
+    addressId: stringValue(firstOrder?.address_id) || undefined,
+    shippingAddress: shippingAddress(firstOrder),
   };
 }
 
@@ -189,6 +231,15 @@ export function createOrdersRepository(): OrdersRepository {
         type: 'change_status',
         hash_id: hashId,
         status,
+      });
+    },
+    async requestRefund(hashId, message) {
+      const orderHash = hashId.replace(/^#/, '');
+      await apiBridge.post(apiRoutes.products.market, {
+        type: 'refund',
+        hash_order: orderHash,
+        order_hash: orderHash,
+        message,
       });
     },
   };

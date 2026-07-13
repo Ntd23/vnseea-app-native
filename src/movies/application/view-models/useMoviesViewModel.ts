@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { createMoviesRepository } from '../../infrastructure/repositories/ApiMoviesRepository';
-import type { MovieItem } from '../../domain/types/movies.types';
+import type { MovieFilterOption, MovieItem } from '../../domain/types/movies.types';
 
 const repository = createMoviesRepository();
 
@@ -10,19 +10,19 @@ export function useMoviesViewModel() {
   const [movies, setMovies] = useState<MovieItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeGenre, setActiveGenre] = useState<string>('Tất cả');
-  const [activeCountry, setActiveCountry] = useState<string>('Tất cả');
+  const [activeGenre, setActiveGenre] = useState('');
+  const [activeCountry, setActiveCountry] = useState('');
+  const [genreOptions, setGenreOptions] = useState<MovieFilterOption[]>([]);
+  const [countryOptions, setCountryOptions] = useState<MovieFilterOption[]>([]);
 
   const loadMovies = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const genreParam = activeGenre === 'Tất cả' ? undefined : activeGenre;
-      const countryParam = activeCountry === 'Tất cả' ? undefined : activeCountry;
       const data = await repository.getMovies({
         limit: 26,
-        genre: genreParam,
-        country: countryParam,
+        genre: activeGenre || undefined,
+        country: activeCountry || undefined,
       });
       setMovies(data);
     } catch (caughtError) {
@@ -36,6 +36,26 @@ export function useMoviesViewModel() {
     loadMovies();
   }, [loadMovies]);
 
+  useEffect(() => {
+    let active = true;
+    repository
+      .getFilterMetadata()
+      .then(metadata => {
+        if (!active) return;
+        setGenreOptions(metadata.genres);
+        setCountryOptions(metadata.countries);
+      })
+      .catch(() => {
+        if (!active) return;
+        setGenreOptions([]);
+        setCountryOptions([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return {
     movies,
     isLoading,
@@ -44,6 +64,8 @@ export function useMoviesViewModel() {
     setActiveGenre,
     activeCountry,
     setActiveCountry,
+    genreOptions,
+    countryOptions,
     reload: loadMovies,
   };
 }

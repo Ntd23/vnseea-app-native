@@ -25,6 +25,9 @@ import {
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { Pressable } from 'react-native';
 import { useMovieDetailViewModel } from '../../application/view-models/useMovieDetailViewModel';
 import { useMoviesViewModel } from '../../application/view-models/useMoviesViewModel';
 
@@ -33,6 +36,8 @@ type MovieDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.MOVIE_DETAIL
 export default function MovieDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<MovieDetailRoute>();
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
   const movie = route.params.movie;
   const [commentText, setCommentText] = useState('');
   const {
@@ -47,25 +52,53 @@ export default function MovieDetailScreen() {
     .filter(item => String(item.id) !== String(movie.id) && item.genre === movie.genre)
     .slice(0, 6), [movie.genre, movie.id, movies]);
 
-  const title = movie.name || movie.title || 'Phim';
+  const title = movie.name || movie.title || (isVi ? 'Phim' : 'Movie');
   const shareMovie = () => Share.share({ message: `${title}\n${movie.url || movie.source || ''}` });
   const sendComment = async () => {
     if (await submitComment(commentText)) setCommentText('');
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-[#edf2ff]" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000ff" />
-      <View className="h-12 flex-row items-center bg-[#0000ff] px-3">
-        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10}>
-          <ArrowLeft size={22} color="#ffffff" />
-        </TouchableOpacity>
-        <Text className="ml-3 flex-1 text-base font-semibold text-white" numberOfLines={1}>{title}</Text>
-        <TouchableOpacity onPress={shareMovie} hitSlop={10}><Share2 size={20} color="#ffffff" /></TouchableOpacity>
-      </View>
+    <View style={{ flex: 1, backgroundColor: '#edf2ff' }}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="min-h-[170px] justify-end bg-[#526268] px-5 pb-5">
+        <View className="min-h-[170px] justify-end bg-[#526268] px-5 pb-5" style={{ position: 'relative', paddingTop: 60 }}>
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: 12,
+              zIndex: 10,
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <ArrowLeft size={20} color="#ffffff" />
+          </Pressable>
+          <Pressable
+            onPress={shareMovie}
+            style={{
+              position: 'absolute',
+              right: 12,
+              top: 12,
+              zIndex: 10,
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Share2 size={18} color="#ffffff" />
+          </Pressable>
           <Text className="text-[28px] font-normal text-white" numberOfLines={2}>{title}</Text>
           <View className="mt-3 flex-row items-center">
             <Star size={17} color="#ffc000" fill="#ffc000" />
@@ -79,12 +112,12 @@ export default function MovieDetailScreen() {
 
         <View className="bg-white px-3 py-4">
           <Text className="text-sm leading-6 text-[#4b5563]">{movie.description || ''}</Text>
-          <MovieInfo label="Các ngôi sao" value={movie.stars} />
-          <MovieInfo label="Thể loại" value={String(movie.genre || '').toUpperCase()} accent />
-          <MovieInfo label="Người sản xuất" value={movie.producer} accent />
-          <MovieInfo label="Lượt xem" value={String(movie.views ?? 0)} accent />
+          <MovieInfo label={isVi ? 'Diễn viên' : 'Stars'} value={movie.stars} />
+          <MovieInfo label={isVi ? 'Thể loại' : 'Genre'} value={String(movie.genre || '').toUpperCase()} accent />
+          <MovieInfo label={isVi ? 'Đạo diễn / Nhà sản xuất' : 'Producer / Director'} value={movie.producer} accent />
+          <MovieInfo label={isVi ? 'Lượt xem' : 'Views'} value={String(movie.views ?? 0)} accent />
           <View className="mt-2 flex-row items-center">
-            <Text className="text-sm text-[#4b5563]">Chia sẻ với:</Text>
+            <Text className="text-sm text-[#4b5563]">{isVi ? 'Chia sẻ với:' : 'Share with:'}</Text>
             <TouchableOpacity className="ml-3 h-7 w-7 items-center justify-center bg-[#337ab7]" onPress={shareMovie}>
               <Text className="font-bold text-white">f</Text>
             </TouchableOpacity>
@@ -111,7 +144,7 @@ export default function MovieDetailScreen() {
         <View className="mt-3 bg-white px-3 pb-5">
           <View className="min-h-[52px] flex-row items-center border-b border-[#e5e7eb]">
             <Clapperboard size={18} color="#0000ff" />
-            <Text className="ml-2 text-sm font-semibold text-[#111827]">Hơn như thế này</Text>
+            <Text className="ml-2 text-sm font-semibold text-[#111827]">{isVi ? 'Hơn như thế này' : 'More like this'}</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingVertical: 16 }}>
             {relatedMovies.map(item => (
@@ -130,12 +163,12 @@ export default function MovieDetailScreen() {
         <View className="mt-3 bg-white px-3 pb-8">
           <View className="min-h-[52px] flex-row items-center border-b border-[#e5e7eb]">
             <MessageCircle size={18} color="#0000ff" />
-            <Text className="ml-2 text-sm font-semibold text-[#111827]">{comments.length} Bình luận</Text>
+            <Text className="ml-2 text-sm font-semibold text-[#111827]">{comments.length} {isVi ? 'Bình luận' : 'Comments'}</Text>
           </View>
           <View className="mt-4 flex-row items-center">
             <TextInput
               className="h-12 flex-1 rounded-full border border-[#d7dce4] px-4 text-sm text-[#111827]"
-              placeholder="Viết bình luận và nhấn enter"
+              placeholder={isVi ? "Viết bình luận và nhấn enter" : "Write a comment and press enter"}
               placeholderTextColor="#9ca3af"
               value={commentText}
               onChangeText={setCommentText}
@@ -161,7 +194,7 @@ export default function MovieDetailScreen() {
           ))}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

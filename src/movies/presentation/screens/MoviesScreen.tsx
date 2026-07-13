@@ -32,11 +32,8 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { useMoviesViewModel } from '../../application/view-models/useMoviesViewModel';
 import type { MovieItem } from '../../domain/types/movies.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import {
-  MOVIE_COUNTRY_KEYS,
-  MOVIE_GENRE_KEYS,
-} from '../../domain/types/movies.types';
-import { languageStorage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
 type MoviesNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -166,36 +163,40 @@ function MovieCard({ movie, onPress }: MovieCardProps) {
 }
 
 function EmptyState({ onRetry }: { onRetry: () => void }) {
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
   return (
     <View className="flex-1 items-center justify-center px-8 py-20">
       <View className="mb-6 h-24 w-24 items-center justify-center rounded-full bg-slate-100">
         <Clapperboard size={48} color="#94a3b8" />
       </View>
       <Text className="text-[18px] font-semibold text-slate-700">
-        Không tìm thấy phim
+        {isVi ? 'Không tìm thấy phim' : 'No movies found'}
       </Text>
       <Text className="mt-2 text-center text-body-secondary text-slate-500">
-        Hiện tại không có phim nào trong danh mục này
+        {isVi ? 'Hiện tại không có phim nào trong danh mục này' : 'There are currently no movies in this category'}
       </Text>
       <Pressable
         className="mt-6 rounded-full bg-[#0000ff] px-8 py-3"
         activeOpacity={0.8}
         onPress={onRetry}
       >
-        <Text className="text-[14px] font-semibold text-white">Xem tất cả</Text>
+        <Text className="text-[14px] font-semibold text-white">{isVi ? 'Xem tất cả' : 'View all'}</Text>
       </Pressable>
     </View>
   );
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
   return (
     <View className="flex-1 items-center justify-center px-8 py-20">
       <View className="mb-6 h-24 w-24 items-center justify-center rounded-full bg-red-50">
         <Text className="text-4xl">😢</Text>
       </View>
       <Text className="text-[18px] font-semibold text-slate-700">
-        Đã xảy ra lỗi
+        {isVi ? 'Đã xảy ra lỗi' : 'An error occurred'}
       </Text>
       <Text className="mt-2 text-center text-body-secondary text-slate-500">
         {error}
@@ -205,18 +206,20 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
         activeOpacity={0.8}
         onPress={onRetry}
       >
-        <Text className="text-[14px] font-semibold text-white">Thử lại</Text>
+        <Text className="text-[14px] font-semibold text-white">{isVi ? 'Thử lại' : 'Retry'}</Text>
       </Pressable>
     </View>
   );
 }
 
 function LoadingState() {
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
   return (
     <View className="flex-1 items-center justify-center py-20">
       <ActivityIndicator size="large" color={BRAND} />
       <Text className="mt-4 text-body-secondary text-slate-500">
-        Đang tải phim...
+        {isVi ? 'Đang tải phim...' : 'Loading movies...'}
       </Text>
     </View>
   );
@@ -228,47 +231,9 @@ function MoviesScreen() {
     useMoviesViewModel();
 
   return (
-    <SafeAreaView className="flex-1 bg-[#f1f4fb]" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#f1f4fb" />
-
-      {/* Header */}
-      <View className="flex-row items-center justify-between bg-[#f1f4fb] px-4 pb-3">
-        <View className="flex-row items-center gap-3">
-          <Pressable
-            className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm"
-            activeOpacity={0.8}
-            onPress={() => navigation.goBack()}
-            style={{
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.06,
-              shadowRadius: 8,
-            }}
-          >
-            <ArrowLeft size={22} color="#1e293b" />
-          </Pressable>
-          <View>
-            <Text className="text-[22px] font-bold text-slate-800">Phim</Text>
-            <Text className="text-caption-secondary text-slate-500">
-              {movies.length} phim
-            </Text>
-          </View>
-        </View>
-        <Pressable
-          className="h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm"
-          activeOpacity={0.8}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          onPress={() => navigation.navigate(ROUTES.CREATE_MOVIE)}
-          style={{
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.06,
-            shadowRadius: 8,
-          }}
-        >
-          <Plus size={22} color={BRAND} />
-        </Pressable>
-      </View>
+    <View style={{ flex: 1, backgroundColor: '#f1f4fb' }}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
 
       {/* Category Filter */}
       <View className="bg-[#f1f4fb] pb-2">
@@ -357,28 +322,23 @@ function MoviesScreen() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+
+    </View>
   );
 }
 
 type MovieSort = 'new' | 'recommended' | 'watched';
 
-const VI_GENRES: Record<string, string> = {
-  action: 'Hành động', comedy: 'Hài', drama: 'Chính kịch', horror: 'Kinh dị',
-  mythological: 'Thần thoại', war: 'Chiến tranh', adventure: 'Phiêu lưu',
-  family: 'Gia đình', sport: 'Thể thao', animation: 'Hoạt hình', crime: 'Tội phạm',
-  fantasy: 'Giả tưởng', musical: 'Nhạc kịch', romance: 'Tình cảm', thriller: 'Giật gân',
-  history: 'Lịch sử', documentary: 'Tài liệu', tvshow: 'TV Show',
-};
-
-const VI_COUNTRIES: Record<string, string> = {
-  'united-states': 'Hoa Kỳ', china: 'Trung Quốc', india: 'Ấn Độ', iran: 'Iran',
-  japan: 'Nhật Bản', turkey: 'Thổ Nhĩ Kỳ', russia: 'Nga', france: 'Pháp',
-  'united-kingdom': 'Anh', vietnam: 'Việt Nam',
-};
-
-function CatalogMovieCard({ movie }: { movie: MovieItem }) {
+function CatalogMovieCard({
+  movie,
+  genreLabels,
+}: {
+  movie: MovieItem;
+  genreLabels: Record<string, string>;
+}) {
   const navigation = useNavigation<any>();
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
   const rating = Number(movie.rating ?? 0);
   return (
     <Pressable
@@ -403,10 +363,10 @@ function CatalogMovieCard({ movie }: { movie: MovieItem }) {
         </View>
       </View>
       <Text className="mt-3 text-center text-sm font-semibold text-[#374151]" numberOfLines={1}>
-        {movie.name || movie.title || 'Không có tiêu đề'}
+        {movie.name || movie.title || (isVi ? 'Không có tiêu đề' : 'Untitled')}
       </Text>
       <Text className="mt-1 text-center text-xs text-[#64748b]" numberOfLines={1}>
-        {VI_GENRES[String(movie.genre ?? '').toLowerCase()] || movie.genre || movie.category || ''}
+        {genreLabels[String(movie.genre ?? '').toLowerCase()] || movie.genre || movie.category || ''}
       </Text>
     </Pressable>
   );
@@ -422,9 +382,12 @@ function MoviesCatalogScreen() {
     setActiveGenre,
     activeCountry,
     setActiveCountry,
+    genreOptions,
+    countryOptions,
     reload,
   } = useMoviesViewModel();
-  const isVi = languageStorage.getLanguage() === 'vi';
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<MovieSort>('new');
   const [filterOpen, setFilterOpen] = useState(false);
@@ -460,23 +423,21 @@ function MoviesCatalogScreen() {
   ];
 
   const genres = [
-    { value: 'Tất cả', label: isVi ? 'Tất cả' : 'All' },
-    ...MOVIE_GENRE_KEYS.map(value => ({ value, label: isVi ? VI_GENRES[value] : value })),
+    { value: '', label: isVi ? 'Tất cả' : 'All' },
+    ...genreOptions,
   ];
   const countries = [
-    { value: 'Tất cả', label: isVi ? 'Tất cả' : 'All' },
-    ...MOVIE_COUNTRY_KEYS.map(value => ({ value, label: isVi ? VI_COUNTRIES[value] : value })),
+    { value: '', label: isVi ? 'Tất cả' : 'All' },
+    ...countryOptions,
   ];
+  const genreLabels = Object.fromEntries(
+    genreOptions.map(option => [option.value.toLowerCase(), option.label]),
+  );
 
   return (
-    <SafeAreaView className="flex-1 bg-[#eaf0ff]" edges={['top']}>
+    <View style={{ flex: 1, backgroundColor: '#eaf0ff' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <View className="h-12 flex-row items-center border-b border-[#e5e7eb] bg-white px-3">
-        <Pressable onPress={() => navigation.goBack()} hitSlop={10}>
-          <ArrowLeft size={22} color="#0000ff" />
-        </Pressable>
-        <Text className="ml-3 text-base font-semibold text-[#111827]">{isVi ? 'Phim' : 'Movies'}</Text>
-      </View>
+      <FeedHeader />
 
       <View className="bg-white px-3 pb-4 pt-3">
         <View className="flex-row items-center gap-2">
@@ -520,10 +481,16 @@ function MoviesCatalogScreen() {
         ) : error ? (
           <ErrorState error={error} onRetry={reload} />
         ) : visibleMovies.length === 0 ? (
-          <EmptyState onRetry={() => { setSearch(''); setActiveGenre('Tất cả'); setActiveCountry('Tất cả'); }} />
+          <EmptyState onRetry={() => { setSearch(''); setActiveGenre(''); setActiveCountry(''); }} />
         ) : (
           <View className="flex-row flex-wrap justify-between">
-            {visibleMovies.map(movie => <CatalogMovieCard key={String(movie.id)} movie={movie} />)}
+            {visibleMovies.map(movie => (
+              <CatalogMovieCard
+                key={String(movie.id)}
+                movie={movie}
+                genreLabels={genreLabels}
+              />
+            ))}
           </View>
         )}
       </ScrollView>
@@ -567,7 +534,8 @@ function MoviesCatalogScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+
+    </View>
   );
 }
 

@@ -62,6 +62,7 @@ export function useMyProductsViewModel(targetUserId?: number) {
   const [filtersVisible, setFiltersVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isOrdersLoading, setIsOrdersLoading] = useState(true);
+  const [deletingProductId, setDeletingProductId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ordersError, setOrdersError] = useState<string | null>(null);
 
@@ -102,12 +103,10 @@ export function useMyProductsViewModel(targetUserId?: number) {
     setOrdersError(null);
 
     try {
-      const [purchasedResponse, sellerResponse] = await Promise.all([
-        ordersRepository.getPurchasedOrders({ limit: 50 }),
-        ordersRepository.getSellerOrders({ limit: 50 }),
-      ]);
+      const purchasedResponse = await ordersRepository.getPurchasedOrders({
+        limit: 50,
+      });
       setPurchasedOrders(purchasedResponse.items);
-      setSellerOrders(sellerResponse.items);
     } catch (caughtError) {
       setOrdersError(
         caughtError instanceof Error
@@ -166,10 +165,10 @@ export function useMyProductsViewModel(targetUserId?: number) {
 
   const orderItems = useMemo(
     () =>
-      sellerOrders
+      purchasedOrders
         .filter(item => matchesOrderQuery(item, ordersSearch))
         .filter(item => matchesOrderStatus(item, ordersStatus)),
-    [ordersSearch, ordersStatus, sellerOrders],
+    [ordersSearch, ordersStatus, purchasedOrders],
   );
 
   const deletePurchasedOrder = useCallback(async (orderId: string) => {
@@ -188,6 +187,22 @@ export function useMyProductsViewModel(targetUserId?: number) {
       Alert.alert('Thất bại', 'Không thể xóa đơn mua hàng.');
     }
   }, [purchasedOrders]);
+
+  const deleteProduct = useCallback(async (product: ProductItem) => {
+    if (!product.is_owner || !product.post_id) {
+      throw new Error('Bạn không có quyền xóa sản phẩm này.');
+    }
+
+    setDeletingProductId(product.id);
+    try {
+      await productRepository.deleteProduct(product.post_id);
+      setProducts(currentProducts =>
+        currentProducts.filter(item => item.id !== product.id),
+      );
+    } finally {
+      setDeletingProductId(null);
+    }
+  }, []);
 
   const updateOrderStatus = useCallback(async (orderId: string, status: OrderStatus) => {
     try {
@@ -231,6 +246,20 @@ export function useMyProductsViewModel(targetUserId?: number) {
     }
   }, []);
 
+  const requestRefund = useCallback(async (orderId: string, message: string) => {
+    const order = purchasedOrders.find(item => item.id === orderId);
+    if (!order) {
+      throw new Error('Không tìm thấy đơn hàng.');
+    }
+
+    await ordersRepository.requestRefund(order.code, message);
+    setPurchasedOrders(currentOrders =>
+      currentOrders.map(item =>
+        item.id === orderId ? { ...item, refundRequested: true } : item,
+      ),
+    );
+  }, [purchasedOrders]);
+
   const reload = useCallback(() => {
     loadProducts().catch(() => undefined);
     loadOrders().catch(() => undefined);
@@ -239,6 +268,8 @@ export function useMyProductsViewModel(targetUserId?: number) {
   return {
     activeTab,
     categories,
+    deleteProduct,
+    deletingProductId,
     error,
     filtersVisible,
     filteredProducts,
@@ -255,6 +286,7 @@ export function useMyProductsViewModel(targetUserId?: number) {
     purchasedStatus,
     selectedCategoryId: categoryId,
     reload,
+    requestRefund,
     setActiveTab,
     setOrdersSearch,
     setOrdersStatus,

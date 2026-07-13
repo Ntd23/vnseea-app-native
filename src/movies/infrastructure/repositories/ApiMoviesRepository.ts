@@ -8,8 +8,34 @@ import type {
   CreateMovieResponse,
   MovieItem,
   MovieComment,
+  MovieFilterMetadata,
   MoviesResponse,
 } from '../../domain/types/movies.types';
+
+type MovieSettingsResponse = {
+  api_status?: number | string;
+  movie_categories?: Record<string, unknown> | Array<Record<string, unknown>>;
+  movie_countries?: Record<string, unknown> | Array<Record<string, unknown>>;
+};
+
+function mapFilterOptions(
+  input: MovieSettingsResponse['movie_categories'],
+): MovieFilterMetadata['genres'] {
+  if (!input) return [];
+
+  if (Array.isArray(input)) {
+    return input
+      .map(item => ({
+        value: String(item.value ?? item.key ?? item.id ?? ''),
+        label: String(item.label ?? item.name ?? item.title ?? ''),
+      }))
+      .filter(item => item.value && item.label);
+  }
+
+  return Object.entries(input)
+    .map(([value, label]) => ({ value, label: String(label ?? '') }))
+    .filter(item => item.value && item.label);
+}
 
 type MovieCommentsResponse = {
   api_status: number | string;
@@ -46,6 +72,18 @@ export function createMoviesRepository(): MoviesRepository {
       );
 
       return response.movies ?? [];
+    },
+
+    async getFilterMetadata(): Promise<MovieFilterMetadata> {
+      const response = await apiBridge.post<MovieSettingsResponse>(
+        apiRoutes.auth.siteSettings,
+        {},
+      );
+
+      return {
+        genres: mapFilterOptions(response.movie_categories),
+        countries: mapFilterOptions(response.movie_countries),
+      };
     },
 
     async createMovie(input: CreateMovieInput): Promise<CreateMovieResponse> {

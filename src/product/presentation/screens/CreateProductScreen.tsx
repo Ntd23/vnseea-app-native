@@ -49,7 +49,9 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 
 type CreateProductNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -61,6 +63,10 @@ type RootStackParamList = {
 interface StepOption {
   id: string;
   name: string;
+}
+
+interface CurrencyOption extends StepOption {
+  code: string;
 }
 
 type StepConfig = {
@@ -366,10 +372,40 @@ const CONDITIONS_LIST = [
   { id: '1', name: 'Đã sử dụng' },
 ];
 
+function decodeCurrencySymbol(value: unknown) {
+  let decoded = String(value ?? '');
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    decoded = decoded
+      .replace(/&amp;/gi, '&')
+      .replace(/&#x([0-9a-f]+);?/gi, (_, code: string) =>
+        String.fromCodePoint(Number.parseInt(code, 16)),
+      )
+      .replace(/&#(\d+);?/g, (_, code: string) =>
+        String.fromCodePoint(Number.parseInt(code, 10)),
+      )
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>');
+  }
+
+  return decoded.trim();
+}
+
+function formatCurrencyOption(code: string, symbol: unknown, fallback?: string) {
+  const decodedSymbol = decodeCurrencySymbol(symbol);
+  return decodedSymbol
+    ? `${code} (${decodedSymbol})`
+    : decodeCurrencySymbol(fallback || code);
+}
+
 export default function CreateProductScreen() {
   const navigation = useNavigation<CreateProductNav>();
   const route = useRoute<any>();
   const editingProduct = route.params?.product;
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
 
   const {
     formData,
@@ -397,11 +433,11 @@ export default function CreateProductScreen() {
     { id: '9', name: 'Ô tô & Xe cộ' },
   ]);
 
-  const [currenciesList, setCurrenciesList] = useState<Array<{ id: string; name: string }>>([
-    { id: 'VND', name: 'VND (₫)' },
-    { id: 'VNSEEA', name: 'VNSEEA' },
-    { id: 'USD', name: 'USD ($)' },
-    { id: 'EUR', name: 'EUR (€)' },
+  const [currenciesList, setCurrenciesList] = useState<CurrencyOption[]>([
+    { id: 'VND', code: 'VND', name: 'VND (₫)' },
+    { id: 'VNSEEA', code: 'VNSEEA', name: 'VNSEEA' },
+    { id: 'USD', code: 'USD', name: 'USD ($)' },
+    { id: 'EUR', code: 'EUR', name: 'EUR (€)' },
   ]);
 
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
@@ -413,37 +449,59 @@ export default function CreateProductScreen() {
     let isMounted = true;
 
     const fetchApiData = async () => {
-      const parseCurrencies = (raw: unknown): Array<{ id: string; name: string }> => {
+      const parseCurrencies = (raw: unknown): CurrencyOption[] => {
         if (!raw) return [];
         console.log('[CreateProductScreen] Parsing currencies from raw data:', typeof raw, Array.isArray(raw));
         if (Array.isArray(raw)) {
-          return raw.map(curr => {
-            const id = String(curr?.id || curr?.code || curr?.text || '');
-            const name = String(curr?.name || id);
-            const symbol = String(curr?.symbol || '');
+          return raw.map((curr, index) => {
+            const id = String(curr?.id ?? index);
+            const code = String(curr?.code ?? curr?.text ?? id).toUpperCase();
+            const name = String(curr?.name || curr?.text || code);
             return {
               id,
-              name: symbol ? `${id} (${symbol})` : name,
+              code,
+              name: formatCurrencyOption(code, curr?.symbol, name),
             };
           }).filter(c => c.id);
         }
         if (typeof raw === 'object' && raw !== null) {
-          return Object.entries(raw).map(([code, val]) => {
+          return Object.entries(raw).map(([id, val]) => {
             if (typeof val === 'object' && val !== null) {
-              const symbol = String((val as any).symbol || '');
-              const text = String((val as any).text || (val as any).name || code);
+              const code = String((val as any).code || (val as any).text || id).toUpperCase();
+              const text = String((val as any).name || (val as any).text || code);
               return {
-                id: code,
-                name: symbol ? `${code} (${symbol})` : text,
+                id,
+                code,
+                name: formatCurrencyOption(code, (val as any).symbol, text),
               };
             }
+            const code = id.toUpperCase();
             return {
-              id: code,
-              name: `${code} (${String(val)})`,
+              id,
+              code,
+              name: formatCurrencyOption(code, val),
             };
           }).filter(c => c.id);
         }
         return [];
+      };
+
+      const applyCurrencyOptions = (options: CurrencyOption[]) => {
+        if (!isMounted || options.length === 0) return;
+
+        setCurrenciesList(options);
+        const currentValue = String(formData.currency ?? '');
+        const requestedCode = String(
+          editingProduct?.currency_code ||
+          (/^\d+$/.test(currentValue) ? '' : currentValue),
+        ).toUpperCase();
+        const selectedOption =
+          options.find(option => String(option.id) === currentValue) ||
+          options.find(option => option.code === requestedCode);
+
+        if (selectedOption && String(selectedOption.id) !== currentValue) {
+          updateFormData('currency', String(selectedOption.id));
+        }
       };
 
       // 1. Fetch categories & currencies from get-products response
@@ -481,7 +539,7 @@ export default function CreateProductScreen() {
           const currs = parseCurrencies(resProducts.currencies);
           console.log('[CreateProductScreen] Currencies loaded from products API:', currs);
           if (currs.length > 0) {
-            setCurrenciesList(currs);
+            applyCurrencyOptions(currs);
           }
         }
       } catch (err) {
@@ -495,7 +553,7 @@ export default function CreateProductScreen() {
           const currs = parseCurrencies(response.currencies);
           console.log('[CreateProductScreen] Currencies loaded from site settings envelope:', currs);
           if (currs.length > 0) {
-            setCurrenciesList(currs);
+            applyCurrencyOptions(currs);
           }
         } else if (isMounted && response?.config) {
           const config = response.config;
@@ -512,13 +570,18 @@ export default function CreateProductScreen() {
           if (Object.keys(currencySymbols).length > 0) {
             const list = Object.entries(currencySymbols).map(([code, symbol]) => ({
               id: code,
-              name: `${code} (${symbol})`,
+              code: code.toUpperCase(),
+              name: formatCurrencyOption(code, symbol),
             }));
             console.log('[CreateProductScreen] Currencies loaded from site settings config.currency_symbol_array:', list);
-            setCurrenciesList(list);
+            applyCurrencyOptions(list);
           } else if (typeof config.currency === 'string' && typeof config.currency_symbol === 'string') {
-            setCurrenciesList([
-              { id: config.currency, name: `${config.currency} (${config.currency_symbol})` }
+            applyCurrencyOptions([
+              {
+                id: config.currency,
+                code: config.currency.toUpperCase(),
+                name: formatCurrencyOption(config.currency, config.currency_symbol),
+              },
             ]);
           }
         }
@@ -537,7 +600,9 @@ export default function CreateProductScreen() {
           const currs = parseCurrencies(resMonetization.currencies);
           console.log('[CreateProductScreen] Currencies loaded from monetization API:', currs);
           if (currs.length > 0) {
-            setCurrenciesList(prev => prev.length <= 3 ? currs : prev);
+            if (currenciesList.length <= 3) {
+              applyCurrencyOptions(currs);
+            }
           }
         }
       } catch (err) {
@@ -598,6 +663,30 @@ export default function CreateProductScreen() {
     [removeImage],
   );
 
+  const handleLocationChange = useCallback(
+    (value: string) => {
+      updateFormData('product_location', value);
+      updateFormData('lat', '');
+      updateFormData('lng', '');
+    },
+    [updateFormData],
+  );
+
+  const handleLocationSelect = useCallback(
+    (place: { description: string; lat?: number; lng?: number }) => {
+      updateFormData('product_location', place.description);
+      updateFormData('lat', place.lat === undefined ? '' : String(place.lat));
+      updateFormData('lng', place.lng === undefined ? '' : String(place.lng));
+    },
+    [updateFormData],
+  );
+
+  React.useEffect(() => {
+    if (submitSuccess) {
+      navigation.replace(ROUTES.MY_PRODUCTS);
+    }
+  }, [navigation, submitSuccess]);
+
   // SUCCESS STATE
   if (submitSuccess) {
     return (
@@ -643,42 +732,17 @@ export default function CreateProductScreen() {
 
   const selectedCategoryName = categoriesList.find(opt => String(opt.id) === String(formData.product_category))?.name || 'Chọn danh mục';
   const selectedConditionName = CONDITIONS_LIST.find(opt => String(opt.id) === String(formData.product_type))?.name || 'Mới';
-  const selectedCurrencyName = currenciesList.find(opt => String(opt.id) === String(formData.currency))?.name || 'VND (₫)';
+  const selectedCurrencyName = currenciesList.find(
+    option =>
+      String(option.id) === String(formData.currency) ||
+      option.code === String(formData.currency).toUpperCase(),
+  )?.name || 'Chọn tiền tệ';
 
   // MAIN FORM STATE
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" />
-
-      {/* Curved Wave Header */}
-      <View style={{ backgroundColor: '#5252ff', paddingTop: 20, paddingBottom: 28, position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={handleBack}
-          style={{ position: 'absolute', right: 20, top: 20, height: 32, width: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.2)' }}
-        >
-          <X size={18} color="#ffffff" />
-        </TouchableOpacity>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ height: 36, width: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.2)', marginRight: 10 }}>
-            <ShoppingBag size={18} color="#ffffff" />
-          </View>
-          <Text style={{ fontSize: 18, fontWeight: '900', color: '#ffffff' }}>
-            {isEditing ? 'Cập nhật sản phẩm' : 'Bán sản phẩm mới'}
-          </Text>
-        </View>
-
-        {/* SVG Wave bottom decoration */}
-        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 16 }}>
-          <Svg height="100%" width="100%" viewBox="0 0 1440 320" preserveAspectRatio="none">
-            <Path
-              d="M0,160 C480,260 960,260 1440,160 L1440,320 L0,320 Z"
-              fill="#ffffff"
-            />
-          </Svg>
-        </View>
-      </View>
+    <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -691,10 +755,10 @@ export default function CreateProductScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Tên sản phẩm */}
-          <FieldWrapper label="Tên" error={errors.product_title}>
+          <FieldWrapper label="Tên sản phẩm" error={errors.product_title}>
             <TextInput
               style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600', height: '100%' }}
-              placeholder="Tên sản phẩm"
+              placeholder="Dầu gội dược liệu"
               placeholderTextColor="#94a3b8"
               value={formData.product_title}
               onChangeText={val => updateFormData('product_title', val)}
@@ -771,15 +835,41 @@ export default function CreateProductScreen() {
           />
 
           {/* Địa điểm */}
-          <FieldWrapper label="Địa điểm" error={errors.product_location}>
-            <TextInput
-              style={{ flex: 1, color: '#0f172a', fontSize: 15, fontWeight: '600', height: '100%' }}
-              placeholder="Địa điểm"
-              placeholderTextColor="#94a3b8"
+          <View style={{ marginBottom: 18 }}>
+            <Text
+              style={{
+                fontSize: 14,
+                fontWeight: '800',
+                color: '#0f172a',
+                marginBottom: 8,
+              }}
+            >
+              Địa điểm
+            </Text>
+            <AddressAutocomplete
               value={formData.product_location}
-              onChangeText={val => updateFormData('product_location', val)}
+              placeholder="Địa điểm"
+              onChangeText={handleLocationChange}
+              onSelectPlace={handleLocationSelect}
+              customInputContainerStyle={{
+                minHeight: 52,
+                borderRadius: 16,
+                borderColor: errors.product_location ? '#ef4444' : '#e2e8f0',
+              }}
+              customInputStyle={{
+                fontSize: 15,
+                fontWeight: '600',
+              }}
             />
-          </FieldWrapper>
+            {errors.product_location ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                <AlertCircle size={14} color="#ef4444" />
+                <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: '600', color: '#ef4444' }}>
+                  {errors.product_location}
+                </Text>
+              </View>
+            ) : null}
+          </View>
 
           {/* Tiền tệ Bottom Sheet Trigger */}
           <SelectorTrigger
@@ -886,16 +976,38 @@ export default function CreateProductScreen() {
             paddingBottom: Platform.OS === 'ios' ? 28 : 16,
             borderTopWidth: 1,
             borderTopColor: '#f1f5f9',
+            flexDirection: 'row',
+            gap: 12,
           }}
         >
+          <TouchableOpacity
+            onPress={handleBack}
+            disabled={isLoading}
+            activeOpacity={0.8}
+            style={{
+              flex: 1,
+              minHeight: 52,
+              borderRadius: 26,
+              borderWidth: 1,
+              borderColor: '#e2e8f0',
+              backgroundColor: '#ffffff',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '700' }}>
+              {isVi ? 'Quay lại' : 'Back'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={submitProduct}
             disabled={isLoading}
             activeOpacity={0.8}
             style={{
+              flex: 2,
               minHeight: 52,
-              borderRadius: 99,
-              backgroundColor: '#5252ff',
+              borderRadius: 26,
+              backgroundColor: '#0000ff',
               alignItems: 'center',
               justifyContent: 'center',
               opacity: isLoading ? 0.6 : 1,
@@ -905,7 +1017,7 @@ export default function CreateProductScreen() {
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '900' }}>
-                {isEditing ? 'Cập nhật sản phẩm' : 'Đăng sản phẩm'}
+                {isEditing ? (isVi ? 'Cập nhật' : 'Update') : (isVi ? 'Đăng sản phẩm' : 'Publish')}
               </Text>
             )}
           </TouchableOpacity>
@@ -941,6 +1053,6 @@ export default function CreateProductScreen() {
         onSelect={(val) => updateFormData('currency', val)}
         onClose={() => setCurrencyModalVisible(false)}
       />
-    </SafeAreaView>
+    </View>
   );
 }

@@ -69,6 +69,8 @@ $response_data      = array(
     'config' => $get_config,
     'group_categories' => $wo['group_categories'],
     'group_sub_categories' => $wo['group_sub_categories'],
+    'movie_categories' => $wo['film-genres'],
+    'movie_countries' => $wo['countries'],
     'public_config' => $public_config,
     'currencies' => !empty($wo['currencies']) ? $wo['currencies'] : null
 );

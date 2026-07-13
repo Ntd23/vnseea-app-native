@@ -16,6 +16,7 @@ export interface OrdersItem {
   shop: string;
   product: string;
   total: string;
+  amount?: number;
   status: OrderStatus;
   statusLabel: string;
   date: string;
@@ -24,6 +25,9 @@ export interface OrdersItem {
   buyerName?: string;
   buyerUsername?: string;
   buyerAvatar?: string;
+  addressId?: string;
+  shippingAddress?: OrderShippingAddress;
+  refundRequested?: boolean;
 }
 
 export interface OrdersPage {
@@ -38,4 +42,16 @@ export interface OrderLineItem {
   statusLabel: string;
   shop?: string;
   price?: number;
+  image?: string;
+  quantity?: number;
+}
+
+export interface OrderShippingAddress {
+  name: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  zip: string;
 }

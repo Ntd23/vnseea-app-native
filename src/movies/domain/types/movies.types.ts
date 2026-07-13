@@ -38,6 +38,16 @@ export interface MoviesResponse {
   movies: MovieItem[];
 }
 
+export type MovieFilterOption = {
+  value: string;
+  label: string;
+};
+
+export type MovieFilterMetadata = {
+  genres: MovieFilterOption[];
+  countries: MovieFilterOption[];
+};
+
 // --- Create-side constants (mirrored from phtml/assets/includes/data.php) --
 
 // Mirrors $wo['film-genres'] in phtml/assets/includes/data.php (line 201-220).
