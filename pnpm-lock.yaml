@@ -112,6 +112,9 @@ importers:
       react-native-config:
         specifier: ^1.6.1
         version: 1.6.1(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+      react-native-create-thumbnail:
+        specifier: ^2.2.0
+        version: 2.2.0
       react-native-css-interop:
         specifier: 0.2.3
         version: 0.2.3(patch_hash=084efd53ec081af8eee6637779a9cb8a73b6e213c5f32d4a27bb6d8c4c99a2a7)(aa4656c3d4d5a0bb02654e1288d783f8)
@@ -3845,6 +3848,9 @@ packages:
     peerDependenciesMeta:
       react-native-windows:
         optional: true
+
+  react-native-create-thumbnail@2.2.0:
+    resolution: {integrity: sha512-zrwVYWMpeMEGIYO1jgwUMBpSpIzMR7Z2gkSANVlf9BFZLRw017k7CfjttvDhCHjsxNNDb7+V8uJaNwIGdTpz/g==}
 
   react-native-css-interop@0.2.3:
     resolution: {integrity: sha512-wc+JI7iUfdFBqnE18HhMTtD0q9vkhuMczToA87UdHGWwMyxdT5sCcNy+i4KInPCE855IY0Ic8kLQqecAIBWz7w==}
@@ -9290,6 +9296,8 @@ snapshots:
     dependencies:
       react: 19.2.3
       react-native: 0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)
+
+  react-native-create-thumbnail@2.2.0: {}
 
   react-native-css-interop@0.2.3(patch_hash=084efd53ec081af8eee6637779a9cb8a73b6e213c5f32d4a27bb6d8c4c99a2a7)(aa4656c3d4d5a0bb02654e1288d783f8):
     dependencies:

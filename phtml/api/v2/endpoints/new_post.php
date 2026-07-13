@@ -117,6 +117,84 @@ $page_id       = 0;
 $event_id       = 0;
 $group_id      = 0;
 $image_array   = array();
+if (!function_exists('Vnseea_ResolveVideoPostPath')) {
+    function Vnseea_ResolveVideoPostPath($video_filename) {
+        if (empty($video_filename)) {
+            return '';
+        }
+        if (file_exists($video_filename)) {
+            return $video_filename;
+        }
+        $root_video_path = dirname(dirname(dirname(__DIR__))) . '/' . ltrim($video_filename, '/\\');
+        return file_exists($root_video_path) ? $root_video_path : '';
+    }
+}
+
+if (!function_exists('Vnseea_ResolveFfmpegBinary')) {
+    function Vnseea_ResolveFfmpegBinary() {
+        global $wo;
+        $candidates = array();
+        if (!empty($wo['config']['ffmpeg_binary_file'])) {
+            $candidates[] = $wo['config']['ffmpeg_binary_file'];
+        }
+        $candidates[] = '/usr/bin/ffmpeg';
+        $candidates[] = '/usr/local/bin/ffmpeg';
+        $candidates[] = '/bin/ffmpeg';
+
+        foreach ($candidates as $candidate) {
+            if (!empty($candidate) && file_exists($candidate)) {
+                return $candidate;
+            }
+        }
+        if (function_exists('shell_exec')) {
+            $from_path = trim((string) shell_exec('command -v ffmpeg 2>/dev/null'));
+            if (!empty($from_path)) {
+                return $from_path;
+            }
+        }
+        return '';
+    }
+}
+
+if (!function_exists('Vnseea_CreateVideoPostThumb')) {
+    function Vnseea_CreateVideoPostThumb($video_filename) {
+        global $wo;
+        if (empty($video_filename)) {
+            error_log('[vnseea-thumb] Missing video filename');
+            return '';
+        }
+        if (!function_exists('shell_exec')) {
+            error_log('[vnseea-thumb] shell_exec is disabled');
+            return '';
+        }
+        $ffmpeg_b = Vnseea_ResolveFfmpegBinary();
+        if (empty($ffmpeg_b)) {
+            error_log('[vnseea-thumb] ffmpeg binary not found');
+            return '';
+        }
+        $video_path = Vnseea_ResolveVideoPostPath($video_filename);
+        if (empty($video_path)) {
+            error_log('[vnseea-thumb] Video file not found: ' . $video_filename);
+            return '';
+        }
+        $dir = 'upload/photos/' . date('Y') . '/' . date('m');
+        if (!file_exists($dir)) {
+            @mkdir($dir, 0777, true);
+        }
+        $image_thumb = $dir . '/' . Wo_GenerateKey() . '_' . date('d') . '_' . md5($video_filename . microtime(true)) . '_video_thumb.jpeg';
+        $output = shell_exec(escapeshellarg($ffmpeg_b) . ' -y -ss 1 -i ' . escapeshellarg($video_path) . ' -vframes 1 -f mjpeg ' . escapeshellarg($image_thumb) . ' 2>&1');
+        if (file_exists($image_thumb) && !empty(@getimagesize($image_thumb))) {
+            Wo_Resize_Crop_Image(525, 295, $image_thumb, $image_thumb, $wo['config']['images_quality']);
+            if ($wo['config']['amazone_s3'] == 1 || $wo['config']['wasabi_storage'] == 1 || $wo['config']['backblaze_storage'] == 1 || $wo['config']['ftp_upload'] == 1 || $wo['config']['spaces'] == 1 || $wo['config']['cloud_upload'] == 1) {
+                Wo_UploadToS3($image_thumb);
+            }
+            return $image_thumb;
+        }
+        @unlink($image_thumb);
+        error_log('[vnseea-thumb] ffmpeg did not create a valid thumbnail for ' . $video_filename . ': ' . substr((string) $output, 0, 500));
+        return '';
+    }
+}
 if (isset($_POST['recipient_id']) && !empty($_POST['recipient_id'])) {
     $recipient_id = Wo_Secure($_POST['recipient_id']);
 } else if (isset($_POST['page_id']) && !empty($_POST['page_id'])) {
@@ -181,6 +259,21 @@ if (isset($_FILES['postVideo']['name']) && empty($mediaFilename)) {
     if ($wo['config']['ffmpeg_system'] != 'on') {
         $fileInfo['types'] = 'mp4,m4v,webm,flv,mov,mpeg,mkv';
     }
+    $preserve_video_for_thumb = empty($_FILES['video_thumb']) &&
+        $wo['config']['ffmpeg_system'] != 'on' &&
+        (
+            $wo['config']['amazone_s3'] == 1 ||
+            $wo['config']['wasabi_storage'] == 1 ||
+            $wo['config']['backblaze_storage'] == 1 ||
+            $wo['config']['ftp_upload'] == 1 ||
+            $wo['config']['spaces'] == 1 ||
+            $wo['config']['cloud_upload'] == 1
+        );
+    if ($preserve_video_for_thumb) {
+        // Wo_UploadToS3() removes the local video after remote upload.
+        // Keep it until ffmpeg extracts a poster frame, then upload it below.
+        $fileInfo['local_upload'] = 1;
+    }
     if ($wo['config']['ffmpeg_system'] == 'on') {
         if ($not_video == false) {
             $fileInfo['is_video'] = 1;
@@ -235,6 +328,14 @@ if (isset($_FILES['postVideo']['name']) && empty($mediaFilename)) {
             if (!empty($media)) {
                 $video_thumb = $media['filename'];
             }
+        }
+        // Always create a lightweight poster when the client did not send one.
+        // This keeps Feed/Reels from decoding video frames while scrolling.
+        if (empty($video_thumb)) {
+            $video_thumb = Vnseea_CreateVideoPostThumb($mediaFilename);
+        }
+        if ($preserve_video_for_thumb && !empty($mediaFilename) && file_exists($mediaFilename)) {
+            Wo_UploadToS3($mediaFilename);
         }
     }
     if (empty($mediaFilename)) {
@@ -462,8 +563,8 @@ if (empty($error_message)) {
     }
     if (!empty($ffmpeg_convert_video)) {
         $ffmpeg_b             = $wo['config']['ffmpeg_binary_file'];
-        $video_file_full_path = dirname(__DIR__) . '/' . $ffmpeg_convert_video;
-        $video_info           = shell_exec("$ffmpeg_b -i " . $video_file_full_path . " 2>&1");
+        $video_file_full_path = Vnseea_ResolveVideoPostPath($ffmpeg_convert_video);
+        $video_info           = !empty($video_file_full_path) ? shell_exec(escapeshellarg($ffmpeg_b) . " -i " . escapeshellarg($video_file_full_path) . " 2>&1") : '';
         $re                   = '/[0-9]{3}+x[0-9]{3}/m';
         preg_match_all($re, $video_info, $min_str);
         $resolution = 0;

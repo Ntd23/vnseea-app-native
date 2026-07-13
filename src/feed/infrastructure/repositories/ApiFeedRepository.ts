@@ -2013,6 +2013,13 @@ export function createFeedRepository(): FeedRepository {
           name: draft.video.name,
           type: draft.video.type,
         };
+        if (draft.video.thumbnailUri) {
+          payload.video_thumb = {
+            uri: draft.video.thumbnailUri,
+            name: draft.video.thumbnailName || `video-thumb-${Date.now()}.jpg`,
+            type: draft.video.thumbnailType || 'image/jpeg',
+          };
+        }
         // Mark this as a video post so the feed mapper and the
         // homepage's `looksLikeVideo` classifier both pick it up.
         payload.postType = 'video';
@@ -2041,7 +2048,16 @@ export function createFeedRepository(): FeedRepository {
       // Server returns the freshly-created post in the same shape as
       // `/api/posts` returns. Route it through `mapPost` so video uploads
       // are prepended as video cards instead of being coerced to text.
-      const post = mapPost(response.post_data);
+      const mappedPost = mapPost(response.post_data);
+      const post: FeedPost =
+        mappedPost.kind === 'video' &&
+        draft.video?.thumbnailUri &&
+        !mappedPost.thumbnailUrl
+          ? {
+              ...mappedPost,
+              thumbnailUrl: draft.video.thumbnailUri,
+            }
+          : mappedPost;
 
       return { postId: post.id, post };
     },

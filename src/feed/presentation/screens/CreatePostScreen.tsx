@@ -68,6 +68,7 @@ import {
   formatAudioDuration,
   pickSupportedAudioFile,
 } from '../../../shared-kernel/application/utils/audioFiles';
+import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/useWavAudioRecorder';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
@@ -1461,6 +1462,14 @@ const VideoPreviewCard = React.memo(({
         {/* Skeleton/Placeholder until first frame loads */}
         {!isVideoLoaded && (
           <View style={StyleSheet.absoluteFill} className="items-center justify-center bg-slate-950 z-10">
+            {video.thumbnailUri ? (
+              <Image
+                source={{ uri: video.thumbnailUri }}
+                style={StyleSheet.absoluteFill}
+                resizeMode="cover"
+              />
+            ) : null}
+            <View style={StyleSheet.absoluteFill} className="bg-black/25" />
             <ActivityIndicator color="#3b82f6" size="small" />
             <Text className="mt-2 text-xs text-slate-400 font-semibold">{copy.processing}</Text>
           </View>
@@ -2086,7 +2095,13 @@ export function CreatePostModal({
       if (!asset) return;
       const attachment = assetToVideoAttachment(asset);
       if (attachment) {
-        vmRef.current.setVideo(attachment);
+        const thumbnail = await createVideoUploadThumbnail(attachment.uri);
+        vmRef.current.setVideo({
+          ...attachment,
+          thumbnailUri: thumbnail?.uri,
+          thumbnailName: thumbnail?.name,
+          thumbnailType: thumbnail?.type,
+        });
       }
     } finally {
       setIsProcessingPhotos(false);
