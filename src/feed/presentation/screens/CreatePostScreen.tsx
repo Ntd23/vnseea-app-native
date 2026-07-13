@@ -1878,6 +1878,7 @@ export interface CreatePostModalProps {
   groupId?: string;
   eventId?: string;
   initialAction?: 'photo' | 'video' | 'product' | 'poll';
+  replaceRouteOnNavigate?: boolean;
 }
 
 export function CreatePostModal({
@@ -1888,6 +1889,7 @@ export function CreatePostModal({
   groupId,
   eventId,
   initialAction,
+  replaceRouteOnNavigate = false,
 }: CreatePostModalProps) {
   const navigation = useNavigation<Nav>();
   const route = useRoute<CreatePostRoute>();
@@ -2139,14 +2141,21 @@ export function CreatePostModal({
   }, []);
 
   const handleMoreNavigate = useCallback(
-    (route: RootStackRouteName) => {
+    (targetRoute: RootStackRouteName) => {
       setMoreSheetVisible(false);
-      if (route === ROUTES.CREATE_POST) {
+      if (targetRoute === ROUTES.CREATE_POST) {
         return;
       }
-      (navigation as any).replace(route);
+
+      if (replaceRouteOnNavigate) {
+        (navigation as any).replace(targetRoute);
+        return;
+      }
+
+      onClose();
+      (navigation as any).navigate(targetRoute);
     },
-    [navigation],
+    [navigation, onClose, replaceRouteOnNavigate],
   );
 
   const handleMoreNavigateRef = useRef(handleMoreNavigate);
@@ -2788,6 +2797,7 @@ function CreatePostScreen() {
   return (
     <CreatePostModal
       visible={true}
+      replaceRouteOnNavigate
       onClose={() => navigation.goBack()}
       page={targetPage}
       groupId={targetGroupId}

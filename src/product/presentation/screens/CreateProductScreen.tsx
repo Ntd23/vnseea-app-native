@@ -40,7 +40,11 @@ import {
   Check,
 } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import {
+  useNavigation,
+  usePreventRemove,
+  useRoute,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useProductViewModel } from '../../application/view-models/useProductViewModel';
@@ -52,6 +56,8 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type CreateProductNav = NativeStackNavigationProp<RootStackParamList>;
+
+const PRODUCT_HEADER_COLOR = '#5252ff';
 
 type RootStackParamList = {
   Feed: undefined;
@@ -552,15 +558,23 @@ export default function CreateProductScreen() {
   }, []);
 
   const handleBack = useCallback(() => {
+    navigation.goBack();
+  }, [navigation]);
+
+  usePreventRemove(!submitSuccess, ({ data }) => {
     Alert.alert(
       isEditing ? 'Hủy chỉnh sửa' : 'Hủy tạo sản phẩm',
       'Bạn có chắc muốn hủy? Thông tin đã nhập sẽ không được lưu.',
       [
         { text: 'Không', style: 'cancel' },
-        { text: 'Có', style: 'destructive', onPress: () => navigation.goBack() },
+        {
+          text: 'Có',
+          style: 'destructive',
+          onPress: () => navigation.dispatch(data.action),
+        },
       ],
     );
-  }, [navigation, isEditing]);
+  });
 
   const handleAddImage = useCallback(async () => {
     try {
@@ -647,11 +661,14 @@ export default function CreateProductScreen() {
 
   // MAIN FORM STATE
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" />
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: PRODUCT_HEADER_COLOR }}
+      edges={['top']}
+    >
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={PRODUCT_HEADER_COLOR} />
 
       {/* Curved Wave Header */}
-      <View style={{ backgroundColor: '#5252ff', paddingTop: 20, paddingBottom: 28, position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ backgroundColor: PRODUCT_HEADER_COLOR, paddingTop: 20, paddingBottom: 28, position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={handleBack}
@@ -681,7 +698,7 @@ export default function CreateProductScreen() {
       </View>
 
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: '#ffffff' }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
