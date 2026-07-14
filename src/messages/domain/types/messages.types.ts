@@ -4,6 +4,7 @@
 export interface ChatItem {
   id: string;
   chatId?: string;
+  hasConversationRecord?: boolean;
   chatType: 'user' | 'group' | 'page';
   participantId?: string;
   groupId?: string;
@@ -21,6 +22,14 @@ export interface ChatItem {
   isFollowing?: boolean;
   isFollower?: boolean;
   labels?: MessageLabel[];
+  notificationsMuted?: boolean;
+}
+
+export interface ConversationGroupMember {
+  id: string;
+  name: string;
+  username: string;
+  avatar: string;
 }
 
 export interface MessageLabel {
@@ -95,6 +104,29 @@ export interface GetMessagesOptions {
   limit?: number;
   beforeMessageId?: string;
   afterMessageId?: string;
+  messageId?: string;
+}
+
+export type ConversationAssetCategory = 'media' | 'files' | 'links';
+
+export type ConversationAssetMediaType =
+  | 'images'
+  | 'videos'
+  | 'docs'
+  | 'links';
+
+export type ConversationAssetsCursor = Partial<
+  Record<ConversationAssetMediaType, string | null>
+>;
+
+export interface ConversationAssetsPage {
+  items: MessageItem[];
+  nextCursor?: ConversationAssetsCursor;
+}
+
+export interface ConversationReportResult {
+  reported: true;
+  alreadyReported: boolean;
 }
 
 export interface GetChatsOptions {

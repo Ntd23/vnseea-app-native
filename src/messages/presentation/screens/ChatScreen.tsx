@@ -64,6 +64,7 @@ import {
   X,
   CornerUpLeft,
   Copy,
+  Pin,
 } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
@@ -80,7 +81,6 @@ import {
 } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
-import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import { useChatViewModel } from '../../application/view-models/useChatViewModel';
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
@@ -100,6 +100,7 @@ import { formatAudioDuration } from '../../../shared-kernel/application/utils/au
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import { findConversationMessageListItemIndex } from '../utils/conversationMessageNavigation';
 
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
@@ -2957,6 +2958,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     loadInitial,
     loadOlder,
     refreshLatest,
+    loadMessageContext,
+    setMessagePinned,
     sendMessage,
     notifyTyping,
     stopTyping,
@@ -2973,6 +2976,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const [text, setText] = useState('');
   const [replyingMessage, setReplyingMessage] = useState<MessageItem | undefined>(undefined);
   const [selectedOptionMessage, setSelectedOptionMessage] = useState<MessageItem | undefined>(undefined);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string>();
   const [attachedProduct, setAttachedProduct] = useState<ProductItem | undefined>(route.params?.product);
 
   useEffect(() => {
@@ -3077,7 +3081,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   }, []);
 
   const handlePressReply = useCallback((originalMessageId: string) => {
-    const index = messageItemsRef.current.findIndex(item => item.id === originalMessageId);
+    const index = findConversationMessageListItemIndex(
+      messageItemsRef.current,
+      originalMessageId,
+    );
     if (index !== -1) {
       try {
         flatListRef.current?.scrollToIndex({
@@ -3090,6 +3097,54 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       }
     }
   }, []);
+
+  const handleMessageScrollToIndexFailed = useCallback(
+    ({ index, averageItemLength }: { index: number; averageItemLength: number }) => {
+      flatListRef.current?.scrollToOffset({
+        offset: Math.max(0, averageItemLength * index),
+        animated: false,
+      });
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({
+          index,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      }, 100);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const highlightMessageId = route.params?.highlightMessageId;
+    if (!highlightMessageId) return undefined;
+
+    let cancelled = false;
+    let highlightTimeout: ReturnType<typeof setTimeout> | undefined;
+    loadMessageContext(highlightMessageId)
+      .then(() => {
+        if (cancelled) return;
+        setHighlightedMessageId(highlightMessageId);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => handlePressReply(highlightMessageId));
+        });
+        navigation.setParams({ highlightMessageId: undefined });
+        highlightTimeout = setTimeout(() => {
+          if (!cancelled) setHighlightedMessageId(undefined);
+        }, 1800);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      if (highlightTimeout) clearTimeout(highlightTimeout);
+    };
+  }, [
+    handlePressReply,
+    loadMessageContext,
+    navigation,
+    route.params?.highlightMessageId,
+  ]);
 
   const handleQuickRecord = useCallback(() => {
     if (!recorder.isRecording) {
@@ -3341,6 +3396,25 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     }
   }, [selectedOptionMessage]);
 
+  const handleSelectOptionPin = useCallback(async () => {
+    if (!selectedOptionMessage) return;
+    try {
+      await setMessagePinned(selectedOptionMessage.id, true);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Đã ghim tin nhắn', ToastAndroid.SHORT);
+      } else {
+        Alert.alert('Thông báo', 'Đã ghim tin nhắn');
+      }
+    } catch (error) {
+      Alert.alert(
+        'Không thể ghim tin nhắn',
+        error instanceof Error ? error.message : 'Vui lòng thử lại.',
+      );
+    } finally {
+      setSelectedOptionMessage(undefined);
+    }
+  }, [selectedOptionMessage, setMessagePinned]);
+
   const handleSendProductInquiryOption = useCallback(
     async (optionText: string) => {
       if (!attachedProduct) return;
@@ -3446,7 +3520,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         return;
       }
 
-      const recipientId = chat.participantId || chat.userId || chat.chatId;
+      const recipientId = chat.participantId || chat.userId;
       if (!recipientId) {
         Alert.alert(copy.audioCallFailedTitle, copy.missingRecipient);
         return;
@@ -3468,7 +3542,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     },
     [
       chat.avatar,
-      chat.chatId,
       chat.chatType,
       chat.name,
       copy.audioCallFailedTitle,
@@ -3488,12 +3561,20 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     ({ item }) => {
       if (item.kind === 'media-group') {
         return (
-          <MemoizedMediaMessageGroup
-            messages={item.messages}
-            avatar={chat.avatar}
-            onOpenMedia={handleOpenMedia}
-            onReply={setReplyingMessage}
-          />
+          <View
+            style={
+              item.messages.some(message => message.id === highlightedMessageId)
+                ? styles.highlightedMessage
+                : undefined
+            }
+          >
+            <MemoizedMediaMessageGroup
+              messages={item.messages}
+              avatar={chat.avatar}
+              onOpenMedia={handleOpenMedia}
+              onReply={setReplyingMessage}
+            />
+          </View>
         );
       }
 
@@ -3509,21 +3590,29 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           : false;
 
       return (
-        <MemoizedMessageBubble
-          message={item.message}
-          avatar={chat.avatar}
-          partnerName={chat.name}
-          showAvatar={showAvatar}
-          onOpenMedia={handleOpenMedia}
-          onReply={setReplyingMessage}
-          onLongPress={setSelectedOptionMessage}
-          onRecallCall={handleStartConversationCall}
-          onPressReply={handlePressReply}
-          onQuickRecord={handleQuickRecord}
-        />
+        <View
+          style={
+            item.message.id === highlightedMessageId
+              ? styles.highlightedMessage
+              : undefined
+          }
+        >
+          <MemoizedMessageBubble
+            message={item.message}
+            avatar={chat.avatar}
+            partnerName={chat.name}
+            showAvatar={showAvatar}
+            onOpenMedia={handleOpenMedia}
+            onReply={setReplyingMessage}
+            onLongPress={setSelectedOptionMessage}
+            onRecallCall={handleStartConversationCall}
+            onPressReply={handlePressReply}
+            onQuickRecord={handleQuickRecord}
+          />
+        </View>
       );
     },
-    [chat.avatar, chat.name, messageItems, handleOpenMedia, handleStartConversationCall, handlePressReply, handleQuickRecord],
+    [chat.avatar, chat.name, highlightedMessageId, messageItems, handleOpenMedia, handleStartConversationCall, handlePressReply, handleQuickRecord],
   );
 
   const handleOpenGroupInfo = useCallback(() => {
@@ -3788,22 +3877,22 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     ],
   );
 
-  const conversationProfileTargetId = useMemo(() => {
+  const conversationPartnerId = useMemo(() => {
     if (chat.chatType !== 'user') return '';
-    return chat.participantId || chat.userId || chat.chatId || '';
-  }, [chat.chatId, chat.chatType, chat.participantId, chat.userId]);
+    return chat.participantId || chat.userId || '';
+  }, [chat.chatType, chat.participantId, chat.userId]);
 
   const handleOpenConversationInfo = useCallback(() => {
     if (chat.chatType === 'group') {
       handleOpenGroupInfo();
       return;
     }
-    if (chat.chatType === 'user' && conversationProfileTargetId) {
-      navigateToUserProfile(navigation, conversationProfileTargetId);
+    if (chat.chatType === 'user' && conversationPartnerId) {
+      navigation.navigate(ROUTES.CONVERSATION_DETAILS, { chat });
     }
   }, [
-    chat.chatType,
-    conversationProfileTargetId,
+    chat,
+    conversationPartnerId,
     handleOpenGroupInfo,
     navigation,
   ]);
@@ -3957,6 +4046,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             windowSize={7}
             onEndReached={handleLoadOlder}
             onEndReachedThreshold={2.0}
+            onScrollToIndexFailed={handleMessageScrollToIndexFailed}
             ListHeaderComponent={
               <View className="py-2">
                 {(isTyping || isRecording) && (
@@ -4462,6 +4552,21 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 </View>
               </TouchableOpacity>
 
+              {chat.chatType === 'user' ? (
+                <TouchableOpacity
+                  className="mb-5 flex-row items-center rounded-xl bg-gray-50 px-4 py-4 active:bg-gray-100"
+                  onPress={handleSelectOptionPin}
+                >
+                  <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-amber-50">
+                    <Pin size={20} color="#D97706" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-base font-semibold text-gray-800">Ghim tin nhắn</Text>
+                    <Text className="text-xs text-gray-500">Hiển thị trong chi tiết cuộc trò chuyện</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+
               <TouchableOpacity
                 className="items-center justify-center rounded-full bg-gray-200/80 py-3.5 active:bg-gray-300"
                 onPress={() => setSelectedOptionMessage(undefined)}
@@ -4477,6 +4582,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 }
 
 const styles = StyleSheet.create({
+  highlightedMessage: {
+    backgroundColor: 'rgba(0, 0, 255, 0.08)',
+    borderRadius: 16,
+  },
   inlineLink: {
     fontWeight: '700',
     textDecorationLine: 'underline',

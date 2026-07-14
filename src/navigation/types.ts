@@ -2,7 +2,10 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { ROUTES } from './constants/routes';
 import type { StoryItem } from '../stories/domain/types/stories.types';
-import type { ChatItem } from '../messages/domain/types/messages.types';
+import type {
+  ChatItem,
+  ConversationGroupMember,
+} from '../messages/domain/types/messages.types';
 import type { LiveKitCallRouteParams } from '../messages/domain/types/call.types';
 import type { GroupLiveKitCallRouteParams } from '../messages/domain/types/groupCall.types';
 import type { PagesItem } from '../pages/domain/types/pages.types';
@@ -107,8 +110,18 @@ export type RootStackParamList = {
   [ROUTES.MY_VIDEOS]: undefined;
   [ROUTES.WATCH]: undefined;
   [ROUTES.MESSAGES]: undefined;
-  [ROUTES.CREATE_GROUP_CHAT]: undefined;
-  [ROUTES.CHAT]: { chat: ChatItem; product?: ProductItem };
+  [ROUTES.CREATE_GROUP_CHAT]:
+    | { initialMember?: ConversationGroupMember }
+    | undefined;
+  [ROUTES.CHAT]: {
+    chat: ChatItem;
+    product?: ProductItem;
+    highlightMessageId?: string;
+  };
+  [ROUTES.CONVERSATION_DETAILS]: { chat: ChatItem };
+  [ROUTES.CONVERSATION_SEARCH]: { chat: ChatItem };
+  [ROUTES.CONVERSATION_MEDIA]: { chat: ChatItem };
+  [ROUTES.CONVERSATION_PINNED]: { chat: ChatItem };
   [ROUTES.GROUP_INFO]: {
     groupId: number;
     groupName: string;
