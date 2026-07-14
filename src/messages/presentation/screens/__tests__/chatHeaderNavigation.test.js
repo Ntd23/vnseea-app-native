@@ -47,12 +47,20 @@ describe('ChatScreen header navigation', () => {
     expect(detailsPressable).toContain('{conversationSubtitle}');
   });
 
-  it('uses a safe profile target id for one-to-one chat header navigation', () => {
+  it('opens conversation details for one-to-one chats without treating chat id as a user id', () => {
     const source = read('src/messages/presentation/screens/ChatScreen.tsx');
+    const handlerBlock = extractBlock(
+      source,
+      'const conversationPartnerId = useMemo(',
+      'const conversationSubtitle = useMemo',
+    );
 
-    expect(source).toContain('const conversationProfileTargetId = useMemo(');
-    expect(source).toContain('chat.participantId || chat.userId || chat.chatId ||');
-    expect(source).toContain('navigateToUserProfile(navigation, conversationProfileTargetId);');
+    expect(handlerBlock).toContain('chat.participantId || chat.userId ||');
+    expect(handlerBlock).not.toContain('chat.chatId');
+    expect(handlerBlock).toContain(
+      'navigation.navigate(ROUTES.CONVERSATION_DETAILS, { chat });',
+    );
+    expect(handlerBlock).not.toContain('navigateToUserProfile');
   });
 
   it('keeps group header taps routed to group info', () => {

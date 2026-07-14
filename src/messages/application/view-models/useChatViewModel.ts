@@ -27,6 +27,7 @@ const TYPING_EMIT_THROTTLE_MS = 1200;
 const TYPING_IDLE_DONE_MS = 1800;
 const TYPING_REMOTE_IDLE_MS = 2600;
 const WEB_GROUP_TYPING_STATUS_SYNC_MS = 2000;
+const URL_REGEX = /https?:\/\/[^\s)>]+/gi;
 const repository = createMessagesRepository();
 
 function areCallEventsEqual(
@@ -179,6 +180,7 @@ export function useChatViewModel(chat: ChatItem) {
   const isLoadingRef = useRef(isLoading);
   const isLoadingMoreRef = useRef(isLoadingMore);
   const hasMoreRef = useRef(hasMore);
+  const initialLoadPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const isSending = pendingSendCount > 0;
   const getMessagesForChat = useCallback(
     (options?: Parameters<typeof repository.getMessages>[1]) =>
@@ -231,30 +233,36 @@ export function useChatViewModel(chat: ChatItem) {
     [stopTyping, typingRecipientId],
   );
 
-  const loadInitial = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const loadInitial = useCallback(() => {
+    const operation = (async () => {
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const page = await getMessagesForChat({
-        limit: PAGE_SIZE,
-      });
-      setMessages(mergeMessages(page));
-      setHasMore(page.length >= PAGE_SIZE);
-      setIsTyping(false);
-      setIsRecording(false);
-      if (chat.chatType !== 'group') {
-        repository
-          .markAsSeen(chat.userId)
-          .then(() => setUnreadBadgeCounts({ messageCount: 0 }))
-          .catch(() => undefined);
+      try {
+        const page = await getMessagesForChat({
+          limit: PAGE_SIZE,
+        });
+        setMessages(mergeMessages(page));
+        setHasMore(page.length >= PAGE_SIZE);
+        setIsTyping(false);
+        setIsRecording(false);
+        if (chat.chatType !== 'group') {
+          repository
+            .markAsSeen(chat.userId)
+            .then(() => setUnreadBadgeCounts({ messageCount: 0 }))
+            .catch(() => undefined);
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Không tải được tin nhắn',
+        );
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không tải được tin nhắn');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [chat]);
+    })();
+    initialLoadPromiseRef.current = operation;
+    return operation;
+  }, [chat.chatType, chat.userId, getMessagesForChat]);
 
   const loadOlder = useCallback(async () => {
     const oldestMessageId = oldestMessageIdRef.current;
@@ -317,6 +325,60 @@ export function useChatViewModel(chat: ChatItem) {
       }
     },
     [getMessagesForChat, isLoading, isSending],
+  );
+
+  const loadMessageContext = useCallback(
+    async (messageId: string) => {
+      if (!messageId) return;
+      try {
+        await initialLoadPromiseRef.current.catch(() => undefined);
+        const [targetMessage, olderMessages] = await Promise.all([
+          getMessagesForChat({
+            limit: 1,
+            messageId,
+          }),
+          getMessagesForChat({
+            limit: PAGE_SIZE,
+            beforeMessageId: messageId,
+          }),
+        ]);
+        if (targetMessage.length === 0) {
+          throw new Error('Không tìm thấy tin nhắn cần mở.');
+        }
+        setMessages(current =>
+          mergeMessages(current, targetMessage, olderMessages),
+        );
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Không tải được tin nhắn',
+        );
+        throw err;
+      }
+    },
+    [getMessagesForChat],
+  );
+
+  const setMessagePinned = useCallback(
+    async (messageId: string, pinned: boolean) => {
+      if (chat.chatType !== 'user') {
+        throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
+      }
+      const conversation =
+        chat.hasConversationRecord && chat.chatId
+          ? chat
+          : await repository.findUserConversation(
+              chat.participantId || chat.userId,
+            );
+      if (!conversation?.chatId) {
+        throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
+      }
+      await repository.setMessagePinned(
+        conversation.chatId,
+        messageId,
+        pinned,
+      );
+    },
+    [chat],
   );
 
   const sendMessage = useCallback(
@@ -581,7 +643,6 @@ export function useChatViewModel(chat: ChatItem) {
   }, [refreshLatest]);
 
   // Build shared assets from loaded messages
-  const URL_REGEX = /https?:\/\/[^\s)>]+/gi;
   const groupSharedAssetsFromMessages = useMemo<GroupSharedAssets>(() => {
     const media: GroupSharedMedia[] = [];
     const links: GroupSharedLink[] = [];
@@ -633,6 +694,8 @@ export function useChatViewModel(chat: ChatItem) {
     loadInitial,
     loadOlder,
     refreshLatest,
+    loadMessageContext,
+    setMessagePinned,
     sendMessage,
     notifyTyping,
     stopTyping,

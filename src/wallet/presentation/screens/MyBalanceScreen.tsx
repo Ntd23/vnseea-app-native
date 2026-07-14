@@ -43,7 +43,7 @@ import {
   parsePositivePoints,
 } from '../../domain/services/pointsTransfer';
 import { pendingPointsTransferRequestStorage } from '../../infrastructure/storage/pointsTransferRequestStorage';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 
 type BalanceNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -590,7 +590,7 @@ function MyBalanceScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-        <FeedHeader />
+        <SafeAreaFeedHeader />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="small" color="#0000ff" />
           <Text className="text-sm font-bold text-slate-500 mt-4">{copy.loading}</Text>
@@ -603,7 +603,7 @@ function MyBalanceScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-        <FeedHeader />
+        <SafeAreaFeedHeader />
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-sm font-extrabold text-center text-red-500 mb-4">
             {copy.errorOccurred}: {error}
@@ -637,7 +637,7 @@ function MyBalanceScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <FlatList
         data={walletOverview?.transactions || []}

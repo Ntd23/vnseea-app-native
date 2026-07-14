@@ -27,6 +27,14 @@ const unsafeFeedHeaderScreens = [
   'src/settings/presentation/screens/AdvertisingScreen.tsx',
   'src/advertising/presentation/screens/AdDetailsScreen.tsx',
   'src/advertising/presentation/screens/CreateAdScreen.tsx',
+  'src/wallet/presentation/screens/MyBalanceScreen.tsx',
+  'src/movies/presentation/screens/MoviesScreen.tsx',
+  'src/forum/presentation/screens/ForumScreen.tsx',
+  'src/photos/presentation/screens/AlbumsScreen.tsx',
+  'src/watch/presentation/screens/WatchScreen.tsx',
+  'src/movies/presentation/screens/CreateMovieScreen.tsx',
+  'src/movies/presentation/screens/MovieDetailScreen.tsx',
+  'src/photos/presentation/screens/CreateAlbumScreen.tsx',
 ];
 
 describe('FeedHeader top safe-area coverage', () => {
@@ -64,6 +72,15 @@ describe('FeedHeader top safe-area coverage', () => {
 
     expect(source).not.toContain('Platform,');
     expect(source).toContain("from 'react-native-safe-area-context'");
+    expect(source).toContain('<SafeAreaView');
+    expect(source).toContain("edges={['top']}");
+  });
+
+  it('keeps the standalone points screen protected by its own top safe-area', () => {
+    const source = read(
+      'src/wallet/presentation/screens/MyPointsScreen.tsx',
+    );
+
     expect(source).toContain('<SafeAreaView');
     expect(source).toContain("edges={['top']}");
   });

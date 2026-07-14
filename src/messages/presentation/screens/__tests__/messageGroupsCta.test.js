@@ -11,13 +11,18 @@ describe('Messages groups tab create CTA', () => {
   it('renders a create group chat CTA in the groups tab header', () => {
     const source = read('src/messages/presentation/screens/MessageScreen.tsx');
     const groupsPageStart = source.indexOf('{/* PAGE 2: Groups (Các nhóm) */}');
-    const groupsPageEnd = source.indexOf('ListEmptyComponent={renderListEmpty(\'groups\')}', groupsPageStart);
+    const groupsPageEnd = source.indexOf(
+      "ListEmptyComponent={renderListEmpty('groups')}",
+      groupsPageStart,
+    );
     const groupsHeaderBlock = source.slice(groupsPageStart, groupsPageEnd);
 
     expect(groupsHeaderBlock).toContain('SearchBar');
     expect(groupsHeaderBlock).toContain('handleCreateGroupChat');
     expect(groupsHeaderBlock).toContain('copy.createGroupChat');
-    expect(source).toContain('const handleCreateGroupChat = useCallback(() => {');
+    expect(source).toContain(
+      'const handleCreateGroupChat = useCallback(() => {',
+    );
     expect(source).toContain('navigation.navigate(ROUTES.CREATE_GROUP_CHAT);');
   });
 
@@ -25,10 +30,24 @@ describe('Messages groups tab create CTA', () => {
     const source = read('src/messages/presentation/screens/MessageScreen.tsx');
     const floatingActionBlock = source.slice(
       source.indexOf("{activeFilter !== 'broadcast' && ("),
-      source.indexOf('<ToastContainer', source.indexOf("{activeFilter !== 'broadcast' && (")),
+      source.indexOf(
+        '<ToastContainer',
+        source.indexOf("{activeFilter !== 'broadcast' && ("),
+      ),
     );
 
     expect(floatingActionBlock).toContain('onPress={handleMarkAllAsRead}');
     expect(floatingActionBlock).not.toContain('handleCreateGroupChat');
+  });
+
+  it('allows conversation details to preselect the other participant', () => {
+    const types = read('src/navigation/types.ts');
+    const createGroup = read(
+      'src/messages/presentation/screens/CreateGroupScreen.tsx',
+    );
+
+    expect(types).toContain('initialMember?: ConversationGroupMember');
+    expect(createGroup).toContain('route.params?.initialMember');
+    expect(createGroup).toContain('setSelectedUsers');
   });
 });

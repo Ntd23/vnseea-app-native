@@ -29,7 +29,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -317,6 +317,9 @@ function EmptyState({
 
 export default function CreateGroupScreen() {
   const navigation = useNavigation<CreateGroupNav>();
+  const route = useRoute<
+    RouteProp<RootStackParamList, typeof ROUTES.CREATE_GROUP_CHAT>
+  >();
   const {
     createGroup,
     isCreating,
@@ -330,6 +333,26 @@ export default function CreateGroupScreen() {
   const [selectedUsers, setSelectedUsers] = useState<GroupChatUser[]>([]);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [filteredFriends, setFilteredFriends] = useState<GroupChatUser[]>([]);
+
+  useEffect(() => {
+    const initialMember = route.params?.initialMember;
+    if (!initialMember?.id) return;
+    const nameParts = initialMember.name.trim().split(/\s+/).filter(Boolean);
+    const initialUser: GroupChatUser = {
+      user_id: Number(initialMember.id),
+      username: initialMember.username,
+      first_name: nameParts[0] || initialMember.name,
+      last_name: nameParts.slice(1).join(' '),
+      avatar: initialMember.avatar,
+      cover: '',
+    };
+    if (!Number.isFinite(initialUser.user_id) || initialUser.user_id <= 0) return;
+    setSelectedUsers(current =>
+      current.some(user => user.user_id === initialUser.user_id)
+        ? current
+        : [initialUser, ...current],
+    );
+  }, [route.params?.initialMember]);
 
   // Animation values
   const headerOpacity = useRef(new Animated.Value(0)).current;

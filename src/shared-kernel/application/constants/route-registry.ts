@@ -78,6 +78,11 @@ export const apiRoutes = {
     livekit: 'livekit',
     groupCall: 'group_call',
     labels: 'tags',
+    chat: 'chat',
+    mute: 'mute',
+    pinnedMessages: 'get_pin_message',
+    pinMessage: 'pin_message',
+    reportUser: 'report_user',
   },
   products: {
     get: 'get-products',

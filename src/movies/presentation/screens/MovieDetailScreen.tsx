@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import VideoPlayer from 'react-native-video';
@@ -26,7 +25,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { Pressable } from 'react-native';
 import { useMovieDetailViewModel } from '../../application/view-models/useMovieDetailViewModel';
 import { useMoviesViewModel } from '../../application/view-models/useMoviesViewModel';
@@ -61,7 +60,7 @@ export default function MovieDetailScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#edf2ff' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <View className="min-h-[170px] justify-end bg-[#526268] px-5 pb-5" style={{ position: 'relative', paddingTop: 60 }}>

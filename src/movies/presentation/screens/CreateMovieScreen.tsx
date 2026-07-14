@@ -19,7 +19,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { launchImageLibrary, type Asset } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -45,7 +44,7 @@ import {
   type CoverAsset,
 } from '../../application/view-models/useCreateMovieViewModel';
 import { getCreateMovieCopy } from '../../application/i18n/moviesCopy';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import type {
   MovieCountryKey,
   MovieGenreKey,
@@ -388,7 +387,7 @@ function CreateMovieScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: SURFACE_BASE }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
       <ToastContainer />
 
       <KeyboardAvoidingView

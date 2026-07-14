@@ -12,12 +12,9 @@ import { AppState, Platform } from 'react-native';
 import {
   AudioSession,
   isTrackReference,
-  LiveKitRoom,
   RoomContext,
-  useConnectionState,
   useLocalParticipant,
   useRemoteParticipants,
-  useRoomContext,
   useTracks,
   type TrackReferenceOrPlaceholder,
 } from '@livekit/react-native';
@@ -147,14 +144,10 @@ type LiveKitCallSessionContextValue = {
 
 type IosCallKitAudioSessionStartStage =
   | 'callkit_activation'
-  | 'managed_room_connected'
   | 'app_foreground';
 
 type IosVoiceAudioStage =
   | 'before_connect'
-  | 'managed_room_connected'
-  | 'managed_room_disconnected'
-  | 'managed_room_error'
   | 'ios_direct_room_error'
   | 'app_foreground'
   | 'release';
@@ -178,6 +171,8 @@ const TERMINAL_CALL_STATUSES = new Set([
 ]);
 const CALL_AUDIO_ZERO_RTP_RECOVERY_SAMPLE = 3;
 const REMOTE_SUBSCRIPTION_TIMEOUT_MS = 2_000;
+const REMOTE_AUDIO_SUBSCRIPTION_ERROR =
+  'Không nhận được âm thanh từ đối phương.';
 const LIVEKIT_ROOM_OPTIONS = {
   adaptiveStream: false,
   dynacast: false,
@@ -200,10 +195,6 @@ const liveKitAudioRuntime = require('../../../shared-kernel/infrastructure/livek
 
 const LiveKitCallSessionContext =
   createContext<LiveKitCallSessionContextValue | null>(null);
-
-function shouldUseManagedIosDirectRoom(callType: LiveKitCallType) {
-  return Platform.OS === 'ios' && callType === 'audio';
-}
 
 function shouldUseIosDirectCallAudioGate(callType: LiveKitCallType) {
   return Platform.OS === 'ios' && (callType === 'audio' || callType === 'video');
@@ -1283,6 +1274,8 @@ type RemoteSubscriptionRequestedCallback = (params: {
   context: RemoteSubscriptionDebugContext;
 }) => void;
 
+type RemoteSubscriptionPendingCheck = (trackSid: string) => boolean;
+
 type PendingRemoteSubscription = {
   timeoutId: ReturnType<typeof setTimeout>;
   retried: boolean;
@@ -1305,6 +1298,17 @@ function shouldSubscribeRemotePublication(
     SUBSCRIBABLE_REMOTE_TRACK_KINDS.has(kind) ||
     SUBSCRIBABLE_REMOTE_TRACK_SOURCES.has(source)
   );
+}
+
+function isRemoteMicrophonePublication(
+  publication?: RemoteTrackPublicationLike,
+) {
+  const kind = String(publication?.kind ?? publication?.track?.kind ?? '')
+    .toLowerCase();
+  const source = String(publication?.source ?? publication?.track?.source ?? '')
+    .toLowerCase();
+  if (source) return source === String(Track.Source.Microphone);
+  return kind === 'audio';
 }
 
 function debugValue(value: unknown) {
@@ -1340,10 +1344,19 @@ function requestRemoteTrackSubscription(params: {
   participant?: RemoteParticipantLike;
   context: RemoteSubscriptionDebugContext;
   onSubscriptionRequested?: RemoteSubscriptionRequestedCallback;
+  isSubscriptionPending?: RemoteSubscriptionPendingCheck;
 }) {
-  const { publication, participant, context, onSubscriptionRequested } = params;
+  const {
+    publication,
+    participant,
+    context,
+    onSubscriptionRequested,
+    isSubscriptionPending,
+  } = params;
   if (!shouldSubscribeRemotePublication(publication)) return;
   if (publication?.isSubscribed) return;
+  const trackSid = publication.trackSid ?? publication.sid ?? '';
+  if (trackSid && isSubscriptionPending?.(trackSid)) return;
 
   logCallDebug('track_subscription_requested', {
     ...remoteSubscriptionDebugPayload(context, publication, participant),
@@ -1364,8 +1377,14 @@ function requestRemoteParticipantTrackSubscriptions(params: {
   participant?: RemoteParticipantLike;
   context: RemoteSubscriptionDebugContext;
   onSubscriptionRequested?: RemoteSubscriptionRequestedCallback;
+  isSubscriptionPending?: RemoteSubscriptionPendingCheck;
 }) {
-  const { participant, context, onSubscriptionRequested } = params;
+  const {
+    participant,
+    context,
+    onSubscriptionRequested,
+    isSubscriptionPending,
+  } = params;
   const seenTrackSids = new Set<string>();
   const visit = (publication: RemoteTrackPublicationLike) => {
     const trackSid = publication.trackSid ?? '';
@@ -1376,6 +1395,7 @@ function requestRemoteParticipantTrackSubscriptions(params: {
       participant,
       context,
       onSubscriptionRequested,
+      isSubscriptionPending,
     });
   };
 
@@ -1846,583 +1866,6 @@ function LiveKitMediaBridge({
   return null;
 }
 
-const ManagedIosDirectLiveKitRoom = React.memo(
-  function ManagedIosDirectLiveKitRoom({
-    session,
-    onRoomAvailable,
-    onConnected,
-    onDisconnected,
-    onError,
-    onMediaState,
-    onController,
-  }: {
-    session: LiveKitCallSession;
-    onRoomAvailable: (room: Room | null) => void;
-    onConnected: (room: Room) => void;
-    onDisconnected: () => void;
-    onError: (error: Error) => void;
-    onMediaState: (state: Partial<LiveKitCallSession>) => void;
-    onController: (controller: LiveKitMediaController | null) => void;
-  }) {
-    const payload = session.payload;
-
-    if (!payload) return null;
-
-    return (
-      <LiveKitRoom
-        serverUrl={payload.wsUrl}
-        token={payload.token}
-        connect={session.iosNativeAudioReady}
-        audio={true}
-        video={false}
-        connectOptions={{ autoSubscribe: true }}
-        onDisconnected={onDisconnected}
-        onError={onError}
-        onMediaDeviceFailure={failure => {
-          onError(
-            new Error(
-              failure
-                ? `LiveKit media device failure: ${String(failure)}`
-                : 'LiveKit media device failure',
-            ),
-          );
-        }}
-      >
-        <ManagedIosDirectLiveKitRoomBridge
-          session={session}
-          onRoomAvailable={onRoomAvailable}
-          onConnected={onConnected}
-          onDisconnected={onDisconnected}
-          onMediaState={onMediaState}
-          onController={onController}
-        />
-      </LiveKitRoom>
-    );
-  },
-);
-
-function ManagedIosDirectLiveKitRoomBridge({
-  session,
-  onRoomAvailable,
-  onConnected,
-  onDisconnected,
-  onMediaState,
-  onController,
-}: {
-  session: LiveKitCallSession;
-  onRoomAvailable: (room: Room | null) => void;
-  onConnected: (room: Room) => void;
-  onDisconnected: () => void;
-  onMediaState: (state: Partial<LiveKitCallSession>) => void;
-  onController: (controller: LiveKitMediaController | null) => void;
-}) {
-  const room = useRoomContext();
-  const connectionState = useConnectionState();
-  const { localParticipant, isMicrophoneEnabled } = useLocalParticipant();
-  const hasConnectedRef = useRef(false);
-  const managedPendingRemoteSubscriptionsRef = useRef(
-    new Map<string, PendingRemoteSubscription>(),
-  );
-  const callId = session.callId;
-  const callType = session.callType;
-  const callUuid = session.nativeCallUuid;
-  const roomName = session.payload?.call.roomName ?? '';
-  const MANAGED_IOS_REMOTE_SUBSCRIPTION_TIMEOUT_MS =
-    REMOTE_SUBSCRIPTION_TIMEOUT_MS;
-
-  const managedCameraTracks = useTracks([Track.Source.Camera]);
-  const managedCameraTrackRefs = useMemo(
-    () => managedCameraTracks.filter(isTrackReference),
-    [managedCameraTracks],
-  );
-
-  const clearManagedRemoteTrackSubscriptionTimeout = useCallback(
-    (trackSid?: string) => {
-      if (!trackSid) return;
-      const pending = managedPendingRemoteSubscriptionsRef.current.get(trackSid);
-      if (!pending) return;
-      clearTimeout(pending.timeoutId);
-      managedPendingRemoteSubscriptionsRef.current.delete(trackSid);
-    },
-    [],
-  );
-
-  const clearAllManagedRemoteTrackSubscriptionTimeouts = useCallback(() => {
-    managedPendingRemoteSubscriptionsRef.current.forEach(pending => {
-      clearTimeout(pending.timeoutId);
-    });
-    managedPendingRemoteSubscriptionsRef.current.clear();
-  }, []);
-
-  const scheduleManagedRemoteTrackSubscriptionTimeout = useCallback(
-    (
-      params: {
-        publication: RemoteTrackPublicationLike;
-        participant?: RemoteParticipantLike;
-        context: RemoteSubscriptionDebugContext;
-      },
-      retried = false,
-    ) => {
-      const { publication, participant, context } = params;
-      const trackSid = publication.trackSid;
-      if (!trackSid) return;
-
-      clearManagedRemoteTrackSubscriptionTimeout(trackSid);
-      const timeoutId = setTimeout(() => {
-        const pending =
-          managedPendingRemoteSubscriptionsRef.current.get(trackSid);
-        if (!pending) return;
-        if (publication.isSubscribed) {
-          clearManagedRemoteTrackSubscriptionTimeout(trackSid);
-          return;
-        }
-
-        logCallDebug('managed_track_subscription_timeout', {
-          ...remoteSubscriptionDebugPayload(context, publication, participant),
-          retried: pending.retried,
-          timeoutMs: MANAGED_IOS_REMOTE_SUBSCRIPTION_TIMEOUT_MS,
-        });
-
-        if (pending.retried) {
-          managedPendingRemoteSubscriptionsRef.current.delete(trackSid);
-          return;
-        }
-
-        logCallDebug('managed_track_subscription_retry', {
-          ...remoteSubscriptionDebugPayload(context, publication, participant),
-          retryAttempt: 1,
-        });
-
-        try {
-          if (typeof publication.setSubscribed !== 'function') {
-            throw new Error('Remote publication cannot be subscribed.');
-          }
-          publication.setSubscribed(false);
-          publication.setSubscribed(true);
-          logCallDebug('managed_track_subscription_retry_applied', {
-            ...remoteSubscriptionDebugPayload(
-              context,
-              publication,
-              participant,
-            ),
-            retryAttempt: 1,
-          });
-          scheduleManagedRemoteTrackSubscriptionTimeout(
-            {
-              publication,
-              participant,
-              context,
-            },
-            true,
-          );
-        } catch (error) {
-          logCallDebug('managed_track_subscription_failed', {
-            ...remoteSubscriptionDebugPayload(
-              context,
-              publication,
-              participant,
-            ),
-            retryAttempt: 1,
-            error: serializeCallDebugError(error),
-          });
-          managedPendingRemoteSubscriptionsRef.current.delete(trackSid);
-        }
-      }, MANAGED_IOS_REMOTE_SUBSCRIPTION_TIMEOUT_MS);
-
-      managedPendingRemoteSubscriptionsRef.current.set(trackSid, {
-        timeoutId,
-        retried,
-        publication,
-        participant,
-        context,
-      });
-    },
-    [
-      MANAGED_IOS_REMOTE_SUBSCRIPTION_TIMEOUT_MS,
-      clearManagedRemoteTrackSubscriptionTimeout,
-    ],
-  );
-
-  const requestManagedRemoteTrackSubscription = useCallback(
-    (params: {
-      publication?: RemoteTrackPublicationLike;
-      participant?: RemoteParticipantLike;
-      context: RemoteSubscriptionDebugContext;
-    }) => {
-      const { publication, participant, context } = params;
-      if (!shouldSubscribeRemotePublication(publication)) return;
-      if (publication.isSubscribed) return;
-
-      logCallDebug('managed_track_subscription_requested', {
-        ...remoteSubscriptionDebugPayload(context, publication, participant),
-      });
-
-      requestRemoteTrackSubscription({
-        publication,
-        participant,
-        context,
-        onSubscriptionRequested: scheduleManagedRemoteTrackSubscriptionTimeout,
-      });
-    },
-    [scheduleManagedRemoteTrackSubscriptionTimeout],
-  );
-
-  const requestManagedRemoteParticipantTrackSubscriptions = useCallback(
-    (participant?: RemoteParticipantLike, reason = 'managed_room_connected') => {
-      const context: RemoteSubscriptionDebugContext = {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-        reason,
-      };
-      const seenTrackSids = new Set<string>();
-      const visit = (publication: RemoteTrackPublicationLike) => {
-        const trackSid = publication.trackSid ?? '';
-        if (trackSid && seenTrackSids.has(trackSid)) return;
-        if (trackSid) seenTrackSids.add(trackSid);
-        requestManagedRemoteTrackSubscription({
-          publication,
-          participant,
-          context,
-        });
-      };
-
-      participant?.trackPublications?.forEach(visit);
-      participant?.audioTrackPublications?.forEach(visit);
-      participant?.videoTrackPublications?.forEach(visit);
-    },
-    [callId, callType, callUuid, requestManagedRemoteTrackSubscription, roomName],
-  );
-
-  useEffect(() => {
-    onRoomAvailable(room);
-    return () => onRoomAvailable(null);
-  }, [onRoomAvailable, room]);
-
-  useEffect(() => {
-    const microphonePublication =
-      localParticipant.getTrackPublication(Track.Source.Microphone) as
-        | RemoteTrackPublicationLike
-        | undefined;
-    logCallDebug('managed_local_mic_state', {
-      callId,
-      callType,
-      callUuid,
-      roomName,
-      isMicrophoneEnabled,
-      hasPublication: Boolean(microphonePublication),
-      ...managedTrackDebugPayload(microphonePublication, {
-        identity: localParticipant.identity,
-        sid: localParticipant.sid,
-        name: localParticipant.name,
-        isLocal: localParticipant.isLocal,
-      }),
-    });
-  }, [
-    callId,
-    callType,
-    callUuid,
-    isMicrophoneEnabled,
-    localParticipant,
-    roomName,
-  ]);
-
-  useEffect(() => {
-    const localParticipantDebug = {
-      identity: localParticipant.identity,
-      sid: localParticipant.sid,
-      name: localParticipant.name,
-      isLocal: localParticipant.isLocal,
-    };
-
-    const handleLocalTrackPublished = (
-      publication?: RemoteTrackPublicationLike,
-    ) => {
-      logCallDebug('managed_local_track_published', {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-        ...managedTrackDebugPayload(publication, localParticipantDebug),
-      });
-    };
-
-    const handleLocalTrackUnpublished = (
-      publication?: RemoteTrackPublicationLike,
-    ) => {
-      logCallDebug('managed_local_track_unpublished', {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-        ...managedTrackDebugPayload(publication, localParticipantDebug),
-      });
-    };
-
-    const handleTrackMuted = (
-      publication?: RemoteTrackPublicationLike,
-      participant?: RemoteParticipantLike,
-    ) => {
-      if (participant?.isLocal !== true) return;
-      logCallDebug('managed_local_track_muted', {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-        ...managedTrackDebugPayload(publication, participant),
-      });
-    };
-
-    const handleTrackUnmuted = (
-      publication?: RemoteTrackPublicationLike,
-      participant?: RemoteParticipantLike,
-    ) => {
-      if (participant?.isLocal !== true) return;
-      logCallDebug('managed_local_track_unmuted', {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-        ...managedTrackDebugPayload(publication, participant),
-      });
-    };
-
-    const handleRemoteTrackPublished = (
-      publication?: RemoteTrackPublicationLike,
-      participant?: RemoteParticipantLike,
-    ) => {
-      logCallDebug('managed_remote_track_published', {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-        ...managedTrackDebugPayload(publication, participant),
-      });
-      requestManagedRemoteTrackSubscription({
-        publication,
-        participant,
-        context: {
-          callId,
-          callType,
-          callUuid,
-          roomName,
-          reason: 'managed_track_published',
-        },
-      });
-    };
-
-    const handleRemoteTrackSubscribed = (
-      track?: { kind?: string; source?: string; sid?: string },
-      publication?: RemoteTrackPublicationLike,
-      participant?: RemoteParticipantLike,
-    ) => {
-      const trackSid = track?.sid ?? publication?.trackSid;
-      clearManagedRemoteTrackSubscriptionTimeout(trackSid);
-      logCallDebug('managed_remote_track_subscribed', {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-        ...managedTrackDebugPayload(publication, participant),
-        trackKind: track?.kind ?? publication?.kind,
-        trackSource: track?.source ?? publication?.source,
-        trackSid: track?.sid ?? publication?.trackSid,
-      });
-    };
-
-    const handleParticipantConnected = (
-      participant?: RemoteParticipantLike,
-    ) => {
-      requestManagedRemoteParticipantTrackSubscriptions(
-        participant,
-        'managed_participant_connected',
-      );
-    };
-
-    const handleRemoteTrackSubscriptionFailed = (
-      trackSid?: string,
-      participant?: RemoteParticipantLike,
-      error?: unknown,
-    ) => {
-      clearManagedRemoteTrackSubscriptionTimeout(trackSid);
-      logCallDebug('managed_track_subscription_sdk_failed', {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-        trackSid,
-        participantIdentity: participant?.identity,
-        participantSid: participant?.sid,
-        participantName: participant?.name,
-        error: error ? serializeCallDebugError(error) : undefined,
-      });
-    };
-
-    const handleRemoteTrackSubscriptionStatusChanged = (
-      publication?: RemoteTrackPublicationLike,
-      status?: unknown,
-      participant?: RemoteParticipantLike,
-    ) => {
-      if (publication?.isSubscribed) {
-        clearManagedRemoteTrackSubscriptionTimeout(publication.trackSid);
-      }
-      logCallDebug('managed_track_subscription_status_changed', {
-        ...remoteSubscriptionDebugPayload(
-          {
-            callId,
-            callType,
-            callUuid,
-            roomName,
-            reason: 'managed_sdk_status_changed',
-          },
-          publication,
-          participant,
-        ),
-        status: debugValue(status),
-      });
-    };
-
-    const handleRemoteTrackSubscriptionPermissionChanged = (
-      publication?: RemoteTrackPublicationLike,
-      status?: unknown,
-      participant?: RemoteParticipantLike,
-    ) => {
-      logCallDebug('managed_track_subscription_permission_changed', {
-        ...remoteSubscriptionDebugPayload(
-          {
-            callId,
-            callType,
-            callUuid,
-            roomName,
-            reason: 'managed_sdk_permission_changed',
-          },
-          publication,
-          participant,
-        ),
-        status: debugValue(status),
-      });
-    };
-
-    room
-      .on(RoomEvent.LocalTrackPublished, handleLocalTrackPublished)
-      .on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished)
-      .on(RoomEvent.TrackMuted, handleTrackMuted)
-      .on(RoomEvent.TrackUnmuted, handleTrackUnmuted)
-      .on(RoomEvent.ParticipantConnected, handleParticipantConnected)
-      .on(RoomEvent.TrackPublished, handleRemoteTrackPublished)
-      .on(RoomEvent.TrackSubscribed, handleRemoteTrackSubscribed)
-      .on(
-        RoomEvent.TrackSubscriptionFailed,
-        handleRemoteTrackSubscriptionFailed,
-      )
-      .on(
-        RoomEvent.TrackSubscriptionStatusChanged,
-        handleRemoteTrackSubscriptionStatusChanged,
-      )
-      .on(
-        RoomEvent.TrackSubscriptionPermissionChanged,
-        handleRemoteTrackSubscriptionPermissionChanged,
-      );
-
-    return () => {
-      clearAllManagedRemoteTrackSubscriptionTimeouts();
-      room
-        .off(RoomEvent.LocalTrackPublished, handleLocalTrackPublished)
-        .off(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished)
-        .off(RoomEvent.TrackMuted, handleTrackMuted)
-        .off(RoomEvent.TrackUnmuted, handleTrackUnmuted)
-        .off(RoomEvent.ParticipantConnected, handleParticipantConnected)
-        .off(RoomEvent.TrackPublished, handleRemoteTrackPublished)
-        .off(RoomEvent.TrackSubscribed, handleRemoteTrackSubscribed)
-        .off(
-          RoomEvent.TrackSubscriptionFailed,
-          handleRemoteTrackSubscriptionFailed,
-        )
-        .off(
-          RoomEvent.TrackSubscriptionStatusChanged,
-          handleRemoteTrackSubscriptionStatusChanged,
-        )
-        .off(
-          RoomEvent.TrackSubscriptionPermissionChanged,
-          handleRemoteTrackSubscriptionPermissionChanged,
-        );
-    };
-  }, [
-    callId,
-    callType,
-    callUuid,
-    clearAllManagedRemoteTrackSubscriptionTimeouts,
-    clearManagedRemoteTrackSubscriptionTimeout,
-    localParticipant,
-    requestManagedRemoteParticipantTrackSubscriptions,
-    requestManagedRemoteTrackSubscription,
-    room,
-    roomName,
-  ]);
-
-  useEffect(() => {
-    if (connectionState === ConnectionState.Connected) {
-      hasConnectedRef.current = true;
-      onConnected(room);
-      room.remoteParticipants.forEach(participant => {
-        requestManagedRemoteParticipantTrackSubscriptions(
-          participant as RemoteParticipantLike,
-          'managed_room_connected',
-        );
-      });
-      return;
-    }
-
-    if (
-      hasConnectedRef.current &&
-      connectionState === ConnectionState.Disconnected
-    ) {
-      onDisconnected();
-    }
-  }, [
-    connectionState,
-    onConnected,
-    onDisconnected,
-    requestManagedRemoteParticipantTrackSubscriptions,
-    room,
-  ]);
-
-  useEffect(() => {
-    if (callType !== 'video') return;
-    const localCameraRefs = managedCameraTrackRefs.filter(
-      trackRef => trackRef.participant?.isLocal,
-    );
-    const remoteCameraRefs = managedCameraTrackRefs.filter(
-      trackRef => !trackRef.participant?.isLocal,
-    );
-    const remotePublication = remoteCameraRefs[0]?.publication as
-      | RemoteTrackPublicationLike
-      | undefined;
-
-    logCallDebug('managed_video_render_state', {
-      callId,
-      callType,
-      callUuid,
-      roomName,
-      localCameraRefs: localCameraRefs.length,
-      remoteCameraRefs: remoteCameraRefs.length,
-      remoteTrackSid: remotePublication?.trackSid,
-      remoteIsSubscribed: remotePublication?.isSubscribed,
-      remoteHasTrack: Boolean(remotePublication?.track),
-      remoteHasStreamUrl: Boolean(resolveTrackStreamUrl(remotePublication?.track)),
-    });
-  }, [callId, callType, callUuid, managedCameraTrackRefs, roomName]);
-
-  return (
-    <LiveKitMediaBridge
-      callType={session.callType}
-      onMediaState={onMediaState}
-      onController={onController}
-    />
-  );
-}
-
 const ActiveLiveKitRoom = React.memo(function ActiveLiveKitRoom({
   room,
   callType,
@@ -2529,6 +1972,12 @@ export function LiveKitCallSessionProvider({
     pendingRemoteSubscriptionsRef.current.clear();
   }, []);
 
+  const isRemoteTrackSubscriptionPending = useCallback(
+    (trackSid: string) =>
+      pendingRemoteSubscriptionsRef.current.has(trackSid),
+    [],
+  );
+
   const scheduleRemoteTrackSubscriptionTimeout = useCallback(
     (
       params: {
@@ -2558,7 +2007,32 @@ export function LiveKitCallSessionProvider({
         });
 
         if (pending.retried) {
-          pendingRemoteSubscriptionsRef.current.delete(trackSid);
+          logCallDebug('track_subscription_terminal_failure', {
+            ...remoteSubscriptionDebugPayload(
+              pending.context,
+              publication,
+              participant,
+            ),
+            retryAttempt: 1,
+          });
+          if (isRemoteMicrophonePublication(publication)) {
+            setSession(current => {
+              if (
+                !current ||
+                current.callId !== pending.context.callId ||
+                current.nativeCallUuid !== pending.context.callUuid ||
+                isFinalPhase(current.phase)
+              ) {
+                return current;
+              }
+              const next = {
+                ...current,
+                mediaErrorText: REMOTE_AUDIO_SUBSCRIPTION_ERROR,
+              };
+              sessionRef.current = next;
+              return next;
+            });
+          }
           return;
         }
 
@@ -2764,6 +2238,14 @@ export function LiveKitCallSessionProvider({
     [patchSession],
   );
 
+  const preserveRemoteAudioSubscriptionError = useCallback(
+    () =>
+      sessionRef.current?.mediaErrorText === REMOTE_AUDIO_SUBSCRIPTION_ERROR
+        ? REMOTE_AUDIO_SUBSCRIPTION_ERROR
+        : '',
+    [],
+  );
+
   const publishLocalCallMedia = useCallback(
     async (params: {
       room: Room;
@@ -2820,7 +2302,7 @@ export function LiveKitCallSessionProvider({
           });
           patchSessionForCurrentCall(room, callId, callUuid, {
             isLocalMicrophoneEnabled: true,
-            mediaErrorText: '',
+            mediaErrorText: preserveRemoteAudioSubscriptionError(),
           });
         } catch (microphoneError) {
           logCallDebug('local_microphone_enabled', {
@@ -2889,7 +2371,7 @@ export function LiveKitCallSessionProvider({
           });
           patchSessionForCurrentCall(room, callId, callUuid, {
             isLocalCameraEnabled: true,
-            mediaErrorText: '',
+            mediaErrorText: preserveRemoteAudioSubscriptionError(),
           });
         } catch (cameraError) {
           logCallDebug('local_camera_enabled', {
@@ -2910,7 +2392,7 @@ export function LiveKitCallSessionProvider({
 
       await Promise.allSettled([enableMicrophone(), enableCamera()]);
     },
-    [patchSessionForCurrentCall],
+    [patchSessionForCurrentCall, preserveRemoteAudioSubscriptionError],
   );
 
   const prepareIosDirectCallAudioGate = useCallback(
@@ -2978,71 +2460,6 @@ export function LiveKitCallSessionProvider({
     [],
   );
 
-  const prepareManagedIosDirectRoom = useCallback(
-    async (params: {
-      callId: string;
-      callType: LiveKitCallType;
-      callUuid: string;
-      roomName: string;
-    }) => {
-      const { callId, callType, callUuid, roomName } = params;
-      const hasNativeCallUi = usesNativeCallUi(callUuid);
-      logCallDebug('managed_ios_direct_room_prepare_start', {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-        usesNativeCallUi: hasNativeCallUi,
-      });
-      setIosVoiceCallAudioActive(true, {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-        stage: 'before_connect',
-      });
-
-      try {
-        const isNativeAudioReady = await waitForRequiredCallKitAudioSession({
-          callId,
-          callType,
-          callUuid,
-          roomName,
-        });
-        if (!isNativeAudioReady) {
-          throw new Error(
-            'Không thể kích hoạt audio session CallKit cho cuộc gọi.',
-          );
-        }
-        logIosAudioDeviceState({
-          callId,
-          callType,
-          callUuid,
-          roomName,
-          stage: 'before_connect',
-          checkpoint: 'before_connect',
-        });
-      } catch (error) {
-        setIosVoiceCallAudioActive(false, {
-          callId,
-          callType,
-          callUuid,
-          roomName,
-          stage: 'managed_room_error',
-        });
-        throw error;
-      }
-
-      logCallDebug('managed_ios_direct_room_prepare_end', {
-        callId,
-        callType,
-        callUuid,
-        roomName,
-      });
-    },
-    [],
-  );
-
   const connectPayload = useCallback(
     async (
       callId: string,
@@ -3064,7 +2481,7 @@ export function LiveKitCallSessionProvider({
           (currentConnectKey === nextConnectKey &&
             (current?.phase === 'connecting' || Boolean(current?.payload))))
       ) {
-        logCallDebug('managed_ios_direct_room_connect_deduped', {
+        logCallDebug('room_connect_deduped', {
           callId,
           callType,
           callUuid,
@@ -3157,59 +2574,8 @@ export function LiveKitCallSessionProvider({
       );
       disconnectActiveRoom();
 
-      const isManagedIosDirectCall = shouldUseManagedIosDirectRoom(callType);
       const shouldPrepareIosDirectAudioGate =
-        shouldUseIosDirectCallAudioGate(callType) && !isManagedIosDirectCall;
-      if (isManagedIosDirectCall) {
-        try {
-          await prepareManagedIosDirectRoom({
-            callId,
-            callType,
-            callUuid,
-            roomName: nextPayload.call.roomName,
-          });
-        } catch (prepareError) {
-          if (activeConnectKeyRef.current === nextConnectKey) {
-            activeConnectKeyRef.current = '';
-            connectPayloadPromiseRef.current = null;
-          }
-          if (usesNativeCallUi(callUuid)) {
-            endNativeCall(callUuid);
-          }
-          throw prepareError;
-        }
-        setSession(existingSession => {
-          const next: LiveKitCallSession | null = existingSession
-            ? {
-                ...existingSession,
-                callId,
-                callType,
-                payload: nextPayload,
-                iosNativeAudioReady: true,
-                peer: nextPayload.peer || existingSession.peer,
-                nativeCallUuid: callUuid,
-                startedAt: initialStartedAt,
-                elapsedSeconds: initialElapsedSeconds,
-                phase: 'connecting',
-                isMinimized: false,
-                isLocalMicrophoneEnabled: false,
-                isLocalCameraEnabled: false,
-                mediaErrorText: '',
-              }
-            : current;
-          sessionRef.current = next;
-          return next;
-        });
-        logCallDebug('managed_ios_direct_room_connect_ready', {
-          callId,
-          callType,
-          callUuid,
-          wsUrl: nextPayload.wsUrl,
-          roomName: nextPayload.call.roomName,
-          sourceRoomName: nextPayload.call.sourceRoomName,
-        });
-        return;
-      }
+        shouldUseIosDirectCallAudioGate(callType);
 
       if (shouldPrepareIosDirectAudioGate) {
         try {
@@ -3240,9 +2606,18 @@ export function LiveKitCallSessionProvider({
           roomName: nextPayload.call.roomName,
           reason: reason ? String(reason) : '',
         });
-        if (closeSentRef.current) return;
-        patchSession({
-          mediaErrorText: reason
+        const activeSession = sessionRef.current;
+        if (
+          activeRoomRef.current !== nextRoom ||
+          closeSentRef.current ||
+          !activeSession ||
+          isFinalPhase(activeSession.phase)
+        ) {
+          return;
+        }
+        finishSession({
+          phase: 'error',
+          error: reason
             ? `Kết nối media bị ngắt: ${String(reason)}.`
             : 'Kết nối media bị ngắt.',
         });
@@ -3296,6 +2671,7 @@ export function LiveKitCallSessionProvider({
               reason: 'room_connected',
             },
             onSubscriptionRequested: scheduleRemoteTrackSubscriptionTimeout,
+            isSubscriptionPending: isRemoteTrackSubscriptionPending,
           });
         });
       };
@@ -3322,6 +2698,7 @@ export function LiveKitCallSessionProvider({
             reason: 'participant_connected',
           },
           onSubscriptionRequested: scheduleRemoteTrackSubscriptionTimeout,
+          isSubscriptionPending: isRemoteTrackSubscriptionPending,
         });
       };
       const handleParticipantDisconnected = () => {
@@ -3357,6 +2734,7 @@ export function LiveKitCallSessionProvider({
             reason: 'track_published',
           },
           onSubscriptionRequested: scheduleRemoteTrackSubscriptionTimeout,
+          isSubscriptionPending: isRemoteTrackSubscriptionPending,
         });
       };
       const handleLocalTrackPublished = (publication?: {
@@ -3384,6 +2762,11 @@ export function LiveKitCallSessionProvider({
       ) => {
         const trackSid = track?.sid ?? publication?.trackSid;
         clearRemoteTrackSubscriptionTimeout(trackSid);
+        const subscribedPublication = {
+          ...publication,
+          kind: track?.kind ?? publication?.kind,
+          source: track?.source ?? publication?.source,
+        };
         logCallDebug('track_subscribed', {
           callId,
           callType,
@@ -3400,12 +2783,32 @@ export function LiveKitCallSessionProvider({
           participantSid: participant?.sid,
           participantName: participant?.name,
         });
+        if (isRemoteMicrophonePublication(subscribedPublication)) {
+          logCallDebug('remote_audio_ready', {
+            callId,
+            callType,
+            callUuid,
+            roomName: nextPayload.call.roomName,
+            trackSid,
+            participantIdentity: participant?.identity,
+            participantSid: participant?.sid,
+          });
+          const activeSession = sessionRef.current;
+          patchSessionForCurrentCall(nextRoom, callId, callUuid, {
+            hasRemoteParticipant: true,
+            isRemoteMicrophoneMuted: publication?.isMuted ?? false,
+            mediaErrorText:
+              activeSession?.mediaErrorText ===
+              REMOTE_AUDIO_SUBSCRIPTION_ERROR
+                ? ''
+                : (activeSession?.mediaErrorText ?? ''),
+          });
+        }
       };
       const handleTrackSubscriptionFailed = (
         trackSid?: string,
         participant?: RemoteParticipantLike,
       ) => {
-        clearRemoteTrackSubscriptionTimeout(trackSid);
         logCallDebug('track_subscription_sdk_failed', {
           callId,
           callType,
@@ -3589,6 +2992,26 @@ export function LiveKitCallSessionProvider({
           roomName: nextPayload.call.roomName,
           error: serializeCallDebugError(caught),
         });
+        if (shouldPrepareIosDirectAudioGate) {
+          setIosVoiceCallAudioActive(false, {
+            callId,
+            callType,
+            callUuid,
+            roomName: nextPayload.call.roomName,
+            stage: 'ios_direct_room_error',
+          });
+          logIosAudioDeviceState({
+            callId,
+            callType,
+            callUuid,
+            roomName: nextPayload.call.roomName,
+            stage: 'ios_direct_room_error',
+            checkpoint: 'room_connect_error',
+          });
+          if (usesNativeCallUi(callUuid)) {
+            endNativeCall(callUuid);
+          }
+        }
         disconnectActiveRoom();
         throw caught;
       }
@@ -3631,9 +3054,10 @@ export function LiveKitCallSessionProvider({
       clearRemoteTrackSubscriptionTimeout,
       disconnectActiveRoom,
       finishSession,
+      isRemoteTrackSubscriptionPending,
       patchSession,
+      patchSessionForCurrentCall,
       prepareIosDirectCallAudioGate,
-      prepareManagedIosDirectRoom,
       publishLocalCallMedia,
       repository,
       scheduleRemoteTrackSubscriptionTimeout,
@@ -3685,173 +3109,6 @@ export function LiveKitCallSessionProvider({
       }
     },
     [clearRingTimers, connectPayload, patchSession],
-  );
-
-  const handleManagedIosDirectRoomAvailable = useCallback(
-    (room: Room | null) => {
-      activeRoomRef.current = room;
-      setActiveRoom(room);
-    },
-    [],
-  );
-
-  const handleManagedIosDirectRoomConnected = useCallback(
-    (room: Room) => {
-      const current = sessionRef.current;
-      if (
-        !current?.payload ||
-        !shouldUseManagedIosDirectRoom(current.callType)
-      ) {
-        return;
-      }
-
-      const roomName = current.payload.call.roomName;
-      logCallDebug('managed_ios_direct_room_connected', {
-        callId: current.callId,
-        callType: current.callType,
-        callUuid: current.nativeCallUuid,
-        roomName,
-        connectionState: String(room.state),
-        localIdentity: room.localParticipant.identity,
-        remoteParticipants: room.remoteParticipants.size,
-      });
-      logCallDebug('room_connect_success', {
-        callId: current.callId,
-        callType: current.callType,
-        callUuid: current.nativeCallUuid,
-        roomName,
-        connectionState: String(room.state),
-        managedBy: 'LiveKitRoom',
-      });
-      logCallDebug('room_connected', {
-        callId: current.callId,
-        callType: current.callType,
-        callUuid: current.nativeCallUuid,
-        roomName,
-        sourceRoomName: current.payload.call.sourceRoomName,
-        connectionState: String(room.state),
-        localIdentity: room.localParticipant.identity,
-        remoteParticipants: room.remoteParticipants.size,
-        managedBy: 'LiveKitRoom',
-      });
-      ensureIosCallKitAudioSessionStarted({
-        callId: current.callId,
-        callType: current.callType,
-        callUuid: current.nativeCallUuid,
-        roomName,
-        stage: 'managed_room_connected',
-        preferSpeakerOutput: current.isSpeakerEnabled,
-      }).catch(() => undefined);
-      logIosAudioDeviceState({
-        callId: current.callId,
-        callType: current.callType,
-        callUuid: current.nativeCallUuid,
-        roomName,
-        stage: 'managed_room_connected',
-        checkpoint: 'managed_room_connected',
-      });
-
-      patchSession({
-        phase: 'connected',
-        mediaErrorText: '',
-        isLocalCameraEnabled: false,
-        hasRemoteParticipant: room.remoteParticipants.size > 0,
-      });
-      if (current.nativeCallUuid) markNativeCallConnected(current.nativeCallUuid);
-      audioStatsProbeCleanupRef.current?.();
-      audioStatsProbeCleanupRef.current = startCallAudioStatsProbe({
-        room,
-        callId: current.callId,
-        callType: current.callType,
-        callUuid: current.nativeCallUuid,
-        roomName,
-      });
-      if (current.callType === 'video') {
-        videoStatsProbeCleanupRef.current?.();
-        videoStatsProbeCleanupRef.current = startCallVideoStatsProbe({
-          room,
-          callId: current.callId,
-          callType: current.callType,
-          callUuid: current.nativeCallUuid,
-          roomName,
-        });
-      }
-    },
-    [patchSession],
-  );
-
-  const handleManagedIosDirectRoomDisconnected = useCallback(() => {
-    const current = sessionRef.current;
-    if (
-      !current?.payload ||
-      !shouldUseManagedIosDirectRoom(current.callType)
-    ) {
-      return;
-    }
-
-    logCallDebug('managed_ios_direct_room_disconnected', {
-      callId: current.callId,
-      callType: current.callType,
-      callUuid: current.nativeCallUuid,
-      roomName: current.payload.call.roomName,
-    });
-    setIosVoiceCallAudioActive(false, {
-      callId: current.callId,
-      callType: current.callType,
-      callUuid: current.nativeCallUuid,
-      roomName: current.payload.call.roomName,
-      stage: 'managed_room_disconnected',
-    });
-    logIosAudioDeviceState({
-      callId: current.callId,
-      callType: current.callType,
-      callUuid: current.nativeCallUuid,
-      roomName: current.payload.call.roomName,
-      stage: 'managed_room_disconnected',
-      checkpoint: 'managed_room_disconnected',
-    });
-    if (closeSentRef.current || isFinalPhase(current.phase)) return;
-    patchSession({ mediaErrorText: 'Kết nối media bị ngắt.' });
-  }, [patchSession]);
-
-  const handleManagedIosDirectRoomError = useCallback(
-    (error: Error) => {
-      const current = sessionRef.current;
-      if (
-        !current?.payload ||
-        !shouldUseManagedIosDirectRoom(current.callType)
-      ) {
-        return;
-      }
-
-      logCallDebug('managed_ios_direct_room_error', {
-        callId: current.callId,
-        callType: current.callType,
-        callUuid: current.nativeCallUuid,
-        roomName: current.payload.call.roomName,
-        error: serializeCallDebugError(error),
-      });
-      setIosVoiceCallAudioActive(false, {
-        callId: current.callId,
-        callType: current.callType,
-        callUuid: current.nativeCallUuid,
-        roomName: current.payload.call.roomName,
-        stage: 'managed_room_error',
-      });
-      logIosAudioDeviceState({
-        callId: current.callId,
-        callType: current.callType,
-        callUuid: current.nativeCallUuid,
-        roomName: current.payload.call.roomName,
-        stage: 'managed_room_error',
-        checkpoint: 'managed_room_error',
-      });
-      patchSession({
-        mediaErrorText:
-          error.message || 'Không kết nối được âm thanh cuộc gọi.',
-      });
-    },
-    [patchSession],
   );
 
   useEffect(() => {
@@ -4496,12 +3753,6 @@ export function LiveKitCallSessionProvider({
   }, [clearRingTimers, resetMediaState]);
 
   const statusText = resolveStatusText(session);
-  const shouldRenderManagedIosDirectRoom = Boolean(
-    session?.payload &&
-      session.iosNativeAudioReady &&
-      session.hasMediaPermissions &&
-      shouldUseManagedIosDirectRoom(session.callType),
-  );
   const value = useMemo<LiveKitCallSessionContextValue>(
     () => ({
       session,
@@ -4537,21 +3788,8 @@ export function LiveKitCallSessionProvider({
   return (
     <LiveKitCallSessionContext.Provider value={value}>
       {children}
-      {shouldRenderManagedIosDirectRoom && session ? (
-        <ManagedIosDirectLiveKitRoom
-          session={session}
-          onRoomAvailable={handleManagedIosDirectRoomAvailable}
-          onConnected={handleManagedIosDirectRoomConnected}
-          onDisconnected={handleManagedIosDirectRoomDisconnected}
-          onError={handleManagedIosDirectRoomError}
-          onMediaState={patchSession}
-          onController={handleLiveKitMediaController}
-        />
-      ) : null}
-      {!shouldRenderManagedIosDirectRoom &&
-      session?.payload &&
+      {session?.payload &&
       session.hasMediaPermissions &&
-      !shouldUseManagedIosDirectRoom(session.callType) &&
       activeRoom ? (
         <ActiveLiveKitRoom
           room={activeRoom}

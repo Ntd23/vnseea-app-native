@@ -168,8 +168,8 @@ describe('iOS CallKit audio session configuration', () => {
     expect(liveKitNativeSource).not.toContain('guardCallKitVoiceAudioLock');
     expect(webRtcAudioSessionSource).toContain('audioSessionDidActivate');
     expect(webRtcAudioSessionSource).toContain('audioSessionDidDeactivate');
-    expect(webRtcAudioSessionSource).not.toContain('audioSessionDebugState');
-    expect(webRtcAudioSessionSource).not.toContain('VNSEEAWebRTCAudioSessionState');
+    expect(webRtcAudioSessionSource).toContain('audioSessionDebugState');
+    expect(webRtcAudioSessionSource).toContain('VNSEEAWebRTCAudioSessionState');
     expect(webRtcAudioSessionSource).not.toContain('VNSEEAForceCallKitVoiceRTCAudioSession');
     expect(exists(webRtcPatchPath)).toBe(true);
     expect(webRtcPatchSource).toContain('VNSEEAConfigureAudioSessionForEngine');

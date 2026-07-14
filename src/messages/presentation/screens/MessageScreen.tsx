@@ -2714,7 +2714,7 @@ function MessageScreen() {
 
         id: `user:${recipient.userId}`,
 
-        chatId: recipient.userId,
+        hasConversationRecord: false,
 
         chatType: 'user' as const,
 

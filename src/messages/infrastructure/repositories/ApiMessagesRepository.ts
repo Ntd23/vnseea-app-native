@@ -2,11 +2,17 @@
 import CryptoJS from 'crypto-js';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { normalizeRawUrl } from '../../../foundation/application/normalizers/url';
 import type { MessagesRepository } from '../../domain/repositories/MessagesRepository';
 import type {
   ChatItem,
   ChatPreviewKind,
+  ConversationAssetCategory,
+  ConversationAssetsPage,
+  ConversationAssetsCursor,
+  ConversationAssetMediaType,
   CreateGroupChatInput,
   GetChatsResponse,
   GetChatsOptions,
@@ -224,7 +230,7 @@ function getChatTarget(chat: ChatItem | string): ChatTarget {
   }
   return {
     type: chat.chatType === 'page' ? 'page' : 'user',
-    id: chat.participantId || chat.userId || chat.chatId || '',
+    id: chat.participantId || chat.userId || '',
   };
 }
 function getRawUserName(raw: RawRecord): string {
@@ -443,11 +449,13 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
     readString(userData, 'name') ||
     'Người dùng';
   const chatId =
-    readString(raw, 'chat_id', 'id', 'group_id', 'page_id') ||
-    participantId ||
-    groupId;
+    chatType === 'user'
+      ? readString(raw, 'chat_id')
+      : chatType === 'group'
+      ? readString(raw, 'chat_id', 'group_id', 'id')
+      : readString(raw, 'chat_id', 'page_id', 'id');
   const targetId =
-    chatType === 'group' ? groupId || chatId : participantId || chatId;
+    chatType === 'group' ? groupId || chatId : participantId || pageId;
   const lastMessageTime =
     readNumber(lastMessage, 'time') ||
     readNumber(raw, 'last_message_time', 'time', 'chat_time', 'last_time');
@@ -460,8 +468,9 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
       'last_time',
     ) || lastMessageTime;
   return {
-    id: `${chatType}:${chatId}`,
-    chatId,
+    id: `${chatType}:${chatId || targetId}`,
+    chatId: chatId || undefined,
+    hasConversationRecord: Boolean(chatId),
     chatType,
     participantId,
     groupId: chatType === 'group' ? targetId : undefined,
@@ -484,6 +493,8 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
         ? readGroupOnline(raw)
         : readUserOnline(userData),
     isVerified: readBool(userData, 'verified'),
+    notificationsMuted:
+      readString(asRecord(raw.mute) ?? {}, 'notify') === 'no',
   };
 }
 async function fetchRawUserMessages(
@@ -497,6 +508,7 @@ async function fetchRawUserMessages(
       limit: options.limit ?? 20,
       before_message_id: options.beforeMessageId,
       after_message_id: options.afterMessageId,
+      message_id: options.messageId,
     },
   );
   return (response.messages ?? []) as RawRecord[];
@@ -884,7 +896,6 @@ async function fetchDiscoveredUserChats(forceRefresh?: boolean): Promise<ChatIte
         mapChat({
           ...user,
           chat_type: 'user',
-          chat_id: userId,
           chat_time: 0,
           last_message: undefined,
           message_count: 0,
@@ -908,7 +919,10 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
   const fromId = String(raw.from_id ?? raw.fromId ?? '');
   const toId = String(raw.to_id ?? raw.toId ?? '');
   const sessionUserId = sessionStorage.getSession()?.userId ?? '';
-  const media = readMessageMedia(raw);
+  const media = normalizeRawUrl(
+    readMessageMedia(raw),
+    apiConfig.webBaseUrl,
+  );
   const rawText = readString(raw, 'or_text');
   const decodedMessage = rawText
     ? rawText
@@ -930,7 +944,10 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
     callEvent,
     media,
     mediaType: readMediaType(raw, decodedMessage),
-    thumbnail: readMessageThumbnail(raw) || undefined,
+    thumbnail: normalizeRawUrl(
+      readMessageThumbnail(raw),
+      apiConfig.webBaseUrl,
+    ),
     time: readNumber(raw, 'time'),
     isSentByMe: callEvent ? callEvent.isInitiator : (fromId === sessionUserId),
     seen: readNumber(raw, 'seen'),
@@ -1150,6 +1167,17 @@ export function createMessagesRepository(): MessagesRepository {
       ]);
       return mergeChats(discoveredChats, cachedChats);
     },
+    async findUserConversation(userId: string) {
+      const normalizedUserId = String(userId || '');
+      if (!normalizedUserId) return undefined;
+      const chats = await fetchCachedChats();
+      return chats.find(
+        chat =>
+          chat.chatType === 'user' &&
+          chat.hasConversationRecord === true &&
+          (chat.participantId || chat.userId) === normalizedUserId,
+      );
+    },
 
     async getGroupChats() {
       return fetchGroupChats();
@@ -1251,6 +1279,135 @@ export function createMessagesRepository(): MessagesRepository {
     },
     async markAsSeen(userId: string) {
       await apiBridge.post(apiRoutes.messages.read, { recipient_id: userId });
+    },
+    async searchConversationMessages(userId: string, query: string) {
+      const response = await apiBridge.post<{ data?: RawRecord[] }>(
+        apiRoutes.messages.chat,
+        {
+          type: 'search',
+          user_id: userId,
+          text: query.trim(),
+        },
+      );
+      return (response.data ?? []).map(mapMessage);
+    },
+    async getConversationAssets(
+      userId: string,
+      category: ConversationAssetCategory,
+      cursor?: ConversationAssetsCursor,
+      limit = 24,
+    ): Promise<ConversationAssetsPage> {
+      const mediaTypes: ConversationAssetMediaType[] =
+        category === 'media'
+          ? ['images', 'videos']
+          : category === 'files'
+          ? ['docs']
+          : ['links'];
+      const responses = await Promise.all(
+        mediaTypes
+          .filter(mediaType => cursor?.[mediaType] !== null)
+          .map(async mediaType => ({
+            mediaType,
+            response: await apiBridge.post<{ data?: RawRecord[] }>(
+              apiRoutes.messages.chat,
+              {
+                type: 'get_media',
+                user_id: userId,
+                media_type: mediaType,
+                offset: cursor?.[mediaType],
+                limit,
+              },
+            ),
+          })),
+      );
+      const items = responses
+        .flatMap(({ response }) => response.data ?? [])
+        .map(mapMessage)
+        .filter(item => item.id)
+        .sort((left, right) => right.time - left.time);
+      const uniqueItems = Array.from(
+        new Map(items.map(item => [item.id, item])).values(),
+      );
+      const nextCursor = mediaTypes.reduce<ConversationAssetsCursor>(
+        (next, mediaType) => {
+          const result = responses.find(item => item.mediaType === mediaType);
+          if (!result) {
+            next[mediaType] = null;
+            return next;
+          }
+          const rawItems = result.response.data ?? [];
+          const lastRawItem = rawItems[rawItems.length - 1];
+          const lastId = lastRawItem
+            ? readString(lastRawItem, 'id', 'message_id')
+            : '';
+          next[mediaType] =
+            rawItems.length >= limit && lastId ? lastId : null;
+          return next;
+        },
+        {},
+      );
+      return {
+        items: uniqueItems,
+        nextCursor: Object.values(nextCursor).some(value => value !== null)
+          ? nextCursor
+          : undefined,
+      };
+    },
+    async setConversationNotifications(chatId: string, enabled: boolean) {
+      await apiBridge.post(apiRoutes.messages.mute, {
+        chat_id: chatId,
+        type: 'user',
+        notify: enabled ? 'yes' : 'no',
+      });
+    },
+    async getPinnedMessages(chatId: string) {
+      const response = await apiBridge.post<{ data?: RawRecord[] }>(
+        apiRoutes.messages.pinnedMessages,
+        { chat_id: chatId, type: 'user' },
+      );
+      return (response.data ?? []).map(mapMessage);
+    },
+    async setMessagePinned(
+      chatId: string,
+      messageId: string,
+      pinned: boolean,
+    ) {
+      await apiBridge.post(apiRoutes.messages.pinMessage, {
+        chat_id: chatId,
+        message_id: messageId,
+        pin: pinned ? 'yes' : 'no',
+        type: 'user',
+      });
+    },
+    async blockConversationUser(userId: string) {
+      const response = await apiBridge.post<{ block_status?: string }>(
+        apiRoutes.social.block,
+        {
+          user_id: userId,
+          block_action: 'block',
+        },
+      );
+      if (response.block_status !== 'blocked') {
+        throw new Error('Backend không xác nhận chặn người dùng.');
+      }
+    },
+    async reportConversationUser(userId: string, reason: string) {
+      const payload = {
+        user: userId,
+        text: reason.trim(),
+        ensure_reported: 1,
+      };
+      const response = await apiBridge.post<{
+        code?: string | number;
+        already_reported?: string | number;
+      }>(apiRoutes.messages.reportUser, payload);
+      if (Number(response.code) !== 1) {
+        throw new Error('Backend không xác nhận báo cáo người dùng.');
+      }
+      return {
+        reported: true,
+        alreadyReported: Number(response.already_reported) === 1,
+      };
     },
     async getGroupInfo(groupId: string) {
       const response = await apiBridge.post<{ data?: unknown[] }>(

@@ -33,7 +33,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 
 type CreateAlbumNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -863,7 +863,7 @@ function CreateAlbumScreen() {
   return (
     <View className="flex-1 bg-[#eaf0ff]">
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <ScrollView
         className="flex-1 bg-white"

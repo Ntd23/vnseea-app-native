@@ -3,6 +3,10 @@
 
 import type {
   ChatItem,
+  ConversationAssetCategory,
+  ConversationAssetsPage,
+  ConversationAssetsCursor,
+  ConversationReportResult,
   CreateGroupChatInput,
   GetChatsOptions,
   GetMessagesOptions,
@@ -29,6 +33,7 @@ export interface MessagesRepository {
    * API: POST /api/get_chats
    */
   getChats(options?: GetChatsOptions): Promise<ChatItem[]>;
+  findUserConversation(userId: string): Promise<ChatItem | undefined>;
 
   /**
    * Get only group conversations.
@@ -89,6 +94,38 @@ export interface MessagesRepository {
    * API: POST /api/delete-conversation (with action=seen)
    */
   markAsSeen(userId: string): Promise<void>;
+
+  searchConversationMessages(
+    userId: string,
+    query: string,
+  ): Promise<MessageItem[]>;
+
+  getConversationAssets(
+    userId: string,
+    category: ConversationAssetCategory,
+    cursor?: ConversationAssetsCursor,
+    limit?: number,
+  ): Promise<ConversationAssetsPage>;
+
+  setConversationNotifications(
+    chatId: string,
+    enabled: boolean,
+  ): Promise<void>;
+
+  getPinnedMessages(chatId: string): Promise<MessageItem[]>;
+
+  setMessagePinned(
+    chatId: string,
+    messageId: string,
+    pinned: boolean,
+  ): Promise<void>;
+
+  blockConversationUser(userId: string): Promise<void>;
+
+  reportConversationUser(
+    userId: string,
+    reason: string,
+  ): Promise<ConversationReportResult>;
 
   getGroupInfo(groupId: string): Promise<GroupChatInfo>;
 
