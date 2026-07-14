@@ -27,6 +27,12 @@ export type MergeFeedContentOptions = Partial<FeedVideoMixConfig> & {
    * buffering cannot shove visible feed cards down the screen.
    */
   preserveExistingPosts?: readonly FeedPost[];
+  /**
+   * Lets the view-model keep a video out of the render lane until its poster
+   * is already available. This avoids the "black card, then decode on-screen"
+   * path on slower Android devices.
+   */
+  videoReadiness?: (videoPost: FeedVideoPost) => boolean;
 };
 
 export const DEFAULT_FEED_VIDEO_MIX_CONFIG: FeedVideoMixConfig = {
@@ -189,11 +195,13 @@ export function mergeFeedContentWithVideos(
   videoPosts: readonly FeedVideoPost[],
   options: MergeFeedContentOptions = {},
 ): FeedPost[] {
-  const { preserveExistingPosts, ...configOverrides } = options;
+  const { preserveExistingPosts, videoReadiness, ...configOverrides } = options;
   const config = normalizeConfig(configOverrides);
   const lightIds = new Set(lightPosts.map(post => post.id));
   const usableVideos = uniqueById(videoPosts).filter(
-    video => !lightIds.has(video.id),
+    video =>
+      !lightIds.has(video.id) &&
+      (videoReadiness ? videoReadiness(video) : true),
   );
 
   if (preserveExistingPosts?.length) {

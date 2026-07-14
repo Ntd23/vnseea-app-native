@@ -429,6 +429,16 @@ function normalizePlayableMediaUrl(url: string | undefined): string | undefined 
   }
 }
 
+function getComparableMediaUrl(url: string | undefined) {
+  return (url ?? '').trim().split('?')[0].replace(/\/+$/, '').toLowerCase();
+}
+
+function isSameMediaUrl(left: string | undefined, right: string | undefined) {
+  const normalizedLeft = getComparableMediaUrl(left);
+  const normalizedRight = getComparableMediaUrl(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+}
+
 function readNumber(raw: Record<string, unknown>, ...keys: string[]) {
   for (const key of keys) {
     const value = raw[key];
@@ -526,7 +536,11 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
   const privacy: PostPrivacy = WIRE_TO_PRIVACY[rawPrivacy] ?? 'public';
 
   const videoUrl = normalizePlayableMediaUrl(readString(raw, 'postFile')) ?? '';
-  const thumbnailUrl =
+  const publisherAvatarUrl =
+    readString(publisher, 'avatar', 'profile_picture') || undefined;
+  const normalizedPublisherAvatarUrl =
+    normalizePlayableMediaUrl(publisherAvatarUrl);
+  const rawThumbnailUrl =
     normalizePlayableMediaUrl(
       readString(
         raw,
@@ -538,6 +552,12 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
         'thumb',
       ),
     ) ?? undefined;
+  const thumbnailUrl = isSameMediaUrl(
+    rawThumbnailUrl,
+    normalizedPublisherAvatarUrl,
+  )
+    ? undefined
+    : rawThumbnailUrl;
 
   return {
     kind: 'video',
@@ -559,7 +579,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
       id: readString(publisher, 'user_id', 'id'),
       name,
       username,
-      avatarUrl: readString(publisher, 'avatar', 'profile_picture') || undefined,
+      avatarUrl: publisherAvatarUrl,
       isFollowing:
         publisher['is_following'] === 1 ||
         publisher['is_following'] === 'yes' ||

@@ -61,12 +61,14 @@ describe('iOS comment sheet chrome', () => {
     );
 
     expect(source).toContain(
-      "const sheetBottomPadding = Platform.OS === 'ios' ? 0 : Math.max(insets.bottom, 10);",
+      "const bottomSafeInset = Math.max(insets.bottom, Platform.OS === 'android' ? 18 : 10);",
+    );
+    expect(source).toMatch(
+      /const sheetBottomPadding =\s+Platform\.OS === 'ios' \|\| isKeyboardVisible \? 0 : bottomSafeInset;/,
     );
     expect(source).toContain(
-      "const composerBottomPadding = Platform.OS === 'ios'",
+      'const composerBottomPadding = isKeyboardVisible ? 6 : bottomSafeInset;',
     );
-    expect(source).toContain('isKeyboardVisible ? 6 : Math.max(insets.bottom, 10)');
     expect(source).toContain('Keyboard.addListener');
     expect(source).toContain("'keyboardWillShow'");
     expect(source).toContain("'keyboardWillHide'");

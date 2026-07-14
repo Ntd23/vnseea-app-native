@@ -36,6 +36,10 @@ import {
   getFeedVideoBufferTarget,
   mergeFeedContentWithVideos,
 } from './feedVideoScheduler';
+import {
+  createCachedVideoPosterThumbnail,
+  getCachedVideoPosterThumbnail,
+} from '../../../shared-kernel/application/utils/videoThumbnails';
 
 const repository = createFeedRepository();
 const pollRepository = createPollRepository();
@@ -46,6 +50,7 @@ const pollRepository = createPollRepository();
 // skipping older posts that live in the same raw API window.
 const PAGE_SIZE = 10;
 const VIDEO_PAGE_SIZE = 12;
+const VIDEO_PREPARE_BATCH_SIZE = 4;
 const LOAD_MORE_FRESH_POST_LIMIT = 3;
 const LOAD_MORE_FRESH_POST_FETCH_LIMIT = 8;
 const FEED_VM_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;
@@ -205,7 +210,7 @@ function cacheLightPostsAfterInteractions(posts: FeedPost[]) {
 }
 
 function cacheVideoPostsAfterInteractions(posts: FeedVideoPost[]) {
-  const snapshot = posts.slice(0, 30);
+  const snapshot = posts.filter(isFeedVideoReadyForDisplay).slice(0, 30);
   pendingVideoCacheTask?.cancel();
   pendingVideoCacheTask = InteractionManager.runAfterInteractions(() => {
     feedCacheStorage.setCachedVideoPosts(snapshot);
@@ -222,16 +227,74 @@ function getPollTotalVotes(options: FeedPollPost['options']) {
   );
 }
 
+function getFeedVideoPosterCacheKey(post: FeedVideoPost) {
+  return `${post.id}:${post.videoUrl || 'video'}`;
+}
+
+function hasRemoteOrLocalVideoPoster(post: FeedVideoPost) {
+  return typeof post.thumbnailUrl === 'string' && post.thumbnailUrl.trim().length > 0;
+}
+
+function isFeedVideoReadyForDisplay(post: FeedVideoPost) {
+  const videoUrl = post.videoUrl?.trim();
+  if (!videoUrl) return false;
+  if (hasRemoteOrLocalVideoPoster(post)) return true;
+  return Boolean(
+    getCachedVideoPosterThumbnail(videoUrl, getFeedVideoPosterCacheKey(post))
+      ?.uri,
+  );
+}
+
+function getReadyFeedVideos(posts: FeedVideoPost[]) {
+  return posts.filter(isFeedVideoReadyForDisplay);
+}
+
+async function prepareFeedVideoForDisplay(post: FeedVideoPost) {
+  const videoUrl = post.videoUrl?.trim();
+  if (!videoUrl) return false;
+  if (isFeedVideoReadyForDisplay(post)) return true;
+
+  const thumbnail = await createCachedVideoPosterThumbnail(
+    videoUrl,
+    getFeedVideoPosterCacheKey(post),
+  );
+  return Boolean(thumbnail?.uri);
+}
+
+async function prepareFeedVideosForDisplay(
+  candidates: FeedVideoPost[],
+  limit = VIDEO_PREPARE_BATCH_SIZE,
+) {
+  const preparedVideos: FeedVideoPost[] = [];
+  const seenIds = new Set<string>();
+
+  for (const candidate of candidates) {
+    if (preparedVideos.length >= limit) break;
+    if (!candidate?.id || seenIds.has(candidate.id)) continue;
+    seenIds.add(candidate.id);
+
+    const isReady = await prepareFeedVideoForDisplay(candidate);
+    if (isReady) {
+      preparedVideos.push(candidate);
+    }
+  }
+
+  return preparedVideos;
+}
+
 export function useFeedViewModel() {
   const [feedSource, setFeedSourceState] = useState<FeedSource | 'photos'>('all');
   const [posts, setPosts] = useState<FeedPost[]>(() => {
     const cachedLightPosts = feedCacheStorage
       .getCachedPosts()
       .filter(isLightFeedPost);
-    const cachedVideoPosts = feedCacheStorage.getCachedVideoPosts();
+    const cachedVideoPosts = getReadyFeedVideos(
+      feedCacheStorage.getCachedVideoPosts(),
+    );
     return mergeFeedContentWithVideos(
       sortByTime(cachedLightPosts),
       sortByTime(cachedVideoPosts) as FeedVideoPost[],
+      { videoReadiness: isFeedVideoReadyForDisplay },
     );
   });
   const mergedPostsRef = useRef<FeedPost[]>(posts);
@@ -246,7 +309,7 @@ export function useFeedViewModel() {
     feedCacheStorage.getCachedPosts().filter(isLightFeedPost),
   );
   const videoPostsRef = useRef<FeedVideoPost[]>(
-    feedCacheStorage.getCachedVideoPosts(),
+    getReadyFeedVideos(feedCacheStorage.getCachedVideoPosts()),
   );
 
   // Prefetch buffer
@@ -256,6 +319,12 @@ export function useFeedViewModel() {
   const isPrefetchingRef = useRef(false);
   const isFetchingVideosRef = useRef(false);
   const videoBufferTaskRef = useRef<InteractionTask | null>(null);
+  const videoFetchCursorRef = useRef<string | undefined>(
+    videoPostsRef.current[videoPostsRef.current.length - 1]?.id,
+  );
+  const videoCandidateIdsRef = useRef<Set<string>>(
+    new Set(videoPostsRef.current.map(post => post.id)),
+  );
   const isScrollBusyRef = useRef(false);
   const pendingCommitRef = useRef<{
     lightPosts: FeedPost[];
@@ -307,19 +376,27 @@ export function useFeedViewModel() {
         .map(post => ({ id: post.id, kind: post.kind }));
 
       const cleanLightPosts = sortByTime(dedupedLight.filter(isLightFeedPost));
-      const cleanVideoPosts = sortByTime(uniqueById(nextVideoPosts)) as FeedVideoPost[];
+      const dedupedVideos = uniqueById(nextVideoPosts);
+      const droppedUnreadyVideos = dedupedVideos.length -
+        dedupedVideos.filter(isFeedVideoReadyForDisplay).length;
+      const cleanVideoPosts = sortByTime(
+        dedupedVideos.filter(isFeedVideoReadyForDisplay),
+      ) as FeedVideoPost[];
 
       lightPostsRef.current = cleanLightPosts;
       videoPostsRef.current = cleanVideoPosts;
       const mergedPosts = mergeFeedContentWithVideos(
         cleanLightPosts,
         cleanVideoPosts,
-        options?.preserveRenderedOrder || options?.preserveExistingPosts
-          ? {
-              preserveExistingPosts:
-                options.preserveExistingPosts ?? mergedPostsRef.current,
-            }
-          : undefined,
+        {
+          videoReadiness: isFeedVideoReadyForDisplay,
+          ...(options?.preserveRenderedOrder || options?.preserveExistingPosts
+            ? {
+                preserveExistingPosts:
+                  options.preserveExistingPosts ?? mergedPostsRef.current,
+              }
+            : {}),
+        },
       );
       mergedPostsRef.current = mergedPosts;
       setPosts(mergedPosts);
@@ -334,6 +411,7 @@ export function useFeedViewModel() {
         dedupDropped,
         light: cleanLightPosts.length,
         video: cleanVideoPosts.length,
+        videoWaitingForPoster: droppedUnreadyVideos,
         merged: cleanLightPosts.length + cleanVideoPosts.length,
         lightFilterDropped: droppedByLightFilter.length,
         lightFilterDroppedKinds: droppedKinds,
@@ -429,7 +507,10 @@ export function useFeedViewModel() {
       .filter(isLightFeedPost);
     videoPostsRef.current = videoPostsRef.current
       .map(updater)
-      .filter((post): post is FeedVideoPost => post.kind === 'video');
+      .filter(
+        (post): post is FeedVideoPost =>
+          post.kind === 'video' && isFeedVideoReadyForDisplay(post),
+      );
     setPosts(prev => {
       const nextPosts = prev.map(updater);
       mergedPostsRef.current = nextPosts;
@@ -440,6 +521,23 @@ export function useFeedViewModel() {
       cacheVideoPostsAfterInteractions(videoPostsRef.current);
     }
   }, []);
+
+  const updatePublisherFollowState = useCallback(
+    (publisherId: string, isFollowing: boolean) => {
+      if (!publisherId) return;
+      updatePostEverywhere(post => {
+        if (String(post.publisher?.id) !== String(publisherId)) return post;
+        return {
+          ...post,
+          publisher: {
+            ...post.publisher,
+            isFollowing,
+          },
+        };
+      });
+    },
+    [updatePostEverywhere],
+  );
 
   const removePostEverywhere = useCallback((postId: string) => {
     lightPostsRef.current = lightPostsRef.current.filter(post => post.id !== postId);
@@ -499,34 +597,58 @@ export function useFeedViewModel() {
       const requiredVideos = getFeedVideoBufferTarget(lightCount);
       if (videoPostsRef.current.length >= requiredVideos) return;
 
-      const lastVideo = videoPostsRef.current[videoPostsRef.current.length - 1];
+      const missingVideoCount = requiredVideos - videoPostsRef.current.length;
+      const cursor =
+        videoFetchCursorRef.current ??
+        videoPostsRef.current[videoPostsRef.current.length - 1]?.id;
       isFetchingVideosRef.current = true;
 
-      // Snapshot timestamps to enforce strict "older than what we have"
-      const existingVideoIds = new Set(videoPostsRef.current.map(post => post.id));
-      const oldestVideoTimestamp = videoPostsRef.current.reduce<number>(
-        (min, post) => (post.postedAt ? Math.min(min, post.postedAt) : min),
-        Number.POSITIVE_INFINITY,
+      const existingVideoIds = new Set(
+        videoPostsRef.current.map(post => post.id),
       );
 
       repository
-        .getVideoPosts(VIDEO_PAGE_SIZE * 2, lastVideo?.id, feedSourceRef.current)
-        .then(nextVideos => {
-          const freshVideos = nextVideos.filter(post => {
+        .getVideoPosts(VIDEO_PAGE_SIZE * 2, cursor, feedSourceRef.current)
+        .then(async nextVideos => {
+          const lastFetchedVideo = nextVideos[nextVideos.length - 1];
+          if (lastFetchedVideo?.id) {
+            videoFetchCursorRef.current = lastFetchedVideo.id;
+          }
+
+          const candidateVideos = nextVideos.filter(post => {
             if (existingVideoIds.has(post.id)) return false;
-            if (
-              post.postedAt &&
-              oldestVideoTimestamp !== Number.POSITIVE_INFINITY
-            ) {
-              return post.postedAt < oldestVideoTimestamp;
-            }
+            if (videoCandidateIdsRef.current.has(post.id)) return false;
             return true;
           }).slice(0, VIDEO_PAGE_SIZE);
 
-          if (freshVideos.length === 0) return;
+          if (candidateVideos.length === 0) return;
+
+          const prepareLimit = Math.max(
+            1,
+            Math.min(missingVideoCount, VIDEO_PREPARE_BATCH_SIZE),
+          );
+          const videosToPrepare = candidateVideos.slice(0, prepareLimit);
+          videosToPrepare.forEach(post => {
+            videoCandidateIdsRef.current.add(post.id);
+          });
+
+          const readyVideos = await prepareFeedVideosForDisplay(
+            videosToPrepare,
+            prepareLimit,
+          );
+
+          if (readyVideos.length === 0) {
+            debugFeedVm('video pool waiting for poster', {
+              fetched: nextVideos.length,
+              candidates: candidateVideos.length,
+              cursor: cursor ?? '(none)',
+            });
+            return;
+          }
+
           commitFeedSources(lightPostsRef.current, [
             ...videoPostsRef.current,
-            ...freshVideos,
+            ...readyVideos,
           ], {
             deferDuringScroll: true,
             preserveRenderedOrder: true,
@@ -665,6 +787,10 @@ export function useFeedViewModel() {
     hasReachedNetworkEndRef.current = false;
     nextPageCursorRef.current = undefined;
     emptyPageStrikeRef.current = 0;
+    videoFetchCursorRef.current = undefined;
+    videoCandidateIdsRef.current = new Set(
+      videoPostsRef.current.map(post => post.id),
+    );
     if (isPullToRefresh) {
       trackedImpressionIdsRef.current = new Set();
       pendingImpressionIdsRef.current.clear();
@@ -784,6 +910,8 @@ export function useFeedViewModel() {
       setFeedSourceState(nextSource);
       lightPostsRef.current = [];
       videoPostsRef.current = [];
+      videoFetchCursorRef.current = undefined;
+      videoCandidateIdsRef.current = new Set();
       prefetchBufferRef.current = null;
       hasReachedNetworkEndRef.current = false;
       nextPageCursorRef.current = undefined;
@@ -826,35 +954,106 @@ export function useFeedViewModel() {
           }
           return;
         } else {
-          const freshHeadPosts = await loadFreshPostsForNextBatch(newPosts);
-          const freshLight = freshHeadPosts.filter(isLightFeedPost);
-          const freshVideo = freshHeadPosts.filter(
-            (p): p is FeedVideoPost => p.kind === 'video',
-          );
+          const visiblePostsBeforeAppend = mergedPostsRef.current;
           // Split newPosts into light and video posts
           const newLight = newPosts.filter(isLightFeedPost);
-          const newVideo = newPosts.filter((p): p is FeedVideoPost => p.kind === 'video');
+          const newVideoCandidates = newPosts.filter(
+            (p): p is FeedVideoPost => p.kind === 'video',
+          );
+          newVideoCandidates.forEach(post => {
+            videoCandidateIdsRef.current.add(post.id);
+          });
+          const readyNewVideo = newVideoCandidates.filter(
+            isFeedVideoReadyForDisplay,
+          );
 
-          const mergedLight = [...currentLightPosts, ...freshLight, ...newLight];
+          const mergedLight = [...currentLightPosts, ...newLight];
           const mergedVideo = [
             ...videoPostsRef.current,
-            ...freshVideo,
-            ...newVideo,
+            ...readyNewVideo,
           ];
-          const preserveExistingPosts =
-            freshHeadPosts.length > 0
-              ? [...mergedPostsRef.current, ...freshHeadPosts]
-              : undefined;
-
 
           // Append paged posts immediately so fast scrolling never reaches a
           // visible end gap while waiting for scroll-idle commit flushing.
           commitFeedSources(mergedLight, mergedVideo, {
             preserveRenderedOrder: true,
-            preserveExistingPosts,
           });
           scheduleVideoBuffer(mergedLight.length);
           setTimeout(() => prefetchNextPage(), 0);
+
+          const unreadyNewVideo = newVideoCandidates.filter(
+            post => !isFeedVideoReadyForDisplay(post),
+          );
+          if (unreadyNewVideo.length > 0) {
+            void prepareFeedVideosForDisplay(
+              unreadyNewVideo,
+              VIDEO_PREPARE_BATCH_SIZE,
+            ).then(preparedVideos => {
+              if (preparedVideos.length === 0) return;
+              commitFeedSources(
+                lightPostsRef.current,
+                [...videoPostsRef.current, ...preparedVideos],
+                {
+                  deferDuringScroll: true,
+                  preserveRenderedOrder: true,
+                },
+              );
+            });
+          }
+
+          void loadFreshPostsForNextBatch(newPosts).then(
+            async freshHeadPosts => {
+              if (freshHeadPosts.length === 0) return;
+
+              const freshLight = freshHeadPosts.filter(isLightFeedPost);
+              const freshVideoCandidates = freshHeadPosts.filter(
+                (p): p is FeedVideoPost => p.kind === 'video',
+              );
+              freshVideoCandidates.forEach(post => {
+                videoCandidateIdsRef.current.add(post.id);
+              });
+              const freshVideo = await prepareFeedVideosForDisplay(
+                freshVideoCandidates,
+                LOAD_MORE_FRESH_POST_LIMIT,
+              );
+              const readyFreshVideoIds = new Set(
+                freshVideo.map(post => post.id),
+              );
+              const renderableFreshHeadPosts = freshHeadPosts.filter(
+                post =>
+                  isLightFeedPost(post) ||
+                  (post.kind === 'video' && readyFreshVideoIds.has(post.id)),
+              );
+              if (renderableFreshHeadPosts.length === 0) return;
+
+              const currentLightIds = new Set(
+                lightPostsRef.current.map(post => post.id),
+              );
+              const currentVideoIds = new Set(
+                videoPostsRef.current.map(post => post.id),
+              );
+
+              commitFeedSources(
+                [
+                  ...lightPostsRef.current,
+                  ...freshLight.filter(post => !currentLightIds.has(post.id)),
+                ],
+                [
+                  ...videoPostsRef.current,
+                  ...freshVideo.filter(post => !currentVideoIds.has(post.id)),
+                ],
+                {
+                  deferDuringScroll: true,
+                  preserveRenderedOrder: true,
+                  preserveExistingPosts: [
+                    ...visiblePostsBeforeAppend,
+                    ...renderableFreshHeadPosts,
+                    ...newPosts,
+                  ],
+                },
+              );
+            },
+          );
           return;
         }
       }
@@ -931,14 +1130,27 @@ export function useFeedViewModel() {
         emptyPageStrikeRef.current = 0;
         const freshHeadPosts = await loadFreshPostsForNextBatch(newPosts);
         const freshLight = freshHeadPosts.filter(isLightFeedPost);
-        const freshVideo = freshHeadPosts.filter(
+        const freshVideoCandidates = freshHeadPosts.filter(
           (p): p is FeedVideoPost => p.kind === 'video',
+        );
+        freshVideoCandidates.forEach(post => {
+          videoCandidateIdsRef.current.add(post.id);
+        });
+        const freshVideo = await prepareFeedVideosForDisplay(
+          freshVideoCandidates,
+          LOAD_MORE_FRESH_POST_LIMIT,
+        );
+        const readyFreshVideoIds = new Set(freshVideo.map(post => post.id));
+        const renderableFreshHeadPosts = freshHeadPosts.filter(
+          post =>
+            isLightFeedPost(post) ||
+            (post.kind === 'video' && readyFreshVideoIds.has(post.id)),
         );
         const mergedLight = [...currentLightPosts, ...freshLight, ...newPosts];
         const mergedVideo = [...videoPostsRef.current, ...freshVideo];
         const preserveExistingPosts =
-          freshHeadPosts.length > 0
-            ? [...mergedPostsRef.current, ...freshHeadPosts]
+          renderableFreshHeadPosts.length > 0
+            ? [...mergedPostsRef.current, ...renderableFreshHeadPosts]
             : undefined;
 
         // Append paged posts immediately so fast scrolling never reaches a
@@ -1037,10 +1249,28 @@ export function useFeedViewModel() {
     ) ?? null;
 
     if (post.kind === 'video') {
+      videoCandidateIdsRef.current.add(post.id);
       videoPostsRef.current = sortByTime([
         post,
         ...videoPostsRef.current,
       ]) as FeedVideoPost[];
+      if (!isFeedVideoReadyForDisplay(post)) {
+        InteractionManager.runAfterInteractions(() => {
+          prepareFeedVideoForDisplay(post).then(isReady => {
+            if (!isReady) return;
+            if (!videoPostsRef.current.some(video => video.id === post.id)) {
+              videoPostsRef.current = sortByTime([
+                post,
+                ...videoPostsRef.current,
+              ]) as FeedVideoPost[];
+            }
+            commitFeedSources(lightPostsRef.current, videoPostsRef.current, {
+              preserveRenderedOrder: true,
+              preserveExistingPosts: mergedPostsRef.current,
+            });
+          });
+        });
+      }
     } else if (isLightFeedPost(post)) {
       lightPostsRef.current = sortByTime([post, ...lightPostsRef.current]);
     }
@@ -1058,7 +1288,7 @@ export function useFeedViewModel() {
       cacheLightPostsAfterInteractions(lightPostsRef.current);
       cacheVideoPostsAfterInteractions(videoPostsRef.current);
     }
-  }, []);
+  }, [commitFeedSources]);
   const toggleReaction = useCallback(
     async (postId: string, nextReaction: ReactionType) => {
       let snapshot: FeedPost | undefined;
@@ -1263,6 +1493,7 @@ export function useFeedViewModel() {
     loadMorePosts,
     setScrollBusy,
     prependPost,
+    updatePublisherFollowState,
     toggleReaction,
     updateCommentCount,
     votePoll,

@@ -138,12 +138,17 @@ import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
 type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
+type ProfileListItem =
+  | { type: 'filter' }
+  | { type: 'state' }
+  | { type: 'post'; post: ProfileFeedPost };
 type ProfileRoute = RouteProp<
   RootStackParamList,
   typeof ROUTES.PROFILE | typeof ROUTES.USER_PROFILE
 >;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const PROFILE_COVER_HEIGHT = 210;
 const PROFILE_POST_MEDIA_HEIGHT = Math.min(320, Math.round(SCREEN_WIDTH * 0.62));
 // One friend tile width in a 2-col grid inside the wider Friends column.
 // PROFILE_FRIENDS_PAGE_WIDTH = width of one "page" (2 columns) = 2 tiles + 1 gap.
@@ -174,6 +179,7 @@ const PROFILE_POST_ACTIVE_DWELL_MS = 160;
 const PROFILE_POST_MEDIA_PREFETCH_BATCH_SIZE = PROFILE_IS_ANDROID ? 2 : 3;
 const PROFILE_POST_MEDIA_PREFETCH_BATCH_DELAY_MS = PROFILE_IS_ANDROID ? 140 : 110;
 const PROFILE_SCROLL_DIRECTION_THRESHOLD = 6;
+const PROFILE_HEADER_HEIGHT = 48;
 const COUNTRY_NAME_BY_ID = new Map(
   COUNTRY_OPTIONS.map(country => [country.id, country.name]),
 );
@@ -281,6 +287,10 @@ function getProfilePostPreviewText(post: ProfileFeedPost, language: AppLanguage)
 
 function isProfileFeedPost(post: FeedPost): post is ProfileFeedPost {
   return post.kind === 'text' || post.kind === 'video' || post.kind === 'poll';
+}
+
+function getProfileListItemPost(item?: ProfileListItem): ProfileFeedPost | null {
+  return item?.type === 'post' ? item.post : null;
 }
 
 function canProfilePostAppearInFilter(
@@ -1104,7 +1114,11 @@ function FullProfileSkeleton() {
     <View className="flex-1 bg-[#F0F2F5]">
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={profileMainStyles.coverContainer}>
-          <SkeletonBlock height={210} width={SCREEN_WIDTH} borderRadius={0} />
+          <SkeletonBlock
+            height={PROFILE_COVER_HEIGHT}
+            width={SCREEN_WIDTH}
+            borderRadius={0}
+          />
           <View
             style={[
               profileMainStyles.headerOverlay,
@@ -1268,6 +1282,7 @@ function ProfileScreen() {
     scrollIndicatorBottomInset,
   } = useMainTabContentInsets();
   const safeTopInset = insets.top > 0 ? insets.top : (Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 44);
+  const profileHeaderHeight = safeTopInset + PROFILE_HEADER_HEIGHT;
   const navigation = useNavigation<ProfileNav>();
   const route = useRoute<ProfileRoute>();
   const isProfileFocused = useIsFocused();
@@ -1315,6 +1330,7 @@ function ProfileScreen() {
   const profileMediaPrefetchTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileScrollYRef = useRef(0);
+  const profileHeaderSolidRef = useRef(false);
   const isProfileScrollingRef = useRef(false);
   const isProfileMomentumScrollingRef = useRef(false);
   const profileScrollDirectionRef = useRef<ProfileScrollDirection>('none');
@@ -1330,6 +1346,7 @@ function ProfileScreen() {
     useState<ProfileFriendsTab>('following');
   const [profilePostFilter, setProfilePostFilter] =
     useState<ProfilePostFilter>('all');
+  const [isProfileHeaderSolid, setProfileHeaderSolid] = useState(false);
   const [isActivitiesSheetVisible, setActivitiesSheetVisible] = useState(false);
   const [isConnectLoading, setIsConnectLoading] = useState(false);
   const [isPokeLoading, setIsPokeLoading] = useState(false);
@@ -1371,6 +1388,9 @@ function ProfileScreen() {
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
   const gestureActive = useSharedValue(false);
+  const gestureStartX = useSharedValue(0);
+  const gestureStartY = useSharedValue(0);
+  const hasDragged = useSharedValue(false);
 
   const feedRepo = useMemo(() => createFeedRepository(), []);
   const pollRepo = useMemo(() => createPollRepository(), []);
@@ -1531,15 +1551,14 @@ function ProfileScreen() {
   );
 
   const onProfilePostViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: FlashListViewToken<ProfileFeedPost>[] }) => {
+    ({ viewableItems }: { viewableItems: FlashListViewToken<ProfileListItem>[] }) => {
       const currentPosts = profilePostsRef.current;
       const visibleVideo = viewableItems.find(
-        item =>
-          item.isViewable &&
-          (item.item as ProfileFeedPost | undefined)?.kind === 'video',
+        item => item.isViewable && getProfileListItemPost(item.item)?.kind === 'video',
       );
-      const nextVisibleVideoId = visibleVideo?.item
-        ? String((visibleVideo.item as ProfileFeedPost).id)
+      const visibleVideoPost = getProfileListItemPost(visibleVideo?.item);
+      const nextVisibleVideoId = visibleVideoPost
+        ? String(visibleVideoPost.id)
         : null;
 
       if (isProfileScrollingRef.current) {
@@ -1549,8 +1568,8 @@ function ProfileScreen() {
           ? viewableItems.some(
               item =>
                 item.isViewable &&
-                (item.item as ProfileFeedPost | undefined)?.kind === 'video' &&
-                String((item.item as ProfileFeedPost).id) ===
+                getProfileListItemPost(item.item)?.kind === 'video' &&
+                String(getProfileListItemPost(item.item)?.id) ===
                   activeProfileVideoIdRef.current,
             )
           : false;
@@ -1571,14 +1590,10 @@ function ProfileScreen() {
       let furthestVisibleIndex = -1;
       viewableItems.forEach(viewable => {
         if (!viewable?.isViewable) return;
+        const viewedPost = getProfileListItemPost(viewable.item);
+        if (!viewedPost) return;
 
-        const index =
-          typeof viewable.index === 'number'
-            ? viewable.index
-            : currentPosts.findIndex(
-                post =>
-                  post.id === (viewable.item as ProfileFeedPost | undefined)?.id,
-              );
+        const index = currentPosts.findIndex(post => post.id === viewedPost.id);
 
         if (index < 0) return;
         if (index < firstVisibleIndex) firstVisibleIndex = index;
@@ -1626,8 +1641,8 @@ function ProfileScreen() {
         return;
       }
 
-      const activeVideoId = visibleVideo?.item
-        ? String(visibleVideo.item.id)
+      const activeVideoId = visibleVideoPost
+        ? String(visibleVideoPost.id)
         : activeProfileVideoIdRef.current;
       const warmVideoIds: string[] = [];
       const candidateIndices: number[] = [];
@@ -2227,6 +2242,7 @@ function ProfileScreen() {
   const handlePickReaction = useCallback((reaction: ReactionType) => {
     if (!pickerAnchor) return;
     handleSetPostReaction(pickerAnchor.postId, reaction);
+    setPickerAnchor(null);
   }, [handleSetPostReaction, pickerAnchor]);
 
   const handlePhotoPress = useCallback((post: FeedTextPost, photoIndex: number) => {
@@ -2271,6 +2287,25 @@ function ProfileScreen() {
       photoPressTimeoutRef.current = null;
     }
   }, []);
+
+  const handlePhotoViewerFollowChange = useCallback(
+    (publisherId: string, isFollowing: boolean) => {
+      if (!publisherId) return;
+      setPosts(previous =>
+        previous.map(post => {
+          if (String(post.publisher?.id) !== String(publisherId)) return post;
+          return {
+            ...post,
+            publisher: {
+              ...post.publisher,
+              isFollowing,
+            },
+          };
+        }),
+      );
+    },
+    [],
+  );
 
   const handleOpenSharePost = useCallback((post: FeedPost) => {
     setSharingPost(post);
@@ -2536,6 +2571,14 @@ function ProfileScreen() {
       }
       profileScrollYRef.current = contentOffset.y;
       profileViewportHeightRef.current = layoutMeasurement.height;
+
+      const shouldUseSolidHeader =
+        contentOffset.y >= Math.max(0, PROFILE_COVER_HEIGHT - profileHeaderHeight);
+      if (profileHeaderSolidRef.current !== shouldUseSolidHeader) {
+        profileHeaderSolidRef.current = shouldUseSolidHeader;
+        setProfileHeaderSolid(shouldUseSolidHeader);
+      }
+
       if (Platform.OS === 'ios') {
         publishNativeTabScrollIntent(
           nativeTabScrollPublisherStateRef,
@@ -2549,7 +2592,7 @@ function ProfileScreen() {
         handleLoadMorePosts();
       }
     },
-    [handleLoadMorePosts],
+    [handleLoadMorePosts, profileHeaderHeight],
   );
 
   const finishProfileScroll = useCallback(
@@ -2679,7 +2722,7 @@ function ProfileScreen() {
     });
   };
 
-  const handleChangeAvatar = async () => {
+  const handleChangeAvatar = useCallback(async () => {
     try {
       const result = await launchImageLibrary({
         mediaType: 'photo',
@@ -2704,7 +2747,7 @@ function ProfileScreen() {
     } finally {
       setIsLoadingAvatar(false);
     }
-  };
+  }, [copy.errorTitle, loadProfile, targetUserId, updateAvatar]);
 
   const handleChangeCover = useCallback(async () => {
     try {
@@ -2751,7 +2794,7 @@ function ProfileScreen() {
 
       handleChangeAvatar();
     }, 180);
-  }, [handleChangeCover, profileMediaSheet]);
+  }, [handleChangeAvatar, handleChangeCover, profileMediaSheet]);
 
   const handleOpenStory = () => {
     if (!userStory) return;
@@ -3027,6 +3070,9 @@ function ProfileScreen() {
             gestureX={gestureX}
             gestureY={gestureY}
             gestureActive={gestureActive}
+            gestureStartX={gestureStartX}
+            gestureStartY={gestureStartY}
+            hasDragged={hasDragged}
             navigateToProfile={handleNavigateToProfile}
             onOpenReactions={openReactionsSheet}
             onOpenPostMenu={handleOpenPostMenu}
@@ -3048,6 +3094,12 @@ function ProfileScreen() {
           onProfilePress={handleNavigateToProfile}
           onMorePress={handleOpenPostMenu}
           currentUserAvatar={avatarUrl}
+          gestureX={gestureX}
+          gestureY={gestureY}
+          gestureActive={gestureActive}
+          gestureStartX={gestureStartX}
+          gestureStartY={gestureStartY}
+          hasDragged={hasDragged}
         />
       );
     }
@@ -3064,6 +3116,9 @@ function ProfileScreen() {
         gestureX={gestureX}
         gestureY={gestureY}
         gestureActive={gestureActive}
+        gestureStartX={gestureStartX}
+        gestureStartY={gestureStartY}
+        hasDragged={hasDragged}
         navigateToProfile={handleNavigateToProfile}
         onOpenReactions={openReactionsSheet}
         onOpenPostMenu={handleOpenPostMenu}
@@ -3073,8 +3128,11 @@ function ProfileScreen() {
     avatarUrl,
     commentVm.openComments,
     gestureActive,
+    gestureStartX,
+    gestureStartY,
     gestureX,
     gestureY,
+    hasDragged,
     handleNavigateToProfile,
     handleOpenPicker,
     handleOpenPostMenu,
@@ -3087,19 +3145,15 @@ function ProfileScreen() {
     postCardCopy,
   ]);
 
-  const renderProfilePostItem = useCallback(
-    ({ item }: FlashListRenderItemInfo<ProfileFeedPost>) =>
-      renderProfilePostContent(item),
-    [renderProfilePostContent],
-  );
-
-  const profilePostKeyExtractor = useCallback(
-    (post: ProfileFeedPost) => `${post.kind}-${post.id}`,
+  const profileListItemKeyExtractor = useCallback(
+    (item: ProfileListItem) =>
+      item.type === 'post' ? `${item.post.kind}-${item.post.id}` : item.type,
     [],
   );
 
-  const profilePostItemType = useCallback(
-    (post: ProfileFeedPost) => post.kind,
+  const profileListItemType = useCallback(
+    (item: ProfileListItem) =>
+      item.type === 'post' ? item.post.kind : item.type,
     [],
   );
 
@@ -3114,11 +3168,11 @@ function ProfileScreen() {
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={handleCoverPress}
-              style={{ width: SCREEN_WIDTH, height: 210 }}
+              style={{ width: SCREEN_WIDTH, height: PROFILE_COVER_HEIGHT }}
             >
               <Image
                 source={{ uri: coverUrl }}
-                style={{ width: SCREEN_WIDTH, height: 210 }}
+                style={{ width: SCREEN_WIDTH, height: PROFILE_COVER_HEIGHT }}
                 resizeMode="cover"
               />
             </TouchableOpacity>
@@ -3128,36 +3182,6 @@ function ProfileScreen() {
                 <ActivityIndicator size="large" color="#ffffff" />
               </View>
             )}
-
-            {/* Floating Header Inside Cover Photo */}
-            <View
-              style={[profileMainStyles.headerOverlay, { paddingTop: safeTopInset + 8, height: safeTopInset + 48 }]}
-              pointerEvents="box-none"
-            >
-              <TouchableOpacity
-                style={profileMainStyles.circleButton}
-                activeOpacity={0.8}
-                onPress={() => navigation.goBack()}
-              >
-                <ArrowLeft size={18} color="#050505" />
-              </TouchableOpacity>
-
-              <View className="flex-row items-center gap-2">
-                <TouchableOpacity
-                  style={profileMainStyles.circleButton}
-                  activeOpacity={0.8}
-                  onPress={() => navigation.navigate(ROUTES.SEARCH)}
-                >
-                  <Search size={18} color="#050505" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={profileMainStyles.circleButton}
-                  activeOpacity={0.8}
-                >
-                  <MoreHorizontal size={18} color="#050505" />
-                </TouchableOpacity>
-              </View>
-            </View>
 
             {/* Edit Profile (own) or Cart (other) button overlapping cover photo bottom right */}
             {isOwnProfile ? (
@@ -3858,11 +3882,6 @@ function ProfileScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-          <FeedSourceFilterBar<ProfileFilterBarKey>
-            activeKey={profilePostFilter}
-            items={profilePostFilterItems}
-            onChange={handleProfilePostFilterChange}
-          />
     </>
   );
 
@@ -3898,16 +3917,61 @@ function ProfileScreen() {
     </View>
   ) : null;
 
+  const shouldRenderProfilePostsState = profilePostsEmptyComponent !== null;
+  const profileListItems = useMemo<ProfileListItem[]>(
+    () => [
+      { type: 'filter' },
+      ...(shouldRenderProfilePostsState
+        ? [{ type: 'state' } as ProfileListItem]
+        : filteredProfilePosts.map(
+            post => ({ type: 'post', post }) as ProfileListItem,
+          )),
+    ],
+    [filteredProfilePosts, shouldRenderProfilePostsState],
+  );
+
+  const renderProfileListItem = useCallback(
+    ({ item }: FlashListRenderItemInfo<ProfileListItem>) => {
+      if (item.type === 'filter') {
+        return (
+          <FeedSourceFilterBar<ProfileFilterBarKey>
+            activeKey={profilePostFilter}
+            items={profilePostFilterItems}
+            onChange={handleProfilePostFilterChange}
+          />
+        );
+      }
+
+      if (item.type === 'state') {
+        return <>{profilePostsEmptyComponent}</>;
+      }
+
+      return renderProfilePostContent(item.post);
+    },
+    [
+      handleProfilePostFilterChange,
+      profilePostFilter,
+      profilePostFilterItems,
+      profilePostsEmptyComponent,
+      renderProfilePostContent,
+    ],
+  );
+
   const profilePostsListElement = (
     <FlashList
       style={profileMainStyles.postsList}
-      data={filteredProfilePosts}
-      keyExtractor={profilePostKeyExtractor}
-      getItemType={profilePostItemType}
-      renderItem={renderProfilePostItem}
+      data={profileListItems}
+      keyExtractor={profileListItemKeyExtractor}
+      getItemType={profileListItemType}
+      renderItem={renderProfileListItem}
       ListHeaderComponent={profileContentHeader}
-      ListEmptyComponent={profilePostsEmptyComponent}
       ListFooterComponent={profilePostsFooterComponent}
+      stickyHeaderIndices={[0]}
+      stickyHeaderConfig={{
+        offset: profileHeaderHeight,
+        useNativeDriver: true,
+        hideRelatedCell: true,
+      }}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={profilePostsListContentStyle}
       scrollIndicatorInsets={{ bottom: scrollIndicatorBottomInset }}
@@ -3928,11 +3992,61 @@ function ProfileScreen() {
     />
   );
 
+  const profileHeaderOverlayElement = (
+    <View
+      style={[
+        profileMainStyles.headerOverlay,
+        {
+          paddingTop: safeTopInset + 8,
+          height: profileHeaderHeight,
+        },
+        isProfileHeaderSolid
+          ? profileMainStyles.headerOverlaySolid
+          : profileMainStyles.headerOverlayTransparent,
+      ]}
+      pointerEvents="box-none"
+    >
+      <TouchableOpacity
+        style={[
+          profileMainStyles.circleButton,
+          isProfileHeaderSolid && profileMainStyles.circleButtonOnSolidHeader,
+        ]}
+        activeOpacity={0.8}
+        onPress={() => navigation.goBack()}
+      >
+        <ArrowLeft size={18} color="#050505" />
+      </TouchableOpacity>
+
+      <View className="flex-row items-center gap-2">
+        <TouchableOpacity
+          style={[
+            profileMainStyles.circleButton,
+            isProfileHeaderSolid && profileMainStyles.circleButtonOnSolidHeader,
+          ]}
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate(ROUTES.SEARCH)}
+        >
+          <Search size={18} color="#050505" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            profileMainStyles.circleButton,
+            isProfileHeaderSolid && profileMainStyles.circleButtonOnSolidHeader,
+          ]}
+          activeOpacity={0.8}
+        >
+          <MoreHorizontal size={18} color="#050505" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={profileMainStyles.container}>
         <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
         {profilePostsListElement}
+        {profileHeaderOverlayElement}
         <EditProfileActionSheet
           visible={editSheetVisible}
           onClose={() => {
@@ -4111,6 +4225,7 @@ function ProfileScreen() {
           gestureX={gestureX}
           gestureY={gestureY}
           gestureActive={gestureActive}
+          hasDragged={hasDragged}
         />
         <PostReactionsSheet
           visible={reactionsSheetVisible}
@@ -4133,6 +4248,7 @@ function ProfileScreen() {
           onCommentTap={commentVm.openComments}
           onProfilePress={handleNavigateToProfile}
           onInternalShare={handleInternalSharePost}
+          onFollowChange={handlePhotoViewerFollowChange}
           posts={posts}
         />
         <ReelCommentsSheet
@@ -4314,7 +4430,7 @@ const profileMainStyles = StyleSheet.create({
   coverContainer: {
     position: 'relative',
     width: SCREEN_WIDTH,
-    height: 210,
+    height: PROFILE_COVER_HEIGHT,
     backgroundColor: '#E4E6EB',
   },
   headerOverlay: {
@@ -4322,11 +4438,27 @@ const profileMainStyles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
+    zIndex: 30,
+  },
+  headerOverlayTransparent: {
+    backgroundColor: 'transparent',
+    borderBottomWidth: 0,
+    borderBottomColor: 'transparent',
+    elevation: 0,
+  },
+  headerOverlaySolid: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E4E6EB',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 12,
   },
   circleButton: {
     width: 36,
@@ -4340,6 +4472,12 @@ const profileMainStyles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  circleButtonOnSolidHeader: {
+    backgroundColor: 'transparent',
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
   },
   editCoverButton: {
     position: 'absolute',

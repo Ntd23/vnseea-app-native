@@ -17,6 +17,16 @@ const repository = createReelsRepository();
 const COMMENT_PAGE_SIZE = 20;
 
 type CommentPhase = 'idle' | 'loading' | 'loading-more' | 'submitting';
+type CommentsCacheEntry = {
+  comments: ReelComment[];
+  hasMore: boolean;
+  offset: number;
+  updatedAt: number;
+};
+
+function normalizeCommentPostId(postId: string) {
+  return postId.replace(/_rc\d+_\d+$/, '');
+}
 
 interface UseFeedCommentsViewModelOptions {
   onCommentCountChange?: (postId: string, delta: number) => void;
@@ -111,44 +121,86 @@ export function useFeedCommentsViewModel({
   const commentOffsetRef = useRef(0);
   const commentInFlightRef = useRef(false);
   const replyOffsetsRef = useRef<Record<string, number>>({});
+  const commentRequestSeqRef = useRef(0);
+  const loadingCommentPostIdRef = useRef<string | null>(null);
+  const commentsCacheRef = useRef<Record<string, CommentsCacheEntry>>({});
+
+  useEffect(() => {
+    if (!selectedCommentPostId) return;
+
+    const cleanPostId = normalizeCommentPostId(selectedCommentPostId);
+    commentsCacheRef.current[cleanPostId] = {
+      comments,
+      hasMore: hasMoreComments,
+      offset: commentOffsetRef.current,
+      updatedAt: Date.now(),
+    };
+  }, [comments, hasMoreComments, selectedCommentPostId]);
 
   const openComments = useCallback(async (postId: string) => {
-    if (commentInFlightRef.current) return;
+    const cleanPostId = normalizeCommentPostId(postId);
+    if (
+      commentInFlightRef.current &&
+      loadingCommentPostIdRef.current === cleanPostId &&
+      selectedCommentPostId === postId
+    ) {
+      return;
+    }
 
+    const requestSeq = ++commentRequestSeqRef.current;
+    const cached = commentsCacheRef.current[cleanPostId];
     commentInFlightRef.current = true;
+    loadingCommentPostIdRef.current = cleanPostId;
     setSelectedCommentPostId(postId);
-    setComments([]);
-    setHasMoreComments(false);
+    setComments(cached?.comments ?? []);
+    setHasMoreComments(cached?.hasMore ?? false);
     setCommentPhase('loading');
     setCommentError(null);
-    commentOffsetRef.current = 0;
+    setRepliesById({});
+    setLoadingRepliesIds([]);
+    setReplyingTo(null);
+    replyOffsetsRef.current = {};
+    commentOffsetRef.current = cached?.offset ?? 0;
 
     try {
-      const cleanPostId = postId.replace(/_rc\d+_\d+$/, '');
       const nextComments = await repository.getComments(cleanPostId, {
         limit: COMMENT_PAGE_SIZE,
         offset: 0,
       });
+      if (commentRequestSeqRef.current !== requestSeq) return;
       setComments(nextComments);
       setHasMoreComments(nextComments.length >= COMMENT_PAGE_SIZE);
       const lastComment = nextComments[nextComments.length - 1];
       commentOffsetRef.current = Number(lastComment?.id ?? 0) || 0;
+      commentsCacheRef.current[cleanPostId] = {
+        comments: nextComments,
+        hasMore: nextComments.length >= COMMENT_PAGE_SIZE,
+        offset: commentOffsetRef.current,
+        updatedAt: Date.now(),
+      };
     } catch (caught) {
+      if (commentRequestSeqRef.current !== requestSeq) return;
       setCommentError(
         caught instanceof Error
           ? caught.message
           : 'Không tải được bình luận.',
       );
     } finally {
-      setCommentPhase('idle');
-      commentInFlightRef.current = false;
+      if (commentRequestSeqRef.current === requestSeq) {
+        setCommentPhase('idle');
+        commentInFlightRef.current = false;
+        loadingCommentPostIdRef.current = null;
+      }
     }
-  }, []);
-
+  }, [selectedCommentPostId]);
   const closeComments = useCallback(() => {
+    commentRequestSeqRef.current += 1;
+    commentInFlightRef.current = false;
+    loadingCommentPostIdRef.current = null;
     setSelectedCommentPostId(null);
     setComments([]);
     setCommentError(null);
+    setCommentPhase('idle');
     setHasMoreComments(false);
     setRepliesById({});
     setLoadingRepliesIds([]);
@@ -163,15 +215,18 @@ export function useFeedCommentsViewModel({
     if (commentInFlightRef.current) return;
 
     commentInFlightRef.current = true;
+    loadingCommentPostIdRef.current = normalizeCommentPostId(selectedCommentPostId);
+    const requestSeq = ++commentRequestSeqRef.current;
     setCommentPhase('loading-more');
     setCommentError(null);
 
     try {
-      const cleanPostId = selectedCommentPostId.replace(/_rc\d+_\d+$/, '');
+      const cleanPostId = normalizeCommentPostId(selectedCommentPostId);
       const nextComments = await repository.getComments(cleanPostId, {
         limit: COMMENT_PAGE_SIZE,
         offset: commentOffsetRef.current,
       });
+      if (commentRequestSeqRef.current !== requestSeq) return;
       setComments(prev => {
         const seen = new Set(prev.map(comment => comment.id));
         const fresh = nextComments.filter(comment => !seen.has(comment.id));
@@ -183,14 +238,18 @@ export function useFeedCommentsViewModel({
         commentOffsetRef.current = Number(lastComment.id) || commentOffsetRef.current;
       }
     } catch (caught) {
+      if (commentRequestSeqRef.current !== requestSeq) return;
       setCommentError(
         caught instanceof Error
           ? caught.message
           : 'Không tải thêm được bình luận.',
       );
     } finally {
-      setCommentPhase('idle');
-      commentInFlightRef.current = false;
+      if (commentRequestSeqRef.current === requestSeq) {
+        setCommentPhase('idle');
+        commentInFlightRef.current = false;
+        loadingCommentPostIdRef.current = null;
+      }
     }
   }, [hasMoreComments, selectedCommentPostId]);
 
@@ -235,7 +294,7 @@ export function useFeedCommentsViewModel({
       onCommentCountChange?.(selectedCommentPostId, 1);
 
       try {
-        const cleanPostId = selectedCommentPostId.replace(/_rc\d+_\d+$/, '');
+        const cleanPostId = normalizeCommentPostId(selectedCommentPostId);
         const createdComment = await repository.addComment(
           cleanPostId,
           trimmed,
