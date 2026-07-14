@@ -32,7 +32,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { useMoviesViewModel } from '../../application/view-models/useMoviesViewModel';
 import type { MovieItem } from '../../domain/types/movies.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
 type MoviesNav = NativeStackNavigationProp<RootStackParamList>;
@@ -233,7 +233,7 @@ function MoviesScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#f1f4fb' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       {/* Category Filter */}
       <View className="bg-[#f1f4fb] pb-2">
@@ -437,7 +437,7 @@ function MoviesCatalogScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#eaf0ff' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <View className="bg-white px-3 pb-4 pt-3">
         <View className="flex-row items-center gap-2">

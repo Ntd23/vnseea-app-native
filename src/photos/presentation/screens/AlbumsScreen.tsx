@@ -18,7 +18,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAlbumsViewModel } from '../../application/view-models/useAlbumsViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
 type AlbumsNav = NativeStackNavigationProp<RootStackParamList>;
@@ -287,7 +287,7 @@ function AlbumsScreen() {
   return (
     <View className="flex-1 bg-[#eaf0ff]">
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <View className="bg-[#eaf0ff]" />
       <View className="h-[58px] flex-row items-end border-b border-slate-200 bg-white px-3">

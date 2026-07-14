@@ -24,7 +24,7 @@ import { languageStorage } from '../../../shared-kernel/infrastructure/storage/l
 import { forumCopy } from '../../application/i18n/forumCopy';
 import { ChevronDown, List, MessageSquare, Search, Users, X } from 'lucide-react-native';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import type {
   ForumPageTab,
   ForumReply,
@@ -468,7 +468,7 @@ export default function ForumScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#edf3ff' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
       <View className="border-b border-slate-200 bg-white">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10 }}>
           {FORUM_TABS.map(tab => {
