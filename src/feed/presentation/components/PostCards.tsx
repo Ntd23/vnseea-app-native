@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Dimensions,
   Image,
+  InteractionManager,
   Platform,
   Pressable,
   StyleSheet,
@@ -64,6 +65,10 @@ import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
+import {
+  createCachedVideoPosterThumbnail,
+  getCachedVideoPosterThumbnail,
+} from '../../../shared-kernel/application/utils/videoThumbnails';
 import {
   FeedCardContent,
   FeedCardSurface,
@@ -972,6 +977,68 @@ const VideoFallbackPoster = React.memo(function VideoFallbackPoster({
   );
 });
 
+function useGeneratedVideoPoster({
+  videoUrl,
+  postId,
+  serverThumbnailUrl,
+  enabled,
+  isScrollBusy,
+}: {
+  videoUrl: string;
+  postId: string;
+  serverThumbnailUrl?: string;
+  enabled: boolean;
+  isScrollBusy: boolean;
+}) {
+  const cacheKey = `${postId}:${videoUrl}`;
+  const [generatedPosterUrl, setGeneratedPosterUrl] = useState(() => {
+    if (serverThumbnailUrl || !videoUrl) return undefined;
+    return getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri;
+  });
+
+  useEffect(() => {
+    if (serverThumbnailUrl || !videoUrl) {
+      setGeneratedPosterUrl(undefined);
+      return;
+    }
+    setGeneratedPosterUrl(getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri);
+  }, [cacheKey, serverThumbnailUrl, videoUrl]);
+
+  useEffect(() => {
+    if (
+      serverThumbnailUrl ||
+      !videoUrl ||
+      generatedPosterUrl ||
+      !enabled ||
+      isScrollBusy
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const task = InteractionManager.runAfterInteractions(() => {
+      createCachedVideoPosterThumbnail(videoUrl, cacheKey).then(thumbnail => {
+        if (cancelled || !thumbnail?.uri) return;
+        setGeneratedPosterUrl(thumbnail.uri);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      task.cancel?.();
+    };
+  }, [
+    cacheKey,
+    enabled,
+    generatedPosterUrl,
+    isScrollBusy,
+    serverThumbnailUrl,
+    videoUrl,
+  ]);
+
+  return serverThumbnailUrl || generatedPosterUrl;
+}
+
 // Background colors for each reaction type's circular badge (FB-style)
 const REACTION_BADGE_BG: Record<ReactionType, string> = {
   like: '#0866FF',
@@ -1507,6 +1574,17 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   );
   const hasVideoUrl = videoUrl.length > 0;
   const canAttemptVideo = hasVideoUrl && !hasVideoError;
+  const resolvedThumbnailUrl = useGeneratedVideoPoster({
+    videoUrl,
+    postId: post.id,
+    serverThumbnailUrl: post.thumbnailUrl,
+    enabled:
+      isScreenFocused !== false &&
+      hasVideoUrl &&
+      !hasVideoError &&
+      (isActive || isWarm || isPreparedKeptAlive),
+    isScrollBusy,
+  });
   const hasUserWatchedRef = useRef(getVideoPlaybackTime(post.id, 0) > 0.05);
   const warmPreviewTimeRef = useRef(0);
   const frameCoverOpacity = useSharedValue(1);
@@ -1579,7 +1657,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   // Measure thumbnail size on mount to avoid layout jumps
   useEffect(() => {
-    const thumbnailUrl = post.thumbnailUrl;
+    const thumbnailUrl = resolvedThumbnailUrl;
     if (!thumbnailUrl) return;
 
     const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(thumbnailUrl);
@@ -1605,7 +1683,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         console.warn('[HomeVideoPostCard] getSize failed for thumbnail:', err);
       },
     );
-  }, [post.thumbnailUrl]);
+  }, [resolvedThumbnailUrl]);
 
   // Refine aspect ratio when actual video loads
   const handleVideoLoad = useCallback((data: any) => {
@@ -1654,7 +1732,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           }
         },
       );
-    }, post.thumbnailUrl ? VIDEO_POSTER_REVEAL_HOLD_MS : 0);
+    }, resolvedThumbnailUrl ? VIDEO_POSTER_REVEAL_HOLD_MS : 0);
   }, [
     frameCoverOpacity,
     hideFrameCoverForMedia,
@@ -1662,7 +1740,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     keepPreparedVideoMounted,
     mediaIdentity,
     post.id,
-    post.thumbnailUrl,
+    resolvedThumbnailUrl,
     scheduleVideoQualityRamp,
   ]);
 
@@ -1833,7 +1911,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             text={post.caption}
             mentionNames={post.mentionNames}
             copy={copy}
-            collapsible={Boolean(post.thumbnailUrl || post.videoUrl)}
+            collapsible={Boolean(resolvedThumbnailUrl || post.videoUrl)}
           />
         ) : null}
       </FeedCardContent>
@@ -1844,10 +1922,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           style={{ width: '100%', height: '100%' }}
         >
           {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
-          {post.thumbnailUrl ? (
+          {resolvedThumbnailUrl ? (
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
               <FeedMediaImage
-                uri={post.thumbnailUrl}
+                uri={resolvedThumbnailUrl}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
                 deferWhileScrolling={false}
@@ -1905,7 +1983,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                     revealVideoFrame();
                   }
                 }}
-                poster={post.thumbnailUrl}
+                poster={resolvedThumbnailUrl}
                 posterResizeMode="cover"
                 onError={error => {
                   if (mediaIdentity !== mediaIdentityRef.current) return;
@@ -1923,19 +2001,19 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   );
                 }}
               />
-              {post.thumbnailUrl && isFrameCoverVisible ? (
+              {resolvedThumbnailUrl && isFrameCoverVisible ? (
                 <Animated.View
                   pointerEvents="none"
                   style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
                 >
                   <FeedMediaImage
-                    uri={post.thumbnailUrl}
+                    uri={resolvedThumbnailUrl}
                     style={{ width: '100%', height: '100%' }}
                     resizeMode="cover"
                     deferWhileScrolling={false}
                   />
                 </Animated.View>
-              ) : !post.thumbnailUrl && isFrameCoverVisible ? (
+              ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
                 <Animated.View
                   pointerEvents="none"
                   style={[
@@ -1949,7 +2027,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 </Animated.View>
               ) : null}
             </View>
-          ) : post.thumbnailUrl ? (
+          ) : resolvedThumbnailUrl ? (
             null
           ) : (
             <VideoFallbackPoster
