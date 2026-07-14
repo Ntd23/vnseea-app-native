@@ -1,5 +1,4 @@
-// Movies domain types
-// Port từ: client/src/movies/domain/types/
+// English description: Defines movie listing and creation data contracts.
 
 // --- Existing read-side types (kept for backward compatibility) -------------
 
@@ -15,15 +14,39 @@ export interface MovieItem {
   release?: string;
   quality?: string;
   views?: number | string;
+  rating?: number | string;
   duration?: string;
   category?: string;
   author?: string;
+  description?: string;
+  stars?: string;
+  producer?: string;
+  iframe?: string;
+  video?: string;
+}
+
+export interface MovieComment {
+  id: number | string;
+  text: string;
+  time?: number | string;
+  userName: string;
+  userAvatar?: string;
 }
 
 export interface MoviesResponse {
   api_status: number;
   movies: MovieItem[];
 }
+
+export type MovieFilterOption = {
+  value: string;
+  label: string;
+};
+
+export type MovieFilterMetadata = {
+  genres: MovieFilterOption[];
+  countries: MovieFilterOption[];
+};
 
 // --- Create-side constants (mirrored from phtml/assets/includes/data.php) --
 

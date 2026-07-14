@@ -169,6 +169,20 @@ export function createProductRepository(): ProductRepository {
       return response;
     },
 
+    async deleteProduct(postId: number) {
+      const response = await apiBridge.post<{
+        api_status: number | string;
+        action?: string;
+      }>(apiRoutes.feed.postActions, {
+        action: 'delete',
+        post_id: postId,
+      });
+
+      if (String(response.action).toLowerCase() !== 'deleted') {
+        throw new Error('Không thể xóa sản phẩm.');
+      }
+    },
+
     async getCategories() {
       // Fetch products with no filters to get categories from response
       const response = await apiBridge.post<ProductsResponse>(

@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { usePhotosViewModel } from '../../application/view-models/usePhotosViewModel';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { PhotosItem } from '../../domain/types/photos.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
@@ -48,6 +49,8 @@ function EmptyState({
   error: string | null;
   onRetry: () => void;
 }) {
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
   return (
     <View style={styles.emptyWrap}>
       <View style={styles.emptyIcon}>
@@ -58,10 +61,10 @@ function EmptyState({
         )}
       </View>
       <Text style={styles.emptyTitle}>
-        {error ? 'Không tải được ảnh' : 'Chưa có ảnh'}
+        {error ? (isVi ? 'Không tải được ảnh' : 'Failed to load photos') : (isVi ? 'Chưa có ảnh' : 'No photos yet')}
       </Text>
       <Text style={styles.emptyText}>
-        {error ?? 'Những ảnh bạn đăng sẽ xuất hiện tại đây.'}
+        {error ?? (isVi ? 'Những ảnh bạn đăng sẽ xuất hiện tại đây.' : 'Photos you post will appear here.')}
       </Text>
       <TouchableOpacity
         style={styles.retryButton}
@@ -69,7 +72,7 @@ function EmptyState({
         onPress={onRetry}
       >
         <RotateCw size={17} color="#FFFFFF" />
-        <Text style={styles.retryText}>Thử lại</Text>
+        <Text style={styles.retryText}>{isVi ? 'Thử lại' : 'Retry'}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -78,6 +81,8 @@ function EmptyState({
 function MyPhotosScreen() {
   const navigation = useNavigation<MyPhotosNav>();
   const vm = usePhotosViewModel();
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
 
   useFocusEffect(
     useCallback(() => {
@@ -113,7 +118,7 @@ function MyPhotosScreen() {
           >
             <ArrowLeft size={22} color="#0F172A" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Ảnh của tôi</Text>
+          <Text style={styles.headerTitle}>{isVi ? 'Ảnh của tôi' : 'My photos'}</Text>
         </View>
 
         <TouchableOpacity
@@ -153,9 +158,9 @@ function MyPhotosScreen() {
         ListHeaderComponent={
           vm.photos.length > 0 ? (
             <View style={styles.summary}>
-              <Text style={styles.summaryTitle}>{vm.photos.length} ảnh</Text>
+              <Text style={styles.summaryTitle}>{vm.photos.length} {isVi ? 'ảnh' : 'photos'}</Text>
               <Text style={styles.summaryText}>
-                Ảnh từ các bài đăng của bạn.
+                {isVi ? 'Ảnh từ các bài đăng của bạn.' : 'Photos from your posts.'}
               </Text>
             </View>
           ) : null

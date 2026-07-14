@@ -252,6 +252,23 @@ export function createAdsRepository(): AdsRepository {
       const pages = normalizePages(data.pages);
       const genders = normalizeOptions(data.genders);
       const backendPlacements = normalizeOptions(data.placements);
+      const placementLabels = new Map(
+        backendPlacements.map(item => [item.value, item.label]),
+      );
+      const placements: AdOption[] = [
+        ['entire', 'Toàn bộ trang web'],
+        ['post', 'Bài viết'],
+        ['sidebar', 'Thanh bên'],
+        ['jobs', 'Việc làm'],
+        ['forum', 'Diễn đàn'],
+        ['movies', 'Phim'],
+        ['offer', 'Ưu đãi'],
+        ['funding', 'Gây quỹ'],
+        ['story', 'Tin'],
+      ].map(([value, fallbackLabel]) => ({
+        value,
+        label: placementLabels.get(value) || fallbackLabel,
+      }));
 
       return {
         audience: normalizeOptions(data.audience),
@@ -260,7 +277,7 @@ export function createAdsRepository(): AdsRepository {
           ...genders.filter(item => item.value !== 'all'),
         ],
         pages,
-        placements: backendPlacements,
+        placements,
         clickPrice: toNumber(data.prices?.clicks),
         viewPrice: toNumber(data.prices?.views),
         currency: data.prices?.currency ?? 'VNSEEA',
