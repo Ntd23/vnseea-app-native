@@ -158,6 +158,23 @@ const DEFAULT_REGION = {
   latitudeDelta: 0.03,
   longitudeDelta: 0.03,
 };
+const ADDRESS_PLACE_MARKER_COLOR = '#0EA5A4';
+const ADDRESS_PLACE_MARKER_DARK = '#0F766E';
+const ADDRESS_PLACE_MARKER_LIGHT = '#E6FFFA';
+const ADDRESS_PLACE_LABEL_COLOR = '#0F4C5C';
+const ADDRESS_PLACE_LABEL_BACKGROUND = 'rgba(255, 255, 255, 0.94)';
+const ADDRESS_PLACE_LABEL_BORDER = 'rgba(20, 184, 166, 0.24)';
+const ADDRESS_LABEL_DELTA_HIDDEN = 0.018;
+const ADDRESS_LABEL_DELTA_MEDIUM = 0.009;
+const ADDRESS_LABEL_LIMIT_MEDIUM = 4;
+const ADDRESS_LABEL_LIMIT_CLOSE = 8;
+const HEALTH_PLACE_TYPE_SET = new Set([
+  'hospital',
+  'doctor',
+  'health',
+  'pharmacy',
+  'dentist',
+]);
 
 type SuggestionItem =
   | { id: string; kind: 'page'; page: NearbyPlace }
@@ -188,146 +205,96 @@ type RouteOption = MapRoute & {
 type LocationSource = 'gps' | 'profile' | null;
 type RouteLoadSource = 'user' | 'auto';
 
-type PageAvatarMapMarkerProps = {
+type AddressPlaceMapMarkerProps = {
   coordinate: LatLng;
-  place: Pick<NearbyPlace, 'avatarUrl' | 'id' | 'name'>;
+  title: string;
+  badgeText?: string;
+  compact?: boolean;
   selected?: boolean;
   zIndex: number;
   onPress: () => void;
 };
 
-function PageAvatarMapMarkerComponent({
+function AddressPlaceMapMarker({
   coordinate,
-  place,
+  title,
+  badgeText = '',
+  compact = false,
   selected = false,
   zIndex,
   onPress,
-}: PageAvatarMapMarkerProps) {
-  const avatarUri = place.avatarUrl || FALLBACK_AVATAR;
-  const markerInitial = useMemo(() => {
-    const trimmedName = place.name.trim();
-    return trimmedName.length > 0 ? trimmedName.charAt(0).toLocaleUpperCase('vi-VN') : 'V';
-  }, [place.name]);
-  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [imageReady, setImageReady] = useState(false);
-  const [tracksViewChanges, setTracksViewChanges] = useState(true);
-
-  useEffect(() => {
-    setImageReady(false);
-    setTracksViewChanges(true);
-    
-    // Safety fallback: stop tracking view changes after 5 seconds to optimize performance
-    const fallbackTimer = setTimeout(() => {
-      setTracksViewChanges(false);
-    }, 5000);
-
-    return () => {
-      clearTimeout(fallbackTimer);
-      if (settleTimerRef.current) {
-        clearTimeout(settleTimerRef.current);
-        settleTimerRef.current = null;
-      }
-    };
-  }, [avatarUri]);
-
-  const handleImageLoaded = useCallback(() => {
-    setImageReady(true);
-    if (settleTimerRef.current) {
-      clearTimeout(settleTimerRef.current);
-    }
-    settleTimerRef.current = setTimeout(() => {
-      setTracksViewChanges(false);
-      settleTimerRef.current = null;
-    }, 500);
-  }, []);
-
-  const handleImageError = useCallback(() => {
-    setImageReady(false);
-    if (settleTimerRef.current) {
-      clearTimeout(settleTimerRef.current);
-    }
-    settleTimerRef.current = setTimeout(() => {
-      setTracksViewChanges(false);
-      settleTimerRef.current = null;
-    }, 120);
-  }, []);
+}: AddressPlaceMapMarkerProps) {
+  const showLabel = selected || !compact;
 
   return (
     <Marker
-      anchor={{ x: 0.5, y: 1 }}
+      anchor={selected ? { x: 0.9, y: 1 } : compact ? { x: 0.5, y: 1 } : { x: 0.88, y: 1 }}
       coordinate={coordinate}
       onPress={onPress}
-      tracksViewChanges={tracksViewChanges}
+      tracksViewChanges={false}
       zIndex={zIndex}
     >
       <View
         collapsable={false}
         renderToHardwareTextureAndroid
         style={[
-          styles.pageAvatarMapMarkerRoot,
-          selected && styles.selectedPageAvatarMarker,
+          styles.healthPlaceMarkerRoot,
+          compact && styles.healthPlaceMarkerRootCompact,
+          selected && styles.healthPlaceMarkerRootSelected,
         ]}
       >
-        <View style={styles.pageAvatarMarkerStage}>
-          {selected ? <View style={styles.pageAvatarSelectedHalo} /> : null}
+        {showLabel ? (
           <View
-            collapsable={false}
-            renderToHardwareTextureAndroid
             style={[
-              styles.pageAvatarMarker,
-              selected && styles.pageAvatarMarkerSelected,
+              styles.healthPlaceMarkerLabelCard,
+              selected && styles.healthPlaceMarkerLabelCardSelected,
             ]}
           >
-            <View style={styles.pageAvatarMarkerFallback}>
-              <Text style={styles.pageAvatarMarkerFallbackText}>{markerInitial}</Text>
-            </View>
-            <Image
-              key={avatarUri}
-              source={{ uri: avatarUri }}
-              resizeMode="cover"
-              fadeDuration={0}
-              onLoadEnd={handleImageLoaded}
-              onError={handleImageError}
+            <Text
+              numberOfLines={2}
               style={[
-                styles.pageAvatarMarkerImage,
-                !imageReady && styles.pageAvatarMarkerImageLoading,
+                styles.healthPlaceMarkerLabel,
+                selected && styles.healthPlaceMarkerLabelSelected,
               ]}
-            />
+            >
+              {title}
+            </Text>
           </View>
-        </View>
-        <View
-          collapsable={false}
-          style={[
-            styles.pageAvatarNameBadge,
-            selected && styles.pageAvatarNameBadgeSelected,
-          ]}
-        >
-          <Text
-            style={[
-              styles.pageAvatarNameBadgeText,
-              selected && styles.pageAvatarNameBadgeTextSelected,
-            ]}
-            numberOfLines={1}
-          >
-            {place.name}
-          </Text>
-        </View>
+        ) : null}
+
+        {selected ? (
+          <View style={styles.healthPlaceSelectedPin}>
+            <MapPin
+              size={33}
+              color="#FFFFFF"
+              fill={ADDRESS_PLACE_MARKER_DARK}
+              strokeWidth={2.35}
+            />
+            {badgeText ? (
+              <Text style={styles.healthPlaceSelectedPinText}>{badgeText}</Text>
+            ) : (
+              <View style={styles.healthPlaceSelectedPinDot} />
+            )}
+          </View>
+        ) : (
+          <View style={styles.healthPlaceBadgePin}>
+            <MapPin
+              size={48}
+              color="#FFFFFF"
+              fill={ADDRESS_PLACE_MARKER_COLOR}
+              strokeWidth={2.2}
+            />
+            {badgeText ? (
+              <Text style={styles.healthPlaceBadgeText}>{badgeText}</Text>
+            ) : (
+              <View style={styles.healthPlaceBadgeDot} />
+            )}
+          </View>
+        )}
       </View>
     </Marker>
   );
 }
-
-const PageAvatarMapMarker = React.memo(
-  PageAvatarMapMarkerComponent,
-  (previous, next) =>
-    previous.place.id === next.place.id &&
-    previous.place.name === next.place.name &&
-    previous.place.avatarUrl === next.place.avatarUrl &&
-    previous.coordinate.latitude === next.coordinate.latitude &&
-    previous.coordinate.longitude === next.coordinate.longitude &&
-    previous.selected === next.selected &&
-    previous.zIndex === next.zIndex,
-);
 
 type TurnInstruction = {
   distanceMeters: number;
@@ -987,6 +954,28 @@ function normalizeSearchText(value: string | undefined | null) {
     .trim();
 }
 
+function isHealthPlace(types?: string[], ...labels: Array<string | undefined | null>) {
+  if (types?.some(type => HEALTH_PLACE_TYPE_SET.has(type))) {
+    return true;
+  }
+
+  const normalized = labels.map(normalizeSearchText).filter(Boolean).join(' ');
+  if (!normalized) {
+    return false;
+  }
+
+  return /\b(benh vien|phong kham|y te|huyet hoc|truyen mau|nha thuoc|hospital|clinic|doctor|health|pharmacy|dentist)\b/.test(
+    normalized,
+  );
+}
+
+function addressMarkerBadgeText(
+  types?: string[],
+  ...labels: Array<string | undefined | null>
+) {
+  return isHealthPlace(types, ...labels) ? 'H' : '';
+}
+
 function getGoogleCategorySearchQuery(value: string) {
   const normalized = normalizeSearchText(value);
 
@@ -1237,6 +1226,7 @@ export default function NearbyUsersScreen() {
   const activeDestinationRef = useRef<LatLng | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const currentRegionRef = useRef<Region>(DEFAULT_REGION);
+  const [mapRegion, setMapRegion] = useState<Region>(DEFAULT_REGION);
   const [searchResults, setSearchResults] = useState<SuggestionItem[]>([]);
   const [isSearchResultsVisible, setIsSearchResultsVisible] = useState(false);
   const searchResultsScrollRef = useRef<ScrollView>(null);
@@ -1497,6 +1487,18 @@ export default function NearbyUsersScreen() {
     selectedPoint?.source,
   ]);
 
+  const addressLabelLimit = useMemo(() => {
+    if (mapRegion.longitudeDelta > ADDRESS_LABEL_DELTA_HIDDEN) {
+      return 0;
+    }
+
+    if (mapRegion.longitudeDelta > ADDRESS_LABEL_DELTA_MEDIUM) {
+      return ADDRESS_LABEL_LIMIT_MEDIUM;
+    }
+
+    return ADDRESS_LABEL_LIMIT_CLOSE;
+  }, [mapRegion.longitudeDelta]);
+
   const nearbyQuickPlaces = useMemo(
     () =>
       pageMarkers
@@ -1671,6 +1673,12 @@ export default function NearbyUsersScreen() {
     );
   }, []);
 
+  const clearSelectedPoint = useCallback(() => {
+    setSelectedPoint(null);
+    setIsSheetCollapsed(false);
+    resetRouteState();
+  }, [resetRouteState]);
+
   useEffect(
     () =>
       subscribeNavigationHeading(heading => {
@@ -1812,6 +1820,7 @@ export default function NearbyUsersScreen() {
 
   const handleRegionChangeComplete = useCallback((region: Region) => {
     currentRegionRef.current = region;
+    setMapRegion(region);
   }, []);
 
   const handleZoomIn = useCallback(() => {
@@ -2899,7 +2908,7 @@ export default function NearbyUsersScreen() {
           </Marker>
         ) : null}
 
-        {visiblePageMarkers.map(({ place, coordinate }) => {
+        {visiblePageMarkers.map(({ place, coordinate }, markerIndex) => {
           if (
             selectedPoint?.source === 'page' &&
             selectedPoint.id === place.id
@@ -2908,11 +2917,18 @@ export default function NearbyUsersScreen() {
           }
 
           return (
-            <PageAvatarMapMarker
-              key={`${place.id}:page-avatar:${place.avatarUrl || 'fallback'}`}
+            <AddressPlaceMapMarker
+              key={`${place.id}:address-place:${markerIndex < addressLabelLimit ? 'label' : 'pin'}`}
               coordinate={coordinate}
-              place={place}
-              zIndex={12}
+              title={place.name}
+              compact={markerIndex >= addressLabelLimit}
+              badgeText={addressMarkerBadgeText(
+                undefined,
+                place.name,
+                place.category,
+                place.location,
+              )}
+              zIndex={markerIndex < addressLabelLimit ? 13 : 12}
               onPress={() => {
                 setIsSearchResultsVisible(false);
                 setSearchResults([]);
@@ -2923,14 +2939,36 @@ export default function NearbyUsersScreen() {
         })}
 
         {selectedPoint?.source === 'page' ? (
-          <PageAvatarMapMarker
-            key={`selected:${selectedPoint.id}:${selectedPoint.avatarUrl || 'fallback'}`}
+          <AddressPlaceMapMarker
+            key={`selected-address-page:${selectedPoint.id}:${selectedPoint.title}`}
             coordinate={selectedPoint.coordinate}
-            place={{
-              id: selectedPoint.id,
-              name: selectedPoint.title,
-              avatarUrl: selectedPoint.avatarUrl,
+            title={selectedPoint.title}
+            badgeText={addressMarkerBadgeText(
+              undefined,
+              selectedPoint.title,
+              selectedPoint.subtitle,
+              selectedPoint.address,
+              selectedPoint.page?.category,
+            )}
+            selected
+            zIndex={30}
+            onPress={() => {
+              setIsSheetCollapsed(false);
             }}
+          />
+        ) : selectedPoint?.source === 'google' &&
+        isHealthPlace(
+          selectedPoint.types,
+          selectedPoint.title,
+          selectedPoint.subtitle,
+          selectedPoint.address,
+          query,
+        ) ? (
+          <AddressPlaceMapMarker
+            key={`selected-health-google:${selectedPoint.id}:${selectedPoint.title}`}
+            coordinate={selectedPoint.coordinate}
+            title={selectedPoint.title}
+            badgeText="H"
             selected
             zIndex={30}
             onPress={() => {
@@ -3083,7 +3121,7 @@ export default function NearbyUsersScreen() {
 
       {/* Render search results markers on the map */}
       {isSearchResultsVisible &&
-        searchResults.map(item => {
+        searchResults.map((item, markerIndex) => {
           // Hide marker if it's currently selected to avoid double overlapping icons
           const isSelected = selectedPoint && (
             selectedPoint.id === item.id ||
@@ -3110,6 +3148,40 @@ export default function NearbyUsersScreen() {
 
           if (!coordinate) return null;
 
+          const isHealthSearchMarker =
+            item.kind === 'google'
+              ? isHealthPlace(
+                  item.prediction.types,
+                  title,
+                  item.prediction.secondaryText,
+                  item.prediction.description,
+                  query,
+                )
+              : isHealthPlace(undefined, title, item.page.category, item.page.location);
+
+          if (item.kind === 'page' || isHealthSearchMarker) {
+            return (
+              <AddressPlaceMapMarker
+                key={`search-address-marker:${item.id}:${markerIndex < addressLabelLimit ? 'label' : 'pin'}`}
+                coordinate={coordinate}
+                title={title}
+                compact={markerIndex >= addressLabelLimit}
+                badgeText={
+                  item.kind === 'google'
+                    ? 'H'
+                    : addressMarkerBadgeText(
+                        undefined,
+                        title,
+                        item.page.category,
+                        item.page.location,
+                      )
+                }
+                zIndex={markerIndex < addressLabelLimit ? 26 : 25}
+                onPress={() => handleSelectSearchResult(item)}
+              />
+            );
+          }
+
           const googleIconStyle = item.kind === 'google' ? getPlaceIconAndColor(item.prediction.types, query) : null;
           const MarkerIcon = googleIconStyle ? googleIconStyle.Icon : MapPin;
           const shouldUseGoogleIcon =
@@ -3123,41 +3195,28 @@ export default function NearbyUsersScreen() {
               title={title}
               onPress={() => handleSelectSearchResult(item)}
             >
-              {item.kind === 'page' ? (
-                <PageAvatarMapMarker
-                  coordinate={coordinate}
-                  place={{
-                    id: item.page.id,
-                    name: item.page.name,
-                    avatarUrl: item.page.avatarUrl,
-                  }}
-                  zIndex={25}
-                  onPress={() => handleSelectSearchResult(item)}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.googleCircleMarker,
-                    {
-                      backgroundColor: shouldUseGoogleIcon
-                        ? item.prediction.iconBackgroundColor ||
-                          googleIconStyle?.color ||
-                          '#1E70E6'
-                        : googleIconStyle?.color || '#1E70E6',
-                    },
-                  ]}
-                >
-                  {shouldUseGoogleIcon && item.prediction.icon ? (
-                    <Image
-                      source={{ uri: item.prediction.icon }}
-                      style={{ width: 15, height: 15, tintColor: '#FFFFFF' }}
-                      resizeMode="contain"
-                    />
-                  ) : (
-                    <MarkerIcon size={15} color="#FFFFFF" />
-                  )}
-                </View>
-              )}
+              <View
+                style={[
+                  styles.googleCircleMarker,
+                  {
+                    backgroundColor: shouldUseGoogleIcon
+                      ? item.prediction.iconBackgroundColor ||
+                        googleIconStyle?.color ||
+                        '#1E70E6'
+                      : googleIconStyle?.color || '#1E70E6',
+                  },
+                ]}
+              >
+                {shouldUseGoogleIcon && item.prediction.icon ? (
+                  <Image
+                    source={{ uri: item.prediction.icon }}
+                    style={{ width: 15, height: 15, tintColor: '#FFFFFF' }}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <MarkerIcon size={15} color="#FFFFFF" />
+                )}
+              </View>
             </Marker>
           );
         })}
@@ -3610,7 +3669,7 @@ export default function NearbyUsersScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             style={styles.sheetClose}
-            onPress={() => setIsSheetCollapsed(true)}
+            onPress={clearSelectedPoint}
           >
             <X size={18} color="#64748B" />
           </TouchableOpacity>
@@ -3817,6 +3876,8 @@ export default function NearbyUsersScreen() {
               onPress={() => {
                 setIsSearchResultsVisible(false);
                 setSearchResults([]);
+                setSelectedPoint(null);
+                resetRouteState();
               }}
             >
               <X size={16} color="#64748B" />
@@ -4723,6 +4784,124 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 5,
   },
+  healthPlaceMarkerRoot: {
+    width: 248,
+    minHeight: 70,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingRight: 0,
+  },
+  healthPlaceMarkerRootCompact: {
+    width: 54,
+    minHeight: 58,
+    justifyContent: 'center',
+  },
+  healthPlaceMarkerRootSelected: {
+    width: 190,
+    minHeight: 48,
+    paddingRight: 0,
+  },
+  healthPlaceMarkerLabelCard: {
+    maxWidth: 186,
+    marginRight: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: ADDRESS_PLACE_LABEL_BORDER,
+    backgroundColor: ADDRESS_PLACE_LABEL_BACKGROUND,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  healthPlaceMarkerLabelCardSelected: {
+    maxWidth: 142,
+    marginRight: 5,
+    borderRadius: 10,
+    borderColor: 'rgba(14, 165, 164, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    shadowOpacity: 0.06,
+    elevation: 2,
+  },
+  healthPlaceMarkerLabel: {
+    color: ADDRESS_PLACE_LABEL_COLOR,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  healthPlaceMarkerLabelSelected: {
+    color: ADDRESS_PLACE_MARKER_DARK,
+    fontSize: 9.5,
+    fontWeight: '700',
+    lineHeight: 12.5,
+    textAlign: 'right',
+  },
+  healthPlaceBadgePin: {
+    width: 50,
+    height: 58,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    shadowColor: ADDRESS_PLACE_MARKER_DARK,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 7,
+  },
+  healthPlaceBadgeText: {
+    position: 'absolute',
+    top: 11,
+    left: 0,
+    right: 0,
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  healthPlaceBadgeDot: {
+    position: 'absolute',
+    top: 18,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: ADDRESS_PLACE_MARKER_LIGHT,
+  },
+  healthPlaceSelectedPin: {
+    width: 34,
+    height: 39,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    shadowColor: ADDRESS_PLACE_MARKER_DARK,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  healthPlaceSelectedPinText: {
+    position: 'absolute',
+    top: 7,
+    left: 0,
+    right: 0,
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+    lineHeight: 12,
+    textAlign: 'center',
+  },
+  healthPlaceSelectedPinDot: {
+    position: 'absolute',
+    top: 12,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: ADDRESS_PLACE_MARKER_LIGHT,
+  },
   mapConfigNotice: {
     position: 'absolute',
     top: Platform.OS === 'android' ? 92 : 68,
@@ -4758,107 +4937,6 @@ const styles = StyleSheet.create({
   },
   pageMarkerWithBadge: {
     width: 210,
-  },
-  pageAvatarMapMarkerRoot: {
-    width: 132,
-    minHeight: 92,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: 8,
-    paddingHorizontal: 10,
-    paddingBottom: 8,
-  },
-  pageAvatarMarkerStage: {
-    width: 66,
-    height: 62,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pageAvatarSelectedHalo: {
-    position: 'absolute',
-    width: 66,
-    height: 66,
-    borderRadius: 33,
-    backgroundColor: 'rgba(0, 0, 255, 0.14)',
-    borderWidth: 2,
-    borderColor: 'rgba(0, 0, 255, 0.22)',
-  },
-  pageAvatarMarker: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    backgroundColor: '#EEF4FF',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.22,
-    shadowRadius: 5,
-    elevation: 7,
-  },
-  pageAvatarMarkerSelected: {
-    borderColor: BRAND,
-    borderWidth: 4,
-    shadowOpacity: 0.32,
-    elevation: 10,
-  },
-  pageAvatarMarkerFallback: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 24,
-    backgroundColor: '#DBEAFE',
-  },
-  pageAvatarMarkerFallbackText: {
-    color: BRAND,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  pageAvatarMarkerImage: {
-    position: 'absolute',
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#E2E8F0',
-  },
-  pageAvatarMarkerImageLoading: {
-    opacity: 0,
-  },
-  selectedPageAvatarMarker: {
-    transform: [{ scale: 1.08 }],
-  },
-  pageAvatarNameBadge: {
-    maxWidth: 112,
-    marginTop: 2,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#DDE7FF',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.16,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  pageAvatarNameBadgeSelected: {
-    borderColor: BRAND,
-    backgroundColor: BRAND,
-  },
-  pageAvatarNameBadgeText: {
-    color: '#0F172A',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  pageAvatarNameBadgeTextSelected: {
-    color: '#FFFFFF',
   },
   pageNameBadge: {
     maxWidth: 144,

@@ -438,7 +438,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             navigation.navigate(ROUTES.ALBUMS);
             return;
           case 'photos':
-            navigation.navigate(ROUTES.MY_PHOTOS);
+            navigation.navigate(ROUTES.WATCH);
             return;
           case 'videos':
             navigation.navigate(ROUTES.MY_VIDEOS);

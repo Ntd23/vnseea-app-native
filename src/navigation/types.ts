@@ -13,6 +13,8 @@ import type { FeedPost } from '../feed/domain/types/feed.types';
 import type { AdItem } from '../advertising/domain/types/ads.types';
 import type { EventsItem } from '../events/domain/types/events.types';
 import type { UserProfile } from '../user/domain/types/user.types';
+import type { OrdersItem } from '../orders/domain/types/orders.types';
+import type { FundingItem } from '../funding/domain/types/funding.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]:
@@ -103,6 +105,7 @@ export type RootStackParamList = {
   [ROUTES.ALBUMS]: undefined;
   [ROUTES.CREATE_ALBUM]: undefined;
   [ROUTES.MY_VIDEOS]: undefined;
+  [ROUTES.WATCH]: undefined;
   [ROUTES.MESSAGES]: undefined;
   [ROUTES.CREATE_GROUP_CHAT]: undefined;
   [ROUTES.CHAT]: { chat: ChatItem; product?: ProductItem };
@@ -132,6 +135,7 @@ export type RootStackParamList = {
         userId?: string;
       }
     | undefined;
+  [ROUTES.ORDER_DETAIL]: { order: OrdersItem };
   [ROUTES.PRODUCT_DETAIL]: {
     productId: number;
     product?: ProductItem;
@@ -162,7 +166,7 @@ export type RootStackParamList = {
   [ROUTES.EVENTS]: undefined;
   [ROUTES.FUNDING]: undefined;
   [ROUTES.FUNDING_DETAIL]: { fundId: string };
-  [ROUTES.CREATE_FUNDING]: undefined;
+  [ROUTES.CREATE_FUNDING]: { campaign?: FundingItem } | undefined;
   [ROUTES.FOLLOWING]: undefined;
   [ROUTES.BOOSTED]: undefined;
   [ROUTES.POPULAR]: undefined;
@@ -173,6 +177,7 @@ export type RootStackParamList = {
   [ROUTES.CREATE_BLOG]: undefined;
   [ROUTES.EDIT_BLOG]: { blogId: string };
   [ROUTES.MOVIES]: undefined;
+  [ROUTES.MOVIE_DETAIL]: { movie: import('../movies/domain/types/movies.types').MovieItem };
   [ROUTES.CREATE_MOVIE]: undefined;
   [ROUTES.JOBS]: undefined;
   [ROUTES.JOB_DETAIL]: { jobId?: string; job?: any };

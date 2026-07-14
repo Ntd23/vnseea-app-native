@@ -89,4 +89,5 @@ yarn-error.log
 
 tmp/*
 duong/*
+!duong/google-maps-ios-setup.md
 .superpowers/*

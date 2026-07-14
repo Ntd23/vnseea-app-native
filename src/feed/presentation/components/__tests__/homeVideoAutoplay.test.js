@@ -15,14 +15,31 @@ describe('Home feed video autoplay safety', () => {
     expect(feedScreenSource).not.toContain("feedPosts.find(p => p.kind === 'video')");
   });
 
-  it('uses shared muted autoplay state instead of local-only unmute behavior', () => {
+  it('uses shared audio state with feed videos muted by default', () => {
     const postCardsSource = read('src/feed/presentation/components/PostCards.tsx');
 
     expect(postCardsSource).toContain('export let feedVideoMutedSnapshot = true');
     expect(postCardsSource).toContain('function useFeedVideoMuted()');
     expect(postCardsSource).toContain('publishFeedVideoMuted(!muted)');
+    expect(postCardsSource).toContain('const isScrollBusy = useFeedScrollBusy();');
+    expect(postCardsSource).toContain('const canMountWarmVideo = !isScrollBusy || shouldKeepPreparedVideoMounted;');
+    expect(postCardsSource).toContain('!isScrollBusy &&');
+    expect(postCardsSource).toContain('(isActive ? !isScrollBusy : warmPlaying)');
+    expect(postCardsSource).toContain('muted={muted || !isActive || isScrollBusy || !hasRenderedFrame}');
     expect(postCardsSource).not.toContain('setMuted(false)');
     expect(postCardsSource).not.toContain('setMuted(true)');
     expect(postCardsSource).not.toContain('const [muted, setMuted] = useState(');
+  });
+
+  it('keeps the poster visible until the first real video frame is ready', () => {
+    const postCardsSource = read('src/feed/presentation/components/PostCards.tsx');
+
+    expect(postCardsSource).toContain('const mediaIdentity = `${post.id}:${videoUrl}`;');
+    expect(postCardsSource).toContain('if (mediaIdentity !== mediaIdentityRef.current) return;');
+    expect(postCardsSource).toContain('onReadyForDisplay={revealVideoFrame}');
+    expect(postCardsSource).toContain('!hasRenderedFrame ? { opacity: 0 } : null');
+    expect(postCardsSource).toContain('frameCoverOpacity.value = withTiming(');
+    expect(postCardsSource).toContain('runOnJS(hideFrameCoverForMedia)(mediaIdentity)');
+    expect(postCardsSource).toContain('style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}');
   });
 });

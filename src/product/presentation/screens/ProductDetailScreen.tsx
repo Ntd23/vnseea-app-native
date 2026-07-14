@@ -50,6 +50,7 @@ import type { ProductImage, ProductItem } from '../../domain/types/product.types
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import { useSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
+import { formatProductPrice } from '../components/ProductCurrency';
 
 type ProductDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.PRODUCT_DETAIL>;
 type ProductDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -62,16 +63,6 @@ const repository = createProductRepository();
 function numberValue(value: string | number | undefined | null) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function formatPrice(product: ProductItem) {
-  const value = Number(product.price);
-  const formattedPrice = Number.isFinite(value)
-    ? value.toLocaleString('vi-VN')
-    : product.price;
-  const currency =
-    product.currency_symbol || product.currency_code || product.currency || 'VNSEEA';
-  return `${formattedPrice} ${currency}`.trim();
 }
 
 function formatRelativeTime(timeValue: string | number | undefined) {
@@ -260,7 +251,7 @@ function ProductSummaryCard({ product }: { product: ProductItem }) {
 
       {/* Price */}
       <Text className="mt-2 text-2xl font-extrabold text-[#0000ff]" style={{ color: '#0000ff', fontSize: 20, marginTop: 8 }}>
-        {formatPrice(product)}
+        {formatProductPrice(product)}
       </Text>
 
       {/* Stars Rating & Reviews count */}
@@ -430,7 +421,7 @@ function RelatedProductCard({
           </View>
         ) : null}
         <Text className="mt-2 text-base font-extrabold text-[#0000ff]" numberOfLines={1}>
-          {formatPrice(product)}
+          {formatProductPrice(product)}
         </Text>
       </View>
     </TouchableOpacity>
@@ -760,7 +751,7 @@ function ProductDetailContent({
     try {
       await Share.share({
         title: product.name,
-        message: `${product.name}\n${formatPrice(product)}`,
+        message: `${product.name}\n${formatProductPrice(product)}`,
       });
     } catch (error) {
       console.warn('[ProductDetail] share error:', error);
@@ -1148,8 +1139,10 @@ function ProductDetailScreen() {
   useEffect(() => {
     let cancelled = false;
 
-    if (!productFromParams && productId) {
-      setLoading(true);
+    if (productId) {
+      if (!productFromParams) {
+        setLoading(true);
+      }
       repository
         .getProducts({ product_id: productId })
         .then(response => {

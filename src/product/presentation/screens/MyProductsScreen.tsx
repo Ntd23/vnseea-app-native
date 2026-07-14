@@ -5,6 +5,7 @@ import {
   Alert,
   Dimensions,
   FlatList,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -26,9 +27,12 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
+  Banknote,
+  Clock3,
   Download,
   Eye,
   MessageSquare,
+  Package,
   Plus,
   RotateCw,
   Search,
@@ -60,11 +64,13 @@ type MyProductsRoute = RouteProp<RootStackParamList, typeof ROUTES.MY_PRODUCTS>;
 
 const PRODUCT_COLUMNS = { justifyContent: 'space-between' } as const;
 const ORDER_DETAIL_MAX_HEIGHT = Dimensions.get('window').height * 0.82;
+const PURCHASE_COLUMNS = Dimensions.get('window').width >= 700 ? 2 : 1;
 const productRepository = createProductRepository();
 
 const TABS: Array<{ key: MyProductsTab; label: string }> = [
   { key: 'products', label: 'Sản phẩm của tôi' },
-  { key: 'orders', label: 'Đơn hàng' },
+  { key: 'purchased', label: 'Đã đặt' },
+  { key: 'marketplace', label: 'Thị trường' },
 ];
 
 const PRODUCT_SORT_OPTIONS: Array<{ label: string; value: ProductSortOption }> = [
@@ -455,6 +461,241 @@ function OrderDetailModal({
   );
 }
 
+function orderLines(order: OrdersItem): OrderLineItem[] {
+  return order.lines.length
+    ? order.lines
+    : [
+        {
+          id: order.id,
+          product: order.product,
+          total: order.total,
+          status: order.status,
+          statusLabel: order.statusLabel,
+          shop: order.shop,
+          price: order.amount,
+          quantity: 1,
+        },
+      ];
+}
+
+function formatVnd(value?: number, withDecimals = false) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return 'VND0';
+  return `VND${amount.toLocaleString(withDecimals ? 'en-US' : 'vi-VN', {
+    minimumFractionDigits: withDecimals ? 2 : 0,
+    maximumFractionDigits: withDecimals ? 2 : 0,
+  })}`;
+}
+
+function PurchasedOrderDetailModal({
+  order,
+  onClose,
+  onRequestRefund,
+}: {
+  order: OrdersItem | null;
+  onClose: () => void;
+  onRequestRefund: (orderId: string, message: string) => Promise<void>;
+}) {
+  const [refundFormVisible, setRefundFormVisible] = useState(false);
+  const [refundMessage, setRefundMessage] = useState('');
+  const [requestingRefund, setRequestingRefund] = useState(false);
+  const [refundSubmitted, setRefundSubmitted] = useState(false);
+
+  useEffect(() => {
+    setRefundFormVisible(false);
+    setRefundMessage('');
+    setRequestingRefund(false);
+    setRefundSubmitted(Boolean(order?.refundRequested));
+  }, [order]);
+
+  const lines = order ? orderLines(order) : [];
+  const subtotal = order?.amount || lines.reduce((sum, line) => sum + (line.price || 0), 0);
+  const address = order?.shippingAddress;
+
+  const submitRefund = async () => {
+    const message = refundMessage.trim();
+    if (!order || !message) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập lý do yêu cầu hoàn tiền.');
+      return;
+    }
+
+    setRequestingRefund(true);
+    try {
+      await onRequestRefund(order.id, message);
+      setRefundSubmitted(true);
+      setRefundFormVisible(false);
+      Alert.alert('Thành công', 'Yêu cầu hoàn tiền của bạn đang được xem xét.');
+    } catch (error) {
+      Alert.alert(
+        'Không thể gửi yêu cầu',
+        error instanceof Error ? error.message : 'Vui lòng thử lại sau.',
+      );
+    } finally {
+      setRequestingRefund(false);
+    }
+  };
+
+  return (
+    <Modal
+      transparent
+      visible={Boolean(order)}
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.orderDetailBackdrop}>
+        <View style={styles.purchasedDetailSheet}>
+          <View style={styles.purchasedDetailHeader}>
+            <View style={styles.purchasedDetailHeaderText}>
+              <Text style={styles.purchasedDetailTitle}>Chi tiết đơn hàng</Text>
+              <Text style={styles.purchasedDetailCode}>{order?.code}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.purchasedDetailClose}
+              activeOpacity={0.8}
+              onPress={onClose}
+            >
+              <X size={19} color="#475569" />
+            </TouchableOpacity>
+          </View>
+
+          {order ? (
+            <ScrollView
+              showsVerticalScrollIndicator
+              persistentScrollbar
+              contentContainerStyle={styles.purchasedDetailContent}
+            >
+              {order.status !== 'delivered' ? (
+                <>
+                  <View style={styles.orderInfoBanner}>
+                    <Text style={styles.orderInfoText}>
+                      Nếu trạng thái đơn đặt hàng không được đặt thành đã giao trong vòng 60 ngày kể từ ngày đặt hàng, nó sẽ tự động được gửi đến "Đã giao".
+                    </Text>
+                  </View>
+                  <View style={styles.orderInfoBanner}>
+                    <Text style={styles.orderInfoText}>
+                      Nếu đơn đặt hàng không thực sự được giao, người mua có thể yêu cầu hoàn lại tiền.
+                    </Text>
+                  </View>
+                </>
+              ) : null}
+
+              <Text style={styles.orderSectionTitle}>Địa chỉ giao hàng</Text>
+              <View style={styles.shippingAddressCard}>
+                {address ? (
+                  <>
+                    <Text style={styles.shippingName}>{address.name || 'Người nhận'}</Text>
+                    {address.phone ? <Text style={styles.shippingText}>{address.phone}</Text> : null}
+                    {address.address ? <Text style={styles.shippingText}>{address.address}</Text> : null}
+                    {[address.city, address.state, address.country]
+                      .filter(Boolean)
+                      .map((value, index) => (
+                        <Text key={`${value}-${index}`} style={styles.shippingText}>{value}</Text>
+                      ))}
+                    {address.zip ? <Text style={styles.shippingText}>{address.zip}</Text> : null}
+                  </>
+                ) : (
+                  <Text style={styles.shippingMissing}>Chưa có thông tin địa chỉ giao hàng.</Text>
+                )}
+              </View>
+
+              <View style={styles.orderProductsSection}>
+                {lines.map(line => (
+                  <View key={line.id} style={styles.orderProductRow}>
+                    <View style={styles.orderProductImageWrap}>
+                      {line.image ? (
+                        <Image source={{ uri: line.image }} style={styles.orderProductImage} resizeMode="cover" />
+                      ) : (
+                        <View style={styles.orderProductPlaceholder}>
+                          <Package size={28} color="#94a3b8" />
+                        </View>
+                      )}
+                      <View style={styles.orderProductPriceBadge}>
+                        <Text style={styles.orderProductPriceText}>{formatVnd(line.price)}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.orderProductCopy}>
+                      <Text style={styles.orderProductName} numberOfLines={3}>{line.product}</Text>
+                      <Text style={styles.orderProductQuantity}>Qty {line.quantity || 1}</Text>
+                    </View>
+                  </View>
+                ))}
+
+                <View style={styles.orderSubtotal}>
+                  <Text style={styles.orderSubtotalLabel}>Thanh toán Tổng phụ</Text>
+                  <Text style={styles.orderSubtotalValue}>{formatVnd(subtotal, true)}</Text>
+                </View>
+
+                {refundFormVisible ? (
+                  <View style={styles.refundForm}>
+                    <Text style={styles.refundLabel}>Lý do hoàn tiền</Text>
+                    <TextInput
+                      style={styles.refundInput}
+                      value={refundMessage}
+                      onChangeText={setRefundMessage}
+                      placeholder="Mô tả vấn đề với đơn hàng"
+                      placeholderTextColor="#94a3b8"
+                      multiline
+                      textAlignVertical="top"
+                    />
+                    <View style={styles.refundFormActions}>
+                      <TouchableOpacity
+                        style={styles.refundCancelButton}
+                        activeOpacity={0.8}
+                        onPress={() => setRefundFormVisible(false)}
+                      >
+                        <Text style={styles.refundCancelText}>Hủy</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.refundSubmitButton}
+                        activeOpacity={0.8}
+                        disabled={requestingRefund}
+                        onPress={submitRefund}
+                      >
+                        {requestingRefund ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text style={styles.refundSubmitText}>Gửi yêu cầu</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : null}
+
+                {refundSubmitted ? (
+                  <View style={styles.refundPendingBanner}>
+                    <Text style={styles.refundPendingText}>Yêu cầu hoàn tiền của bạn đang chờ duyệt.</Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.orderDetailActions}>
+                  <TouchableOpacity
+                    style={styles.invoiceButton}
+                    activeOpacity={0.8}
+                    onPress={() => downloadInvoiceFile(order, order.shop || 'Shop', lines)}
+                  >
+                    <Download size={15} color="#FFFFFF" />
+                    <Text style={styles.orderActionText}>Tải xuống hóa đơn</Text>
+                  </TouchableOpacity>
+                  {!refundSubmitted && order.status !== 'canceled' ? (
+                    <TouchableOpacity
+                      style={styles.refundButton}
+                      activeOpacity={0.8}
+                      onPress={() => setRefundFormVisible(true)}
+                    >
+                      <RotateCw size={15} color="#FFFFFF" />
+                      <Text style={styles.orderActionText}>Yêu cầu hoàn lại</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+            </ScrollView>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const downloadInvoiceFile = async (order: OrdersItem, shopName: string, lines: OrderLineItem[]) => {
   try {
     const cleanShopName = shopName.replace(/[^a-zA-Z0-9]/g, '_');
@@ -571,113 +812,78 @@ const downloadInvoiceFile = async (order: OrdersItem, shopName: string, lines: O
 
 function PurchasedOrderCard({
   item,
-  onDelete,
   onViewDetail,
 }: {
   item: OrdersItem;
-  onDelete: (id: string) => void;
   onViewDetail: (item: OrdersItem) => void;
 }) {
-  const groups = React.useMemo(() => {
-    const map: Record<string, OrderLineItem[]> = {};
-    const lines = item.lines.length ? item.lines : [
-      {
-        id: item.id,
-        product: item.product,
-        total: item.total,
-        status: item.status,
-        statusLabel: item.statusLabel,
-        shop: item.shop,
-      } as OrderLineItem
-    ];
-    lines.forEach(line => {
-      const shopName = line.shop || item.shop || 'Shop';
-      if (!map[shopName]) map[shopName] = [];
-      map[shopName].push(line);
-    });
-    return map;
-  }, [item]);
-
-  const handleDelete = () => {
-    Alert.alert(
-      'Xác nhận xóa',
-      'Bạn có chắc chắn muốn xóa đơn mua hàng này không?',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        { text: 'Xóa', style: 'destructive', onPress: () => onDelete(item.id) },
-      ]
-    );
-  };
+  const invoiceLines = React.useMemo(
+    () =>
+      item.lines.length
+        ? item.lines
+        : [
+            {
+              id: item.id,
+              product: item.product,
+              total: item.total,
+              status: item.status,
+              statusLabel: item.statusLabel,
+              shop: item.shop,
+            } as OrderLineItem,
+          ],
+    [item],
+  );
+  const amount = Number(item.amount);
+  const formattedAmount = Number.isFinite(amount)
+    ? amount.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    : item.total.replace(/\s*đ$/i, '');
 
   return (
-    <View className="mb-4 p-4 rounded-2xl bg-white border border-slate-100 shadow-sm">
-      {/* Header */}
-      <View className="flex-row items-center justify-between border-b border-slate-100 pb-3 mb-3" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <View>
-          <Text className="text-sm font-bold text-slate-800">{item.code}</Text>
-          <Text className="text-xs text-slate-400 mt-0.5">{item.date}</Text>
-        </View>
-        <View className="rounded-full bg-blue-50 px-2.5 py-1">
-          <Text className="text-xs font-bold text-blue-600">
-            {item.statusLabel}
+    <View className="rounded-xl border border-slate-200 bg-white px-4 py-4">
+      <Text className="text-sm font-medium text-slate-500">#{item.id}</Text>
+      <TouchableOpacity
+        activeOpacity={0.75}
+        onPress={() => onViewDetail(item)}
+        style={{ alignSelf: 'flex-start' }}
+      >
+        <Text
+          className="mt-1 text-lg font-extrabold text-slate-800"
+          numberOfLines={2}
+          style={{ textDecorationLine: 'underline' }}
+        >
+          {item.product}
+        </Text>
+      </TouchableOpacity>
+
+      <View className="mt-2 flex-row items-center">
+        <Banknote size={16} color="#475569" />
+        <Text className="ml-1.5 text-sm font-medium text-slate-600">
+          {formattedAmount}
+        </Text>
+      </View>
+
+      <View className="mt-5 flex-row items-center justify-between border-t border-slate-100 pt-3">
+        <View className="flex-row items-center">
+          <Clock3 size={16} color="#475569" />
+          <Text className="ml-1.5 text-sm text-slate-600">
+            {item.date || 'Vừa xong'}
           </Text>
         </View>
-      </View>
-
-      {/* Shop groups for invoice separation */}
-      <View className="gap-3">
-        {Object.entries(groups).map(([shopName, lines]) => {
-          return (
-            <View key={shopName} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <View className="flex-row items-center justify-between mb-2" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text className="text-xs font-extrabold text-slate-700 uppercase tracking-wide flex-1 mr-2" numberOfLines={1}>🏬 Shop: {shopName}</Text>
-                <TouchableOpacity
-                  className="flex-row items-center bg-blue-50 border border-blue-200 rounded-lg px-2 py-1"
-                  style={{ flexDirection: 'row', alignItems: 'center' }}
-                  activeOpacity={0.8}
-                  onPress={() => downloadInvoiceFile(item, shopName, lines)}
-                >
-                  <Download size={12} color="#2563EB" />
-                  <Text className="ml-1 text-[10px] font-bold text-blue-600">Tải hóa đơn</Text>
-                </TouchableOpacity>
-              </View>
-              {lines.map((line, idx) => (
-                <View key={line.id || idx} className="flex-row justify-between py-1" style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text className="text-xs text-slate-600 flex-1 pr-3" numberOfLines={1}>• {line.product}</Text>
-                  <Text className="text-xs font-bold text-slate-800">{line.total}</Text>
-                </View>
-              ))}
-            </View>
-          );
-        })}
-      </View>
-
-      {/* Total and Actions */}
-      <View className="flex-row items-center justify-between border-t border-slate-100 pt-3 mt-3" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <View>
-          <Text className="text-xs text-slate-400">Tổng cộng:</Text>
-          <Text className="text-sm font-black text-blue-600 mt-0.5">{item.total}</Text>
-        </View>
-        <View className="flex-row gap-2" style={{ flexDirection: 'row' }}>
-          <TouchableOpacity
-            className="flex-row items-center justify-center bg-slate-100 border border-slate-200 h-9 px-3 rounded-xl"
-            style={{ flexDirection: 'row', alignItems: 'center', marginRight: 8 }}
-            activeOpacity={0.85}
-            onPress={() => onViewDetail(item)}
-          >
-            <Eye size={14} color="#475569" />
-            <Text className="ml-1 text-xs font-semibold text-slate-600">Chi tiết</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            className="flex-row items-center justify-center bg-red-50 border border-red-200 h-9 px-3 rounded-xl"
-            style={{ flexDirection: 'row', alignItems: 'center' }}
-            activeOpacity={0.8}
-            onPress={handleDelete}
-          >
-            <Trash2 size={14} color="#EF4444" />
-            <Text className="ml-1 text-xs font-bold text-red-600">Xóa đơn</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          className="flex-row items-center rounded bg-[#0000ff] px-3 py-2"
+          activeOpacity={0.8}
+          onPress={() =>
+            downloadInvoiceFile(item, item.shop || 'Shop', invoiceLines)
+          }
+        >
+          <Download size={14} color="#FFFFFF" />
+          <Text className="ml-1.5 text-xs font-bold text-white">
+            Tải xuống hóa đơn
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -691,11 +897,14 @@ function MyProductsScreen() {
   const vm = useMyProductsViewModel(targetUserId);
   const { setActiveTab } = vm;
   const { cartCount, syncCartCount } = useSyncedCartCount(0);
-  const [selectedOrder, setSelectedOrder] = useState<OrdersItem | null>(null);
 
   useEffect(() => {
     if (route.params?.initialTab) {
-      setActiveTab(route.params.initialTab);
+      setActiveTab(
+        route.params.initialTab === 'orders'
+          ? 'purchased'
+          : route.params.initialTab,
+      );
     }
   }, [route.params?.initialTab, setActiveTab]);
 
@@ -745,24 +954,60 @@ function MyProductsScreen() {
     [navigation],
   );
 
+  const handleDeleteProduct = useCallback(
+    (product: ProductItem) => {
+      Alert.alert(
+        'Xóa sản phẩm',
+        `Bạn có chắc chắn muốn xóa "${product.name}"?`,
+        [
+          { text: 'Hủy', style: 'cancel' },
+          {
+            text: 'Xóa',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await vm.deleteProduct(product);
+              } catch (error) {
+                Alert.alert(
+                  'Không thể xóa sản phẩm',
+                  error instanceof Error
+                    ? error.message
+                    : 'Vui lòng thử lại.',
+                );
+              }
+            },
+          },
+        ],
+      );
+    },
+    [vm.deleteProduct],
+  );
+
   const renderProduct = useCallback(
     ({ item }: ListRenderItemInfo<ProductItem>) => (
       <View className="w-[48%]">
-        <ProductPostCard compact product={item} onPress={handleProductPress} />
+        <ProductPostCard
+          compact
+          product={item}
+          onPress={handleProductPress}
+          onDelete={item.is_owner ? handleDeleteProduct : undefined}
+          isDeleting={vm.deletingProductId === item.id}
+        />
       </View>
     ),
-    [handleProductPress],
+    [handleDeleteProduct, handleProductPress, vm.deletingProductId],
   );
 
   const renderOrder = useCallback(
     ({ item }: ListRenderItemInfo<OrdersItem>) => (
-      <OrderCard
-        item={item}
-        isSeller={vm.activeTab === 'orders'}
-        onViewDetail={setSelectedOrder}
-      />
+      <View style={{ flex: 1 }}>
+        <PurchasedOrderCard
+          item={item}
+          onViewDetail={order => navigation.navigate(ROUTES.ORDER_DETAIL, { order })}
+        />
+      </View>
     ),
-    [vm.activeTab],
+    [navigation],
   );
 
   const productFiltersActive = Boolean(
@@ -800,7 +1045,7 @@ function MyProductsScreen() {
       </View>
       */}
 
-      {!targetUserId && (
+      {!targetUserId && vm.activeTab === 'products' && (
         <View className="mx-4 my-2.5 rounded-2xl bg-white p-3 border border-slate-100 shadow-sm">
           <View className="flex-row items-center gap-3">
             <TouchableOpacity
@@ -839,18 +1084,25 @@ function MyProductsScreen() {
       <View className="flex-row items-center justify-between border-b border-slate-100 bg-white">
         <ScrollView
           horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerClassName="flex-row items-center gap-6 px-4"
+          showsHorizontalScrollIndicator
+          persistentScrollbar
+          contentContainerClassName="flex-row items-center gap-6 px-4 pb-1"
           className="flex-1"
         >
           {TABS.filter(tab => {
-            // Khi xem sản phẩm của người khác → chỉ hiện tab 'products'
+            // When viewing another user's products, keep a marketplace shortcut beside the products tab.
             if (targetUserId) {
-              return tab.key === 'products';
+              return tab.key === 'products' || tab.key === 'marketplace';
+            }
+            if (tab.key === 'marketplace') {
+              return vm.activeTab === 'purchased';
             }
             return true;
           }).map(tab => {
             const isActive = tab.key === vm.activeTab;
+            const tabLabel = targetUserId && tab.key === 'marketplace'
+              ? 'Chuyển đến Thị trường'
+              : tab.label;
 
             return (
               <TouchableOpacity
@@ -864,7 +1116,7 @@ function MyProductsScreen() {
                     isActive ? 'text-slate-900 font-bold' : 'text-slate-500'
                   }`}
                 >
-                  {tab.label}
+                  {tabLabel}
                 </Text>
                 {isActive && (
                   <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
@@ -968,7 +1220,7 @@ function MyProductsScreen() {
 
 
 
-      {vm.activeTab === 'orders' ? (
+      {vm.activeTab === 'purchased' ? (
         <>
           {/* Tạm thời comment tìm kiếm và bộ lọc ở tab Đơn hàng theo yêu cầu */}
           {/*
@@ -998,10 +1250,21 @@ function MyProductsScreen() {
           </View>
           */}
           <FlatList
-            data={vm.orderItems}
+            data={vm.purchasedItems}
             keyExtractor={item => item.id}
             renderItem={renderOrder}
-            contentContainerClassName="px-4 pb-10"
+            numColumns={PURCHASE_COLUMNS}
+            columnWrapperStyle={
+              PURCHASE_COLUMNS > 1
+                ? { gap: 16 }
+                : undefined
+            }
+            contentContainerStyle={{
+              gap: 16,
+              paddingHorizontal: 16,
+              paddingVertical: 16,
+              paddingBottom: 40,
+            }}
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               vm.isOrdersLoading ? (
@@ -1015,7 +1278,7 @@ function MyProductsScreen() {
                   }
                   description={
                     vm.ordersError ??
-                    'Đơn từ người mua sản phẩm của bạn sẽ hiển thị ở đây.'
+                    'Những sản phẩm bạn đã mua sẽ hiển thị ở đây.'
                   }
                   canRetry={Boolean(vm.ordersError)}
                   onRetry={vm.reload}
@@ -1025,13 +1288,6 @@ function MyProductsScreen() {
           />
         </>
       ) : null}
-      <OrderDetailModal
-        order={selectedOrder}
-        isSeller={vm.activeTab === 'orders'}
-        onUpdateStatus={vm.updateOrderStatus}
-        onClose={() => setSelectedOrder(null)}
-        navigation={navigation}
-      />
     </SafeAreaView>
   );
 }
@@ -1041,5 +1297,272 @@ export default MyProductsScreen;
 const styles = StyleSheet.create({
   orderDetailSheet: {
     maxHeight: ORDER_DETAIL_MAX_HEIGHT,
+  },
+  orderDetailBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.42)',
+  },
+  purchasedDetailSheet: {
+    maxHeight: Dimensions.get('window').height * 0.94,
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: 'hidden',
+  },
+  purchasedDetailHeader: {
+    minHeight: 62,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  purchasedDetailHeaderText: {
+    flex: 1,
+  },
+  purchasedDetailTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  purchasedDetailCode: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#64748b',
+  },
+  purchasedDetailClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  purchasedDetailContent: {
+    paddingBottom: 28,
+  },
+  orderInfoBanner: {
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    backgroundColor: '#dbeafe',
+    borderBottomWidth: 1,
+    borderBottomColor: '#bfdbfe',
+  },
+  orderInfoText: {
+    fontSize: 13,
+    lineHeight: 20,
+    fontWeight: '700',
+    color: '#0ea5e9',
+  },
+  orderSectionTitle: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 8,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#334155',
+    backgroundColor: '#eef2ff',
+  },
+  shippingAddressCard: {
+    marginHorizontal: 14,
+    marginVertical: 12,
+    padding: 14,
+    minHeight: 112,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+  },
+  shippingName: {
+    marginBottom: 3,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1e293b',
+  },
+  shippingText: {
+    marginTop: 2,
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#475569',
+  },
+  shippingMissing: {
+    fontSize: 13,
+    color: '#64748b',
+  },
+  orderProductsSection: {
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    borderTopWidth: 10,
+    borderTopColor: '#eef2ff',
+  },
+  orderProductRow: {
+    minHeight: 104,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 16,
+  },
+  orderProductImageWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 6,
+    overflow: 'hidden',
+    backgroundColor: '#f1f5f9',
+  },
+  orderProductImage: {
+    width: '100%',
+    height: '100%',
+  },
+  orderProductPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  orderProductPriceBadge: {
+    position: 'absolute',
+    left: 4,
+    bottom: 4,
+    maxWidth: 80,
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+    borderRadius: 4,
+    backgroundColor: 'rgba(51, 65, 85, 0.9)',
+  },
+  orderProductPriceText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  orderProductCopy: {
+    flex: 1,
+    alignSelf: 'stretch',
+    paddingLeft: 12,
+    paddingTop: 8,
+  },
+  orderProductName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  orderProductQuantity: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#64748b',
+  },
+  orderSubtotal: {
+    alignItems: 'flex-end',
+    paddingVertical: 18,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  orderSubtotalLabel: {
+    fontSize: 16,
+    color: '#475569',
+  },
+  orderSubtotalValue: {
+    marginTop: 4,
+    fontSize: 26,
+    fontWeight: '400',
+    color: '#334155',
+  },
+  refundForm: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#f8fafc',
+  },
+  refundLabel: {
+    marginBottom: 7,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  refundInput: {
+    minHeight: 86,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    fontSize: 14,
+    color: '#0f172a',
+  },
+  refundFormActions: {
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  refundCancelButton: {
+    minWidth: 74,
+    height: 38,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refundCancelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  refundSubmitButton: {
+    minWidth: 112,
+    height: 38,
+    borderRadius: 6,
+    backgroundColor: '#22c55e',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refundSubmitText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  refundPendingBanner: {
+    marginTop: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: 6,
+    backgroundColor: '#dbeafe',
+  },
+  refundPendingText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0284c7',
+  },
+  orderDetailActions: {
+    paddingTop: 18,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  invoiceButton: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: '#38bdf8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refundButton: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: '#4ade80',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  orderActionText: {
+    marginLeft: 6,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#ffffff',
   },
 });

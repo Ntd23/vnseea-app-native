@@ -30,6 +30,12 @@ export interface ProductItem {
   currency: string;
   currency_code: string;
   currency_symbol: string;
+  price_format?: string;
+  currency_rule?: {
+    decimals: number;
+    decimal_sep: string;
+    thousand_sep: string;
+  };
   location: string;
   lat?: string;
   lng?: string;

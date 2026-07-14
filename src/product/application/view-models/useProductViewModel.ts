@@ -53,7 +53,12 @@ function buildInitialFormData(product?: ProductItem): ProductFormData {
     product_price: product.price ? String(product.price) : '',
     product_location: product.location ?? '',
     product_type: Number(product.type ?? 0),
-    currency: product.currency || product.currency_code || 'VND',
+    currency:
+      product.currency !== undefined &&
+      product.currency !== null &&
+      String(product.currency) !== ''
+        ? String(product.currency)
+        : product.currency_code || 'VND',
     lat: product.lat ?? '',
     lng: product.lng ?? '',
     units: product.units,
@@ -126,6 +131,10 @@ export function useProductViewModel(initialProduct?: ProductItem) {
       errors.product_description = 'Mô tả phải ít nhất 10 ký tự';
     }
 
+    if (!formData.product_location.trim()) {
+      errors.product_location = 'Vui lòng nhập địa điểm';
+    }
+
     if (formData.images.length === 0 && !hasExistingImages) {
       errors.images = 'Vui lòng thêm ít nhất 1 hình ảnh';
     }
@@ -165,6 +174,11 @@ export function useProductViewModel(initialProduct?: ProductItem) {
       case 6: // Images
         if (formData.images.length === 0 && !hasExistingImages) {
           errors.images = 'Vui l\u00f2ng th\u00eam \u00edt nh\u1ea5t 1 h\u00ecnh \u1ea3nh';
+        }
+        break;
+      case 7: // Location
+        if (!formData.product_location.trim()) {
+          errors.product_location = 'Vui lòng nhập địa điểm';
         }
         break;
     }

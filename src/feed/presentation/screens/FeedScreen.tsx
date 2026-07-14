@@ -30,6 +30,7 @@ import {
 import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -176,22 +177,27 @@ const FEED_EARLY_LOAD_DISTANCE_MULTIPLIER = 2.25;
 const FEED_EARLY_LOAD_MIN_DISTANCE = 1600;
 const FEED_NEW_POST_PROBE_INTERVAL_MS = 30000;
 const FEED_NEW_POST_PROBE_LIMIT = 8;
-const INITIAL_IMAGE_PREFETCH_ITEMS = 8;
-const IMAGE_PREFETCH_LOOKAHEAD = 14;
+const FEED_IS_ANDROID = Platform.OS === 'android';
+const INITIAL_IMAGE_PREFETCH_ITEMS = FEED_IS_ANDROID ? 6 : 8;
+const FEED_CAROUSEL_IMAGE_PREFETCH_ITEMS = 4;
+const IMAGE_PREFETCH_LOOKAHEAD = FEED_IS_ANDROID ? 9 : 14;
 const IMAGE_PREFETCH_BEHIND = 2;
-const MAX_IMAGE_PREFETCH_URLS = 20;
-const IMAGE_PREFETCH_BATCH_SIZE = 4;
-const IMAGE_PREFETCH_BATCH_DELAY_MS = 90;
+const MAX_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 12 : 20;
+const IMAGE_PREFETCH_BATCH_SIZE = FEED_IS_ANDROID ? 3 : 4;
+const IMAGE_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 120 : 90;
 const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = 8;
-const FEED_VIDEO_WARM_BEHIND_ITEMS = 6;
-const FEED_VIDEO_WARM_AHEAD_ITEMS = 8;
-const FEED_VIDEO_WARM_MAX_COUNT = 3;
+const FEED_VIDEO_WARM_BEHIND_ITEMS = FEED_IS_ANDROID ? 2 : 6;
+const FEED_VIDEO_WARM_AHEAD_ITEMS = FEED_IS_ANDROID ? 4 : 12;
+const FEED_VIDEO_WARM_MAX_COUNT = FEED_IS_ANDROID ? 1 : 3;
+const FEED_SCROLLING_VIDEO_WARM_MAX_COUNT = FEED_IS_ANDROID ? 0 : 1;
 const FEED_VIDEO_VIEWABLE_PERCENT = 55;
-const FEED_VIDEO_ACTIVE_DWELL_MS = 240;
-const FEED_LIST_INITIAL_RENDER_COUNT = 6;
-const FEED_LIST_RENDER_BATCH_SIZE = 6;
-const FEED_LIST_WINDOW_SIZE = 9;
-const FEED_LIST_BATCHING_PERIOD_MS = 40;
+const FEED_VIDEO_ACTIVE_DWELL_MS = 120;
+const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
+const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
+const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
+  ? Math.max(3200, Math.round(FEED_SCREEN_HEIGHT * 3.8))
+  : Math.max(5600, Math.round(FEED_SCREEN_HEIGHT * 6));
+const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 16 : 30;
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: 24,
 };
@@ -209,6 +215,7 @@ const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
     ? ['left', 'right']
     : ['top', 'left', 'right', 'bottom'];
 const FEED_LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
+type FeedScrollDirection = 'up' | 'down' | 'none';
 
 function logFeedLiveDebug(event: string, data: Record<string, unknown> = {}) {
   const payload = {
@@ -1284,6 +1291,53 @@ function collectFeedPostImageUrls(post: FeedPost): string[] {
   return urls;
 }
 
+function pushRemoteFeedImageUrl(urls: string[], url?: string | null) {
+  const normalizedUrl = url ?? undefined;
+  if (isRemoteFeedImageUrl(normalizedUrl)) {
+    urls.push(normalizedUrl);
+  }
+}
+
+function collectFeedListItemImageUrls(item: FeedListItem): string[] {
+  if (item.type === 'post') {
+    return collectFeedPostImageUrls(item.post);
+  }
+
+  const urls: string[] = [];
+
+  if (item.type === 'live') {
+    pushRemoteFeedImageUrl(urls, item.item.publisher.avatarUrl);
+    pushRemoteFeedImageUrl(urls, item.item.thumbnailUrl);
+    return urls;
+  }
+
+  if (item.type === 'groups-carousel') {
+    item.groups.slice(0, FEED_CAROUSEL_IMAGE_PREFETCH_ITEMS).forEach(group => {
+      pushRemoteFeedImageUrl(urls, group.cover);
+      pushRemoteFeedImageUrl(urls, group.avatar);
+    });
+    return urls;
+  }
+
+  if (item.type === 'pages-carousel') {
+    item.pages.slice(0, FEED_CAROUSEL_IMAGE_PREFETCH_ITEMS).forEach(page => {
+      pushRemoteFeedImageUrl(urls, page.cover);
+      pushRemoteFeedImageUrl(urls, page.avatar);
+    });
+    return urls;
+  }
+
+  if (item.type === 'funding-carousel') {
+    item.campaigns
+      .slice(0, FEED_CAROUSEL_IMAGE_PREFETCH_ITEMS)
+      .forEach(campaign => {
+        pushRemoteFeedImageUrl(urls, campaign.image);
+      });
+  }
+
+  return urls;
+}
+
 // Section wrapper â€” header + empty/loading/error states + list of cards.
 
 function interleaveSupplementalPosts(
@@ -1347,7 +1401,7 @@ function FeedScreen() {
   const shareFeedPost = vm.sharePost;
   const reloadFeedPosts = vm.reloadPosts;
   const peekLatestFeedPosts = vm.peekLatestPosts;
-  const mainFeedListRef = useRef<FlatList>(null);
+  const mainFeedListRef = useRef<FlashListRef<FeedListItem>>(null);
   const [hasNewPosts, setHasNewPosts] = useState(false);
   const pendingNewPostsRef = useRef<FeedPost[]>([]);
   const feedPostsRef = useRef<FeedPost[]>(feedPosts);
@@ -1554,6 +1608,7 @@ function FeedScreen() {
   );
   const feedMeasureRequestRef = useRef(0);
   const feedScrollYRef = useRef(0);
+  const feedScrollDirectionRef = useRef<FeedScrollDirection>('none');
   const feedViewportHeightRef = useRef(0);
   const isScrollingRef = useRef(false);
   const lastLoadMoreRequestAtRef = useRef(0);
@@ -1708,7 +1763,7 @@ function FeedScreen() {
       pickViewableFeedVideoId() ?? pendingActiveVideoIdRef.current;
     pendingActiveVideoIdRef.current = null;
     if (pendingVideoId !== activeVideoIdRef.current) {
-      scheduleActiveFeedVideo(pendingVideoId);
+      scheduleActiveFeedVideo(pendingVideoId, true);
     }
     measureActiveFeedVideoOnScreen(false);
   }, [
@@ -1737,6 +1792,11 @@ function FeedScreen() {
   const handleFeedScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const previousY = feedScrollYRef.current;
+      const deltaY = contentOffset.y - previousY;
+      if (Math.abs(deltaY) > FEED_SCROLL_DIRECTION_THRESHOLD) {
+        feedScrollDirectionRef.current = deltaY > 0 ? 'down' : 'up';
+      }
       feedScrollYRef.current = contentOffset.y;
       feedViewportHeightRef.current = layoutMeasurement.height;
 
@@ -1865,14 +1925,25 @@ function FeedScreen() {
     measureActiveFeedVideoOnScreen,
   ]);
 
-  // Subscribe to local post-created events and place them in the same
-  // pending queue used by the remote latest-post probe.
+  // Subscribe to posts created by the current user and show them instantly.
+  // Remote new posts still use the floating "new posts" button, but a post
+  // the user just submitted should land in the feed immediately.
   useEffect(() => {
     const unsubscribe = postCreatedEvents.subscribe(post => {
-      enqueueNewPostCandidates([post]);
+      if (!post?.id) return;
+      pendingNewPostsRef.current = pendingNewPostsRef.current.filter(
+        pendingPost => pendingPost.id !== post.id,
+      );
+      if (pendingNewPostsRef.current.length === 0) {
+        setHasNewPosts(false);
+      }
+      prependFeedPost(post);
+      requestAnimationFrame(() => {
+        mainFeedListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      });
     });
     return unsubscribe;
-  }, [enqueueNewPostCandidates]);
+  }, [prependFeedPost]);
 
   const [composerModalVisible, setComposerModalVisible] = useState(false);
   const [composerInitialAction, setComposerInitialAction] = useState<'photo' | 'video' | 'product' | 'poll' | undefined>(undefined);
@@ -2270,9 +2341,10 @@ function FeedScreen() {
       const urlsToPrefetch: string[] = [];
       for (let index = start; index < end; index += 1) {
         const item = items[index];
-        if (item?.type !== 'post') continue;
 
-        for (const url of collectFeedPostImageUrls(item.post)) {
+        if (!item) continue;
+
+        for (const url of collectFeedListItemImageUrls(item)) {
           if (prefetchedImageUrlsRef.current.has(url)) continue;
           if (queuedImagePrefetchUrlsRef.current.has(url)) continue;
 
@@ -2285,8 +2357,10 @@ function FeedScreen() {
         if (urlsToPrefetch.length >= MAX_IMAGE_PREFETCH_URLS) break;
       }
 
-      pendingImagePrefetchUrlsRef.current.push(...urlsToPrefetch);
-      scheduleImagePrefetchFlush();
+      if (urlsToPrefetch.length > 0) {
+        pendingImagePrefetchUrlsRef.current.push(...urlsToPrefetch);
+        scheduleImagePrefetchFlush();
+      }
     },
     [scheduleImagePrefetchFlush],
   );
@@ -2296,6 +2370,7 @@ function FeedScreen() {
       const items = feedListItemsRef.current;
       if (items.length === 0 || viewableItems.length === 0) return;
 
+      let firstVisibleIndex = Number.POSITIVE_INFINITY;
       let furthestVisibleIndex = -1;
       viewableItems.forEach(viewable => {
         if (!viewable?.isViewable) return;
@@ -2308,17 +2383,24 @@ function FeedScreen() {
               ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
               : -1;
 
-        if (index > furthestVisibleIndex) {
-          furthestVisibleIndex = index;
-        }
+        if (index < 0) return;
+        if (index < firstVisibleIndex) firstVisibleIndex = index;
+        if (index > furthestVisibleIndex) furthestVisibleIndex = index;
       });
 
       if (furthestVisibleIndex < 0) return;
 
-      prefetchFeedImagesInRange(
-        furthestVisibleIndex - IMAGE_PREFETCH_BEHIND,
-        furthestVisibleIndex + IMAGE_PREFETCH_LOOKAHEAD + 1,
-      );
+      const direction = feedScrollDirectionRef.current;
+      const startIndex =
+        direction === 'up'
+          ? firstVisibleIndex - IMAGE_PREFETCH_LOOKAHEAD
+          : furthestVisibleIndex - IMAGE_PREFETCH_BEHIND;
+      const endIndex =
+        direction === 'up'
+          ? firstVisibleIndex + IMAGE_PREFETCH_BEHIND + 1
+          : furthestVisibleIndex + IMAGE_PREFETCH_LOOKAHEAD + 1;
+
+      prefetchFeedImagesInRange(startIndex, endIndex);
     },
     [prefetchFeedImagesInRange],
   );
@@ -2389,7 +2471,7 @@ function FeedScreen() {
         viewable.item.post.kind === 'video',
     )?.item?.post?.id;
     const activeVideoId =
-      typeof nextActiveVideoId === 'string'
+      !isScrollingRef.current && typeof nextActiveVideoId === 'string'
         ? nextActiveVideoId
         : activeVideoIdRef.current;
     const warmVideoIds: string[] = [];
@@ -2410,17 +2492,35 @@ function FeedScreen() {
       pushCandidateIndex(index);
     }
 
+    const direction = feedScrollDirectionRef.current;
     const maxWarmOffset = Math.max(
       FEED_VIDEO_WARM_AHEAD_ITEMS,
       FEED_VIDEO_WARM_BEHIND_ITEMS,
     );
     for (let offset = 1; offset <= maxWarmOffset; offset += 1) {
-      if (offset <= FEED_VIDEO_WARM_AHEAD_ITEMS) {
-        pushCandidateIndex(furthestVisibleIndex + offset);
+      if (direction === 'up') {
+        if (offset <= FEED_VIDEO_WARM_BEHIND_ITEMS) {
+          pushCandidateIndex(firstVisibleIndex - offset);
+        }
+        if (offset <= FEED_VIDEO_WARM_AHEAD_ITEMS) {
+          pushCandidateIndex(furthestVisibleIndex + offset);
+        }
+      } else {
+        if (offset <= FEED_VIDEO_WARM_AHEAD_ITEMS) {
+          pushCandidateIndex(furthestVisibleIndex + offset);
+        }
+        if (offset <= FEED_VIDEO_WARM_BEHIND_ITEMS) {
+          pushCandidateIndex(firstVisibleIndex - offset);
+        }
       }
-      if (offset <= FEED_VIDEO_WARM_BEHIND_ITEMS) {
-        pushCandidateIndex(firstVisibleIndex - offset);
-      }
+    }
+
+    const warmVideoLimit = isScrollingRef.current
+      ? FEED_SCROLLING_VIDEO_WARM_MAX_COUNT
+      : FEED_VIDEO_WARM_MAX_COUNT;
+    if (warmVideoLimit <= 0) {
+      publishFeedWarmVideoIds([]);
+      return;
     }
 
     for (const index of candidateIndices) {
@@ -2429,13 +2529,13 @@ function FeedScreen() {
       if (item.post.id === activeVideoId) continue;
 
       warmVideoIds.push(item.post.id);
-      if (warmVideoIds.length >= FEED_VIDEO_WARM_MAX_COUNT) break;
+      if (warmVideoIds.length >= warmVideoLimit) break;
     }
 
     publishFeedWarmVideoIds(warmVideoIds);
   }, []);
 
-  // Viewability config for FlatList autoplay
+  // Viewability config for FlashList autoplay.
   const viewabilityConfigRef = useRef({
     itemVisiblePercentThreshold: FEED_VIDEO_VIEWABLE_PERCENT,
     minimumViewTime: 0,
@@ -2944,14 +3044,13 @@ function FeedScreen() {
   }, [feedListItems, setActiveFeedVideo]);
 
   // â”€â”€ Smart image prefetch â€” only the next ~10 upcoming items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Image prefetching is driven by FlatList viewability above so upcoming
+  // Image prefetching is driven by FlashList viewability above so upcoming
   // media enters cache before scroll.
   // Separate memoized render functions for each type - prevents full re-render
   const renderVideoPost = useCallback(
     ({ item }: { item: FeedVideoPost }) => (
       <View ref={node => setFeedVideoRef(item.id, node)}>
         <HomeVideoPostCard
-          key={item.id}
           post={item}
           copy={copy}
           onReact={handleToggleReactionStable}
@@ -2962,6 +3061,7 @@ function FeedScreen() {
           navigateToProfile={navigateToProfile}
           onOpenPostMenu={handleOpenPostMenu}
           isScreenFocused={isFeedTabFocused}
+          keepPreparedVideoMounted={!FEED_IS_ANDROID}
         />
       </View>
     ),
@@ -2982,7 +3082,6 @@ function FeedScreen() {
   const renderTextPost = useCallback(
     ({ item }: { item: FeedTextPost }) => (
       <TextPostCard
-        key={item.id}
         post={item}
         copy={copy}
         onReact={handleToggleReactionStable}
@@ -3013,7 +3112,6 @@ function FeedScreen() {
   const renderProductPost = useCallback(
     ({ item }: { item: FeedProductPost }) => (
       <FeedProductPostCard
-        key={item.id}
         post={item}
         onPress={handleProductPress}
         onProfilePress={navigateToProfile}
@@ -3026,7 +3124,6 @@ function FeedScreen() {
   const renderEventPost = useCallback(
     ({ item }: { item: FeedEventPost }) => (
       <FeedEventPostCard
-        key={item.id}
         post={item}
         copy={copy}
         onPress={handleEventPress}
@@ -3057,7 +3154,6 @@ function FeedScreen() {
   const renderPollPost = useCallback(
     ({ item }: { item: FeedPollPost }) => (
       <PollPostCard
-        key={item.id}
         post={item}
         language={language}
         onVote={voteFeedPoll}
@@ -3097,7 +3193,7 @@ function FeedScreen() {
 
   const renderAdPost = useCallback(
     ({ item }: { item: FeedAdPost }) => (
-      <FeedAdPostCard key={item.id} post={item} copy={copy} />
+      <FeedAdPostCard post={item} copy={copy} />
     ),
     [copy],
   );
@@ -3105,7 +3201,6 @@ function FeedScreen() {
   const renderJobPost = useCallback(
     ({ item }: { item: FeedJobPost }) => (
       <FeedJobPostCard
-        key={item.id}
         post={item}
         copy={copy}
         onPress={handleJobPress}
@@ -3252,6 +3347,28 @@ function FeedScreen() {
 
   const keyExtractor = useCallback((item: FeedListItem) => item.id, []);
 
+  const feedListItemType = useCallback((item: FeedListItem) => {
+    if (item.type !== 'post') return item.type;
+    return `post-${item.post.kind}`;
+  }, []);
+
+  const feedListExtraData = useMemo(
+    () => ({
+      isFeedTabFocused,
+      language,
+      userAvatar: userVm.user?.avatar,
+      userId: userVm.user?.userId,
+      userName: userVm.user?.name,
+    }),
+    [
+      isFeedTabFocused,
+      language,
+      userVm.user?.avatar,
+      userVm.user?.userId,
+      userVm.user?.name,
+    ],
+  );
+
   const androidListHeaderComponent = useMemo(
     () => renderFeedIntro(),
     [renderFeedIntro],
@@ -3263,20 +3380,19 @@ function FeedScreen() {
   );
 
   const feedListElement = (
-    <FlatList
+    <FlashList
       ref={mainFeedListRef}
       data={Platform.OS === 'ios' ? iosFeedListItems : feedListItems}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
-      extraData={language}
-      initialNumToRender={FEED_LIST_INITIAL_RENDER_COUNT}
-      maxToRenderPerBatch={FEED_LIST_RENDER_BATCH_SIZE}
-      updateCellsBatchingPeriod={FEED_LIST_BATCHING_PERIOD_MS}
-      windowSize={FEED_LIST_WINDOW_SIZE}
-      removeClippedSubviews={Platform.OS === 'android'}
+      getItemType={feedListItemType}
+      extraData={feedListExtraData}
       ListHeaderComponent={
         Platform.OS === 'ios' ? undefined : androidListHeaderComponent
       }
+      drawDistance={FEED_LIST_DRAW_DISTANCE}
+      maxItemsInRecyclePool={FEED_LIST_RECYCLE_POOL_SIZE}
+      maintainVisibleContentPosition={{ disabled: true }}
       decelerationRate="normal"
       showsVerticalScrollIndicator={false}
       nestedScrollEnabled

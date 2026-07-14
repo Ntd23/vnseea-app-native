@@ -31,6 +31,7 @@ import type {
 } from '../../../reels/domain/types/reels.types';
 
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
 
 const repository = createFeedRepository();
 
@@ -96,6 +97,30 @@ function normalizePickedCaptionValue(suggestion: ReelCaptionSuggestion) {
     .trim()
     .replace(/\s+/g, '');
   return normalized ? `#${normalized}` : '#';
+}
+
+async function ensureDraftVideoThumbnail(
+  draft: CreatePostDraft,
+): Promise<CreatePostDraft> {
+  const video = draft.video;
+  if (!video || video.thumbnailUri) {
+    return draft;
+  }
+
+  const thumbnail = await createVideoUploadThumbnail(video.uri);
+  if (!thumbnail?.uri) {
+    return draft;
+  }
+
+  return {
+    ...draft,
+    video: {
+      ...video,
+      thumbnailUri: thumbnail.uri,
+      thumbnailName: thumbnail.name,
+      thumbnailType: thumbnail.type,
+    },
+  };
 }
 
 // Reasonable defaults so the screen can render without first-touch
@@ -393,9 +418,39 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
       // Swap displayed `@FullName` → backend `@username` right before
       // we hit the wire. The user still sees the friendly form in the
       // input; only the persisted record uses the canonical username.
+      const uploadDraft = await ensureDraftVideoThumbnail(draft);
+      if (
+        uploadDraft.video?.thumbnailUri &&
+        draft.video &&
+        !draft.video.thumbnailUri
+      ) {
+        setDraft(prev => {
+          if (
+            !prev.video ||
+            prev.video.uri !== draft.video?.uri ||
+            prev.video.thumbnailUri
+          ) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            video: {
+              ...prev.video,
+              thumbnailUri: uploadDraft.video?.thumbnailUri,
+              thumbnailName: uploadDraft.video?.thumbnailName,
+              thumbnailType: uploadDraft.video?.thumbnailType,
+            },
+          };
+        });
+      }
+
       const apiDraft: CreatePostDraft = {
-        ...draft,
-        text: serializeTextForBackend(draft.text, captionMentionReplacements),
+        ...uploadDraft,
+        text: serializeTextForBackend(
+          uploadDraft.text,
+          captionMentionReplacements,
+        ),
       };
       const result = await repository.createPost(apiDraft);
       // Notify the parent FIRST (so the feed updates) then reset our

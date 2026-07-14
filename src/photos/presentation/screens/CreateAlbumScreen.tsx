@@ -33,6 +33,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type CreateAlbumNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -170,7 +171,7 @@ type CreateAlbumResponse = {
   };
 };
 
-function CreateAlbumScreen() {
+function LegacyCreateAlbumScreen() {
   const navigation = useNavigation<CreateAlbumNav>();
   const language = useAppLanguage();
   const copy = useMemo(() => CREATE_ALBUM_COPY[language] || CREATE_ALBUM_COPY.vi, [language]);
@@ -776,6 +777,180 @@ function CreateAlbumScreen() {
         </ScaleButton>
       </Animated.View>
     </SafeAreaView>
+  );
+}
+
+function CreateAlbumScreen() {
+  const navigation = useNavigation<CreateAlbumNav>();
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
+  const [albumName, setAlbumName] = useState('');
+  const [selectedImages, setSelectedImages] = useState<Asset[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const selectImages = async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      selectionLimit: 0,
+    });
+
+    if (result.errorCode) {
+      Alert.alert(
+        isVi ? 'Lỗi' : 'Error',
+        result.errorMessage || (isVi ? 'Không thể mở thư viện ảnh.' : 'Could not open the photo library.'),
+      );
+      return;
+    }
+
+    if (result.assets?.length) {
+      setSelectedImages(result.assets.filter(asset => Boolean(asset.uri)));
+    }
+  };
+
+  const publishAlbum = async () => {
+    if (!albumName.trim()) {
+      Alert.alert(isVi ? 'Lỗi' : 'Error', isVi ? 'Vui lòng nhập tên album.' : 'Please enter an album name.');
+      return;
+    }
+    if (selectedImages.length === 0) {
+      Alert.alert(isVi ? 'Lỗi' : 'Error', isVi ? 'Vui lòng chọn ít nhất một ảnh.' : 'Please select at least one image.');
+      return;
+    }
+    if (!sessionStorage.getSession()?.userId) {
+      Alert.alert(isVi ? 'Lỗi' : 'Error', isVi ? 'Vui lòng đăng nhập để tạo album.' : 'Please sign in to create an album.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await apiBridge.multipart<CreateAlbumResponse>(
+        apiRoutes.photos.create,
+        {
+          type: 'create',
+          album_name: albumName.trim(),
+          postPhotos: selectedImages.map((image, index) => ({
+            uri: image.uri,
+            name: image.fileName || `album_${Date.now()}_${index}.jpg`,
+            type: image.type || 'image/jpeg',
+          })),
+        },
+      );
+
+      if (response.api_status !== 200 && response.api_status !== '200') {
+        throw new Error(response.errors?.error_text || (isVi ? 'Không thể tạo album.' : 'Could not create the album.'));
+      }
+
+      Alert.alert(
+        isVi ? 'Thành công' : 'Success',
+        isVi ? 'Album đã được tạo.' : 'The album was created.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
+      );
+    } catch (error) {
+      Alert.alert(
+        isVi ? 'Lỗi' : 'Error',
+        error instanceof Error ? error.message : (isVi ? 'Không thể tạo album.' : 'Could not create the album.'),
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const coverImage = selectedImages[0]?.uri;
+
+  return (
+    <View className="flex-1 bg-[#eaf0ff]">
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
+
+      <ScrollView
+        className="flex-1 bg-white"
+        contentContainerStyle={{ padding: 14, paddingBottom: 28 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text className="mb-2 text-sm font-bold text-slate-800">
+          {isVi ? 'Tên album' : 'Album name'}
+        </Text>
+        <TextInput
+          value={albumName}
+          onChangeText={setAlbumName}
+          editable={!isSubmitting}
+          className="h-12 rounded-[7px] border border-slate-300 px-3 text-slate-800"
+        />
+        <Text className="mb-5 mt-1 text-xs text-slate-500">
+          {isVi ? 'Chọn tên album của bạn' : 'Choose a name for your album'}
+        </Text>
+
+        <Text className="mb-2 text-sm font-bold text-slate-800">
+          {isVi ? 'Hình ảnh' : 'Images'}
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.88}
+          disabled={isSubmitting}
+          onPress={selectImages}
+          className="h-[280px] overflow-hidden rounded-[6px] bg-[#e5e7eb]"
+        >
+          {coverImage ? (
+            <Image source={{ uri: coverImage }} className="h-full w-full" resizeMode="cover" />
+          ) : (
+            <View className="h-full w-full bg-[#e5e7eb]" />
+          )}
+          <View className="absolute inset-0 justify-end bg-black/20 px-4 pb-5">
+            <View className="items-center">
+              <ImagePlus size={25} color="#FFFFFF" fill="#FFFFFF" />
+              <Text className="mt-2 text-center text-sm text-white">
+                {isVi ? 'Thả hình ảnh ở đây HOẶC Duyệt để tải lên' : 'Drop images here OR browse to upload'}
+              </Text>
+              {selectedImages.length > 0 && (
+                <Text className="mt-1 text-xs font-bold text-white">
+                  {selectedImages.length} {isVi ? 'ảnh đã chọn' : 'images selected'}
+                </Text>
+              )}
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {selectedImages.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3">
+            {selectedImages.map((image, index) => (
+              <View key={`${image.uri}-${index}`} className="mr-2 overflow-hidden rounded-[4px]">
+                <Image source={{ uri: image.uri }} className="h-16 w-16" resizeMode="cover" />
+                <TouchableOpacity
+                  className="absolute right-1 top-1 h-5 w-5 items-center justify-center rounded-full bg-black/60"
+                  onPress={() => setSelectedImages(current => current.filter((_, itemIndex) => itemIndex !== index))}
+                >
+                  <X size={12} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        <View className="mt-7 flex-row items-center justify-end gap-6">
+          <TouchableOpacity
+            disabled={isSubmitting}
+            className="h-11 flex-row items-center px-2"
+            onPress={() => navigation.goBack()}
+          >
+            <ChevronLeft size={18} color="#64748b" />
+            <Text className="ml-1 text-sm text-slate-500">{isVi ? 'Quay lại' : 'Go back'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            disabled={isSubmitting}
+            className="h-11 min-w-[120px] items-center justify-center rounded-[6px] bg-[#0000ff] px-5"
+            onPress={publishAlbum}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text className="font-bold text-white">{isVi ? 'Công bố' : 'Publish'}</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 

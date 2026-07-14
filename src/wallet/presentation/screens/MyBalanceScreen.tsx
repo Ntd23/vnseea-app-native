@@ -43,6 +43,7 @@ import {
   parsePositivePoints,
 } from '../../domain/services/pointsTransfer';
 import { pendingPointsTransferRequestStorage } from '../../infrastructure/storage/pointsTransferRequestStorage';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type BalanceNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -587,38 +588,22 @@ function MyBalanceScreen() {
   }, [fetchAndSetRecipientFromQr, isVi, username, walletOverview?.currentUser?.id]);
   if (isLoading && !walletOverview) {
     return (
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-        <FocusAwareStatusBar barStyle="dark-content" />
-        <View className="h-16 flex-row items-center px-4 border-b border-slate-100 bg-white">
-          <TouchableOpacity activeOpacity={0.8} onPress={() => navigation.goBack()}>
-            <ArrowLeft size={24} color="#0000ff" />
-          </TouchableOpacity>
-          <Text className="flex-1 text-center text-xl font-extrabold text-slate-950">
-            {copy.header}
-          </Text>
-          <View className="w-10" />
-        </View>
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+        <FeedHeader />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="small" color="#0000ff" />
           <Text className="text-sm font-bold text-slate-500 mt-4">{copy.loading}</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (error && !walletOverview) {
     return (
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-        <FocusAwareStatusBar barStyle="dark-content" />
-        <View className="h-16 flex-row items-center px-4 border-b border-slate-100 bg-white">
-          <TouchableOpacity activeOpacity={0.8} onPress={() => navigation.goBack()}>
-            <ArrowLeft size={24} color="#0000ff" />
-          </TouchableOpacity>
-          <Text className="flex-1 text-center text-xl font-extrabold text-slate-950">
-            {copy.header}
-          </Text>
-          <View className="w-10" />
-        </View>
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+        <FeedHeader />
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-sm font-extrabold text-center text-red-500 mb-4">
             {copy.errorOccurred}: {error}
@@ -632,7 +617,7 @@ function MyBalanceScreen() {
             <Text className="text-sm font-extrabold text-blue-600">{copy.retry}</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -650,35 +635,17 @@ function MyBalanceScreen() {
   }`;
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" />
-
-      {/* Header */}
-      <View className="h-16 flex-row items-center justify-between border-b border-slate-100 bg-white px-4">
-        <TouchableOpacity
-          activeOpacity={0.82}
-          onPress={() => navigation.goBack()}
-          className="h-11 w-11 items-center justify-center rounded-full bg-slate-50"
-        >
-          <ArrowLeft size={24} color="#0000ff" />
-        </TouchableOpacity>
-        <Text className="flex-1 text-center text-xl font-extrabold text-slate-950" numberOfLines={1}>
-          {copy.header}
-        </Text>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => void reload()}
-          className="h-11 w-11 items-center justify-center rounded-full bg-slate-50"
-        >
-          <RefreshCw size={18} color="#64748b" />
-        </TouchableOpacity>
-      </View>
+    <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
 
       <FlatList
         data={walletOverview?.transactions || []}
         keyExtractor={item => String(item.id)}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
+        refreshing={isLoading}
+        onRefresh={reload}
         ListHeaderComponent={
           <View className="mb-4">
             {/* Top Balance Panel */}
@@ -1075,7 +1042,7 @@ function MyBalanceScreen() {
           </View>
         </SafeAreaView>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 

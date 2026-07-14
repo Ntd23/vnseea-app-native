@@ -16,7 +16,77 @@ if ($wo['config']['forum'] == 0) {
 }
 
 if (empty($error_code)) {
-    if ($action == 'threads') {
+    if ($action == 'members') {
+        $member_key = !empty($_POST['key']) ? Wo_Secure($_POST['key']) : '';
+        $members = Wo_GetForumUsers(array(
+            'key' => $member_key,
+            'name' => $keyword,
+            'offset' => $offset,
+            'limit' => $limit
+        ));
+
+        $response_data = array(
+            'api_status' => 200,
+            'members' => $members,
+            'total_members' => Wo_GetTotalUsers(),
+            'has_more' => count($members) >= 10,
+            'next_offset' => !empty($members) ? end($members)['user_id'] : null
+        );
+    } else if ($action == 'search') {
+        $search_in = !empty($_POST['search_in']) ? Wo_Secure($_POST['search_in']) : 'threads';
+        $search_terms = !empty($_POST['search_terms']) ? Wo_Secure($_POST['search_terms']) : '';
+        $section = (!empty($_POST['section']) && is_numeric($_POST['section'])) ? Wo_Secure($_POST['section']) : false;
+        $search_only = !empty($_POST['search_only']);
+
+        if (strlen($search_terms) < 4 || !in_array($search_in, array('forums', 'threads', 'messages'))) {
+            $response_data = array(
+                'api_status' => 400,
+                'errors' => array('error_text' => 'search terms must contain at least 4 characters')
+            );
+        } else if ($search_in == 'forums') {
+            $sections = Wo_GetForumSec(array(
+                'search' => true,
+                'id' => $section,
+                'keyword' => $search_terms,
+                'forums' => true
+            ));
+            $response_data = array('api_status' => 200, 'sections' => $sections);
+        } else if ($search_in == 'messages') {
+            $replies = Wo_SearchThreadReplies(array(
+                'subject' => $search_terms,
+                'reply' => $search_only ? $search_terms : false,
+                'limit' => $limit
+            ));
+            $response_data = array('api_status' => 200, 'replies' => $replies);
+        } else {
+            $threads = Wo_GetForumThreads(array(
+                'search' => true,
+                'limit' => $limit,
+                'subject' => $search_terms,
+                'post' => $search_only ? $search_terms : false,
+                'order_by' => 'DESC'
+            ));
+            foreach ($threads as $key => $thread) {
+                $threads[$key]['forum_data'] = Wo_GetForum($thread['forum']);
+            }
+            $response_data = array('api_status' => 200, 'threads' => $threads);
+        }
+    } else if ($action == 'my_messages') {
+        if ($wo['loggedin'] == false) {
+            $response_data = array(
+                'api_status' => 401,
+                'errors' => array('error_text' => 'login is required')
+            );
+        } else {
+            $replies = Wo_GetMyReplies(array('offset' => $offset, 'limit' => $limit));
+            $response_data = array(
+                'api_status' => 200,
+                'replies' => $replies,
+                'has_more' => count($replies) >= $limit,
+                'next_offset' => !empty($replies) ? end($replies)['id'] : null
+            );
+        }
+    } else if ($action == 'threads') {
         $forum_id = (!empty($_POST['forum_id']) && is_numeric($_POST['forum_id'])) ? Wo_Secure($_POST['forum_id']) : 0;
         $forum = $forum_id ? Wo_GetForum($forum_id) : array();
 
@@ -213,6 +283,7 @@ if (empty($error_code)) {
         'api_status' => 200,
         'can_create' => !empty($wo['config']['can_use_forum']),
         'sections' => $sections,
+        'search_sections' => Wo_GetForumSec(array('forums' => false)),
         'has_more' => count($sections) >= $limit,
         'next_offset' => !empty($sections) ? end($sections)['id'] : null
     );

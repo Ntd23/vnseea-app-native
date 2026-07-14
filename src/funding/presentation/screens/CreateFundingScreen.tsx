@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   AlertCircle,
@@ -36,6 +36,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type CreateFundingNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -50,7 +51,7 @@ const CREATE_FUNDING_COPY = {
     placeholderTitle: 'Ví dụ: Xây dựng cầu cho vùng cao',
     labelDesc: 'MÔ TẢ',
     placeholderDesc: 'Mô tả chi tiết mục đích, hoàn cảnh và kế hoạch sử dụng số tiền...',
-    labelAmount: 'SỐ TIỀN MỤC TIÊU',
+    labelAmount: 'Bạn muốn nhận được bao nhiêu VNSEEA',
     labelImage: 'ẢNH ĐẠI DIỆN',
     chooseImage: 'Chọn hình ảnh',
     changeImage: 'Đổi ảnh khác',
@@ -77,7 +78,7 @@ const CREATE_FUNDING_COPY = {
     placeholderTitle: 'e.g., Build a bridge for highland kids',
     labelDesc: 'DESCRIPTION',
     placeholderDesc: 'Detail the purpose, context, and plan for using the funds...',
-    labelAmount: 'TARGET AMOUNT',
+    labelAmount: 'How much VNSEEA do you want to receive?',
     labelImage: 'CAMPAIGN COVER',
     chooseImage: 'Choose image',
     changeImage: 'Change image',
@@ -150,6 +151,10 @@ function IconField({ icon, children, multiline, hasError }: IconFieldProps) {
 
 function CreateFundingScreen() {
   const navigation = useNavigation<CreateFundingNav>();
+  const route = useRoute<RouteProp<RootStackParamList, typeof ROUTES.CREATE_FUNDING>>();
+  const campaign = route.params?.campaign;
+  const isEditing = !!campaign;
+
   const language = useAppLanguage();
   const isVi = language === 'vi';
   const copy = CREATE_FUNDING_COPY[language] || CREATE_FUNDING_COPY.vi;
@@ -163,7 +168,7 @@ function CreateFundingScreen() {
     updateField,
     resetForm,
     handleSubmit,
-  } = useCreateFundingViewModel();
+  } = useCreateFundingViewModel(campaign);
 
   // Screen Entrance Animation
   const opacity = useRef(new Animated.Value(0)).current;
@@ -205,7 +210,7 @@ function CreateFundingScreen() {
   };
 
   const handleBack = useCallback(() => {
-    if (form.title || form.description || form.amount || form.image) {
+    if (!isEditing && (form.title || form.description || form.amount || form.image)) {
       Alert.alert(
         copy.alertCancelTitle,
         copy.alertCancelMessage,
@@ -221,7 +226,7 @@ function CreateFundingScreen() {
     } else {
       navigation.goBack();
     }
-  }, [form, navigation, copy]);
+  }, [form, navigation, copy, isEditing]);
 
   const handlePickImage = useCallback(async () => {
     try {
@@ -258,10 +263,14 @@ function CreateFundingScreen() {
             <CheckCircle2 size={44} color="#22c55e" />
           </View>
           <Text className="mt-6 text-[22px] font-extrabold text-[#0F172A] text-center">
-            {copy.successTitle}
+            {isEditing 
+              ? (isVi ? 'Cập nhật thành công!' : 'Update Successful!')
+              : copy.successTitle}
           </Text>
           <Text className="mt-2 text-center text-[14px] font-semibold text-[#64748B] leading-6 px-4">
-            {copy.successDesc}
+            {isEditing 
+              ? (isVi ? 'Chiến dịch của bạn đã được cập nhật thành công.' : 'Your campaign has been successfully updated.')
+              : copy.successDesc}
           </Text>
           <View className="mt-8 w-full gap-3 px-4">
             <TouchableOpacity
@@ -277,15 +286,17 @@ function CreateFundingScreen() {
                 {copy.btnBackList}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              className="min-h-[54px] items-center justify-center rounded-full border border-[#E2E8F0] bg-white shadow-sm"
-              activeOpacity={0.85}
-              onPress={resetForm}
-            >
-              <Text className="text-[16px] font-bold text-[#64748B]">
-                {copy.btnCreateAnother}
-              </Text>
-            </TouchableOpacity>
+            {!isEditing && (
+              <TouchableOpacity
+                className="min-h-[54px] items-center justify-center rounded-full border border-[#E2E8F0] bg-white shadow-sm"
+                activeOpacity={0.85}
+                onPress={resetForm}
+              >
+                <Text className="text-[16px] font-bold text-[#64748B]">
+                  {copy.btnCreateAnother}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </SafeAreaView>
@@ -293,23 +304,57 @@ function CreateFundingScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F8FAFC]" edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }} edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <FeedHeader />
 
       {/* App Bar Header */}
-      <View className="flex-row items-center justify-between px-4 py-3 bg-[#F8FAFC]">
-        <View className="flex-row items-center gap-2.5">
-          <TouchableOpacity
-            className="h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-100 shadow-sm"
-            style={{ elevation: 1 }}
-            activeOpacity={0.75}
-            onPress={handleBack}
-          >
-            <ArrowLeft size={18} color="#0F172A" />
-          </TouchableOpacity>
-          <Text className="text-[20px] font-extrabold text-[#0F172A]">{copy.headerTitle}</Text>
-        </View>
-        <View className="w-9" />
+      <View
+        style={{
+          height: 64,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          backgroundColor: '#FFFFFF',
+          borderBottomWidth: 1,
+          borderBottomColor: '#f1f5f9',
+          zIndex: 1000,
+          elevation: 1000,
+        }}
+      >
+        <TouchableOpacity
+          onPress={handleBack}
+          activeOpacity={0.7}
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: '#ffffff',
+            borderWidth: 1,
+            borderColor: '#f1f5f9',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: 12,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            elevation: 2,
+          }}
+        >
+          <ArrowLeft size={22} color="#0F172A" />
+        </TouchableOpacity>
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: '800',
+            color: '#0F172A',
+            flex: 1,
+          }}
+          numberOfLines={1}
+        >
+          {isEditing ? (isVi ? 'Chỉnh sửa chiến dịch' : 'Edit Campaign') : copy.headerTitle}
+        </Text>
       </View>
 
       <KeyboardAvoidingView
@@ -342,10 +387,12 @@ function CreateFundingScreen() {
               </View>
               <View className="ml-4 flex-1">
                 <Text className="text-[17px] font-extrabold text-[#0F172A]">
-                  {copy.subHeaderTitle}
+                  {isEditing ? (isVi ? 'Cập nhật chiến dịch' : 'Update Campaign') : copy.subHeaderTitle}
                 </Text>
                 <Text className="mt-1 text-[12px] font-semibold text-[#64748B] leading-5">
-                  {copy.subHeaderDesc}
+                  {isEditing 
+                    ? (isVi ? 'Cập nhật thông tin để mọi người hiểu và tiếp tục ủng hộ.' : 'Update information to help people understand and support.') 
+                    : copy.subHeaderDesc}
                 </Text>
               </View>
             </View>
@@ -422,7 +469,7 @@ function CreateFundingScreen() {
                   }
                 />
                 <View className="ml-2 rounded-lg bg-[#EFF6FF] px-2.5 py-1">
-                  <Text className="text-[11px] font-extrabold" style={{ color: BRAND_COLOR }}>VND</Text>
+                  <Text className="text-[11px] font-extrabold" style={{ color: BRAND_COLOR }}>VNSEEA</Text>
                 </View>
               </IconField>
               {errors.amount ? (
@@ -516,11 +563,11 @@ function CreateFundingScreen() {
           >
             {isSubmitting ? (
               <Text className="text-[16px] font-bold text-white">
-                {copy.btnCreating}
+                {isEditing ? (isVi ? 'Đang lưu...' : 'Saving...') : copy.btnCreating}
               </Text>
             ) : (
               <Text className="text-[16px] font-bold text-white">
-                {copy.btnPublish}
+                {isEditing ? (isVi ? 'Lưu thay đổi' : 'Save Changes') : copy.btnPublish}
               </Text>
             )}
           </TouchableOpacity>
