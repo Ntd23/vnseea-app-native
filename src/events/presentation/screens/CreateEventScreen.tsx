@@ -33,7 +33,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import {
   languageStorage,
   type AppLanguage,
@@ -630,7 +630,7 @@ function CreateEventScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <ScrollView
         style={{ flex: 1 }}

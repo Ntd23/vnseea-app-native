@@ -40,7 +40,11 @@ import {
   Check,
 } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import {
+  useNavigation,
+  usePreventRemove,
+  useRoute,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useProductViewModel } from '../../application/view-models/useProductViewModel';
@@ -54,6 +58,8 @@ import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import AddressAutocomplete from '../../../shared-kernel/presentation/components/AddressAutocomplete';
 
 type CreateProductNav = NativeStackNavigationProp<RootStackParamList>;
+
+const PRODUCT_HEADER_COLOR = '#5252ff';
 
 type RootStackParamList = {
   Feed: undefined;
@@ -617,15 +623,23 @@ export default function CreateProductScreen() {
   }, []);
 
   const handleBack = useCallback(() => {
+    navigation.goBack();
+  }, [navigation]);
+
+  usePreventRemove(!submitSuccess, ({ data }) => {
     Alert.alert(
       isEditing ? 'Hủy chỉnh sửa' : 'Hủy tạo sản phẩm',
       'Bạn có chắc muốn hủy? Thông tin đã nhập sẽ không được lưu.',
       [
         { text: 'Không', style: 'cancel' },
-        { text: 'Có', style: 'destructive', onPress: () => navigation.goBack() },
+        {
+          text: 'Có',
+          style: 'destructive',
+          onPress: () => navigation.dispatch(data.action),
+        },
       ],
     );
-  }, [navigation, isEditing]);
+  });
 
   const handleAddImage = useCallback(async () => {
     try {
@@ -740,12 +754,44 @@ export default function CreateProductScreen() {
 
   // MAIN FORM STATE
   return (
-    <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: PRODUCT_HEADER_COLOR }}
+      edges={['top']}
+    >
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={PRODUCT_HEADER_COLOR} />
+
+      {/* Curved Wave Header */}
+      <View style={{ backgroundColor: PRODUCT_HEADER_COLOR, paddingTop: 20, paddingBottom: 28, position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={handleBack}
+          style={{ position: 'absolute', right: 20, top: 20, height: 32, width: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: 'rgba(255, 255, 255, 0.2)' }}
+        >
+          <X size={18} color="#ffffff" />
+        </TouchableOpacity>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ height: 36, width: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.2)', marginRight: 10 }}>
+            <ShoppingBag size={18} color="#ffffff" />
+          </View>
+          <Text style={{ fontSize: 18, fontWeight: '900', color: '#ffffff' }}>
+            {isEditing ? 'Cập nhật sản phẩm' : 'Bán sản phẩm mới'}
+          </Text>
+        </View>
+
+        {/* SVG Wave bottom decoration */}
+        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 16 }}>
+          <Svg height="100%" width="100%" viewBox="0 0 1440 320" preserveAspectRatio="none">
+            <Path
+              d="M0,160 C480,260 960,260 1440,160 L1440,320 L0,320 Z"
+              fill="#ffffff"
+            />
+          </Svg>
+        </View>
+      </View>
 
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: '#ffffff' }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
@@ -1053,6 +1099,6 @@ export default function CreateProductScreen() {
         onSelect={(val) => updateFormData('currency', val)}
         onClose={() => setCurrencyModalVisible(false)}
       />
-    </View>
+    </SafeAreaView>
   );
 }

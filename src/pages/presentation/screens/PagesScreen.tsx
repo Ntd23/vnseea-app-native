@@ -45,7 +45,7 @@ import type { PagesFilter, PagesItem } from '../../domain/types/pages.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 
 type PagesNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -687,7 +687,7 @@ function PagesScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <FilterTabs
         activeFilter={vm.activeFilter}
@@ -1207,4 +1207,3 @@ const styles = StyleSheet.create({
 });
 
 export default PagesScreen;
-

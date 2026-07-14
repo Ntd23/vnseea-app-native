@@ -25,7 +25,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getJobsCopy } from '../../application/i18n/jobsCopy';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -235,7 +235,7 @@ function CreateJobScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <KeyboardAvoidingView
         className="flex-1"

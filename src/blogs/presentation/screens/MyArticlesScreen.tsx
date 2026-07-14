@@ -14,7 +14,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Edit3, FileText, Plus, Trash2 } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -205,7 +205,7 @@ function MyArticlesScreen() {
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={{ zIndex: 10, elevation: 5, backgroundColor: '#FFFFFF' }}>
-        <FeedHeader />
+        <SafeAreaFeedHeader />
       </View>
 
       <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#CBD5E1', backgroundColor: '#FFFFFF' }}>
@@ -261,4 +261,3 @@ function MyArticlesScreen() {
 }
 
 export default MyArticlesScreen;
-

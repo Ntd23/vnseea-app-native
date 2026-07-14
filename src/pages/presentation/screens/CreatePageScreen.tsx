@@ -59,7 +59,7 @@ import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { usePagesViewModel } from '../../application/view-models/usePagesViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import type {
   CreatePageDraft,
   PagePrivileges,
@@ -1564,7 +1564,7 @@ function CreatePageScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

@@ -36,7 +36,7 @@ import type { AdBiddingType, AdGender, AdAppearsType } from '../../domain/types/
 import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { Pressable } from 'react-native';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import {
@@ -995,7 +995,7 @@ function CreateAdScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <ScrollView className="flex-1 bg-[#eef3ff]" showsVerticalScrollIndicator={false}>
         <View className="mt-3 bg-white">

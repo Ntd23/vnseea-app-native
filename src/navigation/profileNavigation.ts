@@ -1,4 +1,5 @@
 import { ROUTES } from './constants/routes';
+import { Platform } from 'react-native';
 import { sessionStorage } from '../shared-kernel/infrastructure/storage/sessionStorage';
 
 type NavigateLike = {
@@ -39,7 +40,15 @@ function pushProfileRoute(
 
 export function navigateToOwnProfile(navigation: NavigateLike) {
   const rootNavigator = getRootNavigator(navigation);
-  pushProfileRoute(rootNavigator, ROUTES.PROFILE);
+
+  if (Platform.OS !== 'ios') {
+    rootNavigator.navigate(ROUTES.PROFILE);
+    return;
+  }
+
+  rootNavigator.navigate(ROUTES.MAIN_TABS, {
+    screen: ROUTES.PROFILE,
+  });
 }
 
 export function navigateToUserProfile(

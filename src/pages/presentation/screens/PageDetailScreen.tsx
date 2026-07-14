@@ -75,7 +75,7 @@ import {
 import { ComposerCard } from '../../../feed/presentation/components/ComposerCard';
 import { CreatePostModal } from '../../../feed/presentation/screens/CreatePostScreen';
 import PostReactionsSheet from '../../../feed/presentation/components/PostReactionsSheet';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import {
   PhotoViewerModal,
   type PhotoViewerState,
@@ -1988,7 +1988,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     <View className="flex-1 surface-base">
       <FocusAwareStatusBar barStyle="dark-content" />
 
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <FlatList
         className="flex-1"

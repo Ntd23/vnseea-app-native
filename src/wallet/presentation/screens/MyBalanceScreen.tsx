@@ -33,8 +33,16 @@ import { useEarningsViewModel } from '../../application/view-models/useEarningsV
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { RootStackParamList } from '../../../navigation/types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { createWalletRepository } from '../../infrastructure/repositories/ApiWalletRepository';
+import {
+  encodePointsQrPayload,
+  parsePointsQrPayload,
+  parsePositivePoints,
+} from '../../domain/services/pointsTransfer';
+import { pendingPointsTransferRequestStorage } from '../../infrastructure/storage/pointsTransferRequestStorage';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 
 type BalanceNav = NativeStackNavigationProp<RootStackParamList>;
@@ -59,6 +67,8 @@ type ParsedTransferQr = {
   username: string;
   amount: string;
 };
+
+const walletRepository = createWalletRepository();
 
 const BALANCE_COPY = {
   vi: {
@@ -245,7 +255,7 @@ function parseQueryParams(query: string, parsed: ParsedTransferQr) {
     });
 }
 
-function parseTransferQrPayload(code: string): ParsedTransferQr {
+function parseLegacyTransferQrPayload(code: string): ParsedTransferQr {
   const cleanCode = stripWrappingQuotes(code).trim();
   const parsed: ParsedTransferQr = { userId: '', username: '', amount: '' };
 
@@ -268,7 +278,7 @@ function parseTransferQrPayload(code: string): ParsedTransferQr {
         }
         return parsed;
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
   }
@@ -309,6 +319,21 @@ function parseTransferQrPayload(code: string): ParsedTransferQr {
   }
 
   return parsed;
+}
+
+function parseTransferQrForScreen(code: string): ParsedTransferQr | null {
+  const pointsPayload = parsePointsQrPayload(code);
+  if (pointsPayload) {
+    return {
+      userId: pointsPayload.userId,
+      username: pointsPayload.username,
+      amount: pointsPayload.points ? String(pointsPayload.points) : '',
+    };
+  }
+  if (/^(POINTS|WALLET)\|/i.test(stripWrappingQuotes(code).trim())) {
+    return null;
+  }
+  return parseLegacyTransferQrPayload(code);
 }
 
 function MyBalanceScreen() {
@@ -433,8 +458,8 @@ function MyBalanceScreen() {
       return;
     }
 
-    const numericAmount = Number(sendAmount);
-    if (Number.isNaN(numericAmount) || numericAmount <= 0) {
+    const numericAmount = parsePositivePoints(sendAmount);
+    if (!numericAmount) {
       Alert.alert(isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Warning', copy.invalidAmount);
       return;
     }
@@ -445,27 +470,45 @@ function MyBalanceScreen() {
       return;
     }
 
+    const senderId = Number(sessionStorage.getSession()?.userId || 0);
+    if (!Number.isSafeInteger(senderId) || senderId <= 0) {
+      Alert.alert(isVi ? 'LÃ¡Â»â€”i' : 'Error', 'Authentication is required.');
+      return;
+    }
+    const requestId = pendingPointsTransferRequestStorage.getOrCreate({
+      senderId,
+      recipientUserId: selectedRecipient.id,
+      points: numericAmount,
+      note: '',
+    });
+
     setIsSubmitting(true);
     try {
-      const response = await apiBridge.post<{ api_status: number; message?: string }>('wallet', {
-        type: 'send',
-        user_id: String(selectedRecipient.id),
-        amount: String(numericAmount),
+      const response = await walletRepository.transferPoints({
+        recipientUserId: selectedRecipient.id,
+        points: numericAmount,
+        requestId,
       });
 
-      if (response && response.api_status === 200) {
-        Alert.alert(isVi ? 'ThÃƒÂ nh cÃƒÂ´ng' : 'Success', copy.successSend);
-        setIsSendModalVisible(false);
-        // Reset form
-        setSearchQuery('');
-        setSearchResults([]);
-        setSelectedRecipient(null);
-        setSendAmount('');
-        reload();
-      } else {
-        Alert.alert(isVi ? 'LÃ¡Â»â€”i' : 'Error', response?.message || 'Server error');
-      }
+      pendingPointsTransferRequestStorage.clear(response.requestId || requestId);
+      Alert.alert(isVi ? 'ThÃƒÂ nh cÃƒÂ´ng' : 'Success', response.message || copy.successSend);
+      setIsSendModalVisible(false);
+      setSearchQuery('');
+      setSearchResults([]);
+      setSelectedRecipient(null);
+      setSendAmount('');
+      reload();
     } catch (err: any) {
+      const status = Number(err?.response?.status || err?.apiStatus || 0);
+      const errorCode = String(
+        err?.response?.data?.error_code || err?.errorId || '',
+      );
+      if (
+        [400, 422].includes(status) ||
+        (status === 409 && errorCode === 'idempotency_conflict')
+      ) {
+        pendingPointsTransferRequestStorage.clear(requestId);
+      }
       Alert.alert(isVi ? 'LÃ¡Â»â€”i' : 'Error', err?.message || 'Network error');
     } finally {
       setIsSubmitting(false);
@@ -503,9 +546,17 @@ function MyBalanceScreen() {
     if (!code) return;
     setIsScannerVisible(false);
 
-    const payload = parseTransferQrPayload(code);
+    const payload = parseTransferQrForScreen(code);
     console.log('[MyBalanceScreen] QR scanned value', code);
     console.log('[MyBalanceScreen] QR parsed payload', payload);
+
+    if (!payload) {
+      Alert.alert(
+        isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Notice',
+        isVi ? 'Mã QR VNSEEA không hợp lệ.' : 'Invalid VNSEEA QR code.',
+      );
+      return;
+    }
 
     const scannedCurrentUserId = Number(payload.userId || 0);
     const currentUserId = Number(walletOverview?.currentUser?.id || 0);
@@ -572,16 +623,15 @@ function MyBalanceScreen() {
 
 
 
-  // Match the Nuxt wallet QR flow: /requests.php?f=qrcode&s=wallet-qr-code&to=<user_id>&amount=<amount>
+  // App and Nuxt share the canonical POINTS QR protocol.
   const currentUserId = Number(walletOverview?.currentUser?.id || 0);
-  const normalizedQrAmount = Number(qrAmount);
-  const normalizedQrAmountText = Number.isFinite(normalizedQrAmount) && normalizedQrAmount > 0
-    ? normalizedQrAmount.toFixed(2)
+  const normalizedQrPoints = qrAmount ? parsePositivePoints(qrAmount) : null;
+  const qrPayload = currentUserId > 0
+    ? encodePointsQrPayload({recipientUserId: currentUserId, points: normalizedQrPoints})
     : '';
-  const qrPayload = `WALLET|to=${String(currentUserId)}${normalizedQrAmountText ? `|amount=${normalizedQrAmountText}` : ''}`;
   const baseUrl = apiConfig.webBaseUrl.replace(/\/+$/, '');
-  const qrCodeUrl = `${baseUrl}/requests.php?f=qrcode&s=wallet-qr-code&to=${encodeURIComponent(String(currentUserId))}${
-    normalizedQrAmountText ? `&amount=${encodeURIComponent(normalizedQrAmountText)}` : ''
+  const qrCodeUrl = `${baseUrl}/requests.php?f=qrcode&s=points-qr-code&to=${encodeURIComponent(String(currentUserId))}${
+    normalizedQrPoints ? `&points=${encodeURIComponent(String(normalizedQrPoints))}` : ''
   }`;
 
   return (
@@ -654,10 +704,11 @@ function MyBalanceScreen() {
           </View>
         }
         renderItem={({ item }) => {
-          const isSent = item.kind === 'SENT' || item.kind === 'PURCHASE';
-          const isReceived = item.kind === 'RECEIVED' || item.kind === 'WALLET' || item.kind === 'POINTS_EARNED';
+          const isSent = ['SENT', 'PURCHASE', 'POINTS_SENT', 'POINTS_DEDUCT'].includes(item.kind);
+          const isReceived = ['RECEIVED', 'WALLET', 'POINTS_RECEIVED', 'POINTS_EARNED'].includes(item.kind);
           const sign = isSent ? '-' : isReceived ? '+' : '';
           const amountColor = isSent ? '#ef4444' : isReceived ? '#22c55e' : '#0f172a';
+          const transactionPoints = item.points > 0 ? item.points : item.amount;
           return (
             <View
               className="mx-4 mt-3 bg-white border border-slate-100 rounded-2xl p-5"
@@ -691,7 +742,7 @@ function MyBalanceScreen() {
               <View className="flex-row justify-between items-center">
                 <Text className="text-xs font-bold text-slate-400">{copy.amountLabel}</Text>
                 <Text style={{ color: amountColor }} className="text-sm font-extrabold">
-                  {sign}{formatNumber(item.amount)} VNSEEA
+                  {sign}{formatNumber(transactionPoints)} VNSEEA
                 </Text>
               </View>
             </View>
@@ -756,7 +807,7 @@ function MyBalanceScreen() {
                 </Text>
                 <TextInput
                   value={sendAmount}
-                  onChangeText={setSendAmount}
+                  onChangeText={value => setSendAmount(value.replace(/\D/g, ''))}
                   placeholder="0"
                   placeholderTextColor="#94a3b8"
                   keyboardType="numeric"
@@ -914,7 +965,7 @@ function MyBalanceScreen() {
               </Text>
               <TextInput
                 value={qrAmount}
-                onChangeText={setQrAmount}
+                onChangeText={value => setQrAmount(value.replace(/\D/g, ''))}
                 placeholder=""
                 placeholderTextColor="#94a3b8"
                 keyboardType="numeric"
@@ -996,4 +1047,3 @@ function MyBalanceScreen() {
 }
 
 export default MyBalanceScreen;
-

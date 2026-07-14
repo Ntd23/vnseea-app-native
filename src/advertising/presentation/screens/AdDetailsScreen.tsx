@@ -32,7 +32,7 @@ import {
 import { getAdvertisingCopy } from '../../application/i18n/advertisingCopy';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { Pressable } from 'react-native';
 import type { AdDailyStats } from '../../domain/types/ads.types';
 import { createAdsRepository } from '../../infrastructure/repositories/ApiAdsRepository';
@@ -216,7 +216,7 @@ function AdDetailsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <View style={{ position: 'relative' }}>

@@ -28,6 +28,7 @@ import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/
 
 type CreatePollNav = NativeStackNavigationProp<RootStackParamList>;
 
+const POLL_HEADER_COLOR = '#0000FF';
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 6;
 
@@ -91,8 +92,11 @@ function CreatePollScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 surface-base" edges={['top']}>
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor="#0000FF" />
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: POLL_HEADER_COLOR }}
+      edges={['top']}
+    >
+      <FocusAwareStatusBar barStyle="light-content" backgroundColor={POLL_HEADER_COLOR} />
 
       {/* Header */}
       <View className="surface-brand h-16 flex-row items-center justify-between px-4">
@@ -129,7 +133,7 @@ function CreatePollScreen() {
       </View>
 
       <KeyboardAvoidingView
-        className="flex-1"
+        className="flex-1 surface-base"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView

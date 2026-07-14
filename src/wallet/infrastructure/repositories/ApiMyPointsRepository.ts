@@ -34,6 +34,7 @@ type BackendWalletTransaction = {
   id?: number | string;
   kind?: string;
   notes?: string;
+  counterparty_name?: string;
   points?: number | string;
   point_action?: string;
   point_type?: string;
@@ -194,6 +195,16 @@ function pointHistoryTitle(
   points: number,
 ) {
   const kind = String(transaction.kind || '').toUpperCase();
+  if (kind === 'POINTS_SENT') {
+    return `Đã gửi ${formatNumber(points)} VNSEEA đến ${
+      transaction.counterparty_name || 'thành viên khác'
+    }`;
+  }
+  if (kind === 'POINTS_RECEIVED') {
+    return `Nhận ${formatNumber(points)} VNSEEA từ ${
+      transaction.counterparty_name || 'thành viên khác'
+    }`;
+  }
   if (kind === 'POINTS_EXCHANGE' || kind === 'POINTS_DEDUCT') {
     return `Trừ ${formatNumber(points)} điểm`;
   }
@@ -204,13 +215,25 @@ function mapPointHistory(
   transaction: BackendWalletTransaction,
 ): PointHistoryItem | null {
   const kind = String(transaction.kind || '').toUpperCase();
-  if (!['POINTS_EXCHANGE', 'POINTS_EARNED', 'POINTS_DEDUCT'].includes(kind)) {
+  if (
+    ![
+      'POINTS_EXCHANGE',
+      'POINTS_EARNED',
+      'POINTS_DEDUCT',
+      'POINTS_SENT',
+      'POINTS_RECEIVED',
+    ].includes(kind)
+  ) {
     return null;
   }
 
   const points = Math.abs(Math.trunc(toNumber(transaction.points)));
   const signedPoints =
-    kind === 'POINTS_EXCHANGE' || kind === 'POINTS_DEDUCT' ? -points : points;
+    kind === 'POINTS_EXCHANGE' ||
+    kind === 'POINTS_DEDUCT' ||
+    kind === 'POINTS_SENT'
+      ? -points
+      : points;
 
   return {
     id: `wallet-${transaction.id || Math.random()}`,
