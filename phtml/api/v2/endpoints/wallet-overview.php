@@ -47,10 +47,16 @@ else {
             if ($kind == 'RECEIVED' && !empty($extra['sender_id'])) {
                 $counterparty_id = (int) $extra['sender_id'];
             }
+            elseif ($kind == 'POINTS_RECEIVED' && !empty($extra['sender_id'])) {
+                $counterparty_id = (int) $extra['sender_id'];
+            }
             elseif ($kind == 'POINTS_EARNED' && !empty($extra['sender_id']) && (!empty($extra['action']) && $extra['action'] == 'transfer')) {
                 $counterparty_id = (int) $extra['sender_id'];
             }
             elseif ($kind == 'SENT' && !empty($extra['recipient_id'])) {
+                $counterparty_id = (int) $extra['recipient_id'];
+            }
+            elseif ($kind == 'POINTS_SENT' && !empty($extra['recipient_id'])) {
                 $counterparty_id = (int) $extra['recipient_id'];
             }
             elseif ($kind == 'POINTS_DEDUCT' && !empty($extra['recipient_id']) && (!empty($extra['action']) && $extra['action'] == 'transfer')) {
@@ -91,10 +97,16 @@ else {
             elseif ($kind == 'RECEIVED' && !empty($extra['sender_name'])) {
                 $counterparty_name = strip_tags((string) $extra['sender_name']);
             }
+            elseif ($kind == 'POINTS_RECEIVED' && !empty($extra['sender_name'])) {
+                $counterparty_name = strip_tags((string) $extra['sender_name']);
+            }
             elseif ($kind == 'POINTS_EARNED' && !empty($extra['sender_name']) && (!empty($extra['action']) && $extra['action'] == 'transfer')) {
                 $counterparty_name = strip_tags((string) $extra['sender_name']);
             }
             elseif ($kind == 'SENT' && !empty($extra['recipient_name'])) {
+                $counterparty_name = strip_tags((string) $extra['recipient_name']);
+            }
+            elseif ($kind == 'POINTS_SENT' && !empty($extra['recipient_name'])) {
                 $counterparty_name = strip_tags((string) $extra['recipient_name']);
             }
             elseif ($kind == 'POINTS_DEDUCT' && !empty($extra['recipient_name']) && (!empty($extra['action']) && $extra['action'] == 'transfer')) {
@@ -102,7 +114,7 @@ else {
             }
 
             $notes = !empty($transaction['notes']) ? strip_tags((string) $transaction['notes']) : '';
-            if (($kind == 'RECEIVED' || $kind == 'SENT') && !empty($extra['note'])) {
+            if (in_array($kind, array('RECEIVED', 'SENT', 'POINTS_RECEIVED', 'POINTS_SENT'), true) && !empty($extra['note'])) {
                 $notes = strip_tags((string) $extra['note']);
             }
 

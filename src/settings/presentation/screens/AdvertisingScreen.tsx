@@ -30,7 +30,7 @@ import { useAdvertisingViewModel } from '../../application/view-models/useAdvert
 import type { AdItem } from '../../../advertising/domain/types/ads.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import {
   languageStorage,
   type AppLanguage,
@@ -304,7 +304,7 @@ function AdvertisingScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <ScrollView
         className="flex-1"
@@ -328,7 +328,7 @@ function AdvertisingScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               className="min-h-[52px] flex-row items-center border-t border-[#f1f5f9] px-4"
-              onPress={() => navigation.navigate(ROUTES.MY_POINTS)}>
+              onPress={() => navigation.navigate(ROUTES.MY_BALANCE)}>
               <CreditCard size={18} color="#8b8b8b" />
               <Text className="ml-3 text-sm text-[#8b8b8b]">{copy.walletTitle || "VNSEEA"}</Text>
             </TouchableOpacity>

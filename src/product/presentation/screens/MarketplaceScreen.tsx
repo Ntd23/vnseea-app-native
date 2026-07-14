@@ -796,6 +796,7 @@ function MarketplaceScreen() {
       <View className="w-[48%]">
         <ProductPostCard
           compact
+          marketplaceFloatingActions
           product={item}
           onPress={handleProductPress}
           onContactSeller={handleContactSeller}
@@ -845,7 +846,7 @@ function MarketplaceScreen() {
           <Search size={16} color="#64748B" />
           <TextInput
             className="ml-2 min-h-[38px] flex-1 text-body-primary text-sm font-medium"
-            placeholder="Tìm sản phẩm, địa điểm..."
+            placeholder="Tìm sản phẩm ..."
             placeholderTextColor="#94A3B8"
             value={vm.keyword}
             onChangeText={vm.setKeyword}
@@ -1101,39 +1102,11 @@ function MarketplaceScreen() {
         className="surface-topbar flex-row items-center px-4 pt-3 pb-2"
         pointerEvents="box-none"
       >
+      
         <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full"
-          activeOpacity={0.8}
-          hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
-          onPress={goBack}
-        >
-          <ArrowLeft size={22} color="#1E293B" />
-        </TouchableOpacity>
-        <View className="ml-2 flex-1">
-          <Text className="text-heading">Cửa hàng</Text>
-        </View>
-        <View ref={cartButtonRef} className="mr-2">
-          <Animated.View style={{ transform: [{ scale: cartScale }] }}>
-            <TouchableOpacity
-              className="relative h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white"
-              activeOpacity={0.8}
-              hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-              onPress={handleOpenCart}
-            >
-              <ShoppingCart size={19} color="#0000FF" />
-              {vm.cartCount > 0 ? (
-                <View className="absolute -right-1 -top-1 h-5 w-5 items-center justify-center rounded-full bg-red-500">
-                  <Text className="text-caption-primary font-bold text-white">
-                    {vm.cartCount > 99 ? '99+' : vm.cartCount}
-                  </Text>
-                </View>
-              ) : null}
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
-        <TouchableOpacity
-          className="btn-primary h-10 px-4"
+          className="btn-primary h-10 px-4 items-center justify-center rounded-full"
           activeOpacity={0.9}
+          hitSlop={{ top: 10, right: 10, bottom: 10, left: 15 }}
           onPress={handleMyProducts}
         >
           <ShoppingBag size={17} color="#FFFFFF" />

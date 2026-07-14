@@ -4,7 +4,7 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import { createPhotosRepository } from '../../infrastructure/repositories/ApiPhotosRepository';
 import type { AlbumItem } from '../../domain/types/photos.types';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 50;
 
 export function useAlbumsViewModel() {
   const repository = useMemo(() => createPhotosRepository(), []);

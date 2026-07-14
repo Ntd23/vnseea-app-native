@@ -1,8 +1,47 @@
-// Forum domain types
+// Description: Defines forum catalog, member, search, thread, and reply domain models.
 // Port từ: client/src/forum/domain/types/
 
 export type ForumSectionKey = 'all' | 'announcements' | 'support' | 'marketplace' | 'events' | 'jobs' | 'showcase';
 export type ForumPageTab = 'browse' | 'members' | 'search' | 'my_threads' | 'my_messages';
+
+export type ForumMember = {
+  id: number;
+  username: string;
+  name: string;
+  avatarUrl: string;
+  joined: number;
+  lastSeen: number;
+  postCount: number;
+  referrals: number;
+  isAdmin: boolean;
+};
+
+export type ForumMemberList = {
+  members: ForumMember[];
+  totalMembers: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+};
+
+export type ForumMemberQuery = ForumCatalogQuery & {
+  key?: string;
+};
+
+export type ForumSearchScope = 'forums' | 'threads' | 'messages';
+
+export type ForumSearchQuery = {
+  terms: string;
+  scope: ForumSearchScope;
+  searchContent: boolean;
+  sectionId?: number;
+  limit?: number;
+};
+
+export type ForumSearchResult = {
+  sections: ForumSummarySection[];
+  threads: ForumThread[];
+  replies: ForumReply[];
+};
 
 export type ForumSection = {
   label: string;
@@ -80,6 +119,7 @@ export type ForumSummarySection = {
 
 export type ForumCatalog = {
   sections: ForumSummarySection[];
+  searchSections: ForumSummarySection[];
   canCreate: boolean;
   hasMore: boolean;
   nextOffset: number | null;

@@ -49,6 +49,7 @@ import {
   SellerStoreScreen,
 } from '../product';
 import { CartScreen, CheckoutScreen, ShippingAddressScreen } from '../checkout';
+import { OrderDetailScreen } from '../orders';
 import { CreateEventScreen, EventDetailScreen, EventsScreen } from '../events';
 import { CreatePollScreen } from '../poll';
 import {
@@ -58,7 +59,7 @@ import {
   GroupDetailScreen,
 } from '../community';
 import { CreateFundingScreen, FundingDetailScreen, FundingScreen } from '../funding';
-import { CreateMovieScreen, MoviesScreen } from '../movies';
+import { CreateMovieScreen, MovieDetailScreen, MoviesScreen } from '../movies';
 import { CreateJobScreen, JobDetailScreen, JobsScreen } from '../jobs';
 import {
   AvatarViewerScreen,
@@ -68,6 +69,7 @@ import {
 } from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
 import { MyVideosScreen } from '../videos';
+import { WatchScreen } from '../watch';
 import {
   CallRoomScreen,
   CallScreen,
@@ -198,6 +200,7 @@ export function createStackRoutes(
     { name: ROUTES.ALBUMS, component: AlbumsScreen },
     { name: ROUTES.CREATE_ALBUM, component: CreateAlbumScreen },
     { name: ROUTES.MY_VIDEOS, component: MyVideosScreen },
+    { name: ROUTES.WATCH, component: WatchScreen },
     { name: ROUTES.MESSAGES, component: MessageScreen },
     { name: ROUTES.CHAT, component: ChatScreen },
     { name: ROUTES.CALLS, component: CallScreen },
@@ -215,6 +218,7 @@ export function createStackRoutes(
     { name: ROUTES.EDIT_PAGE, component: CreatePageScreen },
     { name: ROUTES.MARKETPLACE, component: MarketplaceScreen },
     { name: ROUTES.MY_PRODUCTS, component: MyProductsScreen },
+    { name: ROUTES.ORDER_DETAIL, component: OrderDetailScreen },
     { name: ROUTES.PRODUCT_DETAIL, component: ProductDetailScreen },
     { name: ROUTES.SELLER_STORE, component: SellerStoreScreen },
     { name: ROUTES.CART, component: CartScreen },
@@ -244,6 +248,7 @@ export function createStackRoutes(
     { name: ROUTES.CREATE_BLOG, component: CreateBlogScreen },
     { name: ROUTES.EDIT_BLOG, component: CreateBlogScreen },
     { name: ROUTES.MOVIES, component: MoviesScreen },
+    { name: ROUTES.MOVIE_DETAIL, component: MovieDetailScreen },
     { name: ROUTES.CREATE_MOVIE, component: CreateMovieScreen },
     { name: ROUTES.JOBS, component: JobsScreen },
     { name: ROUTES.JOB_DETAIL, component: JobDetailScreen },

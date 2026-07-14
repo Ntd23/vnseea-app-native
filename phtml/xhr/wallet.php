@@ -191,6 +191,47 @@ if ($f == 'wallet') {
         echo json_encode($data);
         exit();
     }
+    if ($s == 'send-points' && $wo['loggedin'] === true) {
+        header("Content-type: application/json");
+        require_once 'assets/includes/vnseea_points_transfer.php';
+        $legacy_result = Wo_TransferPoints(
+            !empty($wo['user']['user_id']) ? (int) $wo['user']['user_id'] : 0,
+            $_POST['user_id'] ?? null,
+            $_POST['points'] ?? null,
+            $_POST['request_id'] ?? null,
+            $_POST['note'] ?? '',
+            array('allow_generated_request_id' => true)
+        );
+        http_response_code((int) $legacy_result['http_status']);
+        if (!empty($legacy_result['ok'])) {
+            echo json_encode(array(
+                'status' => 200,
+                'api_status' => 200,
+                'success' => true,
+                'message' => $legacy_result['message'],
+                'request_id' => $legacy_result['request_id'],
+                'idempotent_replay' => $legacy_result['idempotent_replay'],
+                'recipient_id' => $legacy_result['recipient_id'],
+                'recipient_name' => $legacy_result['recipient_name'],
+                'points' => $legacy_result['points'],
+                'sender_points' => $legacy_result['sender_points'],
+                'recipient_points' => $legacy_result['recipient_points'],
+                'sender_transaction_id' => $legacy_result['sender_transaction_id'],
+                'recipient_transaction_id' => $legacy_result['recipient_transaction_id'],
+            ));
+        }
+        else {
+            echo json_encode(array(
+                'status' => (int) $legacy_result['http_status'],
+                'api_status' => (int) $legacy_result['http_status'],
+                'success' => false,
+                'request_id' => $legacy_result['request_id'],
+                'error_code' => $legacy_result['error_code'],
+                'message' => $legacy_result['message'],
+            ));
+        }
+        exit();
+    }
     if ($s == 'pay' && $wo['loggedin'] === true) {
         $data = array(
             'status' => 400

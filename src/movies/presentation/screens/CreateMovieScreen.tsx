@@ -45,6 +45,7 @@ import {
   type CoverAsset,
 } from '../../application/view-models/useCreateMovieViewModel';
 import { getCreateMovieCopy } from '../../application/i18n/moviesCopy';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import type {
   MovieCountryKey,
   MovieGenreKey,
@@ -385,44 +386,10 @@ function CreateMovieScreen() {
   }, [vm.sourceKind]);
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: SURFACE_BASE }} edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" backgroundColor={SURFACE_BASE} />
+    <View style={{ flex: 1, backgroundColor: SURFACE_BASE }}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
       <ToastContainer />
-
-      {/* Header */}
-      <View
-        className="flex-row items-center justify-between px-4 pb-3 pt-2"
-        style={{ backgroundColor: SURFACE_BASE }}
-      >
-        <Pressable
-          onPress={handleClose}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          className="h-10 w-10 items-center justify-center rounded-full"
-          style={{ backgroundColor: SURFACE_CARD, elevation: 1 }}
-        >
-          <X size={20} color={TEXT_PRIMARY} />
-        </Pressable>
-        <Text className="text-[17px] font-bold text-slate-800">
-          {copy.headerTitle}
-        </Text>
-        <Pressable
-          onPress={handleSubmit}
-          disabled={!vm.canSubmit}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          className="min-h-[40px] min-w-[60px] items-center justify-center rounded-full px-4"
-          style={{
-            backgroundColor: vm.canSubmit ? BRAND : 'rgba(0, 0, 255, 0.3)',
-          }}
-        >
-          {vm.isSubmitting ? (
-            <ActivityIndicator color="#ffffff" size="small" />
-          ) : (
-            <Text className="text-[14px] font-semibold text-white">
-              {vm.submitButton}
-            </Text>
-          )}
-        </Pressable>
-      </View>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -756,23 +723,36 @@ function CreateMovieScreen() {
             </View>
           ) : null}
 
-          {/* Submit button (mobile-friendly bottom action) */}
-          <Pressable
-            onPress={handleSubmit}
-            disabled={!vm.canSubmit}
-            className="mt-6 min-h-[54px] items-center justify-center rounded-full"
-            style={{
-              backgroundColor: vm.canSubmit ? BRAND : 'rgba(0, 0, 255, 0.3)',
-            }}
-          >
-            {vm.isSubmitting ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text className="text-[15px] font-bold text-white">
-                {vm.submitButton}
+          {/* Action Buttons: Cancel and Submit side-by-side */}
+          <View className="mt-6 flex-row gap-3">
+            <TouchableOpacity
+              onPress={handleClose}
+              className="flex-1 min-h-[54px] items-center justify-center rounded-full border border-slate-200 bg-white"
+              activeOpacity={0.8}
+            >
+              <Text className="text-[15px] font-bold text-slate-600">
+                {language === 'vi' ? 'Quay lại' : 'Back'}
               </Text>
-            )}
-          </Pressable>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleSubmit}
+              disabled={!vm.canSubmit}
+              className="flex-1 min-h-[54px] items-center justify-center rounded-full"
+              style={{
+                backgroundColor: vm.canSubmit ? BRAND : 'rgba(0, 0, 255, 0.3)',
+              }}
+              activeOpacity={0.85}
+            >
+              {vm.isSubmitting ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text className="text-[15px] font-bold text-white">
+                  {vm.submitButton}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -810,7 +790,7 @@ function CreateMovieScreen() {
           vm.markTouched('quality');
         }}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

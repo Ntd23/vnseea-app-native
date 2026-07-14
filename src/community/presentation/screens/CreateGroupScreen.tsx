@@ -42,7 +42,7 @@ import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { useCommunityViewModel } from '../../application/view-models/useCommunityViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type {
   CreateGroupDraft,
@@ -877,7 +877,7 @@ function CreateGroupScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-        <FeedHeader />
+        <SafeAreaFeedHeader />
 
         <View className="flex-row bg-cyan-500">
           {EDIT_TABS.map(tab => {
@@ -1274,7 +1274,7 @@ function CreateGroupScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <KeyboardAvoidingView
         className="flex-1"

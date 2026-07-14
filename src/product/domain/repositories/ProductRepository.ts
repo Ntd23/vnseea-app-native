@@ -16,5 +16,6 @@ export interface ProductRepository {
   getCartCount(): Promise<number>;
   createProduct(input: CreateProductInput): Promise<CreateProductResponse>;
   updateProduct(input: CreateProductInput): Promise<CreateProductResponse>;
+  deleteProduct(postId: number): Promise<void>;
   getCategories(): Promise<{ categories: ProductCategory[] }>;
 }

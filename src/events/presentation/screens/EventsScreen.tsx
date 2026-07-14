@@ -27,7 +27,7 @@ import { useEventsViewModel } from '../../application/view-models/useEventsViewM
 import type { EventsTab } from '../../application/view-models/useEventsViewModel';
 import type { EventsItem } from '../../domain/types/events.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import {
   languageStorage,
   type AppLanguage,
@@ -246,7 +246,7 @@ function EventsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <View className="h-[54px] flex-row items-stretch border-b border-slate-200 bg-white pl-1 pr-2">
         <ScrollView

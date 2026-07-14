@@ -31,9 +31,30 @@ export interface StripeSessionResponse {
   };
 }
 
+export interface PointsTransferInput {
+  recipientUserId: number;
+  points: number;
+  requestId: string;
+  note?: string;
+}
+
+export interface PointsTransferResult {
+  requestId: string;
+  idempotentReplay: boolean;
+  message: string;
+  recipientId: number;
+  recipientName: string;
+  points: number;
+  senderPoints: number;
+  recipientPoints: number;
+  senderTransactionId: number;
+  recipientTransactionId: number;
+}
+
 export interface WalletRepository {
   getWalletOverview(): Promise<WalletOverview>;
   createSepayQR(amount: number): Promise<SepayQRResponse>;
   checkSepayOrder(orderCode: string): Promise<SepayQRResponse>;
   createStripeSession(amount: number): Promise<StripeSessionResponse>;
+  transferPoints(input: PointsTransferInput): Promise<PointsTransferResult>;
 }

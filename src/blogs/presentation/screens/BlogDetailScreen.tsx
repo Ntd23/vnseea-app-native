@@ -26,7 +26,7 @@ import {
   Tag,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
@@ -260,7 +260,7 @@ function BlogDetailScreen() {
     <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <View style={{ zIndex: 10, elevation: 5, backgroundColor: '#ffffff' }}>
-        <FeedHeader />
+        <SafeAreaFeedHeader />
       </View>
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
         <ImageBackground source={{ uri: imageUrl }} style={{ height: 300, backgroundColor: '#9CA3AF' }} resizeMode="cover">

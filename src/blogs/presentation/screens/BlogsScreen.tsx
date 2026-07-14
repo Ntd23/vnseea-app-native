@@ -13,7 +13,7 @@ import {
   type ListRenderItemInfo,
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
@@ -369,7 +369,7 @@ function BlogsScreen() {
     <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
       {/* ── Feed Header ────────────────────────────────────────── */}
       <View style={{ zIndex: 10, elevation: 5, backgroundColor: '#ffffff' }}>
-        <FeedHeader />
+        <SafeAreaFeedHeader />
       </View>
 
       <FlatList

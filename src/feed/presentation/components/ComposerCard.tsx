@@ -2,6 +2,8 @@
 import React from 'react';
 import {
   Image,
+  Platform,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -22,6 +24,19 @@ export type ComposerCopy = {
   library: string;
   tag: string;
   feeling: string;
+};
+
+type ComposerActionId = 'photo' | 'video' | 'product' | 'poll';
+
+type ComposerAction = {
+  id: ComposerActionId;
+  label: string;
+  color: string;
+  Icon: React.ComponentType<{
+    size?: number;
+    color?: string;
+    strokeWidth?: number;
+  }>;
 };
 
 const Avatar = React.memo(function Avatar({
@@ -54,28 +69,58 @@ export function ComposerCard({
   copy,
 }: {
   onPress: () => void;
-  onPressAction?: (action: 'photo' | 'video' | 'product' | 'poll') => void;
+  onPressAction?: (action: ComposerActionId) => void;
   onPressAvatar?: () => void;
   avatarUrl?: string;
   displayName?: string;
   copy: any;
 }) {
+  const isIos = Platform.OS === 'ios';
   const placeholder = copy.createPostBtn || copy.composerPlaceholder || 'Hôm nay bạn thế nào ?';
+  const actions: ComposerAction[] = [
+    {
+      id: 'photo',
+      label: copy.photo === 'Ảnh' ? 'Hình ảnh' : copy.photo || 'Photos',
+      color: '#3b82f6',
+      Icon: ImageIcon,
+    },
+    {
+      id: 'video',
+      label: copy.video || 'Video',
+      color: '#22c55e',
+      Icon: VideoIcon,
+    },
+    {
+      id: 'product',
+      label: copy.product || 'Product',
+      color: '#f97316',
+      Icon: ShoppingCart,
+    },
+    {
+      id: 'poll',
+      label: copy.poll || 'Poll',
+      color: '#0d9488',
+      Icon: BarChart3,
+    },
+  ];
+
+  const handleActionPress = (action: ComposerActionId) => {
+    if (onPressAction) {
+      onPressAction(action);
+      return;
+    }
+    onPress();
+  };
 
   return (
     <View
-      style={{
-        shadowColor: '#94a3b8',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 2,
-      }}
-      className="mx-4  bg-white rounded-[20px] border border-slate-100 p-4"
+      style={[
+        styles.cardShadow,
+        isIos ? styles.iosCardSpacing : null,
+      ]}
+      className="bg-white rounded-[20px] border border-slate-100 p-4"
     >
-      {/* Top row with avatar, name, placeholder and smile icon */}
-      {/* Top row with avatar (linking to profile) and name/placeholder input */}
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <View style={styles.composerTopRow}>
         <TouchableOpacity
           activeOpacity={onPressAvatar ? 0.7 : 1}
           onPress={onPressAvatar}
@@ -87,7 +132,7 @@ export function ComposerCard({
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={onPress}
-          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 12 }}
+          style={styles.composerInput}
         >
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 15, fontWeight: '700', color: '#0f172a' }}>
@@ -101,90 +146,120 @@ export function ComposerCard({
         </TouchableOpacity>
       </View>
 
-      {/* Grid of 4 buttons */}
-      <View style={{ marginTop: 16 }}>
-        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => onPressAction ? onPressAction('photo') : onPress()}
-            style={{
-              flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: '#f1f5f9',
-              borderRadius: 20,
-              paddingVertical: 10,
-              paddingHorizontal: 12,
-            }}
-          >
-            <ImageIcon size={18} color="#3b82f6" strokeWidth={2.5} />
-            <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#475569' }} numberOfLines={1}>
-              {copy.photo === 'Ảnh' ? 'Hình ảnh' : copy.photo || 'Photos'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => onPressAction ? onPressAction('video') : onPress()}
-            style={{
-              flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: '#f1f5f9',
-              borderRadius: 20,
-              paddingVertical: 10,
-              paddingHorizontal: 12,
-            }}
-          >
-            <VideoIcon size={18} color="#22c55e" strokeWidth={2.5} />
-            <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#475569' }} numberOfLines={1}>
-              {copy.video || 'Video'}
-            </Text>
-          </TouchableOpacity>
+      {isIos ? (
+        <View style={styles.iosActionsRow}>
+          {actions.map(action => (
+            <TouchableOpacity
+              key={action.id}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+              onPress={() => handleActionPress(action.id)}
+              style={styles.iosActionButton}
+            >
+              <action.Icon size={21} color={action.color} strokeWidth={2.5} />
+            </TouchableOpacity>
+          ))}
         </View>
-
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => onPressAction ? onPressAction('product') : onPress()}
-            style={{
-              flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: '#f1f5f9',
-              borderRadius: 20,
-              paddingVertical: 10,
-              paddingHorizontal: 12,
-            }}
-          >
-            <ShoppingCart size={18} color="#f97316" strokeWidth={2.5} />
-            <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#475569' }} numberOfLines={1}>
-              {copy.product || 'Product'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => onPressAction ? onPressAction('poll') : onPress()}
-            style={{
-              flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: '#f1f5f9',
-              borderRadius: 20,
-              paddingVertical: 10,
-              paddingHorizontal: 12,
-            }}
-          >
-            <BarChart3 size={18} color="#0d9488" strokeWidth={2.5} />
-            <Text style={{ marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#475569' }} numberOfLines={1}>
-              {copy.poll || 'Poll'}
-            </Text>
-          </TouchableOpacity>
+      ) : (
+        <View style={styles.androidActionsGrid}>
+          {[actions.slice(0, 2), actions.slice(2)].map((row, rowIndex) => (
+            <View
+              key={row[0].id}
+              style={[
+                styles.androidActionRow,
+                rowIndex === 0 ? styles.androidActionRowSpacing : null,
+              ]}
+            >
+              {row.map(action => (
+                <TouchableOpacity
+                  key={action.id}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={action.label}
+                  onPress={() => handleActionPress(action.id)}
+                  style={styles.androidActionButton}
+                >
+                  <action.Icon
+                    size={18}
+                    color={action.color}
+                    strokeWidth={2.5}
+                  />
+                  <Text style={styles.androidActionLabel} numberOfLines={1}>
+                    {action.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))}
         </View>
-      </View>
+      )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  cardShadow: {
+    marginHorizontal: 16,
+    shadowColor: '#94a3b8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  iosCardSpacing: {
+    marginHorizontal: 10,
+    marginBottom: 10,
+  },
+  composerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  composerInput: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  iosActionsRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  iosActionButton: {
+    minHeight: 44,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: '#f1f5f9',
+  },
+  androidActionsGrid: {
+    marginTop: 16,
+  },
+  androidActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  androidActionRowSpacing: {
+    marginBottom: 10,
+  },
+  androidActionButton: {
+    flex: 1,
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#f1f5f9',
+  },
+  androidActionLabel: {
+    marginLeft: 8,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+});
 
 export default ComposerCard;

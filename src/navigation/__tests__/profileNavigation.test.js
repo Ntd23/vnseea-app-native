@@ -66,6 +66,19 @@ describe('profile navigation route separation', () => {
     expect(drawerSource).not.toContain('navigation.navigate(ROUTES.USER_PROFILE)');
   });
 
+  it('opens own profile inside the iOS tab shell while preserving Android routing', () => {
+    const helperSource = read('src/navigation/profileNavigation.ts');
+
+    expect(helperSource).toContain("import { Platform } from 'react-native'");
+    expect(helperSource).toContain("if (Platform.OS !== 'ios')");
+    expect(helperSource).toContain('rootNavigator.navigate(ROUTES.PROFILE)');
+    expect(helperSource).toContain('rootNavigator.navigate(ROUTES.MAIN_TABS, {');
+    expect(helperSource).toContain('screen: ROUTES.PROFILE');
+    expect(helperSource).not.toContain(
+      'pushProfileRoute(rootNavigator, ROUTES.PROFILE)',
+    );
+  });
+
   it('uses a right-to-left root-stack transition for profile screens', () => {
     const appNavigatorSource = read('src/navigation/AppNavigator.tsx');
 

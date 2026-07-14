@@ -1,5 +1,5 @@
 // Description: Renders the VNSEEA albums screen with real album data from API.
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import {
   Image,
   ScrollView,
@@ -11,13 +11,15 @@ import {
   RefreshControl,
 } from 'react-native';
 import { ArrowLeft, Images, Plus, Search } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAlbumsViewModel } from '../../application/view-models/useAlbumsViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 
 type AlbumsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -36,7 +38,7 @@ function mapPrivacyToText(privacy: string): string {
   }
 }
 
-function AlbumsScreen() {
+function LegacyAlbumsScreen() {
   const navigation = useNavigation<AlbumsNav>();
   const {
     albums,
@@ -257,6 +259,114 @@ function AlbumsScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function AlbumsScreen() {
+  const navigation = useNavigation<AlbumsNav>();
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
+  const {
+    albums,
+    error,
+    isLoading,
+    isRefreshing,
+    isLoadingMore,
+    loadFirstPage,
+    refresh,
+    loadMore,
+    retry,
+  } = useAlbumsViewModel();
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadFirstPage();
+    }, [loadFirstPage]),
+  );
+
+  return (
+    <View className="flex-1 bg-[#eaf0ff]">
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <FeedHeader />
+
+      <View className="bg-[#eaf0ff]" />
+      <View className="h-[58px] flex-row items-end border-b border-slate-200 bg-white px-3">
+        <View className="h-full justify-end px-2">
+          <Text className="pb-3 text-sm font-bold text-slate-700">
+            {isVi ? 'Album của tôi' : 'My albums'}
+          </Text>
+          <View className="h-2 bg-[#0000ff]" />
+        </View>
+        <TouchableOpacity
+          activeOpacity={0.84}
+          className="mb-2 ml-auto h-9 flex-row items-center rounded-[6px] bg-[#0000ff] px-3"
+          onPress={() => navigation.navigate(ROUTES.CREATE_ALBUM)}
+        >
+          <Plus size={17} color="#FFFFFF" />
+          <Text className="ml-1 text-sm font-semibold text-white">
+            {isVi ? 'Tạo ra' : 'Create'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {isLoading && albums.length === 0 ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={BRAND} />
+        </View>
+      ) : error ? (
+        <View className="flex-1 items-center justify-center px-8">
+          <Images size={42} color="#ef4444" />
+          <Text className="mt-4 text-center text-sm text-red-500">{error}</Text>
+          <TouchableOpacity className="mt-5 rounded-[5px] border border-[#0000ff] px-6 py-2.5" onPress={retry}>
+            <Text className="font-semibold text-[#0000ff]">{isVi ? 'Thử lại' : 'Retry'}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : albums.length === 0 ? (
+        <View className="flex-1 items-center justify-center px-8 pb-20">
+          <View className="h-14 w-14 items-center justify-center rounded-full bg-[#91aab5]">
+            <Images size={27} color="#FFFFFF" />
+          </View>
+          <Text className="mt-4 text-center text-sm text-slate-500">
+            {isVi ? 'Bạn chưa tạo bất kỳ an bom nào.' : 'You have not created any albums yet.'}
+          </Text>
+        </View>
+      ) : (
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ padding: 12, paddingBottom: 32 }}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} colors={[BRAND]} />}
+          onScroll={({ nativeEvent }) => {
+            const remaining = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y;
+            if (remaining < 180) void loadMore();
+          }}
+          scrollEventThrottle={200}
+        >
+          <View className="flex-row flex-wrap justify-between">
+            {albums.map(album => (
+              <TouchableOpacity
+                key={album.id}
+                activeOpacity={0.86}
+                className="mb-3 w-[49%] overflow-hidden rounded-[4px] bg-white"
+                style={{ elevation: 2 }}
+                onPress={() => {
+                  const postId = album.postId || album.id;
+                  if (postId) {
+                    navigation.navigate(ROUTES.POST_DETAIL, { postId });
+                  }
+                }}
+              >
+                <Image
+                  source={{ uri: album.coverUrl }}
+                  className="aspect-square w-full bg-slate-200"
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+          {isLoadingMore && <ActivityIndicator className="my-4" color={BRAND} />}
+        </ScrollView>
+      )}
+    </View>
   );
 }
 

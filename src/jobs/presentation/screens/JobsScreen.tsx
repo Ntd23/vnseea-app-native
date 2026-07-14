@@ -37,7 +37,7 @@ import type { JobsItem, JobType } from '../../domain/types/jobs.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { getJobsCopy } from '../../application/i18n/jobsCopy';
-import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 
 type JobsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -417,7 +417,7 @@ function JobsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      <FeedHeader />
+      <SafeAreaFeedHeader />
 
       <View className="border-b border-slate-200 bg-[#eef3ff] px-3 pb-4 pt-3">
         <View className="rounded-md bg-white p-3 shadow-sm">

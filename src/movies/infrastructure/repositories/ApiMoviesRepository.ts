@@ -1,5 +1,4 @@
-// Movies API Repository (Infrastructure)
-// Port từ: client/src/movies/infrastructure/repositories/
+// English description: Implements movie listing, creation, and comment API operations.
 
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -8,8 +7,54 @@ import type {
   CreateMovieInput,
   CreateMovieResponse,
   MovieItem,
+  MovieComment,
+  MovieFilterMetadata,
   MoviesResponse,
 } from '../../domain/types/movies.types';
+
+type MovieSettingsResponse = {
+  api_status?: number | string;
+  movie_categories?: Record<string, unknown> | Array<Record<string, unknown>>;
+  movie_countries?: Record<string, unknown> | Array<Record<string, unknown>>;
+};
+
+function mapFilterOptions(
+  input: MovieSettingsResponse['movie_categories'],
+): MovieFilterMetadata['genres'] {
+  if (!input) return [];
+
+  if (Array.isArray(input)) {
+    return input
+      .map(item => ({
+        value: String(item.value ?? item.key ?? item.id ?? ''),
+        label: String(item.label ?? item.name ?? item.title ?? ''),
+      }))
+      .filter(item => item.value && item.label);
+  }
+
+  return Object.entries(input)
+    .map(([value, label]) => ({ value, label: String(label ?? '') }))
+    .filter(item => item.value && item.label);
+}
+
+type MovieCommentsResponse = {
+  api_status: number | string;
+  data?: Array<Record<string, unknown>>;
+  errors?: { error_text?: string };
+};
+
+function mapMovieComment(raw: Record<string, unknown>): MovieComment {
+  const user = raw.user_data && typeof raw.user_data === 'object'
+    ? raw.user_data as Record<string, unknown>
+    : {};
+  return {
+    id: String(raw.id ?? ''),
+    text: String(raw.Orginaltext ?? raw.text ?? ''),
+    time: raw.time as number | string | undefined,
+    userName: String(user.name ?? user.username ?? ''),
+    userAvatar: user.avatar ? String(user.avatar) : undefined,
+  };
+}
 
 export function createMoviesRepository(): MoviesRepository {
   return {
@@ -27,6 +72,18 @@ export function createMoviesRepository(): MoviesRepository {
       );
 
       return response.movies ?? [];
+    },
+
+    async getFilterMetadata(): Promise<MovieFilterMetadata> {
+      const response = await apiBridge.post<MovieSettingsResponse>(
+        apiRoutes.auth.siteSettings,
+        {},
+      );
+
+      return {
+        genres: mapFilterOptions(response.movie_categories),
+        countries: mapFilterOptions(response.movie_countries),
+      };
     },
 
     async createMovie(input: CreateMovieInput): Promise<CreateMovieResponse> {
@@ -63,6 +120,28 @@ export function createMoviesRepository(): MoviesRepository {
       }
 
       return response;
+    },
+
+    async getComments(movieId): Promise<MovieComment[]> {
+      const response = await apiBridge.post<MovieCommentsResponse>(
+        apiRoutes.movies.comments,
+        { type: 'get_comments', movie_id: movieId, limit: 50 },
+      );
+      return response.api_status === 200 || response.api_status === '200'
+        ? (response.data ?? []).map(mapMovieComment)
+        : [];
+    },
+
+    async addComment(movieId, text): Promise<MovieComment | null> {
+      const response = await apiBridge.post<MovieCommentsResponse>(
+        apiRoutes.movies.comments,
+        { type: 'add_comment', movie_id: movieId, text },
+      );
+      if (response.api_status !== 200 && response.api_status !== '200') {
+        throw new Error(response.errors?.error_text ?? 'Không thể gửi bình luận.');
+      }
+      const comment = response.data?.[0];
+      return comment ? mapMovieComment(comment) : null;
     },
   };
 }

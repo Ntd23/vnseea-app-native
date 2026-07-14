@@ -858,7 +858,10 @@ function SearchScreen() {
         : results.pages;
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#eef3ff' }}>
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: '#eef3ff' }}
+        edges={['top']}
+      >
         <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
         <FeedHeader />
 
@@ -977,12 +980,15 @@ function SearchScreen() {
             });
           }}
         />
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F0F2F5' }}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: '#F0F2F5' }}
+      edges={['top']}
+    >
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <FeedHeader />
 
@@ -1068,7 +1074,7 @@ function SearchScreen() {
           </View>
         ) : null}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

@@ -2,8 +2,10 @@
 // Displays products in Facebook Marketplace-style layout.
 import React, { useCallback } from 'react';
 import {
+  ActivityIndicator,
   type GestureResponderEvent,
   Image,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -19,9 +21,11 @@ import {
   Info,
   ThumbsUp,
   MessageSquare,
-  Heart
+  Heart,
+  Trash2,
 } from 'lucide-react-native';
 import type { ProductItem } from '../../domain/types/product.types';
+import { formatProductPrice } from './ProductCurrency';
 import {
   FeedCardContent,
   FeedCardSurface,
@@ -31,29 +35,6 @@ import {
 } from '../../../feed/presentation/components/FeedCardChrome';
 
 // ── Helpers outside component (avoid recreation on each render) ────
-
-function formatPrice(price: string, symbolOrCode: string): string {
-  const numPrice = parseFloat(price);
-  if (isNaN(numPrice)) return price;
-  
-  let currency = symbolOrCode;
-  if (currency === '0') currency = '$';
-  else if (currency === '1') currency = '€';
-  else if (currency === 'VNSEEA' || currency === 'vnd') currency = 'VNSEEA';
-
-  const formatted = numPrice.toLocaleString('vi-VN');
-
-  if (currency === 'VNSEEA') {
-    return `${formatted} VNSEEA`;
-  }
-  if (currency === '$' || currency === 'USD') {
-    return `$${formatted}`;
-  }
-  if (currency === '€' || currency === 'EUR') {
-    return `€${formatted}`;
-  }
-  return `${formatted} ${currency}`;
-}
 
 function formatTimeAgo(timestamp: number | string): string {
   const numTimestamp = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
@@ -99,7 +80,10 @@ interface ProductPostCardProps {
     origin?: { x: number; y: number },
   ) => void;
   onShare?: (product: ProductItem) => void;
+  onDelete?: (product: ProductItem) => void;
+  isDeleting?: boolean;
   compact?: boolean;
+  marketplaceFloatingActions?: boolean;
 
   // New props for post reactions and comments
   postId?: string;
@@ -120,7 +104,10 @@ const ProductPostCard = React.memo(function ProductPostCard({
   onContactSeller,
   onAddToCart,
   onShare,
+  onDelete,
+  isDeleting = false,
   compact,
+  marketplaceFloatingActions = false,
   postId,
   likeCount,
   commentCount,
@@ -168,7 +155,10 @@ const ProductPostCard = React.memo(function ProductPostCard({
     onShare?.(product);
   }, [onShare, product]);
 
-  const currencySymbol = product.currency_symbol || product.currency_code || product.currency || 'VNSEEA';
+  const handleDeletePress = useCallback((event: GestureResponderEvent) => {
+    event.stopPropagation();
+    onDelete?.(product);
+  }, [onDelete, product]);
 
   // Compact layout (used inside the horizontal carousel and marketplace grids)
   if (compact) {
@@ -195,8 +185,67 @@ const ProductPostCard = React.memo(function ProductPostCard({
           </View>
         )}
 
+        {product.is_owner && onDelete ? (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            disabled={isDeleting}
+            onPress={handleDeletePress}
+            accessibilityRole="button"
+            accessibilityLabel="Xóa sản phẩm"
+            className="absolute right-2 top-2 h-9 w-9 items-center justify-center rounded-full bg-[#7765ff]"
+            style={{ zIndex: 2 }}
+          >
+            {isDeleting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Trash2 size={17} color="#FFFFFF" strokeWidth={2.4} />
+            )}
+          </TouchableOpacity>
+        ) : null}
+
         {/* Compact Content */}
-        <View className="p-3">
+        <View
+          className="p-3"
+          style={marketplaceFloatingActions ? styles.marketplaceCompactContent : undefined}
+        >
+          {marketplaceFloatingActions && !product.is_owner ? (
+            <View style={styles.marketplaceFloatingActions}>
+              <TouchableOpacity
+                style={[
+                  styles.marketplaceActionButton,
+                  styles.marketplaceMessageButton,
+                  !product.can_contact_seller && styles.marketplaceActionDisabled,
+                ]}
+                activeOpacity={0.75}
+                disabled={!product.can_contact_seller}
+                onPress={handleContactSeller}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <MessageCircle
+                  size={20}
+                  color={product.can_contact_seller ? '#475569' : '#cbd5e1'}
+                  strokeWidth={2.4}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.marketplaceActionButton,
+                  styles.marketplaceCartButton,
+                  !product.can_add_to_cart && styles.marketplaceActionDisabled,
+                ]}
+                activeOpacity={0.75}
+                disabled={!product.can_add_to_cart}
+                onPress={handleAddToCart}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <ShoppingCart
+                  size={20}
+                  color={product.can_add_to_cart ? '#ffffff' : '#cbd5e1'}
+                  strokeWidth={2.5}
+                />
+              </TouchableOpacity>
+            </View>
+          ) : null}
           <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>
             {product.name}
           </Text>
@@ -212,10 +261,10 @@ const ProductPostCard = React.memo(function ProductPostCard({
           {/* Price & Action Row */}
           <View className="flex-row items-center justify-between mt-2.5">
             <Text className="text-[15px] font-extrabold text-[#0F56FB] flex-1 mr-1.5" numberOfLines={1}>
-              {formatPrice(product.price, currencySymbol)}
+              {formatProductPrice(product)}
             </Text>
 
-            {!product.is_owner ? (
+            {!product.is_owner && !marketplaceFloatingActions ? (
               <View className="flex-row items-center gap-1.5" style={{ flexShrink: 0 }}>
                 {/* Cart Action */}
                 <TouchableOpacity
@@ -355,7 +404,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
         {/* Price in green */}
         <Text className="mt-1.5 text-[18px] font-bold text-green-600" style={{ color: '#16a34a', marginTop: 6 }}>
-          {formatPrice(product.price, currencySymbol)}
+          {formatProductPrice(product)}
         </Text>
 
         {/* Info button */}
@@ -397,7 +446,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
         <View className="flex-row items-center mt-3.5" style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
           <Info size={14} color="#64748B" style={{ marginRight: 6 }} />
           <Text className="text-[13px] text-slate-500 font-semibold" style={{ color: '#64748B' }}>
-            {Number(product.price).toLocaleString('vi-VN')}
+            {formatProductPrice(product)}
           </Text>
         </View>
 
@@ -479,3 +528,42 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
 export { ProductPostCard };
 export default ProductPostCard;
+
+const styles = StyleSheet.create({
+  marketplaceCompactContent: {
+    position: 'relative',
+    paddingTop: 28,
+  },
+  marketplaceFloatingActions: {
+    position: 'absolute',
+    right: 8,
+    top: -22,
+    zIndex: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  marketplaceActionButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#ffffff',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  marketplaceMessageButton: {
+    backgroundColor: '#eef2f7',
+  },
+  marketplaceCartButton: {
+    backgroundColor: '#0000ff',
+  },
+  marketplaceActionDisabled: {
+    backgroundColor: '#f1f5f9',
+  },
+});

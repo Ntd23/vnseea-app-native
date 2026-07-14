@@ -356,6 +356,7 @@ export function PhotoViewerModal({
   const interactionUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const pendingCommentPostIdRef = useRef<string | null>(null);
   const transitionLockRef = useRef(false);
 
   const [pickerAnchor, setPickerAnchor] = useState<{
@@ -445,6 +446,7 @@ export function PhotoViewerModal({
         clearTimeout(interactionUnlockTimeoutRef.current);
         interactionUnlockTimeoutRef.current = null;
       }
+      pendingCommentPostIdRef.current = null;
     };
   }, []);
 
@@ -569,8 +571,24 @@ export function PhotoViewerModal({
     lockInteractionBriefly();
     const postId = livePost.id;
     setPickerAnchor(null);
-    onCommentTap(postId);
-  }, [livePost, lockInteractionBriefly, onCommentTap]);
+
+    if (Platform.OS !== 'ios') {
+      onCommentTap(postId);
+      return;
+    }
+
+    pendingCommentPostIdRef.current = postId;
+    animateClose();
+  }, [animateClose, livePost, lockInteractionBriefly, onCommentTap]);
+
+  const handleModalDismiss = useCallback(() => {
+    const pendingCommentPostId = pendingCommentPostIdRef.current;
+    if (!pendingCommentPostId) return;
+
+    pendingCommentPostIdRef.current = null;
+    transitionLockRef.current = false;
+    onCommentTap(pendingCommentPostId);
+  }, [onCommentTap]);
 
   const handleSharePress = useCallback(() => {
     if (!livePost) return;
@@ -713,7 +731,18 @@ export function PhotoViewerModal({
     opacity: chromeOpacity.value,
   }));
 
-  if (!state || !livePost) return null;
+  if (!state || !livePost) {
+    return (
+      <Modal
+        visible={Boolean(state && livePost)}
+        transparent
+        animationType="none"
+        onRequestClose={handleClose}
+        onDismiss={handleModalDismiss}
+        statusBarTranslucent
+      />
+    );
+  }
   const { post } = state;
   const viewerPhotos =
     livePost.photos && livePost.photos.length > 0
@@ -785,10 +814,11 @@ export function PhotoViewerModal({
 
   return (
     <Modal
-      visible
+      visible={Boolean(state && livePost)}
       transparent
       animationType="none"
       onRequestClose={handleClose}
+      onDismiss={handleModalDismiss}
       statusBarTranslucent
     >
       <FocusAwareStatusBar barStyle="light-content" backgroundColor="#000" translucent />
