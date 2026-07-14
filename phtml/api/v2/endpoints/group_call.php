@@ -408,8 +408,8 @@ else if (!Wo_IsLiveKitAvailable()) {
 }
 else if ($action == 'create') {
     $group_id = !empty($_POST['group_id']) ? intval($_POST['group_id']) : 0;
-    $call_type = Wo_ApiGroupCallType(!empty($_POST['call_type']) ? $_POST['call_type'] : 'video');
-    $can_use = ($call_type == 'audio') ? (!empty($wo['config']['audio_chat']) && !empty($wo['config']['can_use_audio_call'])) : (!empty($wo['config']['video_chat']) && !empty($wo['config']['can_use_video_call']));
+    $call_type = Wo_NormalizeNewGroupCallType(!empty($_POST['call_type']) ? $_POST['call_type'] : 'video');
+    $can_use = Wo_CanStartNewGroupVideoCall($wo['config']);
     if ($group_id <= 0) {
         $response_data = Wo_ApiGroupCallError('group_missing', 'group_id can not be empty.');
     }
@@ -422,13 +422,15 @@ else if ($action == 'create') {
             $response_data = Wo_ApiGroupCallError('create_failed', 'Could not create group call.');
         }
         else {
-            Wo_ApiGroupCallSendPush(Wo_GetGroupChatCallMemberIds($group_id), $group_call, $wo['user']);
+            if (Wo_ShouldNotifyNewGroupCall($group_call)) {
+                Wo_ApiGroupCallSendPush(Wo_GetGroupChatCallMemberIds($group_id), $group_call, $wo['user']);
+            }
             $group = Wo_GroupTabData($group_id, false);
             $response_data = array(
                 'api_status' => 200,
                 'call' => Wo_ApiGroupCallSummary($group_call),
                 'group' => Wo_ApiGroupCallGroup($group),
-                'is_existing' => (!empty($group_call['time']) && intval($group_call['time']) < time()) ? 1 : 0
+                'is_existing' => !empty($group_call['is_existing']) ? 1 : 0
             );
         }
     }

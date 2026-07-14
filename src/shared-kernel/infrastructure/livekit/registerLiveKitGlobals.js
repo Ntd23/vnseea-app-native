@@ -33,7 +33,8 @@ function logLiveKitAudioDebug(event, data = {}) {
 
 function getAppleAudioConfigurationForAudioState(state) {
   if (
-    iosRealtimeMediaAudioContext?.owner === 'direct-call' &&
+    (iosRealtimeMediaAudioContext?.owner === 'direct-call' ||
+      iosRealtimeMediaAudioContext?.owner === 'group-call') &&
     iosRealtimeMediaAudioContext?.requiresInput
   ) {
     return getVoiceCallAppleAudioConfiguration();
@@ -73,9 +74,10 @@ function getVoiceCallAppleAudioConfiguration() {
 
 function normalizeIosRealtimeMediaAudioContext(context = {}) {
   const mediaKind = context.mediaKind === 'video' ? 'video' : 'audio';
+  const owner = context.owner === 'group-call' ? 'group-call' : 'direct-call';
 
   return {
-    owner: 'direct-call',
+    owner,
     mediaKind,
     role: 'call',
     requiresInput: true,

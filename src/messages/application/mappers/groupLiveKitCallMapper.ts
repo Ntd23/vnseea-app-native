@@ -1,5 +1,4 @@
 // Description: Maps WoWonder LiveKit group call API responses into Messages group call domain types.
-import type { LiveKitCallType } from '../../domain/types/call.types';
 import type {
   GroupLiveKitCallStatus,
   GroupLiveKitCallSummary,
@@ -39,8 +38,8 @@ function resolveBoolean(value: unknown) {
   return value === true || value === 1 || value === '1';
 }
 
-function normalizeCallType(value: unknown): LiveKitCallType {
-  return value === 'audio' ? 'audio' : 'video';
+function normalizeCallType(_value: unknown): 'video' {
+  return 'video';
 }
 
 function normalizeStatus(value: unknown): GroupLiveKitCallStatus {

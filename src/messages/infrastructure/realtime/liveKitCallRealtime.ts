@@ -7,6 +7,7 @@ import type {
   LiveKitCallType,
 } from '../../domain/types/call.types';
 import type {
+  GroupLiveKitCallType,
   GroupLiveKitGroup,
   GroupLiveKitParticipant,
   IncomingGroupLiveKitCall,
@@ -47,7 +48,7 @@ export type LiveKitCallRealtimeEvent = LiveKitCallRealtimeTiming & {
 export type GroupLiveKitCallRealtimeEvent = LiveKitCallRealtimeTiming & {
   callId: string;
   groupId: string;
-  callType: LiveKitCallType;
+  callType: GroupLiveKitCallType;
   status?: string;
   group?: GroupLiveKitGroup;
   participants: GroupLiveKitParticipant[];
@@ -232,7 +233,7 @@ function mapIncomingGroupCall(value: unknown): IncomingGroupLiveKitCall | null {
   return {
     callId,
     groupId,
-    callType: normalizeCallType(raw.call_type ?? raw.callType),
+    callType: 'video',
     provider: 'livekit',
     roomName: readString(raw.room_name ?? raw.roomName),
     group: mapGroup(raw.group),
@@ -282,7 +283,7 @@ function mapGroupRealtimeEvent(
   return {
     callId,
     groupId,
-    callType: normalizeCallType(raw.call_type ?? raw.callType),
+    callType: 'video',
     status: readString(raw.status ?? raw.call_status),
     group: raw.group ? mapGroup(raw.group) : undefined,
     participants: mapGroupParticipants(raw.participants),

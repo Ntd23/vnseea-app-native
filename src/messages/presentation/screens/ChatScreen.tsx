@@ -3510,7 +3510,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         }
         const callParams = {
           groupId,
-          callType,
           direction: 'outgoing' as const,
           groupName: chat.name,
           groupAvatar: chat.avatar,
@@ -3939,7 +3938,22 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const conversationHeaderActions = useMemo(() => {
     if (chat.chatType !== 'user' && chat.chatType !== 'group') return [];
 
-    const actions = [
+    if (chat.chatType === 'group') {
+      return [
+        {
+          key: 'video',
+          icon: <Video size={22} color="#0000ff" />,
+          onPress: () => handleStartConversationCall('video'),
+        },
+        {
+          key: 'info',
+          icon: <Info size={21} color="#0000ff" />,
+          onPress: handleOpenGroupInfo,
+        },
+      ];
+    }
+
+    return [
       {
         key: 'audio',
         icon: <Phone size={21} color="#0000ff" />,
@@ -3951,16 +3965,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         onPress: () => handleStartConversationCall('video'),
       },
     ];
-
-    if (chat.chatType === 'group') {
-      actions.push({
-        key: 'info',
-        icon: <Info size={21} color="#0000ff" />,
-        onPress: handleOpenGroupInfo,
-      });
-    }
-
-    return actions;
   }, [chat.chatType, handleOpenGroupInfo, handleStartConversationCall]);
 
   return (

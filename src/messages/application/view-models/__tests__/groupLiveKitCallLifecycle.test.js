@@ -1,0 +1,145 @@
+const fs = require('fs');
+const path = require('path');
+
+const root = path.resolve(__dirname, '../../../../..');
+
+function read(relativePath) {
+  return fs.readFileSync(path.join(root, relativePath), 'utf8');
+}
+
+describe('LiveKit group call video-only lifecycle', () => {
+  it('exposes a video-only group call contract', () => {
+    const types = read('src/messages/domain/types/groupCall.types.ts');
+    const repository = read(
+      'src/messages/domain/repositories/GroupLiveKitCallRepository.ts',
+    );
+    const chatScreen = read('src/messages/presentation/screens/ChatScreen.tsx');
+
+    expect(types).toContain("export type GroupLiveKitCallType = 'video'");
+    expect(types).not.toContain('callType: LiveKitCallType');
+    expect(repository).not.toContain('callType: LiveKitCallType');
+    expect(chatScreen).toContain('startGroupCall(callParams)');
+    expect(chatScreen).toContain("groupId,\n          direction: 'outgoing' as const");
+    expect(chatScreen).not.toContain('groupId,\n          callType,');
+  });
+
+  it('uses the shared CallKit audio gate before connecting group rooms', () => {
+    const source = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+    const nativeSource = read(
+      'src/messages/infrastructure/calls/nativeCallService.ts',
+    );
+    const gateIndex = source.indexOf('await prepareIosCallAudioGate(');
+    const roomIndex = source.indexOf('const nextRoom = new Room(');
+    const connectIndex = source.indexOf('await nextRoom.connect(');
+
+    expect(source).toContain('prepareIosCallAudioGate');
+    expect(source).toContain("owner: 'group-call'");
+    expect(source).toContain('startNativeOutgoingGroupCall');
+    expect(nativeSource).toContain('export async function startNativeOutgoingGroupCall');
+    expect(gateIndex).toBeGreaterThan(-1);
+    expect(roomIndex).toBeGreaterThan(gateIndex);
+    expect(connectIndex).toBeGreaterThan(roomIndex);
+    expect(source).toContain('autoSubscribe: false');
+  });
+
+  it('uses the shared subscription coordinator for microphone and camera', () => {
+    const source = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+    const coordinator = read(
+      'src/messages/application/livekit/remoteTrackSubscriptionCoordinator.ts',
+    );
+
+    expect(source).toContain('createRemoteTrackSubscriptionCoordinator');
+    expect(source).toContain('Track.Source.Microphone');
+    expect(source).toContain('Track.Source.Camera');
+    expect(coordinator).toContain('group_track_subscription_requested');
+    expect(coordinator).toContain('group_track_subscription_retry');
+    expect(coordinator).toContain('group_track_subscription_terminal_failure');
+    expect(source).not.toContain('AudioDeviceModule');
+  });
+
+  it('renders the gallery with official VideoTrack and facing-aware mirroring', () => {
+    const screen = read(
+      'src/messages/presentation/screens/GroupCallRoomScreen.tsx',
+    );
+    const types = read('src/messages/domain/types/groupCall.types.ts');
+
+    expect(screen).toContain('VideoTrack');
+    expect(screen).toContain('useTracks');
+    expect(screen).toContain('RoomContext.Provider');
+    expect(screen).not.toContain('RTCView');
+    expect(screen).not.toContain('streamURL=');
+    expect(screen).toContain("localCameraFacingMode === 'user'");
+    expect(types).not.toContain('videoStreamUrl?: string');
+    expect(types).not.toContain('videoRenderKey?: number');
+  });
+
+  it('removes disconnected participants and reports the actual camera state', () => {
+    const source = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+    const patchIndex = source.indexOf('const patchParticipants = useCallback');
+    const patchEnd = source.indexOf(
+      'const replaceServerParticipants = useCallback',
+      patchIndex,
+    );
+    const patchBlock = source.slice(patchIndex, patchEnd);
+
+    expect(patchBlock).toContain('participants: participants.map');
+    expect(patchBlock).not.toContain('mergeParticipants(');
+    expect(source).toContain('let cameraEnabled = false');
+    expect(source).toContain('isLocalCameraEnabled: cameraEnabled');
+  });
+
+  it('logs compact local and per-participant remote media stats', () => {
+    const source = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+
+    expect(source).toContain("'group_audio_stats_compact'");
+    expect(source).toContain("'group_video_stats_compact'");
+    expect(source).toContain("direction: 'local_outbound'");
+    expect(source).toContain("'remote_inbound'");
+    expect(source).toContain('participantIdentity');
+  });
+
+  it('does not manually stop the iOS CallKit-owned audio session', () => {
+    const source = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+    const finishIndex = source.indexOf('const finishSession = useCallback');
+    const finishEnd = source.indexOf('const connectPayload = useCallback', finishIndex);
+    const finishBlock = source.slice(finishIndex, finishEnd);
+
+    expect(finishBlock).toContain('isIosNativeCall');
+    expect(finishBlock.indexOf('endNativeCall')).toBeLessThan(
+      finishBlock.indexOf('disconnectActiveRoom'),
+    );
+    expect(finishBlock).toContain('const stopAudioSession = !isIosNativeCall');
+    expect(finishBlock).toContain('if (stopAudioSession)');
+  });
+
+  it('cleans up native and server state when group media startup fails', () => {
+    const source = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+    const cleanupIndex = source.indexOf(
+      'const cleanupFailedGroupCallStart = useCallback',
+    );
+    const cleanupEnd = source.indexOf(
+      'const connectPayload = useCallback',
+      cleanupIndex,
+    );
+    const cleanupBlock = source.slice(cleanupIndex, cleanupEnd);
+
+    expect(cleanupBlock).toContain('endNativeCall(current.nativeCallUuid)');
+    expect(cleanupBlock).toContain('disconnectActiveRoom()');
+    expect(cleanupBlock).toContain('releaseIosCallAudio(');
+    expect(cleanupBlock).toContain('repository.leaveCall({ callId: joinedCallId })');
+    expect(cleanupBlock).toContain("if (!isIosCall)");
+    expect(cleanupBlock).toContain('AudioSession.stopAudioSession()');
+  });
+});

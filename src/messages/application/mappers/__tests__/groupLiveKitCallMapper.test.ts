@@ -66,7 +66,7 @@ describe('groupLiveKitCallMapper', () => {
     ).toMatchObject({
       callId: '5',
       groupId: '9',
-      callType: 'audio',
+      callType: 'video',
       group: { name: 'Team' },
       caller: { name: 'Dung' },
     });

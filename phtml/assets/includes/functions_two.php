@@ -12,6 +12,7 @@
 /* Script Main Functions (File 2) */
 // functions_tww.php
 require_once "app_start.php";
+require_once __DIR__ . "/vnseea_group_call_policy.php";
 use Twilio\Rest\Client;
 if (!empty($wo["config"]["adult_images_file"])) {
     putenv("GOOGLE_APPLICATION_CREDENTIALS=" . $wo["config"]["adult_images_file"]);
@@ -6604,7 +6605,7 @@ function Wo_RegisterGroupCallMessage($group_call = array(), $action = 'started',
 function Wo_CreateNewGroupCall($group_id = 0, $call_type = 'video', $created_by = 0) {
     global $wo, $sqlConnect;
     $group_id = intval($group_id);
-    $call_type = Wo_NormalizeGroupCallType($call_type);
+    $call_type = Wo_NormalizeNewGroupCallType($call_type);
     if ($created_by <= 0 && !empty($wo['user']['user_id'])) {
         $created_by = intval($wo['user']['user_id']);
     }
@@ -6624,7 +6625,11 @@ function Wo_CreateNewGroupCall($group_id = 0, $call_type = 'video', $created_by 
                 'notified_at' => time()
             ));
         }
-        return Wo_GetGroupCallById($active_call['id']);
+        $existing_call = Wo_GetGroupCallById($active_call['id']);
+        if (!empty($existing_call)) {
+            $existing_call['is_existing'] = 1;
+        }
+        return $existing_call;
     }
     $now = time();
     $room_name = 'wowonder_groupcall_' . $group_id . '_' . substr(sha1(uniqid((string) $created_by, true)), 0, 20);
@@ -6657,7 +6662,11 @@ function Wo_CreateNewGroupCall($group_id = 0, $call_type = 'video', $created_by 
             'initiator_id' => $created_by
         ));
     }
-    return Wo_GetGroupCallById($call_id);
+    $created_call = Wo_GetGroupCallById($call_id);
+    if (!empty($created_call)) {
+        $created_call['is_existing'] = 0;
+    }
+    return $created_call;
 }
 function Wo_JoinGroupCall($call_id = 0, $user_id = 0) {
     global $wo;

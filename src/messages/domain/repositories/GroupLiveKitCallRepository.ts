@@ -1,5 +1,4 @@
 // Description: Declares the Messages context repository contract for LiveKit group calls.
-import type { LiveKitCallType } from '../types/call.types';
 import type {
   GroupLiveKitCreateResult,
   GroupLiveKitJoinPayload,
@@ -10,7 +9,6 @@ import type {
 
 export type CreateGroupLiveKitCallInput = {
   groupId: string;
-  callType: LiveKitCallType;
 };
 
 export type GroupLiveKitCallIdentityInput = {

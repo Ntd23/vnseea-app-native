@@ -1,5 +1,5 @@
 // Description: Renders the Messages LiveKit group call room from the app-level group call session.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -11,7 +11,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { RTCView } from '@livekit/react-native-webrtc';
+import {
+  isTrackReference,
+  RoomContext,
+  useTracks,
+  VideoTrack,
+  type TrackReferenceOrPlaceholder,
+} from '@livekit/react-native';
+import { Track } from 'livekit-client';
 import {
   ArrowLeft,
   CameraOff,
@@ -70,22 +77,32 @@ function ControlButton({
 
 function ParticipantTile({
   item,
-  isAudioCall,
+  cameraTrack,
+  localCameraFacingMode,
 }: {
   item: GroupLiveKitParticipant;
-  isAudioCall: boolean;
+  cameraTrack?: TrackReferenceOrPlaceholder;
+  localCameraFacingMode: 'user' | 'environment';
 }) {
-  const showVideo = !isAudioCall && item.videoStreamUrl && !item.isCameraMuted;
+  const renderableTrack = isTrackReference(cameraTrack)
+    ? cameraTrack
+    : undefined;
+  const showVideo = Boolean(
+    renderableTrack &&
+      !item.isCameraMuted &&
+      !renderableTrack.publication.isMuted,
+  );
 
   return (
     <View className="m-1 h-64 flex-1 overflow-hidden rounded-2xl bg-slate-900">
       {showVideo ? (
-        <RTCView
-          key={`${item.id}-${item.videoStreamUrl}-${item.videoRenderKey ?? 0}`}
-          streamURL={item.videoStreamUrl ?? ''}
+        <VideoTrack
+          trackRef={renderableTrack}
           style={styles.participantVideo}
           objectFit="cover"
-          mirror={Boolean(item.isLocal)}
+          mirror={Boolean(
+            item.isLocal && localCameraFacingMode === 'user',
+          )}
         />
       ) : (
         <View className="flex-1 items-center justify-center bg-slate-900 px-3">
@@ -116,13 +133,95 @@ function ParticipantTile({
             <MicOff size={16} color="#ffffff" />
           </View>
         ) : null}
-        {!isAudioCall && item.isCameraMuted ? (
+        {item.isCameraMuted ? (
           <View className="h-8 w-8 items-center justify-center rounded-full bg-slate-950/85">
             <CameraOff size={16} color="#ffffff" />
           </View>
         ) : null}
       </View>
     </View>
+  );
+}
+
+function resolveTrackParticipantId(
+  trackRef: TrackReferenceOrPlaceholder,
+): string {
+  const { participant } = trackRef;
+  try {
+    const metadata = JSON.parse(participant.metadata || '{}') as Record<
+      string,
+      unknown
+    >;
+    return String(metadata.user_id ?? participant.identity ?? '');
+  } catch {
+    return String(participant.identity ?? '');
+  }
+}
+
+function GroupCallGallery({
+  participants,
+  localCameraFacingMode,
+}: {
+  participants: GroupLiveKitParticipant[];
+  localCameraFacingMode: 'user' | 'environment';
+}) {
+  const cameraTracks = useTracks([
+    { source: Track.Source.Camera, withPlaceholder: true },
+  ]);
+  const numColumns = participants.length <= 2 ? 1 : 2;
+  const trackByParticipantId = useMemo(() => {
+    const next = new Map<string, TrackReferenceOrPlaceholder>();
+    cameraTracks.forEach(trackRef => {
+      const participantId = resolveTrackParticipantId(trackRef);
+      if (participantId) next.set(participantId, trackRef);
+      if (trackRef.participant.identity) {
+        next.set(String(trackRef.participant.identity), trackRef);
+      }
+      if (trackRef.participant.sid) {
+        next.set(String(trackRef.participant.sid), trackRef);
+      }
+      if (trackRef.participant.isLocal) next.set('__local__', trackRef);
+    });
+    return next;
+  }, [cameraTracks]);
+
+  useEffect(() => {
+    console.log(
+      '[VNSEEA_CALL_DEBUG]',
+      JSON.stringify({
+        event: 'group_video_render_state',
+        participants: participants.length,
+        cameraTracks: cameraTracks.length,
+        subscribedCameraTracks: cameraTracks.filter(isTrackReference).length,
+      }),
+    );
+  }, [cameraTracks, participants.length]);
+
+  return (
+    <FlatList
+      key={`group-call-grid-${numColumns}`}
+      className="flex-1 px-2"
+      data={participants}
+      keyExtractor={item => item.id}
+      numColumns={numColumns}
+      extraData={`${participants.length}-${localCameraFacingMode}-${cameraTracks.length}`}
+      renderItem={({ item }) => (
+        <ParticipantTile
+          item={item}
+          cameraTrack={trackByParticipantId.get(
+            item.isLocal ? '__local__' : item.id,
+          )}
+          localCameraFacingMode={localCameraFacingMode}
+        />
+      )}
+      ListEmptyComponent={
+        <View className="flex-1 items-center justify-center py-20">
+          <Text className="text-center text-slate-300">
+            Đang chờ thành viên tham gia...
+          </Text>
+        </View>
+      }
+    />
   );
 }
 
@@ -269,7 +368,6 @@ function GroupCallControls() {
     switchCamera,
   } = useGroupLiveKitCallSession();
   const [isInviteOpen, setInviteOpen] = useState(false);
-  const isVideo = session?.callType === 'video';
 
   return (
     <View className="items-center pb-8">
@@ -290,24 +388,16 @@ function GroupCallControls() {
           )}
         </ControlButton>
 
-        {isVideo ? (
-          <>
-            <ControlButton
-              onPress={() => toggleCamera().catch(() => undefined)}
-            >
-              {session?.isLocalCameraEnabled ? (
-                <Video size={23} color="#ffffff" />
-              ) : (
-                <CameraOff size={23} color="#ffffff" />
-              )}
-            </ControlButton>
-            <ControlButton
-              onPress={() => switchCamera().catch(() => undefined)}
-            >
-              <RefreshCw size={22} color="#ffffff" />
-            </ControlButton>
-          </>
-        ) : null}
+        <ControlButton onPress={() => toggleCamera().catch(() => undefined)}>
+          {session?.isLocalCameraEnabled ? (
+            <Video size={23} color="#ffffff" />
+          ) : (
+            <CameraOff size={23} color="#ffffff" />
+          )}
+        </ControlButton>
+        <ControlButton onPress={() => switchCamera().catch(() => undefined)}>
+          <RefreshCw size={22} color="#ffffff" />
+        </ControlButton>
 
         <ControlButton onPress={() => setInviteOpen(true)}>
           <UserPlus size={23} color="#ffffff" />
@@ -326,11 +416,13 @@ function GroupCallControls() {
 }
 
 function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
-  const { session, statusText, ensureSessionFromRoute, minimizeCall } =
-    useGroupLiveKitCallSession();
-  const callType = session?.callType ?? route.params.callType;
-  const isVideo = callType === 'video';
-  const numColumns = (session?.participants.length ?? 0) <= 2 ? 1 : 2;
+  const {
+    session,
+    activeRoom,
+    statusText,
+    ensureSessionFromRoute,
+    minimizeCall,
+  } = useGroupLiveKitCallSession();
   const groupName =
     session?.group.name || route.params.groupName || 'Cuộc gọi nhóm';
 
@@ -396,25 +488,17 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
             <ActivityIndicator className="mt-8" color="#0000ff" size="large" />
           ) : null}
         </View>
+      ) : activeRoom ? (
+        <RoomContext.Provider value={activeRoom}>
+          <GroupCallGallery
+            participants={session.participants}
+            localCameraFacingMode={session.localCameraFacingMode}
+          />
+        </RoomContext.Provider>
       ) : (
-        <FlatList
-          key={`group-call-grid-${numColumns}`}
-          className="flex-1 px-2"
-          data={session.participants}
-          keyExtractor={item => item.id}
-          numColumns={numColumns}
-          extraData={`${session.participants.length}-${session.elapsedSeconds}`}
-          renderItem={({ item }) => (
-            <ParticipantTile item={item} isAudioCall={!isVideo} />
-          )}
-          ListEmptyComponent={
-            <View className="flex-1 items-center justify-center py-20">
-              <Text className="text-center text-slate-300">
-                Đang chờ thành viên tham gia...
-              </Text>
-            </View>
-          }
-        />
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color="#0000ff" size="large" />
+        </View>
       )}
 
       {session?.mediaErrorText ? (
@@ -430,8 +514,7 @@ function GroupCallRoomScreen({ route }: GroupCallRoomScreenProps) {
 const styles = StyleSheet.create({
   participantVideo: {
     width: '100%',
-    height: 260,
-    minHeight: 220,
+    height: '100%',
     backgroundColor: '#020617',
   },
 });

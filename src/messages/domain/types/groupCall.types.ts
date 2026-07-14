@@ -1,5 +1,7 @@
 // Description: Defines LiveKit group call domain types owned by the Messages context.
-import type { LiveKitCallDirection, LiveKitCallType } from './call.types';
+import type { LiveKitCallDirection } from './call.types';
+
+export type GroupLiveKitCallType = 'video';
 
 export type GroupLiveKitCallStatus = 'active' | 'ended' | 'unknown';
 
@@ -21,14 +23,12 @@ export type GroupLiveKitParticipant = GroupLiveKitPeer & {
   isLocal?: boolean;
   isMicrophoneMuted?: boolean;
   isCameraMuted?: boolean;
-  videoStreamUrl?: string;
-  videoRenderKey?: number;
 };
 
 export type GroupLiveKitCallSummary = {
   id: string;
   groupId: string;
-  callType: LiveKitCallType;
+  callType: GroupLiveKitCallType;
   provider: 'livekit';
   roomName: string;
   status: GroupLiveKitCallStatus;
@@ -68,7 +68,7 @@ export type GroupLiveKitSyncResult = {
 export type IncomingGroupLiveKitCall = {
   callId: string;
   groupId: string;
-  callType: LiveKitCallType;
+  callType: GroupLiveKitCallType;
   provider: 'livekit';
   roomName: string;
   group: GroupLiveKitGroup;
@@ -83,7 +83,6 @@ export type IncomingGroupLiveKitCall = {
 export type GroupLiveKitCallRouteParams = {
   groupId: string;
   callId?: string;
-  callType: LiveKitCallType;
   direction: LiveKitCallDirection;
   groupName?: string;
   groupAvatar?: string;
