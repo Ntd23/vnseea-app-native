@@ -97,6 +97,7 @@ define('T_PAGE_RATING', 'Wo_PageRating');
 define('T_FAMILY', 'Wo_Family');
 define('T_REL_SHIP', 'Wo_Relationship');
 define('T_PAYMENT_TRANSACTIONS', 'Wo_Payment_Transactions');
+define('T_POINTS_TRANSFER_REQUESTS', 'Wo_Points_Transfer_Requests');
 define('T_USERADS_DATA', 'Wo_UserAds_Data');
 define('T_POKES', 'Wo_Pokes');
 define('T_GIFTS', 'Wo_Gifts');

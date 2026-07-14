@@ -93,14 +93,25 @@ error_reporting(E_ALL);
         exit;
     }
     if($s === 'points-qr-code'){
-        $to = isset($_GET['to']) ? (int)$_GET['to'] : (!empty($wo['loggedin']) ? (int)$wo['user']['user_id'] : 0);
+        require_once 'assets/includes/vnseea_points_transfer.php';
+        $to = isset($_GET['to'])
+            ? Wo_PointsTransferParsePositiveInteger($_GET['to'])
+            : (!empty($wo['loggedin']) ? Wo_PointsTransferParsePositiveInteger($wo['user']['user_id']) : null);
+        if (!$to) {
+            http_response_code(400);
+            exit;
+        }
         $ud = Wo_UserData($to);
         if (empty($ud['user_id']) || $ud['banned'] == 1 || $ud['active'] == 0) {
             http_response_code(404);
             exit;
         }
 
-        $points  = isset($_GET['points']) ? (int) wo_parse_amount($_GET['points']) : null;
+        $points = isset($_GET['points']) ? Wo_PointsTransferParsePositiveInteger($_GET['points']) : null;
+        if (isset($_GET['points']) && $points === null) {
+            http_response_code(400);
+            exit;
+        }
         $payload = 'POINTS|to=' . $to . (($points !== null && $points > 0) ? '|points=' . $points . '|amount=' . $points : '');
         $paths = [
             __DIR__ . '/assets/includes/phpqrcode/qrlib.php',

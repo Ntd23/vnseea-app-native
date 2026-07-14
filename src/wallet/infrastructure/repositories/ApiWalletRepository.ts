@@ -2,7 +2,7 @@
 
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
-import type { WalletRepository, SepayQRResponse, StripeSessionResponse } from '../../domain/repositories/WalletRepository';
+import type { WalletRepository, SepayQRResponse, StripeSessionResponse, PointsTransferResult } from '../../domain/repositories/WalletRepository';
 import type { WalletOverview, Transaction, TopupMethod, CurrentUser } from '../../domain/types/wallet.types';
 
 interface BackendWalletResponse {
@@ -39,6 +39,21 @@ interface BackendWalletResponse {
     username: string;
     avatar: string;
   };
+}
+
+interface BackendPointsTransferResponse {
+  api_status: number | string;
+  success?: boolean;
+  message?: string;
+  request_id?: string;
+  idempotent_replay?: boolean;
+  recipient_id?: number | string;
+  recipient_name?: string;
+  points?: number | string;
+  sender_points?: number | string;
+  recipient_points?: number | string;
+  sender_transaction_id?: number | string;
+  recipient_transaction_id?: number | string;
 }
 
 function mapTransaction(raw: BackendWalletResponse['transactions'][0]): Transaction {
@@ -119,6 +134,30 @@ export function createWalletRepository(): WalletRepository {
         { type: 'createsession', amount },
       );
       return response;
+    },
+
+    async transferPoints(input): Promise<PointsTransferResult> {
+      const response = await apiBridge.post<BackendPointsTransferResponse>(
+        apiRoutes.wallet.pointsTransfer,
+        {
+          recipient_user_id: input.recipientUserId,
+          points: input.points,
+          request_id: input.requestId,
+          note: input.note?.trim() || undefined,
+        },
+      );
+      return {
+        requestId: String(response.request_id || input.requestId),
+        idempotentReplay: Boolean(response.idempotent_replay),
+        message: String(response.message || ''),
+        recipientId: toNumber(response.recipient_id),
+        recipientName: String(response.recipient_name || ''),
+        points: toNumber(response.points),
+        senderPoints: toNumber(response.sender_points),
+        recipientPoints: toNumber(response.recipient_points),
+        senderTransactionId: toNumber(response.sender_transaction_id),
+        recipientTransactionId: toNumber(response.recipient_transaction_id),
+      };
     },
   };
 }
