@@ -1055,7 +1055,7 @@ function ReelCommentsSheetBase({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.modalRoot}
+        style={[styles.modalRoot, Platform.OS === 'android' && { paddingBottom: keyboardHeight }]}
       >
         <Pressable style={styles.backdropPressable} onPress={handleRequestClose}>
           <Animated.View

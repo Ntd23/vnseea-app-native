@@ -78,4 +78,9 @@ export interface EditFundingInput {
   title: string;
   description: string;
   amount: number;
+  image?: {
+    uri: string;
+    name: string;
+    type: string;
+  };
 }

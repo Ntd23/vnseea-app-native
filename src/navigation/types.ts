@@ -13,6 +13,7 @@ import type { FeedPost } from '../feed/domain/types/feed.types';
 import type { AdItem } from '../advertising/domain/types/ads.types';
 import type { EventsItem } from '../events/domain/types/events.types';
 import type { UserProfile } from '../user/domain/types/user.types';
+import type { FundingItem } from '../funding/domain/types/funding.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]:
@@ -162,7 +163,7 @@ export type RootStackParamList = {
   [ROUTES.EVENTS]: undefined;
   [ROUTES.FUNDING]: undefined;
   [ROUTES.FUNDING_DETAIL]: { fundId: string };
-  [ROUTES.CREATE_FUNDING]: undefined;
+  [ROUTES.CREATE_FUNDING]: { campaign?: FundingItem } | undefined;
   [ROUTES.FOLLOWING]: undefined;
   [ROUTES.BOOSTED]: undefined;
   [ROUTES.POPULAR]: undefined;
