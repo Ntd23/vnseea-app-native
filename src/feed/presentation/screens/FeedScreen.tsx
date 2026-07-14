@@ -7,7 +7,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  ActivityIndicator,
   AppState,
   Dimensions,
   FlatList,
@@ -49,7 +48,6 @@ import {
   Radio,
   ThumbsUp,
   Users,
-  Video,
 } from 'lucide-react-native';
 import { PostMenuActionSheet } from '../../../shared-kernel/presentation/components/PostMenuActionSheet';
 import {
@@ -171,13 +169,13 @@ import {
 } from './feedVideoAutoplay';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
-const LOAD_MORE_THROTTLE_MS = 800;
+const FEED_IS_ANDROID = Platform.OS === 'android';
+const LOAD_MORE_THROTTLE_MS = FEED_IS_ANDROID ? 420 : 520;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
-const FEED_EARLY_LOAD_DISTANCE_MULTIPLIER = 2.25;
-const FEED_EARLY_LOAD_MIN_DISTANCE = 1600;
 const FEED_NEW_POST_PROBE_INTERVAL_MS = 30000;
 const FEED_NEW_POST_PROBE_LIMIT = 8;
-const FEED_IS_ANDROID = Platform.OS === 'android';
+const FEED_EARLY_LOAD_DISTANCE_MULTIPLIER = FEED_IS_ANDROID ? 5.2 : 4.2;
+const FEED_EARLY_LOAD_MIN_DISTANCE = FEED_IS_ANDROID ? 4200 : 3600;
 const INITIAL_IMAGE_PREFETCH_ITEMS = FEED_IS_ANDROID ? 6 : 8;
 const FEED_CAROUSEL_IMAGE_PREFETCH_ITEMS = 4;
 const IMAGE_PREFETCH_LOOKAHEAD = FEED_IS_ANDROID ? 9 : 14;
@@ -185,7 +183,7 @@ const IMAGE_PREFETCH_BEHIND = 2;
 const MAX_IMAGE_PREFETCH_URLS = FEED_IS_ANDROID ? 12 : 20;
 const IMAGE_PREFETCH_BATCH_SIZE = FEED_IS_ANDROID ? 3 : 4;
 const IMAGE_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 120 : 90;
-const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = 8;
+const FEED_LOAD_MORE_LOOKAHEAD_ITEMS = FEED_IS_ANDROID ? 18 : 14;
 const FEED_VIDEO_WARM_BEHIND_ITEMS = FEED_IS_ANDROID ? 2 : 6;
 const FEED_VIDEO_WARM_AHEAD_ITEMS = FEED_IS_ANDROID ? 4 : 12;
 const FEED_VIDEO_WARM_MAX_COUNT = FEED_IS_ANDROID ? 1 : 3;
@@ -1401,6 +1399,7 @@ function FeedScreen() {
   const shareFeedPost = vm.sharePost;
   const reloadFeedPosts = vm.reloadPosts;
   const peekLatestFeedPosts = vm.peekLatestPosts;
+  const updateFeedPublisherFollowState = vm.updatePublisherFollowState;
   const mainFeedListRef = useRef<FlashListRef<FeedListItem>>(null);
   const [hasNewPosts, setHasNewPosts] = useState(false);
   const pendingNewPostsRef = useRef<FeedPost[]>([]);
@@ -1879,6 +1878,8 @@ function FeedScreen() {
   );
 
   useEffect(() => {
+    const queuedImagePrefetchUrls = queuedImagePrefetchUrlsRef.current;
+
     return () => {
       if (scrollEndTimeoutRef.current) {
         clearTimeout(scrollEndTimeoutRef.current);
@@ -1892,7 +1893,7 @@ function FeedScreen() {
         imagePrefetchTimerRef.current = null;
       }
       pendingImagePrefetchUrlsRef.current = [];
-      queuedImagePrefetchUrlsRef.current.clear();
+      queuedImagePrefetchUrls.clear();
       activeVideoIdRef.current = null;
       publishFeedActiveVideo(null);
       publishFeedWarmVideoIds([]);
@@ -2755,15 +2756,16 @@ function FeedScreen() {
   ]);
 
   const ListFooterComponent = useMemo(() => {
-    if (isFeedLoadingMore) {
+    if (isFeedLoadingMore && !isFeedAllLoaded) {
       return (
-        <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-          <ActivityIndicator size="small" color="#0866FF" />
+        <View pointerEvents="none" style={{ paddingTop: 4, paddingBottom: 16 }}>
+          <PostSkeleton />
+          <PostSkeleton />
         </View>
       );
     }
     return null;
-  }, [isFeedLoadingMore]);
+  }, [isFeedAllLoaded, isFeedLoadingMore]);
 
   // â”€â”€ Photo viewer state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Set when the user taps a photo in a text post. Cleared by the modal's
@@ -3406,7 +3408,7 @@ function FeedScreen() {
       onMomentumScrollBegin={handleMomentumScrollBegin}
       onMomentumScrollEnd={handleMomentumScrollEnd}
       onEndReached={handleLoadMore}
-      onEndReachedThreshold={0.75}
+      onEndReachedThreshold={1.4}
       ListFooterComponent={ListFooterComponent}
       contentContainerStyle={feedListContentStyle}
       scrollIndicatorInsets={
@@ -3519,6 +3521,7 @@ function FeedScreen() {
           onProfilePress={navigateToProfile}
           onInternalShare={handleInternalSharePost}
           onShared={prependFeedPost}
+          onFollowChange={updateFeedPublisherFollowState}
           posts={feedPosts}
         />
         <ReelCommentsSheet

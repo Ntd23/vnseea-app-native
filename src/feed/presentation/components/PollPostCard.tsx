@@ -3,6 +3,7 @@
 import React, { useCallback, useRef, useMemo } from 'react';
 import {
   Image,
+  Platform,
   Text,
   TouchableOpacity,
   View,
@@ -32,7 +33,12 @@ import {
   FeedGlassActionBar,
   FeedGlassActionButton,
 } from './FeedCardChrome';
-import { renderPostTextTokens } from './PostCards';
+import {
+  FeedInlineReactionPickerBar,
+  getFeedReactionPickerAnchorY,
+  renderPostTextTokens,
+  useFeedReactionPickerActivePostId,
+} from './PostCards';
 
 interface PollPostCardProps {
   post: FeedPollPost;
@@ -307,13 +313,21 @@ export const PollPostCard = React.memo(function PollPostCard({
   const handleLikeLongPress = useCallback(() => {
     if (!onOpenPicker) return;
     if (!likeButtonRef.current) {
-      onOpenPicker(post.id, 100, 200);
+      onOpenPicker(
+        post.id,
+        100,
+        getFeedReactionPickerAnchorY(200, post.likeCount, post.commentCount),
+      );
       return;
     }
     likeButtonRef.current.measureInWindow((x, y, width) => {
-      onOpenPicker(post.id, x + width / 2, y);
+      onOpenPicker(
+        post.id,
+        x + width / 2,
+        getFeedReactionPickerAnchorY(y, post.likeCount, post.commentCount),
+      );
     });
-  }, [onOpenPicker, post.id]);
+  }, [onOpenPicker, post.id, post.likeCount, post.commentCount]);
 
   const composedGesture = useMemo(() => {
     const pan = Gesture.Pan()
@@ -354,6 +368,11 @@ export const PollPostCard = React.memo(function PollPostCard({
   const reactionColor = post.myReaction ? REACTION_COLOR[post.myReaction] : '#65676B';
   const privacyMeta = getPollPrivacyMeta(post.privacy, copy);
   const PrivacyIcon = privacyMeta.Icon;
+  const activeReactionPickerPostId = useFeedReactionPickerActivePostId();
+  const showInlineReactionPicker =
+    Platform.OS === 'android' &&
+    activeReactionPickerPostId !== null &&
+    activeReactionPickerPostId === post.id;
 
   return (
     <FeedCardSurface>
@@ -446,54 +465,61 @@ export const PollPostCard = React.memo(function PollPostCard({
         </View>
       </View>
 
-      {/* Action buttons (Like / Comment / Share) */}
-      <FeedGlassActionBar className="border-t-0 px-3 py-2.5 pt-0">
-        <GestureDetector gesture={composedGesture}>
-          <Animated.View
-            ref={likeButtonRef as any}
-            className="flex-1 flex-row items-center justify-center py-1"
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          >
-            {post.myReaction ? (
-              <Image
-                source={REACTION_IMAGES[post.myReaction]}
-                style={{ width: 20, height: 20 }}
-                resizeMode="contain"
-              />
-            ) : (
-              <ThumbsUp size={19} color={reactionColor} />
-            )}
-            <Text
-              className="ml-2 text-[14px] font-semibold"
-              style={{ color: reactionColor }}
+      {showInlineReactionPicker ? (
+        <View className="px-3 pb-2">
+          <FeedInlineReactionPickerBar
+            onPick={reaction => onReact(post.id, reaction)}
+          />
+        </View>
+      ) : (
+        <FeedGlassActionBar className="border-t-0 px-3 py-2.5 pt-0">
+          <GestureDetector gesture={composedGesture}>
+            <Animated.View
+              ref={likeButtonRef as any}
+              className="flex-1 flex-row items-center justify-center py-1"
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              {reactionLabel}
+              {post.myReaction ? (
+                <Image
+                  source={REACTION_IMAGES[post.myReaction]}
+                  style={{ width: 20, height: 20 }}
+                  resizeMode="contain"
+                />
+              ) : (
+                <ThumbsUp size={19} color={reactionColor} />
+              )}
+              <Text
+                className="ml-2 text-[14px] font-semibold"
+                style={{ color: reactionColor }}
+              >
+                {reactionLabel}
+              </Text>
+            </Animated.View>
+          </GestureDetector>
+
+          <FeedGlassActionButton
+            className="flex-1 flex-row items-center justify-center py-1"
+            activeOpacity={0.75}
+            onPress={() => onCommentTap(post.id)}
+          >
+            <MessageCircle size={19} color="#65676B" />
+            <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
+              {copy.comment}
             </Text>
-          </Animated.View>
-        </GestureDetector>
+          </FeedGlassActionButton>
 
-        <FeedGlassActionButton
-          className="flex-1 flex-row items-center justify-center py-1"
-          activeOpacity={0.75}
-          onPress={() => onCommentTap(post.id)}
-        >
-          <MessageCircle size={19} color="#65676B" />
-          <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
-            {copy.comment}
-          </Text>
-        </FeedGlassActionButton>
-
-        <FeedGlassActionButton
-          className="flex-1 flex-row items-center justify-center py-1"
-          activeOpacity={0.75}
-          onPress={() => onShare?.(post)}
-        >
-          <Share2 size={19} color="#65676B" />
-          <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
-            {copy.share}
-          </Text>
-        </FeedGlassActionButton>
-      </FeedGlassActionBar>
+          <FeedGlassActionButton
+            className="flex-1 flex-row items-center justify-center py-1"
+            activeOpacity={0.75}
+            onPress={() => onShare?.(post)}
+          >
+            <Share2 size={19} color="#65676B" />
+            <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
+              {copy.share}
+            </Text>
+          </FeedGlassActionButton>
+        </FeedGlassActionBar>
+      )}
     </FeedCardSurface>
   );
 });

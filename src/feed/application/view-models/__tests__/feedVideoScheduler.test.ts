@@ -86,6 +86,28 @@ describe('feed video scheduler', () => {
     ]);
   });
 
+  it('keeps unprepared videos out of the mixed lane until they are ready', () => {
+    const light = Array.from({ length: 6 }, (_, index) =>
+      lightPost(`post-${index + 1}`),
+    );
+    const videos = [videoPost('video-1'), videoPost('video-2')];
+
+    const merged = mergeFeedContentWithVideos(light, videos, {
+      videoReadiness: video => video.id === 'video-2',
+    });
+
+    expect(merged.map(post => post.id)).toEqual([
+      'post-1',
+      'post-2',
+      'post-3',
+      'video-2',
+      'post-4',
+      'post-5',
+      'post-6',
+    ]);
+    expect(merged.some(post => post.id === 'video-1')).toBe(false);
+  });
+
   it('preserves already-rendered rows when background videos arrive later', () => {
     const firstPage = Array.from({ length: 10 }, (_, index) =>
       lightPost(`post-${index + 1}`),

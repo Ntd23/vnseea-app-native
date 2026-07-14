@@ -93,6 +93,9 @@ import { changeLocale } from '../../../shared-kernel/infrastructure/i18n';
 const SCREEN_W = Dimensions.get('window').width;
 const DRAWER_W = SCREEN_W * 0.84;
 const FALLBACK_AVATAR = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
+const DRAWER_HEADER_BAR_HEIGHT = 68;
+const DRAWER_CONTENT_DEFER_MS = 80;
+const DRAWER_SKELETON_ROWS = Array.from({ length: 8 }, (_, index) => index);
 
 const DRAWER_COPY = {
   vi: {
@@ -339,8 +342,17 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
 
     if (visible) {
       setShouldRender(true);
-      setContentReady(true); // Render content immediately to avoid white/blank flash
+      setContentReady(false);
       translateX.setValue(DRAWER_W);
+      drawerOpacity.setValue(1);
+      backdropOpacity.setValue(0);
+      openAnimFrame.current = requestAnimationFrame(() => {
+        openAnimFrame.current = null;
+        contentTimerRef.current = setTimeout(() => {
+          contentTimerRef.current = null;
+          setContentReady(true);
+        }, DRAWER_CONTENT_DEFER_MS);
+      });
 
       Animated.parallel([
         Animated.timing(backdropOpacity, {
@@ -385,7 +397,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
         }
       });
     }
-  }, [visible, backdropOpacity, translateX]);
+  }, [visible, backdropOpacity, drawerOpacity, translateX]);
 
   useEffect(() => {
     return () => {
@@ -637,6 +649,9 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
       visible={shouldRender}
       transparent
       animationType="none"
+      hardwareAccelerated
+      statusBarTranslucent
+      presentationStyle="overFullScreen"
       onRequestClose={handleClose}
     >
       <View style={styles.container}>
@@ -653,13 +668,20 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             {
               transform: [{ translateX }],
               opacity: drawerOpacity,
-              paddingTop: Math.max(insets.top, 12),
               paddingBottom: Math.max(insets.bottom, 12),
             },
           ]}
         >
           {/* Header */}
-          <View style={styles.header}>
+          <View
+            style={[
+              styles.header,
+              {
+                height: Math.max(insets.top, 12) + DRAWER_HEADER_BAR_HEIGHT,
+                paddingTop: Math.max(insets.top, 12),
+              },
+            ]}
+          >
             <Text style={styles.headerTitle}>{copy.menuTitle}</Text>
             <TouchableOpacity
               onPress={handleClose}
@@ -847,12 +869,38 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             />
           </ScrollView>
           </View>
-        ) : null}
+        ) : (
+          <DrawerMenuSkeleton />
+        )}
         </Animated.View>
       </View>
     </Modal>
   );
 }
+
+const DrawerMenuSkeleton = React.memo(function DrawerMenuSkeleton() {
+  return (
+    <View style={styles.skeletonContent} pointerEvents="none">
+      <View style={styles.skeletonProfileCard}>
+        <View style={styles.skeletonProfileTop}>
+          <View style={styles.skeletonNameBlock}>
+            <View style={styles.skeletonLineWide} />
+            <View style={styles.skeletonLineMedium} />
+          </View>
+          <View style={styles.skeletonAvatar} />
+        </View>
+        <View style={styles.skeletonWalletLine} />
+      </View>
+      {DRAWER_SKELETON_ROWS.map(index => (
+        <View key={`drawer-skeleton-${index}`} style={styles.skeletonRow}>
+          <View style={styles.skeletonIcon} />
+          <View style={styles.skeletonRowText} />
+          <View style={styles.skeletonChevron} />
+        </View>
+      ))}
+    </View>
+  );
+});
 
 // Sub-component for individual settings rows — memoized, no per-row Animated
 // values to keep the list cheap to render. Native activeOpacity + a thin
@@ -982,12 +1030,89 @@ const styles = StyleSheet.create({
   scrollWrapper: {
     flex: 1,
   },
+  skeletonContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  skeletonProfileCard: {
+    minHeight: 122,
+    borderRadius: 24,
+    backgroundColor: '#eef2f7',
+    padding: 16,
+    marginBottom: 20,
+  },
+  skeletonProfileTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  skeletonNameBlock: {
+    flex: 1,
+    marginRight: 18,
+  },
+  skeletonLineWide: {
+    width: '58%',
+    height: 18,
+    borderRadius: 999,
+    backgroundColor: '#e2e8f0',
+    marginBottom: 12,
+  },
+  skeletonLineMedium: {
+    width: '72%',
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: '#e2e8f0',
+  },
+  skeletonAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#e2e8f0',
+  },
+  skeletonWalletLine: {
+    width: '76%',
+    height: 15,
+    borderRadius: 999,
+    backgroundColor: '#e2e8f0',
+  },
+  skeletonRow: {
+    minHeight: 64,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    marginBottom: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#eef2f7',
+  },
+  skeletonIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+    marginRight: 14,
+  },
+  skeletonRowText: {
+    flex: 1,
+    height: 15,
+    borderRadius: 999,
+    backgroundColor: '#e8edf5',
+  },
+  skeletonChevron: {
+    width: 10,
+    height: 18,
+    borderRadius: 999,
+    backgroundColor: '#eef2f7',
+    marginLeft: 14,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
     backgroundColor: '#ffffff',

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Image,
   StyleSheet,
@@ -66,6 +66,14 @@ export const FeedHeader = React.memo(function FeedHeader() {
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
   const [menuVisible, setMenuVisible] = useState(false);
   const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
+
+  useEffect(() => {
+    const warmMountTimer = setTimeout(() => {
+      setHasOpenedMenu(true);
+    }, 650);
+
+    return () => clearTimeout(warmMountTimer);
+  }, []);
 
   const handleOpenFutureDrawer = useCallback(() => {
     setHasOpenedMenu(true);

@@ -47,7 +47,6 @@ export const FeedHeader = React.memo(function FeedHeader() {
   const { user } = useCurrentUserViewModel();
   useNotificationBadgeViewModel();
   const [menuVisible, setMenuVisible] = useState(false);
-  const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
 
   const avatarUrl = user?.avatar;
   const transitionAnim = useRef(new Animated.Value(0)).current;
@@ -80,7 +79,6 @@ export const FeedHeader = React.memo(function FeedHeader() {
   }, [navigation]);
 
   const handleOpenMenu = useCallback(() => {
-    setHasOpenedMenu(true);
     setMenuVisible(true);
   }, []);
 

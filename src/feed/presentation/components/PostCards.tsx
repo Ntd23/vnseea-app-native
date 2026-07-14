@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Dimensions,
   Image,
+  InteractionManager,
   Platform,
   Pressable,
   StyleSheet,
@@ -65,6 +66,10 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import {
+  createCachedVideoPosterThumbnail,
+  getCachedVideoPosterThumbnail,
+} from '../../../shared-kernel/application/utils/videoThumbnails';
+import {
   FeedCardContent,
   FeedCardSurface,
   FeedGlassActionBar,
@@ -113,6 +118,39 @@ const REACTION_IMAGES: Record<ReactionType, any> = {
 const PICKER_WIDTH = 282;
 const PICKER_HEIGHT = 52;
 const PICKER_GAP = 8;
+const ANDROID_PICKER_HORIZONTAL_MARGIN = 10;
+const ANDROID_PICKER_HEIGHT = 92;
+const ANDROID_PICKER_ICON_ROW_HEIGHT = 54;
+const ANDROID_PICKER_HORIZONTAL_PADDING = 10;
+const ANDROID_PICKER_ICON_BOX = 34;
+const ANDROID_PICKER_ICON_SIZE = 32;
+const ANDROID_PICKER_ICON_CENTER_Y = ANDROID_PICKER_ICON_ROW_HEIGHT / 2;
+const ANDROID_PICKER_SUMMARY_ROW_ANCHOR_OFFSET = 8;
+const IOS_PICKER_ICON_SLOT = 44;
+const IOS_PICKER_ICON_BOX = 40;
+const IOS_PICKER_ICON_SIZE = 36;
+let activeReactionPickerPostIdSnapshot: string | null = null;
+type ReactionPickerActiveListener = () => void;
+const reactionPickerActiveListeners = new Set<ReactionPickerActiveListener>();
+
+export function getFeedReactionPickerAnchorY(
+  buttonTop: number,
+  likeCount: number,
+  commentCount = 0,
+) {
+  if (Platform.OS !== 'android') {
+    return buttonTop;
+  }
+
+  const hasSummaryRow = likeCount > 0 || commentCount > 0;
+  return (
+    buttonTop +
+    (hasSummaryRow
+      ? ANDROID_PICKER_SUMMARY_ROW_ANCHOR_OFFSET
+      : ANDROID_PICKER_ICON_ROW_HEIGHT)
+  );
+}
+
 export const VIDEO_BUFFER_CONFIG = {
   minBufferMs: Platform.OS === 'android' ? 1200 : 2500,
   maxBufferMs: Platform.OS === 'android' ? 3000 : 5000,
@@ -144,8 +182,146 @@ const MEDIA_ASPECT_RATIO_CACHE = new Map<string, number>();
 const POST_TOKEN_BLUE = '#0000ff';
 const POST_TOKEN_FALLBACK = String.raw`[@#][^\s@#.,!?;:()[\]{}"']+`;
 
+const styles = StyleSheet.create({
+  reactionPickerSurface: {},
+  iosReactionPickerSurface: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+  },
+  iosReactionPickerRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  androidReactionPickerSurface: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    borderRadius: 0,
+    backgroundColor: '#ffffff',
+  },
+  androidReactionPickerRow: {
+    width: '100%',
+    height: ANDROID_PICKER_ICON_ROW_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: ANDROID_PICKER_HORIZONTAL_PADDING,
+  },
+  androidReactionPickerHintWrap: {
+    width: '100%',
+    height: ANDROID_PICKER_HEIGHT - ANDROID_PICKER_ICON_ROW_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#d7dce5',
+  },
+  androidReactionPickerHint: {
+    color: '#8b95a5',
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '600',
+    marginTop: 1,
+    textAlign: 'center',
+  },
+  androidInlineReactionPickerSurface: {
+    width: '100%',
+    height: ANDROID_PICKER_HEIGHT,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#d7dce5',
+  },
+});
+
 function escapeTokenPattern(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function publishReactionPickerActivePostId(nextPostId: string | null) {
+  if (activeReactionPickerPostIdSnapshot === nextPostId) return;
+  activeReactionPickerPostIdSnapshot = nextPostId;
+  reactionPickerActiveListeners.forEach(listener => listener());
+}
+
+export function useFeedReactionPickerActivePostId() {
+  const [activePostId, setActivePostId] = useState(
+    activeReactionPickerPostIdSnapshot,
+  );
+
+  useEffect(() => {
+    const listener = () => {
+      setActivePostId(activeReactionPickerPostIdSnapshot);
+    };
+    reactionPickerActiveListeners.add(listener);
+    listener();
+    return () => {
+      reactionPickerActiveListeners.delete(listener);
+    };
+  }, []);
+
+  return activePostId;
+}
+
+export function FeedInlineReactionPickerBar({
+  onPick,
+}: {
+  onPick: (reaction: ReactionType) => void;
+}) {
+  const language = useAppLanguage();
+  const hint = language === 'en' ? 'Press to choose' : 'Nhấn để chọn';
+  const handlePick = useCallback(
+    (reaction: ReactionType) => {
+      onPick(reaction);
+      publishReactionPickerActivePostId(null);
+    },
+    [onPick],
+  );
+
+  return (
+    <View
+      style={[
+        styles.androidReactionPickerSurface,
+        styles.androidInlineReactionPickerSurface,
+      ]}
+    >
+      <View style={styles.androidReactionPickerRow}>
+        {ALL_REACTION_TYPES.map(type => (
+          <TouchableOpacity
+            key={type}
+            activeOpacity={0.75}
+            onPress={() => handlePick(type)}
+            style={{
+              flex: 1,
+              height: ANDROID_PICKER_ICON_ROW_HEIGHT,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Image
+              source={REACTION_IMAGES[type]}
+              style={{
+                width: ANDROID_PICKER_ICON_SIZE,
+                height: ANDROID_PICKER_ICON_SIZE,
+              }}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.androidReactionPickerHintWrap}>
+        <Text allowFontScaling={false} style={styles.androidReactionPickerHint}>
+          {hint}
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 export function renderPostTextTokens(text: string, mentionNames: string[] = []) {
@@ -616,7 +792,7 @@ const feedPreparedVideoListeners = new Set<FeedPreparedVideoListener>();
 const preparedVideoLru: string[] = [];
 let feedScrollBusySnapshot = false;
 const feedScrollBusyListeners = new Set<FeedScrollBusyListener>();
-export let feedVideoMutedSnapshot = true;
+export let feedVideoMutedSnapshot = false;
 const feedVideoMutedListeners = new Set<FeedVideoMutedListener>();
 
 export function publishFeedActiveVideo(videoId: string | null) {
@@ -972,6 +1148,68 @@ const VideoFallbackPoster = React.memo(function VideoFallbackPoster({
   );
 });
 
+function useGeneratedVideoPoster({
+  videoUrl,
+  postId,
+  serverThumbnailUrl,
+  enabled,
+  isScrollBusy,
+}: {
+  videoUrl: string;
+  postId: string;
+  serverThumbnailUrl?: string;
+  enabled: boolean;
+  isScrollBusy: boolean;
+}) {
+  const cacheKey = `${postId}:${videoUrl}`;
+  const [generatedPosterUrl, setGeneratedPosterUrl] = useState(() => {
+    if (serverThumbnailUrl || !videoUrl) return undefined;
+    return getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri;
+  });
+
+  useEffect(() => {
+    if (serverThumbnailUrl || !videoUrl) {
+      setGeneratedPosterUrl(undefined);
+      return;
+    }
+    setGeneratedPosterUrl(getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri);
+  }, [cacheKey, serverThumbnailUrl, videoUrl]);
+
+  useEffect(() => {
+    if (
+      serverThumbnailUrl ||
+      !videoUrl ||
+      generatedPosterUrl ||
+      !enabled ||
+      isScrollBusy
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const task = InteractionManager.runAfterInteractions(() => {
+      createCachedVideoPosterThumbnail(videoUrl, cacheKey).then(thumbnail => {
+        if (cancelled || !thumbnail?.uri) return;
+        setGeneratedPosterUrl(thumbnail.uri);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      task.cancel?.();
+    };
+  }, [
+    cacheKey,
+    enabled,
+    generatedPosterUrl,
+    isScrollBusy,
+    serverThumbnailUrl,
+    videoUrl,
+  ]);
+
+  return serverThumbnailUrl || generatedPosterUrl;
+}
+
 // Background colors for each reaction type's circular badge (FB-style)
 const REACTION_BADGE_BG: Record<ReactionType, string> = {
   like: '#0866FF',
@@ -1104,6 +1342,7 @@ const VideoPostActions = React.memo(function VideoPostActions({
   likeButtonRef,
   onLikeTap,
   onLikeLongPress,
+  onPickReaction,
   onCommentTap,
   onShare,
   post,
@@ -1119,6 +1358,7 @@ const VideoPostActions = React.memo(function VideoPostActions({
   likeButtonRef: React.RefObject<View | null>;
   onLikeTap: () => void;
   onLikeLongPress: () => void;
+  onPickReaction: (reaction: ReactionType) => void;
   onCommentTap: () => void;
   onShare?: (post: FeedPost) => void;
   post: FeedPost;
@@ -1131,6 +1371,15 @@ const VideoPostActions = React.memo(function VideoPostActions({
 }) {
   const label = myReaction ? copy.reactionLabel[myReaction] : copy.like;
   const color = myReaction ? REACTION_COLOR[myReaction] : '#64748B';
+  const activeReactionPickerPostId = useFeedReactionPickerActivePostId();
+  const showInlineReactionPicker =
+    Platform.OS === 'android' &&
+    activeReactionPickerPostId !== null &&
+    activeReactionPickerPostId === post.id;
+
+  if (showInlineReactionPicker) {
+    return <FeedInlineReactionPickerBar onPick={onPickReaction} />;
+  }
 
   // Like button: a plain TouchableOpacity with native `onPress` (fast tap
   // â†’ like) and `onLongPress` (â‰¥400ms â†’ opens the floating reaction
@@ -1183,10 +1432,7 @@ const VideoPostActions = React.memo(function VideoPostActions({
         </Text>
       </FeedGlassActionButton>
 
-      <FeedGlassActionButton
-        activeOpacity={0.75}
-        onPress={onCommentTap}
-      >
+      <FeedGlassActionButton activeOpacity={0.75} onPress={onCommentTap}>
         <MessageCircle size={19} color="#64748B" />
         <Text style={{ marginLeft: 6, color: '#64748B', fontSize: 14 }}>
           {copy.comment}
@@ -1227,21 +1473,54 @@ export function ReactionPickerOverlay({
   const localDragged = useSharedValue(false);
   const gDragged = hasDragged ?? localDragged;
 
+  useEffect(() => {
+    publishReactionPickerActivePostId(anchor?.postId ?? null);
+    return () => {
+      publishReactionPickerActivePostId(null);
+    };
+  }, [anchor]);
+
   if (!anchor) return null;
 
+  const isAndroidPicker = Platform.OS === 'android';
+  if (isAndroidPicker) return null;
+
   const screenWidth = Dimensions.get('window').width;
-  const left = Math.max(
-    10,
-    Math.min(anchor.x - PICKER_WIDTH / 2, screenWidth - PICKER_WIDTH - 10),
-  );
-  const top = Math.max(40, anchor.y - PICKER_HEIGHT - PICKER_GAP);
+  const pickerWidth = isAndroidPicker
+    ? screenWidth - ANDROID_PICKER_HORIZONTAL_MARGIN * 2
+    : PICKER_WIDTH;
+  const pickerHeight = isAndroidPicker ? ANDROID_PICKER_HEIGHT : PICKER_HEIGHT;
+  const iconSlot = isAndroidPicker
+    ? (pickerWidth - ANDROID_PICKER_HORIZONTAL_PADDING * 2) /
+      ALL_REACTION_TYPES.length
+    : IOS_PICKER_ICON_SLOT;
+  const iconBoxSize = isAndroidPicker
+    ? ANDROID_PICKER_ICON_BOX
+    : IOS_PICKER_ICON_BOX;
+  const iconImageSize = isAndroidPicker
+    ? ANDROID_PICKER_ICON_SIZE
+    : IOS_PICKER_ICON_SIZE;
+  const iconStartX = isAndroidPicker
+    ? ANDROID_PICKER_HORIZONTAL_PADDING
+    : 8;
+  const iconCenterOffsetY = isAndroidPicker
+    ? ANDROID_PICKER_ICON_CENTER_Y
+    : PICKER_HEIGHT / 2;
+  const left = isAndroidPicker
+    ? ANDROID_PICKER_HORIZONTAL_MARGIN
+    : Math.max(
+        10,
+        Math.min(anchor.x - pickerWidth / 2, screenWidth - pickerWidth - 10),
+      );
+  const top = isAndroidPicker
+    ? Math.max(40, anchor.y - ANDROID_PICKER_ICON_ROW_HEIGHT)
+    : Math.max(40, anchor.y - pickerHeight - PICKER_GAP);
 
   // Clamp the arrow pointer's horizontal position so it stays within the rounded rectangle boundaries
   const arrowLeft = Math.max(
     left + 20,
-    Math.min(anchor.x - 8, left + PICKER_WIDTH - 20 - 16),
+    Math.min(anchor.x - 8, left + pickerWidth - 20 - 16),
   );
-
   return (
     <>
       <Pressable
@@ -1270,36 +1549,51 @@ export function ReactionPickerOverlay({
         }}
       />
       <FeedReactionPickerSurface
-        style={{
-          position: 'absolute',
-          left,
-          top,
-          width: PICKER_WIDTH,
-          height: PICKER_HEIGHT,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: 8,
-          elevation: 12,
-          zIndex: 100,
-        }}
+        style={[
+          styles.reactionPickerSurface,
+          isAndroidPicker
+            ? styles.androidReactionPickerSurface
+            : styles.iosReactionPickerSurface,
+          {
+            position: 'absolute',
+            left,
+            top,
+            width: pickerWidth,
+            height: pickerHeight,
+            elevation: isAndroidPicker ? 0 : 12,
+            zIndex: 100,
+          },
+        ]}
         pointerEvents="box-none"
       >
-        {ALL_REACTION_TYPES.map((type, index) => (
-          <ReactionIcon
-            key={type}
-            type={type}
-            index={index}
-            pickerLeft={left}
-            pickerTop={top}
-            gestureX={gestureX}
-            gestureY={gestureY}
-            gestureActive={gestureActive}
-            hasDragged={gDragged}
-            onPick={onPick}
-            onDismiss={onDismiss}
-          />
-        ))}
+        <View
+          style={
+            isAndroidPicker
+              ? styles.androidReactionPickerRow
+              : styles.iosReactionPickerRow
+          }
+        >
+          {ALL_REACTION_TYPES.map((type, index) => (
+            <ReactionIcon
+              key={type}
+              type={type}
+              index={index}
+              pickerLeft={left}
+              pickerTop={top}
+              iconStartX={iconStartX}
+              iconSlot={iconSlot}
+              iconBoxSize={iconBoxSize}
+              iconImageSize={iconImageSize}
+              iconCenterOffsetY={iconCenterOffsetY}
+              gestureX={gestureX}
+              gestureY={gestureY}
+              gestureActive={gestureActive}
+              hasDragged={gDragged}
+              onPick={onPick}
+              onDismiss={onDismiss}
+            />
+          ))}
+        </View>
       </FeedReactionPickerSurface>
     </>
   );
@@ -1310,6 +1604,11 @@ function ReactionIcon({
   index,
   pickerLeft,
   pickerTop,
+  iconStartX,
+  iconSlot,
+  iconBoxSize,
+  iconImageSize,
+  iconCenterOffsetY,
   gestureX,
   gestureY,
   gestureActive,
@@ -1321,6 +1620,11 @@ function ReactionIcon({
   index: number;
   pickerLeft: number;
   pickerTop: number;
+  iconStartX: number;
+  iconSlot: number;
+  iconBoxSize: number;
+  iconImageSize: number;
+  iconCenterOffsetY: number;
   gestureX: any;
   gestureY: any;
   gestureActive: any;
@@ -1329,8 +1633,8 @@ function ReactionIcon({
   onDismiss: () => void;
 }) {
   // Approximate center of this icon in absolute screen coordinates
-  const iconCenterX = pickerLeft + 8 + index * 44 + 20;
-  const iconCenterY = pickerTop + PICKER_HEIGHT / 2;
+  const iconCenterX = pickerLeft + iconStartX + index * iconSlot + iconSlot / 2;
+  const iconCenterY = pickerTop + iconCenterOffsetY;
 
   useAnimatedReaction(
     () => [gestureActive.value, hasDragged.value] as const,
@@ -1385,8 +1689,8 @@ function ReactionIcon({
     <Animated.View
       style={[
         {
-          width: 40,
-          height: 40,
+          width: iconSlot,
+          height: iconBoxSize,
           alignItems: 'center',
           justifyContent: 'center',
         },
@@ -1399,7 +1703,7 @@ function ReactionIcon({
       >
         <Image
           source={REACTION_IMAGES[type]}
-          style={{ width: 36, height: 36 }}
+          style={{ width: iconImageSize, height: iconImageSize }}
           resizeMode="contain"
         />
       </TouchableOpacity>
@@ -1507,6 +1811,17 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   );
   const hasVideoUrl = videoUrl.length > 0;
   const canAttemptVideo = hasVideoUrl && !hasVideoError;
+  const resolvedThumbnailUrl = useGeneratedVideoPoster({
+    videoUrl,
+    postId: post.id,
+    serverThumbnailUrl: post.thumbnailUrl,
+    enabled:
+      isScreenFocused !== false &&
+      hasVideoUrl &&
+      !hasVideoError &&
+      (isActive || isWarm || isPreparedKeptAlive),
+    isScrollBusy,
+  });
   const hasUserWatchedRef = useRef(getVideoPlaybackTime(post.id, 0) > 0.05);
   const warmPreviewTimeRef = useRef(0);
   const frameCoverOpacity = useSharedValue(1);
@@ -1579,7 +1894,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   // Measure thumbnail size on mount to avoid layout jumps
   useEffect(() => {
-    const thumbnailUrl = post.thumbnailUrl;
+    const thumbnailUrl = resolvedThumbnailUrl;
     if (!thumbnailUrl) return;
 
     const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(thumbnailUrl);
@@ -1605,7 +1920,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
         console.warn('[HomeVideoPostCard] getSize failed for thumbnail:', err);
       },
     );
-  }, [post.thumbnailUrl]);
+  }, [resolvedThumbnailUrl]);
 
   // Refine aspect ratio when actual video loads
   const handleVideoLoad = useCallback((data: any) => {
@@ -1654,7 +1969,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           }
         },
       );
-    }, post.thumbnailUrl ? VIDEO_POSTER_REVEAL_HOLD_MS : 0);
+    }, resolvedThumbnailUrl ? VIDEO_POSTER_REVEAL_HOLD_MS : 0);
   }, [
     frameCoverOpacity,
     hideFrameCoverForMedia,
@@ -1662,7 +1977,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     keepPreparedVideoMounted,
     mediaIdentity,
     post.id,
-    post.thumbnailUrl,
+    resolvedThumbnailUrl,
     scheduleVideoQualityRamp,
   ]);
 
@@ -1803,13 +2118,21 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   const handleLikeLongPress = useCallback(() => {
     if (!likeButtonRef.current) {
-      onOpenPicker(post.id, 100, 200);
+      onOpenPicker(
+        post.id,
+        100,
+        getFeedReactionPickerAnchorY(200, post.likeCount, post.commentCount),
+      );
       return;
     }
     likeButtonRef.current.measureInWindow((x, y, width) => {
-      onOpenPicker(post.id, x + width / 2, y);
+      onOpenPicker(
+        post.id,
+        x + width / 2,
+        getFeedReactionPickerAnchorY(y, post.likeCount, post.commentCount),
+      );
     });
-  }, [onOpenPicker, post.id]);
+  }, [onOpenPicker, post.id, post.likeCount, post.commentCount]);
 
   return (
     <FeedCardSurface>
@@ -1833,7 +2156,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
             text={post.caption}
             mentionNames={post.mentionNames}
             copy={copy}
-            collapsible={Boolean(post.thumbnailUrl || post.videoUrl)}
+            collapsible={Boolean(resolvedThumbnailUrl || post.videoUrl)}
           />
         ) : null}
       </FeedCardContent>
@@ -1844,10 +2167,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           style={{ width: '100%', height: '100%' }}
         >
           {/* react-native-video v6 â€” unmount when inactive to release native decoders */}
-          {post.thumbnailUrl ? (
+          {resolvedThumbnailUrl ? (
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
               <FeedMediaImage
-                uri={post.thumbnailUrl}
+                uri={resolvedThumbnailUrl}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
                 deferWhileScrolling={false}
@@ -1905,7 +2228,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                     revealVideoFrame();
                   }
                 }}
-                poster={post.thumbnailUrl}
+                poster={resolvedThumbnailUrl}
                 posterResizeMode="cover"
                 onError={error => {
                   if (mediaIdentity !== mediaIdentityRef.current) return;
@@ -1923,19 +2246,19 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                   );
                 }}
               />
-              {post.thumbnailUrl && isFrameCoverVisible ? (
+              {resolvedThumbnailUrl && isFrameCoverVisible ? (
                 <Animated.View
                   pointerEvents="none"
                   style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
                 >
                   <FeedMediaImage
-                    uri={post.thumbnailUrl}
+                    uri={resolvedThumbnailUrl}
                     style={{ width: '100%', height: '100%' }}
                     resizeMode="cover"
                     deferWhileScrolling={false}
                   />
                 </Animated.View>
-              ) : !post.thumbnailUrl && isFrameCoverVisible ? (
+              ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
                 <Animated.View
                   pointerEvents="none"
                   style={[
@@ -1949,7 +2272,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 </Animated.View>
               ) : null}
             </View>
-          ) : post.thumbnailUrl ? (
+          ) : resolvedThumbnailUrl ? (
             null
           ) : (
             <VideoFallbackPoster
@@ -2031,6 +2354,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           likeButtonRef={likeButtonRef}
           onLikeTap={handleLikeTap}
           onLikeLongPress={handleLikeLongPress}
+          onPickReaction={reaction => onReact(post.id, reaction)}
           onCommentTap={handleCommentTap}
           onShare={onShare}
           post={post}
@@ -2500,13 +2824,21 @@ export const TextPostCard = React.memo(function TextPostCard({
 
   const handleLikeLongPress = useCallback(() => {
     if (!likeButtonRef.current) {
-      onOpenPicker(post.id, 100, 200);
+      onOpenPicker(
+        post.id,
+        100,
+        getFeedReactionPickerAnchorY(200, post.likeCount, post.commentCount),
+      );
       return;
     }
     likeButtonRef.current.measureInWindow((x, y, width) => {
-      onOpenPicker(post.id, x + width / 2, y);
+      onOpenPicker(
+        post.id,
+        x + width / 2,
+        getFeedReactionPickerAnchorY(y, post.likeCount, post.commentCount),
+      );
     });
-  }, [onOpenPicker, post.id]);
+  }, [onOpenPicker, post.id, post.likeCount, post.commentCount]);
 
   // Photo grid: Facebook-style 2x2 grid, shows 4 photos max
   // When total > 4, the 4th photo shows "+N" overlay
@@ -2655,6 +2987,7 @@ export const TextPostCard = React.memo(function TextPostCard({
           likeButtonRef={likeButtonRef}
           onLikeTap={handleLikeTap}
           onLikeLongPress={handleLikeLongPress}
+          onPickReaction={reaction => onReact(post.id, reaction)}
           onCommentTap={handleCommentTap}
           onShare={onShare}
           post={post}

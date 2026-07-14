@@ -15,10 +15,10 @@ describe('Home feed video autoplay safety', () => {
     expect(feedScreenSource).not.toContain("feedPosts.find(p => p.kind === 'video')");
   });
 
-  it('uses shared audio state with feed videos muted by default', () => {
+  it('uses shared audio state with feed videos unmuted by default', () => {
     const postCardsSource = read('src/feed/presentation/components/PostCards.tsx');
 
-    expect(postCardsSource).toContain('export let feedVideoMutedSnapshot = true');
+    expect(postCardsSource).toContain('export let feedVideoMutedSnapshot = false');
     expect(postCardsSource).toContain('function useFeedVideoMuted()');
     expect(postCardsSource).toContain('publishFeedVideoMuted(!muted)');
     expect(postCardsSource).toContain('const isScrollBusy = useFeedScrollBusy();');

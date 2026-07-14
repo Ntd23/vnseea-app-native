@@ -53,8 +53,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Camera,
   ChevronDown,
+  ChevronRight,
   Flag,
-  Heart,
   ImagePlus,
   Mic,
   Music2,
@@ -62,7 +62,6 @@ import {
   RotateCcw,
   SendHorizonal,
   Square,
-  ThumbsUp,
   Trash2,
   X,
 } from 'lucide-react-native';
@@ -120,9 +119,11 @@ const COMMENTS_COPY = {
     errorTitle: 'Lỗi',
     errorActionMsg: 'Không thực hiện được thao tác.',
     pickPhotoTitle: 'Chọn ảnh bình luận',
-    pickPhotoMsg: 'Bạn muốn chụp ảnh mới hay chọn ảnh từ thư viện?',
+    pickPhotoMsg: 'Chọn nguồn ảnh bạn muốn sử dụng',
     takePhoto: 'Chụp ảnh',
+    takePhotoHint: 'Sử dụng máy ảnh để chụp ảnh mới',
     chooseFromLibrary: 'Chọn từ thư viện',
+    chooseFromLibraryHint: 'Chọn ảnh có sẵn trong thư viện',
     audioPickErrorTitle: 'Không chọn được âm thanh',
     audioRecordErrorTitle: 'Không ghi âm được',
     pleaseTryAgain: 'Vui lòng thử lại.',
@@ -158,9 +159,11 @@ const COMMENTS_COPY = {
     errorTitle: 'Error',
     errorActionMsg: 'Cannot perform operation.',
     pickPhotoTitle: 'Select comment photo',
-    pickPhotoMsg: 'Do you want to take a new photo or select from the library?',
+    pickPhotoMsg: 'Choose the photo source you want to use',
     takePhoto: 'Take photo',
+    takePhotoHint: 'Use the camera to take a new photo',
     chooseFromLibrary: 'Choose from library',
+    chooseFromLibraryHint: 'Choose an existing photo from your library',
     audioPickErrorTitle: 'Cannot select audio',
     audioRecordErrorTitle: 'Cannot record audio',
     pleaseTryAgain: 'Please try again.',
@@ -249,6 +252,15 @@ const REACTION_COLOR: Record<ReactionType, string> = {
   angry: '#e9710f',
 };
 
+const REACTION_IMAGES: Record<ReactionType, any> = {
+  like: require('../../../assets/reactions/reactions_like.png'),
+  love: require('../../../assets/reactions/reactions_love.png'),
+  haha: require('../../../assets/reactions/reactions_haha.png'),
+  wow: require('../../../assets/reactions/reactions_wow.png'),
+  sad: require('../../../assets/reactions/reactions_sad.png'),
+  angry: require('../../../assets/reactions/reactions_angry.png'),
+};
+
 // Width of the picker pill — used to clamp its X position so it never
 // runs off the screen edge when the long-press happens near the right.
 const PICKER_PILL_WIDTH = 282;
@@ -260,11 +272,11 @@ const COMMENT_IMAGE_FALLBACK_WIDTH = 180;
 const COMMENT_IMAGE_FALLBACK_HEIGHT = 140;
 const COMMENT_DELETE_ANIMATION_MS = 220;
 const SHEET_OPEN_SPRING = {
-  damping: 20,
-  stiffness: 210,
-  mass: 0.85,
+  damping: 24,
+  stiffness: 360,
+  mass: 0.72,
 };
-const SHEET_CLOSE_DURATION_MS = 170;
+const SHEET_CLOSE_DURATION_MS = 150;
 
 interface Props {
   visible: boolean;
@@ -921,16 +933,32 @@ function ReelCommentsSheetBase({
   const deleteCommentLabel = language === 'en' ? 'Delete' : 'X\u00f3a';
   const editCommentLabel = language === 'en' ? 'Edit' : 'Ch\u1ec9nh s\u1eeda';
   const reportCommentLabel = language === 'en' ? 'Report' : 'B\u00e1o c\u00e1o';
+  const deleteCommentHint = language === 'en'
+    ? 'Remove this comment'
+    : 'X\u00f3a b\u00ecnh lu\u1eadn n\u00e0y';
+  const editCommentHint = language === 'en'
+    ? 'Update your comment'
+    : 'Ch\u1ec9nh s\u1eeda n\u1ed9i dung b\u00ecnh lu\u1eadn';
+  const reportCommentHint = language === 'en'
+    ? 'Send this comment to review'
+    : 'G\u1eedi b\u00e1o c\u00e1o \u0111\u1ec3 ch\u00fang t\u00f4i xem x\u00e9t';
+  const retryCommentHint = language === 'en'
+    ? 'Try sending this comment again'
+    : 'Th\u1eed g\u1eedi l\u1ea1i b\u00ecnh lu\u1eadn n\u00e0y';
 
   const actionMenuCopy = useMemo(
     () => ({
       cancel: copy.cancel,
       delete: deleteCommentLabel,
+      deleteHint: deleteCommentHint,
       edit: editCommentLabel,
+      editHint: editCommentHint,
       footnote: actionMenuFootnote,
       message: actionMenuMessage,
       report: reportCommentLabel,
+      reportHint: reportCommentHint,
       retry: copy.retry,
+      retryHint: retryCommentHint,
       title: actionMenuTitle,
     }),
     [
@@ -939,9 +967,13 @@ function ReelCommentsSheetBase({
       actionMenuTitle,
       copy.cancel,
       copy.retry,
+      deleteCommentHint,
       deleteCommentLabel,
+      editCommentHint,
       editCommentLabel,
+      reportCommentHint,
       reportCommentLabel,
+      retryCommentHint,
     ],
   );
 
@@ -1042,6 +1074,8 @@ function ReelCommentsSheetBase({
     }
     return found?.text || '';
   }, [replyingTo, comments, repliesById]);
+  const isInitialLoading = isLoading && comments.length === 0;
+  const isRefreshingComments = isLoading && comments.length > 0;
 
   return (
     <Modal
@@ -1155,7 +1189,7 @@ function ReelCommentsSheetBase({
             </View>
           </View>
 
-          {isLoading ? (
+          {isInitialLoading ? (
             <View style={styles.stateBox}>
               <ActivityIndicator color="#0866ff" size="small" />
               <Text style={styles.stateText}>{copy.loadingComments}</Text>
@@ -1196,6 +1230,16 @@ function ReelCommentsSheetBase({
               onEndReachedThreshold={0.6}
               onScroll={handleListScroll}
               scrollEventThrottle={16}
+              ListHeaderComponent={
+                isRefreshingComments ? (
+                  <View style={styles.refreshingHeader}>
+                    <ActivityIndicator color="#0866ff" size="small" />
+                    <Text style={styles.refreshingHeaderText}>
+                      {copy.loadingComments}
+                    </Text>
+                  </View>
+                ) : null
+              }
               ListEmptyComponent={
                 <View style={styles.emptyBox}>
                   <Text style={styles.emptyTitle}>{copy.noCommentsTitle}</Text>
@@ -1441,8 +1485,11 @@ function ReelCommentsSheetBase({
         visible={photoPickerVisible}
         bottomInset={actionSheetBottomInset}
         title={copy.pickPhotoTitle}
+        message={copy.pickPhotoMsg}
         takePhotoLabel={copy.takePhoto}
+        takePhotoHint={copy.takePhotoHint}
         chooseFromLibraryLabel={copy.chooseFromLibrary}
+        chooseFromLibraryHint={copy.chooseFromLibraryHint}
         cancelLabel={copy.cancel}
         onClose={() => setPhotoPickerVisible(false)}
         onTakePhoto={async () => {
@@ -1482,11 +1529,15 @@ interface CommentActionSheetProps {
   copy: {
     cancel: string;
     delete: string;
+    deleteHint: string;
     edit: string;
+    editHint: string;
     footnote: string;
     message: string;
     report: string;
+    reportHint: string;
     retry: string;
+    retryHint: string;
     title: string;
   };
   showRetry: boolean;
@@ -1504,8 +1555,11 @@ interface CommentPhotoPickerSheetProps {
   visible: boolean;
   bottomInset: number;
   title: string;
+  message: string;
   takePhotoLabel: string;
+  takePhotoHint: string;
   chooseFromLibraryLabel: string;
+  chooseFromLibraryHint: string;
   cancelLabel: string;
   onClose: () => void;
   onTakePhoto: () => void;
@@ -1516,8 +1570,11 @@ function CommentPhotoPickerSheet({
   visible,
   bottomInset,
   title,
+  message,
   takePhotoLabel,
+  takePhotoHint,
   chooseFromLibraryLabel,
+  chooseFromLibraryHint,
   cancelLabel,
   onClose,
   onTakePhoto,
@@ -1525,57 +1582,136 @@ function CommentPhotoPickerSheet({
 }: CommentPhotoPickerSheetProps) {
   if (!visible) return null;
 
+  const photoPickerSheetWidth = Math.min(
+    Math.max(Dimensions.get('window').width - 48, 300),
+    430,
+  );
+  const photoPickerOptionCopyWidth = Math.max(
+    photoPickerSheetWidth - 188,
+    116,
+  );
+
   return (
     <View style={styles.actionSheetLayer} pointerEvents="box-none">
       <Pressable style={styles.actionSheetBackdrop} onPress={onClose} />
-      <View style={[styles.actionSheetCard, { marginBottom: bottomInset }]}>
+      <View
+        style={[
+          styles.photoPickerCard,
+          { marginBottom: bottomInset, width: photoPickerSheetWidth },
+        ]}
+      >
         <View style={styles.actionSheetGrabber} />
-        <View style={styles.actionSheetHeader}>
-          <Text style={styles.actionSheetTitle} numberOfLines={1}>
-            {title}
-          </Text>
+
+        <View style={styles.photoPickerHero}>
+          <View style={styles.photoPickerHeroIcon}>
+            <ImagePlus size={32} color="#4f46e5" />
+          </View>
+          <View style={styles.photoPickerHeroCopy}>
+            <Text
+              allowFontScaling={false}
+              style={styles.photoPickerTitle}
+              numberOfLines={1}
+            >
+              {title}
+            </Text>
+            <Text
+              allowFontScaling={false}
+              style={styles.photoPickerSubtitle}
+              numberOfLines={2}
+            >
+              {message}
+            </Text>
+          </View>
         </View>
 
-        <Pressable
-          onPress={onTakePhoto}
-          style={({ pressed }) => [
-            styles.actionSheetOption,
-            styles.actionSheetNeutralOption,
-            pressed && styles.actionSheetOptionPressed,
-          ]}
-        >
-          <View style={[styles.actionSheetIcon, styles.actionSheetPhotoIcon]}>
-            <Camera size={18} color="#2563eb" />
-          </View>
-          <Text style={styles.actionSheetOptionText} numberOfLines={1}>
-            {takePhotoLabel}
-          </Text>
-        </Pressable>
+        <View style={styles.photoPickerOptionRow}>
+          <Pressable
+            onPress={onTakePhoto}
+            style={({ pressed }) => [
+              styles.photoPickerOptionCard,
+              pressed && styles.actionSheetOptionPressed,
+            ]}
+          >
+            <View style={styles.photoPickerOptionMainRow}>
+              <View style={[styles.photoPickerOptionIcon, styles.actionSheetPhotoIcon]}>
+                <Camera size={26} color="#2563eb" />
+              </View>
+              <Text
+                allowFontScaling={false}
+                style={[
+                  styles.photoPickerOptionText,
+                  { width: photoPickerOptionCopyWidth },
+                ]}
+                numberOfLines={1}
+              >
+                {takePhotoLabel}
+              </Text>
+            </View>
+            <Text
+              allowFontScaling={false}
+              style={[
+                styles.photoPickerOptionHint,
+                { width: photoPickerOptionCopyWidth },
+              ]}
+              numberOfLines={1}
+            >
+              {takePhotoHint}
+            </Text>
+            <View pointerEvents="none" style={styles.photoPickerChevronBox}>
+              <ChevronRight size={25} color="#2563eb" strokeWidth={3} />
+            </View>
+          </Pressable>
 
-        <Pressable
-          onPress={onChooseFromLibrary}
-          style={({ pressed }) => [
-            styles.actionSheetOption,
-            styles.actionSheetNeutralOption,
-            pressed && styles.actionSheetOptionPressed,
-          ]}
-        >
-          <View style={[styles.actionSheetIcon, styles.actionSheetLibraryIcon]}>
-            <ImagePlus size={18} color="#4f46e5" />
-          </View>
-          <Text style={styles.actionSheetOptionText} numberOfLines={1}>
-            {chooseFromLibraryLabel}
-          </Text>
-        </Pressable>
+          <Pressable
+            onPress={onChooseFromLibrary}
+            style={({ pressed }) => [
+              styles.photoPickerOptionCard,
+              pressed && styles.actionSheetOptionPressed,
+            ]}
+          >
+            <View style={styles.photoPickerOptionMainRow}>
+              <View style={[styles.photoPickerOptionIcon, styles.actionSheetLibraryIcon]}>
+                <ImagePlus size={26} color="#4f46e5" />
+              </View>
+              <Text
+                allowFontScaling={false}
+                style={[
+                  styles.photoPickerOptionText,
+                  { width: photoPickerOptionCopyWidth },
+                ]}
+                numberOfLines={1}
+              >
+                {chooseFromLibraryLabel}
+              </Text>
+            </View>
+            <Text
+              allowFontScaling={false}
+              style={[
+                styles.photoPickerOptionHint,
+                { width: photoPickerOptionCopyWidth },
+              ]}
+              numberOfLines={1}
+            >
+              {chooseFromLibraryHint}
+            </Text>
+            <View pointerEvents="none" style={styles.photoPickerChevronBox}>
+              <ChevronRight size={25} color="#2563eb" strokeWidth={3} />
+            </View>
+          </Pressable>
+        </View>
+
+        <View style={styles.photoPickerFooterDivider} />
 
         <Pressable
           onPress={onClose}
           style={({ pressed }) => [
-            styles.actionSheetCancel,
+            styles.photoPickerCancel,
             pressed && styles.actionSheetOptionPressed,
           ]}
         >
-          <Text style={styles.actionSheetCancelText}>{cancelLabel}</Text>
+          <Text allowFontScaling={false} style={styles.photoPickerCancelText}>
+            {cancelLabel}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -1598,43 +1734,108 @@ function CommentActionSheet({
 }: CommentActionSheetProps) {
   if (!visible) return null;
 
+  const actionSheetWidth = Math.min(
+    Math.max(Dimensions.get('window').width - 48, 300),
+    430,
+  );
+  const actionCopyWidth = Math.max(actionSheetWidth - 188, 116);
+  const isReportOnly = showReport && !showRetry && !showEdit && !showDelete;
+  const isRetryMenu = showRetry;
+  const heroIcon = isRetryMenu ? (
+    <RotateCcw size={32} color="#2563eb" />
+  ) : isReportOnly ? (
+    <Flag size={32} color="#ef4444" />
+  ) : (
+    <Pencil size={32} color="#4f5f82" />
+  );
+  const heroIconStyle = isRetryMenu
+    ? styles.commentActionHeroPrimaryIcon
+    : isReportOnly
+      ? styles.commentActionHeroDangerIcon
+      : styles.commentActionHeroNeutralIcon;
+
   return (
     <View style={styles.actionSheetLayer} pointerEvents="box-none">
       <Pressable style={styles.actionSheetBackdrop} onPress={onClose} />
-      <View style={[styles.actionSheetCard, { marginBottom: bottomInset }]}>
+      <View
+        style={[
+          styles.commentActionSheetCard,
+          { marginBottom: bottomInset, width: actionSheetWidth },
+        ]}
+      >
         <View style={styles.actionSheetGrabber} />
-        <View style={styles.actionSheetHeader}>
-          <Text style={styles.actionSheetTitle} numberOfLines={1}>
-            {copy.title}
-          </Text>
-          {copy.message ? (
-            <Text style={styles.actionSheetMessage} numberOfLines={2}>
-              {copy.message}
+
+        <View style={styles.commentActionHero}>
+          <View style={[styles.commentActionHeroIcon, heroIconStyle]}>
+            {heroIcon}
+          </View>
+          <View style={styles.commentActionHeroCopy}>
+            <Text
+              allowFontScaling={false}
+              style={styles.commentActionHeroTitle}
+              numberOfLines={1}
+            >
+              {copy.title}
             </Text>
-          ) : null}
-          {copy.footnote ? (
-            <Text style={styles.actionSheetFootnote} numberOfLines={1}>
-              {copy.footnote}
-            </Text>
-          ) : null}
+            {copy.message ? (
+              <Text
+                allowFontScaling={false}
+                style={styles.commentActionHeroSubtitle}
+                numberOfLines={2}
+              >
+                {copy.message}
+              </Text>
+            ) : null}
+            {copy.footnote ? (
+              <Text
+                allowFontScaling={false}
+                style={styles.commentActionHeroFootnote}
+                numberOfLines={1}
+              >
+                {copy.footnote}
+              </Text>
+            ) : null}
+          </View>
         </View>
 
-        <View style={styles.commentActionGrid}>
+        <View style={styles.commentActionOptionList}>
           {showRetry ? (
             <Pressable
               onPress={onRetry}
               style={({ pressed }) => [
-                styles.commentActionTile,
-                styles.commentActionPrimaryTile,
+                styles.commentActionOptionCard,
+                styles.commentActionPrimaryOptionCard,
                 pressed && styles.actionSheetOptionPressed,
               ]}
             >
-              <View style={[styles.commentActionIcon, styles.commentActionPrimaryIcon]}>
-                <RotateCcw size={24} color="#0866ff" />
+              <View style={styles.commentActionOptionMainRow}>
+                <View style={[styles.commentActionOptionIcon, styles.commentActionPrimaryIcon]}>
+                  <RotateCcw size={26} color="#2563eb" />
+                </View>
+                <Text
+                  allowFontScaling={false}
+                  style={[
+                    styles.commentActionPrimaryOptionText,
+                    { width: actionCopyWidth },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {copy.retry}
+                </Text>
               </View>
-              <Text style={styles.commentActionPrimaryText} numberOfLines={1}>
-                {copy.retry}
+              <Text
+                allowFontScaling={false}
+                style={[
+                  styles.commentActionOptionHint,
+                  { width: actionCopyWidth },
+                ]}
+                numberOfLines={1}
+              >
+                {copy.retryHint}
               </Text>
+              <View pointerEvents="none" style={styles.commentActionChevronBox}>
+                <ChevronRight size={25} color="#2563eb" strokeWidth={3} />
+              </View>
             </Pressable>
           ) : null}
 
@@ -1642,17 +1843,39 @@ function CommentActionSheet({
             <Pressable
               onPress={onEdit}
               style={({ pressed }) => [
-                styles.commentActionTile,
-                styles.commentActionNeutralTile,
+                styles.commentActionOptionCard,
+                styles.commentActionNeutralOptionCard,
                 pressed && styles.actionSheetOptionPressed,
               ]}
             >
-              <View style={[styles.commentActionIcon, styles.commentActionNeutralIcon]}>
-                <Pencil size={24} color="#4f5f82" />
+              <View style={styles.commentActionOptionMainRow}>
+                <View style={[styles.commentActionOptionIcon, styles.commentActionNeutralIcon]}>
+                  <Pencil size={26} color="#4f5f82" />
+                </View>
+                <Text
+                  allowFontScaling={false}
+                  style={[
+                    styles.commentActionOptionText,
+                    { width: actionCopyWidth },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {copy.edit}
+                </Text>
               </View>
-              <Text style={styles.commentActionText} numberOfLines={1}>
-                {copy.edit}
+              <Text
+                allowFontScaling={false}
+                style={[
+                  styles.commentActionOptionHint,
+                  { width: actionCopyWidth },
+                ]}
+                numberOfLines={1}
+              >
+                {copy.editHint}
               </Text>
+              <View pointerEvents="none" style={styles.commentActionChevronBox}>
+                <ChevronRight size={25} color="#2563eb" strokeWidth={3} />
+              </View>
             </Pressable>
           ) : null}
 
@@ -1660,17 +1883,39 @@ function CommentActionSheet({
             <Pressable
               onPress={onReport}
               style={({ pressed }) => [
-                styles.commentActionTile,
-                styles.commentActionDangerTile,
+                styles.commentActionOptionCard,
+                styles.commentActionDangerOptionCard,
                 pressed && styles.actionSheetOptionPressed,
               ]}
             >
-              <View style={[styles.commentActionIcon, styles.commentActionDangerIcon]}>
-                <Flag size={24} color="#ef4444" />
+              <View style={styles.commentActionOptionMainRow}>
+                <View style={[styles.commentActionOptionIcon, styles.commentActionDangerIcon]}>
+                  <Flag size={26} color="#ef4444" />
+                </View>
+                <Text
+                  allowFontScaling={false}
+                  style={[
+                    styles.commentActionDangerOptionText,
+                    { width: actionCopyWidth },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {copy.report}
+                </Text>
               </View>
-              <Text style={styles.commentActionDangerText} numberOfLines={1}>
-                {copy.report}
+              <Text
+                allowFontScaling={false}
+                style={[
+                  styles.commentActionOptionHint,
+                  { width: actionCopyWidth },
+                ]}
+                numberOfLines={1}
+              >
+                {copy.reportHint}
               </Text>
+              <View pointerEvents="none" style={styles.commentActionChevronBox}>
+                <ChevronRight size={25} color="#ef4444" strokeWidth={3} />
+              </View>
             </Pressable>
           ) : null}
 
@@ -1678,29 +1923,55 @@ function CommentActionSheet({
             <Pressable
               onPress={onDelete}
               style={({ pressed }) => [
-                styles.commentActionTile,
-                styles.commentActionDangerTile,
+                styles.commentActionOptionCard,
+                styles.commentActionDangerOptionCard,
                 pressed && styles.actionSheetOptionPressed,
               ]}
             >
-              <View style={[styles.commentActionIcon, styles.commentActionDangerIcon]}>
-                <Trash2 size={24} color="#ef4444" />
+              <View style={styles.commentActionOptionMainRow}>
+                <View style={[styles.commentActionOptionIcon, styles.commentActionDangerIcon]}>
+                  <Trash2 size={26} color="#ef4444" />
+                </View>
+                <Text
+                  allowFontScaling={false}
+                  style={[
+                    styles.commentActionDangerOptionText,
+                    { width: actionCopyWidth },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {copy.delete}
+                </Text>
               </View>
-              <Text style={styles.commentActionDangerText} numberOfLines={1}>
-                {copy.delete}
+              <Text
+                allowFontScaling={false}
+                style={[
+                  styles.commentActionOptionHint,
+                  { width: actionCopyWidth },
+                ]}
+                numberOfLines={1}
+              >
+                {copy.deleteHint}
               </Text>
+              <View pointerEvents="none" style={styles.commentActionChevronBox}>
+                <ChevronRight size={25} color="#ef4444" strokeWidth={3} />
+              </View>
             </Pressable>
           ) : null}
         </View>
 
+        <View style={styles.photoPickerFooterDivider} />
+
         <Pressable
           onPress={onClose}
           style={({ pressed }) => [
-            styles.actionSheetCancel,
+            styles.photoPickerCancel,
             pressed && styles.actionSheetOptionPressed,
           ]}
         >
-          <Text style={styles.actionSheetCancelText}>{copy.cancel}</Text>
+          <Text allowFontScaling={false} style={styles.photoPickerCancelText}>
+            {copy.cancel}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -1792,13 +2063,11 @@ function renderReactionIcon(reaction: ReactionType) {
 
   return (
     <View style={[styles.reactionCircle, { backgroundColor: bgColor }]}>
-      {reaction === 'like' ? (
-        <ThumbsUp size={8} color="#fff" fill="#fff" />
-      ) : reaction === 'love' ? (
-        <Heart size={8} color="#fff" fill="#fff" />
-      ) : (
-        <Text style={styles.reactionEmojiText}>{REACTION_EMOJI[reaction]}</Text>
-      )}
+      <Image
+        source={REACTION_IMAGES[reaction]}
+        style={styles.reactionBadgeImage}
+        resizeMode="contain"
+      />
     </View>
   );
 }
@@ -1869,7 +2138,7 @@ function ReactionPicker({ anchor, onPick, onDismiss }: PickerProps) {
       {/* Invisible full-screen backdrop swallows the next tap to dismiss. */}
       <Pressable style={styles.pickerBackdrop} onPress={onDismiss} />
       <CommentSheetReactionPickerSurface style={[styles.pickerPill, { left, top }]}>
-        {ALL_REACTION_TYPES.map(type => (
+        {[...ALL_REACTION_TYPES].reverse().map(type => (
           <TouchableOpacity
             key={type}
             activeOpacity={0.7}
@@ -1877,7 +2146,11 @@ function ReactionPicker({ anchor, onPick, onDismiss }: PickerProps) {
             style={styles.pickerItem}
             hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
           >
-            <Text style={styles.pickerEmoji}>{REACTION_EMOJI[type]}</Text>
+            <Image
+              source={REACTION_IMAGES[type]}
+              style={styles.pickerReactionImage}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
         ))}
       </CommentSheetReactionPickerSurface>
@@ -2554,6 +2827,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: Platform.OS === 'ios' ? 13 : 12,
     paddingVertical: Platform.OS === 'ios' ? 10 : 8,
   },
+  refreshingHeader: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 8,
+  },
+  refreshingHeaderText: {
+    marginLeft: 8,
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   emptyListContent: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -2732,16 +3018,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   reactionCircle: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ffffff',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 4,
+    overflow: 'hidden',
   },
-  reactionEmojiText: {
-    fontSize: 9,
-    lineHeight: 11,
+  reactionBadgeImage: {
+    width: 16,
+    height: 16,
   },
 
   // ── Action row ──────────────────────────────────────────────────────
@@ -3187,6 +3477,285 @@ const styles = StyleSheet.create({
   actionSheetOptionPressed: {
     opacity: 0.72,
   },
+  photoPickerCard: {
+    alignSelf: 'center',
+    borderRadius: 30,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    paddingBottom: 20,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.2,
+    shadowRadius: 34,
+    elevation: 22,
+  },
+  photoPickerHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    paddingTop: 18,
+    paddingBottom: 22,
+  },
+  photoPickerHeroIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef2ff',
+    marginRight: 14,
+    flexShrink: 0,
+  },
+  photoPickerHeroCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  photoPickerTitle: {
+    color: '#0f172a',
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '900',
+  },
+  photoPickerSubtitle: {
+    color: '#6b7280',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  photoPickerOptionRow: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+    width: '100%',
+    alignSelf: 'stretch',
+    marginBottom: 22,
+  },
+  photoPickerOptionCard: {
+    width: '100%',
+    alignSelf: 'stretch',
+    minHeight: 88,
+    borderRadius: 18,
+    borderWidth: 1.2,
+    borderColor: '#e1e7f0',
+    backgroundColor: '#ffffff',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingRight: 50,
+    paddingVertical: 14,
+    marginTop: 14,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  photoPickerOptionMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  photoPickerOptionIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+    flexShrink: 0,
+  },
+  photoPickerOptionText: {
+    color: '#0f172a',
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '900',
+    textAlign: 'left',
+  },
+  photoPickerOptionHint: {
+    color: '#6b7280',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    marginTop: 5,
+    marginLeft: 68,
+  },
+  photoPickerChevronBox: {
+    position: 'absolute',
+    right: 16,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoPickerFooterDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#dbe2ec',
+    marginBottom: 16,
+  },
+  photoPickerCancel: {
+    minHeight: 58,
+    borderWidth: 1,
+    borderColor: '#eef3fb',
+    borderRadius: 999,
+    backgroundColor: '#f6f9ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+  },
+  photoPickerCancelText: {
+    color: '#2563eb',
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  commentActionSheetCard: {
+    alignSelf: 'center',
+    borderRadius: 30,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    paddingBottom: 20,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.2,
+    shadowRadius: 34,
+    elevation: 22,
+  },
+  commentActionHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    paddingTop: 18,
+    paddingBottom: 22,
+  },
+  commentActionHeroIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+    flexShrink: 0,
+  },
+  commentActionHeroPrimaryIcon: {
+    backgroundColor: '#eff6ff',
+  },
+  commentActionHeroNeutralIcon: {
+    backgroundColor: '#eef2ff',
+  },
+  commentActionHeroDangerIcon: {
+    backgroundColor: '#fff1f2',
+  },
+  commentActionHeroCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  commentActionHeroTitle: {
+    color: '#0f172a',
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '900',
+  },
+  commentActionHeroSubtitle: {
+    color: '#6b7280',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  commentActionHeroFootnote: {
+    color: '#94a3b8',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  commentActionOptionList: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+    width: '100%',
+    alignSelf: 'stretch',
+    marginBottom: 22,
+  },
+  commentActionOptionCard: {
+    width: '100%',
+    alignSelf: 'stretch',
+    minHeight: 88,
+    borderRadius: 18,
+    borderWidth: 1.2,
+    backgroundColor: '#ffffff',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingRight: 50,
+    paddingVertical: 14,
+    marginTop: 14,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  commentActionPrimaryOptionCard: {
+    borderColor: '#bfdbfe',
+  },
+  commentActionNeutralOptionCard: {
+    borderColor: '#e1e7f0',
+  },
+  commentActionDangerOptionCard: {
+    borderColor: '#fecdd3',
+  },
+  commentActionOptionMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  commentActionOptionIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+    flexShrink: 0,
+  },
+  commentActionOptionText: {
+    color: '#0f172a',
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '900',
+    textAlign: 'left',
+  },
+  commentActionPrimaryOptionText: {
+    color: '#2563eb',
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '900',
+    textAlign: 'left',
+  },
+  commentActionDangerOptionText: {
+    color: '#dc2626',
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '900',
+    textAlign: 'left',
+  },
+  commentActionOptionHint: {
+    color: '#6b7280',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    marginTop: 5,
+    marginLeft: 68,
+  },
+  commentActionChevronBox: {
+    position: 'absolute',
+    right: 16,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   commentActionGrid: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3328,12 +3897,12 @@ const styles = StyleSheet.create({
   },
   pickerPill: {
     position: 'absolute',
-    width: PICKER_PILL_WIDTH,
-    height: PICKER_PILL_HEIGHT,
+    width: Platform.OS === 'android' ? 300 : PICKER_PILL_WIDTH,
+    height: Platform.OS === 'android' ? 48 : PICKER_PILL_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#fff',
     borderRadius: 26,
     shadowColor: '#000',
@@ -3346,14 +3915,14 @@ const styles = StyleSheet.create({
       Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.82)' : '#e5e7eb',
   },
   pickerItem: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pickerEmoji: {
-    fontSize: 28,
-    lineHeight: 32,
+  pickerReactionImage: {
+    width: 32,
+    height: 32,
   },
 });

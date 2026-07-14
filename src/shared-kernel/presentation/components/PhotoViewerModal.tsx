@@ -47,6 +47,7 @@ import { FEED_COPY } from '../../../feed/presentation/components/PostCards';
 import type { FeedPost, FeedTextPost } from '../../../feed/domain/types/feed.types';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type { FollowState } from '../../../user/domain/types/user.types';
 import { ReactionPickerOverlay } from '../../../feed/presentation/components/PostCards';
 
 import { useAppLanguage } from '../../application/hooks/useAppLanguage';
@@ -322,6 +323,7 @@ export function PhotoViewerModal({
   onProfilePress,
   onInternalShare,
   onShared,
+  onFollowChange,
   posts,
 }: {
   state: PhotoViewerState;
@@ -332,6 +334,7 @@ export function PhotoViewerModal({
   onProfilePress?: (userId: string) => void;
   onInternalShare?: (input: SharePostInput) => Promise<FeedPost>;
   onShared?: (post: FeedPost) => void;
+  onFollowChange?: (publisherId: string, isFollowing: boolean) => void;
   posts: FeedPost[];
 }) {
   const language = useAppLanguage();
@@ -364,9 +367,10 @@ export function PhotoViewerModal({
     x: number;
     y: number;
   } | null>(null);
-  const [isFollowedLocally, setIsFollowedLocally] = useState<
-    boolean | undefined
+  const [localFollowState, setLocalFollowState] = useState<
+    FollowState | undefined
   >(undefined);
+  const [isFollowSubmitting, setIsFollowSubmitting] = useState(false);
 
   const localGestureX = useSharedValue(0);
   const localGestureY = useSharedValue(0);
@@ -409,6 +413,10 @@ export function PhotoViewerModal({
     openScale.value = withTiming(1, {
       duration: 160,
       easing: Easing.out(Easing.quad),
+    });
+    contentOpacity.value = withTiming(1, {
+      duration: 120,
+      easing: Easing.out(Easing.cubic),
     });
   }, [
     state,
@@ -480,12 +488,28 @@ export function PhotoViewerModal({
   // Sync follow state locally
   useEffect(() => {
     if (livePost) {
-      setIsFollowedLocally(livePost.publisher.isFollowing);
+      setLocalFollowState(
+        livePost.publisher.isFollowing ? 'following' : 'none',
+      );
       setLocalReactionPostId(livePost.id);
       setLocalReaction(livePost.myReaction);
       setLocalLikeCount(livePost.likeCount);
     }
   }, [livePost]);
+
+  useEffect(() => {
+    if (!state || !livePost) return;
+    const photos =
+      livePost.photos && livePost.photos.length > 0
+        ? livePost.photos
+        : state.post.photos;
+
+    [currentIndex - 1, currentIndex + 1].forEach(index => {
+      const url = photos[index];
+      if (!url) return;
+      Image.prefetch(url).catch(() => undefined);
+    });
+  }, [currentIndex, livePost, state]);
 
   const applyReaction = useCallback(
     (reaction: ReactionType) => {
@@ -538,16 +562,45 @@ export function PhotoViewerModal({
     [livePost, SCREEN_W, SCREEN_H],
   );
 
+  const currentUserId = sessionStorage.getSession()?.userId;
+  const isOwnPublisher = Boolean(
+    livePost?.publisher.id &&
+      currentUserId &&
+      String(livePost.publisher.id) === String(currentUserId),
+  );
+  const resolvedFollowState =
+    localFollowState ?? (livePost?.publisher.isFollowing ? 'following' : 'none');
+  const isFollowActive =
+    resolvedFollowState === 'following' || resolvedFollowState === 'requested';
+
   const handleFollowPress = useCallback(async () => {
-    if (!livePost || isFollowedLocally) return;
-    setIsFollowedLocally(true);
+    if (!livePost || isOwnPublisher || isFollowSubmitting) return;
+
+    const previousState = resolvedFollowState;
+    const optimisticState: FollowState = isFollowActive ? 'none' : 'following';
+    setIsFollowSubmitting(true);
+    setLocalFollowState(optimisticState);
+    onFollowChange?.(livePost.publisher.id, optimisticState !== 'none');
+
     try {
       const profileRepo = createProfileRepository();
-      await profileRepo.toggleFollow(livePost.publisher.id);
+      const nextState = await profileRepo.toggleFollow(livePost.publisher.id);
+      setLocalFollowState(nextState);
+      onFollowChange?.(livePost.publisher.id, nextState !== 'none');
     } catch {
-      setIsFollowedLocally(false);
+      setLocalFollowState(previousState);
+      onFollowChange?.(livePost.publisher.id, previousState !== 'none');
+    } finally {
+      setIsFollowSubmitting(false);
     }
-  }, [livePost, isFollowedLocally]);
+  }, [
+    isFollowActive,
+    isFollowSubmitting,
+    isOwnPublisher,
+    livePost,
+    onFollowChange,
+    resolvedFollowState,
+  ]);
 
   const handleClose = useCallback(() => {
     // Animate close first, then call onClose when animation finishes
@@ -694,7 +747,7 @@ export function PhotoViewerModal({
       }
     });
 
-  const containerStyle = useAnimatedStyle(() => {
+  const backdropAnimatedStyle = useAnimatedStyle(() => {
     const dragProgress = interpolate(
       Math.abs(translateY.value),
       [0, SCREEN_H * 0.5],
@@ -704,8 +757,7 @@ export function PhotoViewerModal({
     const dragOpacity = Math.max(0, Math.min(1, dragProgress));
     const finalOpacity = Math.min(openProgress.value, dragOpacity);
     return {
-      flex: 1,
-      backgroundColor: `rgba(0, 0, 0, ${finalOpacity})`,
+      opacity: finalOpacity,
     };
   });
 
@@ -740,6 +792,8 @@ export function PhotoViewerModal({
         onRequestClose={handleClose}
         onDismiss={handleModalDismiss}
         statusBarTranslucent
+        presentationStyle="overFullScreen"
+        hardwareAccelerated
       />
     );
   }
@@ -820,11 +874,27 @@ export function PhotoViewerModal({
       onRequestClose={handleClose}
       onDismiss={handleModalDismiss}
       statusBarTranslucent
+      presentationStyle="overFullScreen"
+      hardwareAccelerated
     >
       <FocusAwareStatusBar barStyle="light-content" backgroundColor="#000" translucent />
-      <GestureHandlerRootView style={{ flex: 1 }}>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
         <GestureDetector gesture={panGesture}>
-          <Animated.View style={containerStyle}>
+          <Animated.View style={{ flex: 1, backgroundColor: 'transparent' }}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                {
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  bottom: 0,
+                  left: 0,
+                  backgroundColor: '#000000',
+                },
+                backdropAnimatedStyle,
+              ]}
+            />
             <Animated.View style={[contentStyle, { flex: 1 }]}>
               {/* Top bar: progress segments + page counter + close */}
               <Animated.View
@@ -1097,37 +1167,47 @@ export function PhotoViewerModal({
                     </View>
                   </GHTouchableOpacity>
 
-                  {/* Follow button only shown when not own post and not followed yet */}
-                  {(() => {
-                    const currentUserId = sessionStorage.getSession()?.userId;
-                    const showFollowButton =
-                      livePost.publisher.id !== currentUserId &&
-                      !isFollowedLocally;
-                    if (!showFollowButton) return null;
-                    return (
+                  {/* Follow button: API-backed state, hidden on own post. */}
+                  {!isOwnPublisher ? (
                       <GHTouchableOpacity
                         activeOpacity={0.7}
                         onPress={handleFollowPress}
+                        disabled={isFollowSubmitting}
                         style={{
                           borderWidth: 1,
-                          borderColor: 'rgba(255, 255, 255, 0.3)',
+                          borderColor: isFollowActive
+                            ? 'rgba(255, 255, 255, 0.2)'
+                            : 'rgba(255, 255, 255, 0.38)',
                           borderRadius: 20,
                           paddingHorizontal: 16,
                           paddingVertical: 6,
+                          backgroundColor: isFollowActive
+                            ? 'rgba(255, 255, 255, 0.1)'
+                            : 'transparent',
+                          opacity: isFollowSubmitting ? 0.65 : 1,
                         }}
                       >
                         <Text
                           style={{
                             color: '#ffffff',
                             fontSize: 13,
-                            fontWeight: '600',
+                            fontWeight: '700',
                           }}
                         >
-                          {language === 'vi' ? 'Theo dõi' : 'Follow'}
+                          {resolvedFollowState === 'requested'
+                            ? language === 'vi'
+                              ? 'Đã gửi'
+                              : 'Requested'
+                            : isFollowActive
+                              ? language === 'vi'
+                                ? 'Đang theo dõi'
+                                : 'Following'
+                              : language === 'vi'
+                                ? 'Theo dõi'
+                                : 'Follow'}
                         </Text>
                       </GHTouchableOpacity>
-                    );
-                  })()}
+                  ) : null}
                 </View>
 
                 <View
