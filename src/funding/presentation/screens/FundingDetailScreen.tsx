@@ -31,9 +31,36 @@ import type { RootStackParamList } from '../../../navigation/types';
 import type { FundingDonation } from '../../domain/types/funding.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
+import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 
 type DetailNav = NativeStackNavigationProp<RootStackParamList>;
 type DetailRoute = RouteProp<RootStackParamList, 'FundingDetail'>;
+
+function formatDate(timestamp?: any, fallback?: string) {
+  if (!timestamp) return fallback || '';
+  const cleanTimestamp = typeof timestamp === 'string' ? timestamp.trim() : timestamp;
+  const num = Number(cleanTimestamp);
+  let date: Date;
+  if (!isNaN(num) && isFinite(num)) {
+    const isMilliseconds = num > 1e11;
+    date = new Date(isMilliseconds ? num : num * 1000);
+  } else {
+    date = new Date(cleanTimestamp);
+  }
+  if (isNaN(date.getTime())) {
+    return fallback || String(timestamp);
+  }
+  try {
+    return date.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch (err) {
+    return fallback || String(timestamp);
+  }
+}
 
 const BRAND_COLOR = '#2563FF';
 
@@ -111,6 +138,67 @@ function formatTimeAgo(unixSeconds: number, copy: typeof DETAIL_COPY.vi): string
   if (diff < 3600) return copy.minutesAgo(Math.floor(diff / 60));
   if (diff < 86400) return copy.hoursAgo(Math.floor(diff / 3600));
   return copy.daysAgo(Math.floor(diff / 86400));
+}
+
+interface PaginationControlsProps {
+  page: number;
+  hasNextPage: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  language: string;
+}
+
+function PaginationControls({
+  page,
+  hasNextPage,
+  onPrev,
+  onNext,
+  language,
+}: PaginationControlsProps) {
+  const isVi = language === 'vi';
+  return (
+    <View className="flex-row items-center justify-center gap-4 py-4 mt-2">
+      <TouchableOpacity
+        disabled={page === 1}
+        onPress={onPrev}
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: page === 1 ? '#F1F5F9' : '#FFFFFF',
+          borderWidth: 1,
+          borderColor: '#E2E8F0',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={{ fontSize: 16, color: page === 1 ? '#CBD5E1' : '#0F172A', fontWeight: 'bold' }}>‹</Text>
+      </TouchableOpacity>
+      
+      <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B' }}>
+        {isVi ? `Trang ${page}` : `Page ${page}`}
+      </Text>
+
+      <TouchableOpacity
+        disabled={!hasNextPage}
+        onPress={onNext}
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: !hasNextPage ? '#F1F5F9' : '#FFFFFF',
+          borderWidth: 1,
+          borderColor: '#E2E8F0',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={{ fontSize: 16, color: !hasNextPage ? '#CBD5E1' : '#0F172A', fontWeight: 'bold' }}>›</Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 interface DonorRowProps {
@@ -266,16 +354,60 @@ function FundingDetailScreen() {
   const fundId = route.params?.fundId ?? '';
   const [donateModalVisible, setDonateModalVisible] = useState(false);
 
+  const { user } = useCurrentUserViewModel();
+  const currentUserId = user?.userId;
+
   const {
     campaign,
     donations,
+    donationsPage,
     isLoading,
     isDonating,
     error,
     currencySymbol,
     reload,
+    loadDonations,
     donate,
   } = useFundingDetailViewModel(fundId);
+
+  const hasNextDonations = donations.length === 10;
+  const handlePrevDonations = () => {
+    if (donationsPage > 1) {
+      loadDonations(donationsPage - 1);
+    }
+  };
+  const handleNextDonations = () => {
+    if (hasNextDonations) {
+      loadDonations(donationsPage + 1);
+    }
+  };
+
+  const isOwner = React.useMemo(() => {
+    if (!campaign || currentUserId === undefined || currentUserId === null) {
+      return false;
+    }
+    const targetIdStr = String(currentUserId).trim();
+    if (!targetIdStr) return false;
+
+    // Match direct campaign.user_id
+    if (campaign.user_id !== undefined && campaign.user_id !== null) {
+      if (String(campaign.user_id).trim() === targetIdStr) {
+        return true;
+      }
+    }
+
+    // Match campaign.user_data.user_id
+    if (campaign.user_data && typeof campaign.user_data === 'object') {
+      const userDataId = campaign.user_data.user_id;
+      if (userDataId !== undefined && userDataId !== null) {
+        if (String(userDataId).trim() === targetIdStr) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }, [campaign, currentUserId]);
 
   // Entrance slide-up and fade-in animations for staggered cover and details card
   const coverOpacity = useRef(new Animated.Value(0)).current;
@@ -414,20 +546,57 @@ function FundingDetailScreen() {
       : (donor?.username ?? copy.creatorFallback);
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F8FAFC]" edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F8FAFC' }} edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <FeedHeader />
 
       {/* App Bar Header */}
-      <View className="flex-row items-center justify-between px-4 py-3 bg-white border-b border-[#F1F5F9]">
+      <View
+        style={{
+          height: 64,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          backgroundColor: '#FFFFFF',
+          borderBottomWidth: 1,
+          borderBottomColor: '#f1f5f9',
+          zIndex: 1000,
+          elevation: 1000,
+        }}
+      >
         <TouchableOpacity
-          className="h-9 w-9 items-center justify-center rounded-full bg-white border border-[#E2E8F0] shadow-sm"
-          activeOpacity={0.75}
           onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: '#ffffff',
+            borderWidth: 1,
+            borderColor: '#f1f5f9',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: 12,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            elevation: 2,
+          }}
         >
-          <ArrowLeft size={18} color="#0F172A" />
+          <ArrowLeft size={22} color="#0F172A" />
         </TouchableOpacity>
-        <Text className="text-[18px] font-extrabold text-[#0F172A]">{copy.headerTitle}</Text>
-        <View className="h-9 w-9" />
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: '800',
+            color: '#0F172A',
+            flex: 1,
+          }}
+          numberOfLines={1}
+        >
+          {copy.headerTitle}
+        </Text>
       </View>
 
       <ScrollView
@@ -476,26 +645,37 @@ function FundingDetailScreen() {
           </Text>
 
           {/* Creator Details */}
-          <View className="mt-4 flex-row items-center">
-            {donor?.avatar ? (
-              <Image
-                source={{ uri: donor.avatar }}
-                className="h-9 w-9 rounded-full"
-                resizeMode="cover"
-              />
-            ) : (
-              <View className="h-9 w-9 rounded-full bg-slate-100 items-center justify-center border border-slate-200">
-                <User size={18} color="#64748B" />
+          <View style={{ marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {donor?.avatar ? (
+                <Image
+                  source={{ uri: donor.avatar }}
+                  style={{ width: 36, height: 36, borderRadius: 18 }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E2E8F0' }}>
+                  <User size={18} color="#64748B" />
+                </View>
+              )}
+              <View style={{ marginLeft: 10, flexDirection: 'column' }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B' }}>
+                  {donorName}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                  <ShieldCheck size={12} color={BRAND_COLOR} />
+                  <Text style={{ marginLeft: 4, fontSize: 11, fontWeight: '600', color: '#64748B' }}>
+                    {copy.adminLabel}
+                  </Text>
+                </View>
               </View>
-            )}
-            <View className="ml-3 flex-row items-center">
-              <ShieldCheck size={14} color={BRAND_COLOR} />
-              <Text className="ml-1.5 text-[13px] font-bold text-[#64748B]">
-                {copy.adminLabel}
-              </Text>
             </View>
-            <View className="ml-auto h-9 w-9 rounded-full bg-white border border-[#E2E8F0] items-center justify-center shadow-sm">
-              <Calendar size={15} color="#64748B" />
+            
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
+              <Calendar size={14} color="#64748B" style={{ marginRight: 6 }} />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B' }}>
+                {formatDate(campaign.time)}
+              </Text>
             </View>
           </View>
 
@@ -567,20 +747,29 @@ function FundingDetailScreen() {
                 </Text>
               </View>
             ) : (
-              <View className="bg-[#F8FAFC] border border-[#F1F5F9] mt-3 rounded-[20px] px-4">
-                {donations.map((item, index) => (
-                  <View key={item.id ?? index}>
-                    <DonorRow
-                      donation={item}
-                      currencySymbol={currencySymbol}
-                      copy={copy}
-                    />
-                    {index < donations.length - 1 ? (
-                      <View className="h-px bg-[#F1F5F9]" />
-                    ) : null}
-                  </View>
-                ))}
-              </View>
+              <>
+                <View className="bg-[#F8FAFC] border border-[#F1F5F9] mt-3 rounded-[20px] px-4">
+                  {donations.map((item, index) => (
+                    <View key={item.id ?? index}>
+                      <DonorRow
+                        donation={item}
+                        currencySymbol={currencySymbol}
+                        copy={copy}
+                      />
+                      {index < donations.length - 1 ? (
+                        <View className="h-px bg-[#F1F5F9]" />
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+                <PaginationControls
+                  page={donationsPage}
+                  hasNextPage={hasNextDonations}
+                  onPrev={handlePrevDonations}
+                  onNext={handleNextDonations}
+                  language={language}
+                />
+              </>
             )}
           </View>
         </Animated.View>
@@ -601,27 +790,52 @@ function FundingDetailScreen() {
         }}
         className="bg-white border border-[#F1F5F9] flex-row items-center rounded-3xl p-3"
       >
-        <View className="flex-1 pl-3 justify-center">
-          <Text className="text-[11px] font-bold text-[#94A3B8]">{copy.askDonate}</Text>
-          <Text className="text-[13px] font-extrabold text-[#0F172A] mt-0.5" numberOfLines={1}>
-            {formatMoney(raised, currencySymbol)} / {formatMoney(goal, currencySymbol)}
-          </Text>
-        </View>
-        <Animated.View style={{ transform: [{ scale: ctaScale }] }}>
-          <TouchableOpacity
-            className="flex-row items-center rounded-full px-7 py-3 shadow-md"
-            style={{ backgroundColor: BRAND_COLOR }}
-            activeOpacity={0.85}
-            onPressIn={handleCtaPressIn}
-            onPressOut={handleCtaPressOut}
-            onPress={() => setDonateModalVisible(true)}
-          >
-            <HeartHandshake size={16} color="#ffffff" />
-            <Text className="ml-2 text-[14px] font-bold text-white">
-              {copy.btnDonate}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
+        {isOwner ? (
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4 }}>
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+              <ShieldCheck size={20} color={BRAND_COLOR} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B' }}>
+                {language === 'vi' ? 'Chiến dịch của bạn' : 'Your Campaign'}
+              </Text>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748B', marginTop: 1 }}>
+                {language === 'vi' 
+                  ? 'Bạn không thể tự ủng hộ chiến dịch của chính mình.' 
+                  : 'You cannot donate to your own campaign.'}
+              </Text>
+            </View>
+            <View style={{ backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND_COLOR }}>
+                {language === 'vi' ? 'QUẢN TRỊ' : 'OWNER'}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <>
+            <View className="flex-1 pl-3 justify-center">
+              <Text className="text-[11px] font-bold text-[#94A3B8]">{copy.askDonate}</Text>
+              <Text className="text-[13px] font-extrabold text-[#0F172A] mt-0.5" numberOfLines={1}>
+                {formatMoney(raised, currencySymbol)} / {formatMoney(goal, currencySymbol)}
+              </Text>
+            </View>
+            <Animated.View style={{ transform: [{ scale: ctaScale }] }}>
+              <TouchableOpacity
+                className="flex-row items-center rounded-full px-7 py-3 shadow-md"
+                style={{ backgroundColor: BRAND_COLOR }}
+                activeOpacity={0.85}
+                onPressIn={handleCtaPressIn}
+                onPressOut={handleCtaPressOut}
+                onPress={() => setDonateModalVisible(true)}
+              >
+                <HeartHandshake size={16} color="#ffffff" />
+                <Text className="ml-2 text-[14px] font-bold text-white">
+                  {copy.btnDonate}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </>
+        )}
       </View>
 
       {/* Donate Modal */}

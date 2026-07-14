@@ -27,6 +27,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
+import android.view.WindowInsets
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
@@ -145,7 +146,7 @@ class IncomingCallActivity : Activity() {
     val content = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_HORIZONTAL
-      setPadding(dp(24), dp(76), dp(24), dp(28))
+      setPadding(horizontalContentPadding(), callContentTopPadding(), horizontalContentPadding(), callContentBottomPadding())
       layoutParams = FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -172,7 +173,7 @@ class IncomingCallActivity : Activity() {
 
     content.addView(TextView(this).apply {
       text = callerName
-      textSize = 34f
+      textSize = if (isCompactCallLayout()) 29f else 34f
       typeface = Typeface.DEFAULT_BOLD
       setTextColor(Color.WHITE)
       gravity = Gravity.CENTER
@@ -182,7 +183,7 @@ class IncomingCallActivity : Activity() {
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       ).apply {
-        topMargin = dp(26)
+        topMargin = dp(if (isCompactCallLayout()) 18 else 26)
       }
     })
 
@@ -198,7 +199,13 @@ class IncomingCallActivity : Activity() {
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       ).apply {
-        topMargin = dp(28)
+        topMargin = dp(
+          when {
+            isVeryCompactCallLayout() -> 14
+            isCompactCallLayout() -> 20
+            else -> 28
+          },
+        )
       }
     })
 
@@ -210,12 +217,112 @@ class IncomingCallActivity : Activity() {
     content.addView(createModernCallActions(isAudioCall))
 
     root.addView(content)
+    applySystemBarAwarePadding(root, content)
     setContentView(root)
 
     // The fullscreen activity is now the call surface; remove the heads-up card
     // so the lock-screen UI does not show two incoming-call layers at once.
     cancelNotification()
     startRingtone()
+  }
+
+  private fun screenWidthDp(): Float {
+    return resources.displayMetrics.widthPixels / resources.displayMetrics.density
+  }
+
+  private fun screenHeightDp(): Float {
+    return resources.displayMetrics.heightPixels / resources.displayMetrics.density
+  }
+
+  private fun isNarrowCallLayout(): Boolean = screenWidthDp() < 360f
+
+  private fun isCompactCallLayout(): Boolean = screenHeightDp() < 760f
+
+  private fun isVeryCompactCallLayout(): Boolean = screenHeightDp() < 680f
+
+  private fun horizontalContentPadding(): Int = dp(if (isNarrowCallLayout()) 18 else 24)
+
+  private fun callContentTopPadding(): Int = dp(
+    when {
+      isVeryCompactCallLayout() -> 34
+      isCompactCallLayout() -> 46
+      else -> 76
+    },
+  )
+
+  private fun callContentBottomPadding(): Int = dp(
+    when {
+      isVeryCompactCallLayout() -> 18
+      isCompactCallLayout() -> 22
+      else -> 28
+    },
+  )
+
+  private fun primaryActionSize(): Int = dp(
+    when {
+      isVeryCompactCallLayout() -> 74
+      isNarrowCallLayout() -> 74
+      isCompactCallLayout() -> 80
+      else -> 88
+    },
+  )
+
+  private fun primaryActionIconSize(): Int = dp(
+    when {
+      isNarrowCallLayout() -> 30
+      isCompactCallLayout() -> 32
+      else -> 35
+    },
+  )
+
+  private fun answerHandleSize(): Int = (primaryActionSize() - dp(10)).coerceAtLeast(dp(64))
+
+  private fun secondaryActionSize(): Int = dp(
+    when {
+      isVeryCompactCallLayout() -> 56
+      isNarrowCallLayout() -> 58
+      isCompactCallLayout() -> 62
+      else -> 66
+    },
+  )
+
+  private fun secondaryActionIconSize(): Int = dp(
+    when {
+      isNarrowCallLayout() -> 23
+      isCompactCallLayout() -> 25
+      else -> 26
+    },
+  )
+
+  private fun applySystemBarAwarePadding(root: View, content: LinearLayout) {
+    fun update(topInset: Int, bottomInset: Int) {
+      val horizontal = horizontalContentPadding()
+      val topPadding = maxOf(callContentTopPadding(), topInset + dp(if (isCompactCallLayout()) 14 else 22))
+      val bottomPadding = maxOf(callContentBottomPadding(), bottomInset + dp(18))
+      content.setPadding(horizontal, topPadding, horizontal, bottomPadding)
+    }
+
+    update(0, 0)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+      root.setOnApplyWindowInsetsListener { _, insets ->
+        val topInset: Int
+        val bottomInset: Int
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+          val statusInsets = insets.getInsets(WindowInsets.Type.statusBars())
+          val navigationInsets = insets.getInsets(WindowInsets.Type.navigationBars())
+          topInset = statusInsets.top
+          bottomInset = navigationInsets.bottom
+        } else {
+          @Suppress("DEPRECATION")
+          topInset = insets.systemWindowInsetTop
+          @Suppress("DEPRECATION")
+          bottomInset = insets.systemWindowInsetBottom
+        }
+        update(topInset, bottomInset)
+        insets
+      }
+      root.requestApplyInsets()
+    }
   }
 
   override fun onNewIntent(nextIntent: Intent) {
@@ -236,11 +343,29 @@ class IncomingCallActivity : Activity() {
   }
 
   private fun createAvatarBlock(name: String, avatarUrl: String): FrameLayout {
-    val size = dp(176)
-    val avatarSize = dp(134)
+    val size = dp(
+      when {
+        isVeryCompactCallLayout() -> 136
+        isCompactCallLayout() -> 152
+        else -> 176
+      },
+    )
+    val avatarSize = dp(
+      when {
+        isVeryCompactCallLayout() -> 104
+        isCompactCallLayout() -> 116
+        else -> 134
+      },
+    )
     val block = FrameLayout(this).apply {
       layoutParams = LinearLayout.LayoutParams(size, size).apply {
-        topMargin = dp(56)
+        topMargin = dp(
+          when {
+            isVeryCompactCallLayout() -> 28
+            isCompactCallLayout() -> 38
+            else -> 56
+          },
+        )
       }
     }
     block.addView(RingView(this).apply {
@@ -293,9 +418,11 @@ class IncomingCallActivity : Activity() {
     block.addView(avatarContainer)
     block.addView(View(this).apply {
       background = ovalBorder(Color.rgb(31, 205, 75), Color.WHITE, dp(4))
-      layoutParams = FrameLayout.LayoutParams(dp(32), dp(32), Gravity.RIGHT or Gravity.BOTTOM).apply {
-        rightMargin = dp(22)
-        bottomMargin = dp(22)
+      val onlineDotSize = dp(if (isCompactCallLayout()) 28 else 32)
+      val onlineDotInset = dp(if (isCompactCallLayout()) 18 else 22)
+      layoutParams = FrameLayout.LayoutParams(onlineDotSize, onlineDotSize, Gravity.RIGHT or Gravity.BOTTOM).apply {
+        rightMargin = onlineDotInset
+        bottomMargin = onlineDotInset
       }
     })
     return block
@@ -335,14 +462,16 @@ class IncomingCallActivity : Activity() {
       addView(FrameLayout(this@IncomingCallActivity).apply {
         background = ovalBorder(Color.argb(52, 255, 255, 255), Color.argb(82, 255, 255, 255), dp(1))
         elevation = dp(5).toFloat()
-        layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
-        addView(iconView(iconRes, dp(19)).apply {
-          layoutParams = FrameLayout.LayoutParams(dp(19), dp(19), Gravity.CENTER)
+        val titleIconCircle = dp(if (isCompactCallLayout()) 32 else 36)
+        val titleIconSize = dp(if (isCompactCallLayout()) 17 else 19)
+        layoutParams = LinearLayout.LayoutParams(titleIconCircle, titleIconCircle)
+        addView(iconView(iconRes, titleIconSize).apply {
+          layoutParams = FrameLayout.LayoutParams(titleIconSize, titleIconSize, Gravity.CENTER)
         })
       })
       addView(TextView(this@IncomingCallActivity).apply {
         text = title
-        textSize = 25f
+        textSize = if (isCompactCallLayout()) 22f else 25f
         typeface = Typeface.DEFAULT_BOLD
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
@@ -424,9 +553,9 @@ class IncomingCallActivity : Activity() {
       background = roundRectBorder(Color.argb(46, 255, 255, 255), dp(22), Color.argb(46, 255, 255, 255), dp(1))
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.WRAP_CONTENT,
-        dp(38),
+        dp(if (isCompactCallLayout()) 34 else 38),
       ).apply {
-        topMargin = dp(18)
+        topMargin = dp(if (isCompactCallLayout()) 14 else 18)
       }
       addView(View(this@IncomingCallActivity).apply {
         background = oval(Color.rgb(34, 197, 94))
@@ -436,7 +565,7 @@ class IncomingCallActivity : Activity() {
       })
       addView(TextView(this@IncomingCallActivity).apply {
         text = "Online"
-        textSize = 14f
+        textSize = if (isCompactCallLayout()) 13f else 14f
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
         includeFontPadding = false
@@ -452,7 +581,13 @@ class IncomingCallActivity : Activity() {
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       ).apply {
-        bottomMargin = dp(44)
+        bottomMargin = dp(
+          when {
+            isVeryCompactCallLayout() -> 14
+            isCompactCallLayout() -> 24
+            else -> 34
+          },
+        )
       }
       addView(utilityButton(R.drawable.ic_call_message_modern, "Nh\u1eafn tin").apply {
         setOnClickListener { openMessageThread() }
@@ -477,48 +612,55 @@ class IncomingCallActivity : Activity() {
       addView(FrameLayout(this@IncomingCallActivity).apply {
         background = ovalBorder(Color.argb(52, 255, 255, 255), Color.argb(58, 255, 255, 255), dp(1))
         elevation = dp(6).toFloat()
-        layoutParams = LinearLayout.LayoutParams(dp(76), dp(76))
-        addView(iconView(iconRes, dp(28)).apply {
-          layoutParams = FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER)
+        val buttonSize = secondaryActionSize()
+        val iconSize = secondaryActionIconSize()
+        layoutParams = LinearLayout.LayoutParams(buttonSize, buttonSize)
+        addView(iconView(iconRes, iconSize).apply {
+          layoutParams = FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
         })
       })
       addView(TextView(this@IncomingCallActivity).apply {
         text = label
-        textSize = 14.5f
+        textSize = if (isCompactCallLayout()) 13f else 14f
         setTextColor(Color.rgb(232, 237, 247))
         gravity = Gravity.CENTER
         includeFontPadding = false
         layoutParams = LinearLayout.LayoutParams(
           ViewGroup.LayoutParams.WRAP_CONTENT,
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply {
-          topMargin = dp(12)
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+      ).apply {
+          topMargin = dp(if (isCompactCallLayout()) 8 else 10)
         }
       })
     }
   }
 
   private fun createModernCallActions(isAudioCall: Boolean): View {
+    val mainButtonSize = primaryActionSize()
+    val mainIconSize = primaryActionIconSize()
+    val handleSize = answerHandleSize()
+    val trackHeight = mainButtonSize
+
     val container = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(4), 0, dp(4), 0)
+      setPadding(0, 0, 0, 0)
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       ).apply {
-        bottomMargin = dp(34)
+        bottomMargin = 0
       }
     }
 
     val declineBtn = FrameLayout(this).apply {
       background = gradientOval(Color.rgb(255, 74, 87), Color.rgb(223, 39, 52))
       elevation = dp(10).toFloat()
-      layoutParams = LinearLayout.LayoutParams(dp(68), dp(68)).apply {
-        rightMargin = dp(18)
+      layoutParams = LinearLayout.LayoutParams(mainButtonSize, mainButtonSize).apply {
+        rightMargin = dp(if (isNarrowCallLayout()) 12 else 16)
       }
-      addView(iconView(R.drawable.ic_call_phone_modern, dp(29)).apply {
-        layoutParams = FrameLayout.LayoutParams(dp(29), dp(29), Gravity.CENTER)
+      addView(iconView(R.drawable.ic_call_phone_modern, mainIconSize).apply {
+        layoutParams = FrameLayout.LayoutParams(mainIconSize, mainIconSize, Gravity.CENTER)
       })
       setOnClickListener {
         LiveKitCallNativeActions.markIncomingCallHandled(
@@ -541,21 +683,21 @@ class IncomingCallActivity : Activity() {
       background = gradientRoundRect(
         Color.argb(76, 255, 255, 255),
         Color.argb(42, 255, 255, 255),
-        dp(34),
+        trackHeight / 2,
         Color.argb(58, 255, 255, 255),
         dp(1),
       )
       elevation = dp(8).toFloat()
       layoutParams = LinearLayout.LayoutParams(
         0,
-        dp(68),
+        trackHeight,
         1f
       )
     }
 
     val promptText = TextView(this).apply {
       text = "Tr\u01b0\u1ee3t \u0111\u1ec3 tr\u1ea3 l\u1eddi" // "Trượt để trả lời"
-      textSize = 14.5f
+      textSize = if (isNarrowCallLayout()) 13f else 14.5f
       typeface = Typeface.DEFAULT_BOLD
       setTextColor(Color.WHITE)
       gravity = Gravity.CENTER
@@ -563,8 +705,8 @@ class IncomingCallActivity : Activity() {
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT
       ).apply {
-        leftMargin = dp(58)
-        rightMargin = dp(42)
+        leftMargin = handleSize + dp(8)
+        rightMargin = dp(if (isNarrowCallLayout()) 32 else 42)
       }
     }
     sliderTrack.addView(promptText)
@@ -572,7 +714,7 @@ class IncomingCallActivity : Activity() {
     val arrow = iconView(R.drawable.ic_call_arrow_right_modern, dp(18)).apply {
       alpha = 0.58f
       layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply {
-        rightMargin = dp(18)
+        rightMargin = dp(if (isNarrowCallLayout()) 13 else 18)
       }
     }
     sliderTrack.addView(arrow)
@@ -581,14 +723,14 @@ class IncomingCallActivity : Activity() {
       background = gradientOval(Color.rgb(60, 222, 91), Color.rgb(22, 180, 86))
       elevation = dp(10).toFloat()
       layoutParams = FrameLayout.LayoutParams(
-        dp(58),
-        dp(58),
+        handleSize,
+        handleSize,
         Gravity.LEFT or Gravity.CENTER_VERTICAL
       ).apply {
-        leftMargin = dp(5)
+        leftMargin = (trackHeight - handleSize) / 2
       }
-      addView(iconView(if (isAudioCall) R.drawable.ic_call_phone_modern else R.drawable.ic_call_video_modern, dp(27)).apply {
-        layoutParams = FrameLayout.LayoutParams(dp(27), dp(27), Gravity.CENTER)
+      addView(iconView(if (isAudioCall) R.drawable.ic_call_phone_modern else R.drawable.ic_call_video_modern, mainIconSize).apply {
+        layoutParams = FrameLayout.LayoutParams(mainIconSize, mainIconSize, Gravity.CENTER)
       })
     }
     sliderTrack.addView(handle)
@@ -600,7 +742,7 @@ class IncomingCallActivity : Activity() {
     handle.setOnTouchListener(object : View.OnTouchListener {
       override fun onTouch(v: View, event: MotionEvent): Boolean {
         if (isAnswered) return false
-        val maxSlide = (sliderTrack.width - v.width - dp(10)).coerceAtLeast(1)
+        val maxSlide = (sliderTrack.width - v.width - (trackHeight - handleSize)).coerceAtLeast(1)
 
         when (event.action) {
           MotionEvent.ACTION_DOWN -> {

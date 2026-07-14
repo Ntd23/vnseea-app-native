@@ -75,18 +75,32 @@ export function createFundingRepository(): FundingRepository {
     },
 
     async editFunding(input: EditFundingInput) {
-      const response = await apiBridge.post<FundingMutationResponse>(
-        apiRoutes.funding.list,
-        {
-          type: 'edit',
-          id: input.id,
-          title: input.title,
-          description: input.description,
-          amount: input.amount,
-        },
-      );
-
-      return response;
+      if (input.image) {
+        const response = await apiBridge.multipart<FundingMutationResponse>(
+          apiRoutes.funding.list,
+          {
+            type: 'edit',
+            id: input.id,
+            title: input.title,
+            description: input.description,
+            amount: input.amount,
+            image: input.image,
+          },
+        );
+        return response;
+      } else {
+        const response = await apiBridge.post<FundingMutationResponse>(
+          apiRoutes.funding.list,
+          {
+            type: 'edit',
+            id: input.id,
+            title: input.title,
+            description: input.description,
+            amount: input.amount,
+          },
+        );
+        return response;
+      }
     },
 
     async deleteFunding(id: number) {

@@ -61,6 +61,9 @@ export interface PostVideoAttachment {
   uri: string;
   name: string;
   type: string; // MIME, e.g. 'video/mp4'
+  thumbnailUri?: string;
+  thumbnailName?: string;
+  thumbnailType?: string;
   width?: number;
   height?: number;
   duration?: number;

@@ -68,6 +68,7 @@ import {
   formatAudioDuration,
   pickSupportedAudioFile,
 } from '../../../shared-kernel/application/utils/audioFiles';
+import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/useWavAudioRecorder';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
@@ -134,11 +135,11 @@ const CREATE_POST_COPY = {
     videoErrorTip: 'Vui lòng thử lại.',
     addVideo: 'Thêm video',
     done: 'Hoàn tất',
-    privacyPublic: 'Đã kiếm tiền',
+    privacyPublic: 'Công khai',
     privacyFollowing: 'Những người tôi theo dõi',
     privacyFollowers: 'Mọi người theo dõi tôi',
     privacyOnlyMe: 'Chỉ mình tôi',
-    privacyAnonymous: 'Vô danh',
+    privacyAnonymous: 'Ẩn danh',
     privacyPublicDesc: 'Bất kỳ ai cũng có thể xem',
     privacyFollowingDesc: 'Chỉ những người bạn đang theo dõi',
     privacyFollowersDesc: 'Chỉ những người đang theo dõi bạn',
@@ -569,7 +570,7 @@ function PrivacyPickerSheet({
       onRequestClose={onClose}
     >
       <Pressable className="flex-1 bg-black/40" onPress={onClose}>
-        <Pressable onPress={() => {}} className="mt-auto bg-white pt-2 pb-6 rounded-t-[24px]">
+        <Pressable onPress={() => { }} className="mt-auto bg-white pt-2 pb-6 rounded-t-[24px]">
           <View className="mb-2 self-center h-1 w-12 rounded-full bg-slate-300" />
           <Text className="px-5 py-3 text-heading">{title}</Text>
           {options.map(({ value, label, Icon, description }) => {
@@ -657,7 +658,7 @@ function FeelingPickerSheet({
       onRequestClose={onClose}
     >
       <Pressable className="flex-1 bg-black/40" onPress={onClose}>
-        <Pressable onPress={() => {}} className="mt-auto bg-white pt-2 pb-6 rounded-t-[24px] max-h-[70%]">
+        <Pressable onPress={() => { }} className="mt-auto bg-white pt-2 pb-6 rounded-t-[24px] max-h-[70%]">
           <View className="mb-2 self-center h-1 w-12 rounded-full bg-slate-300" />
           <View className="flex-row items-center justify-between px-5 py-3">
             <Text className="text-heading">{title}</Text>
@@ -1461,6 +1462,14 @@ const VideoPreviewCard = React.memo(({
         {/* Skeleton/Placeholder until first frame loads */}
         {!isVideoLoaded && (
           <View style={StyleSheet.absoluteFill} className="items-center justify-center bg-slate-950 z-10">
+            {video.thumbnailUri ? (
+              <Image
+                source={{ uri: video.thumbnailUri }}
+                style={StyleSheet.absoluteFill}
+                resizeMode="cover"
+              />
+            ) : null}
+            <View style={StyleSheet.absoluteFill} className="bg-black/25" />
             <ActivityIndicator color="#3b82f6" size="small" />
             <Text className="mt-2 text-xs text-slate-400 font-semibold">{copy.processing}</Text>
           </View>
@@ -2086,7 +2095,13 @@ export function CreatePostModal({
       if (!asset) return;
       const attachment = assetToVideoAttachment(asset);
       if (attachment) {
-        vmRef.current.setVideo(attachment);
+        const thumbnail = await createVideoUploadThumbnail(attachment.uri);
+        vmRef.current.setVideo({
+          ...attachment,
+          thumbnailUri: thumbnail?.uri,
+          thumbnailName: thumbnail?.name,
+          thumbnailType: thumbnail?.type,
+        });
       }
     } finally {
       setIsProcessingPhotos(false);
@@ -2323,25 +2338,31 @@ export function CreatePostModal({
           style={{
             flex: 1,
             backgroundColor: 'rgba(0, 0, 0, 0.4)',
-            justifyContent: 'flex-end',
+            justifyContent: 'center',
+            alignItems: 'center',
           }}
           onPress={handleDiscard}
         >
           <Pressable
             style={{
+              width: '92%',
               backgroundColor: '#ffffff',
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
+              borderRadius: 24,
               paddingHorizontal: 16,
               paddingTop: 16,
-              paddingBottom: Math.max(insets.bottom, 16),
+              paddingBottom: 20,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.15,
+              shadowRadius: 20,
+              elevation: 5,
             }}
             onPress={(e) => e.stopPropagation()}
           >
             <View style={{ position: 'relative', zIndex: 20, elevation: 20 }}>
               {/* Row 1: Avatar, highlighted text input, hashtag/mention shortcuts */}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-                 <Image source={{ uri: avatarUrl || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw' }} style={{ width: 40, height: 40, borderRadius: 20 }} resizeMode="cover" />
+                <Image source={{ uri: avatarUrl || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw' }} style={{ width: 40, height: 40, borderRadius: 20 }} resizeMode="cover" />
                 <HighlightedComposerInput
                   inputRef={textInputRef}
                   value={vm.draft.text}
@@ -2545,7 +2566,7 @@ export function CreatePostModal({
 
             {/* Row 3: Bottom action buttons */}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              {/* Dropdown: Đã kiếm tiền (or privacy selector) */}
+              {/* Dropdown: Công khai (or privacy selector) */}
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() => setPrivacyMenuVisible(true)}
@@ -2557,13 +2578,18 @@ export function CreatePostModal({
                   borderRadius: 20,
                   paddingVertical: 8,
                   paddingHorizontal: 12,
+                  flexShrink: 1,
                 }}
               >
-                {vm.draft.privacy === 'public' && <CreditCard size={16} color="#64748b" style={{ marginRight: 6 }} />}
+                {vm.draft.privacy === 'public' && <Globe2 size={16} color="#64748b" style={{ marginRight: 6 }} />}
                 {(vm.draft.privacy === 'following' || vm.draft.privacy === 'followers') && <Users size={16} color="#64748b" style={{ marginRight: 6 }} />}
                 {vm.draft.privacy === 'anonymous' && <EyeOff size={16} color="#64748b" style={{ marginRight: 6 }} />}
-                
-                <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569', marginRight: 4 }}>
+
+                <Text
+                  style={{ fontSize: 13, fontWeight: '600', color: '#475569', marginRight: 4, flexShrink: 1 }}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {vm.draft.privacy === 'public' && copy.privacyPublic}
                   {vm.draft.privacy === 'following' && copy.privacyFollowing}
                   {vm.draft.privacy === 'followers' && copy.privacyFollowers}
@@ -2632,14 +2658,16 @@ export function CreatePostModal({
             onRequestClose={() => setPrivacyMenuVisible(false)}
           >
             <Pressable
-              style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.1)' }}
+              style={{
+                flex: 1,
+                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
               onPress={() => setPrivacyMenuVisible(false)}
             >
               <View
                 style={{
-                  position: 'absolute',
-                  bottom: insets.bottom + 58,
-                  left: 16,
                   width: 220,
                   backgroundColor: '#ffffff',
                   borderRadius: 16,
@@ -2648,9 +2676,10 @@ export function CreatePostModal({
                   shadowOffset: { width: 0, height: 4 },
                   shadowOpacity: 0.15,
                   shadowRadius: 12,
-                  elevation: 5,
+                  elevation: 10,
                   borderWidth: 1,
                   borderColor: '#e2e8f0',
+                  overflow: 'hidden',
                 }}
               >
                 {/* Option 1: Những người tôi theo dõi */}

@@ -32,6 +32,10 @@ import type {
 import type { FeedSource } from '../../domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { feedCacheStorage } from '../../../shared-kernel/infrastructure/storage/feedCacheStorage';
+import {
+  getFeedVideoBufferTarget,
+  mergeFeedContentWithVideos,
+} from './feedVideoScheduler';
 
 const repository = createFeedRepository();
 const pollRepository = createPollRepository();
@@ -42,7 +46,8 @@ const pollRepository = createPollRepository();
 // skipping older posts that live in the same raw API window.
 const PAGE_SIZE = 10;
 const VIDEO_PAGE_SIZE = 12;
-const VIDEO_INSERT_INTERVAL = 5;
+const LOAD_MORE_FRESH_POST_LIMIT = 3;
+const LOAD_MORE_FRESH_POST_FETCH_LIMIT = 8;
 const FEED_VM_DEBUG = typeof __DEV__ !== 'undefined' && __DEV__;
 // Stop paging only after this many consecutive empty pages. Each
 // empty page retries with a different cursor source; 3 was empirically
@@ -95,6 +100,50 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
   }
   return Array.from(map.values());
 }
+
+function getFeedPostTimestamp(post?: FeedPost | null) {
+  const value = Number(post?.postedAt);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function getFeedPostNumericId(post?: FeedPost | null) {
+  const value = Number(post?.id);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function isPostNewerThanFeedTop(
+  post: FeedPost,
+  currentPosts: readonly FeedPost[],
+) {
+  const topPost = currentPosts[0];
+  if (!topPost) return false;
+
+  const postTime = getFeedPostTimestamp(post);
+  const topTime = getFeedPostTimestamp(topPost);
+
+  if (postTime > 0 && topTime > 0 && postTime !== topTime) {
+    return postTime > topTime;
+  }
+
+  const postId = getFeedPostNumericId(post);
+  const topId = getFeedPostNumericId(topPost);
+  return postId > 0 && topId > 0 && postId > topId;
+}
+
+function pickFreshPostsForLoadMore(
+  candidates: FeedPost[],
+  existingIds: Set<string>,
+  currentPosts: readonly FeedPost[],
+  limit = LOAD_MORE_FRESH_POST_LIMIT,
+) {
+  return sortByTime(uniqueById(candidates))
+    .filter(post => {
+      if (!post?.id || existingIds.has(post.id)) return false;
+      return isPostNewerThanFeedTop(post, currentPosts);
+    })
+    .slice(0, limit);
+}
+
 function debugFeedVm(label: string, payload: Record<string, unknown>) {
   if (!FEED_VM_DEBUG) return;
   console.log(`[feed.vm] ${label}`, payload);
@@ -146,28 +195,6 @@ function pickAppendablePage(
   return picked;
 }
 
-function interleaveVideos(
-  lightPosts: FeedPost[],
-  videoPosts: FeedVideoPost[],
-): FeedPost[] {
-  const lightIds = new Set(lightPosts.map(post => post.id));
-  const usableVideos = uniqueById(videoPosts)
-    .filter(video => !lightIds.has(video.id))
-    .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
-  const result: FeedPost[] = [];
-  let videoIndex = 0;
-
-  lightPosts.forEach((post, index) => {
-    result.push(post);
-    if ((index + 1) % VIDEO_INSERT_INTERVAL === 0 && videoIndex < usableVideos.length) {
-      result.push(usableVideos[videoIndex]);
-      videoIndex += 1;
-    }
-  });
-
-  return result;
-}
-
 function cacheLightPostsAfterInteractions(posts: FeedPost[]) {
   const snapshot = posts.slice(0, 50);
   pendingLightCacheTask?.cancel();
@@ -202,8 +229,12 @@ export function useFeedViewModel() {
       .getCachedPosts()
       .filter(isLightFeedPost);
     const cachedVideoPosts = feedCacheStorage.getCachedVideoPosts();
-    return interleaveVideos(cachedLightPosts, cachedVideoPosts);
+    return mergeFeedContentWithVideos(
+      sortByTime(cachedLightPosts),
+      sortByTime(cachedVideoPosts) as FeedVideoPost[],
+    );
   });
+  const mergedPostsRef = useRef<FeedPost[]>(posts);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -229,6 +260,8 @@ export function useFeedViewModel() {
   const pendingCommitRef = useRef<{
     lightPosts: FeedPost[];
     videoPosts: FeedVideoPost[];
+    preserveRenderedOrder?: boolean;
+    preserveExistingPosts?: readonly FeedPost[];
   } | null>(null);
   const feedSourceRef = useRef<FeedSource>('all');
   const trackedImpressionIdsRef = useRef<Set<string>>(new Set());
@@ -244,7 +277,14 @@ export function useFeedViewModel() {
   const emptyPageStrikeRef = useRef(0);
 
   const applyFeedSources = useCallback(
-    (nextLightPosts: FeedPost[], nextVideoPosts: FeedVideoPost[]) => {
+    (
+      nextLightPosts: FeedPost[],
+      nextVideoPosts: FeedVideoPost[],
+      options?: {
+        preserveRenderedOrder?: boolean;
+        preserveExistingPosts?: readonly FeedPost[];
+      },
+    ) => {
       // Snapshot the pre-dedupe / pre-filter kinds so the log can show
       // exactly which kinds the repository handed us (e.g. 6 video,
       // 2 product, 18 text+photo). Without this, dedupe + the
@@ -271,7 +311,18 @@ export function useFeedViewModel() {
 
       lightPostsRef.current = cleanLightPosts;
       videoPostsRef.current = cleanVideoPosts;
-      setPosts(interleaveVideos(cleanLightPosts, cleanVideoPosts));
+      const mergedPosts = mergeFeedContentWithVideos(
+        cleanLightPosts,
+        cleanVideoPosts,
+        options?.preserveRenderedOrder || options?.preserveExistingPosts
+          ? {
+              preserveExistingPosts:
+                options.preserveExistingPosts ?? mergedPostsRef.current,
+            }
+          : undefined,
+      );
+      mergedPostsRef.current = mergedPosts;
+      setPosts(mergedPosts);
       if (feedSourceRef.current === 'all') {
         cacheLightPostsAfterInteractions(cleanLightPosts);
         cacheVideoPostsAfterInteractions(cleanVideoPosts);
@@ -298,16 +349,25 @@ export function useFeedViewModel() {
     (
       nextLightPosts: FeedPost[],
       nextVideoPosts: FeedVideoPost[],
-      options?: { deferDuringScroll?: boolean },
+      options?: {
+        deferDuringScroll?: boolean;
+        preserveRenderedOrder?: boolean;
+        preserveExistingPosts?: readonly FeedPost[];
+      },
     ) => {
       if (options?.deferDuringScroll && isScrollBusyRef.current) {
         pendingCommitRef.current = {
           lightPosts: nextLightPosts,
           videoPosts: nextVideoPosts,
+          preserveRenderedOrder: options.preserveRenderedOrder,
+          preserveExistingPosts: options.preserveExistingPosts,
         };
         return;
       }
-      applyFeedSources(nextLightPosts, nextVideoPosts);
+      applyFeedSources(nextLightPosts, nextVideoPosts, {
+        preserveRenderedOrder: options?.preserveRenderedOrder,
+        preserveExistingPosts: options?.preserveExistingPosts,
+      });
     },
     [applyFeedSources],
   );
@@ -316,7 +376,10 @@ export function useFeedViewModel() {
     const pending = pendingCommitRef.current;
     if (!pending) return;
     pendingCommitRef.current = null;
-    applyFeedSources(pending.lightPosts, pending.videoPosts);
+    applyFeedSources(pending.lightPosts, pending.videoPosts, {
+      preserveRenderedOrder: pending.preserveRenderedOrder,
+      preserveExistingPosts: pending.preserveExistingPosts,
+    });
   }, [applyFeedSources]);
 
   const scheduleImpressionFlush = useCallback((delayMs = 900) => {
@@ -367,7 +430,11 @@ export function useFeedViewModel() {
     videoPostsRef.current = videoPostsRef.current
       .map(updater)
       .filter((post): post is FeedVideoPost => post.kind === 'video');
-    setPosts(prev => prev.map(updater));
+    setPosts(prev => {
+      const nextPosts = prev.map(updater);
+      mergedPostsRef.current = nextPosts;
+      return nextPosts;
+    });
     if (feedSourceRef.current === 'all') {
       cacheLightPostsAfterInteractions(lightPostsRef.current);
       cacheVideoPostsAfterInteractions(videoPostsRef.current);
@@ -380,7 +447,11 @@ export function useFeedViewModel() {
     prefetchBufferRef.current = prefetchBufferRef.current?.filter(
       post => post.id !== postId,
     ) ?? null;
-    setPosts(prev => prev.filter(post => post.id !== postId));
+    setPosts(prev => {
+      const nextPosts = prev.filter(post => post.id !== postId);
+      mergedPostsRef.current = nextPosts;
+      return nextPosts;
+    });
     if (feedSourceRef.current === 'all') {
       cacheLightPostsAfterInteractions(lightPostsRef.current);
       cacheVideoPostsAfterInteractions(videoPostsRef.current);
@@ -425,7 +496,7 @@ export function useFeedViewModel() {
   const ensureVideoBuffer = useCallback(
     (lightCount: number) => {
       if (isFetchingVideosRef.current) return;
-      const requiredVideos = Math.floor(lightCount / VIDEO_INSERT_INTERVAL) + 2;
+      const requiredVideos = getFeedVideoBufferTarget(lightCount);
       if (videoPostsRef.current.length >= requiredVideos) return;
 
       const lastVideo = videoPostsRef.current[videoPostsRef.current.length - 1];
@@ -456,7 +527,10 @@ export function useFeedViewModel() {
           commitFeedSources(lightPostsRef.current, [
             ...videoPostsRef.current,
             ...freshVideos,
-          ], { deferDuringScroll: true });
+          ], {
+            deferDuringScroll: true,
+            preserveRenderedOrder: true,
+          });
         })
         .catch(err => {
           // Video is a secondary lane; a failure must not blank or block feed.
@@ -664,6 +738,43 @@ export function useFeedViewModel() {
     return sortByTime(posts).slice(0, limit);
   }, []);
 
+  const loadFreshPostsForNextBatch = useCallback(
+    async (batchPosts: FeedPost[] = []) => {
+      try {
+        const currentPosts = mergedPostsRef.current;
+        const existingIds = new Set(currentPosts.map(post => post.id));
+        batchPosts.forEach(post => {
+          if (post?.id) existingIds.add(post.id);
+        });
+
+        const latestPosts = await repository.getAllPosts(
+          LOAD_MORE_FRESH_POST_FETCH_LIMIT,
+          undefined,
+          feedSourceRef.current,
+        );
+        const freshPosts = pickFreshPostsForLoadMore(
+          latestPosts,
+          existingIds,
+          currentPosts,
+        );
+
+        debugFeedVm('load-more fresh head', {
+          fetched: latestPosts.length,
+          usable: freshPosts.length,
+          ids: freshPosts.map(post => post.id),
+        });
+
+        return freshPosts;
+      } catch (caught) {
+        debugFeedVm('load-more fresh head failed', {
+          error: caught instanceof Error ? caught.message : String(caught),
+        });
+        return [];
+      }
+    },
+    [],
+  );
+
   const selectFeedSource = useCallback(
     (nextSource: FeedSource | 'photos') => {
       const nextApiSource = nextSource === 'photos' ? 'all' : nextSource;
@@ -679,6 +790,7 @@ export function useFeedViewModel() {
       emptyPageStrikeRef.current = 0;
       trackedImpressionIdsRef.current = new Set();
       pendingImpressionIdsRef.current.clear();
+      mergedPostsRef.current = [];
       setPosts([]);
       setIsAllLoaded(false);
       setHasLoadedOnce(false);
@@ -693,6 +805,8 @@ export function useFeedViewModel() {
       return;
     }
 
+    setIsLoadingMore(true);
+    setError(null);
 
     try {
       // Fast path: use prefetch buffer if available.
@@ -712,17 +826,33 @@ export function useFeedViewModel() {
           }
           return;
         } else {
+          const freshHeadPosts = await loadFreshPostsForNextBatch(newPosts);
+          const freshLight = freshHeadPosts.filter(isLightFeedPost);
+          const freshVideo = freshHeadPosts.filter(
+            (p): p is FeedVideoPost => p.kind === 'video',
+          );
           // Split newPosts into light and video posts
           const newLight = newPosts.filter(isLightFeedPost);
           const newVideo = newPosts.filter((p): p is FeedVideoPost => p.kind === 'video');
 
-          const mergedLight = [...currentLightPosts, ...newLight];
-          const mergedVideo = [...videoPostsRef.current, ...newVideo];
+          const mergedLight = [...currentLightPosts, ...freshLight, ...newLight];
+          const mergedVideo = [
+            ...videoPostsRef.current,
+            ...freshVideo,
+            ...newVideo,
+          ];
+          const preserveExistingPosts =
+            freshHeadPosts.length > 0
+              ? [...mergedPostsRef.current, ...freshHeadPosts]
+              : undefined;
 
 
           // Append paged posts immediately so fast scrolling never reaches a
           // visible end gap while waiting for scroll-idle commit flushing.
-          commitFeedSources(mergedLight, mergedVideo);
+          commitFeedSources(mergedLight, mergedVideo, {
+            preserveRenderedOrder: true,
+            preserveExistingPosts,
+          });
           scheduleVideoBuffer(mergedLight.length);
           setTimeout(() => prefetchNextPage(), 0);
           return;
@@ -749,9 +879,6 @@ export function useFeedViewModel() {
         }
         return;
       }
-
-      setIsLoadingMore(true);
-      setError(null);
 
       const page = await repository.getLightPostsPage(
         PAGE_SIZE,
@@ -802,12 +929,24 @@ export function useFeedViewModel() {
         }
       } else {
         emptyPageStrikeRef.current = 0;
-        const mergedLight = [...currentLightPosts, ...newPosts];
-        const mergedVideo = videoPostsRef.current;
+        const freshHeadPosts = await loadFreshPostsForNextBatch(newPosts);
+        const freshLight = freshHeadPosts.filter(isLightFeedPost);
+        const freshVideo = freshHeadPosts.filter(
+          (p): p is FeedVideoPost => p.kind === 'video',
+        );
+        const mergedLight = [...currentLightPosts, ...freshLight, ...newPosts];
+        const mergedVideo = [...videoPostsRef.current, ...freshVideo];
+        const preserveExistingPosts =
+          freshHeadPosts.length > 0
+            ? [...mergedPostsRef.current, ...freshHeadPosts]
+            : undefined;
 
         // Append paged posts immediately so fast scrolling never reaches a
         // visible end gap while waiting for scroll-idle commit flushing.
-        commitFeedSources(mergedLight, mergedVideo);
+        commitFeedSources(mergedLight, mergedVideo, {
+          preserveRenderedOrder: true,
+          preserveExistingPosts,
+        });
         scheduleVideoBuffer(mergedLight.length);
         if (!page.nextCursor || !advancedCursor) {
           hasReachedNetworkEndRef.current = page.reachedEnd || !page.nextCursor;
@@ -828,6 +967,7 @@ export function useFeedViewModel() {
     isLoading,
     isLoadingMore,
     isAllLoaded,
+    loadFreshPostsForNextBatch,
     prefetchNextPage,
     scheduleVideoBuffer,
   ]);
@@ -882,23 +1022,43 @@ export function useFeedViewModel() {
    * later).
    *
    * Dedupe by `id` so an accidental double-emit doesn't show the same
-   * post twice. Then re-sort so the new post lands in its real
-   * chronological slot - usually the top, but defensive in case the
-   * server returns an older `time` than we expect.
+   * post twice. Unlike the normal server-page merge, this intentionally
+   * puts the local post at index 0 so the user sees the content they just
+   * submitted immediately instead of getting the "new posts" button or a
+   * video-mix slot further down the feed.
    */
   const prependPost = useCallback((post: FeedPost) => {
-    if (post.kind === 'video') {
-      if (videoPostsRef.current.some(p => p.id === post.id)) return;
-      commitFeedSources(lightPostsRef.current, sortByTime([
-        post,
-        ...videoPostsRef.current,
-      ]) as FeedVideoPost[]);
+    if (!post?.id || mergedPostsRef.current.some(p => p.id === post.id)) {
       return;
     }
 
-    if (lightPostsRef.current.some(p => p.id === post.id)) return;
-    commitFeedSources(sortByTime([post, ...lightPostsRef.current]), videoPostsRef.current);
-  }, [commitFeedSources]);
+    prefetchBufferRef.current = prefetchBufferRef.current?.filter(
+      bufferedPost => bufferedPost.id !== post.id,
+    ) ?? null;
+
+    if (post.kind === 'video') {
+      videoPostsRef.current = sortByTime([
+        post,
+        ...videoPostsRef.current,
+      ]) as FeedVideoPost[];
+    } else if (isLightFeedPost(post)) {
+      lightPostsRef.current = sortByTime([post, ...lightPostsRef.current]);
+    }
+
+    setPosts(prev => {
+      if (prev.some(existingPost => existingPost.id === post.id)) {
+        return prev;
+      }
+      const nextPosts = [post, ...prev];
+      mergedPostsRef.current = nextPosts;
+      return nextPosts;
+    });
+
+    if (feedSourceRef.current === 'all') {
+      cacheLightPostsAfterInteractions(lightPostsRef.current);
+      cacheVideoPostsAfterInteractions(videoPostsRef.current);
+    }
+  }, []);
   const toggleReaction = useCallback(
     async (postId: string, nextReaction: ReactionType) => {
       let snapshot: FeedPost | undefined;

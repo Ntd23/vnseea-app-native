@@ -17,7 +17,9 @@ export interface FundingDetailMeta {
 
 export function useFundingDetailViewModel(fundId: string) {
   const [campaign, setCampaign] = useState<FundingItem | null>(null);
-  const [donations, setDonations] = useState<FundingDonation[]>([]);
+  const [donationsList, setDonationsList] = useState<FundingDonation[]>([]);
+  const [donationsPage, setDonationsPage] = useState(1);
+  const [isLoadingDonations, setIsLoadingDonations] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isDonating, setIsDonating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -26,6 +28,24 @@ export function useFundingDetailViewModel(fundId: string) {
     currencySymbol: 'VNSEEA',
   });
 
+  const loadDonations = useCallback(async (pageNumber: number, overrideCampaignId?: number) => {
+    const cId = overrideCampaignId ?? campaign?.id;
+    if (!cId) return;
+    setIsLoadingDonations(true);
+    try {
+      const response = await repository.getRecentDonations(cId, {
+        limit: 10,
+        offset: (pageNumber - 1) * 10,
+      });
+      setDonationsList(response);
+      setDonationsPage(pageNumber);
+    } catch (e) {
+      console.warn('Failed to load donations page:', pageNumber, e);
+    } finally {
+      setIsLoadingDonations(false);
+    }
+  }, [campaign?.id]);
+
   const load = useCallback(async () => {
     if (!fundId) return;
     setIsLoading(true);
@@ -33,8 +53,8 @@ export function useFundingDetailViewModel(fundId: string) {
     try {
       const detail = await repository.getFundingById(fundId);
       setCampaign(detail);
-      if (detail?.recent_donations) {
-        setDonations(detail.recent_donations);
+      if (detail) {
+        await loadDonations(1, detail.id);
       }
       setMeta({ currencySymbol: 'VNSEEA' });
     } catch (caughtError) {
@@ -46,7 +66,7 @@ export function useFundingDetailViewModel(fundId: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [fundId]);
+  }, [fundId, loadDonations]);
 
   useEffect(() => {
     load();
@@ -124,13 +144,16 @@ export function useFundingDetailViewModel(fundId: string) {
 
   return {
     campaign,
-    donations,
+    donations: donationsList,
+    donationsPage,
+    isLoadingDonations,
     isLoading,
     isDonating,
     isDeleting,
     error,
     currencySymbol: meta.currencySymbol,
     reload: load,
+    loadDonations,
     donate,
     remove,
     confirmDelete,
