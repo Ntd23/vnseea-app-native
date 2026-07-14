@@ -47,6 +47,7 @@ import { postCreatedEvents } from '../../../feed/application/events/postCreatedE
 import type { FeedVideoPost } from '../../../feed/domain/types/feed.types';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { createVideoUploadThumbnail } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -302,6 +303,7 @@ export default function CreateReelScreen() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const emittedCreatedPostIdsRef = useRef(new Set<string>());
   const handledUploadResultRef = useRef<string | null>(null);
+  const selectedVideoUriRef = useRef<string | null>(null);
 
   // ScrollView ref for keyboard avoidance
   const scrollRef = useRef<ScrollView | null>(null);
@@ -462,11 +464,22 @@ export default function CreateReelScreen() {
         return;
       }
 
+      const videoUri = asset.uri;
+      selectedVideoUriRef.current = videoUri;
+
       vm.setVideo(
-        asset.uri,
+        videoUri,
         asset.type || 'video/mp4',
         buildVideoFileName(asset),
       );
+      createVideoUploadThumbnail(videoUri)
+        .then(thumbnail => {
+          if (!thumbnail || selectedVideoUriRef.current !== videoUri) {
+            return;
+          }
+          vm.setThumbnail(thumbnail.uri);
+        })
+        .catch(() => undefined);
       setPaused(false);
       setMuted(false);
       setPreviewError(null);
