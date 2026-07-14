@@ -8,61 +8,34 @@ function read(relativePath) {
 }
 
 describe('LiveKit call media startup resilience', () => {
-  it('renders only iOS direct audio calls through LiveKitRoom with SDK-owned media startup', () => {
+  it('routes iOS direct audio and video calls through the manual Room path', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
-    const managedComponentIndex = source.indexOf(
-      'const ManagedIosDirectLiveKitRoom',
+    const connectIndex = source.indexOf('const connectPayload = useCallback');
+    const connectEndIndex = source.indexOf(
+      'const joinAnsweredOutgoingCall = useCallback',
+      connectIndex,
     );
-    const activeManualComponentIndex = source.indexOf(
-      'const ActiveLiveKitRoom',
-      managedComponentIndex,
-    );
-    const managedBlock = source.slice(
-      managedComponentIndex,
-      activeManualComponentIndex,
-    );
+    const connectBlock = source.slice(connectIndex, connectEndIndex);
 
-    expect(managedComponentIndex).toBeGreaterThan(-1);
-    expect(managedBlock).toContain('<LiveKitRoom');
-    expect(managedBlock).toContain('audio={true}');
-    expect(managedBlock).toContain('video={false}');
-    expect(managedBlock).toContain('connect={session.iosNativeAudioReady}');
-    expect(managedBlock).toContain('connectOptions={{ autoSubscribe: true }}');
-    expect(managedBlock).not.toContain('connect={true}');
-    expect(managedBlock).toContain('useRoomContext()');
-    expect(managedBlock).toContain('useConnectionState()');
-    expect(managedBlock).not.toContain('options={LIVEKIT_ROOM_OPTIONS}');
-    expect(managedBlock).not.toContain('connectOptions={LIVEKIT_CONNECT_OPTIONS}');
-    expect(managedBlock).not.toContain('new Room');
-    expect(managedBlock).not.toContain('room.localParticipant.setMicrophoneEnabled(true)');
-  });
-
-  it('routes only iOS direct audio calls to the managed LiveKitRoom path', () => {
-    const source = read(
-      'src/messages/application/view-models/useLiveKitCallSession.tsx',
+    expect(source).not.toContain('ManagedIosDirectLiveKitRoom');
+    expect(source).not.toContain('shouldUseManagedIosDirectRoom');
+    expect(source).not.toContain('<LiveKitRoom');
+    expect(source).toContain('function shouldUseIosDirectCallAudioGate');
+    expect(source).toContain("callType === 'audio' || callType === 'video'");
+    expect(connectBlock).toContain('prepareIosDirectCallAudioGate({');
+    expect(connectBlock).toContain('const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)');
+    expect(connectBlock).toContain(
+      'await nextRoom.connect(nextPayload.wsUrl, nextPayload.token, LIVEKIT_CONNECT_OPTIONS)',
     );
-
-    expect(source).toContain('function shouldUseManagedIosDirectRoom');
-    const managedHelperIndex = source.indexOf('function shouldUseManagedIosDirectRoom');
-    const managedHelperEndIndex = source.indexOf(
-      'function shouldUseIosDirectCallAudioGate',
-      managedHelperIndex,
-    );
-    const managedHelperBlock = source.slice(managedHelperIndex, managedHelperEndIndex);
-    expect(source).toContain("Platform.OS === 'ios'");
-    expect(managedHelperBlock).toContain("callType === 'audio'");
-    expect(managedHelperBlock).not.toContain("callType === 'video'");
-    expect(source).toContain('isManagedIosDirectCall');
-    expect(source).toContain('managed_ios_direct_room_prepare_start');
+    expect(connectBlock).toContain('publishLocalCallMedia({');
     expect(source).toContain("logCallDebug('native_audio_gate_pass'");
     expect(source).toContain("logCallDebug('native_audio_gate_failed'");
     expect(source).toContain('iosNativeAudioReady');
-    expect(source).toContain('managed_ios_direct_room_connected');
   });
 
-  it('routes iOS direct video calls through the manual Room path while preserving the native audio gate', () => {
+  it('publishes audio and optional video after the manual room connects', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
@@ -72,9 +45,7 @@ describe('LiveKit call media startup resilience', () => {
 
     expect(source).toContain('function shouldUseIosDirectCallAudioGate');
     expect(source).toContain("callType === 'audio' || callType === 'video'");
-    expect(connectBlock).toContain('const isManagedIosDirectCall = shouldUseManagedIosDirectRoom(callType)');
     expect(connectBlock).toContain('prepareIosDirectCallAudioGate({');
-    expect(connectBlock).toContain('!isManagedIosDirectCall');
     expect(connectBlock).toContain('const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)');
     expect(connectBlock).toContain(
       'await nextRoom.connect(nextPayload.wsUrl, nextPayload.token, LIVEKIT_CONNECT_OPTIONS)',
@@ -143,7 +114,6 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).toContain("stage: 'before_connect'");
     expect(source).toContain('ensureIosCallKitAudioSessionStarted');
     expect(source).toContain("stage: 'callkit_activation'");
-    expect(source).toContain("stage: 'managed_room_connected'");
     expect(source).toContain('activation.callUuid === callUuid');
     expect(source).toContain("logCallDebug('ios_callkit_audio_session_start_start'");
     expect(source).toContain("logCallDebug('ios_callkit_audio_session_ready'");
@@ -162,29 +132,29 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).toContain('usesNativeCallUi');
   });
 
-  it('hard-gates managed iOS direct voice rendering on native audio readiness', () => {
+  it('hard-gates iOS direct calls before creating the manual room', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
-    const renderGuardIndex = source.indexOf(
-      'const shouldRenderManagedIosDirectRoom',
+    const connectIndex = source.indexOf('const connectPayload = useCallback');
+    const roomIndex = source.indexOf(
+      'const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)',
+      connectIndex,
     );
-    const renderGuardEndIndex = source.indexOf(
-      'const value = useMemo<LiveKitCallSessionContextValue>',
-      renderGuardIndex,
+    const gateIndex = source.indexOf(
+      'await prepareIosDirectCallAudioGate({',
+      connectIndex,
     );
-    const renderGuardBlock = source.slice(renderGuardIndex, renderGuardEndIndex);
 
     expect(source).toContain('iosNativeAudioReady: false');
-    expect(source).toContain('iosNativeAudioReady: true');
-    expect(renderGuardIndex).toBeGreaterThan(-1);
-    expect(renderGuardBlock).toContain('session.iosNativeAudioReady');
-    expect(renderGuardBlock).toContain('session?.payload');
-    expect(renderGuardBlock).toContain('shouldUseManagedIosDirectRoom');
+    expect(source).toContain(
+      'iosNativeAudioReady: shouldPrepareIosDirectAudioGate',
+    );
+    expect(gateIndex).toBeGreaterThan(-1);
+    expect(roomIndex).toBeGreaterThan(gateIndex);
     expect(source).toContain('catch (prepareError)');
     expect(source).toContain('endNativeCall(callUuid)');
     expect(source).toContain('throw prepareError');
-    expect(source).toContain('!shouldUseManagedIosDirectRoom(session.callType)');
   });
 
   it('does not manually stop AudioSession for iOS CallKit teardown', () => {
@@ -212,26 +182,49 @@ describe('LiveKit call media startup resilience', () => {
     expect(finishBlock).toContain('stopAudioSession: !isIosNativeCall');
   });
 
-  it('keeps manual Room options out of the managed iOS voice path while enabling SDK auto-subscribe', () => {
+  it('releases the iOS direct-call audio owner on connect failure and final room disconnect', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
-    const managedComponentIndex = source.indexOf(
-      'const ManagedIosDirectLiveKitRoom',
+    const connectIndex = source.indexOf('const connectPayload = useCallback');
+    const connectEndIndex = source.indexOf(
+      'const joinAnsweredOutgoingCall = useCallback',
+      connectIndex,
     );
-    const activeManualComponentIndex = source.indexOf(
-      'const ActiveLiveKitRoom',
-      managedComponentIndex,
+    const connectBlock = source.slice(connectIndex, connectEndIndex);
+    const disconnectedIndex = connectBlock.indexOf(
+      'const handleDisconnected =',
     );
-    const managedBlock = source.slice(
-      managedComponentIndex,
-      activeManualComponentIndex,
+    const disconnectedEndIndex = connectBlock.indexOf(
+      'const handleMediaDeviceError =',
+      disconnectedIndex,
+    );
+    const disconnectedBlock = connectBlock.slice(
+      disconnectedIndex,
+      disconnectedEndIndex,
+    );
+    const connectCatchIndex = connectBlock.indexOf("logCallDebug('room_connect_error'");
+    const connectCatchEndIndex = connectBlock.indexOf(
+      'const elapsedSeconds =',
+      connectCatchIndex,
+    );
+    const connectCatchBlock = connectBlock.slice(
+      connectCatchIndex,
+      connectCatchEndIndex,
     );
 
-    expect(managedBlock).not.toContain('LIVEKIT_ROOM_OPTIONS');
-    expect(managedBlock).not.toContain('LIVEKIT_CONNECT_OPTIONS');
-    expect(managedBlock).toContain('connectOptions={{ autoSubscribe: true }}');
-    expect(managedBlock).toContain('video={false}');
+    expect(disconnectedBlock).toContain('activeRoomRef.current !== nextRoom');
+    expect(disconnectedBlock).toContain('finishSession({');
+    expect(connectCatchBlock).toContain('setIosVoiceCallAudioActive(false');
+    expect(connectCatchBlock).toContain('endNativeCall(callUuid)');
+  });
+
+  it('uses selective subscription for every manual call room', () => {
+    const source = read(
+      'src/messages/application/view-models/useLiveKitCallSession.tsx',
+    );
+
+    expect(source).not.toContain('connectOptions={{ autoSubscribe: true }}');
     expect(source).toContain('LIVEKIT_CONNECT_OPTIONS');
     expect(source).toContain('autoSubscribe: false');
     expect(source).toContain(
