@@ -3,18 +3,41 @@ import React from 'react';
 import {
   Image,
   ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { Plus } from 'lucide-react-native';
 import { ComposerCard } from './ComposerCard';
+import type { StoryItem } from '../../../stories/domain/types/stories.types';
+import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
 import {
   getHomeGreetingModel,
   HOME_INTRO_FALLBACK_AVATAR,
   type HomeFeedIntroProps,
   useHomeStoriesRail,
 } from './HomeFeedIntro.shared';
+
+const DEFAULT_STORY_CARD_WIDTH = 116;
+const DEFAULT_STORY_CARD_HEIGHT = 188;
+const DEFAULT_CREATE_STORY_COVER_HEIGHT = 116;
+
+function StoryCardCover({ story }: { story: StoryItem }) {
+  const coverUri = useStoryCoverImageUri({
+    story,
+    fallbackUri: story.publisher.avatarUrl ?? HOME_INTRO_FALLBACK_AVATAR,
+  });
+
+  return (
+    <Image
+      source={{ uri: coverUri || HOME_INTRO_FALLBACK_AVATAR }}
+      style={StyleSheet.absoluteFill}
+      resizeMode="cover"
+      fadeDuration={0}
+    />
+  );
+}
 
 function DefaultStoriesRow({
   avatarUrl,
@@ -31,16 +54,17 @@ function DefaultStoriesRow({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerClassName="gap-3 px-4"
+        contentContainerStyle={defaultStyles.storiesContent}
       >
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={goToCreateStory}
-          className="h-44 w-28 overflow-hidden rounded-[18px] border border-[#e5e7eb] bg-white shadow-sm"
+          style={defaultStyles.storyCard}
+          className="overflow-hidden rounded-[20px] border border-[#e5e7eb] bg-white shadow-sm"
         >
           <Image
             source={{ uri: avatarUrl ?? HOME_INTRO_FALLBACK_AVATAR }}
-            className="h-24 w-full"
+            style={defaultStyles.createStoryCover}
             resizeMode="cover"
             fadeDuration={0}
           />
@@ -68,23 +92,14 @@ function DefaultStoriesRow({
               key={story.publisher.userId || story.id}
               activeOpacity={0.85}
               onPress={() => goToViewerForGroup(index)}
-              className={`h-44 w-28 overflow-hidden rounded-[18px] shadow-sm ${
+              style={defaultStyles.storyCard}
+              className={`overflow-hidden rounded-[20px] shadow-sm ${
                 hasUnseen ? '' : 'opacity-80'
               }`}
             >
-              <Image
-                source={{
-                  uri:
-                    story.thumbnailUrl ??
-                    story.publisher.avatarUrl ??
-                    HOME_INTRO_FALLBACK_AVATAR,
-                }}
-                className="h-full w-full"
-                resizeMode="cover"
-                fadeDuration={0}
-              />
+              <StoryCardCover story={story} />
               <View className="absolute inset-0 bg-black/25" />
-              <View className="absolute bottom-0 left-0 right-0 h-24 bg-black/35" />
+              <View className="absolute bottom-0 left-0 right-0 h-20 bg-black/35" />
               <View
                 className={`absolute left-2 top-2 h-8 w-8 overflow-hidden rounded-full border-2 ${
                   hasUnseen ? 'border-white' : 'border-slate-200'
@@ -169,3 +184,19 @@ export function HomeFeedIntro({
 }
 
 export default HomeFeedIntro;
+
+const defaultStyles = StyleSheet.create({
+  storiesContent: {
+    paddingHorizontal: 16,
+    columnGap: 12,
+    alignItems: 'stretch',
+  },
+  storyCard: {
+    width: DEFAULT_STORY_CARD_WIDTH,
+    height: DEFAULT_STORY_CARD_HEIGHT,
+  },
+  createStoryCover: {
+    width: '100%',
+    height: DEFAULT_CREATE_STORY_COVER_HEIGHT,
+  },
+});

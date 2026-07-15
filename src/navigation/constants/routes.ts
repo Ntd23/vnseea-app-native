@@ -11,6 +11,7 @@ export const ROUTES = {
   NOTIFICATIONS: 'Notifications',
   PROFILE: 'Profile',
   USER_PROFILE: 'UserProfile',
+  PROFILE_MORE: 'ProfileMore',
   PROFILE_FRIENDS: 'ProfileFriends',
   MY_PHOTOS: 'MyPhotos',
   ALBUMS: 'Albums',

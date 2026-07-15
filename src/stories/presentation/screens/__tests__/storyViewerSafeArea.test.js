@@ -18,4 +18,14 @@ describe('StoryViewer iOS header safe area', () => {
     expect(source).not.toMatch(/<View style=\{styles\.topOverlay\} pointerEvents="box-none">/);
     expect(source).toMatch(/topOverlay:\s*{[\s\S]*position:\s*'absolute'[\s\S]*top:\s*0/);
   });
+
+  it('keeps the viewer route transparent so swipe-down reveals the previous screen', () => {
+    const source = read('src/navigation/AppNavigator.tsx');
+
+    expect(source).toMatch(
+      /const TRANSPARENT_MODAL_ROUTES:[\s\S]*new Set\(\[[\s\S]*ROUTES\.CREATE_POST,[\s\S]*ROUTES\.STORY_VIEWER,[\s\S]*\]\)/,
+    );
+    expect(source).toContain("presentation: 'transparentModal'");
+    expect(source).toContain("contentStyle: { backgroundColor: 'transparent' }");
+  });
 });

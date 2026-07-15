@@ -40,6 +40,30 @@ describe('iOS Google Maps provider for nearby address search', () => {
     expect(source).not.toContain("top: Platform.OS === 'android' ? 22 : 12");
   });
 
+  it('keeps active navigation heading-up instead of north-up', () => {
+    const source = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
+
+    expect(source).toContain('const nextRouteHeading =');
+    expect(source).toContain('const nextCameraHeading = resolveNavigationHeading({');
+    expect(source).toContain('heading: nextCameraHeading');
+    expect(source).toContain('deviceHeading,');
+    expect(source).toContain('userSpeed,');
+    expect(source).toContain('const heading = navigationRouteHeading(origin, routePath, destination);');
+    expect(source).toContain('heading,');
+    expect(source).toContain('style={styles.navigationBannerSubtitle} numberOfLines={2}');
+    expect(source).toContain('const selectRouteOption = useCallback');
+    expect(source).toContain('const routeMapLabels = useMemo');
+    expect(source).toContain('tappable');
+    expect(source).toContain('onPress={() => selectRouteOption(route, false)}');
+    expect(source).toContain('const shouldShowNavigationPuck = isNavigating && shouldShowRoute;');
+    expect(source).toContain('tracksViewChanges={shouldShowHeadingPuck}');
+    expect(source).toContain('const ROUTE_LOOKAHEAD_MAX_METERS = 135;');
+    expect(source).toContain('const ROUTE_LOOKAHEAD_DISTANCE_RATIO = 0.32;');
+    expect(source).toContain('const navigationRoadName = useMemo');
+    expect(source).toContain('currentNavigationRoadName({');
+    expect(source).toContain('styles.currentUserRoadLabelPill');
+  });
+
   it('links Google Maps SDK for iOS and initializes it from react-native-config', () => {
     const podfile = read('ios/Podfile');
     const appDelegate = read('ios/VNSEEA/AppDelegate.swift');

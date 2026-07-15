@@ -99,6 +99,21 @@ export type RootStackParamList = {
   };
   [ROUTES.PROFILE]: undefined;
   [ROUTES.USER_PROFILE]: { userId: string };
+  [ROUTES.PROFILE_MORE]: {
+    userId?: string;
+    isOwnProfile: boolean;
+    displayName?: string;
+    username?: string;
+    avatarUrl?: string;
+    phoneNumber?: string;
+    followersCount?: number;
+    followingCount?: number;
+    followedByCurrentUser?: boolean;
+    followsCurrentUser?: boolean;
+    blocked?: boolean;
+    pro?: boolean;
+    privacy?: UserProfile['privacy'];
+  };
   [ROUTES.PROFILE_FRIENDS]: {
     userId: string;
     title?: string;

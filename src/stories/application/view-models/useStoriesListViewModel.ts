@@ -112,7 +112,10 @@ export function useStoriesListViewModel(options: UseStoriesListViewModelOptions 
       const segment = sortedMedia[0];
       if (!segment) continue;
 
-      const coverUrl = segment.url || story.thumbnailUrl || story.publisher.avatarUrl || '';
+      const coverUrl =
+        segment.type === 'image'
+          ? segment.url
+          : story.thumbnailUrl || story.publisher.avatarUrl || '';
       rows.push({
         key: `${story.publisher.userId}-${story.id}`,
         index: rows.length,
