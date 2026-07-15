@@ -113,20 +113,25 @@ const NAVIGATION_CAMERA_PITCH = 60;
 const NAVIGATION_CAMERA_ZOOM = 19.25;
 const NAVIGATION_CAMERA_HEADING = 0;
 const ROUTE_CONNECTOR_MIN_METERS = 5;
-const ROUTE_LOOKAHEAD_MIN_METERS = 38;
-const ROUTE_LOOKAHEAD_MAX_METERS = 135;
-const ROUTE_LOOKAHEAD_DISTANCE_RATIO = 0.32;
-const OFF_ROUTE_DISTANCE_METERS = 45;
-const REROUTE_COOLDOWN_MS = 12000;
+const ROUTE_CAMERA_LOOKAHEAD_MIN_METERS = 12;
+const ROUTE_CAMERA_LOOKAHEAD_MAX_METERS = 72;
+const ROUTE_CAMERA_LOOKAHEAD_DISTANCE_RATIO = 0.16;
+const ROUTE_HEADING_LOOKAHEAD_MIN_METERS = 8;
+const ROUTE_HEADING_LOOKAHEAD_MAX_METERS = 28;
+const ROUTE_HEADING_LOOKAHEAD_DISTANCE_RATIO = 0.1;
+const OFF_ROUTE_DISTANCE_METERS = 24;
+const OFF_ROUTE_CONFIRM_MS = 0;
+const REROUTE_COOLDOWN_MS = 1500;
+const NAVIGATION_ARRIVAL_DISTANCE_METERS = 24;
 const LOCATION_RECENTER_DISTANCE_METERS = 50000;
 const SEARCH_RADIUS_METERS = 3000;
 const MAX_VISIBLE_PAGE_MARKERS = 64;
 const IDLE_LOCATION_STATE_MIN_METERS = 8;
-const NAVIGATION_LOCATION_STATE_MIN_METERS = 2;
+const NAVIGATION_LOCATION_STATE_MIN_METERS = 1;
 const IDLE_LOCATION_STATE_MIN_MS = 1400;
-const NAVIGATION_LOCATION_STATE_MIN_MS = 650;
-const HEADING_STATE_MIN_DEGREES = 4;
-const HEADING_STATE_MIN_MS = 120;
+const NAVIGATION_LOCATION_STATE_MIN_MS = 280;
+const HEADING_STATE_MIN_DEGREES = 2;
+const HEADING_STATE_MIN_MS = 80;
 const NAVIGATION_MOVING_SPEED_MPS = 0.8;
 const SHOW_APP_DISCOVERY_PLACES_ON_MAP = true;
 const HIDE_GOOGLE_DISCOVERY_PLACES = false;
@@ -452,17 +457,141 @@ function normalizeRoutePath(
   return reverseScore < forwardScore ? [...normalized].reverse() : normalized;
 }
 
+function compactRoutePath(path: LatLng[]) {
+  const compacted: LatLng[] = [];
+  path.forEach(point => {
+    if (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) {
+      return;
+    }
+
+    const previous = compacted[compacted.length - 1];
+    if (!previous || distanceMeters(previous, point) > 0.75) {
+      compacted.push(point);
+    }
+  });
+  return compacted;
+}
+
+function projectPointOnRouteSegment(
+  point: LatLng,
+  start: LatLng,
+  end: LatLng,
+) {
+  const latitudeScale = 111320;
+  const longitudeScale = Math.max(
+    1,
+    Math.abs(
+      111320 *
+        Math.cos(((point.latitude + start.latitude + end.latitude) / 3 * Math.PI) / 180),
+    ),
+  );
+  const px = point.longitude * longitudeScale;
+  const py = point.latitude * latitudeScale;
+  const sx = start.longitude * longitudeScale;
+  const sy = start.latitude * latitudeScale;
+  const ex = end.longitude * longitudeScale;
+  const ey = end.latitude * latitudeScale;
+  const dx = ex - sx;
+  const dy = ey - sy;
+  const lengthSquared = dx * dx + dy * dy;
+
+  if (lengthSquared <= 0) {
+    return {
+      distanceMeters: distanceMeters(point, start),
+      fraction: 0,
+      point: start,
+    };
+  }
+
+  const fraction = Math.max(
+    0,
+    Math.min(1, ((px - sx) * dx + (py - sy) * dy) / lengthSquared),
+  );
+  const projection = {
+    latitude: (sy + dy * fraction) / latitudeScale,
+    longitude: (sx + dx * fraction) / longitudeScale,
+  };
+
+  return {
+    distanceMeters: distanceMeters(point, projection),
+    fraction,
+    point: projection,
+  };
+}
+
+function nearestRouteProjection(path: LatLng[], location: LatLng) {
+  if (path.length === 0) return null;
+  if (path.length === 1) {
+    return {
+      distanceMeters: distanceMeters(location, path[0]),
+      fraction: 0,
+      point: path[0],
+      segmentEndIndex: 0,
+      segmentStartIndex: 0,
+    };
+  }
+
+  let nearest:
+    | {
+        distanceMeters: number;
+        fraction: number;
+        point: LatLng;
+        segmentEndIndex: number;
+        segmentStartIndex: number;
+      }
+    | null = null;
+
+  for (let index = 1; index < path.length; index += 1) {
+    const projection = projectPointOnRouteSegment(
+      location,
+      path[index - 1],
+      path[index],
+    );
+    if (!nearest || projection.distanceMeters < nearest.distanceMeters) {
+      nearest = {
+        ...projection,
+        segmentEndIndex: index,
+        segmentStartIndex: index - 1,
+      };
+    }
+  }
+
+  return nearest;
+}
+
 function buildNavigationPath(origin: LatLng, routePath: LatLng[]) {
   if (routePath.length === 0) {
     return [origin];
   }
 
-  const firstPoint = routePath[0];
-  if (distanceMeters(origin, firstPoint) <= ROUTE_CONNECTOR_MIN_METERS) {
-    return routePath;
+  if (routePath.length === 1) {
+    const firstPoint = routePath[0];
+    return distanceMeters(origin, firstPoint) <= ROUTE_CONNECTOR_MIN_METERS
+      ? [firstPoint]
+      : [origin, firstPoint];
   }
 
-  return [origin, ...routePath];
+  const projection = nearestRouteProjection(routePath, origin);
+  if (!projection) {
+    return [origin, ...routePath];
+  }
+
+  const remainingTail = routePath.slice(projection.segmentEndIndex);
+  const nextPath = [origin];
+  if (distanceMeters(origin, projection.point) > 1.5) {
+    nextPath.push(projection.point);
+  }
+  nextPath.push(...remainingTail);
+  return compactRoutePath(nextPath);
+}
+
+function routeConnectorFromLocation(origin: LatLng, routePath: LatLng[]) {
+  const navigationPath = buildNavigationPath(origin, routePath);
+  if (navigationPath.length < 2) return [];
+  return distanceMeters(navigationPath[0], navigationPath[1]) >
+    ROUTE_CONNECTOR_MIN_METERS
+    ? [navigationPath[0], navigationPath[1]]
+    : [];
 }
 
 function routeDistance(path: LatLng[]) {
@@ -508,22 +637,37 @@ function pointAlongRoute(path: LatLng[], targetDistance: number) {
   return path[path.length - 1];
 }
 
-function navigationCameraCenter(origin: LatLng, routePath: LatLng[]) {
+type NavigationLookAheadConfig = {
+  minMeters: number;
+  maxMeters: number;
+  ratio: number;
+};
+
+function navigationLookAheadPoint(
+  origin: LatLng,
+  routePath: LatLng[],
+  { minMeters, maxMeters, ratio }: NavigationLookAheadConfig,
+) {
   const path = buildNavigationPath(origin, routePath);
   const remainingDistance = routeDistance(path);
-  if (remainingDistance <= ROUTE_LOOKAHEAD_MIN_METERS) {
+  if (remainingDistance <= minMeters) {
     return origin;
   }
 
   const lookAheadDistance = Math.min(
-    Math.max(
-      remainingDistance * ROUTE_LOOKAHEAD_DISTANCE_RATIO,
-      ROUTE_LOOKAHEAD_MIN_METERS,
-    ),
-    ROUTE_LOOKAHEAD_MAX_METERS,
+    Math.max(remainingDistance * ratio, minMeters),
+    maxMeters,
   );
 
   return pointAlongRoute(path, lookAheadDistance) || origin;
+}
+
+function navigationCameraCenter(origin: LatLng, routePath: LatLng[]) {
+  return navigationLookAheadPoint(origin, routePath, {
+    minMeters: ROUTE_CAMERA_LOOKAHEAD_MIN_METERS,
+    maxMeters: ROUTE_CAMERA_LOOKAHEAD_MAX_METERS,
+    ratio: ROUTE_CAMERA_LOOKAHEAD_DISTANCE_RATIO,
+  });
 }
 
 function navigationRouteHeading(
@@ -531,9 +675,14 @@ function navigationRouteHeading(
   routePath: LatLng[],
   destination: LatLng,
 ) {
-  const cameraCenter = navigationCameraCenter(origin, routePath);
-  if (distanceMeters(origin, cameraCenter) > 2) {
-    return bearingBetween(origin, cameraCenter);
+  const headingPoint = navigationLookAheadPoint(origin, routePath, {
+    minMeters: ROUTE_HEADING_LOOKAHEAD_MIN_METERS,
+    maxMeters: ROUTE_HEADING_LOOKAHEAD_MAX_METERS,
+    ratio: ROUTE_HEADING_LOOKAHEAD_DISTANCE_RATIO,
+  });
+
+  if (distanceMeters(origin, headingPoint) > 2) {
+    return bearingBetween(origin, headingPoint);
   }
 
   return initialRouteHeading(
@@ -585,12 +734,18 @@ function resolveNavigationHeading({
   gpsHeading,
   routeHeading,
   userSpeed,
+  preferRouteHeading = false,
 }: {
   deviceHeading: number | null;
   gpsHeading: number | null;
   routeHeading: number | null;
   userSpeed: number;
+  preferRouteHeading?: boolean;
 }) {
+  if (preferRouteHeading && validHeading(routeHeading)) {
+    return routeHeading;
+  }
+
   if (userSpeed > NAVIGATION_MOVING_SPEED_MPS && validHeading(gpsHeading)) {
     return gpsHeading;
   }
@@ -680,30 +835,7 @@ function nearestRouteIndex(path: LatLng[], location: LatLng) {
 }
 
 function distanceToRouteSegment(point: LatLng, start: LatLng, end: LatLng) {
-  const latitudeScale = 111320;
-  const longitudeScale =
-    111320 * Math.cos(((point.latitude + start.latitude + end.latitude) / 3 * Math.PI) / 180);
-  const px = point.longitude * longitudeScale;
-  const py = point.latitude * latitudeScale;
-  const sx = start.longitude * longitudeScale;
-  const sy = start.latitude * latitudeScale;
-  const ex = end.longitude * longitudeScale;
-  const ey = end.latitude * latitudeScale;
-  const dx = ex - sx;
-  const dy = ey - sy;
-  const lengthSquared = dx * dx + dy * dy;
-
-  if (lengthSquared <= 0) {
-    return distanceMeters(point, start);
-  }
-
-  const t = Math.max(0, Math.min(1, ((px - sx) * dx + (py - sy) * dy) / lengthSquared));
-  const projection = {
-    latitude: (sy + dy * t) / latitudeScale,
-    longitude: (sx + dx * t) / longitudeScale,
-  };
-
-  return distanceMeters(point, projection);
+  return projectPointOnRouteSegment(point, start, end).distanceMeters;
 }
 
 function distanceToRoutePath(point: LatLng, path: LatLng[]) {
@@ -961,6 +1093,70 @@ function navigationInstructionKey(instruction: TurnInstruction) {
   }:${Math.round(instruction.distanceMeters / 10)}`;
 }
 
+function geometryTurnInstruction(
+  routePath: LatLng[],
+  current: LatLng,
+  destinationTitle?: string,
+): TurnInstruction | null {
+  const path = buildNavigationPath(current, routePath);
+  if (path.length < 2) return null;
+
+  if (path.length < 3) {
+    const remaining = routeDistance(path);
+    return {
+      distanceMeters: remaining,
+      label:
+        remaining <= 60
+          ? `Sắp đến ${destinationTitle || 'điểm đến'}`
+          : `Tiếp tục ${formatDistance(remaining)}`,
+      detail: remaining <= 60 ? undefined : 'Đi theo tuyến đã chọn',
+      maneuver: remaining <= 60 ? 'arrive' : 'straight',
+    };
+  }
+
+  const connectorDistance = distanceMeters(path[0], path[1]);
+  const scanStartIndex =
+    connectorDistance > ROUTE_CONNECTOR_MIN_METERS ? 2 : 1;
+  let distanceAhead =
+    scanStartIndex > 1 ? connectorDistance : 0;
+
+  for (let index = scanStartIndex; index < path.length - 1; index += 1) {
+    distanceAhead += distanceMeters(path[index - 1], path[index]);
+    const previous = path[index - 1];
+    const point = path[index];
+    const next = path[index + 1];
+    const incoming = bearingBetween(previous, point);
+    const outgoing = bearingBetween(point, next);
+    const delta = normalizeBearingDelta(incoming, outgoing);
+    const maneuver = maneuverFromDelta(delta);
+
+    if (maneuver !== 'straight' && distanceAhead >= 12) {
+      return {
+        distanceMeters: distanceAhead,
+        label: `${formatDistance(distanceAhead)} nữa`,
+        detail: turnLabel(maneuver),
+        maneuver,
+      };
+    }
+  }
+
+  const remaining = routeDistance(path);
+  if (remaining <= 60) {
+    return {
+      distanceMeters: remaining,
+      label: `Sắp đến ${destinationTitle || 'điểm đến'}`,
+      maneuver: 'arrive',
+    };
+  }
+
+  return {
+    distanceMeters: remaining,
+    label: `Tiếp tục ${formatDistance(Math.min(remaining, 500))}`,
+    detail: 'Đi theo tuyến đã chọn',
+    maneuver: 'straight',
+  };
+}
+
 function nextTurnInstruction(
   routePath: LatLng[],
   current: LatLng | null,
@@ -977,8 +1173,30 @@ function nextTurnInstruction(
     destinationTitle,
     routeSteps,
   );
-  if (stepInstruction) {
-    return stepInstruction;
+  const geometryInstruction = geometryTurnInstruction(
+    routePath,
+    current,
+    destinationTitle,
+  );
+
+  if (geometryInstruction) {
+    if (
+      stepInstruction &&
+      stepInstruction.maneuver === geometryInstruction.maneuver &&
+      Math.abs(
+        stepInstruction.distanceMeters - geometryInstruction.distanceMeters,
+      ) <= 45
+    ) {
+      const roadName = roadNameFromInstruction(stepInstruction.detail);
+      if (roadName) {
+        return {
+          ...geometryInstruction,
+          detail: `${turnLabel(geometryInstruction.maneuver)} vào ${roadName}`,
+        };
+      }
+    }
+
+    return geometryInstruction;
   }
 
   const path = buildNavigationPath(current, routePath);
@@ -1342,6 +1560,7 @@ export default function NearbyUsersScreen() {
   const lastRoutedOriginRef = useRef<LatLng | null>(null);
   const activeRoutePathRef = useRef<LatLng[]>([]);
   const lastRerouteAtRef = useRef(0);
+  const offRouteStartedAtRef = useRef(0);
   const lastSpokenInstructionRef = useRef('');
   const selectedPointTitleRef = useRef<string | undefined>(undefined);
   const lastNavigationCameraHeadingRef = useRef<{
@@ -1396,6 +1615,7 @@ export default function NearbyUsersScreen() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [voiceGuidanceEnabled, setVoiceGuidanceEnabled] = useState(true);
   const [isLoadingRoutes, setIsLoadingRoutes] = useState(false);
+  const [isAutoRerouting, setIsAutoRerouting] = useState(false);
   const [routeHeading, setRouteHeading] = useState<number | null>(null);
   const [hasCenteredOnUser, setHasCenteredOnUser] = useState(false);
   const [hasLoadedNearbyPages, setHasLoadedNearbyPages] = useState(false);
@@ -1681,11 +1901,22 @@ export default function NearbyUsersScreen() {
     }
     return routeDistance(buildNavigationPath(origin, activeRoute));
   }, [activeRoute, currentLocation, selectedDistance, shouldShowRoute]);
+  const distanceToActiveDestination = useMemo(() => {
+    if (!currentLocation || !activeDestination) return undefined;
+    return distanceMeters(currentLocation, activeDestination);
+  }, [activeDestination, currentLocation]);
+  const hasArrivedAtDestination = Boolean(
+    isNavigating &&
+      activeDestination &&
+      distanceToActiveDestination !== undefined &&
+      distanceToActiveDestination <= NAVIGATION_ARRIVAL_DISTANCE_METERS,
+  );
   const currentUserMarkerHeading = resolveNavigationHeading({
     deviceHeading,
     gpsHeading: lastHeadingStateRef.current === null ? null : currentHeading,
     routeHeading: shouldShowRoute ? routeHeading : null,
     userSpeed,
+    preferRouteHeading: false,
   });
   const shouldShowNavigationPuck = isNavigating && shouldShowRoute;
   const shouldShowHeadingPuck =
@@ -1771,6 +2002,7 @@ export default function NearbyUsersScreen() {
     isNavigatingRef.current = false;
     activeRoutePathRef.current = [];
     lastRerouteAtRef.current = 0;
+    offRouteStartedAtRef.current = 0;
     setActiveDestination(null);
     setActiveRoute([]);
     setActiveRouteConnector([]);
@@ -1781,6 +2013,7 @@ export default function NearbyUsersScreen() {
     setIsAutoCentering(false);
     setRouteHeading(null);
     setIsLoadingRoutes(false);
+    setIsAutoRerouting(false);
     lastRoutedOriginRef.current = null;
     lastSpokenInstructionRef.current = '';
     lastNavigationCameraHeadingRef.current = {
@@ -1852,6 +2085,7 @@ export default function NearbyUsersScreen() {
       gpsHeading: lastHeadingStateRef.current === null ? null : currentHeading,
       routeHeading: nextRouteHeading,
       userSpeed,
+      preferRouteHeading: true,
     });
     const headingChanged =
       last.heading === null
@@ -1941,6 +2175,7 @@ export default function NearbyUsersScreen() {
                   lastHeadingStateRef.current === null ? null : currentHeading,
                 routeHeading: nextRouteHeading,
                 userSpeed,
+                preferRouteHeading: true,
               });
             })()
           : routeHeading ?? currentHeading;
@@ -2021,6 +2256,7 @@ export default function NearbyUsersScreen() {
               lastHeadingStateRef.current === null ? null : currentHeading,
             routeHeading: nextRouteHeading,
             userSpeed,
+            preferRouteHeading: true,
           })
         : NAVIGATION_CAMERA_HEADING;
     if (nextRouteHeading !== NAVIGATION_CAMERA_HEADING) {
@@ -2062,20 +2298,19 @@ export default function NearbyUsersScreen() {
       destination: LatLng,
       navigating: boolean,
       destinationTitle?: string,
+      cameraDurationMs = 650,
     ) => {
       const origin = currentLocationRef.current;
       if (!origin) return;
 
       const routePath = normalizeRoutePath(route.path, origin, destination);
       const navigationPath = buildNavigationPath(origin, routePath);
-      const routeConnector =
-        navigationPath.length > routePath.length
-          ? [navigationPath[0], navigationPath[1]]
-          : [];
+      const routeConnector = routeConnectorFromLocation(origin, routePath);
 
       activeDestinationRef.current = destination;
       isNavigatingRef.current = navigating;
       activeRoutePathRef.current = routePath;
+      offRouteStartedAtRef.current = 0;
       setActiveRoute(routePath);
       setActiveRouteConnector(routeConnector);
       setActiveDestination(destination);
@@ -2103,10 +2338,14 @@ export default function NearbyUsersScreen() {
           center: origin,
           updatedAt: Date.now(),
         };
-        mapRef.current?.animateCamera(navigationCamera, { duration: 650 });
-        setTimeout(() => {
-          mapRef.current?.animateCamera(navigationCamera, { duration: 220 });
-        }, 700);
+        mapRef.current?.animateCamera(navigationCamera, {
+          duration: cameraDurationMs,
+        });
+        if (cameraDurationMs >= 500) {
+          setTimeout(() => {
+            mapRef.current?.animateCamera(navigationCamera, { duration: 220 });
+          }, 700);
+        }
         if (voiceGuidanceEnabled) {
           const firstInstruction = nextTurnInstruction(
             routePath,
@@ -2192,6 +2431,17 @@ export default function NearbyUsersScreen() {
       shouldShowRoute,
     ],
   );
+  const routePreviewAlternativeSlots = useMemo(
+    () =>
+      Array.from(
+        { length: 4 },
+        (_, index) =>
+          isRoutePreview && shouldShowRoute
+            ? alternativeRoutes[index] ?? null
+            : null,
+      ),
+    [alternativeRoutes, isRoutePreview, shouldShowRoute],
+  );
 
   const loadRouteOptions = useCallback(
     async (
@@ -2215,7 +2465,10 @@ export default function NearbyUsersScreen() {
 
       const requestId = routeRequestIdRef.current + 1;
       routeRequestIdRef.current = requestId;
-      if (source !== 'auto') {
+      if (source === 'auto') {
+        setIsAutoRerouting(true);
+      } else {
+        setIsAutoRerouting(false);
         setIsLoadingRoutes(true);
       }
       try {
@@ -2241,8 +2494,26 @@ export default function NearbyUsersScreen() {
         if (routeRequestIdRef.current !== requestId) {
           return;
         }
+        if (source === 'auto') {
+          const latestLocation = currentLocationRef.current;
+          const activePath = activeRoutePathRef.current;
+          if (
+            latestLocation &&
+            activePath.length > 1 &&
+            distanceToRoutePath(latestLocation, activePath) <=
+              OFF_ROUTE_DISTANCE_METERS
+          ) {
+            return;
+          }
+        }
         setRouteOptions(navigating ? [nextOptions[0]] : nextOptions);
-        focusRoute(nextOptions[0], destination, navigating, destinationTitle);
+        focusRoute(
+          nextOptions[0],
+          destination,
+          navigating,
+          destinationTitle,
+          source === 'auto' ? 220 : 650,
+        );
         setIsSheetCollapsed(navigating);
       } catch {
         if (routeRequestIdRef.current !== requestId) {
@@ -2259,8 +2530,12 @@ export default function NearbyUsersScreen() {
           'VNSEEA chưa lấy được đường đi trong app. Bạn thử lại sau nhé.',
         );
       } finally {
-        if (routeRequestIdRef.current === requestId && source !== 'auto') {
-          setIsLoadingRoutes(false);
+        if (routeRequestIdRef.current === requestId) {
+          if (source === 'auto') {
+            setIsAutoRerouting(false);
+          } else {
+            setIsLoadingRoutes(false);
+          }
         }
       }
     },
@@ -2616,10 +2891,15 @@ export default function NearbyUsersScreen() {
   const handleMapPress = useCallback(() => {
     dismissSearchInput();
     if (selectedPoint && !isNavigating && !isRoutePreview) {
-      setSelectedPoint(null);
-      resetRouteState();
+      clearSelectedPoint();
     }
-  }, [dismissSearchInput, selectedPoint, isNavigating, isRoutePreview, resetRouteState]);
+  }, [
+    clearSelectedPoint,
+    dismissSearchInput,
+    isNavigating,
+    isRoutePreview,
+    selectedPoint,
+  ]);
 
   const handleMapPanDrag = useCallback(() => {
     dismissSearchInput();
@@ -2726,14 +3006,37 @@ export default function NearbyUsersScreen() {
 
       const latestActiveDestination = activeDestinationRef.current;
       if (!latestActiveDestination || !isNavigatingRef.current) return;
+      if (
+        distanceMeters(location, latestActiveDestination) <=
+        NAVIGATION_ARRIVAL_DISTANCE_METERS
+      ) {
+        offRouteStartedAtRef.current = 0;
+        return;
+      }
       const activePath = activeRoutePathRef.current;
       const offRouteDistance = distanceToRoutePath(location, activePath);
       const shouldReroute =
         activePath.length < 2 ||
         offRouteDistance > OFF_ROUTE_DISTANCE_METERS;
 
-      if (shouldReroute && now - lastRerouteAtRef.current >= REROUTE_COOLDOWN_MS) {
+      if (!shouldReroute) {
+        offRouteStartedAtRef.current = 0;
+        return;
+      }
+
+      if (offRouteStartedAtRef.current === 0) {
+        offRouteStartedAtRef.current = now;
+      }
+
+      const offRouteLongEnough =
+        now - offRouteStartedAtRef.current >= OFF_ROUTE_CONFIRM_MS;
+      if (
+        offRouteLongEnough &&
+        now - lastRerouteAtRef.current >= REROUTE_COOLDOWN_MS
+      ) {
         lastRerouteAtRef.current = now;
+        offRouteStartedAtRef.current = 0;
+        setIsAutoCentering(true);
         loadRouteOptions(
           latestActiveDestination,
           true,
@@ -3293,40 +3596,38 @@ export default function NearbyUsersScreen() {
         ) : null}
 
         {/* Main Route & Connector Polylines (Always mounted to prevent react-native-maps unmount render bugs on Android) */}
-        {isRoutePreview && shouldShowRoute
-          ? alternativeRoutes.slice(0, 4).map(route => (
-              <React.Fragment key={`alt-route:${route.id}`}>
-                <Polyline
-                  coordinates={route.path}
-                  lineCap="round"
-                  lineJoin="round"
-                  strokeColor="rgba(255, 255, 255, 0.95)"
-                  strokeWidth={8}
-                  zIndex={12}
-                />
-                <Polyline
-                  coordinates={route.path}
-                  lineCap="round"
-                  lineJoin="round"
-                  strokeColor="#466CFF"
-                  strokeWidth={4}
-                  zIndex={13}
-                  tappable
-                  onPress={() => selectRouteOption(route, false)}
-                />
-                <Polyline
-                  coordinates={route.path}
-                  lineCap="round"
-                  lineJoin="round"
-                  strokeColor="rgba(70, 108, 255, 0.01)"
-                  strokeWidth={24}
-                  zIndex={14}
-                  tappable
-                  onPress={() => selectRouteOption(route, false)}
-                />
-              </React.Fragment>
-            ))
-          : null}
+        {routePreviewAlternativeSlots.map((route, index) => (
+          <React.Fragment key={`alt-route-slot:${index}`}>
+            <Polyline
+              coordinates={route ? route.path : []}
+              lineCap="round"
+              lineJoin="round"
+              strokeColor="rgba(255, 255, 255, 0.95)"
+              strokeWidth={8}
+              zIndex={12}
+            />
+            <Polyline
+              coordinates={route ? route.path : []}
+              lineCap="round"
+              lineJoin="round"
+              strokeColor="#466CFF"
+              strokeWidth={4}
+              zIndex={13}
+              tappable={Boolean(route)}
+              onPress={route ? () => selectRouteOption(route, false) : undefined}
+            />
+            <Polyline
+              coordinates={route ? route.path : []}
+              lineCap="round"
+              lineJoin="round"
+              strokeColor="rgba(70, 108, 255, 0.01)"
+              strokeWidth={24}
+              zIndex={14}
+              tappable={Boolean(route)}
+              onPress={route ? () => selectRouteOption(route, false) : undefined}
+            />
+          </React.Fragment>
+        ))}
 
         <Polyline
           coordinates={
@@ -3536,8 +3837,7 @@ export default function NearbyUsersScreen() {
                   if (text.trim().length === 0) {
                     setSearchResults([]);
                     setIsSearchResultsVisible(false);
-                    setSelectedPoint(null);
-                    resetRouteState();
+                    clearSelectedPoint();
                   }
                 }}
                 onFocus={() => setIsSearchFocused(true)}
@@ -3553,8 +3853,7 @@ export default function NearbyUsersScreen() {
                     setIsSearchFocused(false);
                     setSearchResults([]);
                     setIsSearchResultsVisible(false);
-                    setSelectedPoint(null);
-                    resetRouteState();
+                    clearSelectedPoint();
                     Keyboard.dismiss();
                   }}
                 >
@@ -3667,21 +3966,33 @@ export default function NearbyUsersScreen() {
         <View style={navigationBannerStyle}>
           <View style={styles.navigationBannerIcon}>
             <ManeuverIcon
-              maneuver={turnInstruction?.maneuver ?? 'straight'}
+              maneuver={
+                hasArrivedAtDestination
+                  ? 'arrive'
+                  : turnInstruction?.maneuver ?? 'straight'
+              }
               size={52}
               color="#FFFFFF"
             />
           </View>
           <View style={styles.navigationBannerCopy}>
             <Text style={styles.navigationBannerTitle} numberOfLines={1}>
-              {turnInstruction
+              {hasArrivedAtDestination
+                ? 'Đã đến nơi'
+                : isAutoRerouting
+                  ? 'Đang tìm tuyến'
+                  : turnInstruction
                 ? formatDistance(turnInstruction.distanceMeters)
                 : activeRouteDistance !== undefined
                   ? formatDistance(activeRouteDistance)
                   : 'Đang dẫn đường'}
             </Text>
             <Text style={styles.navigationBannerSubtitle} numberOfLines={2}>
-              {turnInstruction
+              {hasArrivedAtDestination
+                ? selectedPoint?.title || 'Bạn đã đến điểm đến'
+                : isAutoRerouting
+                  ? 'Đang cập nhật chỉ dẫn theo vị trí mới...'
+                  : turnInstruction
                 ? turnInstruction.detail || turnLabel(turnInstruction.maneuver)
                 : selectedPoint?.title || 'Đi theo tuyến đường đã chọn'}
             </Text>
@@ -3898,20 +4209,35 @@ export default function NearbyUsersScreen() {
         <View style={styles.navigationEtaDock}>
           <TouchableOpacity
             activeOpacity={0.86}
-            style={styles.navigationRoundButton}
+            style={
+              hasArrivedAtDestination
+                ? styles.navigationFinishButton
+                : styles.navigationRoundButton
+            }
             onPress={resetRouteState}
           >
-            <X size={31} color="#334155" />
+            {hasArrivedAtDestination ? (
+              <>
+                <MapPinCheck size={21} color="#FFFFFF" />
+                <Text style={styles.navigationFinishText}>Kết thúc</Text>
+              </>
+            ) : (
+              <X size={31} color="#334155" />
+            )}
           </TouchableOpacity>
           <View style={styles.navigationEtaCopy}>
             <View style={styles.sheetHandle} />
             <Text style={styles.navigationEtaTitle}>
-              {activeRouteDuration && activeRouteDuration > 0
+              {hasArrivedAtDestination
+                ? 'Đã đến nơi'
+                : activeRouteDuration && activeRouteDuration > 0
                 ? formatDuration(activeRouteDuration)
                 : 'Đang cập nhật'}
             </Text>
             <Text style={styles.navigationEtaSubtitle}>
-              {[
+              {hasArrivedAtDestination
+                ? 'Chạm Kết thúc để dừng dẫn đường'
+                : [
                 activeRouteDistance !== undefined
                   ? formatDistance(activeRouteDistance)
                   : null,
@@ -4142,8 +4468,7 @@ export default function NearbyUsersScreen() {
               onPress={() => {
                 setIsSearchResultsVisible(false);
                 setSearchResults([]);
-                setSelectedPoint(null);
-                resetRouteState();
+                clearSelectedPoint();
               }}
             >
               <X size={16} color="#64748B" />
@@ -4184,6 +4509,40 @@ export default function NearbyUsersScreen() {
                 types = item.prediction.types;
               }
 
+              const routePoint: SelectedPoint | null = coordinate
+                ? item.kind === 'page'
+                  ? {
+                      id: item.page.id,
+                      source: 'page',
+                      title: item.page.name,
+                      subtitle: item.page.username
+                        ? `@${item.page.username}`
+                        : item.page.location || 'Page',
+                      address: item.page.location,
+                      avatarUrl: item.page.avatarUrl,
+                      url: item.page.url,
+                      showNameBadge: true,
+                      page: item.page,
+                      coordinate,
+                      distanceMeters: item.page.distanceMeters,
+                    }
+                  : {
+                      id: item.prediction.placeId,
+                      source: 'google',
+                      title: item.prediction.mainText,
+                      subtitle:
+                        item.prediction.secondaryText ||
+                        item.prediction.description,
+                      address:
+                        item.prediction.secondaryText ||
+                        item.prediction.description,
+                      coordinate,
+                      distanceMeters: item.prediction.distanceMeters,
+                      types: item.prediction.types,
+                      icon: item.prediction.icon,
+                      iconBackgroundColor: item.prediction.iconBackgroundColor,
+                    }
+                : null;
               const distMeters = (coordinate && currentLocation) ? distanceMeters(currentLocation, coordinate) : (item.kind === 'page' ? item.page.distanceMeters : undefined);
               const googleIconStyle = item.kind === 'google' ? getPlaceIconAndColor(types, query) : null;
               const IconComponent = googleIconStyle ? googleIconStyle.Icon : null;
@@ -4201,13 +4560,18 @@ export default function NearbyUsersScreen() {
               };
 
               const onGetDirections = () => {
-                if (!coordinate) return;
-                loadRouteOptions(coordinate, false, title).catch(() => undefined);
+                if (!routePoint) return;
+                selectPoint(routePoint, true);
               };
 
               const onStartNavigation = () => {
-                if (!coordinate) return;
-                loadRouteOptions(coordinate, true, title).catch(() => undefined);
+                if (!routePoint) return;
+                selectPoint(routePoint);
+                loadRouteOptions(
+                  routePoint.coordinate,
+                  true,
+                  routePoint.title,
+                ).catch(() => undefined);
               };
 
               return (
@@ -5465,6 +5829,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#CBD5E1',
     backgroundColor: '#FFFFFF',
+  },
+  navigationFinishButton: {
+    minWidth: 112,
+    height: 58,
+    borderRadius: 29,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#008B8B',
+    paddingHorizontal: 16,
+    shadowColor: '#0F766E',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  navigationFinishText: {
+    marginLeft: 7,
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
   },
   navigationRoundButtonActive: {
     borderColor: '#99F6E4',

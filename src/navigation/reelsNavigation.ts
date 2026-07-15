@@ -7,51 +7,55 @@ export type ReelsNavigationParams = NonNullable<
 >;
 
 /**
- * Target for opening the Reels surface.
+ * Target for opening a specific Reels item from another screen.
  *
- * Reels belongs to the bottom-tab surface. Opening it through `MAIN_TABS`
- * keeps the iOS bottom bar visible and selects the Video tab. The root
- * `ROUTES.REELS` screen remains registered for legacy/deep-link entrypoints,
- * but this helper intentionally preserves the tab experience.
+ * The bottom-tab Video screen still owns the normal tab experience. Tapping a
+ * concrete video/post should open the root-stack Reels route instead so the
+ * custom left-edge swipe can reveal the screen the user will return to.
  */
 type ReelsNavigationTarget = {
-  name: typeof ROUTES.MAIN_TABS;
-  params: {
-    screen: typeof ROUTES.REELS;
-    params: ReelsNavigationParams;
-  };
+  name: typeof ROUTES.REELS;
+  params: ReelsNavigationParams;
 };
 
 type ReelsNavigatorLike = {
-  navigate: (
-    name: ReelsNavigationTarget['name'],
-    params: ReelsNavigationTarget['params'],
-  ) => void;
+  navigate: (...args: any[]) => void;
+  push?: (...args: any[]) => void;
+  getParent?: () => ReelsNavigatorLike | undefined;
 };
+
+function getRootNavigator(navigation: ReelsNavigatorLike) {
+  let current: ReelsNavigatorLike = navigation;
+  let parent = current.getParent?.();
+
+  while (parent) {
+    current = parent;
+    parent = current.getParent?.();
+  }
+
+  return current;
+}
 
 /**
  * Build a navigation target for the Reels screen.
  *
  * The `_platform` argument is kept for backwards compatibility with callers
- * that historically branched on iOS / Android. Both platforms now enter Reels
- * through the bottom-tab navigator.
+ * that historically branched on iOS / Android.
  */
 export function createReelsNavigationTarget(
   _platform: typeof Platform.OS,
   params: ReelsNavigationParams,
 ): ReelsNavigationTarget {
   return {
-    name: ROUTES.MAIN_TABS,
-    params: {
-      screen: ROUTES.REELS,
-      params,
-    },
+    name: ROUTES.REELS,
+    params,
   };
 }
 
 /**
- * Open Reels through MainTabs. The signature only requires `navigate` because
- * Reels should not use stack-only `push` when entered from feed cards.
+ * Open a tapped reel on top of the current screen. Prefer stack `push` so
+ * closing the reel reveals exactly the screen the user came from; fall back to
+ * `navigate` for very small test/mock navigators.
  */
 export function navigateToReels(
   navigation: ReelsNavigatorLike,
@@ -59,5 +63,12 @@ export function navigateToReels(
   platform: typeof Platform.OS = Platform.OS,
 ) {
   const target = createReelsNavigationTarget(platform, params);
-  navigation.navigate(target.name, target.params);
+  const rootNavigator = getRootNavigator(navigation);
+
+  if (typeof rootNavigator.push === 'function') {
+    rootNavigator.push(target.name, target.params);
+    return;
+  }
+
+  rootNavigator.navigate(target.name, target.params);
 }

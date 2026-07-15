@@ -57,11 +57,33 @@ describe('iOS Google Maps provider for nearby address search', () => {
     expect(source).toContain('onPress={() => selectRouteOption(route, false)}');
     expect(source).toContain('const shouldShowNavigationPuck = isNavigating && shouldShowRoute;');
     expect(source).toContain('tracksViewChanges={shouldShowHeadingPuck}');
-    expect(source).toContain('const ROUTE_LOOKAHEAD_MAX_METERS = 135;');
-    expect(source).toContain('const ROUTE_LOOKAHEAD_DISTANCE_RATIO = 0.32;');
+    expect(source).toContain('const ROUTE_CAMERA_LOOKAHEAD_MAX_METERS = 72;');
+    expect(source).toContain('const ROUTE_HEADING_LOOKAHEAD_MAX_METERS = 28;');
+    expect(source).toContain('const ROUTE_CAMERA_LOOKAHEAD_DISTANCE_RATIO = 0.16;');
+    expect(source).toContain('const NAVIGATION_LOCATION_STATE_MIN_METERS = 1;');
+    expect(source).toContain('const NAVIGATION_LOCATION_STATE_MIN_MS = 280;');
+    expect(source).toContain('const HEADING_STATE_MIN_DEGREES = 2;');
+    expect(source).toContain('const HEADING_STATE_MIN_MS = 80;');
     expect(source).toContain('const navigationRoadName = useMemo');
     expect(source).toContain('currentNavigationRoadName({');
     expect(source).toContain('styles.currentUserRoadLabelPill');
+    expect(source).toContain('preferRouteHeading: false,');
+    expect(source).toContain('preferRouteHeading: true,');
+    expect(source).toContain('const OFF_ROUTE_DISTANCE_METERS = 24;');
+    expect(source).toContain('const OFF_ROUTE_CONFIRM_MS = 0;');
+    expect(source).toContain('const REROUTE_COOLDOWN_MS = 1500;');
+    expect(source).toContain('const NAVIGATION_ARRIVAL_DISTANCE_METERS = 24;');
+    expect(source).toContain('const [isAutoRerouting, setIsAutoRerouting] = useState(false);');
+    expect(source).toContain('const hasArrivedAtDestination = Boolean(');
+    expect(source).toContain('setIsAutoCentering(true);');
+    expect(source).toContain('styles.navigationFinishButton');
+    expect(source).toContain('const routePreviewAlternativeSlots = useMemo');
+    expect(source).toContain('key={`alt-route-slot:${index}`}');
+    expect(source).toContain('coordinates={route ? route.path : []}');
+    expect(source).toContain('const routePoint: SelectedPoint | null = coordinate');
+    expect(source).toContain('selectPoint(routePoint, true);');
+    expect(source).toContain('clearSelectedPoint();');
+    expect(source).toContain('Kết thúc');
   });
 
   it('links Google Maps SDK for iOS and initializes it from react-native-config', () => {

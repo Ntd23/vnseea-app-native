@@ -101,6 +101,10 @@ const REELS_HEADER_LAYER_Z = 10030;
 // Screen width — used by the swipe-back gesture to compute the dismiss
 // threshold and target translation.
 const SCREEN_WIDTH = Dimensions.get('window').width;
+const BACK_GESTURE_START_X = Platform.OS === 'android' ? 18 : 0;
+const BACK_GESTURE_WIDTH = Platform.OS === 'android' ? 82 : 12;
+const BACK_GESTURE_ACTIVE_OFFSET_X = Platform.OS === 'android' ? 8 : 15;
+const BACK_GESTURE_FAIL_OFFSET_Y = Platform.OS === 'android' ? 18 : 15;
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as any;
 const AnimatedImage = Animated.createAnimatedComponent(Image);
@@ -231,8 +235,7 @@ export default function ReelsScreen() {
   const [selectedPublisherId, setSelectedPublisherId] = useState<string | null>(null);
   const language = useAppLanguage();
   const copy = REELS_COPY[language];
-  const isIosTabRoute =
-    Platform.OS === 'ios' && navigation.getState?.().type === 'tab';
+  const isTabRoute = navigation.getState?.().type === 'tab';
 
   const initialVideoId = route.params?.initialVideoId;
   const initialPost = route.params?.post;
@@ -575,16 +578,16 @@ export default function ReelsScreen() {
     useCallback(() => {
       dragX.value = 0;
       screenDismissX.value = 0;
-      if (isIosTabRoute) {
+      if (isTabRoute) {
         tabBarVisibility.setVisible(false);
       }
 
       return () => {
-        if (isIosTabRoute) {
+        if (isTabRoute) {
           tabBarVisibility.setVisible(true);
         }
       };
-    }, [dragX, screenDismissX, isIosTabRoute]),
+    }, [dragX, screenDismissX, isTabRoute]),
   );
 
   // FlatList requires `onViewableItemsChanged` to have a stable identity
@@ -825,14 +828,22 @@ export default function ReelsScreen() {
   const swipeBackGesture = useMemo(
     () =>
       Gesture.Pan()
-        .hitSlop({ left: 0, width: 12 })
-        .activeOffsetX([15, 999])
-        .failOffsetY([-15, 15])
-        .enabled(!isIosTabRoute && !vm.isCommentsOpen)
+        .hitSlop({ left: BACK_GESTURE_START_X, width: BACK_GESTURE_WIDTH })
+        .activeOffsetX([BACK_GESTURE_ACTIVE_OFFSET_X, 999])
+        .failOffsetY([-BACK_GESTURE_FAIL_OFFSET_Y, BACK_GESTURE_FAIL_OFFSET_Y])
+        .enabled(
+          !isTabRoute &&
+          !vm.isCommentsOpen &&
+          !shareModalVisible &&
+          !isPublisherOverlayOpen,
+        )
         .onUpdate(event => {
           'worklet';
-          // Track swipe progress for the back indicator icon while keeping screen still.
-          dragX.value = Math.max(0, event.translationX);
+          // Track swipe progress for the back indicator and reveal the
+          // previous screen under the transparent root Reels route.
+          const nextX = Math.max(0, event.translationX);
+          dragX.value = nextX;
+          screenDismissX.value = nextX;
         })
         .onEnd(event => {
           'worklet';
@@ -852,17 +863,31 @@ export default function ReelsScreen() {
               },
             );
           } else {
-            // Spring back the indicator cleanly. Screen remains at 0.
+            // Spring the indicator and screen back cleanly.
             dragX.value = withSpring(0, { damping: 18, stiffness: 220 });
+            screenDismissX.value = withSpring(0, { damping: 18, stiffness: 220 });
           }
         }),
-    [dragX, screenDismissX, goBackToFeed, isIosTabRoute, vm.isCommentsOpen],
+    [
+      dragX,
+      screenDismissX,
+      goBackToFeed,
+      isTabRoute,
+      isPublisherOverlayOpen,
+      shareModalVisible,
+      vm.isCommentsOpen,
+    ],
   );
 
   const screenAnimatedStyle = useAnimatedStyle(() => {
+    const progress = Math.min(1, screenDismissX.value / SCREEN_WIDTH);
     return {
+      borderTopLeftRadius: interpolate(progress, [0, 1], [0, 22], 'clamp'),
+      borderBottomLeftRadius: interpolate(progress, [0, 1], [0, 22], 'clamp'),
+      opacity: interpolate(progress, [0, 1], [1, 0.92], 'clamp'),
       transform: [
         { translateX: screenDismissX.value },
+        { scale: interpolate(progress, [0, 1], [1, 0.97], 'clamp') },
       ],
     };
   });
@@ -1065,7 +1090,7 @@ export default function ReelsScreen() {
           style={[styles.headerOverlay, { top: reelsHeaderTop }]}
         >
           {/* Left: Back button (if stack navigator has back capability) */}
-          {!isIosTabRoute ? (
+          {!isTabRoute ? (
             <TouchableOpacity
               delayPressIn={0}
               onPressIn={goBackToFeed}
@@ -1170,7 +1195,7 @@ export default function ReelsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: '#000', overflow: 'hidden' },
   list: { flex: 1, backgroundColor: '#000' },
   launchCover: {
     position: 'absolute',

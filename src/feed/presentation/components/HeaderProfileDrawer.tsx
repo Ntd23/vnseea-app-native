@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { navigateToReels } from '../../../navigation/reelsNavigation';
 import {
   User,
   IdCard,
@@ -536,7 +537,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             navigation.navigate(ROUTES.FORUM);
             return;
           case 'reels':
-            navigation.navigate(ROUTES.REELS);
+            navigateToReels(navigation, { source: 'home' });
             return;
           case 'explore':
             navigation.navigate(ROUTES.SEARCH, { discovery: true });

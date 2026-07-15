@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { Compass, Image as ImageIcon, MapPin, ShoppingBag, Video } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToReels } from '../../../navigation/reelsNavigation';
 import { FeedSourceFilterBar } from './FeedSourceFilterBar';
 
 export type FeedFilterTabKey = 'all' | 'photos';
@@ -62,7 +63,7 @@ export function FeedFilterTabs({
             strokeWidth={2.0}
           />
         ),
-        onPress: () => navigation.navigate(ROUTES.REELS),
+        onPress: () => navigateToReels(navigation, { source: 'home' }),
       },
       {
         key: 'marketplace' as const,

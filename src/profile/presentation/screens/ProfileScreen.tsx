@@ -63,8 +63,19 @@ import {
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useSharedValue } from 'react-native-reanimated';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
+import Reanimated, {
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   FlashList,
   type ListRenderItemInfo as FlashListRenderItemInfo,
@@ -149,6 +160,13 @@ type ProfileRoute = RouteProp<
 >;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const PROFILE_BACK_GESTURE_START_X = Platform.OS === 'android' ? 18 : 0;
+const PROFILE_BACK_GESTURE_WIDTH = Platform.OS === 'android' ? 86 : 16;
+const PROFILE_BACK_GESTURE_ACTIVE_OFFSET_X = Platform.OS === 'android' ? 8 : 14;
+const PROFILE_BACK_GESTURE_FAIL_OFFSET_Y = Platform.OS === 'android' ? 18 : 14;
+const PROFILE_BACK_GESTURE_DISTANCE_RATIO = 0.32;
+const PROFILE_BACK_GESTURE_VELOCITY = 700;
+const PROFILE_BACK_CLOSE_DURATION_MS = 180;
 const PROFILE_COVER_HEIGHT = 210;
 const PROFILE_POST_MEDIA_HEIGHT = Math.min(320, Math.round(SCREEN_WIDTH * 0.62));
 // One friend tile width in a 2-col grid inside the wider Friends column.
@@ -1407,6 +1425,8 @@ function ProfileScreen() {
   const gestureStartX = useSharedValue(0);
   const gestureStartY = useSharedValue(0);
   const hasDragged = useSharedValue(false);
+  const profileBackTranslateX = useSharedValue(0);
+  const profileBackClosing = useSharedValue(false);
 
   const feedRepo = useMemo(() => createFeedRepository(), []);
   const pollRepo = useMemo(() => createPollRepository(), []);
@@ -1456,6 +1476,14 @@ function ProfileScreen() {
         publishNativeTabScrollBehavior('onScrollDown');
       };
     }, []),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      profileBackTranslateX.value = 0;
+      profileBackClosing.value = false;
+      return undefined;
+    }, [profileBackClosing, profileBackTranslateX]),
   );
 
   const setActiveProfileVideoId = useCallback((nextVideoId: string | null) => {
@@ -1759,19 +1787,20 @@ function ProfileScreen() {
     setActiveProfileVideoId,
   ]);
 
-  // ── Re-fetch when the route's userId changes ──────────────────────
-  // Opening another user's profile from sibling screens does not
-  // remount this component, and React Navigation only fires
-  // `useFocusEffect` on blur -> focus, not params-only changes.
-  // Compare the new param against the last value we acted on and
-  // reset derived state + reload when they differ.
-  const lastLoadedUserIdRef = useRef<string | undefined>(route.params?.userId);
+  // ── Re-fetch only when the route target changes ────────────────────
+  // ProfileMore / other overlays keep this screen mounted and can
+  // trigger blur -> focus cycles. We do not want those to refetch the
+  // profile data or reset the post list; only a real target change
+  // should reload the screen state.
+  const routeProfileKey = route.params?.userId
+    ? String(route.params.userId)
+    : 'self';
+  const lastLoadedUserIdRef = useRef<string | null>(null);
   useEffect(() => {
-    const nextUserId = route.params?.userId;
-    if (lastLoadedUserIdRef.current === nextUserId) {
+    if (lastLoadedUserIdRef.current === routeProfileKey) {
       return;
     }
-    lastLoadedUserIdRef.current = nextUserId;
+    lastLoadedUserIdRef.current = routeProfileKey;
 
     // Reset user-scoped state so the previous user's posts/stories
     // don't bleed into the new user's profile view.
@@ -1802,22 +1831,16 @@ function ProfileScreen() {
     profilePendingMediaUrlsRef.current = [];
 
     loadProfile({
-      userId: nextUserId,
+      userId: route.params?.userId,
       includeFriends: true,
     }).catch(() => undefined);
   }, [
     route.params?.userId,
+    routeProfileKey,
     clearProfileVideoDwellTimer,
     loadProfile,
     setActiveProfileVideoId,
   ]);
-
-  useFocusEffect(useCallback(() => {
-    loadProfile({
-      userId: route.params?.userId,
-      includeFriends: true,
-    }).catch(() => undefined);
-  }, [loadProfile, route.params?.userId]));
 
   useFocusEffect(
     useCallback(() => {
@@ -3074,6 +3097,15 @@ function ProfileScreen() {
     targetUserId,
   ]);
 
+  const handleProfileBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
+  }, [navigation]);
+
   const handleConnectUser = async () => {
     if (!targetUserId || isOwnProfile || isRequestedProfile || isConnectLoading) {
       return;
@@ -4130,6 +4162,129 @@ function ProfileScreen() {
     ],
   );
 
+  const canSwipeBackToPreviousProfileScreen = navigation.canGoBack();
+  const isProfileSwipeBackBlocked =
+    Boolean(photoViewer) ||
+    profileMediaSheet !== null ||
+    isActivitiesSheetVisible ||
+    editSheetVisible ||
+    storyOptionsSheet !== null ||
+    shareModalVisible ||
+    postMenuVisible ||
+    reactionsSheetVisible ||
+    commentVm.isCommentsOpen;
+
+  const profileSwipeBackGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .hitSlop({
+          left: PROFILE_BACK_GESTURE_START_X,
+          width: PROFILE_BACK_GESTURE_WIDTH,
+        })
+        .activeOffsetX([PROFILE_BACK_GESTURE_ACTIVE_OFFSET_X, 999])
+        .failOffsetY([
+          -PROFILE_BACK_GESTURE_FAIL_OFFSET_Y,
+          PROFILE_BACK_GESTURE_FAIL_OFFSET_Y,
+        ])
+        .enabled(
+          canSwipeBackToPreviousProfileScreen && !isProfileSwipeBackBlocked,
+        )
+        .onUpdate(event => {
+          'worklet';
+          if (profileBackClosing.value) return;
+          profileBackTranslateX.value = Math.max(0, event.translationX);
+        })
+        .onEnd(event => {
+          'worklet';
+          if (profileBackClosing.value) return;
+
+          const shouldClose =
+            event.translationX >
+              SCREEN_WIDTH * PROFILE_BACK_GESTURE_DISTANCE_RATIO ||
+            event.velocityX > PROFILE_BACK_GESTURE_VELOCITY;
+
+          if (shouldClose) {
+            profileBackClosing.value = true;
+            profileBackTranslateX.value = withTiming(
+              SCREEN_WIDTH,
+              { duration: PROFILE_BACK_CLOSE_DURATION_MS },
+              finished => {
+                if (finished) {
+                  runOnJS(handleProfileBack)();
+                }
+              },
+            );
+            return;
+          }
+
+          profileBackTranslateX.value = withSpring(0, {
+            damping: 18,
+            stiffness: 220,
+          });
+        }),
+    [
+      canSwipeBackToPreviousProfileScreen,
+      handleProfileBack,
+      isProfileSwipeBackBlocked,
+      profileBackClosing,
+      profileBackTranslateX,
+    ],
+  );
+
+  const profileSwipeBackScreenStyle = useAnimatedStyle(() => {
+    const progress = Math.min(1, profileBackTranslateX.value / SCREEN_WIDTH);
+
+    return {
+      borderTopLeftRadius: interpolate(progress, [0, 1], [0, 22], 'clamp'),
+      borderBottomLeftRadius: interpolate(progress, [0, 1], [0, 22], 'clamp'),
+      opacity: interpolate(progress, [0, 1], [1, 0.94], 'clamp'),
+      transform: [
+        { translateX: profileBackTranslateX.value },
+        { scale: interpolate(progress, [0, 1], [1, 0.98], 'clamp') },
+      ],
+    };
+  });
+
+  const profileSwipeBackDimStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      profileBackTranslateX.value,
+      [0, SCREEN_WIDTH * PROFILE_BACK_GESTURE_DISTANCE_RATIO, SCREEN_WIDTH],
+      [0.1, 0.06, 0],
+      'clamp',
+    ),
+  }));
+
+  const profileSwipeBackCueStyle = useAnimatedStyle(() => {
+    const threshold = SCREEN_WIDTH * PROFILE_BACK_GESTURE_DISTANCE_RATIO;
+
+    return {
+      opacity: interpolate(
+        profileBackTranslateX.value,
+        [0, 34, threshold],
+        [0, 0.85, 1],
+        'clamp',
+      ),
+      transform: [
+        {
+          translateX: interpolate(
+            profileBackTranslateX.value,
+            [0, threshold],
+            [-54, 18],
+            'clamp',
+          ),
+        },
+        {
+          scale: interpolate(
+            profileBackTranslateX.value,
+            [0, threshold],
+            [0.76, 1.08],
+            'clamp',
+          ),
+        },
+      ],
+    };
+  });
+
   const profilePostsListElement = (
     <FlashList
       style={profileMainStyles.postsList}
@@ -4190,7 +4345,7 @@ function ProfileScreen() {
           isProfileHeaderSolid && profileMainStyles.circleButtonOnSolidHeader,
         ]}
         activeOpacity={0.8}
-        onPress={() => navigation.goBack()}
+        onPress={handleProfileBack}
       >
         <ArrowLeft size={18} color="#050505" />
       </TouchableOpacity>
@@ -4225,8 +4380,34 @@ function ProfileScreen() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <View style={profileMainStyles.container}>
+    <GestureHandlerRootView style={profileMainStyles.gestureRoot}>
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          profileMainStyles.profileSwipeBackDim,
+          profileSwipeBackDimStyle,
+        ]}
+      />
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          profileMainStyles.profileSwipeBackCue,
+          profileSwipeBackCueStyle,
+        ]}
+      >
+        <ArrowLeft size={18} color="#1877F2" strokeWidth={2.6} />
+        <Text style={profileMainStyles.profileSwipeBackCueText}>
+          {language === 'vi' ? 'Vuốt để quay lại' : 'Swipe to go back'}
+        </Text>
+      </Reanimated.View>
+      <GestureDetector gesture={profileSwipeBackGesture}>
+        <Reanimated.View
+          style={[
+            profileMainStyles.container,
+            profileSwipeBackScreenStyle,
+          ]}
+        >
         <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
         {profilePostsListElement}
         {profileHeaderOverlayElement}
@@ -4639,15 +4820,48 @@ function ProfileScreen() {
           </View>
         </Modal>
         <ToastContainer />
-      </View>
+        </Reanimated.View>
+      </GestureDetector>
     </GestureHandlerRootView>
   );
 }
 
 const profileMainStyles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F0F2F5',
+    overflow: 'hidden',
+  },
+  profileSwipeBackDim: {
+    backgroundColor: '#000000',
+  },
+  profileSwipeBackCue: {
+    position: 'absolute',
+    left: Platform.OS === 'android' ? 30 : 14,
+    top: '50%',
+    marginTop: -22,
+    zIndex: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  profileSwipeBackCueText: {
+    marginLeft: 7,
+    color: '#1877F2',
+    fontSize: 13,
+    fontWeight: '900',
   },
   postsList: {
     flex: 1,
