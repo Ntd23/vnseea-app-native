@@ -113,8 +113,9 @@ const NAVIGATION_CAMERA_PITCH = 60;
 const NAVIGATION_CAMERA_ZOOM = 19.25;
 const NAVIGATION_CAMERA_HEADING = 0;
 const ROUTE_CONNECTOR_MIN_METERS = 5;
-const ROUTE_LOOKAHEAD_MIN_METERS = 14;
-const ROUTE_LOOKAHEAD_MAX_METERS = 58;
+const ROUTE_LOOKAHEAD_MIN_METERS = 38;
+const ROUTE_LOOKAHEAD_MAX_METERS = 135;
+const ROUTE_LOOKAHEAD_DISTANCE_RATIO = 0.32;
 const OFF_ROUTE_DISTANCE_METERS = 45;
 const REROUTE_COOLDOWN_MS = 12000;
 const LOCATION_RECENTER_DISTANCE_METERS = 50000;
@@ -515,7 +516,10 @@ function navigationCameraCenter(origin: LatLng, routePath: LatLng[]) {
   }
 
   const lookAheadDistance = Math.min(
-    Math.max(remainingDistance * 0.22, ROUTE_LOOKAHEAD_MIN_METERS),
+    Math.max(
+      remainingDistance * ROUTE_LOOKAHEAD_DISTANCE_RATIO,
+      ROUTE_LOOKAHEAD_MIN_METERS,
+    ),
     ROUTE_LOOKAHEAD_MAX_METERS,
   );
 
@@ -772,6 +776,109 @@ function cleanRouteInstruction(value?: string) {
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function cleanRoadNameCandidate(value?: string) {
+  return cleanRouteInstruction(value)
+    .replace(/\s+(?:toward|towards|for|then)\b.*$/i, '')
+    .replace(/\s+(?:về|hướng|trong|rồi|để)\b.*$/i, '')
+    .replace(/^[,.;:\-\s]+|[,.;:\-\s]+$/g, '')
+    .trim();
+}
+
+function roadNameFromRouteSummary(summary?: string) {
+  const cleaned = cleanRoadNameCandidate(summary);
+  if (!cleaned) return '';
+
+  const [firstPart] = cleaned
+    .split(/\s+(?:and|và)\s+|\/|,/i)
+    .map(part => cleanRoadNameCandidate(part))
+    .filter(Boolean);
+
+  return firstPart || cleaned;
+}
+
+function roadNameFromInstruction(instruction?: string) {
+  const cleaned = cleanRouteInstruction(instruction);
+  if (!cleaned) return '';
+
+  const patterns: RegExp[] = [
+    /\b(?:onto|on)\s+(.+?)(?:\s+(?:toward|towards|for|then)\b|,|$)/i,
+    /\bcontinue\s+on\s+(.+?)(?:\s+(?:toward|towards|for|then)\b|,|$)/i,
+    /\bhead\s+.+?\s+on\s+(.+?)(?:\s+(?:toward|towards|for|then)\b|,|$)/i,
+    /\bmerge\s+onto\s+(.+?)(?:\s+(?:toward|towards|for|then)\b|,|$)/i,
+    /(?:trên|vào|lên|theo)\s+(.+?)(?:\s+(?:về|hướng|trong|rồi|để)\b|,|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = cleaned.match(pattern);
+    const candidate = cleanRoadNameCandidate(match?.[1]);
+    if (candidate.length >= 2) {
+      return candidate;
+    }
+  }
+
+  return '';
+}
+
+function currentRouteStep(
+  routePath: LatLng[],
+  current: LatLng | null,
+  routeSteps?: MapRouteStep[],
+) {
+  if (!current || !routeSteps?.length || routePath.length < 2) {
+    return null;
+  }
+
+  const currentIndex = nearestRouteIndex(routePath, current);
+  let fallback: MapRouteStep | null = null;
+  let fallbackDistance = Number.POSITIVE_INFINITY;
+
+  for (const step of routeSteps) {
+    const stepStart = step.startLocation ?? step.path?.[0];
+    const stepEnd =
+      step.endLocation ??
+      (step.path && step.path.length > 0
+        ? step.path[step.path.length - 1]
+        : undefined);
+
+    if (!stepStart) continue;
+
+    const startIndex = nearestRouteIndex(routePath, stepStart);
+    const endIndex = stepEnd ? nearestRouteIndex(routePath, stepEnd) : startIndex;
+    const rangeStart = Math.min(startIndex, endIndex);
+    const rangeEnd = Math.max(startIndex, endIndex);
+
+    if (currentIndex >= rangeStart - 1 && currentIndex <= rangeEnd + 1) {
+      return step;
+    }
+
+    const distanceToStart = Math.abs(currentIndex - startIndex);
+    if (startIndex <= currentIndex && distanceToStart < fallbackDistance) {
+      fallback = step;
+      fallbackDistance = distanceToStart;
+    }
+  }
+
+  return fallback;
+}
+
+function currentNavigationRoadName({
+  routePath,
+  current,
+  routeSteps,
+  routeSummary,
+}: {
+  routePath: LatLng[];
+  current: LatLng | null;
+  routeSteps?: MapRouteStep[];
+  routeSummary?: string;
+}) {
+  const step = currentRouteStep(routePath, current, routeSteps);
+  return (
+    roadNameFromInstruction(step?.instruction) ||
+    roadNameFromRouteSummary(routeSummary)
+  );
 }
 
 function nextStepInstruction(
@@ -1580,6 +1687,9 @@ export default function NearbyUsersScreen() {
     routeHeading: shouldShowRoute ? routeHeading : null,
     userSpeed,
   });
+  const shouldShowNavigationPuck = isNavigating && shouldShowRoute;
+  const shouldShowHeadingPuck =
+    shouldShowNavigationPuck || userSpeed > NAVIGATION_MOVING_SPEED_MPS;
   const turnInstruction = useMemo(
     () =>
       isNavigating && shouldShowRoute
@@ -1597,6 +1707,24 @@ export default function NearbyUsersScreen() {
       selectedPoint?.title,
       selectedRoute?.steps,
       shouldShowRoute,
+    ],
+  );
+  const navigationRoadName = useMemo(
+    () =>
+      shouldShowNavigationPuck
+        ? currentNavigationRoadName({
+            routePath: activeRoute,
+            current: currentLocation,
+            routeSteps: selectedRoute?.steps,
+            routeSummary: selectedRoute?.summary,
+          })
+        : '',
+    [
+      activeRoute,
+      currentLocation,
+      selectedRoute?.steps,
+      selectedRoute?.summary,
+      shouldShowNavigationPuck,
     ],
   );
   const isRoutePreview = shouldShowRoute && !isNavigating;
@@ -1710,10 +1838,6 @@ export default function NearbyUsersScreen() {
     const last = lastNavigationCameraHeadingRef.current;
     const movedMeters =
       last.center === null ? Infinity : distanceMeters(last.center, location);
-    if (movedMeters < 1 && now - last.updatedAt < 800) {
-      return;
-    }
-
     const cameraCenter = navigationCameraCenter(location, activeRoute);
     const nextRouteHeading =
       activeDestination !== null
@@ -1723,8 +1847,22 @@ export default function NearbyUsersScreen() {
             activeDestination,
           )
         : routeHeading ?? currentHeading;
+    const nextCameraHeading = resolveNavigationHeading({
+      deviceHeading,
+      gpsHeading: lastHeadingStateRef.current === null ? null : currentHeading,
+      routeHeading: nextRouteHeading,
+      userSpeed,
+    });
+    const headingChanged =
+      last.heading === null
+        ? Infinity
+        : Math.abs(normalizeBearingDelta(last.heading, nextCameraHeading));
+
+    if (movedMeters < 1 && headingChanged < 2 && now - last.updatedAt < 800) {
+      return;
+    }
     lastNavigationCameraHeadingRef.current = {
-      heading: NAVIGATION_CAMERA_HEADING,
+      heading: nextCameraHeading,
       center: location,
       updatedAt: now,
     };
@@ -1732,7 +1870,7 @@ export default function NearbyUsersScreen() {
     mapRef.current?.animateCamera(
       {
         center: cameraCenter,
-        heading: NAVIGATION_CAMERA_HEADING,
+        heading: nextCameraHeading,
         pitch: NAVIGATION_CAMERA_PITCH,
         zoom: NAVIGATION_CAMERA_ZOOM,
       },
@@ -1742,11 +1880,13 @@ export default function NearbyUsersScreen() {
     activeDestination,
     activeRoute,
     currentHeading,
+    deviceHeading,
     currentLocation,
     isNavigating,
     isAutoCentering,
     routeHeading,
     shouldShowRoute,
+    userSpeed,
   ]);
 
   useEffect(() => {
@@ -1788,7 +1928,21 @@ export default function NearbyUsersScreen() {
           : location;
       const nextHeading =
         shouldShowRoute && activeDestination !== null
-          ? NAVIGATION_CAMERA_HEADING
+          ? (() => {
+              const nextRouteHeading = navigationRouteHeading(
+                location,
+                activeRoute,
+                activeDestination,
+              );
+              setRouteHeading(nextRouteHeading);
+              return resolveNavigationHeading({
+                deviceHeading,
+                gpsHeading:
+                  lastHeadingStateRef.current === null ? null : currentHeading,
+                routeHeading: nextRouteHeading,
+                userSpeed,
+              });
+            })()
           : routeHeading ?? currentHeading;
       mapRef.current?.animateCamera(
         {
@@ -1813,9 +1967,11 @@ export default function NearbyUsersScreen() {
     activeDestination,
     activeRoute,
     currentHeading,
+    deviceHeading,
     isNavigating,
     routeHeading,
     shouldShowRoute,
+    userSpeed,
   ]);
 
   const handleRegionChangeComplete = useCallback((region: Region) => {
@@ -1848,14 +2004,44 @@ export default function NearbyUsersScreen() {
   }, []);
 
   const resetMapHeading = useCallback(() => {
+    const location = currentLocationRef.current;
+    const nextRouteHeading =
+      isNavigating &&
+      shouldShowRoute &&
+      location &&
+      activeDestination !== null &&
+      activeRoute.length > 1
+        ? navigationRouteHeading(location, activeRoute, activeDestination)
+        : NAVIGATION_CAMERA_HEADING;
+    const nextHeading =
+      nextRouteHeading !== NAVIGATION_CAMERA_HEADING
+        ? resolveNavigationHeading({
+            deviceHeading,
+            gpsHeading:
+              lastHeadingStateRef.current === null ? null : currentHeading,
+            routeHeading: nextRouteHeading,
+            userSpeed,
+          })
+        : NAVIGATION_CAMERA_HEADING;
+    if (nextRouteHeading !== NAVIGATION_CAMERA_HEADING) {
+      setRouteHeading(nextRouteHeading);
+    }
     mapRef.current?.animateCamera(
       {
-        heading: NAVIGATION_CAMERA_HEADING,
+        heading: nextHeading,
         pitch: isNavigating && shouldShowRoute ? NAVIGATION_CAMERA_PITCH : 0,
       },
       { duration: 320 },
     );
-  }, [isNavigating, shouldShowRoute]);
+  }, [
+    activeDestination,
+    activeRoute,
+    currentHeading,
+    deviceHeading,
+    isNavigating,
+    shouldShowRoute,
+    userSpeed,
+  ]);
 
   const loadPagesAroundUser = useCallback(
     async (location: LatLng) => {
@@ -1906,14 +2092,14 @@ export default function NearbyUsersScreen() {
         const cameraCenter = navigationCameraCenter(origin, routePath);
         const navigationCamera = {
           center: cameraCenter,
-          heading: NAVIGATION_CAMERA_HEADING,
+          heading,
           pitch: NAVIGATION_CAMERA_PITCH,
           zoom: NAVIGATION_CAMERA_ZOOM,
         };
 
         setRouteHeading(heading);
         lastNavigationCameraHeadingRef.current = {
-          heading: NAVIGATION_CAMERA_HEADING,
+          heading,
           center: origin,
           updatedAt: Date.now(),
         };
@@ -1954,6 +2140,57 @@ export default function NearbyUsersScreen() {
       }
     },
     [voiceGuidanceEnabled],
+  );
+
+  const selectRouteOption = useCallback(
+    (route: RouteOption, navigating = isNavigating) => {
+      if (!selectedPoint) return;
+      focusRoute(
+        route,
+        selectedPoint.coordinate,
+        navigating,
+        selectedPoint.title,
+      );
+    },
+    [focusRoute, isNavigating, selectedPoint],
+  );
+
+  const routeMapLabels = useMemo(
+    () =>
+      isRoutePreview && shouldShowRoute
+        ? routeOptions
+            .map(route => {
+              const path =
+                route.id === selectedRouteId && activeRoute.length > 1
+                  ? activeRoute
+                  : route.path;
+              if (path.length < 2) return null;
+              const coordinate =
+                pointAlongRoute(path, routeDistance(path) * 0.5) ||
+                path[Math.floor(path.length / 2)];
+              return {
+                route,
+                coordinate,
+                isActive: route.id === selectedRouteId,
+              };
+            })
+            .filter(
+              (
+                item,
+              ): item is {
+                route: RouteOption;
+                coordinate: LatLng;
+                isActive: boolean;
+              } => item !== null,
+            )
+        : [],
+    [
+      activeRoute,
+      isRoutePreview,
+      routeOptions,
+      selectedRouteId,
+      shouldShowRoute,
+    ],
   );
 
   const loadRouteOptions = useCallback(
@@ -2880,17 +3117,13 @@ export default function NearbyUsersScreen() {
             anchor={{ x: 0.5, y: 0.5 }}
             coordinate={currentLocation}
             flat
-            rotation={
-              userSpeed > NAVIGATION_MOVING_SPEED_MPS
-                ? currentUserMarkerHeading
-                : 0
-            }
-            tracksViewChanges={false}
+            rotation={shouldShowHeadingPuck ? currentUserMarkerHeading : 0}
+            tracksViewChanges={shouldShowHeadingPuck}
             zIndex={20}
             onPress={selectCurrentUser}
           >
             <View style={styles.currentUserMarker}>
-              {userSpeed > NAVIGATION_MOVING_SPEED_MPS ? (
+              {shouldShowHeadingPuck ? (
                 <View style={styles.currentUserPuck}>
                   <View style={styles.currentUserArrow}>
                     <View style={styles.currentUserArrowTail} />
@@ -2904,6 +3137,26 @@ export default function NearbyUsersScreen() {
                   </View>
                 </View>
               )}
+            </View>
+          </Marker>
+        ) : null}
+
+        {currentLocation && shouldShowNavigationPuck && navigationRoadName ? (
+          <Marker
+            anchor={{ x: 0.5, y: 0 }}
+            coordinate={currentLocation}
+            tracksViewChanges={shouldShowNavigationPuck}
+            zIndex={19}
+          >
+            <View style={styles.currentUserRoadLabelMarker}>
+              <View style={styles.currentUserRoadLabelPill}>
+                <Text
+                  numberOfLines={1}
+                  style={styles.currentUserRoadLabelText}
+                >
+                  {navigationRoadName}
+                </Text>
+              </View>
             </View>
           </Marker>
         ) : null}
@@ -3040,42 +3293,40 @@ export default function NearbyUsersScreen() {
         ) : null}
 
         {/* Main Route & Connector Polylines (Always mounted to prevent react-native-maps unmount render bugs on Android) */}
-        <Polyline
-          coordinates={
-            isRoutePreview && shouldShowRoute && alternativeRoutes[0]
-              ? alternativeRoutes[0].path
-              : []
-          }
-          lineCap="round"
-          lineJoin="round"
-          strokeColor="rgba(100, 116, 139, 0.72)"
-          strokeWidth={4}
-          zIndex={14}
-        />
-        <Polyline
-          coordinates={
-            isRoutePreview && shouldShowRoute && alternativeRoutes[1]
-              ? alternativeRoutes[1].path
-              : []
-          }
-          lineCap="round"
-          lineJoin="round"
-          strokeColor="rgba(100, 116, 139, 0.72)"
-          strokeWidth={4}
-          zIndex={14}
-        />
-        <Polyline
-          coordinates={
-            isRoutePreview && shouldShowRoute && alternativeRoutes[2]
-              ? alternativeRoutes[2].path
-              : []
-          }
-          lineCap="round"
-          lineJoin="round"
-          strokeColor="rgba(100, 116, 139, 0.72)"
-          strokeWidth={4}
-          zIndex={14}
-        />
+        {isRoutePreview && shouldShowRoute
+          ? alternativeRoutes.slice(0, 4).map(route => (
+              <React.Fragment key={`alt-route:${route.id}`}>
+                <Polyline
+                  coordinates={route.path}
+                  lineCap="round"
+                  lineJoin="round"
+                  strokeColor="rgba(255, 255, 255, 0.95)"
+                  strokeWidth={8}
+                  zIndex={12}
+                />
+                <Polyline
+                  coordinates={route.path}
+                  lineCap="round"
+                  lineJoin="round"
+                  strokeColor="#466CFF"
+                  strokeWidth={4}
+                  zIndex={13}
+                  tappable
+                  onPress={() => selectRouteOption(route, false)}
+                />
+                <Polyline
+                  coordinates={route.path}
+                  lineCap="round"
+                  lineJoin="round"
+                  strokeColor="rgba(70, 108, 255, 0.01)"
+                  strokeWidth={24}
+                  zIndex={14}
+                  tappable
+                  onPress={() => selectRouteOption(route, false)}
+                />
+              </React.Fragment>
+            ))
+          : null}
 
         <Polyline
           coordinates={
@@ -3107,17 +3358,46 @@ export default function NearbyUsersScreen() {
           lineCap="round"
           lineJoin="round"
           strokeColor="rgba(255, 255, 255, 0.92)"
-          strokeWidth={9}
+          strokeWidth={11}
           zIndex={16}
         />
         <Polyline
           coordinates={shouldShowRoute ? activeRoute : []}
           lineCap="round"
           lineJoin="round"
-          strokeColor="#1A73E8"
-          strokeWidth={6}
+          strokeColor={isRoutePreview ? '#2D00D7' : '#1A73E8'}
+          strokeWidth={7}
           zIndex={17}
         />
+
+        {routeMapLabels.map(({ route, coordinate, isActive }) => (
+          <Marker
+            key={`route-label:${route.id}:${isActive ? 'active' : 'alt'}`}
+            coordinate={coordinate}
+            anchor={{ x: 0.5, y: 0.5 }}
+            zIndex={isActive ? 26 : 25}
+            onPress={() => selectRouteOption(route, false)}
+          >
+            <View
+              style={[
+                styles.routeMapDurationPill,
+                isActive && styles.routeMapDurationPillActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.routeMapDurationText,
+                  isActive && styles.routeMapDurationTextActive,
+                ]}
+              >
+                {formatDuration(route.durationSeconds)}
+              </Text>
+              {isActive ? (
+                <Text style={styles.routeMapEcoText}>🍃</Text>
+              ) : null}
+            </View>
+          </Marker>
+        ))}
 
       {/* Render search results markers on the map */}
       {isSearchResultsVisible &&
@@ -3388,26 +3668,26 @@ export default function NearbyUsersScreen() {
           <View style={styles.navigationBannerIcon}>
             <ManeuverIcon
               maneuver={turnInstruction?.maneuver ?? 'straight'}
-              size={42}
+              size={52}
               color="#FFFFFF"
             />
           </View>
           <View style={styles.navigationBannerCopy}>
-            <Text style={styles.navigationBannerTitle}>
+            <Text style={styles.navigationBannerTitle} numberOfLines={1}>
               {turnInstruction
                 ? formatDistance(turnInstruction.distanceMeters)
                 : activeRouteDistance !== undefined
                   ? formatDistance(activeRouteDistance)
                   : 'Đang dẫn đường'}
             </Text>
-            <Text style={styles.navigationBannerSubtitle} numberOfLines={1}>
+            <Text style={styles.navigationBannerSubtitle} numberOfLines={2}>
               {turnInstruction
                 ? turnInstruction.detail || turnLabel(turnInstruction.maneuver)
                 : selectedPoint?.title || 'Đi theo tuyến đường đã chọn'}
             </Text>
           </View>
           <View style={styles.navigationSparkButton}>
-            <Compass size={30} color="#4285F4" />
+            <Compass size={34} color="#4285F4" />
           </View>
         </View>
       ) : null}
@@ -3564,14 +3844,7 @@ export default function NearbyUsersScreen() {
                       styles.routeOptionChip,
                       isActive && styles.routeOptionChipActive,
                     ]}
-                    onPress={() =>
-                      focusRoute(
-                        route,
-                        selectedPoint.coordinate,
-                        false,
-                        selectedPoint.title,
-                      )
-                    }
+                    onPress={() => selectRouteOption(route, false)}
                   >
                     <Text
                       style={[
@@ -3766,14 +4039,7 @@ export default function NearbyUsersScreen() {
                       styles.routeOptionChip,
                       isActive && styles.routeOptionChipActive,
                     ]}
-                    onPress={() =>
-                      focusRoute(
-                        route,
-                        selectedPoint.coordinate,
-                        isNavigating,
-                        selectedPoint.title,
-                      )
-                    }
+                    onPress={() => selectRouteOption(route, isNavigating)}
                   >
                     <Text
                       style={[
@@ -4421,51 +4687,76 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   currentUserMarker: {
-    width: 54,
-    height: 54,
+    width: 72,
+    height: 72,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 8,
   },
   currentUserPuck: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 7,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.22,
+    shadowRadius: 9,
+    elevation: 10,
   },
   currentUserArrow: {
-    width: 31,
-    height: 22,
-    transform: [{ rotate: '-90deg' }],
+    width: 34,
+    height: 40,
+    alignItems: 'center',
   },
   currentUserArrowTail: {
     position: 'absolute',
-    left: 3,
-    top: 7,
-    width: 16,
-    height: 8,
-    borderRadius: 4,
+    top: 25,
+    width: 11,
+    height: 14,
+    borderRadius: 6,
     backgroundColor: BRAND,
   },
   currentUserArrowHead: {
     position: 'absolute',
-    right: 0,
     top: 0,
     width: 0,
     height: 0,
-    borderTopWidth: 11,
-    borderBottomWidth: 11,
-    borderLeftWidth: 18,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: BRAND,
+    borderLeftWidth: 17,
+    borderRightWidth: 17,
+    borderBottomWidth: 30,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: BRAND,
+  },
+  currentUserRoadLabelMarker: {
+    width: 190,
+    minHeight: 96,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingTop: 64,
+  },
+  currentUserRoadLabelPill: {
+    maxWidth: 178,
+    minHeight: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.97)',
+    paddingHorizontal: 11,
+    paddingVertical: 4,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 7,
+  },
+  currentUserRoadLabelText: {
+    color: BRAND,
+    fontSize: 16,
+    fontWeight: '900',
   },
   compassButton: {
     position: 'absolute',
@@ -5277,17 +5568,53 @@ const styles = StyleSheet.create({
   routeOptionMetaActive: {
     color: '#2563EB',
   },
+  routeMapDurationPill: {
+    minWidth: 72,
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  routeMapDurationPillActive: {
+    borderColor: '#123CFF',
+    backgroundColor: '#123CFF',
+  },
+  routeMapDurationText: {
+    color: '#475569',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  routeMapDurationTextActive: {
+    color: '#FFFFFF',
+  },
+  routeMapEcoText: {
+    marginLeft: 5,
+    color: '#D9F99D',
+    fontSize: 13,
+    fontWeight: '900',
+  },
   navigationBanner: {
     position: 'absolute',
-    top: Platform.OS === 'android' ? 22 : 0,
-    right: 10,
-    left: 10,
+    top: Platform.OS === 'android' ? 18 : 0,
+    right: 18,
+    left: 18,
     zIndex: 28,
-    minHeight: 112,
-    borderRadius: 18,
+    minHeight: 126,
+    borderRadius: 22,
     backgroundColor: '#006B64',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     flexDirection: 'row',
     alignItems: 'center',
     shadowColor: '#0F172A',
@@ -5297,9 +5624,9 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   navigationBannerIcon: {
-    width: 74,
-    height: 74,
-    borderRadius: 18,
+    width: 82,
+    height: 82,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -5310,19 +5637,20 @@ const styles = StyleSheet.create({
   },
   navigationBannerTitle: {
     color: '#FFFFFF',
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: '900',
   },
   navigationBannerSubtitle: {
-    marginTop: 4,
+    marginTop: 3,
     color: '#E0F2FE',
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
+    lineHeight: 25,
   },
   navigationSparkButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',

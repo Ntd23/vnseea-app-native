@@ -132,6 +132,7 @@ import type {
   StoryItem,
   StoryMedia,
 } from '../../../stories/domain/types/stories.types';
+import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
@@ -180,6 +181,8 @@ const PROFILE_POST_MEDIA_PREFETCH_BATCH_SIZE = PROFILE_IS_ANDROID ? 2 : 3;
 const PROFILE_POST_MEDIA_PREFETCH_BATCH_DELAY_MS = PROFILE_IS_ANDROID ? 140 : 110;
 const PROFILE_SCROLL_DIRECTION_THRESHOLD = 6;
 const PROFILE_HEADER_HEIGHT = 48;
+const PROFILE_SHEET_OPEN_DURATION_MS = 120;
+const PROFILE_SHEET_CLOSE_DURATION_MS = 90;
 const COUNTRY_NAME_BY_ID = new Map(
   COUNTRY_OPTIONS.map(country => [country.id, country.name]),
 );
@@ -187,6 +190,7 @@ const COUNTRY_NAME_BY_ID = new Map(
 type ProfileScrollDirection = 'up' | 'down' | 'none';
 type ProfileFriendsTab = 'following' | 'followers';
 type ProfileMediaSheetState = 'avatar' | 'cover' | null;
+type ProfileMediaSheetTarget = NonNullable<ProfileMediaSheetState>;
 type ProfilePostFilter = 'all' | 'photos' | 'videos';
 type ProfileFilterBarKey = ProfilePostFilter | 'nearby' | 'marketplace';
 type ProfileActivityItem = {
@@ -1017,14 +1021,21 @@ function mergeStoriesForProfile(
   };
 }
 
-function getStoryPreviewUrl(story: StoryItem | null, fallbackAvatar: string) {
-  if (!story) return fallbackAvatar;
-  const imageSegment = story.media.find(item => item.type === 'image');
+function ProfileStoryCover({
+  story,
+  fallbackUri,
+}: {
+  story: StoryItem;
+  fallbackUri: string;
+}) {
+  const coverUri = useStoryCoverImageUri({ story, fallbackUri });
+
   return (
-    story.thumbnailUrl ||
-    imageSegment?.url ||
-    story.publisher.avatarUrl ||
-    fallbackAvatar
+    <Image
+      source={{ uri: coverUri || fallbackUri || FALLBACK_AVATAR }}
+      style={profileStoryStyles.cover}
+      resizeMode="cover"
+    />
   );
 }
 
@@ -1331,6 +1342,7 @@ function ProfileScreen() {
     useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileScrollYRef = useRef(0);
   const profileHeaderSolidRef = useRef(false);
+  const profileHeaderSolidProgress = useRef(new Animated.Value(0)).current;
   const isProfileScrollingRef = useRef(false);
   const isProfileMomentumScrollingRef = useRef(false);
   const profileScrollDirectionRef = useRef<ProfileScrollDirection>('none');
@@ -1362,6 +1374,10 @@ function ProfileScreen() {
   const [editSheetVisible, setEditSheetVisible] = useState(false);
   const [profileMediaSheet, setProfileMediaSheet] =
     useState<ProfileMediaSheetState>(null);
+  const profileMediaSheetProgress = useRef(new Animated.Value(0)).current;
+  const activitiesSheetProgress = useRef(new Animated.Value(0)).current;
+  const [shouldRenderActivitiesList, setShouldRenderActivitiesList] =
+    useState(false);
 
   // Note: tab bar is hidden via direct tabBarVisibility calls in each handler below.
   const [storyOptionsSheet, setStoryOptionsSheet] = useState<StoryItem | null>(null);
@@ -2182,7 +2198,6 @@ function ProfileScreen() {
     postCardCopy,
     posts,
   ]);
-  const storyPreviewUrl = getStoryPreviewUrl(userStory, avatarUrl);
   const shouldShowStorySection = Boolean(userStory) || isStoryLoading;
   const relationshipState =
     profile?.followingState ??
@@ -2561,6 +2576,17 @@ function ProfileScreen() {
     targetUserId,
   ]);
 
+  const animateProfileHeaderSolid = useCallback(
+    (solid: boolean) => {
+      Animated.timing(profileHeaderSolidProgress, {
+        toValue: solid ? 1 : 0,
+        duration: solid ? 120 : 90,
+        useNativeDriver: true,
+      }).start();
+    },
+    [profileHeaderSolidProgress],
+  );
+
   const handleProfileScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -2576,6 +2602,7 @@ function ProfileScreen() {
         contentOffset.y >= Math.max(0, PROFILE_COVER_HEIGHT - profileHeaderHeight);
       if (profileHeaderSolidRef.current !== shouldUseSolidHeader) {
         profileHeaderSolidRef.current = shouldUseSolidHeader;
+        animateProfileHeaderSolid(shouldUseSolidHeader);
         setProfileHeaderSolid(shouldUseSolidHeader);
       }
 
@@ -2592,7 +2619,7 @@ function ProfileScreen() {
         handleLoadMorePosts();
       }
     },
-    [handleLoadMorePosts, profileHeaderHeight],
+    [animateProfileHeaderSolid, handleLoadMorePosts, profileHeaderHeight],
   );
 
   const finishProfileScroll = useCallback(
@@ -2646,11 +2673,45 @@ function ProfileScreen() {
     [finishProfileScroll],
   );
 
+  const openProfileMediaSheet = useCallback(
+    (target: ProfileMediaSheetTarget) => {
+      tabBarVisibility.setVisible(false);
+      profileMediaSheetProgress.stopAnimation();
+      profileMediaSheetProgress.setValue(0);
+      setProfileMediaSheet(target);
+      requestAnimationFrame(() => {
+        Animated.timing(profileMediaSheetProgress, {
+          toValue: 1,
+          duration: PROFILE_SHEET_OPEN_DURATION_MS,
+          useNativeDriver: true,
+        }).start();
+      });
+    },
+    [profileMediaSheetProgress],
+  );
+
+  const closeProfileMediaSheet = useCallback(
+    (afterClose?: () => void) => {
+      profileMediaSheetProgress.stopAnimation();
+      Animated.timing(profileMediaSheetProgress, {
+        toValue: 0,
+        duration: PROFILE_SHEET_CLOSE_DURATION_MS,
+        useNativeDriver: true,
+      }).start(() => {
+        setProfileMediaSheet(null);
+        tabBarVisibility.setVisible(true);
+        if (afterClose) {
+          requestAnimationFrame(afterClose);
+        }
+      });
+    },
+    [profileMediaSheetProgress],
+  );
+
   // Avatar Press Handler
   const handleAvatarPress = () => {
     if (isOwnProfile) {
-      setProfileMediaSheet('avatar');
-      tabBarVisibility.setVisible(false);
+      openProfileMediaSheet('avatar');
       return;
     }
 
@@ -2662,17 +2723,14 @@ function ProfileScreen() {
   };
 
   const handleCloseProfileMediaSheet = useCallback(() => {
-    setProfileMediaSheet(null);
-    tabBarVisibility.setVisible(true);
-  }, []);
+    closeProfileMediaSheet();
+  }, [closeProfileMediaSheet]);
 
   const handleViewProfileMedia = useCallback(() => {
     const mediaTarget = profileMediaSheet;
     if (!mediaTarget) return;
 
-    setProfileMediaSheet(null);
-    tabBarVisibility.setVisible(true);
-    setTimeout(() => {
+    closeProfileMediaSheet(() => {
       if (mediaTarget === 'cover') {
         navigation.navigate(ROUTES.COVER_VIEWER, {
           coverUrl: coverUrl,
@@ -2687,9 +2745,10 @@ function ProfileScreen() {
         userName: displayName,
         userId: targetUserId ?? currentUserId ?? profile?.id,
       });
-    }, 180);
+    });
   }, [
     avatarUrl,
+    closeProfileMediaSheet,
     coverUrl,
     currentUserId,
     displayName,
@@ -2700,18 +2759,27 @@ function ProfileScreen() {
   ]);
 
   const handleCreateStoryFromMediaSheet = useCallback(() => {
-    setProfileMediaSheet(null);
-    tabBarVisibility.setVisible(true);
-    setTimeout(() => {
+    closeProfileMediaSheet(() => {
       navigation.navigate(ROUTES.CREATE_STORY);
-    }, 180);
-  }, [navigation]);
+    });
+  }, [closeProfileMediaSheet, navigation]);
+
+  const handleViewStoryFromMediaSheet = useCallback(() => {
+    if (!userStory) return;
+
+    const storyToView = userStory;
+    closeProfileMediaSheet(() => {
+      navigation.navigate(ROUTES.STORY_VIEWER, {
+        stories: [storyToView],
+        initialUserIndex: 0,
+      });
+    });
+  }, [closeProfileMediaSheet, navigation, userStory]);
 
   // Cover Photo Press Handler
   const handleCoverPress = () => {
     if (isOwnProfile) {
-      setProfileMediaSheet('cover');
-      tabBarVisibility.setVisible(false);
+      openProfileMediaSheet('cover');
       return;
     }
 
@@ -2784,17 +2852,20 @@ function ProfileScreen() {
     const mediaTarget = profileMediaSheet;
     if (!mediaTarget) return;
 
-    setProfileMediaSheet(null);
-    tabBarVisibility.setVisible(true);
-    setTimeout(() => {
+    closeProfileMediaSheet(() => {
       if (mediaTarget === 'cover') {
         handleChangeCover();
         return;
       }
 
       handleChangeAvatar();
-    }, 180);
-  }, [handleChangeAvatar, handleChangeCover, profileMediaSheet]);
+    });
+  }, [
+    closeProfileMediaSheet,
+    handleChangeAvatar,
+    handleChangeCover,
+    profileMediaSheet,
+  ]);
 
   const handleOpenStory = () => {
     if (!userStory) return;
@@ -2837,12 +2908,34 @@ function ProfileScreen() {
   }, [avatarUrl, copy.userFallback, coverUrl, displayName, navigation, username]);
 
   const handleOpenActivities = useCallback(() => {
+    setShouldRenderActivitiesList(false);
+    activitiesSheetProgress.stopAnimation();
+    activitiesSheetProgress.setValue(0);
     setActivitiesSheetVisible(true);
-  }, []);
+    requestAnimationFrame(() => {
+      Animated.timing(activitiesSheetProgress, {
+        toValue: 1,
+        duration: PROFILE_SHEET_OPEN_DURATION_MS,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          setShouldRenderActivitiesList(true);
+        }
+      });
+    });
+  }, [activitiesSheetProgress]);
 
   const handleCloseActivities = useCallback(() => {
-    setActivitiesSheetVisible(false);
-  }, []);
+    setShouldRenderActivitiesList(false);
+    activitiesSheetProgress.stopAnimation();
+    Animated.timing(activitiesSheetProgress, {
+      toValue: 0,
+      duration: PROFILE_SHEET_CLOSE_DURATION_MS,
+      useNativeDriver: true,
+    }).start(() => {
+      setActivitiesSheetVisible(false);
+    });
+  }, [activitiesSheetProgress]);
 
   const handleOpenCart = useCallback(() => {
     // Khi ở own profile → sản phẩm của mình (không truyền userId)
@@ -2947,6 +3040,39 @@ function ProfileScreen() {
 
     navigation.navigate(ROUTES.CHAT, { chat });
   };
+
+  const handleOpenProfileMore = useCallback(() => {
+    navigation.navigate(ROUTES.PROFILE_MORE, {
+      userId: targetUserId ? String(targetUserId) : undefined,
+      isOwnProfile,
+      displayName,
+      username: profile?.username,
+      avatarUrl,
+      phoneNumber: profile?.phoneNumber,
+      followersCount: followers.length,
+      followingCount: following.length,
+      followedByCurrentUser: Boolean(profile?.followedByCurrentUser),
+      followsCurrentUser: Boolean(profile?.followsCurrentUser),
+      blocked: Boolean(profile?.blocked),
+      pro: Boolean(profile?.pro),
+      privacy: profile?.privacy,
+    });
+  }, [
+    avatarUrl,
+    displayName,
+    followers.length,
+    following.length,
+    isOwnProfile,
+    navigation,
+    profile?.blocked,
+    profile?.followedByCurrentUser,
+    profile?.followsCurrentUser,
+    profile?.phoneNumber,
+    profile?.privacy,
+    profile?.pro,
+    profile?.username,
+    targetUserId,
+  ]);
 
   const handleConnectUser = async () => {
     if (!targetUserId || isOwnProfile || isRequestedProfile || isConnectLoading) {
@@ -3054,6 +3180,66 @@ function ProfileScreen() {
     () => ({ paddingBottom: bottomContentPadding }),
     [bottomContentPadding],
   );
+  const profileListHeaderComponentStyle = useMemo(
+    () => ({ marginBottom: -profileHeaderHeight }),
+    [profileHeaderHeight],
+  );
+  const profileMediaSheetBackdropAnimatedStyle = useMemo(
+    () => ({
+      opacity: profileMediaSheetProgress,
+    }),
+    [profileMediaSheetProgress],
+  );
+  const profileMediaSheetAnimatedStyle = useMemo(
+    () => ({
+      opacity: profileMediaSheetProgress,
+      transform: [
+        {
+          translateY: profileMediaSheetProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [28, 0],
+            extrapolate: 'clamp',
+          }),
+        },
+        {
+          scale: profileMediaSheetProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.98, 1],
+            extrapolate: 'clamp',
+          }),
+        },
+      ],
+    }),
+    [profileMediaSheetProgress],
+  );
+  const activitiesSheetBackdropAnimatedStyle = useMemo(
+    () => ({
+      opacity: activitiesSheetProgress,
+    }),
+    [activitiesSheetProgress],
+  );
+  const activitiesSheetAnimatedStyle = useMemo(
+    () => ({
+      opacity: activitiesSheetProgress,
+      transform: [
+        {
+          translateY: activitiesSheetProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [34, 0],
+            extrapolate: 'clamp',
+          }),
+        },
+        {
+          scale: activitiesSheetProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.985, 1],
+            extrapolate: 'clamp',
+          }),
+        },
+      ],
+    }),
+    [activitiesSheetProgress],
+  );
 
   const renderProfilePostContent = useCallback((post: ProfileFeedPost) => {
     if (post.kind === 'video') {
@@ -3157,10 +3343,6 @@ function ProfileScreen() {
     [],
   );
 
-  if (isLoading && !profile) {
-    return <FullProfileSkeleton />;
-  }
-
   const profileContentHeader = (
     <>
           {/* Cover Photo */}
@@ -3227,15 +3409,8 @@ function ProfileScreen() {
                             x2="1"
                             y2="1"
                           >
-                            {userStory.hasUnseen
-                              ? [
-                                  <Stop key="s1" offset="0%" stopColor="#0EA5E9" />,
-                                  <Stop key="s2" offset="100%" stopColor="#A855F7" />,
-                                ]
-                              : [
-                                  <Stop key="s1" offset="0%" stopColor="#CBD5E1" />,
-                                  <Stop key="s2" offset="100%" stopColor="#94A3B8" />,
-                                ]}
+                            <Stop offset="0%" stopColor="#1877F2" />
+                            <Stop offset="100%" stopColor="#42A5F5" />
                           </SvgLinearGradient>
                         </Defs>
                         <Circle
@@ -3550,10 +3725,9 @@ function ProfileScreen() {
                         }}
                         onPress={handleOpenStory}
                       >
-                        <Image
-                          source={{ uri: storyPreviewUrl }}
-                          style={{ width: '100%', height: '100%' }}
-                          resizeMode="cover"
+                        <ProfileStoryCover
+                          story={userStory}
+                          fallbackUri={avatarUrl || FALLBACK_AVATAR}
                         />
                         <View style={profileStoryStyles.overlay} />
                         {userStory.hasUnseen && (
@@ -3601,10 +3775,9 @@ function ProfileScreen() {
                         }}
                         onPress={() => handleOpenFriendStory(story)}
                       >
-                        <Image
-                          source={{ uri: getStoryPreviewUrl(story, story.publisher.avatarUrl || FALLBACK_AVATAR) }}
-                          style={{ width: '100%', height: '100%' }}
-                          resizeMode="cover"
+                        <ProfileStoryCover
+                          story={story}
+                          fallbackUri={story.publisher.avatarUrl || FALLBACK_AVATAR}
                         />
                         <View style={profileStoryStyles.overlay} />
                         {story.hasUnseen && (
@@ -3965,12 +4138,13 @@ function ProfileScreen() {
       getItemType={profileListItemType}
       renderItem={renderProfileListItem}
       ListHeaderComponent={profileContentHeader}
+      ListHeaderComponentStyle={profileListHeaderComponentStyle}
       ListFooterComponent={profilePostsFooterComponent}
       stickyHeaderIndices={[0]}
       stickyHeaderConfig={{
         offset: profileHeaderHeight,
         useNativeDriver: true,
-        hideRelatedCell: true,
+        hideRelatedCell: false,
       }}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={profilePostsListContentStyle}
@@ -4000,12 +4174,16 @@ function ProfileScreen() {
           paddingTop: safeTopInset + 8,
           height: profileHeaderHeight,
         },
-        isProfileHeaderSolid
-          ? profileMainStyles.headerOverlaySolid
-          : profileMainStyles.headerOverlayTransparent,
       ]}
       pointerEvents="box-none"
     >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          profileMainStyles.headerOverlaySolidBackdrop,
+          { opacity: profileHeaderSolidProgress },
+        ]}
+      />
       <TouchableOpacity
         style={[
           profileMainStyles.circleButton,
@@ -4034,12 +4212,17 @@ function ProfileScreen() {
             isProfileHeaderSolid && profileMainStyles.circleButtonOnSolidHeader,
           ]}
           activeOpacity={0.8}
+          onPress={handleOpenProfileMore}
         >
           <MoreHorizontal size={18} color="#050505" />
         </TouchableOpacity>
       </View>
     </View>
   );
+
+  if (isLoading && !profile) {
+    return <FullProfileSkeleton />;
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -4070,20 +4253,28 @@ function ProfileScreen() {
         <Modal
           visible={!!profileMediaSheet}
           transparent
-          animationType="fade"
+          animationType="none"
           statusBarTranslucent
           onRequestClose={handleCloseProfileMediaSheet}
         >
           <View style={profileMainStyles.mediaSheetRoot}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                profileMainStyles.mediaSheetBackdrop,
+                profileMediaSheetBackdropAnimatedStyle,
+              ]}
+            />
             <TouchableOpacity
               activeOpacity={1}
               onPress={handleCloseProfileMediaSheet}
               style={StyleSheet.absoluteFill}
             />
-            <View
+            <Animated.View
               style={[
                 profileMainStyles.mediaSheet,
                 { paddingBottom: Math.max(insets.bottom, 16) },
+                profileMediaSheetAnimatedStyle,
               ]}
             >
               <View style={profileMainStyles.mediaSheetHandle} />
@@ -4109,6 +4300,28 @@ function ProfileScreen() {
                   </Text>
                 </View>
               </View>
+
+              {profileMediaSheet === 'avatar' && userStory ? (
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  onPress={handleViewStoryFromMediaSheet}
+                  style={profileMainStyles.mediaActionRow}
+                >
+                  <View style={[profileMainStyles.mediaActionIcon, { backgroundColor: '#EFF6FF' }]}>
+                    <Sparkles size={19} color="#2563EB" />
+                  </View>
+                  <View style={profileMainStyles.mediaActionContent}>
+                    <Text style={profileMainStyles.mediaActionLabel}>
+                      {copy.viewStory}
+                    </Text>
+                    <Text style={profileMainStyles.mediaActionHint}>
+                      {language === 'vi'
+                        ? 'Mở tin đang hoạt động của bạn'
+                        : 'Open your active story'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
 
               <TouchableOpacity
                 activeOpacity={0.82}
@@ -4193,7 +4406,7 @@ function ProfileScreen() {
                   {copy.sheetCancel}
                 </Text>
               </TouchableOpacity>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
         <StoryOptionsSheet
@@ -4285,20 +4498,28 @@ function ProfileScreen() {
         <Modal
           visible={isActivitiesSheetVisible}
           transparent
-          animationType="fade"
+          animationType="none"
           statusBarTranslucent
           onRequestClose={handleCloseActivities}
         >
           <View style={profileMainStyles.activitiesModalRoot}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                profileMainStyles.activitiesBackdrop,
+                activitiesSheetBackdropAnimatedStyle,
+              ]}
+            />
             <TouchableOpacity
               activeOpacity={1}
               onPress={handleCloseActivities}
               style={StyleSheet.absoluteFill}
             />
-            <View
+            <Animated.View
               style={[
                 profileMainStyles.activitiesSheet,
                 { paddingBottom: Math.max(insets.bottom, 16) },
+                activitiesSheetAnimatedStyle,
               ]}
             >
               <View style={profileMainStyles.activitiesHandle} />
@@ -4367,7 +4588,11 @@ function ProfileScreen() {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={profileMainStyles.activitiesListContent}
               >
-                {profileActivityItems.length > 0 ? (
+                {!shouldRenderActivitiesList ? (
+                  <View style={profileMainStyles.activitiesOpeningState}>
+                    <ActivityIndicator size="small" color="#1877F2" />
+                  </View>
+                ) : profileActivityItems.length > 0 ? (
                   profileActivityItems.map(item => {
                     const ActivityIcon = item.Icon;
                     return (
@@ -4410,7 +4635,7 @@ function ProfileScreen() {
                   </View>
                 )}
               </ScrollView>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
         <ToastContainer />
@@ -4444,21 +4669,15 @@ const profileMainStyles = StyleSheet.create({
     paddingHorizontal: 16,
     zIndex: 30,
   },
-  headerOverlayTransparent: {
-    backgroundColor: 'transparent',
-    borderBottomWidth: 0,
-    borderBottomColor: 'transparent',
-    elevation: 0,
-  },
-  headerOverlaySolid: {
+  headerOverlaySolidBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E4E6EB',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 12,
   },
   circleButton: {
     width: 36,
@@ -4779,6 +4998,13 @@ const profileMainStyles = StyleSheet.create({
   mediaSheetRoot: {
     flex: 1,
     justifyContent: 'flex-end',
+  },
+  mediaSheetBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: 'rgba(15, 23, 42, 0.42)',
   },
   mediaSheet: {
@@ -4882,6 +5108,13 @@ const profileMainStyles = StyleSheet.create({
   activitiesModalRoot: {
     flex: 1,
     justifyContent: 'flex-end',
+  },
+  activitiesBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: 'rgba(15, 23, 42, 0.44)',
   },
   activitiesSheet: {
@@ -4979,6 +5212,11 @@ const profileMainStyles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
     gap: 10,
+  },
+  activitiesOpeningState: {
+    minHeight: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   activityRow: {
     flexDirection: 'row',

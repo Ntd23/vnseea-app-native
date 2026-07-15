@@ -26,6 +26,7 @@ const SCREENS_WITHOUT_DEFAULT_ANIMATION: ReadonlySet<string> = new Set([
 
 const TRANSPARENT_MODAL_ROUTES: ReadonlySet<string> = new Set([
   ROUTES.CREATE_POST,
+  ROUTES.STORY_VIEWER,
 ]);
 
 const PROFILE_PUSH_ROUTES: ReadonlySet<string> = new Set([
@@ -37,6 +38,13 @@ const PROFILE_PUSH_OPTIONS: NativeStackNavigationOptions = {
   animation: 'ios_from_right',
   animationTypeForReplace: 'push',
   gestureEnabled: true,
+};
+
+const PROFILE_MORE_OPTIONS: NativeStackNavigationOptions = {
+  presentation: 'transparentModal',
+  animation: 'none',
+  contentStyle: { backgroundColor: 'transparent' },
+  gestureEnabled: false,
 };
 
 function AppNavigator() {
@@ -95,6 +103,16 @@ function AppNavigator() {
                 name={name}
                 component={component}
                 options={PROFILE_PUSH_OPTIONS}
+              />
+            );
+          }
+          if (name === ROUTES.PROFILE_MORE) {
+            return (
+              <Stack.Screen
+                key={name}
+                name={name}
+                component={component}
+                options={PROFILE_MORE_OPTIONS}
               />
             );
           }

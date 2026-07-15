@@ -65,6 +65,7 @@ import {
   AvatarViewerScreen,
   CoverViewerScreen,
   ProfileFriendsScreen,
+  ProfileMoreScreen,
   ProfileScreen,
 } from '../profile';
 import { AlbumsScreen, CreateAlbumScreen, MyPhotosScreen } from '../photos';
@@ -199,6 +200,7 @@ export function createStackRoutes(
     { name: ROUTES.POST_DETAIL, component: PostDetailScreen },
     { name: ROUTES.PROFILE, component: ProfileScreen },
     { name: ROUTES.USER_PROFILE, component: ProfileScreen },
+    { name: ROUTES.PROFILE_MORE, component: ProfileMoreScreen },
     { name: ROUTES.PROFILE_FRIENDS, component: ProfileFriendsScreen },
     { name: ROUTES.MY_PHOTOS, component: MyPhotosScreen },
     { name: ROUTES.ALBUMS, component: AlbumsScreen },

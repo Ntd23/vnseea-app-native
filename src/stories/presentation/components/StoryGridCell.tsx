@@ -3,6 +3,7 @@ import { Image, Text, Pressable, View } from 'react-native';
 import { Play } from 'lucide-react-native';
 import type { StoriesListRow } from '../../application/view-models/useStoriesListViewModel';
 import { formatStoriesRelativeTime, type StoriesCopy } from '../../application/i18n/storiesCopy';
+import { useStoryCoverImageUri } from '../hooks/useStoryCoverImageUri';
 
 interface StoryGridCellProps {
   row: StoriesListRow;
@@ -17,6 +18,10 @@ function StoryGridCellImpl({ row, copy, onPress }: StoryGridCellProps) {
   );
 
   const showVideoBadge = row.isVideo;
+  const coverImageUri = useStoryCoverImageUri({
+    segment: row.segment,
+    fallbackUri: row.coverUrl || row.publisher.avatarUrl,
+  });
 
   return (
     <Pressable
@@ -44,9 +49,9 @@ function StoryGridCellImpl({ row, copy, onPress }: StoryGridCellProps) {
           }}
         >
           {/* Cover Media or Premium Mesh Gradient Fallback */}
-          {row.coverUrl ? (
+          {coverImageUri ? (
             <Image
-              source={{ uri: row.coverUrl }}
+              source={{ uri: coverImageUri }}
               style={{ width: '100%', height: '100%', position: 'absolute' }}
               resizeMode="cover"
             />

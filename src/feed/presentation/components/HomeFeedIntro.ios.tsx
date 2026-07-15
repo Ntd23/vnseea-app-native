@@ -26,6 +26,8 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import type { StoryItem } from '../../../stories/domain/types/stories.types';
+import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
 import AdaptiveGlassSurface from '../../../shared-kernel/presentation/components/AdaptiveGlassSurface';
 import {
   getHomeGreetingModel,
@@ -90,6 +92,22 @@ function HomeAvatar({
         fadeDuration={0}
       />
     </View>
+  );
+}
+
+function StoryCardCover({ story }: { story: StoryItem }) {
+  const coverUri = useStoryCoverImageUri({
+    story,
+    fallbackUri: story.publisher.avatarUrl ?? HOME_INTRO_FALLBACK_AVATAR,
+  });
+
+  return (
+    <Image
+      source={{ uri: coverUri || HOME_INTRO_FALLBACK_AVATAR }}
+      style={StyleSheet.absoluteFill}
+      resizeMode="cover"
+      fadeDuration={0}
+    />
   );
 }
 
@@ -282,10 +300,6 @@ function HomeStoriesRail({
 
         {stories.map((story, index) => {
           const hasUnseen = story.hasUnseen && !story.isViewed;
-          const thumbnail =
-            story.thumbnailUrl ??
-            story.publisher.avatarUrl ??
-            HOME_INTRO_FALLBACK_AVATAR;
 
           return (
             <TouchableOpacity
@@ -294,18 +308,16 @@ function HomeStoriesRail({
               onPress={() => goToViewerForGroup(index)}
               style={[
                 styles.storyCard,
-                hasUnseen ? styles.storyCardUnseen : styles.storyCardViewed,
+                hasUnseen ? null : styles.storyCardViewed,
               ]}
             >
-              <Image
-                source={{ uri: thumbnail }}
-                style={StyleSheet.absoluteFill}
-                resizeMode="cover"
-                fadeDuration={0}
-              />
+              <StoryCardCover story={story} />
               <View style={styles.storyImageOverlay} />
+              {hasUnseen ? (
+                <View pointerEvents="none" style={styles.storyCardUnseenRing} />
+              ) : null}
               <View style={styles.storyAvatarPosition}>
-                <HomeAvatar uri={story.publisher.avatarUrl} size={32} />
+                <HomeAvatar uri={story.publisher.avatarUrl} size={34} />
               </View>
               {story.media.length > 1 ? (
                 <View style={styles.storyCountBadge}>
@@ -492,11 +504,12 @@ const styles = StyleSheet.create({
   },
   storiesContent: {
     paddingHorizontal: 14,
-    columnGap: 10,
+    columnGap: 11,
+    alignItems: 'stretch',
   },
   storyCard: {
-    width: 106,
-    height: 166,
+    width: 116,
+    height: 190,
     overflow: 'hidden',
     borderRadius: 24,
     backgroundColor: '#e2e8f0',
@@ -511,7 +524,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
   },
   createStoryCover: {
-    height: 94,
+    height: 116,
     overflow: 'visible',
   },
   createStoryPlusAnchor: {
@@ -566,12 +579,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  storyCardUnseen: {
-    borderWidth: 2,
-    borderColor: '#0872ff',
-  },
   storyCardViewed: {
     opacity: 0.72,
+  },
+  storyCardUnseenRing: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderWidth: 2,
+    borderColor: '#0872ff',
+    borderRadius: 24,
   },
   storyImageOverlay: {
     position: 'absolute',
@@ -583,11 +602,11 @@ const styles = StyleSheet.create({
   },
   storyCountBadge: {
     position: 'absolute',
-    left: 29,
-    top: 30,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    left: 33,
+    top: 32,
+    minWidth: 19,
+    height: 19,
+    borderRadius: 9.5,
     backgroundColor: '#0872ff',
     alignItems: 'center',
     justifyContent: 'center',
@@ -595,8 +614,8 @@ const styles = StyleSheet.create({
   },
   storyAvatarPosition: {
     position: 'absolute',
-    left: 9,
-    top: 9,
+    left: 10,
+    top: 10,
   },
   storyCountText: {
     color: '#ffffff',
@@ -605,11 +624,11 @@ const styles = StyleSheet.create({
   },
   storyName: {
     position: 'absolute',
-    left: 9,
-    right: 9,
-    bottom: 10,
+    left: 11,
+    right: 11,
+    bottom: 12,
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '900',
     textShadowColor: 'rgba(0, 0, 0, 0.42)',
     textShadowOffset: { width: 0, height: 1 },
