@@ -57,6 +57,11 @@ import {
   prepareIosCallAudioGate,
   releaseIosCallAudio,
 } from '../livekit/iosCallAudioLifecycle';
+import {
+  areGroupParticipantListsEqual,
+  mergeGroupParticipantMetadata,
+  reconcileLiveKitParticipants,
+} from '../livekit/groupCallParticipantState';
 import { createRemoteTrackSubscriptionCoordinator } from '../livekit/remoteTrackSubscriptionCoordinator';
 
 type GroupCallPhase =
@@ -65,6 +70,13 @@ type GroupCallPhase =
   | 'connected'
   | 'ended'
   | 'error';
+type GroupCallFinishReason =
+  | 'local_control'
+  | 'native_end'
+  | 'realtime_closed'
+  | 'sync_inactive'
+  | 'connect_failure'
+  | 'provider_unmount';
 type AudioOutputId = 'speaker' | 'earpiece' | 'default' | 'force_speaker';
 
 type GroupLiveKitCallSession = {
@@ -112,7 +124,7 @@ type GroupLiveKitCallSessionContextValue = {
   ensureSessionFromRoute: (params: GroupLiveKitCallRouteParams) => void;
   minimizeCall: () => void;
   restoreCallRoom: () => void;
-  leaveCall: () => Promise<void>;
+  leaveCall: (reason?: GroupCallFinishReason) => Promise<void>;
   declineIncomingGroupCall: (call: IncomingGroupLiveKitCall) => Promise<void>;
   toggleMic: () => Promise<void>;
   toggleCamera: () => Promise<void>;
@@ -126,8 +138,9 @@ const GROUP_SYNC_INTERVAL_MS = 3_000;
 const LIVEKIT_ROOM_OPTIONS = {
   adaptiveStream: { pixelDensity: 'screen' },
   dynacast: true,
+  singlePeerConnection: false,
 } as const;
-const LIVEKIT_CONNECT_OPTIONS = { autoSubscribe: false } as const;
+const LIVEKIT_CONNECT_OPTIONS = { autoSubscribe: true } as const;
 const CALL_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 
 const GroupLiveKitCallSessionContext =
@@ -217,6 +230,53 @@ function logGroupCallDebug(
     CALL_DEBUG_PREFIX,
     JSON.stringify({ event, at: new Date().toISOString(), ...data }),
   );
+}
+
+type GroupCameraMediaTrack = {
+  mediaStream?: {
+    toURL?: () => string;
+  };
+};
+
+function getGroupLocalCameraState(room: Room | null) {
+  const publication = room?.localParticipant.getTrackPublication(
+    Track.Source.Camera,
+  );
+  const track = publication?.track as GroupCameraMediaTrack | undefined;
+  let mediaStreamUrl = '';
+  try {
+    mediaStreamUrl = track?.mediaStream?.toURL?.() ?? '';
+  } catch {
+    mediaStreamUrl = '';
+  }
+
+  return {
+    trackSid: publication?.trackSid ?? '',
+    hasTrack: Boolean(track),
+    hasMediaStream: Boolean(mediaStreamUrl),
+    isMuted: publication?.isMuted ?? true,
+  };
+}
+
+function logGroupSessionFinishRequested(
+  reason: GroupCallFinishReason,
+  session: GroupLiveKitCallSession | null,
+  room: Room | null,
+) {
+  const localCamera = getGroupLocalCameraState(room);
+  logGroupCallDebug('group_session_finish_requested', {
+    reason,
+    callId: session?.callId ?? '',
+    callUuid: session?.nativeCallUuid ?? '',
+    phase: session?.phase ?? 'none',
+    roomConnectionState: room?.state ?? ConnectionState.Disconnected,
+    localParticipantCount: room ? 1 : 0,
+    remoteParticipantCount: room?.remoteParticipants.size ?? 0,
+    localCameraTrackSid: localCamera.trackSid,
+    localCameraHasTrack: localCamera.hasTrack,
+    localCameraHasMediaStream: localCamera.hasMediaStream,
+    localCameraMuted: localCamera.isMuted,
+  });
 }
 
 type GroupStatsTrack = {
@@ -447,6 +507,53 @@ function parseParticipantMetadata(participant: Participant) {
   }
 }
 
+function buildLiveKitRoomParticipants(
+  localParticipant: Participant,
+  remoteParticipants: readonly Participant[],
+  currentUserId: string,
+  localMediaState?: {
+    isMicrophoneEnabled: boolean;
+    isCameraEnabled: boolean;
+  },
+): GroupLiveKitParticipant[] {
+  const toGroupParticipant = (
+    participant: Participant,
+    isLocal: boolean,
+  ): GroupLiveKitParticipant => {
+    const metadata = parseParticipantMetadata(participant);
+    const microphonePublication = participant.getTrackPublication(
+      Track.Source.Microphone,
+    );
+    const cameraPublication = participant.getTrackPublication(
+      Track.Source.Camera,
+    );
+
+    return {
+      id: isLocal ? currentUserId || metadata.id : metadata.id,
+      name: metadata.name,
+      avatar: metadata.avatar,
+      username: metadata.username,
+      joinedAt: 0,
+      isLocal,
+      isMicrophoneMuted:
+        isLocal && localMediaState
+          ? !localMediaState.isMicrophoneEnabled
+          : !microphonePublication || microphonePublication.isMuted,
+      isCameraMuted:
+        isLocal && localMediaState
+          ? !localMediaState.isCameraEnabled
+          : !cameraPublication || cameraPublication.isMuted,
+    };
+  };
+
+  return [
+    toGroupParticipant(localParticipant, true),
+    ...remoteParticipants.map(participant =>
+      toGroupParticipant(participant, false),
+    ),
+  ];
+}
+
 function mergeParticipants(
   current: GroupLiveKitParticipant[],
   patches: GroupLiveKitParticipant[],
@@ -520,38 +627,12 @@ function GroupLiveKitMediaBridge({
   const remoteParticipants = useRemoteParticipants();
 
   const publishParticipantMedia = useCallback(() => {
-    const items: GroupLiveKitParticipant[] = [];
-    const localMeta = parseParticipantMetadata(localParticipant);
-    items.push({
-      id: currentUserId || localMeta.id,
-      name: localMeta.name,
-      avatar: localMeta.avatar,
-      username: localMeta.username,
-      joinedAt: 0,
-      isLocal: true,
-      isMicrophoneMuted: !isMicrophoneEnabled,
-      isCameraMuted: !isCameraEnabled,
-    });
-
-    remoteParticipants.forEach(participant => {
-      const meta = parseParticipantMetadata(participant);
-      const microphonePublication = participant.getTrackPublication(
-        Track.Source.Microphone,
-      );
-      const cameraPublication = participant.getTrackPublication(
-        Track.Source.Camera,
-      );
-      items.push({
-        id: meta.id,
-        name: meta.name,
-        avatar: meta.avatar,
-        username: meta.username,
-        joinedAt: 0,
-        isMicrophoneMuted:
-          !microphonePublication || microphonePublication.isMuted,
-        isCameraMuted: !cameraPublication || cameraPublication.isMuted,
-      });
-    });
+    const items = buildLiveKitRoomParticipants(
+      localParticipant,
+      remoteParticipants,
+      currentUserId,
+      { isMicrophoneEnabled, isCameraEnabled },
+    );
 
     onParticipants(items);
     onMediaState({
@@ -737,7 +818,17 @@ export function GroupLiveKitCallSessionProvider({
   const patchSession = useCallback(
     (patch: Partial<GroupLiveKitCallSession>) => {
       setSession(current => {
-        const next = current ? { ...current, ...patch } : current;
+        if (!current) {
+          sessionRef.current = current;
+          return current;
+        }
+        const hasChanges = Object.entries(patch).some(
+          ([key, value]) =>
+            current[key as keyof GroupLiveKitCallSession] !== value,
+        );
+        if (!hasChanges) return current;
+
+        const next = { ...current, ...patch };
         sessionRef.current = next;
         return next;
       });
@@ -752,48 +843,66 @@ export function GroupLiveKitCallSessionProvider({
           sessionRef.current = current;
           return current;
         }
-        const currentById = new Map(
-          current.participants.map(item => [item.id, item]),
+        const reconciledParticipants = reconcileLiveKitParticipants(
+          current.participants,
+          participants,
         );
+        if (
+          areGroupParticipantListsEqual(
+            current.participants,
+            reconciledParticipants,
+          )
+        ) {
+          return current;
+        }
         const next = {
           ...current,
-          // The media bridge is authoritative for who is currently in the
-          // LiveKit room. Replacing this list removes disconnected tiles.
-          participants: participants.map(item => ({
-            ...currentById.get(item.id),
-            ...item,
-          })),
+          participants: reconciledParticipants,
         };
         sessionRef.current = next;
+        logGroupCallDebug('group_participant_media_state_changed', {
+          callId: current.callId,
+          participants: reconciledParticipants.map(item => ({
+            id: item.id,
+            isLocal: Boolean(item.isLocal),
+            microphoneMuted: Boolean(item.isMicrophoneMuted),
+            cameraMuted: Boolean(item.isCameraMuted),
+          })),
+        });
         return next;
       });
     },
     [],
   );
 
-  const replaceServerParticipants = useCallback(
+  const mergeServerParticipantMetadata = useCallback(
     (participants: GroupLiveKitParticipant[]) => {
       setSession(current => {
         if (!current) {
           sessionRef.current = current;
           return current;
         }
-        const currentById = new Map(
-          current.participants.map(item => [item.id, item]),
+        const mergedParticipants = mergeGroupParticipantMetadata(
+          current.participants,
+          participants,
         );
+        if (
+          areGroupParticipantListsEqual(
+            current.participants,
+            mergedParticipants,
+          )
+        ) {
+          return current;
+        }
         const next = {
           ...current,
-          participants: participants.map(item => {
-            const currentItem = currentById.get(item.id);
-            return {
-              ...item,
-              isLocal: currentItem?.isLocal,
-              isMicrophoneMuted: currentItem?.isMicrophoneMuted,
-              isCameraMuted: currentItem?.isCameraMuted,
-            };
-          }),
+          participants: mergedParticipants,
         };
         sessionRef.current = next;
+        logGroupCallDebug('group_server_metadata_merged', {
+          callId: current.callId,
+          participantIds: mergedParticipants.map(item => item.id),
+        });
         return next;
       });
     },
@@ -812,8 +921,16 @@ export function GroupLiveKitCallSessionProvider({
   }, []);
 
   const finishSession = useCallback(
-    (patch?: Partial<GroupLiveKitCallSession>) => {
+    (
+      reason: GroupCallFinishReason,
+      patch?: Partial<GroupLiveKitCallSession>,
+    ) => {
       const current = sessionRef.current;
+      logGroupSessionFinishRequested(
+        reason,
+        current,
+        activeRoomRef.current,
+      );
       const isIosNativeCall =
         Platform.OS === 'ios' && usesNativeCallUi(current?.nativeCallUuid);
       if (isIosNativeCall && current?.nativeCallUuid) {
@@ -860,6 +977,11 @@ export function GroupLiveKitCallSessionProvider({
 
   const cleanupFailedGroupCallStart = useCallback(() => {
     const current = sessionRef.current;
+    logGroupSessionFinishRequested(
+      'connect_failure',
+      current,
+      activeRoomRef.current,
+    );
     const isIosCall = Platform.OS === 'ios';
     if (isIosCall && current?.nativeCallUuid) {
       endNativeCall(current.nativeCallUuid);
@@ -951,8 +1073,9 @@ export function GroupLiveKitCallSessionProvider({
       const subscriptionCoordinator =
         createRemoteTrackSubscriptionCoordinator({
           room: nextRoom,
+          autoSubscribe: LIVEKIT_CONNECT_OPTIONS.autoSubscribe,
           sources: [Track.Source.Microphone, Track.Source.Camera],
-          timeoutMs: 2_000,
+          timeoutMs: 3_000,
           log: (event, context) => {
             logGroupCallDebug(event, {
               callId,
@@ -996,7 +1119,6 @@ export function GroupLiveKitCallSessionProvider({
       };
 
       activeRoomRef.current = nextRoom;
-      setActiveRoom(nextRoom);
       const elapsedSeconds = resolveGroupElapsedSeconds({
         elapsedSeconds: payload.elapsedSeconds,
         elapsedMs: payload.elapsedMs,
@@ -1043,9 +1165,10 @@ export function GroupLiveKitCallSessionProvider({
           callId,
           callUuid,
           roomName: payload.call.roomName,
-          autoSubscribe: false,
-          adaptiveStream: true,
-          dynacast: true,
+          autoSubscribe: LIVEKIT_CONNECT_OPTIONS.autoSubscribe,
+          adaptiveStream: LIVEKIT_ROOM_OPTIONS.adaptiveStream,
+          dynacast: LIVEKIT_ROOM_OPTIONS.dynacast,
+          singlePeerConnection: LIVEKIT_ROOM_OPTIONS.singlePeerConnection,
         });
         await nextRoom.connect(
           payload.wsUrl,
@@ -1068,13 +1191,38 @@ export function GroupLiveKitCallSessionProvider({
               });
             });
         }
+        const localCameraState = getGroupLocalCameraState(nextRoom);
+        logGroupCallDebug(
+          cameraEnabled && localCameraState.hasMediaStream
+            ? 'group_local_camera_ready'
+            : 'group_local_camera_not_ready',
+          {
+            callId,
+            cameraPermissionGranted: cameraGranted,
+            cameraEnabled,
+            trackSid: localCameraState.trackSid,
+            hasTrack: localCameraState.hasTrack,
+            hasMediaStream: localCameraState.hasMediaStream,
+            isMuted: localCameraState.isMuted,
+          },
+        );
         stopMediaStatsProbe = startGroupMediaStatsProbe(nextRoom, callId);
         patchSession({
           phase: 'connected',
+          participants: buildLiveKitRoomParticipants(
+            nextRoom.localParticipant,
+            Array.from(nextRoom.remoteParticipants.values()),
+            payload.currentUser.id,
+            {
+              isMicrophoneEnabled: true,
+              isCameraEnabled: cameraEnabled,
+            },
+          ),
           isLocalMicrophoneEnabled: true,
           isLocalCameraEnabled: cameraEnabled,
           hasCameraPermission: cameraGranted,
         });
+        setActiveRoom(nextRoom);
       } catch (caught) {
         disconnectActiveRoom();
         throw caught;
@@ -1258,21 +1406,24 @@ export function GroupLiveKitCallSessionProvider({
     });
   }, [patchSession]);
 
-  const leaveCall = useCallback(async () => {
-    const current = sessionRef.current;
-    if (!current) {
-      finishSession();
-      return;
-    }
-    if (!leaveSentRef.current && current.callId) {
-      leaveSentRef.current = true;
-      await repository
-        .leaveCall({ callId: current.callId })
-        .catch(() => undefined);
-      joinedCallIdRef.current = '';
-    }
-    finishSession();
-  }, [finishSession, repository]);
+  const leaveCall = useCallback(
+    async (reason: GroupCallFinishReason = 'local_control') => {
+      const current = sessionRef.current;
+      if (!current) {
+        finishSession(reason);
+        return;
+      }
+      if (!leaveSentRef.current && current.callId) {
+        leaveSentRef.current = true;
+        await repository
+          .leaveCall({ callId: current.callId })
+          .catch(() => undefined);
+        joinedCallIdRef.current = '';
+      }
+      finishSession(reason);
+    },
+    [finishSession, repository],
+  );
 
   const declineIncomingGroupCall = useCallback(
     async (call: IncomingGroupLiveKitCall) => {
@@ -1338,7 +1489,7 @@ export function GroupLiveKitCallSessionProvider({
         patchSession({ group: event.group });
       }
       if (event.participants.length > 0) {
-        replaceServerParticipants(event.participants);
+        mergeServerParticipantMetadata(event.participants);
       }
       const elapsedSeconds = resolveGroupElapsedSeconds(event);
       if (elapsedSeconds >= 0) {
@@ -1353,14 +1504,14 @@ export function GroupLiveKitCallSessionProvider({
     const cleanupClosed = onLiveKitGroupCallClosed(event => {
       const current = sessionRef.current;
       if (!current || current.callId !== event.callId) return;
-      finishSession();
+      finishSession('realtime_closed');
     });
 
     return () => {
       cleanupSync();
       cleanupClosed();
     };
-  }, [finishSession, patchSession, replaceServerParticipants]);
+  }, [finishSession, mergeServerParticipantMetadata, patchSession]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1383,17 +1534,17 @@ export function GroupLiveKitCallSessionProvider({
         .catch(() => null);
       if (!result) return;
       if (result.call.status !== 'active') {
-        finishSession();
+        finishSession('sync_inactive');
         return;
       }
       patchSession({
         group: result.group,
       });
-      replaceServerParticipants(result.participants);
+      mergeServerParticipantMetadata(result.participants);
     }, GROUP_SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [finishSession, patchSession, replaceServerParticipants, repository]);
+  }, [finishSession, mergeServerParticipantMetadata, patchSession, repository]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
@@ -1415,6 +1566,11 @@ export function GroupLiveKitCallSessionProvider({
   useEffect(() => {
     return () => {
       const current = sessionRef.current;
+      logGroupSessionFinishRequested(
+        'provider_unmount',
+        current,
+        activeRoomRef.current,
+      );
       const isIosNativeCall =
         Platform.OS === 'ios' && usesNativeCallUi(current?.nativeCallUuid);
       if (isIosNativeCall && current?.nativeCallUuid) {
@@ -1503,4 +1659,8 @@ export function useGroupLiveKitCallSession() {
   return context;
 }
 
-export type { GroupCallPhase, GroupLiveKitCallSession };
+export type {
+  GroupCallFinishReason,
+  GroupCallPhase,
+  GroupLiveKitCallSession,
+};

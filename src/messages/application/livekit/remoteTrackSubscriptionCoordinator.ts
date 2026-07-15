@@ -23,6 +23,7 @@ type SubscriptionCallback = (context: RemoteTrackSubscriptionContext) => void;
 
 export type RemoteTrackSubscriptionCoordinatorOptions = {
   room: Room;
+  autoSubscribe: boolean;
   sources: readonly Track.Source[];
   timeoutMs?: number;
   log?: SubscriptionLog;
@@ -36,13 +37,14 @@ type PendingSubscription = RemoteTrackSubscriptionContext & {
   timeoutId: ReturnType<typeof setTimeout>;
 };
 
-const DEFAULT_SUBSCRIPTION_TIMEOUT_MS = 2_000;
+const DEFAULT_SUBSCRIPTION_TIMEOUT_MS = 3_000;
 
 export function createRemoteTrackSubscriptionCoordinator(
   options: RemoteTrackSubscriptionCoordinatorOptions,
 ) {
   const {
     room,
+    autoSubscribe,
     sources,
     timeoutMs = DEFAULT_SUBSCRIPTION_TIMEOUT_MS,
     log,
@@ -53,6 +55,7 @@ export function createRemoteTrackSubscriptionCoordinator(
   } = options;
   const allowedSources = new Set(sources);
   const pending = new Map<string, PendingSubscription>();
+  const subscribedTrackSids = new Set<string>();
   let started = false;
 
   const clearPending = (trackSid?: string) => {
@@ -64,6 +67,23 @@ export function createRemoteTrackSubscriptionCoordinator(
 
   const isReady = (publication: RemoteTrackPublication) =>
     publication.isSubscribed && Boolean(publication.track);
+
+  const markSubscribed = (
+    publication: RemoteTrackPublication,
+    participant: RemoteParticipant,
+  ) => {
+    const trackSid = publication.trackSid;
+    clearPending(trackSid);
+    if (!trackSid || subscribedTrackSids.has(trackSid)) return;
+    subscribedTrackSids.add(trackSid);
+    const context = {
+      publication,
+      participant,
+      retryAttempt: 0,
+    };
+    log?.('group_track_subscription_subscribed', context);
+    onSubscribed?.(context);
+  };
 
   const scheduleTimeout = (
     publication: RemoteTrackPublication,
@@ -83,13 +103,21 @@ export function createRemoteTrackSubscriptionCoordinator(
 
       if (retryAttempt === 0) {
         try {
-          publication.setSubscribed(false);
-          publication.setSubscribed(true);
           const retryContext = {
             ...context,
             retryAttempt: 1,
           };
-          log?.('group_track_subscription_retry', retryContext);
+          if (autoSubscribe) {
+            publication.setSubscribed(true);
+            log?.(
+              'group_track_subscription_recovery_requested',
+              retryContext,
+            );
+          } else {
+            publication.setSubscribed(false);
+            publication.setSubscribed(true);
+            log?.('group_track_subscription_retry', retryContext);
+          }
           onRetry?.(retryContext);
           scheduleTimeout(publication, participant, 1);
         } catch {
@@ -114,16 +142,24 @@ export function createRemoteTrackSubscriptionCoordinator(
     participant: RemoteParticipant,
   ) => {
     const trackSid = publication.trackSid;
-    if (
-      !trackSid ||
-      !allowedSources.has(publication.source) ||
-      isReady(publication) ||
-      pending.has(trackSid)
-    ) {
+    if (!trackSid || !allowedSources.has(publication.source)) {
       return;
     }
 
+    if (isReady(publication)) {
+      markSubscribed(publication, participant);
+      return;
+    }
+
+    if (pending.has(trackSid)) return;
+
     const context = { publication, participant, retryAttempt: 0 };
+    if (autoSubscribe) {
+      log?.('group_track_auto_subscribe_waiting', context);
+      scheduleTimeout(publication, participant, 0);
+      return;
+    }
+
     try {
       publication.setSubscribed(true);
       log?.('group_track_subscription_requested', context);
@@ -159,21 +195,30 @@ export function createRemoteTrackSubscriptionCoordinator(
     publication: RemoteTrackPublication,
     participant: RemoteParticipant,
   ) => {
-    clearPending(publication.trackSid);
-    const context = {
-      publication,
-      participant,
-      retryAttempt: 0,
-    };
-    log?.('group_track_subscription_subscribed', context);
-    onSubscribed?.(context);
+    markSubscribed(publication, participant);
   };
   const handleTrackUnsubscribed = (
     _track: RemoteTrack,
     publication: RemoteTrackPublication,
     participant: RemoteParticipant,
   ) => {
+    subscribedTrackSids.delete(publication.trackSid);
     request(publication, participant);
+  };
+  const handleTrackUnpublished = (
+    publication: RemoteTrackPublication,
+    _participant: RemoteParticipant,
+  ) => {
+    clearPending(publication.trackSid);
+    subscribedTrackSids.delete(publication.trackSid);
+  };
+  const handleParticipantDisconnected = (participant: RemoteParticipant) => {
+    Array.from(pending.entries()).forEach(([trackSid, current]) => {
+      if (current.participant.sid === participant.sid) clearPending(trackSid);
+    });
+    participant.trackPublications.forEach(publication => {
+      subscribedTrackSids.delete(publication.trackSid);
+    });
   };
   const handleSubscriptionFailed = (
     trackSid: string,
@@ -227,9 +272,11 @@ export function createRemoteTrackSubscriptionCoordinator(
     room
       .on(RoomEvent.Connected, requestExisting)
       .on(RoomEvent.ParticipantConnected, handleParticipantConnected)
+      .on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected)
       .on(RoomEvent.TrackPublished, handleTrackPublished)
       .on(RoomEvent.TrackSubscribed, handleTrackSubscribed)
       .on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed)
+      .on(RoomEvent.TrackUnpublished, handleTrackUnpublished)
       .on(RoomEvent.TrackSubscriptionFailed, handleSubscriptionFailed)
       .on(
         RoomEvent.TrackSubscriptionStatusChanged,
@@ -246,9 +293,11 @@ export function createRemoteTrackSubscriptionCoordinator(
       room
         .off(RoomEvent.Connected, requestExisting)
         .off(RoomEvent.ParticipantConnected, handleParticipantConnected)
+        .off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected)
         .off(RoomEvent.TrackPublished, handleTrackPublished)
         .off(RoomEvent.TrackSubscribed, handleTrackSubscribed)
         .off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed)
+        .off(RoomEvent.TrackUnpublished, handleTrackUnpublished)
         .off(RoomEvent.TrackSubscriptionFailed, handleSubscriptionFailed)
         .off(
           RoomEvent.TrackSubscriptionStatusChanged,
@@ -262,6 +311,7 @@ export function createRemoteTrackSubscriptionCoordinator(
     started = false;
     pending.forEach(item => clearTimeout(item.timeoutId));
     pending.clear();
+    subscribedTrackSids.clear();
   };
 
   return {

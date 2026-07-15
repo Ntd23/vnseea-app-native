@@ -446,7 +446,7 @@ export function useIncomingLiveKitCalls() {
         if (nativeCall?.context === 'group') {
           const activeGroupSession = groupSessionRef.current;
           if (activeGroupSession?.callId === nativeCall.callId) {
-            leaveCall().catch(() => undefined);
+            leaveCall('native_end').catch(() => undefined);
             return;
           }
           if (nativeCall.callId) {

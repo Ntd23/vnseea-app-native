@@ -41,7 +41,8 @@ describe('LiveKit group call video-only lifecycle', () => {
     expect(gateIndex).toBeGreaterThan(-1);
     expect(roomIndex).toBeGreaterThan(gateIndex);
     expect(connectIndex).toBeGreaterThan(roomIndex);
-    expect(source).toContain('autoSubscribe: false');
+    expect(source).toContain('singlePeerConnection: false');
+    expect(source).toContain('autoSubscribe: true');
   });
 
   it('uses the shared subscription coordinator for microphone and camera', () => {
@@ -53,12 +54,62 @@ describe('LiveKit group call video-only lifecycle', () => {
     );
 
     expect(source).toContain('createRemoteTrackSubscriptionCoordinator');
+    expect(source).toContain(
+      'autoSubscribe: LIVEKIT_CONNECT_OPTIONS.autoSubscribe',
+    );
     expect(source).toContain('Track.Source.Microphone');
     expect(source).toContain('Track.Source.Camera');
+    expect(coordinator).toContain('autoSubscribe: boolean');
+    expect(coordinator).toContain('group_track_auto_subscribe_waiting');
+    expect(coordinator).toContain(
+      'group_track_subscription_recovery_requested',
+    );
     expect(coordinator).toContain('group_track_subscription_requested');
     expect(coordinator).toContain('group_track_subscription_retry');
     expect(coordinator).toContain('group_track_subscription_terminal_failure');
     expect(source).not.toContain('AudioDeviceModule');
+  });
+
+  it('exposes the room to React only after initial local media setup', () => {
+    const source = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+    const connectIndex = source.indexOf('await nextRoom.connect(');
+    const microphoneIndex = source.indexOf(
+      'await nextRoom.localParticipant.setMicrophoneEnabled(true)',
+      connectIndex,
+    );
+    const cameraIndex = source.indexOf(
+      '.setCameraEnabled(true',
+      microphoneIndex,
+    );
+    const exposeRoomIndex = source.indexOf(
+      'setActiveRoom(nextRoom)',
+      connectIndex,
+    );
+
+    expect(connectIndex).toBeGreaterThan(-1);
+    expect(microphoneIndex).toBeGreaterThan(connectIndex);
+    expect(cameraIndex).toBeGreaterThan(microphoneIndex);
+    expect(exposeRoomIndex).toBeGreaterThan(cameraIndex);
+  });
+
+  it('keeps LiveKit as participant membership authority during server sync', () => {
+    const source = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+    const incomingSource = read(
+      'src/messages/application/view-models/useIncomingLiveKitCalls.ts',
+    );
+
+    expect(source).toContain('reconcileLiveKitParticipants');
+    expect(source).toContain('mergeGroupParticipantMetadata');
+    expect(source).not.toContain('replaceServerParticipants');
+    expect(source).toContain("finishSession('realtime_closed'");
+    expect(source).toContain("finishSession('sync_inactive'");
+    expect(source).toContain("'connect_failure'");
+    expect(source).toContain("'provider_unmount'");
+    expect(incomingSource).toContain("leaveCall('native_end')");
   });
 
   it('renders the gallery with official VideoTrack and facing-aware mirroring', () => {
@@ -73,6 +124,13 @@ describe('LiveKit group call video-only lifecycle', () => {
     expect(screen).not.toContain('RTCView');
     expect(screen).not.toContain('streamURL=');
     expect(screen).toContain("localCameraFacingMode === 'user'");
+    expect(screen).toContain('localCameraTracks');
+    expect(screen).toContain('remoteCameraPublications');
+    expect(screen).toContain('remoteSubscribedCameraTracks');
+    expect(screen).toContain('remoteRenderableCameraTracks');
+    expect(screen).toContain('getRenderableGroupCameraTrack');
+    expect(screen).toContain('getGroupCameraTrackRenderKey');
+    expect(screen).toContain('cameraRenderStateKey');
     expect(types).not.toContain('videoStreamUrl?: string');
     expect(types).not.toContain('videoRenderKey?: number');
   });
@@ -83,12 +141,13 @@ describe('LiveKit group call video-only lifecycle', () => {
     );
     const patchIndex = source.indexOf('const patchParticipants = useCallback');
     const patchEnd = source.indexOf(
-      'const replaceServerParticipants = useCallback',
+      'const mergeServerParticipantMetadata = useCallback',
       patchIndex,
     );
     const patchBlock = source.slice(patchIndex, patchEnd);
 
-    expect(patchBlock).toContain('participants: participants.map');
+    expect(patchBlock).toContain('reconcileLiveKitParticipants');
+    expect(patchBlock).toContain('participants: reconciledParticipants');
     expect(patchBlock).not.toContain('mergeParticipants(');
     expect(source).toContain('let cameraEnabled = false');
     expect(source).toContain('isLocalCameraEnabled: cameraEnabled');
