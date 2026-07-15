@@ -11,6 +11,24 @@ import type {
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { createFeedRepository } from '../../../feed';
 
+const LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
+
+function logLiveLifecycleDebug(
+  event: string,
+  data: Record<string, unknown> = {},
+) {
+  const payload = { event, at: new Date().toISOString(), ...data };
+  try {
+    console.log(LIVE_DEBUG_PREFIX, JSON.stringify(payload));
+  } catch {
+    console.log(LIVE_DEBUG_PREFIX, event, data);
+  }
+}
+
+function isMissingLivePostError(error: unknown) {
+  return error instanceof Error && error.message.includes('post not found');
+}
+
 
 function mergeComments(
   current: LiveStreamComment[],
@@ -148,7 +166,18 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
   const [error, setError] = useState<string | null>(null);
   const [liveSession, setLiveSession] = useState<LiveSession | null>(initialSession ?? null);
   const liveSessionRef = useRef<LiveSession | null>(initialSession ?? null);
+  const stateRef = useRef<LiveStreamState>('stale');
+  const activePostIdRef = useRef(postId);
+  const pendingLiveStateCheckRef = useRef<{
+    postId: number;
+    promise: Promise<LiveStreamState>;
+  } | null>(null);
   const seenReactionEventsRef = useRef(new Set<string>());
+
+  const updateLiveState = useCallback((nextState: LiveStreamState) => {
+    stateRef.current = nextState;
+    setState(nextState);
+  }, []);
 
   const currentUserProfile = useMemo(() => {
     return sessionStorage.getUserProfile();
@@ -156,8 +185,11 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
 
   const isHost = useMemo(() => {
     const userId = sessionStorage.getSession()?.userId;
-    return Boolean(userId && streamInfo?.publisher.id === userId);
-  }, [streamInfo?.publisher.id]);
+    return Boolean(
+      liveSession?.isHost ||
+      (userId && streamInfo?.publisher.id === userId),
+    );
+  }, [liveSession?.isHost, streamInfo?.publisher.id]);
 
   useEffect(() => {
     liveSessionRef.current = liveSession;
@@ -177,10 +209,15 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
   }, [initialSession, postId]);
 
   useEffect(() => {
+    activePostIdRef.current = postId;
+    pendingLiveStateCheckRef.current = null;
+    setStreamInfo(null);
+    setComments([]);
     seenReactionEventsRef.current.clear();
     setReactionEvents([]);
     setHasLoadedComments(false);
-  }, [postId]);
+    updateLiveState('stale');
+  }, [postId, updateLiveState]);
 
   const collectReactionEvents = useCallback(
     (events: LiveReactionEvent[] | undefined, shouldEmit: boolean) => {
@@ -212,31 +249,100 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
     setError(null);
     try {
       const stream = await repository.getLivePost(postId);
+      if (activePostIdRef.current !== postId) return;
       setStreamInfo(stream);
       if (stream) {
-        setState(stream.state);
+        updateLiveState(stream.state);
         const userId = sessionStorage.getSession()?.userId;
         const currentIsHost = Boolean(userId && stream.publisher.id === userId);
-        if (!liveSessionRef.current && !currentIsHost) {
+        if (
+          stream.state === 'live' &&
+          !liveSessionRef.current &&
+          !currentIsHost
+        ) {
           const session = await repository.joinLive(postId, stream.streamName);
+          if (activePostIdRef.current !== postId) return;
           liveSessionRef.current = session;
           setLiveSession(session);
         }
       } else {
         setError('Live này không còn hoạt động.');
+        updateLiveState('offline');
       }
     } catch (err: any) {
+      if (activePostIdRef.current !== postId) return;
       console.warn('[LiveRoom] load stream error:', err);
       if (err?.message?.includes('post not found')) {
         setError('Live này không còn hoạt động.');
-        setState('offline');
+        updateLiveState('offline');
       } else {
         setError('Không tải được live.');
       }
     } finally {
-      setIsLoading(false);
+      if (activePostIdRef.current === postId) {
+        setIsLoading(false);
+      }
     }
-  }, [postId, repository]);
+  }, [postId, repository, updateLiveState]);
+
+  const refreshLiveState = useCallback(async (): Promise<LiveStreamState> => {
+    if (!postId || postId <= 0) return stateRef.current;
+    if (stateRef.current === 'offline') return 'offline';
+    if (pendingLiveStateCheckRef.current?.postId === postId) {
+      return pendingLiveStateCheckRef.current.promise;
+    }
+
+    logLiveLifecycleDebug('live_status_check_start', {
+      postId,
+      role: isHost ? 'host' : 'viewer',
+    });
+
+    const request = (async () => {
+      try {
+        const result = await repository.getComments(postId, {
+          limit: 1,
+          page: isHost ? 'live' : 'story',
+        });
+        if (activePostIdRef.current !== postId) return 'stale';
+        updateLiveState(result.state);
+        setViewerCount(result.viewerCount);
+        logLiveLifecycleDebug('live_status_check_result', {
+          postId,
+          role: isHost ? 'host' : 'viewer',
+          state: result.state,
+        });
+        return result.state;
+      } catch (err) {
+        if (activePostIdRef.current !== postId) return 'stale';
+        if (isMissingLivePostError(err)) {
+          updateLiveState('offline');
+          logLiveLifecycleDebug('live_status_check_result', {
+            postId,
+            role: isHost ? 'host' : 'viewer',
+            state: 'offline',
+            reason: 'post_not_found',
+          });
+          return 'offline';
+        }
+
+        logLiveLifecycleDebug('live_status_check_error', {
+          postId,
+          role: isHost ? 'host' : 'viewer',
+          message: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
+    })();
+
+    pendingLiveStateCheckRef.current = { postId, promise: request };
+    try {
+      return await request;
+    } finally {
+      if (pendingLiveStateCheckRef.current?.promise === request) {
+        pendingLiveStateCheckRef.current = null;
+      }
+    }
+  }, [isHost, postId, repository, updateLiveState]);
 
   const refreshComments = useCallback(
     async (onlyNew = false) => {
@@ -250,22 +356,31 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
           limit: 20,
           page: isHost ? 'live' : 'story',
         });
+        if (activePostIdRef.current !== postId) return;
         setComments(prev => mergeComments(onlyNew ? prev : [], result.comments));
         setViewerCount(result.viewerCount);
-        setState(result.state);
+        updateLiveState(result.state);
         setHasLoadedComments(true);
         if (result.reactionsCount !== undefined) {
           setReactionsCount(result.reactionsCount);
         }
         collectReactionEvents(result.reactionEvents, onlyNew && isHost);
       } catch (err: any) {
+        if (activePostIdRef.current !== postId) return;
         console.warn('[LiveRoom] comments error:', err);
         if (err?.message?.includes('post not found')) {
-          setState('offline');
+          updateLiveState('offline');
         }
       }
     },
-    [collectReactionEvents, comments, isHost, postId, repository],
+    [
+      collectReactionEvents,
+      comments,
+      isHost,
+      postId,
+      repository,
+      updateLiveState,
+    ],
   );
 
   useEffect(() => {
@@ -288,6 +403,22 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
     return () => clearInterval(timer);
   }, [refreshComments, streamInfo, state]);
 
+  const leave = useCallback(async () => {
+    if (!isHost) return;
+
+    try {
+      await repository.endLive(postId);
+      updateLiveState('offline');
+      logLiveLifecycleDebug('live_host_end_request_success', { postId });
+    } catch (err) {
+      logLiveLifecycleDebug('live_host_end_request_error', {
+        postId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+  }, [isHost, postId, repository, updateLiveState]);
+
   return {
     streamInfo,
     liveSession,
@@ -301,6 +432,7 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
     hasLoadedComments,
     error,
     currentUserProfile,
+    refreshLiveState,
     sendComment: useCallback(
       async (message: string) => {
         const trimmed = message.trim();
@@ -329,13 +461,7 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
       },
       [postId],
     ),
-    leave: useCallback(() => {
-      if (isHost) {
-        repository.endLive(postId).catch(err => {
-          console.error('[LiveRoom] end live error:', err);
-        });
-      }
-    }, [isHost, postId, repository]),
+    leave,
   };
 }
 

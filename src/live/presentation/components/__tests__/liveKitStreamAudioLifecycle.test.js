@@ -156,7 +156,10 @@ describe('LiveKit live stream native iOS media path', () => {
     expect(handleOpenLiveBlock.indexOf('setActiveFeedVideo(null)')).toBeLessThan(
       handleOpenLiveBlock.indexOf('navigation.navigate'),
     );
-    expect(liveRoomSource).toContain('publishLiveMediaActive(true)');
+    expect(liveRoomSource).toContain('publishLiveMediaActive(liveMediaActive)');
+    expect(liveRoomSource).toContain(
+      'const liveMediaActive = !viewerHasEnded',
+    );
     expect(liveRoomSource).toContain('publishLiveMediaActive(false)');
     expect(isolationSource).toContain('live_video_audio_session_isolation_changed');
     expect(postCardsSource).toContain('useLiveMediaActive');
