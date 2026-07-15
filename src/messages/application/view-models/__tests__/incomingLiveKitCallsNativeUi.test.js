@@ -31,6 +31,29 @@ describe('incoming LiveKit calls native UI routing', () => {
     expect(source).toContain('setActiveIncomingGroupCall(call);');
   });
 
+  it('answers the native CallKit record before joining an iOS passive group call', () => {
+    const incomingSource = read(
+      'src/messages/application/view-models/useIncomingLiveKitCalls.ts',
+    );
+    const nativeSource = read(
+      'src/messages/infrastructure/calls/nativeCallService.ts',
+    );
+
+    expect(incomingSource).toContain(
+      'prepareAndAnswerPassiveIosGroupCall',
+    );
+    expect(incomingSource).toContain(
+      'nativeCallService.displayNativeIncomingGroupCall',
+    );
+    expect(incomingSource).toContain('answerNativeIncomingCall(callUuid)');
+    expect(nativeSource).toContain(
+      'export function answerNativeIncomingCall(callUuid: string)',
+    );
+    expect(nativeSource).toContain(
+      'RNCallKeep.default.answerIncomingCall(callUuid);',
+    );
+  });
+
   it('clears stale custom incoming UI state when a native CallKit answer is consumed', () => {
     const source = read(
       'src/messages/application/view-models/useIncomingLiveKitCalls.ts',

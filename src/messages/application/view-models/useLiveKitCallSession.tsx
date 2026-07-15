@@ -62,6 +62,10 @@ import {
   type LiveKitCallRealtimeTiming,
 } from '../../infrastructure/realtime/liveKitCallRealtime';
 import { createLiveKitCallRepository } from '../../infrastructure/repositories/ApiLiveKitCallRepository';
+import {
+  getIosCallAudioDeviceState,
+  setIosCallAudioActive,
+} from '../livekit/iosCallAudioLifecycle';
 
 type CallPhase =
   | 'initializing'
@@ -182,17 +186,6 @@ const LIVEKIT_CONNECT_OPTIONS = {
   autoSubscribe: false,
 } as const;
 
-type VnseeaLiveKitAudioRuntime = {
-  getIosAudioDeviceState?: () => Record<string, unknown>;
-  setIosRealtimeMediaAudioActive?: (
-    active: boolean,
-    context: Record<string, unknown>,
-  ) => void;
-  setIosVoiceCallAudioActive?: (active: boolean) => void;
-};
-
-const liveKitAudioRuntime = require('../../../shared-kernel/infrastructure/livekit/registerLiveKitGlobals') as VnseeaLiveKitAudioRuntime;
-
 const LiveKitCallSessionContext =
   createContext<LiveKitCallSessionContextValue | null>(null);
 
@@ -263,58 +256,25 @@ function setIosVoiceCallAudioActive(
   if (!shouldUseIosDirectCallAudioGate(params.callType)) return;
   const context = {
     owner: 'direct-call',
-    mediaKind: params.callType,
-    role: 'call',
-    requiresInput: true,
     callId: params.callId,
+    callType: params.callType,
     callUuid: params.callUuid,
     roomName: params.roomName,
     stage: params.stage,
-  };
-  try {
-    if (liveKitAudioRuntime.setIosRealtimeMediaAudioActive) {
-      liveKitAudioRuntime.setIosRealtimeMediaAudioActive(active, context);
-    } else {
-      liveKitAudioRuntime.setIosVoiceCallAudioActive?.(active);
-    }
-    logCallDebug('ios_realtime_media_audio_active_set', {
-      ...context,
-      active,
-    });
-    logCallDebug('ios_voice_call_audio_active_set', {
-      callId: params.callId,
-      callType: params.callType,
-      callUuid: params.callUuid,
-      roomName: params.roomName,
-      stage: params.stage,
-      active,
-    });
-  } catch (error) {
-    logCallDebug('ios_realtime_media_audio_active_error', {
-      ...context,
-      active,
-      error: serializeCallDebugError(error),
-    });
-    logCallDebug('ios_voice_call_audio_active_error', {
-      callId: params.callId,
-      callType: params.callType,
-      callUuid: params.callUuid,
-      roomName: params.roomName,
-      stage: params.stage,
-      active,
-      error: serializeCallDebugError(error),
-    });
-  }
+  } as const;
+  setIosCallAudioActive(active, context, logCallDebug);
+  logCallDebug('ios_voice_call_audio_active_set', {
+    callId: params.callId,
+    callType: params.callType,
+    callUuid: params.callUuid,
+    roomName: params.roomName,
+    stage: params.stage,
+    active,
+  });
 }
 
 function getIosAudioDeviceStateForLog() {
-  try {
-    return liveKitAudioRuntime.getIosAudioDeviceState?.() ?? {};
-  } catch (error) {
-    return {
-      error: serializeCallDebugError(error),
-    };
-  }
+  return getIosCallAudioDeviceState();
 }
 
 function logIosAudioDeviceState(

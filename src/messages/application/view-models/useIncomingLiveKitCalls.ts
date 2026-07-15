@@ -169,7 +169,6 @@ export function useIncomingLiveKitCalls() {
         navigationRef.navigate(ROUTES.GROUP_CALL_ROOM, {
           groupId: call.groupId,
           callId: call.callId,
-          callType: call.callType,
           direction: 'incoming',
           groupName: call.group.name,
           groupAvatar: call.group.avatar,
@@ -186,6 +185,18 @@ export function useIncomingLiveKitCalls() {
     setActiveIncomingCall(null);
     openIncomingCallRoom(call);
   }, [openIncomingCallRoom, setActiveIncomingCall]);
+
+  const prepareAndAnswerPassiveIosGroupCall = useCallback(
+    async (call: IncomingGroupLiveKitCall) => {
+      const nativeCallService = loadNativeCallService();
+      if (!nativeCallService) return false;
+      const callUuid = await nativeCallService.displayNativeIncomingGroupCall(
+        call,
+      );
+      return nativeCallService.answerNativeIncomingCall(callUuid);
+    },
+    [],
+  );
 
   const declineIncomingCall = useCallback(() => {
     const call = incomingCallRef.current;
@@ -214,8 +225,20 @@ export function useIncomingLiveKitCalls() {
     if (!call) return;
 
     setActiveIncomingGroupCall(null);
+    if (Platform.OS === 'ios' && call.ringMode === 'passive') {
+      prepareAndAnswerPassiveIosGroupCall(call)
+        .then(answeredByCallKit => {
+          if (!answeredByCallKit) openIncomingGroupCallRoom(call);
+        })
+        .catch(() => openIncomingGroupCallRoom(call));
+      return;
+    }
     openIncomingGroupCallRoom(call);
-  }, [openIncomingGroupCallRoom, setActiveIncomingGroupCall]);
+  }, [
+    openIncomingGroupCallRoom,
+    prepareAndAnswerPassiveIosGroupCall,
+    setActiveIncomingGroupCall,
+  ]);
 
   const declineIncomingGroup = useCallback(() => {
     const call = incomingGroupCallRef.current;
@@ -382,7 +405,7 @@ export function useIncomingLiveKitCalls() {
           answerIncomingGroupCall({
             callId: nativeCall.callId,
             groupId,
-            callType: nativeCall.callType,
+            callType: 'video',
             provider: 'livekit',
             roomName: '',
             group: nativeCall.group ?? {
@@ -400,7 +423,6 @@ export function useIncomingLiveKitCalls() {
           navigationRef.navigate(ROUTES.GROUP_CALL_ROOM, {
             groupId,
             callId: nativeCall.callId,
-            callType: nativeCall.callType,
             direction: 'incoming',
             groupName: nativeCall.group?.name,
             groupAvatar: nativeCall.group?.avatar,

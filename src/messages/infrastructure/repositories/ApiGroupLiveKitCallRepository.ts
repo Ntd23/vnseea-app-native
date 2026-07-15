@@ -36,7 +36,7 @@ class ApiGroupLiveKitCallRepository implements GroupLiveKitCallRepository {
       {
         type: 'create',
         group_id: input.groupId,
-        call_type: input.callType,
+        call_type: 'video',
       },
     );
     return mapGroupLiveKitCreateResponse(response);

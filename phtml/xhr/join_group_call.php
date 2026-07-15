@@ -9,9 +9,9 @@ if ($f == 'join_group_call') {
                 'status' => 200,
                 'id' => intval($group_call['id']),
                 'group_id' => intval($group_call['group_id']),
-                'call_type' => $group_call['call_type'],
+                'call_type' => 'video',
                 'participant_count' => intval(!empty($group_call['participant_count']) ? $group_call['participant_count'] : 0),
-                'url' => Wo_BuildGroupCallJoinUrl($group_call['id'], $group_call['call_type'])
+                'url' => Wo_BuildGroupCallJoinUrl($group_call['id'], 'video')
             );
         }
     }

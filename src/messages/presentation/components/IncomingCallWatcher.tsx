@@ -53,9 +53,7 @@ function IncomingCallWatcher() {
             </Text>
             <Text className="mt-2 text-center text-base text-slate-300">
               {isGroupCall
-                ? callType === 'audio'
-                  ? 'Cuộc gọi nhóm thoại đến'
-                  : 'Cuộc gọi nhóm video đến'
+                ? 'Cuộc gọi nhóm video đến'
                 : callType === 'audio'
                 ? 'Cuộc gọi thoại đến'
                 : 'Cuộc gọi video đến'}

@@ -264,12 +264,10 @@ function readPushLiveKitGroupCall(
   if (provider !== 'livekit_group' && context !== 'group') return null;
   if (!callId || !groupId) return null;
 
-  const callType =
-    readPushString(payload, 'call_type') === 'audio' ? 'audio' : 'video';
   return {
     callId,
     groupId,
-    callType,
+    callType: 'video',
     provider: 'livekit',
     roomName: readPushString(payload, 'room_name'),
     group: {
@@ -622,10 +620,9 @@ export function createNativeCallUuid(
 
 export function createNativeGroupCallUuid(
   callId?: string,
-  callType: LiveKitCallType = 'video',
 ) {
   const seed = callId
-    ? `vnseea-livekit-group|${callType}|${callId}`
+    ? `vnseea-livekit-group|video|${callId}`
     : `vnseea-livekit-group|${Date.now()}|${Math.random()}`;
   const hex = MD5(seed).toString();
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
@@ -998,6 +995,34 @@ export async function startNativeOutgoingCall(params: {
   );
 }
 
+export async function startNativeOutgoingGroupCall(params: {
+  callUuid: string;
+  callId: string;
+  groupId: string;
+  group: GroupLiveKitGroup;
+}) {
+  await configureNativeCallService();
+  activeCalls.set(params.callUuid, {
+    context: 'group',
+    callId: params.callId,
+    groupId: params.groupId,
+    callType: 'video',
+    group: params.group,
+    usesNativeCallUi: Platform.OS === 'ios',
+  });
+  if (Platform.OS === 'android') return;
+
+  const RNCallKeep = loadCallKeep();
+  if (!RNCallKeep?.default) return;
+  RNCallKeep.default.startCall(
+    params.callUuid,
+    params.groupId,
+    params.group.name || 'Nhóm',
+    'generic',
+    true,
+  );
+}
+
 export async function displayNativeIncomingCall(call: IncomingLiveKitCall) {
   await configureNativeCallService();
   const existingCallUuid = findActiveNativeCallUuid('direct', call.callId);
@@ -1060,7 +1085,7 @@ export async function displayNativeIncomingGroupCall(
   const existingCallUuid = findActiveNativeCallUuid('group', call.callId);
   if (existingCallUuid) return existingCallUuid;
 
-  const callUuid = createNativeGroupCallUuid(call.callId, call.callType);
+  const callUuid = createNativeGroupCallUuid(call.callId);
   activeCalls.set(callUuid, {
     context: 'group',
     callId: call.callId,
@@ -1128,6 +1153,16 @@ export function markNativeCallConnected(callUuid: string) {
   if (Platform.OS === 'ios') {
     loadCallKeep()?.default?.reportConnectedOutgoingCallWithUUID(callUuid);
   }
+}
+
+export function answerNativeIncomingCall(callUuid: string) {
+  const nativeCall = activeCalls.get(callUuid);
+  if (Platform.OS !== 'ios' || !nativeCall?.usesNativeCallUi) return false;
+
+  const RNCallKeep = loadCallKeep();
+  if (!RNCallKeep?.default?.answerIncomingCall) return false;
+  RNCallKeep.default.answerIncomingCall(callUuid);
+  return true;
 }
 
 export function endNativeCall(callUuid?: string, reason?: number) {

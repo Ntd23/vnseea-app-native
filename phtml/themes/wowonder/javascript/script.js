@@ -3344,26 +3344,10 @@ function Wo_GenerateGroupVideoCall(groupId) {
   });
 }
 
-function Wo_GenerateGroupVoiceCall(groupId) {
-  groupId = parseInt(groupId || 0, 10);
-  var requestHash = Wo_GetMainRequestHash();
-  if (!groupId || window.woGroupCallCreatePending === true) {
-    return;
-  }
-  window.woGroupCallCreatePending = true;
-  $.get(Wo_Ajax_Requests_File(), {f:'create_new_group_call', hash: requestHash, group_id: groupId, call_type:'audio'}, function(data) {
-    if (data.status == 200) {
-      window.location.href = Wo_PrepareCallUrl(data.url || Wo_BuildGroupCallUrl(data.id, 'audio'));
-    }
-  }).always(function () {
-    window.woGroupCallCreatePending = false;
-  });
-}
-
 function Wo_JoinGroupCall(callId, groupId, callType) {
   callId = parseInt(callId || 0, 10);
   groupId = parseInt(groupId || 0, 10);
-  callType = (callType === 'audio') ? 'audio' : 'video';
+  callType = 'video';
   var requestHash = Wo_GetMainRequestHash();
   if (!callId || window.woGroupCallJoinPending === true) {
     return;
@@ -6027,5 +6011,3 @@ function FileListItems (files) {
     }
   });
 })();
-
-

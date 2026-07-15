@@ -60,13 +60,17 @@ describe('LiveKit call media startup resilience', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
+    const audioLifecycleSource = read(
+      'src/messages/application/livekit/iosCallAudioLifecycle.ts',
+    );
 
-    expect(source).toContain('setIosRealtimeMediaAudioActive');
+    expect(source).toContain('setIosCallAudioActive(active, context, logCallDebug)');
+    expect(audioLifecycleSource).toContain('setIosRealtimeMediaAudioActive');
     expect(source).toContain('shouldUseIosDirectCallAudioGate(params.callType)');
     expect(source).toContain("owner: 'direct-call'");
-    expect(source).toContain("role: 'call'");
-    expect(source).toContain("mediaKind: params.callType");
-    expect(source).toContain('requiresInput: true');
+    expect(audioLifecycleSource).toContain("role: 'call'");
+    expect(audioLifecycleSource).toContain('mediaKind: context.callType');
+    expect(audioLifecycleSource).toContain('requiresInput: true');
     expect(source).toContain("stage: 'before_connect'");
     expect(source).toContain("stage: 'ios_direct_room_error'");
     expect(source).toContain("stage: 'release'");
@@ -91,6 +95,9 @@ describe('LiveKit call media startup resilience', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
+    const audioLifecycleSource = read(
+      'src/messages/application/livekit/iosCallAudioLifecycle.ts',
+    );
     const nativeSource = read(
       'src/messages/infrastructure/calls/nativeCallService.ts',
     );
@@ -100,7 +107,7 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).toContain("logCallDebug('callkit_audio_session_wait_start'");
     expect(source).toContain("logCallDebug('callkit_audio_session_wait_end'");
     expect(source).toContain('setIosVoiceCallAudioActive(true');
-    expect(source).toContain('setIosRealtimeMediaAudioActive');
+    expect(audioLifecycleSource).toContain('setIosRealtimeMediaAudioActive');
     expect(source).not.toContain('prepareIosVoiceRecordingDevice');
     expect(source).not.toContain('ensureIosVoiceRecordingRunning');
     expect(source).not.toContain('AudioDeviceModule.setEngineAvailability');

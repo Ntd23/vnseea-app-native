@@ -60,4 +60,43 @@ describe('requestCallMediaPermissions', () => {
 
     await expect(requestCallMediaPermissions('video')).resolves.toBe(false);
   });
+
+  it('allows a group video call with microphone permission and camera disabled', async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    jest.doMock('react-native', () => ({
+      Platform: { OS: 'ios' },
+      PermissionsAndroid: {},
+    }));
+    jest.doMock('@livekit/react-native-webrtc', () => ({
+      permissions: { request },
+    }));
+
+    const { requestGroupVideoCallPermissions } = require('../microphonePermission');
+
+    await expect(requestGroupVideoCallPermissions()).resolves.toEqual({
+      microphoneGranted: true,
+      cameraGranted: false,
+    });
+  });
+
+  it('can request camera permission again when a group participant enables video', async () => {
+    const request = jest.fn().mockResolvedValue(true);
+
+    jest.doMock('react-native', () => ({
+      Platform: { OS: 'ios' },
+      PermissionsAndroid: {},
+    }));
+    jest.doMock('@livekit/react-native-webrtc', () => ({
+      permissions: { request },
+    }));
+
+    const { requestCameraPermission } = require('../microphonePermission');
+
+    await expect(requestCameraPermission()).resolves.toBe(true);
+    expect(request).toHaveBeenCalledWith({ name: 'camera' });
+  });
 });
