@@ -1,5 +1,11 @@
 // Description: Renders the Messages LiveKit group call room from the app-level group call session.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -38,6 +44,11 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
+import {
+  getGroupCameraRenderStateKey,
+  getGroupCameraTrackRenderKey,
+  getRenderableGroupCameraTrack,
+} from '../../application/livekit/groupCallVideoState';
 import type { GroupLiveKitParticipant } from '../../domain/types/groupCall.types';
 
 type GroupCallRoomScreenProps = NativeStackScreenProps<
@@ -84,19 +95,15 @@ function ParticipantTile({
   cameraTrack?: TrackReferenceOrPlaceholder;
   localCameraFacingMode: 'user' | 'environment';
 }) {
-  const renderableTrack = isTrackReference(cameraTrack)
-    ? cameraTrack
-    : undefined;
-  const showVideo = Boolean(
-    renderableTrack &&
-      !item.isCameraMuted &&
-      !renderableTrack.publication.isMuted,
-  );
+  const renderableTrack = getRenderableGroupCameraTrack(cameraTrack);
+  const renderKey = getGroupCameraTrackRenderKey(cameraTrack);
+  const showVideo = Boolean(renderableTrack && !item.isCameraMuted);
 
   return (
     <View className="m-1 h-64 flex-1 overflow-hidden rounded-2xl bg-slate-900">
       {showVideo ? (
         <VideoTrack
+          key={renderKey}
           trackRef={renderableTrack}
           style={styles.participantVideo}
           objectFit="cover"
@@ -168,6 +175,8 @@ function GroupCallGallery({
   const cameraTracks = useTracks([
     { source: Track.Source.Camera, withPlaceholder: true },
   ]);
+  const cameraRenderStateKey = getGroupCameraRenderStateKey(cameraTracks);
+  const lastVideoRenderStateRef = useRef('');
   const numColumns = participants.length <= 2 ? 1 : 2;
   const trackByParticipantId = useMemo(() => {
     const next = new Map<string, TrackReferenceOrPlaceholder>();
@@ -186,16 +195,55 @@ function GroupCallGallery({
   }, [cameraTracks]);
 
   useEffect(() => {
+    const localCameraTracks = cameraTracks.filter(
+      trackRef =>
+        trackRef.participant.isLocal &&
+        Boolean(getRenderableGroupCameraTrack(trackRef)),
+    ).length;
+    const remoteCameraPublications = cameraTracks.filter(
+      trackRef =>
+        !trackRef.participant.isLocal && isTrackReference(trackRef),
+    ).length;
+    const remoteSubscribedCameraTracks = cameraTracks.filter(
+      trackRef =>
+        !trackRef.participant.isLocal &&
+        isTrackReference(trackRef) &&
+        trackRef.publication.isSubscribed &&
+        Boolean(trackRef.publication.track),
+    ).length;
+    const remoteRenderableCameraTracks = cameraTracks.filter(
+      trackRef =>
+        !trackRef.participant.isLocal &&
+        isTrackReference(trackRef) &&
+        trackRef.publication.isSubscribed &&
+        Boolean(getRenderableGroupCameraTrack(trackRef)),
+    ).length;
+
+    const renderSignature = [
+      participants.length,
+      cameraRenderStateKey,
+      localCameraTracks,
+      remoteCameraPublications,
+      remoteSubscribedCameraTracks,
+      remoteRenderableCameraTracks,
+    ].join(':');
+    if (lastVideoRenderStateRef.current === renderSignature) return;
+    lastVideoRenderStateRef.current = renderSignature;
+
     console.log(
       '[VNSEEA_CALL_DEBUG]',
       JSON.stringify({
         event: 'group_video_render_state',
         participants: participants.length,
         cameraTracks: cameraTracks.length,
-        subscribedCameraTracks: cameraTracks.filter(isTrackReference).length,
+        localCameraTracks,
+        remoteCameraPublications,
+        remoteSubscribedCameraTracks,
+        remoteRenderableCameraTracks,
+        cameraRenderStateKey,
       }),
     );
-  }, [cameraTracks, participants.length]);
+  }, [cameraRenderStateKey, cameraTracks, participants.length]);
 
   return (
     <FlatList
@@ -204,7 +252,7 @@ function GroupCallGallery({
       data={participants}
       keyExtractor={item => item.id}
       numColumns={numColumns}
-      extraData={`${participants.length}-${localCameraFacingMode}-${cameraTracks.length}`}
+      extraData={`${participants.length}-${localCameraFacingMode}-${cameraRenderStateKey}`}
       renderItem={({ item }) => (
         <ParticipantTile
           item={item}
