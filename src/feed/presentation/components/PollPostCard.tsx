@@ -457,12 +457,19 @@ export const PollPostCard = React.memo(function PollPostCard({
         </View>
 
         {/* Comment Count Bubble */}
-        <View className="flex-row items-center justify-end mt-1 border-b border-[#F0F2F5] pb-3">
+        <TouchableOpacity
+          className="flex-row items-center justify-end mt-1 border-b border-[#F0F2F5] pb-3"
+          activeOpacity={0.7}
+          onPress={() => onCommentTap(post.id)}
+          accessibilityRole="button"
+          accessibilityLabel={`${post.commentCount} ${copy.comment}`}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <MessageSquare size={14} color="#8A8D91" />
           <Text className="ml-1.5 text-[12px] text-[#8A8D91] font-semibold">
             {post.commentCount}
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {showInlineReactionPicker ? (

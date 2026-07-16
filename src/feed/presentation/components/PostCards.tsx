@@ -1231,6 +1231,7 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
   copy,
   post,
   onOpenReactions,
+  onCommentTap,
 }: {
   postId: string;
   likeCount: number;
@@ -1246,6 +1247,7 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
    * own modal — same pattern used by `ReelCommentsSheet` host screens.
    */
   onOpenReactions?: (postId: string, post: FeedPost) => void;
+  onCommentTap: () => void;
 }) {
   // The sheet is hosted by the parent screen — we no longer navigate.
 
@@ -1328,9 +1330,17 @@ const VideoReactionSummary = React.memo(function VideoReactionSummary({
       </TouchableOpacity>
       {/* Right: comment count */}
       {commentCount > 0 ? (
-        <Text className="text-caption-secondary" numberOfLines={1}>
-          {copy.commentsCount(commentCount)}
-        </Text>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={onCommentTap}
+          accessibilityRole="button"
+          accessibilityLabel={copy.commentsCount(commentCount)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text className="text-caption-secondary" numberOfLines={1}>
+            {copy.commentsCount(commentCount)}
+          </Text>
+        </TouchableOpacity>
       ) : null}
     </View>
   );
@@ -2347,6 +2357,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           copy={copy}
           post={post}
           onOpenReactions={onOpenReactions}
+          onCommentTap={handleCommentTap}
         />
         <VideoPostActions
           myReaction={post.myReaction}
@@ -2980,6 +2991,7 @@ export const TextPostCard = React.memo(function TextPostCard({
           copy={copy}
           post={post}
           onOpenReactions={onOpenReactions}
+          onCommentTap={handleCommentTap}
         />
         <VideoPostActions
           myReaction={post.myReaction}

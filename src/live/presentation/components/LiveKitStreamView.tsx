@@ -922,15 +922,21 @@ function LiveKitVideoSurface({
   );
 }
 
+export type LiveKitStreamViewProps = {
+  session: LiveSession;
+  isHost: boolean;
+  cameraFacing?: 'front' | 'back';
+  onConnectionStateChange?: (
+    state: 'connected' | 'disconnected' | 'error',
+  ) => void;
+};
+
 export function LiveKitStreamView({
   session,
   isHost,
   cameraFacing = 'front',
-}: {
-  session: LiveSession;
-  isHost: boolean;
-  cameraFacing?: 'front' | 'back';
-}) {
+  onConnectionStateChange,
+}: LiveKitStreamViewProps) {
   const [permissionState, setPermissionState] = useState<PermissionState>(
     isHost && (Platform.OS === 'android' || Platform.OS === 'ios')
       ? 'checking'
@@ -1034,6 +1040,60 @@ export function LiveKitStreamView({
     traceId,
   ]);
 
+  const handleConnected = useCallback(() => {
+    logLiveDebug('live_room_connected', {
+      role: liveRole,
+      roomName: session.roomName,
+      streamName: session.streamName,
+      traceId,
+    });
+    setConnectionMessage('');
+    onConnectionStateChange?.('connected');
+  }, [
+    liveRole,
+    onConnectionStateChange,
+    session.roomName,
+    session.streamName,
+    traceId,
+  ]);
+
+  const handleDisconnected = useCallback(() => {
+    logLiveDebug('live_room_disconnected', {
+      role: liveRole,
+      roomName: session.roomName,
+      streamName: session.streamName,
+      traceId,
+    });
+    setConnectionMessage('Đã ngắt kết nối live');
+    onConnectionStateChange?.('disconnected');
+  }, [
+    liveRole,
+    onConnectionStateChange,
+    session.roomName,
+    session.streamName,
+    traceId,
+  ]);
+
+  const handleError = useCallback((error: unknown) => {
+    logLiveDebug('live_room_error', {
+      role: liveRole,
+      roomName: session.roomName,
+      streamName: session.streamName,
+      traceId,
+      error: error instanceof Error
+        ? { name: error.name, message: error.message }
+        : { message: String(error) },
+    });
+    setConnectionMessage('Không kết nối được live');
+    onConnectionStateChange?.('error');
+  }, [
+    liveRole,
+    onConnectionStateChange,
+    session.roomName,
+    session.streamName,
+    traceId,
+  ]);
+
   if (!session.wsUrl || !session.token) {
     return (
       <View style={styles.placeholder}>
@@ -1108,36 +1168,9 @@ export function LiveKitStreamView({
         video={hostVideoCaptureOptions}
         options={LIVE_ROOM_OPTIONS}
         connectOptions={LIVE_CONNECT_OPTIONS}
-        onConnected={() => {
-          logLiveDebug('live_room_connected', {
-            role: liveRole,
-            roomName: session.roomName,
-            streamName: session.streamName,
-            traceId,
-          });
-          setConnectionMessage('');
-        }}
-        onDisconnected={() => {
-          logLiveDebug('live_room_disconnected', {
-            role: liveRole,
-            roomName: session.roomName,
-            streamName: session.streamName,
-            traceId,
-          });
-          setConnectionMessage('Đã ngắt kết nối live');
-        }}
-        onError={error => {
-          logLiveDebug('live_room_error', {
-            role: liveRole,
-            roomName: session.roomName,
-            streamName: session.streamName,
-            traceId,
-            error: error instanceof Error
-              ? { name: error.name, message: error.message }
-              : { message: String(error) },
-          });
-          setConnectionMessage('Không kết nối được live');
-        }}
+        onConnected={handleConnected}
+        onDisconnected={handleDisconnected}
+        onError={handleError}
         onMediaDeviceFailure={failure => {
           logLiveDebug('live_media_device_failure', {
             role: liveRole,

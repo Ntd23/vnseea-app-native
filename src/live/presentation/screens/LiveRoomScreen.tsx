@@ -1,5 +1,12 @@
 // Description: Live stream viewer room - shows live metadata, comments, and actions.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -26,6 +33,7 @@ import {
   Send,
   Share2,
   Smile,
+  VideoOff,
   X,
 } from 'lucide-react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
@@ -35,6 +43,11 @@ import { LiveCameraPreview } from '../components/LiveCameraPreview';
 import { LiveKitStreamView } from '../components/LiveKitStreamView';
 import type { LiveSession, LiveStreamComment } from '../../domain/types/live.types';
 import { publishLiveMediaActive } from '../../../shared-kernel/application/state/liveMediaPlaybackIsolation';
+import { ROUTES } from '../../../navigation/constants/routes';
+import {
+  reduceLiveViewerLifecycle,
+  type LiveViewerLifecycleEvent,
+} from '../../application/view-models/liveViewerLifecycle';
 
 type LiveRouteParams = {
   postId: number;
@@ -46,6 +59,21 @@ type LiveRouteParams = {
 const { width: windowWidth, height: windowHeight } = Dimensions.get('window');
 
 const commentsContentStyle = { paddingBottom: 10 };
+const LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
+
+type LiveMediaConnectionState = 'connected' | 'disconnected' | 'error';
+
+function logLiveLifecycle(
+  event: string,
+  data: Record<string, unknown> = {},
+) {
+  const payload = { event, at: new Date().toISOString(), ...data };
+  try {
+    console.log(LIVE_DEBUG_PREFIX, JSON.stringify(payload));
+  } catch {
+    console.log(LIVE_DEBUG_PREFIX, event, data);
+  }
+}
 
 export default function LiveRoomScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -69,6 +97,7 @@ export default function LiveRoomScreen() {
     viewerCount,
     reactionsCount,
     reactionEvents,
+    state,
     isHost: streamIsHost,
     isLoading,
     hasLoadedComments,
@@ -76,6 +105,7 @@ export default function LiveRoomScreen() {
     sendComment,
     react,
     leave,
+    refreshLiveState,
     currentUserProfile,
   } = useLiveRoomViewModel(postId, routeLiveSession);
 
@@ -85,10 +115,20 @@ export default function LiveRoomScreen() {
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>(initialCameraFacing);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [leaveModalVisible, setLeaveModalVisible] = useState(false);
+  const [isLeavingLive, setIsLeavingLive] = useState(false);
+  const [viewerLifecycle, dispatchViewerLifecycle] = useReducer(
+    reduceLiveViewerLifecycle,
+    'watching',
+  );
+  const liveEndSourceRef = useRef('backend_poll');
+  const hasLoggedEndScreenRef = useRef(false);
   
   const insets = useSafeAreaInsets();
   const isHost = routeIsHost || streamIsHost;
   const hasLiveKitSession = Boolean(liveSession?.wsUrl && liveSession?.token);
+  const viewerHasEnded =
+    !isHost && (viewerLifecycle === 'ended' || state === 'offline');
+  const liveMediaActive = !viewerHasEnded;
   
   const [fallingEmojis, setFallingEmojis] = useState<Array<{
     id: string;
@@ -103,11 +143,77 @@ export default function LiveRoomScreen() {
   }>>([]);
 
   useEffect(() => {
-    publishLiveMediaActive(true);
+    publishLiveMediaActive(liveMediaActive);
     return () => {
       publishLiveMediaActive(false);
     };
-  }, []);
+  }, [liveMediaActive]);
+
+  const sendViewerLifecycleEvent = useCallback(
+    (event: LiveViewerLifecycleEvent) => {
+      if (isHost) return;
+      dispatchViewerLifecycle(event);
+    },
+    [isHost],
+  );
+
+  useEffect(() => {
+    dispatchViewerLifecycle('room_changed');
+    liveEndSourceRef.current = 'backend_poll';
+    hasLoggedEndScreenRef.current = false;
+  }, [postId]);
+
+  useEffect(() => {
+    if (isHost || state !== 'offline') return;
+    if (viewerLifecycle === 'watching') {
+      liveEndSourceRef.current = 'backend_poll';
+    }
+    sendViewerLifecycleEvent('backend_offline');
+  }, [isHost, sendViewerLifecycleEvent, state, viewerLifecycle]);
+
+  useEffect(() => {
+    if (isHost || viewerLifecycle !== 'ended') return;
+    if (hasLoggedEndScreenRef.current) return;
+    hasLoggedEndScreenRef.current = true;
+    logLiveLifecycle('live_viewer_host_end_detected', {
+      postId,
+      source: liveEndSourceRef.current,
+    });
+    logLiveLifecycle('live_end_screen_shown', { postId });
+  }, [isHost, postId, viewerLifecycle]);
+
+  const handleMediaConnectionStateChange = useCallback(
+    (connectionState: LiveMediaConnectionState) => {
+      logLiveLifecycle('live_media_connection_state_changed', {
+        postId,
+        role: isHost ? 'host' : 'viewer',
+        connectionState,
+      });
+      if (isHost) return;
+
+      if (connectionState === 'connected') {
+        sendViewerLifecycleEvent('media_connected');
+        return;
+      }
+
+      sendViewerLifecycleEvent(
+        connectionState === 'error' ? 'media_error' : 'media_disconnected',
+      );
+      liveEndSourceRef.current = 'media_disconnect_check';
+      refreshLiveState()
+        .then(nextState => {
+          if (nextState === 'offline') {
+            sendViewerLifecycleEvent('backend_offline');
+            return;
+          }
+          sendViewerLifecycleEvent('backend_live');
+        })
+        .catch(() => {
+          // A transport error must not be interpreted as the host ending live.
+        });
+    },
+    [isHost, postId, refreshLiveState, sendViewerLifecycleEvent],
+  );
 
   const spawnEmojiRain = useCallback((emoji: string, count: number) => {
     for (let i = 0; i < count; i++) {
@@ -223,11 +329,37 @@ export default function LiveRoomScreen() {
     setLeaveModalVisible(true);
   }, []);
 
-  const handleConfirmLeave = useCallback(() => {
-    setLeaveModalVisible(false);
-    leave();
-    navigation.goBack();
-  }, [leave, navigation]);
+  const exitLiveRoom = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
+  }, [navigation]);
+
+  const handleConfirmLeave = useCallback(async () => {
+    if (isLeavingLive) return;
+    setIsLeavingLive(true);
+    try {
+      await leave();
+      setLeaveModalVisible(false);
+      setIsLeavingLive(false);
+      exitLiveRoom();
+    } catch (err) {
+      setIsLeavingLive(false);
+      Alert.alert(
+        'Không thể kết thúc live',
+        err instanceof Error
+          ? err.message
+          : 'Vui lòng kiểm tra kết nối và thử lại.',
+      );
+    }
+  }, [exitLiveRoom, isLeavingLive, leave]);
+
+  const handleExitEndedLive = useCallback(() => {
+    logLiveLifecycle('live_end_screen_exit', { postId });
+    exitLiveRoom();
+  }, [exitLiveRoom, postId]);
 
   const handleReaction = useCallback((emoji: string) => {
     react(emoji);
@@ -251,6 +383,53 @@ export default function LiveRoomScreen() {
       <View className="flex-1 items-center justify-center bg-black">
         <ActivityIndicator size="large" color="#ffffff" />
         <Text className="mt-3 text-white/70">Đang tải live...</Text>
+      </View>
+    );
+  }
+
+  if (viewerHasEnded) {
+    const publisherName = streamInfo?.publisher.name || 'Người phát live';
+    const publisherAvatar = streamInfo?.publisher.avatarUrl;
+
+    return (
+      <View
+        className="flex-1 items-center justify-center bg-slate-950 px-8"
+        style={{
+          paddingTop: Math.max(insets.top, 24),
+          paddingBottom: Math.max(insets.bottom, 24),
+        }}
+      >
+        {publisherAvatar ? (
+          <Image
+            source={{ uri: publisherAvatar }}
+            className="h-24 w-24 rounded-full border-2 border-white/15 bg-slate-800"
+          />
+        ) : (
+          <View className="h-24 w-24 items-center justify-center rounded-full bg-slate-800">
+            <Text className="text-3xl font-bold text-white">
+              {publisherName.slice(0, 1).toUpperCase()}
+            </Text>
+          </View>
+        )}
+        <Text className="mt-4 text-base font-semibold text-white/75">
+          {publisherName}
+        </Text>
+        <View className="mt-8 h-14 w-14 items-center justify-center rounded-full bg-white/10">
+          <VideoOff size={26} color="#ffffff" />
+        </View>
+        <Text className="mt-5 text-center text-2xl font-bold text-white">
+          Phiên live đã kết thúc
+        </Text>
+        <Text className="mt-2 text-center text-sm text-white/60">
+          Cảm ơn bạn đã theo dõi
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={handleExitEndedLive}
+          className="mt-8 min-h-12 min-w-40 items-center justify-center rounded-full bg-white px-7"
+        >
+          <Text className="text-sm font-bold text-slate-950">Quay lại</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -288,9 +467,24 @@ export default function LiveRoomScreen() {
               session={liveSession}
               isHost={isHost}
               cameraFacing={cameraFacing}
+              onConnectionStateChange={handleMediaConnectionStateChange}
             />
           ) : null}
         </View>
+
+        {!isHost && viewerLifecycle === 'reconnecting' ? (
+          <View
+            pointerEvents="none"
+            className="absolute inset-0 z-20 items-center justify-center bg-black/30"
+          >
+            <View className="flex-row items-center rounded-full bg-black/75 px-4 py-2.5">
+              <ActivityIndicator size="small" color="#ffffff" />
+              <Text className="ml-2 text-sm font-semibold text-white">
+                Đang kiểm tra kết nối...
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         {/* Top Header Overlay */}
         <View 
@@ -570,11 +764,19 @@ export default function LiveRoomScreen() {
                 <TouchableOpacity
                   activeOpacity={0.85}
                   onPress={handleConfirmLeave}
-                  style={leaveModalStyles.leaveButton}
+                  disabled={isLeavingLive}
+                  style={[
+                    leaveModalStyles.leaveButton,
+                    isLeavingLive && leaveModalStyles.disabledButton,
+                  ]}
                 >
-                  <Text style={leaveModalStyles.leaveButtonText}>
-                    {isHost ? 'Kết thúc live' : 'Rời đi'}
-                  </Text>
+                  {isLeavingLive ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={leaveModalStyles.leaveButtonText}>
+                      {isHost ? 'Kết thúc live' : 'Rời đi'}
+                    </Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -669,5 +871,8 @@ const leaveModalStyles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  disabledButton: {
+    opacity: 0.65,
   },
 });

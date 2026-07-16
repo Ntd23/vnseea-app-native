@@ -51,15 +51,21 @@ function logLiveDebug(event: string, data: Record<string, unknown> = {}) {
   }
 }
 
+export type LiveKitStreamViewProps = {
+  session: LiveSession;
+  isHost: boolean;
+  cameraFacing?: 'front' | 'back';
+  onConnectionStateChange?: (
+    state: 'connected' | 'disconnected' | 'error',
+  ) => void;
+};
+
 export function LiveKitStreamView({
   session,
   isHost,
   cameraFacing = 'front',
-}: {
-  session: LiveSession;
-  isHost: boolean;
-  cameraFacing?: 'front' | 'back';
-}) {
+  onConnectionStateChange,
+}: LiveKitStreamViewProps) {
   const [permissionState, setPermissionState] = useState<PermissionState>(
     isHost ? 'checking' : 'granted',
   );
@@ -136,15 +142,24 @@ export function LiveKitStreamView({
 
       if (eventName === 'live_native_room_connected') {
         setConnectionMessage('');
+        onConnectionStateChange?.('connected');
       }
       if (eventName === 'live_native_room_disconnected') {
         setConnectionMessage('Đã ngắt kết nối live');
+        onConnectionStateChange?.('disconnected');
       }
       if (eventName === 'live_native_error') {
         setConnectionMessage('Không kết nối được live');
+        onConnectionStateChange?.('error');
       }
     },
-    [liveRole, session.roomName, session.streamName, traceId],
+    [
+      liveRole,
+      onConnectionStateChange,
+      session.roomName,
+      session.streamName,
+      traceId,
+    ],
   );
 
   if (!session.wsUrl || !session.token) {

@@ -1,5 +1,5 @@
 // Description: Renders the My Balance screen with custom card layout, curved wave send modal, real camera QR code scanner using react-native-camera-kit, dynamic QR transfer modal, and social integrations, matching the user's mockup.
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +17,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  ArrowLeft,
   CheckCheck,
   QrCode,
   RefreshCw,
@@ -27,14 +26,11 @@ import {
 } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Camera } from 'react-native-camera-kit';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useEarningsViewModel } from '../../application/view-models/useEarningsViewModel';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
-import type { RootStackParamList } from '../../../navigation/types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { createWalletRepository } from '../../infrastructure/repositories/ApiWalletRepository';
 import {
@@ -44,8 +40,6 @@ import {
 } from '../../domain/services/pointsTransfer';
 import { pendingPointsTransferRequestStorage } from '../../infrastructure/storage/pointsTransferRequestStorage';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
-
-type BalanceNav = NativeStackNavigationProp<RootStackParamList>;
 
 interface SearchUserItem {
   id: number;
@@ -337,7 +331,6 @@ function parseTransferQrForScreen(code: string): ParsedTransferQr | null {
 }
 
 function MyBalanceScreen() {
-  const navigation = useNavigation<BalanceNav>();
   const language = useAppLanguage();
   const copy = BALANCE_COPY[language] || BALANCE_COPY.vi;
   const isVi = language === 'vi';
@@ -351,6 +344,10 @@ function MyBalanceScreen() {
   const [isSendModalVisible, setIsSendModalVisible] = useState(false);
   const [isQrModalVisible, setIsQrModalVisible] = useState(false);
   const [isScannerVisible, setIsScannerVisible] = useState(false);
+  const pendingScannerOpenRef = useRef(false);
+  const returnToSendAfterScannerRef = useRef(false);
+  const pendingScannedCodeRef = useRef<string | null>(null);
+  const scannerTransitionLockedRef = useRef(false);
 
   // Send Money form state
   const [sendAmount, setSendAmount] = useState('');
@@ -395,9 +392,9 @@ function MyBalanceScreen() {
     const normalizedUsername = normalizeRecipientQuery(payload.username).toLowerCase();
     if (normalizedUserId <= 0 && !normalizedUsername) {
       Alert.alert(
-        isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Notice',
+        isVi ? 'Thông báo' : 'Notice',
         isVi 
-          ? 'MÃƒÂ£ QR khÃƒÂ´ng chÃ¡Â»Â©a thÃƒÂ´ng tin ngÃ†Â°Ã¡Â»Âi nhÃ¡ÂºÂ­n!\nPayload: ' + JSON.stringify(payload)
+          ? 'Mã QR không chứa thông tin người nhận!\nPayload: ' + JSON.stringify(payload)
           : 'QR Code does not contain recipient info!\nPayload: ' + JSON.stringify(payload),
       );
       return;
@@ -442,11 +439,11 @@ function MyBalanceScreen() {
           setSendAmount(payload.amount);
         }
       } else {
-        Alert.alert(isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Notice', copy.userNotFound);
+        Alert.alert(isVi ? 'Thông báo' : 'Notice', copy.userNotFound);
       }
     } catch (err: any) {
       console.warn('[MyBalanceScreen] Failed to fetch recipient from scanned QR', err);
-      Alert.alert(isVi ? 'LÃ¡Â»â€”i' : 'Error', err?.message || 'Network error');
+      Alert.alert(isVi ? 'Lỗi' : 'Error', err?.message || 'Network error');
     } finally {
       setIsSearching(false);
     }
@@ -454,25 +451,25 @@ function MyBalanceScreen() {
   // Send money execution
   const handleConfirmSend = useCallback(async () => {
     if (!selectedRecipient) {
-      Alert.alert(isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Warning', copy.selectRecipient);
+      Alert.alert(isVi ? 'Thông báo' : 'Warning', copy.selectRecipient);
       return;
     }
 
     const numericAmount = parsePositivePoints(sendAmount);
     if (!numericAmount) {
-      Alert.alert(isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Warning', copy.invalidAmount);
+      Alert.alert(isVi ? 'Thông báo' : 'Warning', copy.invalidAmount);
       return;
     }
 
     const balance = walletOverview?.balance ?? 0;
     if (numericAmount > balance) {
-      Alert.alert(isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Warning', copy.insufficientBalance);
+      Alert.alert(isVi ? 'Thông báo' : 'Warning', copy.insufficientBalance);
       return;
     }
 
     const senderId = Number(sessionStorage.getSession()?.userId || 0);
     if (!Number.isSafeInteger(senderId) || senderId <= 0) {
-      Alert.alert(isVi ? 'LÃ¡Â»â€”i' : 'Error', 'Authentication is required.');
+      Alert.alert(isVi ? 'Lỗi' : 'Error', 'Authentication is required.');
       return;
     }
     const requestId = pendingPointsTransferRequestStorage.getOrCreate({
@@ -491,7 +488,7 @@ function MyBalanceScreen() {
       });
 
       pendingPointsTransferRequestStorage.clear(response.requestId || requestId);
-      Alert.alert(isVi ? 'ThÃƒÂ nh cÃƒÂ´ng' : 'Success', response.message || copy.successSend);
+      Alert.alert(isVi ? 'Thành công' : 'Success', response.message || copy.successSend);
       setIsSendModalVisible(false);
       setSearchQuery('');
       setSearchResults([]);
@@ -509,7 +506,7 @@ function MyBalanceScreen() {
       ) {
         pendingPointsTransferRequestStorage.clear(requestId);
       }
-      Alert.alert(isVi ? 'LÃ¡Â»â€”i' : 'Error', err?.message || 'Network error');
+      Alert.alert(isVi ? 'Lỗi' : 'Error', err?.message || 'Network error');
     } finally {
       setIsSubmitting(false);
     }
@@ -533,18 +530,37 @@ function MyBalanceScreen() {
 
   // Handle QR scanner trigger click
   const handleOpenScanner = useCallback(async () => {
+    if (scannerTransitionLockedRef.current) return;
+    scannerTransitionLockedRef.current = true;
     const isAuthorized = await requestCameraPermission();
-    if (isAuthorized) {
-      setIsScannerVisible(true);
-    } else {
+    if (!isAuthorized) {
+      scannerTransitionLockedRef.current = false;
       Alert.alert(copy.cameraPermissionTitle, copy.cameraPermissionDesc);
+      return;
     }
+
+    if (Platform.OS === 'ios') {
+      pendingScannerOpenRef.current = true;
+      returnToSendAfterScannerRef.current = true;
+      setIsSendModalVisible(false);
+      return;
+    }
+
+    scannerTransitionLockedRef.current = false;
+    setIsScannerVisible(true);
   }, [copy]);
 
-  // Handle scanned QR code result.
-  const handleReadCode = useCallback((code: string) => {
+  const handleSendModalDismiss = useCallback(() => {
+    if (Platform.OS !== 'ios' || !pendingScannerOpenRef.current) return;
+
+    pendingScannerOpenRef.current = false;
+    scannerTransitionLockedRef.current = false;
+    setIsScannerVisible(true);
+  }, []);
+
+  // Process a scanned QR only after the native scanner modal has dismissed.
+  const processScannedCode = useCallback((code: string) => {
     if (!code) return;
-    setIsScannerVisible(false);
 
     const payload = parseTransferQrForScreen(code);
     console.log('[MyBalanceScreen] QR scanned value', code);
@@ -552,7 +568,7 @@ function MyBalanceScreen() {
 
     if (!payload) {
       Alert.alert(
-        isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Notice',
+        isVi ? 'Thông báo' : 'Notice',
         isVi ? 'Mã QR VNSEEA không hợp lệ.' : 'Invalid VNSEEA QR code.',
       );
       return;
@@ -566,9 +582,9 @@ function MyBalanceScreen() {
       (scannedCurrentUserId > 0 && currentUserId > 0 && scannedCurrentUserId === currentUserId)
     ) {
       Alert.alert(
-        isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Notice',
+        isVi ? 'Thông báo' : 'Notice',
         isVi
-          ? 'BÃ¡ÂºÂ¡n khÃƒÂ´ng thÃ¡Â»Æ’ tÃ¡Â»Â± gÃ¡Â»Â­i VNSEEA cho chÃƒÂ­nh mÃƒÂ¬nh!'
+          ? 'Bạn không thể tự gửi VNSEEA cho chính mình!'
           : 'You cannot send VNSEEA to yourself!',
       );
       return;
@@ -580,12 +596,60 @@ function MyBalanceScreen() {
     }
 
     Alert.alert(
-      isVi ? 'ThÃƒÂ´ng bÃƒÂ¡o' : 'Notice',
+      isVi ? 'Thông báo' : 'Notice',
       isVi 
-        ? 'MÃƒÂ£ QR khÃƒÂ´ng hÃ¡Â»Â£p lÃ¡Â»â€¡ hoÃ¡ÂºÂ·c khÃƒÂ´ng chÃ¡Â»Â©a thÃƒÂ´ng tin ngÃ†Â°Ã¡Â»Âi nhÃ¡ÂºÂ­n!\nDÃ¡Â»Â¯ liÃ¡Â»â€¡u quÃƒÂ©t Ã„â€˜Ã†Â°Ã¡Â»Â£c: "' + code + '"'
+        ? 'Mã QR không hợp lệ hoặc không chứa thông tin người nhận!\nDữ liệu quét được: "' + code + '"'
         : 'Invalid QR or QR does not contain recipient info!\nScanned data: "' + code + '"',
     );
   }, [fetchAndSetRecipientFromQr, isVi, username, walletOverview?.currentUser?.id]);
+
+  const handleReadCode = useCallback(
+    (code: string) => {
+      if (!code || scannerTransitionLockedRef.current) return;
+      scannerTransitionLockedRef.current = true;
+
+      if (Platform.OS === 'ios') {
+        pendingScannedCodeRef.current = code;
+        returnToSendAfterScannerRef.current = true;
+        setIsScannerVisible(false);
+        return;
+      }
+
+      setIsScannerVisible(false);
+      scannerTransitionLockedRef.current = false;
+      processScannedCode(code);
+    },
+    [processScannedCode],
+  );
+
+  const handleCloseScanner = useCallback(() => {
+    pendingScannedCodeRef.current = null;
+    if (Platform.OS === 'ios') {
+      scannerTransitionLockedRef.current = true;
+      returnToSendAfterScannerRef.current = true;
+    } else {
+      scannerTransitionLockedRef.current = false;
+    }
+    setIsScannerVisible(false);
+  }, []);
+
+  const handleScannerDismiss = useCallback(() => {
+    if (Platform.OS !== 'ios') return;
+
+    const scannedCode = pendingScannedCodeRef.current;
+    const shouldReturnToSend = returnToSendAfterScannerRef.current;
+    pendingScannedCodeRef.current = null;
+    returnToSendAfterScannerRef.current = false;
+    scannerTransitionLockedRef.current = false;
+
+    if (shouldReturnToSend) {
+      setIsSendModalVisible(true);
+    }
+    if (scannedCode) {
+      processScannedCode(scannedCode);
+    }
+  }, [processScannedCode]);
+
   if (isLoading && !walletOverview) {
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
@@ -722,13 +786,13 @@ function MyBalanceScreen() {
             >
               {/* Transaction Title */}
               <Text className="text-[15px] font-bold text-slate-800 leading-tight mb-1">
-                {item.notes || (isSent ? 'Ã„ÂÃƒÂ£ gÃ¡Â»Â­i VNSEEA' : isReceived ? 'Nhận VNSEEA' : item.kind)}
+                {item.notes || (isSent ? 'Đã gửi VNSEEA' : isReceived ? 'Nhận VNSEEA' : item.kind)}
               </Text>
 
               {/* Counterparty */}
               {item.counterpartyName ? (
                 <Text className="text-xs font-semibold text-slate-400 mb-3">
-                  {isSent ? 'Ã„ÂÃ¡ÂºÂ¿n: ' : 'Từ: '}{item.counterpartyName}
+                  {isSent ? 'Đến: ' : 'Từ: '}{item.counterpartyName}
                 </Text>
               ) : <View className="mb-3" />}
 
@@ -756,6 +820,7 @@ function MyBalanceScreen() {
         animationType="slide"
         presentationStyle="pageSheet"
         onRequestClose={() => setIsSendModalVisible(false)}
+        onDismiss={handleSendModalDismiss}
       >
         <SafeAreaView className="flex-1 bg-white" edges={['top']}>
           {/* Header with Curved Wave Style */}
@@ -1008,7 +1073,8 @@ function MyBalanceScreen() {
       <Modal
         visible={isScannerVisible}
         animationType="slide"
-        onRequestClose={() => setIsScannerVisible(false)}
+        onRequestClose={handleCloseScanner}
+        onDismiss={handleScannerDismiss}
       >
         <SafeAreaView className="flex-1 bg-black" edges={['top']}>
           {/* Header */}
@@ -1016,7 +1082,7 @@ function MyBalanceScreen() {
             <Text className="text-lg font-black text-white">{copy.scannerTitle}</Text>
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={() => setIsScannerVisible(false)}
+              onPress={handleCloseScanner}
               className="h-10 w-10 items-center justify-center rounded-full bg-neutral-900"
             >
               <X size={20} color="#ffffff" />
