@@ -302,6 +302,29 @@ function PostReactionsSheetBase({ visible, postId, onClose }: Props) {
   // so the close animation has time to play out before React tears it down.
   const [isMounted, setIsMounted] = useState(visible);
   const openProgress = useRef(new Animated.Value(0)).current;
+  const pendingProfileUserIdRef = useRef<string | null>(null);
+
+  const completePendingProfileNavigation = useCallback(() => {
+    const userId = pendingProfileUserIdRef.current;
+    if (!userId) return;
+
+    pendingProfileUserIdRef.current = null;
+    navigateToUserProfile(navigation, userId);
+  }, [navigation]);
+
+  const requestProfileNavigation = useCallback(
+    (userId: string) => {
+      if (!userId || pendingProfileUserIdRef.current) return;
+
+      pendingProfileUserIdRef.current = userId;
+      onClose();
+    },
+    [onClose],
+  );
+
+  const handleModalDismiss = useCallback(() => {
+    completePendingProfileNavigation();
+  }, [completePendingProfileNavigation]);
 
   useEffect(() => {
     if (visible) {
@@ -328,6 +351,11 @@ function PostReactionsSheetBase({ visible, postId, onClose }: Props) {
     });
   }, [openProgress, visible]);
 
+  useEffect(() => {
+    if (Platform.OS === 'ios' || isMounted) return;
+    completePendingProfileNavigation();
+  }, [completePendingProfileNavigation, isMounted]);
+
   const backdropOpacity = openProgress.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 1],
@@ -342,16 +370,6 @@ function PostReactionsSheetBase({ visible, postId, onClose }: Props) {
     inputRange: [0, 1],
     outputRange: [0.985, 1],
   });
-
-  // Profile navigation goes through the shared helper so own profile uses
-  // the tab route and other users open in the root stack above tabs.
-  const navigateToProfile = useCallback(
-    (userId: string) => {
-      if (!userId) return;
-      navigateToUserProfile(navigation, userId);
-    },
-    [navigation],
-  );
 
   const handleToggleFollow = useCallback(
     async (userId: string, currentlyFollowing: boolean) => {
@@ -389,7 +407,7 @@ function PostReactionsSheetBase({ visible, postId, onClose }: Props) {
     ({ item }: { item: PostReactionUser }) => (
       <ReactionUserRow
         user={item}
-        onOpenProfile={navigateToProfile}
+        onOpenProfile={requestProfileNavigation}
         onToggleFollow={handleToggleFollow}
         followLabel={copy.reactionsFollowButton}
         followingLabel={copy.reactionsFollowingButton}
@@ -397,7 +415,7 @@ function PostReactionsSheetBase({ visible, postId, onClose }: Props) {
       />
     ),
     [
-      navigateToProfile,
+      requestProfileNavigation,
       handleToggleFollow,
       copy.reactionsFollowButton,
       copy.reactionsFollowingButton,
@@ -420,10 +438,20 @@ function PostReactionsSheetBase({ visible, postId, onClose }: Props) {
     void loadMore();
   }, [loadMore]);
 
-  // Don't render anything if the sheet is closed AND its exit animation
-  // has finished — saves React work and avoids the back gesture firing
-  // on a transparent Modal that's no longer in the tree.
-  if (!isMounted) return null;
+  // Keep the Modal instance mounted with visible=false so iOS can deliver
+  // onDismiss before profile navigation starts.
+  if (!isMounted) {
+    return (
+      <Modal
+        visible={false}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={onClose}
+        onDismiss={handleModalDismiss}
+      />
+    );
+  }
 
   // Defensive: if the sheet is opening but we have no postId yet (caller
   // toggled visible before setting postId), bail with a blank sheet so
@@ -437,6 +465,7 @@ function PostReactionsSheetBase({ visible, postId, onClose }: Props) {
       animationType="none"
       statusBarTranslucent
       onRequestClose={onClose}
+      onDismiss={handleModalDismiss}
     >
       <View className="flex-1 justify-end">
         <Pressable
