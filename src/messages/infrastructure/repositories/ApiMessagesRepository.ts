@@ -6,6 +6,7 @@ import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { normalizeRawUrl } from '../../../foundation/application/normalizers/url';
 import type { MessagesRepository } from '../../domain/repositories/MessagesRepository';
+import { parseSharedPostMessage } from '../../application/shared-posts/sharedPostMessage';
 import type {
   ChatItem,
   ChatPreviewKind,
@@ -935,6 +936,9 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
     parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
     parseCallEvent(message, sessionUserId);
   const displayMessage = media && message === 'Tin nhắn' ? '' : message;
+  const sharedPost = callEvent
+    ? undefined
+    : parseSharedPostMessage(displayMessage, apiConfig.webBaseUrl);
   return {
     id: readString(raw, 'id', 'message_id'),
     conversationId: readString(raw, 'conversation_id', 'group_id'),
@@ -942,6 +946,7 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
     toId,
     message: callEvent ? '' : displayMessage,
     callEvent,
+    sharedPost,
     media,
     mediaType: readMediaType(raw, decodedMessage),
     thumbnail: normalizeRawUrl(
