@@ -147,6 +147,7 @@ import CreateActionSheet from '../../../shared-kernel/presentation/components/Cr
 import { ColorPicker } from '../../../shared-kernel/presentation/components/ColorPicker';
 
 import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
+import { sortMessageUserChats } from '../utils/messageListOrdering';
 import Svg, {
   Circle as SvgCircle,
   Defs,
@@ -2823,45 +2824,7 @@ function MessageScreen() {
 
     });
 
-    filtered.sort((a, b) => {
-
-      const getPriority = (chat: ChatItem) => {
-
-        if (chat.unreadCount > 0) return 4;
-
-        const hasMsg = chat.lastMessageTime > 0;
-
-        if (chat.isFollowing && !hasMsg) return 2;
-
-        if (hasMsg) {
-
-          const nowSeconds = Date.now() / 1000;
-
-          const isRecent = nowSeconds - chat.lastMessageTime < 86400;
-
-          return isRecent ? 3 : 1;
-
-        }
-
-        return 0;
-
-      };
-
-      const aPri = getPriority(a);
-
-      const bPri = getPriority(b);
-
-      if (aPri !== bPri) return bPri - aPri;
-
-      const timeDiff = b.lastMessageTime - a.lastMessageTime;
-
-      if (timeDiff !== 0) return timeDiff;
-
-      return b.unreadCount - a.unreadCount;
-
-    });
-
-    return filtered;
+    return sortMessageUserChats(filtered);
 
   }, [chats, query, copy]);
 

@@ -139,6 +139,7 @@ export type RootStackParamList = {
     product?: ProductItem;
     highlightMessageId?: string;
     initialText?: string;
+    sharedMapLocation?: SharedMapLocation;
   };
   [ROUTES.CONVERSATION_DETAILS]: { chat: ChatItem };
   [ROUTES.CONVERSATION_SEARCH]: { chat: ChatItem };

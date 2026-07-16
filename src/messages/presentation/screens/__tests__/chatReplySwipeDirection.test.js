@@ -75,4 +75,19 @@ describe('ChatScreen reply swipe direction', () => {
     expect(source).not.toContain('Hàng hiệu à');
     expect(source).not.toMatch(/Quick Option Suggestion Chips[\s\S]*<ScrollView[\s\S]*horizontal/);
   });
+
+  it('previews shared map locations above the composer instead of dropping encoded text into input', () => {
+    const chatSource = read('src/messages/presentation/screens/ChatScreen.tsx');
+    const nearbySource = read('src/user/presentation/screens/NearbyUsersScreen.tsx');
+
+    expect(chatSource).toContain('type ParsedMapShareMessage');
+    expect(chatSource).toContain('function MapShareCard');
+    expect(chatSource).toContain('const [sharedMapLocation, setSharedMapLocation]');
+    expect(chatSource).toContain('parseSharedMapMessage(initialText)');
+    expect(chatSource).toContain('buildMapShareUrl(sharedMapLocation)');
+    expect(chatSource).toContain('styles.mapShareComposerWrap');
+    expect(chatSource).toContain('styles.mapShareMessageCard');
+    expect(nearbySource).toContain('sharedMapLocation: selectedMapShareLocation');
+    expect(nearbySource).not.toContain('initialText: selectedMapShareText');
+  });
 });

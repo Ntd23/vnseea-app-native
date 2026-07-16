@@ -12,6 +12,7 @@ import type {
   MessageLabel,
 } from '../../domain/types/messages.types';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
+import { mergeChatItems } from '../utils/messageChatMerge';
 
 const repository = createMessagesRepository();
 const CHAT_SYNC_INTERVAL_MS = 3500;
@@ -32,37 +33,6 @@ function areLabelsEqual(
       label.name === other?.name &&
       label.color === other?.color
     );
-  });
-}
-
-function mergeChatItems(...chatLists: ChatItem[][]) {
-  const chats = new Map<string, ChatItem>();
-
-  for (const chat of chatLists.flat()) {
-    const key =
-      chat.chatType === 'user' ? `${chat.chatType}:${chat.userId}` : chat.id;
-    const current = chats.get(key);
-
-    if (!current) {
-      chats.set(key, chat);
-    } else if (chat.lastMessageTime >= current.lastMessageTime) {
-      chats.set(key, {
-        ...chat,
-        isOnline: chat.isOnline,
-      });
-    } else {
-      chats.set(key, {
-        ...current,
-        isOnline: chat.isOnline,
-      });
-    }
-  }
-
-  return [...chats.values()].sort((left, right) => {
-    const timeDifference = right.lastMessageTime - left.lastMessageTime;
-    if (timeDifference !== 0) return timeDifference;
-
-    return right.unreadCount - left.unreadCount;
   });
 }
 

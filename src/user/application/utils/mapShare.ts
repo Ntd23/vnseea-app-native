@@ -37,6 +37,10 @@ export function buildMapShareUrl(location: SharedMapLocation) {
   if (address) {
     params.set('address', address.slice(0, 140));
   }
+  const imageUrl = location.imageUrl?.trim();
+  if (imageUrl) {
+    params.set('image', imageUrl.slice(0, 420));
+  }
 
   return `${cleanBaseUrl()}/map?${params.toString()}`;
 }
@@ -59,12 +63,13 @@ export function buildMapSharePreview(
   imageUrl?: string,
 ): PostLinkPreview {
   const coord = `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
+  const previewImage = imageUrl || location.imageUrl || undefined;
 
   return {
-    url: buildMapShareUrl(location),
+    url: buildMapShareUrl({ ...location, imageUrl: previewImage }),
     title: location.title,
     description: `Tọa độ: ${coord}`,
-    image: imageUrl || undefined,
+    image: previewImage,
   };
 }
 
@@ -98,10 +103,12 @@ export function parseMapShareUrl(rawUrl: string): SharedMapLocation | null {
 
     const address = url.searchParams.get('address') || undefined;
     const pageId = url.searchParams.get('page_id') || undefined;
+    const imageUrl = url.searchParams.get('image') || undefined;
 
     return {
       title: url.searchParams.get('title') || 'Địa điểm đã chia sẻ',
       pageId,
+      imageUrl,
       subtitle: address,
       address,
       latitude,
