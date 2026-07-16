@@ -157,6 +157,36 @@ const GROUP_INFO_MODAL_SAFE_AREA_EDGES: Edge[] =
 const GROUP_INFO_DISMISS_SWIPE_DISTANCE = 72;
 const GROUP_INFO_DISMISS_SWIPE_START_DISTANCE = 18;
 const GROUP_INFO_DISMISS_SWIPE_HORIZONTAL_RATIO = 1.35;
+const PRODUCT_INQUIRY_QUICK_OPTIONS = [
+  {
+    id: 'availability',
+    label: 'Sản phẩm còn hàng không ạ?',
+    hint: 'Hỏi tình trạng còn hàng',
+    message: 'Sản phẩm này còn hàng không ạ?',
+    icon: ShoppingBag,
+  },
+  {
+    id: 'price',
+    label: 'Giá hiện tại là bao nhiêu ạ?',
+    hint: 'Xác nhận giá bán',
+    message: 'Giá hiện tại của sản phẩm là bao nhiêu ạ?',
+    icon: Info,
+  },
+  {
+    id: 'condition',
+    label: 'Tình trạng sản phẩm thế nào?',
+    hint: 'Hỏi độ mới và chất lượng',
+    message: 'Tình trạng hiện tại của sản phẩm như thế nào ạ?',
+    icon: MessageCircle,
+  },
+  {
+    id: 'details',
+    label: 'Cho mình xin thêm thông tin.',
+    hint: 'Ảnh thực tế, bảo hành, giao hàng',
+    message: 'Bạn có thể cho mình xin thêm thông tin chi tiết về sản phẩm không ạ?',
+    icon: FileText,
+  },
+] as const;
 
 const CHAT_COPY: Record<
   AppLanguage,
@@ -356,7 +386,6 @@ function LinkifiedText({
       if (mapLocation) {
         navigation.navigate(ROUTES.NEARBY_USERS, {
           initialLocation: mapLocation,
-          autoRoute: true,
         });
         return;
       }
@@ -1283,7 +1312,7 @@ function MessageBubble({
   const visibleMessageText = orderInquiry
     ? ''
     : productInquiry
-    ? productInquiry.userMessage || 'Mặt hàng này còn không bạn yêu?'
+    ? productInquiry.userMessage || 'Sản phẩm này còn hàng không ạ?'
     : replyInfo
     ? replyInfo.replyText
     : message.message;
@@ -4470,30 +4499,50 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               </TouchableOpacity>
             </View>
 
-            {/* Quick Option Suggestion Chips */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 10, paddingTop: 2 }}
-            >
-              {[
-                'Mặt hàng này còn không bạn yêu',
-                'Giá cả như nào vậy bạn',
-                'Cho mình xin thêm thông tin nhé con vợ',
-                'Hàng hiệu à',
-              ].map((optionText, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  onPress={() => handleSendProductInquiryOption(optionText)}
-                  className="mr-2 rounded-full border border-blue-100 bg-blue-50/50 px-3.5 py-1.5 active:bg-blue-100"
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-xs font-semibold text-blue-600">
-                    {optionText}
+            {/* Quick Product Inquiry Options */}
+            <View style={styles.productInquiryPanel}>
+              <View className="mb-2 flex-row items-center justify-between">
+                <View className="min-w-0 flex-1">
+                  <Text className="text-[13px] font-extrabold text-slate-900">
+                    Câu hỏi nhanh
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                  <Text className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                    Chọn một nội dung phù hợp để gửi cho người bán
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.productInquiryOptionGrid}>
+                {PRODUCT_INQUIRY_QUICK_OPTIONS.map(option => {
+                  const OptionIcon = option.icon;
+                  return (
+                    <TouchableOpacity
+                      key={option.id}
+                      onPress={() => handleSendProductInquiryOption(option.message)}
+                      style={styles.productInquiryOptionCard}
+                      activeOpacity={0.82}
+                    >
+                      <View style={styles.productInquiryOptionIcon}>
+                        <OptionIcon size={15} color="#2563EB" />
+                      </View>
+                      <View style={styles.productInquiryOptionCopy}>
+                        <Text
+                          style={styles.productInquiryOptionTitle}
+                          numberOfLines={2}
+                        >
+                          {option.label}
+                        </Text>
+                        <Text
+                          style={styles.productInquiryOptionHint}
+                          numberOfLines={1}
+                        >
+                          {option.hint}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
           </View>
         )}
 
@@ -4923,6 +4972,54 @@ const styles = StyleSheet.create({
     width: IMAGE_GALLERY_TILE_SIZE,
     overflow: 'hidden',
     backgroundColor: '#E5E7EB',
+  },
+  productInquiryPanel: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 2,
+  },
+  productInquiryOptionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  productInquiryOptionCard: {
+    width: '48.4%',
+    minHeight: 70,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    backgroundColor: '#F8FBFF',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  productInquiryOptionIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EAF2FF',
+  },
+  productInquiryOptionCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 8,
+  },
+  productInquiryOptionTitle: {
+    color: '#0F172A',
+    fontSize: 12.5,
+    fontWeight: '800',
+    lineHeight: 17,
+  },
+  productInquiryOptionHint: {
+    marginTop: 2,
+    color: '#64748B',
+    fontSize: 10.5,
+    fontWeight: '700',
   },
   videoPreviewShell: {
     borderRadius: 18,

@@ -97,6 +97,7 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
+const FONT_PRIMARY = 'Inter';
 
 const COMMENTS_COPY = {
   vi: {
@@ -233,15 +234,6 @@ function getReportSentMessage(language: keyof typeof COMMENTS_COPY) {
     ? 'Thanks. We will review this comment.'
     : 'C\u1ea3m \u01a1n b\u1ea1n. Ch\u00fang t\u00f4i s\u1ebd xem x\u00e9t b\u00ecnh lu\u1eadn n\u00e0y.';
 }
-
-const REACTION_EMOJI: Record<ReactionType, string> = {
-  like: '👍',
-  love: '❤️',
-  haha: '😂',
-  wow: '😮',
-  sad: '😢',
-  angry: '😡',
-};
 
 const REACTION_COLOR: Record<ReactionType, string> = {
   like: '#0866ff',
@@ -696,6 +688,7 @@ function ReelCommentsSheetBase({
 
   const handlePickAudio = useCallback(async () => {
     try {
+      Keyboard.dismiss();
       const audio = await pickSupportedAudioFile();
       if (audio) {
         setPendingImage(null);
@@ -711,6 +704,7 @@ function ReelCommentsSheetBase({
 
   const handleToggleAudioRecording = useCallback(async () => {
     try {
+      Keyboard.dismiss();
       if (isWavRecording) {
         const audio = await stopWavRecording();
         if (audio) {
@@ -777,41 +771,9 @@ function ReelCommentsSheetBase({
    * `pendingImage`.
    */
   const handlePickImage = useCallback(() => {
+    Keyboard.dismiss();
     setPhotoPickerVisible(true);
   }, []);
-
-  const handleLongPressRow = useCallback(
-    (comment: ReelComment) => {
-      if (comment.isSending) return;
-      if (comment.isFailed) {
-        setActionMenuComment(comment);
-        return;
-      }
-      if (comment.owner) {
-        setActionMenuComment(null);
-        setInlineDeleteCommentId(current =>
-          current === comment.id ? null : comment.id,
-        );
-        return;
-      }
-      if (!comment.owner) return;
-      Alert.alert(
-        copy.yourCommentTitle,
-        comment.text.length > 60
-          ? comment.text.slice(0, 60) + '…'
-          : comment.text,
-        [
-          { text: copy.cancel, style: 'cancel' },
-          {
-            text: getDeleteCommentLabel(language),
-            style: 'destructive',
-            onPress: () => onDelete(comment.id),
-          },
-        ],
-      );
-    },
-    [onDelete, onDeleteFailedComment, onRetryFailedComment, copy, language],
-  );
 
   const handleInlineDeleteComment = useCallback((commentId: string) => {
     setInlineDeleteCommentId(current => (current === commentId ? null : current));
@@ -1028,7 +990,7 @@ function ReelCommentsSheetBase({
           onOpenImage={handleOpenImage}
           replyingToCommentId={replyingTo?.commentId}
           onPressProfile={handlePressProfile}
-          inlineDeleteCommentId={null}
+          inlineDeleteCommentId={inlineDeleteCommentId}
           deletingCommentIds={deletingCommentIds}
           onInlineDelete={handleInlineDeleteComment}
         />
@@ -1039,6 +1001,7 @@ function ReelCommentsSheetBase({
       handleOpenImage,
       handleOpenPicker,
       handleInlineDeleteComment,
+      inlineDeleteCommentId,
       deletingCommentIds,
       loadingRepliesIds,
       onCollapseReplies,
@@ -1580,6 +1543,12 @@ function CommentPhotoPickerSheet({
   onTakePhoto,
   onChooseFromLibrary,
 }: CommentPhotoPickerSheetProps) {
+  useEffect(() => {
+    if (visible) {
+      Keyboard.dismiss();
+    }
+  }, [visible]);
+
   if (!visible) return null;
 
   const photoPickerSheetWidth = Math.min(
@@ -2767,15 +2736,19 @@ const styles = StyleSheet.create({
   },
   headerCountText: {
     color: '#0872ff',
+    fontFamily: FONT_PRIMARY,
     fontSize: 12,
     fontWeight: '800',
+    includeFontPadding: false,
   },
   title: {
     flex: 1,
     textAlign: 'center',
     color: '#111827',
+    fontFamily: FONT_PRIMARY,
     fontSize: 17,
     fontWeight: '700',
+    includeFontPadding: false,
   },
   closeButton: {
     width: 32,
@@ -2800,13 +2773,17 @@ const styles = StyleSheet.create({
   stateText: {
     marginTop: 10,
     color: '#64748b',
+    fontFamily: FONT_PRIMARY,
     fontSize: 13,
+    includeFontPadding: false,
   },
   errorText: {
     color: '#ef4444',
+    fontFamily: FONT_PRIMARY,
     fontSize: 13,
     textAlign: 'center',
     marginBottom: 14,
+    includeFontPadding: false,
   },
   retryButton: {
     borderRadius: 999,
@@ -2816,8 +2793,10 @@ const styles = StyleSheet.create({
   },
   retryText: {
     color: '#fff',
+    fontFamily: FONT_PRIMARY,
     fontSize: 13,
     fontWeight: '700',
+    includeFontPadding: false,
   },
   commentsList: {
     flex: 1,
@@ -2837,28 +2816,38 @@ const styles = StyleSheet.create({
   refreshingHeaderText: {
     marginLeft: 8,
     color: '#64748b',
+    fontFamily: FONT_PRIMARY,
     fontSize: 12,
     fontWeight: '600',
+    includeFontPadding: false,
   },
   emptyListContent: {
     flexGrow: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 20,
+    paddingBottom: 12,
   },
   emptyBox: {
     alignItems: 'center',
     paddingHorizontal: 24,
+    paddingTop: 8,
   },
   emptyTitle: {
     color: '#111827',
-    fontSize: 15,
+    fontFamily: FONT_PRIMARY,
+    fontSize: 14,
+    lineHeight: 19,
     fontWeight: '800',
     marginBottom: 6,
+    includeFontPadding: false,
   },
   emptyText: {
     color: '#64748b',
-    fontSize: 13,
+    fontFamily: FONT_PRIMARY,
+    fontSize: 12,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 17,
+    includeFontPadding: false,
   },
   footerLoader: {
     paddingVertical: 14,
@@ -2866,9 +2855,11 @@ const styles = StyleSheet.create({
   },
   inlineError: {
     color: '#ef4444',
+    fontFamily: FONT_PRIMARY,
     fontSize: 12,
     textAlign: 'center',
     paddingVertical: 12,
+    includeFontPadding: false,
   },
 
   // Thread wrapper
@@ -3192,8 +3183,10 @@ const styles = StyleSheet.create({
   },
   replyBarText: {
     color: '#475569',
+    fontFamily: FONT_PRIMARY,
     fontSize: 12,
     fontWeight: '500',
+    includeFontPadding: false,
   },
   replyBarMention: {
     color: '#0866ff',
@@ -3201,8 +3194,10 @@ const styles = StyleSheet.create({
   },
   replyBarSnippet: {
     color: '#94a3b8',
+    fontFamily: FONT_PRIMARY,
     fontSize: 11,
     marginTop: 2,
+    includeFontPadding: false,
   },
   replyBarClose: {
     padding: 4,
@@ -3236,11 +3231,13 @@ const styles = StyleSheet.create({
     minHeight: 40,
     borderRadius: 20,
     backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#f1f5f9',
+    fontFamily: FONT_PRIMARY,
     paddingHorizontal: 14,
     paddingTop: Platform.OS === 'ios' ? 10 : 8,
     paddingBottom: Platform.OS === 'ios' ? 10 : 8,
     color: '#111827',
     fontSize: 14,
+    includeFontPadding: false,
   },
   sendButton: {
     width: 40,
@@ -3309,8 +3306,10 @@ const styles = StyleSheet.create({
   pendingAudioName: {
     marginBottom: 5,
     color: '#475569',
+    fontFamily: FONT_PRIMARY,
     fontSize: 12,
     fontWeight: '700',
+    includeFontPadding: false,
   },
   pendingAudioRemove: {
     width: 30,
@@ -3344,9 +3343,11 @@ const styles = StyleSheet.create({
   },
   recordingText: {
     color: '#b91c1c',
+    fontFamily: FONT_PRIMARY,
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 3,
+    includeFontPadding: false,
   },
   recordingBody: {
     flex: 1,
@@ -3439,22 +3440,28 @@ const styles = StyleSheet.create({
   },
   actionSheetTitle: {
     color: '#0f172a',
+    fontFamily: FONT_PRIMARY,
     fontSize: 17,
     fontWeight: '800',
     textAlign: 'center',
+    includeFontPadding: false,
   },
   actionSheetMessage: {
     color: '#334155',
+    fontFamily: FONT_PRIMARY,
     fontSize: 14,
     lineHeight: 20,
     marginTop: 6,
     textAlign: 'center',
+    includeFontPadding: false,
   },
   actionSheetFootnote: {
     color: '#94a3b8',
+    fontFamily: FONT_PRIMARY,
     fontSize: 12,
     marginTop: 5,
     textAlign: 'center',
+    includeFontPadding: false,
   },
   actionSheetOption: {
     minHeight: 54,
@@ -3513,16 +3520,20 @@ const styles = StyleSheet.create({
   },
   photoPickerTitle: {
     color: '#0f172a',
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '900',
+    fontFamily: FONT_PRIMARY,
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '800',
+    includeFontPadding: false,
   },
   photoPickerSubtitle: {
     color: '#6b7280',
-    fontSize: 15,
-    lineHeight: 20,
+    fontFamily: FONT_PRIMARY,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '500',
     marginTop: 2,
+    includeFontPadding: false,
   },
   photoPickerOptionRow: {
     flexDirection: 'column',
@@ -3566,18 +3577,22 @@ const styles = StyleSheet.create({
   },
   photoPickerOptionText: {
     color: '#0f172a',
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '900',
+    fontFamily: FONT_PRIMARY,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
     textAlign: 'left',
+    includeFontPadding: false,
   },
   photoPickerOptionHint: {
     color: '#6b7280',
-    fontSize: 13,
-    lineHeight: 18,
+    fontFamily: FONT_PRIMARY,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '500',
-    marginTop: 5,
+    marginTop: 4,
     marginLeft: 68,
+    includeFontPadding: false,
   },
   photoPickerChevronBox: {
     position: 'absolute',
@@ -3604,10 +3619,12 @@ const styles = StyleSheet.create({
   },
   photoPickerCancelText: {
     color: '#2563eb',
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: '900',
+    fontFamily: FONT_PRIMARY,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
     textAlign: 'center',
+    includeFontPadding: false,
   },
   commentActionSheetCard: {
     alignSelf: 'center',
@@ -3653,23 +3670,29 @@ const styles = StyleSheet.create({
   },
   commentActionHeroTitle: {
     color: '#0f172a',
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '900',
+    fontFamily: FONT_PRIMARY,
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '800',
+    includeFontPadding: false,
   },
   commentActionHeroSubtitle: {
     color: '#6b7280',
-    fontSize: 15,
-    lineHeight: 20,
+    fontFamily: FONT_PRIMARY,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '500',
     marginTop: 2,
+    includeFontPadding: false,
   },
   commentActionHeroFootnote: {
     color: '#94a3b8',
-    fontSize: 12,
-    lineHeight: 16,
+    fontFamily: FONT_PRIMARY,
+    fontSize: 11,
+    lineHeight: 15,
     fontWeight: '600',
     marginTop: 4,
+    includeFontPadding: false,
   },
   commentActionOptionList: {
     flexDirection: 'column',
@@ -3721,32 +3744,40 @@ const styles = StyleSheet.create({
   },
   commentActionOptionText: {
     color: '#0f172a',
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '900',
+    fontFamily: FONT_PRIMARY,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
     textAlign: 'left',
+    includeFontPadding: false,
   },
   commentActionPrimaryOptionText: {
     color: '#2563eb',
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '900',
+    fontFamily: FONT_PRIMARY,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
     textAlign: 'left',
+    includeFontPadding: false,
   },
   commentActionDangerOptionText: {
     color: '#dc2626',
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '900',
+    fontFamily: FONT_PRIMARY,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
     textAlign: 'left',
+    includeFontPadding: false,
   },
   commentActionOptionHint: {
     color: '#6b7280',
-    fontSize: 13,
-    lineHeight: 18,
+    fontFamily: FONT_PRIMARY,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '500',
-    marginTop: 5,
+    marginTop: 4,
     marginLeft: 68,
+    includeFontPadding: false,
   },
   commentActionChevronBox: {
     position: 'absolute',

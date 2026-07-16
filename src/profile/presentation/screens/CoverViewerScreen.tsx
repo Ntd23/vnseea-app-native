@@ -4,6 +4,8 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,7 +16,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Camera, Download } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -38,8 +40,13 @@ function CoverViewerScreen({ route, navigation }: Props) {
   const fallbackRoute = useRoute<CoverRoute>();
   const nav = navigation ?? fallbackNav;
   const screenRoute = route ?? fallbackRoute;
+  const insets = useSafeAreaInsets();
 
   const { coverUrl, userName, userId } = screenRoute.params;
+  const safeTopInset = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0,
+  );
 
   const { updateCover } = useProfileViewModel();
   const [isLoading, setIsLoading] = useState(false);
@@ -179,9 +186,9 @@ function CoverViewerScreen({ route, navigation }: Props) {
   return (
     <GestureHandlerRootView style={styles.container}>
       <FocusAwareStatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.container}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: safeTopInset + 8 }]}>
           <TouchableOpacity
             style={styles.headerButton}
             onPress={handleClose}
@@ -242,7 +249,7 @@ function CoverViewerScreen({ route, navigation }: Props) {
             Chạm hai lần để phóng to • Kéo để di chuyển
           </Text>
         </View>
-      </SafeAreaView>
+      </View>
     </GestureHandlerRootView>
   );
 }
@@ -257,7 +264,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingBottom: 8,
     position: 'absolute',
     top: 0,
     left: 0,

@@ -33,4 +33,21 @@ describe('ProfileScreen reload behavior', () => {
     expect(source).toContain('strokeLinecap="round"');
     expect(source).not.toContain('stroke="url(#storyRingGrad)"');
   });
+
+  it('opens a working relationship action sheet from the followed profile button', () => {
+    const source = read('src/profile/presentation/screens/ProfileScreen.tsx');
+
+    expect(source).toContain('const [isRelationshipSheetVisible, setRelationshipSheetVisible] = useState(false);');
+    expect(source).toContain('const openRelationshipActionsSheet = useCallback(() => {');
+    expect(source).toContain('onPress={openRelationshipActionsSheet}');
+    expect(source).toContain('visible={isRelationshipSheetVisible}');
+    expect(source).toContain('{copy.unfollow}');
+    expect(source).toContain('{copy.blockUser}');
+    expect(source).toContain('await toggleFollow(String(targetUserId));');
+    expect(source).toContain('apiRoutes.social.block');
+    expect(source).toContain("block_action: 'block'");
+    expect(source).toContain('UserMinus size={18} color="#2563EB"');
+    expect(source).toContain('UserRoundX size={18} color="#EF4444"');
+    expect(source).toContain('isRelationshipSheetVisible ||');
+  });
 });

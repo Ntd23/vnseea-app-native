@@ -2550,7 +2550,6 @@ const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
       if (mapLocation) {
         navigation.navigate(ROUTES.NEARBY_USERS, {
           initialLocation: mapLocation,
-          autoRoute: true,
         });
         return;
       }
@@ -2609,8 +2608,12 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
     const mapLocation = parseMapShareUrl(preview.url);
     if (mapLocation) {
       navigation.navigate(ROUTES.NEARBY_USERS, {
-        initialLocation: mapLocation,
-        autoRoute: true,
+        initialLocation: {
+          ...mapLocation,
+          title: preview.title || mapLocation.title,
+          subtitle: mapLocation.subtitle || preview.description,
+          imageUrl: preview.image || mapLocation.imageUrl,
+        },
       });
       return;
     }

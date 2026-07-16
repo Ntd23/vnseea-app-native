@@ -40,10 +40,12 @@ import {
   Users,
   UserCheck,
   Sparkles,
+  UserRoundX,
   Verified,
   MessageCircle,
   ShoppingBag,
   ShoppingCart,
+  UserMinus,
   Video,
   X,
 
@@ -86,6 +88,8 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
+import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
@@ -402,6 +406,18 @@ const PROFILE_COPY: Record<AppLanguage, {
   addToStory: string;
   cartLabel: string;
   followed: string;
+  followActionsTitle: string;
+  followActionsSubtitle: string;
+  unfollow: string;
+  blockUser: string;
+  unfollowHint: string;
+  blockHint: string;
+  blockTitle: string;
+  blockConfirm: (name: string) => string;
+  blockSuccess: string;
+  unfollowSuccess: string;
+  unfollowError: string;
+  blockError: string;
   message: string;
   poke: string;
   requestSent: string;
@@ -467,6 +483,18 @@ const PROFILE_COPY: Record<AppLanguage, {
     addToStory: 'Các hoạt động',
     cartLabel: 'Giỏ hàng',
     followed: 'Đã theo dõi',
+    followActionsTitle: 'Đã theo dõi',
+    followActionsSubtitle: 'Bạn muốn làm gì với người dùng này?',
+    unfollow: 'Hủy theo dõi',
+    blockUser: 'Chặn người dùng',
+    unfollowHint: 'Ngừng theo dõi tài khoản này',
+    blockHint: 'Ngăn người này xem hoặc nhắn tin cho bạn',
+    blockTitle: 'Chặn người dùng',
+    blockConfirm: name => `Bạn có chắc muốn chặn ${name}?`,
+    blockSuccess: 'Đã chặn người dùng.',
+    unfollowSuccess: 'Đã hủy theo dõi.',
+    unfollowError: 'Không thể hủy theo dõi. Vui lòng thử lại.',
+    blockError: 'Không thể chặn người dùng. Vui lòng thử lại.',
     message: 'Nhắn tin',
     poke: 'Chọc',
     requestSent: 'Đã gửi yêu cầu',
@@ -531,6 +559,18 @@ const PROFILE_COPY: Record<AppLanguage, {
     addToStory: 'Activities',
     cartLabel: 'Cart',
     followed: 'Following',
+    followActionsTitle: 'Following',
+    followActionsSubtitle: 'What would you like to do with this user?',
+    unfollow: 'Unfollow',
+    blockUser: 'Block user',
+    unfollowHint: 'Stop following this account',
+    blockHint: 'Prevent this person from viewing or messaging you',
+    blockTitle: 'Block user',
+    blockConfirm: name => `Are you sure you want to block ${name}?`,
+    blockSuccess: 'User blocked.',
+    unfollowSuccess: 'Unfollowed successfully.',
+    unfollowError: 'Could not unfollow. Please try again.',
+    blockError: 'Could not block this user. Please try again.',
     message: 'Message',
     poke: 'Poke',
     requestSent: 'Request sent',
@@ -591,6 +631,10 @@ const PROFILE_COPY: Record<AppLanguage, {
     pokeError: 'Could not poke this user right now.',
   },
 };
+
+function apiSucceeded(value: unknown) {
+  return value === 200 || value === '200' || value === true || value === 'success';
+}
 
 const FALLBACK_COVER =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCNqLNeeWsi7Qk4abx08XCTrKI5CmUGgDCiX-kH7Y_8LIIX5Slo9GRgEra_4deGp5e9pYozUmQdYGZi1sNQSks0QtbNWgpmn5gJgrF62Z8I8UMQpqKiMHLQ8Rzd9oUUIITFJPuwExVflVdeB1fRKjSGDO7zAocaZElLgpqJr6Mjvoj2FKOUVfnTk8XxnkG5WNijLpmXavW9TFlNhtlfLYbSE2qofOA8or7d_AfsUWZV43ADdtVFNH7VwEEazqapaL-Vndqksu_vDnE';
@@ -1339,6 +1383,10 @@ function ProfileScreen() {
 
   const [isLoadingAvatar, setIsLoadingAvatar] = useState(false);
   const [isLoadingCover, setIsLoadingCover] = useState(false);
+  const [isRelationshipSheetVisible, setRelationshipSheetVisible] = useState(false);
+  const [relationshipAction, setRelationshipAction] = useState<
+    'unfollow' | 'block' | null
+  >(null);
 
   const [posts, setPosts] = useState<ProfileFeedPost[]>([]);
   const profilePostsRef = useRef<ProfileFeedPost[]>([]);
@@ -3122,6 +3170,115 @@ function ProfileScreen() {
     }
   };
 
+  const openRelationshipActionsSheet = useCallback(() => {
+    if (!isFriendProfile || isOwnProfile) {
+      return;
+    }
+
+    setRelationshipSheetVisible(true);
+  }, [isFriendProfile, isOwnProfile]);
+
+  const closeRelationshipActionsSheet = useCallback(() => {
+    if (relationshipAction) {
+      return;
+    }
+
+    setRelationshipSheetVisible(false);
+  }, [relationshipAction]);
+
+  const handleUnfollowFromProfile = useCallback(async () => {
+    if (!targetUserId || relationshipAction) {
+      return;
+    }
+
+    setRelationshipAction('unfollow');
+    try {
+      await toggleFollow(String(targetUserId));
+      setRelationshipSheetVisible(false);
+      showToast({
+        message: copy.unfollowSuccess,
+        type: 'success',
+      });
+    } catch (caughtError) {
+      console.error('[ProfileScreen] Failed to unfollow user:', caughtError);
+      Alert.alert(copy.errorTitle, copy.unfollowError);
+    } finally {
+      setRelationshipAction(null);
+    }
+  }, [
+    copy.errorTitle,
+    copy.unfollowError,
+    copy.unfollowSuccess,
+    relationshipAction,
+    targetUserId,
+    toggleFollow,
+  ]);
+
+  const handleBlockFromProfile = useCallback(() => {
+    if (!targetUserId || relationshipAction) {
+      return;
+    }
+
+    Alert.alert(copy.blockTitle, copy.blockConfirm(displayName || copy.userFallback), [
+      { text: copy.sheetCancel, style: 'cancel' },
+      {
+        text: copy.blockUser,
+        style: 'destructive',
+        onPress: async () => {
+          setRelationshipAction('block');
+          try {
+            const response = await apiBridge.post<{
+              api_status?: string | number;
+              block_status?: string;
+              message?: string;
+            }>(apiRoutes.social.block, {
+              user_id: String(targetUserId),
+              block_action: 'block',
+            });
+
+            if (
+              response.block_status !== 'blocked' &&
+              !apiSucceeded(response.api_status)
+            ) {
+              throw new Error(response.message || copy.blockError);
+            }
+
+            showToast({
+              message: copy.blockSuccess,
+              type: 'success',
+            });
+            setRelationshipSheetVisible(false);
+
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+              return;
+            }
+
+            navigation.navigate(ROUTES.MAIN_TABS, { screen: ROUTES.FEED });
+          } catch (caughtError) {
+            console.error('[ProfileScreen] Failed to block user:', caughtError);
+            Alert.alert(copy.errorTitle, copy.blockError);
+          } finally {
+            setRelationshipAction(null);
+          }
+        },
+      },
+    ]);
+  }, [
+    copy.blockConfirm,
+    copy.blockError,
+    copy.blockSuccess,
+    copy.blockTitle,
+    copy.blockUser,
+    copy.errorTitle,
+    copy.sheetCancel,
+    copy.userFallback,
+    displayName,
+    navigation,
+    relationshipAction,
+    targetUserId,
+  ]);
+
   const handlePokeUser = async () => {
     if (!targetUserId || isOwnProfile || isPokeLoading) {
       return;
@@ -3610,6 +3767,7 @@ function ProfileScreen() {
                   <TouchableOpacity
                     className="h-10 flex-1 flex-row items-center justify-center rounded-full bg-[#E4E6EB] px-4"
                     activeOpacity={0.8}
+                    onPress={openRelationshipActionsSheet}
                   >
                     <UserCheck size={16} color="#050505" />
                     <Text className="ml-1.5 text-[14px] font-bold text-[#050505]">
@@ -4171,6 +4329,7 @@ function ProfileScreen() {
     Boolean(photoViewer) ||
     profileMediaSheet !== null ||
     isActivitiesSheetVisible ||
+    isRelationshipSheetVisible ||
     editSheetVisible ||
     storyOptionsSheet !== null ||
     shareModalVisible ||
@@ -4415,6 +4574,107 @@ function ProfileScreen() {
         <FocusAwareStatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
         {profilePostsListElement}
         {profileHeaderOverlayElement}
+        <Modal
+          visible={isRelationshipSheetVisible}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={closeRelationshipActionsSheet}
+        >
+          <View style={profileMainStyles.relationshipSheetRoot}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={closeRelationshipActionsSheet}
+              style={profileMainStyles.relationshipSheetBackdrop}
+            />
+            <View
+              style={[
+                profileMainStyles.relationshipSheetCard,
+                { paddingBottom: Math.max(insets.bottom, 18) },
+              ]}
+            >
+              <View style={profileMainStyles.relationshipSheetHandle} />
+              <Text style={profileMainStyles.relationshipSheetTitle}>
+                {copy.followActionsTitle}
+              </Text>
+              <Text style={profileMainStyles.relationshipSheetSubtitle}>
+                {copy.followActionsSubtitle}
+              </Text>
+
+              <TouchableOpacity
+                activeOpacity={0.82}
+                onPress={handleUnfollowFromProfile}
+                disabled={relationshipAction !== null}
+                style={profileMainStyles.relationshipSheetAction}
+              >
+                <View
+                  style={[
+                    profileMainStyles.relationshipSheetActionIcon,
+                    { backgroundColor: '#EFF6FF' },
+                  ]}
+                >
+                  {relationshipAction === 'unfollow' ? (
+                    <ActivityIndicator size="small" color="#2563EB" />
+                  ) : (
+                    <UserMinus size={18} color="#2563EB" />
+                  )}
+                </View>
+                <View style={profileMainStyles.relationshipSheetActionContent}>
+                  <Text style={profileMainStyles.relationshipSheetActionTitle}>
+                    {copy.unfollow}
+                  </Text>
+                  <Text style={profileMainStyles.relationshipSheetActionHint}>
+                    {copy.unfollowHint}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.82}
+                onPress={handleBlockFromProfile}
+                disabled={relationshipAction !== null}
+                style={profileMainStyles.relationshipSheetAction}
+              >
+                <View
+                  style={[
+                    profileMainStyles.relationshipSheetActionIcon,
+                    { backgroundColor: '#FEF2F2' },
+                  ]}
+                >
+                  {relationshipAction === 'block' ? (
+                    <ActivityIndicator size="small" color="#EF4444" />
+                  ) : (
+                    <UserRoundX size={18} color="#EF4444" />
+                  )}
+                </View>
+                <View style={profileMainStyles.relationshipSheetActionContent}>
+                  <Text
+                    style={[
+                      profileMainStyles.relationshipSheetActionTitle,
+                      { color: '#B91C1C' },
+                    ]}
+                  >
+                    {copy.blockUser}
+                  </Text>
+                  <Text style={profileMainStyles.relationshipSheetActionHint}>
+                    {copy.blockHint}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.86}
+                onPress={closeRelationshipActionsSheet}
+                style={profileMainStyles.relationshipSheetCancel}
+                disabled={relationshipAction !== null}
+              >
+                <Text style={profileMainStyles.relationshipSheetCancelText}>
+                  {copy.sheetCancel}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
         <EditProfileActionSheet
           visible={editSheetVisible}
           onClose={() => {
@@ -5212,6 +5472,102 @@ const profileMainStyles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#CBD5E1',
     opacity: 0.5,
+  },
+  relationshipSheetRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  relationshipSheetBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.46)',
+  },
+  relationshipSheetCard: {
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 18,
+  },
+  relationshipSheetHandle: {
+    width: 44,
+    height: 5,
+    borderRadius: 9999,
+    backgroundColor: '#CBD5E1',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  relationshipSheetTitle: {
+    color: '#0F172A',
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  relationshipSheetSubtitle: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  relationshipSheetAction: {
+    minHeight: 68,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  relationshipSheetActionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  relationshipSheetActionContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  relationshipSheetActionTitle: {
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  relationshipSheetActionHint: {
+    color: '#64748B',
+    fontSize: 11.5,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  relationshipSheetCancel: {
+    height: 48,
+    borderRadius: 9999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEF2FF',
+    marginTop: 2,
+  },
+  relationshipSheetCancelText: {
+    color: '#0F172A',
+    fontSize: 14,
+    fontWeight: '900',
   },
   mediaSheetRoot: {
     flex: 1,

@@ -189,6 +189,8 @@ const ADDRESS_LABEL_DELTA_HIDDEN = 0.018;
 const ADDRESS_LABEL_DELTA_MEDIUM = 0.009;
 const ADDRESS_LABEL_LIMIT_MEDIUM = 4;
 const ADDRESS_LABEL_LIMIT_CLOSE = 8;
+const SHARED_LOCATION_EXACT_PAGE_MATCH_METERS = 35;
+const SHARED_LOCATION_NEAR_PAGE_MATCH_METERS = 260;
 const HEALTH_PLACE_TYPE_SET = new Set([
   'hospital',
   'doctor',
@@ -512,6 +514,43 @@ function formatCoordinate(coordinate: LatLng) {
   )}`;
 }
 
+function normalizeLocationMatchText(value?: string) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasUsefulTextOverlap(left?: string, right?: string) {
+  const normalizedLeft = normalizeLocationMatchText(left);
+  const normalizedRight = normalizeLocationMatchText(right);
+
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft)
+  ) {
+    return true;
+  }
+
+  const leftWords = new Set(
+    normalizedLeft.split(' ').filter(word => word.length >= 3),
+  );
+  const rightWords = normalizedRight
+    .split(' ')
+    .filter(word => word.length >= 3);
+  if (leftWords.size === 0 || rightWords.length === 0) return false;
+
+  const overlap = rightWords.filter(word => leftWords.has(word)).length;
+  return overlap >= Math.min(2, rightWords.length);
+}
+
 function formatCompactCount(value?: number) {
   if (value === undefined || !Number.isFinite(value)) return '0';
   if (value < 1000) return `${Math.max(0, Math.round(value))}`;
@@ -560,6 +599,87 @@ function pageFromNearbyPlace(place: NearbyPlace): PagesItem {
     ownerId: place.ownerId,
     owner: pageOwnerFromNearbyPlace(place),
   };
+}
+
+function selectedPointFromNearbyPage(page: NearbyPlace): SelectedPoint | null {
+  if (!page.coordinate) return null;
+
+  return {
+    id: page.id,
+    source: 'page',
+    title: page.name,
+    subtitle: page.username ? `@${page.username}` : page.location || 'Page',
+    address: page.location,
+    avatarUrl: page.avatarUrl,
+    url: page.url,
+    showNameBadge: true,
+    page,
+    coordinate: page.coordinate,
+    distanceMeters: page.distanceMeters,
+  };
+}
+
+function findPageForSharedLocation(
+  sharedLocation: SharedMapLocation,
+  pages: NearbyPlace[],
+) {
+  if (sharedLocation.pageId) {
+    const exactPage = pages.find(
+      page =>
+        page.pageId === sharedLocation.pageId ||
+        page.id === `page:${sharedLocation.pageId}`,
+    );
+    if (exactPage?.coordinate) {
+      return exactPage;
+    }
+  }
+
+  const targetCoordinate = {
+    latitude: sharedLocation.latitude,
+    longitude: sharedLocation.longitude,
+  };
+  const targetTitle = sharedLocation.title;
+  const targetAddress = sharedLocation.address || sharedLocation.subtitle;
+
+  const candidates = pages
+    .map(page => {
+      if (!page.coordinate) return null;
+
+      const distance = distanceMeters(targetCoordinate, page.coordinate);
+      if (distance > SHARED_LOCATION_NEAR_PAGE_MATCH_METERS) {
+        return null;
+      }
+
+      const textMatched =
+        hasUsefulTextOverlap(targetTitle, page.name) ||
+        hasUsefulTextOverlap(targetTitle, page.username) ||
+        hasUsefulTextOverlap(targetAddress, page.location);
+
+      if (
+        distance > SHARED_LOCATION_EXACT_PAGE_MATCH_METERS &&
+        !textMatched
+      ) {
+        return null;
+      }
+
+      return {
+        page,
+        distance,
+        score:
+          distance +
+          (hasUsefulTextOverlap(targetTitle, page.name) ? -40 : 0) +
+          (textMatched ? -12 : 0),
+      };
+    })
+    .filter(
+      (
+        candidate,
+      ): candidate is { page: NearbyPlace; distance: number; score: number } =>
+        candidate !== null,
+    )
+    .sort((left, right) => left.score - right.score);
+
+  return candidates[0]?.page ?? null;
 }
 
 function chatFromPageOwner(page: PagesItem): ChatItem | null {
@@ -2050,6 +2170,12 @@ export default function NearbyUsersScreen() {
       title: selectedPoint.title,
       subtitle: selectedPoint.subtitle,
       address: selectedPoint.address || selectedPoint.subtitle,
+      pageId: selectedPoint.page?.pageId || undefined,
+      imageUrl:
+        selectedPoint.page?.coverUrl ||
+        selectedPoint.page?.avatarUrl ||
+        selectedPoint.avatarUrl ||
+        undefined,
       latitude: selectedPoint.coordinate.latitude,
       longitude: selectedPoint.coordinate.longitude,
     };
@@ -2783,6 +2909,7 @@ export default function NearbyUsersScreen() {
   const handledInitialLocationRef = useRef('');
   const pendingSharedRoutePointRef = useRef<SelectedPoint | null>(null);
   useEffect(() => {
+    let cancelled = false;
     const sharedLocation = route.params?.initialLocation;
     if (!sharedLocation) return;
 
@@ -2810,20 +2937,92 @@ export default function NearbyUsersScreen() {
         sharedLocation.address ||
         'Địa điểm đã chia sẻ',
       address: sharedLocation.address || sharedLocation.subtitle,
+      avatarUrl: sharedLocation.imageUrl,
       coordinate: { latitude, longitude },
     };
     const shouldRoute = Boolean(route.params?.autoRoute);
-    pendingSharedRoutePointRef.current =
-      shouldRoute && !currentLocationRef.current ? sharedPoint : null;
-    selectPoint(sharedPoint, Boolean(shouldRoute && currentLocationRef.current));
+    const selectResolvedPoint = (point: SelectedPoint) => {
+      if (cancelled) return;
+      pendingSharedRoutePointRef.current =
+        shouldRoute && !currentLocationRef.current ? point : null;
+      selectPoint(point, Boolean(shouldRoute && currentLocationRef.current));
+    };
+    const existingPage = findPageForSharedLocation(
+      sharedLocation,
+      nearbyPlaces,
+    );
+    const existingPagePoint = existingPage
+      ? selectedPointFromNearbyPage(existingPage)
+      : null;
+
+    selectResolvedPoint(existingPagePoint ?? sharedPoint);
     navigation.setParams({
       initialLocation: undefined,
       autoRoute: undefined,
     } as never);
+
+    if (!existingPagePoint) {
+      loadNearbyPages({
+        lat: latitude,
+        lng: longitude,
+        limit: 30,
+      })
+        .then(async pages => {
+          if (cancelled) return;
+          hasLoadedNearbyPagesRef.current = true;
+          setHasLoadedNearbyPages(true);
+
+          const matchedPage = findPageForSharedLocation(
+            sharedLocation,
+            pages,
+          );
+          const matchedPoint = matchedPage
+            ? selectedPointFromNearbyPage(matchedPage)
+            : null;
+          if (matchedPoint) {
+            selectResolvedPoint(matchedPoint);
+            return;
+          }
+
+          const sharedTitle = sharedLocation.title.trim();
+          if (sharedTitle.length < 3) {
+            return;
+          }
+
+          const searchResult = await searchNearbyPagesAndPlaces({
+            query: sharedTitle,
+            googleQuery: sharedTitle,
+            lat: latitude,
+            lng: longitude,
+            radius: SEARCH_RADIUS_METERS,
+            limit: 20,
+          });
+          if (cancelled) return;
+
+          const searchedPage = findPageForSharedLocation(
+            sharedLocation,
+            searchResult.pages,
+          );
+          const searchedPoint = searchedPage
+            ? selectedPointFromNearbyPage(searchedPage)
+            : null;
+          if (searchedPoint) {
+            selectResolvedPoint(searchedPoint);
+          }
+        })
+        .catch(() => undefined);
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [
+    loadNearbyPages,
     navigation,
+    nearbyPlaces,
     route.params?.autoRoute,
     route.params?.initialLocation,
+    searchNearbyPagesAndPlaces,
     selectPoint,
   ]);
 
@@ -2841,21 +3040,10 @@ export default function NearbyUsersScreen() {
 
   const selectPage = useCallback(
     (page: NearbyPlace) => {
-      if (!page.coordinate) return;
+      const pagePoint = selectedPointFromNearbyPage(page);
+      if (!pagePoint) return;
 
-      selectPoint({
-        id: page.id,
-        source: 'page',
-        title: page.name,
-        subtitle: page.username ? `@${page.username}` : page.location || 'Page',
-        address: page.location,
-        avatarUrl: page.avatarUrl,
-        url: page.url,
-        showNameBadge: true,
-        page,
-        coordinate: page.coordinate,
-        distanceMeters: page.distanceMeters,
-      });
+      selectPoint(pagePoint);
     },
     [selectPoint],
   );
@@ -4914,7 +5102,7 @@ export default function NearbyUsersScreen() {
           </TouchableOpacity>
 
           <View className="flex-row items-center pr-7">
-            {selectedPoint.source === 'page' ? (
+            {selectedPoint.avatarUrl ? (
               <Image
                 source={{ uri: selectedPoint.avatarUrl || FALLBACK_AVATAR }}
                 className="h-14 w-14 rounded-2xl bg-slate-100"

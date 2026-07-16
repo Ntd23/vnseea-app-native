@@ -6,6 +6,8 @@ export type SharedMapLocation = {
   title: string;
   latitude: number;
   longitude: number;
+  pageId?: string;
+  imageUrl?: string;
   subtitle?: string;
   address?: string;
 };
@@ -27,6 +29,13 @@ export function buildMapShareUrl(location: SharedMapLocation) {
 
   if (title) {
     params.set('title', title.slice(0, 48));
+  }
+  if (location.pageId) {
+    params.set('page_id', location.pageId);
+  }
+  const address = location.address || location.subtitle;
+  if (address) {
+    params.set('address', address.slice(0, 140));
   }
 
   return `${cleanBaseUrl()}/map?${params.toString()}`;
@@ -61,7 +70,11 @@ export function buildMapSharePreview(
 
 export function parseMapShareUrl(rawUrl: string): SharedMapLocation | null {
   try {
-    const url = new URL(rawUrl);
+    const normalizedUrl = rawUrl
+      .replace(/&amp;/gi, '&')
+      .replace(/&#38;/g, '&')
+      .trim();
+    const url = new URL(normalizedUrl);
     const isSupportedHost =
       url.hostname === 'v2.vnseea.vn' ||
       url.hostname.endsWith('.vnseea.vn') ||
@@ -84,9 +97,11 @@ export function parseMapShareUrl(rawUrl: string): SharedMapLocation | null {
     }
 
     const address = url.searchParams.get('address') || undefined;
+    const pageId = url.searchParams.get('page_id') || undefined;
 
     return {
       title: url.searchParams.get('title') || 'Địa điểm đã chia sẻ',
+      pageId,
       subtitle: address,
       address,
       latitude,

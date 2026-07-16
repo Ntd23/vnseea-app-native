@@ -58,4 +58,21 @@ describe('ChatScreen reply swipe direction', () => {
     expect(source).not.toContain('getMediaFileName');
     expect(source).not.toContain('videoPreviewBottomBar');
   });
+
+  it('renders product inquiry quick options as a serious grid instead of horizontal chips', () => {
+    const source = read('src/messages/presentation/screens/ChatScreen.tsx');
+
+    expect(source).toContain('const PRODUCT_INQUIRY_QUICK_OPTIONS = [');
+    expect(source).toContain("label: 'Sản phẩm còn hàng không ạ?'");
+    expect(source).toContain("label: 'Giá hiện tại là bao nhiêu ạ?'");
+    expect(source).toContain("label: 'Tình trạng sản phẩm thế nào?'");
+    expect(source).toContain("label: 'Cho mình xin thêm thông tin.'");
+    expect(source).toContain('styles.productInquiryOptionGrid');
+    expect(source).toContain("flexWrap: 'wrap'");
+    expect(source).toContain('handleSendProductInquiryOption(option.message)');
+    expect(source).not.toContain('Mặt hàng này còn không bạn yêu');
+    expect(source).not.toContain('Cho mình xin thêm thông tin nhé con vợ');
+    expect(source).not.toContain('Hàng hiệu à');
+    expect(source).not.toMatch(/Quick Option Suggestion Chips[\s\S]*<ScrollView[\s\S]*horizontal/);
+  });
 });
