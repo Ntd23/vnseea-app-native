@@ -2474,8 +2474,10 @@ export function createFeedRepository(): FeedRepository {
       // web client's UI surfaces. We synthesise a stable URL via
       // `getShareableUrl` so the link is real and openable.
       if (input.destination === 'message') {
-        if (!input.recipientUserId) {
-          throw new Error('Thiếu người nhận để chia sẻ qua tin nhắn.');
+        const hasUserRecipient = Boolean(input.recipientUserId);
+        const hasGroupRecipient = Boolean(input.recipientGroupId);
+        if (hasUserRecipient === hasGroupRecipient) {
+          throw new Error('Thiếu hoặc trùng đích nhận chia sẻ qua tin nhắn.');
         }
 
         const shareUrl = await getShareableUrl(input.postId, 'post');
@@ -2488,16 +2490,29 @@ export function createFeedRepository(): FeedRepository {
         // For richer sharing we'd need a wire-level `post_id`
         // parameter on `send-message`, which WoWonder does not
         // support today.
-        const sendResponse = await backendApi.post<{
+        type MessageShareResponse = {
           api_status: number | string;
           message_data?: Record<string, unknown>;
+          data?: unknown;
           errors?: { error_text?: string };
           message?: string;
-        }>(apiRoutes.messages.send, {
-          user_id: input.recipientUserId,
-          text: messageBody,
-          message_type: 'share_post',
-        });
+        };
+        const sendResponse = input.recipientGroupId
+          ? await backendApi.post<MessageShareResponse>(
+              apiRoutes.messages.groupChat,
+              {
+                type: 'send',
+                id: input.recipientGroupId,
+                text: messageBody,
+              },
+            )
+          : await backendApi.post<MessageShareResponse>(apiRoutes.messages.send, {
+              user_id: input.recipientUserId,
+              text: messageBody,
+              message_hash_id: `${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2, 10)}`,
+            });
 
         const ok = String(sendResponse.api_status) === '200';
         if (!ok) {

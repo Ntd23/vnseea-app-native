@@ -1,14 +1,20 @@
-// Description: Animated bottom-sheet variant of the post-share overlay.
-// Slides up from the bottom with a grabber handle, dimmed backdrop that
-// closes on tap, and hides the bottom tab bar while open.
-import React, { useCallback, useEffect, useState } from 'react';
+// Description: VNSEEA post-share sheet with an inline composer and carousels.
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -19,50 +25,219 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  Globe,
-  MessageCircle,
-  Send,
-  Share2,
-  Users,
-  X,
-} from 'lucide-react-native';
-import { useMyPagesViewModel } from '../../../pages';
-import { useMyGroupsViewModel } from '../../../community';
+import { Send, X } from 'lucide-react-native';
+import { captureRef } from 'react-native-view-shot';
+import { useMyPagesViewModel, type PagesItem } from '../../../pages';
+import { useMyGroupsViewModel, type GroupItem } from '../../../community';
+import type { ChatItem } from '../../../messages/domain/types/messages.types';
+import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
-import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
-import { useShareViewModel } from '../../../shared-kernel/application/view-models/useShareViewModel';
+import { storyCreatedEvents } from '../../../stories/application/events/storyCreatedEvents';
+import type { StoryItem } from '../../../stories/domain/types/stories.types';
+import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import {
+  getShareableUrl,
+  useShareViewModel,
+} from '../../../shared-kernel/application/view-models/useShareViewModel';
+import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
+import { showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
 import { getShareCopy } from '../../application/i18n/shareCopy';
-import type {
-  FeedPost,
-} from '../../domain/types/feed.types';
+import {
+  buildPostStoryCardModel,
+  createPostStoryShare,
+} from '../../application/sharing/postStoryShare';
+import {
+  getMessageRecipientIdsToSend,
+  getMessageShareChats,
+  getMessageShareRecipient,
+  MAX_MESSAGE_SHARE_RECIPIENTS,
+  MESSAGE_SHARE_CONCURRENCY,
+  sendPostShareToMessageRecipients,
+  type MessageRecipientStatuses,
+} from '../../application/sharing/shareMessageRecipients';
+import type { FeedPost } from '../../domain/types/feed.types';
 import type {
   FeedShareDestination,
   SharePostInput,
 } from '../../domain/repositories/FeedRepository';
+import { FeedShareComposerCard } from './share/FeedShareComposerCard';
+import {
+  FeedShareDestinationCarousel,
+  type FeedShareCarouselDestination,
+} from './share/FeedShareDestinationCarousel';
+import { FeedShareRecipientCarousel } from './share/FeedShareRecipientCarousel';
+import { PostStoryShareCard } from './share/PostStoryShareCard';
 
-// Fallback avatar for the "me" row in the destination picker when the
-// current user hasn't set one. Mirrors the placeholder used in
-// FeedScreen's local `FALLBACK_AVATAR`.
-const FALLBACK_AVATAR =
-  'https://cdn-icons-png.flaticon.com/512/847/847969.png';
-
-type ShareTarget = FeedShareDestination | 'message';
-
-const SHEET_HEIGHT_PERCENT = 86;
+const FALLBACK_AVATAR = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
 const ANIMATION_MS = 280;
+const STORY_MEDIA_READY_TIMEOUT_MS = 3000;
+const SHARE_DEBUG_PREFIX = '[VNSEEA_SHARE_DEBUG]';
 
-const DESTINATION_ITEMS: Array<{
-  id: ShareTarget;
-  key: 'destTimeline' | 'destPage' | 'destGroup' | 'destMessage';
-  Icon: React.ComponentType<{ size?: number; color?: string }>;
-}> = [
-  { id: 'timeline', key: 'destTimeline', Icon: Send },
-  { id: 'page', key: 'destPage', Icon: Globe },
-  { id: 'group', key: 'destGroup', Icon: Users },
-  { id: 'message', key: 'destMessage', Icon: MessageCircle },
-];
+type InternalShareTarget = 'timeline' | 'page' | 'group' | 'story';
+type LazyShareData = 'message' | 'page' | 'group';
+
+function logShareDebug(event: string, data: Record<string, unknown> = {}) {
+  try {
+    console.log(
+      SHARE_DEBUG_PREFIX,
+      JSON.stringify({ event, at: new Date().toISOString(), ...data }),
+    );
+  } catch {
+    console.log(SHARE_DEBUG_PREFIX, event);
+  }
+}
+
+interface ShareEntityChoice {
+  id: string;
+  title: string;
+  subtitle?: string;
+  avatar?: string;
+}
+
+const messagesRepository = createMessagesRepository();
+const storiesRepository = createStoriesRepository();
+
+function mapPageChoice(page: PagesItem): ShareEntityChoice {
+  return {
+    id: String(page.pageId || page.id),
+    title: page.pageTitle || page.pageName,
+    subtitle: page.pageName ? `@${page.pageName}` : undefined,
+    avatar: page.avatar,
+  };
+}
+
+function mapGroupChoice(group: GroupItem): ShareEntityChoice {
+  return {
+    id: String(group.groupId || group.id),
+    title: group.groupTitle || group.groupName,
+    avatar: group.avatar,
+  };
+}
+
+function ShareEntityCarousel({
+  title,
+  emptyLabel,
+  entities,
+  selectedId,
+  isLoading,
+  disabled,
+  onSelect,
+}: {
+  title: string;
+  emptyLabel: string;
+  entities: ShareEntityChoice[];
+  selectedId: string | null;
+  isLoading: boolean;
+  disabled: boolean;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <View className="mt-4">
+      <Text className="mb-3 px-1 text-[15px] font-extrabold text-slate-900">
+        {title}
+      </Text>
+      {isLoading ? (
+        <View className="min-h-[94px] items-center justify-center">
+          <ActivityIndicator color="#0000ff" />
+        </View>
+      ) : entities.length === 0 ? (
+        <View className="rounded-lg bg-slate-50 p-3">
+          <Text className="text-[13px] font-semibold text-slate-500">
+            {emptyLabel}
+          </Text>
+        </View>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalContent}
+        >
+          {entities.map(entity => {
+            const selected = selectedId === entity.id;
+            return (
+              <TouchableOpacity
+                key={entity.id}
+                activeOpacity={0.85}
+                disabled={disabled}
+                onPress={() => onSelect(entity.id)}
+                className={`mr-3 w-[158px] flex-row items-center rounded-lg border p-2.5 ${
+                  selected
+                    ? 'border-[#0000ff] bg-indigo-50'
+                    : 'border-slate-200 surface-card'
+                }`}
+              >
+                <Image
+                  source={{ uri: entity.avatar || FALLBACK_AVATAR }}
+                  className="h-10 w-10 rounded-full bg-slate-200"
+                />
+                <View className="ml-2 min-w-0 flex-1">
+                  <Text
+                    className="text-[12px] font-extrabold text-slate-900"
+                    numberOfLines={1}
+                  >
+                    {entity.title}
+                  </Text>
+                  {entity.subtitle ? (
+                    <Text
+                      className="mt-0.5 text-[10px] font-semibold text-slate-500"
+                      numberOfLines={1}
+                    >
+                      {entity.subtitle}
+                    </Text>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+function buildOptimisticStory({
+  id,
+  captureUri,
+  title,
+  description,
+  user,
+}: {
+  id: string;
+  captureUri: string;
+  title?: string;
+  description?: string;
+  user: NonNullable<ReturnType<typeof useCurrentUserViewModel>['user']>;
+}): StoryItem {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    id,
+    publisher: {
+      userId: user.userId,
+      username: user.username,
+      name: user.name,
+      avatarUrl: user.avatar,
+      isVerified: false,
+    },
+    title,
+    description,
+    postedAt: now,
+    expiresAt: now + 24 * 60 * 60,
+    thumbnailUrl: captureUri,
+    media: [
+      {
+        id: `local-${id}`,
+        type: 'image',
+        url: captureUri,
+      },
+    ],
+    isOwner: true,
+    isViewed: false,
+    hasUnseen: true,
+    myReaction: null,
+    reactionCount: 0,
+  };
+}
 
 export interface FeedShareBottomSheetProps {
   visible: boolean;
@@ -79,9 +254,6 @@ export function FeedShareBottomSheet({
   onInternalShare,
   onShared,
 }: FeedShareBottomSheetProps) {
-  // Mirror the bilingual pattern used by comment / notification surfaces:
-  // useAppLanguage subscribes to the MMKV-backed language setting so the
-  // sheet re-renders the moment the user switches language in Settings.
   const language = useAppLanguage();
   const copy = getShareCopy(language);
   const insets = useSafeAreaInsets();
@@ -91,31 +263,88 @@ export function FeedShareBottomSheet({
   const { copyToClipboard, sharePost } = useShareViewModel();
 
   const [note, setNote] = useState('');
-  const [destination, setDestination] = useState<ShareTarget>('timeline');
+  const [target, setTarget] = useState<InternalShareTarget>('timeline');
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [messageChats, setMessageChats] = useState<ChatItem[]>([]);
+  const [isLoadingMessageChats, setIsLoadingMessageChats] = useState(false);
+  const [messageChatsError, setMessageChatsError] = useState<string | null>(null);
+  const [selectedMessageRecipientIds, setSelectedMessageRecipientIds] =
+    useState<string[]>([]);
+  const [messageRecipientStatuses, setMessageRecipientStatuses] =
+    useState<MessageRecipientStatuses>({});
   const [isSharing, setIsSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [storyCardReady, setStoryCardReady] = useState(false);
+  const [forceStoryMediaFallback, setForceStoryMediaFallback] = useState(false);
+  const loadedDataRef = useRef<Set<LazyShareData>>(new Set());
+  const messageLoadGenerationRef = useRef(0);
+  const wasVisibleRef = useRef(false);
+  const storyCardRef = useRef<View | null>(null);
 
-  // Animation values
   const translateY = useSharedValue(1000);
   const backdropOpacity = useSharedValue(0);
-  // Separate "rendered" flag so the sheet can stay mounted briefly during
-  // the close animation; without it the modal unmounts instantly.
   const [mounted, setMounted] = useState(visible);
 
+  const pageChoices = useMemo(
+    () => pagesVm.pages.map(mapPageChoice),
+    [pagesVm.pages],
+  );
+  const groupChoices = useMemo(
+    () => groupsVm.groups.map(mapGroupChoice),
+    [groupsVm.groups],
+  );
+  const availableMessageChats = useMemo(
+    () => getMessageShareChats(messageChats, currentUserVm.user?.userId),
+    [currentUserVm.user?.userId, messageChats],
+  );
+  const messageChatsByRecipientKey = useMemo(() => {
+    const chatsByKey = new Map<string, ChatItem>();
+    for (const chat of availableMessageChats) {
+      const recipient = getMessageShareRecipient(chat);
+      if (recipient) chatsByKey.set(recipient.key, chat);
+    }
+    return chatsByKey;
+  }, [availableMessageChats]);
+  const storyCardModel = useMemo(
+    () => (post ? buildPostStoryCardModel(post, note) : null),
+    [note, post],
+  );
+  const storyCardPostId = storyCardModel?.postId;
+  const storyMediaUrl = storyCardModel?.mediaUrl;
+  const messageRecipientIdsToSend = useMemo(
+    () =>
+      getMessageRecipientIdsToSend(
+        selectedMessageRecipientIds,
+        messageRecipientStatuses,
+      ),
+    [messageRecipientStatuses, selectedMessageRecipientIds],
+  );
+  const hasFailedMessageRecipients = selectedMessageRecipientIds.some(
+    recipientId => messageRecipientStatuses[recipientId] === 'failed',
+  );
+
   useEffect(() => {
-    if (visible) {
+    const wasVisible = wasVisibleRef.current;
+    wasVisibleRef.current = visible;
+
+    if (visible && !wasVisible) {
+      messageLoadGenerationRef.current += 1;
       setMounted(true);
       setNote('');
-      setDestination('timeline');
+      setTarget('timeline');
       setError(null);
+      setIsSharing(false);
       setSelectedPageId(null);
       setSelectedGroupId(null);
-      pagesVm.setActiveFilter('mine');
-      groupsVm.setActiveFilter('mine');
-      void pagesVm.loadFirstPage(false);
-      void groupsVm.loadFirstPage(false);
+      setMessageChats([]);
+      setIsLoadingMessageChats(false);
+      setMessageChatsError(null);
+      setSelectedMessageRecipientIds([]);
+      setMessageRecipientStatuses({});
+      setStoryCardReady(false);
+      setForceStoryMediaFallback(false);
+      loadedDataRef.current.clear();
       tabBarVisibility.setVisible(false);
       translateY.value = withTiming(0, {
         duration: ANIMATION_MS,
@@ -125,8 +354,9 @@ export function FeedShareBottomSheet({
         duration: ANIMATION_MS,
         easing: Easing.out(Easing.cubic),
       });
-    } else if (mounted) {
-      // Animate out, then unmount after the duration finishes.
+    } else if (!visible && wasVisible) {
+      messageLoadGenerationRef.current += 1;
+      setTarget('timeline');
       translateY.value = withTiming(1000, {
         duration: ANIMATION_MS,
         easing: Easing.in(Easing.cubic),
@@ -140,99 +370,322 @@ export function FeedShareBottomSheet({
       return () => clearTimeout(timeout);
     }
     return undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [backdropOpacity, translateY, visible]);
 
-  // Restore tab visibility if the sheet unmounts while still visible
-  // (defensive — covers navigation away mid-open).
   useEffect(() => {
     return () => {
+      messageLoadGenerationRef.current += 1;
       tabBarVisibility.setVisible(true);
     };
   }, []);
 
-  useEffect(() => {
-    if (!selectedPageId && pagesVm.pages.length > 0) {
-      const first = pagesVm.pages[0] as any;
-      setSelectedPageId(String(first.pageId || first.id));
-    }
-  }, [pagesVm.pages, selectedPageId]);
+  const loadMessageChats = useCallback(
+    async (force = false) => {
+      if (!visible || (!force && loadedDataRef.current.has('message'))) return;
+
+      loadedDataRef.current.add('message');
+      const generation = messageLoadGenerationRef.current;
+      setIsLoadingMessageChats(true);
+      setMessageChatsError(null);
+      logShareDebug('feed_share_chats_load_start', { generation, force });
+      try {
+        const [userResult, groupResult] = await Promise.allSettled([
+          Promise.resolve().then(() =>
+            messagesRepository.getChats({ includeDiscovery: false }),
+          ),
+          Promise.resolve().then(() => messagesRepository.getGroupChats()),
+        ]);
+
+        if (generation !== messageLoadGenerationRef.current) {
+          logShareDebug('feed_share_chats_load_stale', {
+            generation,
+            currentGeneration: messageLoadGenerationRef.current,
+          });
+          return;
+        }
+
+        const userChats =
+          userResult.status === 'fulfilled' ? userResult.value : [];
+        const groupChats =
+          groupResult.status === 'fulfilled' ? groupResult.value : [];
+        const combinedChats = [...userChats, ...groupChats];
+        const filteredChats = getMessageShareChats(
+          combinedChats,
+          currentUserVm.user?.userId,
+        );
+        const bothFailed =
+          userResult.status === 'rejected' &&
+          groupResult.status === 'rejected';
+        const partiallyFailed =
+          userResult.status === 'rejected' ||
+          groupResult.status === 'rejected';
+
+        setMessageChats(combinedChats);
+        if (bothFailed) {
+          loadedDataRef.current.delete('message');
+          setMessageChatsError(copy.chatLoadFailed);
+        } else if (partiallyFailed) {
+          setMessageChatsError(copy.chatLoadPartial);
+        }
+
+        logShareDebug('feed_share_chats_load_result', {
+          generation,
+          userStatus: userResult.status,
+          groupStatus: groupResult.status,
+          rawUserCount: userChats.length,
+          rawGroupCount: groupChats.length,
+          filteredUserCount: filteredChats.filter(
+            chat => chat.chatType !== 'group',
+          ).length,
+          filteredGroupCount: filteredChats.filter(
+            chat => chat.chatType === 'group',
+          ).length,
+        });
+      } catch {
+        if (generation !== messageLoadGenerationRef.current) return;
+        loadedDataRef.current.delete('message');
+        setMessageChatsError(copy.chatLoadFailed);
+        logShareDebug('feed_share_chats_load_error', { generation });
+      } finally {
+        if (generation === messageLoadGenerationRef.current) {
+          setIsLoadingMessageChats(false);
+        }
+      }
+    },
+    [
+      copy.chatLoadFailed,
+      copy.chatLoadPartial,
+      currentUserVm.user?.userId,
+      visible,
+    ],
+  );
 
   useEffect(() => {
-    if (!selectedGroupId && groupsVm.groups.length > 0) {
-      const first = groupsVm.groups[0] as any;
-      setSelectedGroupId(String(first.groupId || first.id));
+    loadMessageChats().catch(() => undefined);
+  }, [loadMessageChats]);
+
+  const handleRetryMessageChats = useCallback(() => {
+    loadMessageChats(true).catch(() => undefined);
+  }, [loadMessageChats]);
+
+  useEffect(() => {
+    if (!visible || (target !== 'page' && target !== 'group')) return;
+    if (loadedDataRef.current.has(target)) return;
+
+    loadedDataRef.current.add(target);
+    if (target === 'page') {
+      pagesVm.loadFirstPage(false).catch(() => undefined);
+    } else {
+      groupsVm.loadFirstPage(false).catch(() => undefined);
     }
-  }, [groupsVm.groups, selectedGroupId]);
+  }, [groupsVm, pagesVm, target, visible]);
+
+  useEffect(() => {
+    if (!selectedPageId && pageChoices.length > 0) {
+      setSelectedPageId(pageChoices[0].id);
+    }
+  }, [pageChoices, selectedPageId]);
+
+  useEffect(() => {
+    if (!selectedGroupId && groupChoices.length > 0) {
+      setSelectedGroupId(groupChoices[0].id);
+    }
+  }, [groupChoices, selectedGroupId]);
+
+  useEffect(() => {
+    if (!visible || target !== 'story' || !storyCardPostId) return undefined;
+
+    setForceStoryMediaFallback(false);
+    setStoryCardReady(!storyMediaUrl);
+    if (!storyMediaUrl) return undefined;
+
+    const timeout = setTimeout(() => {
+      setForceStoryMediaFallback(true);
+      setStoryCardReady(true);
+    }, STORY_MEDIA_READY_TIMEOUT_MS);
+    return () => clearTimeout(timeout);
+  }, [storyCardPostId, storyMediaUrl, target, visible]);
 
   const sheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
   }));
-
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: backdropOpacity.value,
   }));
 
+  const selectedPage = pageChoices.find(page => page.id === selectedPageId);
+  const selectedGroup = groupChoices.find(
+    group => group.id === selectedGroupId,
+  );
+  const targetLabel =
+    target === 'story'
+      ? copy.destStory
+      : target === 'page'
+      ? selectedPage?.title || copy.destPage
+      : target === 'group'
+      ? selectedGroup?.title || copy.destGroup
+      : copy.destTimeline;
+  const primaryButtonLabel =
+    target === 'story'
+      ? copy.shareStory
+      : target === 'page'
+      ? copy.sharePage
+      : target === 'group'
+      ? copy.shareGroup
+      : copy.shareNow;
+  const isPrimaryShareDisabled =
+    isSharing ||
+    !currentUserVm.user?.userId ||
+    (target === 'page' && !selectedPageId) ||
+    (target === 'group' && !selectedGroupId) ||
+    (target === 'story' && !storyCardReady);
+
+  const destinationLabels = useMemo(
+    () => ({
+      story: copy.destStory,
+      timeline: copy.destTimeline,
+      page: copy.destPage,
+      group: copy.destGroup,
+      copy: copy.copyLink,
+      more: copy.more,
+    }),
+    [copy],
+  );
+
   const handleClose = useCallback(() => {
-    onClose();
-  }, [onClose]);
+    if (!isSharing) onClose();
+  }, [isSharing, onClose]);
+
+  const handleStoryCardReady = useCallback(() => {
+    setStoryCardReady(true);
+  }, []);
+
+  const handleToggleMessageRecipient = useCallback(
+    (recipientId: string) => {
+      if (isSharing || messageRecipientStatuses[recipientId] === 'sent') return;
+
+      if (selectedMessageRecipientIds.includes(recipientId)) {
+        setSelectedMessageRecipientIds(current =>
+          current.filter(id => id !== recipientId),
+        );
+        setMessageRecipientStatuses(current => {
+          const next = { ...current };
+          delete next[recipientId];
+          return next;
+        });
+        setError(null);
+        return;
+      }
+
+      if (selectedMessageRecipientIds.length >= MAX_MESSAGE_SHARE_RECIPIENTS) {
+        setError(copy.recipientLimitReached(MAX_MESSAGE_SHARE_RECIPIENTS));
+        return;
+      }
+
+      setSelectedMessageRecipientIds(current => [...current, recipientId]);
+      setMessageRecipientStatuses(current => ({
+        ...current,
+        [recipientId]: 'idle',
+      }));
+      setError(null);
+    },
+    [copy, isSharing, messageRecipientStatuses, selectedMessageRecipientIds],
+  );
 
   const handleCopyLink = useCallback(async () => {
-    if (!post) return;
-    setIsSharing(true);
-    setError(null);
-    try {
-      await copyToClipboard(post.id, 'post');
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : copy.copyFailed);
-    } finally {
-      setIsSharing(false);
-    }
-  }, [copyToClipboard, onClose, post, copy]);
-
-  const handleExternalShare = useCallback(async () => {
-    if (!post) return;
-    setIsSharing(true);
-    setError(null);
-    try {
-      await sharePost(post, {
-        title: copy.sharePostTitle,
-        subject: copy.sharePostSubject,
-      });
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : copy.shareFailed);
-    } finally {
-      setIsSharing(false);
-    }
-  }, [copy, onClose, post, sharePost]);
-
-  const handleShare = useCallback(async () => {
     if (!post || isSharing) return;
     setIsSharing(true);
     setError(null);
     try {
-      if (destination === 'message') {
-        throw new Error(copy.messageUnavailable);
+      const copied = await copyToClipboard(post.id, 'post');
+      if (!copied) throw new Error(copy.copyFailed);
+      showToast({ message: copy.copied, type: 'success' });
+      onClose();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.copyFailed);
+    } finally {
+      setIsSharing(false);
+    }
+  }, [copy, copyToClipboard, isSharing, onClose, post]);
+
+  const handleExternalShare = useCallback(async () => {
+    if (!post || isSharing) return;
+    setIsSharing(true);
+    setError(null);
+    try {
+      const result = await sharePost(post, {
+        title: copy.sharePostTitle,
+        subject: copy.sharePostSubject,
+      });
+      if (!result) throw new Error(copy.shareFailed);
+      onClose();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.shareFailed);
+    } finally {
+      setIsSharing(false);
+    }
+  }, [copy, isSharing, onClose, post, sharePost]);
+
+  const handleStoryShare = useCallback(async () => {
+    if (
+      !post ||
+      !storyCardReady ||
+      !storyCardRef.current ||
+      !currentUserVm.user
+    ) {
+      throw new Error(copy.storyPreparing);
+    }
+
+    const { captureUri, draft, result } = await createPostStoryShare({
+      post,
+      note,
+      capture: options => captureRef(storyCardRef, options),
+      getShareUrl: postId => getShareableUrl(postId, 'post'),
+      upload: storyDraft => storiesRepository.createStory(storyDraft),
+    });
+    const optimisticId = result.storyId || `local-share-${Date.now()}`;
+    storyCreatedEvents.emit(
+      buildOptimisticStory({
+        id: optimisticId,
+        captureUri,
+        title: draft.title,
+        description: draft.description,
+        user: currentUserVm.user,
+      }),
+    );
+    showToast({ message: copy.storyShareSuccess, type: 'success' });
+  }, [
+    copy.storyPreparing,
+    copy.storyShareSuccess,
+    currentUserVm.user,
+    note,
+    post,
+    storyCardReady,
+  ]);
+
+  const handlePrimaryShare = useCallback(async () => {
+    if (!post || isPrimaryShareDisabled) return;
+    setIsSharing(true);
+    setError(null);
+    try {
+      if (target === 'story') {
+        await handleStoryShare();
+        onClose();
+        return;
       }
 
+      const destination: FeedShareDestination = target;
       const input: SharePostInput = {
         postId: post.id,
         destination,
         text: note,
       };
-
       if (destination === 'timeline') {
-        const userId = currentUserVm.user?.userId;
-        if (!userId) throw new Error(copy.noAccount);
-        input.userId = userId;
+        input.userId = currentUserVm.user?.userId;
       } else if (destination === 'page') {
-        if (!selectedPageId) throw new Error(copy.noPages);
-        input.pageId = selectedPageId;
+        input.pageId = selectedPageId || undefined;
       } else if (destination === 'group') {
-        if (!selectedGroupId) throw new Error(copy.noGroups);
-        input.groupId = selectedGroupId;
+        input.groupId = selectedGroupId || undefined;
       }
 
       const shared = await onInternalShare(input);
@@ -240,16 +693,21 @@ export function FeedShareBottomSheet({
       onClose();
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : copy.shareError,
+        caught instanceof Error
+          ? caught.message
+          : target === 'story'
+          ? copy.storyShareFailed
+          : copy.shareError,
       );
     } finally {
       setIsSharing(false);
     }
   }, [
-    copy,
+    copy.shareError,
+    copy.storyShareFailed,
     currentUserVm.user?.userId,
-    destination,
-    isSharing,
+    handleStoryShare,
+    isPrimaryShareDisabled,
     note,
     onClose,
     onInternalShare,
@@ -257,7 +715,90 @@ export function FeedShareBottomSheet({
     post,
     selectedGroupId,
     selectedPageId,
+    target,
   ]);
+
+  const handleSendMessages = useCallback(async () => {
+    if (!post || isSharing || messageRecipientIdsToSend.length === 0) return;
+    setIsSharing(true);
+    setError(null);
+    try {
+      const results = await sendPostShareToMessageRecipients({
+        recipientIds: messageRecipientIdsToSend,
+        concurrency: MESSAGE_SHARE_CONCURRENCY,
+        send: recipientKey => {
+          const chat = messageChatsByRecipientKey.get(recipientKey);
+          const recipient = chat ? getMessageShareRecipient(chat) : null;
+          if (!recipient) {
+            throw new Error(copy.selectMessageRecipient);
+          }
+          return onInternalShare({
+            postId: post.id,
+            destination: 'message',
+            ...(recipient.kind === 'group'
+              ? { recipientGroupId: recipient.targetId }
+              : { recipientUserId: recipient.targetId }),
+            text: note,
+          });
+        },
+        onStatusChange: (recipientId, status) => {
+          setMessageRecipientStatuses(current => ({
+            ...current,
+            [recipientId]: status,
+          }));
+        },
+      });
+      const failedCount = results.filter(
+        result => result.status === 'failed',
+      ).length;
+      if (failedCount > 0) {
+        setError(
+          copy.messagePartialFailure(
+            selectedMessageRecipientIds.length - failedCount,
+            failedCount,
+          ),
+        );
+        return;
+      }
+
+      showToast({
+        message: copy.messageShareSuccess(selectedMessageRecipientIds.length),
+        type: 'success',
+      });
+      onClose();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.shareError);
+    } finally {
+      setIsSharing(false);
+    }
+  }, [
+    copy,
+    isSharing,
+    messageRecipientIdsToSend,
+    messageChatsByRecipientKey,
+    note,
+    onClose,
+    onInternalShare,
+    post,
+    selectedMessageRecipientIds.length,
+  ]);
+
+  const handleDestinationSelect = useCallback(
+    (destination: FeedShareCarouselDestination) => {
+      if (isSharing) return;
+      setError(null);
+      if (destination === 'copy') {
+        handleCopyLink().catch(() => undefined);
+        return;
+      }
+      if (destination === 'more') {
+        handleExternalShare().catch(() => undefined);
+        return;
+      }
+      setTarget(destination);
+    },
+    [handleCopyLink, handleExternalShare, isSharing],
+  );
 
   if (!mounted || !post) return null;
 
@@ -265,262 +806,195 @@ export function FeedShareBottomSheet({
     <View className="absolute inset-0 z-[1100] justify-end">
       <Animated.View
         pointerEvents={visible ? 'auto' : 'none'}
-        style={[backdropStyle, { backgroundColor: 'rgba(0,0,0,0.36)' }]}
+        style={[backdropStyle, styles.backdrop]}
         className="absolute inset-0"
       >
         <Pressable
           accessibilityLabel={copy.closeAria}
           onPress={handleClose}
+          disabled={isSharing}
           className="flex-1"
         />
       </Animated.View>
 
-      <Animated.View
-        style={[
-          sheetStyle,
-          { paddingBottom: Math.max(insets.bottom, 10) },
-        ]}
-        className="bg-white rounded-t-[20px] overflow-hidden max-h-[86%]"
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        pointerEvents="box-none"
+        className="absolute inset-0 justify-end"
       >
-        <View className="items-center pt-2 pb-1">
-          <View className="w-9 h-[5px] rounded-full bg-slate-300" />
-        </View>
-
-        <View className="flex-row items-center justify-between px-4 min-h-[52px] border-b border-slate-100">
-          <View className="w-9" />
-          <Text className="flex-1 text-center text-[17px] font-extrabold text-slate-900">
-            {copy.title}
-          </Text>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={handleClose}
-            className="w-9 h-9 rounded-full bg-slate-100 items-center justify-center"
-          >
-            <X size={20} color="#111827" />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ padding: 16, paddingBottom: 22 }}
+        <Animated.View
+          style={[sheetStyle, styles.sheet]}
+          className="surface-base overflow-hidden rounded-t-[20px]"
         >
-          <Text className="mb-2 text-[14px] font-extrabold text-slate-900">
-            {copy.orShareTo}
-          </Text>
-          <TextInput
-            value={note}
-            onChangeText={setNote}
-            placeholder={copy.addNotePlaceholder}
-            placeholderTextColor="#94a3b8"
-            multiline
-            textAlignVertical="top"
-            className="min-h-[96px] mb-4 border border-slate-300 bg-white px-3.5 py-3 text-[14px] font-semibold text-slate-900 rounded-xl"
-          />
-
-          <Text className="mb-2 text-[14px] font-extrabold text-slate-900">
-            {copy.destinationLabel}
-          </Text>
-          <View className="flex-row gap-2.5 mb-3">
-            {DESTINATION_ITEMS.map(({ id, key, Icon }) => {
-              const active = destination === id;
-              return (
-                <TouchableOpacity
-                  key={id}
-                  activeOpacity={0.86}
-                  disabled={isSharing}
-                  onPress={() => {
-                    setDestination(id);
-                    setError(
-                      id === 'message' ? copy.messageUnavailable : null,
-                    );
-                  }}
-                  className={`flex-1 min-h-[74px] items-center justify-center rounded-2xl border px-1.5 ${
-                    active
-                      ? 'border-indigo-300 bg-indigo-50'
-                      : 'border-slate-200 bg-slate-50'
-                  }`}
-                >
-                  <Icon
-                    size={17}
-                    color={active ? '#0000ff' : '#64748b'}
-                  />
-                  <Text
-                    className={`mt-2 text-center text-[11px] font-extrabold ${
-                      active ? 'text-brand' : 'text-slate-500'
-                    }`}
-                  >
-                    {copy[key]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+          <View className="surface-card rounded-none border-x-0 border-t-0">
+            <View className="items-center pb-1 pt-2">
+              <View className="h-[5px] w-9 rounded-full bg-slate-300" />
+            </View>
+            <View className="min-h-[52px] flex-row items-center justify-between px-4">
+              <View className="w-9" />
+              <Text className="flex-1 text-center text-[17px] font-extrabold text-slate-900">
+                {copy.title}
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={handleClose}
+                disabled={isSharing}
+                accessibilityLabel={copy.closeAria}
+                className="h-9 w-9 items-center justify-center rounded-full bg-slate-100"
+              >
+                <X size={20} color="#111827" />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {destination === 'timeline' ? (
-            <View className="mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3.5">
-              <Text className="text-[15px] font-extrabold text-slate-900">
-                {copy.myProfile}
-              </Text>
-              <Text className="mt-1 text-[13px] font-semibold text-slate-500">
-                {copy.myProfileDesc}
-              </Text>
-              <View className="mt-3 flex-row items-center rounded-[14px] border border-indigo-300 bg-indigo-50 p-2.5">
-                <Image
-                  source={{ uri: currentUserVm.user?.avatar || FALLBACK_AVATAR }}
-                  className="w-[42px] h-[42px] rounded-full bg-slate-200"
-                />
-                <View className="ml-2.5 flex-1">
-                  <Text className="text-[14px] font-extrabold text-slate-900">
-                    {currentUserVm.user?.name || copy.myProfile}
-                  </Text>
-                  <Text className="mt-0.5 text-[12px] font-bold text-slate-500">
-                    @{currentUserVm.user?.username || 'me'}
+          <ScrollView
+            style={styles.scrollRegion}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+          >
+            <FeedShareComposerCard
+              avatarUri={currentUserVm.user?.avatar}
+              displayName={currentUserVm.user?.name || copy.myProfile}
+              targetLabel={targetLabel}
+              note={note}
+              notePlaceholder={copy.addNotePlaceholder}
+              ctaLabel={primaryButtonLabel}
+              isSubmitting={isSharing}
+              disabled={isPrimaryShareDisabled}
+              error={selectedMessageRecipientIds.length > 0 ? null : error}
+              onNoteChange={setNote}
+              onSubmit={handlePrimaryShare}
+              preview={
+                target === 'story' && storyCardModel ? (
+                  <PostStoryShareCard
+                    ref={storyCardRef}
+                    model={storyCardModel}
+                    forceMediaFallback={forceStoryMediaFallback}
+                    onReady={handleStoryCardReady}
+                  />
+                ) : undefined
+              }
+            />
+
+            {target === 'page' ? (
+              <ShareEntityCarousel
+                title={copy.myPages}
+                emptyLabel={pagesVm.error || copy.noPages}
+                entities={pageChoices}
+                selectedId={selectedPageId}
+                isLoading={pagesVm.isLoading}
+                disabled={isSharing}
+                onSelect={setSelectedPageId}
+              />
+            ) : null}
+
+            {target === 'group' ? (
+              <ShareEntityCarousel
+                title={copy.myGroups}
+                emptyLabel={groupsVm.error || copy.noGroups}
+                entities={groupChoices}
+                selectedId={selectedGroupId}
+                isLoading={groupsVm.isLoading}
+                disabled={isSharing}
+                onSelect={setSelectedGroupId}
+              />
+            ) : null}
+
+            <FeedShareRecipientCarousel
+              title={copy.sendViaMessages}
+              emptyLabel={copy.noChats}
+              loadingLabel={copy.loadingChats}
+              errorLabel={messageChatsError}
+              retryLabel={copy.retryChats}
+              selectedLabel={copy.selectedRecipients(
+                selectedMessageRecipientIds.length,
+                MAX_MESSAGE_SHARE_RECIPIENTS,
+              )}
+              chats={availableMessageChats}
+              selectedIds={selectedMessageRecipientIds}
+              statuses={messageRecipientStatuses}
+              isLoading={isLoadingMessageChats}
+              disabled={isSharing}
+              onToggle={handleToggleMessageRecipient}
+              onRetry={handleRetryMessageChats}
+            />
+
+            <FeedShareDestinationCarousel
+              title={copy.shareTo}
+              selected={target}
+              labels={destinationLabels}
+              disabled={isSharing}
+              onSelect={handleDestinationSelect}
+            />
+          </ScrollView>
+
+          {selectedMessageRecipientIds.length > 0 ? (
+            <View
+              testID="feed-share-footer"
+              style={{ paddingBottom: Math.max(insets.bottom, 10) }}
+              className="surface-card rounded-none border-x-0 border-b-0 px-4 pt-3"
+            >
+              {error ? (
+                <View className="mb-2 rounded-lg bg-red-50 p-2.5">
+                  <Text className="text-[12px] font-bold text-red-700">
+                    {error}
                   </Text>
                 </View>
-              </View>
+              ) : null}
+              <TouchableOpacity
+                activeOpacity={0.88}
+                disabled={isSharing || messageRecipientIdsToSend.length === 0}
+                onPress={handleSendMessages}
+                className={`min-h-12 flex-row items-center justify-center rounded-lg bg-[#0000ff] px-4 ${
+                  isSharing || messageRecipientIdsToSend.length === 0
+                    ? 'opacity-40'
+                    : ''
+                }`}
+              >
+                {isSharing ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <>
+                    <Send size={16} color="#ffffff" />
+                    <Text className="ml-2 text-[14px] font-extrabold text-white">
+                      {hasFailedMessageRecipients
+                        ? copy.retryMessageRecipients(
+                            messageRecipientIdsToSend.length,
+                          )
+                        : copy.sendMessageRecipients(
+                            selectedMessageRecipientIds.length,
+                          )}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
           ) : null}
-
-          {destination === 'page' ? (
-            <View className="mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3.5">
-              <Text className="mb-2 text-[15px] font-extrabold text-slate-900">
-                {copy.myPages}
-              </Text>
-              {pagesVm.isLoading ? (
-                <ActivityIndicator color="#0000ff" />
-              ) : pagesVm.pages.length > 0 ? (
-                pagesVm.pages.map(rawPage => {
-                  const page = rawPage as any;
-                  const id = String(page.pageId || page.id);
-                  const active = selectedPageId === id;
-                  return (
-                    <TouchableOpacity
-                      key={id}
-                      activeOpacity={0.86}
-                      onPress={() => setSelectedPageId(id)}
-                      className={`mt-3 flex-row items-center rounded-[14px] border p-2.5 ${
-                        active
-                          ? 'border-indigo-300 bg-indigo-50'
-                          : 'border-slate-200 bg-white'
-                      }`}
-                    >
-                      <Image
-                        source={{ uri: page.avatar || FALLBACK_AVATAR }}
-                        className="w-[42px] h-[42px] rounded-full bg-slate-200"
-                      />
-                      <Text className="ml-2.5 text-[14px] font-extrabold text-slate-900">
-                        {page.pageTitle || page.pageName || copy.destPage}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })
-              ) : (
-                <Text className="text-[13px] font-semibold text-slate-500">
-                  {pagesVm.isLoading ? copy.loadingPages : copy.noPages}
-                </Text>
-              )}
-            </View>
-          ) : null}
-
-          {destination === 'group' ? (
-            <View className="mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3.5">
-              <Text className="mb-2 text-[15px] font-extrabold text-slate-900">
-                {copy.myGroups}
-              </Text>
-              {groupsVm.isLoading ? (
-                <ActivityIndicator color="#0000ff" />
-              ) : groupsVm.groups.length > 0 ? (
-                groupsVm.groups.map(rawGroup => {
-                  const group = rawGroup as any;
-                  const id = String(group.groupId || group.id);
-                  const active = selectedGroupId === id;
-                  return (
-                    <TouchableOpacity
-                      key={id}
-                      activeOpacity={0.86}
-                      onPress={() => setSelectedGroupId(id)}
-                      className={`mt-3 flex-row items-center rounded-[14px] border p-2.5 ${
-                        active
-                          ? 'border-indigo-300 bg-indigo-50'
-                          : 'border-slate-200 bg-white'
-                      }`}
-                    >
-                      <Image
-                        source={{ uri: group.avatar || FALLBACK_AVATAR }}
-                        className="w-[42px] h-[42px] rounded-full bg-slate-200"
-                      />
-                      <Text className="ml-2.5 text-[14px] font-extrabold text-slate-900">
-                        {group.groupTitle || group.groupName || copy.destGroup}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })
-              ) : (
-                <Text className="text-[13px] font-semibold text-slate-500">
-                  {groupsVm.isLoading ? copy.loadingGroups : copy.noGroups}
-                </Text>
-              )}
-            </View>
-          ) : null}
-
-          {error ? (
-            <View className="mb-3 rounded-[14px] bg-red-50 p-3">
-              <Text className="text-[13px] font-bold text-red-700">
-                {error}
-              </Text>
-            </View>
-          ) : null}
-
-          <TouchableOpacity
-            activeOpacity={0.88}
-            disabled={isSharing || destination === 'message'}
-            onPress={handleShare}
-            className={`mt-1 mb-4 items-center justify-center rounded-[14px] py-3.5 bg-brand ${
-              isSharing || destination === 'message' ? 'opacity-40' : ''
-            }`}
-          >
-            {isSharing ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <View className="flex-row items-center gap-2">
-                <Share2 size={16} color="#fff" />
-                <Text className="text-[14px] font-extrabold text-white">
-                  {copy.shareNow}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          <Text className="mb-2 text-[14px] font-extrabold text-slate-900">
-            {copy.shareOutside}
-          </Text>
-          <View className="flex-row gap-2.5">
-            <TouchableOpacity
-              activeOpacity={0.86}
-              disabled={isSharing}
-              onPress={handleCopyLink}
-              className="flex-1 min-h-[48px] flex-row items-center justify-center rounded-[14px] border border-slate-200 bg-white"
-            >
-              <Text className="text-[13px] font-extrabold text-slate-600">
-                {copy.copyLink}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.86}
-              disabled={isSharing}
-              onPress={handleExternalShare}
-              className="flex-1 min-h-[48px] flex-row items-center justify-center rounded-[14px] border border-slate-200 bg-white"
-            >
-              <Text className="text-[13px] font-extrabold text-slate-600">
-                {copy.more}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </Animated.View>
+        </Animated.View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 export default FeedShareBottomSheet;
+
+const styles = StyleSheet.create({
+  backdrop: {
+    backgroundColor: 'rgba(0,0,0,0.36)',
+  },
+  sheet: {
+    height: '84%',
+  },
+  scrollRegion: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 24,
+  },
+  horizontalContent: {
+    paddingRight: 8,
+  },
+});
