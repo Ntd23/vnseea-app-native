@@ -77,6 +77,9 @@ export function ComposerCard({
 }) {
   const isIos = Platform.OS === 'ios';
   const placeholder = copy.createPostBtn || copy.composerPlaceholder || 'Hôm nay bạn thế nào ?';
+  const composerCardClassName = isIos
+    ? 'bg-white border border-slate-100 p-4'
+    : 'bg-white rounded-[20px] border border-slate-100 p-4';
   const actions: ComposerAction[] = [
     {
       id: 'photo',
@@ -118,7 +121,7 @@ export function ComposerCard({
         styles.cardShadow,
         isIos ? styles.iosCardSpacing : null,
       ]}
-      className="bg-white rounded-[20px] border border-slate-100 p-4"
+      className={composerCardClassName}
     >
       <View style={styles.composerTopRow}>
         <TouchableOpacity
@@ -208,8 +211,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   iosCardSpacing: {
-    marginHorizontal: 10,
-    marginBottom: 10,
+    marginHorizontal: 0,
   },
   composerTopRow: {
     flexDirection: 'row',

@@ -49,7 +49,7 @@ describe('HomeFeedIntro iOS header modules', () => {
     expect(source).toContain('initialUserIndex');
   });
 
-  it('keeps Android/default order while iOS uses the preview order', () => {
+  it('keeps the current stories, composer, greeting order on both platforms', () => {
     const defaultSource = read(
       'src/feed/presentation/components/HomeFeedIntro.tsx',
     );
@@ -57,18 +57,63 @@ describe('HomeFeedIntro iOS header modules', () => {
       'src/feed/presentation/components/HomeFeedIntro.ios.tsx',
     );
 
-    expect(defaultSource.indexOf('<ComposerCard')).toBeLessThan(
-      defaultSource.indexOf('<DefaultStoriesRow'),
+    const defaultRender = defaultSource.slice(
+      defaultSource.indexOf('export function HomeFeedIntro'),
+      defaultSource.indexOf('export default HomeFeedIntro'),
     );
-    expect(defaultSource.indexOf('<DefaultStoriesRow')).toBeLessThan(
-      defaultSource.indexOf('<DefaultGreetingCard'),
+    const iosRender = iosSource.slice(
+      iosSource.indexOf('export function HomeFeedIntro'),
+      iosSource.indexOf('export default HomeFeedIntro'),
     );
-    expect(iosSource.indexOf('<HomeGreetingCard')).toBeLessThan(
-      iosSource.indexOf('<HomeComposerCard'),
+
+    expect(defaultRender.indexOf('<DefaultStoriesRow')).toBeLessThan(
+      defaultRender.indexOf('<ComposerCard'),
     );
-    expect(iosSource.indexOf('<HomeComposerCard')).toBeLessThan(
-      iosSource.indexOf('<HomeStoriesRail'),
+    expect(defaultRender.indexOf('<ComposerCard')).toBeLessThan(
+      defaultRender.indexOf('<DefaultGreetingCard'),
     );
+    expect(iosRender.indexOf('<HomeStoriesRail')).toBeLessThan(
+      iosRender.indexOf('<ComposerCard'),
+    );
+    expect(iosRender.indexOf('<ComposerCard')).toBeLessThan(
+      iosRender.indexOf('<HomeGreetingCard'),
+    );
+  });
+
+  it('renders the iOS intro surfaces edge-to-edge while keeping inner spacing', () => {
+    const defaultSource = read(
+      'src/feed/presentation/components/HomeFeedIntro.tsx',
+    );
+    const iosSource = read(
+      'src/feed/presentation/components/HomeFeedIntro.ios.tsx',
+    );
+    const surfaceStyle = iosSource.slice(
+      iosSource.indexOf('surface: {'),
+      iosSource.indexOf('glassSurface: {'),
+    );
+    const greetingStyle = iosSource.slice(
+      iosSource.indexOf('greetingSurface: {'),
+      iosSource.indexOf('greetingTextWrap: {'),
+    );
+    const storiesContentStyle = iosSource.slice(
+      iosSource.indexOf('storiesContent: {'),
+      iosSource.indexOf('storyCard: {'),
+    );
+    const storyCardStyle = iosSource.slice(
+      iosSource.indexOf('storyCard: {'),
+      iosSource.indexOf('createStoryCard: {'),
+    );
+
+    expect(surfaceStyle).not.toContain('marginHorizontal');
+    expect(surfaceStyle).not.toContain('borderRadius');
+    expect(surfaceStyle).not.toContain('marginBottom');
+    expect(greetingStyle).toContain('padding: 15');
+    expect(storiesContentStyle).toContain('paddingHorizontal: 5');
+    expect(storiesContentStyle).toContain('columnGap: 5');
+    expect(storyCardStyle).toContain('borderRadius: 24');
+    expect(iosSource).not.toContain('style={styles.root}');
+    expect(defaultSource).toContain('paddingHorizontal: 16');
+    expect(defaultSource).toContain('rounded-[18px]');
   });
 
   it('uses the logged-in avatar for the iOS create-story card', () => {
