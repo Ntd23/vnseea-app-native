@@ -20,6 +20,13 @@ export interface FeedPublisher {
   isFollowing?: boolean;
 }
 
+export interface PostLinkPreview {
+  url: string;
+  title?: string;
+  description?: string;
+  image?: string;
+}
+
 // ── Create-post types (Facebook-style composer) ─────────────────────────
 //
 // WoWonder's `/api/new_post` accepts MANY fields, but for the MVP composer
@@ -102,6 +109,7 @@ export interface CreatePostDraft {
   photos: PostPhotoAttachment[];
   audio?: PostAudioAttachment;
   video?: PostVideoAttachment;
+  linkPreview?: PostLinkPreview;
   privacy: PostPrivacy;
   feeling?: PostFeeling;
   pageId?: string;
@@ -154,12 +162,7 @@ export interface FeedTextPost {
   viewCount?: number;
   shareCount?: number;
   reactionBreakdown?: Partial<Record<ReactionType, number>>;
-  linkPreview?: {
-    url: string;
-    title?: string;
-    description?: string;
-    image?: string;
-  };
+  linkPreview?: PostLinkPreview;
   album?: {
     name: string;
     images: string[];
@@ -216,12 +219,7 @@ export interface FeedVideoPost {
   viewCount?: number;
   shareCount?: number;
   reactionBreakdown?: Partial<Record<ReactionType, number>>;
-  linkPreview?: {
-    url: string;
-    title?: string;
-    description?: string;
-    image?: string;
-  };
+  linkPreview?: PostLinkPreview;
   sharedFrom?: {
     id: string;
     caption?: string;

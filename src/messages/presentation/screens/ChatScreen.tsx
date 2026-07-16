@@ -31,6 +31,7 @@ import {
   type ListRenderItem,
   type StyleProp,
   type TextStyle,
+  useWindowDimensions,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -63,6 +64,7 @@ import {
   VolumeX,
   X,
   CornerUpLeft,
+  CornerUpRight,
   Copy,
   Pin,
 } from 'lucide-react-native';
@@ -100,7 +102,12 @@ import { formatAudioDuration } from '../../../shared-kernel/application/utils/au
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
+import {
+  createCachedVideoPosterThumbnail,
+  getCachedVideoPosterThumbnail,
+} from '../../../shared-kernel/application/utils/videoThumbnails';
 import { findConversationMessageListItemIndex } from '../utils/conversationMessageNavigation';
+import { parseMapShareUrl } from '../../../user/application/utils/mapShare';
 
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
@@ -145,7 +152,6 @@ const IMAGE_GROUP_WINDOW_SECONDS = 120;
 const IMAGE_GALLERY_WIDTH = Math.min(Dimensions.get('window').width - 92, 332);
 const IMAGE_GALLERY_GAP = 3;
 const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
-const VIDEO_PREVIEW_HEIGHT = Math.round(IMAGE_GALLERY_WIDTH * 0.74);
 const GROUP_INFO_MODAL_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios' ? ['left', 'right'] : ROOT_SAFE_AREA_EDGES;
 const GROUP_INFO_DISMISS_SWIPE_DISTANCE = 72;
@@ -342,6 +348,23 @@ function LinkifiedText({
   numberOfLines?: number;
 }) {
   const segments = useMemo(() => splitLinkTextSegments(text), [text]);
+  const navigation = useNavigation<any>();
+
+  const handleOpenUrl = useCallback(
+    (url: string) => {
+      const mapLocation = parseMapShareUrl(url);
+      if (mapLocation) {
+        navigation.navigate(ROUTES.NEARBY_USERS, {
+          initialLocation: mapLocation,
+          autoRoute: true,
+        });
+        return;
+      }
+
+      Linking.openURL(url).catch(() => undefined);
+    },
+    [navigation],
+  );
 
   return (
     <Text className={className} style={style} numberOfLines={numberOfLines}>
@@ -350,7 +373,7 @@ function LinkifiedText({
           <Text
             key={`${segment.url}-${index}`}
             style={[styles.inlineLink, { color: linkColor }]}
-            onPress={() => Linking.openURL(segment.url!).catch(() => undefined)}
+            onPress={() => handleOpenUrl(segment.url!)}
           >
             {segment.text}
           </Text>
@@ -846,7 +869,7 @@ function parseOrderInquiry(messageText: string) {
   }
 }
 
-type ReplyMediaType = 'image' | 'video' | 'audio' | 'file';
+type ReplyMediaType = 'image' | 'video' | 'audio' | 'file' | 'call';
 
 type ParsedReplyMessage = {
   senderName: string;
@@ -859,7 +882,7 @@ type ParsedReplyMessage = {
 };
 
 function normalizeReplyMediaType(value: string): ReplyMediaType | undefined {
-  if (value === 'image' || value === 'video' || value === 'audio' || value === 'file') {
+  if (value === 'image' || value === 'video' || value === 'audio' || value === 'file' || value === 'call') {
     return value;
   }
   return undefined;
@@ -872,6 +895,13 @@ function inferReplyMediaType(
   if (reply.originalImage) return 'image';
 
   const normalizedMessage = reply.originalMessage.toLowerCase();
+  if (
+    normalizedMessage.includes('cuộc gọi') ||
+    normalizedMessage.includes('cuoc goi') ||
+    normalizedMessage.includes('call')
+  ) {
+    return 'call';
+  }
   if (normalizedMessage.includes('video')) return 'video';
   if (
     normalizedMessage.includes('audio') ||
@@ -950,6 +980,12 @@ function getReplyLabel(senderName: string, isSentByMe: boolean, partnerName: str
 }
 
 function getMessageSnippet(message: MessageItem, chatName: string) {
+  if (message.callEvent) {
+    const title = getCallCardTitle(message.callEvent);
+    const detail = getCallCardDetail(message);
+    return detail ? `${title} · ${detail}` : title;
+  }
+
   if (message.media) {
     if (message.mediaType === 'image') return '[Hình ảnh]';
     if (message.mediaType === 'video') return '[Video]';
@@ -1038,6 +1074,12 @@ function ReplyMessageBubble({
                 <Play size={17} color="#7C3AED" fill="#7C3AED" />
               ) : mediaType === 'audio' ? (
                 <Mic size={17} color="#7C3AED" />
+              ) : mediaType === 'call' ? (
+                reply.originalMessage.toLowerCase().includes('video') ? (
+                  <Video size={17} color="#7C3AED" />
+                ) : (
+                  <Phone size={17} color="#7C3AED" />
+                )
               ) : (
                 <FileText size={17} color="#7C3AED" />
               )}
@@ -1253,27 +1295,60 @@ function MessageBubble({
 
   const translateX = useRef(new Animated.Value(0)).current;
   const replyIconOpacity = useRef(new Animated.Value(0)).current;
+  const replySwipeMaxDistance = 60;
+  const replySwipeTriggerDistance = 45;
+  const ReplySwipeIcon = isSentByMe ? CornerUpRight : CornerUpLeft;
+  const replyCueTranslateX = replyIconOpacity.interpolate({
+    inputRange: [0, 1],
+    outputRange: [isSentByMe ? -14 : 14, 0],
+  });
+  const replyCueScale = replyIconOpacity.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.82, 1],
+  });
+  const replyCueBackgroundColor = replyIconOpacity.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(239, 246, 255, 0.35)', '#DBEAFE'],
+  });
+  const replyCueBorderColor = replyIconOpacity.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(191, 219, 254, 0.6)', '#93C5FD'],
+  });
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
         const { dx, dy } = gestureState;
-        return Math.abs(dx) > 10 && Math.abs(dy) < 8;
+        const isReplySwipe = isSentByMe ? dx > 10 : dx < -10;
+        return isReplySwipe && Math.abs(dy) < 8;
       },
       onPanResponderMove: (_, gestureState) => {
         const drag = gestureState.dx;
-        if (drag > 0) {
-          translateX.setValue(Math.min(drag, 60));
-          replyIconOpacity.setValue(Math.min(drag / 45, 1));
+        if (isSentByMe) {
+          if (drag > 0) {
+            translateX.setValue(Math.min(drag, replySwipeMaxDistance));
+            replyIconOpacity.setValue(Math.min(drag / replySwipeTriggerDistance, 1));
+          } else {
+            translateX.setValue(Math.max(drag, -20));
+            replyIconOpacity.setValue(0);
+          }
         } else {
-          translateX.setValue(Math.max(drag, -20));
-          replyIconOpacity.setValue(0);
+          if (drag < 0) {
+            translateX.setValue(Math.max(drag, -replySwipeMaxDistance));
+            replyIconOpacity.setValue(Math.min(Math.abs(drag) / replySwipeTriggerDistance, 1));
+          } else {
+            translateX.setValue(Math.min(drag, 20));
+            replyIconOpacity.setValue(0);
+          }
         }
       },
       onPanResponderRelease: (_, gestureState) => {
         const drag = gestureState.dx;
-        if (drag > 45 && onReply) {
+        const shouldOpenReply = isSentByMe
+          ? drag > replySwipeTriggerDistance
+          : drag < -replySwipeTriggerDistance;
+        if (shouldOpenReply && onReply) {
           onReply(message);
         }
         Animated.parallel([
@@ -1303,20 +1378,63 @@ function MessageBubble({
         style={{
           opacity: replyIconOpacity,
           position: 'absolute',
-          left: 12,
+          ...(isSentByMe ? { left: 16 } : { right: 16 }),
           top: '25%',
+          zIndex: 30,
+          elevation: 20,
+          flexDirection: isSentByMe ? 'row' : 'row-reverse',
+          alignItems: 'center',
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: '#BFDBFE',
+          backgroundColor: 'rgba(239, 246, 255, 0.96)',
+          paddingHorizontal: 7,
+          paddingVertical: 5,
+          shadowColor: '#2563EB',
+          shadowOffset: { width: 0, height: 5 },
+          shadowOpacity: 0.2,
+          shadowRadius: 10,
           transform: [
             {
-              scale: replyIconOpacity.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.6, 1],
-              }),
+              translateX: replyCueTranslateX,
+            },
+            {
+              scale: replyCueScale,
             },
           ],
         }}
-        className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center border border-slate-200"
+        pointerEvents="none"
       >
-        <CornerUpLeft size={16} color="#0084FF" />
+        <Animated.View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: replyCueBackgroundColor,
+            borderWidth: 1,
+            borderColor: replyCueBorderColor,
+            shadowColor: '#2563EB',
+            shadowOffset: { width: 0, height: 3 },
+            shadowOpacity: 0.18,
+            shadowRadius: 6,
+            elevation: 4,
+          }}
+        >
+          <ReplySwipeIcon size={18} color="#0084FF" />
+        </Animated.View>
+        <Animated.Text
+          style={{
+            marginHorizontal: 7,
+            color: '#0084FF',
+            fontSize: 11.5,
+            fontWeight: '800',
+            letterSpacing: 0.1,
+          }}
+        >
+          Trả lời tin nhắn
+        </Animated.Text>
       </Animated.View>
 
       {/* Sliding message row */}
@@ -1986,64 +2104,151 @@ function ChatImage({ uri }: { uri: string }) {
   );
 }
 
-function getMediaFileName(uri: string) {
-  const cleanUri = uri.split('?')[0] ?? uri;
-  const fileName = cleanUri.split('/').pop() || 'video.mp4';
-  return fileName.length > 30 ? `${fileName.slice(0, 18)}...${fileName.slice(-8)}` : fileName;
-}
-
 function ChatVideoPreview({
   uri,
   thumbnail,
+  cacheKey,
   compact = false,
 }: {
   uri: string;
   thumbnail?: string;
+  cacheKey?: string;
   compact?: boolean;
 }) {
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const posterCacheKey = cacheKey || uri;
+  const [generatedPosterUri, setGeneratedPosterUri] = useState(() => {
+    if (thumbnail || !uri) return '';
+    return getCachedVideoPosterThumbnail(uri, posterCacheKey)?.uri || '';
+  });
+  const [posterSize, setPosterSize] = useState<{ width: number; height: number } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (thumbnail || !uri) {
+      setGeneratedPosterUri('');
+      return;
+    }
+
+    const cachedPoster = getCachedVideoPosterThumbnail(uri, posterCacheKey)?.uri;
+    if (cachedPoster) {
+      setGeneratedPosterUri(cachedPoster);
+      return;
+    }
+
+    let cancelled = false;
+    createCachedVideoPosterThumbnail(uri, posterCacheKey).then(poster => {
+      if (cancelled || !poster?.uri) return;
+      setGeneratedPosterUri(poster.uri);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [posterCacheKey, thumbnail, uri]);
+
+  const posterUri = thumbnail || generatedPosterUri;
+  const cachedPoster = !thumbnail
+    ? getCachedVideoPosterThumbnail(uri, posterCacheKey)
+    : undefined;
+
+  useEffect(() => {
+    if (cachedPoster?.width && cachedPoster.height) {
+      setPosterSize({ width: cachedPoster.width, height: cachedPoster.height });
+      return;
+    }
+
+    if (!posterUri) {
+      setPosterSize(null);
+      return;
+    }
+
+    let cancelled = false;
+    Image.getSize(
+      posterUri,
+      (width, height) => {
+        if (cancelled || width <= 0 || height <= 0) return;
+        setPosterSize({ width, height });
+      },
+      () => {
+        if (!cancelled) setPosterSize(null);
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cachedPoster?.height, cachedPoster?.width, posterUri]);
+
+  const videoFrameSize = useMemo(() => {
+    if (compact) return undefined;
+
+    const rawRatio =
+      posterSize?.width && posterSize?.height
+        ? posterSize.width / posterSize.height
+        : 16 / 9;
+    const ratio = Math.min(Math.max(rawRatio, 0.48), 2.35);
+    const maxWidth = Math.min(Math.max(viewportWidth - 116, 210), 328);
+    const maxHeight = Math.min(Math.max(viewportHeight * 0.32, 250), 380);
+
+    let width = maxWidth;
+    let height = width / ratio;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * ratio;
+    }
+
+    width = Math.max(176, Math.min(maxWidth, width));
+    height = Math.max(112, Math.min(maxHeight, height));
+
+    if (width / height > ratio) {
+      width = height * ratio;
+    } else {
+      height = width / ratio;
+    }
+
+    return {
+      width: Math.round(width),
+      height: Math.round(height),
+    };
+  }, [compact, posterSize?.height, posterSize?.width, viewportHeight, viewportWidth]);
+
   return (
     <View
-      style={compact ? styles.videoPreviewFill : styles.videoPreviewLarge}
-      className="overflow-hidden bg-slate-950 justify-center items-center relative"
+      style={[
+        styles.videoPreviewShell,
+        compact ? styles.videoPreviewFill : styles.videoPreviewLarge,
+        !compact && videoFrameSize,
+      ]}
     >
-      {thumbnail ? (
-        <Image
-          source={{ uri: thumbnail }}
-          style={styles.videoPreviewBackdrop}
-          resizeMode="cover"
-          fadeDuration={120}
-        />
-      ) : (
-        <View style={styles.videoPreviewBackdrop}>
-          <Video size={compact ? 32 : 48} color="rgba(255,255,255,0.16)" />
+      <View style={styles.videoPreviewSurface}>
+        {posterUri ? (
+          <Image
+            source={{ uri: posterUri }}
+            style={styles.videoPreviewBackdrop}
+            resizeMode="cover"
+            fadeDuration={140}
+          />
+        ) : (
+          <View style={styles.videoPreviewBackdrop}>
+            <Video size={compact ? 32 : 48} color="rgba(255,255,255,0.2)" />
+          </View>
+        )}
+        <View style={styles.videoPreviewScrim} />
+        <View
+          className={`items-center justify-center rounded-full bg-white/95 shadow-md ${
+            compact ? 'h-11 w-11' : 'h-16 w-16'
+          }`}
+        >
+          <Play
+            size={compact ? 20 : 30}
+            color="#111827"
+            fill="#111827"
+            style={{ marginLeft: 3 }}
+          />
         </View>
-      )}
-      <View style={styles.videoPreviewScrim} />
-      <View className="absolute left-2 top-2 rounded-md bg-black/55 px-1.5 py-0.5">
-        <Text className="text-[10px] font-bold text-white">HD</Text>
       </View>
-      <View
-        className={`items-center justify-center rounded-full bg-white/90 shadow-md ${
-          compact ? 'h-11 w-11' : 'h-16 w-16'
-        }`}
-      >
-        <Play
-          size={compact ? 20 : 30}
-          color="#111827"
-          fill="#111827"
-          style={{ marginLeft: 3 }}
-        />
-      </View>
-      {!compact ? (
-        <View className="absolute bottom-0 left-0 right-0 bg-black/45 px-3 py-2">
-          <Text className="text-sm font-bold text-white" numberOfLines={1}>
-            {getMediaFileName(uri)}
-          </Text>
-          <Text className="mt-0.5 text-[11px] font-semibold text-white/75">
-            Video
-          </Text>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -2107,7 +2312,11 @@ function MessageMedia({
         activeOpacity={0.9}
         onPress={() => onOpenMedia({ uri: message.media!, type: 'video' })}
       >
-        <ChatVideoPreview uri={message.media} thumbnail={message.thumbnail} />
+        <ChatVideoPreview
+          uri={message.media}
+          thumbnail={message.thumbnail}
+          cacheKey={message.id}
+        />
       </TouchableOpacity>
     );
   }
@@ -2191,6 +2400,7 @@ function MediaMessageGroup({
                 <ChatVideoPreview
                   uri={message.media!}
                   thumbnail={message.thumbnail}
+                  cacheKey={message.id}
                   compact
                 />
               ) : (
@@ -2984,6 +3194,15 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       setAttachedProduct(route.params.product);
     }
   }, [route.params?.product]);
+
+  useEffect(() => {
+    const initialText = route.params?.initialText;
+    if (!initialText) return;
+
+    setText(current => (current.trim().length > 0 ? current : initialText));
+    notifyTyping(initialText);
+    navigation.setParams({ initialText: undefined });
+  }, [navigation, notifyTyping, route.params?.initialText]);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [isGroupInfoVisible, setIsGroupInfoVisible] = useState(false);
   const [groupInfoDialog, setGroupInfoDialog] =
@@ -3323,7 +3542,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
       let originalImageUrl = '';
       let originalMediaUrl = '';
-      let originalMediaType = replyingMessage.mediaType;
+      let originalMediaType: ReplyMediaType | undefined = replyingMessage.callEvent
+        ? 'call'
+        : replyingMessage.mediaType;
       if (replyingMessage.media) {
         originalMediaUrl = replyingMessage.media;
         if (replyingMessage.mediaType === 'image') {
@@ -3342,9 +3563,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
       const imgSegment = originalImageUrl ? `\n🖼️ Ảnh: *${originalImageUrl}*` : '';
       const mediaMetaSegment =
-        originalMediaUrl && originalMediaType
-          ? `\nMETA_MEDIA: *${originalMediaUrl}*\nMETA_MEDIA_TYPE: *${originalMediaType}*`
-          : '';
+        `${originalMediaUrl ? `\nMETA_MEDIA: *${originalMediaUrl}*` : ''}${
+          originalMediaType ? `\nMETA_MEDIA_TYPE: *${originalMediaType}*` : ''
+        }`;
       nextText = `↪️ *Trả lời tin nhắn:*\n👉 *${senderName}*: ${originalSnippet}\n🆔 ID: *${replyingMessage.id}*${imgSegment}${mediaMetaSegment}\n\n${nextText}`;
       setReplyingMessage(undefined);
     }
@@ -4307,6 +4528,15 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   <Mic size={16} color="#7C3AED" />
                 </View>
               ) : null}
+              {replyingMessage.callEvent ? (
+                <View className="ml-2 h-10 w-10 items-center justify-center rounded-md bg-blue-50">
+                  {replyingMessage.callEvent.callType === 'video' ? (
+                    <Video size={16} color="#2563EB" />
+                  ) : (
+                    <Phone size={16} color="#2563EB" />
+                  )}
+                </View>
+              ) : null}
             </View>
             <TouchableOpacity
               onPress={() => {
@@ -4694,6 +4924,25 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#E5E7EB',
   },
+  videoPreviewShell: {
+    borderRadius: 18,
+    backgroundColor: '#020617',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  videoPreviewSurface: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.9)',
+    backgroundColor: '#020617',
+  },
   videoPreviewBackdrop: {
     bottom: 0,
     left: 0,
@@ -4710,15 +4959,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     top: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.18)',
+    backgroundColor: 'rgba(0, 0, 0, 0.22)',
   },
   videoPreviewFill: {
     height: '100%',
     width: '100%',
   },
   videoPreviewLarge: {
-    width: IMAGE_GALLERY_WIDTH,
-    height: VIDEO_PREVIEW_HEIGHT,
     borderRadius: 18,
   },
   messageVideo: { height: '100%', width: '100%', backgroundColor: '#000' },

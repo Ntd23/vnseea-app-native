@@ -43,6 +43,7 @@ import {
   Alert,
   Animated,
   Image,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -53,7 +54,7 @@ import {
   View,
 } from 'react-native';
 import VideoPlayer from 'react-native-video';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import type {
   NativeStackNavigationProp,
   NativeStackScreenProps,
@@ -68,9 +69,18 @@ import ReanimatedAnimated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { ChevronDown, MoreHorizontal, ThumbsUp } from 'lucide-react-native';
+import {
+  ChevronDown,
+  Flag,
+  MoreHorizontal,
+  ThumbsUp,
+  Trash2,
+  UserCircle,
+  X,
+} from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import { createStoriesRepository } from '../../infrastructure/repositories/ApiStoriesRepository';
 import { storyDeletedEvents } from '../../application/events/storyDeletedEvents';
 import { storyReactedEvents } from '../../application/events/storyReactedEvents';
@@ -124,6 +134,7 @@ function formatRelativeTime(timestamp?: number) {
 
 function StoryViewerScreen({ route }: Props) {
   const navigation = useNavigation<Nav>();
+  const isStoryViewerFocused = useIsFocused();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const storySafeAreaInsets = useSafeAreaInsets();
   const storyHeaderSafeTop = Math.max(storySafeAreaInsets.top, 8);
@@ -172,6 +183,8 @@ function StoryViewerScreen({ route }: Props) {
   }, [stories, passedStories]);
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [isOptionsSheetVisible, setIsOptionsSheetVisible] = useState(false);
+  const pauseForProfileNavigationRef = useRef(false);
   const [reactionBurst, setReactionBurst] = useState<ReactionBurstItem[]>([]);
   const reactionBurstId = useRef(0);
   // Set by VideoPlayer's onLoad — null while waiting for metadata so we
@@ -181,6 +194,7 @@ function StoryViewerScreen({ route }: Props) {
   const currentStory = stories[userIndex] ?? null;
   const segments = currentStory?.media ?? [];
   const currentSegment = segments[segmentIndex] ?? null;
+  const shouldPausePlayback = isPaused || !isStoryViewerFocused || isOptionsSheetVisible;
 
   // Effective duration for the current segment. For video we wait on
   // `onLoad` (videoDurationMs becomes a number), then animate over that.
@@ -200,6 +214,16 @@ function StoryViewerScreen({ route }: Props) {
   useEffect(() => {
     setVideoDurationMs(null);
   }, [userIndex, segmentIndex]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (pauseForProfileNavigationRef.current) {
+        pauseForProfileNavigationRef.current = false;
+        setIsPaused(false);
+      }
+      return undefined;
+    }, []),
+  );
 
   // ── Advance / go-back ──────────────────────────────────────────────
   // Wrapped in refs so the progress effect doesn't recreate the
@@ -239,7 +263,7 @@ function StoryViewerScreen({ route }: Props) {
     // For video, wait until `onLoad` gives us the real duration so the
     // progress bar matches actual playback length.
     if (currentSegment.type === 'video' && videoDurationMs === null) return;
-    if (isPaused) return;
+    if (shouldPausePlayback) return;
 
     progress.setValue(0);
     const anim = Animated.timing(progress, {
@@ -259,7 +283,7 @@ function StoryViewerScreen({ route }: Props) {
   }, [
     currentSegment,
     segmentMs,
-    isPaused,
+    shouldPausePlayback,
     videoDurationMs,
     advance,
     progress,
@@ -453,6 +477,7 @@ function StoryViewerScreen({ route }: Props) {
   // ── Delete (owner only) ────────────────────────────────────────────
   const onDelete = useCallback(() => {
     if (!currentStory || !currentStory.isOwner || !currentSegment) return;
+    setIsPaused(true);
     Alert.alert(
       'Xoá tin?',
       'Tin sẽ bị xoá vĩnh viễn.',
@@ -480,12 +505,14 @@ function StoryViewerScreen({ route }: Props) {
           },
         },
       ],
-      { cancelable: true },
+      { cancelable: true, onDismiss: () => setIsPaused(false) },
     );
   }, [currentStory, currentSegment, close]);
 
   const handleMorePress = useCallback(() => {
     setIsPaused(true);
+    setIsOptionsSheetVisible(true);
+    return;
     const options = currentStory.isOwner
       ? [
           { text: 'Huỷ', style: 'cancel', onPress: () => setIsPaused(false) },
@@ -509,7 +536,35 @@ function StoryViewerScreen({ route }: Props) {
       options as any,
       { cancelable: true, onDismiss: () => setIsPaused(false) }
     );
-  }, [currentStory, onDelete]);
+  }, []);
+
+  const closeOptionsSheet = useCallback(() => {
+    setIsOptionsSheetVisible(false);
+    setIsPaused(false);
+  }, []);
+
+  const handleOpenPublisherProfile = useCallback(() => {
+    if (!currentStory?.publisher.userId) return;
+    pauseForProfileNavigationRef.current = true;
+    setIsOptionsSheetVisible(false);
+    setIsPaused(true);
+    navigateToUserProfile(navigation, currentStory.publisher.userId);
+  }, [currentStory?.publisher.userId, navigation]);
+
+  const handleDeleteFromOptions = useCallback(() => {
+    setIsOptionsSheetVisible(false);
+    onDelete();
+  }, [onDelete]);
+
+  const handleReportStory = useCallback(() => {
+    setIsOptionsSheetVisible(false);
+    Alert.alert(
+      'Đã báo cáo',
+      'Cảm ơn bạn đã báo cáo tin này. Chúng tôi sẽ xem xét nội dung sớm nhất có thể.',
+      [{ text: 'OK', onPress: () => setIsPaused(false) }],
+      { cancelable: true, onDismiss: () => setIsPaused(false) },
+    );
+  }, []);
 
   // ── Long-press pause / release resume ───────────────────────────────
   // Wrapped in stable callbacks so the Pressable refs don't churn.
@@ -703,7 +758,7 @@ function StoryViewerScreen({ route }: Props) {
                 key={`vid-${currentStory.id}-${segmentIndex}`}
                 source={{ uri: currentSegment.url }}
                 style={styles.media}
-                paused={isPaused}
+                paused={shouldPausePlayback}
                 resizeMode="contain"
                 onLoad={data => {
                   // Some Android codecs report 0 for `duration` on first
@@ -784,31 +839,38 @@ function StoryViewerScreen({ route }: Props) {
 
             {/* Header row: avatar with online dot + name & time on same line + close + options */}
             <View style={styles.header}>
-              <View style={styles.avatarContainer}>
-                {currentStory.publisher.avatarUrl ? (
-                  <Image
-                    source={{ uri: currentStory.publisher.avatarUrl }}
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <View style={styles.avatarFallback}>
-                    <Text style={styles.avatarFallbackText}>
-                      {currentStory.publisher.name.charAt(0).toUpperCase()}
+              <TouchableOpacity
+                activeOpacity={0.78}
+                onPress={handleOpenPublisherProfile}
+                disabled={!currentStory.publisher.userId}
+                style={styles.publisherButton}
+              >
+                <View style={styles.avatarContainer}>
+                  {currentStory.publisher.avatarUrl ? (
+                    <Image
+                      source={{ uri: currentStory.publisher.avatarUrl }}
+                      style={styles.avatar}
+                    />
+                  ) : (
+                    <View style={styles.avatarFallback}>
+                      <Text style={styles.avatarFallbackText}>
+                        {currentStory.publisher.name.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  {currentStory.publisher.isOnline ? (
+                    <View style={styles.onlineDot} />
+                  ) : null}
+                </View>
+                <View style={styles.headerText}>
+                  <Text style={styles.headerName} numberOfLines={1}>
+                    {currentStory.publisher.name}{' '}
+                    <Text style={styles.headerTime}>
+                      {formatRelativeTime(currentSegment.postedAt ?? currentStory.postedAt)}
                     </Text>
-                  </View>
-                )}
-                {currentStory.publisher.isOnline ? (
-                  <View style={styles.onlineDot} />
-                ) : null}
-              </View>
-              <View style={styles.headerText}>
-                <Text style={styles.headerName} numberOfLines={1}>
-                  {currentStory.publisher.name}{' '}
-                  <Text style={styles.headerTime}>
-                    {formatRelativeTime(currentSegment.postedAt ?? currentStory.postedAt)}
                   </Text>
-                </Text>
-              </View>
+                </View>
+              </TouchableOpacity>
 
               {/* Close (ChevronDown) */}
               <TouchableOpacity
@@ -924,6 +986,106 @@ function StoryViewerScreen({ route }: Props) {
               </View>
             </View>
           </View>
+          <Modal
+            visible={isOptionsSheetVisible}
+            transparent
+            animationType="fade"
+            statusBarTranslucent
+            onRequestClose={closeOptionsSheet}
+          >
+            <Pressable style={styles.optionsBackdrop} onPress={closeOptionsSheet} />
+            <View
+              style={[
+                styles.optionsSheet,
+                { paddingBottom: Math.max(storySafeAreaInsets.bottom, 18) },
+              ]}
+            >
+              <View style={styles.optionsHandle} />
+              <View style={styles.optionsHeader}>
+                <View style={styles.optionsAvatarWrap}>
+                  {currentStory.publisher.avatarUrl ? (
+                    <Image
+                      source={{ uri: currentStory.publisher.avatarUrl }}
+                      style={styles.optionsAvatar}
+                    />
+                  ) : (
+                    <View style={styles.optionsAvatarFallback}>
+                      <Text style={styles.optionsAvatarFallbackText}>
+                        {currentStory.publisher.name.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.optionsHeaderCopy}>
+                  <Text style={styles.optionsTitle} numberOfLines={1}>
+                    {currentStory.publisher.name}
+                  </Text>
+                  <Text style={styles.optionsSubtitle} numberOfLines={1}>
+                    Tin · {formatRelativeTime(currentSegment.postedAt ?? currentStory.postedAt)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.78}
+                  onPress={closeOptionsSheet}
+                  style={styles.optionsCloseButton}
+                >
+                  <X size={19} color="#334155" />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                activeOpacity={0.82}
+                onPress={handleOpenPublisherProfile}
+                style={styles.optionsActionRow}
+              >
+                <View style={[styles.optionsActionIcon, styles.optionsActionIconPrimary]}>
+                  <UserCircle size={21} color="#2563EB" />
+                </View>
+                <View style={styles.optionsActionCopy}>
+                  <Text style={styles.optionsActionTitle}>Xem trang cá nhân</Text>
+                  <Text style={styles.optionsActionSubtitle}>
+                    Mở hồ sơ của người đăng tin
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {currentStory.isOwner ? (
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  onPress={handleDeleteFromOptions}
+                  style={styles.optionsActionRow}
+                >
+                  <View style={[styles.optionsActionIcon, styles.optionsActionIconDanger]}>
+                    <Trash2 size={20} color="#DC2626" />
+                  </View>
+                  <View style={styles.optionsActionCopy}>
+                    <Text style={[styles.optionsActionTitle, styles.optionsActionTitleDanger]}>
+                      Xóa tin này
+                    </Text>
+                    <Text style={styles.optionsActionSubtitle}>
+                      Gỡ tin khỏi hồ sơ và bảng tin
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  onPress={handleReportStory}
+                  style={styles.optionsActionRow}
+                >
+                  <View style={[styles.optionsActionIcon, styles.optionsActionIconWarning]}>
+                    <Flag size={20} color="#EA580C" />
+                  </View>
+                  <View style={styles.optionsActionCopy}>
+                    <Text style={styles.optionsActionTitle}>Báo cáo tin</Text>
+                    <Text style={styles.optionsActionSubtitle}>
+                      Gửi phản hồi nếu nội dung không phù hợp
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            </View>
+          </Modal>
         </SafeAreaView>
       </ReanimatedAnimated.View>
     </GestureDetector>
@@ -988,6 +1150,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
+  publisherButton: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   avatarContainer: {
     position: 'relative',
     marginRight: 10,
@@ -1044,6 +1212,137 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 6,
+  },
+  optionsBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.58)',
+  },
+  optionsSheet: {
+    position: 'absolute',
+    right: 12,
+    bottom: 10,
+    left: 12,
+    borderRadius: 28,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 16,
+  },
+  optionsHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: '#CBD5E1',
+    marginBottom: 12,
+  },
+  optionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  optionsAvatarWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#E2E8F0',
+  },
+  optionsAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  optionsAvatarFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#475569',
+  },
+  optionsAvatarFallbackText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  optionsHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 12,
+  },
+  optionsTitle: {
+    color: '#0F172A',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  optionsSubtitle: {
+    marginTop: 3,
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  optionsCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+    marginLeft: 10,
+  },
+  optionsActionRow: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    marginTop: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  optionsActionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionsActionIconPrimary: {
+    backgroundColor: '#DBEAFE',
+  },
+  optionsActionIconDanger: {
+    backgroundColor: '#FEE2E2',
+  },
+  optionsActionIconWarning: {
+    backgroundColor: '#FFEDD5',
+  },
+  optionsActionCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 12,
+  },
+  optionsActionTitle: {
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  optionsActionTitleDanger: {
+    color: '#DC2626',
+  },
+  optionsActionSubtitle: {
+    marginTop: 3,
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
   },
 
   // ── Overlay Tags ───────────────────────────────────────────────

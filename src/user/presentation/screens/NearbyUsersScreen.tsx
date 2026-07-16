@@ -21,6 +21,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  ToastAndroid,
   TouchableOpacity,
   Vibration,
   View,
@@ -38,17 +39,21 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
 import {
   ArrowLeft,
   ArrowUp,
   ArrowUpDown,
   Bell,
+  Bike,
+  Car,
   Compass,
   CornerUpLeft,
   CornerUpRight,
   Eye,
+  Footprints,
   Heart,
   LocateFixed,
   MapPin,
@@ -59,7 +64,6 @@ import {
   Navigation as NavigationIcon,
   Search,
   Share2,
-  SlidersHorizontal,
   Undo2,
   UserPlus,
   Users,
@@ -90,6 +94,9 @@ import type {
   PagesItem,
 } from '../../../pages/domain/types/pages.types';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
+import { useMessagesViewModel } from '../../../messages';
+import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
+import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { useUserViewModel } from '../../application/view-models/useUserViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
@@ -99,16 +106,24 @@ import {
 import { subscribeNavigationHeading } from '../../infrastructure/navigation/navigationHeading';
 import type {
   MapPlacePrediction,
+  MapRouteInput,
   MapRoute,
   MapRouteStep,
   NearbyPlace,
 } from '../../domain/types/user.types';
+import {
+  buildMapSharePreview,
+  buildMapShareText,
+  type SharedMapLocation,
+} from '../../application/utils/mapShare';
 
 type NearbyNav = NativeStackNavigationProp<RootStackParamList>;
+type NearbyRoute = RouteProp<RootStackParamList, typeof ROUTES.NEARBY_USERS>;
 
 const BRAND = '#0000FF';
 const ACCENT = '#EF4444';
 const FALLBACK_AVATAR = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
+const feedRepository = createFeedRepository();
 const NAVIGATION_CAMERA_PITCH = 60;
 const NAVIGATION_CAMERA_ZOOM = 19.25;
 const NAVIGATION_CAMERA_HEADING = 0;
@@ -210,6 +225,154 @@ type RouteOption = MapRoute & {
 
 type LocationSource = 'gps' | 'profile' | null;
 type RouteLoadSource = 'user' | 'auto';
+type TransportMode = 'walking' | 'motorcycle' | 'driving';
+type TransportRouteMode = Extract<NonNullable<MapRouteInput['mode']>, TransportMode>;
+
+type TransportOption = {
+  mode: TransportMode;
+  routeMode: TransportRouteMode;
+  title: string;
+  label: string;
+  description: string;
+};
+
+const TRANSPORT_OPTIONS: TransportOption[] = [
+  {
+    mode: 'walking',
+    routeMode: 'walking',
+    title: 'Đi bộ',
+    label: 'Đi bộ',
+    description: 'Tuyến phù hợp để đi bộ',
+  },
+  {
+    mode: 'motorcycle',
+    routeMode: 'motorcycle',
+    title: 'Xe máy',
+    label: 'Xe máy',
+    description: 'Tuyến ưu tiên cho xe máy',
+  },
+  {
+    mode: 'driving',
+    routeMode: 'driving',
+    title: 'Lái xe',
+    label: 'Ô tô',
+    description: 'Tuyến phù hợp cho ô tô',
+  },
+];
+
+function getTransportOption(mode: TransportMode) {
+  return (
+    TRANSPORT_OPTIONS.find(option => option.mode === mode) ??
+    TRANSPORT_OPTIONS[2]
+  );
+}
+
+function TransportModeIcon({
+  mode,
+  size,
+  color,
+}: {
+  mode: TransportMode;
+  size: number;
+  color: string;
+}) {
+  if (mode === 'walking') {
+    return <Footprints size={size} color={color} />;
+  }
+
+  if (mode === 'motorcycle') {
+    return <Bike size={size} color={color} />;
+  }
+
+  return <Car size={size} color={color} />;
+}
+
+type RouteTrafficInfo = {
+  level: NonNullable<MapRoute['trafficLevel']>;
+  label: string;
+  delaySeconds: number;
+  detail: string;
+};
+
+function getRouteTrafficInfo(route: Pick<
+  MapRoute,
+  | 'durationSeconds'
+  | 'durationWithoutTrafficSeconds'
+  | 'durationInTrafficSeconds'
+  | 'trafficDelaySeconds'
+  | 'trafficLabel'
+  | 'trafficLevel'
+>): RouteTrafficInfo | null {
+  const baseDuration = route.durationWithoutTrafficSeconds;
+  const trafficDuration = route.durationInTrafficSeconds ?? route.durationSeconds;
+  const computedDelay =
+    typeof baseDuration === 'number' && baseDuration > 0
+      ? Math.max(0, trafficDuration - baseDuration)
+      : 0;
+  const delaySeconds = Math.max(
+    0,
+    route.trafficDelaySeconds ?? computedDelay,
+  );
+
+  let level = route.trafficLevel;
+  if (!level && baseDuration && trafficDuration) {
+    const ratio = trafficDuration / baseDuration;
+    if (delaySeconds >= 240 || ratio >= 1.22) {
+      level = 'heavy';
+    } else if (delaySeconds <= 60 || ratio <= 1.06) {
+      level = 'clear';
+    } else {
+      level = 'normal';
+    }
+  }
+
+  if (!level) {
+    return null;
+  }
+
+  const label =
+    route.trafficLabel ||
+    (level === 'heavy'
+      ? 'Tắc đường'
+      : level === 'clear'
+        ? 'Vắng vẻ'
+        : 'Bình thường');
+  const detail =
+    level === 'heavy' && delaySeconds >= 60
+      ? `${label} +${formatDuration(delaySeconds)}`
+      : label;
+
+  return {
+    level,
+    label,
+    delaySeconds,
+    detail,
+  };
+}
+
+function trafficBadgeStyle(level: NonNullable<MapRoute['trafficLevel']>) {
+  if (level === 'heavy') {
+    return (styles as any).routeTrafficBadgeHeavy;
+  }
+
+  if (level === 'clear') {
+    return (styles as any).routeTrafficBadgeClear;
+  }
+
+  return (styles as any).routeTrafficBadgeNormal;
+}
+
+function trafficBadgeTextStyle(level: NonNullable<MapRoute['trafficLevel']>) {
+  if (level === 'heavy') {
+    return (styles as any).routeTrafficBadgeTextHeavy;
+  }
+
+  if (level === 'clear') {
+    return (styles as any).routeTrafficBadgeTextClear;
+  }
+
+  return (styles as any).routeTrafficBadgeTextNormal;
+}
 
 type AddressPlaceMapMarkerProps = {
   coordinate: LatLng;
@@ -1531,6 +1694,7 @@ function SearchSuggestionRow({
 
 export default function NearbyUsersScreen() {
   const navigation = useNavigation<NearbyNav>();
+  const route = useRoute<NearbyRoute>();
   const insets = useSafeAreaInsets();
   const {
     clearPlacePredictions,
@@ -1545,6 +1709,7 @@ export default function NearbyUsersScreen() {
     searchNearbyPagesAndPlaces,
     getPlaceDetails,
   } = useUserViewModel();
+  const messagesVm = useMessagesViewModel();
   const mapRef = useRef<MapView>(null);
   const currentLocationRef = useRef<LatLng | null>(null);
   const hasLoadedNearbyPagesRef = useRef(false);
@@ -1616,6 +1781,10 @@ export default function NearbyUsersScreen() {
   const [voiceGuidanceEnabled, setVoiceGuidanceEnabled] = useState(true);
   const [isLoadingRoutes, setIsLoadingRoutes] = useState(false);
   const [isAutoRerouting, setIsAutoRerouting] = useState(false);
+  const [transportMode, setTransportMode] = useState<TransportMode>('driving');
+  const [isTransportPickerOpen, setIsTransportPickerOpen] = useState(false);
+  const [isMapShareSheetOpen, setIsMapShareSheetOpen] = useState(false);
+  const [isPostingMapShare, setIsPostingMapShare] = useState(false);
   const [routeHeading, setRouteHeading] = useState<number | null>(null);
   const [hasCenteredOnUser, setHasCenteredOnUser] = useState(false);
   const [hasLoadedNearbyPages, setHasLoadedNearbyPages] = useState(false);
@@ -1657,6 +1826,12 @@ export default function NearbyUsersScreen() {
     ],
     [insets.top],
   );
+
+  const selectedTransportOption = useMemo(
+    () => getTransportOption(transportMode),
+    [transportMode],
+  );
+  const selectedTransportRouteMode = selectedTransportOption.routeMode;
 
   const suggestions = useMemo<SuggestionItem[]>(() => {
     const normalizedQuery = normalizeSearchText(query);
@@ -1868,6 +2043,40 @@ export default function NearbyUsersScreen() {
     }
     return selectedPoint.distanceMeters;
   }, [currentLocation, selectedPoint]);
+  const selectedMapShareLocation = useMemo<SharedMapLocation | null>(() => {
+    if (!selectedPoint) return null;
+
+    return {
+      title: selectedPoint.title,
+      subtitle: selectedPoint.subtitle,
+      address: selectedPoint.address || selectedPoint.subtitle,
+      latitude: selectedPoint.coordinate.latitude,
+      longitude: selectedPoint.coordinate.longitude,
+    };
+  }, [selectedPoint]);
+  const selectedMapShareText = useMemo(
+    () =>
+      selectedMapShareLocation
+        ? buildMapShareText(selectedMapShareLocation)
+        : '',
+    [selectedMapShareLocation],
+  );
+  const selectedMapSharePreview = useMemo(
+    () =>
+      selectedMapShareLocation
+        ? buildMapSharePreview(
+            selectedMapShareLocation,
+            selectedPoint?.page?.coverUrl ||
+              selectedPoint?.page?.avatarUrl ||
+              selectedPoint?.avatarUrl,
+          )
+        : null,
+    [selectedMapShareLocation, selectedPoint],
+  );
+  const mapShareChats = useMemo(
+    () => messagesVm.chats.filter(chat => chat.chatType === 'user'),
+    [messagesVm.chats],
+  );
   const currentViewerId = useMemo(
     () => currentUser?.id || sessionStorage.getSession()?.userId,
     [currentUser?.id],
@@ -2014,6 +2223,9 @@ export default function NearbyUsersScreen() {
     setRouteHeading(null);
     setIsLoadingRoutes(false);
     setIsAutoRerouting(false);
+    setIsTransportPickerOpen(false);
+    setIsMapShareSheetOpen(false);
+    setIsPostingMapShare(false);
     lastRoutedOriginRef.current = null;
     lastSpokenInstructionRef.current = '';
     lastNavigationCameraHeadingRef.current = {
@@ -2449,6 +2661,7 @@ export default function NearbyUsersScreen() {
       navigating: boolean,
       destinationTitle?: string,
       source: RouteLoadSource = 'user',
+      routeModeOverride?: TransportRouteMode,
     ) => {
       const origin = currentLocationRef.current;
       if (!origin) return;
@@ -2463,6 +2676,7 @@ export default function NearbyUsersScreen() {
         }
       }
 
+      const requestMode = routeModeOverride ?? selectedTransportRouteMode;
       const requestId = routeRequestIdRef.current + 1;
       routeRequestIdRef.current = requestId;
       if (source === 'auto') {
@@ -2477,7 +2691,7 @@ export default function NearbyUsersScreen() {
           originLng: origin.longitude,
           destinationLat: destination.latitude,
           destinationLng: destination.longitude,
-          mode: 'driving',
+          mode: requestMode,
         });
         const nextOptions = routes
           .map((route, index): RouteOption => ({
@@ -2539,7 +2753,7 @@ export default function NearbyUsersScreen() {
         }
       }
     },
-    [focusRoute, getRoutes, resetRouteState],
+    [focusRoute, getRoutes, resetRouteState, selectedTransportRouteMode],
   );
 
   const selectPoint = useCallback(
@@ -2565,6 +2779,65 @@ export default function NearbyUsersScreen() {
     },
     [loadRouteOptions, resetRouteState],
   );
+
+  const handledInitialLocationRef = useRef('');
+  const pendingSharedRoutePointRef = useRef<SelectedPoint | null>(null);
+  useEffect(() => {
+    const sharedLocation = route.params?.initialLocation;
+    if (!sharedLocation) return;
+
+    const latitude = Number(sharedLocation.latitude);
+    const longitude = Number(sharedLocation.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return;
+    }
+
+    const locationKey = `${latitude.toFixed(6)}:${longitude.toFixed(6)}:${sharedLocation.title}`;
+    if (handledInitialLocationRef.current === locationKey) {
+      return;
+    }
+    handledInitialLocationRef.current = locationKey;
+
+    setQuery('');
+    setSearchResults([]);
+    setIsSearchResultsVisible(false);
+    const sharedPoint: SelectedPoint = {
+      id: `shared-map:${locationKey}`,
+      source: 'google',
+      title: sharedLocation.title || 'Địa điểm đã chia sẻ',
+      subtitle:
+        sharedLocation.subtitle ||
+        sharedLocation.address ||
+        'Địa điểm đã chia sẻ',
+      address: sharedLocation.address || sharedLocation.subtitle,
+      coordinate: { latitude, longitude },
+    };
+    const shouldRoute = Boolean(route.params?.autoRoute);
+    pendingSharedRoutePointRef.current =
+      shouldRoute && !currentLocationRef.current ? sharedPoint : null;
+    selectPoint(sharedPoint, Boolean(shouldRoute && currentLocationRef.current));
+    navigation.setParams({
+      initialLocation: undefined,
+      autoRoute: undefined,
+    } as never);
+  }, [
+    navigation,
+    route.params?.autoRoute,
+    route.params?.initialLocation,
+    selectPoint,
+  ]);
+
+  useEffect(() => {
+    const pendingPoint = pendingSharedRoutePointRef.current;
+    if (!currentLocation || !pendingPoint) return;
+
+    pendingSharedRoutePointRef.current = null;
+    loadRouteOptions(
+      pendingPoint.coordinate,
+      false,
+      pendingPoint.title,
+    ).catch(() => undefined);
+  }, [currentLocation, loadRouteOptions]);
 
   const selectPage = useCallback(
     (page: NearbyPlace) => {
@@ -3055,17 +3328,85 @@ export default function NearbyUsersScreen() {
   );
 
   const handleShare = useCallback(() => {
-    if (!selectedPoint) return;
+    if (!selectedMapShareLocation) return;
+
+    setIsMapShareSheetOpen(true);
+    messagesVm.loadChats(true).catch(() => undefined);
+  }, [messagesVm, selectedMapShareLocation]);
+
+  const handleCloseMapShareSheet = useCallback(() => {
+    setIsMapShareSheetOpen(false);
+  }, []);
+
+  const handleShareMapOutside = useCallback(() => {
+    if (!selectedMapShareLocation) return;
 
     Share.share({
-      message:
-        selectedPoint.url ||
-        `${selectedPoint.title}\n${selectedPoint.subtitle}\n${formatCoordinate(
-          selectedPoint.coordinate,
-        )}`,
-      title: selectedPoint.title,
+      message: selectedMapShareText,
+      title: selectedMapShareLocation.title,
     }).catch(() => undefined);
-  }, [selectedPoint]);
+    setIsMapShareSheetOpen(false);
+  }, [selectedMapShareLocation, selectedMapShareText]);
+
+  const handleShareMapToPost = useCallback(() => {
+    if (!selectedMapSharePreview || isPostingMapShare) return;
+
+    setIsPostingMapShare(true);
+    feedRepository
+      .createPost({
+        text: '',
+        photos: [],
+        privacy: 'public',
+        linkPreview: selectedMapSharePreview,
+      })
+      .then(result => {
+        const createdPost =
+          result.post.kind === 'text' || result.post.kind === 'video'
+            ? {
+                ...result.post,
+                linkPreview: {
+                  ...selectedMapSharePreview,
+                  ...(result.post.linkPreview ?? {}),
+                  image:
+                    result.post.linkPreview?.image ||
+                    selectedMapSharePreview.image,
+                },
+              }
+            : result.post;
+        postCreatedEvents.emit({
+          ...createdPost,
+          postedAt: createdPost.postedAt || Math.floor(Date.now() / 1000),
+        });
+        setIsMapShareSheetOpen(false);
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Đã đăng địa điểm lên bài viết', ToastAndroid.SHORT);
+        }
+      })
+      .catch(caught => {
+        Alert.alert(
+          'Không đăng được bài',
+          caught instanceof Error
+            ? caught.message
+            : 'Vui lòng thử lại sau.',
+        );
+      })
+      .finally(() => {
+        setIsPostingMapShare(false);
+      });
+  }, [isPostingMapShare, selectedMapSharePreview]);
+
+  const handleShareMapToChat = useCallback(
+    (chat: ChatItem) => {
+      if (!selectedMapShareText) return;
+
+      setIsMapShareSheetOpen(false);
+      navigation.navigate(ROUTES.CHAT, {
+        chat,
+        initialText: selectedMapShareText,
+      });
+    },
+    [navigation, selectedMapShareText],
+  );
 
   const handleViewDetails = useCallback(() => {
     if (!selectedPoint) return;
@@ -3213,6 +3554,48 @@ export default function NearbyUsersScreen() {
     setIsSheetCollapsed(false);
     await loadRouteOptions(dest, false, selectedPoint.title);
   }, [loadRouteOptions, selectedPoint]);
+
+  const handleOpenTransportPicker = useCallback(() => {
+    setIsTransportPickerOpen(true);
+  }, []);
+
+  const handleCloseTransportPicker = useCallback(() => {
+    setIsTransportPickerOpen(false);
+  }, []);
+
+  const handleSelectTransportMode = useCallback(
+    (nextMode: TransportMode) => {
+      const nextOption = getTransportOption(nextMode);
+      const shouldReloadRoute = nextMode !== transportMode;
+      setTransportMode(nextMode);
+      setIsTransportPickerOpen(false);
+
+      if (!shouldReloadRoute || !currentLocationRef.current) {
+        return;
+      }
+
+      const destination =
+        activeDestinationRef.current ??
+        (selectedPoint && selectedPoint.source !== 'self'
+          ? selectedPoint.coordinate
+          : null);
+
+      if (!destination) {
+        return;
+      }
+
+      Keyboard.dismiss();
+      setIsSearchFocused(false);
+      loadRouteOptions(
+        destination,
+        isNavigatingRef.current,
+        selectedPointTitleRef.current ?? selectedPoint?.title,
+        'user',
+        nextOption.routeMode,
+      ).catch(() => undefined);
+    },
+    [loadRouteOptions, selectedPoint, transportMode],
+  );
 
   const handleStartNavigation = useCallback(async () => {
     if (!selectedPoint || selectedPoint.source === 'self') return;
@@ -3388,6 +3771,7 @@ export default function NearbyUsersScreen() {
         rotateEnabled
         showsBuildings={false}
         showsCompass
+        showsTraffic
         showsIndoorLevelPicker={false}
         showsIndoors={false}
         showsMyLocationButton={false}
@@ -3671,7 +4055,9 @@ export default function NearbyUsersScreen() {
           zIndex={17}
         />
 
-        {routeMapLabels.map(({ route, coordinate, isActive }) => (
+        {routeMapLabels.map(({ route, coordinate, isActive }) => {
+          const trafficInfo = getRouteTrafficInfo(route);
+          return (
           <Marker
             key={`route-label:${route.id}:${isActive ? 'active' : 'alt'}`}
             coordinate={coordinate}
@@ -3693,12 +4079,22 @@ export default function NearbyUsersScreen() {
               >
                 {formatDuration(route.durationSeconds)}
               </Text>
-              {isActive ? (
-                <Text style={styles.routeMapEcoText}>🍃</Text>
+              {trafficInfo ? (
+                <View
+                  style={[
+                    (styles as any).routeMapTrafficDot,
+                    trafficInfo.level === 'heavy'
+                      ? (styles as any).routeMapTrafficDotHeavy
+                      : trafficInfo.level === 'clear'
+                        ? (styles as any).routeMapTrafficDotClear
+                        : (styles as any).routeMapTrafficDotNormal,
+                  ]}
+                />
               ) : null}
             </View>
           </Marker>
-        ))}
+          );
+        })}
 
       {/* Render search results markers on the map */}
       {isSearchResultsVisible &&
@@ -4117,11 +4513,10 @@ export default function NearbyUsersScreen() {
         <View style={styles.routeActionDock}>
           <View style={styles.sheetHandle} />
           <View style={styles.routeActionHeader}>
-            <Text style={styles.routeActionTitle}>Lái xe</Text>
+            <Text style={styles.routeActionTitle}>
+              {selectedTransportOption.title}
+            </Text>
             <View style={styles.routeActionHeaderButtons}>
-              <TouchableOpacity activeOpacity={0.82} style={styles.routeIconButton}>
-                <SlidersHorizontal size={18} color="#334155" />
-              </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.82}
                 style={styles.routeIconButton}
@@ -4147,6 +4542,7 @@ export default function NearbyUsersScreen() {
             >
               {routeOptions.map((route, index) => {
                 const isActive = route.id === selectedRouteId;
+                const trafficInfo = getRouteTrafficInfo(route);
                 return (
                   <TouchableOpacity
                     key={`route-dock-chip:${route.id}`}
@@ -4174,6 +4570,24 @@ export default function NearbyUsersScreen() {
                     >
                       Tuyến {index + 1} · {formatDistance(route.distanceMeters)}
                     </Text>
+                    {trafficInfo ? (
+                      <View
+                        style={[
+                          (styles as any).routeTrafficBadge,
+                          trafficBadgeStyle(trafficInfo.level),
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            (styles as any).routeTrafficBadgeText,
+                            trafficBadgeTextStyle(trafficInfo.level),
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {trafficInfo.detail}
+                        </Text>
+                      </View>
+                    ) : null}
                   </TouchableOpacity>
                 );
               })}
@@ -4189,9 +4603,19 @@ export default function NearbyUsersScreen() {
               <NavigationIcon size={18} color="#FFFFFF" />
               <Text style={styles.startNavigationText}>Bắt đầu</Text>
             </TouchableOpacity>
-            <TouchableOpacity activeOpacity={0.86} style={styles.secondaryRouteButton}>
-              <MapPin size={18} color="#006B64" />
-              <Text style={styles.secondaryRouteButtonText}>Thêm điểm dừng</Text>
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={styles.secondaryRouteButton}
+              onPress={handleOpenTransportPicker}
+            >
+              <TransportModeIcon
+                mode={transportMode}
+                size={18}
+                color="#006B64"
+              />
+              <Text style={styles.secondaryRouteButtonText} numberOfLines={1}>
+                {selectedTransportOption.label}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.86}
@@ -4204,6 +4628,222 @@ export default function NearbyUsersScreen() {
           </View>
         </View>
       ) : null}
+
+      {isTransportPickerOpen ? (
+        <View style={styles.transportPickerOverlay} pointerEvents="box-none">
+          <TouchableOpacity
+            activeOpacity={1}
+            style={styles.transportPickerBackdrop}
+            onPress={handleCloseTransportPicker}
+          />
+          <View
+            style={[
+              styles.transportPickerCard,
+              { paddingBottom: Math.max(insets.bottom + 14, 24) },
+            ]}
+          >
+            <View style={styles.sheetHandle} />
+            <Text style={styles.transportPickerTitle}>Chọn phương tiện</Text>
+            <Text style={styles.transportPickerSubtitle}>
+              Tuyến đường sẽ cập nhật theo phương tiện bạn chọn.
+            </Text>
+            <View style={styles.transportPickerOptions}>
+              {TRANSPORT_OPTIONS.map(option => {
+                const isActive = option.mode === transportMode;
+                return (
+                  <TouchableOpacity
+                    key={option.mode}
+                    activeOpacity={0.86}
+                    style={[
+                      styles.transportPickerOption,
+                      isActive && styles.transportPickerOptionActive,
+                    ]}
+                    onPress={() => handleSelectTransportMode(option.mode)}
+                  >
+                    <View
+                      style={[
+                        styles.transportPickerOptionIcon,
+                        isActive && styles.transportPickerOptionIconActive,
+                      ]}
+                    >
+                      <TransportModeIcon
+                        mode={option.mode}
+                        size={22}
+                        color={isActive ? '#FFFFFF' : '#2563EB'}
+                      />
+                    </View>
+                    <View style={styles.transportPickerOptionCopy}>
+                      <Text
+                        style={[
+                          styles.transportPickerOptionTitle,
+                          isActive && styles.transportPickerOptionTitleActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                      <Text style={styles.transportPickerOptionDescription}>
+                        {option.description}
+                      </Text>
+                    </View>
+                    {isActive ? (
+                      <View style={styles.transportPickerActiveBadge}>
+                        <Text style={styles.transportPickerActiveBadgeText}>
+                          Đang chọn
+                        </Text>
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      <Modal
+        visible={isMapShareSheetOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={handleCloseMapShareSheet}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.mapShareBackdrop}
+          onPress={handleCloseMapShareSheet}
+        />
+        <View style={styles.mapShareSheetWrap}>
+          <View
+            style={[
+              styles.mapShareSheet,
+              { paddingBottom: Math.max(insets.bottom + 14, 24) },
+            ]}
+          >
+            <View style={styles.sheetHandle} />
+            <View style={styles.mapShareHeader}>
+              <View style={styles.mapShareHeaderIcon}>
+                <MapPin size={22} color="#2563EB" />
+              </View>
+              <View style={styles.mapShareHeaderCopy}>
+                <Text style={styles.mapShareTitle}>Chia sẻ địa chỉ</Text>
+                <Text style={styles.mapShareSubtitle} numberOfLines={2}>
+                  {selectedMapShareLocation?.title || 'Địa điểm đã chọn'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                activeOpacity={0.82}
+                style={styles.mapShareCloseButton}
+                onPress={handleCloseMapShareSheet}
+              >
+                <X size={20} color="#334155" />
+              </TouchableOpacity>
+            </View>
+
+            {selectedMapSharePreview ? (
+              <View style={styles.mapSharePreviewCard}>
+                {selectedMapSharePreview.image ? (
+                  <Image
+                    source={{ uri: selectedMapSharePreview.image }}
+                    style={styles.mapSharePreviewImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.mapSharePreviewFallback}>
+                    <MapPin size={26} color="#2563EB" />
+                  </View>
+                )}
+                <View style={styles.mapSharePreviewCopy}>
+                  <Text style={styles.mapSharePreviewEyebrow}>
+                    Địa điểm sẽ chia sẻ
+                  </Text>
+                  <Text style={styles.mapSharePreviewTitle} numberOfLines={1}>
+                    {selectedMapSharePreview.title || 'Địa điểm đã chọn'}
+                  </Text>
+                  <Text style={styles.mapSharePreviewDesc} numberOfLines={2}>
+                    {selectedMapSharePreview.description ||
+                      (selectedMapShareLocation
+                        ? `${selectedMapShareLocation.latitude.toFixed(6)}, ${selectedMapShareLocation.longitude.toFixed(6)}`
+                        : '')}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={[
+                styles.mapSharePrimaryAction,
+                isPostingMapShare && styles.mapShareActionDisabled,
+              ]}
+              onPress={handleShareMapToPost}
+              disabled={isPostingMapShare}
+            >
+              <View style={styles.mapShareActionIcon}>
+                {isPostingMapShare ? (
+                  <ActivityIndicator size="small" color="#2563EB" />
+                ) : (
+                  <Share2 size={19} color="#2563EB" />
+                )}
+              </View>
+              <View style={styles.mapShareActionCopy}>
+                <Text style={styles.mapShareActionTitle}>
+                  {isPostingMapShare ? 'Đang đăng bài...' : 'Đăng thành bài viết'}
+                </Text>
+                <Text style={styles.mapShareActionDesc}>
+                  Bài viết sẽ hiển thị card địa điểm và mở lại bản đồ khi bấm.
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.mapShareSectionHeader}>
+              <MessageCircle size={16} color="#64748B" />
+              <Text style={styles.mapShareSectionTitle}>Gửi vào tin nhắn</Text>
+            </View>
+            {messagesVm.isLoadingChats && mapShareChats.length === 0 ? (
+              <View style={styles.mapShareLoadingRow}>
+                <ActivityIndicator color="#2563EB" />
+                <Text style={styles.mapShareLoadingText}>Đang tải cuộc trò chuyện...</Text>
+              </View>
+            ) : mapShareChats.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.mapShareChatList}
+              >
+                {mapShareChats.slice(0, 12).map(chat => (
+                  <TouchableOpacity
+                    key={`map-share-chat:${chat.id}:${chat.userId}`}
+                    activeOpacity={0.86}
+                    style={styles.mapShareChatItem}
+                    onPress={() => handleShareMapToChat(chat)}
+                  >
+                    <Image
+                      source={{ uri: chat.avatar || FALLBACK_AVATAR }}
+                      style={styles.mapShareChatAvatar}
+                    />
+                    <Text style={styles.mapShareChatName} numberOfLines={1}>
+                      {chat.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : (
+              <Text style={styles.mapShareEmptyText}>
+                Bạn chưa có cuộc trò chuyện nào để chia sẻ.
+              </Text>
+            )}
+
+            <TouchableOpacity
+              activeOpacity={0.86}
+              style={styles.mapShareOutsideButton}
+              onPress={handleShareMapOutside}
+            >
+              <Share2 size={18} color="#006B64" />
+              <Text style={styles.mapShareOutsideText}>Chia sẻ ngoài ứng dụng</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {isNavigating && shouldShowRoute ? (
         <View style={styles.navigationEtaDock}>
@@ -4357,6 +4997,7 @@ export default function NearbyUsersScreen() {
             >
               {routeOptions.map((route, index) => {
                 const isActive = route.id === selectedRouteId;
+                const trafficInfo = getRouteTrafficInfo(route);
                 return (
                   <TouchableOpacity
                     key={`route-chip:${route.id}`}
@@ -4389,6 +5030,24 @@ export default function NearbyUsersScreen() {
                         .filter(Boolean)
                         .join(' · ')}
                     </Text>
+                    {trafficInfo ? (
+                      <View
+                        style={[
+                          (styles as any).routeTrafficBadge,
+                          trafficBadgeStyle(trafficInfo.level),
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            (styles as any).routeTrafficBadgeText,
+                            trafficBadgeTextStyle(trafficInfo.level),
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {trafficInfo.detail}
+                        </Text>
+                      </View>
+                    ) : null}
                   </TouchableOpacity>
                 );
               })}
@@ -5798,6 +6457,320 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
   },
+  transportPickerOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 42,
+    justifyContent: 'flex-end',
+  },
+  transportPickerBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.18)',
+  },
+  transportPickerCard: {
+    marginHorizontal: 14,
+    marginBottom: 12,
+    borderRadius: 28,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 16,
+  },
+  transportPickerTitle: {
+    marginTop: 14,
+    color: '#0F172A',
+    fontSize: 22,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  transportPickerSubtitle: {
+    marginTop: 5,
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  transportPickerOptions: {
+    marginTop: 16,
+  },
+  transportPickerOption: {
+    minHeight: 74,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    marginBottom: 10,
+  },
+  transportPickerOptionActive: {
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+  },
+  transportPickerOptionIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEF2FF',
+  },
+  transportPickerOptionIconActive: {
+    backgroundColor: '#2563EB',
+  },
+  transportPickerOptionCopy: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  transportPickerOptionTitle: {
+    color: '#0F172A',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  transportPickerOptionTitleActive: {
+    color: '#1D4ED8',
+  },
+  transportPickerOptionDescription: {
+    marginTop: 3,
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  transportPickerActiveBadge: {
+    marginLeft: 10,
+    borderRadius: 999,
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  transportPickerActiveBadgeText: {
+    color: '#1D4ED8',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  mapShareBackdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.32)',
+  },
+  mapShareSheetWrap: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  mapShareSheet: {
+    marginHorizontal: 14,
+    marginBottom: 12,
+    borderRadius: 28,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 16,
+  },
+  mapShareHeader: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  mapShareHeaderIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EFF6FF',
+  },
+  mapShareHeaderCopy: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  mapShareTitle: {
+    color: '#0F172A',
+    fontSize: 21,
+    fontWeight: '900',
+  },
+  mapShareSubtitle: {
+    marginTop: 3,
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  mapShareCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  mapSharePreviewCard: {
+    marginTop: 16,
+    minHeight: 92,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+  },
+  mapSharePreviewImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    backgroundColor: '#E2E8F0',
+  },
+  mapSharePreviewFallback: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EFF6FF',
+  },
+  mapSharePreviewCopy: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  mapSharePreviewEyebrow: {
+    color: '#2563EB',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  mapSharePreviewTitle: {
+    marginTop: 4,
+    color: '#0F172A',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  mapSharePreviewDesc: {
+    marginTop: 4,
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  mapSharePrimaryAction: {
+    marginTop: 18,
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 14,
+  },
+  mapShareActionDisabled: {
+    opacity: 0.72,
+  },
+  mapShareActionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DBEAFE',
+  },
+  mapShareActionCopy: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  mapShareActionTitle: {
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  mapShareActionDesc: {
+    marginTop: 3,
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  mapShareSectionHeader: {
+    marginTop: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  mapShareSectionTitle: {
+    marginLeft: 7,
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  mapShareLoadingRow: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  mapShareLoadingText: {
+    marginLeft: 10,
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  mapShareChatList: {
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  mapShareChatItem: {
+    width: 72,
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  mapShareChatAvatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#E2E8F0',
+  },
+  mapShareChatName: {
+    marginTop: 6,
+    color: '#334155',
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  mapShareEmptyText: {
+    marginTop: 10,
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  mapShareOutsideButton: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    borderRadius: 24,
+    backgroundColor: '#CFFAFE',
+  },
+  mapShareOutsideText: {
+    marginLeft: 8,
+    color: '#006B64',
+    fontSize: 13,
+    fontWeight: '900',
+  },
   navigationEtaDock: {
     position: 'absolute',
     right: 0,
@@ -5920,10 +6893,10 @@ const styles = StyleSheet.create({
   },
   routeOptionsRow: {
     marginTop: 12,
-    maxHeight: 72,
+    maxHeight: 96,
   },
   routeOptionChip: {
-    minWidth: 132,
+    minWidth: 148,
     marginRight: 10,
     borderRadius: 16,
     borderWidth: 1,
@@ -5952,6 +6925,35 @@ const styles = StyleSheet.create({
   },
   routeOptionMetaActive: {
     color: '#2563EB',
+  },
+  routeTrafficBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 7,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  routeTrafficBadgeClear: {
+    backgroundColor: '#DCFCE7',
+  },
+  routeTrafficBadgeNormal: {
+    backgroundColor: '#FEF3C7',
+  },
+  routeTrafficBadgeHeavy: {
+    backgroundColor: '#FEE2E2',
+  },
+  routeTrafficBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  routeTrafficBadgeTextClear: {
+    color: '#15803D',
+  },
+  routeTrafficBadgeTextNormal: {
+    color: '#B45309',
+  },
+  routeTrafficBadgeTextHeavy: {
+    color: '#B91C1C',
   },
   routeMapDurationPill: {
     minWidth: 72,
@@ -5988,6 +6990,23 @@ const styles = StyleSheet.create({
     color: '#D9F99D',
     fontSize: 13,
     fontWeight: '900',
+  },
+  routeMapTrafficDot: {
+    marginLeft: 6,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
+  },
+  routeMapTrafficDotClear: {
+    backgroundColor: '#22C55E',
+  },
+  routeMapTrafficDotNormal: {
+    backgroundColor: '#F59E0B',
+  },
+  routeMapTrafficDotHeavy: {
+    backgroundColor: '#EF4444',
   },
   navigationBanner: {
     position: 'absolute',

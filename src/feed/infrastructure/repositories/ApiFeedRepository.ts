@@ -53,6 +53,7 @@ import type {
   FeedPollPost,
   PostFeeling,
   PostPrivacy,
+  PostLinkPreview,
 } from '../../domain/types/feed.types';
 
 // Privacy mapping
@@ -575,6 +576,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     myReaction,
     topReactions: extractTopReactions(raw, myReaction),
     privacy,
+    linkPreview: extractLinkPreview(raw),
     publisher: {
       id: readString(publisher, 'user_id', 'id'),
       name,
@@ -776,6 +778,18 @@ function extractFeeling(raw: Record<string, unknown>): PostFeeling | undefined {
   return undefined;
 }
 
+function extractLinkPreview(raw: Record<string, unknown>): PostLinkPreview | undefined {
+  const url = readString(raw, 'postLink');
+  if (!url) return undefined;
+
+  return {
+    url,
+    title: cleanCaption(readString(raw, 'postLinkTitle')) || undefined,
+    description: cleanCaption(readString(raw, 'postLinkContent')) || undefined,
+    image: normalizeMediaUrl(readString(raw, 'postLinkImage')) || undefined,
+  };
+}
+
 /**
  * A "text or photo" post is anything that is NOT a video. We surface
  * pure-text posts AND photo-album posts in the same lane because the
@@ -792,11 +806,12 @@ function looksLikeTextOrPhoto(raw: Record<string, unknown>): boolean {
   const text = readString(raw, 'postText').trim();
   const hasPhoto = extractPhotoUrls(raw).length > 0;
   const hasAudio = AUDIO_URL_PATTERN.test(readString(raw, 'postFile'));
+  const hasLinkPreview = Boolean(readString(raw, 'postLink'));
   const shared = readSharedInfo(raw);
   const hasSharedContent = shared
     ? looksLikeVideo(shared) || looksLikePoll(shared) || looksLikeTextOrPhoto(shared)
     : false;
-  return Boolean(text) || hasPhoto || hasAudio || hasSharedContent;
+  return Boolean(text) || hasPhoto || hasAudio || hasLinkPreview || hasSharedContent;
 }
 
 function readSharedInfo(
@@ -983,6 +998,7 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
     topReactions: extractTopReactions(raw, myReaction),
     feeling: extractFeeling(raw),
     privacy,
+    linkPreview: extractLinkPreview(raw),
     publisher: {
       id: readString(publisher, 'user_id', 'id'),
       name,
@@ -2043,6 +2059,26 @@ export function createFeedRepository(): FeedRepository {
         // Mark this as a video post so the feed mapper and the
         // homepage's `looksLikeVideo` classifier both pick it up.
         payload.postType = 'video';
+      }
+
+      if (draft.linkPreview) {
+        payload.url_link = draft.linkPreview.url;
+        payload.url_title = draft.linkPreview.title || draft.linkPreview.url;
+        payload.url_content = draft.linkPreview.description || '';
+        if (draft.linkPreview.image) {
+          payload.url_image = draft.linkPreview.image;
+        }
+        // WoWonder's `Wo_RegisterPost` does not count `postLink*` fields
+        // as post content, so a pure link-preview post is rejected as empty.
+        // `postMap` is accepted as content by the backend but is not rendered
+        // as a visible caption in our feed cards, which keeps shared map
+        // locations as a clean preview card instead of a long URL blob.
+        if (!trimmedText) {
+          payload.postMap =
+            draft.linkPreview.title?.trim() ||
+            draft.linkPreview.description?.trim() ||
+            'Shared location';
+        }
       }
 
       // Feeling — two-field combo. `feeling_type` selects the bucket,

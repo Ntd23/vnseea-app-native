@@ -1064,6 +1064,7 @@ const CaptionComposer = React.memo(({
         placeholderTextColor="#94A3B8"
         multiline
         autoFocus
+        scrollEnabled
         textAlignVertical="top"
         style={{
           fontSize: 17,
@@ -1071,6 +1072,7 @@ const CaptionComposer = React.memo(({
           color: '#1e293b',
           padding: 0,
           minHeight: 82,
+          maxHeight: 128,
         }}
       />
 
@@ -1887,6 +1889,7 @@ export interface CreatePostModalProps {
   groupId?: string;
   eventId?: string;
   initialAction?: 'photo' | 'video' | 'product' | 'poll';
+  initialText?: string;
   replaceRouteOnNavigate?: boolean;
 }
 
@@ -1898,6 +1901,7 @@ export function CreatePostModal({
   groupId,
   eventId,
   initialAction,
+  initialText,
   replaceRouteOnNavigate = false,
 }: CreatePostModalProps) {
   const navigation = useNavigation<Nav>();
@@ -1906,6 +1910,7 @@ export function CreatePostModal({
   const copy = CREATE_POST_COPY[language];
   const targetPage = page ?? route.params?.page;
   const targetGroupId = groupId ?? route.params?.groupId;
+  const initialTextValue = initialText ?? route.params?.initialText;
 
   const vm = useCreatePostViewModel({
     pageId: targetPage?.pageId,
@@ -1987,6 +1992,7 @@ export function CreatePostModal({
 
   const textInputRef = useRef<TextInput | null>(null);
   const scrollViewRef = useRef<ScrollView | null>(null);
+  const appliedInitialTextRef = useRef('');
   const [isKeyboardActive, setIsKeyboardActive] = useState(false);
 
   useEffect(() => {
@@ -2293,6 +2299,17 @@ export function CreatePostModal({
   }, [stableMoreNavigate]);
 
   const initialActionVal = initialAction ?? route.params?.initialAction;
+
+  useEffect(() => {
+    if (!visible || !initialTextValue) return;
+    if (appliedInitialTextRef.current === initialTextValue) return;
+
+    appliedInitialTextRef.current = initialTextValue;
+    vmRef.current.setText(initialTextValue);
+    if (route.params?.initialText) {
+      navigation.setParams({ initialText: undefined } as any);
+    }
+  }, [initialTextValue, navigation, route.params?.initialText, visible]);
 
   useEffect(() => {
     if (initialActionVal) {
@@ -2822,6 +2839,7 @@ function CreatePostScreen() {
   const targetPage = route.params?.page;
   const targetGroupId = route.params?.groupId;
   const initialAction = route.params?.initialAction;
+  const initialText = route.params?.initialText;
 
   return (
     <CreatePostModal
@@ -2831,6 +2849,7 @@ function CreatePostScreen() {
       page={targetPage}
       groupId={targetGroupId}
       initialAction={initialAction}
+      initialText={initialText}
     />
   );
 }

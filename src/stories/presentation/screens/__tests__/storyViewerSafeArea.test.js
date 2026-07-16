@@ -28,4 +28,27 @@ describe('StoryViewer iOS header safe area', () => {
     expect(source).toContain("presentation: 'transparentModal'");
     expect(source).toContain("contentStyle: { backgroundColor: 'transparent' }");
   });
+
+  it('uses a modern story options sheet and lets publisher info open profile', () => {
+    const source = read('src/stories/presentation/screens/StoryViewerScreen.tsx');
+
+    expect(source).toContain("import { navigateToUserProfile } from '../../../navigation/profileNavigation';");
+    expect(source).toContain('useFocusEffect');
+    expect(source).toContain('useIsFocused');
+    expect(source).toContain('const isStoryViewerFocused = useIsFocused();');
+    expect(source).toContain('const [isOptionsSheetVisible, setIsOptionsSheetVisible] = useState(false);');
+    expect(source).toContain('const pauseForProfileNavigationRef = useRef(false);');
+    expect(source).toContain('const shouldPausePlayback = isPaused || !isStoryViewerFocused || isOptionsSheetVisible;');
+    expect(source).toContain('setIsOptionsSheetVisible(true);');
+    expect(source).toContain('const handleOpenPublisherProfile = useCallback');
+    expect(source).toContain('pauseForProfileNavigationRef.current = true;');
+    expect(source).toContain('setIsPaused(true);');
+    expect(source).toContain('navigateToUserProfile(navigation, currentStory.publisher.userId);');
+    expect(source).toContain('paused={shouldPausePlayback}');
+    expect(source).toContain('onPress={handleOpenPublisherProfile}');
+    expect(source).toContain('<Modal');
+    expect(source).toContain('styles.optionsSheet');
+    expect(source).toContain('styles.optionsActionRow');
+    expect(source).toContain('Xem trang cá nhân');
+  });
 });

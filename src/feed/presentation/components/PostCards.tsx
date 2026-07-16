@@ -4,6 +4,7 @@ import {
   Dimensions,
   Image,
   InteractionManager,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -36,6 +37,7 @@ import {
   EyeOff,
   Globe,
   Lock,
+  MapPin,
   MessageCircle,
   MoreHorizontal,
   Share2,
@@ -69,6 +71,7 @@ import {
   createCachedVideoPosterThumbnail,
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
+import { parseMapShareUrl } from '../../../user/application/utils/mapShare';
 import {
   FeedCardContent,
   FeedCardSurface,
@@ -324,17 +327,27 @@ export function FeedInlineReactionPickerBar({
   );
 }
 
-export function renderPostTextTokens(text: string, mentionNames: string[] = []) {
+function normalizePostUrlToken(token: string) {
+  return /^https?:\/\//i.test(token) ? token : `https://${token}`;
+}
+
+export function renderPostTextTokens(
+  text: string,
+  mentionNames: string[] = [],
+  onUrlPress?: (url: string) => void,
+) {
   const nodes: React.ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
+  const urlPattern =
+    '(?:https?:\\/\\/|www\\.)[^\\s<>()]+|(?:[a-z0-9-]+\\.)+[a-z]{2,}(?:\\/[^\\s<>()]*)?';
   const knownMentions = mentionNames
     .map(name => name.trim().replace(/^@/, ''))
     .filter(Boolean)
     .sort((left, right) => right.length - left.length)
     .map(name => `@${escapeTokenPattern(name)}(?=$|\\s|[.,!?;:()[\\]{}"'#@])`);
   const tokenPattern = new RegExp(
-    `(${[...knownMentions, POST_TOKEN_FALLBACK].join('|')})`,
+    `(${[urlPattern, ...knownMentions, POST_TOKEN_FALLBACK].join('|')})`,
     'g',
   );
 
@@ -342,11 +355,28 @@ export function renderPostTextTokens(text: string, mentionNames: string[] = []) 
     if (match.index > lastIndex) {
       nodes.push(text.slice(lastIndex, match.index));
     }
+    const rawToken = match[0];
+    const trailingMatch = rawToken.match(/[.,!?;:\])]+$/);
+    const trailingText = trailingMatch?.[0] ?? '';
+    const token = trailingText ? rawToken.slice(0, -trailingText.length) : rawToken;
+    const isUrl =
+      /^https?:\/\//i.test(token) ||
+      /^www\./i.test(token) ||
+      /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/|$)/i.test(token);
+    const url = isUrl ? normalizePostUrlToken(token) : undefined;
+
     nodes.push(
-      <Text key={`${match[0]}-${match.index}`} style={{ color: POST_TOKEN_BLUE }}>
-        {match[0]}
+      <Text
+        key={`${rawToken}-${match.index}`}
+        style={{ color: POST_TOKEN_BLUE }}
+        onPress={url && onUrlPress ? () => onUrlPress(url) : undefined}
+      >
+        {token}
       </Text>,
     );
+    if (trailingText) {
+      nodes.push(trailingText);
+    }
     lastIndex = match.index + match[0].length;
   }
 
@@ -2487,6 +2517,7 @@ const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
   copy: FeedCopy;
   collapsible: boolean;
 }) {
+  const navigation = useNavigation<any>();
   const normalizedText = useMemo(() => text.trim(), [text]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [layoutCanCollapse, setLayoutCanCollapse] = useState(false);
@@ -2513,6 +2544,22 @@ const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
     [collapsible, isExpanded],
   );
 
+  const handleUrlPress = useCallback(
+    (url: string) => {
+      const mapLocation = parseMapShareUrl(url);
+      if (mapLocation) {
+        navigation.navigate(ROUTES.NEARBY_USERS, {
+          initialLocation: mapLocation,
+          autoRoute: true,
+        });
+        return;
+      }
+
+      Linking.openURL(url).catch(() => undefined);
+    },
+    [navigation],
+  );
+
   if (!normalizedText) return null;
 
   return (
@@ -2524,7 +2571,7 @@ const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
         }
         onTextLayout={handleTextLayout}
       >
-        {renderPostTextTokens(normalizedText, mentionNames)}
+        {renderPostTextTokens(normalizedText, mentionNames, handleUrlPress)}
       </Text>
       {canCollapse ? (
         <TouchableOpacity
@@ -2541,6 +2588,75 @@ const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
         </TouchableOpacity>
       ) : null}
     </View>
+  );
+});
+
+const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
+  preview,
+}: {
+  preview: NonNullable<FeedTextPost['linkPreview']>;
+}) {
+  const navigation = useNavigation<any>();
+  const hostLabel = useMemo(() => {
+    try {
+      return new URL(preview.url).hostname.replace(/^www\./, '');
+    } catch {
+      return preview.url;
+    }
+  }, [preview.url]);
+
+  const handlePress = useCallback(() => {
+    const mapLocation = parseMapShareUrl(preview.url);
+    if (mapLocation) {
+      navigation.navigate(ROUTES.NEARBY_USERS, {
+        initialLocation: mapLocation,
+        autoRoute: true,
+      });
+      return;
+    }
+
+    Linking.openURL(preview.url).catch(() => undefined);
+  }, [navigation, preview.url]);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={handlePress}
+      className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white"
+    >
+      {preview.image ? (
+        <FeedMediaImage
+          uri={preview.image}
+          style={{ width: '100%', aspectRatio: 1.91, backgroundColor: '#E2E8F0' }}
+          resizeMode="cover"
+          deferWhileScrolling={false}
+        />
+      ) : (
+        <View className="h-28 items-center justify-center bg-blue-50">
+          <View className="h-14 w-14 items-center justify-center rounded-full bg-white">
+            <MapPin size={28} color="#2563EB" />
+          </View>
+        </View>
+      )}
+      <View className="bg-slate-50 px-4 py-3">
+        <View className="flex-row items-center">
+          <MapPin size={14} color="#2563EB" />
+          <Text className="ml-1.5 flex-1 text-caption-secondary" numberOfLines={1}>
+            {hostLabel}
+          </Text>
+        </View>
+        {preview.title ? (
+          <Text className="mt-1.5 text-title-primary" numberOfLines={2}>
+            {preview.title}
+          </Text>
+        ) : null}
+        {preview.description ? (
+          <Text className="mt-1 text-caption-secondary" numberOfLines={2}>
+            {preview.description}
+          </Text>
+        ) : null}
+      </View>
+    </TouchableOpacity>
   );
 });
 
@@ -2903,6 +3019,9 @@ export const TextPostCard = React.memo(function TextPostCard({
             {copy.feelingPrefix} {post.feeling.label ?? post.feeling.value}{' '}
             {post.feeling.emoji ?? ''}
           </Text>
+        ) : null}
+        {post.linkPreview ? (
+          <FeedLinkPreviewCard preview={post.linkPreview} />
         ) : null}
       </FeedCardContent>
       {totalPhotos === 1 ? (

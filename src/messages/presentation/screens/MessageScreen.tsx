@@ -147,6 +147,12 @@ import CreateActionSheet from '../../../shared-kernel/presentation/components/Cr
 import { ColorPicker } from '../../../shared-kernel/presentation/components/ColorPicker';
 
 import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
+import Svg, {
+  Circle as SvgCircle,
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Stop,
+} from 'react-native-svg';
 
 type MessagesNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -2011,15 +2017,41 @@ function StoriesBubbleRow({
 
             >
 
-              <View
-                style={[
-                  styles.messageStoryInstagramRing,
-                  !hasUnseen && styles.messageStoryInstagramRingSeen,
-                ]}
-              >
-                <View style={styles.messageStoryRingGlowPink} />
-                <View style={styles.messageStoryRingGlowOrange} />
-                <View style={styles.messageStoryRingGlowPurple} />
+              <View style={styles.messageStoryInstagramRing}>
+                <Svg
+                  width={62}
+                  height={62}
+                  viewBox="0 0 62 62"
+                  style={[
+                    styles.messageStoryRingSvg,
+                    !hasUnseen && styles.messageStoryRingSvgSeen,
+                  ]}
+                >
+                  <Defs>
+                    <SvgLinearGradient
+                      id="messageStoryInstagramGradient"
+                      x1="8%"
+                      y1="94%"
+                      x2="92%"
+                      y2="6%"
+                    >
+                      <Stop offset="0%" stopColor="#FEDA75" />
+                      <Stop offset="19%" stopColor="#FA7E1E" />
+                      <Stop offset="45%" stopColor="#D62976" />
+                      <Stop offset="72%" stopColor="#962FBF" />
+                      <Stop offset="100%" stopColor="#4F5BD5" />
+                    </SvgLinearGradient>
+                  </Defs>
+                  <SvgCircle
+                    cx="31"
+                    cy="31"
+                    r="28"
+                    stroke="url(#messageStoryInstagramGradient)"
+                    strokeWidth="4.2"
+                    strokeLinecap="round"
+                    fill="none"
+                  />
+                </Svg>
                 <View style={styles.messageStoryAvatarFrame}>
                   <Image
                     source={{ uri: story.publisher.avatarUrl }}
@@ -4372,15 +4404,13 @@ const styles = StyleSheet.create({
 
     justifyContent: 'center',
 
-    overflow: 'hidden',
-
-    backgroundColor: '#E1306C',
+    backgroundColor: 'transparent',
 
     shadowColor: '#E1306C',
 
     shadowOffset: { width: 0, height: 4 },
 
-    shadowOpacity: 0.16,
+    shadowOpacity: 0.22,
 
     shadowRadius: 8,
 
@@ -4388,65 +4418,19 @@ const styles = StyleSheet.create({
 
   },
 
-  messageStoryInstagramRingSeen: {
-
-    opacity: 0.78,
-
-    shadowOpacity: 0.08,
-
-  },
-
-  messageStoryRingGlowPink: {
+  messageStoryRingSvg: {
 
     position: 'absolute',
 
-    top: -10,
+    top: 0,
 
-    right: -4,
-
-    width: 40,
-
-    height: 40,
-
-    borderRadius: 20,
-
-    backgroundColor: '#C13584',
+    left: 0,
 
   },
 
-  messageStoryRingGlowOrange: {
+  messageStoryRingSvgSeen: {
 
-    position: 'absolute',
-
-    bottom: -9,
-
-    left: -5,
-
-    width: 42,
-
-    height: 42,
-
-    borderRadius: 21,
-
-    backgroundColor: '#FCAF45',
-
-  },
-
-  messageStoryRingGlowPurple: {
-
-    position: 'absolute',
-
-    right: -9,
-
-    bottom: 3,
-
-    width: 34,
-
-    height: 34,
-
-    borderRadius: 17,
-
-    backgroundColor: '#833AB4',
+    opacity: 0.95,
 
   },
 
@@ -4464,7 +4448,7 @@ const styles = StyleSheet.create({
 
     backgroundColor: '#FFFFFF',
 
-    padding: 2,
+    padding: 3,
 
   },
 
@@ -4474,7 +4458,7 @@ const styles = StyleSheet.create({
 
     height: '100%',
 
-    borderRadius: 25,
+    borderRadius: 24,
 
     backgroundColor: '#F1F5F9',
 

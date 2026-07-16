@@ -110,6 +110,18 @@ type RawRouteRecord = {
   steps?: RawRouteStep[];
   distanceMeters?: number | string;
   durationSeconds?: number | string;
+  durationWithoutTrafficSeconds?: number | string;
+  duration_without_traffic_seconds?: number | string;
+  durationInTrafficSeconds?: number | string;
+  duration_in_traffic_seconds?: number | string;
+  trafficDelaySeconds?: number | string;
+  traffic_delay_seconds?: number | string;
+  trafficLevel?: string;
+  traffic_level?: string;
+  trafficLabel?: string;
+  traffic_label?: string;
+  trafficAvailable?: boolean | number | string;
+  traffic_available?: boolean | number | string;
   provider?: string;
 };
 
@@ -422,6 +434,26 @@ function mapRoutePoint(point: RawRoutePoint | undefined) {
   return { latitude, longitude };
 }
 
+function mapTrafficLevel(value: unknown): MapRoute['trafficLevel'] | undefined {
+  if (value === 'clear' || value === 'normal' || value === 'heavy') {
+    return value;
+  }
+
+  return undefined;
+}
+
+function mapBooleanFlag(value: unknown): boolean | undefined {
+  if (value === true || value === 1 || value === '1' || value === 'true') {
+    return true;
+  }
+
+  if (value === false || value === 0 || value === '0' || value === 'false') {
+    return false;
+  }
+
+  return undefined;
+}
+
 function mapRouteStep(step: RawRouteStep): MapRouteStep | null {
   const startLocation = mapRoutePoint(step.startLocation ?? step.start_location);
   const endLocation = mapRoutePoint(step.endLocation ?? step.end_location);
@@ -464,6 +496,34 @@ function mapRouteRecord(route: RouteResponse['route'], index = 0): MapRoute {
       .filter(Boolean) as MapRouteStep[],
     distanceMeters: Number(route.distanceMeters ?? 0) || 0,
     durationSeconds: Number(route.durationSeconds ?? 0) || 0,
+    durationWithoutTrafficSeconds:
+      Number(
+        route.durationWithoutTrafficSeconds ??
+          route.duration_without_traffic_seconds ??
+          0,
+      ) || undefined,
+    durationInTrafficSeconds:
+      Number(
+        route.durationInTrafficSeconds ??
+          route.duration_in_traffic_seconds ??
+          0,
+      ) || undefined,
+    trafficDelaySeconds:
+      Number(
+        route.trafficDelaySeconds ??
+          route.traffic_delay_seconds ??
+          0,
+      ) || undefined,
+    trafficLevel: mapTrafficLevel(route.trafficLevel ?? route.traffic_level),
+    trafficLabel:
+      route.trafficLabel !== undefined && route.trafficLabel !== null
+        ? String(route.trafficLabel)
+        : route.traffic_label !== undefined && route.traffic_label !== null
+          ? String(route.traffic_label)
+          : undefined,
+    trafficAvailable: mapBooleanFlag(
+      route.trafficAvailable ?? route.traffic_available,
+    ),
     provider: 'google',
   };
 }

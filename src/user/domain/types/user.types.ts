@@ -185,7 +185,7 @@ export type MapRouteInput = {
   originLng: number;
   destinationLat: number;
   destinationLng: number;
-  mode?: 'walking' | 'driving' | 'bicycling' | 'transit';
+  mode?: 'walking' | 'driving' | 'motorcycle' | 'bicycling' | 'transit';
 };
 
 export type MapRoutePoint = {
@@ -210,6 +210,12 @@ export type MapRoute = {
   steps?: MapRouteStep[];
   distanceMeters: number;
   durationSeconds: number;
+  durationWithoutTrafficSeconds?: number;
+  durationInTrafficSeconds?: number;
+  trafficDelaySeconds?: number;
+  trafficLevel?: 'clear' | 'normal' | 'heavy';
+  trafficLabel?: string;
+  trafficAvailable?: boolean;
   provider: 'google';
 };
 

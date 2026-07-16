@@ -28,8 +28,44 @@ function Wo_ApiMapDiscoveryNumber($key) {
 
 function Wo_ApiMapDiscoveryRouteMode() {
     $mode = !empty($_POST['mode']) ? strtolower(Wo_Secure($_POST['mode'])) : 'walking';
-    $allowed_modes = array('walking', 'driving', 'bicycling', 'transit');
+    $allowed_modes = array('walking', 'driving', 'motorcycle', 'bicycling', 'transit');
     return in_array($mode, $allowed_modes) ? $mode : 'walking';
+}
+
+function Wo_ApiMapDiscoveryGoogleRouteMode($mode) {
+    return $mode === 'motorcycle' ? 'driving' : $mode;
+}
+
+function Wo_ApiMapDiscoveryTrafficInfo($mode, $duration_seconds, $duration_in_traffic_seconds) {
+    if ($mode !== 'driving' && $mode !== 'motorcycle') {
+        return array();
+    }
+
+    $traffic_available = $duration_in_traffic_seconds !== null && $duration_in_traffic_seconds > 0;
+    $effective_duration_seconds = $traffic_available ? $duration_in_traffic_seconds : $duration_seconds;
+    $traffic_delay_seconds = max(0, $effective_duration_seconds - $duration_seconds);
+    $ratio = $duration_seconds > 0 ? ($effective_duration_seconds / $duration_seconds) : 1;
+    $level = 'normal';
+    $label = 'Bình thường';
+
+    if ($traffic_available && ($traffic_delay_seconds >= 240 || $ratio >= 1.22)) {
+        $level = 'heavy';
+        $label = 'Tắc đường';
+    }
+    else if ($traffic_available && ($traffic_delay_seconds <= 60 || $ratio <= 1.06)) {
+        $level = 'clear';
+        $label = 'Vắng vẻ';
+    }
+
+    return array(
+        'durationSeconds' => $effective_duration_seconds,
+        'durationWithoutTrafficSeconds' => $duration_seconds,
+        'durationInTrafficSeconds' => $effective_duration_seconds,
+        'trafficDelaySeconds' => $traffic_delay_seconds,
+        'trafficLevel' => $level,
+        'trafficLabel' => $label,
+        'trafficAvailable' => $traffic_available ? 1 : 0
+    );
 }
 
 function Wo_ApiMapDiscoveryRadiusMeters() {
@@ -598,19 +634,26 @@ function Wo_ApiMapDiscoveryRoute() {
     $destination_lat = Wo_ApiMapDiscoveryNumber('destination_lat');
     $destination_lng = Wo_ApiMapDiscoveryNumber('destination_lng');
     $mode = Wo_ApiMapDiscoveryRouteMode();
+    $google_mode = Wo_ApiMapDiscoveryGoogleRouteMode($mode);
     if ($origin_lat === null || $origin_lng === null || $destination_lat === null || $destination_lng === null) {
         return Wo_ApiMapDiscoveryError('coordinates_missing', 'Route coordinates are required.');
     }
 
-    $google = Wo_ApiMapDiscoveryGoogleGet('directions/json', array(
+    $route_query = array(
         'origin' => number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', ''),
         'destination' => number_format($destination_lat, 6, '.', '') . ',' . number_format($destination_lng, 6, '.', ''),
-        'mode' => $mode,
+        'mode' => $google_mode,
         'language' => 'vi',
         'region' => 'vn',
         'units' => 'metric',
         'alternatives' => 'true'
-    ));
+    );
+    if ($google_mode === 'driving') {
+        $route_query['departure_time'] = 'now';
+        $route_query['traffic_model'] = 'best_guess';
+    }
+
+    $google = Wo_ApiMapDiscoveryGoogleGet('directions/json', $route_query);
     if (!empty($google['errors'])) {
         return $google;
     }
@@ -624,16 +667,24 @@ function Wo_ApiMapDiscoveryRoute() {
             continue;
         }
         $candidate_leg = $candidate_route['legs'][0];
-        $routes[] = array(
+        $duration_seconds = !empty($candidate_leg['duration']['value']) ? (float) $candidate_leg['duration']['value'] : 0;
+        $duration_in_traffic_seconds = !empty($candidate_leg['duration_in_traffic']['value']) ? (float) $candidate_leg['duration_in_traffic']['value'] : null;
+        $traffic_info = Wo_ApiMapDiscoveryTrafficInfo($mode, $duration_seconds, $duration_in_traffic_seconds);
+        $effective_duration_seconds = !empty($traffic_info['durationSeconds']) ? $traffic_info['durationSeconds'] : $duration_seconds;
+        $route_payload = array(
             'id' => 'route-' . ($route_index + 1),
             'summary' => !empty($candidate_route['summary']) ? $candidate_route['summary'] : '',
             'path' => Wo_ApiMapDiscoveryDecodePolyline(!empty($candidate_route['overview_polyline']['points']) ? $candidate_route['overview_polyline']['points'] : ''),
             'steps' => Wo_ApiMapDiscoveryRouteSteps($candidate_leg),
             'distanceMeters' => !empty($candidate_leg['distance']['value']) ? (float) $candidate_leg['distance']['value'] : 0,
-            'durationSeconds' => !empty($candidate_leg['duration']['value']) ? (float) $candidate_leg['duration']['value'] : 0,
+            'durationSeconds' => $effective_duration_seconds,
             'mode' => $mode,
             'provider' => 'google'
         );
+        if (!empty($traffic_info)) {
+            $route_payload = array_merge($route_payload, $traffic_info);
+        }
+        $routes[] = $route_payload;
     }
 
     if (empty($routes)) {

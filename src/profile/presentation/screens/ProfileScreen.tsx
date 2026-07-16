@@ -3430,27 +3430,31 @@ function ProfileScreen() {
               <View style={profileMainStyles.avatarContainer}>
                 <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.85}>
                   {userStory ? (
-                    // Gradient ring avatar (sky blue → purple, or gray gradient if viewed)
+                    // Instagram-style story ring avatar.
                     <View style={{ width: 110, height: 110, position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
                       <Svg width={110} height={110} style={{ position: 'absolute', top: 0, left: 0 }}>
                         <Defs>
                           <SvgLinearGradient
-                            id="storyRingGrad"
-                            x1="0"
-                            y1="0"
-                            x2="1"
-                            y2="1"
+                            id="profileAvatarStoryInstagramGradient"
+                            x1="8%"
+                            y1="94%"
+                            x2="92%"
+                            y2="6%"
                           >
-                            <Stop offset="0%" stopColor="#1877F2" />
-                            <Stop offset="100%" stopColor="#42A5F5" />
+                            <Stop offset="0%" stopColor="#FEDA75" />
+                            <Stop offset="19%" stopColor="#FA7E1E" />
+                            <Stop offset="45%" stopColor="#D62976" />
+                            <Stop offset="72%" stopColor="#962FBF" />
+                            <Stop offset="100%" stopColor="#4F5BD5" />
                           </SvgLinearGradient>
                         </Defs>
                         <Circle
                           cx={55}
                           cy={55}
-                          r={52}
-                          stroke="url(#storyRingGrad)"
-                          strokeWidth={4}
+                          r={51.7}
+                          stroke="url(#profileAvatarStoryInstagramGradient)"
+                          strokeWidth={5.2}
+                          strokeLinecap="round"
                           fill="none"
                         />
                       </Svg>

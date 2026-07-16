@@ -428,6 +428,9 @@ if (!empty($_POST['postText']) && !ctype_space($_POST['postText'])) {
 if (!empty($_POST['postMap'])) {
     $post_map = $_POST['postMap'];
 }
+if (empty($post_text) && empty($post_map) && !empty($url_link) && !empty($url_title)) {
+    $post_map = $url_title;
+}
 $album_name = '';
 if (!empty($_POST['album_name'])) {
     $album_name = $_POST['album_name'];

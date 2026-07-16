@@ -18,4 +18,19 @@ describe('ProfileScreen reload behavior', () => {
       /useFocusEffect\(useCallback\(\(\) => \{\s*loadProfile\(\{\s*userId:\s*route\.params\?\.(?:userId),\s*includeFriends:\s*true,\s*\}\)\.catch\(\(\) => undefined\);\s*\},\s*\[loadProfile,\s*route\.params\?\.(?:userId)\]\)\);/s,
     );
   });
+
+  it('uses the same bold Instagram story ring palette around profile avatars', () => {
+    const source = read('src/profile/presentation/screens/ProfileScreen.tsx');
+
+    expect(source).toContain('id="profileAvatarStoryInstagramGradient"');
+    expect(source).toContain('stroke="url(#profileAvatarStoryInstagramGradient)"');
+    expect(source).toContain('<Stop offset="0%" stopColor="#FEDA75" />');
+    expect(source).toContain('<Stop offset="19%" stopColor="#FA7E1E" />');
+    expect(source).toContain('<Stop offset="45%" stopColor="#D62976" />');
+    expect(source).toContain('<Stop offset="72%" stopColor="#962FBF" />');
+    expect(source).toContain('<Stop offset="100%" stopColor="#4F5BD5" />');
+    expect(source).toContain('strokeWidth={5.2}');
+    expect(source).toContain('strokeLinecap="round"');
+    expect(source).not.toContain('stroke="url(#storyRingGrad)"');
+  });
 });

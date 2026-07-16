@@ -813,6 +813,10 @@ function ReelItemBase({
         style={[styles.bottomLeft, { bottom: infoBottom }]}
         pointerEvents="box-none"
       >
+        {/*
+          Show the publisher's display name first so reels read more naturally
+          than raw @handles. Keep username as a fallback for legacy data.
+        */}
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() =>
@@ -821,7 +825,7 @@ function ReelItemBase({
           style={styles.publisherRow}
         >
           <Text style={styles.publisherName} numberOfLines={1}>
-            @{item.publisher.username || item.publisher.name || 'unknown'}
+            {item.publisher.name || item.publisher.username || 'unknown'}
           </Text>
           {item.publisher.isVerified ? (
             <View style={styles.verifiedBadge}>

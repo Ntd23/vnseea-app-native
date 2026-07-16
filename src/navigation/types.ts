@@ -16,6 +16,7 @@ import type { FeedPost } from '../feed/domain/types/feed.types';
 import type { AdItem } from '../advertising/domain/types/ads.types';
 import type { EventsItem } from '../events/domain/types/events.types';
 import type { UserProfile } from '../user/domain/types/user.types';
+import type { SharedMapLocation } from '../user/application/utils/mapShare';
 import type { OrdersItem } from '../orders/domain/types/orders.types';
 import type { FundingItem } from '../funding/domain/types/funding.types';
 
@@ -35,7 +36,12 @@ export type MainTabParamList = {
       }
     | undefined;
   [ROUTES.MARKETPLACE]: undefined;
-  [ROUTES.NEARBY_USERS]: undefined;
+  [ROUTES.NEARBY_USERS]:
+    | {
+        initialLocation?: SharedMapLocation;
+        autoRoute?: boolean;
+      }
+    | undefined;
   [ROUTES.NOTIFICATIONS]: undefined;
   [ROUTES.PROFILE]: undefined;
   [ROUTES.SETTINGS]:
@@ -132,6 +138,7 @@ export type RootStackParamList = {
     chat: ChatItem;
     product?: ProductItem;
     highlightMessageId?: string;
+    initialText?: string;
   };
   [ROUTES.CONVERSATION_DETAILS]: { chat: ChatItem };
   [ROUTES.CONVERSATION_SEARCH]: { chat: ChatItem };
@@ -148,7 +155,12 @@ export type RootStackParamList = {
   [ROUTES.GROUP_CALL_ROOM]: GroupLiveKitCallRouteParams;
   [ROUTES.SEARCH]: { q?: string; discovery?: boolean } | undefined;
   [ROUTES.SEARCH_FILTER]: undefined;
-  [ROUTES.NEARBY_USERS]: undefined;
+  [ROUTES.NEARBY_USERS]:
+    | {
+        initialLocation?: SharedMapLocation;
+        autoRoute?: boolean;
+      }
+    | undefined;
   [ROUTES.SAVED_POSTS]: undefined;
   [ROUTES.SEARCH_EMPTY]: undefined;
   [ROUTES.PAGES]: undefined;
@@ -230,7 +242,7 @@ export type RootStackParamList = {
   [ROUTES.AD_DETAILS]: { ad: AdItem };
   [ROUTES.CREATE_AD]: { ad?: AdItem } | undefined;
   [ROUTES.CREATE_REEL]: undefined;
-  [ROUTES.CREATE_POST]: { page?: PagesItem; groupId?: string; initialAction?: 'photo' | 'video' | 'product' | 'poll' } | undefined;
+  [ROUTES.CREATE_POST]: { page?: PagesItem; groupId?: string; initialAction?: 'photo' | 'video' | 'product' | 'poll'; initialText?: string } | undefined;
   [ROUTES.CREATE_STORY]: undefined;
   /**
    * Pass the full stories list + the user-index to open at. The viewer

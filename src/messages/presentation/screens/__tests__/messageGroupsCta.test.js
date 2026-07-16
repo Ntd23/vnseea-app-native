@@ -54,12 +54,23 @@ describe('Messages groups tab create CTA', () => {
   it('uses an Instagram-style story ring in the messages story rail', () => {
     const source = read('src/messages/presentation/screens/MessageScreen.tsx');
 
+    expect(source).toContain("import Svg, {");
+    expect(source).toContain('LinearGradient as SvgLinearGradient');
+    expect(source).toContain('Circle as SvgCircle');
     expect(source).toContain('styles.messageStoryInstagramRing');
-    expect(source).toContain('styles.messageStoryRingGlowPink');
-    expect(source).toContain('styles.messageStoryRingGlowOrange');
-    expect(source).toContain('styles.messageStoryRingGlowPurple');
-    expect(source).toContain("backgroundColor: '#E1306C'");
-    expect(source).toContain("backgroundColor: '#FCAF45'");
+    expect(source).toContain('styles.messageStoryRingSvg');
+    expect(source).toContain('id="messageStoryInstagramGradient"');
+    expect(source).toContain('stroke="url(#messageStoryInstagramGradient)"');
+    expect(source).toContain('<Stop offset="0%" stopColor="#FEDA75" />');
+    expect(source).toContain('<Stop offset="19%" stopColor="#FA7E1E" />');
+    expect(source).toContain('<Stop offset="45%" stopColor="#D62976" />');
+    expect(source).toContain('<Stop offset="72%" stopColor="#962FBF" />');
+    expect(source).toContain('<Stop offset="100%" stopColor="#4F5BD5" />');
+    expect(source).toContain('strokeWidth="4.2"');
+    expect(source).toContain('opacity: 0.95');
+    expect(source).toContain('styles.messageStoryAvatarFrame');
+    expect(source).toContain('styles.messageStoryRingSvgSeen');
     expect(source).not.toContain("hasUnseen ? 'border-blue-500' : 'border-gray-200'");
+    expect(source).not.toContain('messageStoryRingGlowPink');
   });
 });

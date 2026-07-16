@@ -20,6 +20,7 @@ import type {
   CreatePostResult,
   FeedPost,
   PostAudioAttachment,
+  PostLinkPreview,
   PostFeeling,
   PostPhotoAttachment,
   PostPrivacy,
@@ -130,6 +131,7 @@ const DEFAULT_DRAFT: CreatePostDraft = {
   text: '',
   photos: [],
   privacy: 'public',
+  linkPreview: undefined,
 };
 
 // Mirror WoWonder's image upload limit so we can fail fast before
@@ -283,6 +285,14 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     }));
   }, []);
 
+  const setLinkPreview = useCallback((linkPreview: PostLinkPreview | undefined) => {
+    setError(null);
+    setDraft(prev => ({
+      ...prev,
+      linkPreview,
+    }));
+  }, []);
+
   /**
    * Replace the live `@…` / `#…` token with the user's pick. For
    * mentions we remember the (display ↔ backend) mapping so we can
@@ -380,7 +390,8 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
       d.text.trim().length === 0 &&
       d.photos.length === 0 &&
       !d.audio &&
-      !d.video
+      !d.video &&
+      !d.linkPreview
     ) {
       return copy.errEmpty;
     }
@@ -493,6 +504,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     setFeeling,
     setAudio,
     setVideo,
+    setLinkPreview,
     addPhotos,
     removePhoto,
     clearPhotos,
