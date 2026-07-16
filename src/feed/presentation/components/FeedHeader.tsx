@@ -15,14 +15,12 @@ import {
   Bell,
   CircleUser,
   MessageCircle,
-  Plus,
   Search,
 } from 'lucide-react-native';
 
 import { ROUTES } from '../../../navigation/constants/routes';
 import type {
   RootStackParamList,
-  RootStackRouteName,
 } from '../../../navigation/types';
 import { useAuthBranding } from '../../../auth/application/view-models/useAuthBranding';
 import { feedLogoEvents } from '../../application/events/feedLogoEvents';
@@ -33,15 +31,22 @@ import { HeaderProfileDrawer } from './HeaderProfileDrawer';
 import { resolveFeedChromeTopInset } from './feedHeaderInsets';
 
 type FeedHeaderNav = NativeStackNavigationProp<RootStackParamList>;
+type FeedHeaderProps = {
+  includeTopSafeArea?: boolean;
+};
 const HEADER_BAR_HEIGHT = 68;
 
-export const FeedHeader = React.memo(function FeedHeader() {
+export const FeedHeader = React.memo(function FeedHeader({
+  includeTopSafeArea = false,
+}: FeedHeaderProps) {
   const navigation = useNavigation<FeedHeaderNav>();
   const insets = useSafeAreaInsets();
-  const topInset = resolveFeedChromeTopInset(
-    insets.top,
-    initialWindowMetrics?.insets?.top,
-  );
+  const topInset = includeTopSafeArea
+    ? resolveFeedChromeTopInset(
+        insets.top,
+        initialWindowMetrics?.insets?.top,
+      )
+    : 0;
   const { messageCount, notificationCount } = useUnreadBadgeCounts();
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
   const { user } = useCurrentUserViewModel();

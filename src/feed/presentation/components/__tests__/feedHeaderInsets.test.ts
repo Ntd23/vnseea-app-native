@@ -1,0 +1,58 @@
+type ResolveFeedChromeTopInset = (
+  safeAreaTop: number,
+  initialSafeAreaTop?: number | null,
+) => number;
+
+function loadResolver(
+  platform: 'android' | 'ios',
+  statusBarHeight?: number,
+): ResolveFeedChromeTopInset {
+  jest.resetModules();
+  jest.doMock('react-native', () => ({
+    Platform: { OS: platform },
+    StatusBar: { currentHeight: statusBarHeight },
+  }));
+
+  return (
+    require('../feedHeaderInsets') as {
+      resolveFeedChromeTopInset: ResolveFeedChromeTopInset;
+    }
+  ).resolveFeedChromeTopInset;
+}
+
+describe('resolveFeedChromeTopInset', () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.dontMock('react-native');
+  });
+
+  it('uses the Android safe-area inset when available', () => {
+    const resolveFeedChromeTopInset = loadResolver('android', 24);
+
+    expect(resolveFeedChromeTopInset(36, 30)).toBe(36);
+  });
+
+  it('falls back to initial Android metrics before the status-bar height', () => {
+    const resolveFeedChromeTopInset = loadResolver('android', 24);
+
+    expect(resolveFeedChromeTopInset(0, 30)).toBe(30);
+  });
+
+  it('respects an explicit zero Android inset on non-edge-to-edge windows', () => {
+    const resolveFeedChromeTopInset = loadResolver('android', 24);
+
+    expect(resolveFeedChromeTopInset(0, 0)).toBe(0);
+  });
+
+  it('uses StatusBar.currentHeight when initial Android metrics are unavailable', () => {
+    const resolveFeedChromeTopInset = loadResolver('android', 24);
+
+    expect(resolveFeedChromeTopInset(0, undefined)).toBe(24);
+  });
+
+  it('preserves the existing iOS fallback', () => {
+    const resolveFeedChromeTopInset = loadResolver('ios');
+
+    expect(resolveFeedChromeTopInset(0, 0)).toBe(47);
+  });
+});

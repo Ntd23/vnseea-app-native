@@ -211,7 +211,7 @@ const FEED_SAFE_AREA_STYLE =
 const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios'
     ? ['left', 'right']
-    : ['top', 'left', 'right', 'bottom'];
+    : ['left', 'right', 'bottom'];
 const FEED_LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 type FeedScrollDirection = 'up' | 'down' | 'none';
 
@@ -3482,7 +3482,7 @@ function FeedScreen() {
               top={0}
               translateDistance={feedHeaderOverlayHeight}
             >
-              <FeedHeader />
+              <FeedHeader includeTopSafeArea />
               <FeedFilterTabs
                 activeSource={activeFeedSource}
                 onChangeSource={setActiveFeedSource}
