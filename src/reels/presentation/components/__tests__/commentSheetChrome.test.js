@@ -80,4 +80,18 @@ describe('iOS comment sheet chrome', () => {
       '<CommentSheetComposerDock style={[styles.inputBar, { paddingBottom: composerBottomPadding }]}>',
     );
   });
+
+  it('does not double-apply Android keyboard insets while the window resizes', () => {
+    const source = read(
+      'src/reels/presentation/components/ReelCommentsSheet.tsx',
+    );
+
+    expect(source).toContain(
+      "Platform.OS === 'android' && isKeyboardVisible ? '100%' : sheetHeight",
+    );
+    expect(source).toContain('style={styles.modalRoot}');
+    expect(source).not.toContain(
+      "Platform.OS === 'android' && { paddingBottom: keyboardHeight }",
+    );
+  });
 });

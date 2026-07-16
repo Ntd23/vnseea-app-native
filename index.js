@@ -12,9 +12,16 @@ import { name as appName } from './app.json';
 const {
   registerLiveKitGlobalsForVnseea,
 } = require('./src/shared-kernel/infrastructure/livekit/registerLiveKitGlobals');
+const {
+  handleMessageQuickReplyHeadlessTask,
+} = require('./src/messages/application/notifications/messageQuickReplyHeadlessTask');
 const AppModule = require('./App');
 const App = AppModule?.default ?? AppModule;
 
 registerLiveKitGlobalsForVnseea();
 
+AppRegistry.registerHeadlessTask(
+  'VnseeaMessageQuickReply',
+  () => handleMessageQuickReplyHeadlessTask,
+);
 AppRegistry.registerComponent(appName, () => App);

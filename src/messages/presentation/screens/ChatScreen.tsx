@@ -45,6 +45,7 @@ import {
   Info,
   Link as LinkIcon,
   LogOut,
+  MapPin,
   MessageCircle,
   Mic,
   Pencil,
@@ -107,7 +108,11 @@ import {
   getCachedVideoPosterThumbnail,
 } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { findConversationMessageListItemIndex } from '../utils/conversationMessageNavigation';
-import { parseMapShareUrl } from '../../../user/application/utils/mapShare';
+import {
+  buildMapShareUrl,
+  parseMapShareUrl,
+  type SharedMapLocation,
+} from '../../../user/application/utils/mapShare';
 
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
@@ -152,6 +157,7 @@ const IMAGE_GROUP_WINDOW_SECONDS = 120;
 const IMAGE_GALLERY_WIDTH = Math.min(Dimensions.get('window').width - 92, 332);
 const IMAGE_GALLERY_GAP = 3;
 const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
+const MAP_SHARE_CARD_WIDTH = Math.min(Dimensions.get('window').width - 92, 292);
 const GROUP_INFO_MODAL_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios' ? ['left', 'right'] : ROOT_SAFE_AREA_EDGES;
 const GROUP_INFO_DISMISS_SWIPE_DISTANCE = 72;
@@ -411,6 +417,155 @@ function LinkifiedText({
         ),
       )}
     </Text>
+  );
+}
+
+type ParsedMapShareMessage = {
+  location: SharedMapLocation;
+  caption: string;
+  url: string;
+};
+
+function formatMapCoordinates(location: SharedMapLocation) {
+  return `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
+}
+
+function isGeneratedMapShareLine(
+  line: string,
+  location: SharedMapLocation,
+  url: string,
+) {
+  const trimmed = line.trim();
+  if (!trimmed) return true;
+  const normalized = trimmed.toLowerCase();
+  const coordinateText = formatMapCoordinates(location);
+  const address = location.address || location.subtitle || '';
+  return (
+    trimmed.includes(url) ||
+    trimmed.includes(location.title) ||
+    (!!address && trimmed.includes(address)) ||
+    trimmed.includes(coordinateText) ||
+    normalized.startsWith('📍') ||
+    normalized.startsWith('địa') ||
+    normalized.startsWith('tọa') ||
+    normalized.startsWith('mở') ||
+    normalized.startsWith('dia') ||
+    normalized.startsWith('toa') ||
+    normalized.startsWith('mo ') ||
+    normalized.startsWith('map') ||
+    normalized.startsWith('open') ||
+    normalized.startsWith('location') ||
+    normalized.startsWith('address') ||
+    normalized.startsWith('coordinates') ||
+    normalized.startsWith('ä') ||
+    normalized.startsWith('tá') ||
+    normalized.startsWith('má')
+  );
+}
+
+function parseSharedMapMessage(text: string): ParsedMapShareMessage | null {
+  if (!text) return null;
+  const segments = splitLinkTextSegments(text);
+  const mapSegment = segments.find(segment => {
+    if (!segment.url) return false;
+    return Boolean(parseMapShareUrl(segment.url));
+  });
+  if (!mapSegment?.url) return null;
+
+  const location = parseMapShareUrl(mapSegment.url);
+  if (!location) return null;
+
+  const caption = text
+    .split(/\r?\n/)
+    .map(line => line.replace(mapSegment.text, '').trim())
+    .filter(line => !isGeneratedMapShareLine(line, location, mapSegment.url!))
+    .join('\n')
+    .trim();
+
+  return {
+    location,
+    caption,
+    url: mapSegment.url,
+  };
+}
+
+function MapShareCard({
+  location,
+  caption,
+  isSentByMe = false,
+  onRemove,
+  composer = false,
+}: {
+  location: SharedMapLocation;
+  caption?: string;
+  isSentByMe?: boolean;
+  onRemove?: () => void;
+  composer?: boolean;
+}) {
+  const navigation = useNavigation<any>();
+  const coordinateText = formatMapCoordinates(location);
+  const addressText = location.address || location.subtitle || '';
+
+  const handleOpenMap = useCallback(() => {
+    navigation.navigate(ROUTES.NEARBY_USERS, {
+      initialLocation: location,
+    });
+  }, [location, navigation]);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={handleOpenMap}
+      style={[
+        styles.mapShareCard,
+        composer ? styles.mapShareComposerCard : styles.mapShareMessageCard,
+        isSentByMe && !composer ? styles.mapShareCardSent : null,
+      ]}
+    >
+      <View style={styles.mapShareCardMainRow}>
+        {location.imageUrl ? (
+          <Image
+            source={{ uri: location.imageUrl }}
+            style={styles.mapShareCardImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.mapShareCardFallback}>
+            <MapPin size={24} color="#0F766E" />
+          </View>
+        )}
+        <View style={styles.mapShareCardCopy}>
+          <Text style={styles.mapShareCardEyebrow}>
+            {composer ? 'Địa chỉ sẽ gửi' : 'Địa điểm'}
+          </Text>
+          <Text style={styles.mapShareCardTitle} numberOfLines={1}>
+            {location.title || 'Địa điểm đã chọn'}
+          </Text>
+          <Text style={styles.mapShareCardCoordinate} numberOfLines={1}>
+            Tọa độ: {coordinateText}
+          </Text>
+          {!!addressText && (
+            <Text style={styles.mapShareCardAddress} numberOfLines={1}>
+              {addressText}
+            </Text>
+          )}
+        </View>
+        {onRemove ? (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onRemove}
+            style={styles.mapShareCardClose}
+          >
+            <X size={16} color="#475569" />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {!!caption && (
+        <Text style={styles.mapShareCardCaption} numberOfLines={3}>
+          {caption}
+        </Text>
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -1034,6 +1189,11 @@ function getMessageSnippet(message: MessageItem, chatName: string) {
     return `🛍️ Hỏi về sản phẩm: ${productInquiry.name}`;
   }
 
+  const mapShare = parseSharedMapMessage(message.message);
+  if (mapShare) {
+    return `Địa điểm: ${mapShare.location.title}`;
+  }
+
   const replyInfo = parseMessageReply(message.message);
   if (replyInfo) {
     return replyInfo.replyText;
@@ -1309,10 +1469,13 @@ function MessageBubble({
   const orderInquiry = parseOrderInquiry(message.message);
   const productInquiry = parseProductInquiry(message.message);
   const replyInfo = parseMessageReply(message.message);
+  const mapShare = replyInfo ? null : parseSharedMapMessage(message.message);
   const visibleMessageText = orderInquiry
     ? ''
     : productInquiry
     ? productInquiry.userMessage || 'Sản phẩm này còn hàng không ạ?'
+    : mapShare
+    ? mapShare.caption
     : replyInfo
     ? replyInfo.replyText
     : message.message;
@@ -1541,8 +1704,27 @@ function MessageBubble({
             </TouchableOpacity>
           )}
 
-          {/* Order Inquiry Card (renders instead of the main text bubble) */}
-          {!!orderInquiry ? (
+          {!!mapShare ? (
+            <View
+              className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}
+              style={styles.mapShareMessageWrap}
+            >
+              <MapShareCard
+                location={mapShare.location}
+                caption={mapShare.caption}
+                isSentByMe={isSentByMe ?? false}
+              />
+              <Text
+                className={`text-[9.5px] mt-1 ${
+                  isSentByMe ? 'text-gray-400 text-right' : 'text-gray-400 text-left'
+                }`}
+              >
+                {formatMessageTime(message.time)}
+              </Text>
+            </View>
+          ) : (
+          /* Order Inquiry Card (renders instead of the main text bubble) */
+          !!orderInquiry ? (
             <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`} style={{ maxWidth: 260 }}>
               <OrderInquiryBubble
                 order={orderInquiry}
@@ -1677,7 +1859,7 @@ function MessageBubble({
                 </TouchableOpacity>
               </View>
             </>
-          )}
+          ))}
         </View>
 
         {!isSentByMe && message.mediaType === 'audio' && (
@@ -3217,6 +3399,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const [selectedOptionMessage, setSelectedOptionMessage] = useState<MessageItem | undefined>(undefined);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string>();
   const [attachedProduct, setAttachedProduct] = useState<ProductItem | undefined>(route.params?.product);
+  const [sharedMapLocation, setSharedMapLocation] = useState<SharedMapLocation | undefined>(
+    route.params?.sharedMapLocation,
+  );
 
   useEffect(() => {
     if (route.params?.product) {
@@ -3225,8 +3410,27 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   }, [route.params?.product]);
 
   useEffect(() => {
+    const nextLocation = route.params?.sharedMapLocation;
+    if (!nextLocation) return;
+
+    setSharedMapLocation(nextLocation);
+    navigation.setParams({ sharedMapLocation: undefined });
+  }, [navigation, route.params?.sharedMapLocation]);
+
+  useEffect(() => {
     const initialText = route.params?.initialText;
     if (!initialText) return;
+
+    const mapShare = parseSharedMapMessage(initialText);
+    if (mapShare) {
+      setSharedMapLocation(mapShare.location);
+      setText(current => (current.trim().length > 0 ? current : mapShare.caption));
+      if (mapShare.caption) {
+        notifyTyping(mapShare.caption);
+      }
+      navigation.setParams({ initialText: undefined });
+      return;
+    }
 
     setText(current => (current.trim().length > 0 ? current : initialText));
     notifyTyping(initialText);
@@ -3283,7 +3487,11 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const loadingOlderRef = useRef(false);
   const sendAnim = useRef(new Animated.Value(1)).current;
   const canSend =
-    Boolean(text.trim()) || attachments.length > 0 || recorder.isRecording || Boolean(attachedProduct);
+    Boolean(text.trim()) ||
+    attachments.length > 0 ||
+    recorder.isRecording ||
+    Boolean(attachedProduct) ||
+    Boolean(sharedMapLocation);
   const audioAttachment = useMemo(
     () => attachments.find(attachment => attachment.mediaType === 'audio'),
     [attachments],
@@ -3537,7 +3745,14 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       ? [{ ...recordedAudio, mediaType: 'audio' as const }]
       : attachments;
 
-    if (!text.trim() && pendingAttachments.length === 0 && !attachedProduct) return;
+    if (
+      !text.trim() &&
+      pendingAttachments.length === 0 &&
+      !attachedProduct &&
+      !sharedMapLocation
+    ) {
+      return;
+    }
 
     // Animate send button
     Animated.sequence([
@@ -3565,7 +3780,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${productId ? `\n🆔 ID: *${productId}*` : ''}\n\n💬 Lời nhắn: ${text.trim() || 'Mặt hàng này còn không bạn?'}`;
 
       setAttachedProduct(undefined);
-    } else if (replyingMessage) {
+    } else if (sharedMapLocation) {
+      const mapUrl = buildMapShareUrl(sharedMapLocation);
+      nextText = [nextText.trim(), mapUrl].filter(Boolean).join('\n');
+      setSharedMapLocation(undefined);
+    }
+
+    if (replyingMessage) {
       const originalSnippet = getMessageSnippet(replyingMessage, chat.name);
       const senderName = replyingMessage.isSentByMe ? 'Tôi' : (chat.name || 'Người dùng');
 
@@ -3619,6 +3840,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     text,
     sendAnim,
     attachedProduct,
+    sharedMapLocation,
     replyingMessage,
     chat.name,
   ]);
@@ -4546,6 +4768,16 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           </View>
         )}
 
+        {sharedMapLocation ? (
+          <View style={styles.mapShareComposerWrap}>
+            <MapShareCard
+              location={sharedMapLocation}
+              composer
+              onRemove={() => setSharedMapLocation(undefined)}
+            />
+          </View>
+        ) : null}
+
         {/* Reply Preview Bar */}
         {replyingMessage ? (
           <View className="flex-row items-center justify-between border-t border-gray-100 bg-white px-4 py-2">
@@ -5020,6 +5252,109 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 10.5,
     fontWeight: '700',
+  },
+  mapShareComposerWrap: {
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    paddingTop: 10,
+  },
+  mapShareMessageWrap: {
+    maxWidth: MAP_SHARE_CARD_WIDTH,
+  },
+  mapShareCard: {
+    overflow: 'hidden',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#C7F1E8',
+    backgroundColor: '#F8FFFC',
+    shadowColor: '#0F766E',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.11,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  mapShareComposerCard: {
+    width: '100%',
+  },
+  mapShareMessageCard: {
+    width: MAP_SHARE_CARD_WIDTH,
+  },
+  mapShareCardSent: {
+    borderColor: '#B9EDE4',
+    backgroundColor: '#ECFEF8',
+  },
+  mapShareCardMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  mapShareCardImage: {
+    width: 58,
+    height: 58,
+    borderRadius: 14,
+    backgroundColor: '#DDEFEA',
+  },
+  mapShareCardFallback: {
+    width: 58,
+    height: 58,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#D9F8EF',
+  },
+  mapShareCardCopy: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 10,
+  },
+  mapShareCardEyebrow: {
+    color: '#0F766E',
+    fontSize: 10.5,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
+  },
+  mapShareCardTitle: {
+    marginTop: 2,
+    color: '#0F172A',
+    fontSize: 14.5,
+    fontWeight: '900',
+  },
+  mapShareCardCoordinate: {
+    marginTop: 3,
+    color: '#2563EB',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  mapShareCardAddress: {
+    marginTop: 2,
+    color: '#64748B',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  mapShareCardCaption: {
+    borderTopWidth: 1,
+    borderTopColor: '#CCFBF1',
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    paddingTop: 8,
+    color: '#0F172A',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  mapShareCardClose: {
+    width: 30,
+    height: 30,
+    marginLeft: 8,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E2E8F0',
   },
   videoPreviewShell: {
     borderRadius: 18,

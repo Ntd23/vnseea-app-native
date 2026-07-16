@@ -75,5 +75,11 @@
       <receiver
         android:name=".call.LiveKitCallActionReceiver"
         android:exported="false" />
+      <receiver
+        android:name=".messages.MessageQuickReplyReceiver"
+        android:exported="false" />
+      <service
+        android:name=".messages.MessageQuickReplyHeadlessService"
+        android:exported="false" />
     </application>
 </manifest>

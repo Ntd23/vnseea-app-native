@@ -3585,15 +3585,15 @@ export default function NearbyUsersScreen() {
 
   const handleShareMapToChat = useCallback(
     (chat: ChatItem) => {
-      if (!selectedMapShareText) return;
+      if (!selectedMapShareLocation) return;
 
       setIsMapShareSheetOpen(false);
       navigation.navigate(ROUTES.CHAT, {
         chat,
-        initialText: selectedMapShareText,
+        sharedMapLocation: selectedMapShareLocation,
       });
     },
-    [navigation, selectedMapShareText],
+    [navigation, selectedMapShareLocation],
   );
 
   const handleViewDetails = useCallback(() => {

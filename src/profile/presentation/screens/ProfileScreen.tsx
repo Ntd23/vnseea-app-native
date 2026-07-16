@@ -14,6 +14,7 @@ import {
   View,
   Alert,
   ActivityIndicator,
+  InteractionManager,
   StatusBar,
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -103,6 +104,7 @@ import {
   HomeVideoPostCard,
   formatCount,
   formatPostTime,
+  getFeedVideoPosterCacheKeyForPost,
   publishFeedActiveVideo,
   publishFeedScrollBusy,
   publishFeedWarmVideoIds,
@@ -151,6 +153,10 @@ import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useSt
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import {
+  createCachedVideoPosterThumbnail,
+  getCachedVideoPosterThumbnail,
+} from '../../../shared-kernel/application/utils/videoThumbnails';
 
 type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
 type ProfileFeedPost = FeedTextPost | FeedVideoPost | FeedPollPost;
@@ -197,6 +203,11 @@ const PROFILE_POST_MEDIA_PREFETCH_LIMIT = PROFILE_IS_ANDROID ? 10 : 16;
 const PROFILE_POST_VIDEO_WARM_BEHIND_ITEMS = PROFILE_IS_ANDROID ? 1 : 3;
 const PROFILE_POST_VIDEO_WARM_AHEAD_ITEMS = PROFILE_IS_ANDROID ? 3 : 6;
 const PROFILE_POST_VIDEO_WARM_MAX_COUNT = PROFILE_IS_ANDROID ? 1 : 2;
+const PROFILE_POST_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS = PROFILE_IS_ANDROID ? 1 : 2;
+const PROFILE_POST_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS = PROFILE_IS_ANDROID ? 5 : 8;
+const PROFILE_POST_VIDEO_POSTER_PREFETCH_LIMIT = PROFILE_IS_ANDROID ? 2 : 3;
+const PROFILE_POST_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS =
+  PROFILE_IS_ANDROID ? 240 : 180;
 const PROFILE_POST_VIEWABLE_PERCENT = 55;
 const PROFILE_POST_ACTIVE_DWELL_MS = 160;
 const PROFILE_POST_MEDIA_PREFETCH_BATCH_SIZE = PROFILE_IS_ANDROID ? 2 : 3;
@@ -1406,6 +1417,14 @@ function ProfileScreen() {
   const profilePendingMediaUrlsRef = useRef<string[]>([]);
   const profileMediaPrefetchTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profilePrefetchedVideoPosterKeysRef = useRef<Set<string>>(new Set());
+  const profileQueuedVideoPosterKeysRef = useRef<Set<string>>(new Set());
+  const profilePendingVideoPosterPostsRef = useRef<FeedVideoPost[]>([]);
+  const profileVideoPosterPrefetchTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profileVideoPosterPrefetchTaskRef = useRef<ReturnType<
+    typeof InteractionManager.runAfterInteractions
+  > | null>(null);
   const profileScrollYRef = useRef(0);
   const profileHeaderSolidRef = useRef(false);
   const profileHeaderSolidProgress = useRef(new Animated.Value(0)).current;
@@ -1629,15 +1648,126 @@ function ProfileScreen() {
     [scheduleProfileMediaPrefetchFlush],
   );
 
+  const scheduleProfileVideoPosterPrefetchFlush = useCallback(() => {
+    if (
+      profileVideoPosterPrefetchTimerRef.current ||
+      profileVideoPosterPrefetchTaskRef.current
+    ) {
+      return;
+    }
+
+    profileVideoPosterPrefetchTimerRef.current = setTimeout(() => {
+      profileVideoPosterPrefetchTimerRef.current = null;
+      const nextPosts = profilePendingVideoPosterPostsRef.current.splice(
+        0,
+        PROFILE_POST_VIDEO_POSTER_PREFETCH_LIMIT,
+      );
+      if (nextPosts.length === 0) return;
+
+      profileVideoPosterPrefetchTaskRef.current =
+        InteractionManager.runAfterInteractions(() => {
+          profileVideoPosterPrefetchTaskRef.current = null;
+
+          nextPosts.forEach(post => {
+            const videoUrl = post.videoUrl?.trim();
+            if (!videoUrl || post.thumbnailUrl?.trim()) return;
+
+            const cacheKey = getFeedVideoPosterCacheKeyForPost(
+              post.id,
+              videoUrl,
+            );
+            profileQueuedVideoPosterKeysRef.current.delete(cacheKey);
+            if (getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri) return;
+
+            createCachedVideoPosterThumbnail(videoUrl, cacheKey).catch(
+              () => undefined,
+            );
+          });
+
+          if (profilePendingVideoPosterPostsRef.current.length > 0) {
+            scheduleProfileVideoPosterPrefetchFlush();
+          }
+        });
+    }, PROFILE_POST_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS);
+  }, []);
+
+  const queueProfileVideoPosterPrefetch = useCallback(
+    (postsToPrefetch: FeedVideoPost[]) => {
+      if (postsToPrefetch.length === 0) return;
+
+      let queuedAny = false;
+      for (const post of postsToPrefetch) {
+        const videoUrl = post.videoUrl?.trim();
+        if (!videoUrl || post.thumbnailUrl?.trim()) continue;
+
+        const cacheKey = getFeedVideoPosterCacheKeyForPost(post.id, videoUrl);
+        if (profilePrefetchedVideoPosterKeysRef.current.has(cacheKey)) continue;
+        if (profileQueuedVideoPosterKeysRef.current.has(cacheKey)) continue;
+
+        if (getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri) {
+          profilePrefetchedVideoPosterKeysRef.current.add(cacheKey);
+          continue;
+        }
+
+        profilePrefetchedVideoPosterKeysRef.current.add(cacheKey);
+        profileQueuedVideoPosterKeysRef.current.add(cacheKey);
+        profilePendingVideoPosterPostsRef.current.push(post);
+        queuedAny = true;
+      }
+
+      if (queuedAny) {
+        scheduleProfileVideoPosterPrefetchFlush();
+      }
+    },
+    [scheduleProfileVideoPosterPrefetchFlush],
+  );
+
+  const prefetchProfileVideoPostersInRange = useCallback(
+    (startIndex: number, endIndex: number) => {
+      const currentPosts = profilePostsRef.current;
+      if (currentPosts.length === 0) return;
+
+      const start = Math.max(0, startIndex);
+      const end = Math.min(currentPosts.length, Math.max(start, endIndex));
+      if (start >= end) return;
+
+      const postsToPrefetch: FeedVideoPost[] = [];
+      for (let index = start; index < end; index += 1) {
+        const post = currentPosts[index];
+        if (post?.kind !== 'video') continue;
+
+        postsToPrefetch.push(post);
+        if (
+          postsToPrefetch.length >=
+          PROFILE_POST_VIDEO_POSTER_PREFETCH_LIMIT
+        ) {
+          break;
+        }
+      }
+
+      queueProfileVideoPosterPrefetch(postsToPrefetch);
+    },
+    [queueProfileVideoPosterPrefetch],
+  );
+
   useEffect(
     () => () => {
       if (profileMediaPrefetchTimerRef.current) {
         clearTimeout(profileMediaPrefetchTimerRef.current);
         profileMediaPrefetchTimerRef.current = null;
       }
+      if (profileVideoPosterPrefetchTimerRef.current) {
+        clearTimeout(profileVideoPosterPrefetchTimerRef.current);
+        profileVideoPosterPrefetchTimerRef.current = null;
+      }
+      profileVideoPosterPrefetchTaskRef.current?.cancel?.();
+      profileVideoPosterPrefetchTaskRef.current = null;
       profilePrefetchedMediaUrlsRef.current.clear();
       profilePendingMediaUrlsRef.current = [];
       profileQueuedMediaUrlsRef.current.clear();
+      profilePrefetchedVideoPosterKeysRef.current.clear();
+      profilePendingVideoPosterPostsRef.current = [];
+      profileQueuedVideoPosterKeysRef.current.clear();
     },
     [],
   );
@@ -1727,6 +1857,18 @@ function ProfileScreen() {
         }
       }
       queueProfileMediaPrefetch(urlsToPrefetch);
+      const posterPrefetchStartIndex =
+        direction === 'up'
+          ? firstVisibleIndex - PROFILE_POST_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS
+          : furthestVisibleIndex - PROFILE_POST_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS;
+      const posterPrefetchEndIndex =
+        direction === 'up'
+          ? firstVisibleIndex + PROFILE_POST_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS + 1
+          : furthestVisibleIndex + PROFILE_POST_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS + 1;
+      prefetchProfileVideoPostersInRange(
+        posterPrefetchStartIndex,
+        posterPrefetchEndIndex,
+      );
 
       if (isProfileScrollingRef.current) {
         publishFeedWarmVideoIds([]);
@@ -1814,6 +1956,10 @@ function ProfileScreen() {
         if (initialWarmVideoIds.length >= PROFILE_POST_VIDEO_WARM_MAX_COUNT) break;
       }
       publishFeedWarmVideoIds(initialWarmVideoIds);
+      prefetchProfileVideoPostersInRange(
+        0,
+        PROFILE_POST_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS + 1,
+      );
     }
 
     const videoIds = new Set(
@@ -1832,6 +1978,7 @@ function ProfileScreen() {
   }, [
     clearProfileVideoDwellTimer,
     filteredProfilePosts,
+    prefetchProfileVideoPostersInRange,
     setActiveProfileVideoId,
   ]);
 
@@ -1874,9 +2021,18 @@ function ProfileScreen() {
       clearTimeout(profileMediaPrefetchTimerRef.current);
       profileMediaPrefetchTimerRef.current = null;
     }
+    if (profileVideoPosterPrefetchTimerRef.current) {
+      clearTimeout(profileVideoPosterPrefetchTimerRef.current);
+      profileVideoPosterPrefetchTimerRef.current = null;
+    }
+    profileVideoPosterPrefetchTaskRef.current?.cancel?.();
+    profileVideoPosterPrefetchTaskRef.current = null;
     profilePrefetchedMediaUrlsRef.current.clear();
     profileQueuedMediaUrlsRef.current.clear();
     profilePendingMediaUrlsRef.current = [];
+    profilePrefetchedVideoPosterKeysRef.current.clear();
+    profileQueuedVideoPosterKeysRef.current.clear();
+    profilePendingVideoPosterPostsRef.current = [];
 
     loadProfile({
       userId: route.params?.userId,
@@ -1906,8 +2062,16 @@ function ProfileScreen() {
           clearTimeout(profileMediaPrefetchTimerRef.current);
           profileMediaPrefetchTimerRef.current = null;
         }
+        if (profileVideoPosterPrefetchTimerRef.current) {
+          clearTimeout(profileVideoPosterPrefetchTimerRef.current);
+          profileVideoPosterPrefetchTimerRef.current = null;
+        }
+        profileVideoPosterPrefetchTaskRef.current?.cancel?.();
+        profileVideoPosterPrefetchTaskRef.current = null;
         profilePendingMediaUrlsRef.current = [];
         profileQueuedMediaUrlsRef.current.clear();
+        profilePendingVideoPosterPostsRef.current = [];
+        profileQueuedVideoPosterKeysRef.current.clear();
       };
     }, [clearProfileVideoDwellTimer, setActiveProfileVideoId]),
   );

@@ -410,6 +410,8 @@ function ReelCommentsSheetBase({
       : Math.max(insets.bottom, 14);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isKeyboardVisible = keyboardHeight > 0;
+  const activeSheetHeight =
+    Platform.OS === 'android' && isKeyboardVisible ? '100%' : sheetHeight;
   const sheetBottomPadding =
     Platform.OS === 'ios' || isKeyboardVisible ? 0 : bottomSafeInset;
   const composerBottomPadding = isKeyboardVisible ? 6 : bottomSafeInset;
@@ -1052,7 +1054,7 @@ function ReelCommentsSheetBase({
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={[styles.modalRoot, Platform.OS === 'android' && { paddingBottom: keyboardHeight }]}
+        style={styles.modalRoot}
       >
         <Pressable style={styles.backdropPressable} onPress={handleRequestClose}>
           <Animated.View
@@ -1063,7 +1065,7 @@ function ReelCommentsSheetBase({
           style={[
             styles.sheet,
             {
-              height: sheetHeight as ViewStyle['height'],
+              height: activeSheetHeight as ViewStyle['height'],
               paddingBottom: sheetBottomPadding,
               transform: [
                 { translateY: sheetTranslateY },

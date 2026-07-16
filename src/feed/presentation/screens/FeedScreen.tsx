@@ -133,6 +133,7 @@ import {
   feedActiveVideoIdSnapshot,
   FEED_COPY,
   type FeedCopy,
+  getFeedVideoPosterCacheKeyForPost,
   HomeVideoPostCard,
   publishFeedActiveVideo,
   publishFeedScrollBusy,
@@ -168,6 +169,10 @@ import {
   pickFeedViewableVideoId,
 } from './feedVideoAutoplay';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import {
+  createCachedVideoPosterThumbnail,
+  getCachedVideoPosterThumbnail,
+} from '../../../shared-kernel/application/utils/videoThumbnails';
 
 const FEED_IS_ANDROID = Platform.OS === 'android';
 const LOAD_MORE_THROTTLE_MS = FEED_IS_ANDROID ? 420 : 520;
@@ -188,6 +193,10 @@ const FEED_VIDEO_WARM_BEHIND_ITEMS = FEED_IS_ANDROID ? 2 : 6;
 const FEED_VIDEO_WARM_AHEAD_ITEMS = FEED_IS_ANDROID ? 4 : 12;
 const FEED_VIDEO_WARM_MAX_COUNT = FEED_IS_ANDROID ? 1 : 3;
 const FEED_SCROLLING_VIDEO_WARM_MAX_COUNT = FEED_IS_ANDROID ? 0 : 1;
+const FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS = FEED_IS_ANDROID ? 1 : 3;
+const FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 5 : 10;
+const FEED_VIDEO_POSTER_PREFETCH_LIMIT = FEED_IS_ANDROID ? 2 : 4;
+const FEED_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 220 : 160;
 const FEED_VIDEO_VIEWABLE_PERCENT = 55;
 const FEED_VIDEO_ACTIVE_DWELL_MS = 120;
 const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
@@ -214,6 +223,11 @@ const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
     : ['left', 'right', 'bottom'];
 const FEED_LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 type FeedScrollDirection = 'up' | 'down' | 'none';
+
+function getFeedChromeTopInset(rawTopInset: number) {
+  if (Platform.OS === 'android') return 0;
+  return rawTopInset;
+}
 
 function logFeedLiveDebug(event: string, data: Record<string, unknown> = {}) {
   const payload = {
@@ -1556,10 +1570,11 @@ function FeedScreen() {
 
     return () => subscription.remove();
   }, [checkForRemoteNewPosts]);
-  const topInset = resolveFeedChromeTopInset(
+  const rawTopInset = resolveFeedChromeTopInset(
     feedSafeAreaInsets.top,
     initialWindowMetrics?.insets?.top,
   );
+  const topInset = getFeedChromeTopInset(rawTopInset);
   const feedRefreshProgressViewOffset =
     Platform.OS === 'ios'
       ? topInset + FEED_IOS_HEADER_OVERLAY_HEIGHT
@@ -1602,6 +1617,15 @@ function FeedScreen() {
   const imagePrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const prefetchedVideoPosterKeysRef = useRef<Set<string>>(new Set());
+  const queuedVideoPosterKeysRef = useRef<Set<string>>(new Set());
+  const pendingVideoPosterPostsRef = useRef<FeedVideoPost[]>([]);
+  const videoPosterPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const videoPosterPrefetchTaskRef = useRef<ReturnType<
+    typeof InteractionManager.runAfterInteractions
+  > | null>(null);
   const feedVideoRefsRef = useRef(
     new Map<string, React.ElementRef<typeof View>>(),
   );
@@ -1879,6 +1903,7 @@ function FeedScreen() {
 
   useEffect(() => {
     const queuedImagePrefetchUrls = queuedImagePrefetchUrlsRef.current;
+    const queuedVideoPosterKeys = queuedVideoPosterKeysRef.current;
 
     return () => {
       if (scrollEndTimeoutRef.current) {
@@ -1892,8 +1917,16 @@ function FeedScreen() {
         clearTimeout(imagePrefetchTimerRef.current);
         imagePrefetchTimerRef.current = null;
       }
+      if (videoPosterPrefetchTimerRef.current) {
+        clearTimeout(videoPosterPrefetchTimerRef.current);
+        videoPosterPrefetchTimerRef.current = null;
+      }
+      videoPosterPrefetchTaskRef.current?.cancel?.();
+      videoPosterPrefetchTaskRef.current = null;
       pendingImagePrefetchUrlsRef.current = [];
       queuedImagePrefetchUrls.clear();
+      pendingVideoPosterPostsRef.current = [];
+      queuedVideoPosterKeys.clear();
       activeVideoIdRef.current = null;
       publishFeedActiveVideo(null);
       publishFeedWarmVideoIds([]);
@@ -2307,6 +2340,103 @@ function FeedScreen() {
     }
   }, [commentVm]);
 
+  const scheduleVideoPosterPrefetchFlush = useCallback(() => {
+    if (
+      videoPosterPrefetchTimerRef.current ||
+      videoPosterPrefetchTaskRef.current
+    ) {
+      return;
+    }
+
+    videoPosterPrefetchTimerRef.current = setTimeout(() => {
+      videoPosterPrefetchTimerRef.current = null;
+      const nextPosts = pendingVideoPosterPostsRef.current.splice(
+        0,
+        FEED_VIDEO_POSTER_PREFETCH_LIMIT,
+      );
+      if (nextPosts.length === 0) return;
+
+      videoPosterPrefetchTaskRef.current =
+        InteractionManager.runAfterInteractions(() => {
+          videoPosterPrefetchTaskRef.current = null;
+
+          nextPosts.forEach(post => {
+            const videoUrl = post.videoUrl?.trim();
+            if (!videoUrl || post.thumbnailUrl?.trim()) return;
+
+            const cacheKey = getFeedVideoPosterCacheKeyForPost(
+              post.id,
+              videoUrl,
+            );
+            queuedVideoPosterKeysRef.current.delete(cacheKey);
+            if (getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri) return;
+
+            createCachedVideoPosterThumbnail(videoUrl, cacheKey).catch(
+              () => undefined,
+            );
+          });
+
+          if (pendingVideoPosterPostsRef.current.length > 0) {
+            scheduleVideoPosterPrefetchFlush();
+          }
+        });
+    }, FEED_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS);
+  }, []);
+
+  const queueFeedVideoPosterPrefetch = useCallback(
+    (posts: FeedVideoPost[]) => {
+      if (posts.length === 0) return;
+
+      let queuedAny = false;
+      for (const post of posts) {
+        const videoUrl = post.videoUrl?.trim();
+        if (!videoUrl || post.thumbnailUrl?.trim()) continue;
+
+        const cacheKey = getFeedVideoPosterCacheKeyForPost(post.id, videoUrl);
+        if (prefetchedVideoPosterKeysRef.current.has(cacheKey)) continue;
+        if (queuedVideoPosterKeysRef.current.has(cacheKey)) continue;
+
+        if (getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri) {
+          prefetchedVideoPosterKeysRef.current.add(cacheKey);
+          continue;
+        }
+
+        prefetchedVideoPosterKeysRef.current.add(cacheKey);
+        queuedVideoPosterKeysRef.current.add(cacheKey);
+        pendingVideoPosterPostsRef.current.push(post);
+        queuedAny = true;
+      }
+
+      if (queuedAny) {
+        scheduleVideoPosterPrefetchFlush();
+      }
+    },
+    [scheduleVideoPosterPrefetchFlush],
+  );
+
+  const prefetchFeedVideoPostersInRange = useCallback(
+    (startIndex: number, endIndex: number) => {
+      const items = feedListItemsRef.current;
+      if (items.length === 0) return;
+
+      const start = Math.max(0, startIndex);
+      const end = Math.min(items.length, Math.max(start, endIndex));
+      if (start >= end) return;
+
+      const postsToPrefetch: FeedVideoPost[] = [];
+      for (let index = start; index < end; index += 1) {
+        const item = items[index];
+        if (item?.type !== 'post' || item.post.kind !== 'video') continue;
+
+        postsToPrefetch.push(item.post);
+        if (postsToPrefetch.length >= FEED_VIDEO_POSTER_PREFETCH_LIMIT) break;
+      }
+
+      queueFeedVideoPosterPrefetch(postsToPrefetch);
+    },
+    [queueFeedVideoPosterPrefetch],
+  );
+
   const scheduleImagePrefetchFlush = useCallback(() => {
     if (imagePrefetchTimerRef.current) return;
 
@@ -2404,6 +2534,46 @@ function FeedScreen() {
       prefetchFeedImagesInRange(startIndex, endIndex);
     },
     [prefetchFeedImagesInRange],
+  );
+
+  const prefetchFeedVideoPostersAroundVisibleItems = useCallback(
+    (viewableItems: any[]) => {
+      const items = feedListItemsRef.current;
+      if (items.length === 0 || viewableItems.length === 0) return;
+
+      let firstVisibleIndex = Number.POSITIVE_INFINITY;
+      let furthestVisibleIndex = -1;
+      viewableItems.forEach(viewable => {
+        if (!viewable?.isViewable) return;
+
+        const itemId = viewable.item?.id;
+        const index =
+          typeof viewable.index === 'number'
+            ? viewable.index
+            : typeof itemId === 'string'
+              ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
+              : -1;
+
+        if (index < 0) return;
+        if (index < firstVisibleIndex) firstVisibleIndex = index;
+        if (index > furthestVisibleIndex) furthestVisibleIndex = index;
+      });
+
+      if (furthestVisibleIndex < 0) return;
+
+      const direction = feedScrollDirectionRef.current;
+      const startIndex =
+        direction === 'up'
+          ? firstVisibleIndex - FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS
+          : furthestVisibleIndex - FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS;
+      const endIndex =
+        direction === 'up'
+          ? firstVisibleIndex + FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS + 1
+          : furthestVisibleIndex + FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS + 1;
+
+      prefetchFeedVideoPostersInRange(startIndex, endIndex);
+    },
+    [prefetchFeedVideoPostersInRange],
   );
 
   const maybeLoadMoreFeedAroundVisibleItems = useCallback((viewableItems: any[]) => {
@@ -2546,6 +2716,7 @@ function FeedScreen() {
     ({ viewableItems }: { viewableItems: any[] }) => {
       latestViewableFeedItemsRef.current = viewableItems;
       prefetchFeedImagesAroundVisibleItems(viewableItems);
+      prefetchFeedVideoPostersAroundVisibleItems(viewableItems);
       maybeLoadMoreFeedAroundVisibleItems(viewableItems);
       publishWarmFeedVideosAroundVisibleItems(viewableItems);
       const update = getFeedVideoActiveUpdate({
@@ -2575,6 +2746,7 @@ function FeedScreen() {
     [
       maybeLoadMoreFeedAroundVisibleItems,
       prefetchFeedImagesAroundVisibleItems,
+      prefetchFeedVideoPostersAroundVisibleItems,
       publishWarmFeedVideosAroundVisibleItems,
       scheduleActiveFeedVideo,
     ],
@@ -2997,7 +3169,14 @@ function FeedScreen() {
       renderedItems.map((item, index) => [item.id, index]),
     );
     prefetchFeedImagesInRange(0, INITIAL_IMAGE_PREFETCH_ITEMS);
+    prefetchFeedVideoPostersInRange(
+      0,
+      FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS + 1,
+    );
     prefetchFeedImagesAroundVisibleItems(latestViewableFeedItemsRef.current);
+    prefetchFeedVideoPostersAroundVisibleItems(
+      latestViewableFeedItemsRef.current,
+    );
     if (latestViewableFeedItemsRef.current.length > 0) {
       publishWarmFeedVideosAroundVisibleItems(latestViewableFeedItemsRef.current);
     } else {
@@ -3021,6 +3200,8 @@ function FeedScreen() {
     feedListItems,
     prefetchFeedImagesAroundVisibleItems,
     prefetchFeedImagesInRange,
+    prefetchFeedVideoPostersAroundVisibleItems,
+    prefetchFeedVideoPostersInRange,
     publishWarmFeedVideosAroundVisibleItems,
   ]);
 
@@ -3478,11 +3659,11 @@ function FeedScreen() {
           <>
             <FeedHeaderCollapseFrame
               hidden={isFeedChromeHidden}
-              height={feedHeaderOverlayHeight}
-              top={0}
-              translateDistance={feedHeaderOverlayHeight}
+              height={FEED_HEADER_CONTENT_HEIGHT}
+              top={topInset}
+              translateDistance={FEED_HEADER_CONTENT_HEIGHT}
             >
-              <FeedHeader includeTopSafeArea />
+              <FeedHeader />
               <FeedFilterTabs
                 activeSource={activeFeedSource}
                 onChangeSource={setActiveFeedSource}

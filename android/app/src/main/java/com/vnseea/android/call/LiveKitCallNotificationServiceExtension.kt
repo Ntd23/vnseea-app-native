@@ -7,6 +7,7 @@ import android.text.Html
 import android.util.Log
 import com.onesignal.notifications.INotificationReceivedEvent
 import com.onesignal.notifications.INotificationServiceExtension
+import com.vnseea.android.messages.MessagePushNotification
 import org.json.JSONObject
 
 class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
@@ -16,6 +17,12 @@ class LiveKitCallNotificationServiceExtension : INotificationServiceExtension {
     val data = notification.additionalData ?: parseBodyData(notification.body)
     if (data == null) {
       Log.i("LiveKitCallPush", "ignored: no livekit data")
+      return
+    }
+    if (MessagePushNotification.isMessagePush(data)) {
+      event.preventDefault()
+      val context: Context = event.context ?: return
+      MessagePushNotification.show(context, notification)
       return
     }
     normalizeLiveKitData(data, notification.title)

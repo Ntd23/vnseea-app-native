@@ -17,7 +17,7 @@ describe('Android Feed header top safe-area ownership', () => {
     'src/feed/presentation/components/feedHeaderInsets.ts',
   );
 
-  it('lets the absolute header own the Android top inset', () => {
+  it('keeps Android Feed chrome from double-padding below the status bar', () => {
     expect(insetSource).toContain('StatusBar.currentHeight');
     expect(insetSource).not.toContain(
       "if (Platform.OS === 'android') {\n    return 0;",
@@ -29,7 +29,11 @@ describe('Android Feed header top safe-area ownership', () => {
     expect(headerSource).toContain(
       '{ height: topInset + HEADER_BAR_HEIGHT, paddingTop: topInset }',
     );
-    expect(feedSource).toContain('<FeedHeader includeTopSafeArea />');
+    expect(feedSource).toContain('function getFeedChromeTopInset(rawTopInset: number)');
+    expect(feedSource).toContain("if (Platform.OS === 'android') return 0");
+    expect(feedSource).toContain('const topInset = getFeedChromeTopInset(rawTopInset)');
+    expect(feedSource).toContain('<FeedHeader />');
+    expect(feedSource).not.toContain('<FeedHeader includeTopSafeArea />');
   });
 
   it('does not apply the inset twice on stack screens', () => {
@@ -47,8 +51,9 @@ describe('Android Feed header top safe-area ownership', () => {
 
   it('uses the normalized inset for overlay and refresh positioning', () => {
     expect(feedSource).toContain(
-      'const topInset = resolveFeedChromeTopInset(',
+      'const rawTopInset = resolveFeedChromeTopInset(',
     );
+    expect(feedSource).toContain('const topInset = getFeedChromeTopInset(rawTopInset)');
     expect(feedSource).toContain(
       ': topInset + FEED_HEADER_CONTENT_HEIGHT;',
     );
