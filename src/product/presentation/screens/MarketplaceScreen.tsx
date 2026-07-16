@@ -39,6 +39,7 @@ import {
   Image as ImageIcon,
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToReels } from '../../../navigation/reelsNavigation';
 import { useMarketplaceViewModel } from '../../application/view-models/useMarketplaceViewModel';
 import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductItem } from '../../domain/types/product.types';
@@ -574,6 +575,15 @@ function MarketplaceScreen() {
     [navigation],
   );
 
+  const openReelsOverlay = useCallback(() => {
+    if (navigation) {
+      navigateToReels(navigation as any, { source: 'home' });
+      return;
+    }
+    if (!navigationRef.isReady()) return;
+    navigateToReels(navigationRef as any, { source: 'home' });
+  }, [navigation]);
+
   const goBack = useCallback(() => {
     if (navigation) {
       const screenNavigation = navigation as unknown as {
@@ -1069,7 +1079,7 @@ function MarketplaceScreen() {
         <TouchableOpacity
           className="h-10 flex-1 items-center justify-center"
           activeOpacity={0.75}
-          onPress={() => navigate(ROUTES.REELS)}
+          onPress={openReelsOverlay}
         >
           <Video
             size={24}

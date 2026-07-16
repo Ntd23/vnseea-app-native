@@ -50,4 +50,16 @@ describe('Messages groups tab create CTA', () => {
     expect(createGroup).toContain('route.params?.initialMember');
     expect(createGroup).toContain('setSelectedUsers');
   });
+
+  it('uses an Instagram-style story ring in the messages story rail', () => {
+    const source = read('src/messages/presentation/screens/MessageScreen.tsx');
+
+    expect(source).toContain('styles.messageStoryInstagramRing');
+    expect(source).toContain('styles.messageStoryRingGlowPink');
+    expect(source).toContain('styles.messageStoryRingGlowOrange');
+    expect(source).toContain('styles.messageStoryRingGlowPurple');
+    expect(source).toContain("backgroundColor: '#E1306C'");
+    expect(source).toContain("backgroundColor: '#FCAF45'");
+    expect(source).not.toContain("hasUnseen ? 'border-blue-500' : 'border-gray-200'");
+  });
 });

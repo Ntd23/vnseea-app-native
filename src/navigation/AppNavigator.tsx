@@ -35,9 +35,10 @@ const PROFILE_PUSH_ROUTES: ReadonlySet<string> = new Set([
 ]);
 
 const PROFILE_PUSH_OPTIONS: NativeStackNavigationOptions = {
-  animation: 'ios_from_right',
-  animationTypeForReplace: 'push',
-  gestureEnabled: true,
+  presentation: 'transparentModal',
+  animation: 'none',
+  contentStyle: { backgroundColor: 'transparent' },
+  gestureEnabled: false,
 };
 
 const PROFILE_MORE_OPTIONS: NativeStackNavigationOptions = {
@@ -84,15 +85,27 @@ function AppNavigator() {
             // native push/pop). REELS opens without a native transition
             // so a tapped feed video can keep the experience feeling
             // continuous and start playback immediately.
-            const animation = name === ROUTES.REELS
-              ? 'none'
-              : 'fade';
+            if (name === ROUTES.REELS) {
+              return (
+                <Stack.Screen
+                  key={name}
+                  name={name}
+                  component={component}
+                  options={{
+                    presentation: 'transparentModal',
+                    animation: 'none',
+                    contentStyle: { backgroundColor: 'transparent' },
+                    gestureEnabled: false,
+                  }}
+                />
+              );
+            }
             return (
               <Stack.Screen
                 key={name}
                 name={name}
                 component={component}
-                options={{ animation }}
+                options={{ animation: 'fade' }}
               />
             );
           }

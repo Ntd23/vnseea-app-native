@@ -79,12 +79,21 @@ describe('profile navigation route separation', () => {
     );
   });
 
-  it('uses a right-to-left root-stack transition for profile screens', () => {
+  it('uses transparent custom swipe-back routes for root profile screens', () => {
     const appNavigatorSource = read('src/navigation/AppNavigator.tsx');
+    const profileSource = read('src/profile/presentation/screens/ProfileScreen.tsx');
 
     expect(appNavigatorSource).toContain('PROFILE_PUSH_ROUTES');
     expect(appNavigatorSource).toContain('ROUTES.PROFILE');
     expect(appNavigatorSource).toContain('ROUTES.USER_PROFILE');
-    expect(appNavigatorSource).toContain("animation: 'ios_from_right'");
+    expect(appNavigatorSource).toContain("presentation: 'transparentModal'");
+    expect(appNavigatorSource).toContain("animation: 'none'");
+    expect(appNavigatorSource).toContain("contentStyle: { backgroundColor: 'transparent' }");
+    expect(appNavigatorSource).toContain('gestureEnabled: false');
+    expect(profileSource).toContain('const profileSwipeBackGesture = useMemo');
+    expect(profileSource).toContain('profileBackTranslateX.value = Math.max(0, event.translationX);');
+    expect(profileSource).toContain('profileSwipeBackScreenStyle');
+    expect(profileSource).toContain('profileSwipeBackCue');
+    expect(profileSource).toContain('navigation.canGoBack()');
   });
 });

@@ -7,27 +7,21 @@ describe('reels navigation target', () => {
     source: 'saved' as const,
   };
 
-  it('opens Reels through MainTabs on iOS so the bottom bar stays visible', () => {
+  it('opens a tapped Reels item on the root Reels route on iOS', () => {
     expect(createReelsNavigationTarget('ios', params)).toEqual({
-      name: ROUTES.MAIN_TABS,
-      params: {
-        screen: ROUTES.REELS,
-        params,
-      },
+      name: ROUTES.REELS,
+      params,
     });
   });
 
-  it('opens Reels through MainTabs on Android for a consistent tab entrypoint', () => {
+  it('opens a tapped Reels item on the root Reels route on Android', () => {
     expect(createReelsNavigationTarget('android', params)).toEqual({
-      name: ROUTES.MAIN_TABS,
-      params: {
-        screen: ROUTES.REELS,
-        params,
-      },
+      name: ROUTES.REELS,
+      params,
     });
   });
 
-  it('navigates through MainTabs instead of pushing the legacy root Reels route', () => {
+  it('pushes root Reels so the custom swipe-back can reveal the previous screen', () => {
     const navigation = {
       navigate: jest.fn(),
       push: jest.fn(),
@@ -35,10 +29,17 @@ describe('reels navigation target', () => {
 
     navigateToReels(navigation, params, 'ios');
 
-    expect(navigation.push).not.toHaveBeenCalled();
-    expect(navigation.navigate).toHaveBeenCalledWith(ROUTES.MAIN_TABS, {
-      screen: ROUTES.REELS,
-      params,
-    });
+    expect(navigation.push).toHaveBeenCalledWith(ROUTES.REELS, params);
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it('falls back to navigate for minimal navigators without push', () => {
+    const navigation = {
+      navigate: jest.fn(),
+    };
+
+    navigateToReels(navigation, params, 'ios');
+
+    expect(navigation.navigate).toHaveBeenCalledWith(ROUTES.REELS, params);
   });
 });

@@ -5,6 +5,7 @@ import {
   Alert,
   BackHandler,
   Linking,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -145,6 +146,10 @@ const COPY = {
 } as const;
 
 const BACK_GESTURE_EDGE_WIDTH = 28;
+const BACK_GESTURE_START_X = Platform.OS === 'android' ? 18 : 0;
+const BACK_GESTURE_WIDTH = Platform.OS === 'android' ? 82 : BACK_GESTURE_EDGE_WIDTH;
+const BACK_GESTURE_ACTIVE_OFFSET_X = Platform.OS === 'android' ? 6 : 12;
+const BACK_GESTURE_FAIL_OFFSET_Y = Platform.OS === 'android' ? 24 : 16;
 const BACK_GESTURE_DISTANCE_RATIO = 0.28;
 const BACK_GESTURE_VELOCITY = 650;
 const SCREEN_OPEN_DURATION_MS = 220;
@@ -609,9 +614,9 @@ export default function ProfileMoreScreen() {
   const swipeBackGesture = useMemo(
     () =>
       Gesture.Pan()
-        .hitSlop({ left: 0, width: BACK_GESTURE_EDGE_WIDTH })
-        .activeOffsetX([12, 999])
-        .failOffsetY([-16, 16])
+        .hitSlop({ left: BACK_GESTURE_START_X, width: BACK_GESTURE_WIDTH })
+        .activeOffsetX([BACK_GESTURE_ACTIVE_OFFSET_X, 999])
+        .failOffsetY([-BACK_GESTURE_FAIL_OFFSET_Y, BACK_GESTURE_FAIL_OFFSET_Y])
         .onUpdate(event => {
           'worklet';
           if (isClosing.value) return;
@@ -671,6 +676,33 @@ export default function ProfileMoreScreen() {
     opacity: previousScreenDim.value,
   }));
 
+  const swipeBackCueStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      screenTranslateX.value,
+      [0, screenWidth * 0.12, screenWidth * BACK_GESTURE_DISTANCE_RATIO],
+      [0, 0.78, 1],
+      'clamp',
+    ),
+    transform: [
+      {
+        translateX: interpolate(
+          screenTranslateX.value,
+          [0, screenWidth * BACK_GESTURE_DISTANCE_RATIO],
+          [-16, 8],
+          'clamp',
+        ),
+      },
+      {
+        scale: interpolate(
+          screenTranslateX.value,
+          [0, screenWidth * BACK_GESTURE_DISTANCE_RATIO],
+          [0.92, 1],
+          'clamp',
+        ),
+      },
+    ],
+  }));
+
   const renderAction = (action: ProfileMoreAction, index: number) => {
     const Icon = action.Icon;
     const isLoading = loadingActionId === action.id;
@@ -716,6 +748,15 @@ export default function ProfileMoreScreen() {
           previousScreenDimStyle,
         ]}
       />
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.swipeBackCue, swipeBackCueStyle]}
+      >
+        <ArrowLeft size={18} color="#1877F2" strokeWidth={2.6} />
+        <Text style={styles.swipeBackCueText}>
+          {language === 'vi' ? 'Vuốt đúng rồi' : 'Keep swiping'}
+        </Text>
+      </Animated.View>
       <GestureDetector gesture={swipeBackGesture}>
         <Animated.View style={[styles.screen, screenAnimatedStyle]}>
           <View style={styles.header}>
@@ -777,6 +818,30 @@ const styles = StyleSheet.create({
   },
   previousScreenDim: {
     backgroundColor: '#000000',
+  },
+  swipeBackCue: {
+    position: 'absolute',
+    left: Platform.OS === 'android' ? 30 : 14,
+    top: '50%',
+    marginTop: -22,
+    zIndex: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  swipeBackCueText: {
+    marginLeft: 7,
+    color: '#1877F2',
+    fontSize: 12,
+    fontWeight: '800',
   },
   screen: {
     flex: 1,

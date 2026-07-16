@@ -2012,24 +2012,21 @@ function StoriesBubbleRow({
             >
 
               <View
-
-                className={`relative h-[60px] w-[60px] items-center justify-center rounded-full border-2 ${
-
-                  hasUnseen ? 'border-blue-500' : 'border-gray-200'
-
-                } p-[2px]`}
-
+                style={[
+                  styles.messageStoryInstagramRing,
+                  !hasUnseen && styles.messageStoryInstagramRingSeen,
+                ]}
               >
-
-                <Image
-
-                  source={{ uri: story.publisher.avatarUrl }}
-
-                  className="h-full w-full rounded-full"
-
-                  resizeMode="cover"
-
-                />
+                <View style={styles.messageStoryRingGlowPink} />
+                <View style={styles.messageStoryRingGlowOrange} />
+                <View style={styles.messageStoryRingGlowPurple} />
+                <View style={styles.messageStoryAvatarFrame}>
+                  <Image
+                    source={{ uri: story.publisher.avatarUrl }}
+                    style={styles.messageStoryAvatarImage}
+                    resizeMode="cover"
+                  />
+                </View>
 
                 <PresenceDot
 
@@ -4360,6 +4357,128 @@ function QuickSendModal({
 export default MessageScreen;
 
 const styles = StyleSheet.create({
+
+  messageStoryInstagramRing: {
+
+    position: 'relative',
+
+    width: 62,
+
+    height: 62,
+
+    borderRadius: 31,
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    overflow: 'hidden',
+
+    backgroundColor: '#E1306C',
+
+    shadowColor: '#E1306C',
+
+    shadowOffset: { width: 0, height: 4 },
+
+    shadowOpacity: 0.16,
+
+    shadowRadius: 8,
+
+    elevation: 3,
+
+  },
+
+  messageStoryInstagramRingSeen: {
+
+    opacity: 0.78,
+
+    shadowOpacity: 0.08,
+
+  },
+
+  messageStoryRingGlowPink: {
+
+    position: 'absolute',
+
+    top: -10,
+
+    right: -4,
+
+    width: 40,
+
+    height: 40,
+
+    borderRadius: 20,
+
+    backgroundColor: '#C13584',
+
+  },
+
+  messageStoryRingGlowOrange: {
+
+    position: 'absolute',
+
+    bottom: -9,
+
+    left: -5,
+
+    width: 42,
+
+    height: 42,
+
+    borderRadius: 21,
+
+    backgroundColor: '#FCAF45',
+
+  },
+
+  messageStoryRingGlowPurple: {
+
+    position: 'absolute',
+
+    right: -9,
+
+    bottom: 3,
+
+    width: 34,
+
+    height: 34,
+
+    borderRadius: 17,
+
+    backgroundColor: '#833AB4',
+
+  },
+
+  messageStoryAvatarFrame: {
+
+    width: 54,
+
+    height: 54,
+
+    borderRadius: 27,
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    backgroundColor: '#FFFFFF',
+
+    padding: 2,
+
+  },
+
+  messageStoryAvatarImage: {
+
+    width: '100%',
+
+    height: '100%',
+
+    borderRadius: 25,
+
+    backgroundColor: '#F1F5F9',
+
+  },
 
   headerRoot: {
 
