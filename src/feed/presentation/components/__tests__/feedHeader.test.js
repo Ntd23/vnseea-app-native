@@ -107,7 +107,7 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).toContain("from '../components/FeedHeaderCollapseFrame'");
     expect(feedScreenSource).toContain('<FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>');
     expect(feedScreenSource).toContain('<FeedHeader />');
-    expect(feedScreenSource).toContain('<FilterTabs');
+    expect(feedScreenSource).toContain('<FeedFilterTabs');
     expect(feedScreenSource).toContain('</FeedHeaderCollapseFrame>');
     expect(feedScreenSource).toContain('onScroll={handleFeedScroll}');
     expect(feedScreenSource).toContain('scrollEventThrottle={16}');
@@ -128,22 +128,22 @@ describe('FeedHeader platform chrome', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
     expect(feedScreenSource).toMatch(
-      /Platform\.OS === 'ios'\s*\?\s*\(\s*<>\s*\{feedListElement\}\s*<FeedHeaderCollapseFrame hidden=\{isFeedChromeHidden\}>\s*<FeedHeader \/>/s,
+      /Platform\.OS === 'ios'\s*\?\s*\(\s*<>\s*[\s\S]*?\{feedListElement\}\s*<FeedHeaderCollapseFrame hidden=\{isFeedChromeHidden\}>\s*<FeedHeader \/>/,
     );
     expect(feedScreenSource).toMatch(
       /:\s*\(\s*<>\s*<FeedHeaderCollapseFrame\s+hidden=\{isFeedChromeHidden\}\s+height=\{FEED_HEADER_CONTENT_HEIGHT\}\s+top=\{topInset\}\s+translateDistance=\{FEED_HEADER_CONTENT_HEIGHT\}\s*>/s,
     );
     expect(feedScreenSource).toMatch(
-      /translateDistance=\{FEED_HEADER_CONTENT_HEIGHT\}\s*>\s*<FeedHeader \/>\s*<FilterTabs/s,
+      /translateDistance=\{FEED_HEADER_CONTENT_HEIGHT\}\s*>\s*<FeedHeader \/>\s*<FeedFilterTabs/s,
     );
     expect(feedScreenSource).not.toContain('styles.staticHeaderContainer');
   });
 
-  it('keeps Android feed chrome from double-padding under the status bar', () => {
+  it('keeps Android feed chrome below the status bar without double-padding', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
     expect(feedScreenSource).toContain('function getFeedChromeTopInset(rawTopInset: number)');
-    expect(feedScreenSource).toContain("if (Platform.OS === 'android') return 0");
+    expect(feedScreenSource).not.toContain("if (Platform.OS === 'android') return 0");
     expect(feedScreenSource).toContain('return rawTopInset');
     expect(feedScreenSource).toContain('const topInset = getFeedChromeTopInset(rawTopInset)');
     expect(feedScreenSource).toContain('top={topInset}');
@@ -151,19 +151,20 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).toContain('const feedHeaderOverlayHeight = feedRefreshProgressViewOffset');
     expect(feedScreenSource).toContain('const newPostsButtonTop = feedHeaderOverlayHeight + 12');
     expect(feedScreenSource).toContain('style={{ top: newPostsButtonTop }}');
-    expect(feedScreenSource).not.toContain('const topInset = rawTopInset');
     expect(feedScreenSource).not.toContain("const topInset = Platform.OS === 'android' ? 0 : rawTopInset");
   });
 
-  it('keeps native iOS bottom tabs configured to minimize on scroll down', () => {
+  it('keeps native iOS bottom tab presentation wired through the shared store', () => {
     const mainTabNavigatorSource = read('src/navigation/MainTabNavigator.tsx');
     const behaviorSource = read('src/navigation/nativeTabMinimizeBehavior.ts');
 
-    expect(mainTabNavigatorSource).toContain('useNativeTabMinimizeBehavior');
-    expect(mainTabNavigatorSource).toContain('tabBarMinimizeBehavior: nativeTabMinimizeBehavior');
-    expect(mainTabNavigatorSource).toContain("tabBarControllerMode: 'tabBar'");
-    expect(mainTabNavigatorSource).toContain("tabBarBlurEffect: 'systemDefault'");
+    expect(mainTabNavigatorSource).toContain('NativeIosLiquidTabBarView');
+    expect(mainTabNavigatorSource).toContain('tabBarVisibility.subscribe');
+    expect(mainTabNavigatorSource).toContain("nativeTabBarPresentation.setPresentation('expanded')");
+    expect(mainTabNavigatorSource).toContain('tabBarPosition="bottom"');
     expect(behaviorSource).toContain("'onScrollDown'");
+    expect(behaviorSource).toContain('useNativeTabMinimizeBehavior');
+    expect(behaviorSource).toContain('useNativeTabBarPresentation');
   });
 
   it('keeps FlatList first on iOS so native tabs can observe scroll behind the overlay header', () => {
@@ -177,11 +178,11 @@ describe('FeedHeader platform chrome', () => {
     );
     expect(feedScreenSource).toContain('<FeedHeaderCollapseFrame hidden={isFeedChromeHidden}>');
     expect(feedScreenSource).toMatch(
-      /Platform\.OS === 'ios'\s*\?\s*\(\s*<>\s*\{feedListElement\}/,
+      /Platform\.OS === 'ios'\s*\?\s*\(\s*<>\s*[\s\S]*?\{feedListElement\}/,
     );
   });
 
-  it('uses the intro as the first iOS Feed item and places FilterTabs before the iOS intro card', () => {
+  it('uses the intro as the first iOS Feed item and as the Android list header', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
     const renderIntroSource = feedScreenSource.slice(
       feedScreenSource.indexOf('const renderFeedIntro = useCallback'),
@@ -190,11 +191,10 @@ describe('FeedHeader platform chrome', () => {
 
     expect(feedScreenSource).toContain("type: 'intro'");
     expect(feedScreenSource).toContain('const iosFeedListItems');
+    expect(feedScreenSource).toContain('const androidListHeaderComponent');
     expect(feedScreenSource).toContain('if (item.type === \'intro\')');
-    expect(renderIntroSource).toContain("Platform.OS === 'ios'");
-    expect(renderIntroSource.indexOf('<FilterTabs')).toBeLessThan(
-      renderIntroSource.indexOf('<HomeFeedIntro'),
-    );
+    expect(renderIntroSource).toContain('<HomeFeedIntro');
+    expect(renderIntroSource).not.toContain('<FeedFilterTabs');
     expect(feedScreenSource).not.toContain("type: 'ios-header'");
     expect(feedScreenSource).not.toContain('const FEED_IOS_STICKY_HEADER_INDICES');
     expect(feedScreenSource).not.toContain('stickyHeaderIndices={FEED_IOS_STICKY_HEADER_INDICES}');
@@ -204,15 +204,16 @@ describe('FeedHeader platform chrome', () => {
 
   it('publishes upward scroll intent to the native tab minimize POC store', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
-    const mainTabNavigatorSource = read('src/navigation/MainTabNavigator.tsx');
+    const publisherSource = read('src/navigation/nativeTabScrollPublisher.ts');
+    const behaviorSource = read('src/navigation/nativeTabMinimizeBehavior.ts');
 
     expect(feedScreenSource).toContain('createNativeTabScrollPublisherState');
     expect(feedScreenSource).toContain('publishNativeTabScrollIntent');
     expect(feedScreenSource).toContain("publishNativeTabScrollBehavior('none')");
     expect(feedScreenSource).toContain("publishNativeTabScrollBehavior('onScrollDown')");
-    expect(mainTabNavigatorSource).toContain('useNativeTabMinimizeBehavior');
-    expect(mainTabNavigatorSource).toContain('const nativeTabMinimizeBehavior = useNativeTabMinimizeBehavior()');
-    expect(mainTabNavigatorSource).toContain('tabBarMinimizeBehavior: nativeTabMinimizeBehavior');
+    expect(publisherSource).toContain('nativeTabMinimizeBehavior.setBehavior');
+    expect(publisherSource).toContain("nativeTabBarPresentation.setPresentation('expanded')");
+    expect(behaviorSource).toContain('useNativeTabMinimizeBehavior');
   });
 
   it('keeps pull-to-refresh visible below the iOS overlay header', () => {
@@ -244,7 +245,7 @@ describe('FeedHeader platform chrome', () => {
     expect(defaultSource).toContain('ROUTES.NOTIFICATIONS');
     expect(defaultSource).toContain('useNotificationBadgeViewModel');
     expect(defaultSource).toContain('useCurrentUserViewModel');
-    expect(drawerSource).toContain('ROUTES.PROFILE');
+    expect(drawerSource).toContain('navigateToOwnProfile');
 
     expect(iosSource).toContain('HeaderProfileDrawer');
     expect(iosSource).toContain('Menu');

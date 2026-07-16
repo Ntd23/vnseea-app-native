@@ -1,6 +1,7 @@
 // Description: Renders a modern, animated right-side profile and settings drawer.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Dimensions,
   Easing,
@@ -307,6 +308,8 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
 
   const [shouldRender, setShouldRender] = useState(visible);
   const [contentReady, setContentReady] = useState(visible);
+  const [logoutConfirmVisible, setLogoutConfirmVisible] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   // Read profile directly from MMKV cache — no fetch, no hook re-renders
   const cachedProfile = useMemo(() => sessionStorage.getUserProfile(), []);
   const profile = cachedProfile;
@@ -374,6 +377,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
         }
       });
     } else {
+      setLogoutConfirmVisible(false);
       const closeAnim = Animated.parallel([
         Animated.timing(backdropOpacity, {
           toValue: 0,
@@ -414,6 +418,7 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
   }, []);
 
   const handleClose = useCallback(() => {
+    setLogoutConfirmVisible(false);
     onClose();
   }, [onClose]);
 
@@ -569,23 +574,30 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
     [navigation, handleClose, openSettingsPanel],
   );
 
+  const handleDismissLogoutConfirm = useCallback(() => {
+    if (isLoggingOut) return;
+    setLogoutConfirmVisible(false);
+  }, [isLoggingOut]);
+
   const handleLogout = useCallback(() => {
-    Alert.alert(copy.logoutConfirmTitle, copy.logoutConfirmMsg, [
-      { text: copy.cancel, style: 'cancel' },
-      {
-        text: copy.logoutLabel,
-        style: 'destructive',
-        onPress: async () => {
-          handleClose();
-          try {
-            await logout();
-          } catch (e) {
-            console.warn('[HeaderProfileDrawer] Logout failed', e);
-          }
-        },
-      },
-    ]);
-  }, [logout, handleClose, copy]);
+    Vibration.vibrate(8);
+    setLogoutConfirmVisible(true);
+  }, []);
+
+  const handleConfirmLogout = useCallback(async () => {
+    if (isLoggingOut) return;
+
+    setIsLoggingOut(true);
+    setLogoutConfirmVisible(false);
+    handleClose();
+    try {
+      await logout();
+    } catch (e) {
+      console.warn('[HeaderProfileDrawer] Logout failed', e);
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }, [handleClose, isLoggingOut, logout]);
 
   // Inline language toggle (drawer row + two pill buttons).
   // The user no longer has to navigate into a separate screen to
@@ -653,7 +665,9 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
       hardwareAccelerated
       statusBarTranslucent
       presentationStyle="overFullScreen"
-      onRequestClose={handleClose}
+      onRequestClose={
+        logoutConfirmVisible ? handleDismissLogoutConfirm : handleClose
+      }
     >
       <View style={styles.container}>
         {/* Backdrop */}
@@ -874,6 +888,55 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
           <DrawerMenuSkeleton />
         )}
         </Animated.View>
+        {logoutConfirmVisible ? (
+          <View style={styles.logoutConfirmOverlay} pointerEvents="box-none">
+            <Pressable
+              style={styles.logoutConfirmBackdrop}
+              onPress={handleDismissLogoutConfirm}
+            />
+            <View style={styles.logoutConfirmCard}>
+              <View style={styles.logoutConfirmIconWrap}>
+                <LogOut size={24} color="#dc2626" strokeWidth={2.4} />
+              </View>
+              <Text style={styles.logoutConfirmTitle}>
+                {copy.logoutConfirmTitle}
+              </Text>
+              <Text style={styles.logoutConfirmMessage}>
+                {copy.logoutConfirmMsg}
+              </Text>
+              <View style={styles.logoutConfirmActions}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={handleDismissLogoutConfirm}
+                  disabled={isLoggingOut}
+                  style={styles.logoutConfirmCancelButton}
+                >
+                  <Text style={styles.logoutConfirmCancelText}>
+                    {copy.cancel}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.86}
+                  onPress={handleConfirmLogout}
+                  disabled={isLoggingOut}
+                  style={[
+                    styles.logoutConfirmLogoutButton,
+                    isLoggingOut && styles.logoutConfirmButtonDisabled,
+                  ]}
+                >
+                  {isLoggingOut ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <LogOut size={18} color="#ffffff" strokeWidth={2.5} />
+                  )}
+                  <Text style={styles.logoutConfirmLogoutText}>
+                    {copy.logoutLabel}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : null}
       </View>
     </Modal>
   );
@@ -1344,6 +1407,106 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     marginLeft: 8,
+  },
+  logoutConfirmOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 50,
+    elevation: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  logoutConfirmBackdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.52)',
+  },
+  logoutConfirmCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 28,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 18,
+    alignItems: 'center',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.24,
+    shadowRadius: 28,
+    elevation: 20,
+  },
+  logoutConfirmIconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 20,
+    backgroundColor: '#fee2e2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  logoutConfirmTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0f172a',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  logoutConfirmMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+    color: '#64748b',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  logoutConfirmActions: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  logoutConfirmCancelButton: {
+    flex: 1,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutConfirmCancelText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  logoutConfirmLogoutButton: {
+    flex: 1.18,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: '#dc2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#dc2626',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 5,
+  },
+  logoutConfirmButtonDisabled: {
+    opacity: 0.72,
+  },
+  logoutConfirmLogoutText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#ffffff',
   },
   separator: {
     height: 1,

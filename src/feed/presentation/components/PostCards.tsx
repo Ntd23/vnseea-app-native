@@ -190,6 +190,13 @@ const MEDIA_ASPECT_RATIO_CACHE = new Map<string, number>();
 const POST_TOKEN_BLUE = '#0000ff';
 const POST_TOKEN_FALLBACK = String.raw`[@#][^\s@#.,!?;:()[\]{}"']+`;
 
+export function getFeedVideoPosterCacheKeyForPost(
+  postId: string,
+  videoUrl?: string,
+) {
+  return `${postId}:${videoUrl || 'video'}`;
+}
+
 const styles = StyleSheet.create({
   reactionPickerSurface: {},
   iosReactionPickerSurface: {
@@ -1196,7 +1203,7 @@ function useGeneratedVideoPoster({
   enabled: boolean;
   isScrollBusy: boolean;
 }) {
-  const cacheKey = `${postId}:${videoUrl}`;
+  const cacheKey = getFeedVideoPosterCacheKeyForPost(postId, videoUrl);
   const [generatedPosterUrl, setGeneratedPosterUrl] = useState(() => {
     if (serverThumbnailUrl || !videoUrl) return undefined;
     return getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri;
