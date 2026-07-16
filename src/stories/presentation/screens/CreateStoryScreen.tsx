@@ -26,7 +26,7 @@
 // On submit success we emit through `storyCreatedEvents` so the FeedScreen
 // can prepend the new story to its rail (Phase 3 wires that listener).
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -48,7 +48,7 @@ import {
 } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronRight, ImagePlus, ShieldCheck, Trash2, Video as VideoIcon, X, ArrowLeft, Plus, Image as LucideImage } from 'lucide-react-native';
+import { ChevronRight, ImagePlus, ShieldCheck, Trash2, Video as VideoIcon, X } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useCreateStoryViewModel } from '../../application/view-models/useCreateStoryViewModel';
 import { storyCreatedEvents } from '../../application/events/storyCreatedEvents';
@@ -88,8 +88,8 @@ function assetToUpload(
 
 const CREATE_STORY_COPY = {
   vi: {
-    headerTitle: 'Tạo trạng thái mới',
-    publishButton: 'Tạo ra',
+    headerTitle: 'Tạo tin',
+    publishButton: 'Đăng',
     illustrationTitle: 'Chia sẻ khoảnh khắc của bạn',
     illustrationDesc: 'Tạo tin ảnh hoặc video.\nTin sẽ tự động biến mất sau 24 giờ.',
     selectPhoto: 'Chọn ảnh',
@@ -105,13 +105,10 @@ const CREATE_STORY_COPY = {
     libraryError: 'Không mở được thư viện',
     titlePlaceholder: 'Tiêu đề (tuỳ chọn)',
     descPlaceholder: 'Mô tả (tuỳ chọn, {min}–{max} ký tự)',
-    descLabel: 'Chuyện gì đang xảy ra',
-    mediaLabel: 'Tệp phương tiện',
-    mediaPlaceholder: 'Thả hình ảnh và video tại đây HOẶC Duyệt để tải lên',
   },
   en: {
-    headerTitle: 'Create new status',
-    publishButton: 'Create',
+    headerTitle: 'Create Story',
+    publishButton: 'Publish',
     illustrationTitle: 'Share your moments',
     illustrationDesc: 'Create a photo or video story.\nStory will automatically disappear after 24 hours.',
     selectPhoto: 'Select photo',
@@ -127,9 +124,6 @@ const CREATE_STORY_COPY = {
     libraryError: 'Cannot open library',
     titlePlaceholder: 'Title (optional)',
     descPlaceholder: 'Description (optional, {min}–{max} characters)',
-    descLabel: 'What is happening',
-    mediaLabel: 'Media file',
-    mediaPlaceholder: 'Drop images and videos here OR Browse to upload',
   },
 };
 
@@ -249,10 +243,11 @@ function CreateStoryScreen() {
     }
   }, [vm.media, animValue]);
 
-  // Unified mixed picker that opens library for both images and videos directly
-  const handlePickMedia = useCallback(async () => {
+  // Local picker — we DON'T need camera here; the library picker covers
+  // both image and video selection.
+  const handlePickImage = useCallback(async () => {
     const result = await launchImageLibrary({
-      mediaType: 'mixed' as MediaType,
+      mediaType: 'photo' as MediaType,
       selectionLimit: 1,
       quality: 0.8,
       includeBase64: false,
@@ -264,19 +259,34 @@ function CreateStoryScreen() {
     }
     const asset = result.assets?.[0];
     if (!asset) return;
+    const upload = assetToUpload(asset, 'image');
+    if (upload) vm.setMedia(upload);
+  }, [vm, copy]);
 
-    // Detect if picked asset is image or video
-    const isVideo = asset.type?.startsWith('video/') || 
-                    (asset.duration !== undefined && asset.duration > 0) ||
-                    /\.(mp4|mov|m4v|3gp|mkv)$/i.test(asset.uri || '');
-    const fileType = isVideo ? 'video' : 'image';
-    const upload = assetToUpload(asset, fileType);
+  const handlePickVideo = useCallback(async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'video' as MediaType,
+      selectionLimit: 1,
+      includeBase64: false,
+    });
+    if (result.didCancel) return;
+    if (result.errorCode) {
+      Alert.alert(copy.libraryError, result.errorMessage ?? '');
+      return;
+    }
+    const asset = result.assets?.[0];
+    if (!asset) return;
+    const upload = assetToUpload(asset, 'video');
     if (upload) vm.setMedia(upload);
   }, [vm, copy]);
 
   const handleSubmit = useCallback(async () => {
     const result = await vm.submit();
     if (result) {
+      showToast({
+        message: result.message || 'Tin của bạn đã được đăng lên thành công!',
+        type: 'success',
+      });
       navigation.goBack();
     }
   }, [navigation, vm]);
@@ -321,241 +331,437 @@ function CreateStoryScreen() {
     outputRange: [0.94, 1],
   });
 
-  // Media press handler
-  const handleMediaPress = handlePickMedia;
-
-  // Submit handler with empty media check
-  const handleCreatePress = () => {
-    if (!vm.media) {
-      Alert.alert(
-        language === 'vi' ? 'Thông báo' : 'Notice',
-        language === 'vi' ? 'Vui lòng chọn hình ảnh hoặc video cho tin!' : 'Please select an image or video for your story!'
-      );
-      return;
-    }
-    handleSubmit();
-  };
-
   return (
     <SafeAreaView className="flex-1" style={{ backgroundColor: '#ffffff' }} edges={['top']}>
       {/* ── Header ───────────────────────────────────────────────── */}
-      <View 
-        className="h-14 flex-row items-center border-b px-4"
+      <View
+        className="h-14 flex-row items-center justify-between border-b px-4"
         style={{
           backgroundColor: '#ffffff',
           borderColor: '#f1f5f9',
+          position: 'relative',
         }}
       >
-        <TouchableOpacity
+        <ScaleButton
           onPress={handleDiscard}
           activeOpacity={0.7}
-          style={{
-            marginRight: 12,
-            padding: 4,
-          }}
+          className="h-10 w-10 items-center justify-center rounded-full border border-slate-200"
+          style={{ backgroundColor: '#f1f5f9' }}
         >
-          <ArrowLeft size={24} color="#334155" />
-        </TouchableOpacity>
-        
-        {/* Blue circular icon with white plus */}
-        <View
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 13,
-            backgroundColor: '#0000ff',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginRight: 10,
-          }}
-        >
-          <Plus size={14} color="#ffffff" strokeWidth={3} />
-        </View>
-
-        <Text style={{ fontSize: 16, fontWeight: '800', color: '#0f172a' }}>
+          <X size={20} color="#334155" strokeWidth={2.5} />
+        </ScaleButton>
+        <Text style={{ fontSize: 18, fontWeight: '700', color: '#0f172a' }}>
           {copy.headerTitle}
         </Text>
-      </View>
-
-      {/* Blue Banner strip */}
-      <View
-        style={{
-          height: 12,
-          backgroundColor: '#f1f5f9',
-          borderBottomWidth: 1,
-          borderColor: '#e2e8f0',
-        }}
-      />
-
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Caption Label */}
-        <Text
+        <ScaleButton
+          onPress={handleSubmit}
+          disabled={!vm.canSubmit}
+          activeOpacity={0.8}
+          className="rounded-full px-5 py-2"
           style={{
-            fontSize: 15,
-            fontWeight: '800',
-            color: '#1e293b',
-            marginTop: 24,
-            marginBottom: 10,
-          }}
-        >
-          {copy.descLabel}
-        </Text>
-
-        {/* Caption Input */}
-        <TextInput
-          value={vm.description}
-          onChangeText={vm.setDescription}
-          placeholder={copy.descPlaceholder
-            .replace('{min}', String(vm.minDescriptionLength))
-            .replace('{max}', String(vm.maxDescriptionLength))}
-          placeholderTextColor="#94a3b8"
-          maxLength={vm.maxDescriptionLength}
-          multiline
-          textAlignVertical="top"
-          style={{
-            paddingHorizontal: 16,
-            paddingTop: 14,
-            paddingBottom: 14,
-            borderRadius: 12,
-            backgroundColor: '#ffffff',
-            borderWidth: 1,
-            borderColor: '#e2e8f0',
-            fontSize: 15,
-            color: '#0f172a',
-            minHeight: 120,
-            lineHeight: 20,
-          }}
-        />
-
-        {/* Media Label */}
-        <Text
-          style={{
-            fontSize: 15,
-            fontWeight: '800',
-            color: '#1e293b',
-            marginTop: 20,
-            marginBottom: 10,
-          }}
-        >
-          {copy.mediaLabel}
-        </Text>
-
-        {/* Media Picker / Preview */}
-        {vm.media ? (
-          /* Preview state */
-          <View style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', backgroundColor: '#0f172a' }}>
-            {vm.media.fileType === 'image' ? (
-              <Image
-                source={{ uri: vm.media.uri }}
-                style={{ width: '100%', height: 200 }}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={{ width: '100%', height: 200 }}>
-                <VideoPlayer
-                  source={{ uri: vm.media.uri }}
-                  style={{ width: '100%', height: '100%' }}
-                  controls
-                  paused={false}
-                  resizeMode="cover"
-                  repeat
-                />
-              </View>
-            )}
-
-            {/* Floating delete button */}
-            <TouchableOpacity
-              onPress={() => vm.setMedia(null)}
-              activeOpacity={0.85}
-              style={{
-                position: 'absolute',
-                top: 12,
-                right: 12,
-                width: 32,
-                height: 32,
-                borderRadius: 16,
-                backgroundColor: 'rgba(0,0,0,0.6)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Trash2 size={16} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          /* Placeholder button */
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={handleMediaPress}
-            style={{
-              height: 200,
-              backgroundColor: '#cbd5e1', // Slate background matching screenshot
-              borderRadius: 12,
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingHorizontal: 24,
-            }}
-          >
-            <View
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 24,
-                backgroundColor: 'rgba(255, 255, 255, 0.25)',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: 12,
-              }}
-            >
-              <LucideImage size={24} color="#ffffff" />
-            </View>
-            <Text
-              style={{
-                color: '#ffffff',
-                fontSize: 14,
-                fontWeight: '600',
-                textAlign: 'center',
-                lineHeight: 20,
-              }}
-            >
-              {copy.mediaPlaceholder}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ── Error banner ───────────────────────────────────────── */}
-        {vm.error ? (
-          <View className="mt-3 rounded-lg bg-red-50 px-3 py-2">
-            <Text style={{ color: '#B91C1C', fontSize: 13 }}>{vm.error}</Text>
-          </View>
-        ) : null}
-
-        {/* Publish/Submit Button */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={handleCreatePress}
-          disabled={vm.isUploading}
-          style={{
-            backgroundColor: '#0000ff', // Match bright blue button in screenshot
-            borderRadius: 8,
-            paddingVertical: 12,
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginTop: 32,
+            backgroundColor: vm.canSubmit ? '#1d4ed8' : '#eff6ff',
           }}
         >
           {vm.isUploading ? (
-            <ActivityIndicator color="#ffffff" size="small" />
+            <ActivityIndicator color={vm.canSubmit ? '#FFFFFF' : '#93c5fd'} size="small" />
           ) : (
-            <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '700' }}>
+            <Text
+              style={{
+                color: vm.canSubmit ? '#FFFFFF' : '#93c5fd',
+                fontWeight: '700',
+                fontSize: 14,
+              }}
+            >
               {copy.publishButton}
             </Text>
           )}
-        </TouchableOpacity>
+        </ScaleButton>
+      </View>
+
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Media area ─────────────────────────────────────────── */}
+        {vm.media ? (
+          /* Preview state */
+          <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+            <View
+              style={{
+                position: 'relative',
+                borderRadius: 24,
+                overflow: 'hidden',
+                backgroundColor: '#0f172a',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.15,
+                shadowRadius: 12,
+                elevation: 6,
+              }}
+            >
+              {vm.media.fileType === 'image' ? (
+                <Image
+                  source={{ uri: vm.media.uri }}
+                  style={{
+                    width: '100%',
+                    height: 440,
+                  }}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View
+                  style={{
+                    width: '100%',
+                    height: 440,
+                  }}
+                >
+                  <VideoPlayer
+                    source={{ uri: vm.media.uri }}
+                    style={{ width: '100%', height: '100%' }}
+                    controls
+                    paused={false}
+                    resizeMode="contain"
+                    repeat
+                  />
+                </View>
+              )}
+
+              {/* Floating delete button to clear the picked media and pick again */}
+              <TouchableOpacity
+                onPress={() => vm.setMedia(null)}
+                activeOpacity={0.85}
+                style={{
+                  position: 'absolute',
+                  top: 16,
+                  right: 16,
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: 'rgba(0,0,0,0.6)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Trash2 size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          /* Empty state - styled precisely like the mockup */
+          <View style={{ paddingTop: 10 }}>
+            {/* Overlapping cards illustration */}
+            <Animated.View
+              style={{
+                height: 160,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginTop: 24,
+                marginBottom: 24,
+                position: 'relative',
+                opacity: introOpacity,
+                transform: [{ scale: cardsScale }]
+              }}
+            >
+              {/* Purple video card (back right, tilted) */}
+              <View
+                style={{
+                  width: 100,
+                  height: 130,
+                  borderRadius: 16,
+                  backgroundColor: '#f3e8ff',
+                  borderWidth: 2,
+                  borderColor: '#e9d5ff',
+                  position: 'absolute',
+                  transform: [{ rotate: '15deg' }, { translateX: 20 }, { translateY: -5 }],
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  shadowColor: '#8b5cf6',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 6,
+                  elevation: 2,
+                }}
+              >
+                <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#c084fc', alignItems: 'center', justifyContent: 'center' }}>
+                  <VideoIcon size={16} color="#ffffff" fill="#ffffff" />
+                </View>
+              </View>
+
+              {/* Blue photo card (front left, tilted) */}
+              <View
+                style={{
+                  width: 100,
+                  height: 130,
+                  borderRadius: 16,
+                  backgroundColor: '#eff6ff',
+                  borderWidth: 2,
+                  borderColor: '#bfdbfe',
+                  position: 'absolute',
+                  transform: [{ rotate: '-12deg' }, { translateX: -22 }, { translateY: 5 }],
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  shadowColor: '#3b82f6',
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.12,
+                  shadowRadius: 8,
+                  elevation: 3,
+                }}
+              >
+                <ImagePlus size={36} color="#3b82f6" strokeWidth={1.8} />
+              </View>
+
+              {/* Tiny sparkles/stars around */}
+              {/* Top-left Sparkle */}
+              <View style={{ position: 'absolute', top: 12, left: '30%' }}>
+                <Text style={{ fontSize: 16, color: '#93c5fd' }}>✦</Text>
+              </View>
+              {/* Top-right Sparkle */}
+              <View style={{ position: 'absolute', top: 20, right: '32%' }}>
+                <Text style={{ fontSize: 20, color: '#c7d2fe' }}>✦</Text>
+              </View>
+              {/* Bottom-left Sparkle */}
+              <View style={{ position: 'absolute', bottom: 18, left: '26%' }}>
+                <Text style={{ fontSize: 18, color: '#bfdbfe' }}>✦</Text>
+              </View>
+              {/* Far Right tiny Sparkle */}
+              <View style={{ position: 'absolute', bottom: 35, right: '28%' }}>
+                <Text style={{ fontSize: 12, color: '#e0e7ff' }}>✦</Text>
+              </View>
+            </Animated.View>
+
+            {/* Intro text */}
+            <Animated.View style={{ opacity: introOpacity, transform: [{ translateY: introTranslateY }], paddingHorizontal: 20, marginBottom: 32 }}>
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#0f172a', marginBottom: 10, textAlign: 'center' }}>
+                {copy.illustrationTitle}
+              </Text>
+              <Text style={{ fontSize: 14.5, color: '#64748b', textAlign: 'center', lineHeight: 22 }}>
+                {copy.illustrationDesc}
+              </Text>
+            </Animated.View>
+
+            {/* Two Side-by-Side Choose Media Cards */}
+            <Animated.View
+              style={{
+                flexDirection: 'row',
+                gap: 16,
+                paddingHorizontal: 20,
+                marginBottom: 32,
+                opacity: introOpacity,
+                transform: [{ scale: cardsScale }]
+              }}
+            >
+              {/* Choose Photo Card */}
+              <TouchableOpacity
+                onPress={handlePickImage}
+                activeOpacity={0.9}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#ffffff',
+                  borderRadius: 24,
+                  padding: 20,
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  minHeight: 220,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.04,
+                  shadowRadius: 10,
+                  elevation: 3,
+                  borderWidth: 1,
+                  borderColor: '#f1f5f9',
+                }}
+              >
+                <View
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 32,
+                    backgroundColor: '#eff6ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 16,
+                  }}
+                >
+                  <ImagePlus size={28} color="#1d4ed8" strokeWidth={2} />
+                </View>
+                <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center', marginBottom: 16 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 6, textAlign: 'center' }}>
+                    {copy.selectPhoto}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center', lineHeight: 16 }}>
+                    {copy.selectPhotoDesc}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: '#eff6ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <ChevronRight size={16} color="#1d4ed8" strokeWidth={2.5} />
+                </View>
+              </TouchableOpacity>
+
+              {/* Choose Video Card */}
+              <TouchableOpacity
+                onPress={handlePickVideo}
+                activeOpacity={0.9}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#ffffff',
+                  borderRadius: 24,
+                  padding: 20,
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  minHeight: 220,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.04,
+                  shadowRadius: 10,
+                  elevation: 3,
+                  borderWidth: 1,
+                  borderColor: '#f1f5f9',
+                }}
+              >
+                <View
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 32,
+                    backgroundColor: '#faf5ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 16,
+                  }}
+                >
+                  <VideoIcon size={28} color="#7c3aed" strokeWidth={2} />
+                </View>
+                <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center', marginBottom: 16 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 6, textAlign: 'center' }}>
+                    {copy.selectVideo}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center', lineHeight: 16 }}>
+                    {copy.selectVideoDesc.replace('{duration}', String(vm.maxVideoDurationSeconds))}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: '#faf5ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <ChevronRight size={16} color="#7c3aed" strokeWidth={2.5} />
+                </View>
+              </TouchableOpacity>
+            </Animated.View>
+
+            {/* Security Banner */}
+            <Animated.View style={{ opacity: introOpacity, paddingHorizontal: 20, marginBottom: 20 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#f8fafc',
+                  borderRadius: 20,
+                  paddingHorizontal: 16,
+                  paddingVertical: 14,
+                  borderWidth: 1,
+                  borderColor: '#f1f5f9',
+                }}
+              >
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#eff6ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 12,
+                  }}
+                >
+                  <ShieldCheck size={20} color="#1d4ed8" strokeWidth={2} />
+                </View>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 12.5,
+                    fontWeight: '500',
+                    color: '#475569',
+                    lineHeight: 17,
+                  }}
+                >
+                  {copy.securityBanner}
+                </Text>
+                <ChevronRight size={16} color="#94a3b8" strokeWidth={2} />
+              </View>
+            </Animated.View>
+          </View>
+        )}
+
+        {/* ── Caption inputs (only when media is picked) ─────────── */}
+        {vm.media ? (
+          <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+            <TextInput
+              value={vm.title}
+              onChangeText={vm.setTitle}
+              placeholder={copy.titlePlaceholder}
+              placeholderTextColor="#94a3b8"
+              maxLength={vm.maxTitleLength}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 14,
+                borderRadius: 16,
+                backgroundColor: '#ffffff',
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                fontSize: 15,
+                color: '#0f172a',
+                marginBottom: 12,
+              }}
+            />
+            <TextInput
+              value={vm.description}
+              onChangeText={vm.setDescription}
+              placeholder={copy.descPlaceholder
+                .replace('{min}', String(vm.minDescriptionLength))
+                .replace('{max}', String(vm.maxDescriptionLength))}
+              placeholderTextColor="#94a3b8"
+              maxLength={vm.maxDescriptionLength}
+              multiline
+              textAlignVertical="top"
+              style={{
+                paddingHorizontal: 16,
+                paddingTop: 14,
+                paddingBottom: 14,
+                borderRadius: 16,
+                backgroundColor: '#ffffff',
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                fontSize: 15,
+                color: '#0f172a',
+                minHeight: 100,
+                lineHeight: 20,
+              }}
+            />
+          </View>
+        ) : null}
+
+        {/* ── Error banner ───────────────────────────────────────── */}
+        {vm.error ? (
+          <View className="mx-4 mt-3 rounded-lg bg-red-50 px-3 py-2">
+            <Text style={{ color: '#B91C1C', fontSize: 13 }}>{vm.error}</Text>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
