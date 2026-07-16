@@ -87,6 +87,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import { useChatViewModel } from '../../application/view-models/useChatViewModel';
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
+import { SharedPostMessageCard } from '../components/SharedPostMessageCard';
 import type {
   GroupAddableUser,
   GroupChatInfo,
@@ -653,6 +654,9 @@ function getChatListItemType(item: ChatMessageListItem) {
   const { message } = item;
   if (message.callEvent) {
     return `call-${message.callEvent.callType}-${message.callEvent.status}`;
+  }
+  if (message.sharedPost) {
+    return 'shared-post';
   }
   if (message.mediaType) {
     return `media-${message.mediaType}`;
@@ -1443,6 +1447,7 @@ function MessageBubble({
   onRecallCall,
   onPressReply,
   onQuickRecord,
+  onOpenSharedPost,
 }: {
   message: MessageItem;
   avatar: string;
@@ -1454,6 +1459,7 @@ function MessageBubble({
   onRecallCall?: (callType: 'audio' | 'video') => void;
   onPressReply?: (originalMessageId: string) => void;
   onQuickRecord?: () => void;
+  onOpenSharedPost?: (postId: string) => void;
 }) {
   const isSentByMe = message.callEvent ? message.callEvent.isInitiator : message.isSentByMe;
 
@@ -1469,8 +1475,13 @@ function MessageBubble({
   const orderInquiry = parseOrderInquiry(message.message);
   const productInquiry = parseProductInquiry(message.message);
   const replyInfo = parseMessageReply(message.message);
-  const mapShare = replyInfo ? null : parseSharedMapMessage(message.message);
-  const visibleMessageText = orderInquiry
+  const sharedPost = message.sharedPost;
+  const mapShare = sharedPost || replyInfo
+    ? null
+    : parseSharedMapMessage(message.message);
+  const visibleMessageText = sharedPost
+    ? ''
+    : orderInquiry
     ? ''
     : productInquiry
     ? productInquiry.userMessage || 'Sản phẩm này còn hàng không ạ?'
@@ -1704,7 +1715,31 @@ function MessageBubble({
             </TouchableOpacity>
           )}
 
-          {!!mapShare ? (
+          {/* Shared Post Card (renders instead of the raw URL bubble) */}
+          {sharedPost ? (
+            <View
+              className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}
+            >
+              <SharedPostMessageCard
+                reference={sharedPost}
+                onOpenPost={postId => onOpenSharedPost?.(postId)}
+                onLongPress={() => onLongPress?.(message)}
+              />
+              <Text
+                className={`mt-1 text-[9.5px] ${
+                  message.deliveryState === 'failed'
+                    ? 'text-red-600'
+                    : 'text-gray-400'
+                } ${isSentByMe ? 'text-right' : 'text-left'}`}
+              >
+                {message.deliveryState === 'sending'
+                  ? 'Đang gửi...'
+                  : message.deliveryState === 'failed'
+                  ? 'Gửi thất bại'
+                  : formatMessageTime(message.time)}
+              </Text>
+            </View>
+          ) : mapShare ? (
             <View
               className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}
               style={styles.mapShareMessageWrap}
@@ -1722,9 +1757,8 @@ function MessageBubble({
                 {formatMessageTime(message.time)}
               </Text>
             </View>
-          ) : (
-          /* Order Inquiry Card (renders instead of the main text bubble) */
-          !!orderInquiry ? (
+          ) : orderInquiry ? (
+            /* Order Inquiry Card (renders instead of the main text bubble) */
             <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`} style={{ maxWidth: 260 }}>
               <OrderInquiryBubble
                 order={orderInquiry}
@@ -1859,7 +1893,7 @@ function MessageBubble({
                 </TouchableOpacity>
               </View>
             </>
-          ))}
+          )}
         </View>
 
         {!isSentByMe && message.mediaType === 'audio' && (
@@ -1887,6 +1921,11 @@ const MemoizedMessageBubble = React.memo(
       prevProps.message.thumbnail === nextProps.message.thumbnail &&
       prevProps.message.deliveryState === nextProps.message.deliveryState &&
       prevProps.message.seen === nextProps.message.seen &&
+      prevProps.message.sharedPost?.postId ===
+        nextProps.message.sharedPost?.postId &&
+      prevProps.message.sharedPost?.url === nextProps.message.sharedPost?.url &&
+      prevProps.message.sharedPost?.note ===
+        nextProps.message.sharedPost?.note &&
       prevProps.avatar === nextProps.avatar &&
       prevProps.partnerName === nextProps.partnerName &&
       prevProps.showAvatar === nextProps.showAvatar
@@ -3729,6 +3768,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     setViewerMediaIndex(0);
   }, []);
 
+  const handleOpenSharedPost = useCallback(
+    (postId: string) => {
+      navigation.navigate(ROUTES.POST_DETAIL, { postId });
+    },
+    [navigation],
+  );
+
   const handleChangeText = useCallback(
     (nextText: string) => {
       setText(nextText);
@@ -4079,11 +4125,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             onRecallCall={handleStartConversationCall}
             onPressReply={handlePressReply}
             onQuickRecord={handleQuickRecord}
+            onOpenSharedPost={handleOpenSharedPost}
           />
         </View>
       );
     },
-    [chat.avatar, chat.name, highlightedMessageId, messageItems, handleOpenMedia, handleStartConversationCall, handlePressReply, handleQuickRecord],
+    [chat.avatar, chat.name, highlightedMessageId, messageItems, handleOpenMedia, handleStartConversationCall, handlePressReply, handleQuickRecord, handleOpenSharedPost],
   );
 
   const handleOpenGroupInfo = useCallback(() => {
@@ -4508,7 +4555,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             key={chat.id}
             ref={flatListRef}
             data={messageItems}
-            keyExtractor={item => item.id}
+            keyExtractor={item => `${getChatListItemType(item)}:${item.id}`}
             renderItem={renderMessageItem}
             contentContainerStyle={messageListContentStyle}
             inverted

@@ -139,11 +139,11 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).not.toContain('styles.staticHeaderContainer');
   });
 
-  it('keeps Android feed chrome from double-padding under the status bar', () => {
+  it('keeps Android feed chrome below the status bar without double-padding', () => {
     const feedScreenSource = read('src/feed/presentation/screens/FeedScreen.tsx');
 
     expect(feedScreenSource).toContain('function getFeedChromeTopInset(rawTopInset: number)');
-    expect(feedScreenSource).toContain("if (Platform.OS === 'android') return 0");
+    expect(feedScreenSource).not.toContain("if (Platform.OS === 'android') return 0");
     expect(feedScreenSource).toContain('return rawTopInset');
     expect(feedScreenSource).toContain('const topInset = getFeedChromeTopInset(rawTopInset)');
     expect(feedScreenSource).toContain('top={topInset}');
@@ -151,7 +151,6 @@ describe('FeedHeader platform chrome', () => {
     expect(feedScreenSource).toContain('const feedHeaderOverlayHeight = feedRefreshProgressViewOffset');
     expect(feedScreenSource).toContain('const newPostsButtonTop = feedHeaderOverlayHeight + 12');
     expect(feedScreenSource).toContain('style={{ top: newPostsButtonTop }}');
-    expect(feedScreenSource).not.toContain('const topInset = rawTopInset');
     expect(feedScreenSource).not.toContain("const topInset = Platform.OS === 'android' ? 0 : rawTopInset");
   });
 

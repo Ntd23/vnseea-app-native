@@ -10,11 +10,20 @@ function read(relativePath) {
 describe('ComposerCard platform layout', () => {
   const source = read('src/feed/presentation/components/ComposerCard.tsx');
 
-  it('uses the previous iOS card spacing without changing the Android card spacing', () => {
+  it('uses an edge-to-edge square card on iOS without changing Android chrome', () => {
+    const iosSpacingStyle = source.slice(
+      source.indexOf('iosCardSpacing: {'),
+      source.indexOf('composerTopRow: {'),
+    );
+
     expect(source).toContain("const isIos = Platform.OS === 'ios'");
     expect(source).toContain('isIos ? styles.iosCardSpacing : null');
-    expect(source).toMatch(
-      /iosCardSpacing:\s*\{[\s\S]*marginHorizontal:\s*10,[\s\S]*marginBottom:\s*10,/,
+    expect(iosSpacingStyle).toContain('marginHorizontal: 0');
+    expect(iosSpacingStyle).not.toContain('marginBottom');
+    expect(source).toContain('className={composerCardClassName}');
+    expect(source).toContain("'bg-white border border-slate-100 p-4'");
+    expect(source).toContain(
+      "'bg-white rounded-[20px] border border-slate-100 p-4'",
     );
   });
 

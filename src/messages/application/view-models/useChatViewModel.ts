@@ -20,6 +20,8 @@ import {
 } from '../../infrastructure/realtime/liveKitCallRealtime';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
+import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import { parseSharedPostMessage } from '../shared-posts/sharedPostMessage';
 
 const PAGE_SIZE = 30;
 const POLL_INTERVAL_MS = 7000; // Poll every 7 seconds to reduce network/CPU load
@@ -67,6 +69,9 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.isSentByMe === right.isSentByMe &&
     left.seen === right.seen &&
     left.deliveryState === right.deliveryState &&
+    left.sharedPost?.postId === right.sharedPost?.postId &&
+    left.sharedPost?.url === right.sharedPost?.url &&
+    left.sharedPost?.note === right.sharedPost?.note &&
     areCallEventsEqual(left.callEvent, right.callEvent)
   );
 }
@@ -398,6 +403,7 @@ export function useChatViewModel(chat: ChatItem) {
         message,
         media: attachment?.uri,
         mediaType: attachment?.mediaType,
+        sharedPost: parseSharedPostMessage(message, apiConfig.webBaseUrl),
         time: Math.floor(Date.now() / 1000),
         isSentByMe: true,
         seen: 0,

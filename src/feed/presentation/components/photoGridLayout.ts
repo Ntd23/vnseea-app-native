@@ -3,6 +3,13 @@ export type PhotoGridItemLayout = {
   height: number;
 };
 
+export type PhotoGridItemGutterStyle = {
+  paddingTop?: number;
+  paddingRight?: number;
+  paddingBottom?: number;
+  paddingLeft?: number;
+};
+
 function getTwoColumnWidth(gridWidth: number, isLeftColumn: boolean) {
   const leftWidth = Math.floor(gridWidth / 2);
   return isLeftColumn ? leftWidth : gridWidth - leftWidth;
@@ -35,4 +42,39 @@ export function getPhotoGridItemLayout(
     width: getTwoColumnWidth(safeGridWidth, isLeftColumn),
     height: safeGridWidth / 2,
   };
+}
+
+export function getPhotoGridItemGutterStyle(
+  index: number,
+  totalPhotos: number,
+  gutterSize: number,
+): PhotoGridItemGutterStyle {
+  if (totalPhotos <= 1 || index < 0) return {};
+
+  const halfGutter = Math.max(0, gutterSize) / 2;
+  const style: PhotoGridItemGutterStyle = {};
+
+  if (totalPhotos === 3 && index === 0) {
+    if (halfGutter > 0) style.paddingBottom = halfGutter;
+    return style;
+  }
+
+  const adjustedIndex = totalPhotos === 3 ? index - 1 : index;
+  const isLeftColumn = adjustedIndex % 2 === 0;
+  const rowIndex = totalPhotos === 3 ? 1 : Math.floor(index / 2);
+  const displayedCount = Math.min(totalPhotos, 4);
+  const lastRowIndex = totalPhotos === 3 ? 1 : Math.ceil(displayedCount / 2) - 1;
+
+  if (halfGutter > 0) {
+    if (isLeftColumn) {
+      style.paddingRight = halfGutter;
+    } else {
+      style.paddingLeft = halfGutter;
+    }
+
+    if (rowIndex > 0) style.paddingTop = halfGutter;
+    if (rowIndex < lastRowIndex) style.paddingBottom = halfGutter;
+  }
+
+  return style;
 }

@@ -62,6 +62,12 @@ export type ChatPreviewKind =
   | 'product'
   | 'sticker';
 
+export interface SharedPostMessageReference {
+  postId: string;
+  url: string;
+  note: string;
+}
+
 export interface MessageItem {
   id: string;
   conversationId: string;
@@ -72,6 +78,7 @@ export interface MessageItem {
   media?: string;
   mediaType?: 'image' | 'video' | 'audio' | 'file';
   thumbnail?: string;
+  sharedPost?: SharedPostMessageReference;
   time: number;
   isSentByMe: boolean;
   seen: number;

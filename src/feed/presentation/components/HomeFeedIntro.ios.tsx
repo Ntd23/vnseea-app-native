@@ -348,7 +348,7 @@ export function HomeFeedIntro({
     useHomeGreetingDismissal(userId);
 
   return (
-    <View style={styles.root}>
+    <View>
       <HomeStoriesRail avatarUrl={avatarUrl} copy={copy} />
       <ComposerCard
         onPress={onCreatePostPress}
@@ -373,14 +373,8 @@ export function HomeFeedIntro({
 export default HomeFeedIntro;
 
 const styles = StyleSheet.create({
-  root: {
-    paddingTop: 10,
-  },
   surface: {
-    marginHorizontal: 10,
-    marginBottom: 10,
     overflow: 'hidden',
-    borderRadius: 30,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.72)',
     backgroundColor: 'rgba(255, 255, 255, 0.86)',
@@ -503,8 +497,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   storiesContent: {
-    paddingHorizontal: 14,
-    columnGap: 11,
+    paddingHorizontal: 5,
+    columnGap: 5,
     alignItems: 'stretch',
   },
   storyCard: {
