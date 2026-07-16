@@ -81,7 +81,10 @@ import {
   FeedReactionPickerPointer,
   FeedReactionPickerSurface,
 } from './FeedCardChrome';
-import { getPhotoGridItemLayout } from './photoGridLayout';
+import {
+  getPhotoGridItemGutterStyle,
+  getPhotoGridItemLayout,
+} from './photoGridLayout';
 
 export {
   FEED_CARD_CLASS,
@@ -173,11 +176,13 @@ const LOAD_MORE_THROTTLE_MS = 800;
 const SUPPLEMENTAL_LOAD_MORE_THROTTLE_MS = 2500;
 const IMAGE_PREFETCH_LOOKAHEAD = 5;
 const MAX_IMAGE_PREFETCH_URLS = 8;
-const DEFAULT_PHOTO_GRID_WIDTH = Dimensions.get('window').width - 8;
-const PHOTO_GRID_ITEM_PADDING = { padding: 2 };
+const DEFAULT_PHOTO_GRID_WIDTH =
+  Platform.OS === 'ios'
+    ? Dimensions.get('window').width
+    : Dimensions.get('window').width - 8;
+const PHOTO_GRID_GUTTER_SIZE = 2;
+const ANDROID_PHOTO_GRID_ITEM_STYLE = { padding: 2 };
 const PHOTO_GRID_TILE_STYLE: ViewStyle = { flex: 1, overflow: 'hidden' };
-const IOS_PHOTO_GRID_TILE_STYLE: ViewStyle | undefined =
-  Platform.OS === 'ios' ? { borderRadius: 12 } : undefined;
 const IOS_PHOTO_GRID_FRAME_STYLE: ViewStyle | undefined =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 const MEDIA_ASPECT_RATIO_CACHE_LIMIT = 350;
@@ -3048,6 +3053,14 @@ export const TextPostCard = React.memo(function TextPostCard({
               totalPhotos,
               photoGridWidth,
             );
+            const photoGutterStyle =
+              Platform.OS === 'ios'
+                ? getPhotoGridItemGutterStyle(
+                    index,
+                    totalPhotos,
+                    PHOTO_GRID_GUTTER_SIZE,
+                  )
+                : ANDROID_PHOTO_GRID_ITEM_STYLE;
 
             return (
               <TouchableOpacity
@@ -3055,11 +3068,9 @@ export const TextPostCard = React.memo(function TextPostCard({
                 onPress={() => onPhotoPress(post, index)}
                 activeOpacity={0.95}
                 delayPressIn={0}
-                style={[photoLayout, PHOTO_GRID_ITEM_PADDING]}
+                style={[photoLayout, photoGutterStyle]}
               >
-                <View
-                  style={[PHOTO_GRID_TILE_STYLE, IOS_PHOTO_GRID_TILE_STYLE]}
-                >
+                <View style={PHOTO_GRID_TILE_STYLE}>
                   <FeedMediaImage
                     uri={url}
                     style={{

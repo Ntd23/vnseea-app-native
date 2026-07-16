@@ -917,7 +917,7 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
     groups.length > 0 ? groups : GROUP_SKELETONS;
 
   return (
-    <View className="mb-6 border-y border-[#e5e7eb] bg-white py-4">
+    <View className="border-y border-[#e5e7eb] bg-white py-4">
       <View className="mb-3 flex-row items-center justify-between px-4">
         <View>
           <Text className="text-[17px] font-extrabold text-[#111827]">
@@ -1049,7 +1049,7 @@ const SuggestedPagesCarousel = React.memo(
       pages.length > 0 ? pages : PAGE_SKELETONS;
 
     return (
-      <View className="mb-2 border-y border-[#e5e7eb] bg-white py-4">
+      <View className="border-y border-[#e5e7eb] bg-white py-4">
         <View className="mb-3 flex-row items-center justify-between px-4">
           <View>
             <Text className="text-[17px] font-extrabold text-[#111827]">

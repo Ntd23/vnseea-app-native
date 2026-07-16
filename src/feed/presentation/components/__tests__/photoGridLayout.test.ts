@@ -1,4 +1,7 @@
-import { getPhotoGridItemLayout } from '../photoGridLayout';
+import {
+  getPhotoGridItemGutterStyle,
+  getPhotoGridItemLayout,
+} from '../photoGridLayout';
 
 describe('photo grid layout', () => {
   it('splits odd two-column widths without leaving a horizontal gap', () => {
@@ -25,5 +28,43 @@ describe('photo grid layout', () => {
 
     expect(rowOneLeft.width + rowOneRight.width).toBe(353);
     expect(rowTwoLeft.width + rowTwoRight.width).toBe(353);
+  });
+
+  it('keeps a two-photo grid flush at the outer edges with a two-pixel internal gutter', () => {
+    const left = getPhotoGridItemGutterStyle(0, 2, 2);
+    const right = getPhotoGridItemGutterStyle(1, 2, 2);
+
+    expect(left).toEqual({ paddingRight: 1 });
+    expect(right).toEqual({ paddingLeft: 1 });
+    expect((left.paddingRight ?? 0) + (right.paddingLeft ?? 0)).toBe(2);
+  });
+
+  it('keeps a three-photo hero and second row flush around the outside', () => {
+    const hero = getPhotoGridItemGutterStyle(0, 3, 2);
+    const bottomLeft = getPhotoGridItemGutterStyle(1, 3, 2);
+    const bottomRight = getPhotoGridItemGutterStyle(2, 3, 2);
+
+    expect(hero).toEqual({ paddingBottom: 1 });
+    expect(bottomLeft).toEqual({ paddingTop: 1, paddingRight: 1 });
+    expect(bottomRight).toEqual({ paddingTop: 1, paddingLeft: 1 });
+  });
+
+  it('uses gutters only between cells in a four-photo grid', () => {
+    expect(getPhotoGridItemGutterStyle(0, 5, 2)).toEqual({
+      paddingRight: 1,
+      paddingBottom: 1,
+    });
+    expect(getPhotoGridItemGutterStyle(1, 5, 2)).toEqual({
+      paddingLeft: 1,
+      paddingBottom: 1,
+    });
+    expect(getPhotoGridItemGutterStyle(2, 5, 2)).toEqual({
+      paddingTop: 1,
+      paddingRight: 1,
+    });
+    expect(getPhotoGridItemGutterStyle(3, 5, 2)).toEqual({
+      paddingTop: 1,
+      paddingLeft: 1,
+    });
   });
 });

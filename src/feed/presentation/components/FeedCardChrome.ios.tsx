@@ -188,9 +188,6 @@ export const FeedGlassActionButton = React.forwardRef<
 
 const styles = StyleSheet.create({
   cardOuter: {
-    marginHorizontal: 10,
-    marginBottom: 10,
-    borderRadius: 30,
     shadowColor: '#1f2a44',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.14,
@@ -198,7 +195,6 @@ const styles = StyleSheet.create({
   },
   cardInner: {
     overflow: 'hidden',
-    borderRadius: 30,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.72)',
     backgroundColor: 'rgba(255, 255, 255, 0.84)',
@@ -209,9 +205,7 @@ const styles = StyleSheet.create({
   },
   mediaFrame: {
     alignSelf: 'stretch',
-    marginHorizontal: 10,
     overflow: 'hidden',
-    borderRadius: 24,
     backgroundColor: '#000000',
   },
   actionBar: {

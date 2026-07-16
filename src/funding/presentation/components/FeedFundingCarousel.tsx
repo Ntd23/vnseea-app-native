@@ -167,7 +167,7 @@ const FeedFundingCarousel = React.memo(function FeedFundingCarousel({
   );
 
   return (
-    <View className="mb-6 border-y border-[#e5e7eb] bg-white py-4">
+    <View className="border-y border-[#e5e7eb] bg-white py-4">
       <View className="mb-3 flex-row items-center justify-between px-4">
         <View>
           <Text className="text-[17px] font-extrabold text-[#111827]">
