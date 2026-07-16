@@ -47,6 +47,8 @@ export interface SharePostInput {
    * `sendMessage` call in `ApiMessagesRepository`.
    */
   recipientUserId?: string;
+  /** Group chat target for `destination: 'message'`. */
+  recipientGroupId?: string;
 }
 
 export interface FeedRecommendationEventInput {
