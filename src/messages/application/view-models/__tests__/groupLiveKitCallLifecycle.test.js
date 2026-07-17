@@ -70,6 +70,23 @@ describe('LiveKit group call video-only lifecycle', () => {
     expect(source).not.toContain('AudioDeviceModule');
   });
 
+  it('shares the same processed audio routing controls as direct calls', () => {
+    const source = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+    const screen = read(
+      'src/messages/presentation/screens/GroupCallRoomScreen.tsx',
+    );
+
+    expect(source).toContain('CALL_AUDIO_CAPTURE_DEFAULTS');
+    expect(source).toContain('configureCallAudioSession');
+    expect(source).toContain('applyCallAudioOutputMode');
+    expect(source).toContain('setRemoteAudioTrackOutputMode');
+    expect(source).toContain('setAudioOutputMode');
+    expect(screen).toContain('CallAudioOutputSelector');
+    expect(screen).toContain('session?.audioOutputMode');
+  });
+
   it('exposes the room to React only after initial local media setup', () => {
     const source = read(
       'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',

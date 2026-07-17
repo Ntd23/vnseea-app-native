@@ -17,7 +17,6 @@ import {
   MessageCircle,
   MoreHorizontal,
   Share2,
-  ThumbsUp,
   TrendingUp,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -26,27 +25,13 @@ import { usePopularViewModel } from '../../application/view-models/usePopularVie
 import type { PopularPost } from '../../domain/types/popular.types';
 import type { RootStackParamList } from '../../../navigation/types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import {
+  FEED_REACTION_IMAGES,
+  isFeedReactionType,
+} from '../../../feed/presentation/components/FeedReactionAssets';
 
 type PopularNav = NativeStackNavigationProp<RootStackParamList>;
-
-// ── Reaction helpers (matching FeedScreen) ────────────────────────────────────
-const REACTION_EMOJI: Record<string, string> = {
-  like: '👍',
-  love: '❤️',
-  haha: '😂',
-  wow: '😮',
-  sad: '😢',
-  angry: '😡',
-};
-
-const REACTION_BADGE_BG: Record<string, string> = {
-  like: '#0866FF',
-  love: '#F33E58',
-  haha: '#F7B125',
-  wow: '#F7B125',
-  sad: '#F7B125',
-  angry: '#E9710F',
-};
 
 // ── Format helpers ─────────────────────────────────────────────────────────
 function formatCount(count: number) {
@@ -69,11 +54,18 @@ function formatPostTime(timestamp?: string | number) {
   return new Date(numTs * 1000).toLocaleDateString('vi-VN');
 }
 
-function getTopReactions(reactionsCount: Record<string, number> | undefined): string[] {
+function getTopReactions(
+  reactionsCount: Record<string, number> | undefined,
+): ReactionType[] {
   if (!reactionsCount) return [];
-  return Object.entries(reactionsCount)
-    .filter(([, count]) => typeof count === 'number' && count > 0)
-    .sort(([, a], [, b]) => (b as number) - (a as number))
+  const supported: Array<[ReactionType, number]> = [];
+  Object.entries(reactionsCount).forEach(([type, count]) => {
+    if (isFeedReactionType(type) && typeof count === 'number' && count > 0) {
+      supported.push([type, count]);
+    }
+  });
+  return supported
+    .sort(([, a], [, b]) => b - a)
     .slice(0, 3)
     .map(([type]) => type);
 }
@@ -101,16 +93,17 @@ function ReactionSummary({
         {topTypes.map((type, index) => (
           <View
             key={type}
-            className="h-5 w-5 items-center justify-center rounded-full"
+            className="h-5 w-5 items-center justify-center rounded-full border border-white bg-white"
             style={{
-              backgroundColor: REACTION_BADGE_BG[type] || '#0866FF',
               marginLeft: index > 0 ? -4 : 0,
               zIndex: topTypes.length - index,
             }}
           >
-            <Text style={{ fontSize: 10, color: '#fff' }}>
-              {REACTION_EMOJI[type] || '👍'}
-            </Text>
+            <Image
+              source={FEED_REACTION_IMAGES[type]}
+              style={{ width: 17, height: 17 }}
+              resizeMode="contain"
+            />
           </View>
         ))}
         <Text className="ml-2 text-caption-secondary">{formatCount(total)}</Text>
@@ -234,18 +227,23 @@ function PostCard({ item, isFirst }: { item: PopularPost; isFirst?: boolean }) {
                 {topReactions.slice(0, 3).map((type, idx) => (
                   <View
                     key={type}
-                    className="mr-1 h-5 w-5 items-center justify-center rounded-full"
-                    style={{ backgroundColor: REACTION_BADGE_BG[type] || '#0866FF' }}
+                    className="mr-1 h-5 w-5 items-center justify-center rounded-full border border-white bg-white"
                   >
-                    <Text style={{ fontSize: 11, color: '#fff' }}>
-                      {REACTION_EMOJI[type] || '👍'}
-                    </Text>
+                    <Image
+                      source={FEED_REACTION_IMAGES[type]}
+                      style={{ width: 17, height: 17 }}
+                      resizeMode="contain"
+                    />
                   </View>
                 ))}
               </View>
             ) : (
-              <View className="mr-1 h-5 w-5 items-center justify-center rounded-full bg-red-500">
-                <ThumbsUp size={11} color="#fff" />
+              <View className="mr-1 h-5 w-5 items-center justify-center rounded-full border border-white bg-white">
+                <Image
+                  source={FEED_REACTION_IMAGES.like}
+                  style={{ width: 17, height: 17 }}
+                  resizeMode="contain"
+                />
               </View>
             )}
             <Text className="text-caption-secondary">

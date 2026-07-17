@@ -41,7 +41,7 @@ import {
   useShareViewModel,
 } from '../../../shared-kernel/application/view-models/useShareViewModel';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
-import { showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import { getShareCopy } from '../../application/i18n/shareCopy';
 import {
   buildPostStoryCardModel,
@@ -618,6 +618,9 @@ export function FeedShareBottomSheet({
         subject: copy.sharePostSubject,
       });
       if (!result) throw new Error(copy.shareFailed);
+      if (result.method === 'shared') {
+        showToast({ message: copy.shareSuccess, type: 'success' });
+      }
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.shareFailed);
@@ -690,6 +693,7 @@ export function FeedShareBottomSheet({
 
       const shared = await onInternalShare(input);
       onShared?.(shared);
+      showToast({ message: copy.shareSuccess, type: 'success' });
       onClose();
     } catch (caught) {
       setError(
@@ -704,6 +708,7 @@ export function FeedShareBottomSheet({
     }
   }, [
     copy.shareError,
+    copy.shareSuccess,
     copy.storyShareFailed,
     currentUserVm.user?.userId,
     handleStoryShare,

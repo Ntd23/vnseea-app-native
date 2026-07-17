@@ -96,7 +96,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -4045,7 +4045,6 @@ function MessageScreen() {
 
       />
 
-          <ToastContainer />
     </SafeAreaView>
 
   );

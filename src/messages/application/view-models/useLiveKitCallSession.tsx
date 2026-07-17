@@ -66,6 +66,15 @@ import {
   getIosCallAudioDeviceState,
   setIosCallAudioActive,
 } from '../livekit/iosCallAudioLifecycle';
+import {
+  applyCallAudioOutputMode,
+  CALL_AUDIO_CAPTURE_DEFAULTS,
+  configureCallAudioSession,
+  defaultCallAudioOutputMode,
+  resetCallRemoteAudioVolume,
+  setRemoteAudioTrackOutputMode,
+  type CallAudioOutputMode,
+} from '../livekit/callAudioRouting';
 
 type CallPhase =
   | 'initializing'
@@ -77,8 +86,6 @@ type CallPhase =
   | 'error';
 
 type CloseReason = 'ended' | 'cancelled' | 'declined' | 'no_answer' | 'missed';
-type AudioOutputId = 'speaker' | 'earpiece' | 'default' | 'force_speaker';
-
 type LiveKitCallSession = {
   callId: string;
   recipientId: string;
@@ -102,7 +109,7 @@ type LiveKitCallSession = {
   hasRemoteParticipant: boolean;
   isLocalMicrophoneEnabled: boolean;
   isLocalCameraEnabled: boolean;
-  isSpeakerEnabled: boolean;
+  audioOutputMode: CallAudioOutputMode;
   isRemoteMicrophoneMuted: boolean;
   isRemoteCameraMuted: boolean;
 };
@@ -143,7 +150,7 @@ type LiveKitCallSessionContextValue = {
   toggleMic: () => Promise<void>;
   toggleCamera: () => Promise<void>;
   switchCamera: () => Promise<void>;
-  toggleSpeaker: () => Promise<void>;
+  setAudioOutputMode: (mode: CallAudioOutputMode) => Promise<void>;
 };
 
 type IosCallKitAudioSessionStartStage =
@@ -181,6 +188,7 @@ const LIVEKIT_ROOM_OPTIONS = {
   adaptiveStream: false,
   dynacast: false,
   singlePeerConnection: false,
+  audioCaptureDefaults: CALL_AUDIO_CAPTURE_DEFAULTS,
 } as const;
 const LIVEKIT_CONNECT_OPTIONS = {
   autoSubscribe: false,
@@ -1046,7 +1054,7 @@ async function waitForRequiredCallKitAudioSession(params: {
     activationSource: activation.source,
     activationCallUuid: activation.callUuid,
     activationAgeMs: activation.activationAgeMs,
-    preferSpeakerOutput: true,
+    preferSpeakerOutput: callType === 'video',
   });
   return true;
 }
@@ -1138,21 +1146,6 @@ function formatPermissionError(callType: LiveKitCallType) {
   return callType === 'video'
     ? 'Bạn cần cấp quyền mic và camera để tham gia cuộc gọi.'
     : 'Bạn cần cấp quyền mic để tham gia cuộc gọi.';
-}
-
-function resolveAudioOutput(
-  outputs: string[],
-  nextIsSpeakerEnabled: boolean,
-): AudioOutputId | undefined {
-  if (nextIsSpeakerEnabled) {
-    if (outputs.includes('force_speaker')) return 'force_speaker';
-    if (outputs.includes('speaker')) return 'speaker';
-    return undefined;
-  }
-
-  if (outputs.includes('earpiece')) return 'earpiece';
-  if (outputs.includes('default')) return 'default';
-  return undefined;
 }
 
 const SUBSCRIBABLE_REMOTE_TRACK_KINDS = new Set(['audio', 'video']);
@@ -1414,7 +1407,7 @@ function buildInitialSession(
     hasRemoteParticipant: false,
     isLocalMicrophoneEnabled: true,
     isLocalCameraEnabled: params.callType === 'video',
-    isSpeakerEnabled: true,
+    audioOutputMode: defaultCallAudioOutputMode(params.callType),
     isRemoteMicrophoneMuted: true,
     isRemoteCameraMuted: true,
   };
@@ -2099,6 +2092,7 @@ export function LiveKitCallSessionProvider({
       logIosAudioDeviceState({ ...params, checkpoint: 'release' });
     }
     disconnectActiveRoom();
+    resetCallRemoteAudioVolume();
     if (shouldStopAudioSession) {
       AudioSession.stopAudioSession().catch(() => undefined);
     }
@@ -2453,6 +2447,10 @@ export function LiveKitCallSessionProvider({
       }
       activeConnectKeyRef.current = nextConnectKey;
       patchSession({ phase: 'connecting', iosNativeAudioReady: false });
+      const initialAudioOutputMode = defaultCallAudioOutputMode(callType);
+      await configureCallAudioSession(initialAudioOutputMode).catch(
+        () => undefined,
+      );
       const shouldStartAudioSessionBeforeConnect =
         Platform.OS !== 'ios' || !usesNativeCallUi(callUuid);
       if (shouldStartAudioSessionBeforeConnect) {
@@ -2720,6 +2718,11 @@ export function LiveKitCallSessionProvider({
         publication?: RemoteTrackPublicationLike,
         participant?: RemoteParticipantLike,
       ) => {
+        setRemoteAudioTrackOutputMode(
+          track,
+          sessionRef.current?.audioOutputMode ??
+            defaultCallAudioOutputMode(callType),
+        );
         const trackSid = track?.sid ?? publication?.trackSid;
         clearRemoteTrackSubscriptionTimeout(trackSid);
         const subscribedPublication = {
@@ -2937,6 +2940,10 @@ export function LiveKitCallSessionProvider({
           singlePeerConnection: LIVEKIT_ROOM_OPTIONS.singlePeerConnection,
         });
         await nextRoom.connect(nextPayload.wsUrl, nextPayload.token, LIVEKIT_CONNECT_OPTIONS);
+        await applyCallAudioOutputMode(
+          nextRoom,
+          sessionRef.current?.audioOutputMode ?? initialAudioOutputMode,
+        );
         logCallDebug('room_connect_success', {
           callId,
           callType,
@@ -3532,16 +3539,9 @@ export function LiveKitCallSessionProvider({
     await mediaControllerRef.current?.switchCamera().catch(() => undefined);
   }, []);
 
-  const toggleSpeaker = useCallback(async () => {
-    const current = sessionRef.current;
-    const nextIsSpeakerEnabled = !current?.isSpeakerEnabled;
-    const outputs = await AudioSession.getAudioOutputs().catch(() => []);
-    const audioOutput = resolveAudioOutput(outputs, nextIsSpeakerEnabled);
-
-    if (audioOutput) {
-      await AudioSession.selectAudioOutput(audioOutput).catch(() => undefined);
-    }
-    patchSession({ isSpeakerEnabled: nextIsSpeakerEnabled });
+  const setAudioOutputMode = useCallback(async (mode: CallAudioOutputMode) => {
+    await applyCallAudioOutputMode(activeRoomRef.current, mode);
+    patchSession({ audioOutputMode: mode });
   }, [patchSession]);
 
   const handleLiveKitMediaController = useCallback(
@@ -3659,8 +3659,15 @@ export function LiveKitCallSessionProvider({
             callUuid: current.nativeCallUuid,
             roomName: current.payload?.call.roomName ?? '',
             stage: 'app_foreground',
-            preferSpeakerOutput: current.isSpeakerEnabled,
-          }).catch(() => undefined);
+            preferSpeakerOutput: current.audioOutputMode === 'speaker',
+          })
+            .then(() =>
+              applyCallAudioOutputMode(
+                activeRoomRef.current,
+                current.audioOutputMode,
+              ),
+            )
+            .catch(() => undefined);
           logIosAudioDeviceState({
             callId: current.callId,
             callType: current.callType,
@@ -3670,7 +3677,14 @@ export function LiveKitCallSessionProvider({
             checkpoint: 'app_foreground',
           });
         } else {
-          AudioSession.startAudioSession().catch(() => undefined);
+          AudioSession.startAudioSession()
+            .then(() =>
+              applyCallAudioOutputMode(
+                activeRoomRef.current,
+                current.audioOutputMode,
+              ),
+            )
+            .catch(() => undefined);
         }
         return;
       }
@@ -3727,7 +3741,7 @@ export function LiveKitCallSessionProvider({
       toggleMic,
       toggleCamera,
       switchCamera,
-      toggleSpeaker,
+      setAudioOutputMode,
     }),
     [
       answerIncomingCall,
@@ -3741,7 +3755,7 @@ export function LiveKitCallSessionProvider({
       switchCamera,
       toggleCamera,
       toggleMic,
-      toggleSpeaker,
+      setAudioOutputMode,
     ],
   );
 

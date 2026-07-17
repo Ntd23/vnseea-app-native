@@ -31,7 +31,10 @@ import {
   Users,
   X,
 } from 'lucide-react-native';
-import type { NotificationsItem } from '../../domain/types/notifications.types';
+import {
+  GROUP_CHAT_INVITE_NOTIFICATION,
+  type NotificationsItem,
+} from '../../domain/types/notifications.types';
 import { formatNotificationText } from '../../application/i18n/notificationCopy';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 
@@ -68,24 +71,91 @@ const STYLE_BY_TYPE: Record<string, NotificationStyle> = {
   wondered_post: { Icon: Heart, iconColor: '#F59E0B', borderColor: '#F59E0B' },
   shared_post: { Icon: Share2, iconColor: '#0EA5E9', borderColor: '#0EA5E9' },
   liked_page: { Icon: Flag, iconColor: '#0000FF', borderColor: '#0000FF' },
-  comment: { Icon: MessageCircle, iconColor: '#0000FF', borderColor: '#0000FF' },
-  comment_reply: { Icon: MessageCircle, iconColor: '#0000FF', borderColor: '#0000FF' },
-  comment_mention: { Icon: MessageCircle, iconColor: '#0000FF', borderColor: '#0000FF' },
-  post_mention: { Icon: MessageCircle, iconColor: '#0000FF', borderColor: '#0000FF' },
-  profile_wall_post: { Icon: ImageIcon, iconColor: '#A855F7', borderColor: '#A855F7' },
-  visited_profile: { Icon: UserCheck, iconColor: '#64748B', borderColor: '#64748B' },
-  joined_group: { Icon: UserCheck, iconColor: '#22C55E', borderColor: '#22C55E' },
-  accepted_request: { Icon: UserCheck, iconColor: '#22C55E', borderColor: '#22C55E' },
-  interested_event: { Icon: CalendarDays, iconColor: '#EF4444', borderColor: '#EF4444' },
-  going_event: { Icon: CalendarDays, iconColor: '#22C55E', borderColor: '#22C55E' },
-  invited_event: { Icon: CalendarDays, iconColor: '#F59E0B', borderColor: '#F59E0B' },
-  added_you_to_group: { Icon: Users, iconColor: '#22C55E', borderColor: '#22C55E' },
-  accept_group_chat_request: { Icon: Users, iconColor: '#22C55E', borderColor: '#22C55E' },
-  declined_group_chat_request: { Icon: Users, iconColor: '#EF4444', borderColor: '#EF4444' },
+  comment: {
+    Icon: MessageCircle,
+    iconColor: '#0000FF',
+    borderColor: '#0000FF',
+  },
+  comment_reply: {
+    Icon: MessageCircle,
+    iconColor: '#0000FF',
+    borderColor: '#0000FF',
+  },
+  comment_mention: {
+    Icon: MessageCircle,
+    iconColor: '#0000FF',
+    borderColor: '#0000FF',
+  },
+  post_mention: {
+    Icon: MessageCircle,
+    iconColor: '#0000FF',
+    borderColor: '#0000FF',
+  },
+  profile_wall_post: {
+    Icon: ImageIcon,
+    iconColor: '#A855F7',
+    borderColor: '#A855F7',
+  },
+  visited_profile: {
+    Icon: UserCheck,
+    iconColor: '#64748B',
+    borderColor: '#64748B',
+  },
+  joined_group: {
+    Icon: UserCheck,
+    iconColor: '#22C55E',
+    borderColor: '#22C55E',
+  },
+  accepted_request: {
+    Icon: UserCheck,
+    iconColor: '#22C55E',
+    borderColor: '#22C55E',
+  },
+  interested_event: {
+    Icon: CalendarDays,
+    iconColor: '#EF4444',
+    borderColor: '#EF4444',
+  },
+  going_event: {
+    Icon: CalendarDays,
+    iconColor: '#22C55E',
+    borderColor: '#22C55E',
+  },
+  invited_event: {
+    Icon: CalendarDays,
+    iconColor: '#F59E0B',
+    borderColor: '#F59E0B',
+  },
+  added_you_to_group: {
+    Icon: Users,
+    iconColor: '#22C55E',
+    borderColor: '#22C55E',
+  },
+  group_chat_invite: {
+    Icon: Users,
+    iconColor: '#0000FF',
+    borderColor: '#0000FF',
+  },
+  accept_group_chat_request: {
+    Icon: Users,
+    iconColor: '#22C55E',
+    borderColor: '#22C55E',
+  },
+  declined_group_chat_request: {
+    Icon: Users,
+    iconColor: '#EF4444',
+    borderColor: '#EF4444',
+  },
 };
 
 function getNotificationStyle(type: string): NotificationStyle {
-  return STYLE_BY_TYPE[type] ?? { Icon: Bell, iconColor: '#94a3b8', borderColor: '#94a3b8' };
+  return (
+    STYLE_BY_TYPE[type] ?? {
+      Icon: Bell,
+      iconColor: '#94a3b8',
+      borderColor: '#94a3b8',
+    }
+  );
 }
 
 const ENTER_BASE = FadeInDown.duration(280).easing(Easing.out(Easing.cubic));
@@ -147,7 +217,7 @@ function NotificationCard({
     [item.createdAt, language],
   );
 
-  const isGroupChatInvite = item.type === 'added_you_to_group';
+  const isGroupChatInvite = item.type === GROUP_CHAT_INVITE_NOTIFICATION;
   const avatar = item.notifier?.avatarUrl;
   const hasAvatar = Boolean(avatar);
   const entering = ENTER_BASE.delay(Math.min(index, 12) * 40);

@@ -24,7 +24,6 @@ import {
   TouchableOpacity,
   View,
   PanResponder,
-  ToastAndroid,
   Dimensions,
   Pressable,
   FlatList,
@@ -77,6 +76,7 @@ import {
   type MediaType,
 } from 'react-native-image-picker';
 import VideoPlayer from 'react-native-video';
+import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -99,6 +99,7 @@ import type {
 import type { ProductItem } from '../../../product/domain/types/product.types';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
 import { useAudioRecorder } from '../../../shared-kernel/application/hooks/useAudioRecorder';
 import { formatAudioDuration } from '../../../shared-kernel/application/utils/audioFiles';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -110,7 +111,6 @@ import {
 } from '../../../shared-kernel/application/utils/videoThumbnails';
 import { findConversationMessageListItemIndex } from '../utils/conversationMessageNavigation';
 import {
-  buildStaticMapPreviewUrl,
   buildMapShareUrl,
   parseMapShareUrl,
   type SharedMapLocation,
@@ -514,15 +514,15 @@ function MapShareCard({
   const mapShareStyles = styles as Record<string, any>;
   const coordinateText = formatMapCoordinates(location);
   const addressText = location.address || location.subtitle || '';
-  const staticMapUrl = useMemo(
-    () => buildStaticMapPreviewUrl(location),
+  const mapRegion = useMemo(
+    () => ({
+      latitude: location.latitude,
+      longitude: location.longitude,
+      latitudeDelta: 0.006,
+      longitudeDelta: 0.006,
+    }),
     [location.latitude, location.longitude],
   );
-  const [staticMapFailed, setStaticMapFailed] = useState(false);
-
-  useEffect(() => {
-    setStaticMapFailed(false);
-  }, [staticMapUrl]);
 
   const handleOpenMap = useCallback(() => {
     navigation.navigate(ROUTES.NEARBY_USERS, {
@@ -532,7 +532,6 @@ function MapShareCard({
   }, [composer, location, navigation]);
 
   if (!composer) {
-    const showStaticMap = Boolean(staticMapUrl) && !staticMapFailed;
     return (
       <TouchableOpacity
         activeOpacity={0.88}
@@ -543,22 +542,23 @@ function MapShareCard({
         ]}
       >
         <View style={mapShareStyles.mapShareLargeMap}>
-          {showStaticMap ? (
-            <Image
-              source={{ uri: staticMapUrl! }}
-              style={mapShareStyles.mapShareLargeMapImage}
-              resizeMode="cover"
-              onError={() => setStaticMapFailed(true)}
-            />
-          ) : (
-            <View style={mapShareStyles.mapShareLargeMapFallback}>
-              <View style={[mapShareStyles.mapShareFallbackRoad, mapShareStyles.mapShareFallbackRoadOne]} />
-              <View style={[mapShareStyles.mapShareFallbackRoad, mapShareStyles.mapShareFallbackRoadTwo]} />
-              <View style={[mapShareStyles.mapShareFallbackRoad, mapShareStyles.mapShareFallbackRoadThree]} />
-              <View style={[mapShareStyles.mapShareFallbackPark, mapShareStyles.mapShareFallbackParkOne]} />
-              <View style={[mapShareStyles.mapShareFallbackWater, mapShareStyles.mapShareFallbackWaterOne]} />
-            </View>
-          )}
+          <MapView
+            key={`${location.latitude}:${location.longitude}`}
+            provider={PROVIDER_GOOGLE}
+            style={mapShareStyles.mapShareLargeMapNative}
+            initialRegion={mapRegion}
+            mapType="standard"
+            liteMode={Platform.OS === 'android'}
+            loadingEnabled
+            loadingBackgroundColor="#EAF4FB"
+            loadingIndicatorColor="#2563EB"
+            pitchEnabled={false}
+            rotateEnabled={false}
+            scrollEnabled={false}
+            zoomEnabled={false}
+            toolbarEnabled={false}
+            pointerEvents="none"
+          />
           <View style={mapShareStyles.mapShareLargeMarkerShadow} />
           <View style={mapShareStyles.mapShareLargeMarker}>
             {location.imageUrl ? (
@@ -3981,11 +3981,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     try {
       const { Clipboard } = require('react-native');
       await Clipboard.setString(selectedOptionMessage.message || '');
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Đã sao chép tin nhắn', ToastAndroid.SHORT);
-      } else {
-        Alert.alert('Thông báo', 'Đã sao chép tin nhắn');
-      }
+      showSnackbar({ message: 'Đã sao chép tin nhắn', type: 'success' });
     } catch (e) {
       console.warn(e);
     } finally {
@@ -3997,11 +3993,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     if (!selectedOptionMessage) return;
     try {
       await setMessagePinned(selectedOptionMessage.id, true);
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Đã ghim tin nhắn', ToastAndroid.SHORT);
-      } else {
-        Alert.alert('Thông báo', 'Đã ghim tin nhắn');
-      }
+      showSnackbar({ message: 'Đã ghim tin nhắn', type: 'success' });
     } catch (error) {
       Alert.alert(
         'Không thể ghim tin nhắn',
@@ -5441,66 +5433,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#EAF4FB',
   },
-  mapShareLargeMapImage: {
-    width: '100%',
-    height: '100%',
-  },
-  mapShareLargeMapFallback: {
+  mapShareLargeMapNative: {
     ...StyleSheet.absoluteFill,
-    overflow: 'hidden',
     backgroundColor: '#EAF4FB',
-  },
-  mapShareFallbackRoad: {
-    position: 'absolute',
-    height: 12,
-    borderRadius: 999,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D7E3EF',
-  },
-  mapShareFallbackRoadOne: {
-    left: -24,
-    right: -18,
-    top: 32,
-    transform: [{ rotate: '-14deg' }],
-  },
-  mapShareFallbackRoadTwo: {
-    left: 30,
-    right: -42,
-    top: 88,
-    transform: [{ rotate: '24deg' }],
-  },
-  mapShareFallbackRoadThree: {
-    bottom: 28,
-    left: -18,
-    right: 50,
-    transform: [{ rotate: '2deg' }],
-  },
-  mapShareFallbackPark: {
-    position: 'absolute',
-    width: 118,
-    height: 72,
-    borderRadius: 28,
-    backgroundColor: '#CFF4E8',
-    opacity: 0.75,
-  },
-  mapShareFallbackParkOne: {
-    right: -20,
-    top: 16,
-    transform: [{ rotate: '12deg' }],
-  },
-  mapShareFallbackWater: {
-    position: 'absolute',
-    width: 122,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#BAE6FD',
-    opacity: 0.7,
-  },
-  mapShareFallbackWaterOne: {
-    left: -24,
-    bottom: 10,
-    transform: [{ rotate: '-18deg' }],
   },
   mapShareLargeMarkerShadow: {
     position: 'absolute',

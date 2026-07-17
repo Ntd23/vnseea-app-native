@@ -26,6 +26,9 @@ type AudioRuntime = {
     active: boolean,
     context: Record<string, unknown>,
   ) => void;
+  setIosRealtimeMediaAudioOutputPreference?: (
+    preferSpeakerOutput: boolean,
+  ) => void;
   setIosVoiceCallAudioActive?: (active: boolean) => void;
 };
 
@@ -84,6 +87,15 @@ export function getIosCallAudioDeviceState() {
           : { message: String(error) },
     };
   }
+}
+
+export function setIosCallAudioOutputPreference(
+  preferSpeakerOutput: boolean,
+) {
+  if (Platform.OS !== 'ios') return;
+  audioRuntime.setIosRealtimeMediaAudioOutputPreference?.(
+    preferSpeakerOutput,
+  );
 }
 
 export async function prepareIosCallAudioGate(

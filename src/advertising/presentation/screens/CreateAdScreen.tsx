@@ -33,7 +33,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useAdsViewModel } from '../../application/view-models/useAdsViewModel';
 import type { AdBiddingType, AdGender, AdAppearsType } from '../../domain/types/ads.types';
-import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
@@ -1217,7 +1217,6 @@ function CreateAdScreen() {
         />
       )}
 
-      <ToastContainer />
     </View>
   );
 }

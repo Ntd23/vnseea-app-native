@@ -1,5 +1,5 @@
 // English description: Displays movie metadata, playback, related movies, sharing, and comments.
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -29,6 +29,7 @@ import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAr
 import { Pressable } from 'react-native';
 import { useMovieDetailViewModel } from '../../application/view-models/useMovieDetailViewModel';
 import { useMoviesViewModel } from '../../application/view-models/useMoviesViewModel';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 
 type MovieDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.MOVIE_DETAIL>;
 
@@ -39,6 +40,8 @@ export default function MovieDetailScreen() {
   const isVi = language === 'vi';
   const movie = route.params.movie;
   const [commentText, setCommentText] = useState('');
+  const scrollViewRef = useRef<ScrollView>(null);
+  const commentInputRef = useRef<TextInput>(null);
   const {
     comments,
     isLoadingComments,
@@ -56,13 +59,28 @@ export default function MovieDetailScreen() {
   const sendComment = async () => {
     if (await submitComment(commentText)) setCommentText('');
   };
+  const revealCommentInput = useCallback(() => {
+    const input = commentInputRef.current;
+    if (!input) return;
+    scrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+      input,
+      24,
+      true,
+    );
+  }, []);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#edf2ff' }}>
+    <KeyboardSafeView style={{ flex: 1, backgroundColor: '#edf2ff' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <SafeAreaFeedHeader />
 
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollViewRef}
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         <View className="min-h-[170px] justify-end bg-[#526268] px-5 pb-5" style={{ position: 'relative', paddingTop: 60 }}>
           <Pressable
             onPress={() => navigation.goBack()}
@@ -166,11 +184,13 @@ export default function MovieDetailScreen() {
           </View>
           <View className="mt-4 flex-row items-center">
             <TextInput
+              ref={commentInputRef}
               className="h-12 flex-1 rounded-full border border-[#d7dce4] px-4 text-sm text-[#111827]"
               placeholder={isVi ? "Viết bình luận và nhấn enter" : "Write a comment and press enter"}
               placeholderTextColor="#9ca3af"
               value={commentText}
               onChangeText={setCommentText}
+              onFocus={revealCommentInput}
               onSubmitEditing={sendComment}
             />
             <TouchableOpacity
@@ -193,7 +213,7 @@ export default function MovieDetailScreen() {
           ))}
         </View>
       </ScrollView>
-    </View>
+    </KeyboardSafeView>
   );
 }
 

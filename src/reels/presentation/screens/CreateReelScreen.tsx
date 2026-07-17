@@ -51,7 +51,7 @@ import { createVideoUploadThumbnail } from '../../../shared-kernel/application/u
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 
 // Dynamic privacy options will be created inside the component using translations.
 

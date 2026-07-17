@@ -13,7 +13,7 @@ let iosRealtimeMediaAudioContext = null;
 
 const VOICE_CALL_APPLE_AUDIO_CONFIGURATION = {
   audioCategory: 'playAndRecord',
-  audioCategoryOptions: ['allowBluetooth', 'defaultToSpeaker', 'mixWithOthers'],
+  audioCategoryOptions: ['allowBluetooth', 'mixWithOthers'],
   audioMode: 'voiceChat',
 };
 
@@ -37,7 +37,9 @@ function getAppleAudioConfigurationForAudioState(state) {
       iosRealtimeMediaAudioContext?.owner === 'group-call') &&
     iosRealtimeMediaAudioContext?.requiresInput
   ) {
-    return getVoiceCallAppleAudioConfiguration();
+    return getVoiceCallAppleAudioConfiguration(
+      iosRealtimeMediaAudioContext.preferSpeakerOutput,
+    );
   }
 
   if (state.isRecordingEnabled) {
@@ -63,12 +65,14 @@ function getAppleAudioConfigurationForAudioState(state) {
   };
 }
 
-function getVoiceCallAppleAudioConfiguration() {
+function getVoiceCallAppleAudioConfiguration(preferSpeakerOutput = false) {
   return {
     ...VOICE_CALL_APPLE_AUDIO_CONFIGURATION,
     audioCategoryOptions: [
       ...VOICE_CALL_APPLE_AUDIO_CONFIGURATION.audioCategoryOptions,
+      ...(preferSpeakerOutput ? ['defaultToSpeaker'] : []),
     ],
+    audioMode: preferSpeakerOutput ? 'videoChat' : 'voiceChat',
   };
 }
 
@@ -85,7 +89,23 @@ function normalizeIosRealtimeMediaAudioContext(context = {}) {
     callId: typeof context.callId === 'string' ? context.callId : '',
     callUuid: typeof context.callUuid === 'string' ? context.callUuid : '',
     stage: typeof context.stage === 'string' ? context.stage : '',
+    preferSpeakerOutput:
+      typeof context.preferSpeakerOutput === 'boolean'
+        ? context.preferSpeakerOutput
+        : mediaKind === 'video',
   };
+}
+
+function setIosRealtimeMediaAudioOutputPreference(preferSpeakerOutput) {
+  if (!iosRealtimeMediaAudioContext) return;
+  iosRealtimeMediaAudioContext = {
+    ...iosRealtimeMediaAudioContext,
+    preferSpeakerOutput: Boolean(preferSpeakerOutput),
+  };
+  logLiveKitAudioDebug('ios_realtime_media_audio_output_preference_changed', {
+    preferSpeakerOutput: iosRealtimeMediaAudioContext.preferSpeakerOutput,
+    context: iosRealtimeMediaAudioContext,
+  });
 }
 
 function setIosRealtimeMediaAudioActive(active, context = {}) {
@@ -241,5 +261,6 @@ module.exports = {
   isIosVoiceCallAudioActive,
   registerLiveKitGlobalsForVnseea,
   setIosRealtimeMediaAudioActive,
+  setIosRealtimeMediaAudioOutputPreference,
   setIosVoiceCallAudioActive,
 };

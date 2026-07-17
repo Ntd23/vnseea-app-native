@@ -3,6 +3,9 @@
 // Port từ: client/src/notifications/domain/types/
 
 import type { UserSummary } from '../../../foundation';
+import type { EventsItem } from '../../../events/domain/types/events.types';
+
+export const GROUP_CHAT_INVITE_NOTIFICATION = 'group_chat_invite' as const;
 
 export type NotificationType =
   | 'following'
@@ -28,8 +31,9 @@ export type NotificationType =
   | 'going_event'
   | 'invited_event'
   | 'accepted_request'
-  | 'accept_group_chat_request'  // Người khác chấp nhận lời mời nhóm chat
+  | 'accept_group_chat_request' // Người khác chấp nhận lời mời nhóm chat
   | 'declined_group_chat_request' // Người khác từ chối lời mời nhóm chat
+  | typeof GROUP_CHAT_INVITE_NOTIFICATION
   | 'poked' // Người khác chọc bạn
   | string;
 
@@ -39,18 +43,23 @@ export interface NotificationsItem {
   recipientId: string;
   notifierId: string;
   type: NotificationType;
+  type2?: string;
   text: string;
   url: string;
   postId?: string;
   pageId?: string;
   pageName?: string;
   groupId?: string;
+  groupName?: string;
   eventId?: string;
+  event?: EventsItem;
   productId?: string;
   fundingId?: string;
   blogId?: string;
   jobId?: string;
-  groupChatId?: string;  // ID của nhóm chat khi có lời mời tham gia
+  orderId?: string;
+  orderMode?: 'purchased' | 'seller';
+  groupChatId?: string; // ID của nhóm chat khi có lời mời tham gia
   seen: boolean;
   seenAt?: number;
   createdAt: number;

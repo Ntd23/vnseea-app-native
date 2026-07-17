@@ -43,6 +43,29 @@ export function useCurrentUserViewModel() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    const syncUserFromCache = () => {
+      if (cancelled) return;
+
+      const activeSession = sessionStorage.getSession();
+      const activeCachedProfile = sessionStorage.getUserProfile();
+
+      if (!activeSession?.userId) {
+        setUser(null);
+        return;
+      }
+
+      const nextCachedUser = mapCachedUser(
+        activeSession.userId,
+        activeCachedProfile,
+      );
+      if (nextCachedUser) {
+        setUser(nextCachedUser);
+        setError(null);
+      }
+    };
+    const unsubscribeProfile =
+      sessionStorage.subscribeToUserProfile(syncUserFromCache);
     const session = sessionStorage.getSession();
     const cached = sessionStorage.getUserProfile();
 
@@ -50,7 +73,7 @@ export function useCurrentUserViewModel() {
       setUser(null);
       setError('No active user session found');
       setIsLoading(false);
-      return;
+      return unsubscribeProfile;
     }
 
     const sessionUserId = session.userId;
@@ -62,10 +85,9 @@ export function useCurrentUserViewModel() {
 
     if (!shouldRefreshProfile(cached)) {
       setIsLoading(false);
-      return;
+      return unsubscribeProfile;
     }
 
-    let cancelled = false;
     setIsLoading(!cachedUser);
 
     (async () => {
@@ -105,6 +127,7 @@ export function useCurrentUserViewModel() {
 
     return () => {
       cancelled = true;
+      unsubscribeProfile();
     };
   }, []);
 

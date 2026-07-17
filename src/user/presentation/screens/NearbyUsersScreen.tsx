@@ -21,7 +21,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  ToastAndroid,
   TouchableOpacity,
   Vibration,
   View,
@@ -99,6 +98,7 @@ import { createFeedRepository } from '../../../feed/infrastructure/repositories/
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { useUserViewModel } from '../../application/view-models/useUserViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
 import {
   speakNavigationInstruction,
   stopNavigationSpeech,
@@ -3566,9 +3566,10 @@ export default function NearbyUsersScreen() {
           postedAt: createdPost.postedAt || Math.floor(Date.now() / 1000),
         });
         setIsMapShareSheetOpen(false);
-        if (Platform.OS === 'android') {
-          ToastAndroid.show('Đã đăng địa điểm lên bài viết', ToastAndroid.SHORT);
-        }
+        showSnackbar({
+          message: 'Đã đăng địa điểm lên bài viết',
+          type: 'success',
+        });
       })
       .catch(caught => {
         Alert.alert(

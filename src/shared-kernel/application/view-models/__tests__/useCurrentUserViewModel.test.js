@@ -28,4 +28,14 @@ describe('useCurrentUserViewModel profile hydration', () => {
     expect(source).toContain('cached.name || cached.username ||');
     expect(source).toContain('result.user.name || result.user.username ||');
   });
+
+  it('reacts when the cached current-user profile changes', () => {
+    const source = read(
+      'src/shared-kernel/application/view-models/useCurrentUserViewModel.ts',
+    );
+
+    expect(source).toContain('sessionStorage.subscribeToUserProfile');
+    expect(source).toContain('syncUserFromCache');
+    expect(source).toContain('unsubscribeProfile();');
+  });
 });

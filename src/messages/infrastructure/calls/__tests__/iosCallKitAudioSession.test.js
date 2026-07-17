@@ -91,7 +91,7 @@ describe('iOS CallKit audio session configuration', () => {
       'async function ensureIosCallKitAudioSessionStarted',
     );
     const helperEndIndex = sessionSource.indexOf(
-      'function resolveAudioOutput',
+      'const SUBSCRIBABLE_REMOTE_TRACK_KINDS',
       helperIndex,
     );
     const helperBlock = sessionSource.slice(helperIndex, helperEndIndex);

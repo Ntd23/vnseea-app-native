@@ -6,11 +6,13 @@ import { apiRoutes } from '../../../shared-kernel/application/constants/route-re
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import type { NotificationsRepository } from '../../domain/repositories/NotificationsRepository';
-import type {
-  NotificationsItem,
-  NotificationsUnreadCounts,
+import {
+  GROUP_CHAT_INVITE_NOTIFICATION,
+  type NotificationsItem,
+  type NotificationsUnreadCounts,
 } from '../../domain/types/notifications.types';
 import { asRecord } from '../../../foundation/application/normalizers/resolveValue';
+import type { EventsItem } from '../../../events/domain/types/events.types';
 
 type NotificationRecord = Record<string, unknown>;
 type NotificationsResponse = {
@@ -29,22 +31,39 @@ type NotificationsResponse = {
 
 const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
 const NOTIFICATIONS_PAGE_SIZE = 100;
-const MESSAGE_NOTIFICATION_TYPES = new Set([
-  'added_you_to_group',
+const NOTIFICATION_CENTER_CHAT_TYPES = new Set([
+  GROUP_CHAT_INVITE_NOTIFICATION,
   'accept_group_chat_request',
   'declined_group_chat_request',
 ]);
 
-function isMessageRelatedNotification(type: string) {
+const PAGE_NOTIFICATION_TYPES = new Set([
+  'liked_page',
+  'invited_page',
+  'accepted_invite',
+  'page_admin',
+]);
+
+const GROUP_NOTIFICATION_TYPES = new Set([
+  'joined_group',
+  'requested_to_join_group',
+  'accepted_join_request',
+  'added_you_to_group',
+  'group_admin',
+]);
+
+export function shouldExcludeFromNotificationCenter(type: string) {
   const normalized = type.toLowerCase();
-  return (
-    MESSAGE_NOTIFICATION_TYPES.has(normalized) ||
-    normalized.includes('message') ||
-    normalized.includes('chat')
-  );
+  if (NOTIFICATION_CENTER_CHAT_TYPES.has(normalized)) {
+    return false;
+  }
+  return normalized.includes('message') || normalized.includes('chat');
 }
 
-function readString(record: NotificationRecord | undefined, ...keys: string[]): string {
+function readString(
+  record: NotificationRecord | undefined,
+  ...keys: string[]
+): string {
   for (const key of keys) {
     const value = record?.[key];
     if (typeof value === 'string' && value.length > 0) return value;
@@ -53,12 +72,18 @@ function readString(record: NotificationRecord | undefined, ...keys: string[]): 
   return '';
 }
 
-function readTargetString(record: NotificationRecord | undefined, ...keys: string[]): string {
+function readTargetString(
+  record: NotificationRecord | undefined,
+  ...keys: string[]
+): string {
   const value = readString(record, ...keys).trim();
   return value && value !== '0' ? value : '';
 }
 
-function readNumber(record: NotificationRecord | undefined, ...keys: string[]): number | undefined {
+function readNumber(
+  record: NotificationRecord | undefined,
+  ...keys: string[]
+): number | undefined {
   for (const key of keys) {
     const num = Number(record?.[key]);
     if (Number.isFinite(num)) return num;
@@ -66,10 +91,14 @@ function readNumber(record: NotificationRecord | undefined, ...keys: string[]): 
   return undefined;
 }
 
-function readBool(record: NotificationRecord | undefined, key: string): boolean {
+function readBool(
+  record: NotificationRecord | undefined,
+  key: string,
+): boolean {
   const val = record?.[key];
   if (typeof val === 'number') return val > 0;
-  if (typeof val === 'string') return val !== '' && val !== '0' && val !== 'false';
+  if (typeof val === 'string')
+    return val !== '' && val !== '0' && val !== 'false';
   return val === true;
 }
 
@@ -101,28 +130,58 @@ function readAnyUrlTargetId(urls: string[], patterns: RegExp[]): string {
   return '';
 }
 
-function mapNotification(raw: NotificationRecord): NotificationsItem {
+function readLastPathSegment(url: string): string {
+  if (!url) return '';
+  const stripped = url.replace(/^https?:\/\/[^/]+\//i, '');
+  const path = stripped.split(/[?#]/, 1)[0];
+  const last = path.split('/').filter(Boolean).pop() ?? '';
+  const decoded = decodeURIComponent(last).trim();
+  return decoded && decoded !== 'index.php' ? decoded : '';
+}
+
+export function mapNotificationRecord(
+  raw: NotificationRecord,
+): NotificationsItem {
   const notifierRaw = asRecord(raw.notifier) ?? raw;
+  const pageRaw = asRecord(raw.page);
+  const groupRaw = asRecord(raw.group);
   const productRaw = asRecord(raw.product);
   const fundingRaw = asRecord(raw.fund) ?? asRecord(raw.funding);
   const jobRaw = asRecord(raw.job);
+  const eventRaw = asRecord(raw.event);
+  const notificationType = readString(raw, 'type').toLowerCase();
+  const type2 = readString(raw, 'type2');
   const rawUrl = readString(raw, 'url');
   const ajaxUrl = readString(raw, 'ajax_url');
   const fullLink = readString(raw, 'full_link');
-  const normalizedUrl = normalizeUrl(rawUrl);
-  const targetUrls = [rawUrl, ajaxUrl, fullLink, normalizedUrl].filter(Boolean);
+  const normalizedUrl = normalizeUrl(rawUrl || fullLink || ajaxUrl);
+  const targetUrls = [
+    rawUrl,
+    ajaxUrl,
+    fullLink,
+    normalizedUrl,
+    normalizeUrl(ajaxUrl),
+    normalizeUrl(fullLink),
+  ].filter(Boolean);
   const notifierId = readString(notifierRaw, 'user_id', 'id');
-  const notifierName = readString(notifierRaw, 'name', 'first_name', 'username');
-  const notifierAvatar = normalizeUrl(
-    readString(notifierRaw, 'avatar', 'avater')
+  const notifierName = readString(
+    notifierRaw,
+    'name',
+    'first_name',
+    'username',
   );
+  const notifierAvatar = normalizeUrl(
+    readString(notifierRaw, 'avatar', 'avater'),
+  );
+  const directPostId = readTargetString(raw, 'post_id', 'postId');
+  const urlPostId = readAnyUrlTargetId(targetUrls, [
+    /[?&]post_id=([^&#]+)/i,
+    /[?&]link1=post[^#]*[?&]id=([^&#]+)/i,
+    /\/post\/([^/?#]+)/i,
+  ]);
+  const reviewProductId = notificationType === 'new_review' ? urlPostId : '';
   const postId =
-    readTargetString(raw, 'post_id', 'postId') ||
-    readAnyUrlTargetId(targetUrls, [
-      /[?&]post_id=([^&#]+)/i,
-      /[?&]link1=post[^#]*[?&]id=([^&#]+)/i,
-      /\/post\/([^/?#]+)/i,
-    ]);
+    directPostId || (notificationType === 'new_review' ? '' : urlPostId);
   const productId =
     readTargetString(raw, 'product_id', 'productId') ||
     readTargetString(productRaw, 'product_id', 'id') ||
@@ -131,7 +190,8 @@ function mapNotification(raw: NotificationRecord): NotificationsItem {
       /[?&]link1=(?:edit-product|products)[^#]*[?&](?:id|c_id)=([^&#]+)/i,
       /\/products?\/([^/?#]+)/i,
       /\/market(?:place)?\/(?:product\/)?([^/?#]+)/i,
-    ]);
+    ]) ||
+    reviewProductId;
   const fundingId =
     readTargetString(raw, 'fund_id', 'funding_id', 'fundId', 'fundingId') ||
     readTargetString(fundingRaw, 'fund_id', 'funding_id', 'id', 'hashed_id') ||
@@ -157,45 +217,81 @@ function mapNotification(raw: NotificationRecord): NotificationsItem {
       /\/jobs?\/([^/?#]+)/i,
     ]);
   const pageId =
-    readTargetString(raw, 'page_id') ||
-    readTargetString(notifierRaw, 'page_id') ||
+    readTargetString(raw, 'page_id', 'pageId') ||
+    readTargetString(pageRaw, 'page_id', 'id') ||
     readAnyUrlTargetId(targetUrls, [
       /[?&]page_id=([^&#]+)/i,
       /[?&]link1=page[^#]*[?&]id=([^&#]+)/i,
     ]);
+  const timelineSlug = readAnyUrlTargetId(targetUrls, [
+    /[?&]link1=timeline[^#]*[?&]u=([^&#]+)/i,
+  ]);
   const pageName =
-    readTargetString(notifierRaw, 'page_name', 'name') ||
+    readTargetString(raw, 'page_name', 'pageName') ||
+    readTargetString(pageRaw, 'page_name', 'username') ||
     readAnyUrlTargetId(targetUrls, [
-      /[?&]link1=timeline[^#]*[?&]u=([^&#]+)/i,
       /[?&]link1=page[^#]*[?&]page_name=([^&#]+)/i,
     ]) ||
-    (() => {
-      // SEO-formatted url ends in /<page_name>
-      if (!normalizedUrl) return '';
-      const stripped = normalizedUrl.replace(/^https?:\/\/[^/]+\//i, '');
-      const last = stripped.split('/').filter(Boolean).pop() ?? '';
-      const decoded = decodeURIComponent(last).trim();
-      if (!decoded || decoded === 'index.php' || decoded.includes('?')) return '';
-      return decoded;
-    })();
+    (PAGE_NOTIFICATION_TYPES.has(notificationType)
+      ? timelineSlug || readLastPathSegment(normalizedUrl)
+      : '');
+  const groupId =
+    readTargetString(raw, 'group_id', 'groupId') ||
+    readTargetString(groupRaw, 'group_id', 'id') ||
+    readAnyUrlTargetId(targetUrls, [/[?&]group_id=([^&#]+)/i]);
+  const groupName =
+    readTargetString(raw, 'group_name', 'groupName') ||
+    readTargetString(groupRaw, 'group_name', 'username') ||
+    (GROUP_NOTIFICATION_TYPES.has(notificationType)
+      ? timelineSlug || readLastPathSegment(normalizedUrl)
+      : '');
+  const eventId =
+    readTargetString(raw, 'event_id', 'eventId') ||
+    readTargetString(eventRaw, 'event_id', 'id');
+  const event =
+    eventRaw && eventId
+      ? ({
+          ...eventRaw,
+          id: readString(eventRaw, 'id', 'event_id') || eventId,
+        } as unknown as EventsItem)
+      : undefined;
+  const orderId =
+    readTargetString(raw, 'order_id', 'order_hash_id', 'hash_id') ||
+    readAnyUrlTargetId(targetUrls, [
+      /[?&]link1=(?:customer_order|order)[^#]*[?&]id=([^&#]+)/i,
+      /\/(?:customer_order|order)\/([^/?#]+)/i,
+    ]);
+  const orderMode = targetUrls.some(url =>
+    /[?&]link1=order(?:[&#]|$)/i.test(url),
+  )
+    ? ('seller' as const)
+    : targetUrls.some(url => /[?&]link1=customer_order(?:[&#]|$)/i.test(url))
+    ? ('purchased' as const)
+    : undefined;
 
   return {
     id: readString(raw, 'id', 'notification_id', 'notif_id'),
     notification_id: readString(raw, 'notification_id', 'notif_id', 'id'),
     recipientId: readString(raw, 'recipient_id'),
     notifierId,
-    type: readString(raw, 'type'),
+    type: notificationType,
+    type2,
     text: readString(raw, 'type_text', 'text', 'description'),
     url: normalizedUrl,
     postId,
     pageId,
     pageName,
-    groupId: readTargetString(raw, 'group_id', 'groupId'),
-    eventId: readTargetString(raw, 'event_id', 'eventId'),
+    groupId,
+    groupName,
+    eventId,
+    event,
     productId,
     fundingId,
     blogId,
     jobId,
+    orderId,
+    orderMode,
+    groupChatId: readTargetString(raw, 'group_chat_id', 'groupChatId'),
     seen: readBool(raw, 'seen'),
     seenAt: readNumber(raw, 'seen_at', 'seenAt'),
     createdAt: readNumber(raw, 'time', 'created_at', 'posted_at') ?? 0,
@@ -212,7 +308,9 @@ function mapNotification(raw: NotificationRecord): NotificationsItem {
   };
 }
 
-function mapGroupChatRequest(raw: NotificationRecord): NotificationsItem | null {
+export function mapGroupChatRequestRecord(
+  raw: NotificationRecord,
+): NotificationsItem | null {
   const groupTab = asRecord(raw.group_tab) ?? {};
   const groupChatId =
     readString(raw, 'group_id') || readString(groupTab, 'group_id', 'id');
@@ -221,13 +319,12 @@ function mapGroupChatRequest(raw: NotificationRecord): NotificationsItem | null 
     return null;
   }
 
-  const groupName =
-    readString(groupTab, 'group_name', 'name') || 'Nhóm chat';
+  const groupName = readString(groupTab, 'group_name', 'name') || 'Nhóm chat';
   const ownerId = readString(groupTab, 'user_id');
   const avatar = normalizeUrl(readString(groupTab, 'avatar'));
   const createdAt =
-    readNumber(groupTab, 'time', 'created_at') ??
     readNumber(raw, 'time', 'created_at') ??
+    readNumber(groupTab, 'time', 'created_at') ??
     0;
 
   return {
@@ -235,7 +332,7 @@ function mapGroupChatRequest(raw: NotificationRecord): NotificationsItem | null 
     notification_id: `group-chat-request:${groupChatId}`,
     recipientId: readString(raw, 'user_id'),
     notifierId: ownerId,
-    type: 'added_you_to_group',
+    type: GROUP_CHAT_INVITE_NOTIFICATION,
     text: `Bạn được mời vào nhóm chat ${groupName}`,
     url: '',
     groupChatId,
@@ -263,24 +360,36 @@ function toCount(value: unknown): number {
   return Number.isFinite(count) && count > 0 ? count : 0;
 }
 
-function mapUnreadCounts(response: NotificationsResponse): NotificationsUnreadCounts {
+function mapUnreadCounts(
+  response: NotificationsResponse,
+): NotificationsUnreadCounts {
   const rawItems = response.notifications ?? response.data ?? [];
   const visibleUnreadCount = Array.isArray(rawItems)
     ? rawItems
-        .map(item => mapNotification(item as NotificationRecord))
-        .filter(item => !isMessageRelatedNotification(item.type) && !item.seen)
-        .length
+        .map(item => mapNotificationRecord(item as NotificationRecord))
+        .filter(
+          item => !shouldExcludeFromNotificationCenter(item.type) && !item.seen,
+        ).length
     : toCount(response.new_notifications_count ?? response.count_notifications);
+  const rawGroupChatRequests = Array.isArray(response.group_chat_requests)
+    ? response.group_chat_requests.length
+    : 0;
+  const groupChatRequestCount = Math.max(
+    rawGroupChatRequests,
+    toCount(response.new_group_chat_requests_count),
+  );
 
   return {
-    notificationCount: visibleUnreadCount,
+    notificationCount: visibleUnreadCount + groupChatRequestCount,
     messageCount: toCount(response.count_new_messages),
   };
 }
 
 function fetchNotificationsResponse(offset?: string | number | null) {
   const payload: Record<string, string> = {
-    fetch: 'notifications,count_new_messages',
+    fetch: offset
+      ? 'notifications,count_new_messages'
+      : 'notifications,count_new_messages,group_chat_requests',
     include_all_notifications: '1',
   };
   if (offset) {
@@ -303,14 +412,24 @@ export function createNotificationsRepository(): NotificationsRepository {
         const rawItems = response.notifications ?? response.data ?? [];
         const items = Array.isArray(rawItems) ? rawItems : [];
         const mappedNotifications: NotificationsItem[] = items
-          .map(item => mapNotification(item as NotificationRecord))
-          .filter(item => !isMessageRelatedNotification(item.type));
-        const mapped = mappedNotifications.sort(
+          .map(item => mapNotificationRecord(item as NotificationRecord))
+          .filter(item => !shouldExcludeFromNotificationCenter(item.type));
+        const groupChatRequests = options.offset
+          ? []
+          : (response.group_chat_requests ?? [])
+              .map(item =>
+                mapGroupChatRequestRecord(item as NotificationRecord),
+              )
+              .filter((item): item is NotificationsItem => Boolean(item));
+        const mapped = [...mappedNotifications, ...groupChatRequests].sort(
           (left, right) => right.createdAt - left.createdAt,
         );
 
-        const lastItem = items[items.length - 1] as NotificationRecord | undefined;
-        const nextOffset = readString(lastItem, 'id', 'notification_id') || null;
+        const lastItem = items[items.length - 1] as
+          | NotificationRecord
+          | undefined;
+        const nextOffset =
+          readString(lastItem, 'id', 'notification_id') || null;
 
         return {
           items: mapped,
@@ -320,7 +439,10 @@ export function createNotificationsRepository(): NotificationsRepository {
           unreadMessageCount: counts.messageCount,
         };
       } catch (error) {
-        console.warn('[ApiNotificationsRepository] getNotifications failed', error);
+        console.warn(
+          '[ApiNotificationsRepository] getNotifications failed',
+          error,
+        );
         throw error;
       }
     },
@@ -330,20 +452,23 @@ export function createNotificationsRepository(): NotificationsRepository {
         const response = await fetchNotificationsResponse();
         return mapUnreadCounts(response);
       } catch (error) {
-        console.warn('[ApiNotificationsRepository] getUnreadCounts failed', error);
+        console.warn(
+          '[ApiNotificationsRepository] getUnreadCounts failed',
+          error,
+        );
         throw error;
       }
     },
 
     async markAsSeen(notificationId: string) {
       try {
-        const response = await apiBridge.post<{ api_status: number | string; message?: string }>(
-          apiRoutes.notifications.markSeen,
-          {
-            type: 'mark_seen',
-            id: notificationId,
-          },
-        );
+        const response = await apiBridge.post<{
+          api_status: number | string;
+          message?: string;
+        }>(apiRoutes.notifications.markSeen, {
+          type: 'mark_seen',
+          id: notificationId,
+        });
 
         if (!isSuccess(response.api_status)) {
           throw new Error(response.message ?? 'Không thể đánh dấu đã đọc');
@@ -356,19 +481,22 @@ export function createNotificationsRepository(): NotificationsRepository {
 
     async deleteNotification(notificationId: string) {
       try {
-        const response = await apiBridge.post<{ api_status: number | string; message?: string }>(
-          apiRoutes.notifications.delete,
-          {
-            type: 'delete',
-            id: notificationId,
-          },
-        );
+        const response = await apiBridge.post<{
+          api_status: number | string;
+          message?: string;
+        }>(apiRoutes.notifications.delete, {
+          type: 'delete',
+          id: notificationId,
+        });
 
         if (!isSuccess(response.api_status)) {
           throw new Error(response.message ?? 'Không thể xóa thông báo');
         }
       } catch (error) {
-        console.warn('[ApiNotificationsRepository] deleteNotification failed', error);
+        console.warn(
+          '[ApiNotificationsRepository] deleteNotification failed',
+          error,
+        );
         throw error;
       }
     },

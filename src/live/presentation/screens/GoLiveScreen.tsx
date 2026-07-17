@@ -3,13 +3,17 @@ import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Image,
+  Platform,
   Text,
   TextInput,
   TouchableOpacity,
   View,
   StyleSheet,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import {
   ChevronDown,
   ChevronLeft,
@@ -26,6 +30,7 @@ import { useGoLiveViewModel } from '../../application/view-models/useLiveViewMod
 import { LiveCameraPreview } from '../components/LiveCameraPreview';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 
 export default function GoLiveScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -70,7 +75,8 @@ export default function GoLiveScreen() {
     '3': <Lock size={14} color="#ffffff" />,
   };
 
-  const currentPrivacyOption = privacyOptions.find(opt => opt.value === privacy) || privacyOptions[0];
+  const currentPrivacyOption =
+    privacyOptions.find(opt => opt.value === privacy) || privacyOptions[0];
 
   const toggleCameraFacing = useCallback(() => {
     setCameraFacing(prev => (prev === 'front' ? 'back' : 'front'));
@@ -78,126 +84,150 @@ export default function GoLiveScreen() {
 
   return (
     <View className="flex-1 bg-black">
-      <FocusAwareStatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <FocusAwareStatusBar
+        barStyle="light-content"
+        translucent
+        backgroundColor="transparent"
+      />
 
       {/* Camera Background */}
       <View style={StyleSheet.absoluteFill}>
         <LiveCameraPreview cameraFacing={cameraFacing} enabled={true} />
       </View>
 
-      {/* Screen content wrapper using SafeAreaView (All overlay covers removed to be completely transparent) */}
-      <SafeAreaView className="flex-1 bg-transparent justify-between" style={{ backgroundColor: 'transparent' }} edges={['top', 'bottom']}>
-        {/* Top Control Bar */}
-        <View style={styles.topBar}>
-          <View className="flex-row items-center gap-3">
+      {/* Keep the bottom title controls above Android's software keyboard. */}
+      <KeyboardSafeView
+        style={StyleSheet.absoluteFill}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+      >
+        {/* Screen content wrapper using SafeAreaView (all overlay covers remain transparent) */}
+        <SafeAreaView
+          className="flex-1 bg-transparent justify-between"
+          style={{ backgroundColor: 'transparent' }}
+          edges={['top', 'bottom']}
+        >
+          {/* Top Control Bar */}
+          <View style={styles.topBar}>
+            <View className="flex-row items-center gap-3">
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleBack}
+                style={styles.circleButton}
+              >
+                <ChevronLeft size={24} color="#ffffff" />
+              </TouchableOpacity>
+
+              {/* User info & Privacy */}
+              <View className="flex-row items-center gap-2">
+                <Image
+                  source={{
+                    uri:
+                      user?.avatar ||
+                      'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw',
+                  }}
+                  style={styles.avatar}
+                />
+                <View style={{ position: 'relative', zIndex: 50 }}>
+                  <Text style={styles.userName} numberOfLines={1}>
+                    {user?.name || 'Thành viên'}
+                  </Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => setDropdownVisible(prev => !prev)}
+                    style={styles.privacyPill}
+                  >
+                    <View className="flex-row items-center gap-1">
+                      {privacyIcons[privacy] || (
+                        <Globe size={14} color="#ffffff" />
+                      )}
+                      <Text style={styles.privacyText}>
+                        {currentPrivacyOption.label}
+                      </Text>
+                      <ChevronDown size={12} color="#ffffff" />
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Dropdown Options List Menu (Inline directly below the name/privacy badge) */}
+                  {dropdownVisible && (
+                    <View style={styles.dropdownMenu}>
+                      {privacyOptions.map(option => (
+                        <TouchableOpacity
+                          key={option.value}
+                          activeOpacity={0.7}
+                          onPress={() => {
+                            setPrivacy(option.value);
+                            setDropdownVisible(false);
+                          }}
+                          style={[
+                            styles.dropdownItem,
+                            privacy === option.value &&
+                              styles.dropdownItemActive,
+                          ]}
+                        >
+                          <View className="flex-row items-center gap-2">
+                            {privacyIcons[option.value] || (
+                              <Globe size={14} color="#ffffff" />
+                            )}
+                            <Text style={styles.dropdownItemText}>
+                              {option.label}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+
+            {/* Switch Camera */}
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={handleBack}
+              onPress={toggleCameraFacing}
               style={styles.circleButton}
             >
-              <ChevronLeft size={24} color="#ffffff" />
+              <RefreshCw size={20} color="#ffffff" />
             </TouchableOpacity>
+          </View>
 
-            {/* User info & Privacy */}
-            <View className="flex-row items-center gap-2">
-              <Image
-                source={{
-                  uri: user?.avatar || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBzOiwu9eVVr13_YUuLqFaZS5DMZSQjPQqGVp3m79mrFIOksxUaafxT6NOD7hWY1ovOOtnGqlKKmPy3vZS5LhbiBbX6XQyXexcys3dCd700wiTgDGs4KRiq5vM64_gByXbAgZ356Xg_1i8PN9yGMKSGadOq-PYlT497w8_Ab1upM7ybuluWZspaikqyZ-BtES8q1oKfjZ9BHYtV1APztnG0dp7bW-4y0QkJh46DJatsljh0w0WsaL0Os2nes04dtts1t6X_kG8wXqw',
-                }}
-                style={styles.avatar}
+          {/* Spacer to push input and button to bottom */}
+          <View className="flex-1" />
+
+          {/* Input Card for Title */}
+          <View className="mb-4 px-4 w-full">
+            <View style={styles.inputCard}>
+              <Text style={styles.inputLabel}>TIÊU ĐỀ PHÁT TRỰC TIẾP</Text>
+              <TextInput
+                style={styles.textInput}
+                value={title}
+                onChangeText={setTitle}
+                placeholder="Nhấn để thêm tiêu đề..."
+                placeholderTextColor="rgba(255, 255, 255, 0.55)"
+                maxLength={100}
+                returnKeyType="done"
+                blurOnSubmit
               />
-              <View style={{ position: 'relative', zIndex: 50 }}>
-                <Text style={styles.userName} numberOfLines={1}>
-                  {user?.name || 'Thành viên'}
-                </Text>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => setDropdownVisible(prev => !prev)}
-                  style={styles.privacyPill}
-                >
-                  <View className="flex-row items-center gap-1">
-                    {privacyIcons[privacy] || <Globe size={14} color="#ffffff" />}
-                    <Text style={styles.privacyText}>
-                      {currentPrivacyOption.label}
-                    </Text>
-                    <ChevronDown size={12} color="#ffffff" />
-                  </View>
-                </TouchableOpacity>
-
-                {/* Dropdown Options List Menu (Inline directly below the name/privacy badge) */}
-                {dropdownVisible && (
-                  <View style={styles.dropdownMenu}>
-                    {privacyOptions.map(option => (
-                      <TouchableOpacity
-                        key={option.value}
-                        activeOpacity={0.7}
-                        onPress={() => {
-                          setPrivacy(option.value);
-                          setDropdownVisible(false);
-                        }}
-                        style={[
-                          styles.dropdownItem,
-                          privacy === option.value && styles.dropdownItemActive,
-                        ]}
-                      >
-                        <View className="flex-row items-center gap-2">
-                          {privacyIcons[option.value] || <Globe size={14} color="#ffffff" />}
-                          <Text style={styles.dropdownItemText}>{option.label}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
+              <Text style={styles.charCount}>{title.length}/100</Text>
             </View>
           </View>
 
-          {/* Switch Camera */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={toggleCameraFacing}
-            style={styles.circleButton}
-          >
-            <RefreshCw size={20} color="#ffffff" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Spacer to push input and button to bottom */}
-        <View className="flex-1" />
-
-        {/* Input Card for Title */}
-        <View className="mb-4 px-4 w-full">
-          <View style={styles.inputCard}>
-            <Text style={styles.inputLabel}>TIÊU ĐỀ PHÁT TRỰC TIẾP</Text>
-            <TextInput
-              style={styles.textInput}
-              value={title}
-              onChangeText={setTitle}
-              placeholder="Nhấn để thêm tiêu đề..."
-              placeholderTextColor="rgba(255, 255, 255, 0.55)"
-              maxLength={100}
-            />
-            <Text style={styles.charCount}>
-              {title.length}/100
-            </Text>
+          {/* Bottom Button */}
+          <View className="px-4 pb-2 w-full">
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={handleStartLive}
+              disabled={isLoading}
+              style={styles.startLiveButton}
+            >
+              <View style={styles.startLiveIndicator} />
+              <Text style={styles.startLiveButtonText}>
+                {isLoading ? 'Đang bắt đầu...' : 'Phát trực tiếp'}
+              </Text>
+            </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Bottom Button */}
-        <View className="px-4 pb-2 w-full">
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={handleStartLive}
-            disabled={isLoading}
-            style={styles.startLiveButton}
-          >
-            <View style={styles.startLiveIndicator} />
-            <Text style={styles.startLiveButtonText}>
-              {isLoading ? 'Đang bắt đầu...' : 'Phát trực tiếp'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </KeyboardSafeView>
     </View>
   );
 }

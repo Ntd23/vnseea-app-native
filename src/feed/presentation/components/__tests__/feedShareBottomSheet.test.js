@@ -91,9 +91,7 @@ describe('FeedShareBottomSheet', () => {
     expect(source).toContain('const wasVisibleRef = useRef(false);');
     expect(source).toContain('visible && !wasVisible');
     expect(source).toContain('!visible && wasVisible');
-    expect(source).toContain(
-      '}, [backdropOpacity, translateY, visible]);',
-    );
+    expect(source).toContain('}, [backdropOpacity, translateY, visible]);');
     expect(source).not.toContain(
       '}, [backdropOpacity, mounted, translateY, visible]);',
     );
@@ -154,6 +152,20 @@ describe('FeedShareBottomSheet', () => {
     expect(source).toContain('if (!copied) throw new Error(copy.copyFailed);');
     expect(source).toContain('const result = await sharePost(post, {');
     expect(source).toContain('if (!result) throw new Error(copy.shareFailed);');
+  });
+
+  it('confirms successful post shares through the global Snackbar', () => {
+    expect(source).toContain("if (result.method === 'shared') {");
+    expect(source).toContain(
+      "showToast({ message: copy.shareSuccess, type: 'success' });",
+    );
+    expect(
+      source.indexOf('const shared = await onInternalShare(input);'),
+    ).toBeLessThan(
+      source.lastIndexOf(
+        "showToast({ message: copy.shareSuccess, type: 'success' });",
+      ),
+    );
   });
 
   it('uses supported brand utilities so primary actions remain visible', () => {

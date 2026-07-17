@@ -48,7 +48,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  ToastAndroid,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -73,7 +72,6 @@ import {
   ChevronDown,
   Flag,
   MoreHorizontal,
-  ThumbsUp,
   Trash2,
   UserCircle,
   X,
@@ -88,6 +86,11 @@ import type { StoryItem } from '../../domain/types/stories.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
+import {
+  FEED_REACTION_IMAGES,
+  FEED_REACTION_TYPES,
+} from '../../../feed/presentation/components/FeedReactionAssets';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Props = NativeStackScreenProps<RootStackParamList, 'StoryViewer'>;
@@ -100,18 +103,9 @@ const VIDEO_FALLBACK_MS = 15000;
 
 const repository = createStoriesRepository();
 
-const STORY_REACTION_EMOJI: Record<ReactionType, string> = {
-  like: '\uD83D\uDC4D',
-  love: '\u2764\uFE0F',
-  haha: '\uD83D\uDE06',
-  wow: '\uD83D\uDE2E',
-  sad: '\uD83D\uDE22',
-  angry: '\uD83D\uDE21',
-};
-
 type ReactionBurstItem = {
   id: string;
-  emoji: string;
+  reaction: ReactionType;
   left: number;
   size: number;
   driftX: number;
@@ -310,7 +304,6 @@ function StoryViewerScreen({ route }: Props) {
 
   const launchReactionBurst = useCallback(
     (reaction: ReactionType) => {
-      const emoji = STORY_REACTION_EMOJI[reaction];
       const centerX = viewportWidth / 2;
       const maxLeft = Math.max(24, viewportWidth - 48);
       const offsets = [-104, -68, -32, 0, 36, 72, 108];
@@ -320,7 +313,7 @@ function StoryViewerScreen({ route }: Props) {
 
         return {
           id: `${Date.now()}-${reactionBurstId.current++}`,
-          emoji,
+          reaction,
           left,
           size: 28 + (index % 3) * 3,
           driftX: direction * (22 + index * 3),
@@ -383,16 +376,12 @@ function StoryViewerScreen({ route }: Props) {
     [viewportWidth],
   );
 
-  const showToast = useCallback((msg: string) => {
-    if (!/^kh/i.test(msg)) {
-      return;
-    }
-
-    if (Platform.OS === 'android') {
-      ToastAndroid.show(msg, ToastAndroid.SHORT);
-    }
-    // On iOS, we rely on the visual state change (button highlight)
-  }, []);
+  const showReactionSnackbar = useCallback(
+    (message: string, type: 'success' | 'error') => {
+      showSnackbar({ message, type });
+    },
+    [],
+  );
 
   const onReact = useCallback(
     async (reaction: ReactionType) => {
@@ -446,14 +435,10 @@ function StoryViewerScreen({ route }: Props) {
           await repository.reactStory(targetStoryId, reaction);
         }
         // Show success feedback
-        const emojiMap: Record<string, string> = {
-          like: '👍', love: '❤️', haha: '😆', wow: '😮', sad: '😢', angry: '😡',
-        };
-        const emoji = emojiMap[reaction] ?? reaction;
         if (willClear) {
-          showToast('Đã bỏ cảm xúc');
+          showReactionSnackbar('Đã bỏ cảm xúc', 'success');
         } else {
-          showToast(`Đã thả ${emoji}`);
+          showReactionSnackbar('Đã thả cảm xúc', 'success');
         }
         console.log('[StoryViewer] reactStory API success');
       } catch (err) {
@@ -462,7 +447,10 @@ function StoryViewerScreen({ route }: Props) {
         setStories(arr => arr.map(s => (s.id === activeStoryId ? snapshot : s)));
         storyReactedEvents.emit(targetStoryId, prev);
         // Notify user about the failure
-        showToast('Không thể thả cảm xúc. Vui lòng thử lại.');
+        showReactionSnackbar(
+          'Không thể thả cảm xúc. Vui lòng thử lại.',
+          'error',
+        );
       }
     },
     [
@@ -470,7 +458,7 @@ function StoryViewerScreen({ route }: Props) {
       currentSegment,
       bounceReaction,
       launchReactionBurst,
-      showToast,
+      showReactionSnackbar,
     ],
   );
 
@@ -895,13 +883,14 @@ function StoryViewerScreen({ route }: Props) {
           {/* ── Bottom overlay: reactions picker ─────────────── */}
           <View style={styles.reactionBurstLayer} pointerEvents="none">
             {reactionBurst.map(item => (
-              <Animated.Text
+              <Animated.View
                 key={item.id}
                 style={[
-                  styles.floatingReactionEmoji,
+                  styles.floatingReactionIcon,
                   {
                     left: item.left,
-                    fontSize: item.size,
+                    width: item.size,
+                    height: item.size,
                     opacity: item.opacity,
                     transform: [
                       { translateY: item.translateY },
@@ -922,8 +911,12 @@ function StoryViewerScreen({ route }: Props) {
                   },
                 ]}
               >
-                {item.emoji}
-              </Animated.Text>
+                <Image
+                  source={FEED_REACTION_IMAGES[item.reaction]}
+                  style={styles.floatingReactionImage}
+                  resizeMode="contain"
+                />
+              </Animated.View>
             ))}
           </View>
 
@@ -933,14 +926,7 @@ function StoryViewerScreen({ route }: Props) {
               <View style={styles.inputRow}>
                 {/* Quick Reactions */}
                 <Animated.View style={[styles.quickReactions, { transform: [{ scale: reactionScale }] }]}>
-                  {[
-                    (['like', '👍'] as const),
-                    (['love', '❤️'] as const),
-                    (['haha', '😆'] as const),
-                    (['wow', '😮'] as const),
-                    (['sad', '😢'] as const),
-                    (['angry', '😡'] as const),
-                  ].map(([type, emoji]) => {
+                  {FEED_REACTION_TYPES.map(type => {
                     const isActive = currentStory.myReaction === type;
                     return (
                       <TouchableOpacity
@@ -955,30 +941,14 @@ function StoryViewerScreen({ route }: Props) {
                           isActive ? styles.reactionBtnActive : null,
                         ]}
                       >
-                        {type === 'like' ? (
-                          <View style={[
-                            styles.fbLikeCircle,
-                            {
-                              backgroundColor: isActive ? '#1877F2' : '#2A2B2C',
-                              opacity: isActive ? 1 : 0.6
-                            }
-                          ]}>
-                            <ThumbsUp
-                              size={16}
-                              color={isActive ? '#fff' : 'rgba(255, 255, 255, 0.7)'}
-                              fill={isActive ? '#fff' : 'none'}
-                            />
-                          </View>
-                        ) : (
-                          <Text
-                            style={[
-                              styles.quickReactionEmoji,
-                              { opacity: isActive ? 1 : 0.6 }
-                            ]}
-                          >
-                            {emoji}
-                          </Text>
-                        )}
+                        <Image
+                          source={FEED_REACTION_IMAGES[type]}
+                          style={[
+                            styles.quickReactionImage,
+                            { opacity: isActive ? 1 : 0.65 },
+                          ]}
+                          resizeMode="contain"
+                        />
                       </TouchableOpacity>
                     );
                   })}
@@ -1446,13 +1416,13 @@ const styles = StyleSheet.create({
     zIndex: 30,
     elevation: 30,
   },
-  floatingReactionEmoji: {
+  floatingReactionIcon: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 104 : 88,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.35)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+  },
+  floatingReactionImage: {
+    width: '100%',
+    height: '100%',
   },
   quickReplyRow: {
     flexDirection: 'row',
@@ -1498,20 +1468,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quickReactionEmoji: {
-    fontSize: 28,
-  },
-  fbLikeCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#1877F2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fbLikeThumbsUp: {
-    fontSize: 18,
-    color: '#ffffff',
+  quickReactionImage: {
+    width: 32,
+    height: 32,
   },
   reactionBtnActive: {
     backgroundColor: 'rgba(255,255,255,0.15)',

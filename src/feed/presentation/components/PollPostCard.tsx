@@ -2,7 +2,10 @@
 // Displays poll posts with voting options, results, and interaction actions.
 import React, { useCallback, useRef, useMemo } from 'react';
 import {
+  ActivityIndicator,
+  FlatList,
   Image,
+  Modal,
   Platform,
   Text,
   TouchableOpacity,
@@ -21,12 +24,19 @@ import {
   Share2,
   Smile,
   ThumbsUp,
+  X,
   Users,
 } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useSharedValue } from 'react-native-reanimated';
-import type { FeedPollPost, PollOption, PostPrivacy } from '../../domain/types/feed.types';
+import type {
+  FeedPollPost,
+  PollOption,
+  PostPrivacy,
+} from '../../domain/types/feed.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type { PollVoter } from '../../../poll/domain/types/poll.types';
+import { createPollRepository } from '../../../poll/infrastructure/repositories/ApiPollRepository';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
   FeedCardSurface,
@@ -39,6 +49,10 @@ import {
   renderPostTextTokens,
   useFeedReactionPickerActivePostId,
 } from './PostCards';
+import {
+  FEED_REACTION_COLORS as REACTION_COLOR,
+  FEED_REACTION_IMAGES as REACTION_IMAGES,
+} from './FeedReactionAssets';
 
 interface PollPostCardProps {
   post: FeedPollPost;
@@ -61,34 +75,6 @@ interface PollPostCardProps {
 }
 
 const BRAND_BLUE = '#0866FF';
-const SLATE_GRAY = '#65676B';
-
-const REACTION_EMOJI: Record<ReactionType, string> = {
-  like: '👍',
-  love: '❤️',
-  haha: '😂',
-  wow: '😮',
-  sad: '😢',
-  angry: '😡',
-};
-
-const REACTION_COLOR: Record<ReactionType, string> = {
-  like: '#0866ff',
-  love: '#f33e58',
-  haha: '#f7b125',
-  wow: '#f7b125',
-  sad: '#f7b125',
-  angry: '#e9710f',
-};
-
-const REACTION_IMAGES: Record<ReactionType, any> = {
-  like: require('../../../assets/reactions/reactions_like.png'),
-  love: require('../../../assets/reactions/reactions_love.png'),
-  haha: require('../../../assets/reactions/reactions_haha.png'),
-  wow: require('../../../assets/reactions/reactions_wow.png'),
-  sad: require('../../../assets/reactions/reactions_sad.png'),
-  angry: require('../../../assets/reactions/reactions_angry.png'),
-};
 
 type PollCopy = {
   reactionLabel: Record<ReactionType, string>;
@@ -102,6 +88,11 @@ type PollCopy = {
   onlyMePrivacyLabel: string;
   anonymousPrivacyLabel: string;
   totalVotesLabel: (count: string) => string;
+  votersTitle: string;
+  noVoters: string;
+  loadVotersError: string;
+  optionFallback: string;
+  anonymousPoll: string;
   now: string;
   minutesAgo: (count: number) => string;
   hoursAgo: (count: number) => string;
@@ -129,6 +120,11 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     onlyMePrivacyLabel: 'Ch\u1ec9 m\u00ecnh t\u00f4i',
     anonymousPrivacyLabel: '\u1ea8n danh',
     totalVotesLabel: count => `${count} Tổng số phiếu bầu`,
+    votersTitle: 'Những người đã bỏ phiếu',
+    noVoters: 'Chưa có ai bỏ phiếu',
+    loadVotersError: 'Không thể tải danh sách người bỏ phiếu',
+    optionFallback: 'Không rõ phương án',
+    anonymousPoll: 'Cuộc thăm dò này đang ẩn danh',
     now: 'Vừa xong',
     minutesAgo: count => `${count} phút trước`,
     hoursAgo: count => `${count} giờ trước`,
@@ -154,6 +150,11 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     onlyMePrivacyLabel: 'Only me',
     anonymousPrivacyLabel: 'Anonymous',
     totalVotesLabel: count => `${count} total votes`,
+    votersTitle: 'People who voted',
+    noVoters: 'No votes yet',
+    loadVotersError: 'Could not load the voter list',
+    optionFallback: 'Unknown option',
+    anonymousPoll: 'This poll is anonymous',
     now: 'Just now',
     minutesAgo: count => `${count} min ago`,
     hoursAgo: count => `${count} h ago`,
@@ -257,6 +258,47 @@ function PollOptionItem({
   );
 }
 
+const pollRepository = createPollRepository();
+
+function PollVoterRow({
+  voter,
+  userFallback,
+  optionFallback,
+}: {
+  voter: PollVoter;
+  userFallback: string;
+  optionFallback: string;
+}) {
+  return (
+    <View className="mb-3 flex-row items-center rounded-2xl bg-[#F7F8FA] px-3 py-3">
+      {voter.avatarUrl ? (
+        <Image
+          source={{ uri: voter.avatarUrl }}
+          className="h-11 w-11 rounded-full"
+          resizeMode="cover"
+        />
+      ) : (
+        <View className="h-11 w-11 items-center justify-center rounded-full bg-[#D2E4FF]">
+          <Smile size={20} color={BRAND_BLUE} />
+        </View>
+      )}
+      <View className="ml-3 flex-1">
+        <Text className="text-[15px] font-semibold text-[#050505]">
+          {voter.name || voter.username || userFallback}
+        </Text>
+        {!!voter.username && voter.name && (
+          <Text className="mt-0.5 text-[12px] text-[#65676B]">
+            @{voter.username}
+          </Text>
+        )}
+        <Text className="mt-1 text-[13px] text-[#0866FF]">
+          {voter.optionText || optionFallback}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export const PollPostCard = React.memo(function PollPostCard({
   post,
   onVote,
@@ -268,7 +310,7 @@ export const PollPostCard = React.memo(function PollPostCard({
   onCommentTap,
   onShare,
   language = 'vi',
-  currentUserAvatar,
+  currentUserAvatar: _currentUserAvatar,
   gestureX,
   gestureY,
   gestureActive,
@@ -278,6 +320,10 @@ export const PollPostCard = React.memo(function PollPostCard({
 }: PollPostCardProps) {
   const likeButtonRef = useRef<View>(null);
   const copy = POLL_COPY[language];
+  const [votersVisible, setVotersVisible] = React.useState(false);
+  const [voters, setVoters] = React.useState<PollVoter[]>([]);
+  const [votersLoading, setVotersLoading] = React.useState(false);
+  const [votersError, setVotersError] = React.useState<string | null>(null);
 
   const localX = useSharedValue(0);
   const localY = useSharedValue(0);
@@ -306,6 +352,35 @@ export const PollPostCard = React.memo(function PollPostCard({
     [onVote, post.id],
   );
 
+  const handleViewVoters = useCallback(async () => {
+    if (post.totalVotes <= 0) return;
+    setVotersVisible(true);
+    if (post.privacy === 'anonymous') {
+      setVoters([]);
+      setVotersError(copy.anonymousPoll);
+      setVotersLoading(false);
+      return;
+    }
+    setVotersLoading(true);
+    setVotersError(null);
+    try {
+      const response = await pollRepository.getPollVoters(post.id);
+      setVoters(response.voters);
+    } catch (error) {
+      console.warn('[PollPostCard] load voters failed', error);
+      setVoters([]);
+      setVotersError(copy.loadVotersError);
+    } finally {
+      setVotersLoading(false);
+    }
+  }, [
+    copy.anonymousPoll,
+    copy.loadVotersError,
+    post.id,
+    post.privacy,
+    post.totalVotes,
+  ]);
+
   const handleLikeTap = useCallback(() => {
     onReact(post.id, 'like');
   }, [onReact, post.id]);
@@ -332,7 +407,7 @@ export const PollPostCard = React.memo(function PollPostCard({
   const composedGesture = useMemo(() => {
     const pan = Gesture.Pan()
       .activateAfterLongPress(250)
-      .onStart((e) => {
+      .onStart(e => {
         gActive.value = true;
         gStartX.value = e.absoluteX;
         gStartY.value = e.absoluteY;
@@ -341,12 +416,12 @@ export const PollPostCard = React.memo(function PollPostCard({
         gY.value = e.absoluteY;
         runOnJS(handleLikeLongPress)();
       })
-      .onUpdate((e) => {
+      .onUpdate(e => {
         gX.value = e.absoluteX;
         gY.value = e.absoluteY;
         const dx = e.absoluteX - gStartX.value;
         const dy = e.absoluteY - gStartY.value;
-        if (Math.sqrt(dx*dx + dy*dy) > 15) {
+        if (Math.sqrt(dx * dx + dy * dy) > 15) {
           gDragged.value = true;
         }
       })
@@ -354,18 +429,33 @@ export const PollPostCard = React.memo(function PollPostCard({
         gActive.value = false;
       });
 
-    const tap = Gesture.Tap().maxDuration(250).onEnd(() => {
-      runOnJS(handleLikeTap)();
-    });
+    const tap = Gesture.Tap()
+      .maxDuration(250)
+      .onEnd(() => {
+        runOnJS(handleLikeTap)();
+      });
 
     return Gesture.Exclusive(pan, tap);
-  }, [gActive, gX, gY, gStartX, gStartY, gDragged, handleLikeLongPress, handleLikeTap]);
+  }, [
+    gActive,
+    gX,
+    gY,
+    gStartX,
+    gStartY,
+    gDragged,
+    handleLikeLongPress,
+    handleLikeTap,
+  ]);
 
   const hasVoted = post.votedId !== null;
   const totalVotes = post.totalVotes;
 
-  const reactionLabel = post.myReaction ? copy.reactionLabel[post.myReaction] : copy.like;
-  const reactionColor = post.myReaction ? REACTION_COLOR[post.myReaction] : '#65676B';
+  const reactionLabel = post.myReaction
+    ? copy.reactionLabel[post.myReaction]
+    : copy.like;
+  const reactionColor = post.myReaction
+    ? REACTION_COLOR[post.myReaction]
+    : '#65676B';
   const privacyMeta = getPollPrivacyMeta(post.privacy, copy);
   const PrivacyIcon = privacyMeta.Icon;
   const activeReactionPickerPostId = useFeedReactionPickerActivePostId();
@@ -395,16 +485,24 @@ export const PollPostCard = React.memo(function PollPostCard({
             </View>
           )}
           <View className="ml-3 flex-1">
-            <Text className="text-title-primary font-bold text-[#050505]" numberOfLines={1}>
+            <Text
+              className="text-title-primary font-bold text-[#050505]"
+              numberOfLines={1}
+            >
               {post.publisher?.name || copy.userFallback}
             </Text>
             <View className="flex-row items-center mt-0.5">
               <Text className="text-caption-secondary text-[12px] text-[#65676B]">
                 {formatTimeAgo(post.postedAt, copy)}
               </Text>
-              <Text className="text-caption-secondary text-[12px] text-[#65676B]"> {'\u2022'} </Text>
+              <Text className="text-caption-secondary text-[12px] text-[#65676B]">
+                {' '}
+                {'\u2022'}{' '}
+              </Text>
               <PrivacyIcon size={11} color="#65676B" />
-              <Text className="ml-1 text-caption-secondary text-[12px] text-[#65676B]">{privacyMeta.label}</Text>
+              <Text className="ml-1 text-caption-secondary text-[12px] text-[#65676B]">
+                {privacyMeta.label}
+              </Text>
             </View>
           </View>
         </TouchableOpacity>
@@ -429,7 +527,10 @@ export const PollPostCard = React.memo(function PollPostCard({
           onPress={() => onPress?.(post)}
           className="px-3 pb-3"
         >
-          <Text className="text-body-primary font-medium text-[16px] text-[#050505]" numberOfLines={4}>
+          <Text
+            className="text-body-primary font-medium text-[16px] text-[#050505]"
+            numberOfLines={4}
+          >
             {renderPostTextTokens(post.pollQuestion, post.mentionNames)}
           </Text>
         </TouchableOpacity>
@@ -449,12 +550,19 @@ export const PollPostCard = React.memo(function PollPostCard({
         ))}
 
         {/* Votes Pill Badge (aligned to right, blue background, white text) */}
-        <View className="flex-row items-center self-end bg-[#0866FF] px-4 py-1.5 rounded-full mt-2 mb-2 shadow-sm">
+        <TouchableOpacity
+          className="flex-row items-center self-end bg-[#0866FF] px-4 py-1.5 rounded-full mt-2 mb-2 shadow-sm"
+          activeOpacity={0.8}
+          onPress={handleViewVoters}
+          disabled={totalVotes <= 0}
+          accessibilityRole="button"
+          accessibilityLabel={copy.totalVotesLabel(formatCount(totalVotes))}
+        >
           <BarChart3 size={15} color="#FFFFFF" />
           <Text className="ml-1.5 text-[12px] font-bold text-white">
             {copy.totalVotesLabel(formatCount(totalVotes))}
           </Text>
-        </View>
+        </TouchableOpacity>
 
         {/* Comment Count Bubble */}
         <TouchableOpacity
@@ -527,6 +635,60 @@ export const PollPostCard = React.memo(function PollPostCard({
           </FeedGlassActionButton>
         </FeedGlassActionBar>
       )}
+
+      <Modal
+        visible={votersVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setVotersVisible(false)}
+      >
+        <View className="flex-1 justify-end bg-black/40">
+          <View className="max-h-[78%] rounded-t-3xl bg-white px-4 pb-8 pt-3">
+            <View className="mb-3 flex-row items-center justify-between">
+              <Text className="text-[18px] font-bold text-[#050505]">
+                {copy.votersTitle}
+              </Text>
+              <TouchableOpacity
+                className="h-9 w-9 items-center justify-center rounded-full bg-[#F0F2F5]"
+                onPress={() => setVotersVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel={language === 'vi' ? 'Đóng' : 'Close'}
+              >
+                <X size={19} color="#65676B" />
+              </TouchableOpacity>
+            </View>
+
+            {votersLoading ? (
+              <View className="items-center justify-center py-10">
+                <ActivityIndicator color={BRAND_BLUE} />
+              </View>
+            ) : votersError ? (
+              <Text className="px-3 py-10 text-center text-[14px] text-[#65676B]">
+                {votersError}
+              </Text>
+            ) : voters.length === 0 ? (
+              <Text className="px-3 py-10 text-center text-[14px] text-[#65676B]">
+                {copy.noVoters}
+              </Text>
+            ) : (
+              <FlatList
+                data={voters}
+                keyExtractor={(item, index) =>
+                  `${item.userId}-${item.optionId}-${index}`
+                }
+                renderItem={({ item }) => (
+                  <PollVoterRow
+                    voter={item}
+                    userFallback={copy.userFallback}
+                    optionFallback={copy.optionFallback}
+                  />
+                )}
+                showsVerticalScrollIndicator={false}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </FeedCardSurface>
   );
 });

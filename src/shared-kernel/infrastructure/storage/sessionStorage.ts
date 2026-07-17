@@ -1,5 +1,9 @@
 // Description: Persists the authenticated backend session for API requests.
 import { createMMKV } from 'react-native-mmkv';
+import {
+  clearMessageNotificationIdentity,
+  syncMessageNotificationIdentity,
+} from '../notifications/messageNotificationIdentity';
 
 export type AuthSession = {
   accessToken: string;
@@ -22,6 +26,8 @@ export type AuthUserProfile = {
   avatarUrl?: string;
 };
 
+type UserProfileListener = (profile: AuthUserProfile | null) => void;
+
 const ACCESS_TOKEN_KEY = 'auth.accessToken';
 const USER_ID_KEY = 'auth.userId';
 const USER_PLATFORM_KEY = 'auth.userPlatform';
@@ -30,6 +36,11 @@ const USER_USERNAME_KEY = 'auth.userUsername';
 const USER_AVATAR_KEY = 'auth.userAvatar';
 
 const storage = createMMKV({ id: 'vnseea-auth-session' });
+const userProfileListeners = new Set<UserProfileListener>();
+
+function notifyUserProfileListeners(profile: AuthUserProfile | null) {
+  userProfileListeners.forEach(listener => listener(profile));
+}
 
 export const sessionStorage = {
   getAccessToken() {
@@ -96,6 +107,17 @@ export const sessionStorage = {
     } else {
       storage.remove(USER_AVATAR_KEY);
     }
+
+    const storedProfile = this.getUserProfile();
+    syncMessageNotificationIdentity(storedProfile);
+    notifyUserProfileListeners(storedProfile);
+  },
+
+  subscribeToUserProfile(listener: UserProfileListener) {
+    userProfileListeners.add(listener);
+    return () => {
+      userProfileListeners.delete(listener);
+    };
   },
 
   clearSession() {
@@ -105,5 +127,7 @@ export const sessionStorage = {
     storage.remove(USER_NAME_KEY);
     storage.remove(USER_USERNAME_KEY);
     storage.remove(USER_AVATAR_KEY);
+    clearMessageNotificationIdentity();
+    notifyUserProfileListeners(null);
   },
 };

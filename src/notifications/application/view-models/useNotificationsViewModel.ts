@@ -15,6 +15,7 @@ import {
   type NotificationFilterType,
 } from '../../application/i18n/notificationCopy';
 import { createLatestRequestGuard } from './notificationRequestGuard';
+import { foregroundPushEvents } from '../../../shared-kernel/infrastructure/push/foregroundPushEvents';
 
 const PAGE_SIZE = 100;
 
@@ -45,7 +46,8 @@ export function useNotificationsViewModel() {
 
   // UI state — tabs, filter, language
   const [activeTab, setActiveTabState] = useState<NotificationTab>('all');
-  const [activeFilter, setActiveFilterState] = useState<NotificationFilterType>('all');
+  const [activeFilter, setActiveFilterState] =
+    useState<NotificationFilterType>('all');
   const [language, setLanguageState] = useState<AppLanguage>(() =>
     languageStorage.getLanguage(),
   );
@@ -107,9 +109,7 @@ export function useNotificationsViewModel() {
           return;
         }
         setError(
-          err instanceof Error
-            ? err.message
-            : 'Không thể tải thông báo.',
+          err instanceof Error ? err.message : 'Không thể tải thông báo.',
         );
       } finally {
         if (latestRequestGuardRef.current.isCurrent(requestId)) {
@@ -120,6 +120,22 @@ export function useNotificationsViewModel() {
     },
     [repository],
   );
+
+  useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const unsubscribe = foregroundPushEvents.subscribe(() => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        loadFirstPage(false, true);
+      }, 250);
+    });
+
+    return () => {
+      unsubscribe();
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [loadFirstPage]);
 
   // Refresh
   const refresh = useCallback(() => {
@@ -165,9 +181,7 @@ export function useNotificationsViewModel() {
 
         // Update local state
         setNotifications(prev =>
-          prev.map(n =>
-            n.id === notificationId ? { ...n, seen: true } : n
-          )
+          prev.map(n => (n.id === notificationId ? { ...n, seen: true } : n)),
         );
         setUnreadCount(prev => Math.max(0, prev - 1));
       } catch (err) {
@@ -179,14 +193,30 @@ export function useNotificationsViewModel() {
 
   // Mark all as seen
   const markAllAsSeen = useCallback(async () => {
-    const unreadNotifications = notifications.filter(notification => !notification.seen);
+    const syntheticUnreadCount = notifications.filter(
+      notification =>
+        !notification.seen && notification.id.startsWith('group-chat-request:'),
+    ).length;
+    const unreadNotifications = notifications.filter(
+      notification =>
+        !notification.seen &&
+        !notification.id.startsWith('group-chat-request:'),
+    );
     if (unreadNotifications.length === 0) return;
 
-    setNotifications(prev => prev.map(n => ({ ...n, seen: true })));
-    setUnreadCount(0);
+    setNotifications(prev =>
+      prev.map(notification =>
+        notification.id.startsWith('group-chat-request:')
+          ? notification
+          : { ...notification, seen: true },
+      ),
+    );
+    setUnreadCount(syntheticUnreadCount);
 
     const results = await Promise.allSettled(
-      unreadNotifications.map(notification => repository.markAsSeen(notification.id)),
+      unreadNotifications.map(notification =>
+        repository.markAsSeen(notification.id),
+      ),
     );
     const failedIds = new Set(
       unreadNotifications
@@ -197,11 +227,15 @@ export function useNotificationsViewModel() {
     if (failedIds.size > 0) {
       setNotifications(prev =>
         prev.map(notification =>
-          failedIds.has(notification.id) ? { ...notification, seen: false } : notification
-        )
+          failedIds.has(notification.id)
+            ? { ...notification, seen: false }
+            : notification,
+        ),
       );
       setUnreadCount(prev => prev + failedIds.size);
-      console.warn('[useNotificationsViewModel] markAllAsSeen partially failed');
+      console.warn(
+        '[useNotificationsViewModel] markAllAsSeen partially failed',
+      );
     }
   }, [notifications, repository]);
 
@@ -225,7 +259,10 @@ export function useNotificationsViewModel() {
             setUnreadCount(prev => prev + 1);
           }
         }
-        console.warn('[useNotificationsViewModel] deleteNotification failed', err);
+        console.warn(
+          '[useNotificationsViewModel] deleteNotification failed',
+          err,
+        );
       }
     },
     [notifications, repository],
@@ -254,7 +291,7 @@ export function useNotificationsViewModel() {
 
         if (response.api_status === 200) {
           setNotifications(prev =>
-            prev.filter(n => n.groupChatId !== groupChatId)
+            prev.filter(n => n.groupChatId !== groupChatId),
           );
           setUnreadCount(prev => Math.max(0, prev - 1));
           return true;
@@ -295,7 +332,7 @@ export function useNotificationsViewModel() {
 
         if (response.api_status === 200) {
           setNotifications(prev =>
-            prev.filter(n => n.groupChatId !== groupChatId)
+            prev.filter(n => n.groupChatId !== groupChatId),
           );
           setUnreadCount(prev => Math.max(0, prev - 1));
           return true;
