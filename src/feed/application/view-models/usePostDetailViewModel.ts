@@ -220,6 +220,30 @@ export function usePostDetailViewModel({
     [post, postId]
   );
 
+  const applyRealtimePost = useCallback((nextPost: FeedPost) => {
+    setPost(nextPost);
+    setError(null);
+  }, []);
+
+  const markRealtimeDeleted = useCallback(() => {
+    setPost(undefined);
+    setError('Bài viết không còn tồn tại hoặc đã bị xóa.');
+  }, []);
+
+  const refreshRealtimeComments = useCallback(async () => {
+    try {
+      const result = await feedRepository.getPostById(postId, {
+        fetchComments: true,
+        addView: false,
+      });
+      setPost(result.post);
+      setComments(result.comments);
+      setError(null);
+    } catch {
+      // Keep the current detail and draft when a best-effort refresh fails.
+    }
+  }, [postId]);
+
   return {
     post,
     comments,
@@ -230,5 +254,8 @@ export function usePostDetailViewModel({
     isSubmitting,
     likedUsers,
     toggleReaction,
+    applyRealtimePost,
+    markRealtimeDeleted,
+    refreshRealtimeComments,
   };
 }

@@ -11,10 +11,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   CalendarDays,
@@ -54,6 +53,7 @@ import { PollPostCard } from '../../../feed/presentation/components/PollPostCard
 import { CreatePostModal } from '../../../feed/presentation/screens/CreatePostScreen';
 import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
+import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import type {
   FeedPollPost,
@@ -115,6 +115,7 @@ function parseEventDate(dateValue?: string, timeValue?: string): Date | null {
 
 function EventDetailScreen() {
   const navigation = useNavigation<EventDetailNav>();
+  const isFocused = useIsFocused();
   const route = useRoute<EventDetailRoute>();
   const { event } = route.params;
   const { isDeleting, deleteEvent, toggleGoing, toggleInterested } = useEventsViewModel();
@@ -175,6 +176,27 @@ function EventDetailScreen() {
       ...post,
       commentCount: Math.max(0, post.commentCount + delta),
     })),
+  });
+  usePostRealtimeScope({
+    postIds: posts.slice(0, 20).map(post => post.id),
+    enabled: isFocused,
+    onSnapshot: nextPost => {
+      setPosts(current =>
+        current.map(post =>
+          String(post.id) === String(nextPost.id)
+            ? (nextPost as FeedTextPost | FeedVideoPost | FeedPollPost)
+            : post,
+        ),
+      );
+    },
+    onDeleted: postId => {
+      setPosts(current => current.filter(post => String(post.id) !== postId));
+    },
+    onCommentMutation: change => {
+      if (String(commentVm.selectedCommentPostId) === change.postId) {
+        void commentVm.refreshComments();
+      }
+    },
   });
 
   const loadPosts = useCallback(async (refreshing = false) => {

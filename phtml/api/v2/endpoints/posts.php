@@ -538,7 +538,10 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 		                'text' => $_POST['text']
 		            ));
 		        }
-	            $new_post = Wo_PostData($result);
+		            $new_post = Wo_PostData($result);
+		            if (!empty($result) && !empty($new_post)) {
+		                Wo_PublishRealtimePostChange($post['id'], 'share');
+		            }
 	            if (!empty($new_post['publisher'])) {
                     foreach ($non_allowed as $key4 => $value4) {
                       unset($new_post['publisher'][$value4]);
@@ -595,7 +598,10 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 		                'text' => $_POST['text']
 		            ));
 		        }
-	            $new_post = Wo_PostData($result);
+		            $new_post = Wo_PostData($result);
+		            if (!empty($result) && !empty($new_post)) {
+		                Wo_PublishRealtimePostChange($post['id'], 'share');
+		            }
 	            if (!empty($new_post['publisher'])) {
                     foreach ($non_allowed as $key4 => $value4) {
                       unset($new_post['publisher'][$value4]);
@@ -644,7 +650,10 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 		                'text' => $_POST['text']
 		            ));
 		        }
-	            $new_post = Wo_PostData($result);
+		            $new_post = Wo_PostData($result);
+		            if (!empty($result) && !empty($new_post)) {
+		                Wo_PublishRealtimePostChange($post['id'], 'share');
+		            }
 	            if (!empty($new_post['publisher'])) {
                     foreach ($non_allowed as $key4 => $value4) {
                       unset($new_post['publisher'][$value4]);

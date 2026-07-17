@@ -209,6 +209,32 @@ export function useFeedCommentsViewModel({
     replyOffsetsRef.current = {};
   }, []);
 
+  const refreshComments = useCallback(async () => {
+    if (!selectedCommentPostId || commentInFlightRef.current) return;
+    const cleanPostId = normalizeCommentPostId(selectedCommentPostId);
+    commentInFlightRef.current = true;
+    loadingCommentPostIdRef.current = cleanPostId;
+    const requestSeq = ++commentRequestSeqRef.current;
+    try {
+      const fresh = await repository.getComments(cleanPostId, {
+        limit: COMMENT_PAGE_SIZE,
+        offset: 0,
+      });
+      if (commentRequestSeqRef.current !== requestSeq) return;
+      setComments(fresh);
+      setHasMoreComments(fresh.length >= COMMENT_PAGE_SIZE);
+      const lastComment = fresh[fresh.length - 1];
+      commentOffsetRef.current = lastComment ? Number(lastComment.id) || 0 : 0;
+    } catch {
+      // Realtime refresh is best-effort; keep the currently visible comments.
+    } finally {
+      if (commentRequestSeqRef.current === requestSeq) {
+        commentInFlightRef.current = false;
+        loadingCommentPostIdRef.current = null;
+      }
+    }
+  }, [selectedCommentPostId]);
+
   const loadMoreComments = useCallback(async () => {
     if (!selectedCommentPostId) return;
     if (!hasMoreComments) return;
@@ -758,6 +784,7 @@ export function useFeedCommentsViewModel({
     replyingTo,
     openComments,
     closeComments,
+    refreshComments,
     loadMoreComments,
     submitComment,
     // Comment actions

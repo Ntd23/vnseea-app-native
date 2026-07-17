@@ -25,9 +25,10 @@ if (empty($_POST['post_id'])) {
 
 if (empty($error_code)) {
 	$action = '';
-    if ($_POST['action'] == 'delete') {
+	if ($_POST['action'] == 'delete') {
 		if (Wo_DeletePost($_POST['post_id']) === true) {
 			$action = 'deleted';
+			Wo_PublishRealtimePostChange($_POST['post_id'], 'deleted');
 		}
 	} else if ($_POST['action'] == 'like') {
 		if (Wo_AddLikes($_POST['post_id']) == 'unliked') {
@@ -38,6 +39,7 @@ if (empty($error_code)) {
 		$like_data = array(
 			'count' => Wo_CountLikes($_POST['post_id'])
 		);
+		Wo_PublishRealtimePostChange($_POST['post_id'], 'reaction');
 	} else if ($_POST['action'] == 'dislike') {
 		if (Wo_AddWonders($_POST['post_id']) == 'unwonder') {
 			$action = 'like';
@@ -47,6 +49,7 @@ if (empty($error_code)) {
 		$dislike_data = array(
 			'dislikes' => Wo_CountWonders($_POST['post_id'])
 		);
+		Wo_PublishRealtimePostChange($_POST['post_id'], 'reaction');
 	} else if ($_POST['action'] == 'wonder') {
 		if (Wo_AddWonders($_POST['post_id']) == 'unwonder') {
 			$action = 'unwondered';
@@ -56,6 +59,7 @@ if (empty($error_code)) {
 		$wonder_data = array(
 			'wonders' => Wo_CountWonders($_POST['post_id'])
 		);
+		Wo_PublishRealtimePostChange($_POST['post_id'], 'reaction');
 	} else if ($_POST['action'] == 'comment') {
         if (empty($_POST['text'])) {
 			$error_code    = 7;
@@ -81,6 +85,7 @@ if (empty($error_code)) {
 	                'text' => $comment_data['Orginaltext'],
 	                'post_comments_count' => Wo_CountPostComment($_POST['post_id'])
 	            );
+	            Wo_PublishRealtimePostChange($_POST['post_id'], 'comment');
 	        }
 	    }
 	}  else if ($_POST['action'] == 'edit') {
@@ -219,6 +224,9 @@ if (empty($error_code)) {
 		elseif (empty($action)){
 			$error_code    = 8;
 			$error_message = 'reaction (POST) is missing';
+		}
+		if (!empty($action)) {
+			Wo_PublishRealtimePostChange($_POST['post_id'], 'reaction');
 		}
 	}
 	if (!empty($action)) {

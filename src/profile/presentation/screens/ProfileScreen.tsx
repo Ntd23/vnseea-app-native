@@ -88,6 +88,7 @@ import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 're
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -1356,6 +1357,7 @@ function ProfileScreen() {
   >(null);
 
   const [posts, setPosts] = useState<ProfileFeedPost[]>([]);
+  const [realtimeVisiblePostIds, setRealtimeVisiblePostIds] = useState<string[]>([]);
   const profilePostsRef = useRef<ProfileFeedPost[]>([]);
   const [isPostsLoading, setIsPostsLoading] = useState(false);
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
@@ -1730,6 +1732,14 @@ function ProfileScreen() {
 
   const onProfilePostViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: FlashListViewToken<ProfileListItem>[] }) => {
+      const visiblePostIds = viewableItems
+        .filter(item => item.isViewable)
+        .map(item => String(getProfileListItemPost(item.item)?.id ?? ''))
+        .filter(postId => /^[1-9][0-9]*$/.test(postId));
+      setRealtimeVisiblePostIds(previous => {
+        const next = Array.from(new Set(visiblePostIds)).slice(0, 50);
+        return previous.join(',') === next.join(',') ? previous : next;
+      });
       const currentPosts = profilePostsRef.current;
       const visibleVideo = viewableItems.find(
         item => item.isViewable && getProfileListItemPost(item.item)?.kind === 'video',
@@ -1886,6 +1896,23 @@ function ProfileScreen() {
       publishFeedWarmVideoIds(warmVideoIds);
     },
   ).current;
+
+  usePostRealtimeScope({
+    postIds: realtimeVisiblePostIds,
+    enabled: isProfileFocused,
+    onSnapshot: nextPost => {
+      setPosts(current =>
+        current.map(post =>
+          String(post.id) === String(nextPost.id)
+            ? (nextPost as ProfileFeedPost)
+            : post,
+        ),
+      );
+    },
+    onDeleted: postId => {
+      setPosts(current => current.filter(post => String(post.id) !== postId));
+    },
+  });
 
   useEffect(() => {
     profilePostsRef.current = filteredProfilePosts;

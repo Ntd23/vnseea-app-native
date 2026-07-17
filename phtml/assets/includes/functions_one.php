@@ -3208,6 +3208,76 @@ function Wo_PublishRealtimeNotification($recipient_id, $notification_id = 0, $ki
     return true;
 }
 
+function Wo_PublishRealtimePostChange($post_id, $mutation)
+{
+    static $realtime_config = null;
+    $allowed_mutations = array('reaction', 'comment', 'share', 'deleted');
+    if (empty($post_id) || !is_numeric($post_id) || $post_id < 1 || !in_array($mutation, $allowed_mutations)) {
+        return false;
+    }
+    if ($realtime_config === null) {
+        $realtime_config = array(
+            'internal_url' => trim((string) getenv('REALTIME_INTERNAL_URL')),
+            'public_url' => trim((string) getenv('NUXT_PUBLIC_REALTIME_URL')),
+            'secret' => trim((string) getenv('REALTIME_SECRET'))
+        );
+        $env_path = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'client' . DIRECTORY_SEPARATOR . '.env';
+        if (file_exists($env_path) && is_readable($env_path)) {
+            $env_lines = @file($env_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (is_array($env_lines)) {
+                foreach ($env_lines as $env_line) {
+                    $env_line = trim((string) $env_line);
+                    if ($env_line === '' || strpos($env_line, '#') === 0 || strpos($env_line, '=') === false) {
+                        continue;
+                    }
+                    list($env_key, $env_value) = array_pad(explode('=', $env_line, 2), 2, '');
+                    $env_key = trim($env_key);
+                    $env_value = trim($env_value, " \t\n\r\0\x0B\"'");
+                    if ($env_key === 'REALTIME_INTERNAL_URL' && empty($realtime_config['internal_url'])) {
+                        $realtime_config['internal_url'] = $env_value;
+                    }
+                    if ($env_key === 'NUXT_PUBLIC_REALTIME_URL' && empty($realtime_config['public_url'])) {
+                        $realtime_config['public_url'] = $env_value;
+                    }
+                    if ($env_key === 'REALTIME_SECRET' && empty($realtime_config['secret'])) {
+                        $realtime_config['secret'] = $env_value;
+                    }
+                }
+            }
+        }
+    }
+    $internal_url = trim(!empty($realtime_config['internal_url']) ? $realtime_config['internal_url'] : (!empty($realtime_config['public_url']) ? $realtime_config['public_url'] : 'http://127.0.0.1:3015'));
+    $secret = trim((string) $realtime_config['secret']);
+    if (empty($internal_url) || empty($secret) || !function_exists('curl_init')) {
+        return false;
+    }
+    try {
+        $event_id = bin2hex(random_bytes(12));
+    } catch (Exception $e) {
+        $event_id = uniqid('post_', true);
+    }
+    $payload = json_encode(array(
+        'eventId' => $event_id,
+        'postId' => (string) $post_id,
+        'mutation' => (string) $mutation,
+        'occurredAt' => (int) round(microtime(true) * 1000)
+    ));
+    $ch = curl_init(rtrim($internal_url, '/') . '/internal/posts/publish');
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, 150);
+    curl_setopt($ch, CURLOPT_TIMEOUT_MS, 300);
+    curl_setopt($ch, CURLOPT_NOSIGNAL, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+        'Content-Type: application/json',
+        'X-Realtime-Secret: ' . $secret
+    ));
+    curl_exec($ch);
+    curl_close($ch);
+    return true;
+}
+
 function Wo_RegisterNotification($data = array())
 {
     global $wo, $sqlConnect;
@@ -6738,11 +6808,15 @@ function Wo_PostData($post_id, $placement = '', $limited = '', $comments_limit =
         $story['is_wondered'] = (Wo_IsWondered($story['id'], $wo['user']['user_id']) === true) ? true : false;
         $story['is_post_saved'] = (Wo_IsPostSaved($story['id'], $wo['user']['user_id']) === true) ? true : false;
         $story['is_post_reported'] = (Wo_IsPostRepotred($story['id'], $wo['user']['user_id']) === true) ? true : false;
+        $story['can_delete'] = Wo_CanDeletePost($story, $wo['user']['user_id']);
         if (Wo_IsBlocked($story['user_id']) || Wo_IsBlocked($story['recipient_id'])) {
             if (empty($story['group_id'])) {
                 return false;
             }
         }
+    }
+    else {
+        $story['can_delete'] = false;
     }
     $story['postFile_full'] = '';
     $story['shared_from'] = ($story['shared_from'] > 0) ? Wo_UserData($story['shared_from']) : false;
@@ -7430,6 +7504,58 @@ function ifVideoPost($postFile = '')
     return false;
 }
 
+function Wo_CanDeletePost($post, $viewer_id = 0)
+{
+    global $wo, $sqlConnect;
+    if (empty($post)) {
+        return false;
+    }
+    if (!is_array($post)) {
+        if (!is_numeric($post) || $post < 1) {
+            return false;
+        }
+        $post_id = Wo_Secure($post);
+        $query = mysqli_query($sqlConnect, "SELECT id, user_id, recipient_id, page_id, group_id FROM " . T_POSTS . " WHERE id = {$post_id} LIMIT 1");
+        $post = $query && mysqli_num_rows($query) ? mysqli_fetch_assoc($query) : array();
+    }
+    if (empty($post['id'])) {
+        return false;
+    }
+    if (empty($viewer_id)) {
+        $viewer_id = !empty($wo['user']['user_id']) ? $wo['user']['user_id'] : 0;
+    }
+    if (empty($viewer_id) || !is_numeric($viewer_id)) {
+        return false;
+    }
+    $viewer_id = Wo_Secure($viewer_id);
+    if (
+        (!empty($post['user_id']) && (string) $post['user_id'] === (string) $viewer_id) ||
+        (!empty($post['recipient_id']) && (string) $post['recipient_id'] === (string) $viewer_id)
+    ) {
+        return true;
+    }
+    if (!empty($post['page_id'])) {
+        $page_id = Wo_Secure($post['page_id']);
+        $page_query = mysqli_query($sqlConnect, "SELECT page_id FROM " . T_PAGES . " WHERE page_id = {$page_id} AND user_id = {$viewer_id} LIMIT 1");
+        if ($page_query && mysqli_num_rows($page_query)) {
+            return true;
+        }
+        $admin_query = mysqli_query($sqlConnect, "SELECT id FROM " . T_PAGE_ADMINS . " WHERE page_id = {$page_id} AND user_id = {$viewer_id} LIMIT 1");
+        if ($admin_query && mysqli_num_rows($admin_query)) {
+            return true;
+        }
+    }
+    if (!empty($post['group_id'])) {
+        $group_id = Wo_Secure($post['group_id']);
+        $group_query = mysqli_query($sqlConnect, "SELECT id FROM " . T_GROUPS . " WHERE id = {$group_id} AND user_id = {$viewer_id} LIMIT 1");
+        if ($group_query && mysqli_num_rows($group_query)) {
+            return true;
+        }
+    }
+    return (string) $viewer_id === (string) (!empty($wo['user']['user_id']) ? $wo['user']['user_id'] : 0)
+        && (Wo_IsAdmin() || Wo_IsModerator());
+}
+
 function Wo_DeletePost($post_id = 0, $type = '')
 {
     global $wo, $sqlConnect, $cache;
@@ -7441,15 +7567,15 @@ function Wo_DeletePost($post_id = 0, $type = '')
     }
     $user_id = Wo_Secure($wo['user']['user_id']);
     $post_id = Wo_Secure($post_id);
-    $query = mysqli_query($sqlConnect, "SELECT `id`, `user_id`, `recipient_id`, `page_id`, `postFile`, `postType`, `postText`, `postLinkImage`, `multi_image`, `album_name`,`parent_id`,`blog_id`,`job_id`,`postRecord`,`240p`,`360p`,`480p`,`720p`,`1080p`,`2048p`,`4096p` FROM " . T_POSTS . " WHERE `id` = {$post_id} AND (`user_id` = {$user_id} OR `recipient_id` = {$user_id} OR `page_id` IN (SELECT `page_id` FROM " . T_PAGES . " WHERE `user_id` = {$user_id}) OR `group_id` IN (SELECT `id` FROM " . T_GROUPS . " WHERE `user_id` = {$user_id}) OR `page_id` IN (SELECT `page_id` FROM " . T_PAGE_ADMINS . " WHERE `user_id` = {$user_id}))");
-    $is_me = mysqli_num_rows($query);
-    $post_info = mysqli_fetch_assoc($query);
+    $query = mysqli_query($sqlConnect, "SELECT id, user_id, recipient_id, page_id, group_id, postFile, postType, postText, postLinkImage, multi_image, album_name, parent_id, blog_id, job_id, postRecord, `240p`, `360p`, `480p`, `720p`, `1080p`, `2048p`, `4096p` FROM " . T_POSTS . " WHERE id = {$post_id} LIMIT 1");
+    $post_info = $query && mysqli_num_rows($query) ? mysqli_fetch_assoc($query) : array();
+    $is_me = Wo_CanDeletePost($post_info, $user_id);
     $fetched_data = array();
     $row = mysqli_query($sqlConnect, "SELECT * FROM " . T_POSTS . " WHERE `id` = '{$post_id}'");
     if (mysqli_num_rows($row)) {
         $fetched_data = mysqli_fetch_assoc($row);
     }
-    if ($is_me > 0 || (Wo_IsAdmin() || Wo_IsModerator()) || $type == 'shared') {
+    if ($is_me || $type == 'shared') {
         // $post_image = $db->where('post_id',$post_id)->getOne(T_ALBUMS_MEDIA);
         // if (!empty($post_image)) {
         //     mysqli_query($sqlConnect, "DELETE FROM " . T_ALBUMS_MEDIA . " WHERE `image` LIKE '%$post_image->image%' ");

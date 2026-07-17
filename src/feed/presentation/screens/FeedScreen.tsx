@@ -86,6 +86,7 @@ import type {
 } from '../../../navigation/types';
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
+import { usePostRealtimeScope } from '../../application/realtime/usePostRealtimeScope';
 import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import type {
   FeedPost,
@@ -220,7 +221,7 @@ const FEED_SAFE_AREA_STYLE =
 const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios'
     ? ['left', 'right']
-    : ['left', 'right', 'bottom'];
+    : ['top', 'left', 'right', 'bottom'];
 const FEED_LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 type FeedScrollDirection = 'up' | 'down' | 'none';
 
@@ -1577,7 +1578,7 @@ function FeedScreen() {
   const feedRefreshProgressViewOffset =
     Platform.OS === 'ios'
       ? topInset + FEED_IOS_HEADER_OVERLAY_HEIGHT
-      : topInset + FEED_HEADER_CONTENT_HEIGHT;
+      : FEED_HEADER_CONTENT_HEIGHT;
   const feedHeaderOverlayHeight = feedRefreshProgressViewOffset;
   const newPostsButtonTop = feedHeaderOverlayHeight + 12;
   const feedListContentStyle = useMemo(
@@ -1997,6 +1998,18 @@ function FeedScreen() {
 
   const commentVm = useFeedCommentsViewModel({
     onCommentCountChange: vm.updateCommentCount,
+  });
+  const [realtimeVisiblePostIds, setRealtimeVisiblePostIds] = useState<string[]>([]);
+  usePostRealtimeScope({
+    postIds: realtimeVisiblePostIds,
+    enabled: isFeedTabFocused,
+    onSnapshot: vm.applyRealtimePost,
+    onDeleted: vm.removeRealtimePost,
+    onCommentMutation: change => {
+      if (String(commentVm.selectedCommentPostId) === change.postId) {
+        void commentVm.refreshComments();
+      }
+    },
   });
 
   // Stable ref-backed wrappers to prevent flatlist items re-rendering on feed action changes
@@ -2714,6 +2727,14 @@ function FeedScreen() {
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: any[] }) => {
       latestViewableFeedItemsRef.current = viewableItems;
+      const visiblePostIds = viewableItems
+        .filter(item => item?.isViewable && item?.item?.type === 'post')
+        .map(item => String(item.item.post?.id ?? ''))
+        .filter(postId => /^[1-9][0-9]*$/.test(postId));
+      setRealtimeVisiblePostIds(previous => {
+        const next = Array.from(new Set(visiblePostIds)).slice(0, 50);
+        return previous.join(',') === next.join(',') ? previous : next;
+      });
       prefetchFeedImagesAroundVisibleItems(viewableItems);
       prefetchFeedVideoPostersAroundVisibleItems(viewableItems);
       maybeLoadMoreFeedAroundVisibleItems(viewableItems);
@@ -3659,7 +3680,7 @@ function FeedScreen() {
             <FeedHeaderCollapseFrame
               hidden={isFeedChromeHidden}
               height={FEED_HEADER_CONTENT_HEIGHT}
-              top={topInset}
+              top={0}
               translateDistance={FEED_HEADER_CONTENT_HEIGHT}
             >
               <FeedHeader />

@@ -35,6 +35,22 @@ $limit = (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limi
 $after_post_id = (!empty($_POST['after_post_id']) && is_numeric($_POST['after_post_id']) && $_POST['after_post_id'] > 0 ? Wo_Secure($_POST['after_post_id']) : 0);
 $offset = (!empty($_POST['offset']) && is_numeric($_POST['offset']) && $_POST['offset'] > 0 ? Wo_Secure($_POST['offset']) : 0);
 
+$resolve_comment_post_id = function ($comment_id) {
+    if (empty($comment_id) || !is_numeric($comment_id)) {
+        return 0;
+    }
+    $comment = Wo_GetPostComment(Wo_Secure($comment_id));
+    return !empty($comment['post_id']) ? $comment['post_id'] : 0;
+};
+
+$resolve_reply_post_id = function ($reply_id) use ($resolve_comment_post_id) {
+    if (empty($reply_id) || !is_numeric($reply_id)) {
+        return 0;
+    }
+    $reply = Wo_GetCommentReply(Wo_Secure($reply_id));
+    return !empty($reply['comment_id']) ? $resolve_comment_post_id($reply['comment_id']) : 0;
+};
+
 if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 
     if ($_POST['type'] == 'create') {
@@ -125,6 +141,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                                         'api_status' => 200,
                                         'data' => $comment
                                     );
+                if (!empty($R_Comment) && !empty($comment)) {
+                    Wo_PublishRealtimePostChange($_POST['post_id'], 'comment');
+                }
             }
             else{
                 $error_code    = 5;
@@ -140,11 +159,18 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     if ($_POST['type'] == 'delete') {
         if (!empty($_POST['comment_id']) && is_numeric($_POST['comment_id']) && $_POST['comment_id'] > 0) {
             $comment_id = Wo_Secure($_POST['comment_id']);
+            $realtime_post_id = $resolve_comment_post_id($comment_id);
             $DeleteComment = Wo_DeletePostComment($comment_id);
-            $response_data = array(
-                'api_status' => 200,
-                'message' => "comment successfully deleted."
-            );
+            if ($DeleteComment) {
+                $response_data = array(
+                    'api_status' => 200,
+                    'message' => "comment successfully deleted."
+                );
+                Wo_PublishRealtimePostChange($realtime_post_id, 'comment');
+            } else {
+                $error_code = 8;
+                $error_message = 'comment could not be deleted.';
+            }
         }
         else{
             $error_code    = 7;
@@ -154,6 +180,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 
     if ($_POST['type'] == 'edit') {
         if (!empty($_POST['comment_id']) && !empty($_POST['text'])) {
+            $realtime_post_id = $resolve_comment_post_id($_POST['comment_id']);
             $updateComment = Wo_UpdateComment(array(
                 'comment_id' => $_POST['comment_id'],
                 'text' => $_POST['text']
@@ -163,6 +190,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     'api_status' => 200,
                     'message' => "comment successfully edited."
                 );
+                Wo_PublishRealtimePostChange($realtime_post_id, 'comment');
             }
             else{
                 $error_code    = 8;
@@ -177,6 +205,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 
     if ($_POST['type'] == 'create_reply') {
         if (!empty($_POST['comment_id']) && (!empty($_POST['text']) || !empty($_FILES['image']))) {
+            $realtime_post_id = $resolve_comment_post_id($_POST['comment_id']);
             $page_id = '';
             if (!empty($_POST['page_id'])) {
                 $page_id = $_POST['page_id'];
@@ -225,6 +254,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                                         'api_status' => 200,
                                         'data' => $comment
                                     );
+                Wo_PublishRealtimePostChange($realtime_post_id, 'comment');
             }
         }
         else{
@@ -235,6 +265,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     if ($_POST['type'] == 'edit_reply') {
         if (!empty($_POST['reply_id']) && !empty($_POST['text'])) {
             $id           = Wo_Secure($_POST['reply_id']);
+            $realtime_post_id = $resolve_reply_post_id($id);
             $update_datau = array(
                 'text' => Wo_Secure($_POST['text'])
             );
@@ -244,6 +275,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     'api_status' => 200,
                     'message' => "reply successfully edited."
                 );
+                Wo_PublishRealtimePostChange($realtime_post_id, 'comment');
             }
             else{
                 $error_code    = 8;
@@ -258,11 +290,18 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 
     if ($_POST['type'] == 'delete_reply') {
         if (!empty($_POST['reply_id'])) {
+            $realtime_post_id = $resolve_reply_post_id($_POST['reply_id']);
             $DeleteComment = Wo_DeletePostReplyComment($_POST['reply_id']);
-            $response_data = array(
-                'api_status' => 200,
-                'message' => "comment reply successfully deleted."
-            );
+            if ($DeleteComment) {
+                $response_data = array(
+                    'api_status' => 200,
+                    'message' => "comment reply successfully deleted."
+                );
+                Wo_PublishRealtimePostChange($realtime_post_id, 'comment');
+            } else {
+                $error_code = 12;
+                $error_message = 'comment reply could not be deleted.';
+            }
         }
         else{
             $error_code    = 11;
@@ -353,6 +392,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                                     'api_status' => 200,
                                     'message' => "comment successfully reacted."
                                 );
+                    Wo_PublishRealtimePostChange($comment['post_id'], 'comment');
                 }
                 elseif (Wo_IsReacted($comment_id, $wo['user']['user_id'],'comment') == true) {
                     Wo_DeleteCommentReactions($comment_id);
@@ -360,6 +400,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                                     'api_status' => 200,
                                     'message' => "reaction successfully deleted."
                                 );
+                    Wo_PublishRealtimePostChange($comment['post_id'], 'comment');
                 }
                 else{
                     $error_code    = 8;
@@ -381,6 +422,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             $reply_id = Wo_Secure($_POST['reply_id']);
             $reply = Wo_GetCommentReply($reply_id);
             if (!empty($reply)) {
+				$realtime_post_id = $resolve_reply_post_id($reply_id);
 
                 $reactions_types = array_keys($wo['reactions_types']);
                 if (!empty($_POST['reaction']) && in_array($_POST['reaction'], $reactions_types)) {
@@ -392,6 +434,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                                     'api_status' => 200,
                                     'message' => "comment successfully reacted."
                                 );
+                    Wo_PublishRealtimePostChange($realtime_post_id, 'comment');
                 }
                 elseif (Wo_IsReacted($reply_id, $wo['user']['user_id'],'replay') == true) {
                     Wo_DeleteReplayReactions($reply_id);
@@ -399,6 +442,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                                     'api_status' => 200,
                                     'message' => "reaction successfully deleted."
                                 );
+                    Wo_PublishRealtimePostChange($realtime_post_id, 'comment');
                 }
                 else{
                     $error_code    = 8;
@@ -431,6 +475,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                                         'code' => 1
                                     );
                 }
+                Wo_PublishRealtimePostChange($comment['post_id'], 'comment');
             }
             else{
                 $error_code    = 7;
@@ -459,6 +504,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                                         'code' => 1
                                     );
                 }
+                Wo_PublishRealtimePostChange($comment['post_id'], 'comment');
             }
             else{
                 $error_code    = 7;
@@ -472,6 +518,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     }
     if ($_POST['type'] == 'reply_like') {
         if (!empty($_POST['reply_id']) && is_numeric($_POST['reply_id']) && $_POST['reply_id'] > 0) {
+			$realtime_post_id = $resolve_reply_post_id($_POST['reply_id']);
             if (Wo_AddCommentReplyLikes($_POST['reply_id'], '') == 'unliked') {
                 $response_data = array(
                     'api_status' => 200,
@@ -488,6 +535,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 //$response_data['dislike']   = 1;
                 $response_data['dislike'] = Wo_CountCommentReplyWonders($_POST['reply_id']);
             }
+			Wo_PublishRealtimePostChange($realtime_post_id, 'comment');
         }
         else{
             $error_code    = 6;
@@ -496,6 +544,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     }
     if ($_POST['type'] == 'reply_dislike') {
         if (!empty($_POST['reply_id']) && is_numeric($_POST['reply_id']) && $_POST['reply_id'] > 0) {
+			$realtime_post_id = $resolve_reply_post_id($_POST['reply_id']);
             if (Wo_AddCommentReplyWonders($_POST['reply_id'], '') == 'unwonder') {
                 $response_data = array(
                     'status' => 200,
@@ -510,6 +559,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             if ($wo['config']['second_post_button'] == 'dislike') {
                 $response_data['likes'] = Wo_CountCommentReplyLikes($_POST['reply_id']);
             }
+			Wo_PublishRealtimePostChange($realtime_post_id, 'comment');
         }
         else{
             $error_code    = 6;

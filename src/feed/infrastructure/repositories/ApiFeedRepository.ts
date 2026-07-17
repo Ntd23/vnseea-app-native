@@ -209,6 +209,12 @@ function readBool(raw: Record<string, unknown>, ...keys: string[]) {
   return false;
 }
 
+function readPostPermissions(raw: Record<string, unknown>) {
+  return {
+    canDelete: readBool(raw, 'can_delete'),
+  };
+}
+
 // Match any common video extension anywhere in the URL (allows query
 // strings, signed-CDN tokens, weird paths). The `.` is bare so we also
 // catch `video.mp4.encrypted` paths some installs ship with.
@@ -314,6 +320,7 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
   return {
     kind: 'poll',
     id: postId,
+    permissions: readPostPermissions(raw),
     caption: readPostCaption(raw) || undefined,
     mentionNames: readPostMentionNames(raw),
     pollQuestion: readPostCaption(raw) || undefined,
@@ -563,6 +570,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
   return {
     kind: 'video',
     id: postId,
+    permissions: readPostPermissions(raw),
     caption: readPostCaption(raw) || undefined,
     mentionNames: readPostMentionNames(raw),
     // Some endpoints return full Wo_GetMedia URLs, others still return
@@ -984,6 +992,7 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
   return {
     kind: 'text',
     id: postId,
+    permissions: readPostPermissions(raw),
     caption,
     mentionNames: readPostMentionNames(raw),
     photos: photos.length > 0 ? photos : sharedPhotos,

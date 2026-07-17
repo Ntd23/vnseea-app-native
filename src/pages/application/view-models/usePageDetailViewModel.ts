@@ -762,6 +762,18 @@ export function usePageDetailViewModel(initialPage: PagesItem) {
     togglePostComments,
     togglePostReaction,
     updatePostCommentCount,
+    applyRealtimePost: (nextPost: FeedPost) => {
+      setPosts(current =>
+        current.map(post =>
+          String(post.id) === String(nextPost.id) ? nextPost : post,
+        ),
+      );
+    },
+    removeRealtimePost: (postId: string) => {
+      setPosts(current =>
+        current.filter(post => String(post.id) !== String(postId)),
+      );
+    },
     toggleFollow,
     toggleLike,
     toggleSuggestedPageLike,

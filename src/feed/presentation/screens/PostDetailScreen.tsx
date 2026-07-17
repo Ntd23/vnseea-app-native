@@ -39,6 +39,7 @@ import {
   Users,
 } from 'lucide-react-native';
 import {
+  useIsFocused,
   useNavigation,
   useRoute,
   type RouteProp,
@@ -66,6 +67,7 @@ import {
   renderPostTextTokens,
 } from '../components/PostCards';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import { usePostRealtimeScope } from '../../application/realtime/usePostRealtimeScope';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -800,6 +802,7 @@ function CommentComposer({
 
 function PostDetailScreen() {
   const navigation = useNavigation<PostDetailNav>();
+  const isFocused = useIsFocused();
   const route = useRoute<PostDetailRoute>();
   const { postId, post: postFromParams } = route.params;
 
@@ -812,9 +815,22 @@ function PostDetailScreen() {
     isSubmitting,
     likedUsers,
     toggleReaction,
+    applyRealtimePost,
+    markRealtimeDeleted,
+    refreshRealtimeComments,
   } = usePostDetailViewModel({
     fallbackPost: postFromParams,
     postId,
+  });
+
+  usePostRealtimeScope({
+    postIds: [postId],
+    enabled: isFocused,
+    onSnapshot: applyRealtimePost,
+    onDeleted: markRealtimeDeleted,
+    onCommentMutation: () => {
+      void refreshRealtimeComments();
+    },
   });
 
   const language = useAppLanguage();

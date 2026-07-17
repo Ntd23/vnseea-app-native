@@ -95,16 +95,20 @@ export function PostMenuActionSheet({
           iconClassName="bg-slate-100"
           onPress={() => runAction('hide', onHide)}
         />
-        <Divider />
-        <MenuAction
-          label="Xóa bài viết"
-          loading={loadingId === 'delete'}
-          disabled={isBusy}
-          icon={<Trash2 size={20} color="#EF4444" />}
-          iconClassName="bg-red-100"
-          textClassName="text-red-600"
-          onPress={() => runAction('delete', onDelete)}
-        />
+        {post.permissions?.canDelete === true ? (
+          <>
+            <Divider />
+            <MenuAction
+              label="Xóa bài viết"
+              loading={loadingId === 'delete'}
+              disabled={isBusy}
+              icon={<Trash2 size={20} color="#EF4444" />}
+              iconClassName="bg-red-100"
+              textClassName="text-red-600"
+              onPress={() => runAction('delete', onDelete)}
+            />
+          </>
+        ) : null}
         <Divider />
         <MenuAction
           label="Báo cáo bài viết"
