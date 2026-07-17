@@ -18,7 +18,9 @@ describe('Android Feed header top safe-area ownership', () => {
   );
 
   it('positions Android Feed chrome below the status bar without double-padding', () => {
-    expect(insetSource).toContain('StatusBar.currentHeight');
+    expect(insetSource).not.toContain('StatusBar.currentHeight');
+    expect(insetSource).toContain("if (Platform.OS === 'android')");
+    expect(insetSource).toContain('return runtimeTopInset');
     expect(insetSource).not.toContain(
       "if (Platform.OS === 'android') {\n    return 0;",
     );

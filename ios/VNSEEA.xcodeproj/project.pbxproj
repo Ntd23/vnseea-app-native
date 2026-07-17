@@ -17,6 +17,8 @@
 		E1D4A0030000000000000003 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = E1D4A0090000000000000009 /* LiveKit */; };
 		E1D4A0100000000000000010 /* VNSEEAIosLiquidTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0120000000000000012 /* VNSEEAIosLiquidTabBar.swift */; };
 		E1D4A0110000000000000011 /* VNSEEAIosLiquidTabBarManager.m in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0130000000000000013 /* VNSEEAIosLiquidTabBarManager.m */; };
+		E1D4A0140000000000000014 /* CurrentLocationModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0160000000000000016 /* CurrentLocationModule.swift */; };
+		E1D4A0150000000000000015 /* CurrentLocationModule.m in Sources */ = {isa = PBXBuildFile; fileRef = E1D4A0170000000000000017 /* CurrentLocationModule.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +36,8 @@
 		E1D4A0050000000000000005 /* VNSEEALiveKitNativeViewManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = VNSEEALiveKitNativeViewManager.m; path = VNSEEA/VNSEEALiveKitNativeViewManager.m; sourceTree = "<group>"; };
 		E1D4A0120000000000000012 /* VNSEEAIosLiquidTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VNSEEAIosLiquidTabBar.swift; path = VNSEEA/VNSEEAIosLiquidTabBar.swift; sourceTree = "<group>"; };
 		E1D4A0130000000000000013 /* VNSEEAIosLiquidTabBarManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = VNSEEAIosLiquidTabBarManager.m; path = VNSEEA/VNSEEAIosLiquidTabBarManager.m; sourceTree = "<group>"; };
+		E1D4A0160000000000000016 /* CurrentLocationModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CurrentLocationModule.swift; path = VNSEEA/CurrentLocationModule.swift; sourceTree = "<group>"; };
+		E1D4A0170000000000000017 /* CurrentLocationModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = CurrentLocationModule.m; path = VNSEEA/CurrentLocationModule.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -59,6 +63,8 @@
 				E1D4A0050000000000000005 /* VNSEEALiveKitNativeViewManager.m */,
 				E1D4A0120000000000000012 /* VNSEEAIosLiquidTabBar.swift */,
 				E1D4A0130000000000000013 /* VNSEEAIosLiquidTabBarManager.m */,
+				E1D4A0160000000000000016 /* CurrentLocationModule.swift */,
+				E1D4A0170000000000000017 /* CurrentLocationModule.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				A1B2C3D4E5F60718293A4B5C /* VNSEEA.entitlements */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
@@ -273,6 +279,8 @@
 				E1D4A0020000000000000002 /* VNSEEALiveKitNativeViewManager.m in Sources */,
 				E1D4A0100000000000000010 /* VNSEEAIosLiquidTabBar.swift in Sources */,
 				E1D4A0110000000000000011 /* VNSEEAIosLiquidTabBarManager.m in Sources */,
+				E1D4A0140000000000000014 /* CurrentLocationModule.swift in Sources */,
+				E1D4A0150000000000000015 /* CurrentLocationModule.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
