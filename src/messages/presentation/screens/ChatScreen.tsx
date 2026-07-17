@@ -29,6 +29,7 @@ import {
   Pressable,
   FlatList,
   type ListRenderItem,
+  type KeyboardEvent,
   type StyleProp,
   type TextStyle,
   useWindowDimensions,
@@ -159,6 +160,8 @@ const IMAGE_GALLERY_WIDTH = Math.min(Dimensions.get('window').width - 92, 332);
 const IMAGE_GALLERY_GAP = 3;
 const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
 const MAP_SHARE_CARD_WIDTH = Math.min(Dimensions.get('window').width - 92, 292);
+const CHAT_SAFE_AREA_EDGES: Edge[] =
+  Platform.OS === 'ios' ? ['top', 'left', 'right'] : ROOT_SAFE_AREA_EDGES;
 const GROUP_INFO_MODAL_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios' ? ['left', 'right'] : ROOT_SAFE_AREA_EDGES;
 const GROUP_INFO_DISMISS_SWIPE_DISTANCE = 72;
@@ -3575,6 +3578,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     });
   }, []);
 
+  const handleComposerFocus = useCallback(() => {
+    setTimeout(() => scrollToLatest(true), Platform.OS === 'ios' ? 80 : 0);
+  }, [scrollToLatest]);
+
   const handlePressReply = useCallback((originalMessageId: string) => {
     const index = findConversationMessageListItemIndex(
       messageItemsRef.current,
@@ -3654,14 +3661,31 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     setShowJumpToLatest(false);
   }, [chat.id]);
 
-  // Keyboard listeners
   useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardWillShow', () => {
-      setIsKeyboardVisible(true);
-      // Only scroll if user was at bottom
-      setTimeout(() => scrollToLatest(true), 100);
-    });
-    const hideSub = Keyboard.addListener('keyboardWillHide', () => {
+    const handleKeyboardFrameChange = (event: KeyboardEvent) => {
+      const windowHeight = Dimensions.get('window').height;
+      const keyboardIsVisible =
+        event.endCoordinates.height > 0 &&
+        event.endCoordinates.screenY < windowHeight;
+      setIsKeyboardVisible(keyboardIsVisible);
+      if (keyboardIsVisible) {
+        setTimeout(() => scrollToLatest(true), 80);
+      }
+    };
+
+    if (Platform.OS === 'ios') {
+      const frameSub = Keyboard.addListener('keyboardWillChangeFrame', handleKeyboardFrameChange);
+      const hideSub = Keyboard.addListener('keyboardWillHide', () => {
+        setIsKeyboardVisible(false);
+      });
+      return () => {
+        frameSub.remove();
+        hideSub.remove();
+      };
+    }
+
+    const showSub = Keyboard.addListener('keyboardDidShow', handleKeyboardFrameChange);
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
       setIsKeyboardVisible(false);
     });
     return () => {
@@ -4487,10 +4511,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   }, [chat.chatType, handleOpenGroupInfo, handleStartConversationCall]);
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={ROOT_SAFE_AREA_EDGES}>
+    <SafeAreaView className="flex-1 bg-white" edges={CHAT_SAFE_AREA_EDGES}>
       <KeyboardAvoidingView
-        className="flex-1"
+        style={styles.keyboardBoundary}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        enabled={Platform.OS === 'ios'}
+        keyboardVerticalOffset={0}
       >
         {/* Header */}
         <View className="flex-row items-center border-b border-gray-200 px-3 py-2">
@@ -4560,6 +4586,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             contentContainerStyle={messageListContentStyle}
             inverted
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
             onScroll={handleScroll}
             onContentSizeChange={handleContentSizeChange}
             scrollEventThrottle={16}
@@ -4904,6 +4931,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               multiline
               value={text}
               onChangeText={handleChangeText}
+              onFocus={handleComposerFocus}
             />
           )}
 
@@ -5144,6 +5172,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 }
 
 const styles = StyleSheet.create({
+  keyboardBoundary: {
+    flex: 1,
+  },
   highlightedMessage: {
     backgroundColor: 'rgba(0, 0, 255, 0.08)',
     borderRadius: 16,

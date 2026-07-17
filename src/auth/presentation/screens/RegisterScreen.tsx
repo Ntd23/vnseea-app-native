@@ -58,6 +58,7 @@ type RegisterFieldKey =
 const BRAND = '#0000ff';
 const TERMS_URL = 'https://v2.vnseea.vn/terms/terms';
 const PRIVACY_URL = 'https://v2.vnseea.vn/terms/privacy-policy';
+const REGISTER_USERNAME_PATTERN = /^[A-Za-z0-9_]+$/;
 const MIN_BIRTH_YEAR = new Date().getFullYear() - 100;
 const BIRTHDAY_OPTION_ROW_HEIGHT = 50;
 const BIRTHDAY_COLUMN_HEIGHT = 210;
@@ -434,8 +435,25 @@ function RegisterScreen() {
   }, []);
 
   const handleRegister = useCallback(async () => {
-    if (!username.trim()) {
+    const normalizedUsername = username.trim();
+    if (!normalizedUsername) {
       setValidationError('Nhập tên người dùng.');
+      return;
+    }
+    if (normalizedUsername.length < 5 || normalizedUsername.length > 32) {
+      setValidationError(
+        isVi
+          ? 'Tên người dùng phải có từ 5 đến 32 ký tự.'
+          : 'Username must be between 5 and 32 characters.',
+      );
+      return;
+    }
+    if (!REGISTER_USERNAME_PATTERN.test(normalizedUsername)) {
+      setValidationError(
+        isVi
+          ? 'Tên người dùng chỉ được chứa chữ, số và dấu gạch dưới.'
+          : 'Username can only contain letters, numbers, and underscores.',
+      );
       return;
     }
     if (!isValidLoginIdentity(email)) {
@@ -456,13 +474,13 @@ function RegisterScreen() {
     }
 
     setValidationError(null);
-    const displayName = username.trim() || email.trim();
+    const displayName = normalizedUsername;
 
     try {
       const result = await register({
         firstName: displayName,
         lastName: '',
-        username,
+        username: normalizedUsername,
         email,
         password,
         confirmPassword,
@@ -495,6 +513,7 @@ function RegisterScreen() {
     email,
     gender,
     hasExistingStorefront,
+    isVi,
     navigation,
     password,
     register,

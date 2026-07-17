@@ -62,6 +62,11 @@ function stringNumberOrNull(value: unknown) {
   return asString(value);
 }
 
+function positiveEntityId(record: RawRecord, keys: string[]) {
+  const value = firstEntityId(record, keys);
+  return value && /^[1-9][0-9]*$/.test(value) ? value : undefined;
+}
+
 function mapPrivacy(record: RawRecord): UserProfile['privacy'] {
   return {
     message: primitiveValue(record.message_privacy),
@@ -107,6 +112,7 @@ export function mapUserProfile(
     schoolCompleted: firstBoolean(record, ['school_completed']),
     relationshipId: firstString(record, ['relationship_id']),
     coverUrl: normalizeRawUrl(firstString(record, ['cover']), webBaseUrl),
+    avatarPostId: positiveEntityId(record, ['avatar_post_id', 'avatarPostId']),
     facebook: firstString(record, ['facebook']),
     twitter: firstString(record, ['twitter']),
     linkedin: firstString(record, ['linkedin']),

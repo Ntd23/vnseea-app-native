@@ -107,7 +107,6 @@ export type RootStackParamList = {
   [ROUTES.USER_PROFILE]: { userId: string };
   [ROUTES.PROFILE_MORE]: {
     userId?: string;
-    isOwnProfile: boolean;
     displayName?: string;
     username?: string;
     avatarUrl?: string;

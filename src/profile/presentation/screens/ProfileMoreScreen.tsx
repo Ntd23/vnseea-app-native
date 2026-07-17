@@ -1,5 +1,5 @@
 // Description: Facebook-style profile action/settings menu for own and other profiles.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -51,6 +51,8 @@ import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppL
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import { resolveProfileOwnership } from '../../application/utils/profileOwnership';
 
 type ProfileMoreNavigation = NativeStackNavigationProp<RootStackParamList>;
 type ProfileMoreRoute = RouteProp<RootStackParamList, typeof ROUTES.PROFILE_MORE>;
@@ -190,6 +192,10 @@ export default function ProfileMoreScreen() {
   const route = useRoute<ProfileMoreRoute>();
   const { width: screenWidth } = useWindowDimensions();
   const params = route.params;
+  const isOwnProfile = resolveProfileOwnership({
+    currentUserId: sessionStorage.getSession()?.userId,
+    routeUserId: params.userId,
+  });
   const displayName = getDisplayName(params, copy.otherTitleFallback);
   const profileUrl = useMemo(
     () => buildProfileUrl(params.userId, params.username),
@@ -199,9 +205,15 @@ export default function ProfileMoreScreen() {
   const screenTranslateX = useSharedValue(screenWidth);
   const previousScreenDim = useSharedValue(0);
   const isClosing = useSharedValue(false);
+  const pendingCloseActionRef = useRef<(() => void) | null>(null);
 
   const completeClose = useCallback(() => {
+    const pendingAction = pendingCloseActionRef.current;
+    pendingCloseActionRef.current = null;
     navigation.goBack();
+    if (pendingAction) {
+      requestAnimationFrame(() => requestAnimationFrame(pendingAction));
+    }
   }, [navigation]);
 
   const closeScreen = useCallback(() => {
@@ -227,6 +239,12 @@ export default function ProfileMoreScreen() {
     screenWidth,
   ]);
 
+  const closeScreenThen = useCallback((action: () => void) => {
+    if (isClosing.value) return;
+    pendingCloseActionRef.current = action;
+    closeScreen();
+  }, [closeScreen, isClosing]);
+
   useEffect(() => {
     isClosing.value = false;
     screenTranslateX.value = screenWidth;
@@ -250,22 +268,30 @@ export default function ProfileMoreScreen() {
 
   const openChat = useCallback(() => {
     if (!params.userId) return;
-    navigation.navigate(ROUTES.CHAT, {
-      chat: {
-        id: `user:${params.userId}`,
-        chatType: 'user',
-        userId: String(params.userId),
-        username: params.username ?? '',
-        name: displayName,
-        avatar: params.avatarUrl ?? '',
-        lastMessage: '',
-        lastMessageTime: 0,
-        unreadCount: 0,
-        isOnline: false,
-        isVerified: false,
-      },
+    const chat = {
+      id: `user:${params.userId}`,
+      chatType: 'user' as const,
+      userId: String(params.userId),
+      username: params.username ?? '',
+      name: displayName,
+      avatar: params.avatarUrl ?? '',
+      lastMessage: '',
+      lastMessageTime: 0,
+      unreadCount: 0,
+      isOnline: false,
+      isVerified: false,
+    };
+    closeScreenThen(() => {
+      navigation.navigate(ROUTES.CHAT, { chat });
     });
-  }, [displayName, navigation, params.avatarUrl, params.userId, params.username]);
+  }, [
+    closeScreenThen,
+    displayName,
+    navigation,
+    params.avatarUrl,
+    params.userId,
+    params.username,
+  ]);
 
   const openRelationship = useCallback(() => {
     if (!params.userId) return;
@@ -381,14 +407,7 @@ export default function ProfileMoreScreen() {
       },
     ]);
   }, [
-    copy.block,
-    copy.blockConfirm,
-    copy.blockSuccess,
-    copy.blockTitle,
-    copy.cancel,
-    copy.errorTitle,
-    copy.genericError,
-    copy.unblock,
+    copy,
     displayName,
     params.blocked,
     params.userId,
@@ -427,17 +446,14 @@ export default function ProfileMoreScreen() {
       setLoadingActionId(null);
     }
   }, [
-    copy.errorTitle,
-    copy.genericError,
-    copy.pokeSuccess,
-    copy.pokeTitle,
+    copy,
     displayName,
     loadingActionId,
     params.userId,
   ]);
 
   const ownActions = useMemo<ProfileMoreAction[]>(() => {
-    if (!params.isOwnProfile) return [];
+    if (!isOwnProfile) return [];
     return [
       {
         id: 'edit',
@@ -506,14 +522,14 @@ export default function ProfileMoreScreen() {
     copy.shareProfile,
     displayName,
     navigation,
-    params.isOwnProfile,
+    isOwnProfile,
     params.privacy,
     params.username,
     shareProfile,
   ]);
 
   const otherActions = useMemo<ProfileMoreAction[]>(() => {
-    if (params.isOwnProfile) return [];
+    if (isOwnProfile) return [];
     const relationshipAvailable =
       Boolean(params.userId) &&
       ((params.followersCount ?? 0) > 0 ||
@@ -600,6 +616,7 @@ export default function ProfileMoreScreen() {
     blockProfile,
     copy,
     displayName,
+    isOwnProfile,
     navigation,
     openChat,
     openRelationship,
@@ -609,7 +626,7 @@ export default function ProfileMoreScreen() {
     shareProfile,
   ]);
 
-  const actions = params.isOwnProfile ? ownActions : otherActions;
+  const actions = isOwnProfile ? ownActions : otherActions;
 
   const swipeBackGesture = useMemo(
     () =>
@@ -768,7 +785,7 @@ export default function ProfileMoreScreen() {
               <ArrowLeft size={24} color="#050505" strokeWidth={2.3} />
             </TouchableOpacity>
             <Text style={styles.headerTitle} numberOfLines={1}>
-              {params.isOwnProfile ? copy.ownTitle : displayName}
+              {isOwnProfile ? copy.ownTitle : displayName}
             </Text>
             <View style={styles.headerSpacer} />
           </View>
@@ -784,12 +801,12 @@ export default function ProfileMoreScreen() {
 
             <View style={styles.linkSection}>
               <Text style={styles.linkTitle}>
-                {params.isOwnProfile
+                {isOwnProfile
                   ? copy.linkTitleOwn
                   : copy.linkTitleOther(displayName)}
               </Text>
               <Text style={styles.linkSubtitle}>
-                {params.isOwnProfile
+                {isOwnProfile
                   ? copy.linkSubtitleOwn
                   : copy.linkSubtitleOther(displayName)}
               </Text>
