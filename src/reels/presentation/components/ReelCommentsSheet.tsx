@@ -35,7 +35,6 @@ import {
   FlatList,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   type KeyboardEvent,
   Modal,
   Platform,
@@ -76,7 +75,6 @@ import type {
   ReactionType,
   ReelComment,
 } from '../../domain/types/reels.types';
-import { ALL_REACTION_TYPES } from '../../domain/types/reels.types';
 import {
   formatAudioDuration,
   pickSupportedAudioFile,
@@ -84,6 +82,7 @@ import {
 import { useWavAudioRecorder } from '../../../shared-kernel/application/hooks/useWavAudioRecorder';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import {
   CommentSheetComposerDock,
@@ -94,6 +93,11 @@ import {
   CommentSheetReactionPickerSurface,
 } from './CommentSheetChrome';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
+import {
+  FEED_REACTION_COLORS as REACTION_COLOR,
+  FEED_REACTION_IMAGES as REACTION_IMAGES,
+  FEED_REACTION_TYPES,
+} from '../../../feed/presentation/components/FeedReactionAssets';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
@@ -234,24 +238,6 @@ function getReportSentMessage(language: keyof typeof COMMENTS_COPY) {
     ? 'Thanks. We will review this comment.'
     : 'C\u1ea3m \u01a1n b\u1ea1n. Ch\u00fang t\u00f4i s\u1ebd xem x\u00e9t b\u00ecnh lu\u1eadn n\u00e0y.';
 }
-
-const REACTION_COLOR: Record<ReactionType, string> = {
-  like: '#0866ff',
-  love: '#f33e58',
-  haha: '#f7b125',
-  wow: '#f7b125',
-  sad: '#f7b125',
-  angry: '#e9710f',
-};
-
-const REACTION_IMAGES: Record<ReactionType, any> = {
-  like: require('../../../assets/reactions/reactions_like.png'),
-  love: require('../../../assets/reactions/reactions_love.png'),
-  haha: require('../../../assets/reactions/reactions_haha.png'),
-  wow: require('../../../assets/reactions/reactions_wow.png'),
-  sad: require('../../../assets/reactions/reactions_sad.png'),
-  angry: require('../../../assets/reactions/reactions_angry.png'),
-};
 
 // Width of the picker pill — used to clamp its X position so it never
 // runs off the screen edge when the long-press happens near the right.
@@ -1052,10 +1038,7 @@ function ReelCommentsSheetBase({
       presentationStyle="overFullScreen"
       onRequestClose={handleRequestClose}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.modalRoot}
-      >
+      <KeyboardSafeView style={styles.modalRoot}>
         <Pressable style={styles.backdropPressable} onPress={handleRequestClose}>
           <Animated.View
             style={[styles.backdrop, { opacity: backdropOpacity }]}
@@ -1411,7 +1394,7 @@ function ReelCommentsSheetBase({
             </TouchableOpacity>
           </CommentSheetComposerDock>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </KeyboardSafeView>
 
       {/* ── Reaction picker overlay ──────────────────────────────────────
           Rendered as a sibling so it can float above the sheet without
@@ -2109,7 +2092,7 @@ function ReactionPicker({ anchor, onPick, onDismiss }: PickerProps) {
       {/* Invisible full-screen backdrop swallows the next tap to dismiss. */}
       <Pressable style={styles.pickerBackdrop} onPress={onDismiss} />
       <CommentSheetReactionPickerSurface style={[styles.pickerPill, { left, top }]}>
-        {[...ALL_REACTION_TYPES].reverse().map(type => (
+        {FEED_REACTION_TYPES.map(type => (
           <TouchableOpacity
             key={type}
             activeOpacity={0.7}

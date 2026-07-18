@@ -1,5 +1,11 @@
 // Description: Renders reusable feed post cards with media, reactions, and privacy metadata.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Dimensions,
   Image,
@@ -63,7 +69,6 @@ import type {
 } from '../../domain/types/feed.types';
 import type { FeedSource } from '../../domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
-import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
@@ -85,6 +90,11 @@ import {
   getPhotoGridItemGutterStyle,
   getPhotoGridItemLayout,
 } from './photoGridLayout';
+import {
+  FEED_REACTION_COLORS as REACTION_COLOR,
+  FEED_REACTION_IMAGES as REACTION_IMAGES,
+  FEED_REACTION_TYPES,
+} from './FeedReactionAssets';
 
 export {
   FEED_CARD_CLASS,
@@ -93,33 +103,6 @@ export {
 } from './FeedCardChrome';
 
 // â”€â”€ Reaction lookup tables â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const REACTION_EMOJI: Record<ReactionType, string> = {
-  like: '\uD83D\uDC4D',
-  love: '\u2764\uFE0F',
-  haha: '\uD83D\uDE02',
-  wow: '\uD83D\uDE2E',
-  sad: '\uD83D\uDE22',
-  angry: '\uD83D\uDE21',
-};
-
-const REACTION_COLOR: Record<ReactionType, string> = {
-  like: '#0866ff',
-  love: '#f33e58',
-  haha: '#f7b125',
-  wow: '#f7b125',
-  sad: '#f7b125',
-  angry: '#e9710f',
-};
-
-const REACTION_IMAGES: Record<ReactionType, any> = {
-  like: require('../../../assets/reactions/reactions_like.png'),
-  love: require('../../../assets/reactions/reactions_love.png'),
-  haha: require('../../../assets/reactions/reactions_haha.png'),
-  wow: require('../../../assets/reactions/reactions_wow.png'),
-  sad: require('../../../assets/reactions/reactions_sad.png'),
-  angry: require('../../../assets/reactions/reactions_angry.png'),
-};
-
 // â”€â”€ Picker geometry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PICKER_WIDTH = 282;
 const PICKER_HEIGHT = 52;
@@ -307,7 +290,7 @@ export function FeedInlineReactionPickerBar({
       ]}
     >
       <View style={styles.androidReactionPickerRow}>
-        {ALL_REACTION_TYPES.map(type => (
+        {FEED_REACTION_TYPES.map(type => (
           <TouchableOpacity
             key={type}
             activeOpacity={0.75}
@@ -370,7 +353,9 @@ export function renderPostTextTokens(
     const rawToken = match[0];
     const trailingMatch = rawToken.match(/[.,!?;:\])]+$/);
     const trailingText = trailingMatch?.[0] ?? '';
-    const token = trailingText ? rawToken.slice(0, -trailingText.length) : rawToken;
+    const token = trailingText
+      ? rawToken.slice(0, -trailingText.length)
+      : rawToken;
     const isUrl =
       /^https?:\/\//i.test(token) ||
       /^www\./i.test(token) ||
@@ -881,7 +866,9 @@ export function publishFeedWarmVideoIds(videoIds: Iterable<string>) {
   if (areWarmVideoIdsEqual(nextIds)) return;
 
   feedWarmVideoIdsSnapshot = nextIds;
-  feedWarmVideoListeners.forEach(listener => listener(feedWarmVideoIdsSnapshot));
+  feedWarmVideoListeners.forEach(listener =>
+    listener(feedWarmVideoIdsSnapshot),
+  );
 }
 
 function publishPreparedVideoIds() {
@@ -907,8 +894,8 @@ function markFeedPreparedVideo(videoId: string) {
 }
 
 function useFeedVideoWarm(videoId: string) {
-  const [isWarm, setIsWarm] = useState(
-    () => feedWarmVideoIdsSnapshot.has(videoId),
+  const [isWarm, setIsWarm] = useState(() =>
+    feedWarmVideoIdsSnapshot.has(videoId),
   );
 
   useEffect(() => {
@@ -930,8 +917,8 @@ function useFeedVideoWarm(videoId: string) {
 }
 
 function useFeedPreparedVideoKeepAlive(videoId: string) {
-  const [isPrepared, setIsPrepared] = useState(
-    () => feedPreparedVideoIdsSnapshot.has(videoId),
+  const [isPrepared, setIsPrepared] = useState(() =>
+    feedPreparedVideoIdsSnapshot.has(videoId),
   );
 
   useEffect(() => {
@@ -1214,7 +1201,9 @@ function useGeneratedVideoPoster({
       setGeneratedPosterUrl(undefined);
       return;
     }
-    setGeneratedPosterUrl(getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri);
+    setGeneratedPosterUrl(
+      getCachedVideoPosterThumbnail(videoUrl, cacheKey)?.uri,
+    );
   }, [cacheKey, serverThumbnailUrl, videoUrl]);
 
   useEffect(() => {
@@ -1253,15 +1242,6 @@ function useGeneratedVideoPoster({
 }
 
 // Background colors for each reaction type's circular badge (FB-style)
-const REACTION_BADGE_BG: Record<ReactionType, string> = {
-  like: '#0866FF',
-  love: '#F33E58',
-  haha: '#F7B125',
-  wow: '#F7B125',
-  sad: '#F7B125',
-  angry: '#E9710F',
-};
-
 // â”€â”€ PhotoViewerModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // â”€â”€ Post sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const VideoReactionSummary = React.memo(function VideoReactionSummary({
@@ -1544,7 +1524,7 @@ export function ReactionPickerOverlay({
   const pickerHeight = isAndroidPicker ? ANDROID_PICKER_HEIGHT : PICKER_HEIGHT;
   const iconSlot = isAndroidPicker
     ? (pickerWidth - ANDROID_PICKER_HORIZONTAL_PADDING * 2) /
-      ALL_REACTION_TYPES.length
+      FEED_REACTION_TYPES.length
     : IOS_PICKER_ICON_SLOT;
   const iconBoxSize = isAndroidPicker
     ? ANDROID_PICKER_ICON_BOX
@@ -1552,9 +1532,7 @@ export function ReactionPickerOverlay({
   const iconImageSize = isAndroidPicker
     ? ANDROID_PICKER_ICON_SIZE
     : IOS_PICKER_ICON_SIZE;
-  const iconStartX = isAndroidPicker
-    ? ANDROID_PICKER_HORIZONTAL_PADDING
-    : 8;
+  const iconStartX = isAndroidPicker ? ANDROID_PICKER_HORIZONTAL_PADDING : 8;
   const iconCenterOffsetY = isAndroidPicker
     ? ANDROID_PICKER_ICON_CENTER_Y
     : PICKER_HEIGHT / 2;
@@ -1625,7 +1603,7 @@ export function ReactionPickerOverlay({
               : styles.iosReactionPickerRow
           }
         >
-          {ALL_REACTION_TYPES.map((type, index) => (
+          {FEED_REACTION_TYPES.map((type, index) => (
             <ReactionIcon
               key={type}
               type={type}
@@ -1830,9 +1808,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const trackedIsWarm = useFeedVideoWarm(post.id);
   const isPreparedKeptAlive = useFeedPreparedVideoKeepAlive(post.id);
   const liveMediaActive = useLiveMediaActive();
-  const isActive = controlledIsActive !== undefined
-    ? controlledIsActive
-    : (isScreenFocused !== false && trackedIsActive);
+  const isActive =
+    controlledIsActive !== undefined
+      ? controlledIsActive
+      : isScreenFocused !== false && trackedIsActive;
   const isWarm = isScreenFocused !== false && trackedIsWarm;
   const [manuallyPaused, setManuallyPaused] = useState(false);
   const muted = useFeedVideoMuted();
@@ -1923,13 +1902,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     setFrameCoverVisible(true);
     setHasVideoError(false);
     setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
-  }, [
-    clearVideoQualityRamp,
-    frameCoverOpacity,
-    mediaIdentity,
-    post.id,
-    videoPreviewCacheKey,
-  ]);
+  }, [clearVideoQualityRamp, frameCoverOpacity, mediaIdentity, post.id, videoPreviewCacheKey]);
 
   useEffect(() => {
     return () => {
@@ -1951,9 +1924,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
     const cachedRatio = MEDIA_ASPECT_RATIO_CACHE.get(thumbnailUrl);
     if (cachedRatio) {
-      setAspectRatio(
-        clampAspectRatio(cachedRatio, 0.75, 16 / 9, 16 / 9),
-      );
+      setAspectRatio(clampAspectRatio(cachedRatio, 0.75, 16 / 9, 16 / 9));
       return;
     }
 
@@ -1962,38 +1933,41 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       (width, height) => {
         if (width > 0 && height > 0) {
           cacheMediaAspectRatio(thumbnailUrl, width, height);
-            // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
+          // Clamp aspect ratio: portrait 3:4 (0.75) → landscape 16:9 (1.78)
           setAspectRatio(
             clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
           );
         }
       },
-      (err) => {
+      err => {
         console.warn('[HomeVideoPostCard] getSize failed for thumbnail:', err);
       },
     );
   }, [resolvedThumbnailUrl]);
 
   // Refine aspect ratio when actual video loads
-  const handleVideoLoad = useCallback((data: any) => {
-    if (mediaIdentity !== mediaIdentityRef.current) return;
-    if (frameCoverTimeoutRef.current) {
-      clearTimeout(frameCoverTimeoutRef.current);
-      frameCoverTimeoutRef.current = null;
-    }
-    setHasVideoError(false);
-    setIsReady(true);
-    const size = data?.naturalSize ?? data;
-    if (size) {
-      const { width, height } = size;
-      if (width > 0 && height > 0) {
-        cacheMediaAspectRatio(videoPreviewCacheKey, width, height);
-        setAspectRatio(
-          clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
-        );
+  const handleVideoLoad = useCallback(
+    (data: any) => {
+      if (mediaIdentity !== mediaIdentityRef.current) return;
+      if (frameCoverTimeoutRef.current) {
+        clearTimeout(frameCoverTimeoutRef.current);
+        frameCoverTimeoutRef.current = null;
       }
-    }
-  }, [mediaIdentity, videoPreviewCacheKey]);
+      setHasVideoError(false);
+      setIsReady(true);
+      const size = data?.naturalSize ?? data;
+      if (size) {
+        const { width, height } = size;
+        if (width > 0 && height > 0) {
+          cacheMediaAspectRatio(videoPreviewCacheKey, width, height);
+          setAspectRatio(
+            clampAspectRatio(width / height, 0.75, 16 / 9, 16 / 9),
+          );
+        }
+      }
+    },
+    [mediaIdentity, videoPreviewCacheKey],
+  );
 
   const revealVideoFrame = useCallback(() => {
     if (mediaIdentity !== mediaIdentityRef.current) return;
@@ -2009,19 +1983,22 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     if (frameCoverTimeoutRef.current) {
       clearTimeout(frameCoverTimeoutRef.current);
     }
-    frameCoverTimeoutRef.current = setTimeout(() => {
-      frameCoverTimeoutRef.current = null;
-      if (mediaIdentity !== mediaIdentityRef.current) return;
-      frameCoverOpacity.value = withTiming(
-        0,
-        { duration: VIDEO_POSTER_FADE_MS },
-        finished => {
-          if (finished) {
-            runOnJS(hideFrameCoverForMedia)(mediaIdentity);
-          }
-        },
-      );
-    }, resolvedThumbnailUrl ? VIDEO_POSTER_REVEAL_HOLD_MS : 0);
+    frameCoverTimeoutRef.current = setTimeout(
+      () => {
+        frameCoverTimeoutRef.current = null;
+        if (mediaIdentity !== mediaIdentityRef.current) return;
+        frameCoverOpacity.value = withTiming(
+          0,
+          { duration: VIDEO_POSTER_FADE_MS },
+          finished => {
+            if (finished) {
+              runOnJS(hideFrameCoverForMedia)(mediaIdentity);
+            }
+          },
+        );
+      },
+      resolvedThumbnailUrl ? VIDEO_POSTER_REVEAL_HOLD_MS : 0,
+    );
   }, [
     frameCoverOpacity,
     hideFrameCoverForMedia,
@@ -2066,9 +2043,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   // tiny muted slice so the card has a real frame before the user reaches it,
   // without keeping every rendered video alive.
   const shouldKeepPreparedVideoMounted =
-    keepPreparedVideoMounted &&
-    isPreparedKeptAlive &&
-    hasRenderedFrame;
+    keepPreparedVideoMounted && isPreparedKeptAlive && hasRenderedFrame;
   const canMountWarmVideo = !isScrollBusy || shouldKeepPreparedVideoMounted;
   const shouldMountVideo =
     isScreenFocused !== false &&
@@ -2123,13 +2098,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     }
 
     return clearVideoQualityRamp;
-  }, [
-    clearVideoQualityRamp,
-    hasRenderedFrame,
-    isActive,
-    isScrollBusy,
-    scheduleVideoQualityRamp,
-  ]);
+  }, [clearVideoQualityRamp, hasRenderedFrame, isActive, isScrollBusy, scheduleVideoQualityRamp]);
 
   useEffect(() => {
     if (isActive && isReady && seekTime !== undefined && videoRef.current) {
@@ -2144,9 +2113,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     !isScrollBusy &&
     isWarm &&
     !isActive &&
-    (keepPreparedVideoMounted
-      ? !warmPreviewReady
-      : !hasRenderedFrame);
+    (keepPreparedVideoMounted ? !warmPreviewReady : !hasRenderedFrame);
   const playing =
     shouldMountVideo &&
     !manuallyPaused &&
@@ -2244,12 +2211,15 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 muted={muted || !isActive || isScrollBusy || !hasRenderedFrame}
                 repeat
                 ignoreSilentSwitch="ignore"
-                disableAudioSessionManagement={Platform.OS === 'ios' && liveMediaActive}
+                disableAudioSessionManagement={
+                  Platform.OS === 'ios' && liveMediaActive
+                }
                 playInBackground={false}
                 playWhenInactive={false}
-                // Feed/profile cards need TextureView on Android so the
-                // thumbnail cover can mask the first decoded black frame.
-                useTextureView={Platform.OS === 'android'}
+                // SurfaceView is more reliable for Android codecs that can
+                // play audio while TextureView remains stuck on its poster.
+                // The poster/frame-cover layers still hide the first frame.
+                useTextureView={false}
                 bufferConfig={VIDEO_BUFFER_CONFIG}
                 maxBitRate={maxVideoBitRate}
                 onReadyForDisplay={revealVideoFrame}
@@ -2313,20 +2283,13 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
               ) : !resolvedThumbnailUrl && isFrameCoverVisible ? (
                 <Animated.View
                   pointerEvents="none"
-                  style={[
-                    StyleSheet.absoluteFill,
-                    frameCoverAnimatedStyle,
-                  ]}
+                  style={[StyleSheet.absoluteFill, frameCoverAnimatedStyle]}
                 >
-                  <VideoFallbackPoster
-                    label={copy.video ?? 'Video'}
-                  />
+                  <VideoFallbackPoster label={copy.video ?? 'Video'} />
                 </Animated.View>
               ) : null}
             </View>
-          ) : resolvedThumbnailUrl ? (
-            null
-          ) : (
+          ) : resolvedThumbnailUrl ? null : (
             <VideoFallbackPoster
               label={
                 hasVideoUrl && !hasVideoError
@@ -2485,9 +2448,13 @@ const PostHeader = React.memo(function PostHeader({
             ) : null}
           </View>
           <View className="mt-0.5 flex-row items-center">
-            <Text className="text-caption-secondary">{time} {'\u2022'} </Text>
+            <Text className="text-caption-secondary">
+              {time} {'\u2022'}{' '}
+            </Text>
             <PrivacyIcon size={11} color="#94A3B8" />
-            <Text className="ml-1 text-caption-secondary">{privacyMeta.label}</Text>
+            <Text className="ml-1 text-caption-secondary">
+              {privacyMeta.label}
+            </Text>
           </View>
           {onDetailPress && post ? (
             <TouchableOpacity
@@ -2536,7 +2503,8 @@ const ExpandablePostCaption = React.memo(function ExpandablePostCaption({
   const textSuggestsOverflow =
     normalizedText.length > COLLAPSED_CAPTION_CHAR_LIMIT ||
     normalizedText.split(/\r\n|\r|\n/).length > COLLAPSED_CAPTION_LINES;
-  const canCollapse = collapsible && (textSuggestsOverflow || layoutCanCollapse);
+  const canCollapse =
+    collapsible && (textSuggestsOverflow || layoutCanCollapse);
 
   useEffect(() => {
     setIsExpanded(false);
@@ -2642,7 +2610,11 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
       {preview.image ? (
         <FeedMediaImage
           uri={preview.image}
-          style={{ width: '100%', aspectRatio: 1.91, backgroundColor: '#E2E8F0' }}
+          style={{
+            width: '100%',
+            aspectRatio: 1.91,
+            backgroundColor: '#E2E8F0',
+          }}
           resizeMode="cover"
           deferWhileScrolling={false}
         />
@@ -2656,7 +2628,10 @@ const FeedLinkPreviewCard = React.memo(function FeedLinkPreviewCard({
       <View className="bg-slate-50 px-4 py-3">
         <View className="flex-row items-center">
           <MapPin size={14} color="#2563EB" />
-          <Text className="ml-1.5 flex-1 text-caption-secondary" numberOfLines={1}>
+          <Text
+            className="ml-1.5 flex-1 text-caption-secondary"
+            numberOfLines={1}
+          >
             {hostLabel}
           </Text>
         </View>
@@ -2704,7 +2679,7 @@ const SinglePostImage = React.memo(function SinglePostImage({
           setAspectRatio(clampAspectRatio(width / height, 0.75, 1.91, 4 / 3));
         }
       },
-      (err) => {
+      err => {
         console.warn('[SinglePostImage] getSize failed', err);
       },
     );
@@ -2726,10 +2701,7 @@ const SinglePostImage = React.memo(function SinglePostImage({
 });
 
 // ── TextPostCard ──────────────────────────────────────────────────────
-function areScalarArraysEqual<T>(
-  previous?: readonly T[],
-  next?: readonly T[],
-) {
+function areScalarArraysEqual<T>(previous?: readonly T[], next?: readonly T[]) {
   if (previous === next) return true;
   if (!previous || !next) return !previous && !next;
   if (previous.length !== next.length) return false;

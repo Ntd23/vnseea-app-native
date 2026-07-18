@@ -9,9 +9,9 @@ import {
   LiveKitCallSessionProvider,
   LiveKitMiniCallBar,
 } from './src/messages';
-import { requestCallStartupPermissions } from './src/shared-kernel/application/permissions/callStartupPermissions';
 import { initializePushNotifications } from './src/shared-kernel/infrastructure/push/oneSignalPush';
 import { initI18n } from './src/shared-kernel/infrastructure/i18n';
+import { SnackbarProvider } from './src/shared-kernel/presentation/components/Snackbar';
 
 // Initialize i18n before any component subscribes to translations.
 initI18n();
@@ -22,19 +22,20 @@ initI18n();
 function App() {
   useEffect(() => {
     initializePushNotifications();
-    requestCallStartupPermissions();
   }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <LiveKitCallSessionProvider>
-          <GroupLiveKitCallSessionProvider>
-            <AppNavigator />
-            <IncomingCallWatcher />
-            <LiveKitMiniCallBar />
-          </GroupLiveKitCallSessionProvider>
-        </LiveKitCallSessionProvider>
+        <SnackbarProvider>
+          <LiveKitCallSessionProvider>
+            <GroupLiveKitCallSessionProvider>
+              <AppNavigator />
+              <IncomingCallWatcher />
+              <LiveKitMiniCallBar />
+            </GroupLiveKitCallSessionProvider>
+          </LiveKitCallSessionProvider>
+        </SnackbarProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

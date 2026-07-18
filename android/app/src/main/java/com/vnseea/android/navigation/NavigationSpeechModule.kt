@@ -6,6 +6,7 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
@@ -23,12 +24,20 @@ class NavigationSpeechModule(
 
   companion object {
     private const val TAG = "VnseeaNavSpeech"
+    private const val GOOGLE_TTS_ENGINE = "com.google.android.tts"
+  }
+
+  private enum class EngineChoice {
+    GOOGLE,
+    DEFAULT,
   }
 
   private var engine: TextToSpeech? = null
   private var isReady = false
   private var pendingText: String? = null
   private var pendingPromise: Promise? = null
+  private var activeEngineChoice: EngineChoice? = null
+  private var preferDefaultEngine = false
   private val mainHandler = Handler(Looper.getMainLooper())
   private var audioManager: AudioManager? =
     reactContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -45,13 +54,13 @@ class NavigationSpeechModule(
     }
 
     mainHandler.post {
-      pendingText = cleanText
-      pendingPromise = promise
       ensureEngine()
       if (isReady) {
         doSpeak(cleanText, promise)
+      } else {
+        pendingText = cleanText
+        pendingPromise = promise
       }
-      // else: onInit will pick up pendingText/pendingPromise
     }
   }
 
@@ -66,41 +75,32 @@ class NavigationSpeechModule(
   }
 
   override fun onInit(status: Int) {
+    val engineChoice = activeEngineChoice ?: EngineChoice.DEFAULT
     isReady = status == TextToSpeech.SUCCESS
     if (!isReady) {
-      Log.w(TAG, "TTS engine init failed with status=$status")
-      pendingPromise?.resolve(false)
-      pendingPromise = null
-      pendingText = null
+      Log.w(TAG, "TTS engine init failed with status=$status engine=$engineChoice")
+      if (engineChoice == EngineChoice.GOOGLE) {
+        fallbackToDefaultEngine("Google TTS init failed")
+        return
+      }
+      failPendingSpeech()
+      shutdownCurrentEngine()
       return
     }
 
-    Log.d(TAG, "TTS engine initialised OK")
+    Log.d(TAG, "TTS engine initialised OK engine=$engineChoice")
 
-    // Try Vietnamese, fall back to device default
-    val vietnamese = Locale("vi", "VN")
-    val langResult = engine?.setLanguage(vietnamese)
-    if (langResult == TextToSpeech.LANG_MISSING_DATA ||
-        langResult == TextToSpeech.LANG_NOT_SUPPORTED
-    ) {
-      Log.w(TAG, "vi-VN not available (result=$langResult), using device default")
-      engine?.language = Locale.getDefault()
-    }
+    configureBestLanguage()
 
     engine?.setSpeechRate(1.05f)
     engine?.setPitch(1.0f)
 
-    // Set audio attributes for navigation guidance
+    // MIUI can mute navigation-guidance usage separately. Route prompts through
+    // the media stream so Xiaomi users hear them with normal media volume.
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      engine?.setAudioAttributes(
-        AudioAttributes.Builder()
-          .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-          .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-          .build(),
-      )
+      engine?.setAudioAttributes(speechAudioAttributes())
     }
 
-    // Add utterance progress listener for debugging
     engine?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
       override fun onStart(utteranceId: String?) {
         Log.d(TAG, "TTS utterance started: $utteranceId")
@@ -150,15 +150,100 @@ class NavigationSpeechModule(
 
   private fun ensureEngine() {
     if (engine == null) {
-      Log.d(TAG, "Creating TTS engine...")
-      try {
-        // Try Google TTS first for high-quality Vietnamese voice
-        engine = TextToSpeech(reactContext.applicationContext, this, "com.google.android.tts")
-      } catch (e: Exception) {
-        Log.w(TAG, "Failed to initialize with Google TTS, falling back to default engine", e)
-        engine = TextToSpeech(reactContext.applicationContext, this)
-      }
+      createEngine(if (preferDefaultEngine) EngineChoice.DEFAULT else EngineChoice.GOOGLE)
     }
+  }
+
+  private fun createEngine(choice: EngineChoice) {
+    Log.d(TAG, "Creating TTS engine choice=$choice")
+    activeEngineChoice = choice
+    isReady = false
+    try {
+      engine = if (choice == EngineChoice.GOOGLE) {
+        TextToSpeech(reactContext.applicationContext, this, GOOGLE_TTS_ENGINE)
+      } else {
+        TextToSpeech(reactContext.applicationContext, this)
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "Failed to create TTS engine choice=$choice", e)
+      if (choice == EngineChoice.GOOGLE) {
+        fallbackToDefaultEngine("Google TTS constructor failed")
+        return
+      }
+      failPendingSpeech()
+      shutdownCurrentEngine()
+    }
+  }
+
+  private fun fallbackToDefaultEngine(reason: String) {
+    Log.w(TAG, "$reason, falling back to Android default TTS engine")
+    preferDefaultEngine = true
+    shutdownCurrentEngine()
+    createEngine(EngineChoice.DEFAULT)
+  }
+
+  private fun shutdownCurrentEngine() {
+    engine?.stop()
+    engine?.shutdown()
+    engine = null
+    isReady = false
+    activeEngineChoice = null
+  }
+
+  private fun failPendingSpeech() {
+    pendingPromise?.resolve(false)
+    pendingPromise = null
+    pendingText = null
+  }
+
+  private fun configureBestLanguage() {
+    val tts = engine ?: return
+    val candidates = listOf(
+      Locale("vi", "VN"),
+      Locale("vi"),
+      Locale.getDefault(),
+      Locale.US,
+    )
+    val seenLocales = mutableSetOf<String>()
+    for (locale in candidates) {
+      val key = "${locale.language}-${locale.country}-${locale.variant}"
+      if (!seenLocales.add(key)) continue
+
+      val availability = try {
+        tts.isLanguageAvailable(locale)
+      } catch (e: Exception) {
+        Log.w(TAG, "TTS language check failed for $locale", e)
+        TextToSpeech.LANG_NOT_SUPPORTED
+      }
+      if (!isLanguageUsable(availability)) {
+        Log.w(TAG, "TTS locale $locale unavailable result=$availability")
+        continue
+      }
+
+      val result = try {
+        tts.setLanguage(locale)
+      } catch (e: Exception) {
+        Log.w(TAG, "TTS setLanguage failed for $locale", e)
+        TextToSpeech.LANG_NOT_SUPPORTED
+      }
+      if (isLanguageUsable(result)) {
+        Log.d(TAG, "TTS locale selected: $locale result=$result")
+        return
+      }
+      Log.w(TAG, "TTS locale $locale rejected result=$result")
+    }
+    Log.w(TAG, "No preferred TTS locale available; using engine default voice")
+  }
+
+  private fun isLanguageUsable(value: Int?): Boolean {
+    return value != null && value >= TextToSpeech.LANG_AVAILABLE
+  }
+
+  private fun speechAudioAttributes(): AudioAttributes {
+    return AudioAttributes.Builder()
+      .setUsage(AudioAttributes.USAGE_MEDIA)
+      .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+      .build()
   }
 
   private fun doSpeak(text: String, promise: Promise?) {
@@ -166,11 +251,16 @@ class NavigationSpeechModule(
 
     val utteranceId = "vnseea_nav_${System.nanoTime()}"
     val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+      val params = Bundle().apply {
+        putString(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC.toString())
+        putString(TextToSpeech.Engine.KEY_PARAM_VOLUME, "1.0")
+      }
+      engine?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
     } else {
       @Suppress("DEPRECATION")
       val params = hashMapOf(
         TextToSpeech.Engine.KEY_PARAM_STREAM to AudioManager.STREAM_MUSIC.toString(),
+        TextToSpeech.Engine.KEY_PARAM_VOLUME to "1.0",
         TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID to utteranceId,
       )
       @Suppress("DEPRECATION")
@@ -192,23 +282,24 @@ class NavigationSpeechModule(
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val focusReq = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-        .setAudioAttributes(
-          AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
-        )
+        .setAudioAttributes(speechAudioAttributes())
         .setAcceptsDelayedFocusGain(false)
         .build()
-      am.requestAudioFocus(focusReq)
+      val focusResult = am.requestAudioFocus(focusReq)
+      if (focusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+        Log.w(TAG, "Audio focus not granted result=$focusResult")
+      }
       audioFocusRequest = focusReq
     } else {
       @Suppress("DEPRECATION")
-      am.requestAudioFocus(
+      val focusResult = am.requestAudioFocus(
         null,
         AudioManager.STREAM_MUSIC,
         AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,
       )
+      if (focusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+        Log.w(TAG, "Audio focus not granted result=$focusResult")
+      }
     }
   }
 

@@ -33,10 +33,7 @@ import {
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getEventsCopy } from '../../application/i18n/eventsCopy';
-import {
-  showToast,
-  ToastContainer,
-} from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 
 type EventsNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -346,7 +343,6 @@ function EventsScreen() {
           />
         ))}
       </ScrollView>
-      <ToastContainer />
     </View>
   );
 }

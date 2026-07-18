@@ -23,3 +23,16 @@ export type CreatePollPayload = {
 export type PollVoteResponse = {
   options: PollOption[];
 };
+
+export type PollVoter = {
+  userId: string;
+  name: string;
+  username: string;
+  avatarUrl: string;
+  optionId: string;
+  optionText: string;
+};
+
+export type PollVotersResponse = {
+  voters: PollVoter[];
+};

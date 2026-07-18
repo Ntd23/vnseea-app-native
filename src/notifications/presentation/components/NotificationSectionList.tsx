@@ -2,7 +2,10 @@
 
 import React from 'react';
 import { View } from 'react-native';
-import type { NotificationsItem } from '../../domain/types/notifications.types';
+import {
+  GROUP_CHAT_INVITE_NOTIFICATION,
+  type NotificationsItem,
+} from '../../domain/types/notifications.types';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import NotificationCard from './NotificationCard';
 
@@ -37,7 +40,7 @@ export default function NotificationSectionList({
   return (
     <View>
       {items.map((item, index) => {
-        const isGroupChatInvite = item.type === 'added_you_to_group';
+        const isGroupChatInvite = item.type === GROUP_CHAT_INVITE_NOTIFICATION;
         const isPending =
           isGroupChatInvite && item.groupChatId
             ? pendingActions.has(item.groupChatId)
@@ -49,9 +52,7 @@ export default function NotificationSectionList({
             index={index}
             language={language}
             onPress={onItemPress}
-            onLongPress={
-              isGroupChatInvite ? undefined : onItemLongPress
-            }
+            onLongPress={isGroupChatInvite ? undefined : onItemLongPress}
             onAcceptGroupChat={
               isGroupChatInvite ? onAcceptGroupChat : undefined
             }

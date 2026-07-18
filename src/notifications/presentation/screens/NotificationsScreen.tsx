@@ -1,12 +1,19 @@
 // Description: Renders the VNSEEA notifications tab with section grouping,
 // tabs (All / Unread), filter sheet, animated cards, and i18n.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Platform,
   ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
   RefreshControl,
   ScrollView,
   Text,
@@ -19,15 +26,28 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import Svg, {
+  Path,
+  Circle,
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Stop,
+} from 'react-native-svg';
 import { Check } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import type { GroupItem } from '../../../community/domain/types/community.types';
 import type { PagesItem } from '../../../pages/domain/types/pages.types';
+import type { OrdersItem } from '../../../orders/domain/types/orders.types';
+import { createOrdersRepository } from '../../../orders/infrastructure/repositories/ApiOrdersRepository';
+import { createEventsRepository } from '../../../events/infrastructure/repositories/ApiEventsRepository';
 import { useNotificationsViewModel } from '../../application/view-models/useNotificationsViewModel';
-import type { NotificationsItem } from '../../domain/types/notifications.types';
+import {
+  GROUP_CHAT_INVITE_NOTIFICATION,
+  type NotificationsItem,
+} from '../../domain/types/notifications.types';
+import { resolveNotificationDestination } from '../../application/navigation/resolveNotificationDestination';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
 import NotificationsHeader from '../components/NotificationsHeader';
 import NotificationsFilterSheet from '../components/NotificationsFilterSheet';
@@ -46,20 +66,31 @@ import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 type NotificationsNav = NativeStackNavigationProp<RootStackParamList>;
 
+const ordersRepository = createOrdersRepository();
+const eventsRepository = createEventsRepository();
+
 function BeautifulBellIllustration() {
   return (
     <View className="items-center justify-center mb-6 mt-8 relative">
       {/* Plus sign left */}
-      <Text className="absolute left-[28%] top-[10%] text-slate-300 font-bold text-lg">+</Text>
+      <Text className="absolute left-[28%] top-[10%] text-slate-300 font-bold text-lg">
+        +
+      </Text>
       {/* Plus sign right */}
-      <Text className="absolute right-[26%] top-[55%] text-slate-300 font-bold text-lg">+</Text>
+      <Text className="absolute right-[26%] top-[55%] text-slate-300 font-bold text-lg">
+        +
+      </Text>
       {/* Bubble left */}
       <View className="absolute left-[30%] top-[48%] h-3.5 w-3.5 rounded-full border-2 border-slate-200 bg-transparent" />
       {/* Bubble right */}
       <View className="absolute right-[28%] top-[18%] h-3 w-3 rounded-full border border-slate-200 bg-transparent" />
       {/* Small sparkles */}
-      <Text className="absolute left-[38%] top-[2%] text-slate-200 text-[10px]">✦</Text>
-      <Text className="absolute right-[42%] top-[0%] text-slate-200 text-[10px]">✦</Text>
+      <Text className="absolute left-[38%] top-[2%] text-slate-200 text-[10px]">
+        ✦
+      </Text>
+      <Text className="absolute right-[42%] top-[0%] text-slate-200 text-[10px]">
+        ✦
+      </Text>
 
       {/* Bell body (tilted) */}
       <View style={{ transform: [{ rotate: '-15deg' }] }}>
@@ -115,11 +146,6 @@ function BackgroundBellWatermark() {
   );
 }
 
-function includesAny(value: string, tokens: string[]) {
-  const normalized = value.toLowerCase();
-  return tokens.some(token => normalized.includes(token));
-}
-
 function toPositiveNumberId(value: string | undefined) {
   const id = Number(value);
   return Number.isFinite(id) && id > 0 ? id : null;
@@ -138,114 +164,189 @@ function toPageRouteItem(item: NotificationsItem): PagesItem {
 }
 
 function toGroupRouteItem(item: NotificationsItem): GroupItem {
-  const groupId = item.groupId ?? '';
+  const groupId = item.groupId || item.groupName || '';
   return {
     id: groupId,
     groupId,
-    groupName: '',
+    groupName: item.groupName ?? '',
     groupTitle: item.text || 'Nhóm',
     privacy: 'public',
+    url: item.url || undefined,
   };
 }
 
-function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
-  const type = item.type || '';
+function normalizeOrderIdentifier(value: string | undefined) {
+  return (value ?? '').trim().replace(/^#/, '').toLowerCase();
+}
 
-  // Handle poke notifications first - navigate to profile
-  if (includesAny(type, ['poke', 'poked'])) {
-    if (item.notifierId) {
-      navigateToUserProfile(navigation, item.notifierId);
-    }
-    return;
+function findOrderByIdentifier(items: OrdersItem[], orderId: string) {
+  const target = normalizeOrderIdentifier(orderId);
+  if (!target) return undefined;
+  return items.find(order => {
+    if (normalizeOrderIdentifier(order.id) === target) return true;
+    if (normalizeOrderIdentifier(order.code) === target) return true;
+    return order.lines.some(
+      line => normalizeOrderIdentifier(line.id) === target,
+    );
+  });
+}
+
+function toGroupChatRouteItem(
+  item: NotificationsItem,
+  groupChatId: string,
+): ChatItem {
+  return {
+    id: `group:${groupChatId}`,
+    chatType: 'group',
+    userId: groupChatId,
+    username: '',
+    name: item.notifier?.name || item.text || 'Nhóm chat',
+    avatar: item.notifier?.avatarUrl || '',
+    lastMessage: '',
+    lastMessageTime: Date.now() / 1000,
+    unreadCount: 0,
+    isOnline: false,
+    isVerified: false,
+  };
+}
+
+async function openExternalNotificationUrl(
+  url: string,
+  navigation: NotificationsNav,
+) {
+  try {
+    await Linking.openURL(url);
+  } catch {
+    navigation.navigate(ROUTES.FEED as any);
   }
+}
 
-  if (item.fundingId && includesAny(type, ['fund', 'funding'])) {
-    navigation.navigate(ROUTES.FUNDING_DETAIL, { fundId: item.fundingId });
-    return;
-  }
+async function navigateToNotification(
+  item: NotificationsItem,
+  navigation: NotificationsNav,
+) {
+  const destination = resolveNotificationDestination(item);
 
-  if (item.productId && includesAny(type, ['product', 'market', 'order'])) {
-    const productId = toPositiveNumberId(item.productId);
-    if (!productId) {
-      navigation.navigate(ROUTES.FEED as any);
+  switch (destination.kind) {
+    case 'profile':
+      navigateToUserProfile(navigation, destination.userId);
       return;
-    }
-    navigation.navigate(ROUTES.PRODUCT_DETAIL, {
-      productId,
-    });
-    return;
-  }
-
-  if (item.jobId && includesAny(type, ['job', 'apply'])) {
-    navigation.navigate(ROUTES.JOB_DETAIL, { jobId: item.jobId });
-    return;
-  }
-
-  if (item.blogId && includesAny(type, ['blog', 'article'])) {
-    navigation.navigate(ROUTES.BLOG_DETAIL, { blogId: item.blogId });
-    return;
-  }
-
-  if (item.postId && includesAny(type, ['live_video'])) {
-    const postId = toPositiveNumberId(item.postId);
-    if (!postId) {
-      navigation.navigate(ROUTES.FEED as any);
+    case 'groupChat':
+      navigation.navigate(ROUTES.CHAT, {
+        chat: toGroupChatRouteItem(item, destination.groupChatId),
+      });
       return;
-    }
-    navigation.navigate(ROUTES.LIVE_ROOM, { postId });
-    return;
-  }
-
-  if (item.postId) {
-    const postId = toPositiveNumberId(item.postId);
-    if (!postId) {
-      navigation.navigate(ROUTES.FEED as any);
+    case 'funding':
+      navigation.navigate(ROUTES.FUNDING_DETAIL, {
+        fundId: destination.fundId,
+      });
       return;
-    }
-    navigation.navigate(ROUTES.POST_DETAIL, { postId: String(postId) });
-    return;
-  }
-
-  switch (item.type) {
-    case 'following':
-    case 'visited_profile':
-    case 'accepted_request':
-      if (item.notifierId) {
-        navigateToUserProfile(navigation, item.notifierId);
-      }
-      break;
-    case 'liked_post':
-    case 'wondered_post':
-    case 'shared_post':
-    case 'comment':
-    case 'comment_reply':
-    case 'comment_mention':
-    case 'comment_reply_mention':
-    case 'post_mention':
-    case 'liked_comment':
-    case 'wondered_comment':
-    case 'profile_wall_post':
-      navigation.navigate(ROUTES.FEED as any);
-      break;
-    case 'joined_group':
-    case 'requested_to_join_group':
-    case 'accepted_join_request':
-      if (item.groupId) {
-        navigation.navigate(ROUTES.GROUP_DETAIL, { group: toGroupRouteItem(item) });
-      }
-      break;
-    case 'interested_event':
-    case 'going_event':
-    case 'invited_event':
-      navigation.navigate(ROUTES.EVENTS as any);
-      break;
-    case 'liked_page':
-      if (item.pageId || item.pageName) {
-        navigation.navigate(ROUTES.PAGE_DETAIL, { page: toPageRouteItem(item) });
+    case 'product': {
+      const productId = toPositiveNumberId(destination.productId);
+      if (productId) {
+        navigation.navigate(ROUTES.PRODUCT_DETAIL, { productId });
+      } else if (destination.fallbackUrl) {
+        await openExternalNotificationUrl(destination.fallbackUrl, navigation);
       } else {
-        navigation.navigate(ROUTES.PAGES as any);
+        navigation.navigate(ROUTES.MARKETPLACE);
       }
-      break;
+      return;
+    }
+    case 'job':
+      navigation.navigate(ROUTES.JOB_DETAIL, { jobId: destination.jobId });
+      return;
+    case 'blog':
+      navigation.navigate(ROUTES.BLOG_DETAIL, { blogId: destination.blogId });
+      return;
+    case 'live': {
+      const postId = toPositiveNumberId(destination.postId);
+      if (postId) navigation.navigate(ROUTES.LIVE_ROOM, { postId });
+      else navigation.navigate(ROUTES.LIVE);
+      return;
+    }
+    case 'post':
+      navigation.navigate(ROUTES.POST_DETAIL, { postId: destination.postId });
+      return;
+    case 'page':
+      navigation.navigate(ROUTES.PAGE_DETAIL, { page: toPageRouteItem(item) });
+      return;
+    case 'pages':
+      navigation.navigate(ROUTES.PAGES);
+      return;
+    case 'group':
+      navigation.navigate(ROUTES.GROUP_DETAIL, {
+        group: toGroupRouteItem(item),
+      });
+      return;
+    case 'groups':
+      navigation.navigate(ROUTES.EXPLORE_GROUPS);
+      return;
+    case 'event': {
+      try {
+        const event =
+          destination.event ??
+          (destination.eventId
+            ? await eventsRepository.getById(destination.eventId)
+            : null);
+        if (event) {
+          navigation.navigate(ROUTES.EVENT_DETAIL, { event });
+          return;
+        }
+      } catch (error) {
+        console.warn('[NotificationsScreen] load event target failed', error);
+      }
+      navigation.navigate(ROUTES.EVENTS);
+      return;
+    }
+    case 'events':
+      navigation.navigate(ROUTES.EVENTS);
+      return;
+    case 'messages':
+      navigation.navigate(ROUTES.MESSAGES);
+      return;
+    case 'memories':
+      navigation.navigate(ROUTES.MEMORIES);
+      return;
+    case 'forum':
+      navigation.navigate(ROUTES.FORUM);
+      return;
+    case 'stories':
+      navigation.navigate(ROUTES.STORIES_LIST);
+      return;
+    case 'points':
+      navigation.navigate(ROUTES.MY_POINTS);
+      return;
+    case 'balance':
+      navigation.navigate(ROUTES.MY_BALANCE);
+      return;
+    case 'withdrawal':
+      navigation.navigate(ROUTES.WITHDRAWAL);
+      return;
+    case 'orders': {
+      if (destination.orderId) {
+        try {
+          const page =
+            destination.mode === 'seller'
+              ? await ordersRepository.getSellerOrders({ limit: 100 })
+              : await ordersRepository.getPurchasedOrders({ limit: 100 });
+          const order = findOrderByIdentifier(page.items, destination.orderId);
+          if (order) {
+            navigation.navigate(ROUTES.ORDER_DETAIL, { order });
+            return;
+          }
+        } catch (error) {
+          console.warn('[NotificationsScreen] load order target failed', error);
+        }
+      }
+      navigation.navigate(ROUTES.MY_PRODUCTS, {
+        initialTab: destination.mode === 'seller' ? 'orders' : 'purchased',
+      });
+      return;
+    }
+    case 'external':
+      await openExternalNotificationUrl(destination.url, navigation);
+      return;
+    case 'feed':
     default:
       navigation.navigate(ROUTES.FEED as any);
   }
@@ -253,10 +354,8 @@ function getNavigateTo(item: NotificationsItem, navigation: NotificationsNav) {
 
 function NotificationsScreen() {
   const navigation = useNavigation<NotificationsNav>();
-  const {
-    bottomContentPadding,
-    scrollIndicatorBottomInset,
-  } = useMainTabContentInsets();
+  const { bottomContentPadding, scrollIndicatorBottomInset } =
+    useMainTabContentInsets();
   const {
     notifications,
     filteredNotifications,
@@ -327,41 +426,20 @@ function NotificationsScreen() {
 
   const handlePress = useCallback(
     (item: NotificationsItem) => {
-      const isSyntheticGroupChatRequest = item.id.startsWith(
-        'group-chat-request:',
-      );
+      const isSyntheticGroupChatRequest =
+        item.type === GROUP_CHAT_INVITE_NOTIFICATION;
 
       if (!item.seen && !isSyntheticGroupChatRequest) {
-        markAsSeen(item.id);
+        markAsSeen(item.id).catch(() => undefined);
       }
 
-      if (item.type === 'added_you_to_group') {
-        return;
-      }
-
-      if (item.type === 'accept_group_chat_request' && item.groupChatId) {
-        const groupChatItem: ChatItem = {
-          id: `group:${item.groupChatId}`,
-          chatType: 'group',
-          userId: item.groupChatId,
-          username: '',
-          name:
-            item.text.replace(
-              ' đã chấp nhận lời mời tham gia nhóm chat',
-              '',
-            ) || 'Nhóm chat',
-          avatar: item.notifier?.avatarUrl || '',
-          lastMessage: '',
-          lastMessageTime: Date.now() / 1000,
-          unreadCount: 0,
-          isOnline: false,
-          isVerified: false,
-        };
-        navigation.navigate(ROUTES.CHAT, { chat: groupChatItem });
-        return;
-      }
-
-      getNavigateTo(item, navigation);
+      navigateToNotification(item, navigation).catch(navigationError => {
+        console.warn(
+          '[NotificationsScreen] navigation failed',
+          navigationError,
+        );
+        navigation.navigate(ROUTES.FEED as any);
+      });
     },
     [markAsSeen, navigation],
   );
@@ -379,7 +457,13 @@ function NotificationsScreen() {
         },
       ]);
     },
-    [copy.deleteCancel, copy.deleteConfirm, copy.deleteMessage, copy.deleteTitle, deleteNotification],
+    [
+      copy.deleteCancel,
+      copy.deleteConfirm,
+      copy.deleteMessage,
+      copy.deleteTitle,
+      deleteNotification,
+    ],
   );
 
   const handleAcceptGroupChat = useCallback(
@@ -391,10 +475,7 @@ function NotificationsScreen() {
           copy.groupJoined,
         );
       } else {
-        Alert.alert(
-          language === 'vi' ? 'Lỗi' : 'Error',
-          copy.acceptFailed,
-        );
+        Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.acceptFailed);
       }
     },
     [acceptGroupChatInvitation, copy.acceptFailed, copy.groupJoined, language],
@@ -404,10 +485,7 @@ function NotificationsScreen() {
     async (groupChatId: string) => {
       const success = await rejectGroupChatInvitation(groupChatId);
       if (!success) {
-        Alert.alert(
-          language === 'vi' ? 'Lỗi' : 'Error',
-          copy.rejectFailed,
-        );
+        Alert.alert(language === 'vi' ? 'Lỗi' : 'Error', copy.rejectFailed);
       }
     },
     [copy.rejectFailed, language, rejectGroupChatInvitation],
@@ -423,7 +501,7 @@ function NotificationsScreen() {
 
   const renderNotificationItem = useCallback(
     ({ item, index }: ListRenderItemInfo<NotificationsItem>) => {
-      const isGroupChatInvite = item.type === 'added_you_to_group';
+      const isGroupChatInvite = item.type === GROUP_CHAT_INVITE_NOTIFICATION;
       const isPending =
         isGroupChatInvite && item.groupChatId
           ? pendingActions.has(item.groupChatId)
@@ -467,9 +545,7 @@ function NotificationsScreen() {
       <NotificationsSkeleton />
     ) : error && !hasNotifications ? (
       <View className="flex-1 items-center justify-center px-8">
-        <Text className="mb-3 text-center text-body-secondary">
-          {error}
-        </Text>
+        <Text className="mb-3 text-center text-body-secondary">{error}</Text>
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={() => loadFirstPage()}
@@ -494,18 +570,17 @@ function NotificationsScreen() {
       />
     ) : null;
 
-  const notificationsListFooterComponent =
-    isLoadingMore ? (
-      <View className="items-center py-4">
-        <ActivityIndicator size="small" color="#0000ff" />
-      </View>
-    ) : !hasMore && visibleNotifications.length > 0 ? (
-      <View className="items-center justify-center pt-6 pb-8">
-        <Text className="text-[12px] font-semibold text-slate-400 text-center">
-          ✨ {copy.allLoaded}
-        </Text>
-      </View>
-    ) : null;
+  const notificationsListFooterComponent = isLoadingMore ? (
+    <View className="items-center py-4">
+      <ActivityIndicator size="small" color="#0000ff" />
+    </View>
+  ) : !hasMore && visibleNotifications.length > 0 ? (
+    <View className="items-center justify-center pt-6 pb-8">
+      <Text className="text-[12px] font-semibold text-slate-400 text-center">
+        ✨ {copy.allLoaded}
+      </Text>
+    </View>
+  ) : null;
 
   const handleNotificationsEndReached = useCallback(() => {
     if (hasFiltered && hasMore && !isLoadingMore) {
@@ -629,11 +704,7 @@ function NotificationsScreen() {
               const y = e.nativeEvent.contentOffset.y;
               const height = e.nativeEvent.contentSize.height;
               const viewHeight = e.nativeEvent.layoutMeasurement.height;
-              if (
-                y + viewHeight >= height - 100 &&
-                hasMore &&
-                !isLoadingMore
-              ) {
+              if (y + viewHeight >= height - 100 && hasMore && !isLoadingMore) {
                 loadMore();
               }
             }}
@@ -686,7 +757,9 @@ function NotificationsScreen() {
 
       <View className="flex-1 relative">
         <BackgroundBellWatermark />
-        {Platform.OS === 'ios' ? iosNotificationsListElement : notificationsBody}
+        {Platform.OS === 'ios'
+          ? iosNotificationsListElement
+          : notificationsBody}
       </View>
 
       <NotificationsFilterSheet

@@ -21,7 +21,7 @@ import {
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { getPokeCopyAsString } from '../../application/i18n/pokeCopy';
-import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
 const BRAND = '#0000FF';
@@ -281,7 +281,6 @@ function PokeScreen() {
           ) : null
         }
       />
-      <ToastContainer />
     </SafeAreaView>
   );
 }

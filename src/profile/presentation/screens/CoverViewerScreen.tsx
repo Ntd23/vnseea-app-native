@@ -21,9 +21,14 @@ import { ArrowLeft, Camera, Download } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
-import { launchImageLibrary, type Asset } from 'react-native-image-picker';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  ImageCropperModal,
+  type CropSourceImage,
+  type CroppedImageAsset,
+} from '../../../shared-kernel/presentation/components/ImageCropperModal';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type CoverRoute = RouteProp<RootStackParamList, typeof ROUTES.COVER_VIEWER>;
@@ -50,6 +55,7 @@ function CoverViewerScreen({ route, navigation }: Props) {
 
   const { updateCover } = useProfileViewModel();
   const [isLoading, setIsLoading] = useState(false);
+  const [cropImage, setCropImage] = useState<CropSourceImage | null>(null);
   const currentUserId = sessionStorage.getSession()?.userId;
   const isOwnProfile = !userId || String(userId) === String(currentUserId);
 
@@ -139,7 +145,7 @@ function CoverViewerScreen({ route, navigation }: Props) {
               const result = await launchImageLibrary({
                 mediaType: 'photo',
                 selectionLimit: 1,
-                quality: 0.8,
+                quality: 1,
                 includeBase64: false,
               });
 
@@ -147,36 +153,48 @@ function CoverViewerScreen({ route, navigation }: Props) {
                 return;
               }
 
-              const asset: Asset | undefined = result.assets?.[0];
+              const asset = result.assets?.[0];
               if (!asset?.uri) {
                 Alert.alert('Lỗi', 'Không chọn được ảnh');
                 return;
               }
 
-              setIsLoading(true);
-              const success = await updateCover({
+              setCropImage({
                 uri: asset.uri,
-                name: asset.fileName || `cover_${Date.now()}.jpg`,
-                type: asset.type || 'image/jpeg',
+                width: asset.width,
+                height: asset.height,
+                fileName: asset.fileName,
+                type: asset.type,
               });
-
-              if (success) {
-                Alert.alert('Thành công', 'Đã cập nhật ảnh bìa!');
-                // Reload profile to get new cover
-                nav.goBack();
-              } else {
-                Alert.alert('Lỗi', 'Không thể cập nhật ảnh bìa. Vui lòng thử lại.');
-              }
             } catch (error) {
               console.error('[CoverViewer] Change cover error:', error);
               Alert.alert('Lỗi', 'Đã xảy ra lỗi khi đổi ảnh bìa.');
-            } finally {
-              setIsLoading(false);
             }
           },
         },
       ],
     );
+  }, []);
+
+  const handleCroppedCover = useCallback(async (asset: CroppedImageAsset) => {
+    setCropImage(null);
+    setIsLoading(true);
+
+    try {
+      const success = await updateCover(asset);
+
+      if (success) {
+        Alert.alert('Thành công', 'Đã cập nhật ảnh bìa!');
+        nav.goBack();
+      } else {
+        Alert.alert('Lỗi', 'Không thể cập nhật ảnh bìa. Vui lòng thử lại.');
+      }
+    } catch (error) {
+      console.error('[CoverViewer] Upload cropped cover error:', error);
+      Alert.alert('Lỗi', 'Đã xảy ra lỗi khi đổi ảnh bìa.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [nav, updateCover]);
 
   const handleDownload = useCallback(() => {
@@ -249,6 +267,13 @@ function CoverViewerScreen({ route, navigation }: Props) {
             Chạm hai lần để phóng to • Kéo để di chuyển
           </Text>
         </View>
+        <ImageCropperModal
+          visible={cropImage !== null}
+          image={cropImage}
+          target="cover"
+          onCancel={() => setCropImage(null)}
+          onComplete={handleCroppedCover}
+        />
       </View>
     </GestureHandlerRootView>
   );

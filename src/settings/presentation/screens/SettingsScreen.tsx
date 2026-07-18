@@ -119,9 +119,14 @@ import {
   type AppLanguage,
 } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import { AddressAutocomplete } from '../../../shared-kernel/presentation/components/AddressAutocomplete';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
+import {
+  getPushNotificationPermissionStatus,
+  requestPushNotificationPermission,
+} from '../../../shared-kernel/infrastructure/push/oneSignalPush';
 import { useSettingsViewModel } from '../../application/view-models/useSettingsViewModel';
 import { useMyInfoViewModel } from '../../application/view-models/useMyInfoViewModel';
 import { useUserViewModel } from '../../../user/application/view-models/useUserViewModel';
@@ -2895,6 +2900,113 @@ function TwoFactorSettingsCard() {
   );
 }
 
+function DeviceNotificationPermissionCard() {
+  const language = useAppLanguage();
+  const isVi = language === 'vi';
+  const [isGranted, setIsGranted] = useState<boolean | null>(null);
+  const [isRequesting, setIsRequesting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getPushNotificationPermissionStatus()
+      .then(granted => {
+        if (active) setIsGranted(granted);
+      })
+      .catch(() => {
+        if (active) setIsGranted(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleEnableNotifications = useCallback(async () => {
+    if (isRequesting) return;
+    setIsRequesting(true);
+    try {
+      const granted = await requestPushNotificationPermission();
+      setIsGranted(granted);
+      if (granted) {
+        showSnackbar({
+          type: 'success',
+          message: isVi
+            ? 'Đã bật thông báo trên thiết bị.'
+            : 'Device notifications are enabled.',
+        });
+        return;
+      }
+
+      Alert.alert(
+        isVi ? 'Chưa bật thông báo' : 'Notifications are disabled',
+        isVi
+          ? 'Bạn có thể bật thông báo trong phần Cài đặt của thiết bị.'
+          : 'You can enable notifications in the device settings.',
+        [
+          { text: isVi ? 'Để sau' : 'Later', style: 'cancel' },
+          {
+            text: isVi ? 'Mở Cài đặt' : 'Open settings',
+            onPress: () => Linking.openSettings(),
+          },
+        ],
+      );
+    } finally {
+      setIsRequesting(false);
+    }
+  }, [isRequesting, isVi]);
+
+  return (
+    <View className="surface-card mb-4 px-4 py-4">
+      <View className="flex-row items-center">
+        <View className="h-11 w-11 items-center justify-center rounded-full bg-blue-50">
+          <Bell size={21} color="#0000ff" />
+        </View>
+        <View className="ml-3 flex-1">
+          <Text className="text-[17px] font-extrabold text-slate-950">
+            {isVi ? 'Thông báo trên thiết bị' : 'Device notifications'}
+          </Text>
+          <Text className="mt-1 text-[14px] leading-5 text-slate-500">
+            {isGranted
+              ? isVi
+                ? 'Đã được cho phép.'
+                : 'Permission granted.'
+              : isVi
+              ? 'Chỉ hỏi quyền khi bạn chủ động bật tại đây.'
+              : 'Permission is requested only when you enable it here.'}
+          </Text>
+        </View>
+      </View>
+      <TouchableOpacity
+        activeOpacity={0.86}
+        disabled={isRequesting || Boolean(isGranted)}
+        onPress={() => {
+          handleEnableNotifications().catch(() => undefined);
+        }}
+        className={`mt-4 h-11 items-center justify-center rounded-xl ${
+          isGranted ? 'bg-emerald-100' : 'bg-blue-600'
+        }`}
+      >
+        {isRequesting ? (
+          <ActivityIndicator size="small" color="#ffffff" />
+        ) : (
+          <Text
+            className={`text-[15px] font-bold ${
+              isGranted ? 'text-emerald-700' : 'text-white'
+            }`}
+          >
+            {isGranted
+              ? isVi
+                ? 'Đã bật'
+                : 'Enabled'
+              : isVi
+              ? 'Bật thông báo'
+              : 'Enable notifications'}
+          </Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 function EmailNotificationsCard() {
   const { profile, refresh } = useMyInfoViewModel();
   const { updateCurrentUser, isLoading } = useUserViewModel();
@@ -2958,54 +3070,57 @@ function EmailNotificationsCard() {
   }, [form, refresh, updateCurrentUser]);
 
   return (
-    <View className="surface-card px-4 py-4">
-      <Text className="mb-5 text-xl font-extrabold text-slate-950">
-        Email notifications
-      </Text>
-      {EMAIL_NOTIFICATION_ITEMS.map(item => (
-        <View
-          key={item.key}
-          className="mb-3 flex-row items-center rounded-2xl border border-slate-100 bg-white px-4 py-4"
-        >
-          <View className="flex-1 pr-3">
-            <Text className="text-[16px] font-bold text-slate-950">
-              {item.title}
-            </Text>
-            <Text className="mt-1 text-[14px] text-slate-500">
-              {item.description}
-            </Text>
+    <>
+      <DeviceNotificationPermissionCard />
+      <View className="surface-card px-4 py-4">
+        <Text className="mb-5 text-xl font-extrabold text-slate-950">
+          Email notifications
+        </Text>
+        {EMAIL_NOTIFICATION_ITEMS.map(item => (
+          <View
+            key={item.key}
+            className="mb-3 flex-row items-center rounded-2xl border border-slate-100 bg-white px-4 py-4"
+          >
+            <View className="flex-1 pr-3">
+              <Text className="text-[16px] font-bold text-slate-950">
+                {item.title}
+              </Text>
+              <Text className="mt-1 text-[14px] text-slate-500">
+                {item.description}
+              </Text>
+            </View>
+            <Switch
+              value={Boolean(form[item.key])}
+              disabled={!item.supported}
+              trackColor={{ false: '#e2e8f0', true: '#2f7cff' }}
+              thumbColor="#ffffff"
+              ios_backgroundColor="#e2e8f0"
+              onValueChange={value =>
+                setForm(previous => ({ ...previous, [item.key]: value }))
+              }
+            />
           </View>
-          <Switch
-            value={Boolean(form[item.key])}
-            disabled={!item.supported}
-            trackColor={{ false: '#e2e8f0', true: '#2f7cff' }}
-            thumbColor="#ffffff"
-            ios_backgroundColor="#e2e8f0"
-            onValueChange={value =>
-              setForm(previous => ({ ...previous, [item.key]: value }))
-            }
-          />
-        </View>
-      ))}
+        ))}
 
-      <TouchableOpacity
-        activeOpacity={0.86}
-        disabled={isLoading}
-        onPress={() => {
-          handleSave().catch(() => undefined);
-        }}
-        className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
-          isLoading ? 'bg-blue-300' : 'bg-blue-600'
-        }`}
-      >
-        {isLoading ? (
-          <ActivityIndicator size="small" color="#ffffff" />
-        ) : (
-          <Save size={17} color="#ffffff" />
-        )}
-        <Text className="ml-2 text-[16px] font-bold text-white">Save</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity
+          activeOpacity={0.86}
+          disabled={isLoading}
+          onPress={() => {
+            handleSave().catch(() => undefined);
+          }}
+          className={`mt-2 h-12 flex-row items-center justify-center rounded-xl ${
+            isLoading ? 'bg-blue-300' : 'bg-blue-600'
+          }`}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#ffffff" />
+          ) : (
+            <Save size={17} color="#ffffff" />
+          )}
+          <Text className="ml-2 text-[16px] font-bold text-white">Save</Text>
+        </TouchableOpacity>
+      </View>
+    </>
   );
 }
 

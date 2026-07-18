@@ -31,7 +31,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
-import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import {
@@ -1066,8 +1066,6 @@ function CreateEventScreen() {
         />
       )}
 
-      {/* Toast Notification */}
-      <ToastContainer />
     </View>
   );
 }

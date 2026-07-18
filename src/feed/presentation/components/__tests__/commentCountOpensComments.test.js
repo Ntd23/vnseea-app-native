@@ -40,4 +40,16 @@ describe('Feed post comment count interaction', () => {
       /<TouchableOpacity[\s\S]*?onPress=\{\(\) => onCommentTap\(post\.id\)\}[\s\S]*?\{post\.commentCount\}[\s\S]*?<\/TouchableOpacity>/,
     );
   });
+
+  it('opens the voter list from the poll total vote badge', () => {
+    const source = read('src/feed/presentation/components/PollPostCard.tsx');
+    const voteBadgeSource = source.slice(
+      source.indexOf('{/* Votes Pill Badge'),
+      source.indexOf('{/* Comment Count Bubble */}'),
+    );
+
+    expect(voteBadgeSource).toMatch(
+      /<TouchableOpacity[\s\S]*?onPress=\{handleViewVoters\}[\s\S]*?copy\.totalVotesLabel[\s\S]*?<\/TouchableOpacity>/,
+    );
+  });
 });

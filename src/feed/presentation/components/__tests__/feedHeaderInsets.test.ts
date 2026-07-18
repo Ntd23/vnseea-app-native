@@ -32,10 +32,10 @@ describe('resolveFeedChromeTopInset', () => {
     expect(resolveFeedChromeTopInset(36, 30)).toBe(36);
   });
 
-  it('falls back to initial Android metrics before the status-bar height', () => {
+  it('does not reuse stale initial Android metrics when runtime inset is zero', () => {
     const resolveFeedChromeTopInset = loadResolver('android', 24);
 
-    expect(resolveFeedChromeTopInset(0, 30)).toBe(30);
+    expect(resolveFeedChromeTopInset(0, 30)).toBe(0);
   });
 
   it('respects an explicit zero Android inset on non-edge-to-edge windows', () => {
@@ -44,10 +44,10 @@ describe('resolveFeedChromeTopInset', () => {
     expect(resolveFeedChromeTopInset(0, 0)).toBe(0);
   });
 
-  it('uses StatusBar.currentHeight when initial Android metrics are unavailable', () => {
+  it('does not synthesize Android inset from StatusBar.currentHeight', () => {
     const resolveFeedChromeTopInset = loadResolver('android', 24);
 
-    expect(resolveFeedChromeTopInset(0, undefined)).toBe(24);
+    expect(resolveFeedChromeTopInset(0, undefined)).toBe(0);
   });
 
   it('preserves the existing iOS fallback', () => {

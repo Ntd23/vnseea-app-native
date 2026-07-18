@@ -31,7 +31,7 @@ import { useSharedValue } from 'react-native-reanimated';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useEventsViewModel } from '../../application/view-models/useEventsViewModel';
-import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import {
@@ -435,7 +435,6 @@ function EventDetailScreen() {
         onRetryFailedComment={commentVm.retryFailedComment} onDeleteFailedComment={commentVm.deleteFailedComment} sheetHeight="90%"
       />
       <FeedShareBottomSheet visible={shareVisible} post={sharingPost} onClose={() => { setShareVisible(false); setTimeout(() => setSharingPost(undefined), 250); }} onInternalShare={(input: SharePostInput) => feedRepository.sharePost(input)} />
-      <ToastContainer />
     </View>
   );
 }

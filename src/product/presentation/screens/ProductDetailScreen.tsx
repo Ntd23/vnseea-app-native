@@ -2,16 +2,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  Animated,
   Dimensions,
-  Easing,
   FlatList,
   Image,
-  Platform,
   ScrollView,
-  Share,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -22,25 +16,20 @@ import {
   ArrowLeft,
   ChevronRight,
   Clock,
-  Heart,
   Image as ImageIcon,
   MapPin,
   MessageCircle,
   Package,
-  Share2,
   ShieldCheck,
   ShoppingBag,
-  ShoppingCart,
   Star,
   Store,
   Tag,
   Truck,
-  CheckCircle2,
   Info,
   Pencil,
 } from 'lucide-react-native';
-import { BlurView } from '@react-native-community/blur';
-import { useNavigation, useRoute, type RouteProp, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../../navigation/constants/routes';
@@ -49,7 +38,6 @@ import { createProductRepository } from '../../infrastructure/repositories/ApiPr
 import type { ProductImage, ProductItem } from '../../domain/types/product.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
-import { useSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 import { formatProductPrice } from '../components/ProductCurrency';
 
 type ProductDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.PRODUCT_DETAIL>;
@@ -553,15 +541,6 @@ function MissingProductFallback({
   );
 }
 
-type CartAnimationState = {
-  id: number;
-  imageUrl?: string;
-  productName: string;
-  start: { x: number; y: number };
-  end: { x: number; y: number };
-  progress: Animated.Value;
-};
-
 function ProductDetailContent({
   product,
   navigation,
@@ -570,145 +549,8 @@ function ProductDetailContent({
   navigation: ProductDetailNav;
 }) {
   const insets = useSafeAreaInsets();
-  const [isAddingToCart, setIsAddingToCart] = useState(false);
-  const [cartError, setCartError] = useState<string | null>(null);
-  const [isFavorite, setIsFavorite] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState<ProductItem[]>([]);
   const [isRelatedLoading, setIsRelatedLoading] = useState(false);
-  const { cartCount, syncCartCount } = useSyncedCartCount(0);
-
-  const toastOpacity = useRef(new Animated.Value(0)).current;
-  const toastTranslateY = useRef(new Animated.Value(12)).current;
-  const [toastProductName, setToastProductName] = useState<string | null>(null);
-  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const cartButtonRef = useRef<View>(null);
-  const cartScale = useRef(new Animated.Value(1)).current;
-  const [cartAnimation, setCartAnimation] = useState<CartAnimationState | null>(null);
-
-  const showCartToast = useCallback(
-    (productName: string) => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
-
-      setToastProductName(productName);
-      toastOpacity.setValue(0);
-      toastTranslateY.setValue(12);
-      Animated.parallel([
-        Animated.timing(toastOpacity, {
-          toValue: 1,
-          duration: 180,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(toastTranslateY, {
-          toValue: 0,
-          duration: 220,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      toastTimeoutRef.current = setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(toastOpacity, {
-            toValue: 0,
-            duration: 180,
-            easing: Easing.in(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.timing(toastTranslateY, {
-            toValue: 10,
-            duration: 180,
-            easing: Easing.in(Easing.cubic),
-            useNativeDriver: true,
-          }),
-        ]).start(() => setToastProductName(null));
-      }, 1800);
-    },
-    [toastOpacity, toastTranslateY],
-  );
-
-  const runCartAnimation = useCallback(
-    (productItem: ProductItem, origin?: { x: number; y: number }) => {
-      const fallbackStart = origin ?? { x: SCREEN_WIDTH / 2, y: HERO_HEIGHT + 100 };
-      const imageUrl = productItem.images?.[0]?.image;
-
-      cartButtonRef.current?.measureInWindow((x, y, width, height) => {
-        const end = {
-          x: x + width / 2,
-          y: y + height / 2,
-        };
-        const progress = new Animated.Value(0);
-        setCartAnimation({
-          id: Date.now(),
-          imageUrl,
-          productName: productItem.name,
-          start: fallbackStart,
-          end,
-          progress,
-        });
-
-        Animated.parallel([
-          Animated.timing(progress, {
-            toValue: 1,
-            duration: 680,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.sequence([
-            Animated.timing(cartScale, {
-              toValue: 1.18,
-              duration: 120,
-              delay: 440,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.spring(cartScale, {
-              toValue: 1,
-              friction: 4,
-              tension: 120,
-              useNativeDriver: true,
-            }),
-          ]),
-        ]).start(({ finished }) => {
-          if (finished) {
-            setCartAnimation(null);
-          }
-        });
-      });
-    },
-    [cartScale],
-  );
-
-  useEffect(() => {
-    return () => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      async function loadCartCount() {
-        try {
-          const count = await repository.getCartCount();
-          if (!cancelled) {
-            syncCartCount(count);
-          }
-        } catch (error) {
-          console.warn('[ProductDetail] getCartCount error:', error);
-        }
-      }
-      loadCartCount();
-      return () => {
-        cancelled = true;
-      };
-    }, [syncCartCount])
-  );
 
   const images = useMemo(() => productImages(product), [product]);
   const postedAgo = useMemo(() => formatRelativeTime(product.time), [product.time]);
@@ -747,19 +589,8 @@ function ProductDetailContent({
     };
   }, [product.category, product.id]);
 
-  const handleShare = useCallback(async () => {
-    try {
-      await Share.share({
-        title: product.name,
-        message: `${product.name}\n${formatProductPrice(product)}`,
-      });
-    } catch (error) {
-      console.warn('[ProductDetail] share error:', error);
-    }
-  }, [product]);
-
   const handleContactSeller = useCallback(() => {
-    if (!product.seller) return;
+    if (!product.can_contact_seller || !product.seller?.user_id) return;
     navigation.navigate(ROUTES.CHAT, {
       chat: {
         id: String(product.seller.user_id),
@@ -780,44 +611,11 @@ function ProductDetailContent({
     });
   }, [navigation, product]);
 
-  const handleAddToCart = useCallback(
-    async (event?: any) => {
-      if (isAddingToCart) return;
-
-      setIsAddingToCart(true);
-      setCartError(null);
-
-      const origin = event ? { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY } : undefined;
-
-      try {
-        const result = await repository.addToCart(product.id, 1);
-        const nextCount = Number(result.count);
-        syncCartCount(Number.isFinite(nextCount) ? nextCount : undefined, 1);
-        runCartAnimation(product, origin);
-        showCartToast(product.name);
-        repository.getCartCount().then(syncCartCount).catch(() => undefined);
-      } catch (caughtError) {
-        setCartError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : 'Không thể thêm sản phẩm vào giỏ.',
-        );
-      } finally {
-        setIsAddingToCart(false);
-      }
-    },
-    [isAddingToCart, product, runCartAnimation, showCartToast, syncCartCount],
+  const canContactSeller = Boolean(
+    !product.is_owner &&
+      product.can_contact_seller &&
+      product.seller?.user_id,
   );
-
-  const handleSellerPress = useCallback(() => {
-    if (!product.seller?.user_id) return;
-    navigation.navigate(ROUTES.SELLER_STORE, {
-      sellerId: Number(product.seller.user_id),
-      sellerName: product.seller.name || undefined,
-      sellerUsername: product.seller.username || undefined,
-      sellerAvatar: product.seller.avatar || undefined,
-    });
-  }, [navigation, product.seller]);
 
   const handleOpenRelated = useCallback(
     (nextProduct: ProductItem) => {
@@ -853,7 +651,9 @@ function ProductDetailContent({
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: 116 }}
+        contentContainerStyle={{
+          paddingBottom: product.is_owner ? 32 : 112 + insets.bottom,
+        }}
         showsVerticalScrollIndicator={false}
       >
         <ProductGallery images={images} productName={product.name} />
@@ -997,133 +797,37 @@ function ProductDetailContent({
         />
       </ScrollView>
 
-      {/* Cart flying bubble animation */}
-      {cartAnimation && (
-        <Animated.View
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            width: 42,
-            height: 42,
-            borderRadius: 21,
-            backgroundColor: '#0000ff',
-            justifyContent: 'center',
-            alignItems: 'center',
-            shadowColor: '#000000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 6,
-            elevation: 8,
-            zIndex: 9999,
-            pointerEvents: 'none',
-            transform: [
-              {
-                translateX: cartAnimation.progress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [cartAnimation.start.x - 21, cartAnimation.end.x - 21],
-                }),
-              },
-              {
-                translateY: cartAnimation.progress.interpolate({
-                  inputRange: [0, 0.5, 1],
-                  outputRange: [
-                    cartAnimation.start.y - 21,
-                    Math.min(cartAnimation.start.y, cartAnimation.end.y) - 120,
-                    cartAnimation.end.y - 21,
-                  ],
-                }),
-              },
-              {
-                scale: cartAnimation.progress.interpolate({
-                  inputRange: [0, 0.7, 1],
-                  outputRange: [1, 1.2, 0.3],
-                }),
-              },
-            ],
-            opacity: cartAnimation.progress.interpolate({
-              inputRange: [0, 0.85, 1],
-              outputRange: [1, 1, 0],
-            }),
-          }}
+      {!product.is_owner ? (
+        <View
+          className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white px-4 pt-3"
+          style={{ paddingBottom: Math.max(insets.bottom, 12) }}
         >
-          {cartAnimation.imageUrl ? (
-            <Image
-              source={{ uri: cartAnimation.imageUrl }}
-              style={{ width: 38, height: 38, borderRadius: 19 }}
-              resizeMode="cover"
-            />
-          ) : (
-            <ShoppingCart size={18} color="#FFFFFF" />
-          )}
-        </Animated.View>
-      )}
-
-      {/* Glassmorphic feedback toast */}
-      {toastProductName && (
-        <Animated.View
-          style={{
-            position: 'absolute',
-            bottom: insets.bottom + 76,
-            left: 20,
-            right: 20,
-            zIndex: 9999,
-            opacity: toastOpacity,
-            transform: [{ translateY: toastTranslateY }],
-            pointerEvents: 'none',
-          }}
-        >
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingHorizontal: 16,
-              paddingVertical: 12,
-              borderRadius: 24,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: 'rgba(255, 255, 255, 0.4)',
-              backgroundColor: Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.76)' : 'rgba(255, 255, 255, 0.95)',
-              shadowColor: '#000000',
-              shadowOffset: { width: 0, height: 6 },
-              shadowOpacity: 0.12,
-              shadowRadius: 12,
-              elevation: 4,
-              overflow: 'hidden',
-            }}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            disabled={!canContactSeller}
+            onPress={handleContactSeller}
+            accessibilityRole="button"
+            accessibilityLabel="Nhắn tin cho người bán"
+            className={`h-12 flex-row items-center justify-center rounded-2xl ${
+              canContactSeller ? 'bg-blue-600' : 'bg-slate-200'
+            }`}
           >
-            {Platform.OS === 'ios' && (
-              <BlurView
-                style={StyleSheet.absoluteFill}
-                blurType="light"
-                blurAmount={20}
-                reducedTransparencyFallbackColor="rgba(255, 255, 255, 0.95)"
-              />
-            )}
-            <View
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: 12,
-                backgroundColor: '#10B981',
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginRight: 10,
-                zIndex: 2,
-              }}
+            <MessageCircle
+              size={20}
+              color={canContactSeller ? '#FFFFFF' : '#94A3B8'}
+              strokeWidth={2.4}
+            />
+            <Text
+              className={`ml-2 text-sm font-extrabold ${
+                canContactSeller ? 'text-white' : 'text-slate-400'
+              }`}
             >
-              <CheckCircle2 size={14} color="#FFFFFF" />
-            </View>
-            <View style={{ flex: 1, zIndex: 2 }}>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B' }}>
-                Đã thêm vào giỏ hàng
-              </Text>
-              <Text style={{ fontSize: 11, color: '#64748B', marginTop: 1 }} numberOfLines={1}>
-                {toastProductName}
-              </Text>
-            </View>
-          </View>
-        </Animated.View>
-      )}
+              Nhắn tin cho người bán
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
     </SafeAreaView>
   );
 }

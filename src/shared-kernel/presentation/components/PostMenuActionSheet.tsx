@@ -15,6 +15,7 @@ interface PostMenuActionSheetProps {
   visible: boolean;
   onClose: () => void;
   post: FeedPost | null;
+  canDelete?: boolean;
   onSave: (postId: string) => Promise<void>;
   onHide: (postId: string) => Promise<void> | void;
   onDelete: (postId: string) => Promise<void>;
@@ -27,6 +28,7 @@ export function PostMenuActionSheet({
   visible,
   onClose,
   post,
+  canDelete = false,
   onSave,
   onHide,
   onDelete,
@@ -46,7 +48,9 @@ export function PostMenuActionSheet({
       await action(post.id);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thực hiện được thao tác.');
+      setError(
+        err instanceof Error ? err.message : 'Không thực hiện được thao tác.',
+      );
     } finally {
       setLoadingId(null);
     }
@@ -69,7 +73,10 @@ export function PostMenuActionSheet({
           <Text className="text-xl font-bold text-gray-900">
             Tùy chọn bài viết
           </Text>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity
+            onPress={onClose}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <X size={22} color="#64748B" />
           </TouchableOpacity>
         </View>
@@ -96,16 +103,20 @@ export function PostMenuActionSheet({
           onPress={() => runAction('hide', onHide)}
         />
         <Divider />
-        <MenuAction
-          label="Xóa bài viết"
-          loading={loadingId === 'delete'}
-          disabled={isBusy}
-          icon={<Trash2 size={20} color="#EF4444" />}
-          iconClassName="bg-red-100"
-          textClassName="text-red-600"
-          onPress={() => runAction('delete', onDelete)}
-        />
-        <Divider />
+        {canDelete ? (
+          <>
+            <MenuAction
+              label="Xóa bài viết"
+              loading={loadingId === 'delete'}
+              disabled={isBusy}
+              icon={<Trash2 size={20} color="#EF4444" />}
+              iconClassName="bg-red-100"
+              textClassName="text-red-600"
+              onPress={() => runAction('delete', onDelete)}
+            />
+            <Divider />
+          </>
+        ) : null}
         <MenuAction
           label="Báo cáo bài viết"
           loading={loadingId === 'report'}

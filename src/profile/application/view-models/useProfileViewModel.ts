@@ -7,9 +7,14 @@ import type {
 import { createProfileRepository } from '../../infrastructure/repositories/ApiProfileRepository';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { ApiFile } from '../../../shared-kernel/domain/types/api.types';
+import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
+import { storyCreatedEvents } from '../../../stories/application/events/storyCreatedEvents';
+import { updateAvatarAndShareStory } from '../services/updateAvatarAndShareStory';
 
 const repository = createProfileRepository();
+const storiesRepository = createStoriesRepository();
 
 // Avatar upload response type
 type UpdateAvatarResponse = {
@@ -37,6 +42,21 @@ export function useProfileViewModel() {
     try {
       const result = await repository.loadProfile(input);
       setProfileData(result);
+
+      const currentUserId = sessionStorage.getSession()?.userId;
+      const loadedProfile = result?.profile;
+      if (
+        currentUserId &&
+        loadedProfile &&
+        String(loadedProfile.id) === String(currentUserId)
+      ) {
+        sessionStorage.setUserProfile({
+          name: loadedProfile.name,
+          username: loadedProfile.username,
+          avatarUrl: loadedProfile.avatarUrl,
+        });
+      }
+
       return result;
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
@@ -72,25 +92,41 @@ export function useProfileViewModel() {
     await repository.pokeUser(userId);
   }, []);
 
-  const updateAvatar = useCallback(async (avatarUri: string): Promise<boolean> => {
-    try {
-      const response = await apiBridge.multipart<UpdateAvatarResponse>(
-        apiRoutes.user.update,
-        {
-          avatar: {
-            uri: avatarUri,
-            name: `avatar_${Date.now()}.jpg`,
-            type: 'image/jpeg',
-          },
-        }
-      );
+  const updateAvatar = useCallback(
+    async (avatarUri: string): Promise<boolean> => {
+      try {
+        const session = sessionStorage.getSession();
+        const cachedProfile = sessionStorage.getUserProfile();
+        const result = await updateAvatarAndShareStory(avatarUri, {
+          uploadAvatar: async avatar => {
+            const response = await apiBridge.multipart<UpdateAvatarResponse>(
+              apiRoutes.user.update,
+              { avatar },
+            );
 
-      return response.api_status === 200;
-    } catch (error) {
-      console.error('[useProfileViewModel] updateAvatar error:', error);
-      return false;
-    }
-  }, []);
+            return String(response.api_status) === '200';
+          },
+          createStory: draft => storiesRepository.createStory(draft),
+          currentUserId: session?.userId,
+          currentUserProfile: cachedProfile,
+          emitStory: story => storyCreatedEvents.emit(story),
+        });
+
+        if (result.storyError) {
+          console.warn(
+            '[useProfileViewModel] avatar updated but Story creation failed:',
+            result.storyError,
+          );
+        }
+
+        return result.avatarUpdated;
+      } catch (error) {
+        console.error('[useProfileViewModel] updateAvatar error:', error);
+        return false;
+      }
+    },
+    [],
+  );
 
   const updateCover = useCallback(async (cover: ApiFile): Promise<boolean> => {
     try {
@@ -98,7 +134,7 @@ export function useProfileViewModel() {
         apiRoutes.user.updateCover,
         {
           cover,
-        }
+        },
       );
 
       return String(response.api_status) === '200';

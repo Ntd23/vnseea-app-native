@@ -14,9 +14,7 @@ import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
-  KeyboardAvoidingView,
   Linking,
-  Platform,
   RefreshControl,
   ScrollView,
   Share,
@@ -38,6 +36,7 @@ import {
   Share2,
   Users,
 } from 'lucide-react-native';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import {
   useNavigation,
   useRoute,
@@ -65,6 +64,10 @@ import {
   FEED_COPY,
   renderPostTextTokens,
 } from '../components/PostCards';
+import {
+  FEED_REACTION_IMAGES,
+  FEED_REACTION_TYPES,
+} from '../components/FeedReactionAssets';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
@@ -94,15 +97,6 @@ function formatRelativeTime(unixSeconds: number | undefined): string {
   return `${Math.floor(diff / 604800)} tuần`;
 }
 
-const REACTION_EMOJI: Record<ReactionType, string> = {
-  like: '👍',
-  love: '❤️',
-  haha: '😂',
-  wow: '😮',
-  sad: '😢',
-  angry: '😡',
-};
-
 const REACTION_LABEL: Record<ReactionType, string> = {
   like: 'Thích',
   love: 'Yêu thích',
@@ -111,15 +105,6 @@ const REACTION_LABEL: Record<ReactionType, string> = {
   sad: 'Buồn',
   angry: 'Phẫn nộ',
 };
-
-const REACTION_PICKER: ReadonlyArray<ReactionType> = [
-  'like',
-  'love',
-  'haha',
-  'wow',
-  'sad',
-  'angry',
-];
 
 // ────────────────────────────────────────────────────────────────────────
 // Sub-components
@@ -467,10 +452,7 @@ function ReactionSummary({
   // Build the "X.YK" label next to the emoji stack. We use the
   // breakdown when present (more accurate), otherwise the
   // single-emotion top from `topReactions`.
-  const summary = top
-    .slice(0, 3)
-    .map(t => REACTION_EMOJI[t])
-    .join(' ');
+  const summary = top.slice(0, 3);
   const totalReactions = breakdown
     ? Object.values(breakdown).reduce<number>((sum, n) => sum + (n ?? 0), 0)
     : post.likeCount;
@@ -483,7 +465,21 @@ function ReactionSummary({
       className="flex-row items-center justify-between px-4 py-2.5"
     >
       <View className="flex-row items-center">
-        <Text className="text-base">{summary}</Text>
+        <View className="flex-row items-center">
+          {summary.map((type, index) => (
+            <View
+              key={type}
+              className="h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white"
+              style={{ marginLeft: index === 0 ? 0 : -5 }}
+            >
+              <Image
+                source={FEED_REACTION_IMAGES[type]}
+                style={{ width: 20, height: 20 }}
+                resizeMode="contain"
+              />
+            </View>
+          ))}
+        </View>
         <Text className="ml-2 text-caption-primary text-slate-700">
           {totalReactions > 0
             ? `${totalReactions.toLocaleString('vi-VN')} lượt thả cảm xúc`
@@ -549,11 +545,19 @@ function PostActions({
           accessibilityRole="button"
           accessibilityLabel="Thích"
         >
-          <Heart
-            size={18}
-            color={post.isLiked || post.myReaction ? '#ef4444' : '#64748b'}
-            fill={post.isLiked || post.myReaction ? '#ef4444' : 'none'}
-          />
+          {post.myReaction ? (
+            <Image
+              source={FEED_REACTION_IMAGES[post.myReaction]}
+              style={{ width: 20, height: 20 }}
+              resizeMode="contain"
+            />
+          ) : (
+            <Heart
+              size={18}
+              color={post.isLiked ? '#ef4444' : '#64748b'}
+              fill={post.isLiked ? '#ef4444' : 'none'}
+            />
+          )}
           <Text
             className={`ml-2 text-caption-primary ${
               post.isLiked || post.myReaction ? 'text-[#ef4444] font-bold' : 'text-slate-700'
@@ -617,7 +621,7 @@ function PostActions({
           className="mx-4 mb-3 flex-row items-center justify-around rounded-full bg-slate-900 px-3 py-2"
           accessibilityRole="menu"
         >
-          {REACTION_PICKER.map(type => (
+          {FEED_REACTION_TYPES.map(type => (
             <TouchableOpacity
               key={type}
               activeOpacity={0.7}
@@ -629,7 +633,11 @@ function PostActions({
               accessibilityRole="menuitem"
               accessibilityLabel={REACTION_LABEL[type]}
             >
-              <Text className="text-2xl">{REACTION_EMOJI[type]}</Text>
+              <Image
+                source={FEED_REACTION_IMAGES[type]}
+                style={{ width: 30, height: 30 }}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
           ))}
           <TouchableOpacity
@@ -764,15 +772,17 @@ function CommentComposer({
   }, [isSubmitting, onSubmit, text]);
 
   return (
-    <View className="flex-row items-center border-t border-slate-200 bg-white px-4 py-3">
+    <View className="flex-row items-end border-t border-slate-200 bg-white px-4 py-3">
       <TextInput
-        className="input-shell min-h-[44px] flex-1 px-4"
+        className="input-shell max-h-24 min-h-[44px] flex-1 px-4 py-2.5"
         placeholder="Viết bình luận..."
         placeholderTextColor="#94a3b8"
         value={text}
         onChangeText={setText}
         editable={!isSubmitting}
         multiline
+        textAlignVertical="top"
+        scrollEnabled
         returnKeyType="send"
         onSubmitEditing={handleSend}
         accessibilityLabel="Nhập bình luận"
@@ -1008,10 +1018,7 @@ function PostDetailScreen() {
 
       <PostHeader onBack={() => navigation.goBack()} />
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardSafeView style={{ flex: 1 }}>
         <ScrollView
           className="flex-1"
           contentContainerClassName="pb-6"
@@ -1093,7 +1100,7 @@ function PostDetailScreen() {
           onSubmit={submitComment}
           isSubmitting={isSubmitting}
         />
-      </KeyboardAvoidingView>
+      </KeyboardSafeView>
 
       <PostReactionsSheet
         visible={reactionsSheetVisible}

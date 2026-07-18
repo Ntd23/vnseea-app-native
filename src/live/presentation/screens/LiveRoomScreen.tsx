@@ -14,9 +14,7 @@ import {
   Dimensions,
   FlatList,
   Image,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -27,7 +25,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronDown,
   Eye,
-  Heart,
   LogOut,
   RefreshCw,
   Send,
@@ -48,6 +45,12 @@ import {
   reduceLiveViewerLifecycle,
   type LiveViewerLifecycleEvent,
 } from '../../application/view-models/liveViewerLifecycle';
+import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import {
+  FEED_REACTION_IMAGES,
+  FEED_REACTION_TYPES,
+} from '../../../feed/presentation/components/FeedReactionAssets';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 
 type LiveRouteParams = {
   postId: number;
@@ -132,14 +135,14 @@ export default function LiveRoomScreen() {
   
   const [fallingEmojis, setFallingEmojis] = useState<Array<{
     id: string;
-    emoji: string;
+    reaction: ReactionType;
     x: number;
     animY: Animated.Value;
   }>>([]);
   const [reactionToasts, setReactionToasts] = useState<Array<{
     id: string;
     name: string;
-    emoji: string;
+    reaction: ReactionType;
   }>>([]);
 
   useEffect(() => {
@@ -215,14 +218,14 @@ export default function LiveRoomScreen() {
     [isHost, postId, refreshLiveState, sendViewerLifecycleEvent],
   );
 
-  const spawnEmojiRain = useCallback((emoji: string, count: number) => {
+  const spawnEmojiRain = useCallback((reaction: ReactionType, count: number) => {
     for (let i = 0; i < count; i++) {
       setTimeout(() => {
         const id = Math.random().toString(36).substring(2, 9);
         const x = Math.random() * (windowWidth - 60) + 20;
         const animY = new Animated.Value(-50);
 
-        const newEmoji = { id, emoji, x, animY };
+        const newEmoji = { id, reaction, x, animY };
         setFallingEmojis(prev => [...prev, newEmoji]);
 
         Animated.timing(animY, {
@@ -238,9 +241,9 @@ export default function LiveRoomScreen() {
     }
   }, []);
 
-  const triggerReactionToast = useCallback((name: string, emoji: string) => {
+  const triggerReactionToast = useCallback((name: string, reaction: ReactionType) => {
     const id = Math.random().toString(36).substring(2, 9);
-    setReactionToasts(prev => [...prev, { id, name, emoji }]);
+    setReactionToasts(prev => [...prev, { id, name, reaction }]);
     setTimeout(() => {
       setReactionToasts(prev => prev.filter(item => item.id !== id));
     }, 3000);
@@ -264,8 +267,8 @@ export default function LiveRoomScreen() {
       if (handledReactionEvents.current.has(event.id)) return;
       handledReactionEvents.current.add(event.id);
       lastDetailedReactionAt.current = Date.now();
-      spawnEmojiRain(event.emoji, 24);
-      triggerReactionToast(event.name, event.emoji);
+      spawnEmojiRain(event.reaction, 24);
+      triggerReactionToast(event.name, event.reaction);
     });
   }, [isHost, reactionEvents, spawnEmojiRain, triggerReactionToast]);
 
@@ -290,12 +293,13 @@ export default function LiveRoomScreen() {
     const diff = reactionsCount - lastReactionsCount.current;
     const detailedEventJustHandled = Date.now() - lastDetailedReactionAt.current < 1200;
     if (diff > 0 && !detailedEventJustHandled) {
-      const emojis = ['❤️', '😂', '👍'];
-      const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+      const randomReaction = FEED_REACTION_TYPES[
+        Math.floor(Math.random() * FEED_REACTION_TYPES.length)
+      ];
       const count = Math.min(diff * 18, 90);
-      
-      spawnEmojiRain(randomEmoji, count);
-      triggerReactionToast('Người xem', randomEmoji);
+
+      spawnEmojiRain(randomReaction, count);
+      triggerReactionToast('Người xem', randomReaction);
     }
     lastReactionsCount.current = reactionsCount;
   }, [reactionsCount, isHost, hasLoadedComments, reactionEvents.length, spawnEmojiRain, triggerReactionToast]);
@@ -361,12 +365,12 @@ export default function LiveRoomScreen() {
     exitLiveRoom();
   }, [exitLiveRoom, postId]);
 
-  const handleReaction = useCallback((emoji: string) => {
-    react(emoji);
+  const handleReaction = useCallback((reaction: ReactionType) => {
+    react(reaction);
     if (isHost) {
-      spawnEmojiRain(emoji, 24);
+      spawnEmojiRain(reaction, 24);
       const userName = currentUserProfile?.name || currentUserProfile?.username || 'Bạn';
-      triggerReactionToast(userName, emoji);
+      triggerReactionToast(userName, reaction);
     }
   }, [react, isHost, currentUserProfile, spawnEmojiRain, triggerReactionToast]);
 
@@ -452,10 +456,7 @@ export default function LiveRoomScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ flex: 1 }}
-    >
+    <KeyboardSafeView style={{ flex: 1 }}>
       <View className="flex-1 relative bg-slate-950">
         {/* Full Screen Live Stream / Camera Preview */}
         <View className="absolute inset-0 bg-slate-900">
@@ -585,38 +586,31 @@ export default function LiveRoomScreen() {
             </View>
 
             {/* Reactions Stack (Right) */}
-            <View className="items-center gap-2.5">
+            <View className="items-center gap-1.5">
               {reactionsCount > 0 && (
-                <View className="rounded-full bg-black/55 px-2.5 py-1 border border-white/10 mb-0.5">
-                  <Text className="text-[9px] font-extrabold text-white">❤️ {reactionsCount}</Text>
+                <View className="flex-row items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 border border-white/10 mb-0.5">
+                  <Image
+                    source={FEED_REACTION_IMAGES.love}
+                    style={{ width: 14, height: 14 }}
+                    resizeMode="contain"
+                  />
+                  <Text className="text-[9px] font-extrabold text-white">{reactionsCount}</Text>
                 </View>
               )}
-              {/* Heart */}
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => handleReaction('❤️')}
-                className="h-9 w-9 items-center justify-center rounded-full bg-[#ef4444]"
-              >
-                <Heart size={18} color="#ffffff" fill="#ffffff" />
-              </TouchableOpacity>
-
-              {/* Laugh */}
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => handleReaction('😂')}
-                className="h-9 w-9 items-center justify-center rounded-full bg-amber-400"
-              >
-                <Text className="text-[18px] mt-[-2px]">😂</Text>
-              </TouchableOpacity>
-
-              {/* Like */}
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => handleReaction('👍')}
-                className="h-9 w-9 items-center justify-center rounded-full bg-blue-600"
-              >
-                <Text className="text-[16px] mt-[-2px]">👍</Text>
-              </TouchableOpacity>
+              {FEED_REACTION_TYPES.map(reaction => (
+                <TouchableOpacity
+                  key={reaction}
+                  activeOpacity={0.85}
+                  onPress={() => handleReaction(reaction)}
+                  className="h-8 w-8 items-center justify-center rounded-full bg-black/30"
+                >
+                  <Image
+                    source={FEED_REACTION_IMAGES[reaction]}
+                    style={{ width: 27, height: 27 }}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+              ))}
 
               {/* Share */}
               <TouchableOpacity
@@ -700,7 +694,11 @@ export default function LiveRoomScreen() {
                     transform: [{ translateY: item.animY }],
                   }}
                 >
-                  <Text className="text-[28px]">{item.emoji}</Text>
+                  <Image
+                    source={FEED_REACTION_IMAGES[item.reaction]}
+                    style={{ width: 30, height: 30 }}
+                    resizeMode="contain"
+                  />
                 </Animated.View>
               ))}
             </View>
@@ -720,7 +718,11 @@ export default function LiveRoomScreen() {
                     {toast.name}
                   </Text>
                   <Text className="text-[11px] text-white/85">đã thả cảm xúc</Text>
-                  <Text className="text-[14px]">{toast.emoji}</Text>
+                  <Image
+                    source={FEED_REACTION_IMAGES[toast.reaction]}
+                    style={{ width: 18, height: 18 }}
+                    resizeMode="contain"
+                  />
                 </View>
               ))}
             </View>
@@ -782,7 +784,7 @@ export default function LiveRoomScreen() {
             </View>
           </View>
         </Modal>
-    </KeyboardAvoidingView>
+    </KeyboardSafeView>
   );
 }
 

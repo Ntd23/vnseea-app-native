@@ -18,7 +18,6 @@ import {
 } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import {
-  useFocusEffect,
   useNavigation,
   useRoute,
   type RouteProp,
@@ -37,7 +36,6 @@ import {
   RotateCw,
   Search,
   ShoppingBag,
-  ShoppingCart,
   SlidersHorizontal,
   Store,
   Trash2,
@@ -56,8 +54,6 @@ import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { FeedHeader } from '../../../feed/presentation/components/FeedHeader';
-import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
-import { useSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 
 type MyProductsNav = NativeStackNavigationProp<RootStackParamList>;
 type MyProductsRoute = RouteProp<RootStackParamList, typeof ROUTES.MY_PRODUCTS>;
@@ -65,7 +61,6 @@ type MyProductsRoute = RouteProp<RootStackParamList, typeof ROUTES.MY_PRODUCTS>;
 const PRODUCT_COLUMNS = { justifyContent: 'space-between' } as const;
 const ORDER_DETAIL_MAX_HEIGHT = Dimensions.get('window').height * 0.82;
 const PURCHASE_COLUMNS = Dimensions.get('window').width >= 700 ? 2 : 1;
-const productRepository = createProductRepository();
 
 const TABS: Array<{ key: MyProductsTab; label: string }> = [
   { key: 'products', label: 'Sản phẩm của tôi' },
@@ -896,7 +891,6 @@ function MyProductsScreen() {
   const targetUserId = targetUserIdRaw ? Number(targetUserIdRaw) : undefined;
   const vm = useMyProductsViewModel(targetUserId);
   const { setActiveTab } = vm;
-  const { cartCount, syncCartCount } = useSyncedCartCount(0);
 
   useEffect(() => {
     if (route.params?.initialTab) {
@@ -911,27 +905,6 @@ function MyProductsScreen() {
   const handleCreate = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_PRODUCT);
   }, [navigation]);
-
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-
-      productRepository
-        .getCartCount()
-        .then(count => {
-          if (!cancelled) {
-            syncCartCount(count);
-          }
-        })
-        .catch(error => {
-          console.warn('[MyProducts] getCartCount error:', error);
-        });
-
-      return () => {
-        cancelled = true;
-      };
-    }, [syncCartCount]),
-  );
 
   const handleTabPress = useCallback(
     (tab: MyProductsTab) => {
@@ -1047,7 +1020,7 @@ function MyProductsScreen() {
 
       {!targetUserId && vm.activeTab === 'products' && (
         <View className="mx-4 my-2.5 rounded-2xl bg-white p-3 border border-slate-100 shadow-sm">
-          <View className="flex-row items-center gap-3">
+          <View className="flex-row items-center">
             <TouchableOpacity
               className="flex-1 flex-row items-center justify-center bg-blue-600 rounded-xl py-3 px-3 shadow-sm active:bg-blue-700"
               activeOpacity={0.8}
@@ -1056,25 +1029,6 @@ function MyProductsScreen() {
               <Store size={16} color="#FFFFFF" />
               <Text className="ml-2 text-white font-semibold text-caption-primary">
                 Chuyển đến thị trường
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              className="relative flex-1 flex-row items-center justify-center bg-orange-500 rounded-xl py-3 px-3 shadow-sm active:bg-orange-600"
-              style={{ backgroundColor: '#F97316' }}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate(ROUTES.CART)}
-            >
-              <ShoppingCart size={16} color="#FFFFFF" />
-              {cartCount > 0 ? (
-                <View className="absolute right-2 top-1 h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1">
-                  <Text className="text-[10px] font-extrabold text-white">
-                    {cartCount > 99 ? '99+' : cartCount}
-                  </Text>
-                </View>
-              ) : null}
-              <Text className="ml-2 text-white font-semibold text-caption-primary">
-                Giỏ hàng
               </Text>
             </TouchableOpacity>
           </View>

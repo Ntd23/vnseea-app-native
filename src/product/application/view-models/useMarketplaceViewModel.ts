@@ -11,7 +11,6 @@ import type {
  GetProductsInput,
  ProductItem,
 } from '../../domain/types/product.types';
-import { useSyncedCartCount } from '../../../shared-kernel/application/state/cartCountSync';
 
 const repository = createProductRepository();
 const PAGE_SIZE = 20;
@@ -118,7 +117,6 @@ export function useMarketplaceViewModel() {
  const [distanceFilterAvailable, setDistanceFilterAvailable] =
  useState(true);
  const [filtersVisible, setFiltersVisible] = useState(false);
- const { cartCount, syncCartCount } = useSyncedCartCount(0);
  const [isLoading, setIsLoading] = useState(true);
  const [isRefreshing, setIsRefreshing] = useState(false);
  const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -135,23 +133,19 @@ export function useMarketplaceViewModel() {
  setError(null);
 
  try {
- const [response, nextCartCount] = await Promise.all([
- repository.getProducts({
+ const response = await repository.getProducts({
  limit: PAGE_SIZE,
  keyword: keyword.trim() || undefined,
  order_by: orderBy,
  category_id: categoryId,
  distance,
- }),
- repository.getCartCount().catch(() => 0),
- ]);
+ });
 
  const responseProducts = Array.isArray(response.products)
  ? response.products
  : [];
 
  setProducts(responseProducts);
- syncCartCount(nextCartCount);
  setCategories(currentCategories =>
  mergeCategoryOptions(
  currentCategories,
@@ -176,7 +170,7 @@ export function useMarketplaceViewModel() {
  setIsRefreshing(false);
  }
  },
- [categoryId, distance, keyword, orderBy, syncCartCount],
+ [categoryId, distance, keyword, orderBy],
  );
 
  const loadMore = useCallback(async () => {
@@ -249,13 +243,6 @@ export function useMarketplaceViewModel() {
  setDistance(undefined);
  }, []);
 
- const updateCartCount = useCallback(
- (nextCount?: number) => {
- syncCartCount(nextCount, 1);
- },
- [syncCartCount],
- );
-
  useEffect(() => {
  const timeoutId = setTimeout(() => {
  loadFirstPage().catch(() => undefined);
@@ -270,7 +257,6 @@ export function useMarketplaceViewModel() {
  keyword,
  orderBy,
  categoryId,
- cartCount,
  distance,
  filtersVisible,
  distanceFilterError:
@@ -287,7 +273,6 @@ export function useMarketplaceViewModel() {
  setDistance,
  toggleFilters: () => setFiltersVisible(isVisible => !isVisible),
  resetFilters,
- updateCartCount,
  reload: () => loadFirstPage(true),
  loadMore,
  };

@@ -58,7 +58,7 @@ import AddressAutocomplete from '../../../shared-kernel/presentation/components/
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { usePagesViewModel } from '../../application/view-models/usePagesViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { showToast, ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 import type {
   CreatePageDraft,
@@ -1803,7 +1803,6 @@ function CreatePageScreen() {
           </TouchableOpacity>
         </View>
 
-        <ToastContainer />
       </KeyboardAvoidingView>
     </View>
   );

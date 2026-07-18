@@ -1,5 +1,5 @@
 // Description: Renders a WoWonder article detail page with hero metadata, comments, related posts, and category widgets.
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -32,6 +32,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { useBlogDetailViewModel } from '../../application/view-models/useBlogDetailViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import {
   languageStorage,
   type AppLanguage,
@@ -191,6 +192,8 @@ function BlogDetailScreen() {
   const vm = useBlogDetailViewModel(route.params.blogId);
   const [language] = useState<AppLanguage>(languageStorage.getLanguage());
   const [commentText, setCommentText] = useState('');
+  const scrollViewRef = useRef<ScrollView>(null);
+  const commentInputRef = useRef<TextInput>(null);
   const copy = getBlogsCopy(language);
 
   const article = vm.article;
@@ -216,6 +219,16 @@ function BlogDetailScreen() {
     const ok = await vm.submitComment(commentText);
     if (ok) setCommentText('');
   }, [commentText, vm]);
+
+  const revealCommentInput = useCallback(() => {
+    const input = commentInputRef.current;
+    if (!input) return;
+    scrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+      input,
+      24,
+      true,
+    );
+  }, []);
 
   if (vm.isLoading) {
     return (
@@ -257,12 +270,19 @@ function BlogDetailScreen() {
   const commentCountLabel = `${vm.comments.length} B\u00ecnh lu\u1eadn`;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+    <KeyboardSafeView style={{ flex: 1, backgroundColor: '#ffffff' }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <View style={{ zIndex: 10, elevation: 5, backgroundColor: '#ffffff' }}>
         <SafeAreaFeedHeader />
       </View>
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollViewRef}
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 28 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         <ImageBackground source={{ uri: imageUrl }} style={{ height: 300, backgroundColor: '#9CA3AF' }} resizeMode="cover">
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.36)' }}>
             <View style={{ position: 'absolute', top: 12, right: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 999, backgroundColor: 'rgba(17,24,39,0.78)', paddingHorizontal: 10, paddingVertical: 6 }}>
@@ -326,8 +346,10 @@ function BlogDetailScreen() {
           <SectionHeader icon={<MessageCircle size={13} color="#FFFFFF" />} title={commentCountLabel} />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <TextInput
+              ref={commentInputRef}
               value={commentText}
               onChangeText={setCommentText}
+              onFocus={revealCommentInput}
               placeholder={'Vi\u1ebft b\u00ecnh lu\u1eadn v\u00e0 nh\u1ea5n enter'}
               placeholderTextColor="#A3AAB8"
               returnKeyType="send"
@@ -378,7 +400,7 @@ function BlogDetailScreen() {
           </View>
         ) : null}
       </ScrollView>
-    </View>
+    </KeyboardSafeView>
   );
 }
 

@@ -73,6 +73,26 @@ export function buildMapSharePreview(
   };
 }
 
+export function buildStaticMapPreviewUrl(location: SharedMapLocation) {
+  const key = apiConfig.googleMapsApiKey.trim();
+  if (!key) return undefined;
+
+  const center = `${formatCoordinateParam(location.latitude)},${formatCoordinateParam(
+    location.longitude,
+  )}`;
+  const params = new URLSearchParams({
+    center,
+    zoom: '16',
+    size: '640x320',
+    scale: '2',
+    maptype: 'roadmap',
+    key,
+  });
+  params.append('markers', `color:0x2563EB|${center}`);
+
+  return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+}
+
 export function parseMapShareUrl(rawUrl: string): SharedMapLocation | null {
   try {
     const normalizedUrl = rawUrl

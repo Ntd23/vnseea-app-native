@@ -24,7 +24,6 @@ import {
   TouchableOpacity,
   View,
   PanResponder,
-  ToastAndroid,
   Dimensions,
   Pressable,
   FlatList,
@@ -77,6 +76,7 @@ import {
   type MediaType,
 } from 'react-native-image-picker';
 import VideoPlayer from 'react-native-video';
+import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -99,6 +99,7 @@ import type {
 import type { ProductItem } from '../../../product/domain/types/product.types';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
 import { useAudioRecorder } from '../../../shared-kernel/application/hooks/useAudioRecorder';
 import { formatAudioDuration } from '../../../shared-kernel/application/utils/audioFiles';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
@@ -114,6 +115,8 @@ import {
   parseMapShareUrl,
   type SharedMapLocation,
 } from '../../../user/application/utils/mapShare';
+import { getCurrentDeviceLocation } from '../../../shared-kernel/application/utils/currentLocation';
+import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
@@ -158,7 +161,10 @@ const IMAGE_GROUP_WINDOW_SECONDS = 120;
 const IMAGE_GALLERY_WIDTH = Math.min(Dimensions.get('window').width - 92, 332);
 const IMAGE_GALLERY_GAP = 3;
 const IMAGE_GALLERY_TILE_SIZE = (IMAGE_GALLERY_WIDTH - IMAGE_GALLERY_GAP) / 2;
-const MAP_SHARE_CARD_WIDTH = Math.min(Dimensions.get('window').width - 92, 292);
+const MAP_SHARE_CARD_WIDTH = Math.min(
+  Dimensions.get('window').width * 0.76,
+  340,
+);
 const GROUP_INFO_MODAL_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios' ? ['left', 'right'] : ROOT_SAFE_AREA_EDGES;
 const GROUP_INFO_DISMISS_SWIPE_DISTANCE = 72;
@@ -393,6 +399,7 @@ function LinkifiedText({
       if (mapLocation) {
         navigation.navigate(ROUTES.NEARBY_USERS, {
           initialLocation: mapLocation,
+          autoRoute: true,
         });
         return;
       }
@@ -504,14 +511,85 @@ function MapShareCard({
   composer?: boolean;
 }) {
   const navigation = useNavigation<any>();
+  const mapShareStyles = styles as Record<string, any>;
   const coordinateText = formatMapCoordinates(location);
   const addressText = location.address || location.subtitle || '';
+  const mapRegion = useMemo(
+    () => ({
+      latitude: location.latitude,
+      longitude: location.longitude,
+      latitudeDelta: 0.006,
+      longitudeDelta: 0.006,
+    }),
+    [location.latitude, location.longitude],
+  );
 
   const handleOpenMap = useCallback(() => {
     navigation.navigate(ROUTES.NEARBY_USERS, {
       initialLocation: location,
+      autoRoute: !composer,
     });
-  }, [location, navigation]);
+  }, [composer, location, navigation]);
+
+  if (!composer) {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.88}
+        onPress={handleOpenMap}
+        style={[
+          mapShareStyles.mapShareLargeCard,
+          isSentByMe ? mapShareStyles.mapShareLargeCardSent : null,
+        ]}
+      >
+        <View style={mapShareStyles.mapShareLargeMap}>
+          <MapView
+            key={`${location.latitude}:${location.longitude}`}
+            provider={PROVIDER_GOOGLE}
+            style={mapShareStyles.mapShareLargeMapNative}
+            initialRegion={mapRegion}
+            mapType="standard"
+            liteMode={Platform.OS === 'android'}
+            loadingEnabled
+            loadingBackgroundColor="#EAF4FB"
+            loadingIndicatorColor="#2563EB"
+            pitchEnabled={false}
+            rotateEnabled={false}
+            scrollEnabled={false}
+            zoomEnabled={false}
+            toolbarEnabled={false}
+            pointerEvents="none"
+          />
+          <View style={mapShareStyles.mapShareLargeMarkerShadow} />
+          <View style={mapShareStyles.mapShareLargeMarker}>
+            {location.imageUrl ? (
+              <Image
+                source={{ uri: location.imageUrl }}
+                style={mapShareStyles.mapShareLargeMarkerAvatar}
+                resizeMode="cover"
+              />
+            ) : (
+              <MapPin size={22} color="#2563EB" />
+            )}
+          </View>
+        </View>
+        <View
+          style={[
+            mapShareStyles.mapShareLargeFooter,
+            isSentByMe ? mapShareStyles.mapShareLargeFooterSent : null,
+          ]}
+        >
+          <Text style={mapShareStyles.mapShareLargeTitle} numberOfLines={1}>
+            {location.title || 'Vị trí của bạn'}
+          </Text>
+          {!!caption && (
+            <Text style={mapShareStyles.mapShareLargeCaption} numberOfLines={2}>
+              {caption}
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  }
 
   return (
     <TouchableOpacity
@@ -3441,6 +3519,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const [sharedMapLocation, setSharedMapLocation] = useState<SharedMapLocation | undefined>(
     route.params?.sharedMapLocation,
   );
+  const [isPickingCurrentLocation, setIsPickingCurrentLocation] = useState(false);
 
   useEffect(() => {
     if (route.params?.product) {
@@ -3902,11 +3981,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     try {
       const { Clipboard } = require('react-native');
       await Clipboard.setString(selectedOptionMessage.message || '');
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Đã sao chép tin nhắn', ToastAndroid.SHORT);
-      } else {
-        Alert.alert('Thông báo', 'Đã sao chép tin nhắn');
-      }
+      showSnackbar({ message: 'Đã sao chép tin nhắn', type: 'success' });
     } catch (e) {
       console.warn(e);
     } finally {
@@ -3918,11 +3993,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     if (!selectedOptionMessage) return;
     try {
       await setMessagePinned(selectedOptionMessage.id, true);
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Đã ghim tin nhắn', ToastAndroid.SHORT);
-      } else {
-        Alert.alert('Thông báo', 'Đã ghim tin nhắn');
-      }
+      showSnackbar({ message: 'Đã ghim tin nhắn', type: 'success' });
     } catch (error) {
       Alert.alert(
         'Không thể ghim tin nhắn',
@@ -3985,6 +4056,32 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       });
     }
   }, []);
+
+  const handleShareCurrentLocation = useCallback(async () => {
+    if (isPickingCurrentLocation) return;
+
+    setIsPickingCurrentLocation(true);
+    try {
+      const location = await getCurrentDeviceLocation();
+      const currentProfile = sessionStorage.getUserProfile();
+      setSharedMapLocation({
+        title: 'Vị trí của bạn',
+        subtitle: 'Vị trí hiện tại được chia sẻ',
+        address: 'Vị trí hiện tại',
+        latitude: location.latitude,
+        longitude: location.longitude,
+        imageUrl: currentProfile?.avatarUrl,
+      });
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error && caughtError.message
+          ? caughtError.message
+          : 'Không lấy được vị trí hiện tại của bạn.';
+      Alert.alert('Không thể chia sẻ vị trí', message);
+    } finally {
+      setIsPickingCurrentLocation(false);
+    }
+  }, [isPickingCurrentLocation]);
 
   const handleToggleRecording = useCallback(async () => {
     try {
@@ -4891,6 +4988,21 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             <ImagePlus size={22} color="#9DA9BE" />
           </TouchableOpacity>
 
+          <TouchableOpacity
+            className={`mr-2 h-10 w-10 items-center justify-center rounded-full ${
+              isPickingCurrentLocation ? 'bg-blue-50' : ''
+            }`}
+            activeOpacity={0.7}
+            disabled={isPickingCurrentLocation}
+            onPress={() => handleShareCurrentLocation().catch(() => undefined)}
+          >
+            {isPickingCurrentLocation ? (
+              <ActivityIndicator size="small" color="#0084FF" />
+            ) : (
+              <MapPin size={21} color="#9DA9BE" />
+            )}
+          </TouchableOpacity>
+
           {recorder.isRecording ? (
             <RecordingWaveformBar
               durationMs={recorder.durationMs}
@@ -5299,6 +5411,91 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 10.5,
     fontWeight: '700',
+  },
+  mapShareLargeCard: {
+    width: MAP_SHARE_CARD_WIDTH,
+    overflow: 'hidden',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#CFE8F3',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  mapShareLargeCardSent: {
+    borderColor: '#B8E6F7',
+  },
+  mapShareLargeMap: {
+    height: 148,
+    overflow: 'hidden',
+    backgroundColor: '#EAF4FB',
+  },
+  mapShareLargeMapNative: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: '#EAF4FB',
+  },
+  mapShareLargeMarkerShadow: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 52,
+    height: 52,
+    marginLeft: -26,
+    marginTop: -24,
+    borderRadius: 26,
+    backgroundColor: 'rgba(15, 23, 42, 0.16)',
+    transform: [{ translateY: 6 }],
+  },
+  mapShareLargeMarker: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 56,
+    height: 56,
+    marginLeft: -28,
+    marginTop: -34,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#EFF6FF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  mapShareLargeMarkerAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E2E8F0',
+  },
+  mapShareLargeFooter: {
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: '#DDF5FF',
+  },
+  mapShareLargeFooterSent: {
+    backgroundColor: '#CDEEFF',
+  },
+  mapShareLargeTitle: {
+    color: '#0F172A',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  mapShareLargeCaption: {
+    marginTop: 2,
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
   },
   mapShareComposerWrap: {
     borderTopWidth: 1,
