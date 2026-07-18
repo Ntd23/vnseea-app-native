@@ -54,6 +54,7 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
+import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
@@ -446,6 +447,7 @@ function GroupDetailScreen() {
     [commentVm],
   );
   const handleSharePost = useCallback((post: FeedPost) => {
+    if (!isFeedPostShareable(post)) return;
     setSharingPost(post);
     setShareModalVisible(true);
   }, []);

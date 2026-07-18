@@ -61,6 +61,7 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
+import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
@@ -312,7 +313,11 @@ function EventDetailScreen() {
       onReact: handleToggleReaction,
       onOpenPicker: (postId: string, x: number, y: number) => setPickerAnchor({ postId, x, y }),
       onCommentTap: (postId: string) => commentVm.openComments(postId),
-      onShare: (item: FeedPost) => { setSharingPost(item); setShareVisible(true); },
+      onShare: (item: FeedPost) => {
+        if (!isFeedPostShareable(item)) return;
+        setSharingPost(item);
+        setShareVisible(true);
+      },
     };
     if (post.kind === 'video') {
       return <HomeVideoPostCard key={post.id} post={post} copy={postCopy} {...sharedProps} navigateToProfile={userId => navigateToUserProfile(navigation, userId)} isScreenFocused />;

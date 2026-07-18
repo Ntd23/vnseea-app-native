@@ -34,7 +34,6 @@ import Animated, {
   useAnimatedReaction,
 } from 'react-native-reanimated';
 import {
-  EyeOff,
   Globe,
   Lock,
   MapPin,
@@ -61,6 +60,7 @@ import type {
   FeedVideoPost,
   PostPrivacy,
 } from '../../domain/types/feed.types';
+import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type { FeedSource } from '../../domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../../reels/domain/types/reels.types';
@@ -448,7 +448,7 @@ export type FeedCopy = {
   viewDetails?: string;
   sharedPostLabel: (name: string) => string;
   publicLabel: string;
-  followingPrivacyLabel: string;
+  friendsPrivacyLabel: string;
   followersPrivacyLabel: string;
   onlyMePrivacyLabel: string;
   anonymousPrivacyLabel: string;
@@ -564,7 +564,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     viewDetails: 'Xem chi tiết',
     sharedPostLabel: name => `đã chia sẻ bài viết của ${name}`,
     publicLabel: 'Công khai',
-    followingPrivacyLabel: 'Nh\u1eefng ng\u01b0\u1eddi t\u00f4i theo d\u00f5i',
+    friendsPrivacyLabel: 'Bạn bè',
     followersPrivacyLabel: 'M\u1ecdi ng\u01b0\u1eddi theo d\u00f5i t\u00f4i',
     onlyMePrivacyLabel: 'Ch\u1ec9 m\u00ecnh t\u00f4i',
     anonymousPrivacyLabel: '\u1ea8n danh',
@@ -679,7 +679,7 @@ export const FEED_COPY: Record<AppLanguage, FeedCopy> = {
     viewDetails: 'View details',
     sharedPostLabel: name => `shared ${name}'s post`,
     publicLabel: 'Public',
-    followingPrivacyLabel: 'People I follow',
+    friendsPrivacyLabel: 'Friends',
     followersPrivacyLabel: 'People following me',
     onlyMePrivacyLabel: 'Only me',
     anonymousPrivacyLabel: 'Anonymous',
@@ -790,14 +790,12 @@ function getFeedPostPrivacy(post?: FeedPost): PostPrivacy | undefined {
 
 function getPostPrivacyMeta(privacy: PostPrivacy | undefined, copy: FeedCopy) {
   switch (privacy) {
-    case 'following':
-      return { label: copy.followingPrivacyLabel, Icon: Users };
+    case 'friends':
+      return { label: copy.friendsPrivacyLabel, Icon: Users };
     case 'followers':
       return { label: copy.followersPrivacyLabel, Icon: Users };
     case 'only_me':
       return { label: copy.onlyMePrivacyLabel, Icon: Lock };
-    case 'anonymous':
-      return { label: copy.anonymousPrivacyLabel, Icon: EyeOff };
     case 'public':
     default:
       return { label: copy.publicLabel, Icon: Globe };
@@ -1491,15 +1489,17 @@ const VideoPostActions = React.memo(function VideoPostActions({
         </Text>
       </FeedGlassActionButton>
 
-      <FeedGlassActionButton
-        activeOpacity={0.75}
-        onPress={() => onShare?.(post)}
-      >
-        <Share2 size={19} color="#64748B" />
-        <Text style={{ marginLeft: 6, color: '#64748B', fontSize: 14 }}>
-          {copy.share}
-        </Text>
-      </FeedGlassActionButton>
+      {isFeedPostShareable(post) ? (
+        <FeedGlassActionButton
+          activeOpacity={0.75}
+          onPress={() => onShare?.(post)}
+        >
+          <Share2 size={19} color="#64748B" />
+          <Text style={{ marginLeft: 6, color: '#64748B', fontSize: 14 }}>
+            {copy.share}
+          </Text>
+        </FeedGlassActionButton>
+      ) : null}
     </FeedGlassActionBar>
   );
 });
@@ -2035,10 +2035,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   // Profile tap handler
   const handleProfilePress = useCallback(() => {
-    if (post.publisher.id) {
+    if (!post.isAnonymous && post.publisher.id) {
       navigateToProfile(post.publisher.id);
     }
-  }, [navigateToProfile, post.publisher.id]);
+  }, [navigateToProfile, post.isAnonymous, post.publisher.id]);
 
   const handleVideoPress = useCallback(() => {
     const resumeFallback = hasUserWatchedRef.current
@@ -2191,16 +2191,24 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       <FeedCardContent>
         <PostHeader
           avatar={post.publisher.avatarUrl}
-          name={post.publisher.name}
+          name={
+            post.isAnonymous
+              ? copy.anonymousPrivacyLabel
+              : post.publisher.name
+          }
           time={formatPostTime(post.postedAt, copy)}
           copy={copy}
-          onPress={post.publisher.id ? handleProfilePress : undefined}
+          onPress={!post.isAnonymous && post.publisher.id ? handleProfilePress : undefined}
           onMorePress={onOpenPostMenu}
           post={post}
         />
         {post.sharedFrom ? (
           <Text className="-mt-3 mb-3 text-caption-secondary">
-            {copy.sharedPostLabel(post.sharedFrom.publisherName)}
+            {copy.sharedPostLabel(
+              post.sharedFrom.isAnonymous
+                ? copy.anonymousPrivacyLabel
+                : post.sharedFrom.publisherName,
+            )}
           </Text>
         ) : null}
         {post.caption ? (
@@ -2951,10 +2959,10 @@ export const TextPostCard = React.memo(function TextPostCard({
 
   // Profile tap handler
   const handleProfilePress = useCallback(() => {
-    if (post.publisher.id) {
+    if (!post.isAnonymous && post.publisher.id) {
       navigateToProfile(post.publisher.id);
     }
-  }, [navigateToProfile, post.publisher.id]);
+  }, [navigateToProfile, post.isAnonymous, post.publisher.id]);
 
   const handleLikeTap = useCallback(
     () => onReact(post.id, 'like'),
@@ -3006,19 +3014,27 @@ export const TextPostCard = React.memo(function TextPostCard({
       <FeedCardContent>
         <PostHeader
           avatar={post.publisher.avatarUrl}
-          name={post.publisher.name}
+          name={
+            post.isAnonymous
+              ? copy.anonymousPrivacyLabel
+              : post.publisher.name
+          }
           time={`${formatPostTime(post.postedAt, copy)} (${copy.photoCount(
             totalPhotos,
           )})`}
           copy={copy}
-          onPress={post.publisher.id ? handleProfilePress : undefined}
+          onPress={!post.isAnonymous && post.publisher.id ? handleProfilePress : undefined}
           onMorePress={onOpenPostMenu}
           onDetailPress={onPostPress}
           post={post}
         />
         {post.sharedFrom ? (
           <Text className="-mt-3 mb-3 text-caption-secondary">
-            {copy.sharedPostLabel(post.sharedFrom.publisherName)}
+            {copy.sharedPostLabel(
+              post.sharedFrom.isAnonymous
+                ? copy.anonymousPrivacyLabel
+                : post.sharedFrom.publisherName,
+            )}
           </Text>
         ) : null}
         {post.caption ? (

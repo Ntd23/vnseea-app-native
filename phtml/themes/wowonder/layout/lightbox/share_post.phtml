@@ -1,4 +1,4 @@
-<?php if ($wo['config']['shout_box_system'] == 1 && $wo['story']['postPrivacy'] == 4) {
+<?php if ($wo['config']['shout_box_system'] == 1 && VNSEEA_IsAnonymousPost($wo['story'])) {
 	$anonymous = true;
    $wo['story']['publisher']['username'] = 'anonymous';
    $wo['story']['publisher']['name'] = $wo['lang']['anonymous'];

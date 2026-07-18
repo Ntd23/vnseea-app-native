@@ -31,6 +31,8 @@ if ($f == 'status') {
             $cloud_upload                 = $wo['config']['cloud_upload'];
             $registration_data            = array();
             $registration_data['user_id'] = $wo['user']['id'];
+            $story_privacy = VNSEEA_NormalizeStoryPrivacyRequest($_POST);
+            $registration_data['privacy'] = $story_privacy['privacy'];
             $registration_data['posted']  = time();
             $registration_data['expire']  = time() + (60 * 60 * 24);
             if (isset($_POST['title']) && strlen($_POST['title']) >= 2) {
@@ -337,7 +339,7 @@ if ($f == 'status') {
         if (!empty($_GET['story_id']) && is_numeric($_GET['story_id']) && $_GET['story_id'] > 0 && !empty($_GET['reaction']) && in_array($_GET['reaction'], $reactions_types)) {
             $story_id = Wo_Secure($_GET['story_id']);
             $story    = $db->where('id', $story_id)->getOne(T_USER_STORY);
-            if (!empty($story)) {
+            if (!empty($story) && VNSEEA_CanViewStory($story, $wo['user']['id'])) {
                 $is_reacted = $db->where('user_id', $wo['user']['user_id'])->where('story_id', $story_id)->getValue(T_REACTIONS, 'COUNT(*)');
                 if ($is_reacted > 0) {
                     $db->where('user_id', $wo['user']['user_id'])->where('story_id', $story_id)->delete(T_REACTIONS);

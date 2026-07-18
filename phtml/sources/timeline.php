@@ -18,12 +18,15 @@ if (isset($_GET['u'])) {
             $wo['have_stories']           = false;
             if ($wo['loggedin'] == true) {
                 $user_stories = $db->where('user_id', $wo['user_profile']['user_id'])->get(T_USER_STORY, null, array(
-                    'id'
+                    'id', 'user_id', 'privacy', 'ad_id'
                 ));
                 if (!empty($user_stories)) {
-                    $wo['have_stories']     = true;
                     $wo['story_seen_class'] = 'seen_story';
                     foreach ($user_stories as $key => $value) {
+                        if (!VNSEEA_CanViewStory($value, $wo['user']['user_id'])) {
+                            continue;
+                        }
+                        $wo['have_stories'] = true;
                         $is_seen = $db->where('story_id', $value->id)->where('user_id', $wo['user']['user_id'])->getValue(T_STORY_SEEN, 'COUNT(*)');
                         if ($is_seen == 0) {
                             $wo['story_seen_class'] = 'unseen_story';

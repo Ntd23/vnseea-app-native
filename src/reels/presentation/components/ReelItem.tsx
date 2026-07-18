@@ -55,6 +55,7 @@ import {
 } from 'lucide-react-native';
 import type { ReactionType, ReelsItem } from '../../domain/types/reels.types';
 import { ALL_REACTION_TYPES } from '../../domain/types/reels.types';
+import { isReelShareable } from '../../domain/policies/reelPrivacy';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import {
@@ -71,11 +72,13 @@ const REEL_ITEM_COPY = {
   vi: {
     save: 'Lưu',
     share: 'Chia sẻ',
+    anonymous: 'Ẩn danh',
     originalSound: 'Âm thanh gốc',
   },
   en: {
     save: 'Save',
     share: 'Share',
+    anonymous: 'Anonymous',
     originalSound: 'Original sound',
   },
 };
@@ -184,7 +187,8 @@ function ReelItemBase({
   const copy = REEL_ITEM_COPY[language];
   const currentUserId = sessionStorage.getSession()?.userId;
   const isOwnVideo = currentUserId && String(item.publisher.userId) === String(currentUserId);
-  const showFollowBadge = !isOwnVideo && !item.publisher.isFollowing;
+  const showFollowBadge =
+    !item.isAnonymous && !isOwnVideo && !item.publisher.isFollowing;
   const [userPaused, setUserPaused] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -705,9 +709,14 @@ function ReelItemBase({
         <View style={styles.avatarWrap}>
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={() =>
-              item.publisher.userId && onOpenProfile?.(item.publisher.userId)
+            onPress={
+              item.isAnonymous
+                ? undefined
+                : () =>
+                    item.publisher.userId &&
+                    onOpenProfile?.(item.publisher.userId)
             }
+            disabled={item.isAnonymous || !item.publisher.userId}
           >
             <Image
               source={{ uri: item.publisher.avatarUrl || AVATAR_FALLBACK }}
@@ -751,11 +760,13 @@ function ReelItemBase({
           label={copy.save}
           onPress={() => onSave(item.id)}
         />
-        <RailButton
-          icon={<Forward size={30} color="#fff" />}
-          label={copy.share}
-          onPress={() => onShare?.(item)}
-        />
+        {isReelShareable(item) ? (
+          <RailButton
+            icon={<Forward size={30} color="#fff" />}
+            label={copy.share}
+            onPress={() => onShare?.(item)}
+          />
+        ) : null}
         <MusicDisc
           avatarUrl={item.publisher.avatarUrl || AVATAR_FALLBACK}
           isSpinning={playing}
@@ -819,13 +830,20 @@ function ReelItemBase({
         */}
         <TouchableOpacity
           activeOpacity={0.8}
-          onPress={() =>
-            item.publisher.userId && onOpenProfile?.(item.publisher.userId)
+          onPress={
+            item.isAnonymous
+              ? undefined
+              : () =>
+                  item.publisher.userId &&
+                  onOpenProfile?.(item.publisher.userId)
           }
+          disabled={item.isAnonymous || !item.publisher.userId}
           style={styles.publisherRow}
         >
           <Text style={styles.publisherName} numberOfLines={1}>
-            {item.publisher.name || item.publisher.username || 'unknown'}
+            {item.isAnonymous
+              ? copy.anonymous
+              : item.publisher.name || item.publisher.username || 'unknown'}
           </Text>
           {item.publisher.isVerified ? (
             <View style={styles.verifiedBadge}>

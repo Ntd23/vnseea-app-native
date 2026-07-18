@@ -20,6 +20,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -137,11 +138,13 @@ const CREATE_POST_COPY = {
     done: 'Hoàn tất',
     privacyPublic: 'Công khai',
     privacyFollowing: 'Những người tôi theo dõi',
+    privacyFriends: 'Bạn bè',
     privacyFollowers: 'Mọi người theo dõi tôi',
     privacyOnlyMe: 'Chỉ mình tôi',
     privacyAnonymous: 'Ẩn danh',
     privacyPublicDesc: 'Bất kỳ ai cũng có thể xem',
     privacyFollowingDesc: 'Chỉ những người bạn đang theo dõi',
+    privacyFriendsDesc: 'Chỉ bạn bè có thể xem',
     privacyFollowersDesc: 'Chỉ những người đang theo dõi bạn',
     privacyOnlyMeDesc: 'Chỉ mình bạn nhìn thấy',
     privacyAnonymousDesc: 'Đăng bài dưới chế độ ẩn danh',
@@ -194,13 +197,15 @@ const CREATE_POST_COPY = {
     videoErrorTip: 'Please try again.',
     addVideo: 'Add video',
     done: 'Done',
-    privacyPublic: 'Monetized',
+    privacyPublic: 'Public',
     privacyFollowing: 'People I follow',
+    privacyFriends: 'Friends',
     privacyFollowers: 'People following me',
     privacyOnlyMe: 'Only me',
     privacyAnonymous: 'Anonymous',
     privacyPublicDesc: 'Anyone can see',
     privacyFollowingDesc: 'Only people you follow',
+    privacyFriendsDesc: 'Only friends can see',
     privacyFollowersDesc: 'Only people following you',
     privacyOnlyMeDesc: 'Only you can see',
     privacyAnonymousDesc: 'Post without showing your identity',
@@ -1910,6 +1915,16 @@ export function CreatePostModal({
   const copy = CREATE_POST_COPY[language];
   const targetPage = page ?? route.params?.page;
   const targetGroupId = groupId ?? route.params?.groupId;
+  const isPersonalComposer = !targetPage && !targetGroupId && !eventId;
+  const composerContext = targetPage
+    ? 'page'
+    : targetGroupId
+    ? 'group'
+    : eventId
+    ? 'event'
+    : 'personal';
+  const canSelectPrivacy =
+    composerContext === 'personal' || composerContext === 'page';
   const initialTextValue = initialText ?? route.params?.initialText;
 
   const vm = useCreatePostViewModel({
@@ -1941,38 +1956,39 @@ export function CreatePostModal({
   const [discardDialogVisible, setDiscardDialogVisible] = useState(false);
   const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
 
-  const privacyOptions = useMemo(() => [
-    {
-      value: 'public' as PostPrivacy,
-      label: copy.privacyPublic,
-      Icon: Globe2,
-      description: copy.privacyPublicDesc,
-    },
-    {
-      value: 'following' as PostPrivacy,
-      label: copy.privacyFollowing,
-      Icon: Users,
-      description: copy.privacyFollowingDesc,
-    },
-    {
-      value: 'followers' as PostPrivacy,
-      label: copy.privacyFollowers,
-      Icon: Users,
-      description: copy.privacyFollowersDesc,
-    },
-    {
-      value: 'only_me' as PostPrivacy,
-      label: copy.privacyOnlyMe,
-      Icon: Lock,
-      description: copy.privacyOnlyMeDesc,
-    },
-    {
-      value: 'anonymous' as PostPrivacy,
-      label: copy.privacyAnonymous,
-      Icon: EyeOff,
-      description: copy.privacyAnonymousDesc,
-    },
-  ], [copy]);
+  const privacyOptions = useMemo(() => {
+    const options = [
+      {
+        value: 'public' as PostPrivacy,
+        label: copy.privacyPublic,
+        Icon: Globe2,
+        description: copy.privacyPublicDesc,
+      },
+      {
+        value: 'friends' as PostPrivacy,
+        label: copy.privacyFriends,
+        Icon: Users,
+        description: copy.privacyFriendsDesc,
+      },
+      {
+        value: 'followers' as PostPrivacy,
+        label: copy.privacyFollowers,
+        Icon: Users,
+        description: copy.privacyFollowersDesc,
+      },
+      {
+        value: 'only_me' as PostPrivacy,
+        label: copy.privacyOnlyMe,
+        Icon: Lock,
+        description: copy.privacyOnlyMeDesc,
+      },
+    ];
+    return composerContext === 'page'
+      ? options.filter(
+          option => option.value === 'public' || option.value === 'followers',
+        )
+      : options;
+  }, [composerContext, copy]);
 
   const currentPrivacy = useMemo(() => {
     return privacyOptions.find(opt => opt.value === vm.draft.privacy) ?? privacyOptions[0];
@@ -2280,6 +2296,10 @@ export function CreatePostModal({
 
   const stableSetPrivacy = useCallback((prv: PostPrivacy) => {
     vmRef.current.setPrivacy(prv);
+  }, []);
+
+  const stableSetAnonymous = useCallback((isAnonymous: boolean) => {
+    vmRef.current.setAnonymous(isAnonymous);
   }, []);
 
   const stableSetFeeling = useCallback((flg: PostFeeling) => {
@@ -2593,7 +2613,7 @@ export function CreatePostModal({
             {/* Row 3: Bottom action buttons */}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               {/* Dropdown: Công khai (or privacy selector) */}
-              <TouchableOpacity
+              {canSelectPrivacy && <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() => setPrivacyMenuVisible(true)}
                 style={{
@@ -2607,22 +2627,33 @@ export function CreatePostModal({
                   flexShrink: 1,
                 }}
               >
-                {vm.draft.privacy === 'public' && <Globe2 size={16} color="#64748b" style={{ marginRight: 6 }} />}
-                {(vm.draft.privacy === 'following' || vm.draft.privacy === 'followers') && <Users size={16} color="#64748b" style={{ marginRight: 6 }} />}
-                {vm.draft.privacy === 'anonymous' && <EyeOff size={16} color="#64748b" style={{ marginRight: 6 }} />}
+                {vm.draft.isAnonymous ? (
+                  <EyeOff size={16} color="#64748b" style={{ marginRight: 6 }} />
+                ) : vm.draft.privacy === 'public' ? (
+                  <Globe2 size={16} color="#64748b" style={{ marginRight: 6 }} />
+                ) : vm.draft.privacy === 'friends' || vm.draft.privacy === 'followers' ? (
+                  <Users size={16} color="#64748b" style={{ marginRight: 6 }} />
+                ) : (
+                  <Lock size={16} color="#64748b" style={{ marginRight: 6 }} />
+                )}
 
                 <Text
                   style={{ fontSize: 13, fontWeight: '600', color: '#475569', marginRight: 4, flexShrink: 1 }}
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
-                  {vm.draft.privacy === 'public' && copy.privacyPublic}
-                  {vm.draft.privacy === 'following' && copy.privacyFollowing}
-                  {vm.draft.privacy === 'followers' && copy.privacyFollowers}
-                  {vm.draft.privacy === 'anonymous' && copy.privacyAnonymous}
+                  {vm.draft.isAnonymous
+                    ? copy.privacyAnonymous
+                    : vm.draft.privacy === 'public'
+                    ? copy.privacyPublic
+                    : vm.draft.privacy === 'friends'
+                    ? copy.privacyFriends
+                    : vm.draft.privacy === 'followers'
+                    ? copy.privacyFollowers
+                    : copy.privacyOnlyMe}
                 </Text>
                 <ChevronDown size={14} color="#64748b" />
-              </TouchableOpacity>
+              </TouchableOpacity>}
 
               {/* Button: Trực tiếp */}
               <TouchableOpacity
@@ -2708,101 +2739,73 @@ export function CreatePostModal({
                   overflow: 'hidden',
                 }}
               >
-                {/* Option 1: Những người tôi theo dõi */}
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    stableSetPrivacy('following');
-                    setPrivacyMenuVisible(false);
-                  }}
-                  style={{
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                    backgroundColor: vm.draft.privacy === 'following' ? '#3b82f6' : 'transparent',
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: '600',
-                      color: vm.draft.privacy === 'following' ? '#ffffff' : '#334155',
-                    }}
-                  >
-                    {copy.privacyFollowing}
-                  </Text>
-                </TouchableOpacity>
+                {privacyOptions.map(option => {
+                  const isSelected = vm.draft.privacy === option.value;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      activeOpacity={0.8}
+                      disabled={vm.draft.isAnonymous}
+                      onPress={() => {
+                        stableSetPrivacy(option.value);
+                        setPrivacyMenuVisible(false);
+                      }}
+                      style={{
+                        paddingVertical: 12,
+                        paddingHorizontal: 16,
+                        backgroundColor: isSelected
+                          ? '#3b82f6'
+                          : 'transparent',
+                        opacity: vm.draft.isAnonymous ? 0.45 : 1,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: '600',
+                          color: isSelected ? '#ffffff' : '#334155',
+                        }}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
 
-                {/* Option 2: Mọi người theo dõi tôi */}
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    stableSetPrivacy('followers');
-                    setPrivacyMenuVisible(false);
-                  }}
-                  style={{
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                    backgroundColor: vm.draft.privacy === 'followers' ? '#3b82f6' : 'transparent',
-                  }}
-                >
-                  <Text
+                {isPersonalComposer ? (
+                  <View
                     style={{
-                      fontSize: 14,
-                      fontWeight: '600',
-                      color: vm.draft.privacy === 'followers' ? '#ffffff' : '#334155',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 12,
+                      paddingHorizontal: 16,
+                      borderTopWidth: 1,
+                      borderTopColor: '#e2e8f0',
                     }}
                   >
-                    {copy.privacyFollowers}
-                  </Text>
-                </TouchableOpacity>
-
-                {/* Option 3: Vô danh */}
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    stableSetPrivacy('anonymous');
-                    setPrivacyMenuVisible(false);
-                  }}
-                  style={{
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                    backgroundColor: vm.draft.privacy === 'anonymous' ? '#3b82f6' : 'transparent',
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: '600',
-                      color: vm.draft.privacy === 'anonymous' ? '#ffffff' : '#334155',
-                    }}
-                  >
-                    {copy.privacyAnonymous}
-                  </Text>
-                </TouchableOpacity>
-
-                {/* Option 4: Đã kiếm tiền */}
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    stableSetPrivacy('public');
-                    setPrivacyMenuVisible(false);
-                  }}
-                  style={{
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                    backgroundColor: vm.draft.privacy === 'public' ? '#3b82f6' : 'transparent',
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: '600',
-                      color: vm.draft.privacy === 'public' ? '#ffffff' : '#334155',
-                    }}
-                  >
-                    {copy.privacyPublic}
-                  </Text>
-                </TouchableOpacity>
+                    <EyeOff size={18} color="#475569" />
+                    <View style={{ flex: 1, marginHorizontal: 10 }}>
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: '600',
+                          color: '#334155',
+                        }}
+                      >
+                        {copy.privacyAnonymous}
+                      </Text>
+                      <Text style={{ marginTop: 2, fontSize: 11, color: '#64748b' }}>
+                        {copy.privacyAnonymousDesc}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={vm.draft.isAnonymous}
+                      onValueChange={stableSetAnonymous}
+                      trackColor={{ false: '#cbd5e1', true: '#93c5fd' }}
+                      thumbColor={vm.draft.isAnonymous ? '#0758ff' : '#f8fafc'}
+                    />
+                  </View>
+                ) : null}
               </View>
             </Pressable>
           </Modal>

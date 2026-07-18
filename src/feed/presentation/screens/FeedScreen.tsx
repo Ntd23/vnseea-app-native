@@ -98,6 +98,7 @@ import type {
   FeedPollPost,
   FeedAdPost,
 } from '../../domain/types/feed.types';
+import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type {
   FeedSource,
   SharePostInput,
@@ -3056,6 +3057,7 @@ function FeedScreen() {
 
   // Share handlers
   const handleOpenSharePost = useCallback((post: FeedPost) => {
+    if (!isFeedPostShareable(post)) return;
     setSharingPost(post);
     setShareModalVisible(true);
     tabBarVisibility.setVisible(false);

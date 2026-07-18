@@ -3304,6 +3304,7 @@ function Wo_RegisterNotification($data = array())
     if (!is_numeric($data['notifier_id']) or $data['notifier_id'] < 1) {
         return false;
     }
+    $data = VNSEEA_ProtectAnonymousNotification($data);
     if ($data['notifier_id'] == $wo['user']['user_id']) {
         $notifier = $wo['user'];
     } else {
@@ -3312,6 +3313,12 @@ function Wo_RegisterNotification($data = array())
         if (!isset($notifier['user_id'])) {
             return false;
         }
+    }
+    $notification_notifier = $notifier;
+    if (!empty($data['type2']) && $data['type2'] === 'anonymous') {
+        $anonymous_label = !empty($wo['lang']['anonymous']) ? $wo['lang']['anonymous'] : 'Anonymous';
+        $anonymous_avatar = Wo_GetMedia('upload/photos/incognito.png');
+        $notification_notifier = VNSEEA_AnonymousIdentity($anonymous_label, $anonymous_avatar);
     }
     if (!isset($data['comment_id']) or empty($data['comment_id'])) {
         $data['comment_id'] = 0;
@@ -3582,7 +3589,7 @@ function Wo_RegisterNotification($data = array())
                     if (!empty($post_data_id['postText'])) {
                         $post_data['text'] = substr($post_data_id['postText'], 0, 20);
                     }
-                    $data['notifier'] = $notifier;
+                    $data['notifier'] = $notification_notifier;
                     $data['url'] = Wo_SeoLink($url);
                     $data['post_data'] = $post_data;
                     $wo['emailNotification'] = $data;
@@ -3595,7 +3602,7 @@ function Wo_RegisterNotification($data = array())
                         'charSet' => 'utf-8',
                         'message_body' => Wo_LoadPage('emails/notifiction-email'),
                         'is_html' => true,
-                        'notifier' => $notifier
+                        'notifier' => $notification_notifier
                     );
                     if ($wo['config']['smtp_or_mail'] == 'smtp') {
                         $send_message_data['insert_database'] = 1;
@@ -3690,6 +3697,11 @@ function Wo_GetNotifications($data = array())
                         $sql_fetch_one['notifier'] = Wo_UserData($sql_fetch_one['notifier_id']);
                         $sql_fetch_one['notifier']['url'] = Wo_SeoLink('index.php?link1=timeline&u=' . $sql_fetch_one['notifier']['username']);
                     }
+                }
+                if (isset($sql_fetch_one['type2']) && $sql_fetch_one['type2'] === 'anonymous') {
+                    $anonymous_label = !empty($wo['lang']['anonymous']) ? $wo['lang']['anonymous'] : 'Anonymous';
+                    $anonymous_avatar = Wo_GetMedia('upload/photos/incognito.png');
+                    $sql_fetch_one['notifier'] = VNSEEA_AnonymousIdentity($anonymous_label, $anonymous_avatar);
                 }
                 // if (preg_match_all('/^index\.php\?link1=post&id=(.*)$/i', $sql_fetch_one['url'],$matches)) {
                 //     if (!empty($matches[1][0]) && is_numeric($matches[1][0])) {
@@ -6173,6 +6185,9 @@ function Wo_RegisterPost($re_data = array('recipient_id' => 0))
     error_log(print_r($re_data, true));
 
     global $wo, $sqlConnect;
+    $privacy = VNSEEA_NormalizePostPrivacyRequest($re_data);
+    $re_data['postPrivacy'] = $privacy['postPrivacy'];
+    $re_data['is_anonymous'] = $privacy['is_anonymous'];
     if ($wo['config']['website_mode'] == 'instagram' && empty($re_data['postFile']) && empty($re_data['multi_image']) && empty($re_data['postSticker']) && empty($re_data['product_id']) && empty($re_data['album_name'])) {
         if (!preg_match('%(?:youtube(?:-nocookie)?\.com/(?:[^/]+/.+/|(?:v|e(?:mbed)?)/|.*[?&]v=)|youtu\.be/)([^"&?/ ]{11})%i', $re_data["postText"])) {
             header("Content-type: application/json");
@@ -6462,7 +6477,7 @@ function Wo_RegisterPost($re_data = array('recipient_id' => 0))
                 'post_id' => $post_id,
                 'type' => 'profile_wall_post',
                 'url' => 'index.php?link1=post&id=' . $post_id,
-                'type2' => ($re_data['postPrivacy'] == 4 ? 'anonymous' : '')
+                'type2' => (VNSEEA_IsAnonymousPost($re_data) ? 'anonymous' : '')
             );
             Wo_RegisterNotification($notification_data_array);
         }
@@ -6586,6 +6601,15 @@ function Wo_PostData($post_id, $placement = '', $limited = '', $comments_limit =
             return false;
         }
     }
+    $viewer_id = VNSEEA_CurrentViewerId();
+    if ($placement != 'admin') {
+        if (!VNSEEA_CanViewPost($story, $viewer_id)) {
+            return false;
+        }
+        if (!empty($story['parent_id']) && !VNSEEA_CanSharePostTree($story, $viewer_id)) {
+            return false;
+        }
+    }
     $story['limit_comments'] = 3;
     $story['limited_comments'] = false;
     if ($limited == 'not_limited') {
@@ -6623,51 +6647,6 @@ function Wo_PostData($post_id, $placement = '', $limited = '', $comments_limit =
                 $story['is_group_post'] = true;
             } else {
                 $story['group_admin'] = true;
-            }
-        }
-        if ($story['postPrivacy'] == 1) {
-            if ($wo['loggedin'] == true) {
-                if (!empty($story['publisher']['page_id'])) {
-                } else {
-                    if ($story['publisher']['user_id'] != $wo['user']['user_id']) {
-                        if (Wo_IsFollowing($wo['user']['user_id'], $story['publisher']['user_id']) === false) {
-                            return false;
-                        }
-                    }
-                }
-            } else {
-                return false;
-            }
-        }
-        if ($story['postPrivacy'] == 2) {
-            if ($wo['loggedin'] == true) {
-                if (!empty($story['publisher']['page_id'])) {
-                    if ($story['publisher']['user_id'] != $wo['user']['user_id']) {
-                        if (Wo_IsPageLiked($story['publisher']['page_id'], $wo['user']['user_id']) === false) {
-                            return false;
-                        }
-                    }
-                } else {
-                    if ($story['publisher']['user_id'] != $wo['user']['user_id']) {
-                        if (Wo_IsFollowing($story['publisher']['user_id'], $wo['user']['user_id']) === false && empty($story['group_id'])) {
-                            return false;
-                        }
-                    }
-                }
-            } else {
-                return false;
-            }
-        }
-        if ($story['postPrivacy'] == 3) {
-            if ($wo['loggedin'] == true) {
-                if (!empty($story['publisher']['page_id'])) {
-                } else {
-                    if ($wo['user']['user_id'] != $story['publisher']['user_id']) {
-                        return false;
-                    }
-                }
-            } else {
-                return false;
             }
         }
     }
@@ -6809,6 +6788,7 @@ function Wo_PostData($post_id, $placement = '', $limited = '', $comments_limit =
         $story['is_post_saved'] = (Wo_IsPostSaved($story['id'], $wo['user']['user_id']) === true) ? true : false;
         $story['is_post_reported'] = (Wo_IsPostRepotred($story['id'], $wo['user']['user_id']) === true) ? true : false;
         $story['can_delete'] = Wo_CanDeletePost($story, $wo['user']['user_id']);
+        $story['can_share'] = VNSEEA_CanSharePostTree($story, $wo['user']['user_id']);
         if (Wo_IsBlocked($story['user_id']) || Wo_IsBlocked($story['recipient_id'])) {
             if (empty($story['group_id'])) {
                 return false;
@@ -6817,6 +6797,7 @@ function Wo_PostData($post_id, $placement = '', $limited = '', $comments_limit =
     }
     else {
         $story['can_delete'] = false;
+        $story['can_share'] = VNSEEA_CanSharePostTree($story, 0);
     }
     $story['postFile_full'] = '';
     $story['shared_from'] = ($story['shared_from'] > 0) ? Wo_UserData($story['shared_from']) : false;
@@ -6965,7 +6946,12 @@ function Wo_PostData($post_id, $placement = '', $limited = '', $comments_limit =
         }
     }
 
-    return $story;
+    $story['privacy_contract'] = 'audience_v2';
+    $story['is_anonymous'] = VNSEEA_IsAnonymousPost($story) ? 1 : 0;
+    $story['is_owner'] = $viewer_id > 0 && !empty($story['user_id']) && (int) $story['user_id'] === $viewer_id;
+    $anonymous_label = !empty($wo['lang']['anonymous']) ? $wo['lang']['anonymous'] : 'Anonymous';
+    $anonymous_avatar = !empty($wo['userDefaultAvatar']) ? Wo_GetMedia($wo['userDefaultAvatar']) : '';
+    return VNSEEA_RedactAnonymousPost($story, $viewer_id, $anonymous_label, $anonymous_avatar);
 }
 
 function Wo_IsSubscriptionPaidForPublisher($publisher_id)
@@ -7181,7 +7167,6 @@ function Wo_GetPosts($data = array('filter_by' => 'all', 'after_post_id' => 0, '
         if (!$wo['loggedin'] || $Wo_publisher['user_id'] != $wo['user']['id']) {
             $query_text .= " AND `postPrivacy` <> '3'";
         }
-        $query_text .= " AND `postPrivacy` <> '4' ";
         if ($wo['loggedin'] && $wo['config']['website_mode'] == 'linkedin') {
             $logged_user_id = Wo_Secure($wo['user']['user_id']);
             $query_text .= " AND (`postPrivacy` <> '5' OR (`postPrivacy` = '5' AND `user_id` = '{$logged_user_id}') OR (`postPrivacy` = '5' AND `user_id` IN (SELECT `user_id` FROM " . T_JOB . ")))";
@@ -7365,9 +7350,6 @@ function Wo_GetPosts($data = array('filter_by' => 'all', 'after_post_id' => 0, '
         $query_text .= " AND `id` NOT IN (" . $not_in . ") ";
     }
 
-    if (empty($data['anonymous']) || $data['anonymous'] != true) {
-        $query_text .= " AND `postPrivacy` <> '4' ";
-    }
     if ($data['filter_by'] != 'job' && empty($Wo_page_publisher['page_id'])) {
         if ($wo['config']['website_mode'] != 'linkedin') {
             $query_text .= " AND `job_id` = '0' ";
@@ -8428,6 +8410,9 @@ function Wo_AddReactions($post_id, $reaction)
         return false;
     }
     $post_id = Wo_Secure($post_id);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     $user_id = Wo_GetUserIdFromPostId($post_id);
     $page_id = 0;
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
@@ -8487,6 +8472,9 @@ function Wo_AddReplayReactions($user_id, $reply_id, $reaction)
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
     $comment = Wo_GetCommentIdFromReplyId($reply_id);
     $post_id = Wo_GetPostIdFromCommentId($comment);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     $text = 'replay';
     $type2 = $reaction;
     if (empty($user_id)) {
@@ -8504,7 +8492,7 @@ function Wo_AddReplayReactions($user_id, $reply_id, $reaction)
     $sql_query_two = mysqli_query($sqlConnect, $query_two);
     if ($sql_query_two) {
         $post_data = Wo_PostData($post_id);
-        if ($wo['config']['shout_box_system'] == 1 && !empty($post_data) && $post_data['postPrivacy'] == 4 && $post_data['user_id'] == $logged_user_id) {
+        if ($wo['config']['shout_box_system'] == 1 && !empty($post_data) && VNSEEA_IsAnonymousPost($post_data) && !empty($post_data['is_owner'])) {
             $type2 = 'anonymous';
         }
         // $activity_data = array(
@@ -8544,6 +8532,9 @@ function Wo_AddCommentReactions($comment_id, $reaction)
     $page_id = 0;
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
     $post_id = Wo_GetPostIdFromCommentId($comment_id);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     $text = 'comment';
     $type2 = $reaction;
     if (empty($user_id)) {
@@ -8561,7 +8552,7 @@ function Wo_AddCommentReactions($comment_id, $reaction)
     $sql_query_two = mysqli_query($sqlConnect, $query_two);
     if ($sql_query_two) {
         $post_data = Wo_PostData($post_id);
-        if ($wo['config']['shout_box_system'] == 1 && !empty($post_data) && $post_data['postPrivacy'] == 4 && $post_data['user_id'] == $logged_user_id) {
+        if ($wo['config']['shout_box_system'] == 1 && !empty($post_data) && VNSEEA_IsAnonymousPost($post_data) && !empty($post_data['is_owner'])) {
             $type2 = 'anonymous';
         }
         // $activity_data = array(
@@ -8812,6 +8803,9 @@ function Wo_AddLikes($post_id)
         return false;
     }
     $post_id = Wo_Secure($post_id);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     $user_id = Wo_GetUserIdFromPostId($post_id);
     $page_id = 0;
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
@@ -8899,6 +8893,9 @@ function Wo_CountLikes($post_id)
         return false;
     }
     $post_id = Wo_Secure($post_id);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     $query_one = "SELECT COUNT(`id`) AS `likes` FROM " . T_LIKES . " WHERE `post_id` = {$post_id}";
     $sql_query_one = mysqli_query($sqlConnect, $query_one);
     if ($sql_query_one) {
@@ -8971,6 +8968,9 @@ function Wo_AddWonders($post_id)
         return false;
     }
     $post_id = Wo_Secure($post_id);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     $user_id = Wo_GetUserIdFromPostId($post_id);
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
     $post = Wo_PostData($post_id);
@@ -9304,6 +9304,9 @@ function Wo_AddShare($post_id = 0)
     $user_id = Wo_GetUserIdFromPostId($post_id);
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
     $post = Wo_PostData($post_id);
+    if (empty($post) || empty($post['can_share'])) {
+        return false;
+    }
     if (empty($user_id)) {
         $user_id = Wo_GetUserIdFromPageId($post['page_id']);
         if (empty($user_id)) {
@@ -9415,13 +9418,16 @@ function Wo_RegisterPostComment($data = array())
     if (empty($data['user_id']) || !is_numeric($data['user_id']) || $data['user_id'] < 0) {
         return false;
     }
+    if (!VNSEEA_CanMutatePost($data['post_id'])) {
+        return false;
+    }
     if (!empty($data['page_id'])) {
         if (Wo_IsPageOnwer($data['page_id']) === false) {
             $data['page_id'] = 0;
         }
     }
     $getPost = Wo_PostData($data['post_id']);
-    if ($getPost['comments_status'] == 0) {
+    if (empty($getPost) || $getPost['comments_status'] == 0) {
         return false;
     }
     if (!empty($data['text'])) {
@@ -9504,6 +9510,9 @@ function Wo_RegisterPostComment($data = array())
             $type2 = 'post_file';
         }
     }
+    if (VNSEEA_IsAnonymousPost($post) && !empty($post['is_owner']) && !empty($post['user_id']) && (int) $post['user_id'] === (int) $data['user_id']) {
+        $type2 = 'anonymous';
+    }
     $user_id = Wo_GetUserIdFromPostId($data['post_id']);
     if (empty($user_id)) {
         $user_id = Wo_GetUserIdFromPageId($post['page_id']);
@@ -9554,6 +9563,7 @@ function Wo_RegisterPostComment($data = array())
                     'type' => 'comment_mention',
                     'post_id' => $data['post_id'],
                     'page_id' => $page_id,
+                    'type2' => $type2,
                     'url' => 'index.php?link1=post&id=' . $data['post_id']
                 );
                 Wo_RegisterNotification($notification_data_array);
@@ -9820,7 +9830,11 @@ function Wo_GetPostComment($comment_id = 0)
             $fetched_data['reaction'] = Wo_GetPostReactionsTypes($fetched_data['id'], 'comment');
         }
         $fetched_data['replies_count'] = Wo_CountCommentReplies($fetched_data['id']);
-        return $fetched_data;
+        $post_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_POSTS . " WHERE `id` = " . (int) $fetched_data['post_id'] . " LIMIT 1");
+        $post = ($post_query && mysqli_num_rows($post_query)) ? mysqli_fetch_assoc($post_query) : array();
+        $anonymous_label = !empty($wo['lang']['anonymous']) ? $wo['lang']['anonymous'] : 'Anonymous';
+        $anonymous_avatar = Wo_GetMedia('upload/photos/incognito.png');
+        return VNSEEA_RedactAnonymousComment($fetched_data, $post, VNSEEA_CurrentViewerId(), $anonymous_label, $anonymous_avatar);
     }
     return false;
 }
@@ -10024,22 +10038,39 @@ function Wo_UpdatePostPrivacy($data = array())
     if ($wo['loggedin'] == false) {
         return false;
     }
-    if ($data['post_id'] < 0 || empty($data['post_id']) || !is_numeric($data['post_id'])) {
+    if (empty($data['post_id']) || !is_numeric($data['post_id']) || $data['post_id'] < 1) {
         return false;
     }
-    if (!is_numeric($data['privacy_type'])) {
+    if (!isset($data['privacy_type']) || !is_numeric($data['privacy_type'])) {
         return false;
     }
-    $privacy_type = Wo_Secure($data['privacy_type']);
+    $requested_privacy = (int) $data['privacy_type'];
+    if (!in_array($requested_privacy, array(0, 1, 2, 3, 4, 5, 6), true)) {
+        return false;
+    }
     $user_id = Wo_Secure($wo['user']['user_id']);
     $post_id = Wo_Secure($data['post_id']);
     if (Wo_IsPostOnwer($post_id, $user_id) === false) {
         return false;
     }
-    $query_one = mysqli_query($sqlConnect, "UPDATE " . T_POSTS . " SET `postPrivacy` = '{$privacy_type}' WHERE `id` = {$post_id}");
+    $post_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_POSTS . " WHERE `id` = {$post_id} LIMIT 1");
+    if (!$post_query || !mysqli_num_rows($post_query)) {
+        return false;
+    }
+    $privacy_request = mysqli_fetch_assoc($post_query);
+    $privacy_request['postPrivacy'] = $requested_privacy;
+    $privacy_request['is_anonymous'] = $requested_privacy === 4 ? 1 : (!empty($data['is_anonymous']) ? 1 : 0);
+    if (!empty($data['privacy_contract'])) {
+        $privacy_request['privacy_contract'] = $data['privacy_contract'];
+    }
+    $normalized_privacy = VNSEEA_NormalizePostPrivacyRequest($privacy_request);
+    $privacy_type = Wo_Secure($normalized_privacy['postPrivacy']);
+    $is_anonymous = Wo_Secure($normalized_privacy['is_anonymous']);
+    $query_one = mysqli_query($sqlConnect, "UPDATE " . T_POSTS . " SET `postPrivacy` = '{$privacy_type}', `is_anonymous` = '{$is_anonymous}' WHERE `id` = {$post_id}");
     if ($query_one) {
         return $privacy_type;
     }
+    return false;
 }
 
 function Wo_UpdatePost($data = array())
@@ -10145,6 +10176,9 @@ function Wo_SavePosts($post_data = array())
     }
     $user_id = Wo_Secure($wo['user']['user_id']);
     $post_id = Wo_Secure($post_data['post_id']);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     if (Wo_IsPostSaved($post_id, $user_id)) {
         $query_one = "DELETE FROM " . T_SAVED_POSTS . " WHERE `post_id` = {$post_id} AND `user_id` = {$user_id}";
         $sql_query_one = mysqli_query($sqlConnect, $query_one);

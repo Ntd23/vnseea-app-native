@@ -476,7 +476,7 @@ export function useGoLiveViewModel() {
   const privacyOptions = [
     { value: '0', label: 'Công khai' },
     { value: '1', label: 'Bạn bè' },
-    { value: '2', label: 'Bạn bè của bạn' },
+    { value: '2', label: 'Người theo dõi' },
     { value: '3', label: 'Chỉ mình tôi' },
   ];
 

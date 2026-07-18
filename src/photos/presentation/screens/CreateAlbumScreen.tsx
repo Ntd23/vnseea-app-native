@@ -33,16 +33,18 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { CONTENT_AUDIENCE_CONTRACT, audienceToWire, type ContentAudience } from '../../../shared-kernel/domain/types/contentAudience';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
 
 type CreateAlbumNav = NativeStackNavigationProp<RootStackParamList>;
 
-type PrivacyOption = 'public' | 'friends' | 'private';
+type PrivacyOption = ContentAudience;
 
 const PRIVACY_OPTIONS: { key: PrivacyOption; Icon: typeof Globe2 }[] = [
   { key: 'public', Icon: Globe2 },
   { key: 'friends', Icon: Users },
-  { key: 'private', Icon: Lock },
+  { key: 'followers', Icon: Users },
+  { key: 'only_me', Icon: Lock },
 ];
 
 const CREATE_ALBUM_COPY = {
@@ -70,7 +72,8 @@ const CREATE_ALBUM_COPY = {
     privacy: {
       public: { label: 'Công khai', desc: 'Mọi người đều có thể xem' },
       friends: { label: 'Bạn bè', desc: 'Chỉ bạn bè có thể xem' },
-      private: { label: 'Riêng tư', desc: 'Chỉ mình tôi' },
+      followers: { label: 'Người theo dõi', desc: 'Chỉ người theo dõi có thể xem' },
+      only_me: { label: 'Chỉ mình tôi', desc: 'Chỉ mình tôi' },
     },
   },
   en: {
@@ -97,7 +100,8 @@ const CREATE_ALBUM_COPY = {
     privacy: {
       public: { label: 'Public', desc: 'Everyone can see' },
       friends: { label: 'Friends', desc: 'Only friends can see' },
-      private: { label: 'Private', desc: 'Only me' },
+      followers: { label: 'Followers', desc: 'Only followers can see' },
+      only_me: { label: 'Only me', desc: 'Only me' },
     },
   },
 };
@@ -248,18 +252,7 @@ function LegacyCreateAlbumScreen() {
   };
 
   // Map privacy to postPrivacy value
-  const getPrivacyValue = (privacy: PrivacyOption): number => {
-    switch (privacy) {
-      case 'public':
-        return 0;
-      case 'friends':
-        return 2;
-      case 'private':
-        return 3;
-      default:
-        return 0;
-    }
-  };
+  const getPrivacyValue = (privacy: PrivacyOption): number => Number(audienceToWire(privacy));
 
   // Handle form submission
   const handleCreateAlbum = async () => {
@@ -279,6 +272,7 @@ function LegacyCreateAlbumScreen() {
         type: 'create',
         album_name: albumName.trim(),
         postPrivacy: getPrivacyValue(selectedPrivacy),
+        privacy_contract: CONTENT_AUDIENCE_CONTRACT,
         description: description.trim() || undefined,
       };
 
@@ -784,7 +778,10 @@ function CreateAlbumScreen() {
   const navigation = useNavigation<CreateAlbumNav>();
   const language = useAppLanguage();
   const isVi = language === 'vi';
+  const copy = CREATE_ALBUM_COPY[language] || CREATE_ALBUM_COPY.vi;
   const [albumName, setAlbumName] = useState('');
+  const [selectedPrivacy, setSelectedPrivacy] =
+    useState<PrivacyOption>('public');
   const [selectedImages, setSelectedImages] = useState<Asset[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -831,6 +828,8 @@ function CreateAlbumScreen() {
         {
           type: 'create',
           album_name: albumName.trim(),
+          postPrivacy: audienceToWire(selectedPrivacy),
+          privacy_contract: CONTENT_AUDIENCE_CONTRACT,
           postPhotos: selectedImages.map((image, index) => ({
             uri: image.uri,
             name: image.fileName || `album_${Date.now()}_${index}.jpg`,
@@ -927,6 +926,50 @@ function CreateAlbumScreen() {
             ))}
           </ScrollView>
         )}
+
+        <Text className="mb-2 mt-6 text-sm font-bold text-slate-800">
+          {isVi ? 'Quyền riêng tư' : 'Privacy'}
+        </Text>
+        <View className="gap-2">
+          {PRIVACY_OPTIONS.map(({ key, Icon }) => {
+            const isSelected = selectedPrivacy === key;
+            const optionCopy = copy.privacy[key];
+            return (
+              <TouchableOpacity
+                key={key}
+                activeOpacity={0.82}
+                disabled={isSubmitting}
+                onPress={() => setSelectedPrivacy(key)}
+                className={`min-h-[58px] flex-row items-center rounded-[7px] border px-3 py-2 ${
+                  isSelected
+                    ? 'border-[#0000ff] bg-[#f4f6ff]'
+                    : 'border-slate-200 bg-white'
+                }`}
+              >
+                <View className="h-9 w-9 items-center justify-center rounded-full bg-slate-100">
+                  <Icon size={18} color={isSelected ? '#0000ff' : '#475569'} />
+                </View>
+                <View className="ml-3 flex-1">
+                  <Text className="text-sm font-bold text-slate-800">
+                    {optionCopy.label}
+                  </Text>
+                  <Text className="mt-0.5 text-xs text-slate-500">
+                    {optionCopy.desc}
+                  </Text>
+                </View>
+                <View
+                  className={`h-5 w-5 items-center justify-center rounded-full border ${
+                    isSelected
+                      ? 'border-[#0000ff] bg-[#0000ff]'
+                      : 'border-slate-300'
+                  }`}
+                >
+                  {isSelected ? <Check size={12} color="#FFFFFF" /> : null}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         <View className="mt-7 flex-row items-center justify-end gap-6">
           <TouchableOpacity

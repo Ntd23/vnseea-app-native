@@ -64,6 +64,7 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
+import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
 import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
@@ -1556,6 +1557,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   }, [commentVm]);
 
   const handleOpenPostShare = useCallback((post: FeedPost) => {
+    if (!isFeedPostShareable(post)) return;
     setSharingPost(post);
     setPostShareVisible(true);
   }, []);

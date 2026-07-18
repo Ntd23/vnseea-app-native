@@ -3,7 +3,7 @@ $wo['activity']['type_text'] = '';
 $wo['activity']['icon']      = '';
 $post_publisher = '';
 if (!empty($wo['activity']['postData'])) {
-    if ($wo['config']['shout_box_system'] == 1 && $wo['activity']['postData']['postPrivacy'] == 4) {
+    if ($wo['config']['shout_box_system'] == 1 && VNSEEA_IsAnonymousPost($wo['activity']['postData'])) {
         $post_publisher              = '<a class="second-user-color" href="javascript:void(0)">' . $wo['lang']['anonymous'] . '</a>';
     }
     else{

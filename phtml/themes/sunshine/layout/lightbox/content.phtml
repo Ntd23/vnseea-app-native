@@ -13,7 +13,7 @@
    if (!empty($wo['story']['postFile']) && (strpos($wo['story']['postFile'], '.mp4') !== false || strpos($wo['story']['postFile'], '.mkv') !== false || strpos($wo['story']['postFile'], '.avi') !== false || strpos($wo['story']['postFile'], '.webm') || strpos($wo['story']['postFile'], '.mov') || strpos($wo['story']['postFile'], '.m3u8') !== false )) {
         $wo['story']['model_type'] = 'video';
     }
-   if ($wo['config']['shout_box_system'] == 1 && $wo['story']['postPrivacy'] == 4) {
+   if ($wo['config']['shout_box_system'] == 1 && VNSEEA_IsAnonymousPost($wo['story'])) {
          $anonymous = true;
          $wo['story']['publisher']['username'] = 'anonymous';
          $wo['story']['publisher']['name'] = $wo['lang']['anonymous'];

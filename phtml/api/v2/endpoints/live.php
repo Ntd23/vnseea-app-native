@@ -12,20 +12,15 @@ else{
 		    $error_message = 'stream_name can not be empty';
     	}
     	else{
-            $postPrivacy = 0;
-            $privacy_array = array(
-                '0',
-                '1',
-                '2',
-                '3',
-                '4'
-            );
-            if (!empty($_COOKIE['post_privacy']) && in_array($_COOKIE['post_privacy'], $privacy_array)) {
-                $postPrivacy = Wo_Secure($_COOKIE['post_privacy']);
+            $live_privacy_request = $_POST;
+            if (!isset($live_privacy_request['postPrivacy']) && isset($_POST['post_privacy'])) {
+                $live_privacy_request['postPrivacy'] = $_POST['post_privacy'];
+            } elseif (!isset($live_privacy_request['postPrivacy']) && !empty($_COOKIE['post_privacy'])) {
+                $live_privacy_request['postPrivacy'] = $_COOKIE['post_privacy'];
             }
-            if (!empty($_POST['post_privacy']) && in_array($_POST['post_privacy'], $privacy_array)) {
-                $postPrivacy = Wo_Secure($_POST['post_privacy']);
-            }
+            $live_privacy_request['postType'] = 'live';
+            $live_privacy = VNSEEA_NormalizePostPrivacyRequest($live_privacy_request);
+            $postPrivacy = $live_privacy['postPrivacy'];
             $token = null;
             if (!empty($_POST['token']) && !is_null($_POST['token'])) {
                 $token = Wo_Secure($_POST['token']);
@@ -34,6 +29,7 @@ else{
 		    	                                 'postText' => '',
                                                  'postType' => 'live',
                                                  'postPrivacy' => $postPrivacy,
+                                                 'is_anonymous' => $live_privacy['is_anonymous'],
                                                  'agora_token' => $token,
                                                  'stream_name' => Wo_Secure($_POST['stream_name']),
                                                  'time' => time()));
@@ -84,7 +80,10 @@ else{
 	if ($_POST['type'] == 'check_comments') {
 		if (!empty($_POST['post_id']) && is_numeric($_POST['post_id']) && $_POST['post_id'] > 0) {
     		$post_id = Wo_Secure($_POST['post_id']);
-    		$post_data = $db->where('id',$post_id)->getOne(T_POSTS);
+			$post_data = $db->where('id',$post_id)->getOne(T_POSTS);
+			if (!empty($post_data) && !VNSEEA_CanViewPost($post_data, $wo['user']['id'])) {
+				$post_data = null;
+			}
     		if (!empty($post_data)) {
                 if ($post_data->live_ended == 0) {
                 	$response_data = array('api_status' => 200);

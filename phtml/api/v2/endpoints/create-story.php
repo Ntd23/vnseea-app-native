@@ -45,8 +45,10 @@ if (empty($error_code)) {
     $story_title       = (!empty($_POST['story_title'])) ? Wo_Secure($_POST['story_title']) : '';
     $story_description = (!empty($_POST['story_description'])) ? Wo_Secure($_POST['story_description']) : '';
     $file_type         = Wo_Secure($_POST['file_type']);
+    $story_privacy     = VNSEEA_NormalizeStoryPrivacyRequest($_POST);
     $story_data        = array(
         'user_id' => $wo['user']['id'],
+        'privacy' => $story_privacy['privacy'],
         'posted' => time(),
         'expire' => time()+(60*60*24),
         'title' => $story_title,

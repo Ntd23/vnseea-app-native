@@ -20,7 +20,9 @@ describe('post delete permissions', () => {
   it('maps the backend permission into every post', () => {
     expect(types).toContain('export interface FeedPostPermissions');
     expect(types).toContain('permissions?: FeedPostPermissions');
-    expect(repository).toContain("canDelete: readBool(raw, 'can_delete')");
+    expect(repository).toContain(
+      "canDelete: readBool(permissions, 'can_delete', 'canDelete')",
+    );
   });
 
   it.each([

@@ -1,5 +1,10 @@
 // Description: Implements the reels repository using the shared backend API.
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import {
+  CONTENT_AUDIENCE_CONTRACT,
+  audienceFromWire,
+  audienceToWire,
+} from '../../../shared-kernel/domain/types/contentAudience';
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
@@ -227,10 +232,29 @@ function extractMyReaction(raw: Record<string, unknown>): ReactionType | null {
 }
 
 function mapReel(raw: Record<string, unknown>): ReelsItem {
-  const publisherRaw =
+  const realPublisherRaw =
     (raw.publisher as Record<string, unknown> | undefined) ??
     (raw.user_data as Record<string, unknown> | undefined) ??
     undefined;
+  const rawContract = readString(raw, 'privacy_contract');
+  const privacyContract =
+    rawContract === CONTENT_AUDIENCE_CONTRACT
+      ? CONTENT_AUDIENCE_CONTRACT
+      : 'legacy_reel';
+  const decodedPrivacy = audienceFromWire(raw.postPrivacy ?? raw.privacy, {
+    contract: privacyContract,
+    fallback: 'only_me',
+  });
+  const isAnonymous =
+    decodedPrivacy.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous');
+  const permissionSource =
+    (raw.permissions as Record<string, unknown> | undefined) ?? raw;
+  const canShare =
+    readBool(permissionSource, 'can_share', 'canShare') &&
+    decodedPrivacy.isValid &&
+    decodedPrivacy.audience === 'public' &&
+    !isAnonymous;
+  const publisherRaw = isAnonymous ? undefined : realPublisherRaw;
 
   const postId = readString(raw, 'id', 'post_id');
 
@@ -284,7 +308,10 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
     videoUrl: readString(raw, 'postFile') || undefined,
     thumbnailUrl: readString(raw, 'postFileThumb') || undefined,
     caption: cleanCaption(readString(raw, 'postText')) || undefined,
-    privacy: readNumber(raw, 'postPrivacy'),
+    privacy: decodedPrivacy.audience,
+    privacyContract,
+    isAnonymous,
+    canShare,
     postedAt: readNumber(raw, 'time') || undefined,
     publisher: mapPublisher(publisherRaw),
     likeCount,
@@ -538,7 +565,8 @@ export function createReelsRepository(): ReelsRepository {
           type: draft.videoType,
           name: draft.videoName,
         },
-        postPrivacy: String(draft.privacy ?? 0),
+        postPrivacy: audienceToWire(draft.privacy ?? 'public'),
+        privacy_contract: CONTENT_AUDIENCE_CONTRACT,
         postType: 'reel',
       };
 

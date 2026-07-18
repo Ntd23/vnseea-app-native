@@ -573,6 +573,9 @@ function Wo_AddCommentLikes($comment_id, $text = "") {
     $user_id             = Wo_Secure($wo["user"]["user_id"]);
     $comment_timeline_id = Wo_GetUserIdFromCommentId($comment_id);
     $post_id             = Wo_GetPostIdFromCommentId($comment_id);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     $page_id             = "";
     $post_data           = Wo_PostData($post_id);
     if (!empty($post_data["page_id"])) {
@@ -658,6 +661,9 @@ function Wo_AddCommentWonders($comment_id, $text = "") {
     $user_id         = Wo_Secure($wo["user"]["user_id"]);
     $comment_user_id = Wo_GetUserIdFromCommentId($comment_id);
     $post_id         = Wo_GetPostIdFromCommentId($comment_id);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     $page_id         = "";
     $post_data       = Wo_PostData($post_id);
     if (!empty($post_data["page_id"])) {
@@ -4183,7 +4189,11 @@ function Wo_GetCommentReply($reply_id = 0) {
         if ($wo["config"]["second_post_button"] == "reaction") {
             $fetched_data["reaction"] = Wo_GetPostReactionsTypes($fetched_data["id"], "replay");
         }
-        return $fetched_data;
+        $post_query = mysqli_query($sqlConnect, "SELECT P.* FROM " . T_POSTS . " P INNER JOIN " . T_COMMENTS . " C ON C.`post_id` = P.`id` WHERE C.`id` = " . (int) $fetched_data["comment_id"] . " LIMIT 1");
+        $post = ($post_query && mysqli_num_rows($post_query)) ? mysqli_fetch_assoc($post_query) : array();
+        $anonymous_label = !empty($wo["lang"]["anonymous"]) ? $wo["lang"]["anonymous"] : "Anonymous";
+        $anonymous_avatar = Wo_GetMedia("upload/photos/incognito.png");
+        return VNSEEA_RedactAnonymousComment($fetched_data, $post, VNSEEA_CurrentViewerId(), $anonymous_label, $anonymous_avatar);
     }
     return false;
 }
@@ -4229,6 +4239,10 @@ function Wo_RegisterCommentReply($data = array()) {
         return false;
     }
     if (empty($data["user_id"]) || !is_numeric($data["user_id"]) || $data["user_id"] < 0) {
+        return false;
+    }
+    $reply_post_id = Wo_GetPostIdFromCommentId($data["comment_id"]);
+    if (!VNSEEA_CanMutatePost($reply_post_id)) {
         return false;
     }
     if (!empty($data["page_id"])) {
@@ -4314,7 +4328,7 @@ function Wo_RegisterCommentReply($data = array()) {
     if ($query) {
         $inserted_reply_id = mysqli_insert_id($sqlConnect);
         $post_data         = Wo_PostData($comment["post_id"]);
-        if ($wo["config"]["shout_box_system"] == 1 && !empty($post_data) && $post_data["postPrivacy"] == 4 && $post_data["user_id"] == $data["user_id"]) {
+        if ($wo["config"]["shout_box_system"] == 1 && !empty($post_data) && VNSEEA_IsAnonymousPost($post_data) && !empty($post_data["is_owner"]) && $post_data["user_id"] == $data["user_id"]) {
             $type2 = "anonymous";
         }
         $notification_data_array = array(
@@ -4546,6 +4560,9 @@ function Wo_AddCommentReplyWonders($reply_id, $text = "") {
     $comment_user_id = Wo_GetUserIdFromReplyId($reply_id);
     $comment         = Wo_GetCommentIdFromReplyId($reply_id);
     $post_id         = Wo_GetPostIdFromCommentId($comment);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     $page_id         = "";
     $post_data       = Wo_PostData($post_id);
     if (!empty($post_data["page_id"])) {
@@ -4659,6 +4676,9 @@ function Wo_AddCommentReplyLikes($reply_id, $text = "") {
     $comment_user_id = Wo_GetUserIdFromReplyId($reply_id);
     $comment         = Wo_GetCommentIdFromReplyId($reply_id);
     $post_id         = Wo_GetPostIdFromCommentId($comment);
+    if (!VNSEEA_CanMutatePost($post_id)) {
+        return false;
+    }
     $page_id         = "";
     $post_data       = Wo_PostData($post_id);
     if (!empty($post_data["page_id"])) {

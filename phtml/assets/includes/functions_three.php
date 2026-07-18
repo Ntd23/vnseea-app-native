@@ -5433,6 +5433,8 @@ function Wo_InsertUserStory($registration_data = array())
 	if ($wo['loggedin'] == false) {
 		return false;
 	}
+	$privacy = VNSEEA_NormalizeStoryPrivacyRequest($registration_data);
+	$registration_data['privacy'] = $privacy['privacy'];
 	$fields = '`' . implode('`, `', array_keys($registration_data)) . '`';
 	$data   = '\'' . implode('\', \'', $registration_data) . '\'';
 	$sql    = "INSERT INTO " . T_USER_STORY . " ({$fields}) VALUES ({$data})";
@@ -5497,6 +5499,9 @@ function Wo_GetStroies($args = array())
 	$query = mysqli_query($sqlConnect, $sql);
 	if (mysqli_num_rows($query)) {
 		while ($fetched_data = mysqli_fetch_assoc($query)) {
+			if (!VNSEEA_CanViewStory($fetched_data, $wo['user']['id'])) {
+				continue;
+			}
 			$story_images = Wo_GetStoryMedia($fetched_data['id'], 'image');
 			if (count($story_images) > 0) {
 				$fetched_data['thumb']  = array_shift($story_images);
@@ -5595,11 +5600,12 @@ function Wo_GetStoryEntryPoint($owner_id = 0, $viewer_id = 0)
 	if ($viewer_id < 1 && !empty($wo['user']['user_id'])) {
 		$viewer_id = (int) $wo['user']['user_id'];
 	}
+	$audience_sql = VNSEEA_StoryAudienceSql('', $viewer_id);
 
 	$story = null;
 	if ($viewer_id > 0) {
 		$now = time();
-		$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND `ad_id` IS NULL AND `user_id` = '{$owner_id}' AND `id` NOT IN (SELECT `story_id` FROM " . T_STORY_SEEN . " WHERE `user_id` = '{$viewer_id}') ORDER BY `id` ASC LIMIT 1");
+		$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND `ad_id` IS NULL AND `user_id` = '{$owner_id}' AND ({$audience_sql}) AND `id` NOT IN (SELECT `story_id` FROM " . T_STORY_SEEN . " WHERE `user_id` = '{$viewer_id}') ORDER BY `id` ASC LIMIT 1");
 		$story = $story_query ? mysqli_fetch_object($story_query) : null;
 	}
 
@@ -5609,12 +5615,12 @@ function Wo_GetStoryEntryPoint($owner_id = 0, $viewer_id = 0)
 		if (!empty($ads_ids)) {
 			$ads_in = implode(',', $ads_ids);
 			$now = time();
-			$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND ((`ad_id` IN ({$ads_in})) OR (`ad_id` IS NULL AND `user_id` = '{$owner_id}')) ORDER BY `id` ASC LIMIT 1");
+			$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND ((`ad_id` IN ({$ads_in})) OR (`ad_id` IS NULL AND `user_id` = '{$owner_id}' AND ({$audience_sql}))) ORDER BY `id` ASC LIMIT 1");
 			$story = $story_query ? mysqli_fetch_object($story_query) : null;
 		}
 		if (empty($story)) {
 			$now = time();
-			$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND `ad_id` IS NULL AND `user_id` = '{$owner_id}' ORDER BY `id` ASC LIMIT 1");
+			$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND `ad_id` IS NULL AND `user_id` = '{$owner_id}' AND ({$audience_sql}) ORDER BY `id` ASC LIMIT 1");
 			$story = $story_query ? mysqli_fetch_object($story_query) : null;
 		}
 	}
@@ -5919,13 +5925,16 @@ function Wo_SharePost($id = false)
 	$sql  = '';
 	if (Wo_IsPostShared($id)) {
 		$shared_post = Wo_PostData($id);
+		if (empty($shared_post) || empty($shared_post['parent_id'])) {
+			return false;
+		}
 		$post        = mysqli_query($sqlConnect, "SELECT * FROM " . T_POSTS . " WHERE `id` = {$shared_post['parent_id']}");
 		$post_data   = mysqli_fetch_assoc($post);
 	} else {
 		$post      = mysqli_query($sqlConnect, "SELECT * FROM " . T_POSTS . " WHERE `id` = {$id}");
 		$post_data = mysqli_fetch_assoc($post);
 	}
-	if ($post) {
+	if ($post && !empty($post_data) && VNSEEA_CanSharePostTree($post_data, $wo['user']['id'])) {
 		$post_data['id']          = 0;
 		$post_data['post_id']     = 0;
 		$post_data['shared_from'] = $post_data['user_id'];
@@ -7197,7 +7206,8 @@ function Wo_CountStories($user_id = 0)
 	}
 	$data         = array();
 	$user_id      = Wo_Secure($user_id);
-	$query        = "SELECT COUNT(*) as count FROM " . T_USER_STORY . " WHERE (user_id IN (SELECT following_id FROM " . T_FOLLOWERS . " WHERE follower_id = '$user_id') OR user_id = $user_id) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') ORDER BY id DESC";
+	$audience_sql = VNSEEA_StoryAudienceSql('', $user_id);
+	$query        = "SELECT COUNT(*) as count FROM " . T_USER_STORY . " WHERE ({$audience_sql}) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') ORDER BY id DESC";
 	$query_run    = mysqli_query($sqlConnect, $query);
 	$fetched_data = mysqli_fetch_assoc($query_run);
 	return $fetched_data['count'];
@@ -7222,13 +7232,16 @@ function Wo_GetFriendsStatus($data_array = array('limit' => 8, 'user_id' => 0, '
 		$offset       = Wo_Secure($data_array['offset']);
 		$offset_query = " AND `id` < $offset ";
 	}
+	$audience_sql = VNSEEA_StoryAudienceSql('', $user_id);
 	// $query     = "SELECT * FROM " . T_USER_STORY . " WHERE (user_id IN (SELECT following_id FROM " . T_FOLLOWERS . " WHERE follower_id = '$user_id') OR user_id = $user_id) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') $group_by ORDER BY id DESC";
-	$query     = "SELECT DISTINCT user_id,title,description,posted,expire,thumbnail,ad_id,(SELECT MAX(us.id) FROM " . T_USER_STORY . " us WHERE us.user_id = " . T_USER_STORY . ".user_id AND us.expire > UNIX_TIMESTAMP() ) AS id  FROM " . T_USER_STORY . " WHERE  " . T_USER_STORY . ".expire > UNIX_TIMESTAMP()   AND  (user_id IN (SELECT following_id FROM " . T_FOLLOWERS . " WHERE follower_id = '$user_id') OR user_id = $user_id  OR user_id IN (SELECT user_id FROM " . T_USER_ADS . " WHERE status = 1) ) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') $offset_query $group_by ORDER BY id DESC LIMIT " . $data_array['limit'];
+	$query     = "SELECT DISTINCT user_id,title,description,posted,expire,thumbnail,ad_id,(SELECT MAX(us.id) FROM " . T_USER_STORY . " us WHERE us.user_id = " . T_USER_STORY . ".user_id AND us.expire > UNIX_TIMESTAMP() AND (" . VNSEEA_StoryAudienceSql('us', $user_id) . ") ) AS id  FROM " . T_USER_STORY . " WHERE  " . T_USER_STORY . ".expire > UNIX_TIMESTAMP() AND (`ad_id` IS NOT NULL OR ({$audience_sql})) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') $offset_query $group_by ORDER BY id DESC LIMIT " . $data_array['limit'];
 	$query_run = mysqli_query($sqlConnect, $query);
 	while ($fetched_data = mysqli_fetch_assoc($query_run)) {
 
-		$not_seen = $db->where("(user_id = " . $fetched_data['user_id'] . "
-		AND expire > " . time() . "  AND id NOT IN (SELECT story_id FROM " . T_STORY_SEEN . " WHERE user_id = " . $wo['user']['id'] . "))")->getValue(T_USER_STORY, 'COUNT(*)');
+		$story_owner_id = (int) $fetched_data['user_id'];
+		$not_seen_query = mysqli_query($sqlConnect, "SELECT COUNT(*) AS count FROM " . T_USER_STORY . " WHERE `user_id` = {$story_owner_id} AND `expire` > " . time() . " AND ({$audience_sql}) AND `id` NOT IN (SELECT `story_id` FROM " . T_STORY_SEEN . " WHERE `user_id` = " . (int) $wo['user']['id'] . ")");
+		$not_seen_data = $not_seen_query ? mysqli_fetch_assoc($not_seen_query) : array();
+		$not_seen = !empty($not_seen_data['count']) ? (int) $not_seen_data['count'] : 0;
 		$fetched_data['have_not_seen'] = 0;
 		if ($not_seen > 0 && $fetched_data['user_id'] != $wo['user']['id']) {
 			$fetched_data['have_not_seen'] = 1;
@@ -7281,7 +7294,8 @@ function Wo_GetFriendsStatusAPI($data_array = array('limit' => 8, 'user_id' => 0
 		$offset       = Wo_Secure($data_array['offset']);
 		$offset_query = " AND `user_id` < $offset ";
 	}
-	$story_filter = "(user_id IN (SELECT following_id FROM " . T_FOLLOWERS . " WHERE follower_id = '$user_id') OR user_id = $user_id) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') $offset_query";
+	$audience_sql = VNSEEA_StoryAudienceSql('', $user_id);
+	$story_filter = "({$audience_sql}) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') $offset_query";
 	if (!empty($data_array['api'])) {
 		$query = "SELECT * FROM " . T_USER_STORY . " WHERE $story_filter ORDER BY user_id DESC LIMIT " . $data_array['limit'];
 	} else {
@@ -7715,7 +7729,8 @@ function Wo_GetAllStatus()
 {
 	global $wo, $db;
 	$user_id = $wo['user']['user_id'];
-	return $db->rawQuery("SELECT DISTINCT user_id,title,description,posted,expire,thumbnail,ad_id,(SELECT MAX(us.id) FROM " . T_USER_STORY . " us WHERE us.user_id = " . T_USER_STORY . ".user_id AND us.expire > UNIX_TIMESTAMP()) AS id FROM " . T_USER_STORY . " WHERE " . T_USER_STORY . ".expire > UNIX_TIMESTAMP() AND (user_id IN (SELECT following_id FROM " . T_FOLLOWERS . " WHERE follower_id = '$user_id') OR user_id = $user_id OR user_id IN (SELECT user_id FROM " . T_USER_ADS . " WHERE status = 1)) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') GROUP BY user_id ORDER BY id DESC");
+	$audience_sql = VNSEEA_StoryAudienceSql('', $user_id);
+	return $db->rawQuery("SELECT DISTINCT user_id,title,description,posted,expire,thumbnail,ad_id,(SELECT MAX(us.id) FROM " . T_USER_STORY . " us WHERE us.user_id = " . T_USER_STORY . ".user_id AND us.expire > UNIX_TIMESTAMP() AND (" . VNSEEA_StoryAudienceSql('us', $user_id) . ")) AS id FROM " . T_USER_STORY . " WHERE " . T_USER_STORY . ".expire > UNIX_TIMESTAMP() AND (`ad_id` IS NOT NULL OR ({$audience_sql})) AND user_id IN (SELECT user_id FROM " . T_USERS . " WHERE active = '1') GROUP BY user_id ORDER BY id DESC");
 }
 function Wo_SharePostOn($id = false, $type_id = 0, $type = '')
 {
@@ -7735,7 +7750,7 @@ function Wo_SharePostOn($id = false, $type_id = 0, $type = '')
 	$post      = mysqli_query($sqlConnect, "SELECT * FROM " . T_POSTS . " WHERE `id` = {$id}");
 	$post_data = mysqli_fetch_assoc($post);
 	//}
-	if ($post) {
+	if ($post && !empty($post_data) && VNSEEA_CanSharePostTree($post_data, $wo['user']['id'])) {
 		$post_data['user_id'] = $user;
 		if ($type == 'group' && !empty($type_id)) {
 			$post_data['group_id'] = $type_id;
@@ -8980,7 +8995,7 @@ function Wo_CheckAnonymous($id, $type)
 	if ($type == 'reply') {
 		$sub = " AND P.`post_id` = (SELECT `post_id` FROM " . T_COMMENTS . " C WHERE C.`id` = (SELECT `comment_id` FROM " . T_COMMENTS_REPLIES . " R WHERE R.`id` = '{$id}' AND R.`user_id` = P.`user_id`)) ";
 	}
-	$query_one = "SELECT COUNT(id) as count FROM " . T_POSTS . " P WHERE P.`postPrivacy` = '4'" . $sub;
+	$query_one = "SELECT COUNT(id) as count FROM " . T_POSTS . " P WHERE (P.`is_anonymous` = 1 OR P.`postPrivacy` = '4')" . $sub;
 	$sql       = mysqli_query($sqlConnect, $query_one);
 	if (mysqli_num_rows($sql)) {
 		$fetched_data = mysqli_fetch_assoc($sql);

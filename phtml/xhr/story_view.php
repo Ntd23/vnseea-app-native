@@ -4,6 +4,9 @@ if ($f == 'story_view') {
         if (is_numeric($_POST['id']) && $_POST['id'] > 0) {
             $story_id        = Wo_Secure($_POST['id']);
             $story           = $db->where('expire', time(), '>')->where('id', $story_id)->getOne(T_USER_STORY);
+            if (!empty($story) && !VNSEEA_CanViewStory($story, $wo['user']['user_id'])) {
+                $story = null;
+            }
             $get_story_owner = !empty($story->user_id) ? $story->user_id : 0;
             $wo['story']     = ToArray($story);
             if (!empty($story)) {

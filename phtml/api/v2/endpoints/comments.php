@@ -35,6 +35,23 @@ $limit = (!empty($_POST['limit']) && is_numeric($_POST['limit']) && $_POST['limi
 $after_post_id = (!empty($_POST['after_post_id']) && is_numeric($_POST['after_post_id']) && $_POST['after_post_id'] > 0 ? Wo_Secure($_POST['after_post_id']) : 0);
 $offset = (!empty($_POST['offset']) && is_numeric($_POST['offset']) && $_POST['offset'] > 0 ? Wo_Secure($_POST['offset']) : 0);
 
+$redact_api_comment = function ($comment) use ($wo, $sqlConnect) {
+    if (empty($comment)) {
+        return $comment;
+    }
+    if (!empty($comment['post_id'])) {
+        $post_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_POSTS . " WHERE `id` = " . (int) $comment['post_id'] . " LIMIT 1");
+    } elseif (!empty($comment['comment_id'])) {
+        $post_query = mysqli_query($sqlConnect, "SELECT P.* FROM " . T_POSTS . " P INNER JOIN " . T_COMMENTS . " C ON C.`post_id` = P.`id` WHERE C.`id` = " . (int) $comment['comment_id'] . " LIMIT 1");
+    } else {
+        return $comment;
+    }
+    $post = ($post_query && mysqli_num_rows($post_query)) ? mysqli_fetch_assoc($post_query) : array();
+    $anonymous_label = !empty($wo['lang']['anonymous']) ? $wo['lang']['anonymous'] : 'Anonymous';
+    $anonymous_avatar = Wo_GetMedia('upload/photos/incognito.png');
+    return VNSEEA_RedactAnonymousComment($comment, $post, VNSEEA_CurrentViewerId(), $anonymous_label, $anonymous_avatar);
+};
+
 $resolve_comment_post_id = function ($comment_id) {
     if (empty($comment_id) || !is_numeric($comment_id)) {
         return 0;
@@ -121,7 +138,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 }
                 
                 $R_Comment     = Wo_RegisterPostComment($C_Data);
-                $comment       = Wo_GetPostComment($R_Comment);
+                $comment       = $redact_api_comment(Wo_GetPostComment($R_Comment));
                 if (!empty($comment['publisher'])) {
                     foreach ($non_allowed as $key4 => $value4) {
                       unset($comment['publisher'][$value4]);
@@ -239,7 +256,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                 'time' => time()
             );
             $R_Comment   = Wo_RegisterCommentReply($C_Data);
-            $comment = Wo_GetCommentReply($R_Comment);
+            $comment = $redact_api_comment(Wo_GetCommentReply($R_Comment));
             if (!empty($comment)) {
                 if (!empty($comment['publisher'])) {
                     foreach ($non_allowed as $key4 => $value4) {

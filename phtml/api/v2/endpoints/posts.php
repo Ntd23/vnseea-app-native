@@ -874,6 +874,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 			if (!empty($posts)) {
 				foreach ($posts as $key => $value9) {
 					$post = Wo_PostData($value9->id);
+					if (empty($post)) {
+						continue;
+					}
 					$post['shared_info'] = null;
 
 					if (!empty($post['postFile'])) {
@@ -966,6 +969,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 			if (!empty($posts)) {
 				foreach ($posts as $key => $value9) {
 					$post = Wo_PostData($value9->id);
+					if (empty($post)) {
+						continue;
+					}
 					$post['shared_info'] = null;
 
 					if (!empty($post['postFile'])) {
@@ -1059,6 +1065,9 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 			if (!empty($posts)) {
 				foreach ($posts as $key => $value9) {
 					$post = Wo_PostData($value9->id);
+					if (empty($post)) {
+						continue;
+					}
 					$post['shared_info'] = null;
 
 					if (!empty($post['postFile'])) {

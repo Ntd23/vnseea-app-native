@@ -48,7 +48,7 @@ import {
 } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronRight, ImagePlus, ShieldCheck, Trash2, Video as VideoIcon, X } from 'lucide-react-native';
+import { ChevronRight, Globe2, ImagePlus, Lock, ShieldCheck, Trash2, Users, Video as VideoIcon, X } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useCreateStoryViewModel } from '../../application/view-models/useCreateStoryViewModel';
 import { storyCreatedEvents } from '../../application/events/storyCreatedEvents';
@@ -105,6 +105,8 @@ const CREATE_STORY_COPY = {
     libraryError: 'Không mở được thư viện',
     titlePlaceholder: 'Tiêu đề (tuỳ chọn)',
     descPlaceholder: 'Mô tả (tuỳ chọn, {min}–{max} ký tự)',
+    audience: 'Đối tượng xem',
+    audiences: { public: 'Công khai', friends: 'Bạn bè', followers: 'Người theo dõi', only_me: 'Chỉ mình tôi' },
   },
   en: {
     headerTitle: 'Create Story',
@@ -124,6 +126,8 @@ const CREATE_STORY_COPY = {
     libraryError: 'Cannot open library',
     titlePlaceholder: 'Title (optional)',
     descPlaceholder: 'Description (optional, {min}–{max} characters)',
+    audience: 'Audience',
+    audiences: { public: 'Public', friends: 'Friends', followers: 'Followers', only_me: 'Only me' },
   },
 };
 
@@ -711,6 +715,27 @@ function CreateStoryScreen() {
         {/* ── Caption inputs (only when media is picked) ─────────── */}
         {vm.media ? (
           <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+            <Text style={{ color: '#475569', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>
+              {copy.audience}
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+              {(['public', 'friends', 'followers', 'only_me'] as const).map(audience => {
+                const Icon = audience === 'public' ? Globe2 : audience === 'only_me' ? Lock : Users;
+                const selected = vm.audience === audience;
+                return (
+                  <TouchableOpacity
+                    key={audience}
+                    onPress={() => vm.setAudience(audience)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: selected ? '#2563eb' : '#e2e8f0', backgroundColor: selected ? '#eff6ff' : '#ffffff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 }}
+                  >
+                    <Icon size={14} color={selected ? '#2563eb' : '#64748b'} />
+                    <Text style={{ color: selected ? '#1d4ed8' : '#475569', fontSize: 12, fontWeight: '600' }}>
+                      {copy.audiences[audience]}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             <TextInput
               value={vm.title}
               onChangeText={vm.setTitle}

@@ -89,10 +89,10 @@ describe('FeedShareBottomSheet', () => {
 
   it('loads message recipients once per visibility generation without discarding valid results', () => {
     expect(source).toContain('const wasVisibleRef = useRef(false);');
-    expect(source).toContain('visible && !wasVisible');
-    expect(source).toContain('!visible && wasVisible');
+    expect(source).toContain('shareVisible && !wasVisible');
+    expect(source).toContain('!shareVisible && wasVisible');
     expect(source).toContain(
-      '}, [backdropOpacity, translateY, visible]);',
+      '}, [backdropOpacity, shareVisible, translateY]);',
     );
     expect(source).not.toContain(
       '}, [backdropOpacity, mounted, translateY, visible]);',
@@ -133,7 +133,7 @@ describe('FeedShareBottomSheet', () => {
   it('does not reset story media readiness when only the share note changes', () => {
     expect(source).toContain('const storyMediaUrl = storyCardModel?.mediaUrl;');
     expect(source).toContain(
-      '[storyCardPostId, storyMediaUrl, target, visible]',
+      '[shareVisible, storyCardPostId, storyMediaUrl, target]',
     );
     expect(source).not.toContain('[storyCardModel, target, visible]');
   });

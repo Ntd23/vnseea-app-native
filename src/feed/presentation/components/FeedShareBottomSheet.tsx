@@ -57,6 +57,7 @@ import {
   type MessageRecipientStatuses,
 } from '../../application/sharing/shareMessageRecipients';
 import type { FeedPost } from '../../domain/types/feed.types';
+import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type {
   FeedShareDestination,
   SharePostInput,
@@ -254,6 +255,8 @@ export function FeedShareBottomSheet({
   onInternalShare,
   onShared,
 }: FeedShareBottomSheetProps) {
+  const canShare = isFeedPostShareable(post);
+  const shareVisible = visible && canShare;
   const language = useAppLanguage();
   const copy = getShareCopy(language);
   const insets = useSafeAreaInsets();
@@ -284,7 +287,7 @@ export function FeedShareBottomSheet({
 
   const translateY = useSharedValue(1000);
   const backdropOpacity = useSharedValue(0);
-  const [mounted, setMounted] = useState(visible);
+  const [mounted, setMounted] = useState(shareVisible);
 
   const pageChoices = useMemo(
     () => pagesVm.pages.map(mapPageChoice),
@@ -326,9 +329,9 @@ export function FeedShareBottomSheet({
 
   useEffect(() => {
     const wasVisible = wasVisibleRef.current;
-    wasVisibleRef.current = visible;
+    wasVisibleRef.current = shareVisible;
 
-    if (visible && !wasVisible) {
+    if (shareVisible && !wasVisible) {
       messageLoadGenerationRef.current += 1;
       setMounted(true);
       setNote('');
@@ -354,7 +357,7 @@ export function FeedShareBottomSheet({
         duration: ANIMATION_MS,
         easing: Easing.out(Easing.cubic),
       });
-    } else if (!visible && wasVisible) {
+    } else if (!shareVisible && wasVisible) {
       messageLoadGenerationRef.current += 1;
       setTarget('timeline');
       translateY.value = withTiming(1000, {
@@ -370,7 +373,7 @@ export function FeedShareBottomSheet({
       return () => clearTimeout(timeout);
     }
     return undefined;
-  }, [backdropOpacity, translateY, visible]);
+  }, [backdropOpacity, shareVisible, translateY]);
 
   useEffect(() => {
     return () => {
@@ -381,7 +384,7 @@ export function FeedShareBottomSheet({
 
   const loadMessageChats = useCallback(
     async (force = false) => {
-      if (!visible || (!force && loadedDataRef.current.has('message'))) return;
+      if (!shareVisible || (!force && loadedDataRef.current.has('message'))) return;
 
       loadedDataRef.current.add('message');
       const generation = messageLoadGenerationRef.current;
@@ -456,7 +459,7 @@ export function FeedShareBottomSheet({
       copy.chatLoadFailed,
       copy.chatLoadPartial,
       currentUserVm.user?.userId,
-      visible,
+      shareVisible,
     ],
   );
 
@@ -469,7 +472,7 @@ export function FeedShareBottomSheet({
   }, [loadMessageChats]);
 
   useEffect(() => {
-    if (!visible || (target !== 'page' && target !== 'group')) return;
+    if (!shareVisible || (target !== 'page' && target !== 'group')) return;
     if (loadedDataRef.current.has(target)) return;
 
     loadedDataRef.current.add(target);
@@ -478,7 +481,7 @@ export function FeedShareBottomSheet({
     } else {
       groupsVm.loadFirstPage(false).catch(() => undefined);
     }
-  }, [groupsVm, pagesVm, target, visible]);
+  }, [groupsVm, pagesVm, shareVisible, target]);
 
   useEffect(() => {
     if (!selectedPageId && pageChoices.length > 0) {
@@ -493,7 +496,7 @@ export function FeedShareBottomSheet({
   }, [groupChoices, selectedGroupId]);
 
   useEffect(() => {
-    if (!visible || target !== 'story' || !storyCardPostId) return undefined;
+    if (!shareVisible || target !== 'story' || !storyCardPostId) return undefined;
 
     setForceStoryMediaFallback(false);
     setStoryCardReady(!storyMediaUrl);
@@ -504,7 +507,7 @@ export function FeedShareBottomSheet({
       setStoryCardReady(true);
     }, STORY_MEDIA_READY_TIMEOUT_MS);
     return () => clearTimeout(timeout);
-  }, [storyCardPostId, storyMediaUrl, target, visible]);
+  }, [shareVisible, storyCardPostId, storyMediaUrl, target]);
 
   const sheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -534,6 +537,7 @@ export function FeedShareBottomSheet({
       ? copy.shareGroup
       : copy.shareNow;
   const isPrimaryShareDisabled =
+    !canShare ||
     isSharing ||
     !currentUserVm.user?.userId ||
     (target === 'page' && !selectedPageId) ||
@@ -593,7 +597,7 @@ export function FeedShareBottomSheet({
   );
 
   const handleCopyLink = useCallback(async () => {
-    if (!post || isSharing) return;
+    if (!canShare || !post || isSharing) return;
     setIsSharing(true);
     setError(null);
     try {
@@ -606,10 +610,10 @@ export function FeedShareBottomSheet({
     } finally {
       setIsSharing(false);
     }
-  }, [copy, copyToClipboard, isSharing, onClose, post]);
+  }, [canShare, copy, copyToClipboard, isSharing, onClose, post]);
 
   const handleExternalShare = useCallback(async () => {
-    if (!post || isSharing) return;
+    if (!canShare || !post || isSharing) return;
     setIsSharing(true);
     setError(null);
     try {
@@ -624,10 +628,11 @@ export function FeedShareBottomSheet({
     } finally {
       setIsSharing(false);
     }
-  }, [copy, isSharing, onClose, post, sharePost]);
+  }, [canShare, copy, isSharing, onClose, post, sharePost]);
 
   const handleStoryShare = useCallback(async () => {
     if (
+      !canShare ||
       !post ||
       !storyCardReady ||
       !storyCardRef.current ||
@@ -655,6 +660,7 @@ export function FeedShareBottomSheet({
     );
     showToast({ message: copy.storyShareSuccess, type: 'success' });
   }, [
+    canShare,
     copy.storyPreparing,
     copy.storyShareSuccess,
     currentUserVm.user,
@@ -664,7 +670,7 @@ export function FeedShareBottomSheet({
   ]);
 
   const handlePrimaryShare = useCallback(async () => {
-    if (!post || isPrimaryShareDisabled) return;
+    if (!canShare || !post || isPrimaryShareDisabled) return;
     setIsSharing(true);
     setError(null);
     try {
@@ -703,6 +709,7 @@ export function FeedShareBottomSheet({
       setIsSharing(false);
     }
   }, [
+    canShare,
     copy.shareError,
     copy.storyShareFailed,
     currentUserVm.user?.userId,
@@ -719,7 +726,7 @@ export function FeedShareBottomSheet({
   ]);
 
   const handleSendMessages = useCallback(async () => {
-    if (!post || isSharing || messageRecipientIdsToSend.length === 0) return;
+    if (!canShare || !post || isSharing || messageRecipientIdsToSend.length === 0) return;
     setIsSharing(true);
     setError(null);
     try {
@@ -772,6 +779,7 @@ export function FeedShareBottomSheet({
       setIsSharing(false);
     }
   }, [
+    canShare,
     copy,
     isSharing,
     messageRecipientIdsToSend,
@@ -785,7 +793,7 @@ export function FeedShareBottomSheet({
 
   const handleDestinationSelect = useCallback(
     (destination: FeedShareCarouselDestination) => {
-      if (isSharing) return;
+      if (!canShare || isSharing) return;
       setError(null);
       if (destination === 'copy') {
         handleCopyLink().catch(() => undefined);
@@ -797,15 +805,15 @@ export function FeedShareBottomSheet({
       }
       setTarget(destination);
     },
-    [handleCopyLink, handleExternalShare, isSharing],
+    [canShare, handleCopyLink, handleExternalShare, isSharing],
   );
 
-  if (!mounted || !post) return null;
+  if (!mounted || !post || !canShare) return null;
 
   return (
     <View className="absolute inset-0 z-[1100] justify-end">
       <Animated.View
-        pointerEvents={visible ? 'auto' : 'none'}
+        pointerEvents={shareVisible ? 'auto' : 'none'}
         style={[backdropStyle, styles.backdrop]}
         className="absolute inset-0"
       >

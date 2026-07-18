@@ -11,7 +11,6 @@ import {
 import {
   BarChart3,
   Check,
-  EyeOff,
   Globe,
   Lock,
   ChevronDown,
@@ -26,6 +25,7 @@ import {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useSharedValue } from 'react-native-reanimated';
 import type { FeedPollPost, PollOption, PostPrivacy } from '../../domain/types/feed.types';
+import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
@@ -97,7 +97,7 @@ type PollCopy = {
   share: string;
   userFallback: string;
   publicLabel: string;
-  followingPrivacyLabel: string;
+  friendsPrivacyLabel: string;
   followersPrivacyLabel: string;
   onlyMePrivacyLabel: string;
   anonymousPrivacyLabel: string;
@@ -124,7 +124,7 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     share: 'Chia sẻ',
     userFallback: 'Người dùng',
     publicLabel: 'Công khai',
-    followingPrivacyLabel: 'Nh\u1eefng ng\u01b0\u1eddi t\u00f4i theo d\u00f5i',
+    friendsPrivacyLabel: 'Bạn bè',
     followersPrivacyLabel: 'M\u1ecdi ng\u01b0\u1eddi theo d\u00f5i t\u00f4i',
     onlyMePrivacyLabel: 'Ch\u1ec9 m\u00ecnh t\u00f4i',
     anonymousPrivacyLabel: '\u1ea8n danh',
@@ -149,7 +149,7 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     share: 'Share',
     userFallback: 'User',
     publicLabel: 'Public',
-    followingPrivacyLabel: 'People I follow',
+    friendsPrivacyLabel: 'Friends',
     followersPrivacyLabel: 'People following me',
     onlyMePrivacyLabel: 'Only me',
     anonymousPrivacyLabel: 'Anonymous',
@@ -164,14 +164,12 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
 
 function getPollPrivacyMeta(privacy: PostPrivacy | undefined, copy: PollCopy) {
   switch (privacy) {
-    case 'following':
-      return { label: copy.followingPrivacyLabel, Icon: Users };
+    case 'friends':
+      return { label: copy.friendsPrivacyLabel, Icon: Users };
     case 'followers':
       return { label: copy.followersPrivacyLabel, Icon: Users };
     case 'only_me':
       return { label: copy.onlyMePrivacyLabel, Icon: Lock };
-    case 'anonymous':
-      return { label: copy.anonymousPrivacyLabel, Icon: EyeOff };
     case 'public':
     default:
       return { label: copy.publicLabel, Icon: Globe };
@@ -396,7 +394,9 @@ export const PollPostCard = React.memo(function PollPostCard({
           )}
           <View className="ml-3 flex-1">
             <Text className="text-title-primary font-bold text-[#050505]" numberOfLines={1}>
-              {post.publisher?.name || copy.userFallback}
+              {post.isAnonymous
+                ? copy.anonymousPrivacyLabel
+                : post.publisher?.name || copy.userFallback}
             </Text>
             <View className="flex-row items-center mt-0.5">
               <Text className="text-caption-secondary text-[12px] text-[#65676B]">
@@ -515,16 +515,18 @@ export const PollPostCard = React.memo(function PollPostCard({
             </Text>
           </FeedGlassActionButton>
 
-          <FeedGlassActionButton
-            className="flex-1 flex-row items-center justify-center py-1"
-            activeOpacity={0.75}
-            onPress={() => onShare?.(post)}
-          >
-            <Share2 size={19} color="#65676B" />
-            <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
-              {copy.share}
-            </Text>
-          </FeedGlassActionButton>
+          {isFeedPostShareable(post) ? (
+            <FeedGlassActionButton
+              className="flex-1 flex-row items-center justify-center py-1"
+              activeOpacity={0.75}
+              onPress={() => onShare?.(post)}
+            >
+              <Share2 size={19} color="#65676B" />
+              <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
+                {copy.share}
+              </Text>
+            </FeedGlassActionButton>
+          ) : null}
         </FeedGlassActionBar>
       )}
     </FeedCardSurface>

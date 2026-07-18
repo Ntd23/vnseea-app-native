@@ -52,6 +52,7 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../domain/types/feed.types';
+import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { PostComment } from '../../domain/repositories/FeedRepository';
 import { usePostDetailViewModel } from '../../application/view-models/usePostDetailViewModel';
@@ -578,18 +579,20 @@ function PostActions({
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={onShare}
-          className="flex-1 flex-row items-center justify-center rounded-full py-2"
-          accessibilityRole="button"
-          accessibilityLabel="Chia sẻ"
-        >
-          <Share2 size={18} color="#64748b" />
-          <Text className="ml-2 text-caption-primary text-slate-700">
-            Chia sẻ
-          </Text>
-        </TouchableOpacity>
+        {isFeedPostShareable(post) ? (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={onShare}
+            className="flex-1 flex-row items-center justify-center rounded-full py-2"
+            accessibilityRole="button"
+            accessibilityLabel="Chia sẻ"
+          >
+            <Share2 size={18} color="#64748b" />
+            <Text className="ml-2 text-caption-primary text-slate-700">
+              Chia sẻ
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         <TouchableOpacity
           activeOpacity={0.85}
@@ -918,7 +921,7 @@ function PostDetailScreen() {
   );
 
   const handleShare = useCallback(async () => {
-    if (!activePost) return;
+    if (!isFeedPostShareable(activePost)) return;
     try {
       const url = activePost.shareUrl;
       await Share.share({

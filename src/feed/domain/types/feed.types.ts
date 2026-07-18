@@ -6,6 +6,10 @@ import type { ProductItem } from '../../../product/domain/types/product.types';
 import type { EventsItem } from '../../../events/domain/types/events.types';
 import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
 import type { AudioAttachment } from '../../../shared-kernel/domain/types/audio.types';
+import type {
+  ContentAudience,
+  ContentAudienceWireContract,
+} from '../../../shared-kernel/domain/types/contentAudience';
 
 export interface FeedItem {
   id: string | number;
@@ -22,10 +26,13 @@ export interface FeedPublisher {
 
 export interface FeedPostPermissions {
   canDelete: boolean;
+  canShare: boolean;
 }
 
 export interface FeedPostPermissionCarrier {
   permissions?: FeedPostPermissions;
+  isAnonymous?: boolean;
+  privacyContract?: ContentAudienceWireContract;
 }
 
 export interface PostLinkPreview {
@@ -53,7 +60,7 @@ export interface PostLinkPreview {
  * We use string literals here (not numbers) so the domain stays readable
  * and grep-able. The repository layer is responsible for the mapping.
  */
-export type PostPrivacy = 'public' | 'friends' | 'only_me' | 'following' | 'followers' | 'anonymous';
+export type PostPrivacy = ContentAudience;
 
 /**
  * A single photo attached to a draft post. The `uri` is a local
@@ -119,6 +126,7 @@ export interface CreatePostDraft {
   video?: PostVideoAttachment;
   linkPreview?: PostLinkPreview;
   privacy: PostPrivacy;
+  isAnonymous?: boolean;
   feeling?: PostFeeling;
   pageId?: string;
   groupId?: string;
@@ -179,6 +187,7 @@ export interface FeedTextPost extends FeedPostPermissionCarrier {
     id: string;
     caption?: string;
     mentionNames?: string[];
+    isAnonymous?: boolean;
     publisherName: string;
     publisherAvatar?: string;
     postedAt?: number;
@@ -232,6 +241,7 @@ export interface FeedVideoPost extends FeedPostPermissionCarrier {
     id: string;
     caption?: string;
     mentionNames?: string[];
+    isAnonymous?: boolean;
     publisherName: string;
     publisherAvatar?: string;
     postedAt?: number;

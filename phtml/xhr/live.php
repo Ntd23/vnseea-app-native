@@ -187,24 +187,21 @@ if ($f == 'live') {
                     'stream_name' => $stream_name
                 ));
             } else {
-                $postPrivacy   = '0';
-                $privacy_array = array(
-                    '0',
-                    '1',
-                    '2',
-                    '3',
-                    '4'
-                );
-                if (!empty($_POST['post_privacy']) && in_array($_POST['post_privacy'], $privacy_array)) {
-                    $postPrivacy = Wo_Secure($_POST['post_privacy']);
-                } else if (!empty($_COOKIE['post_privacy']) && in_array($_COOKIE['post_privacy'], $privacy_array)) {
-                    $postPrivacy = Wo_Secure($_COOKIE['post_privacy']);
+                $live_privacy_request = $_POST;
+                if (!isset($live_privacy_request['postPrivacy']) && isset($_POST['post_privacy'])) {
+                    $live_privacy_request['postPrivacy'] = $_POST['post_privacy'];
+                } elseif (!isset($live_privacy_request['postPrivacy']) && !empty($_COOKIE['post_privacy'])) {
+                    $live_privacy_request['postPrivacy'] = $_COOKIE['post_privacy'];
                 }
+                $live_privacy_request['postType'] = 'live';
+                $live_privacy = VNSEEA_NormalizePostPrivacyRequest($live_privacy_request);
+                $postPrivacy = $live_privacy['postPrivacy'];
                 $post_id = $db->insert(T_POSTS, array(
                     'user_id' => $wo['user']['id'],
                     'postText' => $post_text,
                     'postType' => 'live',
                     'postPrivacy' => $postPrivacy,
+                    'is_anonymous' => $live_privacy['is_anonymous'],
                     'stream_name' => $stream_name,
                     'time' => time(),
                     'live_time' => time(),
@@ -348,6 +345,9 @@ if ($f == 'live') {
             $post_id   = Wo_Secure($_POST['post_id']);
             $post_row  = $db->where('id', $post_id)->getOne(T_POSTS);
             $post_data = is_object($post_row) ? (array) $post_row : (is_array($post_row) ? $post_row : array());
+            if (!empty($post_data) && !VNSEEA_CanViewPost($post_data, $wo['user']['id'])) {
+                $post_data = array();
+            }
             if (!empty($post_data)) {
                 $heartbeat_window = 10;
                 $stale_window = 45;

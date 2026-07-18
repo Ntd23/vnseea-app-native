@@ -215,6 +215,7 @@ const CREATE_REEL_COPY = {
     audienceLabel: 'ĐỐI TƯỢNG XEM',
     privacyPublic: 'Công khai',
     privacyFriends: 'Bạn bè',
+    privacyFollowers: 'Người theo dõi',
     privacyOnlyMe: 'Chỉ mình tôi',
     publishButton: 'Đăng Reel Video',
     publishingState: 'Đang đăng Reel...',
@@ -257,6 +258,7 @@ const CREATE_REEL_COPY = {
     audienceLabel: 'AUDIENCE',
     privacyPublic: 'Public',
     privacyFriends: 'Friends',
+    privacyFollowers: 'Followers',
     privacyOnlyMe: 'Only me',
     publishButton: 'Publish Reel Video',
     publishingState: 'Publishing Reel...',
@@ -315,9 +317,10 @@ export default function CreateReelScreen() {
 
   // Dynamic privacy options
   const privacyOptions = useMemo(() => [
-    { label: copy.privacyPublic, value: 0 as ReelPrivacy, icon: Globe },
-    { label: copy.privacyFriends, value: 1 as ReelPrivacy, icon: Users },
-    { label: copy.privacyOnlyMe, value: 2 as ReelPrivacy, icon: Lock },
+    { label: copy.privacyPublic, value: 'public' as ReelPrivacy, icon: Globe },
+    { label: copy.privacyFriends, value: 'friends' as ReelPrivacy, icon: Users },
+    { label: copy.privacyFollowers, value: 'followers' as ReelPrivacy, icon: Users },
+    { label: copy.privacyOnlyMe, value: 'only_me' as ReelPrivacy, icon: Lock },
   ], [copy]);
 
   const emitCreatedReelPost = useCallback(
@@ -342,7 +345,7 @@ export default function CreateReelScreen() {
         id: result.postId,
         caption: vm.draft.caption?.trim() || undefined,
         videoUrl: result.postFileUrl,
-        privacy: 'public',
+        privacy: vm.draft.privacy,
         postedAt: Math.floor(Date.now() / 1000),
         likeCount: 0,
         commentCount: 0,
@@ -359,7 +362,7 @@ export default function CreateReelScreen() {
 
       postCreatedEvents.emit(fallbackPost);
     },
-    [feedRepo, vm.draft.caption],
+    [feedRepo, vm.draft.caption, vm.draft.privacy],
   );
 
   useEffect(() => {
@@ -983,7 +986,7 @@ export default function CreateReelScreen() {
             </Text>
             <View className="flex-row flex-wrap gap-2.5">
               {privacyOptions.map(opt => {
-                const isSelected = (vm.draft.privacy ?? 0) === opt.value;
+                const isSelected = (vm.draft.privacy ?? 'public') === opt.value;
                 const IconComponent = opt.icon;
                 return (
                   <ScaleButton

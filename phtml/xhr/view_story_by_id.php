@@ -9,6 +9,9 @@ if ($f == 'view_story_by_id') {
     if (!empty($_POST['story_id']) && is_numeric($_POST['story_id']) && $_POST['story_id'] > 0 && !empty($_POST['type']) && in_array($_POST['type'], $types)) {
         $data['story_id'] = 0;
         $main_story       = $db->where('expire', time(), '>')->where('id', Wo_Secure($_POST['story_id']))->getOne(T_USER_STORY);
+        if (!empty($main_story) && !VNSEEA_CanViewStory($main_story, $wo['user']['user_id'])) {
+            $main_story = null;
+        }
         if (!empty($main_story)) {
             $ads = Wo_GetAlddAdIdsByType('story');
             $ad_query = "";
@@ -20,6 +23,9 @@ if ($f == 'view_story_by_id') {
             $ad_query_second = "ad_id is null AND";
             if ($_POST['type'] == 'previous') {
                 $story = $db->where('expire', time(), '>')->where('id', Wo_Secure($_POST['story_id']), '<')->where("($ad_query ($ad_query_second user_id = $main_story->user_id))")->orderBy('id', "DESC")->getOne(T_USER_STORY);
+                if (!empty($story) && !VNSEEA_CanViewStory($story, $wo['user']['user_id'])) {
+                    $story = null;
+                }
                 if (!empty($story) && !empty($story->id)) {
                     $data['story_id'] = $story->id;
                 }
@@ -35,11 +41,19 @@ if ($f == 'view_story_by_id') {
                     }
                     if ($next_story_id > 0) {
                         $story            = $db->where('expire', time(), '>')->where('id', $next_story_id)->getOne(T_USER_STORY);
-                        $data['story_id'] = $story->id;
+                        if (!empty($story) && !VNSEEA_CanViewStory($story, $wo['user']['user_id'])) {
+                            $story = null;
+                        }
+                        if (!empty($story)) {
+                            $data['story_id'] = $story->id;
+                        }
                     }
                 }
             } else if ($_POST['type'] == 'next') {
                 $story = $db->where('expire', time(), '>')->where('id', Wo_Secure($_POST['story_id']), '>')->where("($ad_query ($ad_query_second user_id = $main_story->user_id))")->orderBy('id', "ASC")->getOne(T_USER_STORY);
+                if (!empty($story) && !VNSEEA_CanViewStory($story, $wo['user']['user_id'])) {
+                    $story = null;
+                }
                 if (!empty($story) && !empty($story->id)) {
                     $data['story_id'] = $story->id;
                 }
@@ -59,11 +73,19 @@ if ($f == 'view_story_by_id') {
                     }
                     if ($next_story_id > 0) {
                         $story            = $db->where('expire', time(), '>')->where('id', $next_story_id)->getOne(T_USER_STORY);
-                        $data['story_id'] = $story->id;
+                        if (!empty($story) && !VNSEEA_CanViewStory($story, $wo['user']['user_id'])) {
+                            $story = null;
+                        }
+                        if (!empty($story)) {
+                            $data['story_id'] = $story->id;
+                        }
                     }
                 }
             } else {
                 $story = $db->where('expire', time(), '>')->where('id', Wo_Secure($_POST['story_id']))->getOne(T_USER_STORY);
+                if (!empty($story) && !VNSEEA_CanViewStory($story, $wo['user']['user_id'])) {
+                    $story = null;
+                }
                 if (!empty($story) && !empty($story->id)) {
                     $data['story_id'] = $story->id;
                 }
