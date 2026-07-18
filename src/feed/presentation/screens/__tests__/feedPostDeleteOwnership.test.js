@@ -7,7 +7,7 @@ function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8');
 }
 
-describe('feed post delete ownership', () => {
+describe('feed post delete authorization', () => {
   const menuSource = read(
     'src/shared-kernel/presentation/components/PostMenuActionSheet.tsx',
   );
@@ -16,19 +16,18 @@ describe('feed post delete ownership', () => {
     'src/profile/presentation/screens/ProfileScreen.tsx',
   );
 
-  it('only renders the delete action when the caller confirms ownership', () => {
+  it('only renders delete when both the post permission and caller allow it', () => {
     expect(menuSource).toContain('canDelete?: boolean');
     expect(menuSource).toContain('canDelete = false');
-    expect(menuSource).toMatch(
-      /\{canDelete \? \([\s\S]*?label="Xóa bài viết"[\s\S]*?\) : null\}/,
-    );
+    expect(menuSource).toContain('post.permissions?.canDelete === true');
+    expect(menuSource).toContain('{canRenderDelete ? (');
   });
 
-  it('compares the feed publisher with the signed-in user before deleting', () => {
+  it('uses the canonical backend permission in Feed', () => {
     expect(feedSource).toContain(
-      'userVm.user?.userId ?? sessionStorage.getSession()?.userId',
+      'selectedPostForMenu?.permissions?.canDelete === true',
     );
-    expect(feedSource).toContain(
+    expect(feedSource).not.toContain(
       'String(selectedPostForMenu.publisher.id) ===',
     );
     expect(feedSource).toContain('canDelete={canDeleteSelectedPost}');
@@ -37,8 +36,11 @@ describe('feed post delete ownership', () => {
     );
   });
 
-  it('keeps the shared profile menu on the same ownership rule', () => {
+  it('keeps Profile on the same backend permission rule', () => {
     expect(profileSource).toContain(
+      'selectedPostForMenu?.permissions?.canDelete === true',
+    );
+    expect(profileSource).not.toContain(
       'String(selectedPostForMenu.publisher.id) === String(currentUserId)',
     );
     expect(profileSource).toContain('canDelete={canDeleteSelectedPost}');

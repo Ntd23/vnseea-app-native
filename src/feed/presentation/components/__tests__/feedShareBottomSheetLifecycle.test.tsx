@@ -173,6 +173,7 @@ const post = {
   id: 'post-1',
   kind: 'text',
   caption: 'Post',
+  permissions: { canDelete: false, canShare: true },
   publisher: { id: 'publisher-1', name: 'Publisher', username: 'publisher' },
 } as FeedPost;
 
@@ -247,6 +248,29 @@ describe('FeedShareBottomSheet message lifecycle', () => {
     jest.clearAllMocks();
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
       true;
+  });
+
+  it('does not mount or load data for a restricted post', async () => {
+    const restrictedPost = {
+      ...post,
+      permissions: { canDelete: false, canShare: false },
+    } as FeedPost;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <FeedShareBottomSheet
+          visible
+          post={restrictedPost}
+          onClose={jest.fn()}
+          onInternalShare={jest.fn()}
+        />,
+      );
+    });
+
+    expect(renderer.toJSON()).toBeNull();
+    expect(mockGetChats).not.toHaveBeenCalled();
+    expect(mockGetGroupChats).not.toHaveBeenCalled();
   });
 
   it('keeps the first visible-generation result after mounted state rerenders', async () => {

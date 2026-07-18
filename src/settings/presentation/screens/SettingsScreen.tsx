@@ -4789,7 +4789,9 @@ function SettingsScreen() {
       }
 
       if (id === 'saved') {
-        navigation.navigate(ROUTES.SAVED_POSTS);
+        navigation.navigate(ROUTES.ACTIVITY_CENTER, {
+          initialTab: 'saved',
+        });
       }
 
       if (id === 'pages') {
@@ -5180,7 +5182,11 @@ function SettingsScreen() {
                   label={FEATURE_LABELS_VI.saved}
                   icon={<Bookmark size={22} color="#0000ff" />}
                   isLast
-                  onPress={() => navigation.navigate(ROUTES.SAVED_POSTS)}
+                  onPress={() =>
+                    navigation.navigate(ROUTES.ACTIVITY_CENTER, {
+                      initialTab: 'saved',
+                    })
+                  }
                 />
               </GeneralSettingsSection>
 

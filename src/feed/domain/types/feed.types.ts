@@ -6,6 +6,10 @@ import type { ProductItem } from '../../../product/domain/types/product.types';
 import type { EventsItem } from '../../../events/domain/types/events.types';
 import type { JobsItem } from '../../../jobs/domain/types/jobs.types';
 import type { AudioAttachment } from '../../../shared-kernel/domain/types/audio.types';
+import type {
+  ContentAudience,
+  ContentAudienceWireContract,
+} from '../../../shared-kernel/domain/types/contentAudience';
 
 export interface FeedItem {
   id: string | number;
@@ -18,6 +22,17 @@ export interface FeedPublisher {
   username: string;
   avatarUrl?: string;
   isFollowing?: boolean;
+}
+
+export interface FeedPostPermissions {
+  canDelete: boolean;
+  canShare: boolean;
+}
+
+export interface FeedPostPermissionCarrier {
+  permissions?: FeedPostPermissions;
+  isAnonymous?: boolean;
+  privacyContract?: ContentAudienceWireContract;
 }
 
 export interface PostLinkPreview {
@@ -45,7 +60,7 @@ export interface PostLinkPreview {
  * We use string literals here (not numbers) so the domain stays readable
  * and grep-able. The repository layer is responsible for the mapping.
  */
-export type PostPrivacy = 'public' | 'friends' | 'only_me' | 'following' | 'followers' | 'anonymous';
+export type PostPrivacy = ContentAudience;
 
 /**
  * A single photo attached to a draft post. The `uri` is a local
@@ -111,6 +126,7 @@ export interface CreatePostDraft {
   video?: PostVideoAttachment;
   linkPreview?: PostLinkPreview;
   privacy: PostPrivacy;
+  isAnonymous?: boolean;
   feeling?: PostFeeling;
   pageId?: string;
   groupId?: string;
@@ -134,7 +150,7 @@ export interface CreatePostResult {
  * `photos.length === 0` → pure text post (FB-style coloured background
  * is a future enhancement, not in MVP).
  */
-export interface FeedTextPost {
+export interface FeedTextPost extends FeedPostPermissionCarrier {
   /** Discriminator for the `FeedPost` union — see `FeedVideoPost.kind`. */
   kind: 'text';
   id: string;
@@ -171,6 +187,7 @@ export interface FeedTextPost {
     id: string;
     caption?: string;
     mentionNames?: string[];
+    isAnonymous?: boolean;
     publisherName: string;
     publisherAvatar?: string;
     postedAt?: number;
@@ -180,7 +197,7 @@ export interface FeedTextPost {
   isSaved?: boolean;
 }
 
-export interface FeedVideoPost {
+export interface FeedVideoPost extends FeedPostPermissionCarrier {
   /**
    * Discriminator for the `FeedPost` union — lets the UI render the
    * right card type with a single `switch (post.kind)` instead of
@@ -224,6 +241,7 @@ export interface FeedVideoPost {
     id: string;
     caption?: string;
     mentionNames?: string[];
+    isAnonymous?: boolean;
     publisherName: string;
     publisherAvatar?: string;
     postedAt?: number;
@@ -238,7 +256,7 @@ export interface FeedVideoPost {
  * Displayed as a card with product image, title, price, and seller info.
  * Links back to a post via `postId` if the product was created as a post.
  */
-export interface FeedProductPost {
+export interface FeedProductPost extends FeedPostPermissionCarrier {
   kind: 'product';
   id: string;
   product: ProductItem;
@@ -251,7 +269,7 @@ export interface FeedProductPost {
   topReactions: ReactionType[];
 }
 
-export interface FeedEventPost {
+export interface FeedEventPost extends FeedPostPermissionCarrier {
   kind: 'event';
   id: string;
   event: EventsItem;
@@ -259,7 +277,7 @@ export interface FeedEventPost {
   publisher: FeedPublisher;
 }
 
-export interface FeedJobPost {
+export interface FeedJobPost extends FeedPostPermissionCarrier {
   kind: 'job';
   id: string;
   job: JobsItem;
@@ -267,7 +285,7 @@ export interface FeedJobPost {
   publisher: FeedPublisher;
 }
 
-export interface FeedAdPost {
+export interface FeedAdPost extends FeedPostPermissionCarrier {
   kind: 'ad';
   id: string;
   adId: string;
@@ -297,7 +315,7 @@ export interface PollOption {
  * A poll post shown on the home feed.
  * Includes question text, options, vote counts, and user's voted option.
  */
-export interface FeedPollPost {
+export interface FeedPollPost extends FeedPostPermissionCarrier {
   kind: 'poll';
   id: string;
   caption?: string;
@@ -332,11 +350,12 @@ export interface FeedPollPost {
  * extending this union with a new `kind` literal — no refactor of the
  * surrounding plumbing needed.
  */
-export type FeedPost =
+export type FeedPost = (
   | FeedVideoPost
   | FeedTextPost
   | FeedProductPost
   | FeedEventPost
   | FeedJobPost
   | FeedPollPost
-  | FeedAdPost;
+  | FeedAdPost
+) & FeedPostPermissionCarrier;

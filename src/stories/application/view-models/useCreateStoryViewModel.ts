@@ -24,6 +24,7 @@ import type {
   CreateStoryResult,
   StoryMediaUpload,
 } from '../../domain/types/stories.types';
+import type { ContentAudience } from '../../../shared-kernel/domain/types/contentAudience';
 
 const repository = createStoriesRepository();
 
@@ -81,6 +82,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
   const [media, setMediaState] = useState<StoryMediaUpload | null>(null);
   const [title, setTitleState] = useState('');
   const [description, setDescriptionState] = useState('');
+  const [audience, setAudience] = useState<ContentAudience>('followers');
   const [phase, setPhase] = useState<Phase>({ type: 'idle' });
 
   // ── Draft mutators ────────────────────────────────────────────────────
@@ -104,6 +106,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
     setMediaState(null);
     setTitleState('');
     setDescriptionState('');
+    setAudience('followers');
     setPhase({ type: 'idle' });
   }, []);
 
@@ -165,6 +168,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
 
     const draft: CreateStoryDraft = {
       media,
+      audience,
       title: title.trim() || undefined,
       description: description.trim() || undefined,
     };
@@ -198,7 +202,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
       setPhase({ type: 'error', message: friendly });
       return null;
     }
-  }, [media, title, description, validate, onCreated]);
+  }, [media, title, description, audience, validate, onCreated, vmCopy]);
 
   // Convenience getter so the screen doesn't have to switch on `phase.type`
   // for the most common cases.
@@ -210,6 +214,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
     media,
     title,
     description,
+    audience,
     phase,
     isUploading,
     error,
@@ -218,6 +223,7 @@ export function useCreateStoryViewModel(options: UseCreateStoryOptions = {}) {
     setMedia,
     setTitle,
     setDescription,
+    setAudience,
     // Lifecycle
     submit,
     reset,

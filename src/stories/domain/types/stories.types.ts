@@ -13,6 +13,7 @@
 // renders what comes back).
 
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import type { ContentAudience } from '../../../shared-kernel/domain/types/contentAudience';
 
 /**
  * Publisher (author) of a story. Shape mirrors `ReelPublisher` so any
@@ -79,6 +80,7 @@ export interface StoryItem {
   myReaction: ReactionType | null;
   /** Total reaction count across all types. */
   reactionCount: number;
+  audience?: ContentAudience;
 }
 
 /**
@@ -107,6 +109,7 @@ export interface StoryMediaUpload {
  */
 export interface CreateStoryDraft {
   media: StoryMediaUpload;
+  audience?: ContentAudience;
   title?: string;
   description?: string;
 }

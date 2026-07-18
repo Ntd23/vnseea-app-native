@@ -30,6 +30,11 @@ import type {
   StoryMedia,
   StoryPublisher,
 } from '../../domain/types/stories.types';
+import {
+  CONTENT_AUDIENCE_CONTRACT,
+  audienceFromWire,
+  audienceToWire,
+} from '../../../shared-kernel/domain/types/contentAudience';
 
 // ── Generic readers (mirror the reels repository) ─────────────────────────
 //
@@ -361,6 +366,13 @@ function mapStory(raw: Record<string, unknown>): StoryItem | null {
     hasUnseen: readBool(raw, 'have_not_seen'),
     myReaction: extractMyReaction(raw),
     reactionCount: extractReactionCount(raw),
+    audience: audienceFromWire(raw.postPrivacy ?? raw.privacy, {
+      contract:
+        readString(raw, 'privacy_contract') === CONTENT_AUDIENCE_CONTRACT
+          ? CONTENT_AUDIENCE_CONTRACT
+          : 'legacy_feed',
+      fallback: 'followers',
+    }).audience,
   };
 }
 
@@ -496,10 +508,14 @@ export function createStoriesRepository(): StoriesRepository {
       // a `file (STREAM FILE) is missing` error because the upload lands
       // in `$_FILES['image']` while line 15 of v2 checks `$_FILES['file']`.
       // The title/description fields silently get dropped.
+      const storyPrivacy = audienceToWire(draft.audience ?? 'followers');
       const payload: Record<string, unknown> = {
         // WoWonder API v2 endpoints typically require a `type` field in the body
         type: 'create_story',
         file_type: draft.media.fileType,
+        postPrivacy: storyPrivacy,
+        privacy: storyPrivacy,
+        privacy_contract: CONTENT_AUDIENCE_CONTRACT,
         // ⚠ MUST be 'file' to satisfy v2 endpoint's $_FILES['file'] check.
         file: {
           uri: draft.media.uri,

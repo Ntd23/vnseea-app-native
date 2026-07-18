@@ -81,9 +81,9 @@ export function useCreateReelViewModel() {
   const language = useAppLanguage();
   const vmCopy = VM_COPY[language];
 
-  const [draft, setDraftState] = useState<Partial<ReelDraft>>({
-    privacy: 0,
-  });
+  const [draft, setDraftState] = useState<
+    Partial<ReelDraft> & Pick<ReelDraft, 'privacy'>
+  >({ privacy: 'public' });
   const [uploadState, setUploadState] = useState<UploadState>({ phase: 'idle' });
   const [captionSuggestions, setCaptionSuggestions] = useState<
     ReelCaptionSuggestion[]
@@ -147,7 +147,7 @@ export function useCreateReelViewModel() {
   }, []);
 
   const reset = useCallback(() => {
-    setDraftState({ privacy: 0 });
+    setDraftState({ privacy: 'public' });
     setUploadState({ phase: 'idle' });
     setCaptionSuggestions([]);
     setIsCaptionSuggestionActive(false);

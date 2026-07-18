@@ -390,22 +390,9 @@ if (isset($_FILES['postPhotos']['name']) && empty($mediaFilename) && empty($_POS
         $multi = 1;
     }
 }
-if (empty($_POST['postPrivacy'])) {
-    $_POST['postPrivacy'] = 0;
-}
-$post_privacy  = 0;
-$privacy_array = array(
-    '0',
-    '1',
-    '2',
-    '3',
-    '4'
-);
-if (isset($_POST['postPrivacy'])) {
-    if (in_array($_POST['postPrivacy'], $privacy_array)) {
-        $post_privacy = $_POST['postPrivacy'];
-    }
-}
+$privacy = VNSEEA_NormalizePostPrivacyRequest($_POST);
+$post_privacy = $privacy['postPrivacy'];
+$is_anonymous = $privacy['is_anonymous'];
 $import_url_image = '';
 $url_link         = '';
 $url_content      = '';
@@ -529,6 +516,7 @@ if (empty($error_message)) {
         'postFileName' => Wo_Secure($mediaName),
         'postMap' => Wo_Secure($post_map),
         'postPrivacy' => Wo_Secure($post_privacy),
+        'is_anonymous' => Wo_Secure($is_anonymous),
         'postLinkTitle' => Wo_Secure($url_title),
         'postLinkContent' => Wo_Secure($url_content),
         'postLink' => Wo_Secure($url_link),

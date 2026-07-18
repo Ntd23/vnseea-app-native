@@ -26,6 +26,7 @@ import type {
 } from '../../domain/types/reels.types';
 import type { FeedVideoPost } from '../../../feed/domain/types/feed.types';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
+import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
 
 const repository = createReelsRepository();
 const feedRepository = createFeedRepository();
@@ -36,6 +37,10 @@ const mapFeedVideoToReel = (post: FeedVideoPost): ReelsItem => {
     videoUrl: post.videoUrl,
     thumbnailUrl: post.thumbnailUrl,
     caption: post.caption,
+    privacy: post.privacy,
+    privacyContract: post.privacyContract ?? 'legacy_feed',
+    isAnonymous: post.isAnonymous === true,
+    canShare: isFeedPostShareable(post),
     postedAt: post.postedAt,
     publisher: {
       userId: post.publisher.id,

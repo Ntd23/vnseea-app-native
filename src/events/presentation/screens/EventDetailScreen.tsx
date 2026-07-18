@@ -11,10 +11,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   CalendarDays,
@@ -54,6 +53,7 @@ import { PollPostCard } from '../../../feed/presentation/components/PollPostCard
 import { CreatePostModal } from '../../../feed/presentation/screens/CreatePostScreen';
 import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
+import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import type {
   FeedPollPost,
@@ -61,6 +61,7 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
+import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
@@ -115,6 +116,7 @@ function parseEventDate(dateValue?: string, timeValue?: string): Date | null {
 
 function EventDetailScreen() {
   const navigation = useNavigation<EventDetailNav>();
+  const isFocused = useIsFocused();
   const route = useRoute<EventDetailRoute>();
   const { event } = route.params;
   const { isDeleting, deleteEvent, toggleGoing, toggleInterested } = useEventsViewModel();
@@ -175,6 +177,27 @@ function EventDetailScreen() {
       ...post,
       commentCount: Math.max(0, post.commentCount + delta),
     })),
+  });
+  usePostRealtimeScope({
+    postIds: posts.slice(0, 20).map(post => post.id),
+    enabled: isFocused,
+    onSnapshot: nextPost => {
+      setPosts(current =>
+        current.map(post =>
+          String(post.id) === String(nextPost.id)
+            ? (nextPost as FeedTextPost | FeedVideoPost | FeedPollPost)
+            : post,
+        ),
+      );
+    },
+    onDeleted: postId => {
+      setPosts(current => current.filter(post => String(post.id) !== postId));
+    },
+    onCommentMutation: change => {
+      if (String(commentVm.selectedCommentPostId) === change.postId) {
+        void commentVm.refreshComments();
+      }
+    },
   });
 
   const loadPosts = useCallback(async (refreshing = false) => {
@@ -290,7 +313,11 @@ function EventDetailScreen() {
       onReact: handleToggleReaction,
       onOpenPicker: (postId: string, x: number, y: number) => setPickerAnchor({ postId, x, y }),
       onCommentTap: (postId: string) => commentVm.openComments(postId),
-      onShare: (item: FeedPost) => { setSharingPost(item); setShareVisible(true); },
+      onShare: (item: FeedPost) => {
+        if (!isFeedPostShareable(item)) return;
+        setSharingPost(item);
+        setShareVisible(true);
+      },
     };
     if (post.kind === 'video') {
       return <HomeVideoPostCard key={post.id} post={post} copy={postCopy} {...sharedProps} navigateToProfile={userId => navigateToUserProfile(navigation, userId)} isScreenFocused />;

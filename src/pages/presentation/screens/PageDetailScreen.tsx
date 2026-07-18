@@ -17,7 +17,7 @@ import {
   type ListRenderItemInfo,
 } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -64,8 +64,10 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
+import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
+import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import {
   FEED_COPY as POST_CARD_COPY,
   HomeVideoPostCard,
@@ -1398,6 +1400,7 @@ function InviteModal({
 
 function PageDetailScreen({ navigation, route }: PageDetailProps) {
   const vm = usePageDetailViewModel(route.params.page);
+  const isFocused = useIsFocused();
   const didFocusRef = useRef(false);
   const [inviteVisible, setInviteVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -1419,6 +1422,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
     y: number;
   } | null>(null);
   const [activeVideoPostId, setActiveVideoPostId] = useState<string | null>(null);
+  const [realtimeVisiblePostIds, setRealtimeVisiblePostIds] = useState<string[]>([]);
   // Photo viewer modal — mirrors Feed / Profile. Opens when the user
   // taps any photo inside a page post so the page is consistent with
   // the global viewer (swipe, progress, reaction, comment).
@@ -1446,6 +1450,13 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   }, []);
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item?: FeedPost }> }) => {
+      const visiblePostIds = viewableItems
+        .map(entry => String(entry.item?.id ?? ''))
+        .filter(postId => /^[1-9][0-9]*$/.test(postId));
+      setRealtimeVisiblePostIds(previous => {
+        const next = Array.from(new Set(visiblePostIds)).slice(0, 50);
+        return previous.join(',') === next.join(',') ? previous : next;
+      });
       const nextVideo = viewableItems.find(
         entry => entry.item?.kind === 'video',
       )?.item;
@@ -1454,6 +1465,17 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
       );
     },
   ).current;
+  usePostRealtimeScope({
+    postIds: realtimeVisiblePostIds,
+    enabled: isFocused,
+    onSnapshot: vm.applyRealtimePost,
+    onDeleted: vm.removeRealtimePost,
+    onCommentMutation: change => {
+      if (String(commentVm.selectedCommentPostId) === change.postId) {
+        void commentVm.refreshComments();
+      }
+    },
+  });
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 60,
     minimumViewTime: 160,
@@ -1535,6 +1557,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   }, [commentVm]);
 
   const handleOpenPostShare = useCallback((post: FeedPost) => {
+    if (!isFeedPostShareable(post)) return;
     setSharingPost(post);
     setPostShareVisible(true);
   }, []);

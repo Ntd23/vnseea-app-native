@@ -84,6 +84,8 @@ import { tabBarVisibility } from '../../../navigation/tabBarVisibility';
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { FeedShareBottomSheet } from '../../../feed/presentation/components/FeedShareBottomSheet';
 import type { FeedPost, FeedVideoPost } from '../../../feed/domain/types/feed.types';
+import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
+import { isReelShareable } from '../../domain/policies/reelPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 
 const VIEWABILITY_CONFIG = {
@@ -150,6 +152,10 @@ function mapFeedVideoPostToReel(post: FeedVideoPost): ReelsItem {
     videoUrl: post.videoUrl,
     thumbnailUrl: post.thumbnailUrl,
     caption: post.caption,
+    privacy: post.privacy,
+    privacyContract: post.privacyContract ?? 'legacy_feed',
+    isAnonymous: post.isAnonymous === true,
+    canShare: isFeedPostShareable(post),
     postedAt: post.postedAt,
     publisher: {
       userId: post.publisher.id,
@@ -169,12 +175,6 @@ function mapFeedVideoPostToReel(post: FeedVideoPost): ReelsItem {
   };
 }
 
-function getFeedPrivacyFromReel(privacy?: number): FeedVideoPost['privacy'] {
-  if (privacy === 1) return 'friends';
-  if (privacy === 2) return 'only_me';
-  return 'public';
-}
-
 function mapReelToFeedVideoPost(item: ReelsItem): FeedVideoPost {
   return {
     kind: 'video',
@@ -188,7 +188,10 @@ function mapReelToFeedVideoPost(item: ReelsItem): FeedVideoPost {
     isLiked: item.isLiked,
     myReaction: item.myReaction,
     topReactions: item.myReaction ? [item.myReaction] : [],
-    privacy: getFeedPrivacyFromReel(item.privacy),
+    privacy: item.privacy,
+    privacyContract: item.privacyContract,
+    isAnonymous: item.isAnonymous,
+    permissions: { canDelete: false, canShare: item.canShare },
     publisher: {
       id: item.publisher.userId,
       name: item.publisher.name,
@@ -638,7 +641,10 @@ export default function ReelsScreen() {
   }, []);
 
   const handleOpenShareReel = useCallback((item: ReelsItem) => {
-    setSharingPost(mapReelToFeedVideoPost(item));
+    if (!isReelShareable(item)) return;
+    const post = mapReelToFeedVideoPost(item);
+    if (!isFeedPostShareable(post)) return;
+    setSharingPost(post);
     setShareModalVisible(true);
   }, []);
 

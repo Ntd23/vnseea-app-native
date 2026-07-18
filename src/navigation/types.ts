@@ -19,6 +19,7 @@ import type { UserProfile } from '../user/domain/types/user.types';
 import type { SharedMapLocation } from '../user/application/utils/mapShare';
 import type { OrdersItem } from '../orders/domain/types/orders.types';
 import type { FundingItem } from '../funding/domain/types/funding.types';
+import type { ActivityCenterTab } from '../activity/domain/types/activity.types';
 
 export type MainTabParamList = {
   [ROUTES.FEED]:
@@ -107,7 +108,6 @@ export type RootStackParamList = {
   [ROUTES.USER_PROFILE]: { userId: string };
   [ROUTES.PROFILE_MORE]: {
     userId?: string;
-    isOwnProfile: boolean;
     displayName?: string;
     username?: string;
     avatarUrl?: string;
@@ -160,6 +160,11 @@ export type RootStackParamList = {
     | {
         initialLocation?: SharedMapLocation;
         autoRoute?: boolean;
+      }
+    | undefined;
+  [ROUTES.ACTIVITY_CENTER]:
+    | {
+        initialTab?: ActivityCenterTab;
       }
     | undefined;
   [ROUTES.SAVED_POSTS]: undefined;

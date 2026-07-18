@@ -101,6 +101,8 @@ if ($type == 'create_story') {
             if (!$error) {
                 $registration_data            = array();
                 $registration_data['user_id'] = $wo['user']['id'];
+                $story_privacy = VNSEEA_NormalizeStoryPrivacyRequest($_POST);
+                $registration_data['privacy'] = $story_privacy['privacy'];
                 $registration_data['posted']  = time();
                 $registration_data['expire']  = time()+(60*60*24);
                 if (isset($_POST['title']) && strlen($_POST['title']) >= 2) {

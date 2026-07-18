@@ -1,5 +1,5 @@
 <?php $replies = Wo_CountCommentReplies($wo['comment']['id']);
-if ($wo['config']['shout_box_system'] == 1 && $wo['story']['postPrivacy'] == 4 && $wo['comment']['publisher']['id'] == $wo['story']['user_id']) {
+if ($wo['config']['shout_box_system'] == 1 && VNSEEA_IsAnonymousPost($wo['story']) && (!empty($wo['comment']['is_anonymous_owner']) || $wo['comment']['publisher']['id'] == $wo['story']['user_id'])) {
   $anonymous = true;
    $wo['comment']['publisher']['username'] = 'anonymous';
    $wo['comment']['publisher']['name'] = $wo['lang']['anonymous'];

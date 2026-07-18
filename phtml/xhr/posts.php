@@ -478,29 +478,9 @@ if ($f == 'posts') {
         if (!empty($_FILES['postPhotos']) && !empty($_FILES['postMusic'])) {
             $multi = 1;
         }
-        if (empty($_POST['postPrivacy'])) {
-            $_POST['postPrivacy'] = 0;
-        }
-        $post_privacy  = 0;
-        $privacy_array = array(
-            '0',
-            '1',
-            '2',
-            '3',
-            '4',
-            '6'
-        );
-        if ($wo['config']['website_mode'] == 'patreon' || $wo['config']['website_mode'] == 'linkedin') {
-            $privacy_array[] = '5';
-        }
-        if (isset($_POST['postPrivacy'])) {
-            if (in_array($_POST['postPrivacy'], $privacy_array)) {
-                $post_privacy = $_POST['postPrivacy'];
-            }
-        }
-        if ($wo['config']['shout_box_system'] != 1 && $post_privacy == 4) {
-            $post_privacy = 0;
-        }
+        $privacy = VNSEEA_NormalizePostPrivacyRequest($_POST);
+        $post_privacy = $privacy['postPrivacy'];
+        $is_anonymous = $privacy['is_anonymous'];
 
         if ($wo['config']['monetization'] != 1 && $post_privacy == 6) {
             $post_privacy = 0;
@@ -649,6 +629,7 @@ if ($f == 'posts') {
                 'postFileName' => Wo_Secure($mediaName,1),
                 'postMap' => Wo_Secure($post_map),
                 'postPrivacy' => Wo_Secure($post_privacy),
+                'is_anonymous' => Wo_Secure($is_anonymous),
                 'postLinkTitle' => Wo_Secure($url_title,1),
                 'videoTitle' => Wo_Secure($videoTitle,1),
                 'postLinkContent' => Wo_Secure($url_content),
@@ -2214,7 +2195,7 @@ if ($f == 'posts') {
                         $data['html'] .= Wo_LoadPage('story/page-post-likes');
                     } else {
                         $wo['WondredLikedusers']['anonymous'] = false;
-                        if ($wo['config']['shout_box_system'] == 1 && !empty($post_info) && $post_info->postPrivacy == 4 && $wo['WondredLikedusers']['user_id'] == $post_info->user_id) {
+                        if ($wo['config']['shout_box_system'] == 1 && !empty($post_info) && VNSEEA_IsAnonymousPost($post_info) && $wo['WondredLikedusers']['user_id'] == $post_info->user_id) {
                             $wo['WondredLikedusers']['anonymous'] = true;
                         }
                         $data['html'] .= Wo_LoadPage('story/post-likes-wonders');
@@ -2284,7 +2265,7 @@ if ($f == 'posts') {
                         $data['html'] .= Wo_LoadPage('story/page-post-likes');
                     } else {
                         $wo['WondredLikedusers']['anonymous'] = false;
-                        if ($wo['config']['shout_box_system'] == 1 && !empty($post_info) && $post_info->postPrivacy == 4 && $wo['WondredLikedusers']['user_id'] == $post_info->user_id) {
+                        if ($wo['config']['shout_box_system'] == 1 && !empty($post_info) && VNSEEA_IsAnonymousPost($post_info) && $wo['WondredLikedusers']['user_id'] == $post_info->user_id) {
                             $wo['WondredLikedusers']['anonymous'] = true;
                         }
                         $data['html'] .= Wo_LoadPage('story/post-likes-wonders');

@@ -84,6 +84,7 @@ import type {
 } from '../../../navigation/types';
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
+import { usePostRealtimeScope } from '../../application/realtime/usePostRealtimeScope';
 import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import type {
   FeedPost,
@@ -95,6 +96,7 @@ import type {
   FeedPollPost,
   FeedAdPost,
 } from '../../domain/types/feed.types';
+import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type {
   FeedSource,
   SharePostInput,
@@ -102,7 +104,6 @@ import type {
 import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
 import { useProductsOnFeedViewModel } from '../../../product/application/view-models/useProductsOnFeedViewModel';
 import type { ProductItem } from '../../../product/domain/types/product.types';
@@ -1397,8 +1398,6 @@ function FeedScreen() {
   // matches the rest of FeedScreen (no conditional hooks below).
   const isFeedTabFocused = useIsFocused();
   const userVm = useCurrentUserViewModel();
-  const currentUserId =
-    userVm.user?.userId ?? sessionStorage.getSession()?.userId;
   const feedPosts = vm.posts;
   const prependFeedPost = vm.prependPost;
   const toggleFeedReaction = vm.toggleReaction;
@@ -2002,6 +2001,18 @@ function FeedScreen() {
 
   const commentVm = useFeedCommentsViewModel({
     onCommentCountChange: vm.updateCommentCount,
+  });
+  const [realtimeVisiblePostIds, setRealtimeVisiblePostIds] = useState<string[]>([]);
+  usePostRealtimeScope({
+    postIds: realtimeVisiblePostIds,
+    enabled: isFeedTabFocused,
+    onSnapshot: vm.applyRealtimePost,
+    onDeleted: vm.removeRealtimePost,
+    onCommentMutation: change => {
+      if (String(commentVm.selectedCommentPostId) === change.postId) {
+        void commentVm.refreshComments();
+      }
+    },
   });
 
   // Stable ref-backed wrappers to prevent flatlist items re-rendering on feed action changes
@@ -2729,6 +2740,14 @@ function FeedScreen() {
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: any[] }) => {
       latestViewableFeedItemsRef.current = viewableItems;
+      const visiblePostIds = viewableItems
+        .filter(item => item?.isViewable && item?.item?.type === 'post')
+        .map(item => String(item.item.post?.id ?? ''))
+        .filter(postId => /^[1-9][0-9]*$/.test(postId));
+      setRealtimeVisiblePostIds(previous => {
+        const next = Array.from(new Set(visiblePostIds)).slice(0, 50);
+        return previous.join(',') === next.join(',') ? previous : next;
+      });
       prefetchFeedImagesAroundVisibleItems(viewableItems);
       prefetchFeedVideoPostersAroundVisibleItems(viewableItems);
       maybeLoadMoreFeedAroundVisibleItems(viewableItems);
@@ -2770,11 +2789,8 @@ function FeedScreen() {
   const [postMenuVisible, setPostMenuVisible] = useState(false);
   const [selectedPostForMenu, setSelectedPostForMenu] =
     useState<FeedPost | null>(null);
-  const canDeleteSelectedPost = Boolean(
-    selectedPostForMenu &&
-      currentUserId &&
-      String(selectedPostForMenu.publisher.id) === String(currentUserId),
-  );
+  const canDeleteSelectedPost =
+    selectedPostForMenu?.permissions?.canDelete === true;
 
   const handleOpenPostMenu = useCallback((post: FeedPost) => {
     setSelectedPostForMenu(post);
@@ -2833,7 +2849,7 @@ function FeedScreen() {
   const handleDeletePost = useCallback(
     async (postId: string) => {
       if (!canDeleteSelectedPost || selectedPostForMenu?.id !== postId) {
-        throw new Error('Bạn chỉ có thể xóa bài viết của mình.');
+        throw new Error('Bạn không có quyền xóa bài viết này.');
       }
 
       try {
@@ -3059,6 +3075,7 @@ function FeedScreen() {
 
   // Share handlers
   const handleOpenSharePost = useCallback((post: FeedPost) => {
+    if (!isFeedPostShareable(post)) return;
     setSharingPost(post);
     setShareModalVisible(true);
     tabBarVisibility.setVisible(false);

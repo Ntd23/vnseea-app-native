@@ -34,6 +34,7 @@ import type {
   PollOption,
   PostPrivacy,
 } from '../../domain/types/feed.types';
+import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { PollVoter } from '../../../poll/domain/types/poll.types';
 import { createPollRepository } from '../../../poll/infrastructure/repositories/ApiPollRepository';
@@ -83,7 +84,7 @@ type PollCopy = {
   share: string;
   userFallback: string;
   publicLabel: string;
-  followingPrivacyLabel: string;
+  friendsPrivacyLabel: string;
   followersPrivacyLabel: string;
   onlyMePrivacyLabel: string;
   anonymousPrivacyLabel: string;
@@ -92,7 +93,6 @@ type PollCopy = {
   noVoters: string;
   loadVotersError: string;
   optionFallback: string;
-  anonymousPoll: string;
   now: string;
   minutesAgo: (count: number) => string;
   hoursAgo: (count: number) => string;
@@ -115,7 +115,7 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     share: 'Chia sẻ',
     userFallback: 'Người dùng',
     publicLabel: 'Công khai',
-    followingPrivacyLabel: 'Nh\u1eefng ng\u01b0\u1eddi t\u00f4i theo d\u00f5i',
+    friendsPrivacyLabel: 'B\u1ea1n b\u00e8',
     followersPrivacyLabel: 'M\u1ecdi ng\u01b0\u1eddi theo d\u00f5i t\u00f4i',
     onlyMePrivacyLabel: 'Ch\u1ec9 m\u00ecnh t\u00f4i',
     anonymousPrivacyLabel: '\u1ea8n danh',
@@ -124,7 +124,6 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     noVoters: 'Chưa có ai bỏ phiếu',
     loadVotersError: 'Không thể tải danh sách người bỏ phiếu',
     optionFallback: 'Không rõ phương án',
-    anonymousPoll: 'Cuộc thăm dò này đang ẩn danh',
     now: 'Vừa xong',
     minutesAgo: count => `${count} phút trước`,
     hoursAgo: count => `${count} giờ trước`,
@@ -145,7 +144,7 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     share: 'Share',
     userFallback: 'User',
     publicLabel: 'Public',
-    followingPrivacyLabel: 'People I follow',
+    friendsPrivacyLabel: 'Friends',
     followersPrivacyLabel: 'People following me',
     onlyMePrivacyLabel: 'Only me',
     anonymousPrivacyLabel: 'Anonymous',
@@ -154,7 +153,6 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
     noVoters: 'No votes yet',
     loadVotersError: 'Could not load the voter list',
     optionFallback: 'Unknown option',
-    anonymousPoll: 'This poll is anonymous',
     now: 'Just now',
     minutesAgo: count => `${count} min ago`,
     hoursAgo: count => `${count} h ago`,
@@ -165,14 +163,12 @@ const POLL_COPY: Record<AppLanguage, PollCopy> = {
 
 function getPollPrivacyMeta(privacy: PostPrivacy | undefined, copy: PollCopy) {
   switch (privacy) {
-    case 'following':
-      return { label: copy.followingPrivacyLabel, Icon: Users };
+    case 'friends':
+      return { label: copy.friendsPrivacyLabel, Icon: Users };
     case 'followers':
       return { label: copy.followersPrivacyLabel, Icon: Users };
     case 'only_me':
       return { label: copy.onlyMePrivacyLabel, Icon: Lock };
-    case 'anonymous':
-      return { label: copy.anonymousPrivacyLabel, Icon: EyeOff };
     case 'public':
     default:
       return { label: copy.publicLabel, Icon: Globe };
@@ -340,10 +336,10 @@ export const PollPostCard = React.memo(function PollPostCard({
   const gDragged = hasDragged ?? localDragged;
 
   const handleProfilePress = useCallback(() => {
-    if (post.publisher?.id) {
+    if (!post.isAnonymous && post.publisher?.id) {
       onProfilePress?.(post.publisher.id);
     }
-  }, [onProfilePress, post.publisher?.id]);
+  }, [onProfilePress, post.isAnonymous, post.publisher?.id]);
 
   const handleOptionVote = useCallback(
     (optionId: string) => {
@@ -355,12 +351,6 @@ export const PollPostCard = React.memo(function PollPostCard({
   const handleViewVoters = useCallback(async () => {
     if (post.totalVotes <= 0) return;
     setVotersVisible(true);
-    if (post.privacy === 'anonymous') {
-      setVoters([]);
-      setVotersError(copy.anonymousPoll);
-      setVotersLoading(false);
-      return;
-    }
     setVotersLoading(true);
     setVotersError(null);
     try {
@@ -373,13 +363,7 @@ export const PollPostCard = React.memo(function PollPostCard({
     } finally {
       setVotersLoading(false);
     }
-  }, [
-    copy.anonymousPoll,
-    copy.loadVotersError,
-    post.id,
-    post.privacy,
-    post.totalVotes,
-  ]);
+  }, [copy.loadVotersError, post.id, post.totalVotes]);
 
   const handleLikeTap = useCallback(() => {
     onReact(post.id, 'like');
@@ -456,7 +440,9 @@ export const PollPostCard = React.memo(function PollPostCard({
   const reactionColor = post.myReaction
     ? REACTION_COLOR[post.myReaction]
     : '#65676B';
-  const privacyMeta = getPollPrivacyMeta(post.privacy, copy);
+  const privacyMeta = post.isAnonymous
+    ? { label: copy.anonymousPrivacyLabel, Icon: EyeOff }
+    : getPollPrivacyMeta(post.privacy, copy);
   const PrivacyIcon = privacyMeta.Icon;
   const activeReactionPickerPostId = useFeedReactionPickerActivePostId();
   const showInlineReactionPicker =
@@ -489,7 +475,9 @@ export const PollPostCard = React.memo(function PollPostCard({
               className="text-title-primary font-bold text-[#050505]"
               numberOfLines={1}
             >
-              {post.publisher?.name || copy.userFallback}
+              {post.isAnonymous
+                ? copy.anonymousPrivacyLabel
+                : post.publisher?.name || copy.userFallback}
             </Text>
             <View className="flex-row items-center mt-0.5">
               <Text className="text-caption-secondary text-[12px] text-[#65676B]">
@@ -623,16 +611,18 @@ export const PollPostCard = React.memo(function PollPostCard({
             </Text>
           </FeedGlassActionButton>
 
-          <FeedGlassActionButton
-            className="flex-1 flex-row items-center justify-center py-1"
-            activeOpacity={0.75}
-            onPress={() => onShare?.(post)}
-          >
-            <Share2 size={19} color="#65676B" />
-            <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
-              {copy.share}
-            </Text>
-          </FeedGlassActionButton>
+          {isFeedPostShareable(post) ? (
+            <FeedGlassActionButton
+              className="flex-1 flex-row items-center justify-center py-1"
+              activeOpacity={0.75}
+              onPress={() => onShare?.(post)}
+            >
+              <Share2 size={19} color="#65676B" />
+              <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">
+                {copy.share}
+              </Text>
+            </FeedGlassActionButton>
+          ) : null}
         </FeedGlassActionBar>
       )}
 

@@ -131,6 +131,7 @@ const DEFAULT_DRAFT: CreatePostDraft = {
   text: '',
   photos: [],
   privacy: 'public',
+  isAnonymous: false,
   linkPreview: undefined,
 };
 
@@ -204,7 +205,11 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
   }, []);
 
   const setPrivacy = useCallback((privacy: PostPrivacy) => {
-    setDraft(prev => ({ ...prev, privacy }));
+    setDraft(prev => ({ ...prev, privacy, isAnonymous: false }));
+  }, []);
+
+  const setAnonymous = useCallback((isAnonymous: boolean) => {
+    setDraft(prev => ({ ...prev, isAnonymous, privacy: isAnonymous ? 'public' : prev.privacy }));
   }, []);
 
   const setFeeling = useCallback((feeling: PostFeeling | undefined) => {
@@ -501,6 +506,7 @@ export function useCreatePostViewModel(options: UseCreatePostOptions = {}) {
     // Mutators
     setText,
     setPrivacy,
+    setAnonymous,
     setFeeling,
     setAudio,
     setVideo,

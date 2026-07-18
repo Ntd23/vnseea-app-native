@@ -2,6 +2,11 @@
 if (!empty($_POST['id']) && is_numeric($_POST['id']) && $_POST['id'] > 0) {
 	$id = Wo_Secure($_POST['id']);
 	$story = $db->where('id',$id)->getOne(T_USER_STORY);
+	if (empty($story) || !VNSEEA_CanViewStory($story, $wo['user']['id'])) {
+		$error_code = 5;
+		$error_message = 'story not found';
+		return;
+	}
 
 	$story_images              = Wo_GetStoryMedia($story->id, 'image');
 	if (count($story_images) > 0) {

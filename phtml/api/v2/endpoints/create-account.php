@@ -18,15 +18,22 @@ $required_fields = array(
     'email',
     'confirm_password'
 );
-if ($wo['config']['auto_username'] == 1) {
-    $_POST['username'] = time() . rand(111111, 999999);
-    if (empty($_POST['first_name'])) {
-        $error_code    = 3;
-        $error_message = 'First name is required';
-    }
-    elseif (preg_match('/[^\w\s]+/u', $_POST['first_name']) || (!empty($_POST['last_name']) && preg_match('/[^\w\s]+/u', $_POST['last_name']))) {
-        $error_code    = 3;
-        $error_message = $wo['lang']['username_invalid_characters'];
+$birthday       = '';
+$birthday_input = isset($_POST['birthday']) ? trim((string) $_POST['birthday']) : '';
+if ($birthday_input !== '') {
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $birthday_input, $birthday_parts)) {
+        $error_code    = 13;
+        $error_message = 'Birthday must use YYYY-MM-DD format';
+    } else {
+        $birthday_year  = (int) $birthday_parts[1];
+        $birthday_month = (int) $birthday_parts[2];
+        $birthday_day   = (int) $birthday_parts[3];
+        if (!checkdate($birthday_month, $birthday_day, $birthday_year) || $birthday_input > date('Y-m-d')) {
+            $error_code    = 13;
+            $error_message = 'Birthday is invalid';
+        } else {
+            $birthday = $birthday_input;
+        }
     }
 }
 foreach ($required_fields as $key => $value) {
@@ -37,14 +44,15 @@ foreach ($required_fields as $key => $value) {
 }
 
 if (empty($error_code)) {
-    $username         = $_POST['username'];
+    $username         = trim((string) $_POST['username']);
+    $_POST['username'] = $username;
     $password         = $_POST['password'];
     $email            = $_POST['email'];
     $confirm_password = $_POST['confirm_password'];
     if (in_array(true, Wo_IsNameExist($username, 0))) {
         $error_code    = 4;
         $error_message = 'Username is already taken';
-    } else if (in_array($username, $wo['site_pages']) || !preg_match('/^[\w]+$/', $username)) {
+    } else if (in_array($username, $wo['site_pages']) || !preg_match('/^[A-Za-z0-9_]+$/', $username)) {
         $error_code    = 5;
         $error_message = 'Invalid username characters, please choose another username';
     } else if (strlen($username) < 5 OR strlen($username) > 32) {
@@ -82,6 +90,9 @@ if (empty($error_code)) {
             'lastseen' => time(),
             'active' => Wo_Secure($activate)
         );
+        if ($birthday !== '') {
+            $account_data['birthday'] = Wo_Secure($birthday, 0);
+        }
         if (!empty($_POST['android_m_device_id'])) {
             $account_data['android_m_device_id']  = Wo_Secure($_POST['android_m_device_id']);
         }
@@ -128,26 +139,15 @@ if (empty($error_code)) {
             }
         }
 
-        if ($wo['config']['auto_username'] == 1) {
+        if (!empty($_POST['first_name'])) {
             $account_data['first_name'] = Wo_Secure($_POST['first_name']);
-            if (!empty($_POST['last_name'])) {
-                $account_data['last_name'] = Wo_Secure($_POST['last_name']);
-            }
+        }
+        if (!empty($_POST['last_name'])) {
+            $account_data['last_name'] = Wo_Secure($_POST['last_name']);
         }
 
         $register     = Wo_RegisterUser($account_data);
         if ($register === true) {
-            if ($wo['config']['auto_username'] == 1) {
-                $registered_user_id = Wo_UserIdFromUsername($username);
-                if (!empty($registered_user_id) && is_numeric($registered_user_id)) {
-                    $username = $username . "_" . $registered_user_id;
-                    $_POST['username'] = $username;
-                    $db->where('user_id', $registered_user_id)->update(T_USERS, array(
-                        'username' => $username
-                    ));
-                    cache($registered_user_id, 'users', 'delete');
-                }
-            }
             if (!empty($account_data['referrer']) && is_numeric($wo['config']['affiliate_level']) && $wo['config']['affiliate_level'] > 1) {
                 $user_id = Wo_UserIdFromUsername($username);
                 AddNewRef($account_data['referrer'],$user_id,$wo['config']['amount_ref']);

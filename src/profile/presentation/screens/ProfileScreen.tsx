@@ -95,10 +95,17 @@ import Svg, {
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
+import { resolveProfileOwnership } from '../../application/utils/profileOwnership';
+import {
+  mergeStoriesForProfile,
+  resolveProfileAvatarViewDestination,
+  shouldShowProfileStorySection,
+} from '../../application/utils/profileStoryAvatarBehavior';
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
@@ -150,12 +157,10 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
+import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
-import type {
-  StoryItem,
-  StoryMedia,
-} from '../../../stories/domain/types/stories.types';
+import type { StoryItem } from '../../../stories/domain/types/stories.types';
 import { useStoryCoverImageUri } from '../../../stories/presentation/hooks/useStoryCoverImageUri';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -208,7 +213,6 @@ const FRIEND_TILE_WIDTH = Math.floor(
   (PROFILE_FRIENDS_COLUMN_WIDTH - 32 - 6) / 2,
 );
 const PROFILE_FRIENDS_PAGE_WIDTH = FRIEND_TILE_WIDTH * 2 + 6;
-const PROFILE_STORY_MAX_AGE_SECONDS = 24 * 60 * 60;
 const PROFILE_POST_PAGE_SIZE = 20;
 const PROFILE_IS_ANDROID = Platform.OS === 'android';
 const PROFILE_POST_DRAW_DISTANCE = PROFILE_IS_ANDROID
@@ -263,7 +267,14 @@ type ProfileActivityItem = {
 function cleanProfileValue(value: unknown) {
   if (value === undefined || value === null) return '';
   const text = String(value).trim();
-  if (!text || text === '0' || text.toLowerCase() === 'null') return '';
+  if (
+    !text ||
+    text === '0' ||
+    text === '0000-00-00' ||
+    text.toLowerCase() === 'null'
+  ) {
+    return '';
+  }
   return text;
 }
 
@@ -1080,59 +1091,6 @@ const profileStoryStyles = StyleSheet.create({
   },
 });
 
-function isFreshProfileStory(story: StoryItem, nowSeconds: number) {
-  const postedAt = story.postedAt ?? 0;
-  if (postedAt <= 0) return false;
-  if (nowSeconds - postedAt > PROFILE_STORY_MAX_AGE_SECONDS) return false;
-  if (story.expiresAt > 0 && story.expiresAt <= nowSeconds) return false;
-  return true;
-}
-
-function mergeStoriesForProfile(
-  stories: StoryItem[],
-  targetUserId: string,
-): StoryItem | null {
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const userStories = stories
-    .filter(story => String(story.publisher.userId) === String(targetUserId))
-    .filter(story => isFreshProfileStory(story, nowSeconds))
-    .sort((a, b) => (a.postedAt ?? 0) - (b.postedAt ?? 0));
-
-  if (userStories.length === 0) {
-    return null;
-  }
-
-  const latestStory = userStories[userStories.length - 1];
-  const oldestStory = userStories[0];
-  const media: StoryMedia[] = [];
-
-  for (const story of userStories) {
-    for (const item of story.media) {
-      const segment: StoryMedia = {
-        ...item,
-        storyId: item.storyId ?? story.id,
-        postedAt: item.postedAt ?? story.postedAt,
-      };
-      const exists = media.some(
-        current =>
-          current.url === segment.url &&
-          (current.storyId ?? '') === (segment.storyId ?? ''),
-      );
-      if (!exists) {
-        media.push(segment);
-      }
-    }
-  }
-
-  return {
-    ...latestStory,
-    thumbnailUrl: latestStory.thumbnailUrl ?? oldestStory.thumbnailUrl,
-    media,
-    isViewed: userStories.every(story => story.isViewed),
-    hasUnseen: userStories.some(story => story.hasUnseen && !story.isViewed),
-  };
-}
-
 function ProfileStoryCover({
   story,
   fallbackUri,
@@ -1441,11 +1399,11 @@ function ProfileScreen() {
   const session = sessionStorage.getSession();
   const currentUserId = session?.userId;
   const targetUserId = route.params?.userId ?? currentUserId ?? profile?.id;
-  const isOwnProfile =
-    !route.params?.userId ||
-    (currentUserId
-      ? String(route.params.userId) === String(currentUserId)
-      : false);
+  const isOwnProfile = resolveProfileOwnership({
+    currentUserId,
+    routeUserId: route.params?.userId,
+    loadedProfileId: profile?.id,
+  });
 
   const [isLoadingAvatar, setIsLoadingAvatar] = useState(false);
   const [isLoadingCover, setIsLoadingCover] = useState(false);
@@ -1460,6 +1418,9 @@ function ProfileScreen() {
   >(null);
 
   const [posts, setPosts] = useState<ProfileFeedPost[]>([]);
+  const [realtimeVisiblePostIds, setRealtimeVisiblePostIds] = useState<
+    string[]
+  >([]);
   const profilePostsRef = useRef<ProfileFeedPost[]>([]);
   const [isPostsLoading, setIsPostsLoading] = useState(false);
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
@@ -1538,11 +1499,8 @@ function ProfileScreen() {
   const [postMenuVisible, setPostMenuVisible] = useState(false);
   const [selectedPostForMenu, setSelectedPostForMenu] =
     useState<FeedPost | null>(null);
-  const canDeleteSelectedPost = Boolean(
-    selectedPostForMenu &&
-      currentUserId &&
-      String(selectedPostForMenu.publisher.id) === String(currentUserId),
-  );
+  const canDeleteSelectedPost =
+    selectedPostForMenu?.permissions?.canDelete === true;
   const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
   const [reactionsSheetPostId, setReactionsSheetPostId] = useState<
     string | null
@@ -1898,6 +1856,14 @@ function ProfileScreen() {
     }: {
       viewableItems: FlashListViewToken<ProfileListItem>[];
     }) => {
+      const visiblePostIds = viewableItems
+        .filter(item => item.isViewable)
+        .map(item => String(getProfileListItemPost(item.item)?.id ?? ''))
+        .filter(postId => /^[1-9][0-9]*$/.test(postId));
+      setRealtimeVisiblePostIds(previous => {
+        const next = Array.from(new Set(visiblePostIds)).slice(0, 50);
+        return previous.join(',') === next.join(',') ? previous : next;
+      });
       const currentPosts = profilePostsRef.current;
       const visibleVideo = viewableItems.find(
         item =>
@@ -2068,6 +2034,23 @@ function ProfileScreen() {
       publishFeedWarmVideoIds(warmVideoIds);
     },
   ).current;
+
+  usePostRealtimeScope({
+    postIds: realtimeVisiblePostIds,
+    enabled: isProfileFocused,
+    onSnapshot: nextPost => {
+      setPosts(current =>
+        current.map(post =>
+          String(post.id) === String(nextPost.id)
+            ? (nextPost as ProfileFeedPost)
+            : post,
+        ),
+      );
+    },
+    onDeleted: postId => {
+      setPosts(current => current.filter(post => String(post.id) !== postId));
+    },
+  });
 
   useEffect(() => {
     profilePostsRef.current = filteredProfilePosts;
@@ -2345,7 +2328,9 @@ function ProfileScreen() {
             dedupedOthersMap.set(String(story.publisher.userId), story);
           }
         }
-        setAllStories(Array.from(dedupedOthersMap.values()));
+        setAllStories(
+          isOwnProfile ? Array.from(dedupedOthersMap.values()) : [],
+        );
       })
       .catch(() => {
         if (!cancelled) {
@@ -2362,7 +2347,7 @@ function ProfileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [storiesRepo, targetUserId]);
+  }, [isOwnProfile, storiesRepo, targetUserId]);
 
   const displayName = profile?.name ?? profile?.username ?? '';
   const username = profile?.username ? `@${profile.username}` : '';
@@ -2607,7 +2592,11 @@ function ProfileScreen() {
     postCardCopy,
     posts,
   ]);
-  const shouldShowStorySection = Boolean(userStory) || isStoryLoading;
+  const shouldShowStorySection = shouldShowProfileStorySection({
+    isOwnProfile,
+    hasStory: Boolean(userStory),
+    isLoading: isStoryLoading,
+  });
   const relationshipState =
     profile?.followingState ??
     (profile?.followedByCurrentUser ? 'following' : 'none');
@@ -2744,6 +2733,7 @@ function ProfileScreen() {
   );
 
   const handleOpenSharePost = useCallback((post: FeedPost) => {
+    if (!isFeedPostShareable(post)) return;
     setSharingPost(post);
     setShareModalVisible(true);
   }, []);
@@ -3171,16 +3161,7 @@ function ProfileScreen() {
 
   // Avatar Press Handler
   const handleAvatarPress = () => {
-    if (isOwnProfile) {
-      openProfileMediaSheet('avatar');
-      return;
-    }
-
-    navigation.navigate(ROUTES.AVATAR_VIEWER, {
-      avatarUrl: avatarUrl,
-      userName: displayName,
-      userId: targetUserId ?? currentUserId ?? profile?.id,
-    });
+    openProfileMediaSheet('avatar');
   };
 
   const handleCloseProfileMediaSheet = useCallback(() => {
@@ -3201,6 +3182,17 @@ function ProfileScreen() {
         return;
       }
 
+      const destination = resolveProfileAvatarViewDestination({
+        isOwnProfile,
+        avatarPostId: profile?.avatarPostId,
+      });
+      if (destination.kind === 'post-detail') {
+        navigation.navigate(ROUTES.POST_DETAIL, {
+          postId: destination.postId,
+        });
+        return;
+      }
+
       navigation.navigate(ROUTES.AVATAR_VIEWER, {
         avatarUrl: avatarUrl,
         userName: displayName,
@@ -3213,8 +3205,10 @@ function ProfileScreen() {
     coverUrl,
     currentUserId,
     displayName,
+    isOwnProfile,
     navigation,
     profile?.id,
+    profile?.avatarPostId,
     profileMediaSheet,
     targetUserId,
   ]);
@@ -3412,22 +3406,10 @@ function ProfileScreen() {
   ]);
 
   const handleOpenActivities = useCallback(() => {
-    setShouldRenderActivitiesList(false);
-    activitiesSheetProgress.stopAnimation();
-    activitiesSheetProgress.setValue(0);
-    setActivitiesSheetVisible(true);
-    requestAnimationFrame(() => {
-      Animated.timing(activitiesSheetProgress, {
-        toValue: 1,
-        duration: PROFILE_SHEET_OPEN_DURATION_MS,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) {
-          setShouldRenderActivitiesList(true);
-        }
-      });
+    navigation.navigate(ROUTES.ACTIVITY_CENTER, {
+      initialTab: 'reaction',
     });
-  }, [activitiesSheetProgress]);
+  }, [navigation]);
 
   const handleCloseActivities = useCallback(() => {
     setShouldRenderActivitiesList(false);
@@ -3442,8 +3424,11 @@ function ProfileScreen() {
   }, [activitiesSheetProgress]);
 
   const handleOpenCart = useCallback(() => {
-    // Khi ở own profile → sản phẩm của mình (không truyền userId)
-    // Khi ở profile người khác → sản phẩm của người đó (truyền userId)
+    if (!isOwnProfile) return;
+    navigation.navigate(ROUTES.MY_PRODUCTS);
+  }, [isOwnProfile, navigation]);
+
+  const handleOpenPublicProducts = useCallback(() => {
     if (isOwnProfile) {
       navigation.navigate(ROUTES.MY_PRODUCTS);
     } else if (targetUserId) {
@@ -3498,12 +3483,12 @@ function ProfileScreen() {
       },
       {
         key: 'marketplace',
-        accessibilityLabel: language === 'vi' ? 'Cửa hàng' : 'Shop',
+        accessibilityLabel: language === 'vi' ? 'Sản phẩm' : 'Products',
         icon: () => <ShoppingBag size={24} color="#9ca3af" strokeWidth={2} />,
-        onPress: handleOpenCart,
+        onPress: handleOpenPublicProducts,
       },
     ],
-    [handleOpenCart, language, navigation],
+    [handleOpenPublicProducts, language, navigation],
   );
 
   const handleProfilePostFilterChange = useCallback(
@@ -3535,13 +3520,17 @@ function ProfileScreen() {
       isVerified: Boolean(profile?.verified),
     };
 
+    if (Platform.OS === 'ios') {
+      navigation.replace(ROUTES.CHAT, { chat });
+      return;
+    }
+
     navigation.navigate(ROUTES.CHAT, { chat });
   };
 
   const handleOpenProfileMore = useCallback(() => {
     navigation.navigate(ROUTES.PROFILE_MORE, {
       userId: targetUserId ? String(targetUserId) : undefined,
-      isOwnProfile,
       displayName,
       username: profile?.username,
       avatarUrl,
@@ -3559,7 +3548,6 @@ function ProfileScreen() {
     displayName,
     followers.length,
     following.length,
-    isOwnProfile,
     navigation,
     profile?.blocked,
     profile?.followedByCurrentUser,
@@ -4007,8 +3995,7 @@ function ProfileScreen() {
           </View>
         )}
 
-        {/* Edit Profile (own) or Cart (other) button overlapping cover photo bottom right */}
-        {isOwnProfile ? (
+        {isOwnProfile && (
           <TouchableOpacity
             style={[
               profileMainStyles.editCoverButton,
@@ -4020,20 +4007,6 @@ function ProfileScreen() {
             <Edit size={14} color="#050505" />
             <Text style={profileMainStyles.editCoverText}>
               {language === 'vi' ? 'Chỉnh sữa hồ sơ' : 'Edit profile'}
-            </Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[
-              profileMainStyles.editCoverButton,
-              { zIndex: 100, elevation: 12 },
-            ]}
-            activeOpacity={0.85}
-            onPress={handleOpenCart}
-          >
-            <ShoppingCart size={14} color="#050505" />
-            <Text style={profileMainStyles.editCoverText}>
-              {copy.cartLabel}
             </Text>
           </TouchableOpacity>
         )}
@@ -4559,14 +4532,16 @@ function ProfileScreen() {
               <Text className="text-[15px] font-bold text-[#050505]">
                 {copy.details}
               </Text>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={handleEditProfilePress}
-              >
-                <Text className="text-[12px] font-bold text-[#1877F2]">
-                  {language === 'vi' ? 'Chỉnh sữa' : 'Edit'}
-                </Text>
-              </TouchableOpacity>
+              {isOwnProfile && (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={handleEditProfilePress}
+                >
+                  <Text className="text-[12px] font-bold text-[#1877F2]">
+                    {language === 'vi' ? 'Chỉnh sửa' : 'Edit'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {profileDetailItems.map(item => {
@@ -4584,20 +4559,20 @@ function ProfileScreen() {
               );
             })}
 
-            <TouchableOpacity
-              className="mt-1 h-7 items-center justify-center rounded-md bg-[#E7F3FF]"
-              activeOpacity={0.8}
-              onPress={() =>
-                isOwnProfile && navigation.navigate(ROUTES.EDIT_PROFILE)
-              }
-            >
-              <Text
-                className="text-[12px] font-bold text-[#1877F2]"
-                numberOfLines={1}
+            {isOwnProfile && (
+              <TouchableOpacity
+                className="mt-1 h-7 items-center justify-center rounded-md bg-[#E7F3FF]"
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate(ROUTES.EDIT_PROFILE)}
               >
-                Chỉnh sữa chi tiết
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  className="text-[12px] font-bold text-[#1877F2]"
+                  numberOfLines={1}
+                >
+                  {language === 'vi' ? 'Chỉnh sửa chi tiết' : 'Edit details'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Friends — right column */}
@@ -4837,15 +4812,17 @@ function ProfileScreen() {
           <Text style={profileMainStyles.postsTabTitle}>{copy.posts}</Text>
           <View style={profileMainStyles.postsTabUnderline} />
         </View>
-        <TouchableOpacity
-          style={profileMainStyles.managePostsButton}
-          activeOpacity={0.8}
-        >
-          <Sliders size={12} color="#1877F2" />
-          <Text style={profileMainStyles.managePostsText}>
-            {language === 'vi' ? 'Quản lý bài viết' : 'Manage posts'}
-          </Text>
-        </TouchableOpacity>
+        {isOwnProfile && (
+          <TouchableOpacity
+            style={profileMainStyles.managePostsButton}
+            activeOpacity={0.8}
+          >
+            <Sliders size={12} color="#1877F2" />
+            <Text style={profileMainStyles.managePostsText}>
+              {language === 'vi' ? 'Quản lý bài viết' : 'Manage posts'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </>
   );
@@ -5282,7 +5259,7 @@ function ProfileScreen() {
             </View>
           </Modal>
           <EditProfileActionSheet
-            visible={editSheetVisible}
+            visible={isOwnProfile && editSheetVisible}
             onClose={() => {
               setEditSheetVisible(false);
               tabBarVisibility.setVisible(true);
@@ -5377,9 +5354,13 @@ function ProfileScreen() {
                         {copy.viewStory}
                       </Text>
                       <Text style={profileMainStyles.mediaActionHint}>
-                        {language === 'vi'
-                          ? 'Mở tin đang hoạt động của bạn'
-                          : 'Open your active story'}
+                        {isOwnProfile
+                          ? language === 'vi'
+                            ? 'Mở tin đang hoạt động của bạn'
+                            : 'Open your active story'
+                          : language === 'vi'
+                          ? `Xem ${userStory.media.length} đoạn tin của ${displayName}`
+                          : `View ${userStory.media.length} story segments from ${displayName}`}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -5416,38 +5397,40 @@ function ProfileScreen() {
                   </View>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  activeOpacity={0.82}
-                  onPress={handleChangeProfileMedia}
-                  style={profileMainStyles.mediaActionRow}
-                >
-                  <View
-                    style={[
-                      profileMainStyles.mediaActionIcon,
-                      { backgroundColor: '#ECFEFF' },
-                    ]}
+                {isOwnProfile ? (
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    onPress={handleChangeProfileMedia}
+                    style={profileMainStyles.mediaActionRow}
                   >
-                    <Camera size={19} color="#0891B2" />
-                  </View>
-                  <View style={profileMainStyles.mediaActionContent}>
-                    <Text style={profileMainStyles.mediaActionLabel}>
-                      {profileMediaSheet === 'cover'
-                        ? copy.changeCoverLabel
-                        : language === 'vi'
-                        ? 'Thay ảnh đại diện'
-                        : 'Change profile picture'}
-                    </Text>
-                    <Text style={profileMainStyles.mediaActionHint}>
-                      {profileMediaSheet === 'cover'
-                        ? copy.changeCoverHint
-                        : language === 'vi'
-                        ? 'Cập nhật ảnh đại diện của bạn'
-                        : 'Update your profile picture'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                    <View
+                      style={[
+                        profileMainStyles.mediaActionIcon,
+                        { backgroundColor: '#ECFEFF' },
+                      ]}
+                    >
+                      <Camera size={19} color="#0891B2" />
+                    </View>
+                    <View style={profileMainStyles.mediaActionContent}>
+                      <Text style={profileMainStyles.mediaActionLabel}>
+                        {profileMediaSheet === 'cover'
+                          ? copy.changeCoverLabel
+                          : language === 'vi'
+                          ? 'Thay ảnh đại diện'
+                          : 'Change profile picture'}
+                      </Text>
+                      <Text style={profileMainStyles.mediaActionHint}>
+                        {profileMediaSheet === 'cover'
+                          ? copy.changeCoverHint
+                          : language === 'vi'
+                          ? 'Cập nhật ảnh đại diện của bạn'
+                          : 'Update your profile picture'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
 
-                {profileMediaSheet === 'avatar' ? (
+                {isOwnProfile && profileMediaSheet === 'avatar' ? (
                   <TouchableOpacity
                     activeOpacity={0.82}
                     onPress={handleCreateStoryFromMediaSheet}

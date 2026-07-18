@@ -16,6 +16,9 @@ if ($f == 'view_all_stories') {
                         ->where('user_id', $owner_id)
                         ->where('expire', time(), '>')
                         ->getOne(T_USER_STORY);
+            if (!empty($story) && !VNSEEA_CanViewStory($story, $viewer_id)) {
+                $story = null;
+            }
         }
 
         if (empty($story)) {

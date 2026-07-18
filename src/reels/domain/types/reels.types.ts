@@ -1,6 +1,10 @@
 // Description: Domain types for the reels bounded context.
 
 import type { AudioAttachment } from '../../../shared-kernel/domain/types/audio.types';
+import type {
+  ContentAudience,
+  ContentAudienceWireContract,
+} from '../../../shared-kernel/domain/types/contentAudience';
 
 /** Publisher info attached to each reel — derived from the post's user_data. */
 export interface ReelPublisher {
@@ -45,8 +49,11 @@ export interface ReelsItem {
   thumbnailUrl?: string;
   /** Caption / post text (server-side hashtag markup stripped client-side) */
   caption?: string;
-  /** Privacy level (0=public, 1=friends, 2=only me) */
-  privacy?: number;
+  /** Normalized audience; wire values are decoded in the repository. */
+  privacy: ContentAudience;
+  privacyContract: ContentAudienceWireContract;
+  isAnonymous: boolean;
+  canShare: boolean;
   /** Unix timestamp (seconds) when posted */
   postedAt?: number;
   /** Publisher (account that posted the reel) */
@@ -156,7 +163,7 @@ export interface CommentImageAttachment {
 export type CommentAudioAttachment = AudioAttachment;
 
 /** Privacy level matching WoWonder postPrivacy values */
-export type ReelPrivacy = 0 | 1 | 2 | 3 | 4;
+export type ReelPrivacy = ContentAudience;
 
 /** Data collected from the user before upload */
 export interface ReelDraft {
@@ -170,8 +177,8 @@ export interface ReelDraft {
   thumbnailUri?: string;
   /** Caption / post text */
   caption?: string;
-  /** Privacy level, defaults to 0 (public) */
-  privacy?: ReelPrivacy;
+  /** Audience, defaults to public. */
+  privacy: ReelPrivacy;
 }
 
 /** Result returned after a successful upload */

@@ -462,7 +462,9 @@ export function HeaderProfileDrawer({ visible, onClose }: Props) {
             navigation.navigate(ROUTES.MY_VIDEOS);
             return;
           case 'saved':
-            navigation.navigate(ROUTES.SAVED_POSTS);
+            navigation.navigate(ROUTES.ACTIVITY_CENTER, {
+              initialTab: 'saved',
+            });
             return;
           case 'groups':
             navigation.navigate(ROUTES.EXPLORE_GROUPS);

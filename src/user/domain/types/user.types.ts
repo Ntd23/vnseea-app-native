@@ -30,6 +30,7 @@ export type UserProfile = UserSummary & {
   schoolCompleted?: boolean;
   relationshipId?: string;
   coverUrl?: string;
+  avatarPostId?: string;
   facebook?: string;
   twitter?: string;
   linkedin?: string;

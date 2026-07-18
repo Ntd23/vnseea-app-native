@@ -21,13 +21,15 @@ export interface PhotosListPage {
 }
 
 // Album types
+import type { ContentAudience } from '../../../shared-kernel/domain/types/contentAudience';
+
 export interface AlbumItem {
   id: string;
   postId: string;
   albumName: string;
   coverUrl: string;
   photoCount: number;
-  privacy: 'public' | 'friends' | 'private';
+  privacy: ContentAudience;
   postedAt?: number;
 }
 

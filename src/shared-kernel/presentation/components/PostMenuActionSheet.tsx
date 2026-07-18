@@ -59,6 +59,8 @@ export function PostMenuActionSheet({
   if (!visible || !post) return null;
 
   const isBusy = loadingId !== null;
+  const canRenderDelete =
+    canDelete && post.permissions?.canDelete === true;
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
@@ -102,9 +104,9 @@ export function PostMenuActionSheet({
           iconClassName="bg-slate-100"
           onPress={() => runAction('hide', onHide)}
         />
-        <Divider />
-        {canDelete ? (
+        {canRenderDelete ? (
           <>
+            <Divider />
             <MenuAction
               label="Xóa bài viết"
               loading={loadingId === 'delete'}
@@ -114,9 +116,9 @@ export function PostMenuActionSheet({
               textClassName="text-red-600"
               onPress={() => runAction('delete', onDelete)}
             />
-            <Divider />
           </>
         ) : null}
+        <Divider />
         <MenuAction
           label="Báo cáo bài viết"
           loading={loadingId === 'report'}

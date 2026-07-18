@@ -96,15 +96,19 @@ export function GroupPostMenuActionSheet({
             onClose();
           }}
         />
-        <Divider />
-        <MenuAction
-          title="Xóa bài đăng"
-          description="Xóa hoàn toàn bài đăng này."
-          icon={<Trash2 size={19} color="#EF4444" />}
-          loading={loadingAction === 'delete'}
-          disabled={isBusy}
-          onPress={() => void runAsyncAction('delete', onDelete)}
-        />
+        {post.permissions?.canDelete === true ? (
+          <>
+            <Divider />
+            <MenuAction
+              title="Xóa bài đăng"
+              description="Xóa hoàn toàn bài đăng này."
+              icon={<Trash2 size={19} color="#EF4444" />}
+              loading={loadingAction === 'delete'}
+              disabled={isBusy}
+              onPress={() => void runAsyncAction('delete', onDelete)}
+            />
+          </>
+        ) : null}
         <Divider />
         <MenuAction
           title="Tắt nhận xét"

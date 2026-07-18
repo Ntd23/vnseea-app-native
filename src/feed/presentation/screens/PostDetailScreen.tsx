@@ -38,6 +38,7 @@ import {
 } from 'lucide-react-native';
 import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import {
+  useIsFocused,
   useNavigation,
   useRoute,
   type RouteProp,
@@ -50,6 +51,7 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../domain/types/feed.types';
+import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { PostComment } from '../../domain/repositories/FeedRepository';
 import { usePostDetailViewModel } from '../../application/view-models/usePostDetailViewModel';
@@ -69,6 +71,7 @@ import {
   FEED_REACTION_TYPES,
 } from '../components/FeedReactionAssets';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import { usePostRealtimeScope } from '../../application/realtime/usePostRealtimeScope';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
@@ -580,18 +583,20 @@ function PostActions({
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={onShare}
-          className="flex-1 flex-row items-center justify-center rounded-full py-2"
-          accessibilityRole="button"
-          accessibilityLabel="Chia sẻ"
-        >
-          <Share2 size={18} color="#64748b" />
-          <Text className="ml-2 text-caption-primary text-slate-700">
-            Chia sẻ
-          </Text>
-        </TouchableOpacity>
+        {isFeedPostShareable(post) ? (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={onShare}
+            className="flex-1 flex-row items-center justify-center rounded-full py-2"
+            accessibilityRole="button"
+            accessibilityLabel="Chia sẻ"
+          >
+            <Share2 size={18} color="#64748b" />
+            <Text className="ml-2 text-caption-primary text-slate-700">
+              Chia sẻ
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         <TouchableOpacity
           activeOpacity={0.85}
@@ -810,6 +815,7 @@ function CommentComposer({
 
 function PostDetailScreen() {
   const navigation = useNavigation<PostDetailNav>();
+  const isFocused = useIsFocused();
   const route = useRoute<PostDetailRoute>();
   const { postId, post: postFromParams } = route.params;
 
@@ -822,9 +828,22 @@ function PostDetailScreen() {
     isSubmitting,
     likedUsers,
     toggleReaction,
+    applyRealtimePost,
+    markRealtimeDeleted,
+    refreshRealtimeComments,
   } = usePostDetailViewModel({
     fallbackPost: postFromParams,
     postId,
+  });
+
+  usePostRealtimeScope({
+    postIds: [postId],
+    enabled: isFocused,
+    onSnapshot: applyRealtimePost,
+    onDeleted: markRealtimeDeleted,
+    onCommentMutation: () => {
+      void refreshRealtimeComments();
+    },
   });
 
   const language = useAppLanguage();
@@ -912,7 +931,7 @@ function PostDetailScreen() {
   );
 
   const handleShare = useCallback(async () => {
-    if (!activePost) return;
+    if (!isFeedPostShareable(activePost)) return;
     try {
       const url = activePost.shareUrl;
       await Share.share({

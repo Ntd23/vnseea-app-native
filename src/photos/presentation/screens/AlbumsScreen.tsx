@@ -31,8 +31,10 @@ function mapPrivacyToText(privacy: string): string {
       return 'Công khai';
     case 'friends':
       return 'Bạn bè';
-    case 'private':
-      return 'Riêng tư';
+    case 'followers':
+      return 'Người theo dõi';
+    case 'only_me':
+      return 'Chỉ mình tôi';
     default:
       return privacy;
   }

@@ -5,13 +5,13 @@ if ($wo['config']['watch_page'] == 0) {
 }
 
 if (!empty($_GET['id'])) {
-    $story = $db->where('id', $_GET['id'])->where('is_reel', 0)->get(T_POSTS);
+    $story = Wo_PostData($_GET['id']);
 
-    if (!$story  || count($story) == 0) {
+    if (empty($story) || !empty($story['is_reel'])) {
         header("Location: " . $wo['config']['site_url']);
         exit();
     }
-    $wo['single_story'] = $story[0];
+    $wo['single_story'] = (object) $story;
     if (isset($wo['single_story']->postFile) && strpos($wo['single_story']->postFile, 'videos') !== false) {
         header("Location: " . $wo['config']['site_url'] . '/post/' . $_GET['id']);
     }

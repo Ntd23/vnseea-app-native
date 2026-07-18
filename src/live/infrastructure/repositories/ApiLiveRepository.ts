@@ -3,6 +3,7 @@
 
 import axios from 'axios';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { CONTENT_AUDIENCE_CONTRACT } from '../../../shared-kernel/domain/types/contentAudience';
 import { normalizeApiResponseData } from '../../../shared-kernel/application/api/apiResponse';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
@@ -680,6 +681,7 @@ export function createLiveRepository(): LiveRepository {
       const response = await postLiveXHR('create', {
         stream_name: streamName,
         post_privacy: getCreateLivePrivacy(payload.privacy),
+        privacy_contract: CONTENT_AUDIENCE_CONTRACT,
         title: payload.title,
         description: payload.description,
       });

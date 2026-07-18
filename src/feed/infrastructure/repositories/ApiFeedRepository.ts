@@ -55,27 +55,18 @@ import type {
   PostPrivacy,
   PostLinkPreview,
 } from '../../domain/types/feed.types';
+import {
+  CONTENT_AUDIENCE_CONTRACT,
+  audienceFromWire,
+  audienceToWire,
+  type ContentAudienceWireContract,
+} from '../../../shared-kernel/domain/types/contentAudience';
 
 // Privacy mapping
 // WoWonder's `postPrivacy` is numeric and enforced by Wo_GetPostData:
-// 0=everyone, 1=people the author follows, 2=people following the author,
+// 0=everyone, 1=mutual friends, 2=people following the author,
 // 3=only me, 4=anonymous.
-const PRIVACY_TO_WIRE: Record<PostPrivacy, string> = {
-  public: '0',
-  friends: '1',
-  following: '1',
-  followers: '2',
-  only_me: '3',
-  anonymous: '4',
-};
-
-const WIRE_TO_PRIVACY: Record<string, PostPrivacy> = {
-  '0': 'public',
-  '1': 'following',
-  '2': 'followers',
-  '3': 'only_me',
-  '4': 'anonymous',
-};
+const PRIVACY_TO_WIRE = audienceToWire;
 
 // ── Wire format ──────────────────────────────────────────────────────────
 //
@@ -209,6 +200,79 @@ function readBool(raw: Record<string, unknown>, ...keys: string[]) {
   return false;
 }
 
+function readOptionalBool(raw: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    if (!(key in raw)) continue;
+    return readBool(raw, key);
+  }
+  return undefined;
+}
+
+function readPostPrivacy(raw: Record<string, unknown>) {
+  const privacyContract = readString(raw, 'privacy_contract');
+  const contract: ContentAudienceWireContract =
+    privacyContract === CONTENT_AUDIENCE_CONTRACT
+      ? CONTENT_AUDIENCE_CONTRACT
+      : 'legacy_feed';
+  const decoded = audienceFromWire(readString(raw, 'postPrivacy', 'privacy'), {
+    contract,
+    fallback: 'only_me',
+  });
+
+  return {
+    ...decoded,
+    contract,
+    isAnonymous:
+      decoded.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
+  };
+}
+
+function readPostPermissions(
+  raw: Record<string, unknown>,
+  privacy = readPostPrivacy(raw),
+) {
+  const permissions =
+    (raw.permissions as Record<string, unknown> | undefined) ?? raw;
+  const backendCanShare = readOptionalBool(
+    permissions,
+    'can_share',
+    'canShare',
+  );
+  return {
+    canDelete: readBool(permissions, 'can_delete', 'canDelete'),
+    canShare:
+      backendCanShare === true &&
+      privacy.isValid &&
+      privacy.audience === 'public' &&
+      !privacy.isAnonymous,
+  };
+}
+
+function readPostPresentation(raw: Record<string, unknown>) {
+  const privacy = readPostPrivacy(raw);
+  const permissions = readPostPermissions(raw, privacy);
+  const realPublisher =
+    (raw.publisher as Record<string, unknown> | undefined) ??
+    (raw.user_data as Record<string, unknown> | undefined) ??
+    {};
+  const viewerId = sessionStorage.getSession()?.userId;
+  const ownerId =
+    readString(raw, 'user_id') || readString(realPublisher, 'user_id', 'id');
+  const isOwner =
+    readBool(raw, 'is_owner', 'isOwner') ||
+    Boolean(viewerId && ownerId && String(viewerId) === ownerId);
+
+  return {
+    privacy,
+    permissions,
+    publisher:
+      privacy.isAnonymous && !isOwner
+        ? ({} as Record<string, unknown>)
+        : realPublisher,
+    isIdentityRedacted: privacy.isAnonymous && !isOwner,
+  };
+}
+
 // Match any common video extension anywhere in the URL (allows query
 // strings, signed-CDN tokens, weird paths). The `.` is bare so we also
 // catch `video.mp4.encrypted` paths some installs ship with.
@@ -263,18 +327,17 @@ function getPollTotalVotes(
 }
 
 function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
-  const publisher =
-    (raw.publisher as Record<string, unknown> | undefined) ??
-    (raw.user_data as Record<string, unknown> | undefined) ??
-    {};
+  const presentation = readPostPresentation(raw);
+  const publisher = presentation.publisher;
   const firstName = readString(publisher, 'first_name');
   const lastName = readString(publisher, 'last_name');
   const username = readString(publisher, 'username', 'user_name');
-  const name =
-    [firstName, lastName].filter(Boolean).join(' ').trim() ||
-    readString(publisher, 'name', 'full_name') ||
-    username ||
-    'Người dùng';
+  const name = presentation.isIdentityRedacted
+    ? ''
+    : [firstName, lastName].filter(Boolean).join(' ').trim() ||
+      readString(publisher, 'name', 'full_name') ||
+      username ||
+      'Người dùng';
 
   const postId = readString(raw, 'id', 'post_id');
 
@@ -308,12 +371,13 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
 
   // Get voted option id (null if not voted)
   const votedId = (raw.voted_id as number) > 0 ? String(raw.voted_id) : null;
-  const rawPrivacy = readString(raw, 'postPrivacy');
-  const privacy: PostPrivacy = WIRE_TO_PRIVACY[rawPrivacy] ?? 'public';
+  const privacyResult = presentation.privacy;
+  const privacy: PostPrivacy = privacyResult.audience;
 
   return {
     kind: 'poll',
     id: postId,
+    permissions: presentation.permissions,
     caption: readPostCaption(raw) || undefined,
     mentionNames: readPostMentionNames(raw),
     pollQuestion: readPostCaption(raw) || undefined,
@@ -327,22 +391,26 @@ function mapPollPost(raw: Record<string, unknown>): FeedPollPost {
     myReaction,
     topReactions: extractTopReactions(raw, myReaction),
     privacy,
-    publisher: {
-      id: readString(publisher, 'user_id', 'id'),
-      name,
-      username,
-      avatarUrl:
-        readString(publisher, 'avatar', 'profile_picture') || undefined,
-      isFollowing:
-        publisher['is_following'] === 1 ||
-        publisher['is_following'] === 'yes' ||
-        publisher['is_following'] === '1' ||
-        publisher['is_following'] === true ||
-        raw['is_following'] === 1 ||
-        raw['is_following'] === 'yes' ||
-        raw['is_following'] === '1' ||
-        raw['is_following'] === true,
-    },
+    privacyContract: privacyResult.contract,
+    isAnonymous: privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
+    publisher: presentation.isIdentityRedacted
+      ? { id: '', name: '', username: '' }
+      : {
+          id: readString(publisher, 'user_id', 'id'),
+          name,
+          username,
+          avatarUrl:
+            readString(publisher, 'avatar', 'profile_picture') || undefined,
+          isFollowing:
+            publisher['is_following'] === 1 ||
+            publisher['is_following'] === 'yes' ||
+            publisher['is_following'] === '1' ||
+            publisher['is_following'] === true ||
+            raw['is_following'] === 1 ||
+            raw['is_following'] === 'yes' ||
+            raw['is_following'] === '1' ||
+            raw['is_following'] === true,
+        },
   };
 }
 
@@ -496,18 +564,17 @@ function readPostMentionNames(raw: Record<string, unknown>) {
 }
 
 function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
-  const publisher =
-    (raw.publisher as Record<string, unknown> | undefined) ??
-    (raw.user_data as Record<string, unknown> | undefined) ??
-    {};
+  const presentation = readPostPresentation(raw);
+  const publisher = presentation.publisher;
   const firstName = readString(publisher, 'first_name');
   const lastName = readString(publisher, 'last_name');
   const username = readString(publisher, 'username', 'user_name');
-  const name =
-    [firstName, lastName].filter(Boolean).join(' ').trim() ||
-    readString(publisher, 'name', 'full_name') ||
-    username ||
-    'Người dùng';
+  const name = presentation.isIdentityRedacted
+    ? ''
+    : [firstName, lastName].filter(Boolean).join(' ').trim() ||
+      readString(publisher, 'name', 'full_name') ||
+      username ||
+      'Người dùng';
 
   const postId = readString(raw, 'id', 'post_id');
 
@@ -538,8 +605,8 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     likeCount = apiLikeCount;
   }
 
-  const rawPrivacy = readString(raw, 'postPrivacy');
-  const privacy: PostPrivacy = WIRE_TO_PRIVACY[rawPrivacy] ?? 'public';
+  const privacyResult = presentation.privacy;
+  const privacy: PostPrivacy = privacyResult.audience;
 
   const videoUrl = normalizePlayableMediaUrl(readString(raw, 'postFile')) ?? '';
   const publisherAvatarUrl =
@@ -568,6 +635,7 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
   return {
     kind: 'video',
     id: postId,
+    permissions: presentation.permissions,
     caption: readPostCaption(raw) || undefined,
     mentionNames: readPostMentionNames(raw),
     // Some endpoints return full Wo_GetMedia URLs, others still return
@@ -581,27 +649,32 @@ function mapVideoPost(raw: Record<string, unknown>): FeedVideoPost {
     myReaction,
     topReactions: extractTopReactions(raw, myReaction),
     privacy,
+    privacyContract: privacyResult.contract,
+    isAnonymous: privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
     linkPreview: extractLinkPreview(raw),
-    publisher: {
-      id: readString(publisher, 'user_id', 'id'),
-      name,
-      username,
-      avatarUrl: publisherAvatarUrl,
-      isFollowing:
-        publisher['is_following'] === 1 ||
-        publisher['is_following'] === 'yes' ||
-        publisher['is_following'] === '1' ||
-        publisher['is_following'] === true ||
-        raw['is_following'] === 1 ||
-        raw['is_following'] === 'yes' ||
-        raw['is_following'] === '1' ||
-        raw['is_following'] === true,
-    },
+    publisher: presentation.isIdentityRedacted
+      ? { id: '', name: '', username: '' }
+      : {
+          id: readString(publisher, 'user_id', 'id'),
+          name,
+          username,
+          avatarUrl: publisherAvatarUrl,
+          isFollowing:
+            publisher['is_following'] === 1 ||
+            publisher['is_following'] === 'yes' ||
+            publisher['is_following'] === '1' ||
+            publisher['is_following'] === true ||
+            raw['is_following'] === 1 ||
+            raw['is_following'] === 'yes' ||
+            raw['is_following'] === '1' ||
+            raw['is_following'] === true,
+        },
   };
 }
 
 function mapAdPost(raw: Record<string, unknown>): FeedAdPost {
   const publisher =
+    (raw.anonymous_publisher as Record<string, unknown> | undefined) ??
     (raw.publisher as Record<string, unknown> | undefined) ??
     (raw.user_data as Record<string, unknown> | undefined) ??
     {};
@@ -633,6 +706,7 @@ function mapAdPost(raw: Record<string, unknown>): FeedAdPost {
     targetUrl: readString(raw, 'url', 'website') || undefined,
     appears: readString(raw, 'appears') || undefined,
     postedAt: readNumber(raw, 'posted', 'time') || undefined,
+    permissions: readPostPermissions(raw),
     publisher: {
       id: readString(publisher, 'user_id', 'id') || readString(raw, 'user_id'),
       name,
@@ -838,23 +912,23 @@ function mapSharedFrom(raw: Record<string, unknown>) {
   const shared = readSharedInfo(raw);
   if (!shared) return undefined;
 
-  const publisher =
-    (shared.publisher as Record<string, unknown> | undefined) ??
-    (shared.user_data as Record<string, unknown> | undefined) ??
-    {};
+  const presentation = readPostPresentation(shared);
+  const publisher = presentation.publisher;
   const firstName = readString(publisher, 'first_name');
   const lastName = readString(publisher, 'last_name');
   const username = readString(publisher, 'username', 'user_name');
-  const publisherName =
-    [firstName, lastName].filter(Boolean).join(' ').trim() ||
-    readString(publisher, 'name', 'full_name') ||
-    username ||
-    'Người dùng';
+  const publisherName = presentation.isIdentityRedacted
+    ? ''
+    : [firstName, lastName].filter(Boolean).join(' ').trim() ||
+      readString(publisher, 'name', 'full_name') ||
+      username ||
+      'Người dùng';
 
   return {
     id: readString(shared, 'id', 'post_id'),
     caption: readPostCaption(shared) || undefined,
     mentionNames: readPostMentionNames(shared),
+    isAnonymous: presentation.isIdentityRedacted,
     publisherName,
     publisherAvatar:
       readString(publisher, 'avatar', 'profile_picture') || undefined,
@@ -948,18 +1022,17 @@ function mapProfilePost(
 }
 
 function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
-  const publisher =
-    (raw.publisher as Record<string, unknown> | undefined) ??
-    (raw.user_data as Record<string, unknown> | undefined) ??
-    {};
+  const presentation = readPostPresentation(raw);
+  const publisher = presentation.publisher;
   const firstName = readString(publisher, 'first_name');
   const lastName = readString(publisher, 'last_name');
   const username = readString(publisher, 'username', 'user_name');
-  const name =
-    [firstName, lastName].filter(Boolean).join(' ').trim() ||
-    readString(publisher, 'name', 'full_name') ||
-    username ||
-    'Người dùng';
+  const name = presentation.isIdentityRedacted
+    ? ''
+    : [firstName, lastName].filter(Boolean).join(' ').trim() ||
+      readString(publisher, 'name', 'full_name') ||
+      username ||
+      'Người dùng';
 
   const postId = readString(raw, 'id', 'post_id');
 
@@ -985,8 +1058,8 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
     likeCount = apiLikeCount;
   }
 
-  const rawPrivacy = readString(raw, 'postPrivacy');
-  const privacy: PostPrivacy = WIRE_TO_PRIVACY[rawPrivacy] ?? 'public';
+  const privacyResult = presentation.privacy;
+  const privacy: PostPrivacy = privacyResult.audience;
   const sharedFrom = mapSharedFrom(raw);
   const photos = extractPhotoUrls(raw);
   const sharedPhotos = sharedFrom?.photos ?? [];
@@ -995,6 +1068,7 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
   return {
     kind: 'text',
     id: postId,
+    permissions: presentation.permissions,
     caption,
     mentionNames: readPostMentionNames(raw),
     photos: photos.length > 0 ? photos : sharedPhotos,
@@ -1009,16 +1083,20 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
     topReactions: extractTopReactions(raw, myReaction),
     feeling: extractFeeling(raw),
     privacy,
+    privacyContract: privacyResult.contract,
+    isAnonymous: privacyResult.isAnonymous || readBool(raw, 'is_anonymous', 'isAnonymous'),
     linkPreview: extractLinkPreview(raw),
-    publisher: {
-      id: readString(publisher, 'user_id', 'id'),
-      name,
-      username,
-      // Avatar is pre-normalized by Wo_GetMedia in posts.php — full URL
-      // already. Don't double-prepend the host here.
-      avatarUrl:
-        readString(publisher, 'avatar', 'profile_picture') || undefined,
-    },
+    publisher: presentation.isIdentityRedacted
+      ? { id: '', name: '', username: '' }
+      : {
+          id: readString(publisher, 'user_id', 'id'),
+          name,
+          username,
+          // Avatar is pre-normalized by Wo_GetMedia in posts.php — full URL
+          // already. Don't double-prepend the host here.
+          avatarUrl:
+            readString(publisher, 'avatar', 'profile_picture') || undefined,
+        },
     sharedFrom,
   };
 }
@@ -1725,6 +1803,37 @@ function mixAdsIntoPosts(posts: FeedPost[]): FeedPost[] {
   return mixed.sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
 }
 
+type CreatePostContext = 'personal' | 'page' | 'group' | 'event';
+
+function resolveCreatePostContext(draft: CreatePostDraft): CreatePostContext {
+  const targets = [draft.pageId, draft.groupId, draft.eventId].filter(Boolean);
+  if (targets.length > 1) {
+    throw new Error('Invalid create-post context: multiple targets.');
+  }
+
+  if (draft.pageId) {
+    if (draft.isAnonymous) {
+      throw new Error('Anonymous posts are not allowed in a page context.');
+    }
+    if (draft.privacy !== 'public' && draft.privacy !== 'followers') {
+      throw new Error('Invalid page audience.');
+    }
+    return 'page';
+  }
+
+  if (draft.groupId || draft.eventId) {
+    if (draft.isAnonymous) {
+      throw new Error('Anonymous posts are not allowed in this context.');
+    }
+    return draft.groupId ? 'group' : 'event';
+  }
+
+  if (draft.isAnonymous && draft.privacy !== 'public') {
+    throw new Error('Anonymous personal posts must use the public audience.');
+  }
+  return 'personal';
+}
+
 function isGroupRawPost(raw: Record<string, unknown>): boolean {
   return readNumber(raw, 'group_id', 'groupId') > 0;
 }
@@ -2007,9 +2116,16 @@ export function createFeedRepository(): FeedRepository {
       // Build the multipart payload. Keys MUST match WoWonder's expected
       // POST fields (see phtml/api/phone/new_post.php). Empty optional
       // fields are omitted entirely so the backend defaults kick in.
-      const payload: Record<string, unknown> = {
-        postPrivacy: PRIVACY_TO_WIRE[draft.privacy] ?? '0',
-      };
+      const context = resolveCreatePostContext(draft);
+      const payload: Record<string, unknown> = {};
+
+      if (context === 'personal' || context === 'page') {
+        payload.postPrivacy = PRIVACY_TO_WIRE(draft.privacy);
+        payload.privacy_contract = CONTENT_AUDIENCE_CONTRACT;
+      }
+      if (context === 'personal') {
+        payload.is_anonymous = draft.isAnonymous ? '1' : '0';
+      }
 
       if (draft.pageId) {
         payload.page_id = draft.pageId;
@@ -2434,7 +2550,8 @@ export function createFeedRepository(): FeedRepository {
         action: 'edit',
         post_id: postId,
         text: input.text,
-        privacy_type: PRIVACY_TO_WIRE[input.privacy ?? 'public'] ?? '0',
+        privacy_type: PRIVACY_TO_WIRE(input.privacy ?? 'public'),
+        privacy_contract: CONTENT_AUDIENCE_CONTRACT,
       });
 
       const edited =

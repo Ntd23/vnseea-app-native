@@ -23,7 +23,7 @@ import {
   Users,
 } from 'lucide-react-native';
 import { useSharedValue } from 'react-native-reanimated';
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useIsFocused, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -46,6 +46,7 @@ import PostReactionsSheet from '../../../feed/presentation/components/PostReacti
 import { PollPostCard } from '../../../feed/presentation/components/PollPostCard';
 import { CreatePostModal } from '../../../feed/presentation/screens/CreatePostScreen';
 import { useFeedCommentsViewModel } from '../../../feed/application/view-models/useFeedCommentsViewModel';
+import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
 import { createFeedRepository } from '../../../feed/infrastructure/repositories/ApiFeedRepository';
 import type {
   FeedPost,
@@ -53,6 +54,7 @@ import type {
   FeedTextPost,
   FeedVideoPost,
 } from '../../../feed/domain/types/feed.types';
+import { isFeedPostShareable } from '../../../feed/domain/policies/feedPostPrivacy';
 import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepository';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
@@ -227,6 +229,7 @@ function GroupDetailScreen() {
   const copy = GROUP_DETAIL_COPY[language] ?? GROUP_DETAIL_COPY.vi;
   const postCopy = FEED_COPY[language] ?? FEED_COPY.vi;
   const navigation = useNavigation<GroupDetailNav>();
+  const isFocused = useIsFocused();
   const route = useRoute<GroupDetailRoute>();
   const group = route.params?.group;
   const profile = sessionStorage.getUserProfile();
@@ -289,6 +292,27 @@ function GroupDetailScreen() {
   );
   const commentVm = useFeedCommentsViewModel({
     onCommentCountChange: updateCommentCount,
+  });
+  usePostRealtimeScope({
+    postIds: posts.slice(0, 20).map(post => post.id),
+    enabled: isFocused,
+    onSnapshot: nextPost => {
+      setPosts(current =>
+        current.map(post =>
+          String(post.id) === String(nextPost.id)
+            ? (nextPost as FeedTextPost | FeedVideoPost | FeedPollPost)
+            : post,
+        ),
+      );
+    },
+    onDeleted: postId => {
+      setPosts(current => current.filter(post => String(post.id) !== postId));
+    },
+    onCommentMutation: change => {
+      if (String(commentVm.selectedCommentPostId) === change.postId) {
+        void commentVm.refreshComments();
+      }
+    },
   });
   const loadGroupPosts = useCallback(
     async (refreshing = false) => {
@@ -423,6 +447,7 @@ function GroupDetailScreen() {
     [commentVm],
   );
   const handleSharePost = useCallback((post: FeedPost) => {
+    if (!isFeedPostShareable(post)) return;
     setSharingPost(post);
     setShareModalVisible(true);
   }, []);

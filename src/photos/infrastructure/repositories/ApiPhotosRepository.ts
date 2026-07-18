@@ -4,6 +4,10 @@ import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import type { PhotosRepository } from '../../domain/repositories/PhotosRepository';
 import type { AlbumItem, PhotosItem } from '../../domain/types/photos.types';
+import {
+  CONTENT_AUDIENCE_CONTRACT,
+  audienceFromWire,
+} from '../../../shared-kernel/domain/types/contentAudience';
 
 type RawRecord = Record<string, unknown>;
 
@@ -215,10 +219,13 @@ export function createPhotosRepository(): PhotosRepository {
             : (Array.isArray(raw.photo_multi) ? raw.photo_multi.length : 0);
 
           // Get privacy
-          const privacyValue = readNumber(raw, 'postPrivacy', 'privacy');
-          let privacy: 'public' | 'friends' | 'private' = 'public';
-          if (privacyValue === 2) privacy = 'friends';
-          else if (privacyValue === 3) privacy = 'private';
+          const privacy = audienceFromWire(raw.postPrivacy ?? raw.privacy, {
+            contract:
+              readString(raw, 'privacy_contract') === CONTENT_AUDIENCE_CONTRACT
+                ? CONTENT_AUDIENCE_CONTRACT
+                : 'legacy_feed',
+            fallback: 'only_me',
+          }).audience;
 
           const postedAt = readNumber(raw, 'time', 'posted');
 

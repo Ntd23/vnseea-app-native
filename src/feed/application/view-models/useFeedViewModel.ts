@@ -1586,6 +1586,12 @@ export function useFeedViewModel() {
     setScrollBusy,
     prependPost,
     updatePublisherFollowState,
+    applyRealtimePost: (nextPost: FeedPost) => {
+      updatePostEverywhere(post =>
+        String(post.id) === String(nextPost.id) ? nextPost : post,
+      );
+    },
+    removeRealtimePost: removePostEverywhere,
     toggleReaction,
     updateCommentCount,
     votePoll,
