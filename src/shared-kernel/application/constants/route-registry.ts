@@ -40,6 +40,7 @@ export const apiRoutes = {
     postReactions: 'post-reactions',
     comments: 'comments',
     getPost: 'get-post-data',
+    postActivity: 'post-activity',
     generalData: 'get-general-data',
   },
   social: {

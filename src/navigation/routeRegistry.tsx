@@ -85,7 +85,7 @@ import {
   MessageScreen,
 } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
-import { SavedPostsScreen } from '../saved';
+import { ActivityCenterScreen } from '../activity';
 import {
   AffiliatesScreen,
   DepositScreen,
@@ -219,7 +219,8 @@ export function createStackRoutes(
     { name: ROUTES.SEARCH, component: SearchScreen },
     { name: ROUTES.SEARCH_FILTER, component: SearchFilterScreen },
     { name: ROUTES.NEARBY_USERS, component: NearbyUsersScreen },
-    { name: ROUTES.SAVED_POSTS, component: SavedPostsScreen },
+    { name: ROUTES.ACTIVITY_CENTER, component: ActivityCenterScreen },
+    { name: ROUTES.SAVED_POSTS, component: ActivityCenterScreen },
     { name: ROUTES.SEARCH_EMPTY, component: SearchEmptyScreen },
     { name: ROUTES.PAGES, component: PagesScreen },
     { name: ROUTES.PAGE_DETAIL, component: PageDetailScreen },

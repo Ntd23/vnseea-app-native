@@ -471,7 +471,10 @@ export default function ProfileMoreScreen() {
         id: 'archive',
         label: copy.archive,
         Icon: Archive,
-        onPress: () => navigation.navigate(ROUTES.SAVED_POSTS),
+        onPress: () =>
+          navigation.navigate(ROUTES.ACTIVITY_CENTER, {
+            initialTab: 'saved',
+          }),
       },
       ...(params.privacy
         ? [

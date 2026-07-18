@@ -3136,22 +3136,10 @@ function ProfileScreen() {
   }, [avatarUrl, copy.userFallback, coverUrl, displayName, navigation, username]);
 
   const handleOpenActivities = useCallback(() => {
-    setShouldRenderActivitiesList(false);
-    activitiesSheetProgress.stopAnimation();
-    activitiesSheetProgress.setValue(0);
-    setActivitiesSheetVisible(true);
-    requestAnimationFrame(() => {
-      Animated.timing(activitiesSheetProgress, {
-        toValue: 1,
-        duration: PROFILE_SHEET_OPEN_DURATION_MS,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) {
-          setShouldRenderActivitiesList(true);
-        }
-      });
+    navigation.navigate(ROUTES.ACTIVITY_CENTER, {
+      initialTab: 'reaction',
     });
-  }, [activitiesSheetProgress]);
+  }, [navigation]);
 
   const handleCloseActivities = useCallback(() => {
     setShouldRenderActivitiesList(false);

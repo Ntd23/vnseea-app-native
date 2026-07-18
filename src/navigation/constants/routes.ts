@@ -32,6 +32,7 @@ export const ROUTES = {
   SEARCH: 'Search',
   SEARCH_FILTER: 'SearchFilter',
   NEARBY_USERS: 'NearbyUsers',
+  ACTIVITY_CENTER: 'ActivityCenter',
   SAVED_POSTS: 'SavedPosts',
   SEARCH_EMPTY: 'SearchEmpty',
   PAGES: 'Pages',
