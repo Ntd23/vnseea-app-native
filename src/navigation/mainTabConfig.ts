@@ -35,7 +35,7 @@ const TAB_LABELS: Record<AppLanguage, Partial<Record<MainTabRouteName, string>>>
 const IOS_SF_SYMBOLS: Partial<Record<MainTabRouteName, string>> = {
   [ROUTES.FEED]: 'house.fill',
   [ROUTES.REELS]: 'play.rectangle.fill',
-  [ROUTES.MARKETPLACE]: 'cart.fill',
+  [ROUTES.MARKETPLACE]: 'storefront.fill',
   [ROUTES.NOTIFICATIONS]: 'bell.fill',
   [ROUTES.PROFILE]: 'person.crop.circle.fill',
 };
@@ -60,7 +60,6 @@ export function createIosNativeTabOptions(
   routeName: MainTabRouteName,
   notificationCount = 0,
   language: AppLanguage = 'vi',
-  cartCount = 0,
 ): NativeBottomTabNavigationOptions {
   const options: NativeBottomTabNavigationOptions = {
     tabBarLabel:
@@ -73,11 +72,6 @@ export function createIosNativeTabOptions(
 
   if (routeName === ROUTES.NOTIFICATIONS) {
     options.tabBarBadge = formatNotificationTabBadge(notificationCount);
-    options.tabBarBadgeStyle = { backgroundColor: '#EF4444' };
-  }
-
-  if (routeName === ROUTES.MARKETPLACE) {
-    options.tabBarBadge = formatNotificationTabBadge(cartCount);
     options.tabBarBadgeStyle = { backgroundColor: '#EF4444' };
   }
 

@@ -34,8 +34,6 @@ import {
   RefreshCw,
   UserPlus,
   Video,
-  Volume2,
-  VolumeX,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -44,6 +42,7 @@ import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
+import { CallAudioOutputSelector } from '../components/CallAudioOutputSelector';
 import {
   getGroupCameraRenderStateKey,
   getGroupCameraTrackRenderKey,
@@ -410,7 +409,7 @@ function GroupCallControls() {
   const {
     session,
     leaveCall,
-    toggleSpeaker,
+    setAudioOutputMode,
     toggleMic,
     toggleCamera,
     switchCamera,
@@ -419,15 +418,13 @@ function GroupCallControls() {
 
   return (
     <View className="items-center pb-8">
+      <CallAudioOutputSelector
+        mode={session?.audioOutputMode ?? 'speaker'}
+        onChange={mode => {
+          setAudioOutputMode(mode).catch(() => undefined);
+        }}
+      />
       <View className="flex-row items-center justify-center gap-3 rounded-[28px] bg-slate-950/95 px-4 py-3">
-        <ControlButton onPress={() => toggleSpeaker().catch(() => undefined)}>
-          {session?.isSpeakerEnabled ? (
-            <Volume2 size={23} color="#ffffff" />
-          ) : (
-            <VolumeX size={23} color="#ffffff" />
-          )}
-        </ControlButton>
-
         <ControlButton onPress={() => toggleMic().catch(() => undefined)}>
           {session?.isLocalMicrophoneEnabled ? (
             <Mic size={23} color="#ffffff" />

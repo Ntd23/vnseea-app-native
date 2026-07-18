@@ -64,6 +64,7 @@ export interface ShareCopy {
   more: string;
   copied: string;
   copyFailed: string;
+  shareSuccess: string;
   shareFailed: string;
 }
 
@@ -129,6 +130,7 @@ export const SHARE_COPY: Record<AppLanguage, ShareCopy> = {
     more: 'Khác',
     copied: 'Đã sao chép liên kết',
     copyFailed: 'Không thể sao chép liên kết',
+    shareSuccess: 'Đã chia sẻ bài viết thành công.',
     shareFailed: 'Không thể chia sẻ bài viết',
   },
   en: {
@@ -191,6 +193,7 @@ export const SHARE_COPY: Record<AppLanguage, ShareCopy> = {
     more: 'More',
     copied: 'Link copied',
     copyFailed: 'Could not copy link',
+    shareSuccess: 'Post shared successfully.',
     shareFailed: 'Could not share this post',
   },
 };

@@ -3,15 +3,24 @@ import { Platform } from 'react-native';
 import {
   LogLevel,
   OneSignal,
+  type NotificationWillDisplayEvent,
   type PushSubscriptionChangedState,
   type UserChangedState,
 } from 'react-native-onesignal';
 import { apiRoutes } from '../../application/constants/route-registry';
 import { apiBridge } from '../api/apiBridge';
 import { apiConfig } from '../config/env';
+import { syncMessageNotificationIdentity } from '../notifications/messageNotificationIdentity';
 import { sessionStorage } from '../storage/sessionStorage';
+import { foregroundPushEvents } from './foregroundPushEvents';
 
 const PUSH_DEBUG_PREFIX = '[VNSEEA_PUSH_DEBUG]';
+const MESSAGE_PUSH_KINDS = new Set([
+  'message',
+  'chat',
+  'chat_message',
+  'new_message',
+]);
 
 let initialized = false;
 let lastSyncedKey = '';
@@ -217,7 +226,152 @@ function handlePermissionChange(permissionGranted: boolean) {
   });
 }
 
+async function optInPushIfAlreadyAuthorized(source: string) {
+  const permissionGranted =
+    await OneSignal.Notifications.getPermissionAsync();
+  if (!permissionGranted) {
+    logPushDebug('push_opt_in_skipped', {
+      source,
+      reason: 'permission_not_granted',
+    });
+    return false;
+  }
+
+  try {
+    OneSignal.User.pushSubscription.optIn();
+    logPushDebug('push_opt_in_complete', { source });
+    return true;
+  } catch (error) {
+    logPushDebug('push_opt_in_error', {
+      source,
+      error: pushDebugError(error),
+    });
+    return false;
+  }
+}
+
+function toPushData(value: object | undefined): Record<string, unknown> {
+  if (!value || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function readPushDataString(data: Record<string, unknown>, key: string) {
+  const value = data[key];
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value).trim()
+    : '';
+}
+
+function isLiveKitPush(data: Record<string, unknown>) {
+  const eventType = readPushDataString(data, 'event_type').toLowerCase();
+  const provider = readPushDataString(data, 'provider').toLowerCase();
+
+  return eventType.startsWith('livekit_') || provider === 'livekit';
+}
+
+function isAndroidNativeMessagePush(data: Record<string, unknown>) {
+  if (Platform.OS !== 'android') return false;
+
+  const type = readPushDataString(data, 'type').toLowerCase();
+  const pushKind = (
+    readPushDataString(data, 'push_kind') ||
+    readPushDataString(data, 'payload_kind')
+  ).toLowerCase();
+  const notificationType = readPushDataString(
+    data,
+    'notification_type',
+  ).toLowerCase();
+  const hasConversationTarget =
+    (type === 'group' && readPushDataString(data, 'group_id').length > 0) ||
+    (type === 'page' && readPushDataString(data, 'page_id').length > 0) ||
+    (type === 'user' && readPushDataString(data, 'user_id').length > 0);
+
+  if (pushKind) {
+    return MESSAGE_PUSH_KINDS.has(pushKind) && hasConversationTarget;
+  }
+  if (MESSAGE_PUSH_KINDS.has(notificationType)) {
+    return hasConversationTarget;
+  }
+  if (readPushDataString(data, 'message_id')) {
+    return hasConversationTarget;
+  }
+
+  if (type === 'group') {
+    return readPushDataString(data, 'group_id').length > 0;
+  }
+  if (type === 'page') {
+    return readPushDataString(data, 'page_id').length > 0;
+  }
+
+  return type === 'user' && readPushDataString(data, 'user_id').length > 0;
+}
+
+function handleForegroundWillDisplay(event: NotificationWillDisplayEvent) {
+  const notification = event.getNotification();
+  const additionalData = toPushData(notification.additionalData);
+
+  logPushDebug('push_foreground_received', {
+    notificationId: maskPushIdentifier(notification.notificationId),
+    hasTitle: Boolean(notification.title?.trim()),
+    hasBody: Boolean(notification.body?.trim()),
+    eventType: readPushDataString(additionalData, 'event_type'),
+    notificationType: readPushDataString(additionalData, 'type'),
+  });
+
+  // LiveKit pushes are intentionally owned by nativeCallService so foreground
+  // calls keep their CallKit/full-screen behavior instead of becoming a banner.
+  if (isLiveKitPush(additionalData)) {
+    logPushDebug('push_foreground_delegated', { target: 'livekit' });
+    return;
+  }
+
+  foregroundPushEvents.emit({
+    id: notification.notificationId,
+    title: notification.title,
+    body: notification.body,
+    additionalData,
+    receivedAt: Date.now(),
+  });
+
+  // The Android service extension already posts message notifications with
+  // MessagingStyle and inline reply. Let that native path display it once.
+  if (isAndroidNativeMessagePush(additionalData)) {
+    logPushDebug('push_foreground_delegated', {
+      target: 'android_message_notification',
+    });
+    return;
+  }
+
+  if (!notification.title?.trim() && !notification.body?.trim()) {
+    logPushDebug('push_foreground_display_skipped', {
+      reason: 'missing_visible_content',
+    });
+    return;
+  }
+
+  // Make foreground presentation explicit. OneSignal v5 displays foreground
+  // notifications by default, while preventDefault + display lets this app
+  // guarantee one controlled display and keeps the behavior testable.
+  event.preventDefault();
+  try {
+    notification.display();
+    logPushDebug('push_foreground_displayed', {
+      notificationId: maskPushIdentifier(notification.notificationId),
+    });
+  } catch (error) {
+    logPushDebug('push_foreground_display_error', {
+      error: pushDebugError(error),
+    });
+    console.warn(
+      '[OneSignal] Could not display foreground notification',
+      error,
+    );
+  }
+}
+
 export function initializePushNotifications() {
+  syncMessageNotificationIdentity(sessionStorage.getUserProfile());
+
   if (initialized) {
     logPushDebug('push_initialize_skipped', {
       reason: 'already_initialized',
@@ -253,7 +407,14 @@ export function initializePushNotifications() {
     handleSubscriptionChange,
   );
   OneSignal.User.addEventListener('change', handleUserChange);
-  OneSignal.Notifications.addEventListener('permissionChange', handlePermissionChange);
+  OneSignal.Notifications.addEventListener(
+    'permissionChange',
+    handlePermissionChange,
+  );
+  OneSignal.Notifications.addEventListener(
+    'foregroundWillDisplay',
+    handleForegroundWillDisplay,
+  );
 
   const userId = sessionStorage.getSession()?.userId;
   if (userId) {
@@ -262,38 +423,53 @@ export function initializePushNotifications() {
       userId,
       source: 'initialize',
     });
-    try {
-      OneSignal.User.pushSubscription.optIn();
-      logPushDebug('push_opt_in_complete', {
-        source: 'initialize',
-      });
-    } catch (error) {
-      logPushDebug('push_opt_in_error', {
-        source: 'initialize',
-        error: pushDebugError(error),
-      });
-    }
   }
 
-  OneSignal.Notifications.requestPermission(false)
-    .then(permissionGranted => {
-      logPushDebug('push_permission_request_result', {
-        permissionGranted,
-      });
-    })
+  optInPushIfAlreadyAuthorized('initialize')
+    .then(() => syncCurrentSubscription())
     .catch(error => {
-      logPushDebug('push_permission_request_error', {
+      logPushDebug('push_sync_error', {
+        source: 'initialize_current_subscription',
         error: pushDebugError(error),
       });
-      console.warn('[OneSignal] Could not request push permission', error);
+      console.warn('[OneSignal] Could not read push subscription', error);
     });
-  syncCurrentSubscription().catch(error => {
-    logPushDebug('push_sync_error', {
-      source: 'initialize_current_subscription',
-      error: pushDebugError(error),
+}
+
+export async function getPushNotificationPermissionStatus() {
+  if (!initialized) initializePushNotifications();
+  if (!initialized || !isPushConfigured()) return false;
+  return OneSignal.Notifications.getPermissionAsync();
+}
+
+export async function requestPushNotificationPermission() {
+  if (!initialized) initializePushNotifications();
+  if (!initialized || !isPushConfigured()) return false;
+
+  let permissionGranted =
+    await OneSignal.Notifications.getPermissionAsync();
+  if (!permissionGranted) {
+    const canRequest =
+      await OneSignal.Notifications.canRequestPermission();
+    if (!canRequest) {
+      logPushDebug('push_permission_request_skipped', {
+        reason: 'system_prompt_unavailable',
+      });
+      return false;
+    }
+
+    permissionGranted =
+      await OneSignal.Notifications.requestPermission(false);
+    logPushDebug('push_permission_request_result', {
+      permissionGranted,
+      source: 'notification_settings',
     });
-    console.warn('[OneSignal] Could not read push subscription', error);
-  });
+  }
+
+  if (!permissionGranted) return false;
+  await optInPushIfAlreadyAuthorized('notification_settings');
+  await syncCurrentSubscription();
+  return true;
 }
 
 export function identifyPushUser(userId: string) {
@@ -308,24 +484,15 @@ export function identifyPushUser(userId: string) {
     userId,
     source: 'identify',
   });
-  try {
-    OneSignal.User.pushSubscription.optIn();
-    logPushDebug('push_opt_in_complete', {
-      source: 'identify',
+  optInPushIfAlreadyAuthorized('identify')
+    .then(() => syncCurrentSubscription())
+    .catch(error => {
+      logPushDebug('push_sync_error', {
+        source: 'identify_current_subscription',
+        error: pushDebugError(error),
+      });
+      console.warn('[OneSignal] Could not sync identified push user', error);
     });
-  } catch (error) {
-    logPushDebug('push_opt_in_error', {
-      source: 'identify',
-      error: pushDebugError(error),
-    });
-  }
-  syncCurrentSubscription().catch(error => {
-    logPushDebug('push_sync_error', {
-      source: 'identify_current_subscription',
-      error: pushDebugError(error),
-    });
-    console.warn('[OneSignal] Could not sync identified push user', error);
-  });
 }
 
 export function logoutPushUser() {

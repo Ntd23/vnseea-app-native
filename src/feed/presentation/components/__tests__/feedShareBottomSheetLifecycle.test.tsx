@@ -126,8 +126,8 @@ jest.mock(
 );
 
 jest.mock(
-  '../../../../shared-kernel/presentation/components/ToastNotification',
-  () => ({ showToast: jest.fn() }),
+  '../../../../shared-kernel/presentation/components/Snackbar',
+  () => ({ showSnackbar: jest.fn() }),
 );
 
 jest.mock('../../../application/sharing/postStoryShare', () => ({

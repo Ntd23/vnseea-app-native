@@ -10,6 +10,7 @@ import type {
 } from '../../domain/types/live.types';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { createFeedRepository } from '../../../feed';
+import type { ReactionType } from '../../../reels/domain/types/reels.types';
 
 const LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 
@@ -443,17 +444,10 @@ export function useLiveRoomViewModel(postId: number, initialSession?: LiveSessio
       [postId, repository],
     ),
     react: useCallback(
-      async (reactionEmoji: string) => {
-        const mapping: Record<string, 'like' | 'love' | 'haha'> = {
-          '👍': 'like',
-          '❤️': 'love',
-          '😂': 'haha',
-        };
-        const reactionType = mapping[reactionEmoji];
-        if (!reactionType) return;
+      async (reaction: ReactionType) => {
         try {
           const feedRepo = createFeedRepository();
-          await feedRepo.setReaction(String(postId), reactionType);
+          await feedRepo.setReaction(String(postId), reaction);
           setReactionsCount(prev => prev + 1);
         } catch (err) {
           console.error('[LiveRoom] react error:', err);

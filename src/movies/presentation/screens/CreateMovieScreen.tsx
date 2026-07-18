@@ -35,10 +35,7 @@ import {
 import type { RootStackParamList } from '../../../navigation/types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import {
-  showToast,
-  ToastContainer,
-} from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import {
   useCreateMovieViewModel,
   type CoverAsset,
@@ -388,7 +385,6 @@ function CreateMovieScreen() {
     <View style={{ flex: 1, backgroundColor: SURFACE_BASE }}>
       <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <SafeAreaFeedHeader />
-      <ToastContainer />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

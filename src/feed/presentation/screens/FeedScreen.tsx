@@ -26,9 +26,7 @@ import {
   type ImageStyle,
   type StyleProp,
 } from 'react-native';
-import {
-  GestureHandlerRootView,
-} from 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import Animated, {
   useSharedValue,
@@ -154,7 +152,6 @@ import {
 import { useJobsOnFeedViewModel } from '../../../jobs/application/view-models/useJobsOnFeedViewModel';
 import type { GroupItem } from '../../../community/domain/types/community.types';
 import { useSuggestedGroupsOnFeedViewModel } from '../../../community/application/view-models/useSuggestedGroupsOnFeedViewModel';
-import { ToastContainer } from '../../../shared-kernel/presentation/components/ToastNotification';
 import { useLiveViewModel } from '../../../live/application/view-models/useLiveViewModel';
 import type { LiveStreamItem } from '../../../live/domain/types/live.types';
 import { usePagesOnFeedViewModel } from '../../../pages';
@@ -220,9 +217,7 @@ const FEED_SAFE_AREA_CLASS_NAME =
 const FEED_SAFE_AREA_STYLE =
   Platform.OS === 'ios' ? { backgroundColor: 'transparent' } : undefined;
 const FEED_ROOT_SAFE_AREA_EDGES: Edge[] =
-  Platform.OS === 'ios'
-    ? ['left', 'right']
-    : ['top', 'left', 'right', 'bottom'];
+  Platform.OS === 'ios' ? ['left', 'right'] : ['left', 'right', 'bottom'];
 const FEED_LIVE_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
 type FeedScrollDirection = 'up' | 'down' | 'none';
 
@@ -1017,7 +1012,9 @@ const SuggestedGroupsCarousel = React.memo(function SuggestedGroupsCarousel({
                       ? copy.privateLabel
                       : copy.publicLabel}
                   </Text>
-                  <Text className="mx-1 text-xs text-[#94a3b8]">{'\u2022'}</Text>
+                  <Text className="mx-1 text-xs text-[#94a3b8]">
+                    {'\u2022'}
+                  </Text>
                   <Users size={13} color="#64748b" />
                   <Text className="ml-1 text-xs font-semibold text-[#64748b]">
                     {formatCount(Number(item.members) || 0)}
@@ -1195,17 +1192,17 @@ function PostSkeleton() {
     <Animated.View style={animatedStyle}>
       <FeedCardSurface>
         <FeedCardContent>
-        {/* Header: avatar + name + time */}
-        <View className="mb-4 flex-row items-center">
-          <View className="h-10 w-10 rounded-full bg-slate-200" />
-          <View className="ml-3 flex-1">
-            <View className="h-3 w-32 rounded bg-slate-200" />
-            <View className="mt-2 h-2 w-20 rounded bg-slate-200" />
+          {/* Header: avatar + name + time */}
+          <View className="mb-4 flex-row items-center">
+            <View className="h-10 w-10 rounded-full bg-slate-200" />
+            <View className="ml-3 flex-1">
+              <View className="h-3 w-32 rounded bg-slate-200" />
+              <View className="mt-2 h-2 w-20 rounded bg-slate-200" />
+            </View>
           </View>
-        </View>
-        {/* Caption */}
-        <View className="h-3 w-full rounded bg-slate-200" />
-        <View className="mt-2 h-3 w-3/4 rounded bg-slate-200" />
+          {/* Caption */}
+          <View className="h-3 w-full rounded bg-slate-200" />
+          <View className="mt-2 h-3 w-3/4 rounded bg-slate-200" />
         </FeedCardContent>
         {/* Media placeholder for photo / video skeletons. */}
         <FeedMediaFrame className="h-56 bg-slate-200" />
@@ -1394,10 +1391,8 @@ function FeedScreen() {
   const copy = FEED_COPY[language];
   const vm = useFeedViewModel();
   const feedSafeAreaInsets = useSafeAreaInsets();
-  const {
-    bottomContentPadding,
-    scrollIndicatorBottomInset,
-  } = useMainTabContentInsets();
+  const { bottomContentPadding, scrollIndicatorBottomInset } =
+    useMainTabContentInsets();
   // Top-bar logo: FeedScreen only acts on the scroll-to-top event when it
   // is the currently focused tab. Declared up here so the hook order
   // matches the rest of FeedScreen (no conditional hooks below).
@@ -1432,39 +1427,44 @@ function FeedScreen() {
     hasFeedLoadedOnceRef.current = vm.hasLoadedOnce;
   }, [isFeedTabFocused, vm.hasLoadedOnce, vm.isLoading]);
 
-  const enqueueNewPostCandidates = useCallback((
-    posts: FeedPost[],
-    options: { requireNewerThanFeedTop?: boolean } = {},
-  ) => {
-    if (posts.length === 0) return;
+  const enqueueNewPostCandidates = useCallback(
+    (
+      posts: FeedPost[],
+      options: { requireNewerThanFeedTop?: boolean } = {},
+    ) => {
+      if (posts.length === 0) return;
 
-    const currentPosts = feedPostsRef.current;
-    const visibleIds = new Set(feedPostsRef.current.map(item => item.id));
-    const pendingIds = new Set(pendingNewPostsRef.current.map(item => item.id));
-    const nextPosts = posts
-      .filter(post => {
-        if (!post?.id) return false;
-        if (!canPostAppearInFeedSource(post, activeFeedSourceRef.current)) {
-          return false;
-        }
-        if (visibleIds.has(post.id) || pendingIds.has(post.id)) return false;
-        if (
-          options.requireNewerThanFeedTop &&
-          !isPostNewerThanFeedTop(post, currentPosts)
-        ) {
-          return false;
-        }
+      const currentPosts = feedPostsRef.current;
+      const visibleIds = new Set(feedPostsRef.current.map(item => item.id));
+      const pendingIds = new Set(
+        pendingNewPostsRef.current.map(item => item.id),
+      );
+      const nextPosts = posts
+        .filter(post => {
+          if (!post?.id) return false;
+          if (!canPostAppearInFeedSource(post, activeFeedSourceRef.current)) {
+            return false;
+          }
+          if (visibleIds.has(post.id) || pendingIds.has(post.id)) return false;
+          if (
+            options.requireNewerThanFeedTop &&
+            !isPostNewerThanFeedTop(post, currentPosts)
+          ) {
+            return false;
+          }
 
-        pendingIds.add(post.id);
-        return true;
-      })
-      .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
+          pendingIds.add(post.id);
+          return true;
+        })
+        .sort((a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0));
 
-    if (nextPosts.length === 0) return;
+      if (nextPosts.length === 0) return;
 
-    pendingNewPostsRef.current.push(...nextPosts);
-    setHasNewPosts(true);
-  }, []);
+      pendingNewPostsRef.current.push(...nextPosts);
+      setHasNewPosts(true);
+    },
+    [],
+  );
 
   useEffect(() => {
     feedPostsRef.current = feedPosts;
@@ -1491,9 +1491,12 @@ function FeedScreen() {
       post => post?.id && !visibleIds.has(post.id),
     );
 
-    pendingPosts.slice().reverse().forEach(post => {
-      prependFeedPost(post);
-    });
+    pendingPosts
+      .slice()
+      .reverse()
+      .forEach(post => {
+        prependFeedPost(post);
+      });
     pendingNewPostsRef.current = [];
     setHasNewPosts(false);
   }, [prependFeedPost]);
@@ -1579,7 +1582,7 @@ function FeedScreen() {
   const feedRefreshProgressViewOffset =
     Platform.OS === 'ios'
       ? topInset + FEED_IOS_HEADER_OVERLAY_HEIGHT
-      : FEED_HEADER_CONTENT_HEIGHT;
+      : topInset + FEED_HEADER_CONTENT_HEIGHT;
   const feedHeaderOverlayHeight = feedRefreshProgressViewOffset;
   const newPostsButtonTop = feedHeaderOverlayHeight + 12;
   const feedListContentStyle = useMemo(
@@ -1621,9 +1624,9 @@ function FeedScreen() {
   const prefetchedVideoPosterKeysRef = useRef<Set<string>>(new Set());
   const queuedVideoPosterKeysRef = useRef<Set<string>>(new Set());
   const pendingVideoPosterPostsRef = useRef<FeedVideoPost[]>([]);
-  const videoPosterPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const videoPosterPrefetchTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const videoPosterPrefetchTaskRef = useRef<ReturnType<
     typeof InteractionManager.runAfterInteractions
   > | null>(null);
@@ -1815,7 +1818,8 @@ function FeedScreen() {
 
   const handleFeedScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const { contentOffset, contentSize, layoutMeasurement } =
+        event.nativeEvent;
       const previousY = feedScrollYRef.current;
       const deltaY = contentOffset.y - previousY;
       if (Math.abs(deltaY) > FEED_SCROLL_DIRECTION_THRESHOLD) {
@@ -1823,7 +1827,6 @@ function FeedScreen() {
       }
       feedScrollYRef.current = contentOffset.y;
       feedViewportHeightRef.current = layoutMeasurement.height;
-
 
       if (contentOffset.y < 0) {
         feedChromeCollapseStateRef.current = createFeedChromeCollapseState();
@@ -1835,10 +1838,7 @@ function FeedScreen() {
       }
 
       const currentY = Math.max(0, contentOffset.y);
-      publishNativeTabScrollIntent(
-        nativeTabScrollPublisherStateRef,
-        currentY,
-      );
+      publishNativeTabScrollIntent(nativeTabScrollPublisherStateRef, currentY);
 
       const nextState = getNextFeedChromeCollapseState(
         feedChromeCollapseStateRef.current,
@@ -1981,7 +1981,9 @@ function FeedScreen() {
   }, [prependFeedPost]);
 
   const [composerModalVisible, setComposerModalVisible] = useState(false);
-  const [composerInitialAction, setComposerInitialAction] = useState<'photo' | 'video' | 'product' | 'poll' | undefined>(undefined);
+  const [composerInitialAction, setComposerInitialAction] = useState<
+    'photo' | 'video' | 'product' | 'poll' | undefined
+  >(undefined);
 
   const goToCreatePost = useCallback((action?: any) => {
     const cleanAction = typeof action === 'string' ? action : undefined;
@@ -2317,9 +2319,9 @@ function FeedScreen() {
   // it through navigation so the sheet feels instant (no screen push)
   // and the underlying post list is preserved behind the backdrop.
   const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
-  const [reactionsSheetPostId, setReactionsSheetPostId] = useState<string | null>(
-    null,
-  );
+  const [reactionsSheetPostId, setReactionsSheetPostId] = useState<
+    string | null
+  >(null);
 
   const openReactionsSheet = useCallback((postId: string, _post: FeedPost) => {
     // `_post` is reserved for future use (e.g. header context above the
@@ -2524,8 +2526,8 @@ function FeedScreen() {
           typeof viewable.index === 'number'
             ? viewable.index
             : typeof itemId === 'string'
-              ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
-              : -1;
+            ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
+            : -1;
 
         if (index < 0) return;
         if (index < firstVisibleIndex) firstVisibleIndex = index;
@@ -2564,8 +2566,8 @@ function FeedScreen() {
           typeof viewable.index === 'number'
             ? viewable.index
             : typeof itemId === 'string'
-              ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
-              : -1;
+            ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
+            : -1;
 
         if (index < 0) return;
         if (index < firstVisibleIndex) firstVisibleIndex = index;
@@ -2589,135 +2591,145 @@ function FeedScreen() {
     [prefetchFeedVideoPostersInRange],
   );
 
-  const maybeLoadMoreFeedAroundVisibleItems = useCallback((viewableItems: any[]) => {
-    const items = feedListItemsRef.current;
-    if (items.length === 0 || viewableItems.length === 0) return;
+  const maybeLoadMoreFeedAroundVisibleItems = useCallback(
+    (viewableItems: any[]) => {
+      const items = feedListItemsRef.current;
+      if (items.length === 0 || viewableItems.length === 0) return;
 
-    let furthestVisibleIndex = -1;
-    viewableItems.forEach(viewable => {
-      if (!viewable?.isViewable) return;
+      let furthestVisibleIndex = -1;
+      viewableItems.forEach(viewable => {
+        if (!viewable?.isViewable) return;
 
-      const itemId = viewable.item?.id;
-      const index =
-        typeof viewable.index === 'number'
-          ? viewable.index
-          : typeof itemId === 'string'
+        const itemId = viewable.item?.id;
+        const index =
+          typeof viewable.index === 'number'
+            ? viewable.index
+            : typeof itemId === 'string'
             ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
             : -1;
 
-      if (index > furthestVisibleIndex) {
-        furthestVisibleIndex = index;
+        if (index > furthestVisibleIndex) {
+          furthestVisibleIndex = index;
+        }
+      });
+
+      if (furthestVisibleIndex < 0) return;
+
+      const remainingItems = items.length - furthestVisibleIndex - 1;
+      if (remainingItems <= FEED_LOAD_MORE_LOOKAHEAD_ITEMS) {
+        triggerLoadMoreRef.current();
       }
-    });
+    },
+    [],
+  );
 
-    if (furthestVisibleIndex < 0) return;
-
-    const remainingItems = items.length - furthestVisibleIndex - 1;
-    if (remainingItems <= FEED_LOAD_MORE_LOOKAHEAD_ITEMS) {
-      triggerLoadMoreRef.current();
-    }
-  }, []);
-
-  const publishWarmFeedVideosAroundVisibleItems = useCallback((viewableItems: any[]) => {
-    const items = feedListItemsRef.current;
-    if (items.length === 0) {
-      publishFeedWarmVideoIds([]);
-      return;
-    }
-
-    let firstVisibleIndex = Number.POSITIVE_INFINITY;
-    let furthestVisibleIndex = -1;
-    viewableItems.forEach(viewable => {
-      if (!viewable?.isViewable) return;
-
-      const itemId = viewable.item?.id;
-      const index =
-        typeof viewable.index === 'number'
-          ? viewable.index
-          : typeof itemId === 'string'
-            ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
-            : -1;
-
-      if (index < 0) return;
-      if (index < firstVisibleIndex) firstVisibleIndex = index;
-      if (index > furthestVisibleIndex) furthestVisibleIndex = index;
-    });
-
-    if (furthestVisibleIndex < 0) {
-      publishFeedWarmVideoIds([]);
-      return;
-    }
-
-    const nextActiveVideoId = viewableItems.find(
-      viewable =>
-        viewable?.isViewable &&
-        viewable.item?.type === 'post' &&
-        viewable.item.post.kind === 'video',
-    )?.item?.post?.id;
-    const activeVideoId =
-      !isScrollingRef.current && typeof nextActiveVideoId === 'string'
-        ? nextActiveVideoId
-        : activeVideoIdRef.current;
-    const warmVideoIds: string[] = [];
-    const candidateIndices: number[] = [];
-    const pushCandidateIndex = (index: number) => {
-      if (
-        index < 0 ||
-        index >= items.length ||
-        candidateIndices.includes(index)
-      ) {
+  const publishWarmFeedVideosAroundVisibleItems = useCallback(
+    (viewableItems: any[]) => {
+      const items = feedListItemsRef.current;
+      if (items.length === 0) {
+        publishFeedWarmVideoIds([]);
         return;
       }
 
-      candidateIndices.push(index);
-    };
+      let firstVisibleIndex = Number.POSITIVE_INFINITY;
+      let furthestVisibleIndex = -1;
+      viewableItems.forEach(viewable => {
+        if (!viewable?.isViewable) return;
 
-    for (let index = firstVisibleIndex; index <= furthestVisibleIndex; index += 1) {
-      pushCandidateIndex(index);
-    }
+        const itemId = viewable.item?.id;
+        const index =
+          typeof viewable.index === 'number'
+            ? viewable.index
+            : typeof itemId === 'string'
+            ? feedListItemIndexByIdRef.current.get(itemId) ?? -1
+            : -1;
 
-    const direction = feedScrollDirectionRef.current;
-    const maxWarmOffset = Math.max(
-      FEED_VIDEO_WARM_AHEAD_ITEMS,
-      FEED_VIDEO_WARM_BEHIND_ITEMS,
-    );
-    for (let offset = 1; offset <= maxWarmOffset; offset += 1) {
-      if (direction === 'up') {
-        if (offset <= FEED_VIDEO_WARM_BEHIND_ITEMS) {
-          pushCandidateIndex(firstVisibleIndex - offset);
+        if (index < 0) return;
+        if (index < firstVisibleIndex) firstVisibleIndex = index;
+        if (index > furthestVisibleIndex) furthestVisibleIndex = index;
+      });
+
+      if (furthestVisibleIndex < 0) {
+        publishFeedWarmVideoIds([]);
+        return;
+      }
+
+      const nextActiveVideoId = viewableItems.find(
+        viewable =>
+          viewable?.isViewable &&
+          viewable.item?.type === 'post' &&
+          viewable.item.post.kind === 'video',
+      )?.item?.post?.id;
+      const activeVideoId =
+        !isScrollingRef.current && typeof nextActiveVideoId === 'string'
+          ? nextActiveVideoId
+          : activeVideoIdRef.current;
+      const warmVideoIds: string[] = [];
+      const candidateIndices: number[] = [];
+      const pushCandidateIndex = (index: number) => {
+        if (
+          index < 0 ||
+          index >= items.length ||
+          candidateIndices.includes(index)
+        ) {
+          return;
         }
-        if (offset <= FEED_VIDEO_WARM_AHEAD_ITEMS) {
-          pushCandidateIndex(furthestVisibleIndex + offset);
-        }
-      } else {
-        if (offset <= FEED_VIDEO_WARM_AHEAD_ITEMS) {
-          pushCandidateIndex(furthestVisibleIndex + offset);
-        }
-        if (offset <= FEED_VIDEO_WARM_BEHIND_ITEMS) {
-          pushCandidateIndex(firstVisibleIndex - offset);
+
+        candidateIndices.push(index);
+      };
+
+      for (
+        let index = firstVisibleIndex;
+        index <= furthestVisibleIndex;
+        index += 1
+      ) {
+        pushCandidateIndex(index);
+      }
+
+      const direction = feedScrollDirectionRef.current;
+      const maxWarmOffset = Math.max(
+        FEED_VIDEO_WARM_AHEAD_ITEMS,
+        FEED_VIDEO_WARM_BEHIND_ITEMS,
+      );
+      for (let offset = 1; offset <= maxWarmOffset; offset += 1) {
+        if (direction === 'up') {
+          if (offset <= FEED_VIDEO_WARM_BEHIND_ITEMS) {
+            pushCandidateIndex(firstVisibleIndex - offset);
+          }
+          if (offset <= FEED_VIDEO_WARM_AHEAD_ITEMS) {
+            pushCandidateIndex(furthestVisibleIndex + offset);
+          }
+        } else {
+          if (offset <= FEED_VIDEO_WARM_AHEAD_ITEMS) {
+            pushCandidateIndex(furthestVisibleIndex + offset);
+          }
+          if (offset <= FEED_VIDEO_WARM_BEHIND_ITEMS) {
+            pushCandidateIndex(firstVisibleIndex - offset);
+          }
         }
       }
-    }
 
-    const warmVideoLimit = isScrollingRef.current
-      ? FEED_SCROLLING_VIDEO_WARM_MAX_COUNT
-      : FEED_VIDEO_WARM_MAX_COUNT;
-    if (warmVideoLimit <= 0) {
-      publishFeedWarmVideoIds([]);
-      return;
-    }
+      const warmVideoLimit = isScrollingRef.current
+        ? FEED_SCROLLING_VIDEO_WARM_MAX_COUNT
+        : FEED_VIDEO_WARM_MAX_COUNT;
+      if (warmVideoLimit <= 0) {
+        publishFeedWarmVideoIds([]);
+        return;
+      }
 
-    for (const index of candidateIndices) {
-      const item = items[index];
-      if (item?.type !== 'post' || item.post.kind !== 'video') continue;
-      if (item.post.id === activeVideoId) continue;
+      for (const index of candidateIndices) {
+        const item = items[index];
+        if (item?.type !== 'post' || item.post.kind !== 'video') continue;
+        if (item.post.id === activeVideoId) continue;
 
-      warmVideoIds.push(item.post.id);
-      if (warmVideoIds.length >= warmVideoLimit) break;
-    }
+        warmVideoIds.push(item.post.id);
+        if (warmVideoIds.length >= warmVideoLimit) break;
+      }
 
-    publishFeedWarmVideoIds(warmVideoIds);
-  }, []);
+      publishFeedWarmVideoIds(warmVideoIds);
+    },
+    [],
+  );
 
   // Viewability config for FlashList autoplay.
   const viewabilityConfigRef = useRef({
@@ -2777,6 +2789,8 @@ function FeedScreen() {
   const [postMenuVisible, setPostMenuVisible] = useState(false);
   const [selectedPostForMenu, setSelectedPostForMenu] =
     useState<FeedPost | null>(null);
+  const canDeleteSelectedPost =
+    selectedPostForMenu?.permissions?.canDelete === true;
 
   const handleOpenPostMenu = useCallback((post: FeedPost) => {
     setSelectedPostForMenu(post);
@@ -2834,6 +2848,10 @@ function FeedScreen() {
 
   const handleDeletePost = useCallback(
     async (postId: string) => {
+      if (!canDeleteSelectedPost || selectedPostForMenu?.id !== postId) {
+        throw new Error('Bạn không có quyền xóa bài viết này.');
+      }
+
       try {
         const result = await deleteFeedPost?.(postId);
         if (result?.deleted) {
@@ -2845,7 +2863,7 @@ function FeedScreen() {
         Alert.alert('Lỗi', 'Có lỗi xảy ra khi xóa bài viết.');
       }
     },
-    [deleteFeedPost],
+    [canDeleteSelectedPost, deleteFeedPost, selectedPostForMenu?.id],
   );
 
   // Infinite scroll pagination â€” calls loadMore directly.
@@ -3183,7 +3201,10 @@ function FeedScreen() {
   useEffect(() => {
     const renderedItems =
       Platform.OS === 'ios'
-        ? ([{ type: 'intro', id: 'feed-intro' }, ...feedListItems] as FeedListItem[])
+        ? ([
+            { type: 'intro', id: 'feed-intro' },
+            ...feedListItems,
+          ] as FeedListItem[])
         : feedListItems;
 
     feedListItemsRef.current = renderedItems;
@@ -3200,7 +3221,9 @@ function FeedScreen() {
       latestViewableFeedItemsRef.current,
     );
     if (latestViewableFeedItemsRef.current.length > 0) {
-      publishWarmFeedVideosAroundVisibleItems(latestViewableFeedItemsRef.current);
+      publishWarmFeedVideosAroundVisibleItems(
+        latestViewableFeedItemsRef.current,
+      );
     } else {
       const initialWarmVideoIds: string[] = [];
       const activeVideoId = activeVideoIdRef.current;
@@ -3405,11 +3428,7 @@ function FeedScreen() {
 
   const renderJobPost = useCallback(
     ({ item }: { item: FeedJobPost }) => (
-      <FeedJobPostCard
-        post={item}
-        copy={copy}
-        onPress={handleJobPress}
-      />
+      <FeedJobPostCard post={item} copy={copy} onPress={handleJobPress} />
     ),
     [copy, handleJobPress],
   );
@@ -3669,7 +3688,9 @@ function FeedScreen() {
                 className="absolute self-center z-[999] flex-row items-center bg-blue-600 px-4 py-2.5 rounded-full shadow-lg border border-blue-500"
               >
                 <ArrowUp size={14} color="#ffffff" className="mr-1.5" />
-                <Text className="text-white text-xs font-bold">Có bài đăng mới</Text>
+                <Text className="text-white text-xs font-bold">
+                  Có bài đăng mới
+                </Text>
               </TouchableOpacity>
             )}
             {feedListElement}
@@ -3682,7 +3703,7 @@ function FeedScreen() {
             <FeedHeaderCollapseFrame
               hidden={isFeedChromeHidden}
               height={FEED_HEADER_CONTENT_HEIGHT}
-              top={0}
+              top={topInset}
               translateDistance={FEED_HEADER_CONTENT_HEIGHT}
             >
               <FeedHeader />
@@ -3699,7 +3720,9 @@ function FeedScreen() {
                 className="absolute self-center z-[999] flex-row items-center bg-blue-600 px-4 py-2.5 rounded-full shadow-lg border border-blue-500"
               >
                 <ArrowUp size={14} color="#ffffff" className="mr-1.5" />
-                <Text className="text-white text-xs font-bold">Có bài đăng mới</Text>
+                <Text className="text-white text-xs font-bold">
+                  Có bài đăng mới
+                </Text>
               </TouchableOpacity>
             )}
             {feedListElement}
@@ -3774,6 +3797,7 @@ function FeedScreen() {
           visible={postMenuVisible}
           onClose={handleClosePostMenu}
           post={selectedPostForMenu}
+          canDelete={canDeleteSelectedPost}
           onSave={handleSavePost}
           onHide={handleHidePost}
           onDelete={handleDeletePost}
@@ -3785,8 +3809,6 @@ function FeedScreen() {
           onClose={() => setComposerModalVisible(false)}
           initialAction={composerInitialAction}
         />
-        {/* ── Toast Notification ── */}
-        <ToastContainer />
       </SafeAreaView>
     </GestureHandlerRootView>
   );

@@ -1,28 +1,29 @@
-import { Platform, StatusBar } from 'react-native';
+import { Platform } from 'react-native';
 
 const IOS_STATUS_BAR_FALLBACK = 47;
+
+function normalizeInset(value?: number | null) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, value)
+    : 0;
+}
 
 export function resolveFeedChromeTopInset(
   safeAreaTop: number,
   initialSafeAreaTop?: number | null,
 ) {
-  const fallbackTop =
-    Platform.OS === 'ios'
-      ? IOS_STATUS_BAR_FALLBACK
-      : StatusBar.currentHeight ?? 0;
-  const androidInitialTop =
-    Platform.OS === 'android' &&
-    typeof initialSafeAreaTop === 'number' &&
-    Number.isFinite(initialSafeAreaTop)
-      ? Math.max(0, initialSafeAreaTop)
-      : undefined;
+  const runtimeTopInset = normalizeInset(safeAreaTop);
+
+  if (Platform.OS === 'android') {
+    return runtimeTopInset;
+  }
+
+  const initialTopInset = normalizeInset(initialSafeAreaTop);
   const rawTopInset =
-    safeAreaTop > 0
-      ? safeAreaTop
-      : androidInitialTop !== undefined
-      ? androidInitialTop
-      : initialSafeAreaTop || fallbackTop;
+    runtimeTopInset > 0
+      ? runtimeTopInset
+      : initialTopInset || IOS_STATUS_BAR_FALLBACK;
   return Number.isFinite(rawTopInset)
     ? Math.max(0, rawTopInset)
-    : fallbackTop;
+    : IOS_STATUS_BAR_FALLBACK;
 }

@@ -35,7 +35,7 @@ import {
 } from 'lucide-react-native';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
-import { showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import { ROOT_SAFE_AREA_EDGES } from '../../../shared-kernel/presentation/utils/safeAreaEdges';
 import { usePageSettingsViewModel } from '../../application/view-models/usePageSettingsViewModel';
 import { usePagesCopy } from '../../application/i18n/pagesCopy';

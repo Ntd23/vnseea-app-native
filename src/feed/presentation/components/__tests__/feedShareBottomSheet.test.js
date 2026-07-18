@@ -156,6 +156,20 @@ describe('FeedShareBottomSheet', () => {
     expect(source).toContain('if (!result) throw new Error(copy.shareFailed);');
   });
 
+  it('confirms successful post shares through the global Snackbar', () => {
+    expect(source).toContain("if (result.method === 'shared') {");
+    expect(source).toContain(
+      "showToast({ message: copy.shareSuccess, type: 'success' });",
+    );
+    expect(
+      source.indexOf('const shared = await onInternalShare(input);'),
+    ).toBeLessThan(
+      source.lastIndexOf(
+        "showToast({ message: copy.shareSuccess, type: 'success' });",
+      ),
+    );
+  });
+
   it('uses supported brand utilities so primary actions remain visible', () => {
     const shareUiSource = [
       source,

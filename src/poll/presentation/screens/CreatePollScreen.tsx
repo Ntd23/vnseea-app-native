@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -23,6 +24,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
+import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { usePollViewModel } from '../../application/view-models/usePollViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 
@@ -42,19 +44,72 @@ function CreatePollScreen() {
 
   // Simple fade animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const titleAnim = useRef(new Animated.Value(0)).current;
+  const publishScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(titleAnim, {
+        toValue: 1,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, titleAnim]);
 
   const canAddMore = options.length < MAX_OPTIONS;
   const canRemove = options.length > MIN_OPTIONS;
-  const canSubmit = question.trim().length > 0 && options.filter(o => o.trim()).length >= MIN_OPTIONS;
+  const canSubmit =
+    question.trim().length > 0 &&
+    options.filter(o => o.trim()).length >= MIN_OPTIONS;
   const validOptionsCount = options.filter(o => o.trim()).length;
+
+  useEffect(() => {
+    if (!canSubmit) {
+      publishScale.setValue(1);
+      return undefined;
+    }
+
+    publishScale.setValue(0.9);
+    const animation = Animated.spring(publishScale, {
+      toValue: 1,
+      friction: 5,
+      tension: 180,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [canSubmit, publishScale]);
+
+  const animatePublishScale = (toValue: number) => {
+    if (!canSubmit || isLoading) return;
+    Animated.spring(publishScale, {
+      toValue,
+      friction: 6,
+      tension: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const publishButtonAnimationStyle = {
+    transform: [{ scale: publishScale }],
+  };
+  const titleAnimationStyle = {
+    opacity: titleAnim,
+    transform: [
+      {
+        translateY: titleAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [-4, 0],
+        }),
+      },
+    ],
+  };
 
   const addOption = () => {
     if (canAddMore) {
@@ -79,15 +134,24 @@ function CreatePollScreen() {
 
     const validOptions = options.filter(o => o.trim());
     try {
-      await createPoll(question.trim(), validOptions);
+      const result = await createPoll(question.trim(), validOptions);
+      if (result.post) {
+        postCreatedEvents.emit({
+          ...result.post,
+          postedAt: result.post.postedAt || Math.floor(Date.now() / 1000),
+        });
+      }
       // Show success message first, then navigate back
-      setSuccessMessage('✓ Đăng thành công!');
+      setSuccessMessage(
+        result.underReview
+          ? '✓ Đã gửi, bài đang chờ duyệt!'
+          : '✓ Đăng thành công!',
+      );
       setTimeout(() => {
         navigation.goBack();
       }, 1500);
-    } catch (err) {
-      // Error will be shown via the error toast
-      clearError();
+    } catch {
+      // The view-model owns the error; keep it visible in the toast below.
     }
   };
 
@@ -96,40 +160,74 @@ function CreatePollScreen() {
       style={{ flex: 1, backgroundColor: POLL_HEADER_COLOR }}
       edges={['top']}
     >
-      <FocusAwareStatusBar barStyle="light-content" backgroundColor={POLL_HEADER_COLOR} />
+      <FocusAwareStatusBar
+        barStyle="light-content"
+        backgroundColor={POLL_HEADER_COLOR}
+      />
 
       {/* Header */}
-      <View className="surface-brand h-16 flex-row items-center justify-between px-4">
-        <TouchableOpacity
-          className="h-10 w-10 items-center justify-center rounded-full active:bg-white/10"
-          activeOpacity={0.8}
-          onPress={() => navigation.goBack()}
+      <View className="surface-brand h-16 flex-row items-center px-3">
+        <View style={styles.headerLeftSlot}>
+          <TouchableOpacity
+            className="h-10 w-10 items-center justify-center rounded-full active:bg-white/10"
+            activeOpacity={0.8}
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Quay lại"
+          >
+            <ArrowLeft size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+        <Animated.Text
+          className="text-heading text-inverse"
+          style={[styles.headerTitle, titleAnimationStyle]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.82}
         >
-          <ArrowLeft size={22} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text className="text-heading text-inverse">Tạo cuộc thăm dò</Text>
-        <TouchableOpacity
-          className={`h-10 min-w-[60px] items-center justify-center rounded-full px-4 ${
-            canSubmit ? 'bg-white/20' : 'bg-transparent'
-          }`}
-          activeOpacity={canSubmit ? 0.8 : 1}
-          onPress={handleSubmit}
-          disabled={!canSubmit || isLoading}
+          Tạo cuộc thăm dò
+        </Animated.Text>
+        <Animated.View
+          style={[styles.headerRightSlot, publishButtonAnimationStyle]}
         >
-          {isLoading ? (
-            <View className="h-5 w-5 items-center justify-center">
-              <Loader2 size={18} color="#FFFFFF" className="animate-spin" />
-            </View>
-          ) : (
-            <Text
-              className={`text-title-primary font-semibold ${
-                canSubmit ? 'text-inverse' : 'text-inverse/40'
-              }`}
-            >
-              Đăng
-            </Text>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            className="h-10 min-w-[72px] items-center justify-center rounded-full px-4"
+            style={
+              canSubmit
+                ? styles.publishButtonEnabled
+                : styles.publishButtonDisabled
+            }
+            activeOpacity={canSubmit ? 0.8 : 1}
+            onPress={handleSubmit}
+            onPressIn={() => animatePublishScale(0.94)}
+            onPressOut={() => animatePublishScale(1)}
+            disabled={!canSubmit || isLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Đăng cuộc thăm dò"
+            accessibilityState={{ disabled: !canSubmit || isLoading }}
+          >
+            {isLoading ? (
+              <View className="h-5 w-5 items-center justify-center">
+                <Loader2
+                  size={18}
+                  color={POLL_HEADER_COLOR}
+                  className="animate-spin"
+                />
+              </View>
+            ) : (
+              <Text
+                className="text-title-primary font-bold"
+                style={
+                  canSubmit
+                    ? styles.publishLabelEnabled
+                    : styles.publishLabelDisabled
+                }
+              >
+                Đăng
+              </Text>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
       </View>
 
       <KeyboardAvoidingView
@@ -274,8 +372,9 @@ function CreatePollScreen() {
                   Mẹo tạo cuộc thăm dò hiệu quả
                 </Text>
                 <Text className="mt-1 text-caption-secondary text-amber-700">
-                  Cần tối thiểu {MIN_OPTIONS} phương án trả lời. Bạn có thể thêm tối đa {MAX_OPTIONS} phương án.
-                  Cuộc thăm dò sẽ được đăng lên bảng tin để bạn bè bình chọn.
+                  Cần tối thiểu {MIN_OPTIONS} phương án trả lời. Bạn có thể thêm
+                  tối đa {MAX_OPTIONS} phương án. Cuộc thăm dò sẽ được đăng lên
+                  bảng tin để bạn bè bình chọn.
                 </Text>
               </View>
             </View>
@@ -286,12 +385,18 @@ function CreatePollScreen() {
                 <View
                   className="h-full rounded-full bg-blue-500"
                   style={{
-                    width: `${Math.min(100, (validOptionsCount / MIN_OPTIONS) * 50 + (question.trim() ? 50 : 0))}%`,
+                    width: `${Math.min(
+                      100,
+                      (validOptionsCount / MIN_OPTIONS) * 50 +
+                        (question.trim() ? 50 : 0),
+                    )}%`,
                   }}
                 />
               </View>
               <Text className="text-caption-secondary">
-                {canSubmit ? '✓ Sẵn sàng đăng' : 'Điền đầy đủ thông tin để tiếp tục'}
+                {canSubmit
+                  ? '✓ Sẵn sàng đăng'
+                  : 'Điền đầy đủ thông tin để tiếp tục'}
               </Text>
             </View>
           </Animated.View>
@@ -319,7 +424,9 @@ function CreatePollScreen() {
             <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-white/20">
               <Text>⚠️</Text>
             </View>
-            <Text className="flex-1 text-title-primary text-white">{error}</Text>
+            <Text className="flex-1 text-title-primary text-white">
+              {error}
+            </Text>
             <TouchableOpacity onPress={clearError} className="ml-2">
               <Text className="text-white/80">✕</Text>
             </TouchableOpacity>
@@ -329,5 +436,42 @@ function CreatePollScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  headerLeftSlot: {
+    alignItems: 'flex-start',
+    width: 84,
+  },
+  headerTitle: {
+    flex: 1,
+    paddingHorizontal: 4,
+    textAlign: 'center',
+  },
+  headerRightSlot: {
+    alignItems: 'flex-end',
+    width: 84,
+  },
+  publishButtonEnabled: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+    borderWidth: 1,
+    elevation: 4,
+    shadowColor: '#0000AA',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.24,
+    shadowRadius: 5,
+  },
+  publishButtonDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    borderWidth: 1,
+  },
+  publishLabelEnabled: {
+    color: POLL_HEADER_COLOR,
+  },
+  publishLabelDisabled: {
+    color: 'rgba(255, 255, 255, 0.72)',
+  },
+});
 
 export default CreatePollScreen;

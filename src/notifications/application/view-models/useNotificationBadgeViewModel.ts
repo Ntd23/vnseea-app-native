@@ -7,6 +7,7 @@ import {
 } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { createMessagesRepository } from '../../../messages/infrastructure/repositories/ApiMessagesRepository';
 import { createNotificationsRepository } from '../../infrastructure/repositories/ApiNotificationsRepository';
+import { foregroundPushEvents } from '../../../shared-kernel/infrastructure/push/foregroundPushEvents';
 
 const POLL_INTERVAL_MS = 30000;
 
@@ -49,6 +50,23 @@ export function useNotificationBadgeViewModel() {
     return () => {
       clearInterval(interval);
       subscription.remove();
+    };
+  }, [refresh]);
+
+  useEffect(() => {
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const unsubscribe = foregroundPushEvents.subscribe(() => {
+      refresh().catch(() => undefined);
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        refresh().catch(() => undefined);
+      }, 800);
+    });
+
+    return () => {
+      unsubscribe();
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [refresh]);
 

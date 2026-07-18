@@ -15,13 +15,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ArrowLeft, Camera } from 'lucide-react-native';
-import { launchImageLibrary, type Asset } from 'react-native-image-picker';
-import { ROUTES } from '../../../navigation/constants/routes';
+import { launchImageLibrary } from 'react-native-image-picker';
 import type { RootStackParamList } from '../../../navigation/types';
-import type { RouteProp } from '@react-navigation/native';
 import { useProfileViewModel } from '../../application/view-models/useProfileViewModel';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  ImageCropperModal,
+  type CropSourceImage,
+  type CroppedImageAsset,
+} from '../../../shared-kernel/presentation/components/ImageCropperModal';
 
 type AvatarViewerNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -49,6 +52,7 @@ export default function AvatarViewerScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [localAvatarUrl, setLocalAvatarUrl] = useState(avatarUrl);
+  const [cropImage, setCropImage] = useState<CropSourceImage | null>(null);
 
   const handleBack = () => {
     navigation.goBack();
@@ -58,9 +62,7 @@ export default function AvatarViewerScreen() {
     try {
       const result = await launchImageLibrary({
         mediaType: 'photo',
-        quality: 0.8,
-        maxWidth: 800,
-        maxHeight: 800,
+        quality: 1,
         selectionLimit: 1,
       });
 
@@ -73,34 +75,28 @@ export default function AvatarViewerScreen() {
         return;
       }
 
-      const asset: Asset | undefined = result.assets?.[0];
+      const asset = result.assets?.[0];
 
       if (!asset?.uri) {
         Alert.alert('Lỗi', 'Vui lòng chọn một ảnh');
         return;
       }
 
-      // Show confirmation
-      Alert.alert(
-        'Thay đổi ảnh đại diện',
-        'Bạn có chắc muốn thay đổi ảnh đại diện không?',
-        [
-          { text: 'Hủy', style: 'cancel' },
-          {
-            text: 'Thay đổi',
-            onPress: () => uploadAvatar(asset),
-          },
-        ]
-      );
+      setCropImage({
+        uri: asset.uri,
+        width: asset.width,
+        height: asset.height,
+        fileName: asset.fileName,
+        type: asset.type,
+      });
     } catch (error) {
       console.error('[AvatarViewer] Error picking image:', error);
       Alert.alert('Lỗi', 'Đã xảy ra lỗi khi chọn ảnh');
     }
   };
 
-  const uploadAvatar = async (asset: Asset) => {
-    if (!asset.uri) return;
-
+  const uploadAvatar = async (asset: CroppedImageAsset) => {
+    setCropImage(null);
     setIsLoading(true);
 
     try {
@@ -109,6 +105,8 @@ export default function AvatarViewerScreen() {
       if (success) {
         setLocalAvatarUrl(asset.uri);
         Alert.alert('Thành công', 'Ảnh đại diện đã được thay đổi');
+      } else {
+        Alert.alert('Lỗi', 'Không thể thay đổi ảnh đại diện. Vui lòng thử lại.');
       }
     } catch (error) {
       console.error('[AvatarViewer] Error uploading avatar:', error);
@@ -182,6 +180,13 @@ export default function AvatarViewerScreen() {
           </View>
         </SafeAreaView>
       )}
+      <ImageCropperModal
+        visible={cropImage !== null}
+        image={cropImage}
+        target="avatar"
+        onCancel={() => setCropImage(null)}
+        onComplete={uploadAvatar}
+      />
     </View>
   );
 }

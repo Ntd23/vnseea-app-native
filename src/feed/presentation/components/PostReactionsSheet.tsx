@@ -39,17 +39,9 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import type { PostReactionUser } from '../../domain/types/reactions.types';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import { FEED_REACTION_IMAGES } from './FeedReactionAssets';
 
 const BRAND = '#0000ff';
-
-const REACTION_EMOJI: Record<ReactionType, string> = {
-  like: '👍',
-  love: '❤️',
-  haha: '😂',
-  wow: '😮',
-  sad: '😢',
-  angry: '😡',
-};
 
 const TAB_KEYS: PostReactionTab[] = [
   'all',
@@ -104,7 +96,11 @@ function ReactionTab({
       accessibilityState={{ selected: active }}
     >
       {tab !== 'all' ? (
-        <Text className="mr-1.5 text-base">{REACTION_EMOJI[tab]}</Text>
+        <Image
+          source={FEED_REACTION_IMAGES[tab]}
+          style={{ width: 18, height: 18, marginRight: 6 }}
+          resizeMode="contain"
+        />
       ) : null}
       <Text
         className={`text-caption-primary font-semibold ${
@@ -225,7 +221,11 @@ function ReactionUserRow({
         )}
         {showReactionBadge ? (
           <View className="absolute -bottom-1 -right-1 h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white">
-            <Text className="text-xs">{REACTION_EMOJI[user.reaction]}</Text>
+            <Image
+              source={FEED_REACTION_IMAGES[user.reaction]}
+              style={{ width: 17, height: 17 }}
+              resizeMode="contain"
+            />
           </View>
         ) : null}
       </TouchableOpacity>

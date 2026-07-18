@@ -15,6 +15,7 @@ interface PostMenuActionSheetProps {
   visible: boolean;
   onClose: () => void;
   post: FeedPost | null;
+  canDelete?: boolean;
   onSave: (postId: string) => Promise<void>;
   onHide: (postId: string) => Promise<void> | void;
   onDelete: (postId: string) => Promise<void>;
@@ -27,6 +28,7 @@ export function PostMenuActionSheet({
   visible,
   onClose,
   post,
+  canDelete = false,
   onSave,
   onHide,
   onDelete,
@@ -46,7 +48,9 @@ export function PostMenuActionSheet({
       await action(post.id);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thực hiện được thao tác.');
+      setError(
+        err instanceof Error ? err.message : 'Không thực hiện được thao tác.',
+      );
     } finally {
       setLoadingId(null);
     }
@@ -55,6 +59,8 @@ export function PostMenuActionSheet({
   if (!visible || !post) return null;
 
   const isBusy = loadingId !== null;
+  const canRenderDelete =
+    canDelete && post.permissions?.canDelete === true;
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
@@ -69,7 +75,10 @@ export function PostMenuActionSheet({
           <Text className="text-xl font-bold text-gray-900">
             Tùy chọn bài viết
           </Text>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity
+            onPress={onClose}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <X size={22} color="#64748B" />
           </TouchableOpacity>
         </View>
@@ -95,7 +104,7 @@ export function PostMenuActionSheet({
           iconClassName="bg-slate-100"
           onPress={() => runAction('hide', onHide)}
         />
-        {post.permissions?.canDelete === true ? (
+        {canRenderDelete ? (
           <>
             <Divider />
             <MenuAction

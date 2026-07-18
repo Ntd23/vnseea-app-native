@@ -49,6 +49,7 @@ import type { SharePostInput } from '../../../feed/domain/repositories/FeedRepos
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type { FollowState } from '../../../user/domain/types/user.types';
 import { ReactionPickerOverlay } from '../../../feed/presentation/components/PostCards';
+import { FEED_REACTION_IMAGES as REACTION_IMAGES } from '../../../feed/presentation/components/FeedReactionAssets';
 
 import { useAppLanguage } from '../../application/hooks/useAppLanguage';
 import { createProfileRepository } from '../../../profile/infrastructure/repositories/ApiProfileRepository';
@@ -74,18 +75,6 @@ const PHOTO_VIEWER_BOTTOM_PANEL_MAX_HEIGHT = 360;
 const PHOTO_VIEWER_BOTTOM_PANEL_MAX_HEIGHT_RATIO = 0.42;
 const PHOTO_VIEWER_PROFILE_CLOSE_DELAY_MS = 80;
 const PHOTO_VIEWER_INTERACTION_LOCK_MS = 350;
-
-// Local copy of the reaction emoji → image map. Kept inline here
-// (instead of importing from FeedScreen) so this component has zero
-// coupling to any specific screen.
-const REACTION_IMAGES: Record<ReactionType, any> = {
-  like: require('../../../assets/reactions/reactions_like.png'),
-  love: require('../../../assets/reactions/reactions_love.png'),
-  haha: require('../../../assets/reactions/reactions_haha.png'),
-  wow: require('../../../assets/reactions/reactions_wow.png'),
-  sad: require('../../../assets/reactions/reactions_sad.png'),
-  angry: require('../../../assets/reactions/reactions_angry.png'),
-};
 
 // Relative-time formatter used in the bottom publisher row. Mirrors
 // `formatPostTime` in FeedScreen so the viewer caption shows the

@@ -52,18 +52,13 @@ describe('Create Product and Poll navigation flow', () => {
   });
 
   it('uses a visible brand safe area without coloring the poll body', () => {
-    expect(createPollSource).toContain(
-      "const POLL_HEADER_COLOR = '#0000FF'",
-    );
+    expect(createPollSource).toContain("const POLL_HEADER_COLOR = '#0000FF'");
     expect(createPollSource).toContain(
       'style={{ flex: 1, backgroundColor: POLL_HEADER_COLOR }}',
     );
-    expect(createPollSource).toContain(
-      'barStyle="light-content" backgroundColor={POLL_HEADER_COLOR}',
-    );
-    expect(createPollSource).toContain(
-      'className="flex-1 surface-base"',
-    );
+    expect(createPollSource).toContain('barStyle="light-content"');
+    expect(createPollSource).toContain('backgroundColor={POLL_HEADER_COLOR}');
+    expect(createPollSource).toContain('className="flex-1 surface-base"');
   });
 
   it('protects unfinished product forms for button and gesture back', () => {
@@ -71,9 +66,27 @@ describe('Create Product and Poll navigation flow', () => {
     expect(createProductSource).toContain(
       'usePreventRemove(!submitSuccess, ({ data }) =>',
     );
-    expect(createProductSource).toContain(
-      'navigation.dispatch(data.action)',
-    );
+    expect(createProductSource).toContain('navigation.dispatch(data.action)');
     expect(createPollSource).not.toContain('usePreventRemove');
+  });
+
+  it('keeps the poll title centered in a symmetric header and animates publish', () => {
+    expect(createPollSource).toContain('styles.headerLeftSlot');
+    expect(createPollSource).toContain('styles.headerRightSlot');
+    expect(createPollSource).toContain('adjustsFontSizeToFit');
+    expect(createPollSource).toContain('Animated.Text');
+    expect(createPollSource).toContain('titleAnim');
+    expect(createPollSource).toContain('publishScale');
+    expect(createPollSource).toContain(
+      'onPressIn={() => animatePublishScale(0.94)}',
+    );
+  });
+
+  it('emits the created poll so Home Feed can show it immediately', () => {
+    expect(createPollSource).toContain(
+      "postCreatedEvents } from '../../../feed/application/events/postCreatedEvents'",
+    );
+    expect(createPollSource).toContain('postCreatedEvents.emit({');
+    expect(createPollSource).toContain('result.post');
   });
 });

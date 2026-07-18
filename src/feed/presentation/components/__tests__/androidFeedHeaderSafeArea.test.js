@@ -17,39 +17,54 @@ describe('Android Feed header top safe-area ownership', () => {
     'src/feed/presentation/components/feedHeaderInsets.ts',
   );
 
-  it('lets the Android root safe-area own the top inset', () => {
+  it('positions Android Feed chrome below the status bar without double-padding', () => {
+    expect(insetSource).not.toContain('StatusBar.currentHeight');
+    expect(insetSource).toContain("if (Platform.OS === 'android')");
+    expect(insetSource).toContain('return runtimeTopInset');
+    expect(insetSource).not.toContain(
+      "if (Platform.OS === 'android') {\n    return 0;",
+    );
     expect(headerSource).toContain('includeTopSafeArea = false');
+    expect(headerSource).toMatch(
+      /const topInset = includeTopSafeArea\s*\?\s*resolveFeedChromeTopInset\(/,
+    );
+    expect(headerSource).toContain(
+      '{ height: topInset + HEADER_BAR_HEIGHT, paddingTop: topInset }',
+    );
+    expect(feedSource).toContain('function getFeedChromeTopInset(rawTopInset: number)');
+    expect(feedSource).not.toContain("if (Platform.OS === 'android') return 0");
+    expect(feedSource).toContain('return rawTopInset');
+    expect(feedSource).toContain('const topInset = getFeedChromeTopInset(rawTopInset)');
     expect(feedSource).toContain('<FeedHeader />');
     expect(feedSource).not.toContain('<FeedHeader includeTopSafeArea />');
-    expect(feedSource).toMatch(
-      /Platform\.OS === 'ios'\s*\?\s*\['left', 'right'\]\s*:\s*\['top', 'left', 'right', 'bottom'\]/,
-    );
-    expect(feedSource).toContain('edges={FEED_ROOT_SAFE_AREA_EDGES}');
-    expect(feedSource).toContain('top={0}');
-    expect(feedSource).toMatch(
-      /Platform\.OS === 'ios'\s*\?\s*\([\s\S]*?<FeedHeaderCollapseFrame hidden=\{isFeedChromeHidden\}>/,
-    );
   });
 
-  it('does not add Android top inset to list or refresh offsets', () => {
+  it('does not apply the inset twice on stack screens', () => {
+    expect(safeHeaderSource).toContain("edges={['top']}");
+    expect(safeHeaderSource).toContain('<FeedHeader />');
+    expect(safeHeaderSource).not.toContain('includeTopSafeArea');
+  });
+
+  it('removes only the Android top edge from the Feed root', () => {
+    expect(feedSource).toMatch(
+      /Platform\.OS === 'ios'\s*\?\s*\['left', 'right'\]\s*:\s*\['left', 'right', 'bottom'\]/,
+    );
+    expect(feedSource).toContain('edges={FEED_ROOT_SAFE_AREA_EDGES}');
+  });
+
+  it('uses the normalized inset for overlay and refresh positioning', () => {
     expect(feedSource).toContain(
       'const rawTopInset = resolveFeedChromeTopInset(',
     );
+    expect(feedSource).not.toContain("if (Platform.OS === 'android') return 0");
     expect(feedSource).toContain('const topInset = getFeedChromeTopInset(rawTopInset)');
     expect(feedSource).toContain(
-      ': FEED_HEADER_CONTENT_HEIGHT;',
+      ': topInset + FEED_HEADER_CONTENT_HEIGHT;',
     );
     expect(feedSource).toContain('paddingTop: feedHeaderOverlayHeight');
     expect(feedSource).toContain(
       'progressViewOffset={feedRefreshProgressViewOffset}',
     );
-  });
-
-  it('keeps stack headers protected independently', () => {
-    expect(safeHeaderSource).toContain("edges={['top']}");
-    expect(safeHeaderSource).toContain('<FeedHeader />');
-    expect(safeHeaderSource).not.toContain('includeTopSafeArea');
-    expect(insetSource).toContain('StatusBar.currentHeight');
   });
 
   it('keeps the Android status bar white with dark icons', () => {

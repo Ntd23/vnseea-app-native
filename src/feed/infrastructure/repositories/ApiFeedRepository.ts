@@ -450,7 +450,9 @@ function normalizeMediaUrl(url: string | undefined): string | undefined {
   return `${_siteRoot}/${trimmed.replace(/^\/+/, '')}`;
 }
 
-function mapFollowingMention(raw: Record<string, unknown>): ReelCaptionSuggestion | null {
+function mapFollowingMention(
+  raw: Record<string, unknown>,
+): ReelCaptionSuggestion | null {
   const username = readString(raw, 'username', 'user_name');
   if (!username) return null;
 
@@ -458,10 +460,7 @@ function mapFollowingMention(raw: Record<string, unknown>): ReelCaptionSuggestio
   const lastName = readString(raw, 'last_name');
   const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
   const label =
-    firstName ||
-    fullName ||
-    readString(raw, 'name', 'full_name') ||
-    username;
+    firstName || fullName || readString(raw, 'name', 'full_name') || username;
   const displayHandle = (firstName || username).replace(/\s+/g, '_');
 
   return {
@@ -488,7 +487,9 @@ function matchesMentionQuery(suggestion: ReelCaptionSuggestion, query: string) {
   );
 }
 
-function normalizePlayableMediaUrl(url: string | undefined): string | undefined {
+function normalizePlayableMediaUrl(
+  url: string | undefined,
+): string | undefined {
   const normalized = normalizeMediaUrl(url);
   if (!normalized) return undefined;
   try {
@@ -505,7 +506,9 @@ function getComparableMediaUrl(url: string | undefined) {
 function isSameMediaUrl(left: string | undefined, right: string | undefined) {
   const normalizedLeft = getComparableMediaUrl(left);
   const normalizedRight = getComparableMediaUrl(right);
-  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+  return Boolean(
+    normalizedLeft && normalizedRight && normalizedLeft === normalizedRight,
+  );
 }
 
 function readNumber(raw: Record<string, unknown>, ...keys: string[]) {
@@ -538,7 +541,9 @@ function cleanCaption(raw: string) {
 }
 
 function readPostCaption(raw: Record<string, unknown>) {
-  return cleanCaption(readString(raw, 'Orginaltext', 'postText_API', 'postText'));
+  return cleanCaption(
+    readString(raw, 'Orginaltext', 'postText_API', 'postText'),
+  );
 }
 
 function readPostMentionNames(raw: Record<string, unknown>) {
@@ -852,7 +857,9 @@ function extractFeeling(raw: Record<string, unknown>): PostFeeling | undefined {
   return undefined;
 }
 
-function extractLinkPreview(raw: Record<string, unknown>): PostLinkPreview | undefined {
+function extractLinkPreview(
+  raw: Record<string, unknown>,
+): PostLinkPreview | undefined {
   const url = readString(raw, 'postLink');
   if (!url) return undefined;
 
@@ -883,9 +890,13 @@ function looksLikeTextOrPhoto(raw: Record<string, unknown>): boolean {
   const hasLinkPreview = Boolean(readString(raw, 'postLink'));
   const shared = readSharedInfo(raw);
   const hasSharedContent = shared
-    ? looksLikeVideo(shared) || looksLikePoll(shared) || looksLikeTextOrPhoto(shared)
+    ? looksLikeVideo(shared) ||
+      looksLikePoll(shared) ||
+      looksLikeTextOrPhoto(shared)
     : false;
-  return Boolean(text) || hasPhoto || hasAudio || hasLinkPreview || hasSharedContent;
+  return (
+    Boolean(text) || hasPhoto || hasAudio || hasLinkPreview || hasSharedContent
+  );
 }
 
 function readSharedInfo(
@@ -1734,7 +1745,11 @@ async function fetchRawFeedPosts(
     ownLimit: ownPostsLimit,
     discovery: discoveryRaw.length,
     public: publicRaw.length,
-    rawTotal: followedRaw.length + discoveryRaw.length + ownRaw.length + publicRaw.length,
+    rawTotal:
+      followedRaw.length +
+      discoveryRaw.length +
+      ownRaw.length +
+      publicRaw.length,
     merged: merged.length,
     dropped: dropCounters,
   });
@@ -1952,7 +1967,11 @@ export function createFeedRepository(): FeedRepository {
       let primaryCount = 0;
       let scannedRawRows = 0;
 
-      for (let scan = 0; scan < maxScanPages && mappedById.size < limit; scan += 1) {
+      for (
+        let scan = 0;
+        scan < maxScanPages && mappedById.size < limit;
+        scan += 1
+      ) {
         const page = await fetchRecommendedRawFeedPostsWithFallback(
           rawLimit,
           cursor,
@@ -1968,7 +1987,9 @@ export function createFeedRepository(): FeedRepository {
         }
 
         const nextRawCursor = page.nextCursor ?? getOldestRawPostId(page.posts);
-        const advancedCursor = Boolean(nextRawCursor && nextRawCursor !== cursor);
+        const advancedCursor = Boolean(
+          nextRawCursor && nextRawCursor !== cursor,
+        );
         lastRawCursor = nextRawCursor;
         reachedEnd =
           page.reachedEnd === true ||
@@ -2220,7 +2241,7 @@ export function createFeedRepository(): FeedRepository {
       // Server returns the freshly-created post in the same shape as
       // `/api/posts` returns. Route it through `mapPost` so video uploads
       // are prepended as video cards instead of being coerced to text.
-      const mappedPost = mapPost(response.post_data);
+      const mappedPost = mapFeedPost(response.post_data);
       const post: FeedPost =
         mappedPost.kind === 'video' &&
         draft.video?.thumbnailUri &&
@@ -2234,7 +2255,9 @@ export function createFeedRepository(): FeedRepository {
       return { postId: post.id, post };
     },
 
-    async searchMentionSuggestions(query: string): Promise<ReelCaptionSuggestion[]> {
+    async searchMentionSuggestions(
+      query: string,
+    ): Promise<ReelCaptionSuggestion[]> {
       const sessionUserId = sessionStorage.getSession()?.userId;
       if (!sessionUserId) return [];
 
@@ -2505,7 +2528,8 @@ export function createFeedRepository(): FeedRepository {
         post_id: postId,
       });
 
-      const deleted = String(response.api_status) === '200' &&
+      const deleted =
+        String(response.api_status) === '200' &&
         (response.action ?? '').includes('deleted');
       if (!deleted) {
         throw new Error(response.message ?? 'Không xóa được bài viết.');
@@ -2530,7 +2554,8 @@ export function createFeedRepository(): FeedRepository {
         privacy_contract: CONTENT_AUDIENCE_CONTRACT,
       });
 
-      const edited = String(response.api_status) === '200' &&
+      const edited =
+        String(response.api_status) === '200' &&
         (response.action ?? '').includes('edited');
       if (!edited) {
         throw new Error(response.message ?? 'Không chỉnh sửa được bài viết.');
@@ -2599,9 +2624,7 @@ export function createFeedRepository(): FeedRepository {
 
         const shareUrl = await getShareableUrl(input.postId, 'post');
         const note = input.text?.trim();
-        const messageBody = note
-          ? `${note}\n\n${shareUrl}`
-          : shareUrl;
+        const messageBody = note ? `${note}\n\n${shareUrl}` : shareUrl;
 
         // The text-only path is fine for the no-attachment case.
         // For richer sharing we'd need a wire-level `post_id`
@@ -2623,13 +2646,16 @@ export function createFeedRepository(): FeedRepository {
                 text: messageBody,
               },
             )
-          : await backendApi.post<MessageShareResponse>(apiRoutes.messages.send, {
-              user_id: input.recipientUserId,
-              text: messageBody,
-              message_hash_id: `${Date.now()}-${Math.random()
-                .toString(36)
-                .slice(2, 10)}`,
-            });
+          : await backendApi.post<MessageShareResponse>(
+              apiRoutes.messages.send,
+              {
+                user_id: input.recipientUserId,
+                text: messageBody,
+                message_hash_id: `${Date.now()}-${Math.random()
+                  .toString(36)
+                  .slice(2, 10)}`,
+              },
+            );
 
         const ok = String(sendResponse.api_status) === '200';
         if (!ok) {
@@ -2694,7 +2720,7 @@ export function createFeedRepository(): FeedRepository {
         );
       }
 
-      return mapPost(response.data);
+      return mapFeedPost(response.data);
     },
 
     async getPostById(postId, options = {}): Promise<GetPostByIdResult> {
@@ -2726,7 +2752,7 @@ export function createFeedRepository(): FeedRepository {
       // same `mapTextPost` used by the feed list handles it. The
       // branch is only on post type (text vs video), which `mapPost`
       // already disambiguates via `looksLikeVideo`.
-      const post = mapPost(response.post_data);
+      const post = mapFeedPost(response.post_data);
       const comments = (response.post_comments ?? []).map(mapPostComment);
 
       return { post, comments };
@@ -2791,9 +2817,7 @@ export function createFeedRepository(): FeedRepository {
       // explicit end-of-list signal so we don't request a second page
       // that would return zero rows.
       const reachedEnd = users.length < limit;
-      const nextOffset = reachedEnd
-        ? undefined
-        : String(offset + users.length);
+      const nextOffset = reachedEnd ? undefined : String(offset + users.length);
 
       return {
         users,
@@ -2812,7 +2836,12 @@ export function createFeedRepository(): FeedRepository {
 // + video. We mirror the same dispatch the feed list does so the
 // detail screen's renderer (which is union-aware) sees the right
 // `kind` discriminator.
-function mapPost(raw: Record<string, unknown>): FeedTextPost | FeedVideoPost {
+export function mapFeedPost(
+  raw: Record<string, unknown>,
+): FeedTextPost | FeedVideoPost | FeedPollPost {
+  if (looksLikePoll(raw)) {
+    return mapPollPost(raw);
+  }
   if (looksLikeVideo(raw)) {
     return mapVideoPost(raw);
   }
@@ -2899,23 +2928,30 @@ function parseReactionType(raw: Record<string, unknown>): string {
   if (typeof rawType === 'number') return String(rawType);
 
   const rawReactionType = raw.reaction_type;
-  if (typeof rawReactionType === 'string' && rawReactionType.length > 0) return rawReactionType;
+  if (typeof rawReactionType === 'string' && rawReactionType.length > 0)
+    return rawReactionType;
   if (typeof rawReactionType === 'number') return String(rawReactionType);
 
   return '';
 }
 
-function mapPostReactionCount(raw: Record<string, unknown>): PostReactionCount | null {
+function mapPostReactionCount(
+  raw: Record<string, unknown>,
+): PostReactionCount | null {
   const rawType = parseReactionType(raw);
-  const reaction = WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()];
+  const reaction =
+    WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()];
   if (!reaction) return null;
   const count = readNumber(raw, 'count');
   return { reaction, count };
 }
 
-function mapPostReactionUser(raw: Record<string, unknown>): PostReactionUser | null {
+function mapPostReactionUser(
+  raw: Record<string, unknown>,
+): PostReactionUser | null {
   const rawType = parseReactionType(raw);
-  const reaction = WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()];
+  const reaction =
+    WIRE_TO_REACTION[rawType] ?? WIRE_TO_REACTION[rawType.toLowerCase()];
   if (!reaction) return null;
 
   // Backend strips a few private fields server-side via `$non_allowed`
@@ -2936,7 +2972,8 @@ function mapPostReactionUser(raw: Record<string, unknown>): PostReactionUser | n
   // or a bare `/upload/...` path on older installs — same dual format the
   // feed mapper already handles via `normalizeMediaUrl`.
   const avatarUrl =
-    normalizeMediaUrl(readString(raw, 'avatar', 'profile_picture')) || undefined;
+    normalizeMediaUrl(readString(raw, 'avatar', 'profile_picture')) ||
+    undefined;
 
   return {
     id,

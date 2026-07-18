@@ -16,7 +16,6 @@ import {
   ShoppingBag,
   MessageCircle,
   Share2,
-  ShoppingCart,
   Star,
   Info,
   ThumbsUp,
@@ -74,11 +73,6 @@ interface ProductPostCardProps {
   onProfilePress?: (userId: string) => void;
   /** Open a chat thread with the seller (tapped on Nhắn tin button). */
   onContactSeller?: (product: ProductItem) => void;
-  /** Add product to cart (tapped on Thêm giỏ button). */
-  onAddToCart?: (
-    product: ProductItem,
-    origin?: { x: number; y: number },
-  ) => void;
   onShare?: (product: ProductItem) => void;
   onDelete?: (product: ProductItem) => void;
   isDeleting?: boolean;
@@ -102,7 +96,6 @@ const ProductPostCard = React.memo(function ProductPostCard({
   onMorePress,
   onProfilePress,
   onContactSeller,
-  onAddToCart,
   onShare,
   onDelete,
   isDeleting = false,
@@ -137,19 +130,6 @@ const ProductPostCard = React.memo(function ProductPostCard({
     if (!product.can_contact_seller || !product.seller?.user_id) return;
     onContactSeller?.(product);
   }, [onContactSeller, product, product.can_contact_seller, product.seller?.user_id]);
-
-  const handleAddToCart = useCallback((event?: GestureResponderEvent) => {
-    if (!product.can_add_to_cart) return;
-    onAddToCart?.(
-      product,
-      event
-        ? {
-            x: event.nativeEvent.pageX,
-            y: event.nativeEvent.pageY,
-          }
-        : undefined,
-    );
-  }, [onAddToCart, product, product.can_add_to_cart]);
 
   const handleSharePress = useCallback(() => {
     onShare?.(product);
@@ -227,23 +207,6 @@ const ProductPostCard = React.memo(function ProductPostCard({
                   strokeWidth={2.4}
                 />
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.marketplaceActionButton,
-                  styles.marketplaceCartButton,
-                  !product.can_add_to_cart && styles.marketplaceActionDisabled,
-                ]}
-                activeOpacity={0.75}
-                disabled={!product.can_add_to_cart}
-                onPress={handleAddToCart}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              >
-                <ShoppingCart
-                  size={20}
-                  color={product.can_add_to_cart ? '#ffffff' : '#cbd5e1'}
-                  strokeWidth={2.5}
-                />
-              </TouchableOpacity>
             </View>
           ) : null}
           <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>
@@ -266,19 +229,6 @@ const ProductPostCard = React.memo(function ProductPostCard({
 
             {!product.is_owner && !marketplaceFloatingActions ? (
               <View className="flex-row items-center gap-1.5" style={{ flexShrink: 0 }}>
-                {/* Cart Action */}
-                <TouchableOpacity
-                  className={`h-8 w-8 items-center justify-center rounded-full ${
-                    product.can_add_to_cart ? 'bg-blue-50/80 active:bg-blue-100/80' : 'bg-slate-50'
-                  }`}
-                  activeOpacity={0.7}
-                  disabled={!product.can_add_to_cart}
-                  onPress={handleAddToCart}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                >
-                  <ShoppingCart size={15} color={product.can_add_to_cart ? "#0F56FB" : "#CBD5E1"} />
-                </TouchableOpacity>
-
                 {/* Contact Action */}
                 <TouchableOpacity
                   className={`h-8 w-8 items-center justify-center rounded-full ${
@@ -559,9 +509,6 @@ const styles = StyleSheet.create({
   },
   marketplaceMessageButton: {
     backgroundColor: '#eef2f7',
-  },
-  marketplaceCartButton: {
-    backgroundColor: '#0000ff',
   },
   marketplaceActionDisabled: {
     backgroundColor: '#f1f5f9',

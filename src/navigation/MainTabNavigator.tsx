@@ -31,7 +31,6 @@ import { iosPagerSwipeLock } from './iosPagerSwipeLock';
 import { tabBarVisibility } from './tabBarVisibility';
 import { nativeTabBarPresentation } from './nativeTabMinimizeBehavior';
 import { useAppLanguage } from '../shared-kernel/application/hooks/useAppLanguage';
-import { useSyncedCartCount } from '../shared-kernel/application/state/cartCountSync';
 import {
   createIosNativeTabOptions,
   getCustomTabRoutes,
@@ -282,7 +281,6 @@ function IosLiquidTabBar({
 }: MaterialTopTabBarProps) {
   const { notificationCount: notificationBadgeCount } =
     useNotificationBadgeViewModel();
-  const { cartCount } = useSyncedCartCount(0);
   const language = useAppLanguage();
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(0)).current;
@@ -310,7 +308,6 @@ function IosLiquidTabBar({
             name,
             notificationBadgeCount,
             language,
-            cartCount,
           );
         const label =
           typeof options.tabBarLabel === 'string'
@@ -331,7 +328,7 @@ function IosLiquidTabBar({
           badgeValue,
         };
       }),
-    [cartCount, language, notificationBadgeCount],
+    [language, notificationBadgeCount],
   );
 
   const handleTabPress = useCallback(

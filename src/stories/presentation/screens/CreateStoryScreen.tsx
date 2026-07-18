@@ -58,7 +58,7 @@ import type {
   StoryItem,
 } from '../../domain/types/stories.types';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import { showToast } from '../../../shared-kernel/presentation/components/ToastNotification';
+import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 

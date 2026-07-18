@@ -3201,6 +3201,7 @@ function Wo_NotificationWebPushNotifier()
 						$send_array['notification']['notification_data']['story_id'] = $sql_get_notification_for_push['story_id'];
 					}
 					$send_array['notification']['notification_data']['type'] = $sql_get_notification_for_push['type'];
+					$send_array['notification']['notification_data']['push_kind'] = 'notification';
 					if ($wo['config']['android_push_native'] == 1 && !empty($to_data['android_n_device_id'])) {
 						$send_array['send_to']                                      = array(
 							$to_data['android_n_device_id']
@@ -3287,7 +3288,10 @@ function Wo_MessagesPushNotifier()
 						$to_id             = $sql_get_messages_for_push['to_id'];
 						$to_data           = Wo_UserData($sql_get_messages_for_push['to_id']);
 						$notification_data = array(
-							'user_id' => $user_id
+							'user_id' => $user_id,
+							'push_kind' => 'message',
+							'notification_type' => 'message',
+							'message_id' => (string) $message_id
 						);
 						if (!empty($sql_get_messages_for_push['group_id'])) {
 							$notification_data['group_id'] = $sql_get_messages_for_push['group_id'];

@@ -6,7 +6,6 @@ import {
   Animated,
   Easing,
   FlatList,
-  Image,
   PanResponder,
   RefreshControl,
   Text,
@@ -19,7 +18,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { NavigationContext } from '@react-navigation/native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { navigationRef } from '../../../navigation/navigationRef';
 import {
@@ -28,7 +27,6 @@ import {
   RotateCw,
   Search,
   ShoppingBag,
-  ShoppingCart,
   SlidersHorizontal,
   X,
   ChevronDown,
@@ -41,7 +39,6 @@ import {
 import { ROUTES } from '../../../navigation/constants/routes';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
 import { useMarketplaceViewModel } from '../../application/view-models/useMarketplaceViewModel';
-import { createProductRepository } from '../../infrastructure/repositories/ApiProductRepository';
 import type { ProductItem } from '../../domain/types/product.types';
 import ProductPostCard from '../components/ProductPostCard';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
@@ -70,15 +67,6 @@ const FILTER_PANEL_CHILD_STYLE = {
   right: 0,
   top: 0,
 } as const;
-
-type CartAnimationState = {
-  id: number;
-  imageUrl?: string;
-  productName: string;
-  start: { x: number; y: number };
-  end: { x: number; y: number };
-  progress: Animated.Value;
-};
 
 const SORT_OPTIONS: Array<{
   label: string;
@@ -408,23 +396,14 @@ function DistancePickerModal({
 
 function MarketplaceScreen() {
   const navigation = useContext(NavigationContext);
-  const insets = useSafeAreaInsets();
   const {
     bottomContentPadding,
     scrollIndicatorBottomInset,
   } = useMainTabContentInsets();
   const vm = useMarketplaceViewModel();
- // Repository for direct product operations (e.g. quick add-to-cart
- // from the marketplace card).
- const repository = useMemo(() => createProductRepository(), []);
   const nativeTabScrollPublisherStateRef = useRef(
     createNativeTabScrollPublisherState(),
   );
-  const cartButtonRef = useRef<View>(null);
-  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toastOpacity = useRef(new Animated.Value(0)).current;
-  const toastTranslateY = useRef(new Animated.Value(12)).current;
-  const cartScale = useRef(new Animated.Value(1)).current;
   const filterPanelProgress = useRef(new Animated.Value(0)).current;
   const filterAnimationRef = useRef<ReturnType<typeof Animated.timing> | null>(null);
   const hasActiveFilters = Boolean(vm.categoryId || vm.distance || vm.orderBy);
@@ -432,9 +411,6 @@ function MarketplaceScreen() {
   const [sortModalVisible, setSortModalVisible] = useState(false);
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [distanceModalVisible, setDistanceModalVisible] = useState(false);
-  const [cartAnimation, setCartAnimation] = useState<CartAnimationState | null>(null);
-  const [toastProductName, setToastProductName] = useState<string | null>(null);
-
  // Collapsible filter panel state. When the user scrolls down past
  // COLLAPSE_THRESHOLD we collapse the filter chip bar (search + sort
  // + category + distance + nearby + reset) and keep only the top app
@@ -542,9 +518,6 @@ function MarketplaceScreen() {
 
   useEffect(() => {
     return () => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
       filterAnimationRef.current?.stop();
     };
   }, []);
@@ -607,10 +580,6 @@ function MarketplaceScreen() {
     navigate(ROUTES.MY_PRODUCTS);
   }, [navigate]);
 
-  const handleOpenCart = useCallback(() => {
-    navigate(ROUTES.CART);
-  }, [navigate]);
-
   const handleOpenFeed = useCallback(
     (params?: { filter?: 'photos' }) => {
       navigate(ROUTES.MAIN_TABS, {
@@ -619,50 +588,6 @@ function MarketplaceScreen() {
       });
     },
     [navigate],
-  );
-
-  const showCartToast = useCallback(
-    (productName: string) => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
-
-      setToastProductName(productName);
-      toastOpacity.setValue(0);
-      toastTranslateY.setValue(12);
-      Animated.parallel([
-        Animated.timing(toastOpacity, {
-          toValue: 1,
-          duration: 180,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(toastTranslateY, {
-          toValue: 0,
-          duration: 220,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      toastTimeoutRef.current = setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(toastOpacity, {
-            toValue: 0,
-            duration: 180,
-            easing: Easing.in(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.timing(toastTranslateY, {
-            toValue: 10,
-            duration: 180,
-            easing: Easing.in(Easing.cubic),
-            useNativeDriver: true,
-          }),
-        ]).start(() => setToastProductName(null));
-      }, 1800);
-    },
-    [toastOpacity, toastTranslateY],
   );
 
   const animateFiltersCollapsed = useCallback(
@@ -687,58 +612,6 @@ function MarketplaceScreen() {
     [filterPanelProgress],
   );
 
-  const runCartAnimation = useCallback(
-    (product: ProductItem, origin?: { x: number; y: number }) => {
-      const fallbackStart = origin ?? { x: 96, y: 520 };
-      const imageUrl = product.images?.[0]?.image;
-
-      cartButtonRef.current?.measureInWindow((x, y, width, height) => {
-        const end = {
-          x: x + width / 2,
-          y: y + height / 2,
-        };
-        const progress = new Animated.Value(0);
-        setCartAnimation({
-          id: Date.now(),
-          imageUrl,
-          productName: product.name,
-          start: fallbackStart,
-          end,
-          progress,
-        });
-
-        Animated.parallel([
-          Animated.timing(progress, {
-            toValue: 1,
-            duration: 680,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.sequence([
-            Animated.timing(cartScale, {
-              toValue: 1.18,
-              duration: 120,
-              delay: 440,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.spring(cartScale, {
-              toValue: 1,
-              friction: 4,
-              tension: 120,
-              useNativeDriver: true,
-            }),
-          ]),
-        ]).start(({ finished }) => {
-          if (finished) {
-            setCartAnimation(null);
-          }
-        });
-      });
-    },
-    [cartScale],
-  );
-
   const handleProductPress = useCallback(
     (product: ProductItem) => {
       navigate(ROUTES.PRODUCT_DETAIL, {
@@ -748,28 +621,6 @@ function MarketplaceScreen() {
     },
     [navigate],
   );
-
- // Quick add-to-cart from the marketplace card. It keeps the user on
- // the marketplace, updates the cart badge, then plays a small fly-to-cart
- // animation so the result is visible without breaking shopping flow.
- const handleAddToCart = useCallback(
- async (product: ProductItem, origin?: { x: number; y: number }) => {
- if (!product.can_add_to_cart) return;
- try {
- const result = await repository.addToCart(product.id, 1);
- const nextCount = Number(result.count);
- vm.updateCartCount(Number.isFinite(nextCount) ? nextCount : undefined);
- repository.getCartCount().then(vm.updateCartCount).catch(() => undefined);
- runCartAnimation(product, origin);
- showCartToast(product.name);
- } catch (error) {
- // Silent failure for the marketplace card - the user can
- // always retry from the product detail screen.
- console.warn('[MarketplaceScreen] addToCart failed', error);
- }
- },
- [repository, runCartAnimation, showCartToast, vm],
- );
 
  // Open a chat thread with the product seller. Mirrors the handler
   // in ProductDetailScreen so behaviour stays consistent across the
@@ -810,12 +661,10 @@ function MarketplaceScreen() {
           product={item}
           onPress={handleProductPress}
           onContactSeller={handleContactSeller}
-
-          onAddToCart={handleAddToCart}
         />
       </View>
     ),
-    [handleProductPress, handleContactSeller, handleAddToCart],
+    [handleProductPress, handleContactSeller],
   );
  
   const handleMarketplaceScroll = useCallback(
@@ -1213,94 +1062,6 @@ function MarketplaceScreen() {
           ) : null
         }
       />
-      {cartAnimation ? (
-        <Animated.View
-          pointerEvents="none"
-          className="absolute h-14 w-14 overflow-hidden rounded-2xl border-2 border-white bg-blue-50 shadow-lg"
-          style={{
-            opacity: cartAnimation.progress.interpolate({
-              inputRange: [0, 0.75, 1],
-              outputRange: [0.95, 0.9, 0],
-            }),
-            transform: [
-              {
-                translateX: cartAnimation.progress.interpolate({
-                  inputRange: [0, 0.62, 1],
-                  outputRange: [
-                    cartAnimation.start.x - 28,
-                    (cartAnimation.start.x + cartAnimation.end.x) / 2 - 28,
-                    cartAnimation.end.x - 28,
-                  ],
-                }),
-              },
-              {
-                translateY: cartAnimation.progress.interpolate({
-                  inputRange: [0, 0.62, 1],
-                  outputRange: [
-                    cartAnimation.start.y - 28,
-                    Math.min(cartAnimation.start.y, cartAnimation.end.y) - 110,
-                    cartAnimation.end.y - 28,
-                  ],
-                }),
-              },
-              {
-                scale: cartAnimation.progress.interpolate({
-                  inputRange: [0, 0.68, 1],
-                  outputRange: [1, 0.78, 0.28],
-                }),
-              },
-              {
-                rotate: cartAnimation.progress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['0deg', '16deg'],
-                }),
-              },
-            ],
-          }}
-        >
-          {cartAnimation.imageUrl ? (
-            <Image
-              source={{ uri: cartAnimation.imageUrl }}
-              className="h-full w-full"
-              resizeMode="cover"
-            />
-          ) : (
-            <View className="h-full w-full items-center justify-center bg-blue-50">
-              <ShoppingBag size={24} color="#0000FF" />
-            </View>
-          )}
-        </Animated.View>
-      ) : null}
-
-      {toastProductName ? (
-        <Animated.View
-          pointerEvents="none"
-          className="absolute left-4 right-4 rounded-2xl bg-slate-950/95 px-4 py-3 shadow-lg"
-          style={{
-            top: Math.max(insets.top, 12) + 74,
-            opacity: toastOpacity,
-            transform: [{ translateY: toastTranslateY }],
-          }}
-        >
-          <View className="flex-row items-center">
-            <View className="h-9 w-9 items-center justify-center rounded-full bg-white/12">
-              <ShoppingCart size={18} color="#FFFFFF" />
-            </View>
-            <View className="ml-3 flex-1">
-              <Text className="text-sm font-extrabold text-white">
-                Đã thêm vào giỏ hàng
-              </Text>
-              <Text
-                className="mt-0.5 text-xs font-semibold text-white/75"
-                numberOfLines={1}
-              >
-                {toastProductName}
-              </Text>
-            </View>
-          </View>
-        </Animated.View>
-      ) : null}
-
       <FilterPickerModal
         visible={sortModalVisible}
         title="Sắp xếp theo"

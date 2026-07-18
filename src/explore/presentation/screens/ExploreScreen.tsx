@@ -10,8 +10,6 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -76,6 +74,7 @@ import HashtagSkeleton from '../components/HashtagSkeleton';
 import HashtagTabs from '../components/HashtagTabs';
 import StatPill from '../components/StatPill';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 
 const BRAND = '#0000ff';
 const AVATAR_FALLBACK = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
@@ -292,9 +291,9 @@ function HashtagCommentsOverlay({
         onPress={onClose}
         accessibilityLabel="Đóng bình luận"
       />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        className="absolute bottom-0 left-0 right-0"
+      <KeyboardSafeView
+        style={{ flex: 1, justifyContent: 'flex-end' }}
+        pointerEvents="box-none"
       >
         <View
           className="rounded-t-3xl bg-white px-4 pb-4 pt-3 shadow-2xl"
@@ -409,7 +408,7 @@ function HashtagCommentsOverlay({
             </TouchableOpacity>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardSafeView>
     </View>
   );
 }

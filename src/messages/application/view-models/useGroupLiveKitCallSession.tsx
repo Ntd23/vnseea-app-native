@@ -58,6 +58,15 @@ import {
   releaseIosCallAudio,
 } from '../livekit/iosCallAudioLifecycle';
 import {
+  applyCallAudioOutputMode,
+  CALL_AUDIO_CAPTURE_DEFAULTS,
+  configureCallAudioSession,
+  defaultCallAudioOutputMode,
+  resetCallRemoteAudioVolume,
+  setRemoteAudioTrackOutputMode,
+  type CallAudioOutputMode,
+} from '../livekit/callAudioRouting';
+import {
   areGroupParticipantListsEqual,
   mergeGroupParticipantMetadata,
   reconcileLiveKitParticipants,
@@ -77,8 +86,6 @@ type GroupCallFinishReason =
   | 'sync_inactive'
   | 'connect_failure'
   | 'provider_unmount';
-type AudioOutputId = 'speaker' | 'earpiece' | 'default' | 'force_speaker';
-
 type GroupLiveKitCallSession = {
   callId: string;
   groupId: string;
@@ -99,7 +106,7 @@ type GroupLiveKitCallSession = {
   isLocalMicrophoneEnabled: boolean;
   isLocalCameraEnabled: boolean;
   localCameraFacingMode: 'user' | 'environment';
-  isSpeakerEnabled: boolean;
+  audioOutputMode: CallAudioOutputMode;
 };
 
 type GroupLiveKitMediaController = {
@@ -129,7 +136,7 @@ type GroupLiveKitCallSessionContextValue = {
   toggleMic: () => Promise<void>;
   toggleCamera: () => Promise<void>;
   switchCamera: () => Promise<void>;
-  toggleSpeaker: () => Promise<void>;
+  setAudioOutputMode: (mode: CallAudioOutputMode) => Promise<void>;
   getCandidates: () => Promise<GroupLiveKitParticipant[]>;
   addMembers: (userIds: string[]) => Promise<string[]>;
 };
@@ -139,6 +146,7 @@ const LIVEKIT_ROOM_OPTIONS = {
   adaptiveStream: { pixelDensity: 'screen' },
   dynacast: true,
   singlePeerConnection: false,
+  audioCaptureDefaults: CALL_AUDIO_CAPTURE_DEFAULTS,
 } as const;
 const LIVEKIT_CONNECT_OPTIONS = { autoSubscribe: true } as const;
 const CALL_DEBUG_PREFIX = '[VNSEEA_CALL_DEBUG]';
@@ -450,21 +458,6 @@ function startGroupMediaStatsProbe(room: Room, callId: string) {
   };
 }
 
-function resolveAudioOutput(
-  outputs: string[],
-  nextIsSpeakerEnabled: boolean,
-): AudioOutputId | undefined {
-  if (nextIsSpeakerEnabled) {
-    if (outputs.includes('force_speaker')) return 'force_speaker';
-    if (outputs.includes('speaker')) return 'speaker';
-    return undefined;
-  }
-
-  if (outputs.includes('earpiece')) return 'earpiece';
-  if (outputs.includes('default')) return 'default';
-  return undefined;
-}
-
 function exitGroupCallRoomIfFocused() {
   if (!navigationRef.isReady()) return;
   if (navigationRef.getCurrentRoute()?.name !== ROUTES.GROUP_CALL_ROOM) return;
@@ -603,7 +596,7 @@ function buildInitialSession(
     isLocalMicrophoneEnabled: true,
     isLocalCameraEnabled: false,
     localCameraFacingMode: 'user',
-    isSpeakerEnabled: true,
+    audioOutputMode: defaultCallAudioOutputMode('video'),
   };
 }
 
@@ -937,6 +930,7 @@ export function GroupLiveKitCallSessionProvider({
         endNativeCall(current.nativeCallUuid);
       }
       disconnectActiveRoom();
+      resetCallRemoteAudioVolume();
       if (current) {
         releaseIosCallAudio(
           {
@@ -987,6 +981,7 @@ export function GroupLiveKitCallSessionProvider({
       endNativeCall(current.nativeCallUuid);
     }
     disconnectActiveRoom();
+    resetCallRemoteAudioVolume();
     if (current) {
       releaseIosCallAudio(
         {
@@ -1016,6 +1011,10 @@ export function GroupLiveKitCallSessionProvider({
       patchSession({ phase: 'connecting' });
       const payload = await repository.getJoinPayload({ callId });
       disconnectActiveRoom();
+      const initialAudioOutputMode = defaultCallAudioOutputMode('video');
+      await configureCallAudioSession(initialAudioOutputMode).catch(
+        () => undefined,
+      );
 
       try {
         await prepareIosCallAudioGate(
@@ -1089,6 +1088,10 @@ export function GroupLiveKitCallSessionProvider({
             });
           },
           onSubscribed: context => {
+            setRemoteAudioTrackOutputMode(
+              context.publication.track,
+              sessionRef.current?.audioOutputMode ?? initialAudioOutputMode,
+            );
             logGroupCallDebug('group_remote_track_subscribed', {
               callId,
               participantIdentity: context.participant.identity,
@@ -1174,6 +1177,10 @@ export function GroupLiveKitCallSessionProvider({
           payload.wsUrl,
           payload.token,
           LIVEKIT_CONNECT_OPTIONS,
+        );
+        await applyCallAudioOutputMode(
+          nextRoom,
+          sessionRef.current?.audioOutputMode ?? initialAudioOutputMode,
         );
         subscriptionCoordinator.requestExisting();
         await nextRoom.localParticipant.setMicrophoneEnabled(true);
@@ -1446,15 +1453,9 @@ export function GroupLiveKitCallSessionProvider({
     await mediaControllerRef.current?.switchCamera().catch(() => undefined);
   }, []);
 
-  const toggleSpeaker = useCallback(async () => {
-    const current = sessionRef.current;
-    const nextIsSpeakerEnabled = !current?.isSpeakerEnabled;
-    const outputs = await AudioSession.getAudioOutputs().catch(() => []);
-    const audioOutput = resolveAudioOutput(outputs, nextIsSpeakerEnabled);
-    if (audioOutput) {
-      await AudioSession.selectAudioOutput(audioOutput).catch(() => undefined);
-    }
-    patchSession({ isSpeakerEnabled: nextIsSpeakerEnabled });
+  const setAudioOutputMode = useCallback(async (mode: CallAudioOutputMode) => {
+    await applyCallAudioOutputMode(activeRoomRef.current, mode);
+    patchSession({ audioOutputMode: mode });
   }, [patchSession]);
 
   const getCandidates = useCallback(async () => {
@@ -1557,7 +1558,14 @@ export function GroupLiveKitCallSessionProvider({
       ) {
         return;
       }
-      AudioSession.startAudioSession().catch(() => undefined);
+      AudioSession.startAudioSession()
+        .then(() =>
+          applyCallAudioOutputMode(
+            activeRoomRef.current,
+            current.audioOutputMode,
+          ),
+        )
+        .catch(() => undefined);
     });
 
     return () => subscription.remove();
@@ -1577,6 +1585,7 @@ export function GroupLiveKitCallSessionProvider({
         endNativeCall(current.nativeCallUuid);
       }
       disconnectActiveRoom();
+      resetCallRemoteAudioVolume();
       if (current) {
         releaseIosCallAudio({
           owner: 'group-call',
@@ -1608,7 +1617,7 @@ export function GroupLiveKitCallSessionProvider({
       toggleMic,
       toggleCamera,
       switchCamera,
-      toggleSpeaker,
+      setAudioOutputMode,
       getCandidates,
       addMembers,
     }),
@@ -1627,7 +1636,7 @@ export function GroupLiveKitCallSessionProvider({
       switchCamera,
       toggleCamera,
       toggleMic,
-      toggleSpeaker,
+      setAudioOutputMode,
     ],
   );
 

@@ -38,7 +38,8 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
     filterGroups: 'Nhóm',
     filterEvents: 'Sự kiện',
     noUnread: 'Bạn đã đọc hết thông báo',
-    noUnreadDescription: 'Quay lại sau nhé, chúng tôi sẽ thông báo khi có gì mới.',
+    noUnreadDescription:
+      'Quay lại sau nhé, chúng tôi sẽ thông báo khi có gì mới.',
     searchPlaceholder: 'Tìm kiếm thông báo',
     noSearchResults: 'Không tìm thấy thông báo phù hợp',
   },
@@ -49,7 +50,8 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
     markAllRead: 'Mark all as read',
     filter: 'Filter',
     emptyTitle: 'No notifications yet',
-    emptyDescription: 'When you have new notifications, they will show up here.',
+    emptyDescription:
+      'When you have new notifications, they will show up here.',
     loading: 'Loading notifications...',
     retry: 'Retry',
     allLoaded: 'All notifications loaded',
@@ -74,7 +76,8 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
     filterGroups: 'Groups',
     filterEvents: 'Events',
     noUnread: 'You are all caught up',
-    noUnreadDescription: 'Come back later, we will let you know when something is new.',
+    noUnreadDescription:
+      'Come back later, we will let you know when something is new.',
     searchPlaceholder: 'Search notifications',
     noSearchResults: 'No notifications match your search',
   },
@@ -82,7 +85,9 @@ export const NOTIFICATION_COPY: Record<AppLanguage, Record<string, string>> = {
 
 export type NotificationCopyKey = keyof typeof NOTIFICATION_COPY.vi;
 
-export function getCopy(language: AppLanguage): Record<NotificationCopyKey, string> {
+export function getCopy(
+  language: AppLanguage,
+): Record<NotificationCopyKey, string> {
   return NOTIFICATION_COPY[language] as Record<NotificationCopyKey, string>;
 }
 
@@ -90,7 +95,11 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ONE_WEEK_MS = 7 * ONE_DAY_MS;
 const ONE_MONTH_MS = 30 * ONE_DAY_MS;
 
-export type NotificationBucketKey = 'today' | 'thisWeek' | 'thisMonth' | 'earlier';
+export type NotificationBucketKey =
+  | 'today'
+  | 'thisWeek'
+  | 'thisMonth'
+  | 'earlier';
 
 export interface NotificationBucket {
   key: NotificationBucketKey;
@@ -129,13 +138,26 @@ export function groupNotificationsByTime(
   }
 
   const buckets: NotificationBucket[] = [];
-  if (today.length > 0) buckets.push({ key: 'today', title: copy.sectionToday, items: today });
+  if (today.length > 0)
+    buckets.push({ key: 'today', title: copy.sectionToday, items: today });
   if (thisWeek.length > 0)
-    buckets.push({ key: 'thisWeek', title: copy.sectionThisWeek, items: thisWeek });
+    buckets.push({
+      key: 'thisWeek',
+      title: copy.sectionThisWeek,
+      items: thisWeek,
+    });
   if (thisMonth.length > 0)
-    buckets.push({ key: 'thisMonth', title: copy.sectionThisMonth, items: thisMonth });
+    buckets.push({
+      key: 'thisMonth',
+      title: copy.sectionThisMonth,
+      items: thisMonth,
+    });
   if (earlier.length > 0)
-    buckets.push({ key: 'earlier', title: copy.sectionEarlier, items: earlier });
+    buckets.push({
+      key: 'earlier',
+      title: copy.sectionEarlier,
+      items: earlier,
+    });
 
   return buckets;
 }
@@ -210,7 +232,12 @@ export function filterNotificationsByType(
         return (
           item.type === 'joined_group' ||
           item.type === 'requested_to_join_group' ||
-          item.type === 'accepted_join_request'
+          item.type === 'accepted_join_request' ||
+          item.type === 'added_you_to_group' ||
+          item.type === 'group_admin' ||
+          item.type === 'group_chat_invite' ||
+          item.type === 'accept_group_chat_request' ||
+          item.type === 'declined_group_chat_request'
         );
       case 'events':
         return (
@@ -238,7 +265,8 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
     visited_profile: '{name} đã xem trang cá nhân của bạn',
     liked_page: '{name} đã thích trang của bạn',
     joined_group: '{name} đã tham gia nhóm của bạn',
-    added_you_to_group: '{name} đã mời bạn vào nhóm chat',
+    added_you_to_group: '{name} đã thêm bạn vào nhóm',
+    group_chat_invite: '{name} đã mời bạn vào nhóm chat',
     accept_group_chat_request: '{name} đã chấp nhận lời mời tham gia nhóm chat',
     declined_group_chat_request: '{name} đã từ chối lời mời tham gia nhóm chat',
     accepted_request: '{name} đã chấp nhận lời mời kết bạn',
@@ -259,7 +287,8 @@ const TEXT_TEMPLATES: Record<AppLanguage, Record<string, string>> = {
     visited_profile: '{name} visited your profile',
     liked_page: '{name} liked your page',
     joined_group: '{name} joined your group',
-    added_you_to_group: '{name} invited you to a group chat',
+    added_you_to_group: '{name} added you to a group',
+    group_chat_invite: '{name} invited you to a group chat',
     accept_group_chat_request: '{name} accepted your group chat invite',
     declined_group_chat_request: '{name} declined your group chat invite',
     accepted_request: '{name} accepted your friend request',

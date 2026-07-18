@@ -31,7 +31,7 @@ describe('Messages groups tab create CTA', () => {
     const floatingActionBlock = source.slice(
       source.indexOf("{activeFilter !== 'broadcast' && ("),
       source.indexOf(
-        '<ToastContainer',
+        '</SafeAreaView>',
         source.indexOf("{activeFilter !== 'broadcast' && ("),
       ),
     );

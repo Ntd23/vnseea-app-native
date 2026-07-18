@@ -56,12 +56,11 @@ describe('main tab platform configuration', () => {
       },
     });
 
-    expect(createIosNativeTabOptions(ROUTES.MARKETPLACE, 0, 'vi', 4)).toMatchObject({
+    expect(createIosNativeTabOptions(ROUTES.MARKETPLACE, 0, 'vi')).toMatchObject({
       tabBarLabel: 'Mua sắm',
-      tabBarBadge: 4,
       tabBarIcon: {
         type: 'sfSymbol',
-        name: 'cart.fill',
+        name: 'storefront.fill',
       },
     });
 

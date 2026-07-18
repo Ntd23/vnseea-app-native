@@ -54,7 +54,6 @@ import {
   Forward,
 } from 'lucide-react-native';
 import type { ReactionType, ReelsItem } from '../../domain/types/reels.types';
-import { ALL_REACTION_TYPES } from '../../domain/types/reels.types';
 import { isReelShareable } from '../../domain/policies/reelPrivacy';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -67,6 +66,10 @@ import {
   getReelVideoFitMode,
   getReelVideoNaturalAspectRatio,
 } from './reelVideoFit';
+import {
+  FEED_REACTION_IMAGES,
+  FEED_REACTION_TYPES,
+} from '../../../feed/presentation/components/FeedReactionAssets';
 
 const REEL_ITEM_COPY = {
   vi: {
@@ -88,17 +91,6 @@ const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 // Screen width used by the SVG gradient — computed once at module level.
 // Rotation is not a concern for a portrait-locked reels feed.
 const SCREEN_W = Dimensions.get('window').width;
-
-// Maps a backend reaction type to the emoji we render in the picker and
-// (when applicable) inside the heart button itself.
-const REACTION_EMOJI: Record<ReactionType, string> = {
-  like: '👍',
-  love: '❤️',
-  haha: '😂',
-  wow: '😮',
-  sad: '😢',
-  angry: '😡',
-};
 
 // Time window within which two taps count as a double-tap. 320ms is
 // slightly more forgiving than Apple's 280ms — testing on Android showed
@@ -793,7 +785,7 @@ function ReelItemBase({
               },
             ]}
           >
-            {ALL_REACTION_TYPES.map(type => {
+            {FEED_REACTION_TYPES.map(type => {
               const isCurrent = item.myReaction === type;
               return (
                 <TouchableOpacity
@@ -809,9 +801,11 @@ function ReelItemBase({
                   ]}
                   hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
                 >
-                  <Text style={styles.reactionPickerEmoji}>
-                    {REACTION_EMOJI[type]}
-                  </Text>
+                  <Image
+                    source={FEED_REACTION_IMAGES[type]}
+                    style={styles.reactionPickerImage}
+                    resizeMode="contain"
+                  />
                 </TouchableOpacity>
               );
             })}
@@ -921,10 +915,13 @@ function ReactionIcon({ reaction }: { reaction: ReactionType | null }) {
   if (reaction === null) {
     return <Heart size={32} color="#fff" fill="transparent" />;
   }
-  if (reaction === 'love') {
-    return <Heart size={32} color="#ff2d55" fill="#ff2d55" />;
-  }
-  return <Text style={styles.reactionIconEmoji}>{REACTION_EMOJI[reaction]}</Text>;
+  return (
+    <Image
+      source={FEED_REACTION_IMAGES[reaction]}
+      style={styles.reactionIconImage}
+      resizeMode="contain"
+    />
+  );
 }
 
 // ── RailButton ────────────────────────────────────────────────────────────
@@ -1118,16 +1115,14 @@ const styles = StyleSheet.create({
   reactionPickerItemActive: {
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
-  reactionPickerEmoji: {
-    fontSize: 26,
-    // Counter-acting font baseline so the emoji sits visually centered
-    lineHeight: 30,
+  reactionPickerImage: {
+    width: 30,
+    height: 30,
   },
 
-  // Emoji inside the heart RailButton (when myReaction is non-love)
-  reactionIconEmoji: {
-    fontSize: 30,
-    lineHeight: 36,
+  reactionIconImage: {
+    width: 32,
+    height: 32,
   },
 
   // Mute button style is no longer needed since it's in ReelsScreen.tsx
