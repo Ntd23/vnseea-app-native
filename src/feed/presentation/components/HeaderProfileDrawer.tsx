@@ -1057,7 +1057,7 @@ const LanguageRow = React.memo(function LanguageRow({
               currentLanguage === 'en' ? styles.langPillTextActive : styles.langPillTextInactive,
             ]}
           >
-            Tiếng Anh
+            English
           </Text>
         </TouchableOpacity>
       </View>
