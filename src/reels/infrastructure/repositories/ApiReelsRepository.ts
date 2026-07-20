@@ -5,6 +5,10 @@ import {
   audienceFromWire,
   audienceToWire,
 } from '../../../shared-kernel/domain/types/contentAudience';
+import {
+  REACTION_TO_WIRE,
+  WIRE_TO_REACTION,
+} from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
@@ -155,52 +159,6 @@ function cleanCaption(raw: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
-
-// ── Wire format mapping ────────────────────────────────────────────────
-//
-// THIS IS THE PIECE THAT MAKES REACTIONS ACTUALLY WORK.
-//
-// WoWonder's PHP backend keys `$wo['reactions_types']` by the numeric `id`
-// column from `Wo_Reactions_Types` (1=Like, 2=Love, 3=Haha, 4=Wow, 5=Sad,
-// 6=Angry), NOT by the reaction name. The post-actions endpoint then does:
-//
-//   in_array($_POST['reaction'], array_keys($wo['reactions_types']))
-//
-// which means it only accepts '1'..'6' — sending `reaction=love` silently
-// fails with "reaction missing" (we confirmed this by inspecting WoWonder's
-// own web client at script.js:4489 where it sends `name: '1'..'6'`).
-//
-// We keep the domain layer talking in human-friendly strings ('love',
-// 'haha', …) and convert here, right at the wire boundary.
-const REACTION_TO_WIRE: Record<ReactionType, string> = {
-  like: '1',
-  love: '2',
-  haha: '3',
-  wow: '4',
-  sad: '5',
-  angry: '6',
-};
-
-// Reverse lookup for parsing what the server sends back. Keyed by string
-// so we can do `WIRE_TO_REACTION[String(value)]` regardless of whether the
-// JSON came back as number or string.
-const WIRE_TO_REACTION: Record<string, ReactionType> = {
-  '1': 'like',
-  '2': 'love',
-  '3': 'haha',
-  '4': 'wow',
-  '5': 'sad',
-  '6': 'angry',
-  // Also accept the lowercase name in case some endpoint normalizes
-  // before responding (defensive — wire format IS numeric, but we've
-  // seen older WoWonder builds occasionally pass the name through).
-  like: 'like',
-  love: 'love',
-  haha: 'haha',
-  wow: 'wow',
-  sad: 'sad',
-  angry: 'angry',
-};
 
 /**
  * Pull the viewer's current reaction (if any) out of a raw post.

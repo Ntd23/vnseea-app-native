@@ -89,6 +89,11 @@ import { useChatViewModel } from '../../application/view-models/useChatViewModel
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 import { SharedPostMessageCard } from '../components/SharedPostMessageCard';
+import { DoubleTapTouchable } from '../components/DoubleTapTouchable';
+import {
+  MessageReactionBadge,
+  MessageReactionPicker,
+} from '../components/MessageReactions';
 import type {
   GroupAddableUser,
   GroupChatInfo,
@@ -118,6 +123,8 @@ import {
 } from '../../../user/application/utils/mapShare';
 import { getCurrentDeviceLocation } from '../../../shared-kernel/application/utils/currentLocation';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
+import { areMessageReactionSummariesEqual } from '../../domain/reactions/messageReactions';
 
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
@@ -678,6 +685,7 @@ type ChatMessageListItem =
 function isGroupableMediaMessage(message: MessageItem) {
   return Boolean(
     message.media &&
+      message.reactions.total === 0 &&
       (message.mediaType === 'image' || message.mediaType === 'video'),
   );
 }
@@ -1529,6 +1537,7 @@ function MessageBubble({
   onPressReply,
   onQuickRecord,
   onOpenSharedPost,
+  onDoubleTap,
 }: {
   message: MessageItem;
   avatar: string;
@@ -1541,6 +1550,7 @@ function MessageBubble({
   onPressReply?: (originalMessageId: string) => void;
   onQuickRecord?: () => void;
   onOpenSharedPost?: (postId: string) => void;
+  onDoubleTap?: (message: MessageItem) => void;
 }) {
   const isSentByMe = message.callEvent ? message.callEvent.isInitiator : message.isSentByMe;
 
@@ -1805,6 +1815,7 @@ function MessageBubble({
                 reference={sharedPost}
                 onOpenPost={postId => onOpenSharedPost?.(postId)}
                 onLongPress={() => onLongPress?.(message)}
+                onDoubleTap={() => onDoubleTap?.(message)}
               />
               <Text
                 className={`mt-1 text-[9.5px] ${
@@ -1821,9 +1832,12 @@ function MessageBubble({
               </Text>
             </View>
           ) : mapShare ? (
-            <View
+            <DoubleTapTouchable
               className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}
               style={styles.mapShareMessageWrap}
+              activeOpacity={0.96}
+              onLongPress={() => onLongPress?.(message)}
+              onDoubleTap={() => onDoubleTap?.(message)}
             >
               <MapShareCard
                 location={mapShare.location}
@@ -1837,10 +1851,16 @@ function MessageBubble({
               >
                 {formatMessageTime(message.time)}
               </Text>
-            </View>
+            </DoubleTapTouchable>
           ) : orderInquiry ? (
             /* Order Inquiry Card (renders instead of the main text bubble) */
-            <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`} style={{ maxWidth: 260 }}>
+            <DoubleTapTouchable
+              className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}
+              style={{ maxWidth: 260 }}
+              activeOpacity={0.96}
+              onLongPress={() => onLongPress?.(message)}
+              onDoubleTap={() => onDoubleTap?.(message)}
+            >
               <OrderInquiryBubble
                 order={orderInquiry}
                 isSentByMe={isSentByMe ?? false}
@@ -1852,7 +1872,7 @@ function MessageBubble({
               >
                 {formatMessageTime(message.time)}
               </Text>
-            </View>
+            </DoubleTapTouchable>
           ) : (
             <>
               {/* Product Inquiry Card (outside bubble) */}
@@ -1885,16 +1905,21 @@ function MessageBubble({
                   message.deliveryState === 'sending' ? 'opacity-70' : ''
                 }`}
               >
-                <TouchableOpacity
+                <DoubleTapTouchable
                   activeOpacity={0.9}
                   onLongPress={() => onLongPress?.(message)}
+                  onDoubleTap={() => onDoubleTap?.(message)}
                   delayLongPress={350}
                 >
                   {message.callEvent ? (
                     <CallEventContent message={message} onRecall={onRecallCall} />
                   ) : (
                     <>
-                      <MessageMedia message={message} onOpenMedia={onOpenMedia} />
+                      <MessageMedia
+                        message={message}
+                        onOpenMedia={onOpenMedia}
+                        onDoubleTap={() => onDoubleTap?.(message)}
+                      />
                       {!!replyInfo ? (
                         hasMessageMedia ? (
                           <View
@@ -1971,10 +1996,14 @@ function MessageBubble({
                         : formatMessageTime(message.time)}
                     </Text>
                   )}
-                </TouchableOpacity>
+                </DoubleTapTouchable>
               </View>
             </>
           )}
+          <MessageReactionBadge
+            summary={message.reactions}
+            isSentByMe={Boolean(isSentByMe)}
+          />
         </View>
 
         {!isSentByMe && message.mediaType === 'audio' && (
@@ -2007,6 +2036,10 @@ const MemoizedMessageBubble = React.memo(
       prevProps.message.sharedPost?.url === nextProps.message.sharedPost?.url &&
       prevProps.message.sharedPost?.note ===
         nextProps.message.sharedPost?.note &&
+      areMessageReactionSummariesEqual(
+        prevProps.message.reactions,
+        nextProps.message.reactions,
+      ) &&
       prevProps.avatar === nextProps.avatar &&
       prevProps.partnerName === nextProps.partnerName &&
       prevProps.showAvatar === nextProps.showAvatar
@@ -2620,35 +2653,43 @@ function RecordingWaveformBar({
 function MessageMedia({
   message,
   onOpenMedia,
+  onDoubleTap,
 }: {
   message: MessageItem;
   onOpenMedia: OpenChatMedia;
+  onDoubleTap?: () => void;
 }) {
   if (!message.media) return null;
 
   if (message.mediaType === 'image') {
     return (
-      <TouchableOpacity
+      <DoubleTapTouchable
         activeOpacity={0.9}
-        onPress={() => onOpenMedia({ uri: message.media!, type: 'image' })}
+        onSingleTap={() =>
+          onOpenMedia({ uri: message.media!, type: 'image' })
+        }
+        onDoubleTap={onDoubleTap}
       >
         <ChatImage uri={message.media} />
-      </TouchableOpacity>
+      </DoubleTapTouchable>
     );
   }
 
   if (message.mediaType === 'video') {
     return (
-      <TouchableOpacity
+      <DoubleTapTouchable
         activeOpacity={0.9}
-        onPress={() => onOpenMedia({ uri: message.media!, type: 'video' })}
+        onSingleTap={() =>
+          onOpenMedia({ uri: message.media!, type: 'video' })
+        }
+        onDoubleTap={onDoubleTap}
       >
         <ChatVideoPreview
           uri={message.media}
           thumbnail={message.thumbnail}
           cacheKey={message.id}
         />
-      </TouchableOpacity>
+      </DoubleTapTouchable>
     );
   }
 
@@ -2671,12 +2712,14 @@ function MediaMessageGroup({
   messages,
   avatar,
   onOpenMedia,
-  onReply,
+  onLongPress,
+  onDoubleTap,
 }: {
   messages: MessageItem[];
   avatar: string;
   onOpenMedia: OpenChatMedia;
-  onReply?: (message: MessageItem) => void;
+  onLongPress?: (message: MessageItem) => void;
+  onDoubleTap?: (message: MessageItem) => void;
 }) {
   const orderedMessages = [...messages].reverse();
   const visibleMessages = orderedMessages.slice(0, 6);
@@ -2711,12 +2754,13 @@ function MediaMessageGroup({
       <View style={styles.imageGalleryBody}>
         <View style={styles.imageGallery}>
           {visibleMessages.map((message, index) => (
-            <TouchableOpacity
+            <DoubleTapTouchable
               key={message.id}
               activeOpacity={0.9}
               delayLongPress={320}
-              onLongPress={() => onReply?.(message)}
-              onPress={() => {
+              onLongPress={() => onLongPress?.(message)}
+              onDoubleTap={() => onDoubleTap?.(message)}
+              onSingleTap={() => {
                 onOpenMedia(
                   {
                     uri: message.media!,
@@ -2749,7 +2793,7 @@ function MediaMessageGroup({
                   </Text>
                 </View>
               ) : null}
-            </TouchableOpacity>
+            </DoubleTapTouchable>
           ))}
         </View>
         {captions.length > 0 ? (
@@ -3501,6 +3545,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     refreshLatest,
     loadMessageContext,
     setMessagePinned,
+    setMessageReaction,
     sendMessage,
     notifyTyping,
     stopTyping,
@@ -4028,6 +4073,33 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     }
   }, [selectedOptionMessage, setMessagePinned]);
 
+  const handleMessageReaction = useCallback(
+    async (message: MessageItem, reaction: ReactionType | null) => {
+      setSelectedOptionMessage(undefined);
+      try {
+        await setMessageReaction(message.id, reaction);
+      } catch (reactionError) {
+        showSnackbar({
+          message:
+            reactionError instanceof Error
+              ? reactionError.message
+              : 'Không thể cập nhật cảm xúc.',
+          type: 'error',
+        });
+      }
+    },
+    [setMessageReaction],
+  );
+
+  const handleDoubleTapMessage = useCallback(
+    (message: MessageItem) => {
+      const reaction =
+        message.reactions.myReaction === 'like' ? null : 'like';
+      handleMessageReaction(message, reaction).catch(() => undefined);
+    },
+    [handleMessageReaction],
+  );
+
   const handleSendProductInquiryOption = useCallback(
     async (optionText: string) => {
       if (!attachedProduct) return;
@@ -4210,7 +4282,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               messages={item.messages}
               avatar={chat.avatar}
               onOpenMedia={handleOpenMedia}
-              onReply={setReplyingMessage}
+              onLongPress={setSelectedOptionMessage}
+              onDoubleTap={handleDoubleTapMessage}
             />
           </View>
         );
@@ -4247,11 +4320,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             onPressReply={handlePressReply}
             onQuickRecord={handleQuickRecord}
             onOpenSharedPost={handleOpenSharedPost}
+            onDoubleTap={handleDoubleTapMessage}
           />
         </View>
       );
     },
-    [chat.avatar, chat.name, highlightedMessageId, messageItems, handleOpenMedia, handleStartConversationCall, handlePressReply, handleQuickRecord, handleOpenSharedPost],
+    [chat.avatar, chat.name, highlightedMessageId, messageItems, handleOpenMedia, handleStartConversationCall, handlePressReply, handleQuickRecord, handleOpenSharedPost, handleDoubleTapMessage],
   );
 
   const handleOpenGroupInfo = useCallback(() => {
@@ -5227,6 +5301,17 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               <Text className="text-center text-sm font-semibold text-gray-500 mb-6">
                 Tùy chọn tin nhắn
               </Text>
+
+              {selectedOptionMessage ? (
+                <MessageReactionPicker
+                  currentReaction={
+                    selectedOptionMessage.reactions.myReaction
+                  }
+                  onSelect={reaction =>
+                    handleMessageReaction(selectedOptionMessage, reaction)
+                  }
+                />
+              ) : null}
 
               <TouchableOpacity
                 className="flex-row items-center rounded-xl bg-gray-50 px-4 py-4 mb-3 active:bg-gray-100"

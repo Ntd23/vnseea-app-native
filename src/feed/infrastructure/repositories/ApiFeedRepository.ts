@@ -24,8 +24,12 @@ import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { getShareableUrl } from '../../../shared-kernel/application/view-models/useShareViewModel';
+import {
+  REACTION_TO_WIRE,
+  WIRE_TO_REACTION,
+  type ReactionType,
+} from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import type {
-  ReactionType,
   ReelCaptionSuggestion,
 } from '../../../reels/domain/types/reels.types';
 import { reelsReactionsStorage } from '../../../reels/infrastructure/storage/reelsReactionsStorage';
@@ -69,42 +73,6 @@ import {
 // 0=everyone, 1=mutual friends, 2=people following the author,
 // 3=only me, 4=anonymous.
 const PRIVACY_TO_WIRE = audienceToWire;
-
-// ── Wire format ──────────────────────────────────────────────────────────
-//
-// WoWonder keys `$wo['reactions_types']` by the numeric `id` column of
-// `Wo_Reactions_Types` (1..6), NOT by the human name. The `post-actions`
-// endpoint then validates:
-//
-//   in_array($_POST['reaction'], array_keys($wo['reactions_types']))
-//
-// → sending `reaction=love` silently fails ("reaction missing"). Confirmed
-// by inspecting WoWonder's own web client at script.js:4489 which sends
-// `name: '1'..'6'`. Same mapping as `src/reels/.../ApiReelsRepository.ts`.
-const REACTION_TO_WIRE: Record<ReactionType, string> = {
-  like: '1',
-  love: '2',
-  haha: '3',
-  wow: '4',
-  sad: '5',
-  angry: '6',
-};
-
-const WIRE_TO_REACTION: Record<string, ReactionType> = {
-  '1': 'like',
-  '2': 'love',
-  '3': 'haha',
-  '4': 'wow',
-  '5': 'sad',
-  '6': 'angry',
-  // Defensive: some installs occasionally return the lowercase name.
-  like: 'like',
-  love: 'love',
-  haha: 'haha',
-  wow: 'wow',
-  sad: 'sad',
-  angry: 'angry',
-};
 
 function extractMyReaction(raw: Record<string, unknown>): ReactionType | null {
   const reaction = raw.reaction;

@@ -1160,7 +1160,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                             $message['reply']['message_hash_id'] = $_POST['message_hash_id'];
                         }
                     }
-                    $message['reaction'] = Wo_GetPostReactionsTypes($message['id'], 'message');
+                    $message['reaction'] = VNSEEA_GetMessageReactionSummary($message['id']);
                     array_push($messages, $message);
                 }
                 foreach ($messages as $m_id => $value) {

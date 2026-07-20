@@ -21,7 +21,11 @@
 
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
-import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import {
+  REACTION_TO_WIRE,
+  WIRE_TO_REACTION,
+  type ReactionType,
+} from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import type { StoriesRepository } from '../../domain/repositories/StoriesRepository';
 import type {
   CreateStoryDraft,
@@ -107,36 +111,6 @@ function readUserOnline(raw: Record<string, unknown>): boolean {
   );
   return lastseen > 0 && lastseen > Math.floor(Date.now() / 1000) - 60;
 }
-
-// ── Reaction wire format ──────────────────────────────────────────────────
-//
-// Stories use the same `T_REACTIONS.reaction` column as posts: numeric
-// strings '1'..'6'. The `react_story.php` endpoint validates
-// `$_POST['reaction']` against `array_keys($wo['reactions_types'])`, and
-// those keys are the numeric reaction ids on this WoWonder install.
-const REACTION_TO_WIRE: Record<ReactionType, string> = {
-  like: '1',
-  love: '2',
-  haha: '3',
-  wow: '4',
-  sad: '5',
-  angry: '6',
-};
-
-const WIRE_TO_REACTION: Record<string, ReactionType> = {
-  '1': 'like',
-  '2': 'love',
-  '3': 'haha',
-  '4': 'wow',
-  '5': 'sad',
-  '6': 'angry',
-  like: 'like',
-  love: 'love',
-  haha: 'haha',
-  wow: 'wow',
-  sad: 'sad',
-  angry: 'angry',
-};
 
 type ReactStoryResponse = {
   api_status?: number | string;

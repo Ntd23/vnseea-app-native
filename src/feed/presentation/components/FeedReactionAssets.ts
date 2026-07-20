@@ -3,8 +3,9 @@
 import type { ImageSourcePropType } from 'react-native';
 import {
   ALL_REACTION_TYPES,
+  isReactionType,
   type ReactionType,
-} from '../../../reels/domain/types/reels.types';
+} from '../../../shared-kernel/domain/reactions/reactionCatalog';
 
 export const FEED_REACTION_TYPES: readonly ReactionType[] = ALL_REACTION_TYPES;
 
@@ -27,5 +28,5 @@ export const FEED_REACTION_COLORS: Record<ReactionType, string> = {
 };
 
 export function isFeedReactionType(value: string): value is ReactionType {
-  return FEED_REACTION_TYPES.includes(value as ReactionType);
+  return isReactionType(value);
 }

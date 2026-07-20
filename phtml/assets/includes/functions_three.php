@@ -6406,7 +6406,7 @@ function Wo_GetChatGroupLastMessage($id = false)
 	if ($query && mysqli_num_rows($query) > 0) {
 		$fetched_data              = mysqli_fetch_assoc($query);
 		$fetched_data['user_data'] = Wo_UserData($fetched_data['from_id']);
-		$fetched_data['reaction']  = Wo_GetPostReactionsTypes($fetched_data['id'], 'message');
+		$fetched_data['reaction']  = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
 		$data                      = $fetched_data;
 	}
 	return $data;
