@@ -148,6 +148,7 @@ export function useIncomingLiveKitCalls() {
         answerIncomingCall(call)
           .then(didAnswer => {
             if (!didAnswer) return;
+            dismissAndroidIncomingCall(call.callId);
             navigationRef.navigate(ROUTES.CALL_ROOM, {
               callId: call.callId,
               callType: call.callType,

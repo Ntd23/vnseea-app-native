@@ -33,9 +33,13 @@ describe('ChatScreen input safe area', () => {
     expect(source).toContain("behavior={Platform.OS === 'ios' ? 'padding' : undefined}");
     expect(source).toContain("enabled={Platform.OS === 'ios'}");
     expect(source).toContain('keyboardVerticalOffset={0}');
-    expect(source).toContain("Keyboard.addListener('keyboardWillChangeFrame'");
-    expect(source).toContain("Keyboard.addListener('keyboardWillHide'");
-    expect(source).toContain("keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}");
+    expect(source).toMatch(
+      /Keyboard\.addListener\(\s*'keyboardWillChangeFrame'/,
+    );
+    expect(source).toMatch(/Keyboard\.addListener\(\s*'keyboardWillHide'/);
+    expect(source).toMatch(
+      /keyboardDismissMode=\{\s*Platform\.OS === 'ios'\s*\? 'interactive'\s*: 'on-drag'\s*\}/,
+    );
     expect(source).toContain('onFocus={handleComposerFocus}');
   });
 });

@@ -18,7 +18,7 @@ patchedDependencies:
     hash: 084efd53ec081af8eee6637779a9cb8a73b6e213c5f32d4a27bb6d8c4c99a2a7
     path: patches/react-native-css-interop@0.2.3.patch
   react-native-video@6.19.2:
-    hash: 0887a9cbe1aecc7a33dae6d0a91320d98ea61031a5469e603f9e7621e5e2f721
+    hash: 471f8c53b6e4177056be55114ec67708d81312a0947e0a0c8b615631389e3a20
     path: patches/react-native-video@6.19.2.patch
 
 importers:
@@ -168,7 +168,7 @@ importers:
         version: 10.3.0
       react-native-video:
         specifier: ^6.19.2
-        version: 6.19.2(patch_hash=0887a9cbe1aecc7a33dae6d0a91320d98ea61031a5469e603f9e7621e5e2f721)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+        version: 6.19.2(patch_hash=471f8c53b6e4177056be55114ec67708d81312a0947e0a0c8b615631389e3a20)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       react-native-view-shot:
         specifier: 5.1.1
         version: 5.1.1(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
@@ -9520,7 +9520,7 @@ snapshots:
       prop-types: 15.8.1
       yargs: 16.2.0
 
-  react-native-video@6.19.2(patch_hash=0887a9cbe1aecc7a33dae6d0a91320d98ea61031a5469e603f9e7621e5e2f721)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3):
+  react-native-video@6.19.2(patch_hash=471f8c53b6e4177056be55114ec67708d81312a0947e0a0c8b615631389e3a20)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3):
     dependencies:
       react: 19.2.3
       react-native: 0.85.3(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/jest-preset@0.85.3(@babel/core@7.29.0)(react@19.2.3))(@react-native/metro-config@0.85.3(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3)

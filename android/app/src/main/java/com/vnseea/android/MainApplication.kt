@@ -9,6 +9,7 @@ import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.livekit.reactnative.LiveKitReactNative
 import com.livekit.reactnative.audio.AudioType
+import com.vnseea.android.audio.CallAudioRoutePackage
 import com.vnseea.android.audio.WavAudioRecorderPackage
 import com.vnseea.android.call.VnseeaCallIntentPackage
 import com.vnseea.android.live.LiveCameraPreviewPackage
@@ -23,6 +24,7 @@ class MainApplication : Application(), ReactApplication {
     getDefaultReactHost(
       context = applicationContext,
       packageList = PackageList(this).packages.apply {
+        add(CallAudioRoutePackage())
         add(WavAudioRecorderPackage())
         add(VnseeaCallIntentPackage())
         add(LiveCameraPreviewPackage())

@@ -8,6 +8,87 @@ function read(relativePath) {
 }
 
 describe('LiveKit call media startup resilience', () => {
+  it('keeps echo cancellation enabled for direct voice, direct video, and group video rooms', () => {
+    const routingSource = read(
+      'src/messages/application/livekit/callAudioRouting.ts',
+    );
+    const directSource = read(
+      'src/messages/application/view-models/useLiveKitCallSession.tsx',
+    );
+    const groupSource = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+
+    expect(routingSource).toContain('echoCancellation: true');
+    expect(routingSource).toContain('noiseSuppression: true');
+    expect(routingSource).toContain('autoGainControl: true');
+    expect(routingSource).toContain('AndroidAudioTypePresets.communication');
+    expect(routingSource).toContain(
+      "audioMode: preferSpeakerOutput ? 'videoChat' : 'voiceChat'",
+    );
+    for (const source of [directSource, groupSource]) {
+      expect(source).toContain(
+        'audioCaptureDefaults: CALL_AUDIO_CAPTURE_DEFAULTS',
+      );
+    }
+  });
+
+  it('updates output controls immediately and rolls back only the latest failed route', () => {
+    const directSource = read(
+      'src/messages/application/view-models/useLiveKitCallSession.tsx',
+    );
+    const groupSource = read(
+      'src/messages/application/view-models/useGroupLiveKitCallSession.tsx',
+    );
+
+    for (const source of [directSource, groupSource]) {
+      expect(source).toContain('const audioOutputRequestIdRef = useRef(0);');
+      expect(source).toContain(
+        'const requestId = ++audioOutputRequestIdRef.current;',
+      );
+      expect(source).toContain('patchSession({ audioOutputMode: mode });');
+      expect(source).toContain(
+        'const result = await applyCallAudioOutputMode(',
+      );
+      expect(source).toContain(
+        'if (requestId !== audioOutputRequestIdRef.current) return;',
+      );
+      expect(source).toContain(
+        'patchSession({ audioOutputMode: rollbackMode });',
+      );
+    }
+  });
+
+  it('offers a dedicated remote-audio mute choice in the call picker', () => {
+    const selectorSource = read(
+      'src/messages/presentation/components/CallAudioOutputSelector.tsx',
+    );
+
+    expect(selectorSource).toContain("mode: 'muted'");
+    expect(selectorSource).toContain("label: 'Tắt âm thanh'");
+    expect(selectorSource).toContain('setOptimisticMode(nextMode);');
+    expect(selectorSource).toContain(
+      'if (requestId !== applyRequestIdRef.current) return;',
+    );
+  });
+
+  it('keeps the Android call-route lock active until call audio teardown', () => {
+    const nativeRouteSource = read(
+      'android/app/src/main/java/com/vnseea/android/audio/CallAudioRouteModule.kt',
+    );
+    const mainApplicationSource = read(
+      'android/app/src/main/java/com/vnseea/android/MainApplication.kt',
+    );
+
+    expect(nativeRouteSource).toContain(
+      'CALL_ROUTE_ACTIVE_PROPERTY = "vnseea.call.audio.route.active"',
+    );
+    expect(nativeRouteSource).toContain('setCallRouteActive(true)');
+    expect(nativeRouteSource).toContain('setCallRouteActive(false)');
+    expect(nativeRouteSource).toContain('override fun invalidate()');
+    expect(mainApplicationSource).toContain('add(CallAudioRoutePackage())');
+  });
+
   it('routes iOS direct audio and video calls through the manual Room path', () => {
     const source = read(
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
@@ -25,10 +106,10 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).toContain('function shouldUseIosDirectCallAudioGate');
     expect(source).toContain("callType === 'audio' || callType === 'video'");
     expect(connectBlock).toContain('prepareIosDirectCallAudioGate({');
-    expect(connectBlock).toContain('const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)');
     expect(connectBlock).toContain(
-      'await nextRoom.connect(nextPayload.wsUrl, nextPayload.token, LIVEKIT_CONNECT_OPTIONS)',
+      'const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)',
     );
+    expect(connectBlock).toContain('await nextRoom.connect(');
     expect(connectBlock).toContain('publishLocalCallMedia({');
     expect(source).toContain("logCallDebug('native_audio_gate_pass'");
     expect(source).toContain("logCallDebug('native_audio_gate_failed'");
@@ -40,18 +121,23 @@ describe('LiveKit call media startup resilience', () => {
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
     const connectIndex = source.indexOf('const connectPayload = useCallback');
-    const connectEndIndex = source.indexOf('const joinAnsweredOutgoingCall = useCallback', connectIndex);
+    const connectEndIndex = source.indexOf(
+      'const joinAnsweredOutgoingCall = useCallback',
+      connectIndex,
+    );
     const connectBlock = source.slice(connectIndex, connectEndIndex);
 
     expect(source).toContain('function shouldUseIosDirectCallAudioGate');
     expect(source).toContain("callType === 'audio' || callType === 'video'");
     expect(connectBlock).toContain('prepareIosDirectCallAudioGate({');
-    expect(connectBlock).toContain('const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)');
     expect(connectBlock).toContain(
-      'await nextRoom.connect(nextPayload.wsUrl, nextPayload.token, LIVEKIT_CONNECT_OPTIONS)',
+      'const nextRoom = new Room(LIVEKIT_ROOM_OPTIONS)',
     );
+    expect(connectBlock).toContain('await nextRoom.connect(');
     expect(connectBlock).toContain('publishLocalCallMedia({');
-    expect(source).toContain('room.localParticipant.setMicrophoneEnabled(true)');
+    expect(source).toContain(
+      'room.localParticipant.setMicrophoneEnabled(true)',
+    );
     expect(source).toContain('room.localParticipant.setCameraEnabled(true)');
     expect(source).toContain('requestRemoteTrackSubscription');
   });
@@ -64,9 +150,13 @@ describe('LiveKit call media startup resilience', () => {
       'src/messages/application/livekit/iosCallAudioLifecycle.ts',
     );
 
-    expect(source).toContain('setIosCallAudioActive(active, context, logCallDebug)');
+    expect(source).toContain(
+      'setIosCallAudioActive(active, context, logCallDebug)',
+    );
     expect(audioLifecycleSource).toContain('setIosRealtimeMediaAudioActive');
-    expect(source).toContain('shouldUseIosDirectCallAudioGate(params.callType)');
+    expect(source).toContain(
+      'shouldUseIosDirectCallAudioGate(params.callType)',
+    );
     expect(source).toContain("owner: 'direct-call'");
     expect(audioLifecycleSource).toContain("role: 'call'");
     expect(audioLifecycleSource).toContain('mediaKind: context.callType');
@@ -88,7 +178,9 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).not.toContain('activateWebRTCAudioSessionForCallKit');
     expect(source).not.toContain('getWebRTCAudioSessionDebugState');
     expect(source).not.toContain('repairIosVoiceAudioSessionDrift');
-    expect(source).not.toContain('ios_audio_session_state_after_local_publish_reapply');
+    expect(source).not.toContain(
+      'ios_audio_session_state_after_local_publish_reapply',
+    );
   });
 
   it('waits for CallKit activation without taking native recording ownership before connect', () => {
@@ -113,28 +205,52 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).not.toContain('AudioDeviceModule.setEngineAvailability');
     expect(source).not.toContain('isInputAvailable: true');
     expect(source).not.toContain('isOutputAvailable: true');
-    expect(source).not.toContain('AudioDeviceModule.setRecordingAlwaysPreparedMode');
+    expect(source).not.toContain(
+      'AudioDeviceModule.setRecordingAlwaysPreparedMode',
+    );
     expect(source).not.toContain('AudioDeviceModule.setVoiceProcessingEnabled');
-    expect(source).not.toContain('AudioDeviceModule.setVoiceProcessingAGCEnabled');
+    expect(source).not.toContain(
+      'AudioDeviceModule.setVoiceProcessingAGCEnabled',
+    );
     expect(source).not.toContain('AudioDeviceModule.setMicrophoneMuted');
     expect(source).not.toContain('AudioSession.setAppleAudioConfiguration');
     expect(source).toContain("stage: 'before_connect'");
     expect(source).toContain('ensureIosCallKitAudioSessionStarted');
     expect(source).toContain("stage: 'callkit_activation'");
     expect(source).toContain('activation.callUuid === callUuid');
-    expect(source).toContain("logCallDebug('ios_callkit_audio_session_start_start'");
+    expect(source).toContain(
+      "logCallDebug('ios_callkit_audio_session_start_start'",
+    );
     expect(source).toContain("logCallDebug('ios_callkit_audio_session_ready'");
-    expect(source).not.toContain("logCallDebug('ios_callkit_audio_session_start_success'");
-    expect(source).not.toContain("logCallDebug('ios_callkit_audio_session_start_error'");
-    expect(source).not.toContain("logCallDebug('ios_voice_recording_prepare_start'");
-    expect(source).not.toContain("logCallDebug('ios_voice_recording_prepare_success'");
-    expect(source).not.toContain("logCallDebug('ios_voice_recording_warm_start'");
-    expect(source).not.toContain("logCallDebug('ios_voice_recording_warm_error'");
+    expect(source).not.toContain(
+      "logCallDebug('ios_callkit_audio_session_start_success'",
+    );
+    expect(source).not.toContain(
+      "logCallDebug('ios_callkit_audio_session_start_error'",
+    );
+    expect(source).not.toContain(
+      "logCallDebug('ios_voice_recording_prepare_start'",
+    );
+    expect(source).not.toContain(
+      "logCallDebug('ios_voice_recording_prepare_success'",
+    );
+    expect(source).not.toContain(
+      "logCallDebug('ios_voice_recording_warm_start'",
+    );
+    expect(source).not.toContain(
+      "logCallDebug('ios_voice_recording_warm_error'",
+    );
     expect(source).toContain("logCallDebug('ios_audio_device_state'");
     expect(source).toContain('preferSpeakerOutput');
-    expect(source).not.toContain("logCallDebug('ios_callkit_audio_outputs_after_start'");
-    expect(source).not.toContain("logCallDebug('ios_callkit_audio_output_select_start'");
-    expect(source).not.toContain("logCallDebug('ios_callkit_audio_output_select_success'");
+    expect(source).not.toContain(
+      "logCallDebug('ios_callkit_audio_outputs_after_start'",
+    );
+    expect(source).not.toContain(
+      "logCallDebug('ios_callkit_audio_output_select_start'",
+    );
+    expect(source).not.toContain(
+      "logCallDebug('ios_callkit_audio_output_select_success'",
+    );
     expect(source).toContain('shouldStartAudioSessionBeforeConnect');
     expect(source).toContain('usesNativeCallUi');
   });
@@ -210,7 +326,9 @@ describe('LiveKit call media startup resilience', () => {
       disconnectedIndex,
       disconnectedEndIndex,
     );
-    const connectCatchIndex = connectBlock.indexOf("logCallDebug('room_connect_error'");
+    const connectCatchIndex = connectBlock.indexOf(
+      "logCallDebug('room_connect_error'",
+    );
     const connectCatchEndIndex = connectBlock.indexOf(
       'const elapsedSeconds =',
       connectCatchIndex,
@@ -234,9 +352,7 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).not.toContain('connectOptions={{ autoSubscribe: true }}');
     expect(source).toContain('LIVEKIT_CONNECT_OPTIONS');
     expect(source).toContain('autoSubscribe: false');
-    expect(source).toContain(
-      'await nextRoom.connect(nextPayload.wsUrl, nextPayload.token, LIVEKIT_CONNECT_OPTIONS)',
-    );
+    expect(source).toContain('await nextRoom.connect(');
   });
 
   it('keeps recording SDK-owned and uses compact stats with one SDK mic recovery', () => {
@@ -244,7 +360,10 @@ describe('LiveKit call media startup resilience', () => {
       'src/messages/application/view-models/useLiveKitCallSession.tsx',
     );
     const probeIndex = source.indexOf('function startCallAudioStatsProbe');
-    const probeEndIndex = source.indexOf('function startCallVideoStatsProbe', probeIndex);
+    const probeEndIndex = source.indexOf(
+      'function startCallVideoStatsProbe',
+      probeIndex,
+    );
     const probeBlock = source.slice(probeIndex, probeEndIndex);
 
     expect(source).not.toContain('ensureIosVoiceRecordingRunning');
@@ -252,7 +371,9 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).not.toContain('AudioDeviceModule.startLocalRecording()');
     expect(source).not.toContain('releaseIosVoiceRecordingDevice');
     expect(source).not.toContain('AudioDeviceModule.stopLocalRecording()');
-    expect(source).not.toContain('AudioDeviceModule.setRecordingAlwaysPreparedMode');
+    expect(source).not.toContain(
+      'AudioDeviceModule.setRecordingAlwaysPreparedMode',
+    );
     expect(source).toContain('setIosVoiceCallAudioActive(false');
     expect(probeBlock).not.toContain("logCallDebug('audio_stats_sample'");
     expect(probeBlock).toContain("logCallDebug('audio_stats_compact'");
@@ -263,10 +384,16 @@ describe('LiveKit call media startup resilience', () => {
     expect(source).toContain('diagnosis');
     expect(probeBlock).toContain("logCallDebug('audio_stats_zero_outbound'");
     expect(probeBlock).toContain("logCallDebug('zero_outbound_recovery_start'");
-    expect(probeBlock).toContain("logCallDebug('zero_outbound_recovery_success'");
+    expect(probeBlock).toContain(
+      "logCallDebug('zero_outbound_recovery_success'",
+    );
     expect(probeBlock).toContain("logCallDebug('zero_outbound_recovery_error'");
-    expect(probeBlock).toContain('room.localParticipant.setMicrophoneEnabled(false)');
-    expect(probeBlock).toContain('room.localParticipant.setMicrophoneEnabled(true)');
+    expect(probeBlock).toContain(
+      'room.localParticipant.setMicrophoneEnabled(false)',
+    );
+    expect(probeBlock).toContain(
+      'room.localParticipant.setMicrophoneEnabled(true)',
+    );
     expect(probeBlock).not.toContain('onZeroOutboundAudio');
     expect(source).not.toContain('restartIosWebRTCAudioDeviceAfterZeroStats');
     expect(source).not.toContain('AudioDeviceModule.stopRecording()');

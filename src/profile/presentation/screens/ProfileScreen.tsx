@@ -96,6 +96,7 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import { usePostRealtimeScope } from '../../../feed/application/realtime/usePostRealtimeScope';
+import { useDeferredVisiblePostIds } from '../../../feed/application/realtime/useDeferredVisiblePostIds';
 import { useMainTabContentInsets } from '../../../navigation/useMainTabContentInsets';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
@@ -216,9 +217,11 @@ const PROFILE_FRIENDS_PAGE_WIDTH = FRIEND_TILE_WIDTH * 2 + 6;
 const PROFILE_POST_PAGE_SIZE = 20;
 const PROFILE_IS_ANDROID = Platform.OS === 'android';
 const PROFILE_POST_DRAW_DISTANCE = PROFILE_IS_ANDROID
-  ? Math.max(3000, Math.round(SCREEN_HEIGHT * 3.4))
-  : Math.max(5200, Math.round(SCREEN_HEIGHT * 5.5));
-const PROFILE_POST_RECYCLE_POOL_SIZE = PROFILE_IS_ANDROID ? 12 : 22;
+  ? Math.max(1400, Math.round(SCREEN_HEIGHT * 1.8))
+  : Math.max(2200, Math.round(SCREEN_HEIGHT * 2.6));
+const PROFILE_POST_RECYCLE_POOL_SIZE = PROFILE_IS_ANDROID ? 8 : 14;
+const PROFILE_POST_STICKY_HEADER_INDICES = [0];
+const PROFILE_POST_MAINTAIN_VISIBLE_CONTENT_POSITION = { disabled: true };
 const PROFILE_POST_MEDIA_PREFETCH_BEHIND = 2;
 const PROFILE_POST_MEDIA_PREFETCH_LOOKAHEAD = PROFILE_IS_ANDROID ? 8 : 12;
 const PROFILE_POST_MEDIA_PREFETCH_LIMIT = PROFILE_IS_ANDROID ? 10 : 16;
@@ -1418,10 +1421,12 @@ function ProfileScreen() {
   >(null);
 
   const [posts, setPosts] = useState<ProfileFeedPost[]>([]);
-  const [realtimeVisiblePostIds, setRealtimeVisiblePostIds] = useState<
-    string[]
-  >([]);
+  const {
+    postIds: realtimeVisiblePostIds,
+    schedulePostIds: scheduleRealtimeVisiblePostIds,
+  } = useDeferredVisiblePostIds();
   const profilePostsRef = useRef<ProfileFeedPost[]>([]);
+  const profilePostIndexByIdRef = useRef<Map<string, number>>(new Map());
   const [isPostsLoading, setIsPostsLoading] = useState(false);
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
   const [hasMorePosts, setHasMorePosts] = useState(false);
@@ -1860,10 +1865,7 @@ function ProfileScreen() {
         .filter(item => item.isViewable)
         .map(item => String(getProfileListItemPost(item.item)?.id ?? ''))
         .filter(postId => /^[1-9][0-9]*$/.test(postId));
-      setRealtimeVisiblePostIds(previous => {
-        const next = Array.from(new Set(visiblePostIds)).slice(0, 50);
-        return previous.join(',') === next.join(',') ? previous : next;
-      });
+      scheduleRealtimeVisiblePostIds(visiblePostIds);
       const currentPosts = profilePostsRef.current;
       const visibleVideo = viewableItems.find(
         item =>
@@ -1907,7 +1909,8 @@ function ProfileScreen() {
         const viewedPost = getProfileListItemPost(viewable.item);
         if (!viewedPost) return;
 
-        const index = currentPosts.findIndex(post => post.id === viewedPost.id);
+        const index =
+          profilePostIndexByIdRef.current.get(String(viewedPost.id)) ?? -1;
 
         if (index < 0) return;
         if (index < firstVisibleIndex) firstVisibleIndex = index;
@@ -2054,6 +2057,9 @@ function ProfileScreen() {
 
   useEffect(() => {
     profilePostsRef.current = filteredProfilePosts;
+    profilePostIndexByIdRef.current = new Map(
+      filteredProfilePosts.map((post, index) => [String(post.id), index]),
+    );
 
     if (filteredProfilePosts.length === 0) {
       clearProfileVideoDwellTimer();
@@ -3690,20 +3696,7 @@ function ProfileScreen() {
         },
       ],
     );
-  }, [
-    copy.blockConfirm,
-    copy.blockError,
-    copy.blockSuccess,
-    copy.blockTitle,
-    copy.blockUser,
-    copy.errorTitle,
-    copy.sheetCancel,
-    copy.userFallback,
-    displayName,
-    navigation,
-    relationshipAction,
-    targetUserId,
-  ]);
+  }, [copy, displayName, navigation, relationshipAction, targetUserId]);
 
   const handlePokeUser = async () => {
     if (!targetUserId || isOwnProfile || isPokeLoading) {
@@ -3803,6 +3796,18 @@ function ProfileScreen() {
   );
   const profileListHeaderComponentStyle = useMemo(
     () => ({ marginBottom: -profileHeaderHeight }),
+    [profileHeaderHeight],
+  );
+  const profileScrollIndicatorInsets = useMemo(
+    () => ({ bottom: scrollIndicatorBottomInset }),
+    [scrollIndicatorBottomInset],
+  );
+  const profileStickyHeaderConfig = useMemo(
+    () => ({
+      offset: profileHeaderHeight,
+      useNativeDriver: true,
+      hideRelatedCell: false,
+    }),
     [profileHeaderHeight],
   );
   const profileMediaSheetBackdropAnimatedStyle = useMemo(
@@ -4827,37 +4832,52 @@ function ProfileScreen() {
     </>
   );
 
-  const profilePostsEmptyComponent =
-    isPostsLoading && posts.length === 0 ? (
-      <View>
-        <PostSkeletonCard />
-        <PostSkeletonCard />
-      </View>
-    ) : postsError ? (
-      <View style={profilePostStyles.stateCard}>
-        <Text style={[profilePostStyles.stateText, { color: '#EF4444' }]}>
-          {copy.loadPostsError}: {postsError}
-        </Text>
-      </View>
-    ) : posts.length === 0 ? (
-      <View style={profilePostStyles.stateCard}>
-        <Text style={profilePostStyles.stateText}>{copy.noPosts}</Text>
-      </View>
-    ) : filteredProfilePosts.length === 0 ? (
-      <View style={profilePostStyles.stateCard}>
-        <Text style={profilePostStyles.stateText}>
-          {language === 'vi'
-            ? 'Chưa có bài viết phù hợp với bộ lọc này.'
-            : 'No posts match this filter yet.'}
-        </Text>
-      </View>
-    ) : null;
+  const profilePostsEmptyComponent = useMemo(
+    () =>
+      isPostsLoading && posts.length === 0 ? (
+        <View>
+          <PostSkeletonCard />
+          <PostSkeletonCard />
+        </View>
+      ) : postsError ? (
+        <View style={profilePostStyles.stateCard}>
+          <Text style={[profilePostStyles.stateText, { color: '#EF4444' }]}>
+            {copy.loadPostsError}: {postsError}
+          </Text>
+        </View>
+      ) : posts.length === 0 ? (
+        <View style={profilePostStyles.stateCard}>
+          <Text style={profilePostStyles.stateText}>{copy.noPosts}</Text>
+        </View>
+      ) : filteredProfilePosts.length === 0 ? (
+        <View style={profilePostStyles.stateCard}>
+          <Text style={profilePostStyles.stateText}>
+            {language === 'vi'
+              ? 'Chưa có bài viết phù hợp với bộ lọc này.'
+              : 'No posts match this filter yet.'}
+          </Text>
+        </View>
+      ) : null,
+    [
+      copy.loadPostsError,
+      copy.noPosts,
+      filteredProfilePosts.length,
+      isPostsLoading,
+      language,
+      posts.length,
+      postsError,
+    ],
+  );
 
-  const profilePostsFooterComponent = isLoadingMorePosts ? (
-    <View className="items-center py-4">
-      <ActivityIndicator size="small" color="#1877F2" />
-    </View>
-  ) : null;
+  const profilePostsFooterComponent = useMemo(
+    () =>
+      isLoadingMorePosts ? (
+        <View className="items-center py-4">
+          <ActivityIndicator size="small" color="#1877F2" />
+        </View>
+      ) : null,
+    [isLoadingMorePosts],
+  );
 
   const shouldRenderProfilePostsState = profilePostsEmptyComponent !== null;
   const profileListItems = useMemo<ProfileListItem[]>(
@@ -5034,15 +5054,11 @@ function ProfileScreen() {
       ListHeaderComponent={profileContentHeader}
       ListHeaderComponentStyle={profileListHeaderComponentStyle}
       ListFooterComponent={profilePostsFooterComponent}
-      stickyHeaderIndices={[0]}
-      stickyHeaderConfig={{
-        offset: profileHeaderHeight,
-        useNativeDriver: true,
-        hideRelatedCell: false,
-      }}
+      stickyHeaderIndices={PROFILE_POST_STICKY_HEADER_INDICES}
+      stickyHeaderConfig={profileStickyHeaderConfig}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={profilePostsListContentStyle}
-      scrollIndicatorInsets={{ bottom: scrollIndicatorBottomInset }}
+      scrollIndicatorInsets={profileScrollIndicatorInsets}
       onLayout={handleProfileViewportLayout}
       onScroll={handleProfileScroll}
       onScrollBeginDrag={handleProfileScrollBegin}
@@ -5056,7 +5072,10 @@ function ProfileScreen() {
       viewabilityConfig={profilePostsViewabilityConfigRef.current}
       drawDistance={PROFILE_POST_DRAW_DISTANCE}
       maxItemsInRecyclePool={PROFILE_POST_RECYCLE_POOL_SIZE}
-      maintainVisibleContentPosition={{ disabled: true }}
+      maintainVisibleContentPosition={
+        PROFILE_POST_MAINTAIN_VISIBLE_CONTENT_POSITION
+      }
+      removeClippedSubviews={PROFILE_IS_ANDROID}
     />
   );
 

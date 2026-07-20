@@ -79,4 +79,31 @@ describe('incoming LiveKit calls native UI routing', () => {
     expect(block).toContain('dismissAndroidIncomingCall(call.callId)');
     expect(block).not.toContain('dismissNativeIncomingCall(call.callId);');
   });
+
+  it('does not resurrect an Android incoming notification after the call was answered', () => {
+    const notifierSource = read(
+      'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNotifier.kt',
+    );
+    const activitySource = read(
+      'android/app/src/main/java/com/vnseea/android/call/IncomingCallActivity.kt',
+    );
+    const actionsSource = read(
+      'android/app/src/main/java/com/vnseea/android/call/LiveKitCallNativeActions.kt',
+    );
+    const incomingSource = read(
+      'src/messages/application/view-models/useIncomingLiveKitCalls.ts',
+    );
+
+    expect(notifierSource).toContain('skip late notification for handled call_id=');
+    expect(notifierSource).toContain('cancel raced notification for handled call_id=');
+    expect(notifierSource).toContain('manager.cancel(notificationId)');
+    expect(activitySource).toContain('if (finishIfIncomingCallWasHandled()) return');
+    expect(activitySource).toContain('finishIfIncomingCallWasHandled()');
+    expect(actionsSource).toContain(
+      'HANDLED_INCOMING_CALL_TTL_MS = 12 * 60 * 60 * 1000L',
+    );
+    expect(incomingSource).toContain(
+      'dismissAndroidIncomingCall(call.callId);',
+    );
+  });
 });

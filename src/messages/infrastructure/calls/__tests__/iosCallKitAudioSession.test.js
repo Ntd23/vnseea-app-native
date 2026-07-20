@@ -195,6 +195,9 @@ describe('iOS CallKit audio session configuration', () => {
     expect(videoPatchSource).toContain(
       'diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager.swift',
     );
+    expect(videoPatchSource).toContain(
+      'diff --git a/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java b/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java',
+    );
     expect(videoPatchSource).not.toContain('package-current');
     expect(videoPatchSource).toContain('isVnseeaRealtimeMediaSessionActive');
     expect(videoPatchSource).toContain('AVAudioSession.Category.playAndRecord');
@@ -207,6 +210,13 @@ describe('iOS CallKit audio session configuration', () => {
     expect(videoPatchSource).toContain('react_native_video_audio_session_skip_realtime_media_activate');
     expect(videoPatchSource).toContain('react_native_video_audio_session_skip_realtime_media_deactivate');
     expect(videoPatchSource).toContain('react_native_video_audio_session_skip_realtime_media_route_change');
+    expect(videoPatchSource).toContain('AudioManager.MODE_IN_COMMUNICATION');
+    expect(videoPatchSource).toContain('AudioManager.MODE_IN_CALL');
+    expect(videoPatchSource).toContain('vnseea.call.audio.route.active');
+    expect(videoPatchSource).toContain('isVnseeaCallRouteActive ||');
+    expect(videoPatchSource).toContain(
+      'Skipping video audio route change during communication audio session',
+    );
     expect(videoPatchSource).not.toContain('react_native_video_audio_session_skip_voice_call_');
     expect(videoPatchSource).not.toContain('AVAudioSessionModeMoviePlayback');
   });

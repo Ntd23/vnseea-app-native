@@ -39,7 +39,16 @@ type GlobalWithNavigator = typeof globalThis & {
   };
 };
 
-const DEFAULT_TIMEOUT_MS = 9000;
+const DEFAULT_TIMEOUT_MS = 6000;
+const LOCATION_CACHE_TTL_MS = 45000;
+
+let cachedLocation:
+  | {
+      value: CurrentDeviceLocation;
+      receivedAt: number;
+    }
+  | undefined;
+let inFlightLocationPromise: Promise<CurrentDeviceLocation> | undefined;
 
 function getNativeCurrentLocationModule() {
   return NativeModules.VnseeaCurrentLocation as
@@ -49,9 +58,12 @@ function getNativeCurrentLocationModule() {
 
 async function requestAndroidLocationPermission() {
   const finePermission = PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION;
-  const coarsePermission = PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION;
-  const hasFine = await PermissionsAndroid.check(finePermission);
-  const hasCoarse = await PermissionsAndroid.check(coarsePermission);
+  const coarsePermission =
+    PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION;
+  const [hasFine, hasCoarse] = await Promise.all([
+    PermissionsAndroid.check(finePermission),
+    PermissionsAndroid.check(coarsePermission),
+  ]);
   if (hasFine || hasCoarse) return true;
 
   const result = await PermissionsAndroid.requestMultiple([
@@ -72,10 +84,18 @@ function normalizeLocation(value: CurrentDeviceLocation) {
     throw new Error('Không đọc được tọa độ hiện tại.');
   }
 
+  const rawTimestamp = Number(value.timestamp);
+  const timestamp = Number.isFinite(rawTimestamp)
+    ? rawTimestamp < 10000000000
+      ? rawTimestamp * 1000
+      : rawTimestamp
+    : undefined;
+
   return {
     ...value,
     latitude,
     longitude,
+    timestamp,
   };
 }
 
@@ -87,14 +107,17 @@ async function getAndroidCurrentLocation(timeoutMs: number) {
 
   const nativeModule = getNativeCurrentLocationModule();
   if (!nativeModule) {
-    throw new Error('Chưa tìm thấy module vị trí. Hãy rebuild lại app Android.');
+    throw new Error(
+      'Chưa tìm thấy module vị trí. Hãy rebuild lại app Android.',
+    );
   }
 
   return normalizeLocation(await nativeModule.getCurrentLocation(timeoutMs));
 }
 
 function getIosCurrentLocation(timeoutMs: number) {
-  const geolocation = (globalThis as GlobalWithNavigator).navigator?.geolocation;
+  const geolocation = (globalThis as GlobalWithNavigator).navigator
+    ?.geolocation;
   if (!geolocation?.getCurrentPosition) {
     return Promise.reject(
       new Error('Thiết bị chưa hỗ trợ lấy vị trí hiện tại trong chat.'),
@@ -134,7 +157,7 @@ function getIosCurrentLocation(timeoutMs: number) {
   });
 }
 
-export async function getCurrentDeviceLocation(timeoutMs = DEFAULT_TIMEOUT_MS) {
+async function requestCurrentDeviceLocation(timeoutMs: number) {
   if (Platform.OS === 'android') {
     return getAndroidCurrentLocation(timeoutMs);
   }
@@ -145,4 +168,34 @@ export async function getCurrentDeviceLocation(timeoutMs = DEFAULT_TIMEOUT_MS) {
   }
 
   return getIosCurrentLocation(timeoutMs);
+}
+
+export async function getCurrentDeviceLocation(timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const now = Date.now();
+  if (
+    cachedLocation &&
+    now - cachedLocation.receivedAt <= LOCATION_CACHE_TTL_MS
+  ) {
+    return cachedLocation.value;
+  }
+
+  if (inFlightLocationPromise) {
+    return inFlightLocationPromise;
+  }
+
+  const request = requestCurrentDeviceLocation(timeoutMs);
+  inFlightLocationPromise = request;
+
+  try {
+    const location = await request;
+    cachedLocation = {
+      value: location,
+      receivedAt: Date.now(),
+    };
+    return location;
+  } finally {
+    if (inFlightLocationPromise === request) {
+      inFlightLocationPromise = undefined;
+    }
+  }
 }

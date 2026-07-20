@@ -77,7 +77,6 @@ import {
   type MediaType,
 } from 'react-native-image-picker';
 import VideoPlayer from 'react-native-video';
-import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -113,6 +112,7 @@ import {
 import { findConversationMessageListItemIndex } from '../utils/conversationMessageNavigation';
 import {
   buildMapShareUrl,
+  buildStaticMapPreviewUrl,
   parseMapShareUrl,
   type SharedMapLocation,
 } from '../../../user/application/utils/mapShare';
@@ -199,7 +199,8 @@ const PRODUCT_INQUIRY_QUICK_OPTIONS = [
     id: 'details',
     label: 'Cho mình xin thêm thông tin.',
     hint: 'Ảnh thực tế, bảo hành, giao hàng',
-    message: 'Bạn có thể cho mình xin thêm thông tin chi tiết về sản phẩm không ạ?',
+    message:
+      'Bạn có thể cho mình xin thêm thông tin chi tiết về sản phẩm không ạ?',
     icon: FileText,
   },
 ] as const;
@@ -437,6 +438,51 @@ type ParsedMapShareMessage = {
   url: string;
 };
 
+const MAP_SHARE_PARSE_CACHE_LIMIT = 240;
+const STATIC_MAP_PREFETCH_CACHE_LIMIT = 120;
+const parsedMapShareMessageCache = new Map<
+  string,
+  ParsedMapShareMessage | null
+>();
+const prefetchedStaticMapPreviewUrls = new Set<string>();
+
+function rememberParsedMapShareMessage(
+  text: string,
+  value: ParsedMapShareMessage | null,
+) {
+  parsedMapShareMessageCache.delete(text);
+  parsedMapShareMessageCache.set(text, value);
+  if (parsedMapShareMessageCache.size > MAP_SHARE_PARSE_CACHE_LIMIT) {
+    const oldestKey = parsedMapShareMessageCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      parsedMapShareMessageCache.delete(oldestKey);
+    }
+  }
+  return value;
+}
+
+function prefetchStaticMapPreview(location: SharedMapLocation) {
+  const previewUrl = buildStaticMapPreviewUrl(location);
+  if (!previewUrl || prefetchedStaticMapPreviewUrls.has(previewUrl)) {
+    return previewUrl;
+  }
+
+  prefetchedStaticMapPreviewUrls.add(previewUrl);
+  if (prefetchedStaticMapPreviewUrls.size > STATIC_MAP_PREFETCH_CACHE_LIMIT) {
+    const oldestUrl = prefetchedStaticMapPreviewUrls.values().next().value;
+    if (oldestUrl !== undefined) {
+      prefetchedStaticMapPreviewUrls.delete(oldestUrl);
+    }
+  }
+
+  Image.prefetch(previewUrl)
+    .then(success => {
+      if (!success) prefetchedStaticMapPreviewUrls.delete(previewUrl);
+    })
+    .catch(() => prefetchedStaticMapPreviewUrls.delete(previewUrl));
+  return previewUrl;
+}
+
 function formatMapCoordinates(location: SharedMapLocation) {
   return `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
 }
@@ -476,15 +522,27 @@ function isGeneratedMapShareLine(
 
 function parseSharedMapMessage(text: string): ParsedMapShareMessage | null {
   if (!text) return null;
-  const segments = splitLinkTextSegments(text);
-  const mapSegment = segments.find(segment => {
-    if (!segment.url) return false;
-    return Boolean(parseMapShareUrl(segment.url));
-  });
-  if (!mapSegment?.url) return null;
+  if (parsedMapShareMessageCache.has(text)) {
+    return rememberParsedMapShareMessage(
+      text,
+      parsedMapShareMessageCache.get(text) ?? null,
+    );
+  }
 
-  const location = parseMapShareUrl(mapSegment.url);
-  if (!location) return null;
+  const segments = splitLinkTextSegments(text);
+  let mapSegment: (typeof segments)[number] | undefined;
+  let location: SharedMapLocation | null = null;
+  for (const segment of segments) {
+    if (!segment.url) continue;
+    const parsedLocation = parseMapShareUrl(segment.url);
+    if (!parsedLocation) continue;
+    mapSegment = segment;
+    location = parsedLocation;
+    break;
+  }
+  if (!mapSegment?.url || !location) {
+    return rememberParsedMapShareMessage(text, null);
+  }
 
   const caption = text
     .split(/\r?\n/)
@@ -493,14 +551,14 @@ function parseSharedMapMessage(text: string): ParsedMapShareMessage | null {
     .join('\n')
     .trim();
 
-  return {
+  return rememberParsedMapShareMessage(text, {
     location,
     caption,
     url: mapSegment.url,
-  };
+  });
 }
 
-function MapShareCard({
+const MapShareCard = React.memo(function MapShareCard({
   location,
   caption,
   isSentByMe = false,
@@ -517,14 +575,16 @@ function MapShareCard({
   const mapShareStyles = styles as Record<string, any>;
   const coordinateText = formatMapCoordinates(location);
   const addressText = location.address || location.subtitle || '';
-  const mapRegion = useMemo(
-    () => ({
-      latitude: location.latitude,
-      longitude: location.longitude,
-      latitudeDelta: 0.006,
-      longitudeDelta: 0.006,
-    }),
-    [location.latitude, location.longitude],
+  const staticMapPreviewUrl = buildStaticMapPreviewUrl(location);
+  const staticMapPreviewSource = useMemo(
+    () =>
+      staticMapPreviewUrl
+        ? {
+            uri: staticMapPreviewUrl,
+            cache: 'force-cache' as const,
+          }
+        : undefined,
+    [staticMapPreviewUrl],
   );
 
   const handleOpenMap = useCallback(() => {
@@ -545,23 +605,16 @@ function MapShareCard({
         ]}
       >
         <View style={mapShareStyles.mapShareLargeMap}>
-          <MapView
-            key={`${location.latitude}:${location.longitude}`}
-            provider={PROVIDER_GOOGLE}
-            style={mapShareStyles.mapShareLargeMapNative}
-            initialRegion={mapRegion}
-            mapType="standard"
-            liteMode={Platform.OS === 'android'}
-            loadingEnabled
-            loadingBackgroundColor="#EAF4FB"
-            loadingIndicatorColor="#2563EB"
-            pitchEnabled={false}
-            rotateEnabled={false}
-            scrollEnabled={false}
-            zoomEnabled={false}
-            toolbarEnabled={false}
-            pointerEvents="none"
-          />
+          {staticMapPreviewSource ? (
+            <Image
+              source={staticMapPreviewSource}
+              style={mapShareStyles.mapShareLargeMapNative}
+              resizeMode="cover"
+              resizeMethod="resize"
+              fadeDuration={120}
+              progressiveRenderingEnabled
+            />
+          ) : null}
           <View style={mapShareStyles.mapShareLargeMarkerShadow} />
           <View style={mapShareStyles.mapShareLargeMarker}>
             {location.imageUrl ? (
@@ -649,7 +702,7 @@ function MapShareCard({
       )}
     </TouchableOpacity>
   );
-}
+});
 
 // Format date separator
 function formatDateSeparator(
@@ -811,9 +864,7 @@ function ChatMessagesSkeleton() {
               : styles.messageSkeletonRowReceived,
           ]}
         >
-          {!row.sentByMe ? (
-            <View style={styles.messageSkeletonAvatar} />
-          ) : null}
+          {!row.sentByMe ? <View style={styles.messageSkeletonAvatar} /> : null}
           <View
             style={[
               styles.messageSkeletonBubble,
@@ -1031,7 +1082,11 @@ function CallEventContent({
       : Phone;
 
   const isSentByMe = callEvent ? callEvent.isInitiator : message.isSentByMe;
-  const iconBgClass = missedIncoming ? 'bg-red-500' : isSentByMe ? 'bg-blue-500' : 'bg-gray-400';
+  const iconBgClass = missedIncoming
+    ? 'bg-red-500'
+    : isSentByMe
+    ? 'bg-blue-500'
+    : 'bg-gray-400';
 
   return (
     <View
@@ -1049,10 +1104,16 @@ function CallEventContent({
           <Icon size={16} color="#ffffff" />
         </View>
         <View className="shrink flex-1">
-          <Text className="text-[14px] font-semibold text-gray-950" numberOfLines={1}>
+          <Text
+            className="text-[14px] font-semibold text-gray-950"
+            numberOfLines={1}
+          >
             {getCallCardTitle(callEvent)}
           </Text>
-          <Text className="mt-0.5 text-[11.5px] text-gray-500" numberOfLines={1}>
+          <Text
+            className="mt-0.5 text-[11.5px] text-gray-500"
+            numberOfLines={1}
+          >
             {getCallCardDetail(message)}
           </Text>
         </View>
@@ -1064,9 +1125,7 @@ function CallEventContent({
         style={{ height: 34 }}
         onPress={() => onRecall?.(callEvent.callType)}
       >
-        <Text className="text-[12px] font-bold text-gray-950">
-          Gọi lại
-        </Text>
+        <Text className="text-[12px] font-bold text-gray-950">Gọi lại</Text>
       </TouchableOpacity>
     </View>
   );
@@ -1102,9 +1161,10 @@ function parseProductInquiry(messageText: string) {
 
 function parseOrderInquiry(messageText: string) {
   if (!messageText) return null;
-  const isOrderMsg = messageText.includes('Tôi muốn đặt mua sản phẩm:') || 
-                     messageText.includes('TĂ´i muá»‘n Ä‘áº·t mua') ||
-                     messageText.includes('muá»‘n Ä‘áº·t mua sáº£n pháº©m');
+  const isOrderMsg =
+    messageText.includes('Tôi muốn đặt mua sản phẩm:') ||
+    messageText.includes('TĂ´i muá»‘n Ä‘áº·t mua') ||
+    messageText.includes('muá»‘n Ä‘áº·t mua sáº£n pháº©m');
   if (!isOrderMsg) {
     return null;
   }
@@ -1113,12 +1173,20 @@ function parseOrderInquiry(messageText: string) {
     // Robust regexes that handle both Mojibake and standard Vietnamese
     const nameMatch = messageText.match(/\*(.*?)\*/);
     const priceMatch = messageText.match(/(?:Giá|GiĂ¡|Gi\u00e1):\s*\*(.*?)\*/);
-    const qtyMatch = messageText.match(/(?:Số lượng|Sá»‘ l\u01b0\u1ee3ng|l\u01b0\u1ee3ng):\s*\*(.*?)\*/);
+    const qtyMatch = messageText.match(
+      /(?:Số lượng|Sá»‘ l\u01b0\u1ee3ng|l\u01b0\u1ee3ng):\s*\*(.*?)\*/,
+    );
     const idMatch = messageText.match(/(?:ID):\s*\*(.*?)\*/);
     const imageMatch = messageText.match(/(?:Ảnh|áº¢nh|Anh):\s*(\S+)/);
-    const nameBuyerMatch = messageText.match(/(?:Tên|TĂŞn|T\u00ean):\s*\*(.*?)\*/);
-    const phoneBuyerMatch = messageText.match(/(?:SĐT|SÄ\u0110T|SDT):\s*\*(.*?)\*/);
-    const addressBuyerMatch = messageText.match(/(?:Địa chỉ|Äá»‹a chá»‰|Dia chi):\s*\*(.*?)\*/);
+    const nameBuyerMatch = messageText.match(
+      /(?:Tên|TĂŞn|T\u00ean):\s*\*(.*?)\*/,
+    );
+    const phoneBuyerMatch = messageText.match(
+      /(?:SĐT|SÄ\u0110T|SDT):\s*\*(.*?)\*/,
+    );
+    const addressBuyerMatch = messageText.match(
+      /(?:Địa chỉ|Äá»‹a chá»‰|Dia chi):\s*\*(.*?)\*/,
+    );
 
     if (!nameMatch) return null;
 
@@ -1151,14 +1219,23 @@ type ParsedReplyMessage = {
 };
 
 function normalizeReplyMediaType(value: string): ReplyMediaType | undefined {
-  if (value === 'image' || value === 'video' || value === 'audio' || value === 'file' || value === 'call') {
+  if (
+    value === 'image' ||
+    value === 'video' ||
+    value === 'audio' ||
+    value === 'file' ||
+    value === 'call'
+  ) {
     return value;
   }
   return undefined;
 }
 
 function inferReplyMediaType(
-  reply: Pick<ParsedReplyMessage, 'originalImage' | 'originalMessage' | 'originalMediaType'>,
+  reply: Pick<
+    ParsedReplyMessage,
+    'originalImage' | 'originalMessage' | 'originalMediaType'
+  >,
 ): ReplyMediaType | undefined {
   if (reply.originalMediaType) return reply.originalMediaType;
   if (reply.originalImage) return 'image';
@@ -1216,7 +1293,8 @@ function parseMessageReply(messageText: string): ParsedReplyMessage | null {
     } else {
       let lastBlockIndex = -1;
       if (imageMatch) {
-        lastBlockIndex = messageText.indexOf(imageMatch[0]) + imageMatch[0].length;
+        lastBlockIndex =
+          messageText.indexOf(imageMatch[0]) + imageMatch[0].length;
       } else if (idMatch) {
         lastBlockIndex = messageText.indexOf(idMatch[0]) + idMatch[0].length;
       }
@@ -1239,12 +1317,20 @@ function parseMessageReply(messageText: string): ParsedReplyMessage | null {
   }
 }
 
-function getReplyLabel(senderName: string, isSentByMe: boolean, partnerName: string) {
+function getReplyLabel(
+  senderName: string,
+  isSentByMe: boolean,
+  partnerName: string,
+) {
   const isOriginalMe = senderName === 'Tôi';
   if (isSentByMe) {
-    return isOriginalMe ? 'Bạn đã trả lời chính mình' : `Bạn đã trả lời ${senderName}`;
+    return isOriginalMe
+      ? 'Bạn đã trả lời chính mình'
+      : `Bạn đã trả lời ${senderName}`;
   } else {
-    return isOriginalMe ? `${partnerName} đã trả lời bạn` : `${partnerName} đã trả lời chính mình`;
+    return isOriginalMe
+      ? `${partnerName} đã trả lời bạn`
+      : `${partnerName} đã trả lời chính mình`;
   }
 }
 
@@ -1315,11 +1401,17 @@ function ReplyMessageBubble({
 
         {/* Content column */}
         <View className="flex-1 pl-2 py-1.5 justify-center">
-          <Text className={`text-[12px] font-bold ${senderColor}`} numberOfLines={1}>
+          <Text
+            className={`text-[12px] font-bold ${senderColor}`}
+            numberOfLines={1}
+          >
             {reply.senderName}
           </Text>
           {mediaLabel ? (
-            <Text className={`text-[11px] mt-0.5 ${originalMessageColor}`} numberOfLines={1}>
+            <Text
+              className={`text-[11px] mt-0.5 ${originalMessageColor}`}
+              numberOfLines={1}
+            >
               {previewText}
             </Text>
           ) : (
@@ -1412,14 +1504,20 @@ function ProductInquiryBubble({
         />
       )}
       <View className="p-2.5">
-        <Text className={`text-[13px] font-semibold leading-4 ${nameColor}`} numberOfLines={2}>
+        <Text
+          className={`text-[13px] font-semibold leading-4 ${nameColor}`}
+          numberOfLines={2}
+        >
           {product.name}
         </Text>
         <Text className={`text-[12px] font-bold mt-1.5 ${priceColor}`}>
           {product.price}
         </Text>
         {!!product.location && (
-          <Text className="text-[9.5px] mt-1 text-slate-400 font-medium" numberOfLines={1}>
+          <Text
+            className="text-[9.5px] mt-1 text-slate-400 font-medium"
+            numberOfLines={1}
+          >
             📍 {product.location}
           </Text>
         )}
@@ -1459,11 +1557,20 @@ function OrderInquiryBubble({
   };
 
   return (
-    <View className={`w-[260px] rounded-3xl border overflow-hidden ${cardBg} ${cardBorder} shadow-md`}>
+    <View
+      className={`w-[260px] rounded-3xl border overflow-hidden ${cardBg} ${cardBorder} shadow-md`}
+    >
       {/* Header Banner */}
-      <View className="bg-blue-600 px-3.5 py-2.5 flex-row items-center justify-between" style={{ backgroundColor: '#0000ff' }}>
-        <Text className="text-[12px] font-extrabold text-white uppercase tracking-wider">📦 ĐƠN HÀNG MỚI</Text>
-        <Text className="text-[11px] text-blue-100 font-bold">ID: #{order.id}</Text>
+      <View
+        className="bg-blue-600 px-3.5 py-2.5 flex-row items-center justify-between"
+        style={{ backgroundColor: '#0000ff' }}
+      >
+        <Text className="text-[12px] font-extrabold text-white uppercase tracking-wider">
+          📦 ĐƠN HÀNG MỚI
+        </Text>
+        <Text className="text-[11px] text-blue-100 font-bold">
+          ID: #{order.id}
+        </Text>
       </View>
 
       {/* Product Row */}
@@ -1480,7 +1587,10 @@ function OrderInquiryBubble({
           />
         )}
         <View className="flex-1 justify-center">
-          <Text className={`text-[13px] font-bold leading-4 ${nameColor}`} numberOfLines={2}>
+          <Text
+            className={`text-[13px] font-bold leading-4 ${nameColor}`}
+            numberOfLines={2}
+          >
             {order.name}
           </Text>
           <View className="flex-row items-center justify-between mt-1">
@@ -1496,21 +1606,61 @@ function OrderInquiryBubble({
 
       {/* Buyer Details */}
       <View className="p-3.5 bg-slate-50">
-        <Text className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Thông tin nhận hàng</Text>
-        
-        <View className="flex-row items-start mb-1.5" style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 }}>
-          <Text className="text-[12px] text-slate-500 w-20 font-semibold" style={{ width: 80 }}>Người nhận:</Text>
-          <Text className="text-[12px] text-slate-800 flex-1 font-bold">{order.buyerName}</Text>
+        <Text className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+          Thông tin nhận hàng
+        </Text>
+
+        <View
+          className="flex-row items-start mb-1.5"
+          style={{
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            marginBottom: 6,
+          }}
+        >
+          <Text
+            className="text-[12px] text-slate-500 w-20 font-semibold"
+            style={{ width: 80 }}
+          >
+            Người nhận:
+          </Text>
+          <Text className="text-[12px] text-slate-800 flex-1 font-bold">
+            {order.buyerName}
+          </Text>
         </View>
 
-        <View className="flex-row items-start mb-1.5" style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 }}>
-          <Text className="text-[12px] text-slate-500 w-20 font-semibold" style={{ width: 80 }}>Điện thoại:</Text>
-          <Text className="text-[12px] text-slate-800 flex-1 font-bold">{order.buyerPhone}</Text>
+        <View
+          className="flex-row items-start mb-1.5"
+          style={{
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            marginBottom: 6,
+          }}
+        >
+          <Text
+            className="text-[12px] text-slate-500 w-20 font-semibold"
+            style={{ width: 80 }}
+          >
+            Điện thoại:
+          </Text>
+          <Text className="text-[12px] text-slate-800 flex-1 font-bold">
+            {order.buyerPhone}
+          </Text>
         </View>
 
-        <View className="flex-row items-start" style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-          <Text className="text-[12px] text-slate-500 w-20 font-semibold" style={{ width: 80 }}>Địa chỉ:</Text>
-          <Text className="text-[12px] text-slate-700 flex-1 font-semibold leading-4">{order.buyerAddress}</Text>
+        <View
+          className="flex-row items-start"
+          style={{ flexDirection: 'row', alignItems: 'flex-start' }}
+        >
+          <Text
+            className="text-[12px] text-slate-500 w-20 font-semibold"
+            style={{ width: 80 }}
+          >
+            Địa chỉ:
+          </Text>
+          <Text className="text-[12px] text-slate-700 flex-1 font-semibold leading-4">
+            {order.buyerAddress}
+          </Text>
         </View>
       </View>
     </View>
@@ -1542,7 +1692,9 @@ function MessageBubble({
   onQuickRecord?: () => void;
   onOpenSharedPost?: (postId: string) => void;
 }) {
-  const isSentByMe = message.callEvent ? message.callEvent.isInitiator : message.isSentByMe;
+  const isSentByMe = message.callEvent
+    ? message.callEvent.isInitiator
+    : message.isSentByMe;
 
   const isMediaOnly =
     !message.callEvent &&
@@ -1557,9 +1709,8 @@ function MessageBubble({
   const productInquiry = parseProductInquiry(message.message);
   const replyInfo = parseMessageReply(message.message);
   const sharedPost = message.sharedPost;
-  const mapShare = sharedPost || replyInfo
-    ? null
-    : parseSharedMapMessage(message.message);
+  const mapShare =
+    sharedPost || replyInfo ? null : parseSharedMapMessage(message.message);
   const visibleMessageText = sharedPost
     ? ''
     : orderInquiry
@@ -1575,7 +1726,8 @@ function MessageBubble({
     isSentByMe && !replyInfo ? 'text-white' : 'text-gray-900'
   }`;
   const messageLinkColor = isSentByMe && !replyInfo ? '#ffffff' : '#2563EB';
-  const usesLightReplyBubble = Boolean(replyInfo) && !hasMessageMedia && !isMediaOnly;
+  const usesLightReplyBubble =
+    Boolean(replyInfo) && !hasMessageMedia && !isMediaOnly;
 
   const translateX = useRef(new Animated.Value(0)).current;
   const replyIconOpacity = useRef(new Animated.Value(0)).current;
@@ -1612,7 +1764,9 @@ function MessageBubble({
         if (isSentByMe) {
           if (drag > 0) {
             translateX.setValue(Math.min(drag, replySwipeMaxDistance));
-            replyIconOpacity.setValue(Math.min(drag / replySwipeTriggerDistance, 1));
+            replyIconOpacity.setValue(
+              Math.min(drag / replySwipeTriggerDistance, 1),
+            );
           } else {
             translateX.setValue(Math.max(drag, -20));
             replyIconOpacity.setValue(0);
@@ -1620,7 +1774,9 @@ function MessageBubble({
         } else {
           if (drag < 0) {
             translateX.setValue(Math.max(drag, -replySwipeMaxDistance));
-            replyIconOpacity.setValue(Math.min(Math.abs(drag) / replySwipeTriggerDistance, 1));
+            replyIconOpacity.setValue(
+              Math.min(Math.abs(drag) / replySwipeTriggerDistance, 1),
+            );
           } else {
             translateX.setValue(Math.min(drag, 20));
             replyIconOpacity.setValue(0);
@@ -1649,7 +1805,7 @@ function MessageBubble({
           }),
         ]).start();
       },
-    })
+    }),
   ).current;
 
   return (
@@ -1728,8 +1884,8 @@ function MessageBubble({
           isSentByMe ? 'justify-end' : 'justify-start'
         } items-end`}
       >
-        {!isSentByMe && (
-          showAvatar ? (
+        {!isSentByMe &&
+          (showAvatar ? (
             <Image
               source={{ uri: avatar }}
               className="mr-2 mb-1 h-7 w-7 rounded-full bg-gray-200"
@@ -1738,8 +1894,7 @@ function MessageBubble({
             />
           ) : (
             <View className="w-7 mr-2" />
-          )
-        )}
+          ))}
 
         {isSentByMe && message.mediaType === 'audio' && (
           <TouchableOpacity
@@ -1751,13 +1906,21 @@ function MessageBubble({
           </TouchableOpacity>
         )}
 
-        <View className={`flex-col max-w-[78%] ${isSentByMe ? 'items-end' : 'items-start'}`}>
+        <View
+          className={`flex-col max-w-[78%] ${
+            isSentByMe ? 'items-end' : 'items-start'
+          }`}
+        >
           {/* Reply Label (outside bubble) */}
           {false && !!replyInfo && (
             <View className="flex-row items-center mb-1 px-1 opacity-70">
               <CornerUpLeft size={11} color="#64748B" className="mr-1" />
               <Text className="text-[10px] font-semibold text-slate-500">
-                {getReplyLabel(replyInfo!.senderName, isSentByMe ?? false, partnerName)}
+                {getReplyLabel(
+                  replyInfo!.senderName,
+                  isSentByMe ?? false,
+                  partnerName,
+                )}
               </Text>
             </View>
           )}
@@ -1766,7 +1929,10 @@ function MessageBubble({
           {false && !!replyInfo && (
             <TouchableOpacity
               activeOpacity={0.85}
-              onPress={() => replyInfo!.originalMessageId && onPressReply?.(replyInfo!.originalMessageId)}
+              onPress={() =>
+                replyInfo!.originalMessageId &&
+                onPressReply?.(replyInfo!.originalMessageId)
+              }
               className="mb-1 rounded-xl overflow-hidden bg-slate-100 border border-slate-200"
               style={{ opacity: 0.9 }}
             >
@@ -1798,9 +1964,7 @@ function MessageBubble({
 
           {/* Shared Post Card (renders instead of the raw URL bubble) */}
           {sharedPost ? (
-            <View
-              className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}
-            >
+            <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}>
               <SharedPostMessageCard
                 reference={sharedPost}
                 onOpenPost={postId => onOpenSharedPost?.(postId)}
@@ -1832,7 +1996,9 @@ function MessageBubble({
               />
               <Text
                 className={`text-[9.5px] mt-1 ${
-                  isSentByMe ? 'text-gray-400 text-right' : 'text-gray-400 text-left'
+                  isSentByMe
+                    ? 'text-gray-400 text-right'
+                    : 'text-gray-400 text-left'
                 }`}
               >
                 {formatMessageTime(message.time)}
@@ -1840,14 +2006,19 @@ function MessageBubble({
             </View>
           ) : orderInquiry ? (
             /* Order Inquiry Card (renders instead of the main text bubble) */
-            <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`} style={{ maxWidth: 260 }}>
+            <View
+              className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}
+              style={{ maxWidth: 260 }}
+            >
               <OrderInquiryBubble
                 order={orderInquiry}
                 isSentByMe={isSentByMe ?? false}
               />
               <Text
                 className={`text-[9.5px] mt-1 ${
-                  isSentByMe ? 'text-gray-400 text-right' : 'text-gray-400 text-left'
+                  isSentByMe
+                    ? 'text-gray-400 text-right'
+                    : 'text-gray-400 text-left'
                 }`}
               >
                 {formatMessageTime(message.time)}
@@ -1881,9 +2052,7 @@ function MessageBubble({
                           ? 'rounded-2xl rounded-br-md bg-blue-600 px-3 py-2'
                           : 'rounded-2xl rounded-bl-md bg-gray-100 px-3 py-2'
                       }`
-                } ${
-                  message.deliveryState === 'sending' ? 'opacity-70' : ''
-                }`}
+                } ${message.deliveryState === 'sending' ? 'opacity-70' : ''}`}
               >
                 <TouchableOpacity
                   activeOpacity={0.9}
@@ -1891,10 +2060,16 @@ function MessageBubble({
                   delayLongPress={350}
                 >
                   {message.callEvent ? (
-                    <CallEventContent message={message} onRecall={onRecallCall} />
+                    <CallEventContent
+                      message={message}
+                      onRecall={onRecallCall}
+                    />
                   ) : (
                     <>
-                      <MessageMedia message={message} onOpenMedia={onOpenMedia} />
+                      <MessageMedia
+                        message={message}
+                        onOpenMedia={onOpenMedia}
+                      />
                       {!!replyInfo ? (
                         hasMessageMedia ? (
                           <View
@@ -1907,44 +2082,55 @@ function MessageBubble({
                           >
                             <TouchableOpacity
                               activeOpacity={0.85}
-                              onPress={() => replyInfo!.originalMessageId && onPressReply?.(replyInfo!.originalMessageId)}
+                              onPress={() =>
+                                replyInfo!.originalMessageId &&
+                                onPressReply?.(replyInfo!.originalMessageId)
+                              }
                             >
-                              <ReplyMessageBubble reply={replyInfo} isSentByMe={isSentByMe ?? false} />
+                              <ReplyMessageBubble
+                                reply={replyInfo}
+                                isSentByMe={isSentByMe ?? false}
+                              />
                             </TouchableOpacity>
                           </View>
                         ) : (
                           <TouchableOpacity
                             activeOpacity={0.85}
-                            onPress={() => replyInfo!.originalMessageId && onPressReply?.(replyInfo!.originalMessageId)}
+                            onPress={() =>
+                              replyInfo!.originalMessageId &&
+                              onPressReply?.(replyInfo!.originalMessageId)
+                            }
                           >
-                            <ReplyMessageBubble reply={replyInfo} isSentByMe={isSentByMe ?? false} />
+                            <ReplyMessageBubble
+                              reply={replyInfo}
+                              isSentByMe={isSentByMe ?? false}
+                            />
                           </TouchableOpacity>
                         )
                       ) : (
-                        !!visibleMessageText && (
-                          hasMessageMedia ? (
-                            <View
-                              className={`mt-1 rounded-2xl px-3 py-2 ${
-                                isSentByMe
-                                  ? 'rounded-br-md bg-blue-600'
-                                  : 'rounded-bl-md border border-gray-200 bg-white'
-                              }`}
-                              style={styles.mediaCaptionBubble}
-                            >
-                              <LinkifiedText
-                                text={visibleMessageText}
-                                className={messageTextClassName}
-                                linkColor={messageLinkColor}
-                              />
-                            </View>
-                          ) : (
+                        !!visibleMessageText &&
+                        (hasMessageMedia ? (
+                          <View
+                            className={`mt-1 rounded-2xl px-3 py-2 ${
+                              isSentByMe
+                                ? 'rounded-br-md bg-blue-600'
+                                : 'rounded-bl-md border border-gray-200 bg-white'
+                            }`}
+                            style={styles.mediaCaptionBubble}
+                          >
                             <LinkifiedText
                               text={visibleMessageText}
                               className={messageTextClassName}
                               linkColor={messageLinkColor}
                             />
-                          )
-                        )
+                          </View>
+                        ) : (
+                          <LinkifiedText
+                            text={visibleMessageText}
+                            className={messageTextClassName}
+                            linkColor={messageLinkColor}
+                          />
+                        ))
                       )}
                     </>
                   )}
@@ -2011,7 +2197,7 @@ const MemoizedMessageBubble = React.memo(
       prevProps.partnerName === nextProps.partnerName &&
       prevProps.showAvatar === nextProps.showAvatar
     );
-  }
+  },
 );
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -2075,7 +2261,7 @@ function SwipeToCloseContainer({
           ]).start();
         }
       },
-    })
+    }),
   ).current;
 
   const animatedStyle = {
@@ -2083,9 +2269,7 @@ function SwipeToCloseContainer({
   };
 
   return (
-    <Animated.View
-      style={[{ flex: 1, backgroundColor: 'black' }, { opacity }]}
-    >
+    <Animated.View style={[{ flex: 1, backgroundColor: 'black' }, { opacity }]}>
       <Animated.View
         style={[{ flex: 1 }, animatedStyle]}
         {...panResponder.panHandlers}
@@ -2132,15 +2316,18 @@ function ChatVideoViewer({
   const videoRef = useRef<any>(null);
   const progressWidthRef = useRef(1);
 
-  const triggerControlsTimeout = useCallback((forceAutoHide = false) => {
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    if (paused && !forceAutoHide) return;
-    controlsTimeoutRef.current = setTimeout(() => {
-      setShowControls(false);
-    }, 3000);
-  }, [paused]);
+  const triggerControlsTimeout = useCallback(
+    (forceAutoHide = false) => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      if (paused && !forceAutoHide) return;
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    },
+    [paused],
+  );
 
   useEffect(() => {
     triggerControlsTimeout();
@@ -2170,44 +2357,58 @@ function ChatVideoViewer({
   };
 
   const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60).toString().padStart(2, '0');
-    const s = Math.floor(secs % 60).toString().padStart(2, '0');
+    const m = Math.floor(secs / 60)
+      .toString()
+      .padStart(2, '0');
+    const s = Math.floor(secs % 60)
+      .toString()
+      .padStart(2, '0');
     return `${m}:${s}`;
   };
 
-  const seekTo = useCallback((nextTime: number) => {
-    if (!duration) return;
-    const boundedTime = Math.max(0, Math.min(duration, nextTime));
-    setCurrentTime(boundedTime);
-    videoRef.current?.seek?.(boundedTime);
-    setShowControls(true);
-    triggerControlsTimeout();
-  }, [duration, triggerControlsTimeout]);
+  const seekTo = useCallback(
+    (nextTime: number) => {
+      if (!duration) return;
+      const boundedTime = Math.max(0, Math.min(duration, nextTime));
+      setCurrentTime(boundedTime);
+      videoRef.current?.seek?.(boundedTime);
+      setShowControls(true);
+      triggerControlsTimeout();
+    },
+    [duration, triggerControlsTimeout],
+  );
 
-  const handleSeekBy = useCallback((deltaSeconds: number) => {
-    seekTo(currentTime + deltaSeconds);
-  }, [currentTime, seekTo]);
+  const handleSeekBy = useCallback(
+    (deltaSeconds: number) => {
+      seekTo(currentTime + deltaSeconds);
+    },
+    [currentTime, seekTo],
+  );
 
-  const seekFromLocationX = useCallback((locationX: number) => {
-    const width = Math.max(progressWidthRef.current, 1);
-    const ratio = Math.max(0, Math.min(1, locationX / width));
-    seekTo(duration * ratio);
-  }, [duration, seekTo]);
+  const seekFromLocationX = useCallback(
+    (locationX: number) => {
+      const width = Math.max(progressWidthRef.current, 1);
+      const ratio = Math.max(0, Math.min(1, locationX / width));
+      seekTo(duration * ratio);
+    },
+    [duration, seekTo],
+  );
 
   const progressPanResponder = useMemo(
-    () => PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: event => {
-        seekFromLocationX(event.nativeEvent.locationX);
-      },
-      onPanResponderMove: event => {
-        seekFromLocationX(event.nativeEvent.locationX);
-      },
-      onPanResponderRelease: () => {
-        triggerControlsTimeout();
-      },
-    }),
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: event => {
+          seekFromLocationX(event.nativeEvent.locationX);
+        },
+        onPanResponderMove: event => {
+          seekFromLocationX(event.nativeEvent.locationX);
+        },
+        onPanResponderRelease: () => {
+          triggerControlsTimeout();
+        },
+      }),
     [seekFromLocationX, triggerControlsTimeout],
   );
 
@@ -2222,10 +2423,10 @@ function ChatVideoViewer({
             resizeMode="contain"
             paused={paused}
             muted={muted}
-            onProgress={(data) => {
+            onProgress={data => {
               setCurrentTime(data.currentTime);
             }}
-            onLoad={(data) => {
+            onLoad={data => {
               setDuration(data.duration);
             }}
             controls={false}
@@ -2236,7 +2437,10 @@ function ChatVideoViewer({
               className="absolute inset-0 bg-black/20 items-center justify-center"
               pointerEvents="box-none"
             >
-              <View className="flex-row items-center justify-center" pointerEvents="auto">
+              <View
+                className="flex-row items-center justify-center"
+                pointerEvents="auto"
+              >
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={() => handleSeekBy(-10)}
@@ -2316,14 +2520,18 @@ function ChatVideoViewer({
                     <View
                       className="h-full rounded-full bg-blue-500"
                       style={{
-                        width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
+                        width: `${
+                          duration > 0 ? (currentTime / duration) * 100 : 0
+                        }%`,
                       }}
                     />
                   </View>
                   <View
                     className="absolute h-4 w-4 rounded-full border border-white bg-blue-500"
                     style={{
-                      left: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`,
+                      left: `${
+                        duration > 0 ? (currentTime / duration) * 100 : 0
+                      }%`,
                       marginLeft: -8,
                     }}
                   />
@@ -2360,7 +2568,9 @@ function ChatVideoViewer({
 }
 
 function ChatImage({ uri }: { uri: string }) {
-  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!uri) return;
@@ -2412,7 +2622,7 @@ function ChatImage({ uri }: { uri: string }) {
       },
       () => {
         setDims({ width: 240, height: 180 });
-      }
+      },
     );
   }, [uri]);
 
@@ -2446,15 +2656,17 @@ function ChatVideoPreview({
   cacheKey?: string;
   compact?: boolean;
 }) {
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const { width: viewportWidth, height: viewportHeight } =
+    useWindowDimensions();
   const posterCacheKey = cacheKey || uri;
   const [generatedPosterUri, setGeneratedPosterUri] = useState(() => {
     if (thumbnail || !uri) return '';
     return getCachedVideoPosterThumbnail(uri, posterCacheKey)?.uri || '';
   });
-  const [posterSize, setPosterSize] = useState<{ width: number; height: number } | null>(
-    null,
-  );
+  const [posterSize, setPosterSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   useEffect(() => {
     if (thumbnail || !uri) {
@@ -2462,7 +2674,10 @@ function ChatVideoPreview({
       return;
     }
 
-    const cachedPoster = getCachedVideoPosterThumbnail(uri, posterCacheKey)?.uri;
+    const cachedPoster = getCachedVideoPosterThumbnail(
+      uri,
+      posterCacheKey,
+    )?.uri;
     if (cachedPoster) {
       setGeneratedPosterUri(cachedPoster);
       return;
@@ -2543,7 +2758,13 @@ function ChatVideoPreview({
       width: Math.round(width),
       height: Math.round(height),
     };
-  }, [compact, posterSize?.height, posterSize?.width, viewportHeight, viewportWidth]);
+  }, [
+    compact,
+    posterSize?.height,
+    posterSize?.width,
+    viewportHeight,
+    viewportWidth,
+  ]);
 
   return (
     <View
@@ -2655,11 +2876,7 @@ function MessageMedia({
   if (message.mediaType === 'audio') {
     return (
       <View className="w-64">
-        <AudioPlayer
-          uri={message.media}
-          compact
-          accentColor="#0084FF"
-        />
+        <AudioPlayer uri={message.media} compact accentColor="#0084FF" />
       </View>
     );
   }
@@ -2687,7 +2904,8 @@ function MediaMessageGroup({
   const newestMessage = messages[0];
   const viewerItems: ChatMediaViewerItem[] = orderedMessages.map(message => ({
     uri: message.media!,
-    type: message.mediaType === 'video' ? ('video' as const) : ('image' as const),
+    type:
+      message.mediaType === 'video' ? ('video' as const) : ('image' as const),
   }));
   const captions = orderedMessages
     .map(message => message.message.trim())
@@ -2999,480 +3217,480 @@ function GroupInfoModal({
 
   return (
     <>
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView
-        className="flex-1 bg-white"
-        edges={GROUP_INFO_MODAL_SAFE_AREA_EDGES}
-        style={Platform.OS === 'ios' ? { paddingTop: topInset } : undefined}
-        {...groupInfoDismissPanResponder.panHandlers}
-      >
-        <View className="flex-row items-center justify-between border-b border-gray-100 px-5 py-4">
-          <Text className="text-lg font-bold text-gray-950">Thông tin</Text>
-          <TouchableOpacity
-            className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
-            activeOpacity={0.8}
-            onPress={onClose}
-          >
-            <X size={20} color="#111827" />
-          </TouchableOpacity>
-        </View>
-
-        {isLoading && !groupInfo ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" color="#0000ff" />
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <SafeAreaView
+          className="flex-1 bg-white"
+          edges={GROUP_INFO_MODAL_SAFE_AREA_EDGES}
+          style={Platform.OS === 'ios' ? { paddingTop: topInset } : undefined}
+          {...groupInfoDismissPanResponder.panHandlers}
+        >
+          <View className="flex-row items-center justify-between border-b border-gray-100 px-5 py-4">
+            <Text className="text-lg font-bold text-gray-950">Thông tin</Text>
+            <TouchableOpacity
+              className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
+              activeOpacity={0.8}
+              onPress={onClose}
+            >
+              <X size={20} color="#111827" />
+            </TouchableOpacity>
           </View>
-        ) : (
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <View className="items-center px-5 py-6">
-              <Image
-                source={{ uri: groupInfo?.avatar }}
-                className="h-24 w-24 rounded-full bg-red-100"
-              />
-              <View className="mt-4 flex-row items-center px-4">
-                <Text className="text-2xl font-bold text-gray-950">
-                  {groupInfo?.name ?? 'Nhóm'}
-                </Text>
-              </View>
-              <Text className="mt-1 text-sm text-gray-500">
-                {groupInfo?.memberCount ?? 0} thành viên
-              </Text>
 
-              {groupInfo?.isOwner ? (
-                <View className="mt-5 w-full flex-row justify-center">
-                  <TouchableOpacity
-                    className="mx-1 flex-1 items-center rounded-2xl bg-blue-50 px-2 py-3"
-                    activeOpacity={0.85}
-                    onPress={onOpenAddMembers}
-                  >
-                    <View className="h-11 w-11 items-center justify-center rounded-full bg-blue-600">
-                      <UserPlus size={20} color="#ffffff" />
-                    </View>
-                    <Text
-                      className="mt-2 text-center text-xs font-semibold text-gray-900"
-                      numberOfLines={2}
-                    >
-                      {copy.addMembers}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    className="mx-1 flex-1 items-center rounded-2xl bg-gray-100 px-2 py-3"
-                    activeOpacity={0.85}
-                    onPress={onOpenEditGroup}
-                  >
-                    <View className="h-11 w-11 items-center justify-center rounded-full bg-white">
-                      <Pencil size={20} color="#111827" />
-                    </View>
-                    <Text
-                      className="mt-2 text-center text-xs font-semibold text-gray-900"
-                      numberOfLines={2}
-                    >
-                      Thay doi thong tin
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    className="mx-1 flex-1 items-center rounded-2xl bg-red-50 px-2 py-3"
-                    activeOpacity={0.85}
-                    onPress={onOpenDeleteGroup}
-                  >
-                    <View className="h-11 w-11 items-center justify-center rounded-full bg-red-600">
-                      <Trash2 size={20} color="#ffffff" />
-                    </View>
-                    <Text
-                      className="mt-2 text-center text-xs font-semibold text-red-700"
-                      numberOfLines={2}
-                    >
-                      Xoa nhom
-                    </Text>
-                  </TouchableOpacity>
+          {isLoading && !groupInfo ? (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator size="large" color="#0000ff" />
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View className="items-center px-5 py-6">
+                <Image
+                  source={{ uri: groupInfo?.avatar }}
+                  className="h-24 w-24 rounded-full bg-red-100"
+                />
+                <View className="mt-4 flex-row items-center px-4">
+                  <Text className="text-2xl font-bold text-gray-950">
+                    {groupInfo?.name ?? 'Nhóm'}
+                  </Text>
                 </View>
-              ) : null}
+                <Text className="mt-1 text-sm text-gray-500">
+                  {groupInfo?.memberCount ?? 0} thành viên
+                </Text>
+
+                {groupInfo?.isOwner ? (
+                  <View className="mt-5 w-full flex-row justify-center">
+                    <TouchableOpacity
+                      className="mx-1 flex-1 items-center rounded-2xl bg-blue-50 px-2 py-3"
+                      activeOpacity={0.85}
+                      onPress={onOpenAddMembers}
+                    >
+                      <View className="h-11 w-11 items-center justify-center rounded-full bg-blue-600">
+                        <UserPlus size={20} color="#ffffff" />
+                      </View>
+                      <Text
+                        className="mt-2 text-center text-xs font-semibold text-gray-900"
+                        numberOfLines={2}
+                      >
+                        {copy.addMembers}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="mx-1 flex-1 items-center rounded-2xl bg-gray-100 px-2 py-3"
+                      activeOpacity={0.85}
+                      onPress={onOpenEditGroup}
+                    >
+                      <View className="h-11 w-11 items-center justify-center rounded-full bg-white">
+                        <Pencil size={20} color="#111827" />
+                      </View>
+                      <Text
+                        className="mt-2 text-center text-xs font-semibold text-gray-900"
+                        numberOfLines={2}
+                      >
+                        Thay doi thong tin
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="mx-1 flex-1 items-center rounded-2xl bg-red-50 px-2 py-3"
+                      activeOpacity={0.85}
+                      onPress={onOpenDeleteGroup}
+                    >
+                      <View className="h-11 w-11 items-center justify-center rounded-full bg-red-600">
+                        <Trash2 size={20} color="#ffffff" />
+                      </View>
+                      <Text
+                        className="mt-2 text-center text-xs font-semibold text-red-700"
+                        numberOfLines={2}
+                      >
+                        Xoa nhom
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                {false && groupInfo?.isOwner ? (
+                  <View className="mt-4 w-full">
+                    <TextInput
+                      className="rounded-2xl border border-gray-200 px-4 py-3 text-base text-gray-900"
+                      placeholder="Tên nhóm"
+                      placeholderTextColor="#94a3b8"
+                      value={editName}
+                      onChangeText={onChangeEditName}
+                    />
+                    <TouchableOpacity
+                      className="mt-3 rounded-2xl bg-blue-600 py-3"
+                      activeOpacity={0.85}
+                      onPress={onSaveGroup}
+                    >
+                      <Text className="text-center text-base font-bold text-white">
+                        Lưu thay đổi
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+              </View>
 
               {false && groupInfo?.isOwner ? (
-                <View className="mt-4 w-full">
-                  <TextInput
-                    className="rounded-2xl border border-gray-200 px-4 py-3 text-base text-gray-900"
-                    placeholder="Tên nhóm"
-                    placeholderTextColor="#94a3b8"
-                    value={editName}
-                    onChangeText={onChangeEditName}
-                  />
-                  <TouchableOpacity
-                    className="mt-3 rounded-2xl bg-blue-600 py-3"
-                    activeOpacity={0.85}
-                    onPress={onSaveGroup}
-                  >
-                    <Text className="text-center text-base font-bold text-white">
-                      Lưu thay đổi
+                <View className="border-t border-gray-100 px-5 py-4">
+                  <View className="flex-row items-center">
+                    <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-50">
+                      <UserPlus size={20} color="#0000ff" />
+                    </View>
+                    <Text className="ml-3 text-base font-semibold text-gray-900">
+                      {copy.addMembers}
                     </Text>
-                  </TouchableOpacity>
+                  </View>
+                  <View className="mt-3 flex-row">
+                    <TextInput
+                      className="mr-2 flex-1 rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-900"
+                      placeholder="Tìm thành viên"
+                      placeholderTextColor="#94a3b8"
+                      value={addableQuery}
+                      onChangeText={onChangeAddableQuery}
+                      onSubmitEditing={onSearchAddableUsers}
+                    />
+                    <TouchableOpacity
+                      className="h-12 w-12 items-center justify-center rounded-2xl bg-blue-600"
+                      activeOpacity={0.85}
+                      onPress={onSearchAddableUsers}
+                    >
+                      {isLoadingAddableUsers ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                      ) : (
+                        <UserPlus size={19} color="#ffffff" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                  {addableUsers.map(user => (
+                    <AddableUserRow
+                      key={user.id}
+                      user={user}
+                      selected={selectedAddableIds.has(user.id)}
+                      onToggle={onToggleAddableUser}
+                    />
+                  ))}
+                  {!isLoadingAddableUsers && addableUsers.length === 0 ? (
+                    <Text className="mt-3 rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                      Chua co goi y. Nguoi dung da follow qua lai va chua o
+                      trong nhom se hien o day.
+                    </Text>
+                  ) : null}
+                  {selectedAddableIds.size > 0 ? (
+                    <TouchableOpacity
+                      className="mt-2 rounded-2xl bg-blue-600 py-3"
+                      activeOpacity={0.85}
+                      onPress={onSubmitAddUsers}
+                    >
+                      <Text className="text-center text-sm font-bold text-white">
+                        Thêm {selectedAddableIds.size} người
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : null}
-            </View>
 
-            {false && groupInfo?.isOwner ? (
-              <View className="border-t border-gray-100 px-5 py-4">
-                <View className="flex-row items-center">
-                  <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-50">
-                    <UserPlus size={20} color="#0000ff" />
-                  </View>
-                  <Text className="ml-3 text-base font-semibold text-gray-900">
-                    {copy.addMembers}
-                  </Text>
-                </View>
-                <View className="mt-3 flex-row">
-                  <TextInput
-                    className="mr-2 flex-1 rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-900"
-                    placeholder="Tìm thành viên"
-                    placeholderTextColor="#94a3b8"
-                    value={addableQuery}
-                    onChangeText={onChangeAddableQuery}
-                    onSubmitEditing={onSearchAddableUsers}
-                  />
-                  <TouchableOpacity
-                    className="h-12 w-12 items-center justify-center rounded-2xl bg-blue-600"
-                    activeOpacity={0.85}
-                    onPress={onSearchAddableUsers}
-                  >
-                    {isLoadingAddableUsers ? (
-                      <ActivityIndicator size="small" color="#ffffff" />
-                    ) : (
-                      <UserPlus size={19} color="#ffffff" />
-                    )}
-                  </TouchableOpacity>
-                </View>
-                {addableUsers.map(user => (
-                  <AddableUserRow
-                    key={user.id}
-                    user={user}
-                    selected={selectedAddableIds.has(user.id)}
-                    onToggle={onToggleAddableUser}
-                  />
-                ))}
-                {!isLoadingAddableUsers && addableUsers.length === 0 ? (
-                  <Text className="mt-3 rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-500">
-                    Chua co goi y. Nguoi dung da follow qua lai va chua o trong
-                    nhom se hien o day.
-                  </Text>
-                ) : null}
-                {selectedAddableIds.size > 0 ? (
-                  <TouchableOpacity
-                    className="mt-2 rounded-2xl bg-blue-600 py-3"
-                    activeOpacity={0.85}
-                    onPress={onSubmitAddUsers}
-                  >
-                    <Text className="text-center text-sm font-bold text-white">
-                      Thêm {selectedAddableIds.size} người
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            ) : null}
-
-            <SectionHeader
-              title={copy.groupMembers}
-              isOpen={isMembersOpen}
-              onPress={() => onToggleSection('members')}
-            />
-            {isMembersOpen ? (
-              <View className="pb-3">
-                {(groupInfo?.members ?? []).map(member => (
-                  <GroupMemberRow
-                    key={member.id}
-                    member={member}
-                    canRemove={
-                      Boolean(groupInfo?.isOwner) &&
-                      !member.isOwner &&
-                      member.id !== groupInfo?.ownerId
-                    }
-                    onRemove={onRemoveMember}
-                  />
-                ))}
-              </View>
-            ) : null}
-
-            <SectionHeader
-              title={copy.sharedMedia}
-              isOpen={isMediaOpen}
-              onPress={() => onToggleSection('media')}
-            />
-            {isMediaOpen ? (
-              <View className="flex-row flex-wrap px-5 pb-4">
-                {(assets?.media ?? []).length === 0 ? (
-                  <Text className="py-3 text-sm text-gray-500">
-                    {copy.emptySharedMedia}
-                  </Text>
-                ) : (
-                  assets!.media.map(item => (
-                    <Image
-                      key={item.id}
-                      source={{ uri: item.uri }}
-                      className="mr-2 mt-2 h-20 w-20 rounded-xl bg-gray-100"
-                    />
-                  ))
-                )}
-              </View>
-            ) : null}
-
-            <SectionHeader
-              title="File"
-              isOpen={isFilesOpen}
-              onPress={() => onToggleSection('files')}
-            />
-            {isFilesOpen ? (
-              <View className="px-5 pb-4">
-                {(assets?.files ?? []).length === 0 ? (
-                  <Text className="py-3 text-sm text-gray-500">
-                    Chưa có File được chia sẻ trong hội thoại này
-                  </Text>
-                ) : (
-                  assets!.files.map(item => (
-                    <TouchableOpacity
-                      key={item.id}
-                      className="flex-row items-center py-2"
-                      activeOpacity={0.8}
-                      onPress={() =>
-                        Linking.openURL(item.uri).catch(() => undefined)
-                      }
-                    >
-                      <FileText size={18} color="#0000ff" />
-                      <Text className="ml-2 flex-1 text-sm font-semibold text-gray-900">
-                        {item.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </View>
-            ) : null}
-
-            <SectionHeader
-              title="Link"
-              isOpen={isLinksOpen}
-              onPress={() => onToggleSection('links')}
-            />
-            {isLinksOpen ? (
-              <View className="px-5 pb-4">
-                {(assets?.links ?? []).length === 0 ? (
-                  <Text className="py-3 text-sm text-gray-500">
-                    Chưa có Link được chia sẻ trong hội thoại này
-                  </Text>
-                ) : (
-                  assets!.links.map(item => (
-                    <TouchableOpacity
-                      key={item.id}
-                      className="flex-row items-center py-2"
-                      activeOpacity={0.8}
-                      onPress={() =>
-                        Linking.openURL(item.url).catch(() => undefined)
-                      }
-                    >
-                      <LinkIcon size={18} color="#0000ff" />
-                      <Text className="ml-2 flex-1 text-sm font-semibold text-blue-700">
-                        {item.title}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </View>
-            ) : null}
-
-            <View className="mt-2 border-t border-gray-100 px-5 py-4">
-              <TouchableOpacity
-                className="flex-row items-center py-3"
-                activeOpacity={0.8}
-                onPress={onClearHistory}
-              >
-                <Trash2 size={19} color="#111827" />
-                <Text className="ml-3 text-base text-gray-950">
-                  Xóa lịch sử trò chuyện
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="flex-row items-center py-3"
-                activeOpacity={0.8}
-                onPress={onLeaveGroup}
-              >
-                <LogOut size={19} color="#dc2626" />
-                <Text className="ml-3 text-base text-red-600">
-                  {copy.leaveGroup}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        )}
-      </SafeAreaView>
-    </Modal>
-    <Modal
-      visible={visible && activeDialog === 'add'}
-      animationType="fade"
-      transparent
-      onRequestClose={onCloseActionDialog}
-    >
-      <View className="flex-1 justify-end bg-black/45">
-        <View className="max-h-[82%] rounded-t-3xl bg-white px-5 pb-6 pt-4">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-lg font-bold text-gray-950">
-              {copy.addMembers}
-            </Text>
-            <TouchableOpacity
-              className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
-              activeOpacity={0.8}
-              onPress={onCloseActionDialog}
-            >
-              <X size={20} color="#111827" />
-            </TouchableOpacity>
-          </View>
-          <View className="mt-4 flex-row">
-            <TextInput
-              className="mr-2 flex-1 rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-900"
-              placeholder="Tim thanh vien"
-              placeholderTextColor="#94a3b8"
-              value={addableQuery}
-              onChangeText={onChangeAddableQuery}
-              onSubmitEditing={onSearchAddableUsers}
-            />
-            <TouchableOpacity
-              className="h-12 w-12 items-center justify-center rounded-2xl bg-blue-600"
-              activeOpacity={0.85}
-              onPress={onSearchAddableUsers}
-            >
-              {isLoadingAddableUsers ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <UserPlus size={19} color="#ffffff" />
-              )}
-            </TouchableOpacity>
-          </View>
-          <ScrollView className="mt-2" showsVerticalScrollIndicator={false}>
-            {addableUsers.map(user => (
-              <AddableUserRow
-                key={user.id}
-                user={user}
-                selected={selectedAddableIds.has(user.id)}
-                onToggle={onToggleAddableUser}
+              <SectionHeader
+                title={copy.groupMembers}
+                isOpen={isMembersOpen}
+                onPress={() => onToggleSection('members')}
               />
-            ))}
-            {!isLoadingAddableUsers && addableUsers.length === 0 ? (
-              <Text className="mt-3 rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-500">
-                Chua co goi y. Hay thu tim theo ten hoac username.
+              {isMembersOpen ? (
+                <View className="pb-3">
+                  {(groupInfo?.members ?? []).map(member => (
+                    <GroupMemberRow
+                      key={member.id}
+                      member={member}
+                      canRemove={
+                        Boolean(groupInfo?.isOwner) &&
+                        !member.isOwner &&
+                        member.id !== groupInfo?.ownerId
+                      }
+                      onRemove={onRemoveMember}
+                    />
+                  ))}
+                </View>
+              ) : null}
+
+              <SectionHeader
+                title={copy.sharedMedia}
+                isOpen={isMediaOpen}
+                onPress={() => onToggleSection('media')}
+              />
+              {isMediaOpen ? (
+                <View className="flex-row flex-wrap px-5 pb-4">
+                  {(assets?.media ?? []).length === 0 ? (
+                    <Text className="py-3 text-sm text-gray-500">
+                      {copy.emptySharedMedia}
+                    </Text>
+                  ) : (
+                    assets!.media.map(item => (
+                      <Image
+                        key={item.id}
+                        source={{ uri: item.uri }}
+                        className="mr-2 mt-2 h-20 w-20 rounded-xl bg-gray-100"
+                      />
+                    ))
+                  )}
+                </View>
+              ) : null}
+
+              <SectionHeader
+                title="File"
+                isOpen={isFilesOpen}
+                onPress={() => onToggleSection('files')}
+              />
+              {isFilesOpen ? (
+                <View className="px-5 pb-4">
+                  {(assets?.files ?? []).length === 0 ? (
+                    <Text className="py-3 text-sm text-gray-500">
+                      Chưa có File được chia sẻ trong hội thoại này
+                    </Text>
+                  ) : (
+                    assets!.files.map(item => (
+                      <TouchableOpacity
+                        key={item.id}
+                        className="flex-row items-center py-2"
+                        activeOpacity={0.8}
+                        onPress={() =>
+                          Linking.openURL(item.uri).catch(() => undefined)
+                        }
+                      >
+                        <FileText size={18} color="#0000ff" />
+                        <Text className="ml-2 flex-1 text-sm font-semibold text-gray-900">
+                          {item.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </View>
+              ) : null}
+
+              <SectionHeader
+                title="Link"
+                isOpen={isLinksOpen}
+                onPress={() => onToggleSection('links')}
+              />
+              {isLinksOpen ? (
+                <View className="px-5 pb-4">
+                  {(assets?.links ?? []).length === 0 ? (
+                    <Text className="py-3 text-sm text-gray-500">
+                      Chưa có Link được chia sẻ trong hội thoại này
+                    </Text>
+                  ) : (
+                    assets!.links.map(item => (
+                      <TouchableOpacity
+                        key={item.id}
+                        className="flex-row items-center py-2"
+                        activeOpacity={0.8}
+                        onPress={() =>
+                          Linking.openURL(item.url).catch(() => undefined)
+                        }
+                      >
+                        <LinkIcon size={18} color="#0000ff" />
+                        <Text className="ml-2 flex-1 text-sm font-semibold text-blue-700">
+                          {item.title}
+                        </Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </View>
+              ) : null}
+
+              <View className="mt-2 border-t border-gray-100 px-5 py-4">
+                <TouchableOpacity
+                  className="flex-row items-center py-3"
+                  activeOpacity={0.8}
+                  onPress={onClearHistory}
+                >
+                  <Trash2 size={19} color="#111827" />
+                  <Text className="ml-3 text-base text-gray-950">
+                    Xóa lịch sử trò chuyện
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="flex-row items-center py-3"
+                  activeOpacity={0.8}
+                  onPress={onLeaveGroup}
+                >
+                  <LogOut size={19} color="#dc2626" />
+                  <Text className="ml-3 text-base text-red-600">
+                    {copy.leaveGroup}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
+      <Modal
+        visible={visible && activeDialog === 'add'}
+        animationType="fade"
+        transparent
+        onRequestClose={onCloseActionDialog}
+      >
+        <View className="flex-1 justify-end bg-black/45">
+          <View className="max-h-[82%] rounded-t-3xl bg-white px-5 pb-6 pt-4">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-lg font-bold text-gray-950">
+                {copy.addMembers}
               </Text>
-            ) : null}
-          </ScrollView>
-          <TouchableOpacity
-            className={`mt-4 rounded-2xl py-3 ${
-              selectedAddableIds.size > 0 ? 'bg-blue-600' : 'bg-gray-200'
-            }`}
-            activeOpacity={0.85}
-            disabled={selectedAddableIds.size === 0}
-            onPress={onSubmitAddUsers}
-          >
-            <Text
-              className={`text-center text-sm font-bold ${
-                selectedAddableIds.size > 0 ? 'text-white' : 'text-gray-500'
-              }`}
-            >
-              Them {selectedAddableIds.size} nguoi
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-    <Modal
-      visible={visible && activeDialog === 'edit'}
-      animationType="fade"
-      transparent
-      onRequestClose={onCloseActionDialog}
-    >
-      <View className="flex-1 justify-end bg-black/45">
-        <View className="rounded-t-3xl bg-white px-5 pb-6 pt-4">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-lg font-bold text-gray-950">
-              Thay doi thong tin
-            </Text>
+              <TouchableOpacity
+                className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
+                activeOpacity={0.8}
+                onPress={onCloseActionDialog}
+              >
+                <X size={20} color="#111827" />
+              </TouchableOpacity>
+            </View>
+            <View className="mt-4 flex-row">
+              <TextInput
+                className="mr-2 flex-1 rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-900"
+                placeholder="Tim thanh vien"
+                placeholderTextColor="#94a3b8"
+                value={addableQuery}
+                onChangeText={onChangeAddableQuery}
+                onSubmitEditing={onSearchAddableUsers}
+              />
+              <TouchableOpacity
+                className="h-12 w-12 items-center justify-center rounded-2xl bg-blue-600"
+                activeOpacity={0.85}
+                onPress={onSearchAddableUsers}
+              >
+                {isLoadingAddableUsers ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <UserPlus size={19} color="#ffffff" />
+                )}
+              </TouchableOpacity>
+            </View>
+            <ScrollView className="mt-2" showsVerticalScrollIndicator={false}>
+              {addableUsers.map(user => (
+                <AddableUserRow
+                  key={user.id}
+                  user={user}
+                  selected={selectedAddableIds.has(user.id)}
+                  onToggle={onToggleAddableUser}
+                />
+              ))}
+              {!isLoadingAddableUsers && addableUsers.length === 0 ? (
+                <Text className="mt-3 rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                  Chua co goi y. Hay thu tim theo ten hoac username.
+                </Text>
+              ) : null}
+            </ScrollView>
             <TouchableOpacity
-              className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
-              activeOpacity={0.8}
-              onPress={onCloseActionDialog}
+              className={`mt-4 rounded-2xl py-3 ${
+                selectedAddableIds.size > 0 ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+              activeOpacity={0.85}
+              disabled={selectedAddableIds.size === 0}
+              onPress={onSubmitAddUsers}
             >
-              <X size={20} color="#111827" />
+              <Text
+                className={`text-center text-sm font-bold ${
+                  selectedAddableIds.size > 0 ? 'text-white' : 'text-gray-500'
+                }`}
+              >
+                Them {selectedAddableIds.size} nguoi
+              </Text>
             </TouchableOpacity>
           </View>
-          <View className="mt-5 items-center">
-            <Image
-              source={{ uri: editAvatar?.uri || groupInfo?.avatar }}
-              className="h-24 w-24 rounded-full bg-red-100"
+        </View>
+      </Modal>
+      <Modal
+        visible={visible && activeDialog === 'edit'}
+        animationType="fade"
+        transparent
+        onRequestClose={onCloseActionDialog}
+      >
+        <View className="flex-1 justify-end bg-black/45">
+          <View className="rounded-t-3xl bg-white px-5 pb-6 pt-4">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-lg font-bold text-gray-950">
+                Thay doi thong tin
+              </Text>
+              <TouchableOpacity
+                className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
+                activeOpacity={0.8}
+                onPress={onCloseActionDialog}
+              >
+                <X size={20} color="#111827" />
+              </TouchableOpacity>
+            </View>
+            <View className="mt-5 items-center">
+              <Image
+                source={{ uri: editAvatar?.uri || groupInfo?.avatar }}
+                className="h-24 w-24 rounded-full bg-red-100"
+              />
+              <TouchableOpacity
+                className="mt-3 flex-row items-center rounded-full bg-gray-100 px-4 py-2"
+                activeOpacity={0.85}
+                onPress={onPickAvatar}
+              >
+                <ImagePlus size={16} color="#111827" />
+                <Text className="ml-2 text-sm font-semibold text-gray-900">
+                  Doi anh
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              className="mt-5 rounded-2xl border border-gray-200 px-4 py-3 text-base text-gray-900"
+              placeholder="Ten nhom"
+              placeholderTextColor="#94a3b8"
+              value={editName}
+              onChangeText={onChangeEditName}
             />
             <TouchableOpacity
-              className="mt-3 flex-row items-center rounded-full bg-gray-100 px-4 py-2"
+              className="mt-4 rounded-2xl bg-blue-600 py-3"
               activeOpacity={0.85}
-              onPress={onPickAvatar}
+              onPress={onSaveGroup}
             >
-              <ImagePlus size={16} color="#111827" />
-              <Text className="ml-2 text-sm font-semibold text-gray-900">
-                Doi anh
+              <Text className="text-center text-base font-bold text-white">
+                Luu thay doi
               </Text>
             </TouchableOpacity>
           </View>
-          <TextInput
-            className="mt-5 rounded-2xl border border-gray-200 px-4 py-3 text-base text-gray-900"
-            placeholder="Ten nhom"
-            placeholderTextColor="#94a3b8"
-            value={editName}
-            onChangeText={onChangeEditName}
-          />
-          <TouchableOpacity
-            className="mt-4 rounded-2xl bg-blue-600 py-3"
-            activeOpacity={0.85}
-            onPress={onSaveGroup}
-          >
-            <Text className="text-center text-base font-bold text-white">
-              Luu thay doi
-            </Text>
-          </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
-    <Modal
-      visible={visible && activeDialog === 'delete'}
-      animationType="fade"
-      transparent
-      onRequestClose={onCloseActionDialog}
-    >
-      <View className="flex-1 justify-end bg-black/45">
-        <View className="rounded-t-3xl bg-white px-5 pb-6 pt-5">
-          <View className="items-center">
-            <View className="h-14 w-14 items-center justify-center rounded-full bg-red-50">
-              <Trash2 size={25} color="#dc2626" />
+      </Modal>
+      <Modal
+        visible={visible && activeDialog === 'delete'}
+        animationType="fade"
+        transparent
+        onRequestClose={onCloseActionDialog}
+      >
+        <View className="flex-1 justify-end bg-black/45">
+          <View className="rounded-t-3xl bg-white px-5 pb-6 pt-5">
+            <View className="items-center">
+              <View className="h-14 w-14 items-center justify-center rounded-full bg-red-50">
+                <Trash2 size={25} color="#dc2626" />
+              </View>
+              <Text className="mt-3 text-lg font-bold text-gray-950">
+                Xoa nhom
+              </Text>
+              <Text className="mt-2 text-center text-sm leading-5 text-gray-500">
+                Hanh dong nay se xoa nhom hien tai. Ban muon tiep tuc?
+              </Text>
             </View>
-            <Text className="mt-3 text-lg font-bold text-gray-950">
-              Xoa nhom
-            </Text>
-            <Text className="mt-2 text-center text-sm leading-5 text-gray-500">
-              Hanh dong nay se xoa nhom hien tai. Ban muon tiep tuc?
-            </Text>
-          </View>
-          <View className="mt-5 flex-row">
-            <TouchableOpacity
-              className="mr-2 flex-1 rounded-2xl bg-gray-100 py-3"
-              activeOpacity={0.85}
-              onPress={onCloseActionDialog}
-            >
-              <Text className="text-center text-sm font-bold text-gray-900">
-                {copy.cancel}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="ml-2 flex-1 rounded-2xl bg-red-600 py-3"
-              activeOpacity={0.85}
-              onPress={onDeleteGroup}
-            >
-              <Text className="text-center text-sm font-bold text-white">
-                {copy.delete}
-              </Text>
-            </TouchableOpacity>
+            <View className="mt-5 flex-row">
+              <TouchableOpacity
+                className="mr-2 flex-1 rounded-2xl bg-gray-100 py-3"
+                activeOpacity={0.85}
+                onPress={onCloseActionDialog}
+              >
+                <Text className="text-center text-sm font-bold text-gray-900">
+                  {copy.cancel}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="ml-2 flex-1 rounded-2xl bg-red-600 py-3"
+                activeOpacity={0.85}
+                onPress={onDeleteGroup}
+              >
+                <Text className="text-center text-sm font-bold text-white">
+                  {copy.delete}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
     </>
   );
 }
@@ -3515,14 +3733,22 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   } = useChatViewModel(chat);
 
   const [text, setText] = useState('');
-  const [replyingMessage, setReplyingMessage] = useState<MessageItem | undefined>(undefined);
-  const [selectedOptionMessage, setSelectedOptionMessage] = useState<MessageItem | undefined>(undefined);
+  const [replyingMessage, setReplyingMessage] = useState<
+    MessageItem | undefined
+  >(undefined);
+  const [selectedOptionMessage, setSelectedOptionMessage] = useState<
+    MessageItem | undefined
+  >(undefined);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string>();
-  const [attachedProduct, setAttachedProduct] = useState<ProductItem | undefined>(route.params?.product);
-  const [sharedMapLocation, setSharedMapLocation] = useState<SharedMapLocation | undefined>(
-    route.params?.sharedMapLocation,
-  );
-  const [isPickingCurrentLocation, setIsPickingCurrentLocation] = useState(false);
+  const [attachedProduct, setAttachedProduct] = useState<
+    ProductItem | undefined
+  >(route.params?.product);
+  const [sharedMapLocation, setSharedMapLocation] = useState<
+    SharedMapLocation | undefined
+  >(route.params?.sharedMapLocation);
+  const [isPickingCurrentLocation, setIsPickingCurrentLocation] =
+    useState(false);
+  const isPickingCurrentLocationRef = useRef(false);
 
   useEffect(() => {
     if (route.params?.product) {
@@ -3539,13 +3765,24 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   }, [navigation, route.params?.sharedMapLocation]);
 
   useEffect(() => {
+    if (!sharedMapLocation) return;
+    prefetchStaticMapPreview(sharedMapLocation);
+  }, [sharedMapLocation]);
+
+  const handleRemoveSharedMapLocation = useCallback(() => {
+    setSharedMapLocation(undefined);
+  }, []);
+
+  useEffect(() => {
     const initialText = route.params?.initialText;
     if (!initialText) return;
 
     const mapShare = parseSharedMapMessage(initialText);
     if (mapShare) {
       setSharedMapLocation(mapShare.location);
-      setText(current => (current.trim().length > 0 ? current : mapShare.caption));
+      setText(current =>
+        current.trim().length > 0 ? current : mapShare.caption,
+      );
       if (mapShare.caption) {
         notifyTyping(mapShare.caption);
       }
@@ -3559,8 +3796,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   }, [navigation, notifyTyping, route.params?.initialText]);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [isGroupInfoVisible, setIsGroupInfoVisible] = useState(false);
-  const [groupInfoDialog, setGroupInfoDialog] =
-    useState<GroupInfoDialog>(null);
+  const [groupInfoDialog, setGroupInfoDialog] = useState<GroupInfoDialog>(null);
   const [expandedGroupInfoSections, setExpandedGroupInfoSections] = useState<
     Set<GroupInfoSection>
   >(new Set(['members', 'media', 'files', 'links']));
@@ -3641,7 +3877,11 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const viewerMedia = viewerMediaItems[viewerMediaIndex];
 
   useEffect(() => {
-    if (viewerMediaItems.length > 0 && viewerMediaIndex >= 0 && viewerMediaIndex < viewerMediaItems.length) {
+    if (
+      viewerMediaItems.length > 0 &&
+      viewerMediaIndex >= 0 &&
+      viewerMediaIndex < viewerMediaItems.length
+    ) {
       const timer = setTimeout(() => {
         mediaListRef.current?.scrollToIndex({
           index: viewerMediaIndex,
@@ -3680,7 +3920,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   }, []);
 
   const handleMessageScrollToIndexFailed = useCallback(
-    ({ index, averageItemLength }: { index: number; averageItemLength: number }) => {
+    ({
+      index,
+      averageItemLength,
+    }: {
+      index: number;
+      averageItemLength: number;
+    }) => {
       flatListRef.current?.scrollToOffset({
         offset: Math.max(0, averageItemLength * index),
         animated: false,
@@ -3753,7 +3999,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     };
 
     if (Platform.OS === 'ios') {
-      const frameSub = Keyboard.addListener('keyboardWillChangeFrame', handleKeyboardFrameChange);
+      const frameSub = Keyboard.addListener(
+        'keyboardWillChangeFrame',
+        handleKeyboardFrameChange,
+      );
       const hideSub = Keyboard.addListener('keyboardWillHide', () => {
         setIsKeyboardVisible(false);
       });
@@ -3763,7 +4012,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       };
     }
 
-    const showSub = Keyboard.addListener('keyboardDidShow', handleKeyboardFrameChange);
+    const showSub = Keyboard.addListener(
+      'keyboardDidShow',
+      handleKeyboardFrameChange,
+    );
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
       setIsKeyboardVisible(false);
     });
@@ -3816,15 +4068,25 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     previousLatestMessageIdRef.current = latestMessageId;
   }, [isAtBottom, isKeyboardVisible, messages]);
 
-  const handleContentSizeChange = useCallback((_width?: number, height?: number) => {
-    if (messages.length === 0) return;
-    const nextContentHeight =
-      typeof height === 'number' ? height : scrollMetricsRef.current.contentHeight;
-    scrollMetricsRef.current.contentHeight = nextContentHeight;
-  }, [messages.length]);
+  const handleContentSizeChange = useCallback(
+    (_width?: number, height?: number) => {
+      if (messages.length === 0) return;
+      const nextContentHeight =
+        typeof height === 'number'
+          ? height
+          : scrollMetricsRef.current.contentHeight;
+      scrollMetricsRef.current.contentHeight = nextContentHeight;
+    },
+    [messages.length],
+  );
 
   const handleLoadOlder = useCallback(() => {
-    if (messageItems.length === 0 || isLoadingMore || loadingOlderRef.current || !hasMore) {
+    if (
+      messageItems.length === 0 ||
+      isLoadingMore ||
+      loadingOlderRef.current ||
+      !hasMore
+    ) {
       return;
     }
     loadingOlderRef.current = true;
@@ -3919,14 +4181,24 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
     let nextText = text;
     if (attachedProduct) {
-      const currencySymbol = attachedProduct.currency_symbol || attachedProduct.currency_code || attachedProduct.currency || 'VNSEEA';
+      const currencySymbol =
+        attachedProduct.currency_symbol ||
+        attachedProduct.currency_code ||
+        attachedProduct.currency ||
+        'VNSEEA';
       const formattedPrice = formatPrice(attachedProduct.price, currencySymbol);
       const imageUrl = attachedProduct.images?.[0]?.image || '';
       const productId = attachedProduct.id;
 
-      nextText = `🛍️ *Tôi muốn hỏi về sản phẩm:*\n👉 *${attachedProduct.name}*\n💰 Giá: *${formattedPrice}*${
-        attachedProduct.location ? `\n📍 Địa điểm: *${attachedProduct.location}*` : ''
-      }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${productId ? `\n🆔 ID: *${productId}*` : ''}\n\n💬 Lời nhắn: ${text.trim() || 'Mặt hàng này còn không bạn?'}`;
+      nextText = `🛍️ *Tôi muốn hỏi về sản phẩm:*\n👉 *${
+        attachedProduct.name
+      }*\n💰 Giá: *${formattedPrice}*${
+        attachedProduct.location
+          ? `\n📍 Địa điểm: *${attachedProduct.location}*`
+          : ''
+      }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${
+        productId ? `\n🆔 ID: *${productId}*` : ''
+      }\n\n💬 Lời nhắn: ${text.trim() || 'Mặt hàng này còn không bạn?'}`;
 
       setAttachedProduct(undefined);
     } else if (sharedMapLocation) {
@@ -3937,19 +4209,23 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
     if (replyingMessage) {
       const originalSnippet = getMessageSnippet(replyingMessage, chat.name);
-      const senderName = replyingMessage.isSentByMe ? 'Tôi' : (chat.name || 'Người dùng');
+      const senderName = replyingMessage.isSentByMe
+        ? 'Tôi'
+        : chat.name || 'Người dùng';
 
       let originalImageUrl = '';
       let originalMediaUrl = '';
-      let originalMediaType: ReplyMediaType | undefined = replyingMessage.callEvent
-        ? 'call'
-        : replyingMessage.mediaType;
+      let originalMediaType: ReplyMediaType | undefined =
+        replyingMessage.callEvent ? 'call' : replyingMessage.mediaType;
       if (replyingMessage.media) {
         originalMediaUrl = replyingMessage.media;
         if (replyingMessage.mediaType === 'image') {
           originalImageUrl = replyingMessage.media;
         }
-      } else if (replyingMessage.media && replyingMessage.mediaType === 'image') {
+      } else if (
+        replyingMessage.media &&
+        replyingMessage.mediaType === 'image'
+      ) {
         originalImageUrl = replyingMessage.media;
       } else {
         const prod = parseProductInquiry(replyingMessage.message);
@@ -3960,11 +4236,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         }
       }
 
-      const imgSegment = originalImageUrl ? `\n🖼️ Ảnh: *${originalImageUrl}*` : '';
-      const mediaMetaSegment =
-        `${originalMediaUrl ? `\nMETA_MEDIA: *${originalMediaUrl}*` : ''}${
-          originalMediaType ? `\nMETA_MEDIA_TYPE: *${originalMediaType}*` : ''
-        }`;
+      const imgSegment = originalImageUrl
+        ? `\n🖼️ Ảnh: *${originalImageUrl}*`
+        : '';
+      const mediaMetaSegment = `${
+        originalMediaUrl ? `\nMETA_MEDIA: *${originalMediaUrl}*` : ''
+      }${originalMediaType ? `\nMETA_MEDIA_TYPE: *${originalMediaType}*` : ''}`;
       nextText = `↪️ *Trả lời tin nhắn:*\n👉 *${senderName}*: ${originalSnippet}\n🆔 ID: *${replyingMessage.id}*${imgSegment}${mediaMetaSegment}\n\n${nextText}`;
       setReplyingMessage(undefined);
     }
@@ -4031,14 +4308,24 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const handleSendProductInquiryOption = useCallback(
     async (optionText: string) => {
       if (!attachedProduct) return;
-      const currencySymbol = attachedProduct.currency_symbol || attachedProduct.currency_code || attachedProduct.currency || 'VNSEEA';
+      const currencySymbol =
+        attachedProduct.currency_symbol ||
+        attachedProduct.currency_code ||
+        attachedProduct.currency ||
+        'VNSEEA';
       const formattedPrice = formatPrice(attachedProduct.price, currencySymbol);
       const imageUrl = attachedProduct.images?.[0]?.image || '';
       const productId = attachedProduct.id;
 
-      const nextText = `🛍️ *Tôi muốn hỏi về sản phẩm:*\n👉 *${attachedProduct.name}*\n💰 Giá: *${formattedPrice}*${
-        attachedProduct.location ? `\n📍 Địa điểm: *${attachedProduct.location}*` : ''
-      }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${productId ? `\n🆔 ID: *${productId}*` : ''}\n\n💬 Lời nhắn: ${optionText}`;
+      const nextText = `🛍️ *Tôi muốn hỏi về sản phẩm:*\n👉 *${
+        attachedProduct.name
+      }*\n💰 Giá: *${formattedPrice}*${
+        attachedProduct.location
+          ? `\n📍 Địa điểm: *${attachedProduct.location}*`
+          : ''
+      }${imageUrl ? `\n📷 Ảnh: ${imageUrl}` : ''}${
+        productId ? `\n🆔 ID: *${productId}*` : ''
+      }\n\n💬 Lời nhắn: ${optionText}`;
 
       setAttachedProduct(undefined);
       await sendMessage(nextText);
@@ -4082,20 +4369,23 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   }, []);
 
   const handleShareCurrentLocation = useCallback(async () => {
-    if (isPickingCurrentLocation) return;
+    if (isPickingCurrentLocationRef.current) return;
 
+    isPickingCurrentLocationRef.current = true;
     setIsPickingCurrentLocation(true);
     try {
       const location = await getCurrentDeviceLocation();
       const currentProfile = sessionStorage.getUserProfile();
-      setSharedMapLocation({
+      const nextMapLocation: SharedMapLocation = {
         title: 'Vị trí của bạn',
         subtitle: 'Vị trí hiện tại được chia sẻ',
         address: 'Vị trí hiện tại',
         latitude: location.latitude,
         longitude: location.longitude,
         imageUrl: currentProfile?.avatarUrl,
-      });
+      };
+      prefetchStaticMapPreview(nextMapLocation);
+      setSharedMapLocation(nextMapLocation);
     } catch (caughtError) {
       const message =
         caughtError instanceof Error && caughtError.message
@@ -4103,9 +4393,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           : 'Không lấy được vị trí hiện tại của bạn.';
       Alert.alert('Không thể chia sẻ vị trí', message);
     } finally {
+      isPickingCurrentLocationRef.current = false;
       setIsPickingCurrentLocation(false);
     }
-  }, [isPickingCurrentLocation]);
+  }, []);
 
   const handleToggleRecording = useCallback(async () => {
     try {
@@ -4219,7 +4510,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       const showAvatar =
         item.kind === 'message' && !item.message.isSentByMe
           ? (() => {
-              const currentIndex = messageItems.findIndex(x => x.id === item.id);
+              const currentIndex = messageItems.findIndex(
+                x => x.id === item.id,
+              );
               if (currentIndex <= 0) return true;
               const successor = messageItems[currentIndex - 1];
               if (!successor || successor.kind !== 'message') return true;
@@ -4251,7 +4544,17 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         </View>
       );
     },
-    [chat.avatar, chat.name, highlightedMessageId, messageItems, handleOpenMedia, handleStartConversationCall, handlePressReply, handleQuickRecord, handleOpenSharedPost],
+    [
+      chat.avatar,
+      chat.name,
+      highlightedMessageId,
+      messageItems,
+      handleOpenMedia,
+      handleStartConversationCall,
+      handlePressReply,
+      handleQuickRecord,
+      handleOpenSharedPost,
+    ],
   );
 
   const handleOpenGroupInfo = useCallback(() => {
@@ -4529,12 +4832,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     if (chat.chatType === 'user' && conversationPartnerId) {
       navigation.navigate(ROUTES.CONVERSATION_DETAILS, { chat });
     }
-  }, [
-    chat,
-    conversationPartnerId,
-    handleOpenGroupInfo,
-    navigation,
-  ]);
+  }, [chat, conversationPartnerId, handleOpenGroupInfo, navigation]);
 
   const conversationSubtitle = useMemo(() => {
     if (chat.chatType === 'group') {
@@ -4562,7 +4860,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       }`;
     }
     return `@${chat.username || chat.name}`;
-  }, [chat.chatType, chat.name, chat.username, groupInfo?.memberCount, language]);
+  }, [
+    chat.chatType,
+    chat.name,
+    chat.username,
+    groupInfo?.memberCount,
+    language,
+  ]);
 
   const conversationIntroText = useMemo(() => {
     if (chat.chatType === 'group') {
@@ -4683,7 +4987,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             contentContainerStyle={messageListContentStyle}
             inverted
             keyboardShouldPersistTaps="handled"
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            keyboardDismissMode={
+              Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+            }
             onScroll={handleScroll}
             onContentSizeChange={handleContentSizeChange}
             scrollEventThrottle={16}
@@ -4873,11 +5179,23 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   </View>
                 )}
                 <View className="ml-2.5 flex-1">
-                  <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>
+                  <Text
+                    className="text-sm font-bold text-slate-800"
+                    numberOfLines={1}
+                  >
                     {attachedProduct.name}
                   </Text>
-                  <Text className="text-xs font-semibold text-[#0F56FB] mt-0.5" numberOfLines={1}>
-                    {formatPrice(attachedProduct.price, attachedProduct.currency_symbol || attachedProduct.currency_code || attachedProduct.currency || 'VNSEEA')}
+                  <Text
+                    className="text-xs font-semibold text-[#0F56FB] mt-0.5"
+                    numberOfLines={1}
+                  >
+                    {formatPrice(
+                      attachedProduct.price,
+                      attachedProduct.currency_symbol ||
+                        attachedProduct.currency_code ||
+                        attachedProduct.currency ||
+                        'VNSEEA',
+                    )}
                   </Text>
                 </View>
               </View>
@@ -4910,7 +5228,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   return (
                     <TouchableOpacity
                       key={option.id}
-                      onPress={() => handleSendProductInquiryOption(option.message)}
+                      onPress={() =>
+                        handleSendProductInquiryOption(option.message)
+                      }
                       style={styles.productInquiryOptionCard}
                       activeOpacity={0.82}
                     >
@@ -4944,7 +5264,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             <MapShareCard
               location={sharedMapLocation}
               composer
-              onRemove={() => setSharedMapLocation(undefined)}
+              onRemove={handleRemoveSharedMapLocation}
             />
           </View>
         ) : null}
@@ -4955,27 +5275,38 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
             <View className="min-w-0 flex-1 flex-row items-center">
               <View className="mr-2.5 h-11 w-0.5 rounded-full bg-[#0084FF]" />
               <View className="min-w-0 flex-1 justify-center">
-                <Text className="text-[12px] font-bold text-gray-900" numberOfLines={1}>
-                  {replyingMessage.isSentByMe ? 'Bạn' : chat.name || 'Người dùng'}
+                <Text
+                  className="text-[12px] font-bold text-gray-900"
+                  numberOfLines={1}
+                >
+                  {replyingMessage.isSentByMe
+                    ? 'Bạn'
+                    : chat.name || 'Người dùng'}
                 </Text>
-                <Text className="mt-0.5 text-[12px] leading-4 text-gray-500" numberOfLines={1}>
+                <Text
+                  className="mt-0.5 text-[12px] leading-4 text-gray-500"
+                  numberOfLines={1}
+                >
                   {getMessageSnippet(replyingMessage, chat.name)}
                 </Text>
               </View>
               {/* Optional Right image thumbnail in preview bar */}
-              {replyingMessage.media && replyingMessage.mediaType === 'image' && (
-                <Image
-                  source={{ uri: replyingMessage.media }}
-                  className="ml-2 h-10 w-10 rounded-md bg-slate-200"
-                  resizeMode="cover"
-                />
-              )}
-              {replyingMessage.media && replyingMessage.mediaType === 'video' ? (
+              {replyingMessage.media &&
+                replyingMessage.mediaType === 'image' && (
+                  <Image
+                    source={{ uri: replyingMessage.media }}
+                    className="ml-2 h-10 w-10 rounded-md bg-slate-200"
+                    resizeMode="cover"
+                  />
+                )}
+              {replyingMessage.media &&
+              replyingMessage.mediaType === 'video' ? (
                 <View className="ml-2 h-10 w-10 items-center justify-center rounded-md bg-slate-900">
                   <Play size={14} color="#ffffff" fill="#ffffff" />
                 </View>
               ) : null}
-              {replyingMessage.media && replyingMessage.mediaType === 'audio' ? (
+              {replyingMessage.media &&
+              replyingMessage.mediaType === 'audio' ? (
                 <View className="ml-2 h-10 w-10 items-center justify-center rounded-md bg-violet-100">
                   <Mic size={16} color="#7C3AED" />
                 </View>
@@ -5152,12 +5483,16 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   index,
                 };
               }}
-              onMomentumScrollEnd={(event) => {
+              onMomentumScrollEnd={event => {
                 const slideSize = event.nativeEvent.layoutMeasurement.width;
                 if (slideSize <= 0) return;
                 const offset = event.nativeEvent.contentOffset.x;
                 const index = Math.round(offset / slideSize);
-                if (index >= 0 && index < viewerMediaItems.length && index !== viewerMediaIndex) {
+                if (
+                  index >= 0 &&
+                  index < viewerMediaItems.length &&
+                  index !== viewerMediaIndex
+                ) {
                   setViewerMediaIndex(index);
                 }
               }}
@@ -5167,7 +5502,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   <View style={{ width: screenWidth, flex: 1 }}>
                     {item.type === 'image' ? (
                       <SwipeToCloseContainer onClose={handleCloseMedia}>
-                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                        <View
+                          style={{
+                            flex: 1,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                          }}
+                        >
                           <Image
                             source={{ uri: item.uri }}
                             style={{ width: '100%', height: '100%' }}
@@ -5176,7 +5517,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                         </View>
                       </SwipeToCloseContainer>
                     ) : item.type === 'video' ? (
-                      <ChatVideoViewer uri={item.uri} onClose={handleCloseMedia} />
+                      <ChatVideoViewer
+                        uri={item.uri}
+                        onClose={handleCloseMedia}
+                      />
                     ) : null}
                   </View>
                 );
@@ -5219,7 +5563,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           activeOpacity={1}
           onPress={() => setSelectedOptionMessage(undefined)}
         >
-          <View style={styles.modalContainer} className="bg-white/95 rounded-t-3xl border border-gray-100 shadow-2xl">
+          <View
+            style={styles.modalContainer}
+            className="bg-white/95 rounded-t-3xl border border-gray-100 shadow-2xl"
+          >
             <View className="items-center py-2.5">
               <View className="h-1.5 w-12 rounded-full bg-gray-300" />
             </View>
@@ -5236,8 +5583,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   <CornerUpLeft size={20} color="#3B82F6" />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-base font-semibold text-gray-800">Trả lời</Text>
-                  <Text className="text-xs text-gray-500">Trích dẫn tin nhắn này</Text>
+                  <Text className="text-base font-semibold text-gray-800">
+                    Trả lời
+                  </Text>
+                  <Text className="text-xs text-gray-500">
+                    Trích dẫn tin nhắn này
+                  </Text>
                 </View>
               </TouchableOpacity>
 
@@ -5249,8 +5600,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                   <Copy size={20} color="#10B981" />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-base font-semibold text-gray-800">Sao chép</Text>
-                  <Text className="text-xs text-gray-500">Sao chép nội dung tin nhắn</Text>
+                  <Text className="text-base font-semibold text-gray-800">
+                    Sao chép
+                  </Text>
+                  <Text className="text-xs text-gray-500">
+                    Sao chép nội dung tin nhắn
+                  </Text>
                 </View>
               </TouchableOpacity>
 
@@ -5263,8 +5618,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                     <Pin size={20} color="#D97706" />
                   </View>
                   <View className="flex-1">
-                    <Text className="text-base font-semibold text-gray-800">Ghim tin nhắn</Text>
-                    <Text className="text-xs text-gray-500">Hiển thị trong chi tiết cuộc trò chuyện</Text>
+                    <Text className="text-base font-semibold text-gray-800">
+                      Ghim tin nhắn
+                    </Text>
+                    <Text className="text-xs text-gray-500">
+                      Hiển thị trong chi tiết cuộc trò chuyện
+                    </Text>
                   </View>
                 </TouchableOpacity>
               ) : null}
@@ -5364,7 +5723,8 @@ const styles = StyleSheet.create({
   },
   messageSkeletonRowSent: {
     justifyContent: 'flex-end',
-  },  imageGallery: {
+  },
+  imageGallery: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: IMAGE_GALLERY_GAP,
