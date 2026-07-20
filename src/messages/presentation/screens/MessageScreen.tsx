@@ -2391,18 +2391,28 @@ function MessageLabelsModal({
 
                   {/* Side-by-side color picker indicator & Create button */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                    <TouchableOpacity
-                      style={{
-                        width: 70,
-                        height: 36,
-                        borderRadius: 6,
-                        backgroundColor: hexOK(labelColor) ? labelColor : DEFAULT_LABEL_COLOR,
-                        borderWidth: 1,
-                        borderColor: '#E2E8F0',
-                      }}
-                      activeOpacity={0.8}
-                      onPress={() => setShowColorPicker(v => !v)}
-                    />
+                    {Platform.OS === 'ios' ? (
+                      <View className="flex-1">
+                        <ColorPicker
+                          value={labelColor}
+                          onChange={setLabelColor}
+                          label={copy.labelColorTitle}
+                        />
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={{
+                          width: 70,
+                          height: 36,
+                          borderRadius: 6,
+                          backgroundColor: hexOK(labelColor) ? labelColor : DEFAULT_LABEL_COLOR,
+                          borderWidth: 1,
+                          borderColor: '#E2E8F0',
+                        }}
+                        activeOpacity={0.8}
+                        onPress={() => setShowColorPicker(v => !v)}
+                      />
+                    )}
                     <TouchableOpacity
                       style={{
                         backgroundColor: '#3B82F6',
@@ -2424,7 +2434,7 @@ function MessageLabelsModal({
                     </TouchableOpacity>
                   </View>
 
-                  {showColorPicker && (
+                  {Platform.OS !== 'ios' && showColorPicker && (
                     <View className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 mb-4">
                       <ColorPicker
                         value={labelColor}

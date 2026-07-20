@@ -27,6 +27,8 @@ import type { RootStackParamList } from '../../../navigation/types';
 import { postCreatedEvents } from '../../../feed/application/events/postCreatedEvents';
 import { usePollViewModel } from '../../application/view-models/usePollViewModel';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { POLL_COPY } from '../../application/i18n/pollCopy';
 
 type CreatePollNav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -36,7 +38,12 @@ const MAX_OPTIONS = 6;
 
 function CreatePollScreen() {
   const navigation = useNavigation<CreatePollNav>();
-  const { createPoll, isLoading, error, clearError } = usePollViewModel();
+  const language = useAppLanguage();
+  const copy = POLL_COPY[language];
+  const { createPoll, isLoading, error, clearError } = usePollViewModel({
+    createErrorFallback: copy.createErrorFallback,
+    voteErrorFallback: copy.voteErrorFallback,
+  });
 
   const [question, setQuestion] = useState('');
   const [options, setOptions] = useState<string[]>(['', '']);
@@ -144,8 +151,8 @@ function CreatePollScreen() {
       // Show success message first, then navigate back
       setSuccessMessage(
         result.underReview
-          ? '✓ Đã gửi, bài đang chờ duyệt!'
-          : '✓ Đăng thành công!',
+          ? `✓ ${copy.underReviewSuccess}`
+          : `✓ ${copy.publishedSuccess}`,
       );
       setTimeout(() => {
         navigation.goBack();
@@ -173,7 +180,7 @@ function CreatePollScreen() {
             activeOpacity={0.8}
             onPress={() => navigation.goBack()}
             accessibilityRole="button"
-            accessibilityLabel="Quay lại"
+            accessibilityLabel={copy.backA11yLabel}
           >
             <ArrowLeft size={22} color="#FFFFFF" />
           </TouchableOpacity>
@@ -185,7 +192,7 @@ function CreatePollScreen() {
           adjustsFontSizeToFit
           minimumFontScale={0.82}
         >
-          Tạo cuộc thăm dò
+          {copy.headerTitle}
         </Animated.Text>
         <Animated.View
           style={[styles.headerRightSlot, publishButtonAnimationStyle]}
@@ -203,7 +210,7 @@ function CreatePollScreen() {
             onPressOut={() => animatePublishScale(1)}
             disabled={!canSubmit || isLoading}
             accessibilityRole="button"
-            accessibilityLabel="Đăng cuộc thăm dò"
+            accessibilityLabel={copy.publishA11yLabel}
             accessibilityState={{ disabled: !canSubmit || isLoading }}
           >
             {isLoading ? (
@@ -223,7 +230,7 @@ function CreatePollScreen() {
                     : styles.publishLabelDisabled
                 }
               >
-                Đăng
+                {copy.publishButton}
               </Text>
             )}
           </TouchableOpacity>
@@ -251,9 +258,9 @@ function CreatePollScreen() {
               <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-blue-50">
                 <BarChart3 size={40} color="#0000FF" />
               </View>
-              <Text className="text-heading">Hỏi ý kiến cộng đồng</Text>
+              <Text className="text-heading">{copy.heroTitle}</Text>
               <Text className="mt-1 text-body-secondary">
-                Tạo cuộc thăm dò để thu thập ý kiến từ bạn bè
+                {copy.heroDescription}
               </Text>
             </View>
 
@@ -265,18 +272,19 @@ function CreatePollScreen() {
                     <List size={16} color="#0000FF" />
                   </View>
                   <Text className="text-label-primary font-semibold text-slate-700">
-                    Câu hỏi của bạn
+                    {copy.questionLabel}
                   </Text>
                 </View>
               </View>
               <TextInput
                 className="mx-5 my-4 min-h-[80px] text-body-primary"
-                placeholder="Bạn muốn hỏi gì?"
+                placeholder={copy.questionPlaceholder}
                 placeholderTextColor="#94A3B8"
                 value={question}
                 onChangeText={setQuestion}
                 multiline
                 textAlignVertical="top"
+                style={Platform.OS === 'ios' ? styles.questionInputIos : undefined}
               />
             </View>
 
@@ -289,7 +297,7 @@ function CreatePollScreen() {
                       <Check size={16} color="#0000FF" />
                     </View>
                     <Text className="text-label-primary font-semibold text-slate-700">
-                      Phương án trả lời
+                      {copy.optionsLabel}
                     </Text>
                   </View>
                   <View className="rounded-full bg-blue-100 px-3 py-1">
@@ -324,11 +332,16 @@ function CreatePollScreen() {
                         )}
                       </View>
                       <TextInput
-                        className="flex-1 text-body-primary"
-                        placeholder={`Phương án ${index + 1}`}
+                        className={
+                          Platform.OS === 'ios'
+                            ? 'flex-1'
+                            : 'flex-1 text-body-primary'
+                        }
+                        placeholder={copy.optionPlaceholder(index + 1)}
                         placeholderTextColor="#94A3B8"
                         value={opt}
                         onChangeText={value => updateOption(index, value)}
+                        style={Platform.OS === 'ios' ? styles.optionInputIos : undefined}
                       />
                     </View>
                     {canRemove && (
@@ -336,10 +349,12 @@ function CreatePollScreen() {
                         className="mt-2 flex-row items-center"
                         activeOpacity={0.7}
                         onPress={() => removeOption(index)}
+                        accessibilityRole="button"
+                        accessibilityLabel={copy.removeOptionA11yLabel(index + 1)}
                       >
                         <Trash2 size={14} color="#EF4444" />
                         <Text className="ml-1 text-caption-secondary text-red-500">
-                          Xóa phương án
+                          {copy.removeOption}
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -352,10 +367,12 @@ function CreatePollScreen() {
                     className="mt-2 flex-row items-center justify-center rounded-xl border-2 border-dashed border-blue-300 bg-blue-50/30 py-4"
                     activeOpacity={0.8}
                     onPress={addOption}
+                    accessibilityRole="button"
+                    accessibilityLabel={copy.addOptionA11yLabel}
                   >
                     <Plus size={20} color="#0000FF" />
                     <Text className="ml-2 text-label-primary font-medium text-blue-600">
-                      Thêm phương án
+                      {copy.addOption}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -369,12 +386,10 @@ function CreatePollScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-label-primary font-medium text-amber-800">
-                  Mẹo tạo cuộc thăm dò hiệu quả
+                  {copy.tipsTitle}
                 </Text>
                 <Text className="mt-1 text-caption-secondary text-amber-700">
-                  Cần tối thiểu {MIN_OPTIONS} phương án trả lời. Bạn có thể thêm
-                  tối đa {MAX_OPTIONS} phương án. Cuộc thăm dò sẽ được đăng lên
-                  bảng tin để bạn bè bình chọn.
+                  {copy.tipsDescription(MIN_OPTIONS, MAX_OPTIONS)}
                 </Text>
               </View>
             </View>
@@ -395,8 +410,8 @@ function CreatePollScreen() {
               </View>
               <Text className="text-caption-secondary">
                 {canSubmit
-                  ? '✓ Sẵn sàng đăng'
-                  : 'Điền đầy đủ thông tin để tiếp tục'}
+                  ? `✓ ${copy.readyToPublish}`
+                  : copy.completeForm}
               </Text>
             </View>
           </Animated.View>
@@ -427,7 +442,12 @@ function CreatePollScreen() {
             <Text className="flex-1 text-title-primary text-white">
               {error}
             </Text>
-            <TouchableOpacity onPress={clearError} className="ml-2">
+            <TouchableOpacity
+              onPress={clearError}
+              className="ml-2"
+              accessibilityRole="button"
+              accessibilityLabel={copy.dismissErrorA11yLabel}
+            >
               <Text className="text-white/80">✕</Text>
             </TouchableOpacity>
           </View>
@@ -471,6 +491,20 @@ const styles = StyleSheet.create({
   },
   publishLabelDisabled: {
     color: 'rgba(255, 255, 255, 0.72)',
+  },
+  questionInputIos: {
+    lineHeight: 24,
+    paddingTop: 0,
+    paddingBottom: 0,
+  },
+  optionInputIos: {
+    color: '#000000',
+    fontFamily: 'Inter',
+    fontSize: 14,
+    fontWeight: '400',
+    height: 32,
+    paddingBottom: 0,
+    paddingTop: 0,
   },
 });
 
