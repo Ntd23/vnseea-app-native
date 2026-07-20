@@ -52,6 +52,7 @@ class IncomingCallActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    if (finishIfIncomingCallWasHandled()) return
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
       setShowWhenLocked(true)
       setTurnScreenOn(true)
@@ -328,6 +329,18 @@ class IncomingCallActivity : Activity() {
   override fun onNewIntent(nextIntent: Intent) {
     super.onNewIntent(nextIntent)
     setIntent(nextIntent)
+    finishIfIncomingCallWasHandled()
+  }
+
+  private fun finishIfIncomingCallWasHandled(): Boolean {
+    val callId = extra(LiveKitCallNativeActions.EXTRA_CALL_ID)
+    if (!LiveKitCallNativeActions.isIncomingCallHandledRecently(this, callId)) {
+      return false
+    }
+    stopRingtone()
+    cancelNotification()
+    finishAndRemoveTask()
+    return true
   }
 
   override fun onDestroy() {

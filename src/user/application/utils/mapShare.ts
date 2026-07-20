@@ -62,7 +62,9 @@ export function buildMapSharePreview(
   location: SharedMapLocation,
   imageUrl?: string,
 ): PostLinkPreview {
-  const coord = `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
+  const coord = `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(
+    6,
+  )}`;
   const previewImage = imageUrl || location.imageUrl || undefined;
 
   return {
@@ -77,15 +79,16 @@ export function buildStaticMapPreviewUrl(location: SharedMapLocation) {
   const key = apiConfig.googleMapsApiKey.trim();
   if (!key) return undefined;
 
-  const center = `${formatCoordinateParam(location.latitude)},${formatCoordinateParam(
-    location.longitude,
-  )}`;
+  const center = `${formatCoordinateParam(
+    location.latitude,
+  )},${formatCoordinateParam(location.longitude)}`;
   const params = new URLSearchParams({
     center,
     zoom: '16',
-    size: '640x320',
+    size: '480x240',
     scale: '2',
     maptype: 'roadmap',
+    format: 'jpg',
     key,
   });
   params.append('markers', `color:0x2563EB|${center}`);

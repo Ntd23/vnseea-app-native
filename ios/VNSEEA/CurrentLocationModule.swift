@@ -44,7 +44,8 @@ class CurrentLocationModule: NSObject, CLLocationManagerDelegate {
 
       let manager = CLLocationManager()
       manager.delegate = self
-      manager.desiredAccuracy = kCLLocationAccuracyBest
+      manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+      manager.distanceFilter = kCLDistanceFilterNone
       self.locationManager = manager
 
       let timeout = max(3.0, min(timeoutMs.doubleValue / 1000.0, 15.0))
@@ -88,6 +89,11 @@ class CurrentLocationModule: NSObject, CLLocationManagerDelegate {
     case .notDetermined:
       manager.requestWhenInUseAuthorization()
     case .authorizedAlways, .authorizedWhenInUse:
+      if let cachedLocation = manager.location,
+         isFreshEnough(cachedLocation) {
+        finishResolve(location: cachedLocation)
+        return
+      }
       manager.requestLocation()
     case .denied, .restricted:
       finishReject(
@@ -110,8 +116,15 @@ class CurrentLocationModule: NSObject, CLLocationManagerDelegate {
       "longitude": location.coordinate.longitude,
       "accuracy": location.horizontalAccuracy,
       "provider": "ios",
-      "timestamp": location.timestamp.timeIntervalSince1970,
+      "timestamp": location.timestamp.timeIntervalSince1970 * 1000,
     ])
+  }
+
+  private func isFreshEnough(_ location: CLLocation) -> Bool {
+    let ageSeconds = abs(location.timestamp.timeIntervalSinceNow)
+    return ageSeconds <= 90 &&
+      location.horizontalAccuracy >= 0 &&
+      location.horizontalAccuracy <= 200
   }
 
   private func finishReject(code: String, message: String) {

@@ -30,4 +30,17 @@ describe('iOS current location native module', () => {
       'RCT_EXTERN_MODULE(VnseeaCurrentLocation, NSObject)',
     );
   });
+
+  it('uses a fast chat-appropriate accuracy and normalizes timestamps to milliseconds', () => {
+    expect(swiftSource).toContain(
+      'manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters',
+    );
+    expect(swiftSource).not.toContain(
+      'manager.desiredAccuracy = kCLLocationAccuracyBest',
+    );
+    expect(swiftSource).toContain('isFreshEnough(cachedLocation)');
+    expect(swiftSource).toContain(
+      'location.timestamp.timeIntervalSince1970 * 1000',
+    );
+  });
 });

@@ -12,7 +12,9 @@ import java.net.URLEncoder
 
 object LiveKitCallNativeActions {
   private const val HANDLED_INCOMING_CALLS_PREFS = "vnseea_handled_incoming_calls"
-  private const val HANDLED_INCOMING_CALL_TTL_MS = 2 * 60 * 1000L
+  // Call IDs are unique. Keep answered/declined IDs long enough that a delayed
+  // duplicate push cannot resurrect an incoming-call notification mid-call.
+  private const val HANDLED_INCOMING_CALL_TTL_MS = 12 * 60 * 60 * 1000L
 
   const val EXTRA_EVENT_TYPE = "event_type"
   const val EXTRA_CALL_ID = "call_id"

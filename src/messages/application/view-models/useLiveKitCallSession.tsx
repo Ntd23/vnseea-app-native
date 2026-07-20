@@ -153,9 +153,7 @@ type LiveKitCallSessionContextValue = {
   setAudioOutputMode: (mode: CallAudioOutputMode) => Promise<void>;
 };
 
-type IosCallKitAudioSessionStartStage =
-  | 'callkit_activation'
-  | 'app_foreground';
+type IosCallKitAudioSessionStartStage = 'callkit_activation' | 'app_foreground';
 
 type IosVoiceAudioStage =
   | 'before_connect'
@@ -198,15 +196,20 @@ const LiveKitCallSessionContext =
   createContext<LiveKitCallSessionContextValue | null>(null);
 
 function shouldUseIosDirectCallAudioGate(callType: LiveKitCallType) {
-  return Platform.OS === 'ios' && (callType === 'audio' || callType === 'video');
+  return (
+    Platform.OS === 'ios' && (callType === 'audio' || callType === 'video')
+  );
 }
 
-type DirectCallConnectKeyInput = {
-  callId?: string;
-  callType?: LiveKitCallType;
-  callUuid?: string;
-  nativeCallUuid?: string;
-} | null | undefined;
+type DirectCallConnectKeyInput =
+  | {
+      callId?: string;
+      callType?: LiveKitCallType;
+      callUuid?: string;
+      nativeCallUuid?: string;
+    }
+  | null
+  | undefined;
 
 function buildDirectCallConnectKey(input: DirectCallConnectKeyInput) {
   if (!input?.callId || !input.callType) return '';
@@ -388,9 +391,10 @@ function statsReportEntries(report: unknown) {
   }
 
   if (Array.isArray(report)) {
-    return report.filter(
-      value => value && typeof value === 'object',
-    ) as Record<string, unknown>[];
+    return report.filter(value => value && typeof value === 'object') as Record<
+      string,
+      unknown
+    >[];
   }
 
   if (report && typeof report === 'object') {
@@ -491,12 +495,8 @@ function audioTrafficDiagnosis(params: {
   localTrackAudio: AudioTrackStatsSummary;
   remoteTrackAudio: AudioTrackStatsSummary;
 }) {
-  const {
-    pcOutboundAudio,
-    pcInboundAudio,
-    localTrackAudio,
-    remoteTrackAudio,
-  } = params;
+  const { pcOutboundAudio, pcInboundAudio, localTrackAudio, remoteTrackAudio } =
+    params;
   const hasPcOutbound = hasOutboundAudioTraffic(pcOutboundAudio);
   const hasPcInbound = hasInboundAudioTraffic(pcInboundAudio);
   const hasTrackOutbound = hasOutboundAudioTraffic(localTrackAudio.summary);
@@ -511,10 +511,19 @@ function audioTrafficDiagnosis(params: {
   if (!hasTrackOutbound && hasTrackInbound) {
     return 'remote_inbound_present_local_outbound_zero';
   }
-  if ((hasPcOutbound || hasPcInbound) && !hasTrackOutbound && !hasTrackInbound) {
+  if (
+    (hasPcOutbound || hasPcInbound) &&
+    !hasTrackOutbound &&
+    !hasTrackInbound
+  ) {
     return 'pc_stats_present_track_stats_zero';
   }
-  if (!hasPcOutbound && !hasPcInbound && !hasTrackOutbound && !hasTrackInbound) {
+  if (
+    !hasPcOutbound &&
+    !hasPcInbound &&
+    !hasTrackOutbound &&
+    !hasTrackInbound
+  ) {
     return 'all_audio_rtp_zero_or_stats_unavailable';
   }
   return 'mixed_audio_stats';
@@ -1180,7 +1189,9 @@ type AudioStatsTrackLike = {
 };
 
 type RemoteTrackPublicationCollection = {
-  forEach: (callback: (publication: RemoteTrackPublicationLike) => void) => void;
+  forEach: (
+    callback: (publication: RemoteTrackPublicationLike) => void,
+  ) => void;
 };
 
 type RemoteParticipantLike = {
@@ -1200,7 +1211,8 @@ function managedTrackDebugPayload(
   return {
     trackKind: publication?.kind ?? publication?.track?.kind,
     trackSource: publication?.source ?? publication?.track?.source,
-    trackSid: publication?.trackSid ?? publication?.sid ?? publication?.track?.sid,
+    trackSid:
+      publication?.trackSid ?? publication?.sid ?? publication?.track?.sid,
     muted: publication?.isMuted ?? publication?.track?.isMuted,
     isSubscribed: publication?.isSubscribed,
     isDesired: publication?.isDesired,
@@ -1256,10 +1268,12 @@ function shouldSubscribeRemotePublication(
 function isRemoteMicrophonePublication(
   publication?: RemoteTrackPublicationLike,
 ) {
-  const kind = String(publication?.kind ?? publication?.track?.kind ?? '')
-    .toLowerCase();
-  const source = String(publication?.source ?? publication?.track?.source ?? '')
-    .toLowerCase();
+  const kind = String(
+    publication?.kind ?? publication?.track?.kind ?? '',
+  ).toLowerCase();
+  const source = String(
+    publication?.source ?? publication?.track?.source ?? '',
+  ).toLowerCase();
   if (source) return source === String(Track.Source.Microphone);
   return kind === 'audio';
 }
@@ -1432,7 +1446,9 @@ function resolveServerElapsedSeconds(
     Number.isFinite(timing.elapsedMs) &&
     timing.elapsedMs >= 0
   ) {
-    return Math.floor((timing.elapsedMs + localElapsedSinceMeasurementMs) / 1000);
+    return Math.floor(
+      (timing.elapsedMs + localElapsedSinceMeasurementMs) / 1000,
+    );
   }
 
   const startedAtMs = resolveServerStartedAtMs(timing, startedAt);
@@ -1443,8 +1459,10 @@ function resolveServerElapsedSeconds(
     timing.serverNowMs > 0
   ) {
     return Math.floor(
-      Math.max(0, timing.serverNowMs - startedAtMs + localElapsedSinceMeasurementMs) /
-        1000,
+      Math.max(
+        0,
+        timing.serverNowMs - startedAtMs + localElapsedSinceMeasurementMs,
+      ) / 1000,
     );
   }
 
@@ -1495,10 +1513,10 @@ function hasUsableTimerTiming(
       (typeof timing.elapsedMs === 'number' &&
         Number.isFinite(timing.elapsedMs) &&
         timing.elapsedMs >= 0) ||
-    (startedAt > 0 &&
-      typeof timing.serverNow === 'number' &&
-      Number.isFinite(timing.serverNow) &&
-      timing.serverNow > 0) ||
+      (startedAt > 0 &&
+        typeof timing.serverNow === 'number' &&
+        Number.isFinite(timing.serverNow) &&
+        timing.serverNow > 0) ||
       (typeof timing.elapsedSeconds === 'number' &&
         Number.isFinite(timing.elapsedSeconds) &&
         timing.elapsedSeconds >= 0),
@@ -1564,8 +1582,7 @@ function resolveLocalStartedAtFromServer(
     timing.serverNow > 0
   ) {
     return (
-      measuredAt -
-      Math.max(0, Math.floor(timing.serverNow - startedAt)) * 1000
+      measuredAt - Math.max(0, Math.floor(timing.serverNow - startedAt)) * 1000
     );
   }
 
@@ -1855,15 +1872,16 @@ export function LiveKitCallSessionProvider({
   const audioStatsProbeCleanupRef = useRef<(() => void) | null>(null);
   const videoStatsProbeCleanupRef = useRef<(() => void) | null>(null);
   const mediaControllerRef = useRef<LiveKitMediaController | null>(null);
+  const audioOutputRequestIdRef = useRef(0);
+  const audioOutputConfirmedModeRef = useRef<CallAudioOutputMode | null>(null);
+  const audioOutputConfirmedCallIdRef = useRef('');
   const closeSentRef = useRef(false);
   const isJoiningAnsweredCallRef = useRef(false);
   const isAnswerWatchdogCheckingRef = useRef(false);
   const activeConnectKeyRef = useRef('');
   const connectPayloadPromiseRef = useRef<Promise<void> | null>(null);
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const answerWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
+  const answerWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingRemoteSubscriptionsRef = useRef(
     new Map<string, PendingRemoteSubscription>(),
   );
@@ -1926,8 +1944,7 @@ export function LiveKitCallSessionProvider({
   }, []);
 
   const isRemoteTrackSubscriptionPending = useCallback(
-    (trackSid: string) =>
-      pendingRemoteSubscriptionsRef.current.has(trackSid),
+    (trackSid: string) => pendingRemoteSubscriptionsRef.current.has(trackSid),
     [],
   );
 
@@ -2068,35 +2085,38 @@ export function LiveKitCallSessionProvider({
       .catch(() => undefined);
   }, []);
 
-  const resetMediaState = useCallback((options: { stopAudioSession?: boolean } = {}) => {
-    const current = sessionRef.current;
-    const shouldStopAudioSession =
-      options.stopAudioSession ??
-      !(Platform.OS === 'ios' && usesNativeCallUi(current?.nativeCallUuid));
-    mediaControllerRef.current = null;
-    activeConnectKeyRef.current = '';
-    connectPayloadPromiseRef.current = null;
-    audioStatsProbeCleanupRef.current?.();
-    audioStatsProbeCleanupRef.current = null;
-    videoStatsProbeCleanupRef.current?.();
-    videoStatsProbeCleanupRef.current = null;
-    if (current) {
-      const params = {
-        callId: current.callId,
-        callType: current.callType,
-        callUuid: current.nativeCallUuid,
-        roomName: current.payload?.call.roomName ?? '',
-        stage: 'release' as const,
-      };
-      setIosVoiceCallAudioActive(false, params);
-      logIosAudioDeviceState({ ...params, checkpoint: 'release' });
-    }
-    disconnectActiveRoom();
-    resetCallRemoteAudioVolume();
-    if (shouldStopAudioSession) {
-      AudioSession.stopAudioSession().catch(() => undefined);
-    }
-  }, [disconnectActiveRoom]);
+  const resetMediaState = useCallback(
+    (options: { stopAudioSession?: boolean } = {}) => {
+      const current = sessionRef.current;
+      const shouldStopAudioSession =
+        options.stopAudioSession ??
+        !(Platform.OS === 'ios' && usesNativeCallUi(current?.nativeCallUuid));
+      mediaControllerRef.current = null;
+      activeConnectKeyRef.current = '';
+      connectPayloadPromiseRef.current = null;
+      audioStatsProbeCleanupRef.current?.();
+      audioStatsProbeCleanupRef.current = null;
+      videoStatsProbeCleanupRef.current?.();
+      videoStatsProbeCleanupRef.current = null;
+      if (current) {
+        const params = {
+          callId: current.callId,
+          callType: current.callType,
+          callUuid: current.nativeCallUuid,
+          roomName: current.payload?.call.roomName ?? '',
+          stage: 'release' as const,
+        };
+        setIosVoiceCallAudioActive(false, params);
+        logIosAudioDeviceState({ ...params, checkpoint: 'release' });
+      }
+      disconnectActiveRoom();
+      resetCallRemoteAudioVolume();
+      if (shouldStopAudioSession) {
+        AudioSession.stopAudioSession().catch(() => undefined);
+      }
+    },
+    [disconnectActiveRoom],
+  );
 
   const finishSession = useCallback(
     (patch?: Partial<LiveKitCallSession>) => {
@@ -2269,7 +2289,8 @@ export function LiveKitCallSessionProvider({
           });
           patchSessionForCurrentCall(room, callId, callUuid, {
             isLocalMicrophoneEnabled: false,
-            mediaErrorText: 'Không bật được micro. Bạn vẫn đang ở trong phòng gọi.',
+            mediaErrorText:
+              'Không bật được micro. Bạn vẫn đang ở trong phòng gọi.',
           });
         }
       };
@@ -2512,8 +2533,8 @@ export function LiveKitCallSessionProvider({
       const timerTiming = shouldUsePayloadTiming
         ? nextPayload
         : shouldUseOverrideTiming
-          ? timingOverride ?? nextPayload
-          : nextPayload;
+        ? timingOverride ?? nextPayload
+        : nextPayload;
       const timerStartedAt = shouldUsePayloadTiming
         ? payloadStartedAt || overrideStartedAt
         : overrideStartedAt || payloadStartedAt;
@@ -2761,10 +2782,9 @@ export function LiveKitCallSessionProvider({
             hasRemoteParticipant: true,
             isRemoteMicrophoneMuted: publication?.isMuted ?? false,
             mediaErrorText:
-              activeSession?.mediaErrorText ===
-              REMOTE_AUDIO_SUBSCRIPTION_ERROR
+              activeSession?.mediaErrorText === REMOTE_AUDIO_SUBSCRIPTION_ERROR
                 ? ''
-                : (activeSession?.mediaErrorText ?? ''),
+                : activeSession?.mediaErrorText ?? '',
           });
         }
       };
@@ -2884,17 +2904,11 @@ export function LiveKitCallSessionProvider({
           .off(RoomEvent.MediaDevicesError, handleMediaDeviceError)
           .off(RoomEvent.EncryptionError, handleEncryptionError)
           .off(RoomEvent.ParticipantConnected, handleParticipantConnected)
-          .off(
-            RoomEvent.ParticipantDisconnected,
-            handleParticipantDisconnected,
-          )
+          .off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected)
           .off(RoomEvent.TrackPublished, handleTrackPublished)
           .off(RoomEvent.LocalTrackPublished, handleLocalTrackPublished)
           .off(RoomEvent.TrackSubscribed, handleTrackSubscribed)
-          .off(
-            RoomEvent.TrackSubscriptionFailed,
-            handleTrackSubscriptionFailed,
-          )
+          .off(RoomEvent.TrackSubscriptionFailed, handleTrackSubscriptionFailed)
           .off(
             RoomEvent.TrackSubscriptionStatusChanged,
             handleTrackSubscriptionStatusChanged,
@@ -2939,7 +2953,11 @@ export function LiveKitCallSessionProvider({
           dynacast: LIVEKIT_ROOM_OPTIONS.dynacast,
           singlePeerConnection: LIVEKIT_ROOM_OPTIONS.singlePeerConnection,
         });
-        await nextRoom.connect(nextPayload.wsUrl, nextPayload.token, LIVEKIT_CONNECT_OPTIONS);
+        await nextRoom.connect(
+          nextPayload.wsUrl,
+          nextPayload.token,
+          LIVEKIT_CONNECT_OPTIONS,
+        );
         await applyCallAudioOutputMode(
           nextRoom,
           sessionRef.current?.audioOutputMode ?? initialAudioOutputMode,
@@ -3246,7 +3264,10 @@ export function LiveKitCallSessionProvider({
               callType: params.callType,
             })
             .catch(() => null);
-          if (status && (status.finished || isTerminalCallStatus(status.status))) {
+          if (
+            status &&
+            (status.finished || isTerminalCallStatus(status.status))
+          ) {
             closeSentRef.current = true;
             finishSession();
             return true;
@@ -3539,10 +3560,54 @@ export function LiveKitCallSessionProvider({
     await mediaControllerRef.current?.switchCamera().catch(() => undefined);
   }, []);
 
-  const setAudioOutputMode = useCallback(async (mode: CallAudioOutputMode) => {
-    await applyCallAudioOutputMode(activeRoomRef.current, mode);
-    patchSession({ audioOutputMode: mode });
-  }, [patchSession]);
+  const setAudioOutputMode = useCallback(
+    async (mode: CallAudioOutputMode) => {
+      const requestId = ++audioOutputRequestIdRef.current;
+      const currentSession = sessionRef.current;
+      const currentCallId = currentSession?.callId ?? '';
+      if (audioOutputConfirmedCallIdRef.current !== currentCallId) {
+        audioOutputConfirmedCallIdRef.current = currentCallId;
+        audioOutputConfirmedModeRef.current =
+          currentSession?.audioOutputMode ??
+          defaultCallAudioOutputMode(currentSession?.callType ?? 'audio');
+      }
+      const previousMode =
+        audioOutputConfirmedModeRef.current ??
+        currentSession?.audioOutputMode ??
+        defaultCallAudioOutputMode(currentSession?.callType ?? 'audio');
+
+      // Update the controls immediately; the physical route is confirmed in
+      // the background and rolled back only if the latest request fails.
+      patchSession({ audioOutputMode: mode });
+
+      try {
+        const result = await applyCallAudioOutputMode(
+          activeRoomRef.current,
+          mode,
+        );
+        if (requestId !== audioOutputRequestIdRef.current) return;
+        if (!result.applied) {
+          throw new Error(`Không thể chuyển âm thanh sang ${mode}.`);
+        }
+        audioOutputConfirmedModeRef.current = mode;
+      } catch (error) {
+        if (requestId === audioOutputRequestIdRef.current) {
+          const rollbackMode =
+            audioOutputConfirmedModeRef.current ?? previousMode;
+          patchSession({ audioOutputMode: rollbackMode });
+          const rollbackResult = await applyCallAudioOutputMode(
+            activeRoomRef.current,
+            rollbackMode,
+          ).catch(() => null);
+          if (rollbackResult?.applied) {
+            audioOutputConfirmedModeRef.current = rollbackMode;
+          }
+        }
+        throw error;
+      }
+    },
+    [patchSession],
+  );
 
   const handleLiveKitMediaController = useCallback(
     (controller: LiveKitMediaController | null) => {
@@ -3661,12 +3726,20 @@ export function LiveKitCallSessionProvider({
             stage: 'app_foreground',
             preferSpeakerOutput: current.audioOutputMode === 'speaker',
           })
-            .then(() =>
-              applyCallAudioOutputMode(
+            .then(() => {
+              const latest = sessionRef.current;
+              if (
+                !latest ||
+                latest.callId !== current.callId ||
+                latest.phase !== 'connected'
+              ) {
+                return undefined;
+              }
+              return applyCallAudioOutputMode(
                 activeRoomRef.current,
-                current.audioOutputMode,
-              ),
-            )
+                latest.audioOutputMode,
+              );
+            })
             .catch(() => undefined);
           logIosAudioDeviceState({
             callId: current.callId,
@@ -3678,12 +3751,20 @@ export function LiveKitCallSessionProvider({
           });
         } else {
           AudioSession.startAudioSession()
-            .then(() =>
-              applyCallAudioOutputMode(
+            .then(() => {
+              const latest = sessionRef.current;
+              if (
+                !latest ||
+                latest.callId !== current.callId ||
+                latest.phase !== 'connected'
+              ) {
+                return undefined;
+              }
+              return applyCallAudioOutputMode(
                 activeRoomRef.current,
-                current.audioOutputMode,
-              ),
-            )
+                latest.audioOutputMode,
+              );
+            })
             .catch(() => undefined);
         }
         return;
@@ -3697,7 +3778,10 @@ export function LiveKitCallSessionProvider({
           callType: current.callType,
         })
         .then(status => {
-          if (status && (status.finished || isTerminalCallStatus(status.status))) {
+          if (
+            status &&
+            (status.finished || isTerminalCallStatus(status.status))
+          ) {
             closeSentRef.current = true;
             finishSession();
             return true;
@@ -3762,9 +3846,7 @@ export function LiveKitCallSessionProvider({
   return (
     <LiveKitCallSessionContext.Provider value={value}>
       {children}
-      {session?.payload &&
-      session.hasMediaPermissions &&
-      activeRoom ? (
+      {session?.payload && session.hasMediaPermissions && activeRoom ? (
         <ActiveLiveKitRoom
           room={activeRoom}
           callType={session.callType}
