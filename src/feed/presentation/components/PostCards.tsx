@@ -96,6 +96,10 @@ import {
   FEED_REACTION_TYPES,
 } from './FeedReactionAssets';
 import { SharedPostPreviewCard } from './SharedPostPreviewCard';
+import {
+  FEED_VIDEO_SURFACE_MAX_RECOVERY_ATTEMPTS,
+  shouldRecoverFeedVideoSurface,
+} from './feedVideoSurfaceRecovery';
 
 export {
   FEED_CARD_CLASS,
@@ -1826,6 +1830,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const currentTimeRef = useRef<number>(getVideoPlaybackTime(post.id, 0));
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
   const mediaIdentityRef = useRef(mediaIdentity);
+  const hasRenderedFrameRef = useRef(false);
+  const firstFrameProgressStartRef = useRef<number | null>(null);
+  const videoSurfaceRecoveryCountRef = useRef(0);
+  const videoSurfaceRecoveryInFlightRef = useRef(false);
   const frameCoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -1838,6 +1846,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const [warmPreviewReady, setWarmPreviewReady] = useState(false);
   const [isFrameCoverVisible, setFrameCoverVisible] = useState(true);
   const [hasVideoError, setHasVideoError] = useState(false);
+  const [videoPlayerGeneration, setVideoPlayerGeneration] = useState(0);
   const [maxVideoBitRate, setMaxVideoBitRate] = useState(
     VIDEO_STARTUP_MAX_BITRATE,
   );
@@ -1892,6 +1901,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     currentTimeRef.current = savedTime;
     hasUserWatchedRef.current = savedTime > 0.05;
     warmPreviewTimeRef.current = 0;
+    hasRenderedFrameRef.current = false;
+    firstFrameProgressStartRef.current = null;
+    videoSurfaceRecoveryCountRef.current = 0;
+    videoSurfaceRecoveryInFlightRef.current = false;
     setAspectRatio(
       getCachedMediaAspectRatio(videoPreviewCacheKey, 0.75, 16 / 9, 16 / 9),
     );
@@ -1902,6 +1915,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     setWarmPreviewReady(false);
     setFrameCoverVisible(true);
     setHasVideoError(false);
+    setVideoPlayerGeneration(0);
     setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
   }, [clearVideoQualityRamp, frameCoverOpacity, mediaIdentity, post.id, videoPreviewCacheKey]);
 
@@ -1956,6 +1970,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
       }
       setHasVideoError(false);
       setIsReady(true);
+      firstFrameProgressStartRef.current = null;
+      videoSurfaceRecoveryInFlightRef.current = false;
       const size = data?.naturalSize ?? data;
       if (size) {
         const { width, height } = size;
@@ -1972,6 +1988,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
   const revealVideoFrame = useCallback(() => {
     if (mediaIdentity !== mediaIdentityRef.current) return;
+    hasRenderedFrameRef.current = true;
+    firstFrameProgressStartRef.current = null;
+    videoSurfaceRecoveryInFlightRef.current = false;
     setIsReady(true);
     setHasRenderedFrame(true);
     if (keepPreparedVideoMounted) {
@@ -2010,6 +2029,35 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     resolvedThumbnailUrl,
     scheduleVideoQualityRamp,
   ]);
+
+  const recoverAndroidVideoSurface = useCallback(
+    (resumeTime: number) => {
+      if (
+        Platform.OS !== 'android' ||
+        videoSurfaceRecoveryInFlightRef.current ||
+        videoSurfaceRecoveryCountRef.current >=
+          FEED_VIDEO_SURFACE_MAX_RECOVERY_ATTEMPTS
+      ) {
+        return;
+      }
+
+      videoSurfaceRecoveryCountRef.current += 1;
+      videoSurfaceRecoveryInFlightRef.current = true;
+      firstFrameProgressStartRef.current = null;
+      hasRenderedFrameRef.current = false;
+      currentTimeRef.current = resumeTime;
+      setSeekTime(resumeTime > 0.05 ? resumeTime : undefined);
+      setIsReady(false);
+      setHasRenderedFrame(false);
+      setWarmPreviewReady(false);
+      setFrameCoverVisible(true);
+      frameCoverOpacity.value = 1;
+      clearVideoQualityRamp();
+      setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
+      setVideoPlayerGeneration(generation => generation + 1);
+    },
+    [clearVideoQualityRamp, frameCoverOpacity],
+  );
 
   // Profile tap handler
   const handleProfilePress = useCallback(() => {
@@ -2058,6 +2106,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     if (shouldMountVideo) return;
 
     setIsReady(false);
+    hasRenderedFrameRef.current = false;
+    firstFrameProgressStartRef.current = null;
+    videoSurfaceRecoveryCountRef.current = 0;
+    videoSurfaceRecoveryInFlightRef.current = false;
     setHasRenderedFrame(false);
     setWarmPreviewReady(false);
     setFrameCoverVisible(true);
@@ -2065,6 +2117,16 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     clearVideoQualityRamp();
     setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
   }, [clearVideoQualityRamp, frameCoverOpacity, shouldMountVideo]);
+
+  useEffect(() => {
+    if (!isActive || isScrollBusy || hasRenderedFrame) {
+      firstFrameProgressStartRef.current = null;
+    }
+    if (!isActive) {
+      videoSurfaceRecoveryCountRef.current = 0;
+      videoSurfaceRecoveryInFlightRef.current = false;
+    }
+  }, [hasRenderedFrame, isActive, isScrollBusy]);
 
   useEffect(() => {
     if (isActive) {
@@ -2211,6 +2273,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           {shouldMountVideo ? (
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
               <VideoPlayer
+                key={`${mediaIdentity}:${videoPlayerGeneration}`}
                 ref={videoRef}
                 source={videoSource}
                 style={[
@@ -2234,6 +2297,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 useTextureView={false}
                 bufferConfig={VIDEO_BUFFER_CONFIG}
                 maxBitRate={maxVideoBitRate}
+                progressUpdateInterval={250}
                 onReadyForDisplay={revealVideoFrame}
                 onLoad={handleVideoLoad}
                 onProgress={data => {
@@ -2258,7 +2322,42 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                       setWarmPreviewReady(true);
                     }
                   }
-                  if (!hasRenderedFrame && nextTime > 0.05) {
+
+                  if (
+                    Platform.OS === 'android' &&
+                    isActive &&
+                    playing &&
+                    !isScrollBusy &&
+                    !hasRenderedFrameRef.current
+                  ) {
+                    const playbackWindowStart =
+                      firstFrameProgressStartRef.current;
+                    if (
+                      playbackWindowStart === null ||
+                      nextTime < playbackWindowStart
+                    ) {
+                      firstFrameProgressStartRef.current = nextTime;
+                    } else if (
+                      shouldRecoverFeedVideoSurface({
+                        isAndroid: true,
+                        isActive,
+                        isPlaying: playing,
+                        isScrollBusy,
+                        hasRenderedFrame: hasRenderedFrameRef.current,
+                        recoveryInFlight:
+                          videoSurfaceRecoveryInFlightRef.current,
+                        recoveryAttempt: videoSurfaceRecoveryCountRef.current,
+                        playbackWindowStart,
+                        currentTime: nextTime,
+                      })
+                    ) {
+                      recoverAndroidVideoSurface(nextTime);
+                    }
+                  } else if (
+                    Platform.OS !== 'android' &&
+                    !hasRenderedFrameRef.current &&
+                    nextTime > 0.05
+                  ) {
                     revealVideoFrame();
                   }
                 }}
@@ -2266,6 +2365,9 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 posterResizeMode="cover"
                 onError={error => {
                   if (mediaIdentity !== mediaIdentityRef.current) return;
+                  hasRenderedFrameRef.current = false;
+                  firstFrameProgressStartRef.current = null;
+                  videoSurfaceRecoveryInFlightRef.current = false;
                   setHasVideoError(true);
                   setIsReady(false);
                   setHasRenderedFrame(false);

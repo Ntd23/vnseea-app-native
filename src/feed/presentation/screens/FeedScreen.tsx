@@ -85,6 +85,7 @@ import type {
 import { useFeedViewModel } from '../../application/view-models/useFeedViewModel';
 import { postCreatedEvents } from '../../application/events/postCreatedEvents';
 import { usePostRealtimeScope } from '../../application/realtime/usePostRealtimeScope';
+import { useDeferredVisiblePostIds } from '../../application/realtime/useDeferredVisiblePostIds';
 import { feedLogoEvents } from '../../application/events/feedLogoEvents';
 import type {
   FeedPost,
@@ -201,9 +202,10 @@ const FEED_VIDEO_ACTIVE_DWELL_MS = 120;
 const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
 const FEED_SCREEN_HEIGHT = Dimensions.get('window').height;
 const FEED_LIST_DRAW_DISTANCE = FEED_IS_ANDROID
-  ? Math.max(3200, Math.round(FEED_SCREEN_HEIGHT * 3.8))
-  : Math.max(5600, Math.round(FEED_SCREEN_HEIGHT * 6));
-const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 16 : 30;
+  ? Math.max(1400, Math.round(FEED_SCREEN_HEIGHT * 1.8))
+  : Math.max(2200, Math.round(FEED_SCREEN_HEIGHT * 2.6));
+const FEED_LIST_RECYCLE_POOL_SIZE = FEED_IS_ANDROID ? 10 : 18;
+const FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION = { disabled: true };
 const FEED_LIST_CONTENT_STYLE = {
   paddingBottom: 24,
 };
@@ -1597,6 +1599,13 @@ function FeedScreen() {
     ],
     [bottomContentPadding, feedHeaderOverlayHeight],
   );
+  const feedScrollIndicatorInsets = useMemo(
+    () =>
+      Platform.OS === 'ios'
+        ? { bottom: scrollIndicatorBottomInset }
+        : undefined,
+    [scrollIndicatorBottomInset],
+  );
 
   const gestureX = useSharedValue(0);
   const gestureY = useSharedValue(0);
@@ -2002,7 +2011,10 @@ function FeedScreen() {
   const commentVm = useFeedCommentsViewModel({
     onCommentCountChange: vm.updateCommentCount,
   });
-  const [realtimeVisiblePostIds, setRealtimeVisiblePostIds] = useState<string[]>([]);
+  const {
+    postIds: realtimeVisiblePostIds,
+    schedulePostIds: scheduleRealtimeVisiblePostIds,
+  } = useDeferredVisiblePostIds();
   usePostRealtimeScope({
     postIds: realtimeVisiblePostIds,
     posts: feedPosts,
@@ -2745,10 +2757,7 @@ function FeedScreen() {
         .filter(item => item?.isViewable && item?.item?.type === 'post')
         .map(item => String(item.item.post?.id ?? ''))
         .filter(postId => /^[1-9][0-9]*$/.test(postId));
-      setRealtimeVisiblePostIds(previous => {
-        const next = Array.from(new Set(visiblePostIds)).slice(0, 50);
-        return previous.join(',') === next.join(',') ? previous : next;
-      });
+      scheduleRealtimeVisiblePostIds(visiblePostIds);
       prefetchFeedImagesAroundVisibleItems(viewableItems);
       prefetchFeedVideoPostersAroundVisibleItems(viewableItems);
       maybeLoadMoreFeedAroundVisibleItems(viewableItems);
@@ -2782,6 +2791,7 @@ function FeedScreen() {
       prefetchFeedImagesAroundVisibleItems,
       prefetchFeedVideoPostersAroundVisibleItems,
       publishWarmFeedVideosAroundVisibleItems,
+      scheduleRealtimeVisiblePostIds,
       scheduleActiveFeedVideo,
     ],
   );
@@ -3604,6 +3614,48 @@ function FeedScreen() {
     [feedListItems],
   );
 
+  const feedRefreshControl = useMemo(
+    () => (
+      <RefreshControl
+        refreshing={
+          vm.isRefreshing ||
+          productsVm.isRefreshing ||
+          eventsVm.isRefreshing ||
+          jobsVm.isRefreshing ||
+          groupsVm.isRefreshing ||
+          pagesVm.isRefreshing ||
+          liveVm.isRefreshing
+        }
+        onRefresh={handleRefresh}
+        tintColor="#0866FF"
+        progressViewOffset={feedRefreshProgressViewOffset}
+      />
+    ),
+    [
+      eventsVm.isRefreshing,
+      feedRefreshProgressViewOffset,
+      groupsVm.isRefreshing,
+      handleRefresh,
+      jobsVm.isRefreshing,
+      liveVm.isRefreshing,
+      pagesVm.isRefreshing,
+      productsVm.isRefreshing,
+      vm.isRefreshing,
+    ],
+  );
+
+  const feedListEmptyComponent = useMemo(
+    () =>
+      vm.isLoading ? (
+        <View>
+          {[1, 2, 3].map(i => (
+            <PostSkeleton key={i} />
+          ))}
+        </View>
+      ) : null,
+    [vm.isLoading],
+  );
+
   const feedListElement = (
     <FlashList
       ref={mainFeedListRef}
@@ -3617,7 +3669,10 @@ function FeedScreen() {
       }
       drawDistance={FEED_LIST_DRAW_DISTANCE}
       maxItemsInRecyclePool={FEED_LIST_RECYCLE_POOL_SIZE}
-      maintainVisibleContentPosition={{ disabled: true }}
+      maintainVisibleContentPosition={
+        FEED_LIST_MAINTAIN_VISIBLE_CONTENT_POSITION
+      }
+      removeClippedSubviews={FEED_IS_ANDROID}
       decelerationRate="normal"
       showsVerticalScrollIndicator={false}
       nestedScrollEnabled
@@ -3634,36 +3689,9 @@ function FeedScreen() {
       onEndReachedThreshold={1.4}
       ListFooterComponent={ListFooterComponent}
       contentContainerStyle={feedListContentStyle}
-      scrollIndicatorInsets={
-        Platform.OS === 'ios'
-          ? { bottom: scrollIndicatorBottomInset }
-          : undefined
-      }
-      refreshControl={
-        <RefreshControl
-          refreshing={
-            vm.isRefreshing ||
-            productsVm.isRefreshing ||
-            eventsVm.isRefreshing ||
-            jobsVm.isRefreshing ||
-            groupsVm.isRefreshing ||
-            pagesVm.isRefreshing ||
-            liveVm.isRefreshing
-          }
-          onRefresh={handleRefresh}
-          tintColor="#0866FF"
-          progressViewOffset={feedRefreshProgressViewOffset}
-        />
-      }
-      ListEmptyComponent={
-        vm.isLoading ? (
-          <View>
-            {[1, 2, 3].map(i => (
-              <PostSkeleton key={i} />
-            ))}
-          </View>
-        ) : null
-      }
+      scrollIndicatorInsets={feedScrollIndicatorInsets}
+      refreshControl={feedRefreshControl}
+      ListEmptyComponent={feedListEmptyComponent}
     />
   );
 

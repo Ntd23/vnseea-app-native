@@ -1,7 +1,52 @@
+diff --git a/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java b/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
+index e16ac96d8a89055ee6e950777ce73388d22061ee..66532404369589702ea17f1bfaa326b8342952bc 100644
+--- a/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
++++ b/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
+@@ -1436,7 +1436,6 @@ public class ReactExoplayerView extends FrameLayout implements
+                 case Player.STATE_READY:
+                     text += "ready";
+                     hasVideoEnded = false;
+-                    eventEmitter.onReadyForDisplay.invoke();
+                     onBuffering(false);
+                     clearProgressMessageHandler(); // ensure there is no other message
+                     startProgressHandler();
+@@ -1472,3 +1471,8 @@ public class ReactExoplayerView extends FrameLayout implements
++    @Override
++    public void onRenderedFirstFrame() {
++        eventEmitter.onReadyForDisplay.invoke();
++    }
++
+     private void startProgressHandler() {
+         progressHandler.sendEmptyMessage(SHOW_PROGRESS);
+     }
+@@ -2561,6 +2565,22 @@ public class ReactExoplayerView extends FrameLayout implements
+                     .build();
+             player.setAudioAttributes(audioAttributes, false);
+             AudioManager audioManager = (AudioManager) themedReactContext.getSystemService(Context.AUDIO_SERVICE);
++
++            // Feed/reel players may keep their media attributes, but must not
++            // change Android's global communication route while a LiveKit call
++            // is active. MIUI may reset AudioManager.mode even while the call's
++            // explicit communication device remains selected, so also honor
++            // the process-local marker owned by the app's call route module.
++            boolean isVnseeaCallRouteActive = Boolean.parseBoolean(
++                    System.getProperty("vnseea.call.audio.route.active", "false"));
++            int audioMode = audioManager.getMode();
++            if (isVnseeaCallRouteActive ||
++                    audioMode == AudioManager.MODE_IN_COMMUNICATION ||
++                    audioMode == AudioManager.MODE_IN_CALL) {
++                DebugLog.d(TAG, "Skipping video audio route change during communication audio session");
++                return;
++            }
++
+             boolean isSpeakerOutput = output == AudioOutput.SPEAKER;
+             audioManager.setMode(
+                     isSpeakerOutput ? AudioManager.MODE_NORMAL
 diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager.swift
+index 93a8a9f9a11ab6b65c74d00c359fa8e469900603..72c0c33306eee67b4d042b14039d785a10c2e554 100644
 --- a/ios/Video/AudioSessionManager.swift
 +++ b/ios/Video/AudioSessionManager.swift
-@@ -45,6 +45,27 @@
+@@ -45,6 +45,27 @@ class AudioSessionManager {
          NotificationCenter.default.removeObserver(self)
      }
  
@@ -29,7 +74,7 @@ diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager
      // MARK: - Public API
  
      func setIsAudioSessionManagementForcedDisabled(disabled: Bool) {
-@@ -74,6 +95,11 @@
+@@ -74,6 +95,11 @@ class AudioSessionManager {
      }
  
      func updateAudioSessionConfiguration() {
@@ -41,7 +86,7 @@ diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager
          // Activate audio session if needed
          let isAnyPlayerPlaying = videoViews.allObjects.contains { view in
              return !view.isMuted() && view._player != nil && view._player?.rate != 0
-@@ -124,6 +150,11 @@
+@@ -124,6 +150,11 @@ class AudioSessionManager {
      private func configureForRemoteControlEvents() {
          let audioSession = AVAudioSession.sharedInstance()
  
@@ -53,7 +98,7 @@ diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager
          do {
              // Remote control events always need playback category
              try audioSession.setCategory(.playback, mode: .moviePlayback)
-@@ -139,6 +170,11 @@
+@@ -139,6 +170,11 @@ class AudioSessionManager {
          let audioSession = AVAudioSession.sharedInstance()
          var options: AVAudioSession.CategoryOptions = []
  
@@ -65,7 +110,7 @@ diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager
          // Check player properties
          let anyPlayerShowNotificationControls = videoViews.allObjects.contains { view in
              return view._showNotificationControls
-@@ -291,6 +327,12 @@
+@@ -291,6 +327,12 @@ class AudioSessionManager {
              return
          }
  
@@ -78,7 +123,7 @@ diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager
          do {
              try AVAudioSession.sharedInstance().setActive(true)
              isAudioSessionActive = true
-@@ -304,6 +346,12 @@
+@@ -304,6 +346,12 @@ class AudioSessionManager {
              return
          }
  
@@ -91,7 +136,7 @@ diff --git a/ios/Video/AudioSessionManager.swift b/ios/Video/AudioSessionManager
          do {
              try AVAudioSession.sharedInstance().setActive(
                  false, options: .notifyOthersOnDeactivation
-@@ -355,6 +403,11 @@
+@@ -355,6 +403,11 @@ class AudioSessionManager {
  
          switch reason {
          case .categoryChange, .override, .wakeFromSleep, .newDeviceAvailable, .oldDeviceUnavailable:

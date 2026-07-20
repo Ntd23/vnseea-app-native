@@ -139,12 +139,26 @@ object LiveKitCallNotifier {
       )
       .build()
 
+    if (LiveKitCallNativeActions.isIncomingCallHandledRecently(context, callId)) {
+      Log.i("LiveKitCallPush", "skip late notification for handled call_id=$callId")
+      return
+    }
     manager.notify(notificationId, notification)
+    if (LiveKitCallNativeActions.isIncomingCallHandledRecently(context, callId)) {
+      manager.cancel(notificationId)
+      Log.i("LiveKitCallPush", "cancel raced notification for handled call_id=$callId")
+      return
+    }
     Log.i("LiveKitCallPush", "notification posted id=$notificationId")
     maybeLaunchFullScreen(context, fullScreenIntent)
   }
 
   private fun maybeLaunchFullScreen(context: Context, intent: Intent) {
+    val callId = intent.getStringExtra(LiveKitCallNativeActions.EXTRA_CALL_ID).orEmpty()
+    if (LiveKitCallNativeActions.isIncomingCallHandledRecently(context, callId)) {
+      Log.i("LiveKitCallPush", "skip late fullscreen activity for handled call_id=$callId")
+      return
+    }
     val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
     val isLocked = keyguardManager?.isKeyguardLocked == true
     try {
