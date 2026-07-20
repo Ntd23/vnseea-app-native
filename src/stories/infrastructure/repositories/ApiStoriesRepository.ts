@@ -26,6 +26,7 @@ import type { StoriesRepository } from '../../domain/repositories/StoriesReposit
 import type {
   CreateStoryDraft,
   CreateStoryResult,
+  CreateSharedPostStoryDraft,
   StoryItem,
   StoryMedia,
   StoryPublisher,
@@ -232,6 +233,23 @@ function mapMediaItem(
 }
 
 function extractMedia(raw: Record<string, unknown>, storyId: string): StoryMedia[] {
+  const storyType = readString(raw, 'story_type') || 'media';
+  if (storyType === 'shared_post') {
+    const sourcePostId = readString(raw, 'source_post_id');
+    if (!/^[1-9][0-9]*$/.test(sourcePostId)) return [];
+    return [
+      {
+        id: `shared-post-${storyId}`,
+        type: 'shared_post',
+        url: '',
+        storyId,
+        sourcePostId,
+        title: readString(raw, 'title') || undefined,
+        description: readString(raw, 'description') || undefined,
+      },
+    ];
+  }
+
   const out: StoryMedia[] = [];
 
   // The first (cover) image is shipped under `thumb` in `get_stories.php`
@@ -352,15 +370,23 @@ function mapStory(raw: Record<string, unknown>): StoryItem | null {
     Math.floor(Date.now() / 1000)
   );
 
+  const title = readString(raw, 'title') || undefined;
+  const description = readString(raw, 'description') || undefined;
+  const media = extractMedia(raw, id).map(segment => ({
+    ...segment,
+    title: segment.title ?? title,
+    description: segment.description ?? description,
+  }));
+
   return {
     id,
     publisher,
-    title: readString(raw, 'title') || undefined,
-    description: readString(raw, 'description') || undefined,
+    title,
+    description,
     postedAt,
     expiresAt,
     thumbnailUrl,
-    media: extractMedia(raw, id),
+    media,
     isOwner: readBool(raw, 'is_owner'),
     isViewed: readBool(raw, 'is_viewed'),
     hasUnseen: readBool(raw, 'have_not_seen'),
@@ -553,6 +579,46 @@ export function createStoriesRepository(): StoriesRepository {
           response.error ||
           `Status: ${status}`;
         throw new Error(String(errMsg));
+      }
+
+      return {
+        storyId:
+          response.story_id !== undefined
+            ? String(response.story_id)
+            : undefined,
+        message: response.message ?? 'Đã đăng tin.',
+      };
+    },
+
+    async createSharedPostStory(
+      draft: CreateSharedPostStoryDraft,
+    ): Promise<CreateStoryResult> {
+      const storyPrivacy = audienceToWire(draft.audience ?? 'followers');
+      const response = await backendApi.post<{
+        api_status: number | string;
+        message?: string;
+        story_id?: string | number;
+        errors?: unknown;
+        status?: number | string;
+        error?: string;
+      }>(apiRoutes.stories.create, {
+        type: 'create_story',
+        story_type: 'shared_post',
+        source_post_id: draft.sourcePostId,
+        postPrivacy: storyPrivacy,
+        privacy: storyPrivacy,
+        privacy_contract: CONTENT_AUDIENCE_CONTRACT,
+        ...(draft.note ? { story_description: draft.note } : {}),
+      });
+
+      const status = String(response.api_status ?? response.status ?? '');
+      if (status !== '200' && status !== '220') {
+        const errorMessage =
+          (Array.isArray(response.errors) && response.errors[0]) ||
+          response.message ||
+          response.error ||
+          `Status: ${status}`;
+        throw new Error(String(errorMessage));
       }
 
       return {

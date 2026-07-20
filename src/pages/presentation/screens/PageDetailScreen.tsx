@@ -1467,6 +1467,7 @@ function PageDetailScreen({ navigation, route }: PageDetailProps) {
   ).current;
   usePostRealtimeScope({
     postIds: realtimeVisiblePostIds,
+    posts: vm.posts,
     enabled: isFocused,
     onSnapshot: vm.applyRealtimePost,
     onDeleted: vm.removeRealtimePost,

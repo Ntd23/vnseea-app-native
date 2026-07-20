@@ -119,23 +119,22 @@ describe('FeedShareBottomSheet', () => {
     expect(recipientCarouselSource).toContain('!isLoading && errorLabel');
   });
 
-  it('captures a VNSEEA story card and publishes the optimistic story event', () => {
-    expect(source).toContain('PostStoryShareCard');
-    expect(source).toContain('captureRef(storyCardRef');
-    expect(storyShareSource).toContain("format: 'jpg'");
-    expect(storyShareSource).toContain('quality: 0.92');
-    expect(storyShareSource).toContain('width: 1080');
-    expect(storyShareSource).toContain('height: 1920');
+  it('creates a first-class shared-post Story without capture or hidden canvas', () => {
+    expect(source).not.toContain('PostStoryShareCard');
+    expect(source).not.toContain('captureRef');
+    expect(source).not.toContain('storyCardReady');
+    expect(source).not.toContain('STORY_MEDIA_READY_TIMEOUT_MS');
+    expect(storyShareSource).not.toContain('POST_STORY_CAPTURE_OPTIONS');
+    expect(storyShareSource).not.toContain("format: 'jpg'");
     expect(source).toContain('createStoriesRepository');
+    expect(source).toContain('storiesRepository.createSharedPostStory');
     expect(source).toContain('storyCreatedEvents.emit');
   });
 
-  it('does not reset story media readiness when only the share note changes', () => {
-    expect(source).toContain('const storyMediaUrl = storyCardModel?.mediaUrl;');
-    expect(source).toContain(
-      '[shareVisible, storyCardPostId, storyMediaUrl, target]',
-    );
-    expect(source).not.toContain('[storyCardModel, target, visible]');
+  it('keeps the Story CTA available without waiting for remote media readiness', () => {
+    expect(source).not.toContain('forceStoryMediaFallback');
+    expect(source).not.toContain('handleStoryCardReady');
+    expect(source).not.toContain("target === 'story' && !storyCardReady");
   });
 
   it('uses the bounded multi-recipient sender without prepending fake feed posts', () => {

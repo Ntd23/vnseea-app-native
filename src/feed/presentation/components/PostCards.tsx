@@ -95,6 +95,7 @@ import {
   FEED_REACTION_IMAGES as REACTION_IMAGES,
   FEED_REACTION_TYPES,
 } from './FeedReactionAssets';
+import { SharedPostPreviewCard } from './SharedPostPreviewCard';
 
 export {
   FEED_CARD_CLASS,
@@ -2030,9 +2031,10 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
 
     // `source: 'home'` preserves the selected feed video context when
     // the Reels tab opens from a post card.
+    const sourcePostId = post.sharedPostId || post.id;
     navigateToReels(navigation, {
-      initialVideoId: post.id,
-      post,
+      initialVideoId: sourcePostId,
+      ...(post.sharedPostId ? {} : { post }),
       source: 'home',
       seekTime: resumeTime,
     });
@@ -2169,7 +2171,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           onMorePress={onOpenPostMenu}
           post={post}
         />
-        {post.sharedFrom ? (
+        {post.sharedFrom && !post.sharedPost ? (
           <Text className="-mt-3 mb-3 text-caption-secondary">
             {copy.sharedPostLabel(
               post.sharedFrom.isAnonymous
@@ -2187,6 +2189,8 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           />
         ) : null}
       </FeedCardContent>
+      {(() => {
+        const videoMedia = (
       <FeedMediaFrame style={{ aspectRatio }}>
         <TouchableOpacity
           activeOpacity={0.9}
@@ -2360,6 +2364,21 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
           ) : null}
         </TouchableOpacity>
       </FeedMediaFrame>
+        );
+        return post.sharedPost ? (
+          <FeedCardContent>
+            <SharedPostPreviewCard
+              model={post.sharedPost}
+              mediaSlot={videoMedia}
+              onOpenPost={sourcePostId =>
+                navigation.navigate(ROUTES.POST_DETAIL, {
+                  postId: sourcePostId,
+                })
+              }
+            />
+          </FeedCardContent>
+        ) : videoMedia;
+      })()}
       <FeedCardContent>
         <VideoReactionSummary
           postId={post.id}
@@ -2803,6 +2822,8 @@ function areFeedPostBaseRenderFieldsEqual(
     previous.viewCount === next.viewCount &&
     previous.shareUrl === next.shareUrl &&
     previous.isSaved === next.isSaved &&
+    previous.sharedPostId === next.sharedPostId &&
+    previous.sharedPost === next.sharedPost &&
     arePublishersEqual(previous.publisher, next.publisher) &&
     areScalarArraysEqual(previous.mentionNames, next.mentionNames) &&
     areScalarArraysEqual(previous.topReactions, next.topReactions) &&
@@ -2914,6 +2935,7 @@ export const TextPostCard = React.memo(function TextPostCard({
 }) {
   const language = useAppLanguage();
   const copy = providedCopy ?? FEED_COPY[language];
+  const navigation = useNavigation<any>();
   const localX = useSharedValue(0);
   const localY = useSharedValue(0);
   const localActive = useSharedValue(false);
@@ -2962,6 +2984,37 @@ export const TextPostCard = React.memo(function TextPostCard({
     });
   }, [onOpenPicker, post.id, post.likeCount, post.commentCount]);
 
+  const handleOpenSharedPost = useCallback(
+    (sourcePostId: string) => {
+      navigation.navigate(ROUTES.POST_DETAIL, { postId: sourcePostId });
+    },
+    [navigation],
+  );
+
+  const handleOpenSharedPhoto = useCallback(
+    (photoIndex: number) => {
+      const sharedPost = post.sharedPost;
+      if (!sharedPost || sharedPost.content.kind !== 'text') return;
+      const sourcePost: FeedTextPost = {
+        ...post,
+        id: sharedPost.postId,
+        caption: sharedPost.caption,
+        mentionNames: sharedPost.mentionNames,
+        photos: sharedPost.content.photos,
+        audioUrl: sharedPost.content.audioUrl,
+        linkPreview: sharedPost.content.linkPreview,
+        postedAt: sharedPost.postedAt,
+        privacy: sharedPost.privacy,
+        publisher: sharedPost.publisher,
+        sharedFrom: undefined,
+        sharedPostId: undefined,
+        sharedPost: undefined,
+      };
+      onPhotoPress(sourcePost, photoIndex);
+    },
+    [onPhotoPress, post],
+  );
+
   // Photo grid: Facebook-style 2x2 grid, shows 4 photos max
   // When total > 4, the 4th photo shows "+N" overlay
   const totalPhotos = post.photos.length;
@@ -3000,7 +3053,7 @@ export const TextPostCard = React.memo(function TextPostCard({
           onDetailPress={onPostPress}
           post={post}
         />
-        {post.sharedFrom ? (
+        {post.sharedFrom && !post.sharedPost ? (
           <Text className="-mt-3 mb-3 text-caption-secondary">
             {copy.sharedPostLabel(
               post.sharedFrom.isAnonymous
@@ -3027,7 +3080,15 @@ export const TextPostCard = React.memo(function TextPostCard({
           <FeedLinkPreviewCard preview={post.linkPreview} />
         ) : null}
       </FeedCardContent>
-      {totalPhotos === 1 ? (
+      {post.sharedPost ? (
+        <FeedCardContent>
+          <SharedPostPreviewCard
+            model={post.sharedPost}
+            onOpenPost={handleOpenSharedPost}
+            onOpenPhoto={handleOpenSharedPhoto}
+          />
+        </FeedCardContent>
+      ) : totalPhotos === 1 ? (
         <FeedMediaFrame className="bg-transparent">
           <SinglePostImage
             uri={post.photos[0]}
@@ -3104,7 +3165,7 @@ export const TextPostCard = React.memo(function TextPostCard({
           })}
         </FeedMediaFrame>
       ) : null}
-      {post.audioUrl ? (
+      {!post.sharedPost && post.audioUrl ? (
         <View className="px-3 pb-1">
           <AudioPlayer uri={post.audioUrl} />
         </View>

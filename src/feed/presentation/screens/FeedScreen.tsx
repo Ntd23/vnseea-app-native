@@ -2005,6 +2005,7 @@ function FeedScreen() {
   const [realtimeVisiblePostIds, setRealtimeVisiblePostIds] = useState<string[]>([]);
   usePostRealtimeScope({
     postIds: realtimeVisiblePostIds,
+    posts: feedPosts,
     enabled: isFeedTabFocused,
     onSnapshot: vm.applyRealtimePost,
     onDeleted: vm.removeRealtimePost,

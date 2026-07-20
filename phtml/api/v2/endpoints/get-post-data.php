@@ -24,6 +24,7 @@ if (empty($_POST['fetch'])) {
 if (empty($error_code)) {
     $post_id   = Wo_Secure($_POST['post_id']);
     $post_data = Wo_PostData($post_id);
+    $post_data = VNSEEA_AttachSharedPostInfo($post_data, $non_allowed);
     if (empty($post_data)) {
         $error_code    = 6;
         $error_message = 'Post not found';

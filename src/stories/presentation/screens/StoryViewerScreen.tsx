@@ -71,6 +71,7 @@ import ReanimatedAnimated, {
 import {
   ChevronDown,
   Flag,
+  ExternalLink,
   MoreHorizontal,
   Trash2,
   UserCircle,
@@ -91,6 +92,9 @@ import {
   FEED_REACTION_IMAGES,
   FEED_REACTION_TYPES,
 } from '../../../feed/presentation/components/FeedReactionAssets';
+import { parseSharedPostIdFromStoryDescription } from './storySharedPostLink';
+import { SharedPostStorySegment } from '../components/SharedPostStorySegment';
+import { calculateSharedPostStoryAvailableHeight } from '../../application/sharing/sharedPostStoryLayout';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Props = NativeStackScreenProps<RootStackParamList, 'StoryViewer'>;
@@ -178,25 +182,67 @@ function StoryViewerScreen({ route }: Props) {
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [isOptionsSheetVisible, setIsOptionsSheetVisible] = useState(false);
-  const pauseForProfileNavigationRef = useRef(false);
+  const pauseForNavigationRef = useRef(false);
   const [reactionBurst, setReactionBurst] = useState<ReactionBurstItem[]>([]);
   const reactionBurstId = useRef(0);
   // Set by VideoPlayer's onLoad — null while waiting for metadata so we
   // know NOT to start the progress timer yet for video segments.
   const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
+  const [readySharedPostSegmentKey, setReadySharedPostSegmentKey] = useState<
+    string | null
+  >(null);
 
   const currentStory = stories[userIndex] ?? null;
   const segments = currentStory?.media ?? [];
   const currentSegment = segments[segmentIndex] ?? null;
+  const segmentPlaybackKey = useMemo(
+    () =>
+      [
+        userIndex,
+        segmentIndex,
+        currentStory?.id ?? 'story',
+        currentSegment?.id ?? 'segment',
+        currentSegment?.type ?? 'empty',
+      ].join(':'),
+    [
+      currentSegment?.id,
+      currentSegment?.type,
+      currentStory?.id,
+      segmentIndex,
+      userIndex,
+    ],
+  );
+  const sharedPostId = useMemo(() => {
+    if (currentSegment?.type === 'shared_post') {
+      return currentSegment.sourcePostId ?? null;
+    }
+    return parseSharedPostIdFromStoryDescription(
+      currentSegment?.description ?? currentStory?.description,
+    );
+  }, [currentSegment, currentStory?.description]);
   const shouldPausePlayback = isPaused || !isStoryViewerFocused || isOptionsSheetVisible;
 
   // Effective duration for the current segment. For video we wait on
   // `onLoad` (videoDurationMs becomes a number), then animate over that.
   const segmentMs = useMemo(() => {
     if (!currentSegment) return IMAGE_SEGMENT_MS;
-    if (currentSegment.type === 'image') return IMAGE_SEGMENT_MS;
+    if (currentSegment.type !== 'video') return IMAGE_SEGMENT_MS;
     return videoDurationMs ?? VIDEO_FALLBACK_MS;
   }, [currentSegment, videoDurationMs]);
+
+  const isSegmentProgressReady = useMemo(() => {
+    if (!currentSegment) return false;
+    if (currentSegment.type === 'video') return videoDurationMs !== null;
+    if (currentSegment.type === 'shared_post') {
+      return readySharedPostSegmentKey === segmentPlaybackKey;
+    }
+    return true;
+  }, [
+    currentSegment,
+    readySharedPostSegmentKey,
+    segmentPlaybackKey,
+    videoDurationMs,
+  ]);
 
   // ── Progress animation ──────────────────────────────────────────────
   // One Animated.Value drives the FILL on the active segment bar. Inactive
@@ -207,12 +253,14 @@ function StoryViewerScreen({ route }: Props) {
   // for the next video.
   useEffect(() => {
     setVideoDurationMs(null);
-  }, [userIndex, segmentIndex]);
+    progress.stopAnimation();
+    progress.setValue(0);
+  }, [progress, segmentPlaybackKey]);
 
   useFocusEffect(
     useCallback(() => {
-      if (pauseForProfileNavigationRef.current) {
-        pauseForProfileNavigationRef.current = false;
+      if (pauseForNavigationRef.current) {
+        pauseForNavigationRef.current = false;
         setIsPaused(false);
       }
       return undefined;
@@ -254,9 +302,7 @@ function StoryViewerScreen({ route }: Props) {
   // ── Start / restart the timer on segment changes ───────────────────
   useEffect(() => {
     if (!currentSegment) return;
-    // For video, wait until `onLoad` gives us the real duration so the
-    // progress bar matches actual playback length.
-    if (currentSegment.type === 'video' && videoDurationMs === null) return;
+    if (!isSegmentProgressReady) return;
     if (shouldPausePlayback) return;
 
     progress.setValue(0);
@@ -276,9 +322,9 @@ function StoryViewerScreen({ route }: Props) {
     };
   }, [
     currentSegment,
+    isSegmentProgressReady,
     segmentMs,
     shouldPausePlayback,
-    videoDurationMs,
     advance,
     progress,
   ]);
@@ -390,8 +436,7 @@ function StoryViewerScreen({ route }: Props) {
         return;
       }
       const activeStoryId = currentStory.id;
-      // CRITICAL FIX: The storyId might be undefined - use currentStory.id as fallback
-      const targetStoryId = currentStory.id; // Always use currentStory.id directly
+      const targetStoryId = currentSegment.storyId || currentStory.id;
       const prev = currentStory.myReaction;
       const willClear = prev === reaction;
       const targetReaction = willClear ? null : reaction;
@@ -500,30 +545,6 @@ function StoryViewerScreen({ route }: Props) {
   const handleMorePress = useCallback(() => {
     setIsPaused(true);
     setIsOptionsSheetVisible(true);
-    return;
-    const options = currentStory.isOwner
-      ? [
-          { text: 'Huỷ', style: 'cancel', onPress: () => setIsPaused(false) },
-          { text: 'Xoá tin này', style: 'destructive', onPress: onDelete },
-        ]
-      : [
-          { text: 'Huỷ', style: 'cancel', onPress: () => setIsPaused(false) },
-          {
-            text: 'Báo cáo tin',
-            style: 'destructive',
-            onPress: () => {
-              Alert.alert('Đã báo cáo', 'Cảm ơn bạn đã báo cáo bài viết.');
-              setIsPaused(false);
-            },
-          },
-        ];
-
-    Alert.alert(
-      'Tuỳ chọn tin',
-      undefined,
-      options as any,
-      { cancelable: true, onDismiss: () => setIsPaused(false) }
-    );
   }, []);
 
   const closeOptionsSheet = useCallback(() => {
@@ -533,11 +554,18 @@ function StoryViewerScreen({ route }: Props) {
 
   const handleOpenPublisherProfile = useCallback(() => {
     if (!currentStory?.publisher.userId) return;
-    pauseForProfileNavigationRef.current = true;
+    pauseForNavigationRef.current = true;
     setIsOptionsSheetVisible(false);
     setIsPaused(true);
     navigateToUserProfile(navigation, currentStory.publisher.userId);
   }, [currentStory?.publisher.userId, navigation]);
+
+  const handleOpenSharedPost = useCallback(() => {
+    if (!sharedPostId) return;
+    pauseForNavigationRef.current = true;
+    setIsPaused(true);
+    navigation.navigate(ROUTES.POST_DETAIL, { postId: sharedPostId });
+  }, [navigation, sharedPostId]);
 
   const handleDeleteFromOptions = useCallback(() => {
     setIsOptionsSheetVisible(false);
@@ -738,7 +766,7 @@ function StoryViewerScreen({ route }: Props) {
                 style={styles.media}
                 resizeMode="contain"
               />
-            ) : (
+            ) : currentSegment.type === 'video' ? (
               <VideoPlayer
                 // `key` ensures the player remounts when we move to a new
                 // video segment — otherwise the old VideoPlayer instance
@@ -761,7 +789,7 @@ function StoryViewerScreen({ route }: Props) {
                   setVideoDurationMs(VIDEO_FALLBACK_MS);
                 }}
               />
-            )}
+            ) : null}
           </View>
 
           {/* ── Tap zones (transparent overlays over the media) ────────── */}
@@ -782,11 +810,34 @@ function StoryViewerScreen({ route }: Props) {
             />
           </View>
 
+          {/* Keep the interactive post card above navigation tap zones. Its
+              box-none container lets taps outside the card reach those zones. */}
+          {currentSegment.type === 'shared_post' && sharedPostId ? (
+            <SharedPostStorySegment
+              key={segmentPlaybackKey}
+              sourcePostId={sharedPostId}
+              note={currentSegment.description}
+              availableWidth={Math.max(240, viewportWidth - 24)}
+              availableHeight={calculateSharedPostStoryAvailableHeight({
+                viewportHeight,
+                headerSafeTop: storyHeaderSafeTop,
+                bottomInset: storySafeAreaInsets.bottom,
+              })}
+              onOpenPost={handleOpenSharedPost}
+              onLongPress={handleLongPressStart}
+              onPressOut={handlePressOut}
+              onReady={() =>
+                setReadySharedPostSegmentKey(segmentPlaybackKey)
+              }
+            />
+          ) : null}
+
           {/* ── Floating Text Overlay (Facebook Style) ── */}
-          {currentStory.title ? (
+          {currentSegment.type !== 'shared_post' &&
+          (currentSegment.title ?? currentStory.title) ? (
             <View style={styles.floatingCaptionWrap} pointerEvents="none">
               <Text style={styles.floatingCaptionText}>
-                {currentStory.title}
+                {currentSegment.title ?? currentStory.title}
               </Text>
             </View>
           ) : null}
@@ -879,6 +930,25 @@ function StoryViewerScreen({ route }: Props) {
               </TouchableOpacity>
             </View>
           </View>
+
+          {sharedPostId ? (
+            <View
+              pointerEvents="box-none"
+              style={[
+                styles.sharedPostCtaWrap,
+                { bottom: Math.max(storySafeAreaInsets.bottom, 12) + 82 },
+              ]}
+            >
+              <TouchableOpacity
+                activeOpacity={0.86}
+                onPress={handleOpenSharedPost}
+                style={styles.sharedPostCta}
+              >
+                <ExternalLink size={17} color="#0F172A" />
+                <Text style={styles.sharedPostCtaText}>Xem bài viết</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {/* ── Bottom overlay: reactions picker ─────────────── */}
           <View style={styles.reactionBurstLayer} pointerEvents="none">
@@ -1078,6 +1148,28 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  sharedPostCtaWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    alignItems: 'center',
+  },
+  sharedPostCta: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+  },
+  sharedPostCtaText: {
+    color: '#0F172A',
+    fontSize: 14,
+    fontWeight: '800',
+    marginLeft: 8,
+  },
 
   // ── Tap zones (cover the media for navigation) ───────────────────
   tapZones: {
@@ -1096,6 +1188,8 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
+    zIndex: 40,
+    elevation: 40,
     paddingTop: 8,
     paddingHorizontal: 12,
   },
@@ -1410,6 +1504,8 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+    zIndex: 40,
+    elevation: 40,
   },
   reactionBurstLayer: {
     ...(StyleSheet.absoluteFill as object),

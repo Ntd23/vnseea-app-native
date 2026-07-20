@@ -26,7 +26,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Send, X } from 'lucide-react-native';
-import { captureRef } from 'react-native-view-shot';
 import { useMyPagesViewModel, type PagesItem } from '../../../pages';
 import { useMyGroupsViewModel, type GroupItem } from '../../../community';
 import type { ChatItem } from '../../../messages/domain/types/messages.types';
@@ -36,15 +35,11 @@ import { storyCreatedEvents } from '../../../stories/application/events/storyCre
 import type { StoryItem } from '../../../stories/domain/types/stories.types';
 import { createStoriesRepository } from '../../../stories/infrastructure/repositories/ApiStoriesRepository';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
-import {
-  getShareableUrl,
-  useShareViewModel,
-} from '../../../shared-kernel/application/view-models/useShareViewModel';
+import { useShareViewModel } from '../../../shared-kernel/application/view-models/useShareViewModel';
 import { useCurrentUserViewModel } from '../../../shared-kernel/application/view-models/useCurrentUserViewModel';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import { getShareCopy } from '../../application/i18n/shareCopy';
 import {
-  buildPostStoryCardModel,
   createPostStoryShare,
 } from '../../application/sharing/postStoryShare';
 import {
@@ -68,11 +63,9 @@ import {
   type FeedShareCarouselDestination,
 } from './share/FeedShareDestinationCarousel';
 import { FeedShareRecipientCarousel } from './share/FeedShareRecipientCarousel';
-import { PostStoryShareCard } from './share/PostStoryShareCard';
 
 const FALLBACK_AVATAR = 'https://cdn-icons-png.flaticon.com/512/847/847969.png';
 const ANIMATION_MS = 280;
-const STORY_MEDIA_READY_TIMEOUT_MS = 3000;
 const SHARE_DEBUG_PREFIX = '[VNSEEA_SHARE_DEBUG]';
 
 type InternalShareTarget = 'timeline' | 'page' | 'group' | 'story';
@@ -199,15 +192,13 @@ function ShareEntityCarousel({
 
 function buildOptimisticStory({
   id,
-  captureUri,
-  title,
-  description,
+  sourcePostId,
+  note,
   user,
 }: {
   id: string;
-  captureUri: string;
-  title?: string;
-  description?: string;
+  sourcePostId: string;
+  note?: string;
   user: NonNullable<ReturnType<typeof useCurrentUserViewModel>['user']>;
 }): StoryItem {
   const now = Math.floor(Date.now() / 1000);
@@ -220,16 +211,19 @@ function buildOptimisticStory({
       avatarUrl: user.avatar,
       isVerified: false,
     },
-    title,
-    description,
+    description: note,
     postedAt: now,
     expiresAt: now + 24 * 60 * 60,
-    thumbnailUrl: captureUri,
+    thumbnailUrl: user.avatar,
     media: [
       {
         id: `local-${id}`,
-        type: 'image',
-        url: captureUri,
+        type: 'shared_post',
+        url: '',
+        storyId: id,
+        postedAt: now,
+        sourcePostId,
+        description: note,
       },
     ],
     isOwner: true,
@@ -237,6 +231,7 @@ function buildOptimisticStory({
     hasUnseen: true,
     myReaction: null,
     reactionCount: 0,
+    audience: 'followers',
   };
 }
 
@@ -278,12 +273,9 @@ export function FeedShareBottomSheet({
     useState<MessageRecipientStatuses>({});
   const [isSharing, setIsSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [storyCardReady, setStoryCardReady] = useState(false);
-  const [forceStoryMediaFallback, setForceStoryMediaFallback] = useState(false);
   const loadedDataRef = useRef<Set<LazyShareData>>(new Set());
   const messageLoadGenerationRef = useRef(0);
   const wasVisibleRef = useRef(false);
-  const storyCardRef = useRef<View | null>(null);
 
   const translateY = useSharedValue(1000);
   const backdropOpacity = useSharedValue(0);
@@ -309,12 +301,6 @@ export function FeedShareBottomSheet({
     }
     return chatsByKey;
   }, [availableMessageChats]);
-  const storyCardModel = useMemo(
-    () => (post ? buildPostStoryCardModel(post, note) : null),
-    [note, post],
-  );
-  const storyCardPostId = storyCardModel?.postId;
-  const storyMediaUrl = storyCardModel?.mediaUrl;
   const messageRecipientIdsToSend = useMemo(
     () =>
       getMessageRecipientIdsToSend(
@@ -345,8 +331,6 @@ export function FeedShareBottomSheet({
       setMessageChatsError(null);
       setSelectedMessageRecipientIds([]);
       setMessageRecipientStatuses({});
-      setStoryCardReady(false);
-      setForceStoryMediaFallback(false);
       loadedDataRef.current.clear();
       tabBarVisibility.setVisible(false);
       translateY.value = withTiming(0, {
@@ -495,20 +479,6 @@ export function FeedShareBottomSheet({
     }
   }, [groupChoices, selectedGroupId]);
 
-  useEffect(() => {
-    if (!shareVisible || target !== 'story' || !storyCardPostId) return undefined;
-
-    setForceStoryMediaFallback(false);
-    setStoryCardReady(!storyMediaUrl);
-    if (!storyMediaUrl) return undefined;
-
-    const timeout = setTimeout(() => {
-      setForceStoryMediaFallback(true);
-      setStoryCardReady(true);
-    }, STORY_MEDIA_READY_TIMEOUT_MS);
-    return () => clearTimeout(timeout);
-  }, [shareVisible, storyCardPostId, storyMediaUrl, target]);
-
   const sheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
   }));
@@ -541,8 +511,7 @@ export function FeedShareBottomSheet({
     isSharing ||
     !currentUserVm.user?.userId ||
     (target === 'page' && !selectedPageId) ||
-    (target === 'group' && !selectedGroupId) ||
-    (target === 'story' && !storyCardReady);
+    (target === 'group' && !selectedGroupId);
 
   const destinationLabels = useMemo(
     () => ({
@@ -559,10 +528,6 @@ export function FeedShareBottomSheet({
   const handleClose = useCallback(() => {
     if (!isSharing) onClose();
   }, [isSharing, onClose]);
-
-  const handleStoryCardReady = useCallback(() => {
-    setStoryCardReady(true);
-  }, []);
 
   const handleToggleMessageRecipient = useCallback(
     (recipientId: string) => {
@@ -634,31 +599,23 @@ export function FeedShareBottomSheet({
   }, [canShare, copy, isSharing, onClose, post, sharePost]);
 
   const handleStoryShare = useCallback(async () => {
-    if (
-      !canShare ||
-      !post ||
-      !storyCardReady ||
-      !storyCardRef.current ||
-      !currentUserVm.user
-    ) {
+    if (!canShare || !post || !currentUserVm.user) {
       throw new Error(copy.storyPreparing);
     }
 
-    const { captureUri, draft, result } = await createPostStoryShare({
+    const { draft, result } = await createPostStoryShare({
       post,
       note,
-      capture: options => captureRef(storyCardRef, options),
-      getShareUrl: postId => getShareableUrl(postId, 'post'),
-      upload: storyDraft => storiesRepository.createStory(storyDraft),
+      createSharedPostStory: storyDraft =>
+        storiesRepository.createSharedPostStory(storyDraft),
     });
     const optimisticId = result.storyId || `local-share-${Date.now()}`;
     storyCreatedEvents.emit(
-      buildOptimisticStory({
-        id: optimisticId,
-        captureUri,
-        title: draft.title,
-        description: draft.description,
-        user: currentUserVm.user,
+        buildOptimisticStory({
+          id: optimisticId,
+          sourcePostId: draft.sourcePostId,
+          note: draft.note,
+          user: currentUserVm.user,
       }),
     );
     showToast({ message: copy.storyShareSuccess, type: 'success' });
@@ -669,7 +626,6 @@ export function FeedShareBottomSheet({
     currentUserVm.user,
     note,
     post,
-    storyCardReady,
   ]);
 
   const handlePrimaryShare = useCallback(async () => {
@@ -878,16 +834,6 @@ export function FeedShareBottomSheet({
               error={selectedMessageRecipientIds.length > 0 ? null : error}
               onNoteChange={setNote}
               onSubmit={handlePrimaryShare}
-              preview={
-                target === 'story' && storyCardModel ? (
-                  <PostStoryShareCard
-                    ref={storyCardRef}
-                    model={storyCardModel}
-                    forceMediaFallback={forceStoryMediaFallback}
-                    onReady={handleStoryCardReady}
-                  />
-                ) : undefined
-              }
             />
 
             {target === 'page' ? (

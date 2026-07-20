@@ -2,9 +2,14 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { FeedPost } from '../../domain/types/feed.types';
 import { postRealtimeRuntime } from '../../infrastructure/realtime/postRealtimeRuntime';
 import type { PostChangedEvent } from './postRealtimeCoordinator';
+import {
+  applySharedPostSourceSnapshot,
+  getPostRealtimeWatchIds,
+} from '../sharing/sharedPostPreview';
 
 type Options = {
   postIds: Array<string | number>;
+  posts?: FeedPost[];
   enabled?: boolean;
   onSnapshot?: (post: FeedPost) => void;
   onDeleted?: (postId: string) => void;
@@ -13,6 +18,7 @@ type Options = {
 
 export function usePostRealtimeScope({
   postIds,
+  posts = [],
   enabled = true,
   onSnapshot,
   onDeleted,
@@ -20,18 +26,22 @@ export function usePostRealtimeScope({
 }: Options) {
   const callbacksRef = useRef({ onSnapshot, onDeleted, onCommentMutation });
   callbacksRef.current = { onSnapshot, onDeleted, onCommentMutation };
+  const postsRef = useRef(posts);
+  postsRef.current = posts;
+  const requestedIdsRef = useRef(new Set<string>());
+  requestedIdsRef.current = new Set(postIds.map(postId => String(postId)));
   const normalizedIds = useMemo(
     () =>
       Array.from(
         new Set(
-          postIds
+          getPostRealtimeWatchIds(posts, postIds)
             .map(value => String(value).trim())
             .filter(value => /^[1-9][0-9]*$/.test(value)),
         ),
       )
         .sort((left, right) => Number(left) - Number(right))
         .slice(0, 50),
-    [postIds],
+    [postIds, posts],
   );
   const signature = normalizedIds.join(',');
 
@@ -44,8 +54,27 @@ export function usePostRealtimeScope({
       if (!watched.has(event.type === 'mutation' ? event.change.postId : event.postId)) {
         return;
       }
-      if (event.type === 'snapshot') callbacksRef.current.onSnapshot?.(event.post);
-      if (event.type === 'deleted') callbacksRef.current.onDeleted?.(event.postId);
+      if (event.type === 'snapshot') {
+        const sourceConsumers = postsRef.current.filter(
+          post => String(post.sharedPostId ?? '') === String(event.post.id),
+        );
+        sourceConsumers.forEach(post =>
+          callbacksRef.current.onSnapshot?.(
+            applySharedPostSourceSnapshot(post, event.post),
+          ),
+        );
+        if (requestedIdsRef.current.has(String(event.post.id))) {
+          callbacksRef.current.onSnapshot?.(event.post);
+        }
+      }
+      if (event.type === 'deleted') {
+        postsRef.current
+          .filter(post => String(post.sharedPostId ?? '') === event.postId)
+          .forEach(post => callbacksRef.current.onDeleted?.(String(post.id)));
+        if (requestedIdsRef.current.has(event.postId)) {
+          callbacksRef.current.onDeleted?.(event.postId);
+        }
+      }
       if (event.type === 'mutation' && event.change.mutation === 'comment') {
         callbacksRef.current.onCommentMutation?.(event.change);
       }
