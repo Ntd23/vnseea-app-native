@@ -4,7 +4,7 @@ import Foundation
 import React
 
 @objc(VnseeaCurrentLocation)
-class CurrentLocationModule: NSObject, RCTBridgeModule, CLLocationManagerDelegate {
+class CurrentLocationModule: NSObject, CLLocationManagerDelegate {
   private var locationManager: CLLocationManager?
   private var pendingResolve: RCTPromiseResolveBlock?
   private var pendingReject: RCTPromiseRejectBlock?
@@ -26,7 +26,7 @@ class CurrentLocationModule: NSObject, RCTBridgeModule, CLLocationManagerDelegat
   ) {
     DispatchQueue.main.async { [weak self] in
       guard let self = self else {
-        reject("unavailable", "Current location module is unavailable.")
+        reject("unavailable", "Current location module is unavailable.", nil)
         return
       }
 

@@ -397,10 +397,44 @@ function VNSEEA_RedactAnonymousPost($post, $viewer_id = 0, $anonymous_label = 'A
     return $post;
 }
 
-function VNSEEA_CanMutatePost($post_id)
+function VNSEEA_CanMutatePost($post_id, $viewer_id = 0)
 {
-    if (!function_exists('Wo_PostData')) {
+    global $sqlConnect;
+    static $permission_cache = array();
+
+    $post_id = (int) $post_id;
+    $viewer_id = VNSEEA_CurrentViewerId($viewer_id);
+    if ($post_id < 1 || empty($sqlConnect)) {
         return false;
     }
-    return !empty(Wo_PostData((int) $post_id));
+
+    $cache_key = $viewer_id . ':' . $post_id;
+    if (array_key_exists($cache_key, $permission_cache)) {
+        return $permission_cache[$cache_key];
+    }
+
+    $columns = '`id`, `post_id`, `parent_id`, `user_id`, `page_id`, `group_id`, `event_id`, `page_event_id`, `postPrivacy`, `is_anonymous`';
+    $query = mysqli_query($sqlConnect, 'SELECT ' . $columns . ' FROM ' . T_POSTS . " WHERE `id` = {$post_id} LIMIT 1");
+    if (!$query || !mysqli_num_rows($query)) {
+        $permission_cache[$cache_key] = false;
+        return false;
+    }
+
+    $post = mysqli_fetch_assoc($query);
+    $canonical_post_id = !empty($post['post_id']) ? (int) $post['post_id'] : 0;
+    if ($canonical_post_id > 0 && $canonical_post_id !== (int) $post['id']) {
+        $canonical_query = mysqli_query($sqlConnect, 'SELECT ' . $columns . ' FROM ' . T_POSTS . " WHERE `id` = {$canonical_post_id} LIMIT 1");
+        if (!$canonical_query || !mysqli_num_rows($canonical_query)) {
+            $permission_cache[$cache_key] = false;
+            return false;
+        }
+        $post = mysqli_fetch_assoc($canonical_query);
+    }
+
+    $can_mutate = VNSEEA_CanViewPost($post, $viewer_id);
+    if ($can_mutate && !empty($post['parent_id'])) {
+        $can_mutate = VNSEEA_CanSharePostTree($post, $viewer_id);
+    }
+    $permission_cache[$cache_key] = $can_mutate;
+    return $can_mutate;
 }

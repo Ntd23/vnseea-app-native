@@ -237,6 +237,11 @@ privacy_assert(
     'comment/reply mutations must use the central authorization guard'
 );
 privacy_assert(
+    !privacy_source_contains($root, 'assets/includes/vnseea_privacy.php', 'Wo_PostData(') &&
+    privacy_source_contains($root, 'assets/includes/vnseea_privacy.php', 'VNSEEA_CanViewPost($post, $viewer_id)'),
+    'post mutation authorization must use a direct row lookup and never recurse through Wo_PostData'
+);
+privacy_assert(
     privacy_source_count($root, 'assets/includes/functions_three.php', 'VNSEEA_CanViewStory') >= 1 &&
     privacy_source_count($root, 'assets/includes/functions_three.php', 'VNSEEA_StoryAudienceSql') >= 5,
     'story list, direct helper, count and unseen queries must share the audience policy'
