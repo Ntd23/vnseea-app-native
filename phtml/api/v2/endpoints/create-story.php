@@ -12,7 +12,15 @@ $response_data = array(
     'api_status' => 400
 );
 
-if (empty($_FILES["file"]["tmp_name"])) {
+$story_type = !empty($_POST['story_type']) ? Wo_Secure($_POST['story_type']) : 'media';
+$is_shared_post = $story_type === 'shared_post';
+$source_post_id = 0;
+
+if (!in_array($story_type, array('media', 'shared_post'), true)) {
+    $error_code = 2;
+    $error_message = 'Incorrect value for story_type, allowed: media|shared_post';
+}
+if (!$is_shared_post && empty($_FILES["file"]["tmp_name"])) {
     $error_code    = 3;
     $error_message = 'file (STREAM FILE) is missing';
 }
@@ -24,15 +32,31 @@ if (isset($_POST['story_description']) && strlen($_POST['story_description']) > 
     $error_code    = 5;
     $error_message = 'Description is so long';
 }
-if (empty($_POST['file_type'])) {
+if (!$is_shared_post && empty($_POST['file_type'])) {
     $error_code    = 6;
     $error_message = 'file_type (POST) is missing';
-} else if (!in_array($_POST['file_type'], array(
+} else if (!$is_shared_post && !in_array($_POST['file_type'], array(
         'video',
         'image'
     ))) {
     $error_code    = 7;
     $error_message = 'Incorrect value for (file_type), allowed: video|image';
+}
+if ($is_shared_post) {
+    $requested_source_id = isset($_POST['source_post_id']) ? trim((string) $_POST['source_post_id']) : '';
+    if (!preg_match('/^[1-9][0-9]*$/', $requested_source_id)) {
+        $error_code = 8;
+        $error_message = 'source_post_id (POST) is invalid';
+    } else {
+        $source_post_id = VNSEEA_ResolveShareableSourcePostId(
+            (int) $requested_source_id,
+            (int) $wo['user']['id']
+        );
+        if ($source_post_id < 1) {
+            $error_code = 9;
+            $error_message = 'The source post is unavailable or cannot be shared';
+        }
+    }
 }
 
 if (empty($error_code)) {
@@ -44,7 +68,7 @@ if (empty($error_code)) {
     $cloud_upload                 = $wo['config']['cloud_upload'];
     $story_title       = (!empty($_POST['story_title'])) ? Wo_Secure($_POST['story_title']) : '';
     $story_description = (!empty($_POST['story_description'])) ? Wo_Secure($_POST['story_description']) : '';
-    $file_type         = Wo_Secure($_POST['file_type']);
+    $file_type         = $is_shared_post ? '' : Wo_Secure($_POST['file_type']);
     $story_privacy     = VNSEEA_NormalizeStoryPrivacyRequest($_POST);
     $story_data        = array(
         'user_id' => $wo['user']['id'],
@@ -52,10 +76,21 @@ if (empty($error_code)) {
         'posted' => time(),
         'expire' => time()+(60*60*24),
         'title' => $story_title,
-        'description' => $story_description
+        'description' => $story_description,
+        'story_type' => $story_type
     );
+    if ($is_shared_post) {
+        $story_data['source_post_id'] = $source_post_id;
+    }
     $last_id           = Wo_InsertUserStory($story_data);
-    if ($last_id && is_numeric($last_id) && !empty($_FILES["file"]["tmp_name"])) {
+    if ($last_id && is_numeric($last_id) && $is_shared_post) {
+        $response_data = array(
+            'api_status' => 200,
+            'story_id' => $last_id,
+            'story_type' => 'shared_post',
+            'source_post_id' => $source_post_id
+        );
+    } else if ($last_id && is_numeric($last_id) && !empty($_FILES["file"]["tmp_name"])) {
         $true     = false;
         $sources  = array();
         $fileInfo = array(

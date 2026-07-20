@@ -1,6 +1,8 @@
 // Description: Defines the messages repository contract for chats, groups, and labels.
 // Based on WoWonder API - get_chats, get_user_messages, send-message
 
+import type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
+
 import type {
   ChatItem,
   ConversationAssetCategory,
@@ -17,6 +19,7 @@ import type {
   MessageAttachment,
   MessageItem,
   MessageLabel,
+  MessageReactionSummary,
   SendMessageResponse,
 } from '../types/messages.types';
 
@@ -82,6 +85,11 @@ export interface MessagesRepository {
     message: string,
     attachment?: MessageAttachment,
   ): Promise<SendMessageResponse>;
+
+  setMessageReaction(
+    messageId: string,
+    reaction: ReactionType | null,
+  ): Promise<MessageReactionSummary>;
 
   /**
    * Delete a conversation

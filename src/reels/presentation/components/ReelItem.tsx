@@ -903,13 +903,8 @@ function ReelItemBase({
 // Renders the icon inside the heart RailButton based on the viewer's
 // current reaction.
 //
-//   • null  → outline Heart (white)
-//   • 'love' → filled red Heart (matches the floating double-tap heart so
-//             the two pieces of UI feel like the same thing)
-//   • any other reaction → emoji at heart-icon size
-//
-// Using emoji for non-love reactions sidesteps the fact that lucide-react
-// doesn't ship love/haha/wow/sad/angry icons that match its visual style.
+//   • null         → outline Heart (white)
+//   • any reaction → the canonical PNG shared with Feed
 
 function ReactionIcon({ reaction }: { reaction: ReactionType | null }) {
   if (reaction === null) {

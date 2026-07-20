@@ -22,6 +22,12 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { parseSharedPostMessage } from '../shared-posts/sharedPostMessage';
+import {
+  applyOptimisticMessageReaction,
+  areMessageReactionSummariesEqual,
+  createEmptyMessageReactionSummary,
+} from '../../domain/reactions/messageReactions';
+import type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 
 const PAGE_SIZE = 30;
 const POLL_INTERVAL_MS = 7000; // Poll every 7 seconds to reduce network/CPU load
@@ -72,6 +78,7 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.sharedPost?.postId === right.sharedPost?.postId &&
     left.sharedPost?.url === right.sharedPost?.url &&
     left.sharedPost?.note === right.sharedPost?.note &&
+    areMessageReactionSummariesEqual(left.reactions, right.reactions) &&
     areCallEventsEqual(left.callEvent, right.callEvent)
   );
 }
@@ -182,6 +189,8 @@ export function useChatViewModel(chat: ChatItem) {
   const latestMessageIdRef = useRef<string | undefined>(undefined);
   const oldestMessageIdRef = useRef<string | undefined>(undefined);
   const messageIdsRef = useRef<Set<string>>(new Set());
+  const messagesRef = useRef<MessageItem[]>(messages);
+  const pendingReactionMessageIdsRef = useRef<Set<string>>(new Set());
   const isLoadingRef = useRef(isLoading);
   const isLoadingMoreRef = useRef(isLoadingMore);
   const hasMoreRef = useRef(hasMore);
@@ -317,7 +326,19 @@ export function useChatViewModel(chat: ChatItem) {
           limit: PAGE_SIZE,
         });
         setMessages(current => {
-          const merged = mergeMessages(current, page);
+          const currentById = new Map(
+            current.map(message => [message.id, message]),
+          );
+          const pageWithPendingReactions = page.map(message => {
+            if (!pendingReactionMessageIdsRef.current.has(message.id)) {
+              return message;
+            }
+            const existing = currentById.get(message.id);
+            return existing
+              ? { ...message, reactions: existing.reactions }
+              : message;
+          });
+          const merged = mergeMessages(current, pageWithPendingReactions);
           return areMessageArraysSame(current, merged) ? current : merged;
         });
       } catch (err) {
@@ -386,6 +407,66 @@ export function useChatViewModel(chat: ChatItem) {
     [chat],
   );
 
+  const setMessageReaction = useCallback(
+    async (messageId: string, reaction: ReactionType | null) => {
+      if (!messageId || pendingReactionMessageIdsRef.current.has(messageId)) {
+        return false;
+      }
+
+      const originalMessage = messagesRef.current.find(
+        message => message.id === messageId,
+      );
+      if (!originalMessage || originalMessage.deliveryState === 'sending') {
+        return false;
+      }
+
+      const previousReactions = originalMessage.reactions;
+      const optimisticReactions = applyOptimisticMessageReaction(
+        previousReactions,
+        reaction,
+      );
+      pendingReactionMessageIdsRef.current.add(messageId);
+      setMessages(current =>
+        current.map(message =>
+          message.id === messageId
+            ? { ...message, reactions: optimisticReactions }
+            : message,
+        ),
+      );
+      setError(null);
+
+      try {
+        const reactions = await repository.setMessageReaction(
+          messageId,
+          reaction,
+        );
+        setMessages(current =>
+          current.map(message =>
+            message.id === messageId ? { ...message, reactions } : message,
+          ),
+        );
+        return true;
+      } catch (err) {
+        setMessages(current =>
+          current.map(message =>
+            message.id === messageId
+              ? { ...message, reactions: previousReactions }
+              : message,
+          ),
+        );
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Không thể cập nhật cảm xúc.';
+        setError(message);
+        throw err;
+      } finally {
+        pendingReactionMessageIdsRef.current.delete(messageId);
+      }
+    },
+    [],
+  );
+
   const sendMessage = useCallback(
     async (text: string, attachment?: MessageAttachment) => {
       const message = text.trim();
@@ -404,6 +485,7 @@ export function useChatViewModel(chat: ChatItem) {
         media: attachment?.uri,
         mediaType: attachment?.mediaType,
         sharedPost: parseSharedPostMessage(message, apiConfig.webBaseUrl),
+        reactions: createEmptyMessageReactionSummary(),
         time: Math.floor(Date.now() / 1000),
         isSentByMe: true,
         seen: 0,
@@ -623,6 +705,7 @@ export function useChatViewModel(chat: ChatItem) {
   }, [chat.chatType, typingRecipientId]);
 
   useEffect(() => {
+    messagesRef.current = messages;
     latestMessageIdRef.current = messages[messages.length - 1]?.id;
     oldestMessageIdRef.current = messages[0]?.id;
     messageIdsRef.current = new Set(messages.map(message => message.id));
@@ -702,6 +785,7 @@ export function useChatViewModel(chat: ChatItem) {
     refreshLatest,
     loadMessageContext,
     setMessagePinned,
+    setMessageReaction,
     sendMessage,
     notifyTyping,
     stopTyping,

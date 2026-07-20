@@ -35,17 +35,24 @@ export interface StoryPublisher {
  * the API response — so this is ready to drop into <Image source> or
  * <Video source>.
  */
+export type StoryMediaType = 'image' | 'video' | 'shared_post';
+
 export interface StoryMedia {
   /** Row id from T_USER_STORY_MEDIA — used only for keying lists. */
   id: string;
-  /** Either 'image' or 'video' — drives which renderer the viewer uses. */
-  type: 'image' | 'video';
-  /** Full URL (CDN-normalised by `Wo_GetMedia()`). */
+  /** Media renderer discriminator. Shared posts do not have an uploaded file. */
+  type: StoryMediaType;
+  /** Full URL for image/video. Empty for a virtual shared-post segment. */
   url: string;
   /** ID of the parent story this segment belongs to. */
   storyId?: string;
   /** Unix seconds — when this specific segment was posted. */
   postedAt?: number;
+  /** Canonical source post for a shared-post Story. */
+  sourcePostId?: string;
+  /** Per-segment copy. Required because one publisher bubble merges many Stories. */
+  title?: string;
+  description?: string;
 }
 
 /**
@@ -112,6 +119,12 @@ export interface CreateStoryDraft {
   audience?: ContentAudience;
   title?: string;
   description?: string;
+}
+
+export interface CreateSharedPostStoryDraft {
+  sourcePostId: string;
+  note?: string;
+  audience?: ContentAudience;
 }
 
 /**

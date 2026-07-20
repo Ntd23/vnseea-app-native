@@ -33,6 +33,8 @@ export interface FeedPostPermissionCarrier {
   permissions?: FeedPostPermissions;
   isAnonymous?: boolean;
   privacyContract?: ContentAudienceWireContract;
+  sharedPostId?: string;
+  sharedPost?: SharedPostPreviewModel;
 }
 
 export interface PostLinkPreview {
@@ -40,6 +42,41 @@ export interface PostLinkPreview {
   title?: string;
   description?: string;
   image?: string;
+}
+
+export type SharedPostPreviewContent =
+  | {
+      kind: 'text';
+      photos: string[];
+      audioUrl?: string;
+      linkPreview?: PostLinkPreview;
+    }
+  | {
+      kind: 'video';
+      videoUrl: string;
+      thumbnailUrl?: string;
+    }
+  | {
+      kind: 'poll';
+      question: string;
+      options: string[];
+    }
+  | {
+      kind: 'attachment';
+      attachmentKind: 'product' | 'event' | 'job' | 'ad';
+      title: string;
+      subtitle?: string;
+      imageUrl?: string;
+    };
+
+export interface SharedPostPreviewModel {
+  postId: string;
+  publisher: FeedPublisher;
+  postedAt?: number;
+  privacy: PostPrivacy;
+  caption?: string;
+  mentionNames?: string[];
+  content: SharedPostPreviewContent;
 }
 
 // ── Create-post types (Facebook-style composer) ─────────────────────────

@@ -14,6 +14,7 @@ import type { ReactionType } from '../../../reels/domain/types/reels.types';
 import type {
   CreateStoryDraft,
   CreateStoryResult,
+  CreateSharedPostStoryDraft,
   StoryItem,
 } from '../types/stories.types';
 
@@ -41,6 +42,11 @@ export interface StoriesRepository {
    * limits (see `CreateStoryDraft`).
    */
   createStory(draft: CreateStoryDraft): Promise<CreateStoryResult>;
+
+  /** Create a virtual Story segment that references a canonical source post. */
+  createSharedPostStory(
+    draft: CreateSharedPostStoryDraft,
+  ): Promise<CreateStoryResult>;
 
   /**
    * Delete a story the viewer owns. The PHP endpoint enforces ownership

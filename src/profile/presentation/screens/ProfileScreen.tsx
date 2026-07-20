@@ -2040,6 +2040,7 @@ function ProfileScreen() {
 
   usePostRealtimeScope({
     postIds: realtimeVisiblePostIds,
+    posts: filteredProfilePosts,
     enabled: isProfileFocused,
     onSnapshot: nextPost => {
       setPosts(current =>

@@ -1,6 +1,8 @@
 // Description: Defines domain types for messages, chats, labels, and media.
 // Based on WoWonder API responses for get_chats and get_user_messages
 
+import type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
+
 export interface ChatItem {
   id: string;
   chatId?: string;
@@ -68,6 +70,13 @@ export interface SharedPostMessageReference {
   note: string;
 }
 
+export interface MessageReactionSummary {
+  total: number;
+  myReaction: ReactionType | null;
+  topReactions: ReactionType[];
+  breakdown: Partial<Record<ReactionType, number>>;
+}
+
 export interface MessageItem {
   id: string;
   conversationId: string;
@@ -79,6 +88,7 @@ export interface MessageItem {
   mediaType?: 'image' | 'video' | 'audio' | 'file';
   thumbnail?: string;
   sharedPost?: SharedPostMessageReference;
+  reactions: MessageReactionSummary;
   time: number;
   isSentByMe: boolean;
   seen: number;

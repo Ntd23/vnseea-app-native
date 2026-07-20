@@ -8,6 +8,13 @@ const canonicalSource = fs.readFileSync(
   path.join(projectRoot, canonicalRelativePath),
   'utf8',
 );
+const sharedCatalogSource = fs.readFileSync(
+  path.join(
+    projectRoot,
+    'src/shared-kernel/domain/reactions/reactionCatalog.ts',
+  ),
+  'utf8',
+);
 
 const reactionSurfaces = [
   'src/feed/presentation/components/PollPostCard.tsx',
@@ -41,5 +48,35 @@ describe('Feed reaction assets', () => {
       expect(source).not.toMatch(/const\s+(REACTION_EMOJI|STORY_REACTION_EMOJI)/);
       expect(source).not.toContain('assets/reactions/reactions_');
     });
+  });
+
+  it('uses one shared type and wire mapping across Feed, Reels and Stories', () => {
+    expect(canonicalSource).toContain(
+      'shared-kernel/domain/reactions/reactionCatalog',
+    );
+    expect(sharedCatalogSource).toContain('REACTION_TO_WIRE');
+    expect(sharedCatalogSource).toContain('WIRE_TO_REACTION');
+
+    const repositories = [
+      'src/feed/infrastructure/repositories/ApiFeedRepository.ts',
+      'src/reels/infrastructure/repositories/ApiReelsRepository.ts',
+      'src/stories/infrastructure/repositories/ApiStoriesRepository.ts',
+    ];
+
+    repositories.forEach(relativePath => {
+      const source = fs.readFileSync(path.join(projectRoot, relativePath), 'utf8');
+      expect(source).toContain(
+        'shared-kernel/domain/reactions/reactionCatalog',
+      );
+      expect(source).not.toMatch(/const\s+REACTION_TO_WIRE/);
+      expect(source).not.toMatch(/const\s+WIRE_TO_REACTION/);
+    });
+
+    const reelsTypes = fs.readFileSync(
+      path.join(projectRoot, 'src/reels/domain/types/reels.types.ts'),
+      'utf8',
+    );
+    expect(reelsTypes).toContain("export type { ReactionType }");
+    expect(reelsTypes).not.toMatch(/export type ReactionType\s*=/);
   });
 });

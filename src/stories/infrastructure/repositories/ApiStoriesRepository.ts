@@ -21,11 +21,16 @@
 
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
-import type { ReactionType } from '../../../reels/domain/types/reels.types';
+import {
+  REACTION_TO_WIRE,
+  WIRE_TO_REACTION,
+  type ReactionType,
+} from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import type { StoriesRepository } from '../../domain/repositories/StoriesRepository';
 import type {
   CreateStoryDraft,
   CreateStoryResult,
+  CreateSharedPostStoryDraft,
   StoryItem,
   StoryMedia,
   StoryPublisher,
@@ -106,36 +111,6 @@ function readUserOnline(raw: Record<string, unknown>): boolean {
   );
   return lastseen > 0 && lastseen > Math.floor(Date.now() / 1000) - 60;
 }
-
-// ── Reaction wire format ──────────────────────────────────────────────────
-//
-// Stories use the same `T_REACTIONS.reaction` column as posts: numeric
-// strings '1'..'6'. The `react_story.php` endpoint validates
-// `$_POST['reaction']` against `array_keys($wo['reactions_types'])`, and
-// those keys are the numeric reaction ids on this WoWonder install.
-const REACTION_TO_WIRE: Record<ReactionType, string> = {
-  like: '1',
-  love: '2',
-  haha: '3',
-  wow: '4',
-  sad: '5',
-  angry: '6',
-};
-
-const WIRE_TO_REACTION: Record<string, ReactionType> = {
-  '1': 'like',
-  '2': 'love',
-  '3': 'haha',
-  '4': 'wow',
-  '5': 'sad',
-  '6': 'angry',
-  like: 'like',
-  love: 'love',
-  haha: 'haha',
-  wow: 'wow',
-  sad: 'sad',
-  angry: 'angry',
-};
 
 type ReactStoryResponse = {
   api_status?: number | string;
@@ -232,6 +207,23 @@ function mapMediaItem(
 }
 
 function extractMedia(raw: Record<string, unknown>, storyId: string): StoryMedia[] {
+  const storyType = readString(raw, 'story_type') || 'media';
+  if (storyType === 'shared_post') {
+    const sourcePostId = readString(raw, 'source_post_id');
+    if (!/^[1-9][0-9]*$/.test(sourcePostId)) return [];
+    return [
+      {
+        id: `shared-post-${storyId}`,
+        type: 'shared_post',
+        url: '',
+        storyId,
+        sourcePostId,
+        title: readString(raw, 'title') || undefined,
+        description: readString(raw, 'description') || undefined,
+      },
+    ];
+  }
+
   const out: StoryMedia[] = [];
 
   // The first (cover) image is shipped under `thumb` in `get_stories.php`
@@ -352,15 +344,23 @@ function mapStory(raw: Record<string, unknown>): StoryItem | null {
     Math.floor(Date.now() / 1000)
   );
 
+  const title = readString(raw, 'title') || undefined;
+  const description = readString(raw, 'description') || undefined;
+  const media = extractMedia(raw, id).map(segment => ({
+    ...segment,
+    title: segment.title ?? title,
+    description: segment.description ?? description,
+  }));
+
   return {
     id,
     publisher,
-    title: readString(raw, 'title') || undefined,
-    description: readString(raw, 'description') || undefined,
+    title,
+    description,
     postedAt,
     expiresAt,
     thumbnailUrl,
-    media: extractMedia(raw, id),
+    media,
     isOwner: readBool(raw, 'is_owner'),
     isViewed: readBool(raw, 'is_viewed'),
     hasUnseen: readBool(raw, 'have_not_seen'),
@@ -553,6 +553,46 @@ export function createStoriesRepository(): StoriesRepository {
           response.error ||
           `Status: ${status}`;
         throw new Error(String(errMsg));
+      }
+
+      return {
+        storyId:
+          response.story_id !== undefined
+            ? String(response.story_id)
+            : undefined,
+        message: response.message ?? 'Đã đăng tin.',
+      };
+    },
+
+    async createSharedPostStory(
+      draft: CreateSharedPostStoryDraft,
+    ): Promise<CreateStoryResult> {
+      const storyPrivacy = audienceToWire(draft.audience ?? 'followers');
+      const response = await backendApi.post<{
+        api_status: number | string;
+        message?: string;
+        story_id?: string | number;
+        errors?: unknown;
+        status?: number | string;
+        error?: string;
+      }>(apiRoutes.stories.create, {
+        type: 'create_story',
+        story_type: 'shared_post',
+        source_post_id: draft.sourcePostId,
+        postPrivacy: storyPrivacy,
+        privacy: storyPrivacy,
+        privacy_contract: CONTENT_AUDIENCE_CONTRACT,
+        ...(draft.note ? { story_description: draft.note } : {}),
+      });
+
+      const status = String(response.api_status ?? response.status ?? '');
+      if (status !== '200' && status !== '220') {
+        const errorMessage =
+          (Array.isArray(response.errors) && response.errors[0]) ||
+          response.message ||
+          response.error ||
+          `Status: ${status}`;
+        throw new Error(String(errorMessage));
       }
 
       return {

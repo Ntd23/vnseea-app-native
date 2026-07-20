@@ -4,7 +4,6 @@ import {
   Image,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { FileText, Play } from 'lucide-react-native';
@@ -16,6 +15,7 @@ import {
   type SharedPostPreviewModel,
 } from '../../application/shared-posts/sharedPostMessage';
 import type { SharedPostMessageReference } from '../../domain/types/messages.types';
+import { DoubleTapTouchable } from './DoubleTapTouchable';
 
 const sharedPostPreviewLoader = createSharedPostPreviewLoader(
   createFeedRepository(),
@@ -25,6 +25,7 @@ type SharedPostMessageCardProps = {
   reference: SharedPostMessageReference;
   onOpenPost: (postId: string) => void;
   onLongPress?: () => void;
+  onDoubleTap?: () => void;
   loadPreview?: (postId: string) => Promise<SharedPostPreviewModel>;
 };
 
@@ -63,6 +64,7 @@ export function SharedPostMessageCard({
   reference,
   onOpenPost,
   onLongPress,
+  onDoubleTap,
   loadPreview = sharedPostPreviewLoader.load,
 }: SharedPostMessageCardProps) {
   const language = useAppLanguage();
@@ -107,12 +109,12 @@ export function SharedPostMessageCard({
         </Text>
       ) : null}
 
-      <TouchableOpacity
+      <DoubleTapTouchable
         accessibilityRole="button"
         accessibilityLabel="Mở bài viết"
         activeOpacity={0.86}
-        delayLongPress={350}
-        onPress={() => onOpenPost(reference.postId)}
+        onSingleTap={() => onOpenPost(reference.postId)}
+        onDoubleTap={onDoubleTap}
         onLongPress={onLongPress}
         className="overflow-hidden rounded-2xl border"
         style={{ borderColor: colors.border, backgroundColor: colors.card }}
@@ -223,7 +225,7 @@ export function SharedPostMessageCard({
             </View>
           </>
         )}
-      </TouchableOpacity>
+      </DoubleTapTouchable>
     </View>
   );
 }

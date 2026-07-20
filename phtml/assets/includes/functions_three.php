@@ -5506,6 +5506,9 @@ function Wo_GetStroies($args = array())
 			if (!VNSEEA_CanViewStory($fetched_data, $wo['user']['id'])) {
 				continue;
 			}
+			if (!VNSEEA_CanViewSharedPostStory($fetched_data, $wo['user']['id'])) {
+				continue;
+			}
 			$story_images = Wo_GetStoryMedia($fetched_data['id'], 'image');
 			if (count($story_images) > 0) {
 				$fetched_data['thumb']  = array_shift($story_images);
@@ -5593,6 +5596,18 @@ function Wo_GetStoryThumb($story_id = 0, $thumbnail = '')
 	}
 	return false;
 }
+function Wo_GetFirstAccessibleStoryFromResult($query, $viewer_id = 0)
+{
+	if (!$query) {
+		return null;
+	}
+	while ($story = mysqli_fetch_assoc($query)) {
+		if (VNSEEA_CanViewStory($story, $viewer_id) && VNSEEA_CanViewSharedPostStory($story, $viewer_id)) {
+			return (object) $story;
+		}
+	}
+	return null;
+}
 function Wo_GetStoryEntryPoint($owner_id = 0, $viewer_id = 0)
 {
 	global $db, $wo, $sqlConnect;
@@ -5610,7 +5625,7 @@ function Wo_GetStoryEntryPoint($owner_id = 0, $viewer_id = 0)
 	if ($viewer_id > 0) {
 		$now = time();
 		$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND `ad_id` IS NULL AND `user_id` = '{$owner_id}' AND ({$audience_sql}) AND `id` NOT IN (SELECT `story_id` FROM " . T_STORY_SEEN . " WHERE `user_id` = '{$viewer_id}') ORDER BY `id` ASC LIMIT 1");
-		$story = $story_query ? mysqli_fetch_object($story_query) : null;
+		$story = Wo_GetFirstAccessibleStoryFromResult($story_query, $viewer_id);
 	}
 
 	if (empty($story)) {
@@ -5620,12 +5635,12 @@ function Wo_GetStoryEntryPoint($owner_id = 0, $viewer_id = 0)
 			$ads_in = implode(',', $ads_ids);
 			$now = time();
 			$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND ((`ad_id` IN ({$ads_in})) OR (`ad_id` IS NULL AND `user_id` = '{$owner_id}' AND ({$audience_sql}))) ORDER BY `id` ASC LIMIT 1");
-			$story = $story_query ? mysqli_fetch_object($story_query) : null;
+			$story = Wo_GetFirstAccessibleStoryFromResult($story_query, $viewer_id);
 		}
 		if (empty($story)) {
 			$now = time();
 			$story_query = mysqli_query($sqlConnect, "SELECT * FROM " . T_USER_STORY . " WHERE `expire` > '{$now}' AND `ad_id` IS NULL AND `user_id` = '{$owner_id}' AND ({$audience_sql}) ORDER BY `id` ASC LIMIT 1");
-			$story = $story_query ? mysqli_fetch_object($story_query) : null;
+			$story = Wo_GetFirstAccessibleStoryFromResult($story_query, $viewer_id);
 		}
 	}
 
@@ -6391,7 +6406,7 @@ function Wo_GetChatGroupLastMessage($id = false)
 	if ($query && mysqli_num_rows($query) > 0) {
 		$fetched_data              = mysqli_fetch_assoc($query);
 		$fetched_data['user_data'] = Wo_UserData($fetched_data['from_id']);
-		$fetched_data['reaction']  = Wo_GetPostReactionsTypes($fetched_data['id'], 'message');
+		$fetched_data['reaction']  = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
 		$data                      = $fetched_data;
 	}
 	return $data;

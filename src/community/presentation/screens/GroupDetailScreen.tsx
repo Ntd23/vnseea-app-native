@@ -295,6 +295,7 @@ function GroupDetailScreen() {
   });
   usePostRealtimeScope({
     postIds: posts.slice(0, 20).map(post => post.id),
+    posts: posts.slice(0, 20),
     enabled: isFocused,
     onSnapshot: nextPost => {
       setPosts(current =>

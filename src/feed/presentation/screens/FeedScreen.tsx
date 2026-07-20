@@ -2017,6 +2017,7 @@ function FeedScreen() {
   } = useDeferredVisiblePostIds();
   usePostRealtimeScope({
     postIds: realtimeVisiblePostIds,
+    posts: feedPosts,
     enabled: isFeedTabFocused,
     onSnapshot: vm.applyRealtimePost,
     onDeleted: vm.removeRealtimePost,

@@ -24,8 +24,12 @@ import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { getShareableUrl } from '../../../shared-kernel/application/view-models/useShareViewModel';
+import {
+  REACTION_TO_WIRE,
+  WIRE_TO_REACTION,
+  type ReactionType,
+} from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import type {
-  ReactionType,
   ReelCaptionSuggestion,
 } from '../../../reels/domain/types/reels.types';
 import { reelsReactionsStorage } from '../../../reels/infrastructure/storage/reelsReactionsStorage';
@@ -54,7 +58,9 @@ import type {
   PostFeeling,
   PostPrivacy,
   PostLinkPreview,
+  SharedPostPreviewModel,
 } from '../../domain/types/feed.types';
+import { buildSharedPostPreviewModel } from '../../application/sharing/sharedPostPreview';
 import {
   CONTENT_AUDIENCE_CONTRACT,
   audienceFromWire,
@@ -67,42 +73,6 @@ import {
 // 0=everyone, 1=mutual friends, 2=people following the author,
 // 3=only me, 4=anonymous.
 const PRIVACY_TO_WIRE = audienceToWire;
-
-// ── Wire format ──────────────────────────────────────────────────────────
-//
-// WoWonder keys `$wo['reactions_types']` by the numeric `id` column of
-// `Wo_Reactions_Types` (1..6), NOT by the human name. The `post-actions`
-// endpoint then validates:
-//
-//   in_array($_POST['reaction'], array_keys($wo['reactions_types']))
-//
-// → sending `reaction=love` silently fails ("reaction missing"). Confirmed
-// by inspecting WoWonder's own web client at script.js:4489 which sends
-// `name: '1'..'6'`. Same mapping as `src/reels/.../ApiReelsRepository.ts`.
-const REACTION_TO_WIRE: Record<ReactionType, string> = {
-  like: '1',
-  love: '2',
-  haha: '3',
-  wow: '4',
-  sad: '5',
-  angry: '6',
-};
-
-const WIRE_TO_REACTION: Record<string, ReactionType> = {
-  '1': 'like',
-  '2': 'love',
-  '3': 'haha',
-  '4': 'wow',
-  '5': 'sad',
-  '6': 'angry',
-  // Defensive: some installs occasionally return the lowercase name.
-  like: 'like',
-  love: 'love',
-  haha: 'haha',
-  wow: 'wow',
-  sad: 'sad',
-  angry: 'angry',
-};
 
 function extractMyReaction(raw: Record<string, unknown>): ReactionType | null {
   const reaction = raw.reaction;
@@ -958,6 +928,9 @@ function rawPostKey(raw: Record<string, unknown>): string {
 function mapProfilePost(
   raw: Record<string, unknown>,
 ): FeedTextPost | FeedVideoPost | FeedPollPost {
+  if (readSharedInfo(raw)) {
+    return mapSharedOuterPost(raw);
+  }
   if (looksLikeVideo(raw)) {
     return mapVideoPost(raw);
   }
@@ -967,61 +940,13 @@ function mapProfilePost(
   }
 
   if (looksLikeTextOrPhoto(raw)) {
-    return mapTextPost(raw);
+    return mapTextPostBase(raw);
   }
-
-  const shared = readSharedInfo(raw);
-  const base = mapTextPost(raw);
-
-  if (shared && looksLikeVideo(shared)) {
-    const sharedVideo = mapVideoPost(shared);
-    return {
-      ...sharedVideo,
-      id: base.id,
-      caption: base.caption ?? sharedVideo.caption ?? 'Đã chia sẻ một video',
-      postedAt: base.postedAt,
-      likeCount: base.likeCount,
-      commentCount: base.commentCount,
-      isLiked: base.isLiked,
-      myReaction: base.myReaction,
-      topReactions: base.topReactions,
-      publisher: base.publisher,
-    };
-  }
-
-  if (shared && looksLikePoll(shared)) {
-    const sharedPoll = mapPollPost(shared);
-    return {
-      ...sharedPoll,
-      id: base.id,
-      caption:
-        base.caption ?? sharedPoll.caption ?? 'Đã chia sẻ một cuộc thăm dò',
-      postedAt: base.postedAt,
-      likeCount: base.likeCount,
-      commentCount: base.commentCount,
-      isLiked: base.isLiked,
-      myReaction: base.myReaction,
-      topReactions: base.topReactions,
-      publisher: base.publisher,
-    };
-  }
-
-  if (shared && looksLikeTextOrPhoto(shared)) {
-    const sharedText = mapTextPost(shared);
-    return {
-      ...base,
-      caption: base.caption ?? sharedText.caption ?? 'Đã chia sẻ một bài viết',
-      photos: base.photos.length > 0 ? base.photos : sharedText.photos,
-    };
-  }
-
-  return {
-    ...base,
-    caption: base.caption ?? 'Đã tạo một bài viết',
-  };
+  const base = mapTextPostBase(raw);
+  return { ...base, caption: base.caption ?? 'Đã tạo một bài viết' };
 }
 
-function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
+function mapTextPostBase(raw: Record<string, unknown>): FeedTextPost {
   const presentation = readPostPresentation(raw);
   const publisher = presentation.publisher;
   const firstName = readString(publisher, 'first_name');
@@ -1060,10 +985,8 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
 
   const privacyResult = presentation.privacy;
   const privacy: PostPrivacy = privacyResult.audience;
-  const sharedFrom = mapSharedFrom(raw);
   const photos = extractPhotoUrls(raw);
-  const sharedPhotos = sharedFrom?.photos ?? [];
-  const caption = readPostCaption(raw) || sharedFrom?.caption || undefined;
+  const caption = readPostCaption(raw) || undefined;
 
   return {
     kind: 'text',
@@ -1071,7 +994,7 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
     permissions: presentation.permissions,
     caption,
     mentionNames: readPostMentionNames(raw),
-    photos: photos.length > 0 ? photos : sharedPhotos,
+    photos,
     audioUrl: AUDIO_URL_PATTERN.test(readString(raw, 'postFile'))
       ? readString(raw, 'postFile')
       : undefined,
@@ -1097,8 +1020,145 @@ function mapTextPost(raw: Record<string, unknown>): FeedTextPost {
           avatarUrl:
             readString(publisher, 'avatar', 'profile_picture') || undefined,
         },
-    sharedFrom,
+    sharedFrom: mapSharedFrom(raw),
   };
+}
+
+function mapSharedPostPreview(
+  raw: Record<string, unknown>,
+): SharedPostPreviewModel {
+  if (looksLikeVideo(raw)) {
+    return buildSharedPostPreviewModel(mapVideoPost(raw));
+  }
+  if (looksLikePoll(raw)) {
+    return buildSharedPostPreviewModel(mapPollPost(raw));
+  }
+  if (looksLikeAd(raw)) {
+    return buildSharedPostPreviewModel(mapAdPost(raw));
+  }
+
+  const attachmentPreview = mapSharedAttachmentPreview(raw);
+  if (attachmentPreview) return attachmentPreview;
+
+  return buildSharedPostPreviewModel(mapTextPostBase(raw));
+}
+
+function readNestedRecord(
+  raw: Record<string, unknown>,
+  ...keys: string[]
+): Record<string, unknown> | null {
+  for (const key of keys) {
+    const value = raw[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
+function readNestedImage(entity: Record<string, unknown>) {
+  const images = entity.images;
+  if (Array.isArray(images) && images.length > 0) {
+    const first = images[0];
+    if (typeof first === 'string') return normalizeMediaUrl(first) || undefined;
+    if (first && typeof first === 'object') {
+      const image = readString(
+        first as Record<string, unknown>,
+        'image',
+        'image_org',
+        'url',
+        'src',
+      );
+      if (image) return normalizeMediaUrl(image) || undefined;
+    }
+  }
+  const image = readString(entity, 'image', 'cover', 'thumbnail', 'avatar');
+  return image ? normalizeMediaUrl(image) || undefined : undefined;
+}
+
+function mapSharedAttachmentPreview(
+  raw: Record<string, unknown>,
+): SharedPostPreviewModel | null {
+  const base = buildSharedPostPreviewModel(mapTextPostBase(raw));
+  const product = readNestedRecord(raw, 'product', 'product_data');
+  if (product) {
+    return {
+      ...base,
+      content: {
+        kind: 'attachment',
+        attachmentKind: 'product',
+        title: readString(product, 'name', 'title') || 'Sản phẩm',
+        subtitle:
+          readString(product, 'price_format', 'price_text', 'price') ||
+          undefined,
+        imageUrl: readNestedImage(product),
+      },
+    };
+  }
+
+  const event = readNestedRecord(raw, 'event', 'event_data', 'post_event');
+  if (event) {
+    return {
+      ...base,
+      content: {
+        kind: 'attachment',
+        attachmentKind: 'event',
+        title: readString(event, 'name', 'event_name', 'title') || 'Sự kiện',
+        subtitle:
+          readString(event, 'location', 'event_location', 'address') ||
+          undefined,
+        imageUrl: readNestedImage(event),
+      },
+    };
+  }
+
+  const job = readNestedRecord(raw, 'job', 'job_data');
+  if (job) {
+    return {
+      ...base,
+      content: {
+        kind: 'attachment',
+        attachmentKind: 'job',
+        title: readString(job, 'title', 'name') || 'Việc làm',
+        subtitle: readString(job, 'location', 'address') || undefined,
+        imageUrl: readNestedImage(job),
+      },
+    };
+  }
+
+  return null;
+}
+
+function mapSharedOuterPost(
+  raw: Record<string, unknown>,
+): FeedTextPost | FeedVideoPost {
+  const source = readSharedInfo(raw);
+  const outer = mapTextPostBase(raw);
+  if (!source) return outer;
+
+  const sharedPost = mapSharedPostPreview(source);
+  const sharedFields = {
+    sharedPostId: sharedPost.postId,
+    sharedPost,
+  };
+
+  if (sharedPost.content.kind !== 'video') {
+    return { ...outer, ...sharedFields };
+  }
+
+  return {
+    ...outer,
+    ...sharedFields,
+    kind: 'video',
+    videoUrl: sharedPost.content.videoUrl,
+    thumbnailUrl: sharedPost.content.thumbnailUrl,
+  };
+}
+
+function mapTextPost(
+  raw: Record<string, unknown>,
+): FeedTextPost | FeedVideoPost {
+  return readSharedInfo(raw) ? mapSharedOuterPost(raw) : mapTextPostBase(raw);
 }
 
 // ── Shared fetch helper ──────────────────────────────────────────────────
@@ -2057,7 +2117,7 @@ export function createFeedRepository(): FeedRepository {
       return page.posts
         .filter(item => !isGroupRawPost(item))
         .filter(looksLikeTextOrPhoto)
-        .map(mapTextPost);
+        .map(mapTextPostBase);
     },
 
     async getHashtagPosts(tag: string, limit = 20, afterPostId?: string) {
@@ -2081,7 +2141,7 @@ export function createFeedRepository(): FeedRepository {
 
       return (response.data ?? [])
         .filter(looksLikeTextOrPhoto)
-        .map(mapTextPost);
+        .map(mapTextPostBase);
     },
 
     async recordRecommendationEvent(
@@ -2839,6 +2899,9 @@ export function createFeedRepository(): FeedRepository {
 export function mapFeedPost(
   raw: Record<string, unknown>,
 ): FeedTextPost | FeedVideoPost | FeedPollPost {
+  if (readSharedInfo(raw)) {
+    return mapSharedOuterPost(raw);
+  }
   if (looksLikePoll(raw)) {
     return mapPollPost(raw);
   }

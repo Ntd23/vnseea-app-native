@@ -4366,7 +4366,7 @@ function GetMessageById($id)
             if ($fetched_data['messageUser']['user_id'] == $wo['user']['user_id'] && $fetched_data['seen'] == 0) {
                 mysqli_query($sqlConnect, " UPDATE " . T_MESSAGES . " SET `seen` = " . time() . " WHERE `id` = " . $fetched_data['id']);
             }
-            $fetched_data['reaction'] = Wo_GetPostReactionsTypes($fetched_data['id'], 'message');
+            $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
             $fetched_data['pin'] = 'no';
             $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('pin', 'yes')->getOne(T_MUTE);
             if (!empty($mute)) {
@@ -4582,7 +4582,7 @@ function Wo_GetPageMessages($args = array())
                     'seen' => time()
                 ));
             }
-            $fetched_data['reaction'] = Wo_GetPostReactionsTypes($fetched_data['id'], 'message');
+            $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
             $fetched_data['pin'] = 'no';
             $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('pin', 'yes')->getOne(T_MUTE);
             if (!empty($mute)) {
@@ -4718,7 +4718,7 @@ function Wo_GetMessagesHeader($data = array(), $type = '')
         if (!empty($fetched_data['text'])) {
             $fetched_data['text'] = Wo_EditMarkup($fetched_data['text']);
         }
-        $fetched_data['reaction'] = Wo_GetPostReactionsTypes($fetched_data['id'], 'message');
+        $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
         return $fetched_data;
     }
     return false;
@@ -8758,6 +8758,85 @@ function Wo_GetPostReactions($object_id, $col = "post", $type = '')
     }
 }
 
+function VNSEEA_GetMessageReactionSummary($message_id)
+{
+    global $sqlConnect, $wo;
+    $empty = array(
+        'is_reacted' => false,
+        'type' => '',
+        'count' => 0,
+        'total' => 0,
+        'my_reaction' => null,
+        'top_reactions' => array(),
+        'breakdown' => array()
+    );
+    if (empty($message_id) || !is_numeric($message_id) || $message_id < 1) {
+        return $empty;
+    }
+
+    $message_id = Wo_Secure($message_id);
+    $viewer_id = !empty($wo['user']['user_id'])
+        ? (int)$wo['user']['user_id']
+        : 0;
+    $query = mysqli_query(
+        $sqlConnect,
+        "SELECT `reaction`, COUNT(*) AS reaction_count, " .
+        "MAX(CASE WHEN `user_id` = {$viewer_id} THEN 1 ELSE 0 END) AS viewer_reacted " .
+        "FROM " . T_REACTIONS . " WHERE `message_id` = {$message_id} " .
+        "GROUP BY `reaction`"
+    );
+    if (!$query) {
+        return $empty;
+    }
+
+    $canonical_names = array(
+        '1' => 'like',
+        '2' => 'love',
+        '3' => 'haha',
+        '4' => 'wow',
+        '5' => 'sad',
+        '6' => 'angry'
+    );
+    $summary = $empty;
+    $ranked = array();
+    while ($row = mysqli_fetch_assoc($query)) {
+        $wire = (string)$row['reaction'];
+        $count = max(0, (int)$row['reaction_count']);
+        if ($count < 1) {
+            continue;
+        }
+        $summary[$wire] = $count;
+        $summary['count'] += $count;
+        $summary['total'] += $count;
+        if (isset($canonical_names[$wire])) {
+            $name = $canonical_names[$wire];
+            $summary['breakdown'][$name] = $count;
+            $ranked[] = array('wire' => (int)$wire, 'name' => $name, 'count' => $count);
+        }
+        if (!empty($row['viewer_reacted'])) {
+            $summary['is_reacted'] = true;
+            $summary['type'] = $wire;
+            $summary['my_reaction'] = isset($canonical_names[$wire])
+                ? $canonical_names[$wire]
+                : null;
+        }
+    }
+    usort($ranked, function ($left, $right) {
+        if ($left['count'] === $right['count']) {
+            return $left['wire'] - $right['wire'];
+        }
+        return $right['count'] - $left['count'];
+    });
+    $summary['top_reactions'] = array_slice(
+        array_map(function ($item) {
+            return $item['name'];
+        }, $ranked),
+        0,
+        3
+    );
+    return $summary;
+}
+
 function Wo_GetPostReactionsTypes($object_id, $col = "post", $type = "post")
 {
     global $sqlConnect, $wo;
@@ -10659,7 +10738,7 @@ function Wo_GetMessagesAPPN($data = array(), $limit = 50)
                     $fetched_data['story'] = $fetched_data['story'][0];
                 }
             }
-            $fetched_data['reaction'] = Wo_GetPostReactionsTypes($fetched_data['id'], 'message');
+            $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
             $message_data[] = $fetched_data;
         }
     }

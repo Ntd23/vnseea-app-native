@@ -45,8 +45,6 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 
-jest.mock('react-native-view-shot', () => ({ captureRef: jest.fn() }));
-
 jest.mock('lucide-react-native', () => ({
   Send: () => null,
   X: () => null,
@@ -91,7 +89,7 @@ jest.mock('../../../../stories/application/events/storyCreatedEvents', () => ({
 jest.mock(
   '../../../../stories/infrastructure/repositories/ApiStoriesRepository',
   () => ({
-    createStoriesRepository: () => ({ createStory: jest.fn() }),
+    createStoriesRepository: () => ({ createSharedPostStory: jest.fn() }),
   }),
 );
 
@@ -131,7 +129,6 @@ jest.mock(
 );
 
 jest.mock('../../../application/sharing/postStoryShare', () => ({
-  buildPostStoryCardModel: jest.fn(() => null),
   createPostStoryShare: jest.fn(),
 }));
 
@@ -145,10 +142,6 @@ jest.mock('../share/FeedShareDestinationCarousel', () => ({
 
 jest.mock('../share/FeedShareRecipientCarousel', () => ({
   FeedShareRecipientCarousel: (props: unknown) => mockRecipientCarousel(props),
-}));
-
-jest.mock('../share/PostStoryShareCard', () => ({
-  PostStoryShareCard: () => null,
 }));
 
 import { FeedShareBottomSheet } from '../FeedShareBottomSheet';

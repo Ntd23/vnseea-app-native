@@ -4,9 +4,14 @@ import { apiRoutes } from '../../../shared-kernel/application/constants/route-re
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
+import {
+  REACTION_TO_WIRE,
+  type ReactionType,
+} from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { normalizeRawUrl } from '../../../foundation/application/normalizers/url';
 import type { MessagesRepository } from '../../domain/repositories/MessagesRepository';
 import { parseSharedPostMessage } from '../../application/shared-posts/sharedPostMessage';
+import { mapMessageReactionSummary } from '../../domain/reactions/messageReactions';
 import type {
   ChatItem,
   ChatPreviewKind,
@@ -953,6 +958,7 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
       readMessageThumbnail(raw),
       apiConfig.webBaseUrl,
     ),
+    reactions: mapMessageReactionSummary(raw.reaction ?? raw.reactions),
     time: readNumber(raw, 'time'),
     isSentByMe: callEvent ? callEvent.isInitiator : (fromId === sessionUserId),
     seen: readNumber(raw, 'seen'),
@@ -1278,6 +1284,36 @@ export function createMessagesRepository(): MessagesRepository {
           mapMessage(item as RawRecord),
         ),
       };
+    },
+    async setMessageReaction(
+      messageId: string,
+      reaction: ReactionType | null,
+    ) {
+      const payload = reaction
+        ? {
+            id: messageId,
+            action: 'set',
+            reaction: REACTION_TO_WIRE[reaction],
+          }
+        : { id: messageId, action: 'remove' };
+      const response = await apiBridge.post<{
+        api_status?: number | string;
+        status?: number | string;
+        message?: string;
+        reaction?: unknown;
+        data?: { reaction?: unknown } | unknown;
+      }>(apiRoutes.messages.react, payload);
+      const status = String(response.api_status ?? response.status ?? '200');
+      if (status !== '200') {
+        throw new Error(response.message || 'Không thể cập nhật cảm xúc.');
+      }
+      const nestedData =
+        response.data && typeof response.data === 'object'
+          ? (response.data as Record<string, unknown>)
+          : undefined;
+      return mapMessageReactionSummary(
+        response.reaction ?? nestedData?.reaction ?? response.data,
+      );
     },
     async deleteConversation(userId: string) {
       await apiBridge.post(apiRoutes.messages.delete, { user_id: userId });

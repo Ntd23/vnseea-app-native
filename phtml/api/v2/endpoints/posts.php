@@ -539,6 +539,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 		            ));
 		        }
 		            $new_post = Wo_PostData($result);
+		            $new_post = VNSEEA_AttachSharedPostInfo($new_post, $non_allowed);
 		            if (!empty($result) && !empty($new_post)) {
 		                Wo_PublishRealtimePostChange($post['id'], 'share');
 		            }
@@ -599,6 +600,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 		            ));
 		        }
 		            $new_post = Wo_PostData($result);
+		            $new_post = VNSEEA_AttachSharedPostInfo($new_post, $non_allowed);
 		            if (!empty($result) && !empty($new_post)) {
 		                Wo_PublishRealtimePostChange($post['id'], 'share');
 		            }
@@ -651,6 +653,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 		            ));
 		        }
 		            $new_post = Wo_PostData($result);
+		            $new_post = VNSEEA_AttachSharedPostInfo($new_post, $non_allowed);
 		            if (!empty($result) && !empty($new_post)) {
 		                Wo_PublishRealtimePostChange($post['id'], 'share');
 		            }
@@ -1151,6 +1154,10 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
 			                    );
 
 		}
+	}
+
+	if (!empty($response_data['api_status']) && (int) $response_data['api_status'] === 200 && isset($response_data['data'])) {
+		$response_data['data'] = VNSEEA_AttachSharedPostInfoToResponseData($response_data['data'], $non_allowed);
 	}
 
 }

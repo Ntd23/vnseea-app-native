@@ -1,5 +1,40 @@
 <?php
 
+function VNSEEA_CanReactToMessage($message_id)
+{
+    global $wo, $db;
+    if (empty($message_id) || !is_numeric($message_id) || empty($wo['user']['user_id'])) {
+        return false;
+    }
+
+    $message = $db->where('id', Wo_Secure($message_id))->getOne(T_MESSAGES);
+    if (empty($message)) {
+        return false;
+    }
+
+    $current_user_id = (int)$wo['user']['user_id'];
+    if (!empty($message->group_id)) {
+        $group_id = (int)$message->group_id;
+        $group = $db->where('group_id', $group_id)->getOne(T_GROUP_CHAT);
+        if (!empty($group) && (int)$group->user_id === $current_user_id) {
+            return true;
+        }
+        return (int)$db->where('group_id', $group_id)
+                       ->where('user_id', $current_user_id)
+                       ->where('active', 1)
+                       ->getValue(T_GROUP_CHAT_USERS, 'COUNT(*)') > 0;
+    }
+
+    if ((int)$message->from_id === $current_user_id ||
+        (int)$message->to_id === $current_user_id) {
+        return true;
+    }
+
+    return !empty($message->page_id) &&
+           function_exists('Wo_IsPageOnwer') &&
+           Wo_IsPageOnwer((int)$message->page_id);
+}
+
 function chatUpdateTypeValidation()
 {
     global $sqlConnect, $wo,$db;

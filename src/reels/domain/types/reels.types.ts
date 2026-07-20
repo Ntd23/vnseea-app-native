@@ -5,6 +5,10 @@ import type {
   ContentAudience,
   ContentAudienceWireContract,
 } from '../../../shared-kernel/domain/types/contentAudience';
+import type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
+
+export { ALL_REACTION_TYPES } from '../../../shared-kernel/domain/reactions/reactionCatalog';
+export type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 
 /** Publisher info attached to each reel — derived from the post's user_data. */
 export interface ReelPublisher {
@@ -16,29 +20,6 @@ export interface ReelPublisher {
   isFollowing?: boolean;
   isAdmin?: boolean;
 }
-
-/**
- * Reaction types supported by WoWonder.
- *
- * These map 1:1 to the keys in `$wo['reactions_types']` on the PHP side
- * and to the `reaction` POST param accepted by `/api/v2/post-actions`.
- *
- * NOTE: A WoWonder admin can technically rename/add reactions through the
- * admin panel; we hard-code the canonical 6 here because that's what the
- * default install ships with and what TikTok/Facebook also use. Any custom
- * reaction the server returns that isn't in this set will be coerced to
- * `null` (no reaction) when mapping from the API.
- */
-export type ReactionType = 'like' | 'love' | 'haha' | 'wow' | 'sad' | 'angry';
-
-export const ALL_REACTION_TYPES: ReactionType[] = [
-  'like',
-  'love',
-  'haha',
-  'wow',
-  'sad',
-  'angry',
-];
 
 export interface ReelsItem {
   /** Backend post id (numeric string) */

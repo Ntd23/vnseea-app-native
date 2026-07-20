@@ -838,6 +838,7 @@ function PostDetailScreen() {
 
   usePostRealtimeScope({
     postIds: [postId],
+    posts: post ? [post] : [],
     enabled: isFocused,
     onSnapshot: applyRealtimePost,
     onDeleted: markRealtimeDeleted,
