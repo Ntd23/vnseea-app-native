@@ -103,6 +103,7 @@ export type RootStackParamList = {
   [ROUTES.POST_DETAIL]: {
     postId: string;
     post?: FeedPost;
+    focusComments?: boolean;
   };
   [ROUTES.PROFILE]: undefined;
   [ROUTES.USER_PROFILE]: { userId: string };
@@ -123,7 +124,14 @@ export type RootStackParamList = {
   [ROUTES.PROFILE_FRIENDS]: {
     userId: string;
     title?: string;
+    displayName?: string;
+    avatarUrl?: string;
+    initialTab?: 'followers' | 'following' | 'friends';
     initialFriends?: UserProfile[];
+    initialFollowers?: UserProfile[];
+    initialFollowing?: UserProfile[];
+    followersCount?: number;
+    followingCount?: number;
   };
   [ROUTES.MY_PHOTOS]: undefined;
   [ROUTES.ALBUMS]: undefined;

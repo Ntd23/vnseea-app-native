@@ -48,6 +48,19 @@ const PROFILE_MORE_OPTIONS: NativeStackNavigationOptions = {
   gestureEnabled: false,
 };
 
+const PROFILE_CONNECTIONS_OPTIONS: NativeStackNavigationOptions = {
+  animation: 'fade',
+  animationDuration: 140,
+  contentStyle: { backgroundColor: '#FFFFFF' },
+};
+
+const POST_DETAIL_OPTIONS: NativeStackNavigationOptions = {
+  presentation: 'transparentModal',
+  animation: 'slide_from_right',
+  contentStyle: { backgroundColor: 'transparent' },
+  gestureEnabled: false,
+};
+
 function AppNavigator() {
   const initialRouteName = sessionStorage.getAccessToken()
     ? ROUTES.MAIN_TABS
@@ -126,6 +139,26 @@ function AppNavigator() {
                 name={name}
                 component={component}
                 options={PROFILE_MORE_OPTIONS}
+              />
+            );
+          }
+          if (name === ROUTES.PROFILE_FRIENDS) {
+            return (
+              <Stack.Screen
+                key={name}
+                name={name}
+                component={component}
+                options={PROFILE_CONNECTIONS_OPTIONS}
+              />
+            );
+          }
+          if (name === ROUTES.POST_DETAIL) {
+            return (
+              <Stack.Screen
+                key={name}
+                name={name}
+                component={component}
+                options={POST_DETAIL_OPTIONS}
               />
             );
           }

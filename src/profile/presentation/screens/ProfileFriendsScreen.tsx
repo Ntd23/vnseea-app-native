@@ -1,72 +1,120 @@
-// Description: Shows the full friends list for a profile with API-backed data.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+// Description: Shows tabbed followers, following, and mutual connections for a profile.
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
+  InteractionManager,
+  Modal,
+  Platform,
   RefreshControl,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, {
-  Easing,
-  FadeInUp,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import PagerView, {
+  type PagerViewOnPageSelectedEvent,
+} from 'react-native-pager-view';
 import {
   ArrowLeft,
   BadgeCheck,
+  MessageCircle,
+  MoreHorizontal,
   Search,
-  Sparkles,
-  User,
+  UserMinus,
   UserPlus,
+  UserRoundX,
+  X,
 } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { showSnackbar } from '../../../shared-kernel/presentation/components/Snackbar';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import type { ChatItem } from '../../../messages/domain/types/messages.types';
 import type { UserProfile } from '../../../user/domain/types/user.types';
 import { createUserRepository } from '../../../user/infrastructure/repositories/ApiUserRepository';
-import { navigateToUserProfile } from '../../../navigation/profileNavigation';
+import { getProfileConnectionsSnapshot } from '../../application/cache/profileConnectionsSnapshot';
 
 type ProfileFriendsRoute = RouteProp<
   RootStackParamList,
   typeof ROUTES.PROFILE_FRIENDS
 >;
 type ProfileFriendsNavigation = NativeStackNavigationProp<RootStackParamList>;
+type ConnectionTab = 'followers' | 'following' | 'friends';
 
-const FRIENDS_PAGE_SIZE = 30;
-const FALLBACK_AVATAR = 'https://demo.vnseea.vn/themes/wowonder/img/default-avatar.png';
-const ANIMATED_CARD_COUNT = 12;
+const CONNECTIONS_PAGE_SIZE = 30;
+const CONNECTION_TABS: ConnectionTab[] = [
+  'followers',
+  'following',
+  'friends',
+];
+const FALLBACK_AVATAR =
+  'https://demo.vnseea.vn/themes/wowonder/img/default-avatar.png';
 
-const FRIENDS_COPY = {
+const CONNECTIONS_COPY = {
   vi: {
-    title: 'B\u1ea1n b\u00e8',
-    subtitle: (count: number) => `${count} ng\u01b0\u1eddi trong danh s\u00e1ch`,
-    searchPlaceholder: 'T\u00ecm theo t\u00ean ho\u1eb7c username',
-    emptyTitle: 'Ch\u01b0a c\u00f3 b\u1ea1n b\u00e8 \u0111\u1ec3 hi\u1ec3n th\u1ecb',
-    emptyDescription: 'Khi ng\u01b0\u1eddi d\u00f9ng c\u00f3 b\u1ea1n b\u00e8 ho\u1eb7c ng\u01b0\u1eddi theo d\u00f5i, danh s\u00e1ch s\u1ebd xu\u1ea5t hi\u1ec7n \u1edf \u0111\u00e2y.',
-    emptySearchTitle: 'Kh\u00f4ng t\u00ecm th\u1ea5y ng\u01b0\u1eddi ph\u00f9 h\u1ee3p',
-    retry: 'T\u1ea3i l\u1ea1i',
-    viewProfile: 'Xem h\u1ed3 s\u01a1',
+    fallbackTitle: 'Kết nối',
+    followers: 'Người theo dõi',
+    following: 'Đang theo dõi',
+    friends: 'Bạn bè',
+    followersCount: (count: number) => `${count} người theo dõi`,
+    followingCount: (count: number) => `Đang theo dõi ${count} người`,
+    friendsCount: (count: number) => `${count} bạn bè`,
+    searchPlaceholder: 'Tìm kiếm trong danh sách',
+    empty: 'Chưa có người dùng nào trong danh sách này.',
+    emptySearch: 'Không tìm thấy người dùng phù hợp.',
+    retry: 'Tải lại',
+    follow: 'Theo dõi',
+    followBack: 'Theo dõi lại',
+    message: (name: string) => `Nhắn tin cho ${name}`,
+    unfollow: (name: string) => `Bỏ theo dõi ${name}`,
+    block: (name: string) => `Chặn ${name}`,
+    blockHint: (name: string) =>
+      `${name} sẽ không thể xem hoặc liên hệ với bạn.`,
+    followed: 'Đã theo dõi người dùng.',
+    unfollowed: 'Đã bỏ theo dõi người dùng.',
+    blocked: 'Đã chặn người dùng.',
+    actionError: 'Không thể thực hiện thao tác. Vui lòng thử lại.',
   },
   en: {
-    title: 'Friends',
-    subtitle: (count: number) => `${count} people in this list`,
-    searchPlaceholder: 'Search by name or username',
-    emptyTitle: 'No friends to show yet',
-    emptyDescription: 'Friends and followers for this profile will appear here.',
-    emptySearchTitle: 'No matching people found',
+    fallbackTitle: 'Connections',
+    followers: 'Followers',
+    following: 'Following',
+    friends: 'Friends',
+    followersCount: (count: number) => `${count} followers`,
+    followingCount: (count: number) => `Following ${count} people`,
+    friendsCount: (count: number) => `${count} friends`,
+    searchPlaceholder: 'Search this list',
+    empty: 'There are no people in this list yet.',
+    emptySearch: 'No matching people found.',
     retry: 'Retry',
-    viewProfile: 'View profile',
+    follow: 'Follow',
+    followBack: 'Follow back',
+    message: (name: string) => `Message ${name}`,
+    unfollow: (name: string) => `Unfollow ${name}`,
+    block: (name: string) => `Block ${name}`,
+    blockHint: (name: string) =>
+      `${name} will no longer be able to view or contact you.`,
+    followed: 'User followed.',
+    unfollowed: 'User unfollowed.',
+    blocked: 'User blocked.',
+    actionError: 'Could not complete this action. Please try again.',
   },
 } as const;
 
@@ -77,17 +125,15 @@ function getUserKey(user: UserProfile) {
 }
 
 function mergeUniqueUsers(...lists: UserProfile[][]) {
-  const seen = new Set<string>();
-  const merged: UserProfile[] = [];
+  const usersById = new Map<string, UserProfile>();
 
   lists.flat().forEach(user => {
     const key = getUserKey(user);
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    merged.push(user);
+    if (!key) return;
+    usersById.set(key, user);
   });
 
-  return merged;
+  return Array.from(usersById.values());
 }
 
 function matchesQuery(user: UserProfile, query: string) {
@@ -101,107 +147,215 @@ function matchesQuery(user: UserProfile, query: string) {
     .includes(normalized);
 }
 
-function FriendSkeletonGrid() {
+function ConnectionListSkeleton() {
   return (
-    <View className="flex-row flex-wrap gap-3 px-4 pt-4">
-      {Array.from({ length: 6 }).map((_, index) => (
+    <View className="px-4 pt-3">
+      {Array.from({ length: 7 }).map((_, index) => (
         <View
-          key={`friend-skeleton-${index}`}
-          className="flex-1 rounded-[24px] border border-slate-100 bg-white p-4"
-          style={{ minWidth: '47%' }}
+          key={`connection-skeleton-${index}`}
+          className="min-h-[82px] flex-row items-center border-b border-slate-100 py-3"
         >
-          <View className="h-20 w-20 self-center rounded-full bg-slate-100" />
-          <View className="mt-4 h-4 w-24 self-center rounded-full bg-slate-100" />
-          <View className="mt-2 h-3 w-16 self-center rounded-full bg-slate-100" />
-          <View className="mt-4 h-9 rounded-full bg-slate-100" />
+          <View className="h-16 w-16 rounded-full bg-slate-100" />
+          <View className="ml-4 flex-1">
+            <View className="h-4 w-40 rounded-full bg-slate-100" />
+            <View className="mt-2 h-3 w-24 rounded-full bg-slate-100" />
+          </View>
+          <View className="h-10 w-10 rounded-full bg-slate-100" />
         </View>
       ))}
     </View>
   );
 }
 
+function ConnectionSeparator() {
+  return <View className="ml-[96px] h-px bg-slate-100" />;
+}
+
 export default function ProfileFriendsScreen() {
   const navigation = useNavigation<ProfileFriendsNavigation>();
   const route = useRoute<ProfileFriendsRoute>();
+  const insets = useSafeAreaInsets();
   const language = useAppLanguage();
-  const copy = FRIENDS_COPY[language];
-  const { userId, title, initialFriends } = route.params;
-
-  const [friends, setFriends] = useState<UserProfile[]>(
-    mergeUniqueUsers(initialFriends ?? []),
+  const copy = CONNECTIONS_COPY[language];
+  const {
+    userId,
+    title,
+    displayName,
+    avatarUrl,
+    initialTab = 'followers',
+    initialFriends,
+    initialFollowers,
+    initialFollowing,
+    followersCount,
+    followingCount,
+  } = route.params;
+  const pagerRef = useRef<PagerView>(null);
+  const initialTabIndex = Math.max(0, CONNECTION_TABS.indexOf(initialTab));
+  const cachedSnapshot = useMemo(
+    () => getProfileConnectionsSnapshot(userId),
+    [userId],
   );
+  const seededFollowers = useMemo(
+    () =>
+      mergeUniqueUsers(
+        initialFollowers ??
+          cachedSnapshot?.followers ??
+          (initialTab === 'followers' ? initialFriends ?? [] : []),
+      ),
+    [cachedSnapshot?.followers, initialFollowers, initialFriends, initialTab],
+  );
+  const seededFollowing = useMemo(
+    () =>
+      mergeUniqueUsers(
+        initialFollowing ??
+          cachedSnapshot?.following ??
+          (initialTab === 'following' ? initialFriends ?? [] : []),
+      ),
+    [cachedSnapshot?.following, initialFollowing, initialFriends, initialTab],
+  );
+  const hasSeededConnections =
+    seededFollowers.length > 0 || seededFollowing.length > 0;
+  const [activeTab, setActiveTab] = useState<ConnectionTab>(initialTab);
+  const [mountedTabs, setMountedTabs] = useState<Set<ConnectionTab>>(
+    () => new Set([initialTab]),
+  );
+  const [followers, setFollowers] = useState<UserProfile[]>(seededFollowers);
+  const [following, setFollowing] = useState<UserProfile[]>(seededFollowing);
   const [followersOffset, setFollowersOffset] = useState(0);
   const [followingOffset, setFollowingOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoading, setIsLoading] = useState(true);
+  const [hasMoreFollowers, setHasMoreFollowers] = useState(true);
+  const [hasMoreFollowing, setHasMoreFollowing] = useState(true);
+  const [isLoading, setIsLoading] = useState(!hasSeededConnections);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [query, setQuery] = useState('');
+  const [isSearchVisible, setSearchVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [selectedUserTab, setSelectedUserTab] =
+    useState<ConnectionTab>(initialTab);
+  const [actionLoading, setActionLoading] = useState<
+    'follow' | 'unfollow' | 'block' | null
+  >(null);
 
-  const headerTranslateY = useSharedValue(-28);
-  const headerOpacity = useSharedValue(0);
+  const followingIds = useMemo(
+    () => new Set(following.map(user => getUserKey(user))),
+    [following],
+  );
+  const mutualFriends = useMemo(
+    () => followers.filter(user => followingIds.has(getUserKey(user))),
+    [followers, followingIds],
+  );
+  const usersByTab = useMemo<Record<ConnectionTab, UserProfile[]>>(
+    () => ({
+      followers,
+      following,
+      friends: mutualFriends,
+    }),
+    [followers, following, mutualFriends],
+  );
+  const displayedUsersByTab = useMemo<Record<ConnectionTab, UserProfile[]>>(
+    () => {
+      if (!query.trim()) return usersByTab;
 
-  useEffect(() => {
-    headerTranslateY.value = withTiming(0, {
-      duration: 260,
-      easing: Easing.out(Easing.cubic),
-    });
-    headerOpacity.value = withTiming(1, {
-      duration: 260,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [headerOpacity, headerTranslateY]);
-
-  const headerStyle = useAnimatedStyle(() => ({
-    opacity: headerOpacity.value,
-    transform: [{ translateY: headerTranslateY.value }],
-  }));
-
-  const displayFriends = useMemo(
-    () => friends.filter(friend => matchesQuery(friend, query)),
-    [friends, query],
+      return {
+        followers: followers.filter(user => matchesQuery(user, query)),
+        following: following.filter(user => matchesQuery(user, query)),
+        friends: mutualFriends.filter(user => matchesQuery(user, query)),
+      };
+    },
+    [followers, following, mutualFriends, query, usersByTab],
+  );
+  const headingsByTab = useMemo<Record<ConnectionTab, string>>(
+    () => ({
+      followers: copy.followersCount(
+        Math.max(followersCount ?? 0, followers.length),
+      ),
+      following: copy.followingCount(
+        Math.max(followingCount ?? 0, following.length),
+      ),
+      friends: copy.friendsCount(mutualFriends.length),
+    }),
+    [
+      copy,
+      followers.length,
+      followersCount,
+      following.length,
+      followingCount,
+      mutualFriends.length,
+    ],
   );
 
-  const loadFriends = useCallback(
-    async (mode: 'initial' | 'refresh' | 'more' = 'initial') => {
+  const loadConnections = useCallback(
+    async (
+      mode: 'initial' | 'refresh' | 'more' = 'initial',
+      requestedTab: ConnectionTab = activeTab,
+    ) => {
       if (!userId) return;
       if (mode === 'more') {
-        if (isLoadingMore || !hasMore) return;
+        if (isLoadingMore) return;
+        const canLoadMore =
+          requestedTab === 'followers'
+            ? hasMoreFollowers
+            : requestedTab === 'following'
+            ? hasMoreFollowing
+            : hasMoreFollowers || hasMoreFollowing;
+        if (!canLoadMore) return;
         setIsLoadingMore(true);
       } else if (mode === 'refresh') {
         setIsRefreshing(true);
-      } else {
+      } else if (!hasSeededConnections) {
         setIsLoading(true);
       }
 
       setError(null);
-
+      const types: Array<'followers' | 'following'> =
+        mode !== 'initial' && requestedTab !== 'friends'
+          ? [requestedTab]
+          : ['followers', 'following'];
       const nextFollowersOffset = mode === 'more' ? followersOffset : 0;
       const nextFollowingOffset = mode === 'more' ? followingOffset : 0;
 
       try {
         const result = await userRepository.getFriends({
           userId,
-          type: ['followers', 'following'],
-          limit: FRIENDS_PAGE_SIZE,
-          followersOffset: nextFollowersOffset,
-          followingOffset: nextFollowingOffset,
+          type: types,
+          limit: CONNECTIONS_PAGE_SIZE,
+          followersOffset: types.includes('followers')
+            ? nextFollowersOffset
+            : undefined,
+          followingOffset: types.includes('following')
+            ? nextFollowingOffset
+            : undefined,
         });
 
-        const incoming = mergeUniqueUsers(result.followers, result.following);
-        setFriends(prev =>
-          mode === 'more' ? mergeUniqueUsers(prev, incoming) : incoming,
-        );
-        setFollowersOffset(nextFollowersOffset + result.followers.length);
-        setFollowingOffset(nextFollowingOffset + result.following.length);
-        setHasMore(
-          result.followers.length >= FRIENDS_PAGE_SIZE ||
-            result.following.length >= FRIENDS_PAGE_SIZE,
-        );
+        if (types.includes('followers')) {
+          setFollowers(current =>
+            mode === 'more'
+              ? mergeUniqueUsers(current, result.followers)
+              : mergeUniqueUsers(result.followers),
+          );
+          setFollowersOffset(nextFollowersOffset + result.followers.length);
+          setHasMoreFollowers(
+            result.followers.length >= CONNECTIONS_PAGE_SIZE,
+          );
+        }
+        if (types.includes('following')) {
+          setFollowing(current =>
+            mode === 'more'
+              ? mergeUniqueUsers(current, result.following)
+              : mergeUniqueUsers(result.following),
+          );
+          setFollowingOffset(nextFollowingOffset + result.following.length);
+          setHasMoreFollowing(
+            result.following.length >= CONNECTIONS_PAGE_SIZE,
+          );
+        }
       } catch (caughtError) {
         setError(
-          caughtError instanceof Error ? caughtError.message : String(caughtError),
+          caughtError instanceof Error
+            ? caughtError.message
+            : String(caughtError),
         );
       } finally {
         setIsLoading(false);
@@ -209,15 +363,68 @@ export default function ProfileFriendsScreen() {
         setIsLoadingMore(false);
       }
     },
-    [followersOffset, followingOffset, hasMore, isLoadingMore, userId],
+    [
+      activeTab,
+      followersOffset,
+      followingOffset,
+      hasSeededConnections,
+      hasMoreFollowers,
+      hasMoreFollowing,
+      isLoadingMore,
+      userId,
+    ],
   );
 
   useEffect(() => {
-    loadFriends('initial');
-    // This effect is intentionally keyed by route user only. Pagination
-    // offsets are owned by load-more calls, not the first screen fetch.
+    void loadConnections('initial');
+    // Pagination state must not restart the initial route load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  const ensureTabMounted = useCallback((tab: ConnectionTab) => {
+    setMountedTabs(current => {
+      if (current.has(tab)) return current;
+      const next = new Set(current);
+      next.add(tab);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    let warmupTimer: ReturnType<typeof setTimeout> | undefined;
+    const interactionTask = InteractionManager.runAfterInteractions(() => {
+      warmupTimer = setTimeout(() => {
+        setMountedTabs(new Set(CONNECTION_TABS));
+      }, 120);
+    });
+
+    return () => {
+      interactionTask.cancel();
+      if (warmupTimer) clearTimeout(warmupTimer);
+    };
+  }, []);
+
+  const handleSelectTab = useCallback(
+    (tab: ConnectionTab) => {
+      const nextPage = CONNECTION_TABS.indexOf(tab);
+      if (nextPage < 0) return;
+      ensureTabMounted(tab);
+      setActiveTab(tab);
+      pagerRef.current?.setPage(nextPage);
+    },
+    [ensureTabMounted],
+  );
+
+  const handlePageSelected = useCallback(
+    (event: PagerViewOnPageSelectedEvent) => {
+      const nextTab = CONNECTION_TABS[event.nativeEvent.position];
+      if (nextTab) {
+        ensureTabMounted(nextTab);
+        setActiveTab(nextTab);
+      }
+    },
+    [ensureTabMounted],
+  );
 
   const handleBack = useCallback(() => {
     if (navigation.canGoBack()) {
@@ -228,204 +435,491 @@ export default function ProfileFriendsScreen() {
   }, [navigation, userId]);
 
   const handleOpenProfile = useCallback(
-    (friendId: string) => {
-      navigateToUserProfile(navigation, friendId);
+    (targetUserId: string) => {
+      navigateToUserProfile(navigation, targetUserId);
     },
     [navigation],
   );
 
-  const renderFriend = useCallback(
-    ({ item }: { item: UserProfile }) => {
-      const name = item.name || item.username || copy.title;
-      const username = item.username ? `@${item.username}` : '';
-      return (
-        <TouchableOpacity
-          activeOpacity={0.86}
-          onPress={() => handleOpenProfile(String(item.id))}
-          className="flex-1 rounded-[24px] border border-[#E4E6EB] bg-white p-4"
-          style={{
-            flex: 0.5,
-            minWidth: '46%',
-            maxWidth: '48.5%',
-            shadowColor: '#000000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.03,
-            shadowRadius: 10,
-            elevation: 2,
-          }}
-        >
-          <View className="self-center">
-            <Image
-              source={{ uri: item.avatarUrl || FALLBACK_AVATAR }}
-              className="h-20 w-20 rounded-full bg-slate-100"
-              resizeMode="cover"
-            />
-            <View className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-500" />
-          </View>
-
-          <View className="mt-3 flex-row items-center justify-center">
-            <Text
-              className="max-w-[112px] text-center text-[15px] font-extrabold text-slate-950"
-              numberOfLines={1}
-            >
-              {name}
-            </Text>
-            {item.verified ? (
-              <View className="ml-1">
-                <BadgeCheck size={16} color="#1877f2" fill="#1877f2" />
-              </View>
-            ) : null}
-          </View>
-          {username ? (
-            <Text
-              className="mt-1 text-center text-[12px] font-semibold text-slate-500"
-              numberOfLines={1}
-            >
-              {username}
-            </Text>
-          ) : null}
-
-          <View className="mt-4 min-h-[38px] flex-row items-center justify-center rounded-xl bg-[#E7F3FF] px-3 active:bg-[#D0E8FF]">
-            <User size={15} color="#1877f2" />
-            <Text className="ml-2 text-[13px] font-bold text-[#1877f2]">
-              {copy.viewProfile}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      );
+  const handleOpenMessage = useCallback(
+    (user: UserProfile) => {
+      if (!user.id) return;
+      const chat: ChatItem = {
+        id: `user:${user.id}`,
+        chatType: 'user',
+        userId: String(user.id),
+        username: user.username ?? '',
+        name: user.name || user.username || copy.fallbackTitle,
+        avatar: user.avatarUrl || FALLBACK_AVATAR,
+        lastMessage: '',
+        lastMessageTime: 0,
+        unreadCount: 0,
+        isOnline: false,
+        isVerified: Boolean(user.verified),
+      };
+      setSelectedUser(null);
+      navigation.navigate(ROUTES.CHAT, { chat });
     },
-    [copy.title, copy.viewProfile, handleOpenProfile],
+    [copy.fallbackTitle, navigation],
   );
 
-  const ListEmpty = useMemo(() => {
-    if (isLoading && friends.length === 0) {
-      return <FriendSkeletonGrid />;
-    }
+  const updateFollowState = useCallback(
+    async (user: UserProfile, shouldFollow: boolean) => {
+      if (!user.id || actionLoading) return;
+      setActionLoading(shouldFollow ? 'follow' : 'unfollow');
+      try {
+        await apiBridge.post(apiRoutes.social.follow, {
+          user_id: String(user.id),
+          follow_action: shouldFollow ? 'follow' : 'unfollow',
+        });
+        if (shouldFollow) {
+          setFollowing(current =>
+            mergeUniqueUsers(current, [
+              {
+                ...user,
+                followingState: 'following',
+              },
+            ]),
+          );
+        } else {
+          setFollowing(current =>
+            current.filter(item => getUserKey(item) !== getUserKey(user)),
+          );
+        }
+        setSelectedUser(null);
+        showSnackbar({
+          message: shouldFollow ? copy.followed : copy.unfollowed,
+          type: 'success',
+        });
+      } catch {
+        showSnackbar({ message: copy.actionError, type: 'warning' });
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [actionLoading, copy.actionError, copy.followed, copy.unfollowed],
+  );
 
-    return (
-      <View className="items-center px-8 py-16">
-        <View className="h-20 w-20 items-center justify-center rounded-full bg-indigo-50">
-          {query.trim() ? (
-            <Search size={34} color="#0000ff" />
-          ) : (
-            <Sparkles size={34} color="#0000ff" />
-          )}
-        </View>
-        <Text className="mt-4 text-center text-[17px] font-extrabold text-slate-900">
-          {query.trim() ? copy.emptySearchTitle : copy.emptyTitle}
-        </Text>
-        {!query.trim() ? (
-          <Text className="mt-2 text-center text-[13px] font-semibold leading-5 text-slate-500">
-            {error || copy.emptyDescription}
-          </Text>
-        ) : null}
-        {!query.trim() ? (
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => loadFriends('refresh')}
-            className="mt-5 min-h-[42px] items-center justify-center rounded-full bg-[#0000ff] px-6"
-          >
-            <Text className="text-[14px] font-extrabold text-white">
-              {copy.retry}
-            </Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-    );
-  }, [copy, error, friends.length, isLoading, loadFriends, query]);
+  const blockUser = useCallback(
+    async (user: UserProfile) => {
+      if (!user.id || actionLoading) return;
+      setActionLoading('block');
+      try {
+        await apiBridge.post(apiRoutes.social.block, {
+          user_id: String(user.id),
+          block_action: 'block',
+        });
+        const blockedKey = getUserKey(user);
+        setFollowers(current =>
+          current.filter(item => getUserKey(item) !== blockedKey),
+        );
+        setFollowing(current =>
+          current.filter(item => getUserKey(item) !== blockedKey),
+        );
+        setSelectedUser(null);
+        showSnackbar({ message: copy.blocked, type: 'success' });
+      } catch {
+        showSnackbar({ message: copy.actionError, type: 'warning' });
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [actionLoading, copy.actionError, copy.blocked],
+  );
 
-  const ListFooter = useMemo(() => {
-    if (!isLoadingMore) return <View className="h-6" />;
-    return (
-      <View className="items-center py-5">
-        <ActivityIndicator color="#0000ff" />
-      </View>
-    );
-  }, [isLoadingMore]);
+  const selectedUserIsFollowing = selectedUser
+    ? followingIds.has(getUserKey(selectedUser))
+    : false;
+  const menuTab = selectedUserTab || activeTab;
 
-  return (
-    <SafeAreaView className="flex-1 bg-[#F0F2F5]" edges={['top', 'left', 'right']}>
-      <FocusAwareStatusBar barStyle="dark-content" />
+  const renderConnection = useCallback(
+    ({ item }: { item: UserProfile }, tab: ConnectionTab) => {
+      const itemKey = getUserKey(item);
+      const name = item.name || item.username || copy.fallbackTitle;
+      const isFollowing = followingIds.has(itemKey);
 
-      <Animated.View
-        style={headerStyle}
-        className="border-b border-[#E4E6EB] bg-white px-4 pb-4 pt-2"
-      >
-        <View className="min-h-[52px] flex-row items-center">
+      return (
+        <View className="min-h-[88px] flex-row items-center bg-white px-4 py-3">
           <TouchableOpacity
             activeOpacity={0.82}
-            onPress={handleBack}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            className="h-11 w-11 items-center justify-center rounded-full bg-slate-100/80"
+            className="flex-1 flex-row items-center"
+            onPress={() => item.id && handleOpenProfile(String(item.id))}
           >
-            <ArrowLeft size={23} color="#0f172a" />
+            <Image
+              source={{ uri: item.avatarUrl || FALLBACK_AVATAR }}
+              className="h-16 w-16 rounded-full border border-slate-200 bg-slate-100"
+              resizeMode="cover"
+            />
+            <View className="ml-4 flex-1 pr-2">
+              <View className="flex-row items-center">
+                <Text
+                  className="flex-shrink text-[17px] font-bold text-slate-950"
+                  numberOfLines={2}
+                >
+                  {name}
+                </Text>
+                {item.verified ? (
+                  <View className="ml-1.5">
+                    <BadgeCheck size={16} color="#1877F2" fill="#1877F2" />
+                  </View>
+                ) : null}
+              </View>
+              {!!item.about && (
+                <Text
+                  className="mt-1 text-[12px] font-medium text-slate-500"
+                  numberOfLines={1}
+                >
+                  {item.about}
+                </Text>
+              )}
+            </View>
           </TouchableOpacity>
-          <View className="flex-1 items-center px-2">
-            <Text
-              className="text-[21px] font-extrabold text-slate-950"
-              numberOfLines={1}
+
+          {tab === 'followers' && !isFollowing ? (
+            <TouchableOpacity
+              activeOpacity={0.82}
+              className="mr-1 min-h-[38px] items-center justify-center rounded-xl bg-[#1877F2] px-4"
+              onPress={() => void updateFollowState(item, true)}
             >
-              {title || copy.title}
-            </Text>
-            <Text className="mt-0.5 text-[12px] font-semibold text-[#65676B]">
-              {copy.subtitle(friends.length)}
-            </Text>
+              <Text className="text-[13px] font-bold text-white">
+                {copy.follow}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
+          <TouchableOpacity
+            activeOpacity={0.75}
+            className="h-11 w-11 items-center justify-center rounded-full"
+            onPress={() => {
+              setSelectedUserTab(tab);
+              setSelectedUser(item);
+            }}
+          >
+            <MoreHorizontal size={24} color="#65676B" />
+          </TouchableOpacity>
+        </View>
+      );
+    },
+    [
+      copy.fallbackTitle,
+      copy.follow,
+      followingIds,
+      handleOpenProfile,
+      updateFollowState,
+    ],
+  );
+
+  const renderListEmpty = useCallback(
+    (tab: ConnectionTab) => {
+      if (isLoading && usersByTab[tab].length === 0) {
+        return <ConnectionListSkeleton />;
+      }
+
+      return (
+        <View className="items-center px-8 py-20">
+          <View className="h-20 w-20 items-center justify-center rounded-full bg-blue-50">
+            <Search size={32} color="#1877F2" />
           </View>
+          <Text className="mt-4 text-center text-[15px] font-semibold text-slate-600">
+            {query.trim() ? copy.emptySearch : error || copy.empty}
+          </Text>
+          {!query.trim() && error ? (
+            <TouchableOpacity
+              activeOpacity={0.82}
+              className="mt-5 min-h-[42px] items-center justify-center rounded-full bg-[#1877F2] px-6"
+              onPress={() => void loadConnections('refresh', tab)}
+            >
+              <Text className="text-[14px] font-bold text-white">
+                {copy.retry}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      );
+    },
+    [
+      copy.empty,
+      copy.emptySearch,
+      copy.retry,
+      error,
+      isLoading,
+      loadConnections,
+      query,
+      usersByTab,
+    ],
+  );
+
+  return (
+    <SafeAreaView className="flex-1 bg-white" edges={['top', 'left', 'right']}>
+      <FocusAwareStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      <View className="border-b border-[#E4E6EB] bg-white px-4 pb-3 pt-1">
+        <View className="min-h-[54px] flex-row items-center">
           <TouchableOpacity
             activeOpacity={0.8}
-            className="h-11 w-11 items-center justify-center rounded-full bg-[#E7F3FF]"
+            onPress={handleBack}
+            className="h-11 w-11 items-center justify-center rounded-full"
           >
-            <UserPlus size={22} color="#1877F2" />
+            <ArrowLeft size={27} color="#050505" />
           </TouchableOpacity>
-        </View>
 
-        <View className="mt-3 min-h-[48px] flex-row items-center rounded-full bg-[#F0F2F5] px-4">
-          <Search size={20} color="#65676B" />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder={copy.searchPlaceholder}
-            placeholderTextColor="#8E9094"
-            className="ml-3 flex-1 text-[15px] font-normal text-slate-900"
-            autoCorrect={false}
+          <Text
+            className="flex-1 px-3 text-center text-[21px] font-extrabold text-[#050505]"
+            numberOfLines={1}
+          >
+            {displayName || title || copy.fallbackTitle}
+          </Text>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            className="h-11 w-11 items-center justify-center rounded-full"
+            onPress={() => setSearchVisible(current => !current)}
+          >
+            {isSearchVisible ? (
+              <X size={24} color="#050505" />
+            ) : (
+              <Search size={27} color="#050505" />
+            )}
+          </TouchableOpacity>
+          <Image
+            source={{ uri: avatarUrl || FALLBACK_AVATAR }}
+            className="ml-1 h-9 w-9 rounded-full bg-slate-100"
           />
         </View>
-      </Animated.View>
 
-      <FlatList
-        data={displayFriends}
-        keyExtractor={item => getUserKey(item)}
-        renderItem={renderFriend}
-        numColumns={2}
-        columnWrapperStyle={{ gap: 12 }}
-        contentContainerStyle={{
-          padding: 16,
-          paddingBottom: 34,
-          gap: 12,
-        }}
-        ListEmptyComponent={ListEmpty}
-        ListFooterComponent={ListFooter}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={() => loadFriends('refresh')}
-            tintColor="#0000ff"
-            colors={['#0000ff']}
-            progressBackgroundColor="#ffffff"
+        <View className="mt-3 flex-row gap-2">
+          {CONNECTION_TABS.map(tab => {
+            const selected = activeTab === tab;
+            const label =
+              tab === 'followers'
+                ? copy.followers
+                : tab === 'following'
+                ? copy.following
+                : copy.friends;
+            return (
+              <TouchableOpacity
+                key={tab}
+                activeOpacity={0.8}
+                className={`min-h-[44px] flex-1 items-center justify-center rounded-full px-2 ${
+                  selected ? 'bg-[#DCEEFF]' : 'bg-[#E4E6EB]'
+                }`}
+                delayPressIn={0}
+                onPress={() => handleSelectTab(tab)}
+              >
+                <Text
+                  className={`text-[14px] font-bold ${
+                    selected ? 'text-[#0866FF]' : 'text-[#050505]'
+                  }`}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.82}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {isSearchVisible ? (
+          <View className="mt-3 min-h-[46px] flex-row items-center rounded-full bg-[#F0F2F5] px-4">
+            <Search size={19} color="#65676B" />
+            <TextInput
+              autoFocus
+              value={query}
+              onChangeText={setQuery}
+              placeholder={copy.searchPlaceholder}
+              placeholderTextColor="#8E9094"
+              className="ml-3 flex-1 text-[15px] text-[#050505]"
+              autoCorrect={false}
+            />
+          </View>
+        ) : null}
+      </View>
+
+      <PagerView
+        ref={pagerRef}
+        style={styles.pager}
+        initialPage={initialTabIndex}
+        offscreenPageLimit={2}
+        onPageSelected={handlePageSelected}
+      >
+        {CONNECTION_TABS.map(tab => (
+          <View key={tab} collapsable={false} style={styles.page}>
+            <View className="flex-row items-center justify-between px-4 pb-2 pt-5">
+              <Text className="text-[22px] font-extrabold text-[#050505]">
+                {headingsByTab[tab]}
+              </Text>
+            </View>
+
+            {mountedTabs.has(tab) ? (
+              <FlatList
+                data={displayedUsersByTab[tab]}
+                keyExtractor={getUserKey}
+                renderItem={item => renderConnection(item, tab)}
+                ItemSeparatorComponent={ConnectionSeparator}
+                contentContainerStyle={{
+                  paddingBottom: Math.max(insets.bottom, 18),
+                }}
+                ListEmptyComponent={renderListEmpty(tab)}
+                ListFooterComponent={
+                  isLoadingMore && activeTab === tab ? (
+                    <View className="items-center py-5">
+                      <ActivityIndicator color="#1877F2" />
+                    </View>
+                  ) : (
+                    <View className="h-5" />
+                  )
+                }
+                refreshControl={
+                  <RefreshControl
+                    refreshing={isRefreshing && activeTab === tab}
+                    onRefresh={() => void loadConnections('refresh', tab)}
+                    tintColor="#1877F2"
+                    colors={['#1877F2']}
+                  />
+                }
+                onEndReached={() => {
+                  if (activeTab === tab && !query.trim()) {
+                    void loadConnections('more', tab);
+                  }
+                }}
+                onEndReachedThreshold={0.4}
+                showsVerticalScrollIndicator={false}
+                initialNumToRender={8}
+                maxToRenderPerBatch={8}
+                updateCellsBatchingPeriod={32}
+                windowSize={5}
+                removeClippedSubviews={Platform.OS === 'android'}
+              />
+            ) : (
+              <ConnectionListSkeleton />
+            )}
+          </View>
+        ))}
+      </PagerView>
+
+      <Modal
+        visible={selectedUser !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setSelectedUser(null)}
+      >
+        <View className="flex-1 justify-end">
+          <TouchableOpacity
+            activeOpacity={1}
+            className="absolute inset-0 bg-black/40"
+            onPress={() => setSelectedUser(null)}
           />
-        }
-        onEndReached={() => {
-          if (!query.trim()) {
-            loadFriends('more');
-          }
-        }}
-        onEndReachedThreshold={0.45}
-        showsVerticalScrollIndicator={false}
-        initialNumToRender={8}
-        maxToRenderPerBatch={8}
-        windowSize={5}
-        removeClippedSubviews
-      />
+          {selectedUser ? (
+            <View
+              className="rounded-t-[28px] bg-white px-5 pt-3"
+              style={{ paddingBottom: Math.max(insets.bottom, 18) }}
+            >
+              <View className="mb-5 h-1.5 w-12 self-center rounded-full bg-slate-400" />
+
+              <TouchableOpacity
+                activeOpacity={0.82}
+                className="min-h-[68px] flex-row items-center"
+                onPress={() => handleOpenMessage(selectedUser)}
+              >
+                <View className="h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                  <MessageCircle size={23} color="#050505" />
+                </View>
+                <Text className="ml-4 flex-1 text-[17px] font-semibold text-[#050505]">
+                  {copy.message(
+                    selectedUser.name ||
+                      selectedUser.username ||
+                      copy.fallbackTitle,
+                  )}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.82}
+                disabled={actionLoading !== null}
+                className="min-h-[76px] flex-row items-center"
+                onPress={() =>
+                  void updateFollowState(
+                    selectedUser,
+                    menuTab === 'followers' && !selectedUserIsFollowing,
+                  )
+                }
+              >
+                <View className="h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                  {menuTab === 'followers' && !selectedUserIsFollowing ? (
+                    <UserPlus size={23} color="#050505" />
+                  ) : (
+                    <UserMinus size={23} color="#050505" />
+                  )}
+                </View>
+                <View className="ml-4 flex-1">
+                  <Text className="text-[17px] font-semibold text-[#050505]">
+                    {menuTab === 'followers' && !selectedUserIsFollowing
+                      ? copy.followBack
+                      : copy.unfollow(
+                          selectedUser.name ||
+                            selectedUser.username ||
+                            copy.fallbackTitle,
+                        )}
+                  </Text>
+                  {menuTab !== 'followers' || selectedUserIsFollowing ? (
+                    <Text className="mt-1 text-[13px] leading-5 text-[#65676B]">
+                      {language === 'vi'
+                        ? 'Bạn sẽ không còn thấy bài viết của họ trong luồng đang theo dõi.'
+                        : 'Their posts will no longer appear in your following feed.'}
+                    </Text>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.82}
+                disabled={actionLoading !== null}
+                className="min-h-[82px] flex-row items-center"
+                onPress={() => void blockUser(selectedUser)}
+              >
+                <View className="h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                  <UserRoundX size={23} color="#050505" />
+                </View>
+                <View className="ml-4 flex-1">
+                  <Text className="text-[17px] font-semibold text-[#050505]">
+                    {copy.block(
+                      selectedUser.name ||
+                        selectedUser.username ||
+                        copy.fallbackTitle,
+                    )}
+                  </Text>
+                  <Text className="mt-1 text-[13px] leading-5 text-[#65676B]">
+                    {copy.blockHint(
+                      selectedUser.name ||
+                        selectedUser.username ||
+                        copy.fallbackTitle,
+                    )}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {actionLoading ? (
+                <View className="absolute inset-x-0 bottom-5 items-center">
+                  <ActivityIndicator color="#1877F2" />
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  pager: {
+    flex: 1,
+  },
+  page: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+});

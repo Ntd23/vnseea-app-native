@@ -21,6 +21,9 @@ const MESSAGE_PUSH_KINDS = new Set([
   'chat_message',
   'new_message',
 ]);
+const SUPPRESSED_FOREGROUND_NOTIFICATION_TYPES = new Set([
+  'visited_profile',
+]);
 
 let initialized = false;
 let lastSyncedKey = '';
@@ -269,6 +272,20 @@ function isLiveKitPush(data: Record<string, unknown>) {
   return eventType.startsWith('livekit_') || provider === 'livekit';
 }
 
+function readSocialNotificationType(data: Record<string, unknown>) {
+  return (
+    readPushDataString(data, 'notification_type') ||
+    readPushDataString(data, 'event_type') ||
+    readPushDataString(data, 'type')
+  ).toLowerCase();
+}
+
+function shouldSuppressForegroundPush(data: Record<string, unknown>) {
+  return SUPPRESSED_FOREGROUND_NOTIFICATION_TYPES.has(
+    readSocialNotificationType(data),
+  );
+}
+
 function isAndroidNativeMessagePush(data: Record<string, unknown>) {
   if (Platform.OS !== 'android') return false;
 
@@ -322,6 +339,15 @@ function handleForegroundWillDisplay(event: NotificationWillDisplayEvent) {
   // calls keep their CallKit/full-screen behavior instead of becoming a banner.
   if (isLiveKitPush(additionalData)) {
     logPushDebug('push_foreground_delegated', { target: 'livekit' });
+    return;
+  }
+
+  if (shouldSuppressForegroundPush(additionalData)) {
+    event.preventDefault();
+    logPushDebug('push_foreground_display_skipped', {
+      reason: 'suppressed_notification_type',
+      notificationType: readSocialNotificationType(additionalData),
+    });
     return;
   }
 

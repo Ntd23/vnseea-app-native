@@ -179,6 +179,10 @@ export type MapPlacePrediction = {
   distanceMeters?: number;
   icon?: string;
   iconBackgroundColor?: string;
+  rating?: number;
+  ratingsTotal?: number;
+  openNow?: boolean;
+  photoUrls?: string[];
 };
 
 export type MapRouteInput = {

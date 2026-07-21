@@ -11,6 +11,12 @@ jest.mock('../../../../shared-kernel/infrastructure/storage/sessionStorage', () 
   },
 }));
 
+jest.mock('../../../../shared-kernel/infrastructure/config/env', () => ({
+  apiConfig: {
+    webBaseUrl: 'https://demo.vnseea.vn',
+  },
+}));
+
 jest.mock('../../storage/reelsReactionsStorage', () => ({
   reelsReactionsStorage: {
     get: jest.fn(() => null),
@@ -80,5 +86,34 @@ describe('ApiReelsRepository privacy mapping', () => {
 
     const { items } = await createReelsRepository().fetchReels({ limit: 10 });
     expect(items.map(item => item.canShare)).toEqual([true, false, false]);
+  });
+
+  it('normalizes relative reel media URLs and encodes spaces before playback', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({
+      api_status: 200,
+      data: [
+        reel('relative-media', {
+          postFile: 'upload/videos/reel sample.mp4',
+          video_thumb: '/upload/photos/reel cover.jpg',
+          publisher: {
+            user_id: 'author-relative',
+            username: 'author-relative',
+            name: 'Author Relative',
+            avatar: 'upload/photos/avatar sample.jpg',
+          },
+        }),
+      ],
+    });
+
+    const { items } = await createReelsRepository().fetchReels({ limit: 10 });
+    const siteRoot = 'https://demo.vnseea.vn';
+
+    expect(items[0]).toMatchObject({
+      videoUrl: `${siteRoot}/upload/videos/reel%20sample.mp4`,
+      thumbnailUrl: `${siteRoot}/upload/photos/reel%20cover.jpg`,
+      publisher: {
+        avatarUrl: `${siteRoot}/upload/photos/avatar%20sample.jpg`,
+      },
+    });
   });
 });

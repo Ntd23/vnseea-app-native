@@ -116,6 +116,11 @@ export interface ReelComment {
   pendingImageUri?: string;
   /** Local-only preview URI while an audio comment is uploading. */
   pendingAudioUri?: string;
+  /**
+   * Local reply mention display name. When the reply text starts with this
+   * name, the UI renders that leading name in Facebook-style blue.
+   */
+  replyMentionName?: string;
   /** Optimistic update state: true if comment/reply is currently sending */
   isSending?: boolean;
   /** Optimistic update state: true if sending failed */

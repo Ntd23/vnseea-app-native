@@ -26,6 +26,7 @@ export interface UserRepository {
   getNearbyPages(input?: NearbyPagesInput): Promise<NearbyPlace[]>;
   getPlacePredictions(input: {
     query: string;
+    category?: string;
     lat?: number;
     lng?: number;
     radius?: number;

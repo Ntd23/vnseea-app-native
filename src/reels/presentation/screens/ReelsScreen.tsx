@@ -10,7 +10,9 @@
 //       • `windowSize={3}` keeps roughly the active item ±1 alive in the
 //         view hierarchy. We *additionally* gate VideoPlayer mounting inside
 //         each item so even if the row is mounted, the heavy decoder isn't.
-//       • `removeClippedSubviews` recovers GPU work on Android.
+//       • Android clipping stays disabled because Reel video uses TextureView
+//         inside animated, rounded containers. The ±1 mount gate still keeps
+//         memory bounded without detaching the native video surface.
 //
 //   viewabilityConfig
 //     `itemVisiblePercentThreshold: 80` means a row only becomes "active"
@@ -210,10 +212,14 @@ export default function ReelsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const isFocusedScreen = useIsFocused();
+  const [isAppActive, setIsAppActive] = useState(
+    () => AppState.currentState === 'active',
+  );
   const isSelectedRoute = useNavigationState(state =>
     isNavigationRouteSelected(state, route.key, route.name),
   );
-  const isPlaybackRouteFocused = isFocusedScreen && isSelectedRoute;
+  const isPlaybackRouteFocused =
+    isFocusedScreen && isSelectedRoute && isAppActive;
   const insets = useSafeAreaInsets();
   const reelsTopInset = Math.max(
     insets.top,
@@ -444,6 +450,7 @@ export default function ReelsScreen() {
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
+      setIsAppActive(nextState === 'active');
       if (nextState === 'active') {
         void checkForRemoteNewReels();
       }
@@ -704,7 +711,8 @@ export default function ReelsScreen() {
   const renderItem = useCallback(
     ({ item, index }: { item: ReelsItem; index: number }) => {
       const shouldMount = shouldMountReelVideoPlayer({
-        isPlaybackRouteFocused,
+        isPlaybackRouteFocused:
+          isPlaybackRouteFocused && !isPublisherOverlayOpen,
         index,
         activeIndex: vm.activeIndex,
         preloadRadius,
@@ -1037,7 +1045,7 @@ export default function ReelsScreen() {
           initialNumToRender={1}
           maxToRenderPerBatch={2}
           updateCellsBatchingPeriod={50}
-          removeClippedSubviews
+          removeClippedSubviews={Platform.OS !== 'android'}
           // ──────────────────────────────────────────────────────────
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={VIEWABILITY_CONFIG}

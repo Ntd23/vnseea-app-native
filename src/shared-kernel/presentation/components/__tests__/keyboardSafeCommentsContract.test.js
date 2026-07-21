@@ -27,18 +27,42 @@ describe('comment keyboard safety contract', () => {
   });
 
   it('covers every screen that owns a comment composer', () => {
-    commentSurfaces.forEach(file => {
+    const directComposerSurfaces = commentSurfaces.filter(
+      file => !file.endsWith('PostDetailScreen.tsx'),
+    );
+
+    directComposerSurfaces.forEach(file => {
       const source = read(file);
       expect(source).toContain('KeyboardSafeView');
       expect(source).not.toContain(
         "behavior={Platform.OS === 'ios' ? 'padding' : undefined}",
       );
     });
+
+    const postDetail = read(
+      'src/feed/presentation/screens/PostDetailScreen.tsx',
+    );
+    expect(postDetail).toContain('<ReelCommentsSheet');
+    expect(postDetail).toContain('presentation="inline"');
   });
 
   it('keeps the Android activity resize contract enabled', () => {
     const manifest = read('android/app/src/main/AndroidManifest.xml');
     expect(manifest).toContain('android:windowSoftInputMode="adjustResize"');
+  });
+
+  it('measures and lifts the composer only when an OEM keyboard still overlaps it', () => {
+    const sharedSheet = read(commentSurfaces[0]);
+
+    expect(sharedSheet).toContain('Keyboard.metrics?.()');
+    expect(sharedSheet).toContain('INLINE_ANDROID_KEYBOARD_ACCESSORY_CLEARANCE');
+    expect(sharedSheet).toContain('effectiveKeyboardTop');
+    expect(sharedSheet).toContain('measureInWindow');
+    expect(sharedSheet).toContain('unshiftedBottom');
+    expect(sharedSheet).toContain('keyboardLiftRef.current');
+    expect(sharedSheet).toContain('collapsable={false}');
+    expect(sharedSheet).toContain('style={composerLiftStyle}');
+    expect(sharedSheet).toContain('commitKeyboardLift(0)');
   });
 
   it('bounds multiline comment composers so typed text scrolls in place', () => {
@@ -48,8 +72,8 @@ describe('comment keyboard safety contract', () => {
 
     expect(sharedSheet).toContain('maxHeight: 90');
     expect(explore).toContain('className="max-h-24 flex-1');
-    expect(postDetail).toContain('max-h-24 min-h-[44px]');
-    expect(postDetail).toContain('textAlignVertical="top"');
+    expect(sharedSheet).toContain('multiline');
+    expect(postDetail).toContain('presentation="inline"');
   });
 
   it('actively reveals inline blog and movie comment fields on focus', () => {

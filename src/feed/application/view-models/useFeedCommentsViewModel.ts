@@ -23,9 +23,32 @@ type CommentsCacheEntry = {
   offset: number;
   updatedAt: number;
 };
+type ReplyTarget = {
+  commentId: string;
+  targetCommentId: string;
+  username: string;
+  displayName: string;
+};
 
 function normalizeCommentPostId(postId: string) {
   return postId.replace(/_rc\d+_\d+$/, '');
+}
+
+function getReplyMentionName(
+  text: string,
+  target: ReplyTarget | null,
+  explicitMentionName?: string,
+) {
+  const mentionName = (explicitMentionName || target?.displayName || '').trim();
+  if (!mentionName) return undefined;
+
+  const trimmedStart = text.trimStart();
+  if (!trimmedStart.startsWith(mentionName)) return undefined;
+
+  const nextChar = trimmedStart.charAt(mentionName.length);
+  if (nextChar && !/\s|[.,:;!?]/.test(nextChar)) return undefined;
+
+  return mentionName;
 }
 
 interface UseFeedCommentsViewModelOptions {
@@ -113,10 +136,7 @@ export function useFeedCommentsViewModel({
   // Reply state
   const [repliesById, setRepliesById] = useState<Record<string, ReelComment[]>>({});
   const [loadingRepliesIds, setLoadingRepliesIds] = useState<string[]>([]);
-  const [replyingTo, setReplyingTo] = useState<{
-    commentId: string;
-    username: string;
-  } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ReplyTarget | null>(null);
 
   const commentOffsetRef = useRef(0);
   const commentInFlightRef = useRef(false);
@@ -605,8 +625,19 @@ export function useFeedCommentsViewModel({
   }, []);
 
   const startReplyTo = useCallback(
-    (commentId: string, username: string) => {
-      setReplyingTo({ commentId, username });
+    (
+      commentId: string,
+      username: string,
+      displayName?: string,
+      targetCommentId?: string,
+    ) => {
+      const cleanDisplayName = (displayName || username || '').trim();
+      setReplyingTo({
+        commentId,
+        targetCommentId: targetCommentId || commentId,
+        username,
+        displayName: cleanDisplayName || username || 'Người dùng',
+      });
     },
     [],
   );
@@ -620,6 +651,7 @@ export function useFeedCommentsViewModel({
       commentId: string,
       text: string,
       image?: CommentImageAttachment,
+      replyMentionName?: string,
     ) => {
       const trimmed = text.trim();
       // Same rule as `submitComment` — text OR image is required.
@@ -627,6 +659,11 @@ export function useFeedCommentsViewModel({
 
       const tempId = `temp-${Date.now()}`;
       const publisher = getFallbackPublisher();
+      const preservedMentionName = getReplyMentionName(
+        trimmed,
+        replyingTo?.commentId === commentId ? replyingTo : null,
+        replyMentionName,
+      );
       const newReply: ReelComment = {
         id: tempId,
         text: trimmed,
@@ -642,6 +679,7 @@ export function useFeedCommentsViewModel({
         pendingImageUri: image?.uri,
         imageWidth: image?.width,
         imageHeight: image?.height,
+        replyMentionName: preservedMentionName,
       };
 
       // Add the optimistic reply instantly
@@ -666,8 +704,9 @@ export function useFeedCommentsViewModel({
               ...created,
               imageWidth: created.imageWidth ?? image.width,
               imageHeight: created.imageHeight ?? image.height,
+              replyMentionName: preservedMentionName,
             }
-          : created;
+          : { ...created, replyMentionName: preservedMentionName };
         // Replace temp reply with actual one
         setRepliesById(prev => ({
           ...prev,
@@ -704,7 +743,7 @@ export function useFeedCommentsViewModel({
         return null;
       }
     },
-    [getFallbackPublisher],
+    [getFallbackPublisher, replyingTo],
   );
 
   const retryFailedComment = useCallback((comment: ReelComment) => {
@@ -748,7 +787,7 @@ export function useFeedCommentsViewModel({
             c.id === pId ? { ...c, replyCount: Math.max(0, c.replyCount - 1) } : c,
           ),
         );
-        submitReply(pId, comment.text, retryImage);
+        submitReply(pId, comment.text, retryImage, comment.replyMentionName);
       }
     }
   }, [comments, repliesById, submitComment, submitReply]);

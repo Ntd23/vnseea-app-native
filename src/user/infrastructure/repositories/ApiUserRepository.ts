@@ -4,6 +4,7 @@ import type {
   RawApiRecord,
 } from '../../../shared-kernel/domain/types/api.types';
 import { apiRoutes } from '../../../shared-kernel/application/constants/route-registry';
+import { createAsyncResourceCache } from '../../../shared-kernel/application/utils/asyncResourceCache';
 import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
@@ -42,6 +43,7 @@ import {
   toUserProfileFetchValue,
   toUserSuggestionsPayload,
 } from '../../application/mappers/userPayloadMapper';
+import { isGoogleNearbyCategoryType } from '../../application/utils/mapSearchCategory';
 
 type CurrentUserResponse = ApiEnvelope & {
   user_data?: RawApiRecord;
@@ -141,6 +143,137 @@ type FriendsResponse = ApiEnvelope & {
   };
 };
 
+const NEARBY_DISCOVERY_CACHE_TTL_MS = 45 * 1000;
+const PLACE_PREDICTION_CACHE_TTL_MS = 60 * 1000;
+const PLACE_DETAILS_CACHE_TTL_MS = 10 * 60 * 1000;
+const PAGE_PIN_STATUS_CACHE_TTL_MS = 10 * 60 * 1000;
+const ROUTE_CACHE_TTL_MS = 12 * 1000;
+const DIRECT_GOOGLE_TIMEOUT_MS = 1400;
+const MAP_SEARCH_RESPONSE_BUDGET_MS = 1750;
+const PAGE_PIN_WARM_LIMIT = 4;
+const PAGE_PIN_WARM_CONCURRENCY = 2;
+const PAGE_PIN_WARM_DELAY_MS = 800;
+
+const nearbyUsersCache = createAsyncResourceCache<UserProfile[]>({
+  ttlMs: 20 * 1000,
+  maxEntries: 24,
+});
+const nearbyPlacesCache = createAsyncResourceCache<NearbyPlace[]>({
+  ttlMs: NEARBY_DISCOVERY_CACHE_TTL_MS,
+  maxEntries: 24,
+});
+const nearbyPagesCache = createAsyncResourceCache<NearbyPlace[]>({
+  ttlMs: NEARBY_DISCOVERY_CACHE_TTL_MS,
+  maxEntries: 40,
+});
+const placePredictionsCache = createAsyncResourceCache<MapPlacePrediction[]>({
+  ttlMs: PLACE_PREDICTION_CACHE_TTL_MS,
+  maxEntries: 80,
+});
+const placeDetailsCache = createAsyncResourceCache<NearbyPlace | null>({
+  ttlMs: PLACE_DETAILS_CACHE_TTL_MS,
+  maxEntries: 160,
+});
+const pagePinStatusCache = createAsyncResourceCache<string | null>({
+  ttlMs: PAGE_PIN_STATUS_CACHE_TTL_MS,
+  maxEntries: 200,
+});
+const routeResponseCache = createAsyncResourceCache<RouteResponse>({
+  ttlMs: ROUTE_CACHE_TTL_MS,
+  maxEntries: 48,
+});
+
+function normalizeCacheText(value: unknown) {
+  return String(value ?? '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .replace(/\s+/g, ' ');
+}
+
+function coordinateCachePart(value: unknown, precision = 3) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue)
+    ? numericValue.toFixed(precision)
+    : '';
+}
+
+function currentSessionCacheKey() {
+  return (
+    sessionStorage.getSession()?.userId ||
+    sessionStorage.getAccessToken()?.slice(-12) ||
+    'guest'
+  );
+}
+
+function nearbyUsersCacheKey(input?: NearbyUsersInput) {
+  return [
+    currentSessionCacheKey(),
+    input?.limit ?? '',
+    input?.offset ?? '',
+    input?.gender ?? '',
+    normalizeCacheText(input?.keyword),
+    input?.status ?? '',
+    input?.distance ?? '',
+    input?.relationship ?? '',
+    coordinateCachePart(input?.lat),
+    coordinateCachePart(input?.lng),
+  ].join('|');
+}
+
+function nearbyPlacesCacheKey(input?: NearbyPlacesInput) {
+  return [
+    currentSessionCacheKey(),
+    input?.limit ?? '',
+    input?.offset ?? '',
+    normalizeCacheText(input?.keyword),
+    input?.distance ?? '',
+  ].join('|');
+}
+
+function nearbyPagesCacheKey(input?: NearbyPagesInput) {
+  const payload = toNearbyPagesQuery(input);
+  return [
+    currentSessionCacheKey(),
+    normalizeCacheText(payload.query),
+    input?.distance ?? '',
+    input?.limit ?? '',
+    coordinateCachePart(input?.lat),
+    coordinateCachePart(input?.lng),
+  ].join('|');
+}
+
+function placePredictionCacheKey(input: {
+  query: string;
+  category?: string;
+  lat?: number;
+  lng?: number;
+  radius?: number;
+}) {
+  return [
+    normalizeCacheText(input.query),
+    normalizeCacheText(input.category),
+    coordinateCachePart(input.lat),
+    coordinateCachePart(input.lng),
+    input.radius ?? '',
+  ].join('|');
+}
+
+function routeCacheKey(input: {
+  originLat: number;
+  originLng: number;
+  destinationLat: number;
+  destinationLng: number;
+  mode?: string;
+}) {
+  return [
+    coordinateCachePart(input.originLat, 5),
+    coordinateCachePart(input.originLng, 5),
+    coordinateCachePart(input.destinationLat, 5),
+    coordinateCachePart(input.destinationLng, 5),
+    input.mode ?? 'walking',
+  ].join('|');
+}
+
 function hasUploadFile(payload: Record<string, unknown>) {
   return Boolean(payload.avatar || payload.cover);
 }
@@ -176,39 +309,58 @@ function readMapPinStatus(
 }
 
 async function fetchPageMapPinStatus(pageId: string) {
-  if (!pageId) return undefined;
-  const response = await apiBridge
-    .post<PageDetailsResponse>(apiRoutes.pages.getById, { page_id: pageId })
-    .catch(() => undefined);
-  return readMapPinStatus(response?.page_data);
+  if (!pageId) return null;
+
+  return pagePinStatusCache.getOrLoad(pageId, async () => {
+    const response = await apiBridge
+      .post<PageDetailsResponse>(apiRoutes.pages.getById, { page_id: pageId })
+      .catch(() => undefined);
+    return readMapPinStatus(response?.page_data) ?? null;
+  });
 }
 
-async function hydrateNearbyPageMapPinStatus(pages: NearbyPlace[]) {
-  const hydratedPages = await Promise.all(
-    pages.map(async page => {
-      if (!page.pageId || page.mapPinStatus) {
-        return page;
-      }
+function applyMapPinStatus(page: NearbyPlace, mapPinStatus?: string | null) {
+  if (!mapPinStatus) return page;
 
-      const mapPinStatus = await fetchPageMapPinStatus(page.pageId);
-      if (!mapPinStatus) {
-        return page;
-      }
-
-      const isApproved = mapPinStatus.trim().toLowerCase() === 'approved';
-      return {
-        ...page,
-        mapPinStatus,
-        mapPinApproved: isApproved,
-        isPinned: isApproved,
-      };
-    }),
-  );
-
-  return hydratedPages;
+  const isApproved = mapPinStatus.trim().toLowerCase() === 'approved';
+  return {
+    ...page,
+    mapPinStatus,
+    mapPinApproved: isApproved,
+    isPinned: isApproved,
+  };
 }
 
-async function fetchNearbyPages(input?: NearbyPagesInput) {
+function applyCachedNearbyPageMapPinStatus(pages: NearbyPlace[]) {
+  return pages.map(page => {
+    if (!page.pageId || page.mapPinStatus) return page;
+    return applyMapPinStatus(page, pagePinStatusCache.get(page.pageId));
+  });
+}
+
+async function warmNearbyPageMapPinStatuses(pages: NearbyPlace[]) {
+  const candidates = pages
+    .filter(
+      page =>
+        Boolean(page.pageId) &&
+        !page.mapPinStatus &&
+        pagePinStatusCache.get(page.pageId as string) === undefined,
+    )
+    .slice(0, PAGE_PIN_WARM_LIMIT);
+
+  for (
+    let index = 0;
+    index < candidates.length;
+    index += PAGE_PIN_WARM_CONCURRENCY
+  ) {
+    const batch = candidates.slice(index, index + PAGE_PIN_WARM_CONCURRENCY);
+    await Promise.all(
+      batch.map(page => fetchPageMapPinStatus(page.pageId as string)),
+    );
+  }
+}
+
+async function requestNearbyPages(input?: NearbyPagesInput) {
   const payload = toNearbyPagesQuery(input);
   const response = await apiBridge.post<NearbyPagesResponse>(
     apiRoutes.user.mapDiscovery,
@@ -220,13 +372,30 @@ async function fetchNearbyPages(input?: NearbyPagesInput) {
       origin_lat: input?.lat,
       origin_lng: input?.lng,
     },
+    input?.keyword ? { timeout: MAP_SEARCH_RESPONSE_BUDGET_MS } : undefined,
   );
 
   const pages = (response.items ?? [])
     .map(record => mapNearbyPage(record, apiConfig.webBaseUrl))
     .filter(Boolean) as NearbyPlace[];
 
-  return hydrateNearbyPageMapPinStatus(pages);
+  return pages;
+}
+
+async function fetchNearbyPages(input?: NearbyPagesInput) {
+  const pages = await nearbyPagesCache.getOrLoad(
+    nearbyPagesCacheKey(input),
+    () => requestNearbyPages(input),
+  );
+  const hydratedPages = applyCachedNearbyPageMapPinStatus(pages);
+
+  // Map pins are supplementary metadata. Warm a small bounded set in the
+  // background instead of blocking the first useful map render with N+1 calls.
+  setTimeout(() => {
+    warmNearbyPageMapPinStatuses(hydratedPages).catch(() => undefined);
+  }, PAGE_PIN_WARM_DELAY_MS);
+
+  return hydratedPages;
 }
 
 function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
@@ -251,6 +420,20 @@ function mapPlacePrediction(record: RawApiRecord): MapPlacePrediction | null {
     distanceMeters: record.distance_meters !== undefined && record.distance_meters !== null ? Number(record.distance_meters) : undefined,
     icon: record.icon !== undefined && record.icon !== null ? String(record.icon) : undefined,
     iconBackgroundColor: record.icon_background_color !== undefined && record.icon_background_color !== null ? String(record.icon_background_color) : undefined,
+    rating:
+      record.rating !== undefined && record.rating !== null
+        ? Number(record.rating)
+        : undefined,
+    ratingsTotal:
+      record.user_ratings_total !== undefined &&
+      record.user_ratings_total !== null
+        ? Number(record.user_ratings_total)
+        : undefined,
+    openNow:
+      typeof record.open_now === 'boolean' ? record.open_now : undefined,
+    photoUrls: Array.isArray(record.photo_urls)
+      ? record.photo_urls.map(String).filter(Boolean).slice(0, 3)
+      : undefined,
   };
 }
 
@@ -297,6 +480,19 @@ function mapGoogleNearbyPrediction(
   }
 
   const coordinate = { latitude: lat, longitude: lng };
+  const openingHours = asRecord(record.opening_hours);
+  const photoUrls = Array.isArray(record.photos)
+    ? record.photos
+        .map(photo => asRecord(photo)?.photo_reference)
+        .filter(Boolean)
+        .slice(0, 3)
+        .map(
+          reference =>
+            `https://maps.googleapis.com/maps/api/place/photo?maxwidth=720&photo_reference=${encodeURIComponent(
+              String(reference),
+            )}&key=${encodeURIComponent(apiConfig.googleMapsApiKey)}`,
+        )
+    : [];
 
   return {
     source: 'google',
@@ -319,6 +515,20 @@ function mapGoogleNearbyPrediction(
       record.icon_background_color !== null
         ? String(record.icon_background_color)
         : undefined,
+    rating:
+      record.rating !== undefined && record.rating !== null
+        ? Number(record.rating)
+        : undefined,
+    ratingsTotal:
+      record.user_ratings_total !== undefined &&
+      record.user_ratings_total !== null
+        ? Number(record.user_ratings_total)
+        : undefined,
+    openNow:
+      typeof openingHours?.open_now === 'boolean'
+        ? openingHours.open_now
+        : undefined,
+    photoUrls,
   };
 }
 
@@ -340,13 +550,15 @@ function mergePlacePredictions(
 
 async function getDirectGoogleNearbyPredictions(input: {
   query: string;
+  category?: string;
   lat?: number;
   lng?: number;
   radius?: number;
 }) {
+  const categoryType = normalizeCacheText(input.category);
   if (
     !apiConfig.googleMapsApiKey ||
-    !['restaurant', 'cafe'].includes(input.query) ||
+    !isGoogleNearbyCategoryType(categoryType) ||
     typeof input.lat !== 'number' ||
     typeof input.lng !== 'number'
   ) {
@@ -357,27 +569,38 @@ async function getDirectGoogleNearbyPredictions(input: {
   const params = new URLSearchParams({
     location: `${input.lat.toFixed(6)},${input.lng.toFixed(6)}`,
     radius: String(Math.min(Math.max(input.radius ?? 3000, 1), 3000)),
-    type: input.query,
+    type: categoryType,
+    keyword: input.query.trim(),
     language: 'vi',
     key: apiConfig.googleMapsApiKey,
   });
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    DIRECT_GOOGLE_TIMEOUT_MS,
+  );
 
   try {
     const response = await fetch(
       `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`,
+      { signal: controller.signal },
     );
+    if (!response.ok) return [];
+
     const data = (await response.json()) as {
       status?: string;
       error_message?: string;
       results?: RawApiRecord[];
     };
 
-    console.warn('=== GOOGLE DIRECT NEARBY DEBUG ===', {
-      query: input.query,
-      status: data.status,
-      error: data.error_message,
-      count: data.results?.length ?? 0,
-    });
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.debug('[mapDiscovery] direct nearby', {
+        query: input.query,
+        category: categoryType,
+        status: data.status,
+        count: data.results?.length ?? 0,
+      });
+    }
 
     if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
       return [];
@@ -387,8 +610,12 @@ async function getDirectGoogleNearbyPredictions(input: {
       .map(record => mapGoogleNearbyPrediction(record, origin))
       .filter(Boolean) as MapPlacePrediction[];
   } catch (error) {
-    console.warn('=== GOOGLE DIRECT NEARBY ERROR ===', String(error));
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.debug('[mapDiscovery] direct nearby unavailable', String(error));
+    }
     return [];
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -546,6 +773,25 @@ function mapRoutes(response: RouteResponse): MapRoute[] {
   return fallbackRoute.path.length > 1 ? [fallbackRoute] : [];
 }
 
+async function fetchRouteResponse(input: {
+  originLat: number;
+  originLng: number;
+  destinationLat: number;
+  destinationLng: number;
+  mode?: 'walking' | 'driving' | 'motorcycle' | 'bicycling' | 'transit';
+}) {
+  return routeResponseCache.getOrLoad(routeCacheKey(input), () =>
+    apiBridge.post<RouteResponse>(apiRoutes.user.mapDiscovery, {
+      type: 'route',
+      origin_lat: input.originLat,
+      origin_lng: input.originLng,
+      destination_lat: input.destinationLat,
+      destination_lng: input.destinationLng,
+      mode: input.mode ?? 'walking',
+    }),
+  );
+}
+
 function mapFamily(records: UserProfileResponse['family']): UserProfile[] {
   return (records ?? [])
     .map(record => {
@@ -648,31 +894,35 @@ export function createUserRepository(): UserRepository {
     },
 
     async getNearbyUsers(input?: NearbyUsersInput) {
-      const response = await apiBridge.post<NearbyUsersResponse>(
-        apiRoutes.user.nearby,
-        toNearbyUsersPayload(input),
-      );
+      return nearbyUsersCache.getOrLoad(nearbyUsersCacheKey(input), async () => {
+        const response = await apiBridge.post<NearbyUsersResponse>(
+          apiRoutes.user.nearby,
+          toNearbyUsersPayload(input),
+        );
 
-      return mapUserList(response.nearby_users);
+        return mapUserList(response.nearby_users);
+      });
     },
 
     async getNearbyPlaces(input?: NearbyPlacesInput) {
-      const payload = toNearbyPlacesPayload(input);
-      const [shopsResponse, businessesResponse] = await Promise.all([
-        apiBridge.post<NearbyPlacesResponse>(apiRoutes.user.nearbyPlaces, {
-          ...payload,
-          type: 'shops',
-        }),
-        apiBridge.post<NearbyPlacesResponse>(apiRoutes.user.nearbyPlaces, {
-          ...payload,
-          type: 'businesses',
-        }),
-      ]);
+      return nearbyPlacesCache.getOrLoad(nearbyPlacesCacheKey(input), async () => {
+        const payload = toNearbyPlacesPayload(input);
+        const [shopsResponse, businessesResponse] = await Promise.all([
+          apiBridge.post<NearbyPlacesResponse>(apiRoutes.user.nearbyPlaces, {
+            ...payload,
+            type: 'shops',
+          }),
+          apiBridge.post<NearbyPlacesResponse>(apiRoutes.user.nearbyPlaces, {
+            ...payload,
+            type: 'businesses',
+          }),
+        ]);
 
-      return [
-        ...mapNearbyPlaces(shopsResponse.data, 'shop'),
-        ...mapNearbyPlaces(businessesResponse.data, 'business'),
-      ];
+        return [
+          ...mapNearbyPlaces(shopsResponse.data, 'shop'),
+          ...mapNearbyPlaces(businessesResponse.data, 'business'),
+        ];
+      });
     },
 
     async getNearbyPages(input?: NearbyPagesInput) {
@@ -680,86 +930,123 @@ export function createUserRepository(): UserRepository {
     },
 
     async getPlacePredictions(input) {
-      if (input.query.trim().length < 3) return [];
-      const response = await apiBridge.post<any>(
-        apiRoutes.user.mapDiscovery,
-        {
-          type: 'place_autocomplete',
-          query: input.query.trim(),
-          origin_lat: input.lat,
-          origin_lng: input.lng,
-          radius: input.radius,
-        },
-      );
-
-      console.warn('=== GOOGLE API DEBUG ===', {
-        query: input.query.trim(),
-        nearby_status: response.debug_nearby_status,
-        nearby_error: response.debug_nearby_error,
-        detected_type: response.debug_detected_type,
-        nearby_count: response.debug_nearby_count,
-        autocomplete_status: response.debug_autocomplete_status,
-        autocomplete_error: response.debug_autocomplete_error,
-        predictions_count: response.predictions?.length,
+      const trimmedQuery = input.query.trim();
+      if (trimmedQuery.length < 3) return [];
+      const cacheKey = placePredictionCacheKey({
+        ...input,
+        query: trimmedQuery,
       });
 
-      const backendPredictions = (response.predictions ?? [])
-        .map(mapPlacePrediction)
-        .filter(Boolean) as MapPlacePrediction[];
+      return placePredictionsCache.getOrLoad(
+        cacheKey,
+        async () => {
+          type PredictionSourceResult = {
+            source: 'backend' | 'direct';
+            predictions: MapPlacePrediction[];
+            error?: unknown;
+          };
 
-      const directNearbyPredictions = await getDirectGoogleNearbyPredictions(
-        input,
-      );
+          const backendPromise: Promise<PredictionSourceResult> = apiBridge
+            .post<PlaceAutocompleteResponse>(
+              apiRoutes.user.mapDiscovery,
+              {
+                type: 'place_autocomplete',
+                query: trimmedQuery,
+                category: input.category,
+                origin_lat: input.lat,
+                origin_lng: input.lng,
+                radius: input.radius,
+              },
+              { timeout: MAP_SEARCH_RESPONSE_BUDGET_MS },
+            )
+            .then(response => ({
+              source: 'backend' as const,
+              predictions: (response.predictions ?? [])
+                .map(mapPlacePrediction)
+                .filter(Boolean) as MapPlacePrediction[],
+            }))
+            .catch(error => ({
+              source: 'backend' as const,
+              predictions: [],
+              error,
+            }));
+          const directPromise: Promise<PredictionSourceResult> =
+            getDirectGoogleNearbyPredictions({
+              ...input,
+              query: trimmedQuery,
+            })
+              .then(predictions => ({
+                source: 'direct' as const,
+                predictions,
+              }))
+              .catch(error => ({
+                source: 'direct' as const,
+                predictions: [],
+                error,
+              }));
 
-      return mergePlacePredictions(
-        directNearbyPredictions,
-        backendPredictions,
+          const firstResult = await Promise.race([
+            backendPromise,
+            directPromise,
+          ]);
+          const remainingPromise =
+            firstResult.source === 'backend' ? directPromise : backendPromise;
+
+          if (firstResult.predictions.length > 0) {
+            remainingPromise.then(remainingResult => {
+              if (remainingResult.predictions.length === 0) return;
+              const directPredictions =
+                firstResult.source === 'direct'
+                  ? firstResult.predictions
+                  : remainingResult.predictions;
+              const backendPredictions =
+                firstResult.source === 'backend'
+                  ? firstResult.predictions
+                  : remainingResult.predictions;
+              const merged = mergePlacePredictions(
+                directPredictions,
+                backendPredictions,
+              );
+              setTimeout(() => placePredictionsCache.set(cacheKey, merged), 0);
+            });
+            return firstResult.predictions;
+          }
+
+          const remainingResult = await remainingPromise;
+          if (remainingResult.predictions.length > 0) {
+            return remainingResult.predictions;
+          }
+
+          if (firstResult.error && remainingResult.error) {
+            throw firstResult.error;
+          }
+
+          return [];
+        },
       );
     },
 
     async getPlaceDetails(placeId: string) {
       if (!placeId) return null;
-      const response = await apiBridge.post<PlaceDetailsResponse>(
-        apiRoutes.user.mapDiscovery,
-        {
-          type: 'place_details',
-          place_id: placeId,
-        },
-      );
+      return placeDetailsCache.getOrLoad(placeId, async () => {
+        const response = await apiBridge.post<PlaceDetailsResponse>(
+          apiRoutes.user.mapDiscovery,
+          {
+            type: 'place_details',
+            place_id: placeId,
+          },
+        );
 
-      return mapGooglePlace(response.place);
+        return mapGooglePlace(response.place);
+      });
     },
 
     async getRoute(input) {
-      const response = await apiBridge.post<RouteResponse>(
-        apiRoutes.user.mapDiscovery,
-        {
-          type: 'route',
-          origin_lat: input.originLat,
-          origin_lng: input.originLng,
-          destination_lat: input.destinationLat,
-          destination_lng: input.destinationLng,
-          mode: input.mode ?? 'walking',
-        },
-      );
-
-      return mapRoute(response);
+      return mapRoute(await fetchRouteResponse(input));
     },
 
     async getRoutes(input) {
-      const response = await apiBridge.post<RouteResponse>(
-        apiRoutes.user.mapDiscovery,
-        {
-          type: 'route',
-          origin_lat: input.originLat,
-          origin_lng: input.originLng,
-          destination_lat: input.destinationLat,
-          destination_lng: input.destinationLng,
-          mode: input.mode ?? 'walking',
-        },
-      );
-
-      return mapRoutes(response);
+      return mapRoutes(await fetchRouteResponse(input));
     },
 
     async getFriends(input: FriendsInput): Promise<FriendsResult> {

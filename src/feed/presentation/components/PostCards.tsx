@@ -53,6 +53,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ROUTES } from '../../../navigation/constants/routes';
+import { navigateToPostComments } from '../../../navigation/postNavigation';
 import { navigateToReels } from '../../../navigation/reelsNavigation';
 import {
   getVideoPlaybackTime,
@@ -1766,6 +1767,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   navigateToProfile,
   onOpenPostMenu,
   keepPreparedVideoMounted = false,
+  commentNavigationMode = 'detail',
 }: {
   post: FeedVideoPost;
   copy?: FeedCopy;
@@ -1791,6 +1793,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   navigateToProfile: (userId: string) => void;
   onOpenPostMenu?: (post: FeedPost) => void;
   keepPreparedVideoMounted?: boolean;
+  commentNavigationMode?: 'detail' | 'callback';
 }) {
   const language = useAppLanguage();
   const copy = providedCopy ?? FEED_COPY[language];
@@ -2151,7 +2154,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [isActive, isReady, post.id, warmPreviewReady]);
 
   useEffect(() => {
-    if (!isActive || isScrollBusy) {
+    if (!isActive) {
       clearVideoQualityRamp();
       setMaxVideoBitRate(VIDEO_STARTUP_MAX_BITRATE);
       return;
@@ -2162,7 +2165,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
     }
 
     return clearVideoQualityRamp;
-  }, [clearVideoQualityRamp, hasRenderedFrame, isActive, isScrollBusy, scheduleVideoQualityRamp]);
+  }, [clearVideoQualityRamp, hasRenderedFrame, isActive, scheduleVideoQualityRamp]);
 
   useEffect(() => {
     if (isActive && isReady && seekTime !== undefined && videoRef.current) {
@@ -2181,7 +2184,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   const playing =
     shouldMountVideo &&
     !manuallyPaused &&
-    (isActive ? !isScrollBusy : warmPlaying);
+    (isActive || warmPlaying);
   const showPlayOverlay = canAttemptVideo && !playing;
   const videoSource = useMemo(() => ({ uri: videoUrl }), [videoUrl]);
 
@@ -2196,8 +2199,12 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
   }, [onReact, post.id]);
 
   const handleCommentTap = useCallback(() => {
-    onCommentTap(post.id);
-  }, [onCommentTap, post.id]);
+    if (commentNavigationMode === 'callback') {
+      onCommentTap(post.id);
+      return;
+    }
+    navigateToPostComments(navigation, post.id, post);
+  }, [commentNavigationMode, navigation, onCommentTap, post]);
 
   const handleLikeLongPress = useCallback(() => {
     if (!likeButtonRef.current) {
@@ -2283,7 +2290,7 @@ export const HomeVideoPostCard = React.memo(function HomeVideoPostCard({
                 resizeMode="contain"
                 paused={!playing}
                 controls={false}
-                muted={muted || !isActive || isScrollBusy || !hasRenderedFrame}
+                muted={muted || !isActive || !hasRenderedFrame}
                 repeat
                 ignoreSilentSwitch="ignore"
                 disableAudioSessionManagement={
@@ -2949,7 +2956,8 @@ function areCommonCardPropsEqual(previous: any, next: any) {
     previous.gestureStartY === next.gestureStartY &&
     previous.hasDragged === next.hasDragged &&
     previous.navigateToProfile === next.navigateToProfile &&
-    previous.onOpenPostMenu === next.onOpenPostMenu
+    previous.onOpenPostMenu === next.onOpenPostMenu &&
+    previous.commentNavigationMode === next.commentNavigationMode
   );
 }
 
@@ -3001,6 +3009,7 @@ export const TextPostCard = React.memo(function TextPostCard({
   navigateToProfile,
   onOpenPostMenu,
   onPostPress,
+  commentNavigationMode = 'detail',
 }: {
   post: FeedTextPost;
   copy?: FeedCopy;
@@ -3034,6 +3043,7 @@ export const TextPostCard = React.memo(function TextPostCard({
    * at comments inline without leaving the feed.
    */
   onPostPress?: (post: FeedPost) => void;
+  commentNavigationMode?: 'detail' | 'callback';
 }) {
   const language = useAppLanguage();
   const copy = providedCopy ?? FEED_COPY[language];
@@ -3065,8 +3075,12 @@ export const TextPostCard = React.memo(function TextPostCard({
     [onReact, post.id],
   );
   const handleCommentTap = useCallback(() => {
-    onCommentTap(post.id);
-  }, [onCommentTap, post.id]);
+    if (commentNavigationMode === 'callback') {
+      onCommentTap(post.id);
+      return;
+    }
+    navigateToPostComments(navigation, post.id, post);
+  }, [commentNavigationMode, navigation, onCommentTap, post]);
 
   const handleLikeLongPress = useCallback(() => {
     if (!likeButtonRef.current) {

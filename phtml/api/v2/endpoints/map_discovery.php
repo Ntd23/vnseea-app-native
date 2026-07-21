@@ -6,7 +6,7 @@ $response_data = array(
 );
 
 $action = !empty($_POST['type']) ? Wo_Secure($_POST['type']) : '';
-$valid_actions = array('page_suggestions', 'place_autocomplete', 'place_details', 'route');
+$valid_actions = array('page_suggestions', 'place_autocomplete', 'place_details', 'reverse_geocode', 'route');
 define('WO_API_MAP_DISCOVERY_RADIUS_METERS', 3000);
 
 function Wo_ApiMapDiscoveryError($error_id, $error_text, $api_status = 400) {
@@ -24,6 +24,29 @@ function Wo_ApiMapDiscoveryNumber($key) {
         return null;
     }
     return (float) $_POST[$key];
+}
+
+function Wo_ApiMapDiscoveryLanguage() {
+    $language = !empty($_POST['language']) ? strtolower(trim(Wo_Secure($_POST['language']))) : 'vi';
+    return in_array($language, array('vi', 'en')) ? $language : 'vi';
+}
+
+function Wo_ApiMapDiscoveryCountry() {
+    $country = !empty($_POST['country']) ? strtolower(trim(Wo_Secure($_POST['country']))) : 'vn';
+    return preg_match('/^[a-z]{2}$/', $country) ? $country : 'vn';
+}
+
+function Wo_ApiMapDiscoveryIsAddressQuery($input) {
+    $normalized = Wo_ApiMapDiscoveryNormalizeSearchInput($input);
+    if ($normalized === '') {
+        return false;
+    }
+
+    if (preg_match('/\d/', $normalized)) {
+        return true;
+    }
+
+    return (bool) preg_match('/\b(duong|pho|street|road|so|ngo|hem|quan|huyen|tp|city|ward|phuong|thi xa|ap|hamlet|district)\b/', $normalized);
 }
 
 function Wo_ApiMapDiscoveryRouteMode() {
@@ -379,18 +402,58 @@ function Wo_ApiMapDiscoveryAutocomplete() {
     $origin_lat = Wo_ApiMapDiscoveryNumber('origin_lat');
     $origin_lng = Wo_ApiMapDiscoveryNumber('origin_lng');
     $radius = Wo_ApiMapDiscoveryRadiusMeters();
+    $language = Wo_ApiMapDiscoveryLanguage();
+    $country = Wo_ApiMapDiscoveryCountry();
+    $prefer_address = !empty($_POST['prefer_address']) && (string) $_POST['prefer_address'] !== '0';
 
     $predictions = array();
     $seen_place_ids = array();
     $places_results = array();
+    $nearby_search = array();
+    $text_search = array();
     $detected_type = Wo_ApiMapDiscoveryGetGoogleTypeFromInput($input);
+
+    // Address forms should show Google's textual address matches first. This
+    // avoids a nearby business/category result outranking the exact street
+    // address the user typed.
+    $google = array('status' => 'NOT_CALLED');
+    if ($prefer_address) {
+        $autocomplete_query = array(
+            'input' => $input,
+            'language' => $language,
+            'components' => 'country:' . $country
+        );
+        if (Wo_ApiMapDiscoveryIsAddressQuery($input)) {
+            $autocomplete_query['types'] = 'address';
+        }
+        if ($origin_lat !== null && $origin_lng !== null) {
+            $autocomplete_query['location'] = number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', '');
+            $autocomplete_query['radius'] = $radius;
+        }
+        $google = Wo_ApiMapDiscoveryGoogleGet('place/autocomplete/json', $autocomplete_query);
+        @file_put_contents(__DIR__ . '/search_debug.log', "=== Address Autocomplete ===\n" . print_r($google, true) . "\n", FILE_APPEND);
+        if (empty($google['errors']) && (($google['status'] ?? '') === 'OK' || ($google['status'] ?? '') === 'ZERO_RESULTS')) {
+            foreach (($google['predictions'] ?? array()) as $prediction) {
+                $formatting = !empty($prediction['structured_formatting']) && is_array($prediction['structured_formatting']) ? $prediction['structured_formatting'] : array();
+                Wo_ApiMapDiscoveryAddPrediction(
+                    $predictions,
+                    $seen_place_ids,
+                    !empty($prediction['place_id']) ? $prediction['place_id'] : '',
+                    !empty($prediction['description']) ? $prediction['description'] : '',
+                    !empty($formatting['main_text']) ? $formatting['main_text'] : (!empty($prediction['description']) ? $prediction['description'] : ''),
+                    !empty($formatting['secondary_text']) ? $formatting['secondary_text'] : '',
+                    !empty($prediction['types']) && is_array($prediction['types']) ? $prediction['types'] : array()
+                );
+            }
+        }
+    }
 
     // 1. Fetch from Nearby Search (strict radius + category type bias)
     if ($origin_lat !== null && $origin_lng !== null) {
         $nearby_query = array(
             'location' => number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', ''),
             'radius' => $radius,
-            'language' => 'vi'
+            'language' => $language
         );
         if ($detected_type !== null) {
             $nearby_query['type'] = $detected_type;
@@ -408,7 +471,7 @@ function Wo_ApiMapDiscoveryAutocomplete() {
                 usleep(1700000);
                 $nearby_page = Wo_ApiMapDiscoveryGoogleGet('place/nearbysearch/json', array(
                     'pagetoken' => $next_page_token,
-                    'language' => 'vi'
+                    'language' => $language
                 ));
                 @file_put_contents(__DIR__ . '/search_debug.log', "=== Nearby Search Page {$page_fetch_count} ===\n" . print_r($nearby_page, true) . "\n", FILE_APPEND);
                 if (!empty($nearby_page['errors']) || (($nearby_page['status'] ?? '') !== 'OK' && ($nearby_page['status'] ?? '') !== 'ZERO_RESULTS')) {
@@ -421,12 +484,14 @@ function Wo_ApiMapDiscoveryAutocomplete() {
     }
 
     // 2. Fallback / Merge with Text Search for wider coverage (gets places like "quán ăn" matching textually)
-    $should_run_text_search = ($detected_type === null || count($places_results) < 8);
+    $should_run_text_search =
+        (!$prefer_address && ($detected_type === null || count($places_results) < 8)) ||
+        ($prefer_address && count($predictions) === 0);
     if ($should_run_text_search) {
         $text_search_query = array(
-            'query' => $detected_type !== null ? $detected_type : $input,
-            'language' => 'vi',
-            'region' => 'vn'
+            'query' => (!$prefer_address && $detected_type !== null) ? $detected_type : $input,
+            'language' => $language,
+            'region' => $country
         );
         if ($origin_lat !== null && $origin_lng !== null) {
             $text_search_query['location'] = number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', '');
@@ -458,12 +523,11 @@ function Wo_ApiMapDiscoveryAutocomplete() {
     }
 
     // 3. Autocomplete is useful for named places, but generic categories should stay type-based.
-    $google = array('status' => 'SKIPPED_FOR_CATEGORY');
-    if ($detected_type === null) {
+    if (!$prefer_address && $detected_type === null) {
         $query = array(
             'input' => $input,
-            'language' => 'vi',
-            'components' => 'country:vn'
+            'language' => $language,
+            'components' => 'country:' . $country
         );
         if ($origin_lat !== null && $origin_lng !== null) {
             $query['location'] = number_format($origin_lat, 6, '.', '') . ',' . number_format($origin_lng, 6, '.', '');
@@ -548,6 +612,48 @@ function Wo_ApiMapDiscoveryPlaceDetails() {
             'lng' => isset($location['lng']) ? (float) $location['lng'] : null,
             'icon' => !empty($result['icon']) ? $result['icon'] : '',
             'icon_background_color' => !empty($result['icon_background_color']) ? $result['icon_background_color'] : ''
+        )
+    );
+}
+
+function Wo_ApiMapDiscoveryReverseGeocode() {
+    $latitude = Wo_ApiMapDiscoveryNumber('lat');
+    $longitude = Wo_ApiMapDiscoveryNumber('lng');
+    if ($latitude === null || $longitude === null || $latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
+        return Wo_ApiMapDiscoveryError('coordinates_missing', 'Valid latitude and longitude are required.');
+    }
+
+    $language = Wo_ApiMapDiscoveryLanguage();
+    $country = Wo_ApiMapDiscoveryCountry();
+    $google = Wo_ApiMapDiscoveryGoogleGet('geocode/json', array(
+        'latlng' => number_format($latitude, 7, '.', '') . ',' . number_format($longitude, 7, '.', ''),
+        'language' => $language,
+        'region' => $country
+    ));
+    if (!empty($google['errors'])) {
+        return $google;
+    }
+    if (($google['status'] ?? '') !== 'OK' || empty($google['results'][0])) {
+        return Wo_ApiMapDiscoveryError('address_not_found', 'Google Maps could not find an address for this location.', 404);
+    }
+
+    $result = $google['results'][0];
+    $location = !empty($result['geometry']['location']) && is_array($result['geometry']['location'])
+        ? $result['geometry']['location']
+        : array();
+    $place_id = !empty($result['place_id']) ? $result['place_id'] : '';
+    $address = !empty($result['formatted_address']) ? $result['formatted_address'] : '';
+
+    return array(
+        'api_status' => 200,
+        'place' => array(
+            'source' => 'google',
+            'place_id' => $place_id,
+            'name' => $address,
+            'address' => $address,
+            'lat' => isset($location['lat']) ? (float) $location['lat'] : (float) $latitude,
+            'lng' => isset($location['lng']) ? (float) $location['lng'] : (float) $longitude,
+            'types' => !empty($result['types']) && is_array($result['types']) ? $result['types'] : array()
         )
     );
 }
@@ -713,6 +819,9 @@ else if ($action == 'place_autocomplete') {
 }
 else if ($action == 'place_details') {
     $response_data = Wo_ApiMapDiscoveryPlaceDetails();
+}
+else if ($action == 'reverse_geocode') {
+    $response_data = Wo_ApiMapDiscoveryReverseGeocode();
 }
 else if ($action == 'route') {
     $response_data = Wo_ApiMapDiscoveryRoute();

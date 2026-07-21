@@ -171,6 +171,22 @@ describe('OneSignal foreground notification display', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it('suppresses foreground profile-visit notifications', () => {
+    const { foregroundPushEvents, getForegroundHandler } =
+      loadForegroundHandler('ios');
+    const listener = jest.fn();
+    foregroundPushEvents.subscribe(listener);
+    const { event, notification } = createEvent({
+      type: 'visited_profile',
+    });
+
+    getForegroundHandler()(event);
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(notification.display).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it('refreshes notification badges and the open notification list after a foreground push', () => {
     const badgeSource = read(
       'src/notifications/application/view-models/useNotificationBadgeViewModel.ts',

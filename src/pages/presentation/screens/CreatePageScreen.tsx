@@ -51,6 +51,7 @@ import {
   Trash2,
   TrendingUp,
   UserPlus,
+  MapPin,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -60,6 +61,9 @@ import { usePagesViewModel } from '../../application/view-models/usePagesViewMod
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { showSnackbar as showToast } from '../../../shared-kernel/presentation/components/Snackbar';
 import { SafeAreaFeedHeader } from '../../../feed/presentation/components/SafeAreaFeedHeader';
+import PageLocationPickerModal, {
+  type PageLocationSelection,
+} from '../components/PageLocationPickerModal';
 import type {
   CreatePageDraft,
   PagePrivileges,
@@ -244,7 +248,7 @@ const CREATE_PAGE_COPY = {
     step3PinStatusRequested: 'Sẽ gửi duyệt',
     step3ErrorDescLength: 'Mô tả trang phải từ 10 đến 200 ký tự.',
     step3ErrorAddressEmpty: 'Vui lòng nhập địa điểm của trang.',
-    step3ErrorAddressSelect: 'Vui lòng chọn địa điểm từ gợi ý Google Maps.',
+    step3ErrorAddressSelect: 'Vui lòng chọn gợi ý hoặc ghim đúng vị trí trên bản đồ.',
     step4Subtitle: 'Chọn danh mục phù hợp nhất để mọi người dễ dàng tìm thấy trang của bạn.',
     step4Hint: 'Trang của bạn sẽ hiển thị trong kết quả tìm kiếm dựa trên danh mục này. Bạn có thể thay đổi danh mục sau trong phần cài đặt trang.',
     step4ErrorCategory: 'Vui lòng chọn danh mục cho trang.',
@@ -289,7 +293,7 @@ const CREATE_PAGE_COPY = {
     step3PinStatusRequested: 'Will request pin',
     step3ErrorDescLength: 'Page description must be between 10 and 200 characters.',
     step3ErrorAddressEmpty: 'Please enter the page address.',
-    step3ErrorAddressSelect: 'Please select a location from Google Maps suggestions.',
+    step3ErrorAddressSelect: 'Please choose a suggestion or pin the exact location on the map.',
     step4Subtitle: 'Choose the category that best fits to help people easily find your page.',
     step4Hint: 'Your page will display in search results based on this category. You can change the category later in page settings.',
     step4ErrorCategory: 'Please select a category for the page.',
@@ -614,6 +618,7 @@ function CreatePageScreen() {
   const [pickedMediaFiles, setPickedMediaFiles] = useState<Partial<Record<PageMediaField, PickedPageMedia>>>({});
   const [selectedAdmin, setSelectedAdmin] = useState<PageUser | null>(null);
   const [adminPrivileges, setAdminPrivileges] = useState<PagePrivileges>(DEFAULT_PAGE_PRIVILEGES);
+  const [isLocationPickerVisible, setIsLocationPickerVisible] = useState(false);
 
   const currentError = localError || pagesVm.error;
   const isPageNameValid = draft.pageName.trim().length >= 5 && /^[a-z0-9_-]+$/.test(draft.pageName.trim());
@@ -666,6 +671,22 @@ function CreatePageScreen() {
     [pagesVm],
   );
 
+  const handleLocationConfirm = useCallback(
+    (selection: PageLocationSelection) => {
+      setDraft(prev => ({
+        ...prev,
+        pageAddress: selection.address,
+        placeId: selection.placeId,
+        lat: selection.lat,
+        lng: selection.lng,
+      }));
+      setLocalError(null);
+      pagesVm.clearError();
+      setIsLocationPickerVisible(false);
+    },
+    [pagesVm],
+  );
+
   const validateForm = useCallback(() => {
     if (isEditing && activeEditTab === 'flag') {
       if (
@@ -701,9 +722,10 @@ function CreatePageScreen() {
       }
 
       if (
-        !draft.placeId ||
         draft.lat === undefined ||
-        draft.lng === undefined
+        draft.lng === undefined ||
+        !Number.isFinite(draft.lat) ||
+        !Number.isFinite(draft.lng)
       ) {
         return copy.step3ErrorAddressSelect;
       }
@@ -873,6 +895,13 @@ function CreatePageScreen() {
   const selectedCallAction =
     CALL_ACTION_OPTIONS.find(option => option.id === draft.callActionType) ||
     CALL_ACTION_OPTIONS[0];
+  const pageLocationCoordinate = useMemo(
+    () =>
+      draft.lat !== undefined && draft.lng !== undefined
+        ? { latitude: draft.lat, longitude: draft.lng }
+        : undefined,
+    [draft.lat, draft.lng],
+  );
 
   useEffect(() => {
     if (!isEditing || activeEditTab !== 'users' || !editingPage?.pageId) {
@@ -1696,14 +1725,46 @@ function CreatePageScreen() {
             <AddressAutocomplete
               value={draft.pageAddress}
               placeholder="Địa điểm"
+              preferAddressSearch
               onChangeText={handleAddressChange}
               onSelectPlace={place => {
-                updateDraft('pageAddress', place.description);
-                updateDraft('placeId', place.placeId);
-                updateDraft('lat', place.lat);
-                updateDraft('lng', place.lng);
+                setDraft(prev => ({
+                  ...prev,
+                  pageAddress: place.description,
+                  placeId: place.placeId,
+                  lat: place.lat,
+                  lng: place.lng,
+                }));
+                setLocalError(null);
+                pagesVm.clearError();
               }}
             />
+            <TouchableOpacity
+              activeOpacity={0.84}
+              onPress={() => setIsLocationPickerVisible(true)}
+              style={{
+                minHeight: 48,
+                marginTop: 10,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: '#bfdbfe',
+                backgroundColor: '#eff6ff',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingHorizontal: 14,
+              }}
+            >
+              <MapPin size={18} color={BRAND} />
+              <Text style={{ marginLeft: 8, color: BRAND, fontSize: 14, fontWeight: '800' }}>
+                Chọn vị trí chính xác trên bản đồ
+              </Text>
+            </TouchableOpacity>
+            {draft.lat !== undefined && draft.lng !== undefined ? (
+              <Text style={{ marginTop: 7, color: '#64748b', fontSize: 12, fontWeight: '600' }}>
+                Đã ghim tọa độ: {draft.lat.toFixed(5)}, {draft.lng.toFixed(5)}
+              </Text>
+            ) : null}
           </View>
 
           {/* Map Pin Checkbox Card */}
@@ -1802,6 +1863,15 @@ function CreatePageScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        <PageLocationPickerModal
+          visible={isLocationPickerVisible}
+          initialAddress={draft.pageAddress}
+          initialPlaceId={draft.placeId}
+          initialCoordinate={pageLocationCoordinate}
+          onClose={() => setIsLocationPickerVisible(false)}
+          onConfirm={handleLocationConfirm}
+        />
 
       </KeyboardAvoidingView>
     </View>

@@ -1,5 +1,5 @@
 // Description: Provides a reusable modal address search input through the backend map discovery bridge.
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -16,6 +16,7 @@ import {
 import { MapPin, X, ChevronRight } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { apiRoutes } from '../../application/constants/route-registry';
+import { createAsyncResourceCache } from '../../application/utils/asyncResourceCache';
 import { apiBridge } from '../../infrastructure/api/apiBridge';
 import { useAppLanguage } from '../../application/hooks/useAppLanguage';
 
@@ -27,6 +28,8 @@ interface PlacePrediction {
   mainText?: string;
   secondary_text?: string;
   secondaryText?: string;
+  lat?: number | string | null;
+  lng?: number | string | null;
 }
 
 type PlaceDetailsResponse = {
@@ -45,6 +48,23 @@ type PlaceAutocompleteResponse = {
   predictions?: PlacePrediction[];
 };
 
+const addressPredictionCache = createAsyncResourceCache<PlacePrediction[]>({
+  ttlMs: 2 * 60 * 1000,
+  maxEntries: 80,
+});
+const addressDetailsCache = createAsyncResourceCache<PlaceDetailsResponse>({
+  ttlMs: 10 * 60 * 1000,
+  maxEntries: 160,
+});
+
+function addressPredictionCacheKey(
+  language: string,
+  query: string,
+  preferAddressSearch: boolean,
+) {
+  return `${language}:${preferAddressSearch ? 'address' : 'place'}:${query.trim().toLocaleLowerCase(language).replace(/\s+/g, ' ')}`;
+}
+
 interface AddressAutocompleteProps {
   value: string;
   onChangeText: (text: string) => void;
@@ -62,6 +82,8 @@ interface AddressAutocompleteProps {
   customIconWrapperStyle?: any;
   customInputStyle?: any;
   customIcon?: React.ReactNode;
+  /** Prefer exact street/address matches over nearby category results. */
+  preferAddressSearch?: boolean;
 }
 
 const AUTOCOMPLETE_COPY = {
@@ -91,6 +113,7 @@ export function AddressAutocomplete({
   customIconWrapperStyle,
   customInputStyle,
   customIcon,
+  preferAddressSearch = false,
 }: AddressAutocompleteProps) {
   const language = useAppLanguage();
   const copy = AUTOCOMPLETE_COPY[language] || AUTOCOMPLETE_COPY.vi;
@@ -101,16 +124,33 @@ export function AddressAutocomplete({
   const [errorMessage, setErrorMessage] = useState('');
   
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestQueryRef = useRef(value);
+  const isModalOpenRef = useRef(false);
   const modalInputRef = useRef<TextInput>(null);
 
   const handleModalShow = useCallback(() => {
-    // Small delay lets the modal animation finish so keyboard opens instantly
-    const timer = setTimeout(() => {
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+    }
+    // Small delay lets the modal animation finish so keyboard opens instantly.
+    focusTimerRef.current = setTimeout(() => {
       modalInputRef.current?.focus();
     }, 100);
-    return () => clearTimeout(timer);
   }, []);
+
+  useEffect(
+    () => () => {
+      isModalOpenRef.current = false;
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const getErrorMessage = useCallback((error: unknown) => {
     if (error instanceof Error && error.message) {
@@ -130,49 +170,65 @@ export function AddressAutocomplete({
         return;
       }
 
+      const cacheKey = addressPredictionCacheKey(
+        language,
+        trimmedInput,
+        preferAddressSearch,
+      );
+      const cachedPredictions = addressPredictionCache.get(cacheKey);
+      if (cachedPredictions !== undefined) {
+        if (input === latestQueryRef.current && isModalOpenRef.current) {
+          setPredictions(cachedPredictions);
+          setErrorMessage(cachedPredictions.length === 0 ? copy.empty : '');
+          setIsLoading(false);
+        }
+        return;
+      }
+
       setIsLoading(true);
       setErrorMessage('');
       try {
-        const data = await apiBridge.post<PlaceAutocompleteResponse>(
-          apiRoutes.user.mapDiscovery,
-          {
-            type: 'place_autocomplete',
-            query: trimmedInput,
+        const nextPredictions = await addressPredictionCache.getOrLoad(
+          cacheKey,
+          async () => {
+            const data = await apiBridge.post<PlaceAutocompleteResponse>(
+              apiRoutes.user.mapDiscovery,
+              {
+                type: 'place_autocomplete',
+                query: trimmedInput,
+                language,
+                country: language === 'vi' ? 'vn' : undefined,
+                prefer_address: preferAddressSearch ? 1 : undefined,
+              },
+            );
+            return Array.isArray(data.predictions) ? data.predictions : [];
           },
         );
 
         // Prevent race condition: only update state if this matches the latest typed input
-        if (input !== latestQueryRef.current) {
+        if (input !== latestQueryRef.current || !isModalOpenRef.current) {
           return;
         }
 
-        if (data.predictions && Array.isArray(data.predictions)) {
-          setPredictions(data.predictions);
-          setErrorMessage(
-            data.predictions.length === 0
-              ? copy.empty
-              : '',
-          );
-        } else {
-          setPredictions([]);
-          setErrorMessage(copy.empty);
-        }
+        setPredictions(nextPredictions);
+        setErrorMessage(nextPredictions.length === 0 ? copy.empty : '');
       } catch (error) {
-        if (input !== latestQueryRef.current) {
+        if (input !== latestQueryRef.current || !isModalOpenRef.current) {
           return;
         }
         setPredictions([]);
         setErrorMessage(getErrorMessage(error));
       } finally {
-        if (input === latestQueryRef.current) {
+        if (input === latestQueryRef.current && isModalOpenRef.current) {
           setIsLoading(false);
         }
       }
     },
-    [getErrorMessage, copy.empty],
+    [copy.empty, getErrorMessage, language, preferAddressSearch],
   );
 
   const openModal = useCallback(() => {
+    isModalOpenRef.current = true;
     latestQueryRef.current = value;
     setModalQuery(value);
     setIsModalVisible(true);
@@ -183,7 +239,15 @@ export function AddressAutocomplete({
   }, [fetchPredictions, value]);
 
   const closeModal = useCallback(() => {
+    isModalOpenRef.current = false;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+    }
     setIsModalVisible(false);
+    setIsLoading(false);
     Keyboard.dismiss();
   }, []);
 
@@ -216,18 +280,28 @@ export function AddressAutocomplete({
         placeId,
         mainText,
         secondaryText,
-        lat: undefined as number | undefined,
-        lng: undefined as number | undefined,
+        lat: Number.isFinite(Number(prediction.lat))
+          ? Number(prediction.lat)
+          : undefined,
+        lng: Number.isFinite(Number(prediction.lng))
+          ? Number(prediction.lng)
+          : undefined,
       };
 
-      if (placeId) {
+      if (placeId && (selected.lat === undefined || selected.lng === undefined)) {
         try {
-          const details = await apiBridge.post<PlaceDetailsResponse>(
-            apiRoutes.user.mapDiscovery,
-            {
-              type: 'place_details',
-              place_id: placeId,
-            },
+          const details = await addressDetailsCache.getOrLoad(
+            placeId,
+            () =>
+              apiBridge.post<PlaceDetailsResponse>(
+                apiRoutes.user.mapDiscovery,
+                {
+                  type: 'place_details',
+                  place_id: placeId,
+                  language,
+                  country: language === 'vi' ? 'vn' : undefined,
+                },
+              ),
           );
           const place = details.place;
           const lat = Number(place?.lat);
@@ -250,13 +324,18 @@ export function AddressAutocomplete({
       setModalQuery(selectedText);
       setPredictions([]);
       setErrorMessage('');
+      isModalOpenRef.current = false;
       setIsModalVisible(false);
       Keyboard.dismiss();
     },
-    [onChangeText, onSelectPlace],
+    [language, onChangeText, onSelectPlace],
   );
 
   const handleClear = useCallback(() => {
+    isModalOpenRef.current = false;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
     onChangeText('');
     setModalQuery('');
     setPredictions([]);
@@ -346,7 +425,11 @@ export function AddressAutocomplete({
               item.place_id || item.placeId || `${item.description}-${index}`
             }
             renderItem={({ item, index }) => (
-              <Animated.View entering={FadeInDown.delay(index * 60).springify().damping(18)}>
+              <Animated.View
+                entering={FadeInDown.delay(Math.min(index, 4) * 35)
+                  .springify()
+                  .damping(18)}
+              >
                 <TouchableOpacity
                   style={styles.predictionItem}
                   onPress={() => handleSelectPrediction(item)}

@@ -120,6 +120,36 @@ describe('ApiNotificationsRepository notification mapping', () => {
     });
   });
 
+  it('hides profile-visit notifications from the center and unread badge', async () => {
+    expect(shouldExcludeFromNotificationCenter('visited_profile')).toBe(true);
+
+    mockedApiPost.mockResolvedValue({
+      api_status: 200,
+      notifications: [
+        {
+          id: 8,
+          type: 'visited_profile',
+          seen: 0,
+          notifier: { user_id: 12, name: 'Người xem' },
+        },
+        {
+          id: 9,
+          type: 'following',
+          seen: 0,
+          notifier: { user_id: 13, name: 'Bạn mới' },
+        },
+      ],
+      count_new_messages: 0,
+      group_chat_requests: [],
+    });
+
+    const result = await createNotificationsRepository().getNotifications();
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ id: '9', type: 'following' });
+    expect(result.unreadCount).toBe(1);
+  });
+
   it('requests and merges pending group-chat invitations on the first page', async () => {
     mockedApiPost.mockResolvedValue({
       api_status: 200,

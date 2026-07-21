@@ -21,6 +21,21 @@ describe('Home feed video autoplay safety', () => {
     );
   });
 
+  it('uses separate thresholds for playback retention and autoplay selection', () => {
+    const feedScreenSource = read(
+      'src/feed/presentation/screens/FeedScreen.tsx',
+    );
+
+    expect(feedScreenSource).toContain('const FEED_VIDEO_VISIBLE_PERCENT = 1;');
+    expect(feedScreenSource).toContain(
+      'const FEED_VIDEO_VIEWABLE_PERCENT = 55;',
+    );
+    expect(feedScreenSource).toContain('viewabilityConfigCallbackPairs={');
+    expect(feedScreenSource).toContain(
+      'visibleItems: latestVisibleFeedItemsRef.current',
+    );
+  });
+
   it('uses shared audio state with feed videos unmuted by default', () => {
     const postCardsSource = read(
       'src/feed/presentation/components/PostCards.tsx',
@@ -38,11 +53,12 @@ describe('Home feed video autoplay safety', () => {
       'const canMountWarmVideo = !isScrollBusy || shouldKeepPreparedVideoMounted;',
     );
     expect(postCardsSource).toContain('!isScrollBusy &&');
+    expect(postCardsSource).toContain('(isActive || warmPlaying)');
     expect(postCardsSource).toContain(
-      '(isActive ? !isScrollBusy : warmPlaying)',
+      'muted={muted || !isActive || !hasRenderedFrame}',
     );
-    expect(postCardsSource).toContain(
-      'muted={muted || !isActive || isScrollBusy || !hasRenderedFrame}',
+    expect(postCardsSource).not.toContain(
+      '(isActive ? !isScrollBusy : warmPlaying)',
     );
     expect(postCardsSource).not.toContain('setMuted(false)');
     expect(postCardsSource).not.toContain('setMuted(true)');

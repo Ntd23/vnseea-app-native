@@ -55,6 +55,26 @@ describe('iOS comment sheet chrome', () => {
     expect(source).toContain('onDelete');
   });
 
+  it('uses display names for reply drafts and blue leading reply mentions', () => {
+    const source = read(
+      'src/reels/presentation/components/ReelCommentsSheet.tsx',
+    );
+
+    expect(source).toContain('targetCommentId');
+    expect(source).toContain('getReplyDraftPrefix(replyDisplayName)');
+    expect(source).toContain('replyMentionName');
+    expect(source).toContain('splitLeadingReplyMention');
+    expect(source).toContain('styles.commentMentionText');
+    expect(source).toContain('scheduleReplyTargetReveal(replyTarget)');
+    expect(source).toContain('viewPosition: isInline ? 0.76 : 0.58');
+    expect(source).toContain('onScrollToIndexFailed');
+    expect(source).toContain('REPLY_QUICK_EMOJIS');
+    expect(source).toContain('handleInsertReplyEmoji');
+    expect(source).toContain('replyEmojiRailVisible');
+    expect(source).toContain('styles.replyEmojiRail');
+    expect(source).not.toContain("copy.replyingPlaceholder.replace('{username}'");
+  });
+
   it('puts the iOS bottom safe-area padding inside the composer dock', () => {
     const source = read(
       'src/reels/presentation/components/ReelCommentsSheet.tsx',
@@ -89,7 +109,11 @@ describe('iOS comment sheet chrome', () => {
     expect(source).toContain(
       "Platform.OS === 'android' && isKeyboardVisible ? '100%' : sheetHeight",
     );
-    expect(source).toContain('style={styles.modalRoot}');
+    expect(source).toContain(
+      'style={isInline ? styles.inlineRoot : styles.modalRoot}',
+    );
+    expect(source).toContain('enabled={visible && isScreenFocused}');
+    expect(source).toContain('keyboardVerticalOffset={0}');
     expect(source).not.toContain(
       "Platform.OS === 'android' && { paddingBottom: keyboardHeight }",
     );
