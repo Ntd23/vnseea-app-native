@@ -16,6 +16,7 @@ if (!empty($_POST['message_id']) && is_numeric($_POST['message_id']) && $_POST['
     $message = $db->where('id',$message_id)->getOne(T_MESSAGES);
     if (!empty($message) && !empty($message_id) && is_numeric($message_id) && $message_id > 0) {
         if (Wo_DeleteMessage($message_id) === true) {
+            VNSEEA_PublishRealtimeMessageChange($message_id, $message);
             $response_data = array(
                                 'api_status' => 200,
                                 'message' => 'message successfully deleted.'

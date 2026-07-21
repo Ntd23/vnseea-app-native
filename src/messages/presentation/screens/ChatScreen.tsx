@@ -16,7 +16,6 @@ import {
   Linking,
   Modal,
   Platform,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,7 +24,6 @@ import {
   View,
   PanResponder,
   Dimensions,
-  Pressable,
   FlatList,
   type ListRenderItem,
   type KeyboardEvent,
@@ -36,11 +34,8 @@ import {
 import {
   ArrowLeft,
   Check,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   FileText,
-  FastForward,
   ImagePlus,
   Info,
   Link as LinkIcon,
@@ -52,8 +47,6 @@ import {
   Phone,
   PhoneMissed,
   Play,
-  Pause,
-  Rewind,
   Send,
   ShoppingBag,
   Square,
@@ -61,8 +54,6 @@ import {
   UserMinus,
   UserPlus,
   Video,
-  Volume2,
-  VolumeX,
   X,
   CornerUpLeft,
   CornerUpRight,
@@ -70,7 +61,7 @@ import {
   Pin,
 } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import {
   launchImageLibrary,
   type Asset,
@@ -88,6 +79,11 @@ import { useChatViewModel } from '../../application/view-models/useChatViewModel
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 import { SharedPostMessageCard } from '../components/SharedPostMessageCard';
+import { PinnedMessagesBanner } from '../components/PinnedMessagesBanner';
+import {
+  ChatMediaViewerModal,
+  type ChatMediaViewerItem,
+} from '../components/ChatMediaViewerModal';
 import { DoubleTapTouchable } from '../components/DoubleTapTouchable';
 import {
   MessageReactionBadge,
@@ -153,11 +149,6 @@ type ChatScreenProps = NativeStackScreenProps<
   RootStackParamList,
   typeof ROUTES.CHAT
 >;
-
-type ChatMediaViewerItem = {
-  uri: string;
-  type: 'image' | 'video';
-};
 
 type OpenChatMedia = (
   media: ChatMediaViewerItem,
@@ -2227,372 +2218,6 @@ const MemoizedMessageBubble = React.memo(
   },
 );
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-function SwipeToCloseContainer({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  const translateY = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        const { dx, dy } = gestureState;
-        return Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx);
-      },
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-        const { dx, dy } = gestureState;
-        return Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx);
-      },
-      onPanResponderMove: (_, gestureState) => {
-        translateY.setValue(gestureState.dy);
-        const dragPercent = Math.abs(gestureState.dy) / (SCREEN_HEIGHT / 2);
-        opacity.setValue(Math.max(1 - dragPercent, 0.4));
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        const { dy, vy } = gestureState;
-        if (Math.abs(dy) > 120 || Math.abs(vy) > 0.8) {
-          Animated.parallel([
-            Animated.timing(translateY, {
-              toValue: dy > 0 ? SCREEN_HEIGHT : -SCREEN_HEIGHT,
-              duration: 200,
-              useNativeDriver: true,
-            }),
-            Animated.timing(opacity, {
-              toValue: 0,
-              duration: 200,
-              useNativeDriver: true,
-            }),
-          ]).start(() => {
-            onClose();
-          });
-        } else {
-          Animated.parallel([
-            Animated.spring(translateY, {
-              toValue: 0,
-              useNativeDriver: true,
-              tension: 40,
-              friction: 6,
-            }),
-            Animated.spring(opacity, {
-              toValue: 1,
-              useNativeDriver: true,
-            }),
-          ]).start();
-        }
-      },
-    }),
-  ).current;
-
-  const animatedStyle = {
-    transform: [{ translateY }],
-  };
-
-  return (
-    <Animated.View style={[{ flex: 1, backgroundColor: 'black' }, { opacity }]}>
-      <Animated.View
-        style={[{ flex: 1 }, animatedStyle]}
-        {...panResponder.panHandlers}
-      >
-        {children}
-      </Animated.View>
-    </Animated.View>
-  );
-}
-
-function SwipeToCloseImageViewer({
-  uri,
-  onClose,
-}: {
-  uri: string;
-  onClose: () => void;
-}) {
-  return (
-    <SwipeToCloseContainer onClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Image
-          source={{ uri }}
-          style={{ width: '100%', height: '100%' }}
-          resizeMode="contain"
-        />
-      </View>
-    </SwipeToCloseContainer>
-  );
-}
-
-function ChatVideoViewer({
-  uri,
-  onClose,
-}: {
-  uri: string;
-  onClose: () => void;
-}) {
-  const [paused, setPaused] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [showControls, setShowControls] = useState(true);
-  const controlsTimeoutRef = useRef<any>(null);
-  const videoRef = useRef<any>(null);
-  const progressWidthRef = useRef(1);
-
-  const triggerControlsTimeout = useCallback(
-    (forceAutoHide = false) => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-      if (paused && !forceAutoHide) return;
-      controlsTimeoutRef.current = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    },
-    [paused],
-  );
-
-  useEffect(() => {
-    triggerControlsTimeout();
-    return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-    };
-  }, [triggerControlsTimeout]);
-
-  const handleScreenTap = () => {
-    const nextVisible = !showControls;
-    setShowControls(nextVisible);
-    if (!nextVisible) return;
-    triggerControlsTimeout();
-  };
-
-  const handlePlayPause = () => {
-    setPaused(p => {
-      const nextPaused = !p;
-      setShowControls(true);
-      if (!nextPaused) {
-        setTimeout(() => triggerControlsTimeout(true), 0);
-      }
-      return nextPaused;
-    });
-  };
-
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60)
-      .toString()
-      .padStart(2, '0');
-    const s = Math.floor(secs % 60)
-      .toString()
-      .padStart(2, '0');
-    return `${m}:${s}`;
-  };
-
-  const seekTo = useCallback(
-    (nextTime: number) => {
-      if (!duration) return;
-      const boundedTime = Math.max(0, Math.min(duration, nextTime));
-      setCurrentTime(boundedTime);
-      videoRef.current?.seek?.(boundedTime);
-      setShowControls(true);
-      triggerControlsTimeout();
-    },
-    [duration, triggerControlsTimeout],
-  );
-
-  const handleSeekBy = useCallback(
-    (deltaSeconds: number) => {
-      seekTo(currentTime + deltaSeconds);
-    },
-    [currentTime, seekTo],
-  );
-
-  const seekFromLocationX = useCallback(
-    (locationX: number) => {
-      const width = Math.max(progressWidthRef.current, 1);
-      const ratio = Math.max(0, Math.min(1, locationX / width));
-      seekTo(duration * ratio);
-    },
-    [duration, seekTo],
-  );
-
-  const progressPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: event => {
-          seekFromLocationX(event.nativeEvent.locationX);
-        },
-        onPanResponderMove: event => {
-          seekFromLocationX(event.nativeEvent.locationX);
-        },
-        onPanResponderRelease: () => {
-          triggerControlsTimeout();
-        },
-      }),
-    [seekFromLocationX, triggerControlsTimeout],
-  );
-
-  return (
-    <SwipeToCloseContainer onClose={onClose}>
-      <Pressable style={{ flex: 1 }} onPress={handleScreenTap}>
-        <View className="flex-1 items-center justify-center bg-black">
-          <VideoPlayer
-            ref={videoRef}
-            source={{ uri }}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="contain"
-            paused={paused}
-            muted={muted}
-            onProgress={data => {
-              setCurrentTime(data.currentTime);
-            }}
-            onLoad={data => {
-              setDuration(data.duration);
-            }}
-            controls={false}
-          />
-
-          {showControls && (
-            <View
-              className="absolute inset-0 bg-black/20 items-center justify-center"
-              pointerEvents="box-none"
-            >
-              <View
-                className="flex-row items-center justify-center"
-                pointerEvents="auto"
-              >
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => handleSeekBy(-10)}
-                  className="h-12 w-12 items-center justify-center rounded-full bg-black/60 border border-white/10"
-                >
-                  <Rewind size={21} color="#ffffff" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={handlePlayPause}
-                  className="ml-5 h-16 w-16 items-center justify-center rounded-full bg-black/70 shadow-lg border border-white/10"
-                >
-                  {paused ? (
-                    <Play size={28} color="#ffffff" fill="#ffffff" />
-                  ) : (
-                    <Pause size={28} color="#ffffff" fill="#ffffff" />
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => handleSeekBy(10)}
-                  className="ml-5 h-12 w-12 items-center justify-center rounded-full bg-black/60 border border-white/10"
-                >
-                  <FastForward size={21} color="#ffffff" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Bottom Custom Controls Bar */}
-              <View
-                className="absolute bottom-8 left-4 right-4 bg-black/60 px-4 py-3 rounded-2xl border border-white/10"
-                pointerEvents="auto"
-              >
-                <View className="flex-row items-center">
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={handlePlayPause}
-                    className="h-9 w-9 items-center justify-center rounded-full bg-white/10"
-                  >
-                    {paused ? (
-                      <Play size={15} color="#ffffff" fill="#ffffff" />
-                    ) : (
-                      <Pause size={15} color="#ffffff" fill="#ffffff" />
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => handleSeekBy(-10)}
-                    className="ml-2 h-9 w-9 items-center justify-center rounded-full bg-white/10"
-                  >
-                    <Rewind size={15} color="#ffffff" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => handleSeekBy(10)}
-                    className="ml-2 h-9 w-9 items-center justify-center rounded-full bg-white/10"
-                  >
-                    <FastForward size={15} color="#ffffff" />
-                  </TouchableOpacity>
-
-                  <Text className="ml-3 text-[11px] font-semibold text-white/90">
-                    {formatTime(currentTime)}
-                  </Text>
-                </View>
-
-                <View
-                  className="my-3 h-6 justify-center"
-                  onLayout={event => {
-                    progressWidthRef.current = event.nativeEvent.layout.width;
-                  }}
-                  {...progressPanResponder.panHandlers}
-                >
-                  <View className="h-1.5 overflow-hidden rounded-full bg-white/20">
-                    <View
-                      className="h-full rounded-full bg-blue-500"
-                      style={{
-                        width: `${
-                          duration > 0 ? (currentTime / duration) * 100 : 0
-                        }%`,
-                      }}
-                    />
-                  </View>
-                  <View
-                    className="absolute h-4 w-4 rounded-full border border-white bg-blue-500"
-                    style={{
-                      left: `${
-                        duration > 0 ? (currentTime / duration) * 100 : 0
-                      }%`,
-                      marginLeft: -8,
-                    }}
-                  />
-                </View>
-
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-[11px] font-semibold text-white/70">
-                    {formatTime(duration)}
-                  </Text>
-
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      setMuted(m => !m);
-                      setShowControls(true);
-                      triggerControlsTimeout();
-                    }}
-                    className="h-9 w-9 items-center justify-center rounded-full bg-white/10"
-                  >
-                    {muted ? (
-                      <VolumeX size={16} color="#ffffff" />
-                    ) : (
-                      <Volume2 size={16} color="#ffffff" />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          )}
-        </View>
-      </Pressable>
-    </SwipeToCloseContainer>
-  );
-}
 
 function ChatImage({ uri }: { uri: string }) {
   const [dims, setDims] = useState<{ width: number; height: number } | null>(
@@ -3735,6 +3360,7 @@ function GroupInfoModal({
 
 function ChatScreen({ navigation, route }: ChatScreenProps) {
   const { chat } = route.params;
+  const isScreenFocused = useIsFocused();
   const language = useAppLanguage();
   const copy = CHAT_COPY[language];
   const insets = useSafeAreaInsets();
@@ -3747,14 +3373,14 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     isLoadingGroupInfo,
     isLoadingAddableUsers,
     isLoadingMore,
-    isRefreshing,
     hasMore,
     isTyping,
     isRecording,
+    pinnedMessages,
+    isLoadingPinnedMessages,
     error,
     loadInitial,
     loadOlder,
-    refreshLatest,
     loadMessageContext,
     setMessagePinned,
     setMessageReaction,
@@ -3769,7 +3395,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     leaveGroup,
     deleteGroup,
     editGroup,
-  } = useChatViewModel(chat);
+  } = useChatViewModel(chat, isScreenFocused);
 
   const [text, setText] = useState('');
   const [replyingMessage, setReplyingMessage] = useState<
@@ -3851,7 +3477,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     ChatMediaViewerItem[]
   >([]);
   const [viewerMediaIndex, setViewerMediaIndex] = useState(0);
-  const [isViewerMuted, setIsViewerMuted] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
@@ -3867,7 +3492,9 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   const recorder = useAudioRecorder();
   const flatListRef = useRef<FlatList<ChatMessageListItem>>(null);
-  const mediaListRef = useRef<FlatList>(null);
+  const pinnedHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const previousLatestMessageIdRef = useRef<string | undefined>(undefined);
   const didScrollInitialRef = useRef(false);
   const pendingInitialScrollRef = useRef(false);
@@ -3913,23 +3540,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     () => ({ minIndexForVisible: 0 }),
     [],
   );
-  const viewerMedia = viewerMediaItems[viewerMediaIndex];
-
-  useEffect(() => {
-    if (
-      viewerMediaItems.length > 0 &&
-      viewerMediaIndex >= 0 &&
-      viewerMediaIndex < viewerMediaItems.length
-    ) {
-      const timer = setTimeout(() => {
-        mediaListRef.current?.scrollToIndex({
-          index: viewerMediaIndex,
-          animated: false,
-        });
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [viewerMediaIndex, viewerMediaItems.length]);
   const scrollToLatest = useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
       flatListRef.current?.scrollToOffset({ offset: 0, animated });
@@ -3957,6 +3567,35 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       }
     }
   }, []);
+
+  const handleOpenPinnedMessage = useCallback(
+    async (messageId: string) => {
+      await loadMessageContext(messageId);
+      setHighlightedMessageId(messageId);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => handlePressReply(messageId));
+      });
+      if (pinnedHighlightTimeoutRef.current) {
+        clearTimeout(pinnedHighlightTimeoutRef.current);
+      }
+      pinnedHighlightTimeoutRef.current = setTimeout(() => {
+        setHighlightedMessageId(current =>
+          current === messageId ? undefined : current,
+        );
+        pinnedHighlightTimeoutRef.current = null;
+      }, 1800);
+    },
+    [handlePressReply, loadMessageContext],
+  );
+
+  useEffect(
+    () => () => {
+      if (pinnedHighlightTimeoutRef.current) {
+        clearTimeout(pinnedHighlightTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   const handleMessageScrollToIndexFailed = useCallback(
     ({
@@ -4162,7 +3801,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       const index = items.findIndex(item => item.uri === media.uri);
       setViewerMediaItems(items);
       setViewerMediaIndex(Math.max(0, index));
-      setIsViewerMuted(false);
     },
     [],
   );
@@ -4331,9 +3969,15 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   const handleSelectOptionPin = useCallback(async () => {
     if (!selectedOptionMessage) return;
+    const isPinned = pinnedMessages.some(
+      message => message.id === selectedOptionMessage.id,
+    );
     try {
-      await setMessagePinned(selectedOptionMessage.id, true);
-      showSnackbar({ message: 'Đã ghim tin nhắn', type: 'success' });
+      await setMessagePinned(selectedOptionMessage.id, !isPinned);
+      showSnackbar({
+        message: isPinned ? 'Đã bỏ ghim tin nhắn' : 'Đã ghim tin nhắn',
+        type: 'success',
+      });
     } catch (error) {
       Alert.alert(
         'Không thể ghim tin nhắn',
@@ -4342,7 +3986,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     } finally {
       setSelectedOptionMessage(undefined);
     }
-  }, [selectedOptionMessage, setMessagePinned]);
+  }, [pinnedMessages, selectedOptionMessage, setMessagePinned]);
 
   const handleMessageReaction = useCallback(
     async (message: MessageItem, reaction: ReactionType | null) => {
@@ -5043,6 +4687,23 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           ))}
         </View>
 
+        <PinnedMessagesBanner
+          pinnedMessages={pinnedMessages}
+          partnerName={chat.name}
+          isLoading={isLoadingPinnedMessages}
+          onOpenMessage={messageId => {
+            handleOpenPinnedMessage(messageId).catch(error => {
+              showSnackbar({
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : 'Không mở được tin nhắn đã ghim.',
+                type: 'error',
+              });
+            });
+          }}
+        />
+
         {/* Messages */}
         {isLoading ? (
           <ChatMessagesSkeleton />
@@ -5508,116 +5169,12 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         topInset={insets.top}
         copy={copy}
       />
-      <Modal
-        visible={Boolean(viewerMedia)}
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={handleCloseMedia}
-      >
-        <SafeAreaView className="flex-1 bg-black" edges={['top', 'bottom']}>
-          {/* Header Row - positioned safely under status bar */}
-          <View className="flex-row items-center justify-between px-4 py-3 z-10">
-            {viewerMediaItems.length > 1 ? (
-              <View className="rounded-full bg-white/20 px-4 py-2">
-                <Text className="text-sm font-semibold text-white">
-                  {viewerMediaIndex + 1}/{viewerMediaItems.length}
-                </Text>
-              </View>
-            ) : (
-              <View />
-            )}
-            <TouchableOpacity
-              className="h-11 w-11 items-center justify-center rounded-full bg-black/60"
-              activeOpacity={0.8}
-              onPress={handleCloseMedia}
-            >
-              <X size={23} color="#ffffff" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Media Slider (Horizontal FlatList) for swiping */}
-          <View className="flex-1">
-            <FlatList
-              ref={mediaListRef}
-              data={viewerMediaItems}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(item, index) => `${item.uri}-${index}`}
-              getItemLayout={(data, index) => {
-                const screenWidth = Dimensions.get('window').width;
-                return {
-                  length: screenWidth,
-                  offset: screenWidth * index,
-                  index,
-                };
-              }}
-              onMomentumScrollEnd={event => {
-                const slideSize = event.nativeEvent.layoutMeasurement.width;
-                if (slideSize <= 0) return;
-                const offset = event.nativeEvent.contentOffset.x;
-                const index = Math.round(offset / slideSize);
-                if (
-                  index >= 0 &&
-                  index < viewerMediaItems.length &&
-                  index !== viewerMediaIndex
-                ) {
-                  setViewerMediaIndex(index);
-                }
-              }}
-              renderItem={({ item }) => {
-                const screenWidth = Dimensions.get('window').width;
-                return (
-                  <View style={{ width: screenWidth, flex: 1 }}>
-                    {item.type === 'image' ? (
-                      <SwipeToCloseContainer onClose={handleCloseMedia}>
-                        <View
-                          style={{
-                            flex: 1,
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                          }}
-                        >
-                          <Image
-                            source={{ uri: item.uri }}
-                            style={{ width: '100%', height: '100%' }}
-                            resizeMode="contain"
-                          />
-                        </View>
-                      </SwipeToCloseContainer>
-                    ) : item.type === 'video' ? (
-                      <ChatVideoViewer
-                        uri={item.uri}
-                        onClose={handleCloseMedia}
-                      />
-                    ) : null}
-                  </View>
-                );
-              }}
-            />
-          </View>
-
-          {/* Navigation Chevrons */}
-          {viewerMediaIndex > 0 && (
-            <TouchableOpacity
-              className="absolute left-4 top-1/2 h-14 w-14 items-center justify-center rounded-full bg-white/20 -translate-y-1/2 z-10"
-              activeOpacity={0.8}
-              onPress={() => setViewerMediaIndex(i => i - 1)}
-            >
-              <ChevronLeft size={28} color="#fff" />
-            </TouchableOpacity>
-          )}
-          {viewerMediaIndex < viewerMediaItems.length - 1 && (
-            <TouchableOpacity
-              className="absolute right-4 top-1/2 h-14 w-14 items-center justify-center rounded-full bg-white/20 -translate-y-1/2 z-10"
-              activeOpacity={0.8}
-              onPress={() => setViewerMediaIndex(i => i + 1)}
-            >
-              <ChevronRight size={28} color="#fff" />
-            </TouchableOpacity>
-          )}
-        </SafeAreaView>
-      </Modal>
+      <ChatMediaViewerModal
+        items={viewerMediaItems}
+        index={viewerMediaIndex}
+        onIndexChange={setViewerMediaIndex}
+        onClose={handleCloseMedia}
+      />
 
       {/* Custom Option Message Modal (Action Sheet) */}
       <Modal
@@ -5689,24 +5246,27 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 </View>
               </TouchableOpacity>
 
-              {chat.chatType === 'user' ? (
-                <TouchableOpacity
-                  className="mb-5 flex-row items-center rounded-xl bg-gray-50 px-4 py-4 active:bg-gray-100"
-                  onPress={handleSelectOptionPin}
-                >
-                  <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-amber-50">
-                    <Pin size={20} color="#D97706" />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-base font-semibold text-gray-800">
-                      Ghim tin nhắn
-                    </Text>
-                    <Text className="text-xs text-gray-500">
-                      Hiển thị trong chi tiết cuộc trò chuyện
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ) : null}
+              <TouchableOpacity
+                className="mb-5 flex-row items-center rounded-xl bg-gray-50 px-4 py-4 active:bg-gray-100"
+                onPress={handleSelectOptionPin}
+              >
+                <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-amber-50">
+                  <Pin size={20} color="#D97706" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-base font-semibold text-gray-800">
+                    {selectedOptionMessage &&
+                    pinnedMessages.some(
+                      message => message.id === selectedOptionMessage.id,
+                    )
+                      ? 'Bỏ ghim tin nhắn'
+                      : 'Ghim tin nhắn'}
+                  </Text>
+                  <Text className="text-xs text-gray-500">
+                    Hiển thị ngay bên dưới header cuộc trò chuyện
+                  </Text>
+                </View>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 className="items-center justify-center rounded-full bg-gray-200/80 py-3.5 active:bg-gray-300"

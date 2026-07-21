@@ -1,5 +1,6 @@
 // Description: Provides chat message and group chat state for the Messages presentation layer.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import type {
   ChatItem,
   GroupAddableUser,
@@ -9,15 +10,21 @@ import type {
   GroupSharedLink,
   MessageAttachment,
   MessageItem,
+  PinnedMessageItem,
 } from '../../domain/types/messages.types';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
 import {
-  emitChatTyping,
-  emitChatTypingDone,
   getWebTypingState,
-  onChatTyping,
   updateWebTypingState,
 } from '../../infrastructure/realtime/liveKitCallRealtime';
+import {
+  emitMessageTyping as emitChatTyping,
+  emitMessageTypingDone as emitChatTypingDone,
+  isMessageRealtimeConnected,
+  onMessageTyping as onChatTyping,
+  subscribeToMessageInvalidations,
+  subscribeToMessageRealtimeConnection,
+} from '../../infrastructure/realtime/messageRealtimeRuntime';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
@@ -162,7 +169,7 @@ function mergeMessages(...messageLists: MessageItem[][]) {
   });
 }
 
-export function useChatViewModel(chat: ChatItem) {
+export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [groupInfo, setGroupInfo] = useState<GroupChatInfo | null>(null);
   const [groupSharedAssetsOverride, setGroupSharedAssetsOverride] =
@@ -178,6 +185,12 @@ export function useChatViewModel(chat: ChatItem) {
   const [error, setError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [pinnedMessages, setPinnedMessages] = useState<PinnedMessageItem[]>([]);
+  const [isLoadingPinnedMessages, setIsLoadingPinnedMessages] = useState(false);
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(
+    isMessageRealtimeConnected(),
+  );
+  const isSending = pendingSendCount > 0;
   const isRefreshingRef = useRef(false);
   const remoteTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -192,10 +205,10 @@ export function useChatViewModel(chat: ChatItem) {
   const messagesRef = useRef<MessageItem[]>(messages);
   const pendingReactionMessageIdsRef = useRef<Set<string>>(new Set());
   const isLoadingRef = useRef(isLoading);
+  const isSendingRef = useRef(isSending);
   const isLoadingMoreRef = useRef(isLoadingMore);
   const hasMoreRef = useRef(hasMore);
   const initialLoadPromiseRef = useRef<Promise<void>>(Promise.resolve());
-  const isSending = pendingSendCount > 0;
   const getMessagesForChat = useCallback(
     (options?: Parameters<typeof repository.getMessages>[1]) =>
       repository.getMessages(chat, options),
@@ -207,6 +220,17 @@ export function useChatViewModel(chat: ChatItem) {
     [chat],
   );
   const typingRecipientId = getTypingRecipientId(chat);
+
+  const loadPinnedMessages = useCallback(async () => {
+    setIsLoadingPinnedMessages(true);
+    try {
+      const nextPinnedMessages = await repository.getPinnedMessages(chat);
+      setPinnedMessages(nextPinnedMessages);
+      return nextPinnedMessages;
+    } finally {
+      setIsLoadingPinnedMessages(false);
+    }
+  }, [chat]);
 
   const stopTyping = useCallback(() => {
     if (!typingRecipientId) return;
@@ -273,10 +297,11 @@ export function useChatViewModel(chat: ChatItem) {
       } finally {
         setIsLoading(false);
       }
+      loadPinnedMessages().catch(() => undefined);
     })();
     initialLoadPromiseRef.current = operation;
     return operation;
-  }, [chat.chatType, chat.userId, getMessagesForChat]);
+  }, [chat.chatType, chat.userId, getMessagesForChat, loadPinnedMessages]);
 
   const loadOlder = useCallback(async () => {
     const oldestMessageId = oldestMessageIdRef.current;
@@ -316,7 +341,13 @@ export function useChatViewModel(chat: ChatItem) {
 
   const refreshLatest = useCallback(
     async (showSpinner = true) => {
-      if (isLoading || isSending || isRefreshingRef.current) return;
+      if (
+        isLoadingRef.current ||
+        isSendingRef.current ||
+        isRefreshingRef.current
+      ) {
+        return false;
+      }
 
       isRefreshingRef.current = true;
       if (showSpinner) setIsRefreshing(true);
@@ -349,8 +380,9 @@ export function useChatViewModel(chat: ChatItem) {
         isRefreshingRef.current = false;
         if (showSpinner) setIsRefreshing(false);
       }
+      return true;
     },
-    [getMessagesForChat, isLoading, isSending],
+    [getMessagesForChat],
   );
 
   const loadMessageContext = useCallback(
@@ -386,25 +418,45 @@ export function useChatViewModel(chat: ChatItem) {
 
   const setMessagePinned = useCallback(
     async (messageId: string, pinned: boolean) => {
-      if (chat.chatType !== 'user') {
-        throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
-      }
-      const conversation =
-        chat.hasConversationRecord && chat.chatId
-          ? chat
-          : await repository.findUserConversation(
-              chat.participantId || chat.userId,
-            );
-      if (!conversation?.chatId) {
-        throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
-      }
-      await repository.setMessagePinned(
-        conversation.chatId,
-        messageId,
-        pinned,
+      const previousPinnedMessages = pinnedMessages;
+      const targetMessage = messagesRef.current.find(
+        message => message.id === messageId,
       );
+
+      setPinnedMessages(current => {
+        if (!pinned) {
+          return current.filter(message => message.id !== messageId);
+        }
+        if (!targetMessage) return current;
+        const optimistic: PinnedMessageItem = {
+          ...targetMessage,
+          pinnedAt: Math.floor(Date.now() / 1000),
+        };
+        return [optimistic, ...current.filter(item => item.id !== messageId)];
+      });
+
+      try {
+        let targetChat = chat;
+        if (
+          chat.chatType === 'user' &&
+          (!chat.hasConversationRecord || !chat.chatId)
+        ) {
+          const conversation = await repository.findUserConversation(
+            chat.participantId || chat.userId,
+          );
+          if (!conversation?.chatId) {
+            throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
+          }
+          targetChat = conversation;
+        }
+        await repository.setMessagePinned(targetChat, messageId, pinned);
+        await loadPinnedMessages();
+      } catch (caught) {
+        setPinnedMessages(previousPinnedMessages);
+        throw caught;
+      }
     },
-    [chat],
+    [chat, loadPinnedMessages, pinnedMessages],
   );
 
   const setMessageReaction = useCallback(
@@ -631,6 +683,52 @@ export function useChatViewModel(chat: ChatItem) {
     loadInitial().catch(() => undefined);
   }, [loadInitial]);
 
+  useEffect(
+    () => subscribeToMessageRealtimeConnection(setIsRealtimeConnected),
+    [],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    let running = false;
+    let dirty = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flush = async () => {
+      if (running || cancelled) return;
+      running = true;
+      try {
+        while (dirty && !cancelled) {
+          dirty = false;
+          const refreshed = await refreshLatest(false);
+          if (!refreshed) {
+            dirty = true;
+            if (!retryTimer) {
+              retryTimer = setTimeout(() => {
+                retryTimer = null;
+                flush().catch(() => undefined);
+              }, 300);
+            }
+            return;
+          }
+          await loadPinnedMessages().catch(() => undefined);
+        }
+      } finally {
+        running = false;
+      }
+    };
+
+    const unsubscribe = subscribeToMessageInvalidations(() => {
+      dirty = true;
+      flush().catch(() => undefined);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [loadPinnedMessages, refreshLatest]);
+
   useEffect(() => {
     const currentUserId = sessionStorage.getSession()?.userId ?? '';
     const unsubscribe = onChatTyping(event => {
@@ -716,6 +814,10 @@ export function useChatViewModel(chat: ChatItem) {
   }, [isLoading]);
 
   useEffect(() => {
+    isSendingRef.current = isSending;
+  }, [isSending]);
+
+  useEffect(() => {
     isLoadingMoreRef.current = isLoadingMore;
   }, [isLoadingMore]);
 
@@ -724,12 +826,15 @@ export function useChatViewModel(chat: ChatItem) {
   }, [hasMore]);
 
   useEffect(() => {
+    if (isRealtimeConnected || !isScreenFocused) return undefined;
     const interval = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
       refreshLatest(false).catch(() => undefined);
+      loadPinnedMessages().catch(() => undefined);
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [refreshLatest]);
+  }, [isRealtimeConnected, isScreenFocused, loadPinnedMessages, refreshLatest]);
 
   // Build shared assets from loaded messages
   const groupSharedAssetsFromMessages = useMemo<GroupSharedAssets>(() => {
@@ -778,12 +883,15 @@ export function useChatViewModel(chat: ChatItem) {
     isSending,
     isTyping,
     isRecording,
+    pinnedMessages,
+    isLoadingPinnedMessages,
     hasMore,
     error,
     loadInitial,
     loadOlder,
     refreshLatest,
     loadMessageContext,
+    loadPinnedMessages,
     setMessagePinned,
     setMessageReaction,
     sendMessage,

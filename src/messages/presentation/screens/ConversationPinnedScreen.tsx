@@ -13,7 +13,10 @@ import { PinOff, Pin } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
-import type { MessageItem } from '../../domain/types/messages.types';
+import type {
+  ChatItem,
+  PinnedMessageItem,
+} from '../../domain/types/messages.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { ConversationScreenHeader } from '../components/ConversationScreenHeader';
 import { useAppTheme } from '../../../shared-kernel/application/hooks/useAppTheme';
@@ -28,23 +31,27 @@ const repository = createMessagesRepository();
 export default function ConversationPinnedScreen({ navigation, route }: Props) {
   const { chat } = route.params;
   const { isDark } = useAppTheme();
-  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [messages, setMessages] = useState<PinnedMessageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const resolvePinnedChat = useCallback(async (): Promise<ChatItem> => {
+    if (chat.chatType === 'group') return chat;
+    if (chat.hasConversationRecord && chat.chatId) return chat;
+    const conversation = await repository.findUserConversation(
+      chat.participantId || chat.userId,
+    );
+    if (!conversation?.chatId) {
+      throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
+    }
+    return conversation;
+  }, [chat]);
 
   const loadPinnedMessages = useCallback(async () => {
     setIsLoading(true);
     setError('');
     try {
-      const participantId = chat.participantId || chat.userId;
-      const conversation =
-        chat.hasConversationRecord && chat.chatId
-          ? chat
-          : await repository.findUserConversation(participantId);
-      if (!conversation?.chatId) {
-        throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
-      }
-      setMessages(await repository.getPinnedMessages(conversation.chatId));
+      setMessages(await repository.getPinnedMessages(await resolvePinnedChat()));
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -54,25 +61,17 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [chat]);
+  }, [resolvePinnedChat]);
 
   useEffect(() => {
     loadPinnedMessages().catch(() => undefined);
   }, [loadPinnedMessages]);
 
   const unpin = useCallback(
-    async (message: MessageItem) => {
+    async (message: PinnedMessageItem) => {
       try {
-        const participantId = chat.participantId || chat.userId;
-        const conversation =
-          chat.hasConversationRecord && chat.chatId
-            ? chat
-            : await repository.findUserConversation(participantId);
-        if (!conversation?.chatId) {
-          throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
-        }
         await repository.setMessagePinned(
-          conversation.chatId,
+          await resolvePinnedChat(),
           message.id,
           false,
         );
@@ -84,7 +83,7 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
         );
       }
     },
-    [chat],
+    [resolvePinnedChat],
   );
 
   return (

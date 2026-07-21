@@ -33,6 +33,7 @@ import type {
   MessageCallEvent,
   MessageItem,
   MessageLabel,
+  PinnedMessageItem,
   SendMessageResponse,
 } from '../../domain/types/messages.types';
 type RawRecord = Record<string, unknown>;
@@ -237,6 +238,29 @@ function getChatTarget(chat: ChatItem | string): ChatTarget {
   return {
     type: chat.chatType === 'page' ? 'page' : 'user',
     id: chat.participantId || chat.userId || '',
+  };
+}
+
+function getPinnedChatTarget(chat: ChatItem | string) {
+  if (typeof chat === 'string') {
+    return { chatId: chat, type: 'user' as const };
+  }
+
+  const type = chat.chatType === 'group' ? 'group' : 'user';
+  if (type === 'group') {
+    return {
+      chatId:
+        chat.groupId ||
+        chat.chatId ||
+        chat.userId ||
+        chat.id.replace(/^group:/, ''),
+      type,
+    };
+  }
+
+  return {
+    chatId: chat.chatId || '',
+    type,
   };
 }
 function getRawUserName(raw: RawRecord): string {
@@ -1401,23 +1425,35 @@ export function createMessagesRepository(): MessagesRepository {
         notify: enabled ? 'yes' : 'no',
       });
     },
-    async getPinnedMessages(chatId: string) {
+    async getPinnedMessages(chat: ChatItem | string) {
+      const target = getPinnedChatTarget(chat);
+      if (!target.chatId) return [];
       const response = await apiBridge.post<{ data?: RawRecord[] }>(
         apiRoutes.messages.pinnedMessages,
-        { chat_id: chatId, type: 'user' },
+        { chat_id: target.chatId, type: target.type },
       );
-      return (response.data ?? []).map(mapMessage);
+      return (response.data ?? [])
+        .map(item => ({
+          ...mapMessage(item),
+          pinnedAt: readNumber(item, 'pinned_at') || readNumber(item, 'time'),
+        }))
+        .filter((item): item is PinnedMessageItem => Boolean(item.id))
+        .sort((left, right) => right.pinnedAt - left.pinnedAt);
     },
     async setMessagePinned(
-      chatId: string,
+      chat: ChatItem | string,
       messageId: string,
       pinned: boolean,
     ) {
+      const target = getPinnedChatTarget(chat);
+      if (!target.chatId) {
+        throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
+      }
       await apiBridge.post(apiRoutes.messages.pinMessage, {
-        chat_id: chatId,
+        chat_id: target.chatId,
         message_id: messageId,
         pin: pinned ? 'yes' : 'no',
-        type: 'user',
+        type: target.type,
       });
     },
     async blockConversationUser(userId: string) {

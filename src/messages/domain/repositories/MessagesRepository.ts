@@ -20,6 +20,7 @@ import type {
   MessageItem,
   MessageLabel,
   MessageReactionSummary,
+  PinnedMessageItem,
   SendMessageResponse,
 } from '../types/messages.types';
 
@@ -120,10 +121,10 @@ export interface MessagesRepository {
     enabled: boolean,
   ): Promise<void>;
 
-  getPinnedMessages(chatId: string): Promise<MessageItem[]>;
+  getPinnedMessages(chat: ChatItem | string): Promise<PinnedMessageItem[]>;
 
   setMessagePinned(
-    chatId: string,
+    chat: ChatItem | string,
     messageId: string,
     pinned: boolean,
   ): Promise<void>;

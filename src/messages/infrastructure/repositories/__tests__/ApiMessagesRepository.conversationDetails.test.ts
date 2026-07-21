@@ -1,4 +1,5 @@
 import { apiBridge } from '../../../../shared-kernel/infrastructure/api/apiBridge';
+import type { ChatItem } from '../../../domain/types/messages.types';
 import { createMessagesRepository } from '../ApiMessagesRepository';
 
 jest.mock('../../../../shared-kernel/infrastructure/api/apiBridge', () => ({
@@ -162,6 +163,48 @@ describe('ApiMessagesRepository conversation details', () => {
     expect(post).toHaveBeenCalledWith('get_pin_message', {
       chat_id: '77',
       type: 'user',
+    });
+  });
+
+  it('uses the group id for pinned messages and keeps newest pins first', async () => {
+    post
+      .mockResolvedValueOnce({
+        data: [
+          rawMessage('10', { group_id: '55', pinned_at: 100 }),
+          rawMessage('11', { group_id: '55', pinned_at: 200 }),
+        ],
+      })
+      .mockResolvedValueOnce({ api_status: 200 });
+    const groupChat: ChatItem = {
+      id: 'group:55',
+      chatId: '55',
+      chatType: 'group',
+      groupId: '55',
+      userId: '55',
+      username: '',
+      name: 'Nhóm',
+      avatar: '',
+      lastMessage: '',
+      lastMessageTime: 0,
+      unreadCount: 0,
+      isOnline: false,
+      isVerified: false,
+    };
+    const repository = createMessagesRepository();
+
+    const pinned = await repository.getPinnedMessages(groupChat);
+    await repository.setMessagePinned(groupChat, '11', false);
+
+    expect(pinned.map(message => message.id)).toEqual(['11', '10']);
+    expect(post).toHaveBeenNthCalledWith(1, 'get_pin_message', {
+      chat_id: '55',
+      type: 'group',
+    });
+    expect(post).toHaveBeenNthCalledWith(2, 'pin_message', {
+      chat_id: '55',
+      message_id: '11',
+      pin: 'no',
+      type: 'group',
     });
   });
 

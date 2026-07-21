@@ -26,18 +26,13 @@ describe('Messages groups tab create CTA', () => {
     expect(source).toContain('navigation.navigate(ROUTES.CREATE_GROUP_CHAT);');
   });
 
-  it('keeps the floating mark-all-read action separate from group creation', () => {
+  it('does not render the removed floating mark-all-read action', () => {
     const source = read('src/messages/presentation/screens/MessageScreen.tsx');
-    const floatingActionBlock = source.slice(
-      source.indexOf("{activeFilter !== 'broadcast' && ("),
-      source.indexOf(
-        '</SafeAreaView>',
-        source.indexOf("{activeFilter !== 'broadcast' && ("),
-      ),
-    );
 
-    expect(floatingActionBlock).toContain('onPress={handleMarkAllAsRead}');
-    expect(floatingActionBlock).not.toContain('handleCreateGroupChat');
+    expect(source).not.toContain('handleMarkAllAsRead');
+    expect(source).not.toContain('<ListChecks');
+    expect(source).not.toContain('markAllAsRead,');
+    expect(source).toContain('handleCreateGroupChat');
   });
 
   it('allows conversation details to preselect the other participant', () => {

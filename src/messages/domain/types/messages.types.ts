@@ -95,6 +95,10 @@ export interface MessageItem {
   deliveryState?: 'sending' | 'failed';
 }
 
+export interface PinnedMessageItem extends MessageItem {
+  pinnedAt: number;
+}
+
 export interface MessageCallEvent {
   callId: string;
   callType: 'audio' | 'video';
