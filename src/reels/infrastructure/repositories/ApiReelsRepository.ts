@@ -62,6 +62,15 @@ type HashtagPostsResponse = {
   data?: Array<Record<string, unknown>>;
 };
 
+type ReelsPostsResponse = {
+  api_status: number | string;
+  data?: Array<Record<string, unknown>>;
+  has_more?: boolean | number | string;
+  next_cursor?: string | number | null;
+};
+
+const MAX_REEL_SCAN_PAGES = 8;
+
 // ────────────────────────────────────────────────────────────────────────
 // Mapping helpers — turn raw WoWonder JSON into clean domain objects.
 // ────────────────────────────────────────────────────────────────────────
@@ -114,6 +123,22 @@ function readBool(raw: Record<string, unknown>, ...keys: string[]): boolean {
     if (value === 'false' || value === '0' || value === 0) return false;
   }
   return false;
+}
+
+function readOptionalBool(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (value === 'true' || value === '1' || value === 1) return true;
+  if (value === 'false' || value === '0' || value === 0) return false;
+  return undefined;
+}
+
+function getRawReelsCursor(rawList: Array<Record<string, unknown>>) {
+  const minRawId = rawList
+    .map(raw => Number(readString(raw, 'id', 'post_id')))
+    .filter(value => Number.isFinite(value) && value > 0)
+    .reduce((min, value) => (min === 0 || value < min ? value : min), 0);
+
+  return minRawId > 0 ? String(minRawId) : null;
 }
 
 function mapPublisher(raw: Record<string, unknown> | undefined | null): ReelPublisher {
@@ -453,8 +478,8 @@ async function findExactHashtagFallback(
 }
 
 async function fetchReelsPage(options: FetchReelsOptions = {}): Promise<ReelsPage> {
-  const limit = options.limit ?? 10;
-  const cursor = options.cursor ?? null;
+  const limit = Math.max(1, Math.min(options.limit ?? 20, 50));
+  const initialCursor = options.cursor ?? null;
 
   // ── Endpoint selection ────────────────────────────────────────────────
   //
@@ -481,29 +506,20 @@ async function fetchReelsPage(options: FetchReelsOptions = {}): Promise<ReelsPag
   // If `options.publisherId` is explicitly passed (e.g. "show only this
   // user's videos" from a profile screen), we honour it via the
   // `get_user_posts` branch instead.
-  const payload: Record<string, unknown> = {
+  const basePayload: Record<string, unknown> = {
     post_type: 'video',
     limit,
   };
 
   if (options.publisherId) {
     // Profile-scoped fetch — caller wants ONE user's videos.
-    payload.type = 'get_user_posts';
-    payload.id = options.publisherId;
+    basePayload.type = 'get_user_posts';
+    basePayload.id = options.publisherId;
   } else {
     // Default: site-wide public videos. This is what the Reels tab
     // wants — discovery of everyone's content, just like TikTok.
-    payload.type = 'get_random_videos';
+    basePayload.type = 'get_random_videos';
   }
-
-  if (cursor) payload.after_post_id = cursor;
-
-  const response = await backendApi.post<{
-    api_status: number | string;
-    data?: Array<Record<string, unknown>>;
-  }>(apiRoutes.feed.posts, payload);
-
-  const rawList = response.data ?? [];
 
   // Backend constraint reminder: `Wo_GetPosts` (used by `get_user_posts`)
   // appends `AND is_reel = 0` unless `is_reel` is in the data array, but
@@ -511,30 +527,92 @@ async function fetchReelsPage(options: FetchReelsOptions = {}): Promise<ReelsPag
   // — so reels uploaded via the dedicated web Reels feature DO show up
   // through this path now.
   //
-  // We still keep the client-side filter `Boolean(postFile)` because
-  // external embeds (YouTube/Vimeo/etc.) have no `postFile` and can't
-  // be played by `react-native-video`.
-  const items = rawList
-    .filter(raw => Boolean(readString(raw, 'postFile')))
-    .map(mapReel)
-    .filter(item => Boolean(item.videoUrl));
-
+  // Older servers can still return external embeds or fewer usable rows
+  // than requested. Keep walking the cursor until this app page is full,
+  // the server explicitly says there is no more data, or a safety cap is
+  // reached. This prevents one sparse backend page from ending the feed.
+  const items: ReelsItem[] = [];
+  const seenIds = new Set<string>();
+  let requestCursor = initialCursor;
   let nextCursor: string | null = null;
-  if (rawList.length >= limit) {
-    const minRawId = rawList
-      .map(raw => Number(readString(raw, 'id', 'post_id')))
-      .filter(n => Number.isFinite(n) && n > 0)
-      .reduce((min, n) => (min === 0 || n < min ? n : min), 0);
-    nextCursor = minRawId > 0 ? String(minRawId) : null;
+  let totalRawCount = 0;
+
+  for (let scan = 0; scan < MAX_REEL_SCAN_PAGES; scan += 1) {
+    const payload = { ...basePayload };
+    if (requestCursor) payload.after_post_id = requestCursor;
+
+    let response: ReelsPostsResponse;
+    try {
+      response = await backendApi.post<ReelsPostsResponse>(
+        apiRoutes.feed.posts,
+        payload,
+      );
+    } catch (error) {
+      if (items.length > 0) break;
+      throw error;
+    }
+    const rawList = response.data ?? [];
+    totalRawCount += rawList.length;
+
+    const serverCursor = toStringValue(response.next_cursor) || null;
+    const serverHasMore = readOptionalBool(response.has_more);
+
+    if (rawList.length === 0) {
+      const cursorAdvanced = Boolean(
+        serverCursor && String(serverCursor) !== String(requestCursor ?? ''),
+      );
+      if (serverHasMore === true && cursorAdvanced && serverCursor) {
+        nextCursor = serverCursor;
+        requestCursor = serverCursor;
+        continue;
+      }
+      nextCursor = null;
+      break;
+    }
+
+    let processedCount = 0;
+    let lastProcessedCursor: string | null = null;
+
+    for (const raw of rawList) {
+      processedCount += 1;
+      const rawId = readString(raw, 'id', 'post_id');
+      if (rawId) lastProcessedCursor = rawId;
+
+      if (readString(raw, 'postFile')) {
+        const mapped = mapReel(raw);
+        if (mapped.videoUrl && !seenIds.has(mapped.id)) {
+          seenIds.add(mapped.id);
+          items.push(mapped);
+        }
+      }
+
+      if (items.length >= limit) break;
+    }
+
+    const processedWholePage = processedCount >= rawList.length;
+    const pageCursor = serverCursor || getRawReelsCursor(rawList);
+
+    if (!processedWholePage) {
+      nextCursor = lastProcessedCursor || pageCursor;
+      break;
+    }
+
+    const cursorAdvanced = Boolean(
+      pageCursor && String(pageCursor) !== String(requestCursor ?? ''),
+    );
+    const canContinue = serverHasMore === false ? false : cursorAdvanced;
+    nextCursor = canContinue ? pageCursor : null;
+
+    if (items.length >= limit || !canContinue || !pageCursor) break;
+    requestCursor = pageCursor;
   }
 
-  // eslint-disable-next-line no-console
   console.log(
     '[reels] page →',
     'type:',
-    payload.type,
+    basePayload.type,
     'raw:',
-    rawList.length,
+    totalRawCount,
     'playable:',
     items.length,
     'nextCursor:',

@@ -623,8 +623,30 @@ function pageFromNearbyPlace(place: NearbyPlace): PagesItem {
   };
 }
 
+function isValidMapCoordinate(
+  coordinate: LatLng | null | undefined,
+): coordinate is LatLng {
+  return Boolean(
+    coordinate &&
+      Number.isFinite(coordinate.latitude) &&
+      Number.isFinite(coordinate.longitude) &&
+      coordinate.latitude >= -90 &&
+      coordinate.latitude <= 90 &&
+      coordinate.longitude >= -180 &&
+      coordinate.longitude <= 180 &&
+      !(coordinate.latitude === 0 && coordinate.longitude === 0),
+  );
+}
+
+function coordinateFromPageDetail(page: PagesItem): LatLng | null {
+  const latitude = Number(page.lat);
+  const longitude = Number(page.lng);
+  const coordinate = { latitude, longitude };
+  return isValidMapCoordinate(coordinate) ? coordinate : null;
+}
+
 function selectedPointFromNearbyPage(page: NearbyPlace): SelectedPoint | null {
-  if (!page.coordinate) return null;
+  if (!isValidMapCoordinate(page.coordinate)) return null;
 
   return {
     id: page.id,
@@ -1622,6 +1644,10 @@ function toSearchRankCandidate(item: SuggestionItem) {
   return {
     source: item.kind,
     title: getSuggestionTitle(item),
+    aliases:
+      item.kind === 'page' && item.page.username
+        ? [item.page.username]
+        : undefined,
     distanceMeters: getSuggestionDistanceMeters(item),
     pinned:
       item.kind === 'page'
@@ -1881,6 +1907,7 @@ export default function NearbyUsersScreen() {
   }>({ heading: null, center: null, updatedAt: 0 });
   const routeRequestIdRef = useRef(0);
   const pageDetailRequestIdRef = useRef(0);
+  const pageSelectionRequestIdRef = useRef(0);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchEffectRequestIdRef = useRef(0);
   const committedSearchRequestIdRef = useRef(0);
@@ -1920,6 +1947,7 @@ export default function NearbyUsersScreen() {
   );
   const [pageDetail, setPageDetail] = useState<PagesItem | null>(null);
   const [isPageDetailLoading, setIsPageDetailLoading] = useState(false);
+  const [resolvingPageId, setResolvingPageId] = useState<string | null>(null);
   const [isPageActionLoading, setIsPageActionLoading] = useState(false);
   const [isSheetCollapsed, setIsSheetCollapsed] = useState(false);
   const [activeDestination, setActiveDestination] = useState<LatLng | null>(
@@ -1978,7 +2006,7 @@ export default function NearbyUsersScreen() {
   );
 
   const searchResultsPanelHeight = useMemo(
-    () => Math.min(Math.max(viewportHeight * 0.54, 340), 540),
+    () => Math.min(Math.max(viewportHeight * 0.62, 380), 660),
     [viewportHeight],
   );
   const searchResultsPanelStyle = useMemo(
@@ -2089,24 +2117,28 @@ export default function NearbyUsersScreen() {
     query.trim().length >= 3 &&
     (isLoading || suggestions.length > 0 || Boolean(searchMessage || error));
 
+  // Keep the search bar in its committed, full-width state while the map
+  // results sheet is open, matching the Google Maps interaction after submit.
+  const isSearchMode = isSearchFocused || isSearchResultsVisible;
+
   useEffect(() => {
-    const toValue = isSearchFocused ? 1 : 0;
+    const toValue = isSearchMode ? 1 : 0;
 
     Animated.parallel([
       Animated.timing(searchModeAnim, {
         toValue,
-        duration: isSearchFocused ? 260 : 220,
+        duration: isSearchMode ? 260 : 220,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }),
       Animated.timing(searchLayoutAnim, {
         toValue,
-        duration: isSearchFocused ? 260 : 220,
+        duration: isSearchMode ? 260 : 220,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }),
     ]).start();
-  }, [isSearchFocused, searchLayoutAnim, searchModeAnim]);
+  }, [isSearchMode, searchLayoutAnim, searchModeAnim]);
 
   const searchBackAnimatedStyle = useMemo(
     () => ({
@@ -3139,14 +3171,119 @@ export default function NearbyUsersScreen() {
     ).catch(() => undefined);
   }, [currentLocation, loadRouteOptions]);
 
-  const selectPage = useCallback(
-    (page: NearbyPlace) => {
-      const pagePoint = selectedPointFromNearbyPage(page);
-      if (!pagePoint) return;
+  const openPageDetailForNearbyPlace = useCallback(
+    (page: NearbyPlace, fullPage?: PagesItem) => {
+      const requestId = pageDetailRequestIdRef.current + 1;
+      pageDetailRequestIdRef.current = requestId;
 
-      selectPoint(pagePoint);
+      const initialPage = fullPage ?? pageFromNearbyPlace(page);
+      setPageDetailPlace(page);
+      setPageDetail(initialPage);
+      setIsPageDetailLoading(Boolean(!fullPage && initialPage.pageId));
+
+      if (!fullPage && initialPage.pageId) {
+        pagesRepository
+          .getPageDetail({ pageId: initialPage.pageId })
+          .then(loadedPage => {
+            if (pageDetailRequestIdRef.current === requestId) {
+              setPageDetail(loadedPage);
+            }
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            if (pageDetailRequestIdRef.current === requestId) {
+              setIsPageDetailLoading(false);
+            }
+          });
+      }
     },
-    [selectPoint],
+    [],
+  );
+
+  const selectPage = useCallback(
+    async (
+      page: NearbyPlace,
+      options: { shouldRoute?: boolean } = {},
+    ): Promise<SelectedPoint | null> => {
+      const shouldRoute = options.shouldRoute === true;
+      const requestId = pageSelectionRequestIdRef.current + 1;
+      pageSelectionRequestIdRef.current = requestId;
+      const existingPoint = selectedPointFromNearbyPage(page);
+      if (existingPoint) {
+        selectPoint(existingPoint, shouldRoute);
+        setResolvingPageId(null);
+        return existingPoint;
+      }
+
+      setResolvingPageId(page.id);
+
+      let fullPage: PagesItem | undefined;
+      let hydratedPage = page;
+
+      try {
+        if (page.pageId) {
+          try {
+            fullPage = await pagesRepository.getPageDetail({
+              pageId: page.pageId,
+            });
+          } catch {
+            fullPage = undefined;
+          }
+
+          if (requestId !== pageSelectionRequestIdRef.current) return null;
+
+          if (fullPage) {
+            const detailCoordinate = coordinateFromPageDetail(fullPage);
+            hydratedPage = {
+              ...page,
+              name: fullPage.pageTitle || page.name,
+              username: fullPage.pageName || page.username,
+              location: fullPage.address || page.location,
+              placeId: fullPage.placeId || page.placeId,
+              avatarUrl: fullPage.avatar || page.avatarUrl,
+              coverUrl: fullPage.cover || page.coverUrl,
+              url: fullPage.url || page.url,
+              coordinate: detailCoordinate || page.coordinate,
+            };
+          }
+        }
+
+        if (
+          !isValidMapCoordinate(hydratedPage.coordinate) &&
+          hydratedPage.placeId
+        ) {
+          const placeDetails = await getPlaceDetails(hydratedPage.placeId);
+          if (requestId !== pageSelectionRequestIdRef.current) return null;
+          if (placeDetails?.coordinate) {
+            hydratedPage = {
+              ...hydratedPage,
+              coordinate: placeDetails.coordinate,
+              location: placeDetails.location || hydratedPage.location,
+            };
+          }
+        }
+
+        const pagePoint = selectedPointFromNearbyPage(hydratedPage);
+        if (pagePoint) {
+          selectPoint(pagePoint, shouldRoute);
+          return pagePoint;
+        }
+
+        openPageDetailForNearbyPlace(page, fullPage);
+        if (shouldRoute) {
+          Alert.alert(
+            'Page chưa có vị trí chính xác',
+            'Trang này chưa được ghim tọa độ hợp lệ nên chưa thể chỉ đường. Bạn vẫn có thể mở chi tiết để kiểm tra địa chỉ.',
+          );
+        }
+        return null;
+      } finally {
+        if (requestId === pageSelectionRequestIdRef.current) {
+          setResolvingPageId(null);
+        }
+      }
+    },
+    [getPlaceDetails, openPageDetailForNearbyPlace, selectPoint],
   );
 
   const selectCurrentUser = useCallback(() => {
@@ -3203,7 +3340,7 @@ export default function NearbyUsersScreen() {
 
       if (item.kind === 'page') {
         setQuery(item.page.name);
-        selectPage(item.page);
+        await selectPage(item.page);
       } else {
         setQuery(item.prediction.description);
         try {
@@ -3237,11 +3374,19 @@ export default function NearbyUsersScreen() {
   const fitSearchResultsOnMap = useCallback(
     (items: SuggestionItem[]) => {
       const coordinates = items
-        .map(item => {
-          if (item.kind === 'page') return item.page.coordinate ?? null;
+      .map(item => {
+          if (item.kind === 'page') {
+            return isValidMapCoordinate(item.page.coordinate)
+              ? item.page.coordinate
+              : null;
+          }
           if (
             typeof item.prediction.lat === 'number' &&
-            typeof item.prediction.lng === 'number'
+            typeof item.prediction.lng === 'number' &&
+            isValidMapCoordinate({
+              latitude: item.prediction.lat,
+              longitude: item.prediction.lng,
+            })
           ) {
             return {
               latitude: item.prediction.lat,
@@ -3434,9 +3579,16 @@ export default function NearbyUsersScreen() {
   const handleSelectSearchResult = useCallback(
     async (item: SuggestionItem) => {
       if (item.kind === 'page') {
-        selectPage(item.page);
+        await selectPage(item.page);
       } else {
-        if (item.prediction.lat && item.prediction.lng) {
+        if (
+          typeof item.prediction.lat === 'number' &&
+          typeof item.prediction.lng === 'number' &&
+          isValidMapCoordinate({
+            latitude: item.prediction.lat,
+            longitude: item.prediction.lng,
+          })
+        ) {
           selectPoint({
             id: item.prediction.placeId,
             source: 'google',
@@ -4204,7 +4356,7 @@ export default function NearbyUsersScreen() {
         onRegionChangeComplete={handleRegionChangeComplete}
         style={StyleSheet.absoluteFill}
       >
-        {currentLocation ? (
+        {currentLocation && !isSearchResultsVisible ? (
           <Circle
             center={currentLocation}
             radius={3000}
@@ -4264,35 +4416,36 @@ export default function NearbyUsersScreen() {
           </Marker>
         ) : null}
 
-        {visiblePageMarkers.map(({ place, coordinate }, markerIndex) => {
-          if (
-            selectedPoint?.source === 'page' &&
-            selectedPoint.id === place.id
-          ) {
-            return null;
-          }
+        {!isSearchResultsVisible &&
+          visiblePageMarkers.map(({ place, coordinate }, markerIndex) => {
+            if (
+              selectedPoint?.source === 'page' &&
+              selectedPoint.id === place.id
+            ) {
+              return null;
+            }
 
-          return (
-            <AddressPlaceMapMarker
-              key={`${place.id}:address-place`}
-              coordinate={coordinate}
-              title={place.name}
-              compact={markerIndex >= addressLabelLimit}
-              badgeText={addressMarkerBadgeText(
-                undefined,
-                place.name,
-                place.category,
-                place.location,
-              )}
-              zIndex={markerIndex < addressLabelLimit ? 13 : 12}
-              onPress={() => {
-                setIsSearchResultsVisible(false);
-                setSearchResults([]);
-                selectPage(place);
-              }}
-            />
-          );
-        })}
+            return (
+              <AddressPlaceMapMarker
+                key={`${place.id}:address-place`}
+                coordinate={coordinate}
+                title={place.name}
+                compact={markerIndex >= addressLabelLimit}
+                badgeText={addressMarkerBadgeText(
+                  undefined,
+                  place.name,
+                  place.category,
+                  place.location,
+                )}
+                zIndex={markerIndex < addressLabelLimit ? 13 : 12}
+                onPress={() => {
+                  setIsSearchResultsVisible(false);
+                  setSearchResults([]);
+                  selectPage(place).catch(() => undefined);
+                }}
+              />
+            );
+          })}
 
         {selectedPoint?.source === 'page' ? (
           <AddressPlaceMapMarker
@@ -4592,27 +4745,19 @@ export default function NearbyUsersScreen() {
               tracksViewChanges={false}
               onPress={() => handleSelectSearchResult(item)}
             >
-              <View
-                style={[
-                  styles.googleCircleMarker,
-                  {
-                    backgroundColor: shouldUseGoogleIcon
-                      ? item.prediction.iconBackgroundColor ||
-                        googleIconStyle?.color ||
-                        '#1E70E6'
-                      : googleIconStyle?.color || '#1E70E6',
-                  },
-                ]}
-              >
-                {shouldUseGoogleIcon && item.prediction.icon ? (
-                  <Image
-                    source={{ uri: item.prediction.icon }}
-                    style={{ width: 15, height: 15, tintColor: '#FFFFFF' }}
-                    resizeMode="contain"
-                  />
-                ) : (
-                  <MarkerIcon size={15} color="#FFFFFF" />
-                )}
+              <View style={styles.googleMarkerPin}>
+                <View style={styles.googleMarkerPinHead}>
+                  {shouldUseGoogleIcon && item.prediction.icon ? (
+                    <Image
+                      source={{ uri: item.prediction.icon }}
+                      style={styles.googleMarkerPinIcon}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <MarkerIcon size={15} color="#FFFFFF" />
+                  )}
+                </View>
+                <View style={styles.googleMarkerPinTail} />
               </View>
             </Marker>
           );
@@ -4623,7 +4768,7 @@ export default function NearbyUsersScreen() {
         <View style={exploreTopControlsStyle}>
           <View style={styles.exploreSearchRow}>
             <Animated.View
-              pointerEvents={isSearchFocused ? 'none' : 'auto'}
+              pointerEvents={isSearchMode ? 'none' : 'auto'}
               style={[styles.searchBackSlot, searchBackAnimatedStyle]}
             >
               <TouchableOpacity
@@ -4652,6 +4797,7 @@ export default function NearbyUsersScreen() {
                   setIsCommittedSearchLoading(false);
                   setQuery(text);
                   setIsSearchFocused(true);
+                  setIsSearchResultsVisible(false);
                   if (text.trim().length === 0) {
                     setSearchResults([]);
                     setIsSearchResultsVisible(false);
@@ -4662,6 +4808,7 @@ export default function NearbyUsersScreen() {
                   committedSearchRequestIdRef.current += 1;
                   setIsCommittedSearchLoading(false);
                   setIsSearchFocused(true);
+                  setIsSearchResultsVisible(false);
                 }}
                 onSubmitEditing={() => handlePerformSearch(query)}
                 returnKeyType="search"
@@ -4693,7 +4840,7 @@ export default function NearbyUsersScreen() {
 
           {SHOW_APP_DISCOVERY_PLACES_ON_MAP ? (
             <Animated.View
-              pointerEvents={isSearchFocused ? 'none' : 'auto'}
+              pointerEvents={isSearchMode ? 'none' : 'auto'}
               style={quickPlacesAnimatedStyle}
             >
           <ScrollView
@@ -4710,7 +4857,7 @@ export default function NearbyUsersScreen() {
                   onPress={() => {
                     setIsSearchResultsVisible(false);
                     setSearchResults([]);
-                    selectPage(place);
+                    selectPage(place).catch(() => undefined);
                   }}
                 >
                   <MapPin size={17} color="#0F172A" />
@@ -4734,7 +4881,7 @@ export default function NearbyUsersScreen() {
             </Animated.View>
           ) : null}
 
-          {!isSearchFocused && locationSource === 'profile' ? (
+          {!isSearchMode && locationSource === 'profile' ? (
             <View style={styles.locationFallbackNotice}>
               <LocateFixed size={14} color="#1D4ED8" />
               <Text style={styles.locationFallbackText}>
@@ -5751,7 +5898,7 @@ export default function NearbyUsersScreen() {
 
               const onDetailsOrShare = () => {
                 if (item.kind === 'page') {
-                  selectPage(item.page);
+                  openPageDetailForNearbyPlace(item.page);
                 } else {
                   const shareMsg = `${title}\nĐịa chỉ: ${addressText}\nTọa độ: ${coordinate ? `${coordinate.latitude},${coordinate.longitude}` : ''}`;
                   Share.share({ message: shareMsg }).catch(() => undefined);
@@ -5759,18 +5906,39 @@ export default function NearbyUsersScreen() {
               };
 
               const onGetDirections = () => {
-                if (!routePoint) return;
-                selectPoint(routePoint, true);
+                if (routePoint) {
+                  selectPoint(routePoint, true);
+                  return;
+                }
+                if (item.kind === 'page') {
+                  selectPage(item.page, { shouldRoute: true }).catch(
+                    () => undefined,
+                  );
+                }
               };
 
               const onStartNavigation = () => {
-                if (!routePoint) return;
-                selectPoint(routePoint);
-                loadRouteOptions(
-                  routePoint.coordinate,
-                  true,
-                  routePoint.title,
-                ).catch(() => undefined);
+                if (routePoint) {
+                  selectPoint(routePoint);
+                  loadRouteOptions(
+                    routePoint.coordinate,
+                    true,
+                    routePoint.title,
+                  ).catch(() => undefined);
+                  return;
+                }
+                if (item.kind === 'page') {
+                  selectPage(item.page)
+                    .then(point => {
+                      if (!point) return;
+                      loadRouteOptions(
+                        point.coordinate,
+                        true,
+                        point.title,
+                      ).catch(() => undefined);
+                    })
+                    .catch(() => undefined);
+                }
               };
 
               return (
@@ -5824,6 +5992,9 @@ export default function NearbyUsersScreen() {
                           <Text style={styles.resultCardTitleText} numberOfLines={1}>
                             {title}
                           </Text>
+                          {resolvingPageId === item.id ? (
+                            <ActivityIndicator size="small" color={BRAND} />
+                          ) : null}
                           {item.kind === 'page' ? (
                             <View style={styles.pageResultBadge}>
                               <Text style={styles.pageResultBadgeText}>Page</Text>
@@ -5918,7 +6089,7 @@ export default function NearbyUsersScreen() {
                       activeOpacity={0.86}
                       style={[styles.resultCardBtn, styles.resultCardBtnSolid]}
                       onPress={onGetDirections}
-                      disabled={!coordinate}
+                      disabled={!coordinate && item.kind !== 'page'}
                     >
                       <Text style={styles.resultCardBtnSolidText}>Đường đi</Text>
                     </TouchableOpacity>
@@ -5927,7 +6098,7 @@ export default function NearbyUsersScreen() {
                       activeOpacity={0.86}
                       style={[styles.resultCardBtn, styles.resultCardBtnSecondary]}
                       onPress={onStartNavigation}
-                      disabled={!coordinate}
+                      disabled={!coordinate && item.kind !== 'page'}
                     >
                       <Text style={styles.resultCardBtnSecondaryText}>Bắt đầu</Text>
                     </TouchableOpacity>
@@ -8081,6 +8252,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#EF4444',
     borderWidth: 2,
     borderColor: '#FFFFFF',
     elevation: 5,
@@ -8092,10 +8264,16 @@ const styles = StyleSheet.create({
   googleMarkerPinTail: {
     width: 8,
     height: 8,
+    backgroundColor: '#EF4444',
     transform: [{ rotate: '45deg' }],
     marginTop: -4,
     borderBottomRightRadius: 2,
     borderWidth: 1,
     borderColor: '#FFFFFF',
+  },
+  googleMarkerPinIcon: {
+    width: 15,
+    height: 15,
+    tintColor: '#FFFFFF',
   },
 });

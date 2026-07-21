@@ -55,6 +55,8 @@ describe('ApiReelsRepository privacy mapping', () => {
         reel('v2-3', { postPrivacy: '3', privacy_contract: 'audience_v2' }),
         reel('missing', { postPrivacy: undefined, privacy_contract: undefined }),
       ],
+      has_more: false,
+      next_cursor: null,
     });
 
     const { items } = await createReelsRepository().fetchReels({ limit: 10 });
@@ -82,6 +84,8 @@ describe('ApiReelsRepository privacy mapping', () => {
           is_anonymous: '1',
         }),
       ],
+      has_more: false,
+      next_cursor: null,
     });
 
     const { items } = await createReelsRepository().fetchReels({ limit: 10 });
@@ -103,6 +107,8 @@ describe('ApiReelsRepository privacy mapping', () => {
           },
         }),
       ],
+      has_more: false,
+      next_cursor: null,
     });
 
     const { items } = await createReelsRepository().fetchReels({ limit: 10 });
@@ -115,5 +121,71 @@ describe('ApiReelsRepository privacy mapping', () => {
         avatarUrl: `${siteRoot}/upload/photos/avatar%20sample.jpg`,
       },
     });
+  });
+
+  it('keeps scanning legacy sparse pages until it fills the playable reel page', async () => {
+    (backendApi.post as jest.Mock)
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [
+          { id: '30', postYoutube: 'https://youtube.com/watch?v=demo' },
+          reel('29'),
+        ],
+      })
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [reel('20'), reel('19')],
+      });
+
+    const page = await createReelsRepository().fetchReels({ limit: 3 });
+
+    expect(page.items.map(item => item.id)).toEqual(['29', '20', '19']);
+    expect(backendApi.post).toHaveBeenCalledTimes(2);
+    expect(backendApi.post).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      expect.objectContaining({ after_post_id: '29' }),
+    );
+  });
+
+  it('stops when the server explicitly reports the final reel page', async () => {
+    (backendApi.post as jest.Mock).mockResolvedValueOnce({
+      api_status: 200,
+      data: [reel('10')],
+      has_more: false,
+      next_cursor: null,
+    });
+
+    const page = await createReelsRepository().fetchReels({ limit: 20 });
+
+    expect(page.items.map(item => item.id)).toEqual(['10']);
+    expect(page.nextCursor).toBeNull();
+    expect(backendApi.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues after an empty mapped page when the server supplies another cursor', async () => {
+    (backendApi.post as jest.Mock)
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [],
+        has_more: true,
+        next_cursor: '50',
+      })
+      .mockResolvedValueOnce({
+        api_status: 200,
+        data: [reel('49')],
+        has_more: false,
+        next_cursor: null,
+      });
+
+    const page = await createReelsRepository().fetchReels({ limit: 20 });
+
+    expect(page.items.map(item => item.id)).toEqual(['49']);
+    expect(page.nextCursor).toBeNull();
+    expect(backendApi.post).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      expect.objectContaining({ after_post_id: '50' }),
+    );
   });
 });
