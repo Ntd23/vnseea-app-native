@@ -20,6 +20,7 @@ import type {
   MessageItem,
   MessageLabel,
   MessageReactionSummary,
+  SendMessageOptions,
   PinnedMessageItem,
   SendMessageResponse,
 } from '../types/messages.types';
@@ -75,6 +76,7 @@ export interface MessagesRepository {
     chat: ChatItem | string,
     message: string,
     attachment?: MessageAttachment,
+    options?: SendMessageOptions,
   ): Promise<SendMessageResponse>;
 
   /**
@@ -85,6 +87,7 @@ export interface MessagesRepository {
     groupId: string,
     message: string,
     attachment?: MessageAttachment,
+    options?: SendMessageOptions,
   ): Promise<SendMessageResponse>;
 
   setMessageReaction(

@@ -11,6 +11,7 @@ import type {
   MessageAttachment,
   MessageItem,
   PinnedMessageItem,
+  SendMessageOptions,
 } from '../../domain/types/messages.types';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
 import {
@@ -74,6 +75,8 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.conversationId === right.conversationId &&
     left.fromId === right.fromId &&
     left.toId === right.toId &&
+    left.senderName === right.senderName &&
+    left.senderAvatar === right.senderAvatar &&
     left.message === right.message &&
     left.media === right.media &&
     left.mediaType === right.mediaType &&
@@ -85,6 +88,18 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.sharedPost?.postId === right.sharedPost?.postId &&
     left.sharedPost?.url === right.sharedPost?.url &&
     left.sharedPost?.note === right.sharedPost?.note &&
+    left.replyTo?.messageId === right.replyTo?.messageId &&
+    left.replyTo?.senderId === right.replyTo?.senderId &&
+    left.replyTo?.senderName === right.replyTo?.senderName &&
+    left.replyTo?.text === right.replyTo?.text &&
+    left.replyTo?.contentKind === right.replyTo?.contentKind &&
+    left.replyTo?.media === right.replyTo?.media &&
+    left.replyTo?.thumbnail === right.replyTo?.thumbnail &&
+    left.replyTo?.sharedPost?.postId === right.replyTo?.sharedPost?.postId &&
+    left.replyTo?.link?.url === right.replyTo?.link?.url &&
+    left.replyTo?.location?.latitude === right.replyTo?.location?.latitude &&
+    left.replyTo?.location?.longitude === right.replyTo?.location?.longitude &&
+    areCallEventsEqual(left.replyTo?.callEvent, right.replyTo?.callEvent) &&
     left.systemEvent?.type === right.systemEvent?.type &&
     left.systemEvent?.actorId === right.systemEvent?.actorId &&
     left.systemEvent?.actorName === right.systemEvent?.actorName &&
@@ -220,8 +235,11 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     [chat],
   );
   const sendMessageForChat = useCallback(
-    (message: string, attachment?: MessageAttachment) =>
-      repository.sendMessage(chat, message, attachment),
+    (
+      message: string,
+      attachment?: MessageAttachment,
+      options?: SendMessageOptions,
+    ) => repository.sendMessage(chat, message, attachment, options),
     [chat],
   );
   const typingRecipientId = getTypingRecipientId(chat);
@@ -531,7 +549,11 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   );
 
   const sendMessage = useCallback(
-    async (text: string, attachment?: MessageAttachment) => {
+    async (
+      text: string,
+      attachment?: MessageAttachment,
+      options?: SendMessageOptions,
+    ) => {
       const message = text.trim();
       if (!message && !attachment) return false;
       stopTyping();
@@ -555,6 +577,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         contentKind: attachment?.mediaType ?? textDescriptor.kind,
         link: textDescriptor.link,
         location: textDescriptor.location,
+        replyTo: options?.replyTo,
         reactions: createEmptyMessageReactionSummary(),
         time: Math.floor(Date.now() / 1000),
         isSentByMe: true,
@@ -567,7 +590,11 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
       setError(null);
 
       try {
-        const response = await sendMessageForChat(message, attachment);
+        const response = await sendMessageForChat(
+          message,
+          attachment,
+          options,
+        );
         let sentMessages = response.sentMessages ?? [];
 
         if (sentMessages.length === 0) {

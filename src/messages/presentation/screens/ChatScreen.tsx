@@ -37,9 +37,11 @@ import {
   FileText,
   ImagePlus,
   Info,
+  Link2,
   MapPin,
   MessageCircle,
   Mic,
+  Newspaper,
   Phone,
   PhoneMissed,
   Play,
@@ -85,6 +87,7 @@ import {
 import type {
   MessageAttachment,
   MessageItem,
+  MessageReplyReference,
   MessageSystemEvent,
 } from '../../domain/types/messages.types';
 import type { ProductItem } from '../../../product/domain/types/product.types';
@@ -112,6 +115,10 @@ import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/se
 import type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { areMessageReactionSummariesEqual } from '../../domain/reactions/messageReactions';
 import { isValidMessageLocation } from '../../application/preview/messageContentDescriptor';
+import {
+  createMessageReplyReference,
+  getMessageReplyPreviewText,
+} from '../../application/replies/messageReply';
 
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
@@ -563,12 +570,14 @@ const MapShareCard = React.memo(function MapShareCard({
   location,
   caption,
   isSentByMe = false,
+  onLongPress,
   onRemove,
   composer = false,
 }: {
   location: SharedMapLocation;
   caption?: string;
   isSentByMe?: boolean;
+  onLongPress?: () => void;
   onRemove?: () => void;
   composer?: boolean;
 }) {
@@ -600,6 +609,7 @@ const MapShareCard = React.memo(function MapShareCard({
       <TouchableOpacity
         activeOpacity={0.88}
         onPress={handleOpenMap}
+        onLongPress={onLongPress}
         style={[
           mapShareStyles.mapShareLargeCard,
           isSentByMe ? mapShareStyles.mapShareLargeCardSent : null,
@@ -652,6 +662,7 @@ const MapShareCard = React.memo(function MapShareCard({
     <TouchableOpacity
       activeOpacity={0.88}
       onPress={handleOpenMap}
+      onLongPress={onLongPress}
       style={[
         styles.mapShareCard,
         composer ? styles.mapShareComposerCard : styles.mapShareMessageCard,
@@ -823,6 +834,9 @@ function getChatListItemType(item: ChatMessageListItem) {
   if (message.systemEvent) {
     return 'system-message-pinned';
   }
+  if (message.replyTo) {
+    return `reply-${message.replyTo.contentKind}`;
+  }
   if (message.callEvent) {
     return `call-${message.callEvent.callType}-${message.callEvent.status}`;
   }
@@ -835,10 +849,6 @@ function getChatListItemType(item: ChatMessageListItem) {
   if (message.message?.includes('TĂ´i muá»‘n há»i vá» sáº£n pháº©m:')) {
     return 'product-inquiry';
   }
-  if (message.message?.includes('â†ªï¸ *Tráº£ lá»i tin nháº¯n:*')) {
-    return 'reply-message';
-  }
-
   return 'text-message';
 }
 
@@ -1224,134 +1234,6 @@ function parseOrderInquiry(messageText: string) {
   }
 }
 
-type ReplyMediaType = 'image' | 'video' | 'audio' | 'file' | 'call';
-
-type ParsedReplyMessage = {
-  senderName: string;
-  originalMessage: string;
-  originalMessageId: string;
-  originalImage?: string;
-  originalMedia?: string;
-  originalMediaType?: ReplyMediaType;
-  replyText: string;
-};
-
-function normalizeReplyMediaType(value: string): ReplyMediaType | undefined {
-  if (
-    value === 'image' ||
-    value === 'video' ||
-    value === 'audio' ||
-    value === 'file' ||
-    value === 'call'
-  ) {
-    return value;
-  }
-  return undefined;
-}
-
-function inferReplyMediaType(
-  reply: Pick<
-    ParsedReplyMessage,
-    'originalImage' | 'originalMessage' | 'originalMediaType'
-  >,
-): ReplyMediaType | undefined {
-  if (reply.originalMediaType) return reply.originalMediaType;
-  if (reply.originalImage) return 'image';
-
-  const normalizedMessage = reply.originalMessage.toLowerCase();
-  if (
-    normalizedMessage.includes('cuộc gọi') ||
-    normalizedMessage.includes('cuoc goi') ||
-    normalizedMessage.includes('call')
-  ) {
-    return 'call';
-  }
-  if (normalizedMessage.includes('video')) return 'video';
-  if (
-    normalizedMessage.includes('audio') ||
-    normalizedMessage.includes('voice') ||
-    normalizedMessage.includes('ghi') ||
-    normalizedMessage.includes('tho')
-  ) {
-    return 'audio';
-  }
-  return undefined;
-}
-
-function getReplyMediaLabel(type?: ReplyMediaType) {
-  if (type === 'image') return '[Hình ảnh]';
-  if (type === 'video') return '[Video]';
-  if (type === 'audio') return '[Ghi âm]';
-  if (type === 'file') return '[File]';
-  return '';
-}
-
-function parseMessageReply(messageText: string): ParsedReplyMessage | null {
-  if (!messageText || !messageText.includes('↪️ *Trả lời tin nhắn:*')) {
-    return null;
-  }
-  try {
-    const senderMatch = messageText.match(/👉\s*\*(.*?)\*:\s*([\s\S]*?)\s*🆔/);
-    const idMatch = messageText.match(/🆔\s*ID:\s*\*(.*?)\*/);
-    const imageMatch = messageText.match(/🖼️\s*Ảnh:\s*\*(.*?)\*/);
-
-    const mediaMatch = messageText.match(/META_MEDIA:\s*\*(.*?)\*/);
-    const mediaTypeMatch = messageText.match(/META_MEDIA_TYPE:\s*\*(.*?)\*/);
-
-    if (!senderMatch) return null;
-    const originalMediaType =
-      normalizeReplyMediaType(mediaTypeMatch?.[1] ?? '') ??
-      (imageMatch ? 'image' : undefined);
-    const originalMedia = mediaMatch?.[1] || imageMatch?.[1] || '';
-
-    let replyText = '';
-    const doubleNewlineIndex = messageText.indexOf('\n\n');
-    if (doubleNewlineIndex !== -1) {
-      replyText = messageText.substring(doubleNewlineIndex + 2).trim();
-    } else {
-      let lastBlockIndex = -1;
-      if (imageMatch) {
-        lastBlockIndex =
-          messageText.indexOf(imageMatch[0]) + imageMatch[0].length;
-      } else if (idMatch) {
-        lastBlockIndex = messageText.indexOf(idMatch[0]) + idMatch[0].length;
-      }
-      if (lastBlockIndex !== -1) {
-        replyText = messageText.substring(lastBlockIndex).trim();
-      }
-    }
-
-    return {
-      senderName: senderMatch[1],
-      originalMessage: senderMatch[2],
-      originalMessageId: idMatch ? idMatch[1] : '',
-      originalImage: imageMatch ? imageMatch[1] : '',
-      originalMedia,
-      originalMediaType,
-      replyText: replyText || messageText,
-    };
-  } catch (e) {
-    return null;
-  }
-}
-
-function getReplyLabel(
-  senderName: string,
-  isSentByMe: boolean,
-  partnerName: string,
-) {
-  const isOriginalMe = senderName === 'Tôi';
-  if (isSentByMe) {
-    return isOriginalMe
-      ? 'Bạn đã trả lời chính mình'
-      : `Bạn đã trả lời ${senderName}`;
-  } else {
-    return isOriginalMe
-      ? `${partnerName} đã trả lời bạn`
-      : `${partnerName} đã trả lời chính mình`;
-  }
-}
-
 function getMessageSnippet(message: MessageItem, chatName: string) {
   if (message.callEvent) {
     const title = getCallCardTitle(message.callEvent);
@@ -1359,46 +1241,27 @@ function getMessageSnippet(message: MessageItem, chatName: string) {
     return detail ? `${title} · ${detail}` : title;
   }
 
-  if (message.media) {
-    if (message.mediaType === 'image') return '[Hình ảnh]';
-    if (message.mediaType === 'video') return '[Video]';
-    if (message.mediaType === 'audio') return '[Ghi âm]';
-    return '[File]';
-  }
-
-  if (message.sharedPost) return 'Bài viết đã chia sẻ';
-  if (message.location) return `Địa điểm: ${message.location.title}`;
-  if (message.link) return `Liên kết: ${message.link.host}`;
-
   const productInquiry = parseProductInquiry(message.message);
   if (productInquiry) {
     return `🛍️ Hỏi về sản phẩm: ${productInquiry.name}`;
   }
 
-  const mapShare = parseSharedMapMessage(message.message);
-  if (mapShare) {
-    return `Địa điểm: ${mapShare.location.title}`;
-  }
-
-  const replyInfo = parseMessageReply(message.message);
-  if (replyInfo) {
-    return replyInfo.replyText;
-  }
-
-  return message.message;
+  return getMessageReplyPreviewText(
+    createMessageReplyReference(message, message.senderName || chatName),
+  );
 }
 
 function ReplyMessageBubble({
   reply,
+  replyText,
   isSentByMe,
 }: {
-  reply: ParsedReplyMessage;
+  reply: MessageReplyReference;
+  replyText: string;
   isSentByMe: boolean;
 }) {
-  const mediaType = inferReplyMediaType(reply);
-  const mediaLabel = getReplyMediaLabel(mediaType);
-  const previewText = mediaLabel || reply.originalMessage;
-  const originalMedia = reply.originalMedia || reply.originalImage;
+  const previewText = getMessageReplyPreviewText(reply);
+  const previewImage = reply.thumbnail || reply.media;
   const replyBg = isSentByMe ? 'bg-sky-200/70' : 'bg-black/5';
   const senderColor = 'text-blue-600';
   const originalMessageColor = 'text-slate-500';
@@ -1422,45 +1285,44 @@ function ReplyMessageBubble({
           >
             {reply.senderName}
           </Text>
-          {mediaLabel ? (
-            <Text
-              className={`text-[11px] mt-0.5 ${originalMessageColor}`}
-              numberOfLines={1}
-            >
-              {previewText}
-            </Text>
-          ) : (
-            <LinkifiedText
-              text={previewText}
-              className={`text-[11px] mt-0.5 ${originalMessageColor}`}
-              linkColor="#2563EB"
-              numberOfLines={1}
-            />
-          )}
+          <Text
+            className={`text-[11px] mt-0.5 ${originalMessageColor}`}
+            numberOfLines={1}
+          >
+            {previewText}
+          </Text>
         </View>
 
-        {!!originalMedia && mediaType === 'image' && (
+        {!!previewImage && reply.contentKind === 'image' && (
           <View className="justify-center px-1.5 py-1">
             <Image
-              source={{ uri: originalMedia }}
+              source={{ uri: previewImage }}
               className="w-9 h-9 rounded bg-slate-200"
               resizeMode="cover"
             />
           </View>
         )}
-        {!!mediaType && mediaType !== 'image' && (
+        {reply.contentKind !== 'text' && reply.contentKind !== 'image' && (
           <View className="justify-center px-1.5 py-1">
             <View className="h-9 w-9 items-center justify-center rounded bg-violet-100">
-              {mediaType === 'video' ? (
+              {reply.contentKind === 'video' ? (
                 <Play size={17} color="#7C3AED" fill="#7C3AED" />
-              ) : mediaType === 'audio' ? (
+              ) : reply.contentKind === 'audio' ? (
                 <Mic size={17} color="#7C3AED" />
-              ) : mediaType === 'call' ? (
-                reply.originalMessage.toLowerCase().includes('video') ? (
-                  <Video size={17} color="#7C3AED" />
-                ) : (
-                  <Phone size={17} color="#7C3AED" />
-                )
+              ) : reply.contentKind === 'shared_post' ? (
+                <Newspaper size={17} color="#7C3AED" />
+              ) : reply.contentKind === 'location' ? (
+                <MapPin size={17} color="#7C3AED" />
+              ) : reply.contentKind === 'link' ? (
+                <Link2 size={17} color="#7C3AED" />
+              ) : reply.contentKind === 'video_call' ? (
+                <Video size={17} color="#7C3AED" />
+              ) : reply.contentKind === 'audio_call' ? (
+                <Phone size={17} color="#7C3AED" />
+              ) : reply.contentKind === 'product' ? (
+                <ShoppingBag size={17} color="#7C3AED" />
+              ) : reply.contentKind === 'sticker' ? (
+                <MessageCircle size={17} color="#7C3AED" />
               ) : (
                 <FileText size={17} color="#7C3AED" />
               )}
@@ -1469,10 +1331,13 @@ function ReplyMessageBubble({
         )}
       </View>
 
-      {/* Main Reply message text */}
-      <Text className={`text-[15px] leading-5 mt-1.5 ${replyTextColor}`}>
-        {reply.replyText}
-      </Text>
+      {!!replyText && (
+        <LinkifiedText
+          text={replyText}
+          className={`text-[15px] leading-5 mt-1.5 ${replyTextColor}`}
+          linkColor="#2563EB"
+        />
+      )}
     </View>
   );
 }
@@ -1685,7 +1550,6 @@ function OrderInquiryBubble({
 function MessageBubble({
   message,
   avatar,
-  partnerName,
   showAvatar = true,
   onOpenMedia,
   onReply,
@@ -1698,7 +1562,6 @@ function MessageBubble({
 }: {
   message: MessageItem;
   avatar: string;
-  partnerName: string;
   showAvatar?: boolean;
   onOpenMedia: OpenChatMedia;
   onReply?: (message: MessageItem) => void;
@@ -1724,10 +1587,10 @@ function MessageBubble({
 
   const orderInquiry = parseOrderInquiry(message.message);
   const productInquiry = parseProductInquiry(message.message);
-  const replyInfo = parseMessageReply(message.message);
+  const replyInfo = message.replyTo;
   const sharedPost = message.sharedPost;
   const parsedMapShare =
-    sharedPost || replyInfo ? null : parseSharedMapMessage(message.message);
+    sharedPost ? null : parseSharedMapMessage(message.message);
   const mapShare = message.location
     ? {
         location: message.location,
@@ -1746,8 +1609,6 @@ function MessageBubble({
     ? productInquiry.userMessage || 'Sản phẩm này còn hàng không ạ?'
     : mapShare
     ? mapShare.caption
-    : replyInfo
-    ? replyInfo.replyText
     : message.message;
   const messageTextClassName = `text-[15px] leading-5 ${
     isSentByMe && !replyInfo ? 'text-white' : 'text-gray-900'
@@ -1782,6 +1643,11 @@ function MessageBubble({
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
+        const { dx, dy } = gestureState;
+        const isReplySwipe = isSentByMe ? dx > 10 : dx < -10;
+        return isReplySwipe && Math.abs(dy) < 8;
+      },
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
         const { dx, dy } = gestureState;
         const isReplySwipe = isSentByMe ? dx > 10 : dx < -10;
         return isReplySwipe && Math.abs(dy) < 8;
@@ -1938,57 +1804,6 @@ function MessageBubble({
             isSentByMe ? 'items-end' : 'items-start'
           }`}
         >
-          {/* Reply Label (outside bubble) */}
-          {false && !!replyInfo && (
-            <View className="flex-row items-center mb-1 px-1 opacity-70">
-              <CornerUpLeft size={11} color="#64748B" className="mr-1" />
-              <Text className="text-[10px] font-semibold text-slate-500">
-                {getReplyLabel(
-                  replyInfo!.senderName,
-                  isSentByMe ?? false,
-                  partnerName,
-                )}
-              </Text>
-            </View>
-          )}
-
-          {/* Replied Content Preview Box (outside bubble) */}
-          {false && !!replyInfo && (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() =>
-                replyInfo!.originalMessageId &&
-                onPressReply?.(replyInfo!.originalMessageId)
-              }
-              className="mb-1 rounded-xl overflow-hidden bg-slate-100 border border-slate-200"
-              style={{ opacity: 0.9 }}
-            >
-              {replyInfo!.originalImage ? (
-                <View className="relative">
-                  <Image
-                    source={{ uri: replyInfo!.originalImage }}
-                    className="w-24 h-24 bg-slate-200"
-                    resizeMode="cover"
-                  />
-                  {replyInfo!.originalMessage.includes('🎥') && (
-                    <View className="absolute inset-0 items-center justify-center bg-black/25">
-                      <Play size={16} color="#ffffff" fill="#ffffff" />
-                    </View>
-                  )}
-                </View>
-              ) : (
-                <View className="px-3 py-1.5 max-w-[200px]">
-                  <LinkifiedText
-                    text={replyInfo!.originalMessage}
-                    className="text-xs text-slate-600"
-                    linkColor="#2563EB"
-                    numberOfLines={2}
-                  />
-                </View>
-              )}
-            </TouchableOpacity>
-          )}
-
           {/* Shared Post Card (renders instead of the raw URL bubble) */}
           {sharedPost ? (
             <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}>
@@ -2024,6 +1839,7 @@ function MessageBubble({
                 location={mapShare.location}
                 caption={mapShare.caption}
                 isSentByMe={isSentByMe ?? false}
+                onLongPress={() => onLongPress?.(message)}
               />
               <Text
                 className={`text-[9.5px] mt-1 ${
@@ -2123,7 +1939,7 @@ function MessageBubble({
                         onOpenMedia={onOpenMedia}
                         onDoubleTap={() => onDoubleTap?.(message)}
                       />
-                      {!!replyInfo ? (
+                      {replyInfo ? (
                         hasMessageMedia ? (
                           <View
                             className={`mt-1 rounded-2xl px-3 py-2 ${
@@ -2136,13 +1952,14 @@ function MessageBubble({
                             <TouchableOpacity
                               activeOpacity={0.85}
                               onPress={() =>
-                                replyInfo!.originalMessageId &&
-                                onPressReply?.(replyInfo!.originalMessageId)
+                                replyInfo.messageId &&
+                                onPressReply?.(replyInfo.messageId)
                               }
                             >
                               <ReplyMessageBubble
                                 reply={replyInfo}
-                                isSentByMe={isSentByMe ?? false}
+                                replyText={visibleMessageText}
+                                isSentByMe={Boolean(isSentByMe)}
                               />
                             </TouchableOpacity>
                           </View>
@@ -2150,13 +1967,14 @@ function MessageBubble({
                           <TouchableOpacity
                             activeOpacity={0.85}
                             onPress={() =>
-                              replyInfo!.originalMessageId &&
-                              onPressReply?.(replyInfo!.originalMessageId)
+                              replyInfo.messageId &&
+                              onPressReply?.(replyInfo.messageId)
                             }
                           >
                             <ReplyMessageBubble
                               reply={replyInfo}
-                              isSentByMe={isSentByMe ?? false}
+                              replyText={visibleMessageText}
+                              isSentByMe={Boolean(isSentByMe)}
                             />
                           </TouchableOpacity>
                         )
@@ -2171,11 +1989,11 @@ function MessageBubble({
                             }`}
                             style={styles.mediaCaptionBubble}
                           >
-                            <LinkifiedText
-                              text={visibleMessageText}
-                              className={messageTextClassName}
-                              linkColor={messageLinkColor}
-                            />
+                          <LinkifiedText
+                            text={visibleMessageText}
+                            className={messageTextClassName}
+                            linkColor={messageLinkColor}
+                          />
                           </View>
                         ) : (
                           <LinkifiedText
@@ -2249,6 +2067,14 @@ const MemoizedMessageBubble = React.memo(
         nextProps.message.location?.latitude &&
       prevProps.message.location?.longitude ===
         nextProps.message.location?.longitude &&
+      prevProps.message.replyTo?.messageId ===
+        nextProps.message.replyTo?.messageId &&
+      prevProps.message.replyTo?.contentKind ===
+        nextProps.message.replyTo?.contentKind &&
+      prevProps.message.replyTo?.text === nextProps.message.replyTo?.text &&
+      prevProps.message.replyTo?.media === nextProps.message.replyTo?.media &&
+      prevProps.message.replyTo?.thumbnail ===
+        nextProps.message.replyTo?.thumbnail &&
       prevProps.message.deliveryState === nextProps.message.deliveryState &&
       prevProps.message.seen === nextProps.message.seen &&
       prevProps.message.sharedPost?.postId ===
@@ -2261,7 +2087,6 @@ const MemoizedMessageBubble = React.memo(
         nextProps.message.reactions,
       ) &&
       prevProps.avatar === nextProps.avatar &&
-      prevProps.partnerName === nextProps.partnerName &&
       prevProps.showAvatar === nextProps.showAvatar
     );
   },
@@ -3215,44 +3040,15 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       setSharedMapLocation(undefined);
     }
 
-    if (replyingMessage) {
-      const originalSnippet = getMessageSnippet(replyingMessage, chat.name);
-      const senderName = replyingMessage.isSentByMe
-        ? 'Tôi'
-        : chat.name || 'Người dùng';
-
-      let originalImageUrl = '';
-      let originalMediaUrl = '';
-      let originalMediaType: ReplyMediaType | undefined =
-        replyingMessage.callEvent ? 'call' : replyingMessage.mediaType;
-      if (replyingMessage.media) {
-        originalMediaUrl = replyingMessage.media;
-        if (replyingMessage.mediaType === 'image') {
-          originalImageUrl = replyingMessage.media;
-        }
-      } else if (
-        replyingMessage.media &&
-        replyingMessage.mediaType === 'image'
-      ) {
-        originalImageUrl = replyingMessage.media;
-      } else {
-        const prod = parseProductInquiry(replyingMessage.message);
-        if (prod && prod.image) {
-          originalImageUrl = prod.image;
-          originalMediaUrl = prod.image;
-          originalMediaType = 'image';
-        }
-      }
-
-      const imgSegment = originalImageUrl
-        ? `\n🖼️ Ảnh: *${originalImageUrl}*`
-        : '';
-      const mediaMetaSegment = `${
-        originalMediaUrl ? `\nMETA_MEDIA: *${originalMediaUrl}*` : ''
-      }${originalMediaType ? `\nMETA_MEDIA_TYPE: *${originalMediaType}*` : ''}`;
-      nextText = `↪️ *Trả lời tin nhắn:*\n👉 *${senderName}*: ${originalSnippet}\n🆔 ID: *${replyingMessage.id}*${imgSegment}${mediaMetaSegment}\n\n${nextText}`;
-      setReplyingMessage(undefined);
-    }
+    const replyTo = replyingMessage
+      ? createMessageReplyReference(
+          replyingMessage,
+          replyingMessage.isSentByMe
+            ? 'Bạn'
+            : replyingMessage.senderName || chat.name || 'Người dùng',
+        )
+      : undefined;
+    if (replyingMessage) setReplyingMessage(undefined);
 
     const nextAttachments = pendingAttachments;
     setText('');
@@ -3260,10 +3056,14 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     setAttachments([]);
 
     if (nextAttachments.length === 0) {
-      await sendMessage(nextText);
+      await sendMessage(nextText, undefined, replyTo ? { replyTo } : undefined);
     } else {
       for (const [index, attachment] of nextAttachments.entries()) {
-        await sendMessage(index === 0 ? nextText : '', attachment);
+        await sendMessage(
+          index === 0 ? nextText : '',
+          attachment,
+          index === 0 && replyTo ? { replyTo } : undefined,
+        );
       }
     }
   }, [
@@ -3603,7 +3403,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           <MemoizedMessageBubble
             message={item.message}
             avatar={chat.avatar}
-            partnerName={chat.name}
             showAvatar={showAvatar}
             onOpenMedia={handleOpenMedia}
             onReply={setReplyingMessage}
@@ -3619,7 +3418,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     },
     [
       chat.avatar,
-      chat.name,
       highlightedMessageId,
       messageItems,
       handleOpenMedia,

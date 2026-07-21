@@ -8,8 +8,6 @@ import {
 
   AppState,
 
-  Alert,
-
   Animated,
 
   Dimensions,
@@ -17,8 +15,6 @@ import {
   FlatList,
 
   Image,
-
-  Modal,
 
   Platform,
 
@@ -38,12 +34,9 @@ import {
 
   View,
 
-  Keyboard,
 } from 'react-native';
 
 import {
-
-  ArrowLeft,
 
   Bell,
 
@@ -55,7 +48,7 @@ import {
 
   CircleUser,
 
-  Edit3,
+  CornerUpLeft,
 
   FileText,
 
@@ -79,10 +72,6 @@ import {
 
   Tag,
 
-  Trash2,
-
-  Upload,
-
   UserPlus,
 
   Users,
@@ -92,8 +81,6 @@ import {
   X,
 
   Plus,
-
-  Zap,
 
 } from 'lucide-react-native';
 
@@ -107,8 +94,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { launchImageLibrary, type MediaType } from 'react-native-image-picker';
 
 import type { RootStackParamList } from '../../../navigation/types';
-
-import type { RootStackRouteName } from '../../../navigation/types';
 
 import { ROUTES } from '../../../navigation/constants/routes';
 
@@ -146,10 +131,6 @@ import { useCurrentUserViewModel } from '../../../shared-kernel/application/view
 
 import { useNotificationBadgeViewModel } from '../../../notifications';
 
-import CreateActionSheet from '../../../shared-kernel/presentation/components/CreateActionSheet';
-
-import { ColorPicker } from '../../../shared-kernel/presentation/components/ColorPicker';
-
 import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
 import { sortMessageUserChats } from '../utils/messageListOrdering';
 import {
@@ -168,6 +149,8 @@ type MessagesNav = NativeStackNavigationProp<RootStackParamList>;
 
 type ChatFilter = 'broadcast' | 'users' | 'groups';
 
+const MESSAGE_BROADCAST_RECIPIENT_LIST_MAX_HEIGHT = 240;
+
 const MESSAGE_COPY: Record<
 
   AppLanguage,
@@ -181,6 +164,8 @@ const MESSAGE_COPY: Record<
     createStory: string;
 
     createGroupChat: string;
+
+    openLabels: string;
 
     retry: string;
 
@@ -260,17 +245,21 @@ const MESSAGE_COPY: Record<
 
     selectLabelToLoadRecipients: string;
 
+    noRecipientsSelected: string;
+
     typeYourMessagePlaceholder: string;
 
     chooseFile: string;
+
+    chooseImage: string;
+
+    removeImage: string;
 
     optionalLabel: string;
 
     sendMessageButton: string;
 
     createLabelBtn: string;
-
-    quickSendBtn: string;
 
     createNewLabelTitle: string;
 
@@ -327,6 +316,8 @@ const MESSAGE_COPY: Record<
     createStory: 'Tạo tin',
 
     createGroupChat: 'Tạo nhóm chat',
+
+    openLabels: 'Gắn nhãn khách hàng',
 
     retry: 'Thử lại',
 
@@ -414,17 +405,21 @@ const MESSAGE_COPY: Record<
 
     selectLabelToLoadRecipients: 'Chọn nhãn để tải người nhận',
 
+    noRecipientsSelected: 'Chưa chọn người nhận',
+
     typeYourMessagePlaceholder: 'Nhập tin nhắn...',
 
     chooseFile: 'Chọn tệp...',
+
+    chooseImage: 'Chọn ảnh đính kèm',
+
+    removeImage: 'Xóa ảnh đính kèm',
 
     optionalLabel: 'Không bắt buộc',
 
     sendMessageButton: 'Gửi tin nhắn',
 
     createLabelBtn: 'Tạo nhãn',
-
-    quickSendBtn: 'Gửi nhanh',
 
     createNewLabelTitle: 'Tạo nhãn mới',
 
@@ -479,6 +474,8 @@ const MESSAGE_COPY: Record<
     createStory: 'Create story',
 
     createGroupChat: 'Create group chat',
+
+    openLabels: 'Assign customer labels',
 
     retry: 'Try again',
 
@@ -566,17 +563,21 @@ const MESSAGE_COPY: Record<
 
     selectLabelToLoadRecipients: 'Select a label to load recipients',
 
+    noRecipientsSelected: 'No recipients selected',
+
     typeYourMessagePlaceholder: 'Type your message',
 
     chooseFile: 'Choose file...',
+
+    chooseImage: 'Choose an image attachment',
+
+    removeImage: 'Remove image attachment',
 
     optionalLabel: 'Optional',
 
     sendMessageButton: 'Send message',
 
     createLabelBtn: 'Create label',
-
-    quickSendBtn: 'Quick send',
 
     createNewLabelTitle: 'Create new label',
 
@@ -1114,6 +1115,9 @@ function ChatListItem({
 
 }) {
 
+  const MESSAGE_LIST_LABEL_BUTTON_SIZE = 32;
+  const MESSAGE_LIST_LABEL_BUTTON_HIT_SLOP = 6;
+
   // Check if this is a group chat
 
   const isGroup = chat.chatType === 'group';
@@ -1135,6 +1139,11 @@ function ChatListItem({
     chat.lastMessageKind === 'audio_call' || chat.lastMessageKind === 'video_call'
       ? getVisibleLastMessage(chat, copy)
       : messagePreview.text;
+  const messagePreviewIcon = chat.lastMessageIsReply ? (
+    <CornerUpLeft size={14} color="#64748b" />
+  ) : (
+    messagePreview.icon
+  );
 
   return (
 
@@ -1160,7 +1169,7 @@ function ChatListItem({
 
       <View className="ml-3 flex-1 border-b border-gray-100 py-2">
 
-        <View className="mb-1 flex-row items-center justify-between">
+        <View className="mb-1 flex-row items-center">
 
           <View className="flex-row items-center flex-1">
 
@@ -1270,23 +1279,17 @@ function ChatListItem({
 
           </View>
 
-          <Text className="ml-2 text-xs text-gray-500">
-
-            {formatTime(chat.lastMessageTime, copy)}
-
-          </Text>
-
         </View>
 
-        <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center">
 
-          <View className="flex-1 flex-row items-center">
+          <View className="min-w-0 flex-1 flex-row items-center">
 
-            {messagePreview.icon ? (
+            {messagePreviewIcon ? (
 
               <View style={{ marginRight: 6 }}>
 
-                {messagePreview.icon}
+                {messagePreviewIcon}
 
               </View>
 
@@ -1326,6 +1329,12 @@ function ChatListItem({
 
           </View>
 
+          <Text className="ml-2 shrink-0 text-xs text-gray-500">
+
+            {formatTime(chat.lastMessageTime, copy)}
+
+          </Text>
+
           {selectable ? (
 
             <View
@@ -1356,7 +1365,14 @@ function ChatListItem({
 
                 <TouchableOpacity
 
-                  className="rounded-full border border-slate-200 bg-white p-1"
+                  accessibilityRole="button"
+                  accessibilityLabel={copy.openLabels}
+                  hitSlop={MESSAGE_LIST_LABEL_BUTTON_HIT_SLOP}
+                  className="items-center justify-center rounded-full border border-slate-200 bg-white"
+                  style={{
+                    width: MESSAGE_LIST_LABEL_BUTTON_SIZE,
+                    height: MESSAGE_LIST_LABEL_BUTTON_SIZE,
+                  }}
 
                   activeOpacity={0.7}
 
@@ -1364,7 +1380,7 @@ function ChatListItem({
 
                 >
 
-                  <Tag size={15} color="#94a3b8" />
+                  <Tag size={19} color="#64748b" />
 
                 </TouchableOpacity>
 
@@ -1379,62 +1395,6 @@ function ChatListItem({
         <ChatLabelBadges labels={chat.labels} />
 
       </View>
-
-    </TouchableOpacity>
-
-  );
-
-}
-
-// Tab button
-
-function TabButton({
-
-  title,
-
-  isActive,
-
-  onPress,
-
-}: {
-
-  title: string;
-
-  isActive: boolean;
-
-  onPress: () => void;
-
-}) {
-
-  return (
-
-    <TouchableOpacity
-
-      activeOpacity={0.8}
-
-      onPress={onPress}
-
-      className={`flex-1 items-center justify-center px-2 py-3 ${
-
-        isActive ? 'border-b-2 border-blue-500' : ''
-
-      }`}
-
-    >
-
-      <Text
-
-        className={`text-sm font-semibold ${
-
-          isActive ? 'text-blue-600' : 'text-gray-500'
-
-        }`}
-
-      >
-
-        {title}
-
-      </Text>
 
     </TouchableOpacity>
 
@@ -1836,44 +1796,6 @@ function ChatFilters({
 
 }
 
-// Header action buttons
-
-function HeaderActions() {
-
-  return (
-
-    <View className="flex-row items-center gap-2">
-
-      <TouchableOpacity
-
-        className="h-10 w-10 items-center justify-center rounded-full bg-blue-50"
-
-        activeOpacity={0.8}
-
-      >
-
-        <Phone size={18} color="#3b82f6" />
-
-      </TouchableOpacity>
-
-      <TouchableOpacity
-
-        className="h-10 w-10 items-center justify-center rounded-full bg-blue-50"
-
-        activeOpacity={0.8}
-
-      >
-
-        <Video size={18} color="#3b82f6" />
-
-      </TouchableOpacity>
-
-    </View>
-
-  );
-
-}
-
 // Messenger-style Stories row below search bar
 
 function StoriesBubbleRow({
@@ -2147,387 +2069,6 @@ function StoriesBubbleRow({
 
 }
 
-type LabelSheetTab = 'assign' | 'manage';
-
-const DEFAULT_LABEL_COLOR = '#3b82f6';
-
-function hexOK(value: string) {
-
-  return /^#[0-9A-Fa-f]{6}$/.test(value || '');
-
-}
-
-function MessageLabelsModal({
-
-  visible,
-
-  chat,
-
-  labels,
-
-  isLoading,
-
-  onClose,
-
-  onCreate,
-
-  onDelete,
-
-  onAttach,
-
-  onDetach,
-
-  copy,
-
-}: {
-
-  visible: boolean;
-
-  chat: ChatItem | null;
-
-  labels: MessageLabel[];
-
-  isLoading: boolean;
-
-  onClose: () => void;
-
-  onCreate: (name: string, color: string) => Promise<any>;
-
-  onDelete: (labelId: string) => Promise<boolean>;
-
-  onAttach: (userId: string, labelId: string) => Promise<boolean>;
-
-  onDetach: (userId: string, labelId: string) => Promise<boolean>;
-
-  copy: typeof MESSAGE_COPY.vi;
-
-}) {
-
-  const [activeTab, setActiveTab] = useState<LabelSheetTab>('assign');
-
-  const [labelName, setLabelName] = useState('');
-
-  const [labelColor, setLabelColor] = useState(DEFAULT_LABEL_COLOR);
-
-  const [showColorPicker, setShowColorPicker] = useState(false);
-
-  const attachedLabelIds = useMemo(
-
-    () => new Set((chat?.labels ?? []).map(l => l.id)),
-
-    [chat?.labels],
-
-  );
-
-  const handleCreate = useCallback(async () => {
-    const color = hexOK(labelColor) ? labelColor : DEFAULT_LABEL_COLOR;
-    const name = labelName.trim();
-    if (!name) return;
-    const created = await onCreate(name, color);
-    if (created) {
-      setLabelName('');
-      setLabelColor(DEFAULT_LABEL_COLOR);
-      setShowColorPicker(false);
-      showToast({ message: 'Da tao nhan thanh cong!', type: 'success' });
-    } else {
-      showToast({ message: 'Tao nhan that bai.', type: 'error' });
-    }
-  }, [labelColor, labelName, onCreate]);
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.4)' }}>
-        <View style={{ width: '90%', maxHeight: '82%', borderRadius: 20, backgroundColor: '#FFFFFF', overflow: 'hidden' }}>
-          <View className="px-5 pt-4 pb-6" style={{ maxHeight: '100%' }}>
-
-            {/* Header */}
-            <View className="mb-4 flex-row items-center justify-between">
-              <Text className="text-lg font-bold text-slate-900">
-                Thẻ phân loại
-              </Text>
-              <TouchableOpacity
-                onPress={onClose}
-                activeOpacity={0.7}
-              >
-                <X size={20} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Custom Tab Bar */}
-            <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', marginBottom: 20 }}>
-              {(
-                [
-                  ['assign', copy.assignLabels],
-                  ['manage', copy.manageLabels],
-                ] as const
-              ).map(([key, title]) => {
-                const isActive = activeTab === key;
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    style={{
-                      flex: 1,
-                      alignItems: 'center',
-                      paddingVertical: 12,
-                      borderBottomWidth: isActive ? 2 : 0,
-                      borderBottomColor: isActive ? '#3B82F6' : 'transparent',
-                    }}
-                    onPress={() => setActiveTab(key)}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={{
-                        fontWeight: '700',
-                        fontSize: 14,
-                        color: isActive ? '#3B82F6' : '#64748B',
-                      }}
-                    >
-                      {title}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Scrollable Content */}
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {activeTab === 'assign' ? (
-                <>
-                  <Text className="mb-3 text-sm font-bold text-slate-700">
-                    Danh sách thẻ của bạn
-                  </Text>
-
-                  <View className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
-                    {labels.length === 0 ? (
-                      <View className="items-center py-10">
-                        <View className="mb-3 h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-                          <Tag size={24} color="#94a3b8" />
-                        </View>
-                        <Text className="text-sm text-slate-500">{copy.noLabelsYet}</Text>
-                      </View>
-                    ) : (
-                      labels.map(label => {
-                        const attached = attachedLabelIds.has(label.id);
-                        return (
-                          <View
-                            key={label.id}
-                            className="flex-row items-center border-b border-slate-100 px-4 py-3"
-                          >
-                            <View
-                              className="mr-3 h-4 w-4 rounded-full"
-                              style={{ backgroundColor: label.color }}
-                            />
-                            <Text className="flex-1 text-base font-semibold text-slate-700">
-                              {label.name}
-                            </Text>
-                            <TouchableOpacity
-                              style={{
-                                backgroundColor: attached ? '#F1F5F9' : '#3B82F6',
-                                borderRadius: 8,
-                                paddingHorizontal: 16,
-                                paddingVertical: 8,
-                              }}
-                              disabled={!chat || isLoading}
-                              activeOpacity={0.8}
-                              onPress={() => {
-                                if (!chat) return;
-                                const action = attached ? onDetach : onAttach;
-                                action(chat.userId, label.id).then((success) => {
-                                  if (success) {
-                                    showToast({ message: attached ? 'Da go nhan!' : 'Da gan nhan!', type: 'success' });
-                                  }
-                                }).catch(() => undefined);
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: attached ? '#64748B' : '#FFFFFF',
-                                  fontWeight: 'bold',
-                                }}
-                              >
-                                {attached ? 'Gỡ' : 'Gán'}
-                              </Text>
-                            </TouchableOpacity>
-                          </View>
-                        );
-                      })
-                    )}
-                  </View>
-
-                  <Text style={{ fontSize: 12, color: '#64748B', marginTop: 12 }}>
-                    Mẹo: nhấn "Gán/Gỡ" để áp dụng cho đối tượng hiện tại.
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text className="mb-3 text-sm font-bold text-slate-700">
-                    Danh sách thẻ của bạn
-                  </Text>
-
-                  {/* List of Your Labels */}
-                  <View className="overflow-hidden rounded-2xl border border-slate-100 mb-6 bg-white">
-                    {labels.length === 0 ? (
-                      <View className="items-center py-10">
-                        <View className="mb-3 h-14 w-14 items-center justify-center rounded-full bg-slate-100">
-                          <Tag size={24} color="#94a3b8" />
-                        </View>
-                        <Text className="text-sm text-slate-500">{copy.noLabelsYet}</Text>
-                      </View>
-                    ) : (
-                      labels.map(label => (
-                        <View
-                          key={label.id}
-                          className="flex-row items-center border-b border-slate-100 px-4 py-3"
-                        >
-                          <View
-                            className="mr-3 h-4 w-4 rounded-full"
-                            style={{ backgroundColor: label.color }}
-                          />
-                          <Text className="flex-1 text-base font-semibold text-slate-700">
-                            {label.name}
-                          </Text>
-                          <TouchableOpacity
-                            style={{
-                              backgroundColor: '#FEE2E2',
-                              borderRadius: 8,
-                              paddingHorizontal: 16,
-                              paddingVertical: 8,
-                            }}
-                            disabled={isLoading}
-                            activeOpacity={0.8}
-                            onPress={async () => {
-                              try {
-                                const success = await onDelete(label.id);
-                                if (success) {
-                                  showToast({ message: 'Da xoa nhan thanh cong!', type: 'success' });
-                                }
-                              } catch (err) {}
-                            }}
-                          >
-                            <Text style={{ color: '#EF4444', fontWeight: 'bold' }}>Xoá</Text>
-                          </TouchableOpacity>
-                        </View>
-                      ))
-                    )}
-                  </View>
-
-                  {/* Create New Label Form */}
-                  <Text className="mb-3 text-sm font-bold text-slate-700">
-                    Tạo thẻ mới
-                  </Text>
-
-                  <TextInput
-                    style={{
-                      height: 44,
-                      borderRadius: 10,
-                      borderWidth: 1,
-                      borderColor: '#E2E8F0',
-                      backgroundColor: '#FFFFFF',
-                      paddingHorizontal: 14,
-                      fontSize: 15,
-                      color: '#0F172A',
-                      marginBottom: 12,
-                    }}
-                    placeholder={copy.labelNamePlaceholder}
-                    placeholderTextColor="#94a3b8"
-                    value={labelName}
-                    onChangeText={setLabelName}
-                  />
-
-                  {/* Side-by-side color picker indicator & Create button */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                    {Platform.OS === 'ios' ? (
-                      <View className="flex-1">
-                        <ColorPicker
-                          value={labelColor}
-                          onChange={setLabelColor}
-                          label={copy.labelColorTitle}
-                        />
-                      </View>
-                    ) : (
-                      <TouchableOpacity
-                        style={{
-                          width: 70,
-                          height: 36,
-                          borderRadius: 6,
-                          backgroundColor: hexOK(labelColor) ? labelColor : DEFAULT_LABEL_COLOR,
-                          borderWidth: 1,
-                          borderColor: '#E2E8F0',
-                        }}
-                        activeOpacity={0.8}
-                        onPress={() => setShowColorPicker(v => !v)}
-                      />
-                    )}
-                    <TouchableOpacity
-                      style={{
-                        backgroundColor: '#3B82F6',
-                        borderRadius: 6,
-                        paddingHorizontal: 20,
-                        height: 36,
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                      }}
-                      disabled={!labelName.trim() || isLoading}
-                      activeOpacity={0.8}
-                      onPress={() => handleCreate().catch(() => undefined)}
-                    >
-                      {isLoading ? (
-                        <ActivityIndicator size="small" color="#ffffff" />
-                      ) : (
-                        <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 }}>Tạo</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-
-                  {Platform.OS !== 'ios' && showColorPicker && (
-                    <View className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 mb-4">
-                      <ColorPicker
-                        value={labelColor}
-                        onChange={setLabelColor}
-                        label={copy.labelColorTitle}
-                      />
-                    </View>
-                  )}
-
-                  <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
-                    Bạn có thể xoá thẻ trong danh sách phía trên.
-                  </Text>
-                </>
-              )}
-            </ScrollView>
-
-            {isLoading && (
-              <View className="mt-4 flex-row justify-center">
-                <ActivityIndicator size="small" color="#2563eb" />
-              </View>
-            )}
-
-            {/* Bottom Footer Close Button */}
-            <View style={{ borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 16, marginTop: 16, flexDirection: 'row', justifyContent: 'flex-end' }}>
-              <TouchableOpacity
-                style={{
-                  backgroundColor: '#E2E8F0',
-                  borderRadius: 8,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                }}
-                onPress={onClose}
-              >
-                <Text style={{ color: '#334155', fontWeight: '700', fontSize: 14 }}>Đóng</Text>
-              </TouchableOpacity>
-            </View>
-
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );}
-
 // Main screen
 
 function MessageScreen() {
@@ -2540,7 +2081,7 @@ function MessageScreen() {
 
   // Branding & Header states/hooks
 
-  const { messageCount, notificationCount } = useUnreadBadgeCounts();
+  const { notificationCount } = useUnreadBadgeCounts();
 
   const { logoUrl, imageErrorCount, notifyImageError } = useAuthBranding();
 
@@ -2614,25 +2155,17 @@ function MessageScreen() {
 
     isLoadingChats,
 
-    isLoadingLabels,
-
     error,
 
     loadChats,
+
+    loadLabels,
 
     loadFollowingUserIds,
 
     isSending,
 
     sendBulkMessages,
-
-    createLabel,
-
-    deleteLabel,
-
-    attachLabel,
-
-    detachLabel,
 
     selectBroadcastLabel,
 
@@ -2646,8 +2179,6 @@ function MessageScreen() {
 
   const [query, setQuery] = useState('');
 
-  const [showCreateLabelBroadcastModal, setShowCreateLabelBroadcastModal] = useState(false);
-
   const [activeFilter, setActiveFilter] = useState<ChatFilter>('users');
 
   const [broadcastText, setBroadcastText] = useState('');
@@ -2659,8 +2190,6 @@ function MessageScreen() {
   const [showBroadcastLabelOptions, setShowBroadcastLabelOptions] =
 
     useState(false);
-
-  const [labelTargetChat, setLabelTargetChat] = useState<ChatItem | null>(null);
 
   const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(
 
@@ -2682,6 +2211,29 @@ function MessageScreen() {
 
   const handleCreateGroupChat = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_GROUP_CHAT);
+  }, [navigation]);
+
+  const handleOpenLabels = useCallback(
+    (chat: ChatItem) => {
+      const userId = chat.participantId || chat.userId;
+      if (!userId || chat.chatType !== 'user') return;
+      navigation.navigate(ROUTES.MESSAGE_LABELS, {
+        mode: 'assign',
+        target: {
+          userId,
+          name: chat.name,
+          username: chat.username,
+          avatar: chat.avatar,
+        },
+      });
+    },
+    [navigation],
+  );
+
+  const handleCreateLabel = useCallback(() => {
+    navigation.navigate(ROUTES.MESSAGE_LABELS, {
+      mode: 'create',
+    });
   }, [navigation]);
 
   const isProgrammaticScrollRef = useRef(false);
@@ -2750,7 +2302,7 @@ function MessageScreen() {
 
     }
 
-  }, [screenWidth]);
+  }, [activeFilter, screenWidth]);
 
   useEffect(
     () => subscribeToMessageRealtimeConnection(setIsRealtimeConnected),
@@ -2794,7 +2346,14 @@ function MessageScreen() {
 
       if (hasFocusedOnceRef.current) {
 
-        loadChats(false, { forceRefresh: true, includeDiscovery: true }).catch(() => undefined);
+        loadLabels()
+          .then(() =>
+            loadChats(false, {
+              forceRefresh: true,
+              includeDiscovery: true,
+            }),
+          )
+          .catch(() => undefined);
 
         loadFollowingUserIds(true).catch(() => undefined);
 
@@ -2829,7 +2388,7 @@ function MessageScreen() {
         clearInterval(interval);
       };
 
-    }, [isRealtimeConnected, loadChats, loadFollowingUserIds]),
+    }, [isRealtimeConnected, loadChats, loadFollowingUserIds, loadLabels]),
 
   );
 
@@ -2873,6 +2432,14 @@ function MessageScreen() {
 
     [broadcastRecipients],
 
+  );
+
+  const selectedBroadcastRecipientChats = useMemo(
+    () =>
+      broadcastRecipientChats.filter(chat =>
+        selectedRecipients.has(chat.userId),
+      ),
+    [broadcastRecipientChats, selectedRecipients],
   );
 
   const broadcastChats = useMemo(() => {
@@ -2966,24 +2533,6 @@ function MessageScreen() {
     [broadcastLabelId, labels],
 
   );
-
-  const currentLabelChat = useMemo(() => {
-
-    if (!labelTargetChat) return null;
-
-    return (
-
-      chats.find(
-
-        chat =>
-
-          chat.chatType === 'user' && chat.userId === labelTargetChat.userId,
-
-      ) ?? labelTargetChat
-
-    );
-
-  }, [chats, labelTargetChat]);
 
   const onRefresh = useCallback(async () => {
 
@@ -3105,7 +2654,6 @@ function MessageScreen() {
 
   const handleSendBroadcast = useCallback(async () => {
     const attachments = broadcastAttachment ? [broadcastAttachment] : [];
-    const recipientCount = selectedRecipients.size;
     try {
       const sent = await sendBulkMessages(
         [...selectedRecipients],
@@ -3120,7 +2668,7 @@ function MessageScreen() {
       } else {
         showToast({ message: 'Gui tin nhan that bai.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       showToast({ message: 'Gui tin nhan that bai.', type: 'error' });
     }
   }, [
@@ -3137,25 +2685,6 @@ function MessageScreen() {
     Boolean(broadcastText.trim() || broadcastAttachment) &&
 
     !isSending;
-
-  const handleCreateLabelWithRecipients = useCallback(
-    async (name: string, color: string, selectedUserIds: string[]) => {
-      const labelId = await createLabel(name, color);
-      if (!labelId) {
-        showToast({ message: 'Tao nhan that bai.', type: 'error' });
-        return false;
-      }
-      if (selectedUserIds.length > 0) {
-        await Promise.all(
-          selectedUserIds.map(userId => attachLabel(userId, labelId).catch(() => undefined))
-        );
-        await loadChats();
-      }
-      showToast({ message: 'Da tao nhan thanh cong!', type: 'success' });
-      return true;
-    },
-    [createLabel, attachLabel, loadChats],
-  );
 
   const renderListEmpty = useCallback((filter: ChatFilter) => {
 
@@ -3469,7 +2998,7 @@ function MessageScreen() {
 
                   <TouchableOpacity
 
-                    onPress={() => setShowCreateLabelBroadcastModal(true)}
+                    onPress={handleCreateLabel}
 
                     activeOpacity={0.8}
 
@@ -3489,29 +3018,27 @@ function MessageScreen() {
 
                   <TouchableOpacity
 
-                    onPress={() => {
-
-                      Alert.alert(
-
-                        language === 'vi' ? 'Thông báo' : 'Notice',
-
-                        language === 'vi' ? 'Tính năng gửi nhanh đang được phát triển!' : 'Quick send feature is under development!'
-
-                      );
-
-                    }}
+                    onPress={() => handleSendBroadcast().catch(() => undefined)}
 
                     activeOpacity={0.8}
 
-                    className="flex-1 flex-row items-center justify-center bg-indigo-600 py-3 rounded-xl active:scale-95"
+                    disabled={!canSendBroadcast}
+
+                    className={`flex-1 flex-row items-center justify-center py-3 rounded-xl active:scale-95 ${
+                      canSendBroadcast ? 'bg-indigo-600' : 'bg-slate-300'
+                    }`}
 
                   >
 
-                    <Zap size={15} color="#ffffff" className="mr-1.5" />
+                    {isSending ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <Send size={16} color="#ffffff" className="mr-1.5" />
+                    )}
 
                     <Text className="text-white font-bold text-sm">
 
-                      {copy.quickSendBtn}
+                      {copy.sendMessageButton}
 
                     </Text>
 
@@ -3619,11 +3146,95 @@ function MessageScreen() {
 
                   )}
 
+                  <View className="mb-3 flex-row items-end gap-2">
+
+                    <TextInput
+
+                      className="min-h-14 max-h-28 flex-1 rounded-xl border border-slate-300 px-3 py-2 text-base text-slate-900"
+
+                      placeholder={copy.typeYourMessagePlaceholder}
+
+                      placeholderTextColor="#94a3b8"
+
+                      value={broadcastText}
+
+                      multiline
+
+                      textAlignVertical="top"
+
+                      onChangeText={setBroadcastText}
+
+                    />
+
+                    <TouchableOpacity
+
+                      accessibilityRole="button"
+
+                      accessibilityLabel={copy.chooseImage}
+
+                      className="h-11 w-11 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50"
+
+                      activeOpacity={0.8}
+
+                      onPress={() => {
+
+                        handleChooseBroadcastImage().catch(() => undefined);
+
+                      }}
+
+                    >
+
+                      <ImageIcon size={21} color="#4F46E5" />
+
+                    </TouchableOpacity>
+
+                  </View>
+
+                  {broadcastAttachment ? (
+
+                    <View className="mb-3 flex-row items-center rounded-xl border border-indigo-100 bg-indigo-50 p-2">
+
+                      <Image
+
+                        source={{ uri: broadcastAttachment.uri }}
+
+                        className="h-12 w-12 rounded-lg bg-slate-100"
+
+                        resizeMode="cover"
+
+                      />
+
+                      <Text className="ml-3 flex-1 text-sm font-semibold text-slate-700" numberOfLines={1}>
+
+                        {broadcastAttachment.name}
+
+                      </Text>
+
+                      <TouchableOpacity
+
+                        accessibilityRole="button"
+
+                        accessibilityLabel={copy.removeImage}
+
+                        className="h-10 w-10 items-center justify-center rounded-full"
+
+                        onPress={() => setBroadcastAttachment(null)}
+
+                      >
+
+                        <X size={19} color="#64748B" />
+
+                      </TouchableOpacity>
+
+                    </View>
+
+                  ) : null}
+
                   <View className="mb-2 flex-row items-center justify-between">
 
                     <Text className="text-xs font-bold uppercase text-slate-400">
 
-                      {copy.sendTo}
+                      {copy.selectedRecipients(selectedBroadcastRecipientChats.length)}
 
                     </Text>
 
@@ -3675,145 +3286,101 @@ function MessageScreen() {
 
                   </View>
 
-                  <View className="mb-3 min-h-12 flex-row flex-wrap items-center gap-2 rounded-xl border border-indigo-100 px-3 py-2">
+                  <ScrollView
 
-                    {broadcastRecipientChats.length === 0 ? (
+                    nestedScrollEnabled
 
-                      <Text className="text-sm text-slate-400">
+                    style={{
+                      maxHeight: MESSAGE_BROADCAST_RECIPIENT_LIST_MAX_HEIGHT,
+                    }}
 
-                        {copy.selectLabelToLoadRecipients}
+                    contentContainerStyle={{ flexGrow: 1 }}
+
+                    className="mb-1 min-h-12 rounded-xl border border-indigo-100"
+
+                    showsVerticalScrollIndicator={selectedBroadcastRecipientChats.length > 3}
+
+                  >
+
+                    {selectedBroadcastRecipientChats.length === 0 ? (
+
+                      <Text className="px-3 py-4 text-sm text-slate-400">
+
+                        {broadcastRecipientChats.length === 0
+                          ? copy.selectLabelToLoadRecipients
+                          : copy.noRecipientsSelected}
 
                       </Text>
 
                     ) : (
 
-                      broadcastRecipientChats
+                      selectedBroadcastRecipientChats.map(chat => (
 
-                        .filter(chat => selectedRecipients.has(chat.userId))
-
-                        .map(chat => (
-
-                          <TouchableOpacity
+                          <View
 
                             key={chat.userId}
 
-                            className="flex-row items-center rounded-full bg-indigo-50 px-2 py-1"
-
-                            onPress={() => handleChatPress(chat)}
+                            className="min-h-14 flex-row items-center border-b border-slate-100 px-3 py-2"
 
                           >
 
-                            <UserAvatar uri={chat.avatar} name={chat.name} size={24} />
+                            <UserAvatar uri={chat.avatar} name={chat.name} size={36} />
 
-                            <Text className="ml-1 max-w-[110px] text-xs font-semibold text-slate-600">
+                            <View className="ml-3 flex-1">
 
-                              {chat.name}
+                              <Text className="text-sm font-semibold text-slate-800" numberOfLines={1}>
 
-                            </Text>
+                                {chat.name}
 
-                            <X size={13} color="#94a3b8" />
+                              </Text>
 
-                          </TouchableOpacity>
+                              {chat.username ? (
+
+                                <Text className="mt-0.5 text-xs text-slate-500" numberOfLines={1}>
+
+                                  @{chat.username}
+
+                                </Text>
+
+                              ) : null}
+
+                            </View>
+
+                            <TouchableOpacity
+
+                              accessibilityRole="button"
+
+                              accessibilityLabel={`${copy.remove} ${chat.name}`}
+
+                              className="h-10 w-10 items-center justify-center rounded-full"
+
+                              onPress={() => {
+
+                                setSelectedRecipients(previous => {
+
+                                  const next = new Set(previous);
+
+                                  next.delete(chat.userId);
+
+                                  return next;
+
+                                });
+
+                              }}
+
+                            >
+
+                              <X size={18} color="#64748B" />
+
+                            </TouchableOpacity>
+
+                          </View>
 
                         ))
 
                     )}
 
-                  </View>
-
-                  <TextInput
-
-                    className="mb-3 min-h-20 border border-slate-300 px-3 py-2 text-base text-slate-900"
-
-                    placeholder={copy.typeYourMessagePlaceholder}
-
-                    placeholderTextColor="#94a3b8"
-
-                    value={broadcastText}
-
-                    multiline
-
-                    textAlignVertical="top"
-
-                    onChangeText={setBroadcastText}
-
-                  />
-
-                  <TouchableOpacity
-
-                    className="mb-3 items-center justify-center rounded-2xl border border-indigo-100 py-3"
-
-                    activeOpacity={0.8}
-
-                    onPress={() => {
-
-                      handleChooseBroadcastImage().catch(() => undefined);
-
-                    }}
-
-                  >
-
-                    <View className="mb-2 h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-
-                      <Upload size={18} color="#64748b" />
-
-                    </View>
-
-                    <Text className="font-semibold text-slate-900">
-
-                      {broadcastAttachment?.name || copy.chooseFile}
-
-                    </Text>
-
-                    <Text className="mt-1 text-sm text-slate-500">{copy.optionalLabel}</Text>
-
-                  </TouchableOpacity>
-
-                  <View className="items-end border-t border-slate-100 pt-3">
-
-                    <TouchableOpacity
-
-                      className={`flex-row items-center rounded-full px-5 py-3 ${
-
-                        canSendBroadcast ? 'bg-blue-600' : 'bg-gray-300'
-
-                      }`}
-
-                      activeOpacity={0.8}
-
-                      disabled={!canSendBroadcast}
-
-                      onPress={() => {
-
-                        handleSendBroadcast().catch(() => undefined);
-
-                      }}
-
-                    >
-
-                      {isSending ? (
-
-                        <ActivityIndicator size="small" color="#ffffff" />
-
-                      ) : (
-
-                        <>
-
-                          <Send size={17} color="#ffffff" />
-
-                          <Text className="ml-2 font-bold text-white">
-
-                            {copy.sendMessageButton}
-
-                          </Text>
-
-                        </>
-
-                      )}
-
-                    </TouchableOpacity>
-
-                  </View>
+                  </ScrollView>
 
                 </View>
 
@@ -3831,7 +3398,7 @@ function MessageScreen() {
 
                 onPress={handleChatPress}
 
-                onOpenLabels={chat => setLabelTargetChat(chat)}
+                onOpenLabels={handleOpenLabels}
 
                 selectable={true}
 
@@ -3915,7 +3482,7 @@ function MessageScreen() {
 
                 onPress={handleChatPress}
 
-                onOpenLabels={chat => setLabelTargetChat(chat)}
+                onOpenLabels={handleOpenLabels}
 
                 selectable={false}
 
@@ -4013,7 +3580,7 @@ function MessageScreen() {
 
                 onPress={handleChatPress}
 
-                onOpenLabels={chat => setLabelTargetChat(chat)}
+                onOpenLabels={handleOpenLabels}
 
                 selectable={false}
 
@@ -4057,49 +3624,11 @@ function MessageScreen() {
 
       </ScrollView>
 
-      <MessageLabelsModal
-
-        visible={Boolean(currentLabelChat)}
-
-        chat={currentLabelChat}
-
-        labels={labels}
-
-        isLoading={isLoadingLabels}
-
-        onClose={() => setLabelTargetChat(null)}
-
-        onCreate={createLabel}
-
-        onDelete={deleteLabel}
-
-        onAttach={attachLabel}
-
-        onDetach={detachLabel}
-
-        copy={copy}
-
-      />
-
       <HeaderProfileDrawer
 
         visible={menuVisible}
 
         onClose={() => setMenuVisible(false)}
-
-      />
-
-      <CreateLabelBroadcastModal
-
-        visible={showCreateLabelBroadcastModal}
-
-        onClose={() => setShowCreateLabelBroadcastModal(false)}
-
-        onCreate={handleCreateLabelWithRecipients}
-
-        users={usersChats}
-
-        copy={copy}
 
       />
 
@@ -4110,301 +3639,6 @@ function MessageScreen() {
 }
 
 
-
-// ── Quick Send Modal ──────────────────────────────────────────
-interface QuickSendModalProps {
-  visible: boolean;
-  onClose: () => void;
-  recipients: { userId: string; name: string; avatar?: string }[];
-  labels: MessageLabel[];
-  sendBulkMessages: (userIds: string[], text: string, attachments: any[]) => Promise<boolean>;
-  copy: typeof MESSAGE_COPY.vi;
-}
-
-function QuickSendModal({
-  visible,
-  onClose,
-  recipients,
-  labels,
-  sendBulkMessages,
-  copy,
-}: QuickSendModalProps) {
-  const [messageText, setMessageText] = useState('');
-  const [selectedImage, setSelectedImage] = useState<{ uri: string; name: string; type: string; mediaType: string } | null>(null);
-  const [isCustomSelection, setIsCustomSelection] = useState(false);
-  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [showRecipientModal, setShowRecipientModal] = useState(false);
-
-  useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
-
-  const wasVisibleRef = useRef(false);
-  useEffect(() => {
-    if (visible && !wasVisibleRef.current) {
-      setMessageText('');
-      setSelectedImage(null);
-      setSelectedUserIds(new Set(recipients.map(r => r.userId)));
-      setIsCustomSelection(false);
-      setSearchQuery('');
-      setIsSending(false);
-      setShowRecipientModal(false);
-    }
-    wasVisibleRef.current = visible;
-  }, [visible, recipients]);
-
-  const handlePickImage = useCallback(async () => {
-    const mediaType: MediaType = 'photo';
-    try {
-      const result = await launchImageLibrary({ mediaType, selectionLimit: 1, quality: 0.9 });
-      const asset = result.assets?.[0];
-      if (!asset?.uri) return;
-      setSelectedImage({ uri: asset.uri, name: asset.fileName || `quick_send_${Date.now()}.jpg`, type: asset.type || 'image/jpeg', mediaType: 'image' });
-    } catch (err) { console.warn('Pick image error:', err); }
-  }, []);
-
-  const handleRemoveImage = useCallback(() => setSelectedImage(null), []);
-
-  const filteredUsers = useMemo(() => {
-    if (!searchQuery.trim()) return recipients;
-    return recipients.filter(u => (u.name || '').toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [recipients, searchQuery]);
-
-  const toggleUser = useCallback((userId: string) => {
-    setSelectedUserIds(prev => {
-      const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId); else next.add(userId);
-      return next;
-    });
-  }, []);
-
-  const handleToggleSelectAllUsers = useCallback(() => {
-    setSelectedUserIds(prev => {
-      const next = new Set<string>();
-      if (prev.size < filteredUsers.length) filteredUsers.forEach(u => next.add(u.userId));
-      return next;
-    });
-  }, [filteredUsers]);
-
-  const isAllUsersSelected = filteredUsers.length > 0 && selectedUserIds.size === filteredUsers.length;
-
-  const finalRecipientIds = useMemo(() => {
-    return isCustomSelection ? selectedUserIds : new Set(recipients.map(r => r.userId));
-  }, [isCustomSelection, selectedUserIds, recipients]);
-
-  const handleSend = useCallback(async () => {
-    const userIds = Array.from(finalRecipientIds);
-    if (userIds.length === 0) {
-      showToast({ message: 'Vui long chon nguoi nhan.', type: 'warning' });
-      return;
-    }
-    setIsSending(true);
-    const attachments = selectedImage ? [selectedImage] : [];
-    try {
-      const success = await sendBulkMessages(userIds, messageText, attachments);
-      if (success) {
-        showToast({ message: 'Da gui thanh cong!', type: 'success' });
-        onClose();
-      } else {
-        showToast({ message: 'Gui that bai.', type: 'error' });
-      }
-    } catch (err) {
-      showToast({ message: 'Khong the gui tin nhan.', type: 'error' });
-    } finally {
-      setIsSending(false);
-    }
-  }, [finalRecipientIds, messageText, selectedImage, sendBulkMessages, onClose]);
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable className="flex-1 justify-end bg-black/50" onPress={Keyboard.dismiss}>
-        <Pressable
-          style={{ height: '85%', borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-          className="bg-white p-5"
-          onPress={() => {}}
-        >
-          <View className="mb-4 flex-row items-center justify-between border-b border-slate-100 pb-3">
-            <View className="flex-1 pr-4">
-              <Text className="text-lg font-bold text-slate-900">Gui nhanh tin nhan</Text>
-              <Text className="text-xs text-slate-500 mt-0.5" numberOfLines={1}>
-                {isCustomSelection
-                  ? `Dang chon loc: Gui den ${finalRecipientIds.size}/${recipients.length} nguoi`
-                  : `Mac dinh gui den tat ca ban be & nguoi theo doi (${recipients.length} nguoi)`}
-              </Text>
-            </View>
-            <TouchableOpacity className="h-8 w-8 items-center justify-center rounded-full bg-slate-100" onPress={onClose}>
-              <X size={18} color="#475569" />
-            </TouchableOpacity>
-          </View>
-
-          <View className="flex-1">
-            <View className="flex-1 border border-slate-200 rounded-2xl bg-white p-3.5 flex-row items-end mb-4">
-              <TextInput
-                className="flex-1 text-sm text-slate-800 p-0 mr-2 h-full"
-                style={{ textAlignVertical: 'top' }}
-                placeholder="Nhap noi dung tin nhan gui nhanh hang loat..."
-                placeholderTextColor="#94a3b8"
-                value={messageText}
-                onChangeText={setMessageText}
-                multiline
-              />
-              <TouchableOpacity className="h-9 w-9 items-center justify-center rounded-xl bg-slate-100" onPress={handlePickImage}>
-                <ImageIcon size={18} color="#475569" />
-              </TouchableOpacity>
-            </View>
-
-            {selectedImage && (
-              <View className="mb-4 flex-row items-center bg-slate-50 border border-slate-100 rounded-xl p-2">
-                <Image source={{ uri: selectedImage.uri }} className="h-12 w-12 rounded-lg" resizeMode="cover" />
-                <View className="ml-3 flex-1">
-                  <Text className="text-xs font-semibold text-slate-700" numberOfLines={1}>{selectedImage.name}</Text>
-                  <Text className="text-[10px] text-slate-400">Hinh anh dinh kem</Text>
-                </View>
-                <TouchableOpacity className="h-7 w-7 items-center justify-center rounded-full bg-red-50" onPress={handleRemoveImage}>
-                  <Trash2 size={14} color="#ef4444" />
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <View className="mb-4 flex-row items-center gap-3">
-              <TouchableOpacity
-                onPress={() => { setIsCustomSelection(true); setShowRecipientModal(true); }}
-                className="flex-1 flex-row items-center bg-indigo-50 border border-indigo-100 px-4 py-3 rounded-xl"
-              >
-                <Users size={15} color="#4f46e5" />
-                <Text className="text-xs font-bold text-indigo-600 ml-2">
-                  {isCustomSelection ? `Da chon: ${selectedUserIds.size} nguoi` : 'Chon nguoi nhan cu the'}
-                </Text>
-              </TouchableOpacity>
-              {isCustomSelection && (
-                <TouchableOpacity onPress={() => setIsCustomSelection(false)} className="bg-slate-100 border border-slate-200 px-4 py-3 rounded-xl">
-                  <Text className="text-xs font-bold text-slate-600">Gui tat ca</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          <View className="border-t border-slate-100 pt-3">
-            {keyboardVisible ? (
-              <View className="flex-row gap-3">
-                <TouchableOpacity
-                  className={`flex-1 items-center justify-center rounded-xl py-3.5 ${
-                    (messageText.trim() || selectedImage) && finalRecipientIds.size > 0 ? 'bg-indigo-600' : 'bg-slate-200'
-                  }`}
-                  disabled={!(messageText.trim() || selectedImage) || finalRecipientIds.size === 0 || isSending}
-                  onPress={handleSend}
-                >
-                  {isSending ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <Text className={`font-bold ${(messageText.trim() || selectedImage) && finalRecipientIds.size > 0 ? 'text-white' : 'text-slate-400'}`}>Gui nhanh</Text>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity className="flex-1 items-center justify-center rounded-xl bg-slate-100 py-3.5" onPress={() => Keyboard.dismiss()}>
-                  <Text className="font-bold text-slate-600">Xong</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                className={`w-full items-center justify-center rounded-xl py-3.5 ${
-                  (messageText.trim() || selectedImage) && finalRecipientIds.size > 0 ? 'bg-indigo-600' : 'bg-slate-200'
-                }`}
-                disabled={!(messageText.trim() || selectedImage) || finalRecipientIds.size === 0 || isSending}
-                onPress={handleSend}
-              >
-                {isSending ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <Text className={`font-bold ${(messageText.trim() || selectedImage) && finalRecipientIds.size > 0 ? 'text-white' : 'text-slate-400'}`}>Gui nhanh</Text>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-        </Pressable>
-      </Pressable>
-
-      <Modal visible={showRecipientModal} transparent animationType="slide" onRequestClose={() => setShowRecipientModal(false)}>
-        <Pressable className="flex-1 justify-end bg-black/60" onPress={() => setShowRecipientModal(false)}>
-          <Pressable style={{ height: '75%', borderTopLeftRadius: 24, borderTopRightRadius: 24 }} className="bg-white p-5" onPress={() => {}}>
-            <View className="mb-4 flex-row items-center justify-between border-b border-slate-100 pb-3">
-              <View>
-                <Text className="text-base font-bold text-slate-900">Chon nguoi nhan cu the</Text>
-                <Text className="text-xs text-slate-400 mt-0.5">Da chon {selectedUserIds.size}/{recipients.length} nguoi dung</Text>
-              </View>
-              <TouchableOpacity className="h-8 w-8 items-center justify-center rounded-full bg-slate-100" onPress={() => setShowRecipientModal(false)}>
-                <X size={18} color="#475569" />
-              </TouchableOpacity>
-            </View>
-
-            <View className="flex-1">
-              <View className="flex-row items-center justify-between mb-2.5 px-1">
-                <Text className="text-xs font-bold uppercase text-slate-400">Danh sach ban be & nguoi theo doi</Text>
-                <TouchableOpacity onPress={handleToggleSelectAllUsers} disabled={filteredUsers.length === 0}>
-                  <Text className="text-xs font-bold text-blue-600">{isAllUsersSelected ? 'Bo chon tat ca' : 'Chon tat ca'}</Text>
-                </TouchableOpacity>
-              </View>
-
-              <TextInput
-                className="mb-3 h-10 rounded-xl border border-slate-200 px-3.5 text-xs text-slate-900 bg-slate-50"
-                placeholder="Tim kiem nguoi dung..."
-                placeholderTextColor="#94a3b8"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-
-              <ScrollView nestedScrollEnabled className="flex-1 border border-slate-100 rounded-2xl p-2.5 bg-slate-50/50">
-                {filteredUsers.length === 0 ? (
-                  <Text className="text-center text-xs text-slate-400 py-6">Khong tim thay nguoi dung</Text>
-                ) : (
-                  filteredUsers.map(user => {
-                    const isSelected = selectedUserIds.has(user.userId);
-                    return (
-                      <TouchableOpacity
-                        key={user.userId}
-                        className="flex-row items-center justify-between py-3 border-b border-slate-100/60"
-                        activeOpacity={0.8}
-                        onPress={() => toggleUser(user.userId)}
-                      >
-                        <View className="flex-row items-center">
-                          <UserAvatar uri={user.avatar} name={user.name} size={32} />
-                          <Text className="ml-3 font-semibold text-sm text-slate-800">{user.name}</Text>
-                        </View>
-                        <View
-                          style={{
-                            width: 22, height: 22, borderRadius: 6, borderWidth: 2,
-                            borderColor: isSelected ? '#4f46e5' : '#94a3b8',
-                            backgroundColor: isSelected ? '#4f46e5' : '#ffffff',
-                            alignItems: 'center', justifyContent: 'center',
-                          }}
-                        >
-                          {isSelected && <Check size={14} color="#ffffff" strokeWidth={3.5} />}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </ScrollView>
-            </View>
-
-            <View className="border-t border-slate-100 pt-3 flex-row gap-3">
-              <TouchableOpacity className="flex-1 items-center justify-center rounded-xl bg-slate-100 py-3.5" onPress={() => { setIsCustomSelection(false); setShowRecipientModal(false); }}>
-                <Text className="font-bold text-slate-600">Gui tat ca</Text>
-              </TouchableOpacity>
-              <TouchableOpacity className="flex-1 items-center justify-center rounded-xl bg-indigo-600 py-3.5" onPress={() => setShowRecipientModal(false)}>
-                <Text className="font-bold text-white">Ap dung</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </Modal>
-  );
-}
 
 export default MessageScreen;
 
@@ -4849,533 +4083,3 @@ const styles = StyleSheet.create({
   },
 
 });
-
-function CreateLabelBroadcastModal({
-
-  visible,
-
-  onClose,
-
-  onCreate,
-
-  users,
-
-  copy,
-
-}: {
-
-  visible: boolean;
-
-  onClose: () => void;
-
-  onCreate: (name: string, color: string, selectedUserIds: string[]) => Promise<boolean>;
-
-  users: ChatItem[];
-
-  copy: any;
-
-}) {
-
-  const [step, setStep] = useState(1); // 1: name, 2: color, 3: users
-
-  const [labelName, setLabelName] = useState('');
-
-  const [labelColor, setLabelColor] = useState('#3b82f6');
-
-  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
-
-  const [userSearchQuery, setUserSearchQuery] = useState('');
-
-  useEffect(() => {
-
-    if (visible) {
-
-      setStep(1);
-
-      setLabelName('');
-
-      setLabelColor('#3b82f6');
-
-      setSelectedUserIds(new Set());
-
-      setUserSearchQuery('');
-
-    }
-
-  }, [visible]);
-
-  const filteredUsers = useMemo(() => {
-
-    if (!userSearchQuery.trim()) return users;
-
-    return users.filter(u =>
-
-      u.name.toLowerCase().includes(userSearchQuery.toLowerCase())
-
-    );
-
-  }, [users, userSearchQuery]);
-
-  const handleCreate = useCallback(async () => {
-
-    if (!labelName.trim()) return;
-
-    const created = await onCreate(
-
-      labelName.trim(),
-
-      labelColor,
-
-      Array.from(selectedUserIds)
-
-    );
-
-    if (created) {
-
-      onClose();
-
-    }
-
-  }, [labelName, labelColor, selectedUserIds, onCreate, onClose]);
-
-  const isAllSelected = filteredUsers.length > 0 && selectedUserIds.size === filteredUsers.length;
-
-  const handleToggleSelectAll = useCallback(() => {
-
-    setSelectedUserIds(prev => {
-
-      const next = new Set<string>();
-
-      if (prev.size < filteredUsers.length) {
-
-        filteredUsers.forEach(u => next.add(u.userId));
-
-      }
-
-      return next;
-
-    });
-
-  }, [filteredUsers]);
-
-  const renderStepIndicator = () => (
-
-    <View className="flex-row items-center justify-center mb-6">
-
-      {[1, 2, 3].map(s => (
-
-        <React.Fragment key={s}>
-
-          <View
-
-            className={`h-9 w-9 rounded-full items-center justify-center ${
-
-              step >= s ? 'bg-blue-500' : 'bg-slate-200'
-
-            }`}
-
-          >
-
-            <Text className={`text-sm font-extrabold ${step >= s ? 'text-white' : 'text-slate-400'}`}>
-
-              {s}
-
-            </Text>
-
-          </View>
-
-          {s < 3 && (
-
-            <View className={`h-0.5 w-14 ${step > s ? 'bg-blue-500' : 'bg-slate-200'}`} />
-
-          )}
-
-        </React.Fragment>
-
-      ))}
-
-    </View>
-
-  );
-
-  const renderNameStep = () => (
-
-    <View>
-
-      <Text className="mb-1.5 text-xs font-bold uppercase text-slate-400">
-
-        {copy.labelNameTitle}
-
-      </Text>
-
-      <TextInput
-
-        className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
-
-        placeholder={copy.labelNamePlaceholder}
-
-        placeholderTextColor="#94a3b8"
-
-        value={labelName}
-
-        onChangeText={setLabelName}
-
-        autoFocus
-
-      />
-
-      <Text className="mt-2 text-xs text-slate-400">
-
-        Đặt tên cho nhãn để dễ phân loại tin nhắn
-
-      </Text>
-
-    </View>
-
-  );
-
-  const renderColorStep = () => (
-
-    <View>
-
-      <Text className="mb-2 text-xs font-bold uppercase text-slate-400">
-
-        {copy.labelColorTitle}
-
-      </Text>
-
-      <View className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
-
-        <ColorPicker
-
-          value={labelColor}
-
-          onChange={setLabelColor}
-
-          label={copy.labelColorTitle}
-
-        />
-
-      </View>
-
-    </View>
-
-  );
-
-  const renderUsersStep = () => (
-
-    <View>
-
-      <View className="flex-row items-center justify-between mb-2.5 px-1">
-
-        <Text className="text-xs font-bold uppercase text-slate-400">
-
-          {copy.filters?.users || 'Người dùng'}
-
-        </Text>
-
-        <TouchableOpacity onPress={handleToggleSelectAll} disabled={filteredUsers.length === 0}>
-
-          <Text className="text-xs font-bold text-blue-600">
-
-            {isAllSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
-
-          </Text>
-
-        </TouchableOpacity>
-
-      </View>
-
-      <TextInput
-
-        className="mb-3 h-11 rounded-xl border border-slate-200 px-3.5 text-sm text-slate-900 bg-slate-50"
-
-        placeholder={copy.searchPlaceholder}
-
-        placeholderTextColor="#94a3b8"
-
-        value={userSearchQuery}
-
-        onChangeText={setUserSearchQuery}
-
-      />
-
-      <ScrollView nestedScrollEnabled className="max-h-72 border border-slate-100 rounded-xl p-2.5 bg-slate-50">
-
-        {filteredUsers.length === 0 ? (
-
-          <Text className="text-center text-xs text-slate-400 py-4">
-
-            Không tìm thấy người dùng
-
-          </Text>
-
-        ) : (
-
-          filteredUsers.map(user => {
-
-            const isSelected = selectedUserIds.has(user.userId);
-
-            return (
-
-              <TouchableOpacity
-
-                key={user.userId}
-
-                className="flex-row items-center justify-between py-2.5 border-b border-slate-100/50"
-
-                activeOpacity={0.8}
-
-                onPress={() => {
-
-                  setSelectedUserIds(prev => {
-
-                    const next = new Set(prev);
-
-                    if (next.has(user.userId)) {
-
-                      next.delete(user.userId);
-
-                    } else {
-
-                      next.add(user.userId);
-
-                    }
-
-                    return next;
-
-                  });
-
-                }}
-
-              >
-
-                <View className="flex-row items-center">
-
-                  <UserAvatar uri={user.avatar} name={user.name} size={32} />
-
-                  <Text className="ml-3 font-semibold text-sm text-slate-800">
-
-                    {user.name}
-
-                  </Text>
-
-                </View>
-
-                <View
-
-                  className={`h-5.5 w-5.5 items-center justify-center rounded border ${
-
-                    isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'
-
-                  }`}
-
-                >
-
-                  {isSelected && <Check size={12} color="#ffffff" />}
-
-                </View>
-
-              </TouchableOpacity>
-
-            );
-
-          })
-
-        )}
-
-      </ScrollView>
-
-      <Text className="mt-2 text-xs text-slate-400">
-
-        Bước này có thể bỏ qua nếu không cần lọc theo người dùng
-
-      </Text>
-
-    </View>
-
-  );
-
-  const renderContent = () => {
-
-    switch (step) {
-
-      case 1:
-
-        return renderNameStep();
-
-      case 2:
-
-        return renderColorStep();
-
-      case 3:
-
-        return renderUsersStep();
-
-      default:
-
-        return null;
-
-    }
-
-  };
-
-  const getTitle = () => {
-
-    switch (step) {
-
-      case 1:
-
-        return 'Bước 1: Tên nhãn';
-
-      case 2:
-
-        return 'Bước 2: Màu sắc';
-
-      case 3:
-
-        return 'Bước 3: Thêm người';
-
-      default:
-
-        return copy.createNewLabelTitle;
-
-    }
-
-  };
-
-  return (
-
-    <Modal
-
-      visible={visible}
-
-      transparent
-
-      animationType="fade"
-
-      onRequestClose={onClose}
-
-    >
-
-      <Pressable className="flex-1 justify-center bg-black/40 px-6" onPress={onClose}>
-
-        <Pressable className="rounded-3xl bg-white p-5" onPress={() => {}}>
-
-          <View className="mb-4 flex-row items-center justify-between border-b border-slate-100 pb-3">
-
-            <Text className="text-lg font-bold text-slate-900">
-
-              {getTitle()}
-
-            </Text>
-
-            <TouchableOpacity
-
-              className="h-8 w-8 items-center justify-center rounded-full bg-slate-100"
-
-              onPress={onClose}
-
-            >
-
-              <X size={18} color="#475569" />
-
-            </TouchableOpacity>
-
-          </View>
-
-          {renderStepIndicator()}
-
-          <ScrollView showsVerticalScrollIndicator={false} className="mb-4">
-
-            {renderContent()}
-
-          </ScrollView>
-
-          <View className="flex-row gap-3 border-t border-slate-100 pt-3">
-
-            {step > 1 ? (
-
-              <TouchableOpacity
-
-                className="flex-1 items-center justify-center rounded-xl bg-slate-100 py-3"
-
-                onPress={() => setStep(s => s - 1)}
-
-              >
-
-                <Text className="font-bold text-slate-600">Quay lại</Text>
-
-              </TouchableOpacity>
-
-            ) : (
-
-              <TouchableOpacity
-
-                className="flex-1 items-center justify-center rounded-xl bg-slate-100 py-3"
-
-                onPress={onClose}
-
-              >
-
-                <Text className="font-bold text-slate-600">
-
-                  {copy.cancelButton}
-
-                </Text>
-
-              </TouchableOpacity>
-
-            )}
-
-            {step < 3 ? (
-
-              <TouchableOpacity
-
-                className={`flex-1 items-center justify-center rounded-xl py-3 ${
-
-                  step === 1 && !labelName.trim()
-
-                    ? 'bg-blue-300'
-
-                    : 'bg-blue-500'
-
-                }`}
-
-                disabled={step === 1 && !labelName.trim()}
-
-                onPress={() => setStep(s => s + 1)}
-
-              >
-
-                <Text className="font-bold text-white">Tiếp theo</Text>
-
-              </TouchableOpacity>
-
-            ) : (
-
-              <TouchableOpacity
-
-                className="flex-1 items-center justify-center rounded-xl bg-blue-500 py-3"
-
-                onPress={handleCreate}
-
-              >
-
-                <Text className="font-bold text-white">Xong</Text>
-
-              </TouchableOpacity>
-
-            )}
-
-          </View>
-
-        </Pressable>
-
-      </Pressable>
-
-    </Modal>
-
-  );
-
-}

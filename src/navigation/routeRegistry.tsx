@@ -82,6 +82,7 @@ import {
   CreateGroupChatScreen,
   GroupInfoScreen,
   GroupCallRoomScreen,
+  MessageLabelsScreen,
   MessageScreen,
 } from '../messages';
 import { SearchEmptyScreen, SearchFilterScreen, SearchScreen } from '../search';
@@ -208,6 +209,7 @@ export function createStackRoutes(
     { name: ROUTES.MY_VIDEOS, component: MyVideosScreen },
     { name: ROUTES.WATCH, component: WatchScreen },
     { name: ROUTES.MESSAGES, component: MessageScreen },
+    { name: ROUTES.MESSAGE_LABELS, component: MessageLabelsScreen },
     { name: ROUTES.CHAT, component: ChatScreen },
     { name: ROUTES.CONVERSATION_DETAILS, component: ConversationDetailsScreen },
     { name: ROUTES.CONVERSATION_SEARCH, component: ConversationSearchScreen },

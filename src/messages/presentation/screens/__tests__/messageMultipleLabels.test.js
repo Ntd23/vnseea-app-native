@@ -28,4 +28,10 @@ describe('multiple labels in the message list', () => {
     expect(source).toContain("sentLinkMe: 'Bạn đã gửi một liên kết'");
     expect(source).toContain('Boolean(chat.lastMessageIsMine)');
   });
+
+  it('marks the latest conversation preview as a reply without replacing its body', () => {
+    expect(source).toContain('chat.lastMessageIsReply');
+    expect(source).toContain('<CornerUpLeft size={14} color="#64748b" />');
+    expect(source).toContain('messagePreviewText');
+  });
 });

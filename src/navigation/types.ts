@@ -87,6 +87,17 @@ export type SettingsPanelRouteParam =
  */
 export type ReelSource = 'home' | 'profile' | 'page' | 'saved' | 'myVideos';
 
+export type MessageLabelTarget = {
+  userId: string;
+  name: string;
+  username?: string;
+  avatar?: string;
+};
+
+export type MessageLabelsRouteParams =
+  | { mode: 'assign'; target: MessageLabelTarget }
+  | { mode: 'create'; initialTarget?: MessageLabelTarget };
+
 export type RootStackParamList = {
   [ROUTES.LOGIN]: undefined;
   [ROUTES.REGISTER]: undefined;
@@ -131,6 +142,7 @@ export type RootStackParamList = {
   [ROUTES.MY_VIDEOS]: undefined;
   [ROUTES.WATCH]: undefined;
   [ROUTES.MESSAGES]: undefined;
+  [ROUTES.MESSAGE_LABELS]: MessageLabelsRouteParams;
   [ROUTES.CREATE_GROUP_CHAT]:
     | { initialMember?: ConversationGroupMember }
     | undefined;

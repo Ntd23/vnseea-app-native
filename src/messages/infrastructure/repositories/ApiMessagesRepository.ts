@@ -14,6 +14,10 @@ import {
   describeMessageTextContent,
   isValidMessageLocation,
 } from '../../application/preview/messageContentDescriptor';
+import {
+  createMessageReplyReference,
+  parseLegacyMessageReply,
+} from '../../application/replies/messageReply';
 import { mapMessageReactionSummary } from '../../domain/reactions/messageReactions';
 import type {
   ChatItem,
@@ -39,6 +43,7 @@ import type {
   MessageLocationReference,
   MessageSystemEvent,
   PinnedMessageItem,
+  SendMessageOptions,
   SendMessageResponse,
 } from '../../domain/types/messages.types';
 type RawRecord = Record<string, unknown>;
@@ -507,6 +512,9 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
   const userData = asRecord(raw.user_data) ?? raw;
   const lastMessage = asRecord(raw.last_message) ?? {};
   const lastMessagePreview = getMessagePreview(lastMessage);
+  const lastMessageIsReply = Boolean(
+    mapMessage(lastMessage).replyTo || readNumber(lastMessage, 'reply_id'),
+  );
   const lastMessageSenderId = readString(lastMessage, 'from_id', 'sender_id');
   const userId = readString(userData, 'user_id', 'id');
   const groupId = readString(raw, 'group_id', 'chat_id', 'id');
@@ -564,6 +572,7 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
     lastMessageIsMine:
       Boolean(lastMessageSenderId) &&
       lastMessageSenderId === sessionStorage.getSession()?.userId,
+    lastMessageIsReply,
     lastMessageTime: lastMessageTime || paginationCursorTime,
     paginationCursorTime: paginationCursorTime || lastMessageTime,
     unreadCount:
@@ -1001,7 +1010,10 @@ async function fetchDiscoveredUserChats(forceRefresh?: boolean): Promise<ChatIte
     return [];
   }
 }
-function mapMessage(raw: Record<string, unknown>): MessageItem {
+function mapMessage(
+  raw: Record<string, unknown>,
+  includeNestedReply = true,
+): MessageItem {
   const fromId = String(raw.from_id ?? raw.fromId ?? '');
   const toId = String(raw.to_id ?? raw.toId ?? '');
   const sessionUserId = sessionStorage.getSession()?.userId ?? '';
@@ -1016,8 +1028,12 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
         readString(raw, 'text', 'message'),
         readNumber(raw, 'time'),
       );
-  const message = normalizeMessageText(decodedMessage, Boolean(media));
+  const normalizedMessage = normalizeMessageText(decodedMessage, Boolean(media));
   const systemEvent = mapMessageSystemEvent(raw);
+  const legacyReply = systemEvent
+    ? undefined
+    : parseLegacyMessageReply(normalizedMessage, apiConfig.webBaseUrl);
+  const message = legacyReply?.body ?? normalizedMessage;
   const callEvent = systemEvent
     ? undefined
     : parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
@@ -1051,11 +1067,35 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
   } else if (location) {
     contentKind = 'location';
   }
+  const nestedReplyRaw = includeNestedReply ? asRecord(raw.reply) : undefined;
+  const nestedReplyMessage = nestedReplyRaw
+    ? mapMessage(nestedReplyRaw, false)
+    : undefined;
+  const nestedReplyUser = nestedReplyRaw
+    ? asRecord(nestedReplyRaw.messageUser) ??
+      asRecord(nestedReplyRaw.user_data) ??
+      asRecord(nestedReplyRaw.userData) ??
+      {}
+    : undefined;
+  const replyTo = nestedReplyMessage
+    ? createMessageReplyReference(
+        nestedReplyMessage,
+        nestedReplyMessage.senderName || getRawUserName(nestedReplyUser ?? {}),
+      )
+    : legacyReply?.replyTo;
+  const messageUser =
+    asRecord(raw.messageUser) ??
+    asRecord(raw.user_data) ??
+    asRecord(raw.userData) ??
+    {};
   return {
     id: readString(raw, 'id', 'message_id'),
     conversationId: readString(raw, 'conversation_id', 'group_id'),
     fromId,
     toId,
+    senderName: getRawUserName(messageUser),
+    senderAvatar:
+      readString(messageUser, 'avatar', 'profile_picture') || undefined,
     message: callEvent ? '' : displayMessage,
     callEvent,
     systemEvent,
@@ -1063,6 +1103,7 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
     contentKind,
     link,
     location,
+    replyTo,
     media,
     mediaType,
     thumbnail: normalizeRawUrl(
@@ -1333,6 +1374,7 @@ export function createMessagesRepository(): MessagesRepository {
       groupId: string,
       message: string,
       attachment?: MessageAttachment,
+      options?: SendMessageOptions,
     ) {
       return this.sendMessage(
         {
@@ -1352,12 +1394,14 @@ export function createMessagesRepository(): MessagesRepository {
         },
         message,
         attachment,
+        options,
       );
     },
     async sendMessage(
       chat: ChatItem | string,
       message: string,
       attachment?: MessageAttachment,
+      options?: SendMessageOptions,
     ) {
       const target = getChatTarget(chat);
       const messageHashId = `${Date.now()}-${Math.random()
@@ -1371,12 +1415,18 @@ export function createMessagesRepository(): MessagesRepository {
         user_id: target.id,
         text: textPayload,
         message_hash_id: messageHashId,
+        ...(options?.replyTo?.messageId
+          ? { reply_id: options.replyTo.messageId }
+          : {}),
       };
       const groupPayload = {
         type: 'send',
         id: target.id,
         text: textPayload,
         message_hash_id: messageHashId,
+        ...(options?.replyTo?.messageId
+          ? { reply_id: options.replyTo.messageId }
+          : {}),
       };
       const route =
         target.type === 'group'
@@ -1401,9 +1451,11 @@ export function createMessagesRepository(): MessagesRepository {
         response.message_data ?? (response as { data?: unknown[] }).data ?? [];
       return {
         ...response,
-        sentMessages: rawSentMessages.map(item =>
-          mapMessage(item as RawRecord),
-        ),
+        sentMessages: rawSentMessages.map(item => {
+          const sentMessage = mapMessage(item as RawRecord);
+          if (sentMessage.replyTo || !options?.replyTo) return sentMessage;
+          return { ...sentMessage, replyTo: options.replyTo };
+        }),
       };
     },
     async setMessageReaction(
@@ -1453,7 +1505,7 @@ export function createMessagesRepository(): MessagesRepository {
             keyword: query.trim(),
           },
         );
-        return (response.data ?? []).map(mapMessage);
+        return (response.data ?? []).map(item => mapMessage(item));
       }
       const response = await apiBridge.post<{ data?: RawRecord[] }>(
         apiRoutes.messages.chat,
@@ -1463,7 +1515,7 @@ export function createMessagesRepository(): MessagesRepository {
           text: query.trim(),
         },
       );
-      return (response.data ?? []).map(mapMessage);
+      return (response.data ?? []).map(item => mapMessage(item));
     },
     async getConversationAssets(
       chat: ChatItem,
@@ -1507,7 +1559,7 @@ export function createMessagesRepository(): MessagesRepository {
       );
       const items = responses
         .flatMap(({ response }) => response.data ?? [])
-        .map(mapMessage)
+        .map(item => mapMessage(item))
         .filter(item => item.id)
         .sort((left, right) => right.time - left.time);
       const uniqueItems = Array.from(

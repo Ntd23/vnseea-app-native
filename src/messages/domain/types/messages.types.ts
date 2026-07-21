@@ -18,6 +18,7 @@ export interface ChatItem {
   lastMessageId?: string;
   lastMessageKind?: ChatPreviewKind;
   lastMessageIsMine?: boolean;
+  lastMessageIsReply?: boolean;
   lastMessageTime: number;
   paginationCursorTime?: number;
   unreadCount: number;
@@ -96,6 +97,27 @@ export interface MessageReactionSummary {
   breakdown: Partial<Record<ReactionType, number>>;
 }
 
+export type MessageMediaType = 'image' | 'video' | 'audio' | 'file';
+
+export interface MessageReplyReference {
+  messageId: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  contentKind: ChatPreviewKind;
+  media?: string;
+  mediaType?: MessageMediaType;
+  thumbnail?: string;
+  sharedPost?: SharedPostMessageReference;
+  link?: MessageLinkReference;
+  location?: MessageLocationReference;
+  callEvent?: MessageCallEvent;
+}
+
+export interface SendMessageOptions {
+  replyTo?: MessageReplyReference;
+}
+
 export interface MessageSystemEvent {
   type: 'message_pinned';
   actorId: string;
@@ -108,16 +130,19 @@ export interface MessageItem {
   conversationId: string;
   fromId: string;
   toId: string;
+  senderName?: string;
+  senderAvatar?: string;
   message: string;
   callEvent?: MessageCallEvent;
   systemEvent?: MessageSystemEvent;
   media?: string;
-  mediaType?: 'image' | 'video' | 'audio' | 'file';
+  mediaType?: MessageMediaType;
   thumbnail?: string;
   sharedPost?: SharedPostMessageReference;
   contentKind?: ChatPreviewKind;
   link?: MessageLinkReference;
   location?: MessageLocationReference;
+  replyTo?: MessageReplyReference;
   reactions: MessageReactionSummary;
   time: number;
   isSentByMe: boolean;
