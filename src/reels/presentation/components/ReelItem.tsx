@@ -26,7 +26,14 @@
 //   │  Caption text…                   │
 //   └──────────────────────────────────┘
 
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Animated as RNAnimated,
   Dimensions,
@@ -97,6 +104,8 @@ const SCREEN_W = Dimensions.get('window').width;
 // the second tap sometimes arrived at ~300ms when the user wasn't trying
 // to be especially fast.
 const DOUBLE_TAP_MS = 320;
+const REEL_VIDEO_RETRY_LIMIT = 1;
+const REEL_VIDEO_RETRY_DELAY_MS = 350;
 
 interface Props {
   item: ReelsItem;
@@ -183,7 +192,9 @@ function ReelItemBase({
     !item.isAnonymous && !isOwnVideo && !item.publisher.isFollowing;
   const [userPaused, setUserPaused] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [playerAttempt, setPlayerAttempt] = useState(0);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
   const videoRef = useRef<React.ElementRef<typeof VideoPlayer>>(null);
@@ -201,6 +212,12 @@ function ReelItemBase({
   onVideoEndRef.current = onVideoEnd;
   const suppressNextEndRef = useRef(false);
   const endSuppressionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const videoRetryCountRef = useRef(0);
+  const videoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const videoSource = useMemo(
+    () => (item.videoUrl ? { uri: item.videoUrl } : undefined),
+    [item.videoUrl],
+  );
 
   const resetPlaybackToStart = useCallback((seekPlayer = true) => {
     if (seekPlayer && videoRef.current) {
@@ -219,6 +236,45 @@ function ReelItemBase({
       endSuppressionTimerRef.current = null;
     }
   }, []);
+
+  const clearVideoRetry = useCallback(() => {
+    if (videoRetryTimerRef.current === null) return;
+    clearTimeout(videoRetryTimerRef.current);
+    videoRetryTimerRef.current = null;
+  }, []);
+
+  const markVideoReady = useCallback(() => {
+    clearVideoRetry();
+    setHasError(false);
+    setIsBuffering(false);
+    setIsReady(true);
+  }, [clearVideoRetry]);
+
+  const markVideoDisplayed = useCallback(() => {
+    videoRetryCountRef.current = 0;
+    markVideoReady();
+  }, [markVideoReady]);
+
+  const handleVideoError = useCallback(() => {
+    setIsReady(false);
+    setIsBuffering(false);
+
+    if (
+      shouldMount &&
+      videoRetryCountRef.current < REEL_VIDEO_RETRY_LIMIT
+    ) {
+      videoRetryCountRef.current += 1;
+      clearVideoRetry();
+      videoRetryTimerRef.current = setTimeout(() => {
+        videoRetryTimerRef.current = null;
+        setHasError(false);
+        setPlayerAttempt(previous => previous + 1);
+      }, REEL_VIDEO_RETRY_DELAY_MS);
+      return;
+    }
+
+    setHasError(true);
+  }, [clearVideoRetry, shouldMount]);
 
   const startEndSuppression = useCallback(() => {
     suppressNextEndRef.current = true;
@@ -287,8 +343,29 @@ function ReelItemBase({
     return () => {
       unlockIosPagerSwipe();
       clearEndSuppression();
+      clearVideoRetry();
     };
-  }, [clearEndSuppression, unlockIosPagerSwipe]);
+  }, [clearEndSuppression, clearVideoRetry, unlockIosPagerSwipe]);
+
+  useEffect(() => {
+    clearVideoRetry();
+    videoRetryCountRef.current = 0;
+    setPlayerAttempt(0);
+    setIsReady(false);
+    setIsBuffering(false);
+    setHasError(false);
+    setDuration(0);
+  }, [clearVideoRetry, item.id, item.videoUrl]);
+
+  useEffect(() => {
+    if (shouldMount) return;
+    clearVideoRetry();
+    videoRetryCountRef.current = 0;
+    setPlayerAttempt(0);
+    setIsReady(false);
+    setIsBuffering(false);
+    setHasError(false);
+  }, [clearVideoRetry, shouldMount]);
 
   useEffect(() => {
     const targetTime =
@@ -489,10 +566,11 @@ function ReelItemBase({
   // mutate the parent's state synchronously during our own render commit.
   useEffect(() => {
     if (!hasError) return;
+    if (!isCurrent) return;
     if (!onUnavailable) return;
     const handle = setTimeout(() => onUnavailable(item.id), 0);
     return () => clearTimeout(handle);
-  }, [hasError, item.id, onUnavailable]);
+  }, [hasError, isCurrent, item.id, onUnavailable]);
 
   // Bottom safe-area offset so action buttons clear the home indicator and iOS tab bar.
   const protectedBottom = Math.max(bottomOverlayInset, insets.bottom);
@@ -530,10 +608,11 @@ function ReelItemBase({
       ) : null}
 
       {/* ── Video — mounted only when in the ±1 preload window ─────── */}
-      {shouldMount && item.videoUrl ? (
+      {shouldMount && videoSource ? (
         <VideoPlayer
+          key={`${item.id}:${playerAttempt}`}
           ref={videoRef}
-          source={{ uri: item.videoUrl }}
+          source={videoSource}
           style={StyleSheet.absoluteFill}
           resizeMode={videoResizeMode}
           // Don't use `repeat` prop here. When autoScrollEnabled flips
@@ -548,21 +627,30 @@ function ReelItemBase({
           playInBackground={false}
           playWhenInactive={false}
           progressUpdateInterval={250}
-          useTextureView={false}
-          onReadyForDisplay={() => setIsReady(true)}
+          useTextureView={Platform.OS === 'android'}
+          onLoadStart={() => {
+            setIsReady(false);
+            setIsBuffering(true);
+          }}
+          onReadyForDisplay={markVideoDisplayed}
           onLoad={(data) => {
-            setIsReady(true);
+            markVideoReady();
             const naturalAspectRatio = getReelVideoNaturalAspectRatio(data);
             setVideoNaturalAspectRatio(naturalAspectRatio);
             if (data?.duration) {
               setDuration(data.duration);
             }
           }}
+          onBuffer={({ isBuffering: nextIsBuffering }) => {
+            setIsBuffering(nextIsBuffering);
+          }}
           onProgress={(data) => {
             if (!isSeeking && data?.currentTime !== undefined) {
               const nextTime = data.currentTime;
               if (nextTime > 0.25) {
                 clearEndSuppression();
+                videoRetryCountRef.current = 0;
+                setIsBuffering(false);
               }
               setCurrentTime(nextTime);
               currentTimeRef.current = nextTime;
@@ -583,10 +671,7 @@ function ReelItemBase({
               resetPlaybackToStart(true);
             }
           }}
-          onError={() => {
-            setHasError(true);
-            setIsReady(true);
-          }}
+          onError={handleVideoError}
         />
       ) : null}
 
@@ -641,7 +726,7 @@ function ReelItemBase({
       ) : null}
 
       {/* ── Buffering dot — tiny indicator near top while decoding ───── */}
-      {shouldMount && isActive && !isReady && !hasError ? (
+      {shouldMount && isActive && (!isReady || isBuffering) && !hasError ? (
         <View pointerEvents="none" style={styles.bufferContainer}>
           <View style={styles.bufferDot} />
         </View>
@@ -1318,6 +1403,7 @@ export const ReelItem = memo(ReelItemBase, (prev, next) => {
     prev.height === next.height &&
     prev.scrollY === next.scrollY &&
     prev.index === next.index &&
-    prev.bottomOverlayInset === next.bottomOverlayInset
+    prev.bottomOverlayInset === next.bottomOverlayInset &&
+    prev.initialSeekTime === next.initialSeekTime
   );
 });

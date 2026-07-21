@@ -37,7 +37,7 @@ describe('feed video autoplay selection', () => {
     ).toBe('video-center');
   });
 
-  it('clears the active video when the active card leaves view while scrolling', () => {
+  it('keeps the active video playing while any part remains visible during scrolling', () => {
     expect(
       getFeedVideoActiveUpdate({
         activeVideoId: 'video-a',
@@ -48,10 +48,63 @@ describe('feed video autoplay selection', () => {
             item: { type: 'post', post: { kind: 'video', id: 'video-b' } },
           },
         ],
+        visibleItems: [
+          {
+            isViewable: true,
+            item: { type: 'post', post: { kind: 'video', id: 'video-a' } },
+          },
+          {
+            isViewable: true,
+            item: { type: 'post', post: { kind: 'video', id: 'video-b' } },
+          },
+        ],
+      }),
+    ).toEqual({
+      nextActiveVideoId: undefined,
+      pendingActiveVideoId: 'video-b',
+    });
+  });
+
+  it('clears the active video only after the active card fully leaves view', () => {
+    expect(
+      getFeedVideoActiveUpdate({
+        activeVideoId: 'video-a',
+        isScrolling: true,
+        viewableItems: [
+          {
+            isViewable: true,
+            item: { type: 'post', post: { kind: 'video', id: 'video-b' } },
+          },
+        ],
+        visibleItems: [
+          {
+            isViewable: true,
+            item: { type: 'post', post: { kind: 'video', id: 'video-b' } },
+          },
+        ],
       }),
     ).toEqual({
       nextActiveVideoId: null,
       pendingActiveVideoId: 'video-b',
+    });
+  });
+
+  it('retains a partially visible active video after scrolling settles', () => {
+    expect(
+      getFeedVideoActiveUpdate({
+        activeVideoId: 'video-a',
+        isScrolling: false,
+        viewableItems: [],
+        visibleItems: [
+          {
+            isViewable: true,
+            item: { type: 'post', post: { kind: 'video', id: 'video-a' } },
+          },
+        ],
+      }),
+    ).toEqual({
+      nextActiveVideoId: undefined,
+      pendingActiveVideoId: null,
     });
   });
 

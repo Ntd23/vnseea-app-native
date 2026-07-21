@@ -44,6 +44,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  type GestureResponderEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ViewStyle,
@@ -84,6 +85,7 @@ import { AudioPlayer } from '../../../shared-kernel/presentation/components/Audi
 import { AudioWaveform } from '../../../shared-kernel/presentation/components/AudioWaveform';
 import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import type { AppLanguage } from '../../../shared-kernel/infrastructure/storage/languageStorage';
 import {
   CommentSheetComposerDock,
   CommentSheetComposerInputSurface,
@@ -102,6 +104,7 @@ import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 
 const AVATAR_FALLBACK = 'https://v2.vnseea.vn/upload/photos/d-avatar.jpg';
 const FONT_PRIMARY = 'Inter';
+const INLINE_ANDROID_KEYBOARD_ACCESSORY_CLEARANCE = 88;
 
 const COMMENTS_COPY = {
   vi: {
@@ -249,6 +252,8 @@ const COMMENT_IMAGE_MAX_HEIGHT = 210;
 const COMMENT_IMAGE_FALLBACK_WIDTH = 180;
 const COMMENT_IMAGE_FALLBACK_HEIGHT = 140;
 const COMMENT_DELETE_ANIMATION_MS = 220;
+const REPLY_EMOJI_BAR_HEIGHT = 46;
+const REPLY_QUICK_EMOJIS = ['😂', '😍', '🥰', '👍', '❤️', '🙏', '😢', '🔥'];
 const SHEET_OPEN_SPRING = {
   damping: 24,
   stiffness: 360,
@@ -256,8 +261,19 @@ const SHEET_OPEN_SPRING = {
 };
 const SHEET_CLOSE_DURATION_MS = 150;
 
+type ReplyTarget = {
+  commentId: string;
+  targetCommentId?: string;
+  username: string;
+  displayName?: string;
+};
+
 interface Props {
   visible: boolean;
+  presentation?: 'sheet' | 'inline';
+  listHeaderComponent?: React.ReactElement | null;
+  autoFocusComposer?: boolean;
+  composerFocusSignal?: number;
   comments: ReelComment[];
   commentCount: number;
   isLoading: boolean;
@@ -268,7 +284,7 @@ interface Props {
   // Reply state
   repliesById: Record<string, ReelComment[]>;
   loadingRepliesIds: string[];
-  replyingTo: { commentId: string; username: string } | null;
+  replyingTo: ReplyTarget | null;
 
   // Actions
   onClose: () => void;
@@ -283,13 +299,19 @@ interface Props {
     commentId: string,
     text: string,
     image?: CommentImageAttachment,
+    replyMentionName?: string,
   ) => Promise<ReelComment | null>;
   onSetReaction: (commentId: string, reaction: ReactionType) => void;
   onDelete: (commentId: string) => void;
   onEdit: (commentId: string, text: string) => void;
   onLoadReplies: (commentId: string) => void;
   onCollapseReplies: (commentId: string) => void;
-  onStartReply: (commentId: string, username: string) => void;
+  onStartReply: (
+    commentId: string,
+    username: string,
+    displayName?: string,
+    targetCommentId?: string,
+  ) => void;
   onCancelReply: () => void;
   onRetryFailedComment: (comment: ReelComment) => void;
   onDeleteFailedComment: (comment: ReelComment) => void;
@@ -301,6 +323,43 @@ function formatCount(count: number) {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
   return String(count);
+}
+
+function getCommentPublisherDisplayName(comment: ReelComment, language: AppLanguage) {
+  return (
+    comment.publisher.name ||
+    comment.publisher.username ||
+    (language === 'en' ? 'User' : 'Người dùng')
+  );
+}
+
+function getReplyTargetDisplayName(target: ReplyTarget | null, language: AppLanguage) {
+  return (
+    target?.displayName?.trim() ||
+    target?.username?.trim() ||
+    (language === 'en' ? 'User' : 'Người dùng')
+  );
+}
+
+function getReplyDraftPrefix(displayName: string) {
+  const trimmed = displayName.trim();
+  return trimmed ? `${trimmed} ` : '';
+}
+
+function splitLeadingReplyMention(text: string, mentionName?: string) {
+  const name = mentionName?.trim();
+  if (!name) return null;
+
+  const trimmedStart = text.trimStart();
+  if (!trimmedStart.startsWith(name)) return null;
+
+  const nextChar = trimmedStart.charAt(name.length);
+  if (nextChar && !/\s|[.,:;!?]/.test(nextChar)) return null;
+
+  return {
+    mention: name,
+    rest: trimmedStart.slice(name.length),
+  };
 }
 
 function formatRelativeTime(timestamp?: number, language: 'vi' | 'en' = 'vi') {
@@ -352,6 +411,10 @@ function fitCommentImageSize(width?: number, height?: number) {
 
 function ReelCommentsSheetBase({
   visible,
+  presentation = 'sheet',
+  listHeaderComponent = null,
+  autoFocusComposer = false,
+  composerFocusSignal = 0,
   comments,
   commentCount,
   isLoading,
@@ -377,6 +440,7 @@ function ReelCommentsSheetBase({
   onDeleteFailedComment,
   sheetHeight = '72%',
 }: Props) {
+  const isInline = presentation === 'inline';
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
   const navigation = useNavigation<any>();
@@ -396,6 +460,7 @@ function ReelCommentsSheetBase({
       : Math.max(insets.bottom, 14);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isKeyboardVisible = keyboardHeight > 0;
+  const replyEmojiRailVisible = isKeyboardVisible;
   const activeSheetHeight =
     Platform.OS === 'android' && isKeyboardVisible ? '100%' : sheetHeight;
   const sheetBottomPadding =
@@ -410,19 +475,150 @@ function ReelCommentsSheetBase({
     cancelRecording: cancelWavRecording,
   } = wavRecorder;
   const [draft, setDraft] = useState('');
+  const [keyboardLift, setKeyboardLift] = useState(0);
+  const appliedKeyboardLift = Math.max(
+    0,
+    keyboardLift - (replyEmojiRailVisible ? REPLY_EMOJI_BAR_HEIGHT : 0),
+  );
   const inputRef = useRef<TextInput>(null);
+  const composerMeasureRef = useRef<View>(null);
   const commentsListRef = useRef<FlatList<ReelComment>>(null);
   const autoScrollToEndUntilRef = useRef(0);
+  const keyboardLiftRef = useRef(0);
+  const keyboardHeightRef = useRef(0);
+  const keyboardTopRef = useRef<number | null>(null);
+  const keyboardMeasureTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const replyRevealTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const commitKeyboardLift = useCallback((nextLift: number) => {
+    const normalized = Math.max(0, Math.round(nextLift));
+    keyboardLiftRef.current = normalized;
+    setKeyboardLift(current => (current === normalized ? current : normalized));
+  }, []);
+
+  const clearKeyboardMeasureTimers = useCallback(() => {
+    keyboardMeasureTimeoutsRef.current.forEach(clearTimeout);
+    keyboardMeasureTimeoutsRef.current = [];
+  }, []);
+
+  const clearReplyRevealTimers = useCallback(() => {
+    replyRevealTimeoutsRef.current.forEach(clearTimeout);
+    replyRevealTimeoutsRef.current = [];
+  }, []);
+
+  const revealReplyTarget = useCallback(
+    (target: ReplyTarget | null, animated = true) => {
+      if (!target) return;
+      const parentIndex = comments.findIndex(
+        comment => comment.id === target.commentId,
+      );
+      if (parentIndex < 0) return;
+
+      commentsListRef.current?.scrollToIndex({
+        index: parentIndex,
+        animated,
+        viewPosition: isInline ? 0.76 : 0.58,
+      });
+    },
+    [comments, isInline],
+  );
+
+  const scheduleReplyTargetReveal = useCallback(
+    (target: ReplyTarget | null) => {
+      if (!target) return;
+      clearReplyRevealTimers();
+      replyRevealTimeoutsRef.current = [0, 90, 240, 420].map(delay =>
+        setTimeout(() => revealReplyTarget(target, delay !== 0), delay),
+      );
+    },
+    [clearReplyRevealTimers, revealReplyTarget],
+  );
+
+  const measureComposerAgainstKeyboard = useCallback(() => {
+    const keyboardTop = keyboardTopRef.current;
+    const composer = composerMeasureRef.current;
+    if (keyboardTop === null || !composer) return;
+
+    composer.measureInWindow((_x, y, _width, height) => {
+      const keyboardAccessoryClearance =
+        isInline && Platform.OS === 'android'
+          ? INLINE_ANDROID_KEYBOARD_ACCESSORY_CLEARANCE
+          : 2;
+      const effectiveKeyboardTop =
+        keyboardTop - keyboardAccessoryClearance;
+      const unshiftedBottom = y + height + keyboardLiftRef.current;
+      const overlap = Math.max(
+        0,
+        Math.ceil(unshiftedBottom - effectiveKeyboardTop),
+      );
+      const maxLift = keyboardHeightRef.current
+        ? keyboardHeightRef.current + keyboardAccessoryClearance
+        : overlap;
+      commitKeyboardLift(Math.min(overlap, maxLift));
+    });
+  }, [commitKeyboardLift, isInline]);
+
+  const scheduleKeyboardMeasurements = useCallback(() => {
+    clearKeyboardMeasureTimers();
+    keyboardMeasureTimeoutsRef.current = [0, 80, 220].map(delay =>
+      setTimeout(measureComposerAgainstKeyboard, delay),
+    );
+  }, [clearKeyboardMeasureTimers, measureComposerAgainstKeyboard]);
+
+  const handleComposerLayout = useCallback(() => {
+    if (keyboardTopRef.current === null) return;
+    requestAnimationFrame(measureComposerAgainstKeyboard);
+  }, [measureComposerAgainstKeyboard]);
+
+  const composerLiftStyle = useMemo(
+    () =>
+      appliedKeyboardLift > 0
+        ? { marginBottom: appliedKeyboardLift }
+        : undefined,
+    [appliedKeyboardLift],
+  );
+
+  useEffect(() => {
+    if (!visible || (!autoFocusComposer && composerFocusSignal <= 0)) return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 220);
+    return () => clearTimeout(timer);
+  }, [autoFocusComposer, composerFocusSignal, visible]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
     const handleKeyboardShow = (event: KeyboardEvent) => {
-      setKeyboardHeight(Math.max(0, event.endCoordinates?.height ?? 0));
+      const keyboardMetrics = Keyboard.metrics?.();
+      const nextHeight = Math.max(
+        0,
+        event.endCoordinates?.height ?? 0,
+        keyboardMetrics?.height ?? 0,
+      );
+      const reportedScreenY =
+        typeof keyboardMetrics?.screenY === 'number'
+          ? keyboardMetrics.screenY
+          : event.endCoordinates?.screenY;
+      const fallbackKeyboardTop = Dimensions.get('screen').height - nextHeight;
+      keyboardHeightRef.current = nextHeight;
+      keyboardTopRef.current =
+        typeof reportedScreenY === 'number' &&
+        Number.isFinite(reportedScreenY) &&
+        reportedScreenY > 0
+          ? reportedScreenY
+          : fallbackKeyboardTop;
+      setKeyboardHeight(nextHeight);
+      scheduleKeyboardMeasurements();
+      if (replyingTo) {
+        scheduleReplyTargetReveal(replyingTo);
+      }
     };
 
     const handleKeyboardHide = () => {
+      clearKeyboardMeasureTimers();
+      keyboardHeightRef.current = 0;
+      keyboardTopRef.current = null;
+      commitKeyboardLift(0);
       setKeyboardHeight(0);
     };
 
@@ -430,18 +626,28 @@ function ReelCommentsSheetBase({
     const hideSubscription = Keyboard.addListener(hideEvent, handleKeyboardHide);
 
     return () => {
+      clearKeyboardMeasureTimers();
+      clearReplyRevealTimers();
       showSubscription.remove();
       hideSubscription.remove();
     };
-  }, []);
+  }, [
+    clearKeyboardMeasureTimers,
+    clearReplyRevealTimers,
+    commitKeyboardLift,
+    replyingTo,
+    scheduleReplyTargetReveal,
+    scheduleKeyboardMeasurements,
+  ]);
 
   useEffect(() => {
     if (replyingTo && inputRef.current) {
+      scheduleReplyTargetReveal(replyingTo);
       setTimeout(() => {
         inputRef.current?.focus();
       }, 100);
     }
-  }, [replyingTo]);
+  }, [replyingTo, scheduleReplyTargetReveal]);
 
   // Image picked by the user for the next comment / reply. Local file://
   // URI; uploaded via multipart when `onSubmit` fires. Cleared after
@@ -501,9 +707,20 @@ function ReelCommentsSheetBase({
       autoScrollToEndUntilRef.current = 0;
       setInlineDeleteCommentId(null);
       setDeletingCommentIds(new Set());
+      clearKeyboardMeasureTimers();
+      clearReplyRevealTimers();
+      keyboardHeightRef.current = 0;
+      keyboardTopRef.current = null;
+      commitKeyboardLift(0);
       setKeyboardHeight(0);
     }
-  }, [cancelWavRecording, visible]);
+  }, [
+    cancelWavRecording,
+    clearKeyboardMeasureTimers,
+    clearReplyRevealTimers,
+    commitKeyboardLift,
+    visible,
+  ]);
 
   useEffect(() => {
     if (visible) {
@@ -616,11 +833,45 @@ function ReelCommentsSheetBase({
   }, []);
 
   const handleStartReplyFromRow = useCallback(
-    (commentId: string, username: string) => {
+    (
+      commentId: string,
+      username: string,
+      displayName?: string,
+      targetCommentId?: string,
+    ) => {
       handleCancelEdit();
-      onStartReply(commentId, username);
+      const replyDisplayName =
+        (displayName || username || '').trim() ||
+        (language === 'en' ? 'User' : 'Người dùng');
+      const replyTarget: ReplyTarget = {
+        commentId,
+        targetCommentId: targetCommentId || commentId,
+        username,
+        displayName: replyDisplayName,
+      };
+      setPendingImage(null);
+      setPendingAudio(null);
+      setDraft(getReplyDraftPrefix(replyDisplayName));
+      onStartReply(
+        commentId,
+        username,
+        replyDisplayName,
+        targetCommentId || commentId,
+      );
+      scheduleReplyTargetReveal(replyTarget);
+      requestAnimationFrame(() => inputRef.current?.focus());
     },
-    [handleCancelEdit, onStartReply],
+    [handleCancelEdit, language, onStartReply, scheduleReplyTargetReveal],
+  );
+
+  const handleInsertReplyEmoji = useCallback(
+    (emoji: string) => {
+      if (!replyingTo) return;
+      setDraft(current => `${current}${emoji}`);
+      scheduleReplyTargetReveal(replyingTo);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [replyingTo, scheduleReplyTargetReveal],
   );
 
   const handleSubmit = useCallback(() => {
@@ -655,7 +906,11 @@ function ReelCommentsSheetBase({
     setPendingAudio(null);
 
     if (replyingTo) {
-      onSubmitReply(replyingTo.commentId, trimmed, image);
+      const replyMentionName = splitLeadingReplyMention(
+        trimmed,
+        getReplyTargetDisplayName(replyingTo, language),
+      )?.mention;
+      onSubmitReply(replyingTo.commentId, trimmed, image, replyMentionName);
       onCancelReply();
     } else {
       onSubmit(trimmed, image, audio);
@@ -672,6 +927,7 @@ function ReelCommentsSheetBase({
     replyingTo,
     onCancelReply,
     scheduleCommentsAutoScrollToEnd,
+    language,
   ]);
 
   const handlePickAudio = useCallback(async () => {
@@ -976,7 +1232,7 @@ function ReelCommentsSheetBase({
           onCollapseReplies={onCollapseReplies}
           onStartReply={handleStartReplyFromRow}
           onOpenImage={handleOpenImage}
-          replyingToCommentId={replyingTo?.commentId}
+          replyingToCommentId={replyingTo?.targetCommentId ?? replyingTo?.commentId}
           onPressProfile={handlePressProfile}
           inlineDeleteCommentId={inlineDeleteCommentId}
           deletingCommentIds={deletingCommentIds}
@@ -1013,10 +1269,11 @@ function ReelCommentsSheetBase({
 
   const replyingSnippet = useMemo(() => {
     if (!replyingTo) return '';
-    let found = comments.find(c => c.id === replyingTo.commentId);
+    const targetCommentId = replyingTo.targetCommentId ?? replyingTo.commentId;
+    let found = comments.find(c => c.id === targetCommentId);
     if (!found) {
       for (const key in repliesById) {
-        const match = repliesById[key]?.find(c => c.id === replyingTo.commentId);
+        const match = repliesById[key]?.find(c => c.id === targetCommentId);
         if (match) {
           found = match;
           break;
@@ -1027,40 +1284,58 @@ function ReelCommentsSheetBase({
   }, [replyingTo, comments, repliesById]);
   const isInitialLoading = isLoading && comments.length === 0;
   const isRefreshingComments = isLoading && comments.length > 0;
+  const PresentationRoot = (isInline ? View : Modal) as React.ComponentType<any>;
+  const SheetSurface = (isInline ? View : Animated.View) as React.ComponentType<any>;
 
   return (
-    <Modal
-      visible={isMounted && isScreenFocused}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      hardwareAccelerated
-      presentationStyle="overFullScreen"
-      onRequestClose={handleRequestClose}
+    <PresentationRoot
+      {...(isInline
+        ? { style: styles.inlineRoot }
+        : {
+            visible: isMounted && isScreenFocused,
+            transparent: true,
+            animationType: 'none',
+            statusBarTranslucent: true,
+            hardwareAccelerated: true,
+            presentationStyle: 'overFullScreen',
+            onRequestClose: handleRequestClose,
+          })}
     >
-      <KeyboardSafeView style={styles.modalRoot}>
-        <Pressable style={styles.backdropPressable} onPress={handleRequestClose}>
-          <Animated.View
-            style={[styles.backdrop, { opacity: backdropOpacity }]}
-          />
-        </Pressable>
-        <Animated.View
-          style={[
-            styles.sheet,
-            {
-              height: activeSheetHeight as ViewStyle['height'],
-              paddingBottom: sheetBottomPadding,
-              transform: [
-                { translateY: sheetTranslateY },
-                { scale: sheetScale },
-              ],
-            },
-          ]}
-          onTouchStart={(e) => {
+      <KeyboardSafeView
+        style={isInline ? styles.inlineRoot : styles.modalRoot}
+        enabled={visible && isScreenFocused}
+        keyboardVerticalOffset={0}
+      >
+        {!isInline ? (
+          <Pressable style={styles.backdropPressable} onPress={handleRequestClose}>
+            <Animated.View
+              style={[styles.backdrop, { opacity: backdropOpacity }]}
+            />
+          </Pressable>
+        ) : null}
+        <SheetSurface
+          style={
+            isInline
+              ? styles.inlineSheet
+              : [
+                  styles.sheet,
+                  {
+                    height: activeSheetHeight as ViewStyle['height'],
+                    paddingBottom: sheetBottomPadding,
+                    transform: [
+                      { translateY: sheetTranslateY },
+                      { scale: sheetScale },
+                    ],
+                  },
+                ]
+          }
+          onTouchStart={(e: GestureResponderEvent) => {
+            if (isInline) return;
             touchStartY.current = e.nativeEvent.pageY;
             isDraggingSheet.current = false;
           }}
-          onTouchMove={(e) => {
+          onTouchMove={(e: GestureResponderEvent) => {
+            if (isInline) return;
             const currentY = e.nativeEvent.pageY;
             const dy = currentY - touchStartY.current;
 
@@ -1072,7 +1347,8 @@ function ReelCommentsSheetBase({
               panY.setValue(dy);
             }
           }}
-          onTouchEnd={(e) => {
+          onTouchEnd={(e: GestureResponderEvent) => {
+            if (isInline) return;
             if (isDraggingSheet.current) {
               const currentY = e.nativeEvent.pageY;
               const dy = currentY - touchStartY.current;
@@ -1099,6 +1375,7 @@ function ReelCommentsSheetBase({
             }
           }}
           onTouchCancel={() => {
+            if (isInline) return;
             if (isDraggingSheet.current) {
               Animated.spring(panY, {
                 toValue: 0,
@@ -1110,39 +1387,41 @@ function ReelCommentsSheetBase({
             }
           }}
         >
-          <View>
-            <View style={styles.grabber} />
+          {!isInline ? (
+            <View>
+              <View style={styles.grabber} />
 
-            <View style={styles.header}>
-              <View style={styles.headerSide}>
-                {headerCountLabel ? (
-                  <CommentSheetHeaderBadge style={styles.headerCountBadge}>
-                    <Text style={styles.headerCountText}>{headerCountLabel}</Text>
-                  </CommentSheetHeaderBadge>
-                ) : null}
-              </View>
-              <Text style={styles.title}>{title}</Text>
-              <View style={[styles.headerSide, styles.headerCloseSide]}>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={handleRequestClose}
-                  style={styles.closeButton}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <CommentSheetControlSurface style={styles.closeButtonSurface}>
-                    <X size={20} color="#111827" />
-                  </CommentSheetControlSurface>
-                </TouchableOpacity>
+              <View style={styles.header}>
+                <View style={styles.headerSide}>
+                  {headerCountLabel ? (
+                    <CommentSheetHeaderBadge style={styles.headerCountBadge}>
+                      <Text style={styles.headerCountText}>{headerCountLabel}</Text>
+                    </CommentSheetHeaderBadge>
+                  ) : null}
+                </View>
+                <Text style={styles.title}>{title}</Text>
+                <View style={[styles.headerSide, styles.headerCloseSide]}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={handleRequestClose}
+                    style={styles.closeButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <CommentSheetControlSurface style={styles.closeButtonSurface}>
+                      <X size={20} color="#111827" />
+                    </CommentSheetControlSurface>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
+          ) : null}
 
-          {isInitialLoading ? (
+          {isInitialLoading && !isInline ? (
             <View style={styles.stateBox}>
               <ActivityIndicator color="#0866ff" size="small" />
               <Text style={styles.stateText}>{copy.loadingComments}</Text>
             </View>
-          ) : error && comments.length === 0 ? (
+          ) : error && comments.length === 0 && !isInline ? (
             <View style={styles.stateBox}>
               <Text style={styles.errorText}>{error}</Text>
               <TouchableOpacity
@@ -1171,30 +1450,74 @@ function ReelCommentsSheetBase({
               removeClippedSubviews={false}
               onContentSizeChange={handleCommentsContentSizeChange}
               contentContainerStyle={[
-                styles.listContent,
-                comments.length === 0 ? styles.emptyListContent : null,
+                isInline ? styles.inlineListContent : styles.listContent,
+                comments.length === 0
+                  ? isInline
+                    ? styles.inlineEmptyListContent
+                    : styles.emptyListContent
+                  : null,
               ]}
               onEndReached={onEndReached}
               onEndReachedThreshold={0.6}
+              onScrollToIndexFailed={info => {
+                const estimatedOffset = Math.max(
+                  0,
+                  info.averageItemLength * info.index,
+                );
+                setTimeout(() => {
+                  commentsListRef.current?.scrollToOffset({
+                    offset: estimatedOffset,
+                    animated: true,
+                  });
+                }, 80);
+              }}
               onScroll={handleListScroll}
               scrollEventThrottle={16}
               ListHeaderComponent={
-                isRefreshingComments ? (
-                  <View style={styles.refreshingHeader}>
-                    <ActivityIndicator color="#0866ff" size="small" />
-                    <Text style={styles.refreshingHeaderText}>
-                      {copy.loadingComments}
-                    </Text>
-                  </View>
+                listHeaderComponent || isInitialLoading || isRefreshingComments || error ? (
+                  <>
+                    {listHeaderComponent}
+                    {isInitialLoading || isRefreshingComments ? (
+                      <View style={styles.refreshingHeader}>
+                        <ActivityIndicator color="#0866ff" size="small" />
+                        <Text style={styles.refreshingHeaderText}>
+                          {copy.loadingComments}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {isInline && error && comments.length === 0 ? (
+                      <View style={styles.stateBoxInline}>
+                        <Text style={styles.errorText}>{error}</Text>
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          onPress={onRetry}
+                          style={styles.retryButton}
+                        >
+                          <Text style={styles.retryText}>{copy.retry}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                  </>
                 ) : null
               }
               ListEmptyComponent={
-                <View style={styles.emptyBox}>
-                  <Text style={styles.emptyTitle}>{copy.noCommentsTitle}</Text>
-                  <Text style={styles.emptyText}>
-                    {copy.noCommentsDesc}
-                  </Text>
-                </View>
+                !isInitialLoading && !(error && comments.length === 0) ? (
+                  <View
+                    style={[
+                      styles.emptyBox,
+                      isInline ? styles.inlineEmptyBox : null,
+                    ]}
+                  >
+                    <Text style={styles.emptyTitle}>{copy.noCommentsTitle}</Text>
+                    <Text style={styles.emptyText}>
+                      {isInline
+                        ? language === 'en'
+                          ? 'Be the first to comment on this post.'
+                          : 'Hãy là người đầu tiên bình luận bài viết này.'
+                        : copy.noCommentsDesc}
+                    </Text>
+                  </View>
+                ) : null
               }
               ListFooterComponent={
                 isLoadingMore ? (
@@ -1310,9 +1633,15 @@ function ReelCommentsSheetBase({
             </View>
           ) : null}
 
-          <CommentSheetComposerDock style={[styles.inputBar, { paddingBottom: composerBottomPadding }]}>
-            {/* Image picker button — leftmost in the row, mirrors FB layout */}
-            <TouchableOpacity
+          <View style={composerLiftStyle}>
+            <View
+              ref={composerMeasureRef}
+              collapsable={false}
+              onLayout={handleComposerLayout}
+            >
+              <CommentSheetComposerDock style={[styles.inputBar, { paddingBottom: composerBottomPadding }]}>
+              {/* Image picker button — leftmost in the row, mirrors FB layout */}
+              <TouchableOpacity
               activeOpacity={0.7}
               onPress={handlePickImage}
               disabled={Boolean(editingComment)}
@@ -1320,9 +1649,9 @@ function ReelCommentsSheetBase({
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
             >
               <ImagePlus size={22} color={editingComment ? '#cbd5e1' : '#1877f2'} />
-            </TouchableOpacity>
+              </TouchableOpacity>
 
-            <TouchableOpacity
+              <TouchableOpacity
               activeOpacity={0.7}
               onPress={handlePickAudio}
               disabled={Boolean(editingComment || replyingTo || isWavRecording)}
@@ -1333,9 +1662,9 @@ function ReelCommentsSheetBase({
                 size={21}
                 color={editingComment || replyingTo || isWavRecording ? '#cbd5e1' : '#ec4899'}
               />
-            </TouchableOpacity>
+              </TouchableOpacity>
 
-            <TouchableOpacity
+              <TouchableOpacity
               activeOpacity={0.7}
               onPress={handleToggleAudioRecording}
               disabled={Boolean(editingComment || replyingTo || isWavRecording)}
@@ -1347,10 +1676,10 @@ function ReelCommentsSheetBase({
               ) : (
                 <Mic size={21} color={editingComment || replyingTo || isWavRecording ? '#cbd5e1' : '#dc2626'} />
               )}
-            </TouchableOpacity>
+              </TouchableOpacity>
 
-            <CommentSheetComposerInputSurface style={styles.inputSurface}>
-              <TextInput
+              <CommentSheetComposerInputSurface style={styles.inputSurface}>
+                <TextInput
                 ref={inputRef}
                 value={draft}
                 onChangeText={setDraft}
@@ -1358,7 +1687,7 @@ function ReelCommentsSheetBase({
                   editingComment
                     ? getEditCommentLabel(language)
                     : replyingTo
-                    ? copy.replyingPlaceholder.replace('{username}', replyingTo.username)
+                    ? getReplyTargetDisplayName(replyingTo, language)
                     : copy.addCommentPlaceholder
                 }
                 placeholderTextColor="#94a3b8"
@@ -1366,9 +1695,9 @@ function ReelCommentsSheetBase({
                 multiline
                 maxLength={500}
                 editable={!isWavRecording}
-              />
-            </CommentSheetComposerInputSurface>
-            <TouchableOpacity
+                />
+              </CommentSheetComposerInputSurface>
+              <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleSubmit}
               // Enable submit if EITHER text or an image is provided —
@@ -1389,11 +1718,30 @@ function ReelCommentsSheetBase({
                   : null,
               ]}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <SendHorizonal size={18} color="#fff" />
-            </TouchableOpacity>
-          </CommentSheetComposerDock>
-        </Animated.View>
+              >
+                <SendHorizonal size={18} color="#fff" />
+              </TouchableOpacity>
+              </CommentSheetComposerDock>
+            </View>
+            {replyEmojiRailVisible ? (
+              <View style={styles.replyEmojiRail}>
+                {REPLY_QUICK_EMOJIS.map(emoji => (
+                  <TouchableOpacity
+                    key={emoji}
+                    activeOpacity={0.72}
+                    onPress={() => handleInsertReplyEmoji(emoji)}
+                    style={styles.replyEmojiButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Thêm biểu tượng ${emoji}`}
+                    hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                  >
+                    <Text style={styles.replyEmojiText}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        </SheetSurface>
       </KeyboardSafeView>
 
       {/* ── Reaction picker overlay ──────────────────────────────────────
@@ -1461,12 +1809,12 @@ function ReelCommentsSheetBase({
           handleImagePickerResult(result);
         }}
       />
-    </Modal>
+    </PresentationRoot>
   );
 }
 
 interface ReplyBannerProps {
-  replyingTo: { commentId: string; username: string } | null;
+  replyingTo: ReplyTarget | null;
   snippet: string;
   onCancelReply: () => void;
 }
@@ -1980,7 +2328,10 @@ function ReplyBanner({ replyingTo, snippet, onCancelReply }: ReplyBannerProps) {
         <View style={styles.replyBarIndicator} />
         <View style={styles.replyBarTextWrap}>
           <Text style={styles.replyBarText}>
-            {copy.replyingBanner} <Text style={styles.replyBarMention}>@{replyingTo.username}</Text>
+            {copy.replyingBanner}{' '}
+            <Text style={styles.replyBarMention}>
+              {getReplyTargetDisplayName(replyingTo, language)}
+            </Text>
           </Text>
           {snippet ? (
             <Text style={styles.replyBarSnippet} numberOfLines={1}>
@@ -2127,7 +2478,12 @@ interface ThreadProps {
   onLongPressRow: (comment: ReelComment) => void;
   onLoadReplies: (commentId: string) => void;
   onCollapseReplies: (commentId: string) => void;
-  onStartReply: (commentId: string, username: string) => void;
+  onStartReply: (
+    commentId: string,
+    username: string,
+    displayName?: string,
+    targetCommentId?: string,
+  ) => void;
   /** Threaded through to each row so taps on comment images open the viewer. */
   onOpenImage: (uri: string) => void;
   replyingToCommentId?: string | null;
@@ -2159,10 +2515,11 @@ function CommentThreadBase({
   const copy = COMMENTS_COPY[language];
   const username =
     comment.publisher.username || comment.publisher.name || 'unknown';
+  const displayName = getCommentPublisherDisplayName(comment, language);
 
   const handleReply = useCallback(() => {
-    onStartReply(comment.id, username);
-  }, [comment.id, onStartReply, username]);
+    onStartReply(comment.id, username, displayName, comment.id);
+  }, [comment.id, displayName, onStartReply, username]);
 
   const handleToggleReplies = useCallback(() => {
     if (isExpanded) {
@@ -2229,6 +2586,8 @@ function CommentThreadBase({
                 onStartReply(
                   comment.id,
                   reply.publisher.username || reply.publisher.name || 'unknown',
+                  getCommentPublisherDisplayName(reply, language),
+                  reply.id,
                 )
               }
               onOpenImage={onOpenImage}
@@ -2289,8 +2648,7 @@ function CommentRow({
 }: RowProps) {
   const language = useAppLanguage();
   const copy = COMMENTS_COPY[language];
-  const displayName =
-    comment.publisher.name || comment.publisher.username || (language === 'en' ? 'User' : 'Người dùng');
+  const displayName = getCommentPublisherDisplayName(comment, language);
   const deleteCommentLabel = getDeleteCommentLabel(language);
   const deleteCommentHint = getDeleteCommentHint(language);
   const timeText = formatRelativeTime(comment.postedAt, language);
@@ -2298,6 +2656,10 @@ function CommentRow({
   const isSending = comment.isSending;
   const isFailed = comment.isFailed;
   const commentImageUri = comment.pendingImageUri ?? comment.imageUrl ?? null;
+  const replyMentionParts = useMemo(
+    () => splitLeadingReplyMention(comment.text, comment.replyMentionName),
+    [comment.replyMentionName, comment.text],
+  );
   const commentImageKnownSize = useMemo(
     () => fitCommentImageSize(comment.imageWidth, comment.imageHeight),
     [comment.imageHeight, comment.imageWidth],
@@ -2506,7 +2868,18 @@ function CommentRow({
               ) : null}
             </View>
             {comment.text ? (
-              <Text style={styles.commentText}>{comment.text}</Text>
+              <Text style={styles.commentText}>
+                {replyMentionParts ? (
+                  <>
+                    <Text style={styles.commentMentionText}>
+                      {replyMentionParts.mention}
+                    </Text>
+                    {replyMentionParts.rest}
+                  </>
+                ) : (
+                  comment.text
+                )}
+              </Text>
             ) : null}
 
             {/* Comment image — prefer the local pending URI while the
@@ -2654,6 +3027,15 @@ function CommentRow({
 export const ReelCommentsSheet = memo(ReelCommentsSheetBase);
 
 const styles = StyleSheet.create({
+  inlineRoot: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  inlineSheet: {
+    flex: 1,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
   modalRoot: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -2755,6 +3137,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
+  stateBoxInline: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+  },
   stateText: {
     marginTop: 10,
     color: '#64748b',
@@ -2791,6 +3179,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Platform.OS === 'ios' ? 13 : 12,
     paddingVertical: Platform.OS === 'ios' ? 10 : 8,
   },
+  inlineListContent: {
+    flexGrow: 1,
+    paddingHorizontal: 12,
+    paddingTop: 0,
+    paddingBottom: 0,
+  },
   refreshingHeader: {
     minHeight: 34,
     flexDirection: 'row',
@@ -2812,10 +3206,20 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 12,
   },
+  inlineEmptyListContent: {
+    flexGrow: 1,
+  },
   emptyBox: {
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: 8,
+  },
+  inlineEmptyBox: {
+    flexGrow: 1,
+    minHeight: 240,
+    justifyContent: 'center',
+    paddingTop: 0,
+    paddingBottom: 48,
   },
   emptyTitle: {
     color: '#111827',
@@ -2943,6 +3347,10 @@ const styles = StyleSheet.create({
     color: '#050505',
     fontSize: 14,
     lineHeight: 19,
+  },
+  commentMentionText: {
+    color: '#1877f2',
+    fontWeight: '700',
   },
   commentImageWrap: {
     marginTop: 6,
@@ -3223,6 +3631,29 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontSize: 14,
     includeFontPadding: false,
+  },
+  replyEmojiRail: {
+    height: REPLY_EMOJI_BAR_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    paddingBottom: 6,
+    backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#fff',
+  },
+  replyEmojiButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    backgroundColor:
+      Platform.OS === 'ios' ? 'rgba(241, 245, 249, 0.72)' : '#f1f5f9',
+  },
+  replyEmojiText: {
+    fontSize: 21,
+    lineHeight: 25,
   },
   sendButton: {
     width: 40,

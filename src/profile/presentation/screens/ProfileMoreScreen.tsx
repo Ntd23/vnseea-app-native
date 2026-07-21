@@ -298,6 +298,9 @@ export default function ProfileMoreScreen() {
     navigation.navigate(ROUTES.PROFILE_FRIENDS, {
       userId: String(params.userId),
       title: language === 'vi' ? `Bạn bè của ${displayName}` : `${displayName}'s friends`,
+      displayName,
+      avatarUrl: params.avatarUrl,
+      initialTab: 'friends',
     });
   }, [displayName, language, navigation, params.userId]);
 

@@ -29,6 +29,7 @@ import {
 } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useSharedValue } from 'react-native-reanimated';
+import { useNavigation } from '@react-navigation/native';
 import type {
   FeedPollPost,
   PollOption,
@@ -54,6 +55,7 @@ import {
   FEED_REACTION_COLORS as REACTION_COLOR,
   FEED_REACTION_IMAGES as REACTION_IMAGES,
 } from './FeedReactionAssets';
+import { navigateToPostComments } from '../../../navigation/postNavigation';
 
 interface PollPostCardProps {
   post: FeedPollPost;
@@ -64,6 +66,7 @@ interface PollPostCardProps {
   onReact: (postId: string, reaction: ReactionType) => void;
   onOpenPicker?: (postId: string, x: number, y: number) => void;
   onCommentTap: (postId: string) => void;
+  commentNavigationMode?: 'detail' | 'callback';
   onShare?: (post: FeedPollPost) => void;
   language?: AppLanguage;
   currentUserAvatar?: string;
@@ -304,6 +307,7 @@ export const PollPostCard = React.memo(function PollPostCard({
   onReact,
   onOpenPicker,
   onCommentTap,
+  commentNavigationMode = 'detail',
   onShare,
   language = 'vi',
   currentUserAvatar: _currentUserAvatar,
@@ -314,6 +318,7 @@ export const PollPostCard = React.memo(function PollPostCard({
   gestureStartY,
   hasDragged,
 }: PollPostCardProps) {
+  const navigation = useNavigation<any>();
   const likeButtonRef = useRef<View>(null);
   const copy = POLL_COPY[language];
   const [votersVisible, setVotersVisible] = React.useState(false);
@@ -368,6 +373,14 @@ export const PollPostCard = React.memo(function PollPostCard({
   const handleLikeTap = useCallback(() => {
     onReact(post.id, 'like');
   }, [onReact, post.id]);
+
+  const handleCommentTap = useCallback(() => {
+    if (commentNavigationMode === 'callback') {
+      onCommentTap(post.id);
+      return;
+    }
+    navigateToPostComments(navigation, post.id, post);
+  }, [commentNavigationMode, navigation, onCommentTap, post]);
 
   const handleLikeLongPress = useCallback(() => {
     if (!onOpenPicker) return;
@@ -556,7 +569,7 @@ export const PollPostCard = React.memo(function PollPostCard({
         <TouchableOpacity
           className="flex-row items-center justify-end mt-1 border-b border-[#F0F2F5] pb-3"
           activeOpacity={0.7}
-          onPress={() => onCommentTap(post.id)}
+          onPress={handleCommentTap}
           accessibilityRole="button"
           accessibilityLabel={`${post.commentCount} ${copy.comment}`}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -603,7 +616,7 @@ export const PollPostCard = React.memo(function PollPostCard({
           <FeedGlassActionButton
             className="flex-1 flex-row items-center justify-center py-1"
             activeOpacity={0.75}
-            onPress={() => onCommentTap(post.id)}
+            onPress={handleCommentTap}
           >
             <MessageCircle size={19} color="#65676B" />
             <Text className="ml-2 text-[14px] font-semibold text-[#65676B]">

@@ -91,9 +91,23 @@ describe('profile navigation route separation', () => {
     expect(appNavigatorSource).toContain("contentStyle: { backgroundColor: 'transparent' }");
     expect(appNavigatorSource).toContain('gestureEnabled: false');
     expect(profileSource).toContain('const profileSwipeBackGesture = useMemo');
-    expect(profileSource).toContain('profileBackTranslateX.value = Math.max(0, event.translationX);');
+    expect(profileSource).toContain('profileBackTranslateX.value = Math.min(');
+    expect(profileSource).toContain('cancelAnimation(profileBackTranslateX);');
+    expect(profileSource).toContain('duration: PROFILE_BACK_CANCEL_DURATION_MS');
+    expect(profileSource).not.toContain('profileBackTranslateX.value = withSpring(0');
     expect(profileSource).toContain('profileSwipeBackScreenStyle');
     expect(profileSource).toContain('profileSwipeBackCue');
     expect(profileSource).toContain('navigation.canGoBack()');
+  });
+
+  it('opens profile connections with a short dedicated transition', () => {
+    const source = read('src/navigation/AppNavigator.tsx');
+
+    expect(source).toContain(
+      'const PROFILE_CONNECTIONS_OPTIONS: NativeStackNavigationOptions = {',
+    );
+    expect(source).toContain("animation: 'fade'");
+    expect(source).toContain('animationDuration: 140');
+    expect(source).toContain('name === ROUTES.PROFILE_FRIENDS');
   });
 });

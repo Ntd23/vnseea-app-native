@@ -61,7 +61,9 @@ export function pickFeedVideoAutoplayCandidate({
   return bestVideoId;
 }
 
-export function pickFeedViewableVideoId(viewableItems: FeedVideoViewableItem[]) {
+export function pickFeedViewableVideoId(
+  viewableItems: FeedVideoViewableItem[],
+) {
   const viewableVideo = viewableItems.find(
     item =>
       item.isViewable &&
@@ -91,31 +93,40 @@ export function getFeedVideoActiveUpdate({
   activeVideoId,
   isScrolling,
   viewableItems,
+  visibleItems = viewableItems,
 }: {
   activeVideoId: string | null;
   isScrolling: boolean;
   viewableItems: FeedVideoViewableItem[];
+  /**
+   * Uses a much lower visibility threshold than `viewableItems`. The active
+   * video stays alive while even a small part of its card is still on-screen,
+   * while `viewableItems` remains responsible for choosing the next autoplay
+   * candidate.
+   */
+  visibleItems?: FeedVideoViewableItem[];
 }): {
   nextActiveVideoId: string | null | undefined;
   pendingActiveVideoId: string | null;
 } {
   const nextViewableVideoId = pickFeedViewableVideoId(viewableItems);
+  const activeVideoStillVisible = isFeedVideoIdViewable(
+    visibleItems,
+    activeVideoId,
+  );
 
   if (!isScrolling) {
     return {
-      nextActiveVideoId: nextViewableVideoId,
+      nextActiveVideoId:
+        nextViewableVideoId ??
+        (activeVideoId && activeVideoStillVisible ? undefined : null),
       pendingActiveVideoId: null,
     };
   }
 
-  const activeVideoStillViewable = isFeedVideoIdViewable(
-    viewableItems,
-    activeVideoId,
-  );
-
   return {
     nextActiveVideoId:
-      activeVideoId && !activeVideoStillViewable ? null : undefined,
+      activeVideoId && !activeVideoStillVisible ? null : undefined,
     pendingActiveVideoId: nextViewableVideoId,
   };
 }

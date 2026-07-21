@@ -1,7 +1,4 @@
-import type {
-  FeedPost,
-  FeedVideoPost,
-} from '../../../domain/types/feed.types';
+import type { FeedPost, FeedVideoPost } from '../../../domain/types/feed.types';
 import {
   getFeedVideoBufferTarget,
   mergeFeedContentWithVideos,
@@ -12,7 +9,12 @@ function lightPost(id: string): FeedPost {
 }
 
 function videoPost(id: string): FeedVideoPost {
-  return { id, kind: 'video', postedAt: 90, videoUrl: `${id}.mp4` } as FeedVideoPost;
+  return {
+    id,
+    kind: 'video',
+    postedAt: 90,
+    videoUrl: `${id}.mp4`,
+  } as FeedVideoPost;
 }
 
 function postKinds(posts: FeedPost[]) {
@@ -20,7 +22,7 @@ function postKinds(posts: FeedPost[]) {
 }
 
 describe('feed video scheduler', () => {
-  it('uses a tunable video mix instead of the old fixed five-post interval', () => {
+  it('keeps home video density low while retaining a tunable mix', () => {
     const light = Array.from({ length: 12 }, (_, index) =>
       lightPost(`post-${index + 1}`),
     );
@@ -33,13 +35,14 @@ describe('feed video scheduler', () => {
       .map((post, index) => (post.kind === 'video' ? index : -1))
       .filter(index => index >= 0);
 
-    expect(videoPositions).toEqual([3, 8, 13]);
-    expect(postKinds(merged).slice(0, 5)).toEqual([
+    expect(videoPositions).toEqual([5, 12]);
+    expect(postKinds(merged).slice(0, 6)).toEqual([
+      'text',
+      'text',
       'text',
       'text',
       'text',
       'video',
-      'text',
     ]);
   });
 
@@ -52,8 +55,9 @@ describe('feed video scheduler', () => {
     );
 
     const merged = mergeFeedContentWithVideos(light, videos);
-    expect(merged.filter(post => post.kind !== 'video').map(post => post.id))
-      .toEqual(light.map(post => post.id));
+    expect(
+      merged.filter(post => post.kind !== 'video').map(post => post.id),
+    ).toEqual(light.map(post => post.id));
 
     for (let index = 1; index < merged.length; index += 1) {
       expect([merged[index - 1].kind, merged[index].kind]).not.toEqual([
@@ -64,8 +68,16 @@ describe('feed video scheduler', () => {
   });
 
   it('dedupes videos and never inserts a video with the same id as an existing post', () => {
-    const light = [lightPost('post-1'), lightPost('video-1'), lightPost('post-2')];
-    const videos = [videoPost('video-1'), videoPost('video-2'), videoPost('video-2')];
+    const light = [
+      lightPost('post-1'),
+      lightPost('video-1'),
+      lightPost('post-2'),
+    ];
+    const videos = [
+      videoPost('video-1'),
+      videoPost('video-2'),
+      videoPost('video-2'),
+    ];
 
     const merged = mergeFeedContentWithVideos(light, videos);
 
@@ -73,17 +85,19 @@ describe('feed video scheduler', () => {
       'post-1',
       'video-1',
       'post-2',
-      'video-2',
     ]);
   });
 
-  it('can still render a video-only lane when no light posts are available', () => {
-    const videos = [videoPost('video-1'), videoPost('video-2')];
+  it('caps a video-only lane so the home feed does not mount a video wall', () => {
+    const videos = [
+      videoPost('video-1'),
+      videoPost('video-2'),
+      videoPost('video-3'),
+    ];
 
-    expect(mergeFeedContentWithVideos([], videos).map(post => post.id)).toEqual([
-      'video-1',
-      'video-2',
-    ]);
+    expect(mergeFeedContentWithVideos([], videos).map(post => post.id)).toEqual(
+      ['video-1', 'video-2'],
+    );
   });
 
   it('keeps unprepared videos out of the mixed lane until they are ready', () => {
@@ -100,9 +114,9 @@ describe('feed video scheduler', () => {
       'post-1',
       'post-2',
       'post-3',
-      'video-2',
       'post-4',
       'post-5',
+      'video-2',
       'post-6',
     ]);
     expect(merged.some(post => post.id === 'video-1')).toBe(false);
@@ -132,13 +146,13 @@ describe('feed video scheduler', () => {
       'post-11',
       'post-12',
       'post-13',
-      'video-1',
       'post-14',
+      'video-1',
     ]);
   });
 
   it('requests enough secondary video buffer for the dynamic mix', () => {
-    expect(getFeedVideoBufferTarget(10)).toBeGreaterThanOrEqual(5);
+    expect(getFeedVideoBufferTarget(10)).toBe(4);
     expect(getFeedVideoBufferTarget(0)).toBe(2);
   });
 });

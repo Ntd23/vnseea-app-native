@@ -36,6 +36,7 @@ const NOTIFICATION_CENTER_CHAT_TYPES = new Set([
   'accept_group_chat_request',
   'declined_group_chat_request',
 ]);
+const HIDDEN_NOTIFICATION_CENTER_TYPES = new Set(['visited_profile']);
 
 const PAGE_NOTIFICATION_TYPES = new Set([
   'liked_page',
@@ -54,6 +55,9 @@ const GROUP_NOTIFICATION_TYPES = new Set([
 
 export function shouldExcludeFromNotificationCenter(type: string) {
   const normalized = type.toLowerCase();
+  if (HIDDEN_NOTIFICATION_CENTER_TYPES.has(normalized)) {
+    return true;
+  }
   if (NOTIFICATION_CENTER_CHAT_TYPES.has(normalized)) {
     return false;
   }

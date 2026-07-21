@@ -37,8 +37,13 @@ function validateCreatePageDraft(draft: CreatePageDraft): string | null {
     return 'Vui lòng nhập địa điểm của trang.';
   }
 
-  if (!draft.placeId || draft.lat === undefined || draft.lng === undefined) {
-    return 'Vui lòng chọn địa điểm từ gợi ý Google Maps.';
+  if (
+    draft.lat === undefined ||
+    draft.lng === undefined ||
+    !Number.isFinite(draft.lat) ||
+    !Number.isFinite(draft.lng)
+  ) {
+    return 'Vui lòng chọn gợi ý hoặc ghim đúng vị trí trên bản đồ.';
   }
 
   if (!draft.pageCategory) {

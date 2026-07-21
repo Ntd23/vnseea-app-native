@@ -1,6 +1,7 @@
 // Description: Product post card component for the home feed.
 // Displays products in Facebook Marketplace-style layout.
 import React, { useCallback } from 'react';
+import { useNavigation } from '@react-navigation/native';
 import {
   ActivityIndicator,
   type GestureResponderEvent,
@@ -32,6 +33,8 @@ import {
   FeedGlassActionButton,
   FeedMediaFrame,
 } from '../../../feed/presentation/components/FeedCardChrome';
+import { navigateToPostComments } from '../../../navigation/postNavigation';
+import type { FeedPost } from '../../../feed/domain/types/feed.types';
 
 // ── Helpers outside component (avoid recreation on each render) ────
 
@@ -86,6 +89,7 @@ interface ProductPostCardProps {
   myReaction?: string | null;
   onReact?: (postId: string, reaction: any) => void;
   onCommentTap?: (postId: string) => void;
+  commentNavigationMode?: 'detail' | 'callback';
   onOpenReactions?: (postId: string, post: any) => void;
   post?: any;
 }
@@ -107,9 +111,11 @@ const ProductPostCard = React.memo(function ProductPostCard({
   myReaction,
   onReact,
   onCommentTap,
+  commentNavigationMode = 'detail',
   onOpenReactions,
   post,
 }: ProductPostCardProps) {
+  const navigation = useNavigation<any>();
   const imageUrl = product.images?.[0]?.image;
 
   const handlePress = useCallback(() => {
@@ -125,6 +131,19 @@ const ProductPostCard = React.memo(function ProductPostCard({
       onProfilePress?.(String(product.seller.user_id));
     }
   }, [onProfilePress, product.seller?.user_id]);
+
+  const handleCommentPress = useCallback(() => {
+    if (!postId) return;
+    if (commentNavigationMode === 'callback') {
+      onCommentTap?.(postId);
+      return;
+    }
+    navigateToPostComments(
+      navigation,
+      postId,
+      post as FeedPost | undefined,
+    );
+  }, [commentNavigationMode, navigation, onCommentTap, post, postId]);
 
   const handleContactSeller = useCallback(() => {
     if (!product.can_contact_seller || !product.seller?.user_id) return;
@@ -446,7 +465,7 @@ const ProductPostCard = React.memo(function ProductPostCard({
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => onCommentTap?.(postId)}
+                onPress={handleCommentPress}
                 activeOpacity={0.7}
                 className="flex-row items-center justify-center flex-1 py-2.5"
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1, paddingVertical: 10 }}

@@ -1,7 +1,4 @@
-import type {
-  FeedPost,
-  FeedVideoPost,
-} from '../../domain/types/feed.types';
+import type { FeedPost, FeedVideoPost } from '../../domain/types/feed.types';
 
 export type FeedVideoMixConfig = {
   /**
@@ -36,13 +33,15 @@ export type MergeFeedContentOptions = Partial<FeedVideoMixConfig> & {
 };
 
 export const DEFAULT_FEED_VIDEO_MIX_CONFIG: FeedVideoMixConfig = {
-  targetVideoShare: 0.2,
-  minVideoShare: 0.1,
-  maxVideoShare: 0.35,
-  minNonVideoItemsBetweenVideos: 2,
-  maxNonVideoItemsBetweenVideos: 8,
-  firstVideoAfterItems: 3,
+  targetVideoShare: 0.08,
+  minVideoShare: 0.04,
+  maxVideoShare: 0.18,
+  minNonVideoItemsBetweenVideos: 4,
+  maxNonVideoItemsBetweenVideos: 12,
+  firstVideoAfterItems: 5,
 };
+
+const MAX_VIDEO_ONLY_FEED_ITEMS = 2;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -134,7 +133,7 @@ function scheduleVideosIntoLightPosts(
   config: FeedVideoMixConfig,
 ): FeedPost[] {
   if (lightPosts.length === 0) {
-    return [...videoPosts];
+    return videoPosts.slice(0, MAX_VIDEO_ONLY_FEED_ITEMS);
   }
 
   if (videoPosts.length === 0) {

@@ -55,7 +55,7 @@ export function usePostDetailViewModel({
     setIsLoadingComments(true);
 
     feedRepository
-      .getPostById(postId, { fetchComments: true, addView: true })
+      .getPostById(postId, { fetchComments: false, addView: true })
       .then((result: GetPostByIdResult) => {
         if (cancelled) return;
         setPost(prev => prev ?? result.post);
@@ -230,6 +230,17 @@ export function usePostDetailViewModel({
     setError('Bài viết không còn tồn tại hoặc đã bị xóa.');
   }, []);
 
+  const adjustCommentCount = useCallback((delta: number) => {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    setPost(current => {
+      if (!current || !('commentCount' in current)) return current;
+      return {
+        ...current,
+        commentCount: Math.max(0, current.commentCount + delta),
+      } as FeedPost;
+    });
+  }, []);
+
   const refreshRealtimeComments = useCallback(async () => {
     try {
       const result = await feedRepository.getPostById(postId, {
@@ -256,6 +267,7 @@ export function usePostDetailViewModel({
     toggleReaction,
     applyRealtimePost,
     markRealtimeDeleted,
+    adjustCommentCount,
     refreshRealtimeComments,
   };
 }

@@ -8,7 +8,7 @@ function read(relativePath) {
 }
 
 describe('Feed post comment count interaction', () => {
-  it('opens the existing comments sheet from text and video post comment counts', () => {
+  it('opens post detail from text and video post comment counts', () => {
     const source = read('src/feed/presentation/components/PostCards.tsx');
     const summarySource = source.slice(
       source.indexOf('const VideoReactionSummary'),
@@ -27,9 +27,12 @@ describe('Feed post comment count interaction', () => {
     summaryUsages.forEach(usage => {
       expect(usage).toContain('onCommentTap={handleCommentTap}');
     });
+    expect(source).toContain(
+      'navigateToPostComments(navigation, post.id, post);',
+    );
   });
 
-  it('opens the existing comments sheet from a poll post comment count', () => {
+  it('opens post detail from a poll post comment count', () => {
     const source = read('src/feed/presentation/components/PollPostCard.tsx');
     const commentSummarySource = source.slice(
       source.indexOf('{/* Comment Count Bubble */}'),
@@ -37,7 +40,10 @@ describe('Feed post comment count interaction', () => {
     );
 
     expect(commentSummarySource).toMatch(
-      /<TouchableOpacity[\s\S]*?onPress=\{\(\) => onCommentTap\(post\.id\)\}[\s\S]*?\{post\.commentCount\}[\s\S]*?<\/TouchableOpacity>/,
+      /<TouchableOpacity[\s\S]*?onPress=\{handleCommentTap\}[\s\S]*?\{post\.commentCount\}[\s\S]*?<\/TouchableOpacity>/,
+    );
+    expect(source).toContain(
+      'navigateToPostComments(navigation, post.id, post);',
     );
   });
 

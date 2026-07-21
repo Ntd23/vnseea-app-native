@@ -10,6 +10,7 @@ import {
   WIRE_TO_REACTION,
 } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { backendApi } from '../../../shared-kernel/infrastructure/api/backendApi';
+import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type {
   FetchReelsOptions,
@@ -65,6 +66,25 @@ type HashtagPostsResponse = {
 // Mapping helpers — turn raw WoWonder JSON into clean domain objects.
 // ────────────────────────────────────────────────────────────────────────
 
+const siteRoot = apiConfig.webBaseUrl.replace(/\/+$/, '');
+
+function normalizeMediaUrl(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+
+  const absoluteUrl = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : trimmed.startsWith('//')
+      ? `${siteRoot.startsWith('http://') ? 'http:' : 'https:'}${trimmed}`
+      : `${siteRoot}/${trimmed.replace(/^\/+/, '')}`;
+
+  try {
+    return encodeURI(absoluteUrl);
+  } catch {
+    return absoluteUrl;
+  }
+}
+
 function readString(raw: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
     const value = raw[key];
@@ -118,7 +138,9 @@ function mapPublisher(raw: Record<string, unknown> | undefined | null): ReelPubl
     userId,
     username,
     name: fullName,
-    avatarUrl: readString(safe, 'avatar', 'profile_picture') || undefined,
+    avatarUrl:
+      normalizeMediaUrl(readString(safe, 'avatar', 'profile_picture')) ||
+      undefined,
     isVerified: readBool(safe, 'verified'),
     isFollowing: readBool(safe, 'is_following', 'following') || undefined,
     isAdmin,
@@ -263,8 +285,18 @@ function mapReel(raw: Record<string, unknown>): ReelsItem {
 
   return {
     id: postId,
-    videoUrl: readString(raw, 'postFile') || undefined,
-    thumbnailUrl: readString(raw, 'postFileThumb') || undefined,
+    videoUrl: normalizeMediaUrl(readString(raw, 'postFile')),
+    thumbnailUrl: normalizeMediaUrl(
+      readString(
+        raw,
+        'postFileThumb',
+        'postFileThumbnail',
+        'video_thumb',
+        'videoThumb',
+        'thumbnail',
+        'thumb',
+      ),
+    ),
     caption: cleanCaption(readString(raw, 'postText')) || undefined,
     privacy: decodedPrivacy.audience,
     privacyContract,
@@ -291,8 +323,8 @@ function mapComment(raw: Record<string, unknown>): ReelComment {
   // `c_file` is the image-attachment column. comments.php already pipes it
   // through `Wo_GetMedia`, so by the time it lands here it's a full URL
   // (or empty string if no image). Treat empty as no attachment.
-  const imageUrl = readString(raw, 'c_file');
-  const audioUrl = readString(raw, 'record');
+  const imageUrl = normalizeMediaUrl(readString(raw, 'c_file'));
+  const audioUrl = normalizeMediaUrl(readString(raw, 'record'));
   const commentId = readString(raw, 'id', 'comment_id');
 
   // Reaction state. Same logic as for posts: prefer the backend's

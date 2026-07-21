@@ -165,6 +165,7 @@ import type { FundingItem } from '../../../funding/domain/types/funding.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import {
   getFeedVideoActiveUpdate,
+  isFeedVideoIdViewable,
   pickFeedVideoAutoplayCandidate,
   pickFeedViewableVideoId,
 } from './feedVideoAutoplay';
@@ -197,6 +198,7 @@ const FEED_VIDEO_POSTER_PREFETCH_BEHIND_ITEMS = FEED_IS_ANDROID ? 1 : 3;
 const FEED_VIDEO_POSTER_PREFETCH_AHEAD_ITEMS = FEED_IS_ANDROID ? 5 : 10;
 const FEED_VIDEO_POSTER_PREFETCH_LIMIT = FEED_IS_ANDROID ? 2 : 4;
 const FEED_VIDEO_POSTER_PREFETCH_BATCH_DELAY_MS = FEED_IS_ANDROID ? 220 : 160;
+const FEED_VIDEO_VISIBLE_PERCENT = 1;
 const FEED_VIDEO_VIEWABLE_PERCENT = 55;
 const FEED_VIDEO_ACTIVE_DWELL_MS = 120;
 const FEED_SCROLL_DIRECTION_THRESHOLD = 6;
@@ -1621,6 +1623,7 @@ function FeedScreen() {
   const activeVideoDwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const latestVisibleFeedItemsRef = useRef<any[]>([]);
   const latestViewableFeedItemsRef = useRef<any[]>([]);
   const feedListItemsRef = useRef<FeedListItem[]>([]);
   const feedListItemIndexByIdRef = useRef<Map<string, number>>(new Map());
@@ -1748,11 +1751,19 @@ function FeedScreen() {
 
           remaining -= 1;
           if (remaining === 0) {
+            const measuredVideoId = pickFeedVideoAutoplayCandidate({
+              candidates,
+              viewportHeight,
+            });
+            const viewableVideoId = pickViewableFeedVideoId();
+            const activeVideoStillVisible = isFeedVideoIdViewable(
+              latestVisibleFeedItemsRef.current,
+              activeVideoIdRef.current,
+            );
             const fallbackVideoId =
-              pickFeedVideoAutoplayCandidate({
-                candidates,
-                viewportHeight,
-              }) ?? pickViewableFeedVideoId();
+              measuredVideoId ??
+              viewableVideoId ??
+              (activeVideoStillVisible ? activeVideoIdRef.current : null);
 
             if (commitImmediately || !isScrollingRef.current) {
               if (fallbackVideoId !== activeVideoIdRef.current) {
@@ -1778,9 +1789,9 @@ function FeedScreen() {
     [measureActiveFeedVideoOnScreen],
   );
 
-  // Lightweight scroll pause: only track scrolling state for video
-  // autoplay, do NOT null out activeVideoId (that causes expensive
-  // unmount/remount of the video player â†’ jank).
+  // Keep the active player alive during a drag. Scroll-busy still suspends
+  // warm decoders and expensive feed commits, but it no longer pauses the
+  // video that the user is currently watching.
   const beginScrollPause = useCallback(() => {
     isScrollingRef.current = true;
     setFeedScrollBusy(true);
@@ -1794,9 +1805,17 @@ function FeedScreen() {
     isScrollingRef.current = false;
     setFeedScrollBusy(false);
     publishFeedScrollBusy(false);
-    // Commit whichever video became visible during the scroll.
+    // Prefer a newly eligible card. If none crossed the autoplay threshold,
+    // retain the current video while even a small part remains on-screen.
+    const viewableVideoId = pickViewableFeedVideoId();
+    const activeVideoStillVisible = isFeedVideoIdViewable(
+      latestVisibleFeedItemsRef.current,
+      activeVideoIdRef.current,
+    );
     const pendingVideoId =
-      pickViewableFeedVideoId() ?? pendingActiveVideoIdRef.current;
+      viewableVideoId ??
+      pendingActiveVideoIdRef.current ??
+      (activeVideoStillVisible ? activeVideoIdRef.current : null);
     pendingActiveVideoIdRef.current = null;
     if (pendingVideoId !== activeVideoIdRef.current) {
       scheduleActiveFeedVideo(pendingVideoId, true);
@@ -2744,11 +2763,19 @@ function FeedScreen() {
     [],
   );
 
-  // Viewability config for FlashList autoplay.
-  const viewabilityConfigRef = useRef({
-    itemVisiblePercentThreshold: FEED_VIDEO_VIEWABLE_PERCENT,
-    minimumViewTime: 0,
-  });
+  const onVisibleFeedItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: any[] }) => {
+      latestVisibleFeedItemsRef.current = viewableItems;
+      const activeVideoId = activeVideoIdRef.current;
+      if (
+        activeVideoId &&
+        !isFeedVideoIdViewable(viewableItems, activeVideoId)
+      ) {
+        scheduleActiveFeedVideo(null, true);
+      }
+    },
+    [scheduleActiveFeedVideo],
+  );
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: any[] }) => {
@@ -2766,6 +2793,7 @@ function FeedScreen() {
         activeVideoId: activeVideoIdRef.current,
         isScrolling: isScrollingRef.current,
         viewableItems,
+        visibleItems: latestVisibleFeedItemsRef.current,
       });
 
       if (isScrollingRef.current) {
@@ -2797,6 +2825,29 @@ function FeedScreen() {
   );
 
   // â”€â”€ Post menu state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // The low threshold only answers "is the current card still on-screen?".
+  // The high threshold remains responsible for selecting a new autoplay card.
+  const viewabilityConfigCallbackPairsRef = useRef([
+    {
+      viewabilityConfig: {
+        itemVisiblePercentThreshold: FEED_VIDEO_VISIBLE_PERCENT,
+        minimumViewTime: 0,
+      },
+      onViewableItemsChanged: onVisibleFeedItemsChanged,
+    },
+    {
+      viewabilityConfig: {
+        itemVisiblePercentThreshold: FEED_VIDEO_VIEWABLE_PERCENT,
+        minimumViewTime: 0,
+      },
+      onViewableItemsChanged,
+    },
+  ]);
+  viewabilityConfigCallbackPairsRef.current[0].onViewableItemsChanged =
+    onVisibleFeedItemsChanged;
+  viewabilityConfigCallbackPairsRef.current[1].onViewableItemsChanged =
+    onViewableItemsChanged;
+
   const [postMenuVisible, setPostMenuVisible] = useState(false);
   const [selectedPostForMenu, setSelectedPostForMenu] =
     useState<FeedPost | null>(null);
@@ -3679,8 +3730,7 @@ function FeedScreen() {
       onLayout={handleFeedViewportLayout}
       scrollEventThrottle={16}
       onScroll={handleFeedScroll}
-      onViewableItemsChanged={onViewableItemsChanged}
-      viewabilityConfig={viewabilityConfigRef.current}
+      viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairsRef.current}
       onScrollBeginDrag={handleScrollBeginDrag}
       onScrollEndDrag={handleScrollEndDrag}
       onMomentumScrollBegin={handleMomentumScrollBegin}

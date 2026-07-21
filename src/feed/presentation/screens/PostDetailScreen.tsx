@@ -10,16 +10,16 @@
 // request on mount (even when the route already has a `post` param)
 // so the user sees the full data set the backend exposes, not the
 // trimmed shape the feed list carries.
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
   Image,
   Linking,
-  RefreshControl,
-  ScrollView,
+  Platform,
   Share,
+  StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -32,11 +32,8 @@ import {
   Link2,
   MessageCircle,
   MoreHorizontal,
-  Send,
   Share2,
-  Users,
 } from 'lucide-react-native';
-import { KeyboardSafeView } from '../../../shared-kernel/presentation/components/KeyboardSafeView';
 import {
   useIsFocused,
   useNavigation,
@@ -45,19 +42,34 @@ import {
 } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
 import { ROUTES } from '../../../navigation/constants/routes';
 import type { RootStackParamList } from '../../../navigation/types';
 import type {
+  FeedPollPost,
+  FeedProductPost,
   FeedTextPost,
   FeedVideoPost,
 } from '../../domain/types/feed.types';
 import { isFeedPostShareable } from '../../domain/policies/feedPostPrivacy';
 import type { ReactionType } from '../../../reels/domain/types/reels.types';
-import type { PostComment } from '../../domain/repositories/FeedRepository';
 import { usePostDetailViewModel } from '../../application/view-models/usePostDetailViewModel';
+import { useFeedCommentsViewModel } from '../../application/view-models/useFeedCommentsViewModel';
 import PostReactionsSheet from '../components/PostReactionsSheet';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
-import { useSharedValue } from 'react-native-reanimated';
+import Reanimated, {
+  cancelAnimation,
+  Easing,
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
 import {
   TextPostCard,
@@ -72,9 +84,24 @@ import {
 } from '../components/FeedReactionAssets';
 import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import { usePostRealtimeScope } from '../../application/realtime/usePostRealtimeScope';
+import { PollPostCard } from '../components/PollPostCard';
+import { ProductPostCard } from '../../../product/presentation/components/ProductPostCard';
+import { ReelCommentsSheet } from '../../../reels/presentation/components/ReelCommentsSheet';
 
 type PostDetailRoute = RouteProp<RootStackParamList, typeof ROUTES.POST_DETAIL>;
 type PostDetailNav = NativeStackNavigationProp<RootStackParamList>;
+
+const { width: POST_DETAIL_SCREEN_WIDTH } = Dimensions.get('window');
+const POST_DETAIL_BACK_GESTURE_START_X = Platform.OS === 'android' ? 18 : 0;
+const POST_DETAIL_BACK_GESTURE_WIDTH = Platform.OS === 'android' ? 86 : 16;
+const POST_DETAIL_BACK_GESTURE_ACTIVE_OFFSET_X =
+  Platform.OS === 'android' ? 8 : 14;
+const POST_DETAIL_BACK_GESTURE_FAIL_OFFSET_Y =
+  Platform.OS === 'android' ? 18 : 14;
+const POST_DETAIL_BACK_GESTURE_DISTANCE_RATIO = 0.32;
+const POST_DETAIL_BACK_GESTURE_VELOCITY = 700;
+const POST_DETAIL_BACK_CLOSE_DURATION_MS = 180;
+const POST_DETAIL_BACK_CANCEL_DURATION_MS = 140;
 
 // Compact counter — same shape as the Explore screen.
 function formatCompact(n: number): string {
@@ -113,7 +140,13 @@ const REACTION_LABEL: Record<ReactionType, string> = {
 // Sub-components
 // ────────────────────────────────────────────────────────────────────────
 
-function PostHeader({ onBack }: { onBack: () => void }) {
+function PostHeader({
+  onBack,
+  commentCount,
+}: {
+  onBack: () => void;
+  commentCount: number;
+}) {
   return (
     <View className="flex-row items-center px-4 py-3 border-b border-slate-100 min-h-[56px] bg-white">
       <TouchableOpacity
@@ -125,9 +158,16 @@ function PostHeader({ onBack }: { onBack: () => void }) {
       >
         <ArrowLeft size={22} color="#1E293B" />
       </TouchableOpacity>
-      <Text className="ml-2 flex-1 text-[17px] font-extrabold text-[#0f172a]">
-        Bài viết
-      </Text>
+      <View className="ml-2 flex-1 flex-row items-center">
+        <Text className="text-[17px] font-extrabold text-[#0f172a]">
+          Bài viết
+        </Text>
+        <View className="ml-2 rounded-full bg-[#F0F2F5] px-2.5 py-1">
+          <Text className="text-[13px] font-semibold text-[#65676B]">
+            Bình luận ({commentCount})
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -663,152 +703,6 @@ function PostActions({
   );
 }
 
-function CommentRow({
-  comment,
-  onOpenProfile,
-}: {
-  comment: PostComment;
-  onOpenProfile: (userId: string) => void;
-}) {
-  // The header (avatar + name + @handle) is the only piece that
-  // navigates — the comment body remains long-press / selectable
-  // text so users can still copy a quote without accidentally
-  // jumping to the publisher's profile.
-  //
-  // Normalise the publisher id: the feed mapper in ApiFeedRepository
-  // uses `readString()` which collapses missing values to "" (empty
-  // string) rather than `undefined`. Treating "" as a valid id would
-  // make ProfileScreen render the current user's profile as a
-  // fallback (its `route.params?.userId ?? currentUserId` mask),
-  // which is misleading — so we explicitly strip empty ids before
-  // passing the value down. In dev we also log the raw payload so
-  // missing-id comments are easy to spot.
-  const rawId = comment.publisher?.id?.trim() ?? '';
-  const publisherKey = rawId;
-
-  const handleOpenProfile = useCallback(() => {
-    if (!publisherKey) {
-      if (__DEV__) {
-        console.warn(
-          '[CommentRow] cannot open profile — publisher has no usable id',
-          {
-            commentId: comment.id,
-            publisher: comment.publisher,
-            username: comment.publisher?.username,
-          },
-        );
-      }
-      return;
-    }
-    onOpenProfile(publisherKey);
-  }, [onOpenProfile, publisherKey, comment.id, comment.publisher]);
-
-  return (
-    <View className="flex-row px-4 py-3">
-      <TouchableOpacity
-        onPress={handleOpenProfile}
-        activeOpacity={0.7}
-        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-        disabled={!publisherKey}
-      >
-        {comment.publisher?.avatarUrl ? (
-          <Image
-            source={{ uri: comment.publisher.avatarUrl }}
-            className="avatar-sm bg-slate-200"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="avatar-sm items-center justify-center bg-[#0000ff]/10">
-            <Text className="text-caption-primary text-brand">
-              {(comment.publisher?.name?.[0] ?? '?').toUpperCase()}
-            </Text>
-          </View>
-        )}
-      </TouchableOpacity>
-      <View className="ml-3 flex-1">
-        <View className="rounded-2xl bg-slate-100 px-3 py-2.5">
-          <TouchableOpacity
-            onPress={handleOpenProfile}
-            activeOpacity={0.7}
-            disabled={!publisherKey}
-          >
-            <Text className="text-caption-primary text-slate-900" numberOfLines={1}>
-              {comment.publisher?.name ?? 'Người dùng'}{' '}
-              {comment.publisher?.username ? (
-                <Text className="text-caption-secondary">
-                  @{comment.publisher.username}
-                </Text>
-              ) : null}
-            </Text>
-          </TouchableOpacity>
-          <Text className="mt-1 text-body-secondary" selectable>
-            {comment.text}
-          </Text>
-        </View>
-        <View className="mt-1.5 flex-row items-center gap-3 pl-2">
-          <Text className="text-caption-secondary">
-            {formatRelativeTime(comment.postedAt)}
-          </Text>
-          {comment.likeCount > 0 ? (
-            <Text className="text-caption-secondary">
-              {comment.likeCount} lượt thích
-            </Text>
-          ) : null}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function CommentComposer({
-  onSubmit,
-  isSubmitting,
-}: {
-  onSubmit: (text: string) => void | Promise<void>;
-  isSubmitting: boolean;
-}) {
-  const [text, setText] = useState('');
-
-  const handleSend = useCallback(async () => {
-    const trimmed = text.trim();
-    if (!trimmed || isSubmitting) return;
-    await onSubmit(trimmed);
-    setText('');
-  }, [isSubmitting, onSubmit, text]);
-
-  return (
-    <View className="flex-row items-end border-t border-slate-200 bg-white px-4 py-3">
-      <TextInput
-        className="input-shell max-h-24 min-h-[44px] flex-1 px-4 py-2.5"
-        placeholder="Viết bình luận..."
-        placeholderTextColor="#94a3b8"
-        value={text}
-        onChangeText={setText}
-        editable={!isSubmitting}
-        multiline
-        textAlignVertical="top"
-        scrollEnabled
-        returnKeyType="send"
-        onSubmitEditing={handleSend}
-        accessibilityLabel="Nhập bình luận"
-      />
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={handleSend}
-        disabled={!text.trim() || isSubmitting}
-        className="ml-2 h-11 w-11 items-center justify-center rounded-full bg-[#0000ff]"
-        accessibilityLabel="Gửi bình luận"
-      >
-        {isSubmitting ? (
-          <ActivityIndicator size="small" color="#ffffff" />
-        ) : (
-          <Send size={18} color="#ffffff" />
-        )}
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 // ────────────────────────────────────────────────────────────────────────
 // Main screen
 // ────────────────────────────────────────────────────────────────────────
@@ -817,24 +711,43 @@ function PostDetailScreen() {
   const navigation = useNavigation<PostDetailNav>();
   const isFocused = useIsFocused();
   const route = useRoute<PostDetailRoute>();
-  const { postId, post: postFromParams } = route.params;
+  const {
+    postId,
+    post: postFromParams,
+    focusComments = false,
+  } = route.params;
+  const [commentFocusSignal, setCommentFocusSignal] = useState(0);
 
   const {
     post,
-    comments,
     isLoading,
     error,
-    submitComment,
-    isSubmitting,
     likedUsers,
     toggleReaction,
     applyRealtimePost,
     markRealtimeDeleted,
-    refreshRealtimeComments,
+    adjustCommentCount,
   } = usePostDetailViewModel({
     fallbackPost: postFromParams,
     postId,
   });
+
+  const handleCommentCountChange = useCallback(
+    (_changedPostId: string, delta: number) => adjustCommentCount(delta),
+    [adjustCommentCount],
+  );
+  const commentVm = useFeedCommentsViewModel({
+    onCommentCountChange: handleCommentCountChange,
+  });
+  const openCommentsRef = useRef(commentVm.openComments);
+  const closeCommentsRef = useRef(commentVm.closeComments);
+  openCommentsRef.current = commentVm.openComments;
+  closeCommentsRef.current = commentVm.closeComments;
+
+  useEffect(() => {
+    openCommentsRef.current(postId).catch(() => undefined);
+    return () => closeCommentsRef.current();
+  }, [postId]);
 
   usePostRealtimeScope({
     postIds: [postId],
@@ -843,7 +756,7 @@ function PostDetailScreen() {
     onSnapshot: applyRealtimePost,
     onDeleted: markRealtimeDeleted,
     onCommentMutation: () => {
-      void refreshRealtimeComments();
+      commentVm.refreshComments().catch(() => undefined);
     },
   });
 
@@ -861,6 +774,14 @@ function PostDetailScreen() {
   const gestureY = useSharedValue(0);
   const gestureActive = useSharedValue(false);
   const hasDragged = useSharedValue(false);
+  const postDetailBackTranslateX = useSharedValue(0);
+  const postDetailBackClosing = useSharedValue(false);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    postDetailBackTranslateX.value = 0;
+    postDetailBackClosing.value = false;
+  }, [isFocused, postDetailBackClosing, postDetailBackTranslateX]);
 
   const handleOpenPicker = useCallback(
     (postId: string, x: number, y: number) => {
@@ -879,9 +800,6 @@ function PostDetailScreen() {
   );
 
   const wonderedUsers: Array<Record<string, unknown>> = [];
-  const isRefreshing = false;
-  const reload = () => {};
-
   const activePost = post as any;
 
   // Best-effort total like count: prefer the breakdown if the
@@ -907,16 +825,6 @@ function PostDetailScreen() {
   const handleProfilePress = useCallback(() => {
     navigateToProfile(activePost?.publisher?.id ?? '');
   }, [navigateToProfile, activePost]);
-
-  // Tapping a comment's avatar / name jumps to that user's profile.
-  // The comment body stays long-press-selectable so quotes can still
-  // be copied without leaving the post.
-  const handleCommentProfilePress = useCallback(
-    (userId: string) => {
-      navigateToProfile(userId);
-    },
-    [navigateToProfile],
-  );
 
   const handleReact = useCallback(
     (reaction: ReactionType | null) => {
@@ -970,14 +878,191 @@ function PostDetailScreen() {
   }, []);
 
   const handleScrollToComments = useCallback(() => {
-    // No-op for now — the comment composer is a sibling sticky
-    // component below the scroll, so the user just taps in. A future
-    // improvement is to expose a ref on the composer and call .focus().
+    setCommentFocusSignal(current => current + 1);
   }, []);
+
+  const handlePostDetailBack = useCallback(() => {
+    navigation.goBack();
+  }, [navigation]);
+
+  const canSwipeBackToPreviousPostScreen = navigation.canGoBack();
+  const isPostDetailSwipeBackBlocked =
+    reactionsSheetVisible || pickerAnchor !== null;
+
+  const postDetailSwipeBackGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .hitSlop({
+          left: POST_DETAIL_BACK_GESTURE_START_X,
+          width: POST_DETAIL_BACK_GESTURE_WIDTH,
+        })
+        .activeOffsetX([POST_DETAIL_BACK_GESTURE_ACTIVE_OFFSET_X, 999])
+        .failOffsetY([
+          -POST_DETAIL_BACK_GESTURE_FAIL_OFFSET_Y,
+          POST_DETAIL_BACK_GESTURE_FAIL_OFFSET_Y,
+        ])
+        .enabled(
+          canSwipeBackToPreviousPostScreen && !isPostDetailSwipeBackBlocked,
+        )
+        .onBegin(() => {
+          'worklet';
+          if (postDetailBackClosing.value) return;
+          cancelAnimation(postDetailBackTranslateX);
+        })
+        .onUpdate(event => {
+          'worklet';
+          if (postDetailBackClosing.value) return;
+          postDetailBackTranslateX.value = Math.min(
+            POST_DETAIL_SCREEN_WIDTH,
+            Math.max(0, event.translationX),
+          );
+        })
+        .onEnd(event => {
+          'worklet';
+          if (postDetailBackClosing.value) return;
+
+          const shouldClose =
+            event.translationX >
+              POST_DETAIL_SCREEN_WIDTH *
+                POST_DETAIL_BACK_GESTURE_DISTANCE_RATIO ||
+            event.velocityX > POST_DETAIL_BACK_GESTURE_VELOCITY;
+
+          if (shouldClose) {
+            postDetailBackClosing.value = true;
+            postDetailBackTranslateX.value = withTiming(
+              POST_DETAIL_SCREEN_WIDTH,
+              {
+                duration: POST_DETAIL_BACK_CLOSE_DURATION_MS,
+                easing: Easing.out(Easing.cubic),
+              },
+              finished => {
+                if (finished) {
+                  runOnJS(handlePostDetailBack)();
+                }
+              },
+            );
+            return;
+          }
+
+          postDetailBackTranslateX.value = withTiming(0, {
+            duration: POST_DETAIL_BACK_CANCEL_DURATION_MS,
+            easing: Easing.out(Easing.cubic),
+          });
+        }),
+    [
+      canSwipeBackToPreviousPostScreen,
+      handlePostDetailBack,
+      isPostDetailSwipeBackBlocked,
+      postDetailBackClosing,
+      postDetailBackTranslateX,
+    ],
+  );
+
+  const postDetailSwipeBackScreenStyle = useAnimatedStyle(() => {
+    const progress = Math.min(
+      1,
+      postDetailBackTranslateX.value / POST_DETAIL_SCREEN_WIDTH,
+    );
+
+    return {
+      borderTopLeftRadius: interpolate(progress, [0, 1], [0, 18], 'clamp'),
+      borderBottomLeftRadius: interpolate(progress, [0, 1], [0, 18], 'clamp'),
+      transform: [{ translateX: postDetailBackTranslateX.value }],
+    };
+  });
+
+  const postDetailSwipeBackDimStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      postDetailBackTranslateX.value,
+      [
+        0,
+        POST_DETAIL_SCREEN_WIDTH * POST_DETAIL_BACK_GESTURE_DISTANCE_RATIO,
+        POST_DETAIL_SCREEN_WIDTH,
+      ],
+      [0.1, 0.06, 0],
+      'clamp',
+    ),
+  }));
+
+  const postDetailSwipeBackCueStyle = useAnimatedStyle(() => {
+    const threshold =
+      POST_DETAIL_SCREEN_WIDTH * POST_DETAIL_BACK_GESTURE_DISTANCE_RATIO;
+
+    return {
+      opacity: interpolate(
+        postDetailBackTranslateX.value,
+        [0, 34, threshold],
+        [0, 0.85, 1],
+        'clamp',
+      ),
+      transform: [
+        {
+          translateX: interpolate(
+            postDetailBackTranslateX.value,
+            [0, threshold],
+            [-54, 18],
+            'clamp',
+          ),
+        },
+        {
+          scale: interpolate(
+            postDetailBackTranslateX.value,
+            [0, threshold],
+            [0.76, 1.08],
+            'clamp',
+          ),
+        },
+      ],
+    };
+  });
+
+  const renderPostDetailSwipeBackFrame = useCallback(
+    (children: React.ReactNode) => (
+      <GestureHandlerRootView style={postDetailStyles.gestureRoot}>
+        <Reanimated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            postDetailStyles.swipeBackDim,
+            postDetailSwipeBackDimStyle,
+          ]}
+        />
+        <Reanimated.View
+          pointerEvents="none"
+          style={[
+            postDetailStyles.swipeBackCue,
+            postDetailSwipeBackCueStyle,
+          ]}
+        >
+          <ArrowLeft size={18} color="#1877F2" strokeWidth={2.6} />
+          <Text style={postDetailStyles.swipeBackCueText}>
+            {language === 'vi' ? 'Vuốt để quay lại' : 'Swipe to go back'}
+          </Text>
+        </Reanimated.View>
+        <GestureDetector gesture={postDetailSwipeBackGesture}>
+          <Reanimated.View
+            style={[
+              postDetailStyles.screen,
+              postDetailSwipeBackScreenStyle,
+            ]}
+          >
+            {children}
+          </Reanimated.View>
+        </GestureDetector>
+      </GestureHandlerRootView>
+    ),
+    [
+      language,
+      postDetailSwipeBackCueStyle,
+      postDetailSwipeBackDimStyle,
+      postDetailSwipeBackGesture,
+      postDetailSwipeBackScreenStyle,
+    ],
+  );
 
   // ── Loading skeleton ─────────────────────────────────────────────────
   if (isLoading && !activePost) {
-    return (
+    return renderPostDetailSwipeBackFrame(
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
         <FocusAwareStatusBar barStyle="dark-content" />
         <View className="flex-1 items-center justify-center">
@@ -992,7 +1077,7 @@ function PostDetailScreen() {
 
   // ── Not found ───────────────────────────────────────────────────────
   if (!activePost) {
-    return (
+    return renderPostDetailSwipeBackFrame(
       <SafeAreaView className="flex-1 surface-base" edges={['top']}>
         <FocusAwareStatusBar barStyle="dark-content" />
         <View className="surface-topbar flex-row items-center px-4 py-3">
@@ -1032,95 +1117,124 @@ function PostDetailScreen() {
     );
   }
 
-  return (
+  const displayedCommentCount = Math.max(
+    activePost.commentCount,
+    commentVm.comments.length,
+  );
+
+  const postListHeader = (
+    <View style={{ marginHorizontal: -12 }}>
+      {activePost.kind === 'video' ? (
+        <HomeVideoPostCard
+          post={activePost}
+          copy={copy}
+          onReact={(_id, rx) => toggleReaction(rx)}
+          onOpenPicker={handleOpenPicker}
+          onCommentTap={handleScrollToComments}
+          commentNavigationMode="callback"
+          onShare={handleShare}
+          onOpenReactions={handleOpenReactions}
+          navigateToProfile={navigateToProfile}
+          isScreenFocused={true}
+          isActive={true}
+          gestureX={gestureX}
+          gestureY={gestureY}
+          gestureActive={gestureActive}
+          hasDragged={hasDragged}
+        />
+      ) : activePost.kind === 'poll' ? (
+        <PollPostCard
+          post={activePost as FeedPollPost}
+          onReact={(_id, rx) => toggleReaction(rx)}
+          onOpenPicker={handleOpenPicker}
+          onCommentTap={handleScrollToComments}
+          commentNavigationMode="callback"
+          onShare={handleShare}
+          onProfilePress={navigateToProfile}
+          language={language}
+          gestureX={gestureX}
+          gestureY={gestureY}
+          gestureActive={gestureActive}
+          hasDragged={hasDragged}
+        />
+      ) : activePost.kind === 'product' ? (
+        <ProductPostCard
+          product={(activePost as FeedProductPost).product}
+          postId={activePost.id}
+          post={activePost}
+          likeCount={activePost.likeCount}
+          commentCount={activePost.commentCount}
+          myReaction={activePost.myReaction}
+          onReact={(_id, rx) => toggleReaction(rx)}
+          onCommentTap={handleScrollToComments}
+          commentNavigationMode="callback"
+          onOpenReactions={handleOpenReactions}
+          onShare={() => handleShare()}
+          onProfilePress={navigateToProfile}
+        />
+      ) : (
+        <TextPostCard
+          post={activePost}
+          copy={copy}
+          onReact={(_id, rx) => toggleReaction(rx)}
+          onOpenPicker={handleOpenPicker}
+          onCommentTap={handleScrollToComments}
+          commentNavigationMode="callback"
+          onPhotoPress={() => {}}
+          onShare={handleShare}
+          onOpenReactions={handleOpenReactions}
+          navigateToProfile={navigateToProfile}
+          gestureX={gestureX}
+          gestureY={gestureY}
+          gestureActive={gestureActive}
+          hasDragged={hasDragged}
+        />
+      )}
+
+    </View>
+  );
+
+  return renderPostDetailSwipeBackFrame(
     <SafeAreaView className="flex-1 surface-base" edges={['top']}>
       <FocusAwareStatusBar barStyle="dark-content" />
 
-      <PostHeader onBack={() => navigation.goBack()} />
+      <PostHeader
+        onBack={() => navigation.goBack()}
+        commentCount={displayedCommentCount}
+      />
 
-      <KeyboardSafeView style={{ flex: 1 }}>
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="pb-6"
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={reload}
-              tintColor="#0000ff"
-              colors={['#0000ff']}
-            />
-          }
-        >
-          {activePost.kind === 'video' ? (
-            <HomeVideoPostCard
-              post={activePost}
-              copy={copy}
-              onReact={(_id, rx) => toggleReaction(rx)}
-              onOpenPicker={handleOpenPicker}
-              onCommentTap={handleScrollToComments}
-              onShare={handleShare}
-              onOpenReactions={handleOpenReactions}
-              navigateToProfile={navigateToProfile}
-              isScreenFocused={true}
-              isActive={true}
-              gestureX={gestureX}
-              gestureY={gestureY}
-              gestureActive={gestureActive}
-              hasDragged={hasDragged}
-            />
-          ) : (
-            <TextPostCard
-              post={activePost}
-              copy={copy}
-              onReact={(_id, rx) => toggleReaction(rx)}
-              onOpenPicker={handleOpenPicker}
-              onCommentTap={handleScrollToComments}
-              onPhotoPress={() => {}}
-              onShare={handleShare}
-              onOpenReactions={handleOpenReactions}
-              navigateToProfile={navigateToProfile}
-              gestureX={gestureX}
-              gestureY={gestureY}
-              gestureActive={gestureActive}
-              hasDragged={hasDragged}
-            />
-          )}
-
-          {/* Comments section */}
-          <View className="mt-2 border-t border-slate-100 bg-slate-50">
-            <View className="flex-row items-center justify-between px-4 py-3">
-              <View className="flex-row items-center">
-                <Users size={16} color="#1e293b" />
-                <Text className="ml-2 text-title-primary">
-                  Bình luận ({activePost.commentCount > 0 ? activePost.commentCount : comments.length})
-                </Text>
-              </View>
-            </View>
-            {comments.length > 0 ? (
-              comments.map(comment => (
-                <CommentRow
-                  key={comment.id}
-                  comment={comment}
-                  onOpenProfile={handleCommentProfilePress}
-                />
-              ))
-            ) : (
-              <View className="px-4 pb-4">
-                <Text className="text-center text-caption-secondary">
-                  Chưa có bình luận nào. Hãy là người đầu tiên!
-                </Text>
-              </View>
-            )}
-          </View>
-        </ScrollView>
-
-        <CommentComposer
-          onSubmit={submitComment}
-          isSubmitting={isSubmitting}
-        />
-      </KeyboardSafeView>
+      <ReelCommentsSheet
+        visible
+        presentation="inline"
+        listHeaderComponent={postListHeader}
+        autoFocusComposer={focusComments}
+        composerFocusSignal={commentFocusSignal}
+        comments={commentVm.comments}
+        commentCount={activePost.commentCount}
+        isLoading={commentVm.isCommentsLoading}
+        isLoadingMore={commentVm.isCommentsLoadingMore}
+        isSubmitting={commentVm.isSubmittingComment}
+        error={commentVm.commentError}
+        repliesById={commentVm.repliesById}
+        loadingRepliesIds={commentVm.loadingRepliesIds}
+        replyingTo={commentVm.replyingTo}
+        onClose={() => undefined}
+        onEndReached={commentVm.loadMoreComments}
+        onRetry={() => {
+          commentVm.openComments(postId).catch(() => undefined);
+        }}
+        onSubmit={commentVm.submitComment}
+        onSubmitReply={commentVm.submitReply}
+        onSetReaction={commentVm.setCommentReaction}
+        onDelete={commentVm.deleteComment}
+        onEdit={commentVm.editComment}
+        onLoadReplies={commentVm.loadReplies}
+        onCollapseReplies={commentVm.collapseReplies}
+        onStartReply={commentVm.startReplyTo}
+        onCancelReply={commentVm.cancelReply}
+        onRetryFailedComment={commentVm.retryFailedComment}
+        onDeleteFailedComment={commentVm.deleteFailedComment}
+      />
 
       <PostReactionsSheet
         visible={reactionsSheetVisible}
@@ -1140,5 +1254,44 @@ function PostDetailScreen() {
     </SafeAreaView>
   );
 }
+
+const postDetailStyles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  swipeBackDim: {
+    backgroundColor: '#000000',
+  },
+  swipeBackCue: {
+    position: 'absolute',
+    left: Platform.OS === 'android' ? 30 : 14,
+    top: '50%',
+    marginTop: -22,
+    zIndex: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  swipeBackCueText: {
+    marginLeft: 7,
+    color: '#1877F2',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+});
 
 export default PostDetailScreen;

@@ -10,22 +10,18 @@ describe('PhotoViewerModal comment transition', () => {
     'utf8',
   );
 
-  test('opens iOS comments only after the native photo modal is dismissed', () => {
-    expect(photoViewerSource).not.toContain(
-      'onPress={() => onCommentTap(livePost.id)}',
-    );
+  test('keeps photo comments in the shared popup instead of navigating away', () => {
     expect(photoViewerSource).toContain('handleCommentPress');
-    expect(photoViewerSource).toContain('pendingCommentPostIdRef');
-    expect(photoViewerSource).toContain('handleModalDismiss');
-    expect(photoViewerSource).toContain('onDismiss={handleModalDismiss}');
+    expect(photoViewerSource).toContain('onCommentTap(livePost.id)');
     expect(photoViewerSource).toContain('visible={Boolean(state && livePost)}');
-    expect(photoViewerSource).toContain("if (Platform.OS !== 'ios')");
-    expect(photoViewerSource).toContain('pendingCommentPostIdRef.current = postId');
+    expect(photoViewerSource).not.toContain('pendingCommentPostIdRef');
+    expect(photoViewerSource).not.toContain('pendingCommentPostRef');
+    expect(photoViewerSource).not.toContain('handleModalDismiss');
+    expect(photoViewerSource).not.toContain('onDismiss={handleModalDismiss}');
+    expect(photoViewerSource).not.toContain('navigateToPostComments(');
     expect(photoViewerSource).not.toContain('PHOTO_VIEWER_COMMENT_SHEET_DELAY_MS');
     expect(photoViewerSource).not.toContain('commentOpenTimeoutRef');
-    expect(photoViewerSource).not.toMatch(
-      /setTimeout\([\s\S]{0,200}onCommentTap\(postId\)/,
-    );
+    expect(photoViewerSource).not.toContain('onCommentTap(pendingCommentPostId)');
   });
 
   test('sizes photos within the visible viewport instead of behind the bottom panel', () => {

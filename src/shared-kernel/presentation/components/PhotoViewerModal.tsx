@@ -348,7 +348,6 @@ export function PhotoViewerModal({
   const interactionUnlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const pendingCommentPostIdRef = useRef<string | null>(null);
   const transitionLockRef = useRef(false);
 
   const [pickerAnchor, setPickerAnchor] = useState<{
@@ -443,7 +442,6 @@ export function PhotoViewerModal({
         clearTimeout(interactionUnlockTimeoutRef.current);
         interactionUnlockTimeoutRef.current = null;
       }
-      pendingCommentPostIdRef.current = null;
     };
   }, []);
 
@@ -611,26 +609,9 @@ export function PhotoViewerModal({
     if (!livePost) return;
     if (transitionLockRef.current) return;
     lockInteractionBriefly();
-    const postId = livePost.id;
     setPickerAnchor(null);
-
-    if (Platform.OS !== 'ios') {
-      onCommentTap(postId);
-      return;
-    }
-
-    pendingCommentPostIdRef.current = postId;
-    animateClose();
-  }, [animateClose, livePost, lockInteractionBriefly, onCommentTap]);
-
-  const handleModalDismiss = useCallback(() => {
-    const pendingCommentPostId = pendingCommentPostIdRef.current;
-    if (!pendingCommentPostId) return;
-
-    pendingCommentPostIdRef.current = null;
-    transitionLockRef.current = false;
-    onCommentTap(pendingCommentPostId);
-  }, [onCommentTap]);
+    onCommentTap(livePost.id);
+  }, [livePost, lockInteractionBriefly, onCommentTap]);
 
   const handleSharePress = useCallback(() => {
     if (!livePost) return;
@@ -779,7 +760,6 @@ export function PhotoViewerModal({
         transparent
         animationType="none"
         onRequestClose={handleClose}
-        onDismiss={handleModalDismiss}
         statusBarTranslucent
         presentationStyle="overFullScreen"
         hardwareAccelerated
@@ -861,7 +841,6 @@ export function PhotoViewerModal({
       transparent
       animationType="none"
       onRequestClose={handleClose}
-      onDismiss={handleModalDismiss}
       statusBarTranslucent
       presentationStyle="overFullScreen"
       hardwareAccelerated
