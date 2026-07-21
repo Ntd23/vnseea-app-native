@@ -33,6 +33,7 @@ import type {
   MessageCallEvent,
   MessageItem,
   MessageLabel,
+  MessageSystemEvent,
   PinnedMessageItem,
   SendMessageResponse,
 } from '../../domain/types/messages.types';
@@ -347,6 +348,35 @@ function parseCallEventRecord(
     action,
   };
 }
+
+function mapMessageSystemEvent(
+  raw: Record<string, unknown>,
+): MessageSystemEvent | undefined {
+  const payload = asRecord(raw.system_event ?? raw.systemEvent);
+  const actor =
+    asRecord(raw.messageUser ?? raw.user_data ?? raw.userData) ?? {};
+  const eventType = readString(payload ?? raw, 'type', 'event_type');
+  const rawType = readString(raw, 'type_two');
+  if (eventType !== 'message_pinned' && rawType !== 'message_pin_event') {
+    return undefined;
+  }
+  const actorId = readString(payload ?? raw, 'actor_id', 'actorId', 'from_id');
+  const targetMessageId = readString(
+    payload ?? raw,
+    'target_message_id',
+    'targetMessageId',
+    'reply_id',
+  );
+  if (!actorId || !targetMessageId) return undefined;
+  return {
+    type: 'message_pinned',
+    actorId,
+    actorName:
+      readString(payload ?? raw, 'actor_name', 'actorName') ||
+      getRawUserName(actor),
+    targetMessageId,
+  };
+}
 type MessagePreview = {
   text: string;
   kind: ChatPreviewKind;
@@ -370,6 +400,17 @@ function getCallPreview(callEvent: MessageCallEvent): MessagePreview {
     : { text: 'Cuộc gọi thoại', kind: 'audio_call' };
 }
 function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
+  const systemEvent = mapMessageSystemEvent(raw);
+  if (systemEvent) {
+    const sessionUserId = sessionStorage.getSession()?.userId ?? '';
+    return {
+      text:
+        systemEvent.actorId === sessionUserId
+          ? 'Bạn đã ghim một tin nhắn'
+          : `${systemEvent.actorName} đã ghim một tin nhắn`,
+      kind: 'text',
+    };
+  }
   if (readNumber(raw, 'product_id') > 0 || asRecord(raw.product)) {
     return { text: 'Đã gửi một sản phẩm', kind: 'product' };
   }
@@ -961,11 +1002,17 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
         readNumber(raw, 'time'),
       );
   const message = normalizeMessageText(decodedMessage, Boolean(media));
-  const callEvent =
-    parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
-    parseCallEvent(message, sessionUserId);
-  const displayMessage = media && message === 'Tin nhắn' ? '' : message;
-  const sharedPost = callEvent
+  const systemEvent = mapMessageSystemEvent(raw);
+  const callEvent = systemEvent
+    ? undefined
+    : parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
+      parseCallEvent(message, sessionUserId);
+  const displayMessage = systemEvent
+    ? ''
+    : media && message === 'Tin nhắn'
+      ? ''
+      : message;
+  const sharedPost = callEvent || systemEvent
     ? undefined
     : parseSharedPostMessage(displayMessage, apiConfig.webBaseUrl);
   return {
@@ -975,6 +1022,7 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
     toId,
     message: callEvent ? '' : displayMessage,
     callEvent,
+    systemEvent,
     sharedPost,
     media,
     mediaType: readMediaType(raw, decodedMessage),
@@ -984,7 +1032,7 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
     ),
     reactions: mapMessageReactionSummary(raw.reaction ?? raw.reactions),
     time: readNumber(raw, 'time'),
-    isSentByMe: callEvent ? callEvent.isInitiator : (fromId === sessionUserId),
+    isSentByMe: callEvent ? callEvent.isInitiator : fromId === sessionUserId,
     seen: readNumber(raw, 'seen'),
   };
 }
@@ -1433,10 +1481,24 @@ export function createMessagesRepository(): MessagesRepository {
         { chat_id: target.chatId, type: target.type },
       );
       return (response.data ?? [])
-        .map(item => ({
-          ...mapMessage(item),
-          pinnedAt: readNumber(item, 'pinned_at') || readNumber(item, 'time'),
-        }))
+        .map(item => {
+          const pinnedByUserId = readString(
+            item,
+            'pinned_by_user_id',
+            'pinned_by',
+          );
+          return {
+            ...mapMessage(item),
+            pinnedAt:
+              readNumber(item, 'pinned_at') || readNumber(item, 'time'),
+            pinnedByUserId,
+            pinnedByName:
+              pinnedByUserId === sessionStorage.getSession()?.userId
+                ? 'Bạn'
+                : readString(item, 'pinned_by_name') || 'Người dùng',
+            canUnpin: readBool(item, 'can_unpin'),
+          };
+        })
         .filter((item): item is PinnedMessageItem => Boolean(item.id))
         .sort((left, right) => right.pinnedAt - left.pinnedAt);
     },

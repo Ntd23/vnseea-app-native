@@ -77,6 +77,13 @@ export interface MessageReactionSummary {
   breakdown: Partial<Record<ReactionType, number>>;
 }
 
+export interface MessageSystemEvent {
+  type: 'message_pinned';
+  actorId: string;
+  actorName: string;
+  targetMessageId: string;
+}
+
 export interface MessageItem {
   id: string;
   conversationId: string;
@@ -84,6 +91,7 @@ export interface MessageItem {
   toId: string;
   message: string;
   callEvent?: MessageCallEvent;
+  systemEvent?: MessageSystemEvent;
   media?: string;
   mediaType?: 'image' | 'video' | 'audio' | 'file';
   thumbnail?: string;
@@ -97,6 +105,9 @@ export interface MessageItem {
 
 export interface PinnedMessageItem extends MessageItem {
   pinnedAt: number;
+  pinnedByUserId: string;
+  pinnedByName: string;
+  canUnpin: boolean;
 }
 
 export interface MessageCallEvent {

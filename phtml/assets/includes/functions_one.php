@@ -4316,6 +4316,35 @@ function Wo_GetPageChatList($user_id, $limit = 50, $new = false, $update = 0)
     return $data;
 }
 
+function VNSEEA_GetMessagePinFlag($message_id)
+{
+    global $wo, $db;
+    $message = $db->where('id', (int)$message_id)->getOne(T_MESSAGES);
+    if (empty($message)) {
+        return 'no';
+    }
+    if (!empty($message->page_id)) {
+        $legacy_pin = $db->where('user_id', $wo['user']['id'])->where('message_id', (int)$message_id)->where('pin', 'yes')->getOne(T_MUTE);
+        return empty($legacy_pin) ? 'no' : 'yes';
+    }
+    return (int)$db->where('message_id', (int)$message_id)->getValue(T_MESSAGE_PINS, 'COUNT(*)') > 0 ? 'yes' : 'no';
+}
+
+function VNSEEA_AttachMessageSystemEvent($message)
+{
+    if (empty($message) || empty($message['type_two']) || $message['type_two'] !== 'message_pin_event') {
+        return $message;
+    }
+    $actor = Wo_UserData((int)$message['from_id']);
+    $message['system_event'] = array(
+        'type' => 'message_pinned',
+        'actor_id' => (string)$message['from_id'],
+        'actor_name' => !empty($actor['name']) ? $actor['name'] : (!empty($actor['username']) ? $actor['username'] : 'Người dùng'),
+        'target_message_id' => (string)$message['reply_id']
+    );
+    return $message;
+}
+
 function Wo_GetMessages($data = array(), $limit = 50)
 {
     global $wo, $sqlConnect;
@@ -4382,7 +4411,7 @@ function Wo_GetMessages($data = array(), $limit = 50)
                     $fetched_data['story'] = $fetched_data['story'][0];
                 }
             }
-            $message_data[] = $fetched_data;
+            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
     }
     return $message_data;
@@ -4416,17 +4445,13 @@ function GetMessageById($id)
                 mysqli_query($sqlConnect, " UPDATE " . T_MESSAGES . " SET `seen` = " . time() . " WHERE `id` = " . $fetched_data['id']);
             }
             $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
-            $fetched_data['pin'] = 'no';
-            $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('pin', 'yes')->getOne(T_MUTE);
-            if (!empty($mute)) {
-                $fetched_data['pin'] = 'yes';
-            }
+            $fetched_data['pin'] = VNSEEA_GetMessagePinFlag($fetched_data['id']);
             $fetched_data['fav'] = 'no';
             $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('fav', 'yes')->getOne(T_MUTE);
             if (!empty($mute)) {
                 $fetched_data['fav'] = 'yes';
             }
-            $data = $fetched_data;
+            $data = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
         return $data;
     }
@@ -4495,17 +4520,13 @@ function Wo_GetGroupMessages($args = array())
             if (!empty($fetched_data['reply_id'])) {
                 $fetched_data['reply'] = GetMessageById($fetched_data['reply_id']);
             }
-            $fetched_data['pin'] = 'no';
-            $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('pin', 'yes')->getOne(T_MUTE);
-            if (!empty($mute)) {
-                $fetched_data['pin'] = 'yes';
-            }
+            $fetched_data['pin'] = VNSEEA_GetMessagePinFlag($fetched_data['id']);
             $fetched_data['fav'] = 'no';
             $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('fav', 'yes')->getOne(T_MUTE);
             if (!empty($mute)) {
                 $fetched_data['fav'] = 'yes';
             }
-            $message_data[] = $fetched_data;
+            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
     }
     return $message_data;
@@ -4632,17 +4653,13 @@ function Wo_GetPageMessages($args = array())
                 ));
             }
             $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
-            $fetched_data['pin'] = 'no';
-            $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('pin', 'yes')->getOne(T_MUTE);
-            if (!empty($mute)) {
-                $fetched_data['pin'] = 'yes';
-            }
+            $fetched_data['pin'] = VNSEEA_GetMessagePinFlag($fetched_data['id']);
             $fetched_data['fav'] = 'no';
             $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('fav', 'yes')->getOne(T_MUTE);
             if (!empty($mute)) {
                 $fetched_data['fav'] = 'yes';
             }
-            $message_data[] = $fetched_data;
+            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
     }
     return $message_data;
@@ -4704,7 +4721,7 @@ function Wo_GetGroupMessagesAPP($args = array())
                 $fetched_data['reply'] = GetMessageById($fetched_data['reply_id']);
             }
             $fetched_data['chat_data'] = $db->where('user_id', $wo['user']['user_id'])->where('group_id', $group_id)->ArrayBuilder()->getOne(T_GROUP_CHAT_USERS);
-            $message_data[] = $fetched_data;
+            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
     }
     return $message_data;
@@ -4768,7 +4785,7 @@ function Wo_GetMessagesHeader($data = array(), $type = '')
             $fetched_data['text'] = Wo_EditMarkup($fetched_data['text']);
         }
         $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
-        return $fetched_data;
+        return VNSEEA_AttachMessageSystemEvent($fetched_data);
     }
     return false;
 }
@@ -10740,11 +10757,7 @@ function Wo_GetMessagesAPPN($data = array(), $limit = 50)
             if ($fetched_data['messageUser']['user_id'] == $user_id && $fetched_data['seen'] == 0) {
                 mysqli_query($sqlConnect, " UPDATE " . T_MESSAGES . " SET `seen` = " . time() . " WHERE `id` = " . $fetched_data['id']);
             }
-            $fetched_data['pin'] = 'no';
-            $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('pin', 'yes')->getOne(T_MUTE);
-            if (!empty($mute)) {
-                $fetched_data['pin'] = 'yes';
-            }
+            $fetched_data['pin'] = VNSEEA_GetMessagePinFlag($fetched_data['id']);
             $fetched_data['fav'] = 'no';
             $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('fav', 'yes')->getOne(T_MUTE);
             if (!empty($mute)) {
@@ -10768,7 +10781,7 @@ function Wo_GetMessagesAPPN($data = array(), $limit = 50)
                 }
             }
             $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
-            $message_data[] = $fetched_data;
+            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
     }
     return $message_data;

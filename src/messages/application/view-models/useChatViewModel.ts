@@ -85,6 +85,11 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.sharedPost?.postId === right.sharedPost?.postId &&
     left.sharedPost?.url === right.sharedPost?.url &&
     left.sharedPost?.note === right.sharedPost?.note &&
+    left.systemEvent?.type === right.systemEvent?.type &&
+    left.systemEvent?.actorId === right.systemEvent?.actorId &&
+    left.systemEvent?.actorName === right.systemEvent?.actorName &&
+    left.systemEvent?.targetMessageId ===
+      right.systemEvent?.targetMessageId &&
     areMessageReactionSummariesEqual(left.reactions, right.reactions) &&
     areCallEventsEqual(left.callEvent, right.callEvent)
   );
@@ -221,14 +226,14 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   );
   const typingRecipientId = getTypingRecipientId(chat);
 
-  const loadPinnedMessages = useCallback(async () => {
-    setIsLoadingPinnedMessages(true);
+  const loadPinnedMessages = useCallback(async (showLoading = true) => {
+    if (showLoading) setIsLoadingPinnedMessages(true);
     try {
       const nextPinnedMessages = await repository.getPinnedMessages(chat);
       setPinnedMessages(nextPinnedMessages);
       return nextPinnedMessages;
     } finally {
-      setIsLoadingPinnedMessages(false);
+      if (showLoading) setIsLoadingPinnedMessages(false);
     }
   }, [chat]);
 
@@ -431,6 +436,9 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         const optimistic: PinnedMessageItem = {
           ...targetMessage,
           pinnedAt: Math.floor(Date.now() / 1000),
+          pinnedByUserId: sessionStorage.getSession()?.userId ?? '',
+          pinnedByName: 'Bạn',
+          canUnpin: true,
         };
         return [optimistic, ...current.filter(item => item.id !== messageId)];
       });
@@ -450,13 +458,16 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
           targetChat = conversation;
         }
         await repository.setMessagePinned(targetChat, messageId, pinned);
-        await loadPinnedMessages();
+        await Promise.all([
+          loadPinnedMessages(false),
+          refreshLatest(false),
+        ]);
       } catch (caught) {
         setPinnedMessages(previousPinnedMessages);
         throw caught;
       }
     },
-    [chat, loadPinnedMessages, pinnedMessages],
+    [chat, loadPinnedMessages, pinnedMessages, refreshLatest],
   );
 
   const setMessageReaction = useCallback(
@@ -711,7 +722,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
             }
             return;
           }
-          await loadPinnedMessages().catch(() => undefined);
+          await loadPinnedMessages(false).catch(() => undefined);
         }
       } finally {
         running = false;
@@ -830,7 +841,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     const interval = setInterval(() => {
       if (AppState.currentState !== 'active') return;
       refreshLatest(false).catch(() => undefined);
-      loadPinnedMessages().catch(() => undefined);
+      loadPinnedMessages(false).catch(() => undefined);
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);

@@ -1,5 +1,100 @@
 <?php
 
+function VNSEEA_GetOwnedUserChat($chat_id)
+{
+    global $wo, $db;
+    if (empty($chat_id) || !is_numeric($chat_id) || empty($wo['user']['user_id'])) {
+        return false;
+    }
+    return $db->where('id', Wo_Secure($chat_id))
+              ->where('user_id', $wo['user']['user_id'])
+              ->where('page_id', 0)
+              ->getOne(T_U_CHATS);
+}
+
+function VNSEEA_IsMessageInOwnedUserChat($chat_id, $message_id)
+{
+    global $wo, $db;
+    $chat = VNSEEA_GetOwnedUserChat($chat_id);
+    if (empty($chat) || empty($chat->conversation_user_id)) {
+        return false;
+    }
+    $message = $db->where('id', Wo_Secure($message_id))->getOne(T_MESSAGES);
+    if (empty($message) || !empty($message->group_id) || !empty($message->page_id)) {
+        return false;
+    }
+    $current_user_id = (int)$wo['user']['user_id'];
+    $participant_id = (int)$chat->conversation_user_id;
+    return (((int)$message->from_id === $current_user_id && (int)$message->to_id === $participant_id) ||
+            ((int)$message->from_id === $participant_id && (int)$message->to_id === $current_user_id));
+}
+
+function VNSEEA_IsMessageInAuthorizedChat($type, $chat_id, $message_id)
+{
+    global $wo, $db;
+    if (!in_array($type, array('user', 'page', 'group')) || empty($message_id) || !is_numeric($message_id)) {
+        return false;
+    }
+    if ($type === 'user') {
+        return VNSEEA_IsMessageInOwnedUserChat($chat_id, $message_id);
+    }
+    $message = $db->where('id', Wo_Secure($message_id))->getOne(T_MESSAGES);
+    if (empty($message)) {
+        return false;
+    }
+    if ($type === 'page') {
+        $chat = $db->where('id', Wo_Secure($chat_id))
+                   ->where('user_id', $wo['user']['user_id'])
+                   ->where('page_id', 0, '>')
+                   ->getOne(T_U_CHATS);
+        if (empty($chat) || (int)$message->page_id !== (int)$chat->page_id) {
+            return false;
+        }
+        $current_user_id = (int)$wo['user']['user_id'];
+        $participant_id = (int)$chat->conversation_user_id;
+        return (((int)$message->from_id === $current_user_id && (int)$message->to_id === $participant_id) ||
+                ((int)$message->from_id === $participant_id && (int)$message->to_id === $current_user_id));
+    }
+    $group = $db->where('group_id', Wo_Secure($chat_id))->getOne(T_GROUP_CHAT);
+    if (empty($group) || (int)$message->group_id !== (int)$chat_id) {
+        return false;
+    }
+    $current_user_id = (int)$wo['user']['user_id'];
+    if ((int)$group->user_id === $current_user_id) {
+        return true;
+    }
+    return (int)$db->where('group_id', Wo_Secure($chat_id))
+                   ->where('user_id', $current_user_id)
+                   ->where('active', 1)
+                   ->getValue(T_GROUP_CHAT_USERS, 'COUNT(*)') > 0;
+}
+
+function VNSEEA_GetSharedMessagePin($message_id)
+{
+    global $db;
+    if (empty($message_id) || !is_numeric($message_id)) {
+        return false;
+    }
+    return $db->where('message_id', Wo_Secure($message_id))->getOne(T_MESSAGE_PINS);
+}
+
+function VNSEEA_CanUnpinSharedMessage($pin, $type, $chat_id)
+{
+    global $wo, $db;
+    if (empty($pin) || empty($wo['user']['user_id'])) {
+        return false;
+    }
+    $current_user_id = (int)$wo['user']['user_id'];
+    if ((int)$pin->pinned_by === $current_user_id) {
+        return true;
+    }
+    if ($type !== 'group') {
+        return false;
+    }
+    $group = $db->where('group_id', Wo_Secure($chat_id))->getOne(T_GROUP_CHAT);
+    return (!empty($group) && (int)$group->user_id === $current_user_id) || Wo_IsAdmin();
+}
+
 function VNSEEA_CanReactToMessage($message_id)
 {
     global $wo, $db;

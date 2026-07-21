@@ -96,6 +96,7 @@ import type {
   GroupSharedAssets,
   MessageAttachment,
   MessageItem,
+  MessageSystemEvent,
 } from '../../domain/types/messages.types';
 import type { ProductItem } from '../../../product/domain/types/product.types';
 import { AudioPlayer } from '../../../shared-kernel/presentation/components/AudioPlayer';
@@ -722,13 +723,45 @@ function formatDateSeparator(
   });
 }
 
+function PinnedMessageSystemRow({
+  event,
+  isMine,
+  language,
+  onOpenMessage,
+}: {
+  event: MessageSystemEvent;
+  isMine: boolean;
+  language: AppLanguage;
+  onOpenMessage: (messageId: string) => void;
+}) {
+  const label =
+    language === 'vi'
+      ? `${isMine ? 'Bạn' : event.actorName} đã ghim một tin nhắn`
+      : `${isMine ? 'You' : event.actorName} pinned a message`;
+  return (
+    <TouchableOpacity
+      className="mx-8 my-2 min-h-8 flex-row items-center justify-center"
+      activeOpacity={0.7}
+      onPress={() => onOpenMessage(event.targetMessageId)}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Pin size={13} color="#64748B" fill="#64748B" />
+      <Text className="ml-1.5 text-center text-xs font-medium text-slate-500">
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 type ChatMessageListItem =
   | { kind: 'message'; id: string; message: MessageItem }
   | { kind: 'media-group'; id: string; messages: MessageItem[] };
 
 function isGroupableMediaMessage(message: MessageItem) {
   return Boolean(
-    message.media &&
+    !message.systemEvent &&
+      message.media &&
       message.reactions.total === 0 &&
       (message.mediaType === 'image' || message.mediaType === 'video'),
   );
@@ -785,6 +818,9 @@ function getChatListItemType(item: ChatMessageListItem) {
   if (item.kind === 'media-group') return 'media-group';
 
   const { message } = item;
+  if (message.systemEvent) {
+    return 'system-message-pinned';
+  }
   if (message.callEvent) {
     return `call-${message.callEvent.callType}-${message.callEvent.status}`;
   }
@@ -3969,9 +4005,18 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   const handleSelectOptionPin = useCallback(async () => {
     if (!selectedOptionMessage) return;
-    const isPinned = pinnedMessages.some(
+    const pinnedMessage = pinnedMessages.find(
       message => message.id === selectedOptionMessage.id,
     );
+    const isPinned = Boolean(pinnedMessage);
+    if (pinnedMessage && !pinnedMessage.canUnpin) {
+      showSnackbar({
+        message: `${pinnedMessage.pinnedByName} đã ghim tin nhắn này. Chỉ người ghim mới có thể bỏ ghim.`,
+        type: 'info',
+      });
+      setSelectedOptionMessage(undefined);
+      return;
+    }
     try {
       await setMessagePinned(selectedOptionMessage.id, !isPinned);
       showSnackbar({
@@ -4218,6 +4263,27 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         );
       }
 
+      if (item.message.systemEvent) {
+        return (
+          <PinnedMessageSystemRow
+            event={item.message.systemEvent}
+            isMine={item.message.isSentByMe}
+            language={language}
+            onOpenMessage={messageId => {
+              handleOpenPinnedMessage(messageId).catch(error => {
+                showSnackbar({
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : 'Không mở được tin nhắn đã ghim.',
+                  type: 'error',
+                });
+              });
+            }}
+          />
+        );
+      }
+
       const showAvatar =
         item.kind === 'message' && !item.message.isSentByMe
           ? (() => {
@@ -4267,6 +4333,8 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       handleQuickRecord,
       handleOpenSharedPost,
       handleDoubleTapMessage,
+      handleOpenPinnedMessage,
+      language,
     ],
   );
 
@@ -4623,6 +4691,10 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
       },
     ];
   }, [chat.chatType, handleOpenGroupInfo, handleStartConversationCall]);
+
+  const selectedPinnedMessage = selectedOptionMessage
+    ? pinnedMessages.find(message => message.id === selectedOptionMessage.id)
+    : undefined;
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={CHAT_SAFE_AREA_EDGES}>
@@ -5247,7 +5319,11 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                className="mb-5 flex-row items-center rounded-xl bg-gray-50 px-4 py-4 active:bg-gray-100"
+                className={`mb-5 flex-row items-center rounded-xl bg-gray-50 px-4 py-4 active:bg-gray-100 ${
+                  selectedPinnedMessage && !selectedPinnedMessage.canUnpin
+                    ? 'opacity-60'
+                    : ''
+                }`}
                 onPress={handleSelectOptionPin}
               >
                 <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-amber-50">
@@ -5255,15 +5331,16 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
                 </View>
                 <View className="flex-1">
                   <Text className="text-base font-semibold text-gray-800">
-                    {selectedOptionMessage &&
-                    pinnedMessages.some(
-                      message => message.id === selectedOptionMessage.id,
-                    )
-                      ? 'Bỏ ghim tin nhắn'
+                    {selectedPinnedMessage
+                      ? selectedPinnedMessage.canUnpin
+                        ? 'Bỏ ghim tin nhắn'
+                        : `Đã được ${selectedPinnedMessage.pinnedByName} ghim`
                       : 'Ghim tin nhắn'}
                   </Text>
                   <Text className="text-xs text-gray-500">
-                    Hiển thị ngay bên dưới header cuộc trò chuyện
+                    {selectedPinnedMessage && !selectedPinnedMessage.canUnpin
+                      ? 'Bạn không có quyền bỏ ghim tin nhắn này'
+                      : 'Hiển thị ngay bên dưới header cuộc trò chuyện'}
                   </Text>
                 </View>
               </TouchableOpacity>

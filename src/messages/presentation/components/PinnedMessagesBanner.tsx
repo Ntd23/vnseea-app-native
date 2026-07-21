@@ -1,22 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import {
-  ChevronDown,
-  ChevronUp,
-  FileText,
-  ImageIcon,
-  Mic,
-  Pin,
-  Video,
-} from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Pin } from 'lucide-react-native';
 import type { PinnedMessageItem } from '../../domain/types/messages.types';
 
 type Props = {
@@ -37,18 +28,14 @@ function getPinnedMessageText(message: PinnedMessageItem) {
   return 'Tin nhắn';
 }
 
-function PinnedMediaIcon({ message }: { message: PinnedMessageItem }) {
-  if (message.mediaType === 'image') {
-    return <ImageIcon size={16} color="#2563eb" />;
+function getPinnedActorName(
+  message: PinnedMessageItem,
+  partnerName: string,
+) {
+  if (message.pinnedByName && message.pinnedByName !== 'Người dùng') {
+    return message.pinnedByName;
   }
-  if (message.mediaType === 'video') {
-    return <Video size={16} color="#2563eb" />;
-  }
-  if (message.mediaType === 'audio') {
-    return <Mic size={16} color="#2563eb" />;
-  }
-  if (message.media) return <FileText size={16} color="#2563eb" />;
-  return <Pin size={16} color="#2563eb" />;
+  return partnerName;
 }
 
 export function PinnedMessagesBanner({
@@ -59,83 +46,84 @@ export function PinnedMessagesBanner({
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const latestPinnedMessage = pinnedMessages[0];
-  const visibleMessages = useMemo(
-    () => (expanded ? pinnedMessages : latestPinnedMessage ? [latestPinnedMessage] : []),
-    [expanded, latestPinnedMessage, pinnedMessages],
-  );
 
   if (!isLoading && pinnedMessages.length === 0) return null;
 
   return (
-    <View className="border-b border-blue-100 bg-blue-50/80 px-3 py-2">
-      <TouchableOpacity
-        activeOpacity={0.75}
-        className="flex-row items-center"
-        onPress={() => {
-          if (pinnedMessages.length > 1) setExpanded(current => !current);
-        }}
-        accessibilityRole="button"
-        accessibilityLabel={
-          expanded ? 'Thu gọn tin nhắn đã ghim' : 'Mở tất cả tin nhắn đã ghim'
-        }
-      >
-        <Pin size={17} color="#1d4ed8" fill="#1d4ed8" />
-        <Text className="ml-2 flex-1 text-sm font-bold text-blue-900">
-          Tin nhắn đã ghim
-          {pinnedMessages.length > 1 ? ` (${pinnedMessages.length})` : ''}
-        </Text>
-        {isLoading ? (
-          <ActivityIndicator size="small" color="#2563eb" />
-        ) : pinnedMessages.length > 1 ? (
-          expanded ? (
-            <ChevronUp size={19} color="#1d4ed8" />
-          ) : (
-            <ChevronDown size={19} color="#1d4ed8" />
-          )
-        ) : null}
-      </TouchableOpacity>
+    <View className="border-b border-blue-100 bg-blue-50/80 px-3 py-1.5">
+      <View className="min-h-10 flex-row items-center">
+        <TouchableOpacity
+          activeOpacity={0.75}
+          className="min-h-10 flex-1 flex-row items-center"
+          disabled={!latestPinnedMessage}
+          onPress={() => {
+            if (latestPinnedMessage) onOpenMessage(latestPinnedMessage.id);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Mở tin nhắn ghim mới nhất"
+        >
+          <Pin size={17} color="#1d4ed8" fill="#1d4ed8" />
+          <Text
+            className="ml-2 flex-1 text-sm font-semibold text-blue-950"
+            numberOfLines={1}
+          >
+            {latestPinnedMessage
+              ? `${getPinnedMessageText(latestPinnedMessage)} (${pinnedMessages.length})`
+              : 'Đang tải tin nhắn đã ghim'}
+          </Text>
+        </TouchableOpacity>
 
-      {visibleMessages.length > 0 && (
+        {isLoading && pinnedMessages.length === 0 ? (
+          <ActivityIndicator size="small" color="#2563eb" />
+        ) : (
+          <TouchableOpacity
+            className="h-10 w-10 items-center justify-center"
+            activeOpacity={0.7}
+            onPress={() => setExpanded(current => !current)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              expanded
+                ? 'Thu gọn tin nhắn đã ghim'
+                : 'Mở tất cả tin nhắn đã ghim'
+            }
+          >
+            {expanded ? (
+              <ChevronUp size={20} color="#1d4ed8" />
+            ) : (
+              <ChevronDown size={20} color="#1d4ed8" />
+            )}
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {expanded && pinnedMessages.length > 0 ? (
         <ScrollView
           style={styles.list}
-          className="mt-1"
           nestedScrollEnabled
-          showsVerticalScrollIndicator={expanded}
+          showsVerticalScrollIndicator
         >
-          {visibleMessages.map((message, index) => (
+          {pinnedMessages.map((message, index) => (
             <TouchableOpacity
               key={message.id}
-              className={`flex-row items-center py-2 ${
+              className={`min-h-12 flex-row items-center py-2 ${
                 index > 0 ? 'border-t border-blue-100' : ''
               }`}
               activeOpacity={0.75}
               onPress={() => onOpenMessage(message.id)}
             >
-              {message.mediaType === 'image' && message.media ? (
-                <Image
-                  source={{ uri: message.media }}
-                  className="h-9 w-9 rounded-md bg-blue-100"
-                />
-              ) : (
-                <View className="h-9 w-9 items-center justify-center rounded-md bg-blue-100">
-                  <PinnedMediaIcon message={message} />
-                </View>
-              )}
+              <Pin size={15} color="#2563eb" />
               <View className="ml-2 flex-1">
                 <Text className="text-xs font-semibold text-blue-800">
-                  {message.isSentByMe ? 'Bạn' : partnerName}
+                  {getPinnedActorName(message, partnerName)} đã ghim
                 </Text>
-                <Text
-                  className="mt-0.5 text-sm text-gray-800"
-                  numberOfLines={expanded ? 2 : 1}
-                >
+                <Text className="mt-0.5 text-sm text-gray-800" numberOfLines={2}>
                   {getPinnedMessageText(message)}
                 </Text>
               </View>
             </TouchableOpacity>
           ))}
         </ScrollView>
-      )}
+      ) : null}
     </View>
   );
 }

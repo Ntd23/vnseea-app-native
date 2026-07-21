@@ -73,6 +73,37 @@ describe('ApiMessagesRepository conversation details', () => {
     expect(chat.notificationsMuted).toBe(true);
   });
 
+  it('uses the pin actor in the conversation preview instead of the raw token', async () => {
+    post.mockResolvedValueOnce({
+      api_status: 200,
+      data: [
+        {
+          chat_type: 'user',
+          chat_id: '77',
+          user_data: {
+            user_id: '12',
+            username: 'partner',
+            name: 'Partner',
+          },
+          last_message: rawMessage('9', {
+            type_two: 'message_pin_event',
+            reply_id: '8',
+            or_text: 'message_pinned',
+            messageUser: { user_id: '2', name: 'Partner' },
+          }),
+        },
+      ],
+    });
+
+    const [chat] = await createMessagesRepository().getChats({
+      includeDiscovery: false,
+      latestOnly: true,
+    });
+
+    expect(chat.lastMessage).toBe('Partner đã ghim một tin nhắn');
+    expect(chat.lastMessage).not.toContain('message_pinned');
+  });
+
   it('does not invent a chat record id for discovered users', async () => {
     post.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({
       data: {
@@ -170,8 +201,20 @@ describe('ApiMessagesRepository conversation details', () => {
     post
       .mockResolvedValueOnce({
         data: [
-          rawMessage('10', { group_id: '55', pinned_at: 100 }),
-          rawMessage('11', { group_id: '55', pinned_at: 200 }),
+          rawMessage('10', {
+            group_id: '55',
+            pinned_at: 100,
+            pinned_by_user_id: '2',
+            pinned_by_name: 'Partner',
+            can_unpin: false,
+          }),
+          rawMessage('11', {
+            group_id: '55',
+            pinned_at: 200,
+            pinned_by_user_id: '1',
+            pinned_by_name: 'Current user',
+            can_unpin: true,
+          }),
         ],
       })
       .mockResolvedValueOnce({ api_status: 200 });
@@ -196,6 +239,20 @@ describe('ApiMessagesRepository conversation details', () => {
     await repository.setMessagePinned(groupChat, '11', false);
 
     expect(pinned.map(message => message.id)).toEqual(['11', '10']);
+    expect(pinned[0]).toEqual(
+      expect.objectContaining({
+        pinnedByUserId: '1',
+        pinnedByName: 'Bạn',
+        canUnpin: true,
+      }),
+    );
+    expect(pinned[1]).toEqual(
+      expect.objectContaining({
+        pinnedByUserId: '2',
+        pinnedByName: 'Partner',
+        canUnpin: false,
+      }),
+    );
     expect(post).toHaveBeenNthCalledWith(1, 'get_pin_message', {
       chat_id: '55',
       type: 'group',
@@ -205,6 +262,36 @@ describe('ApiMessagesRepository conversation details', () => {
       message_id: '11',
       pin: 'no',
       type: 'group',
+    });
+  });
+
+  it('maps a persisted pin event without exposing its raw transport token', async () => {
+    post.mockResolvedValueOnce({
+      api_status: 200,
+      messages: [
+        rawMessage('30', {
+          from_id: '2',
+          type_two: 'message_pin_event',
+          reply_id: '10',
+          or_text: 'message_pinned',
+          system_event: {
+            type: 'message_pinned',
+            actor_id: '2',
+            actor_name: 'Partner',
+            target_message_id: '10',
+          },
+        }),
+      ],
+    });
+
+    const [eventMessage] = await createMessagesRepository().getMessages('2');
+
+    expect(eventMessage.message).toBe('');
+    expect(eventMessage.systemEvent).toEqual({
+      type: 'message_pinned',
+      actorId: '2',
+      actorName: 'Partner',
+      targetMessageId: '10',
     });
   });
 
