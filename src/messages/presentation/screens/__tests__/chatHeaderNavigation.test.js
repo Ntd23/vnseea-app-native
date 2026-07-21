@@ -72,6 +72,9 @@ describe('ChatScreen header navigation', () => {
     );
 
     expect(handlerBlock).toContain("if (chat.chatType === 'group')");
-    expect(handlerBlock).toContain('handleOpenGroupInfo();');
+    expect(handlerBlock).toContain(
+      'navigation.navigate(ROUTES.GROUP_INFO, { chat });',
+    );
+    expect(handlerBlock).not.toContain('handleOpenGroupInfo();');
   });
 });

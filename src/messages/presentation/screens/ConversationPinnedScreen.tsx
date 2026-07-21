@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -27,6 +28,11 @@ type Props = NativeStackScreenProps<
 >;
 
 const repository = createMessagesRepository();
+const styles = StyleSheet.create({
+  darkScreen: { backgroundColor: '#020617' },
+  listContent: { flexGrow: 1, padding: 16, paddingBottom: 32 },
+  darkCard: { backgroundColor: '#111827', borderColor: '#293241' },
+});
 
 export default function ConversationPinnedScreen({ navigation, route }: Props) {
   const { chat } = route.params;
@@ -90,7 +96,7 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
     <SafeAreaView
       className="flex-1 surface-base"
       edges={['top']}
-      style={isDark ? { backgroundColor: '#020617' } : undefined}
+      style={isDark ? styles.darkScreen : undefined}
     >
       <FocusAwareStatusBar
         barStyle={isDark ? 'light-content' : 'dark-content'}
@@ -117,11 +123,7 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
         <FlatList
           data={messages}
           keyExtractor={item => item.id}
-          contentContainerStyle={{
-            flexGrow: 1,
-            padding: 16,
-            paddingBottom: 32,
-          }}
+          contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View className="flex-1 items-center justify-center px-8">
               <Pin size={38} color="#94A3B8" />
@@ -134,9 +136,7 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
             <TouchableOpacity
               className="surface-card mb-2 flex-row items-center rounded-lg px-4 py-3"
               style={
-                isDark
-                  ? { backgroundColor: '#111827', borderColor: '#293241' }
-                  : undefined
+                isDark ? styles.darkCard : undefined
               }
               onPress={() =>
                 navigation.popTo(ROUTES.CHAT, {
@@ -156,16 +156,22 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
                   {item.message || 'Tin nhắn có tệp đính kèm'}
                 </Text>
               </View>
-              <TouchableOpacity
-                accessibilityLabel="Bỏ ghim tin nhắn"
-                className="h-11 w-11 items-center justify-center rounded-full bg-red-50"
-                onPress={event => {
-                  event.stopPropagation();
-                  unpin(item).catch(() => undefined);
-                }}
-              >
-                <PinOff size={20} color="#DC2626" />
-              </TouchableOpacity>
+              {item.canUnpin ? (
+                <TouchableOpacity
+                  accessibilityLabel="Bỏ ghim tin nhắn"
+                  className="h-11 w-11 items-center justify-center rounded-full bg-red-50"
+                  onPress={event => {
+                    event.stopPropagation();
+                    unpin(item).catch(() => undefined);
+                  }}
+                >
+                  <PinOff size={20} color="#DC2626" />
+                </TouchableOpacity>
+              ) : (
+                <Text className="max-w-24 text-right text-xs text-slate-500">
+                  {item.pinnedByName} đã ghim
+                </Text>
+              )}
             </TouchableOpacity>
           )}
         />

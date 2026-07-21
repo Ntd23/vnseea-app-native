@@ -3257,6 +3257,49 @@ function VNSEEA_PublishRealtimeMessageChange($message_id, $message_data = null)
     return !empty($recipient_ids);
 }
 
+function VNSEEA_GetGroupRealtimeRecipientIds($group_id)
+{
+    global $db;
+    $group_id = (int)$group_id;
+    if ($group_id < 1) {
+        return array();
+    }
+    $recipient_ids = array();
+    $group = $db->where('group_id', $group_id)->getOne(T_GROUP_CHAT);
+    if (!empty($group->user_id)) {
+        $recipient_ids[(int)$group->user_id] = true;
+    }
+    $members = $db->where('group_id', $group_id)
+        ->where('active', 1)
+        ->get(T_GROUP_CHAT_USERS, null, array('user_id'));
+    foreach ($members as $member) {
+        if (!empty($member->user_id)) {
+            $recipient_ids[(int)$member->user_id] = true;
+        }
+    }
+    return array_keys($recipient_ids);
+}
+
+function VNSEEA_PublishRealtimeGroupChange($group_id, $extra_recipient_ids = array(), $include_active_members = true)
+{
+    $recipient_ids = array();
+    if ($include_active_members) {
+        foreach (VNSEEA_GetGroupRealtimeRecipientIds($group_id) as $recipient_id) {
+            $recipient_ids[(int)$recipient_id] = true;
+        }
+    }
+    foreach ((array)$extra_recipient_ids as $recipient_id) {
+        $recipient_id = (int)$recipient_id;
+        if ($recipient_id > 0) {
+            $recipient_ids[$recipient_id] = true;
+        }
+    }
+    foreach (array_keys($recipient_ids) as $recipient_id) {
+        Wo_PublishRealtimeNotification($recipient_id, 0, 'message');
+    }
+    return !empty($recipient_ids);
+}
+
 function Wo_PublishRealtimePostChange($post_id, $mutation)
 {
     static $realtime_config = null;
@@ -4665,6 +4708,58 @@ function Wo_GetPageMessages($args = array())
     return $message_data;
 }
 
+function VNSEEA_GetGroupHistoryClearMessageId($group_id, $user_id = 0)
+{
+    global $wo, $db;
+    $group_id = (int)$group_id;
+    $user_id = (int)($user_id ?: (!empty($wo['user']['user_id']) ? $wo['user']['user_id'] : 0));
+    if ($group_id < 1 || $user_id < 1) {
+        return 0;
+    }
+    $clear = $db->where('group_id', $group_id)
+        ->where('user_id', $user_id)
+        ->getOne(T_GROUP_CHAT_HISTORY_CLEARS);
+    return !empty($clear->cleared_message_id) ? (int)$clear->cleared_message_id : 0;
+}
+
+function VNSEEA_ClearGroupHistoryForUser($group_id, $user_id = 0)
+{
+    global $wo, $db;
+    $group_id = (int)$group_id;
+    $user_id = (int)($user_id ?: (!empty($wo['user']['user_id']) ? $wo['user']['user_id'] : 0));
+    $group = $group_id > 0 ? Wo_GroupTabData($group_id) : false;
+    $active_membership = $db->where('group_id', $group_id)
+        ->where('user_id', $user_id)
+        ->where('active', 1)
+        ->getValue(T_GROUP_CHAT_USERS, 'COUNT(*)');
+    $can_access = !empty($group) &&
+        ((int)$group['user_id'] === $user_id || $active_membership > 0);
+    if (!$can_access) {
+        return false;
+    }
+    $last_message_id = (int)$db->where('group_id', $group_id)->getValue(T_MESSAGES, 'MAX(id)');
+    $existing = $db->where('group_id', $group_id)
+        ->where('user_id', $user_id)
+        ->getOne(T_GROUP_CHAT_HISTORY_CLEARS);
+    $data = array(
+        'cleared_message_id' => $last_message_id,
+        'cleared_at' => time(),
+    );
+    if (!empty($existing)) {
+        $saved = $db->where('id', $existing->id)->update(T_GROUP_CHAT_HISTORY_CLEARS, $data);
+    } else {
+        $data['group_id'] = $group_id;
+        $data['user_id'] = $user_id;
+        $saved = (bool)$db->insert(T_GROUP_CHAT_HISTORY_CLEARS, $data);
+    }
+    if ($saved) {
+        $db->where('group_id', $group_id)
+            ->where('user_id', $user_id)
+            ->update(T_GROUP_CHAT_USERS, array('last_seen' => time()));
+    }
+    return (bool)$saved;
+}
+
 function Wo_GetGroupMessagesAPP($args = array())
 {
     global $wo, $sqlConnect, $db;
@@ -4689,6 +4784,7 @@ function Wo_GetGroupMessagesAPP($args = array())
     $query_one = '';
     $data = array();
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
+    $cleared_message_id = VNSEEA_GetGroupHistoryClearMessageId($group_id, $logged_user_id);
     $message_data = array();
     if (empty($group_id) || !is_numeric($group_id) || $group_id < 0) {
         return false;
@@ -4701,6 +4797,9 @@ function Wo_GetGroupMessagesAPP($args = array())
     }
     if ($old && $offset && $offset > 0 && !$new) {
         $query_one .= " AND `id` < {$offset} AND `id` <> {$offset} ";
+    }
+    if ($cleared_message_id > 0) {
+        $query_one .= " AND `id` > {$cleared_message_id} ";
     }
     $query_one = " SELECT * FROM " . T_MESSAGES . " WHERE `group_id` = '$group_id' {$query_one} ";
     $sql_query_one = mysqli_query($sqlConnect, $query_one);
@@ -12710,14 +12809,22 @@ function Wo_CreateTagLabel($data = [])
 }
 function Wo_AttachUserTag($data = [])
 {
-    global $wo, $sqlConnect;
+    global $wo, $sqlConnect, $db;
     if (empty($wo['loggedin'])) {
         return ['status' => 401, 'message' => 'Not logged in'];
     }
     $owner_id = (int)$wo['user']['user_id'];
     $target_user_id = isset($data['target_user_id']) ? (int)$data['target_user_id'] : 0;
     $tag_id = isset($data['tag_id']) ? (int)$data['tag_id'] : 0;
-    $sql = "INSERT INTO " . T_USER_TAG_ASSIGNMENTS . "(`owner_id`,`target_user_id`,`tag_id`) VALUES ($owner_id,$target_user_id,$tag_id) ON DUPLICATE KEY UPDATE `tag_id` = VALUES(`tag_id`)";
+    if ($target_user_id < 1 || $tag_id < 1) {
+        return ['status' => 400, 'message' => 'Target user and label are required'];
+    }
+    $label = $db->where('id', $tag_id)->where('owner_id', $owner_id)->getOne(T_USER_TAG_LABELS);
+    $target = $db->where('user_id', $target_user_id)->getOne(T_USERS);
+    if (empty($label) || empty($target)) {
+        return ['status' => 404, 'message' => 'Label or target user was not found'];
+    }
+    $sql = "INSERT INTO " . T_USER_TAG_ASSIGNMENTS . "(`owner_id`,`target_user_id`,`tag_id`) VALUES ($owner_id,$target_user_id,$tag_id) ON DUPLICATE KEY UPDATE `id` = `id`";
     $ok = mysqli_query($sqlConnect, $sql);
     if (!$ok) {
         return [
@@ -12746,7 +12853,8 @@ function Wo_GetAllAssignedTagsByOwner($owner_id = null)
             FROM " . T_USER_TAG_ASSIGNMENTS . " AS UTA 
             INNER JOIN " . T_USER_TAG_LABELS . " AS UTL ON UTA.tag_id = UTL.id 
             INNER JOIN " . T_USERS . " AS U ON UTA.target_user_id = U.user_id
-            WHERE UTA.owner_id = {$owner_id}";
+            WHERE UTA.owner_id = {$owner_id}
+            ORDER BY UTA.id DESC";
 
     $ok = mysqli_query($sqlConnect, $sql);
     if (!$ok) {
@@ -12796,7 +12904,7 @@ function Wo_GetTagForUser($owner_id = null, $target_user_id = null)
     if ($target_user_id === null) return [];
     $owner_id = (int)$wo['user']['user_id'];
     $target_user_id = (int)$target_user_id;
-    $sql = "SELECT UTA.owner_id,UTA.target_user_id,UTA.tag_id,UTL.name,UTL.color FROM " . T_USER_TAG_ASSIGNMENTS . " AS UTA INNER JOIN " . T_USER_TAG_LABELS . " AS UTL ON UTA.tag_id=UTL.id WHERE UTA.owner_id={$owner_id} AND UTA.target_user_id={$target_user_id}";
+    $sql = "SELECT UTA.owner_id,UTA.target_user_id,UTA.tag_id,UTL.name,UTL.color FROM " . T_USER_TAG_ASSIGNMENTS . " AS UTA INNER JOIN " . T_USER_TAG_LABELS . " AS UTL ON UTA.tag_id=UTL.id WHERE UTA.owner_id={$owner_id} AND UTA.target_user_id={$target_user_id} ORDER BY UTA.id DESC";
     $ok = mysqli_query($sqlConnect, $sql);
     if (!$ok) {
         return [

@@ -145,12 +145,7 @@ export type RootStackParamList = {
   [ROUTES.CONVERSATION_SEARCH]: { chat: ChatItem };
   [ROUTES.CONVERSATION_MEDIA]: { chat: ChatItem };
   [ROUTES.CONVERSATION_PINNED]: { chat: ChatItem };
-  [ROUTES.GROUP_INFO]: {
-    groupId: number;
-    groupName: string;
-    avatar: string;
-    memberCount: number;
-  };
+  [ROUTES.GROUP_INFO]: { chat: ChatItem };
   [ROUTES.CALLS]: undefined;
   [ROUTES.CALL_ROOM]: LiveKitCallRouteParams;
   [ROUTES.GROUP_CALL_ROOM]: GroupLiveKitCallRouteParams;

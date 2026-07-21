@@ -63,7 +63,11 @@ import {
 
   Link2,
 
+  MapPin,
+
   MessageCircle,
+
+  Newspaper,
 
   Mic,
 
@@ -234,6 +238,14 @@ const MESSAGE_COPY: Record<
 
     sentLinkMe: string;
 
+    sharedPost: string;
+
+    sharedPostMe: string;
+
+    sharedLocation: string;
+
+    sharedLocationMe: string;
+
     mePrefix: string;
 
     broadcastLabel: string;
@@ -376,9 +388,17 @@ const MESSAGE_COPY: Record<
 
     sentStickerMe: 'Bạn đã gửi nhãn dán',
 
-    sentLink: 'Liên kết',
+    sentLink: 'Đã gửi một liên kết',
 
-    sentLinkMe: 'Bạn đã gửi liên kết',
+    sentLinkMe: 'Bạn đã gửi một liên kết',
+
+    sharedPost: 'Đã chia sẻ một bài viết',
+
+    sharedPostMe: 'Bạn đã chia sẻ một bài viết',
+
+    sharedLocation: 'Đã chia sẻ một vị trí',
+
+    sharedLocationMe: 'Bạn đã chia sẻ một vị trí',
 
     mePrefix: 'Bạn',
 
@@ -520,9 +540,17 @@ const MESSAGE_COPY: Record<
 
     sentStickerMe: 'You sent a sticker',
 
-    sentLink: 'Link',
+    sentLink: 'Sent a link',
 
     sentLinkMe: 'You sent a link',
+
+    sharedPost: 'Shared a post',
+
+    sharedPostMe: 'You shared a post',
+
+    sharedLocation: 'Shared a location',
+
+    sharedLocationMe: 'You shared a location',
 
     mePrefix: 'You',
 
@@ -767,6 +795,26 @@ function getMessagePreview(
 
     }
 
+    case 'shared_post':
+
+      return {
+
+        icon: <Newspaper size={14} color="#2563eb" />,
+
+        text: isFromMe ? copy.sharedPostMe : copy.sharedPost,
+
+      };
+
+    case 'location':
+
+      return {
+
+        icon: <MapPin size={14} color="#dc2626" />,
+
+        text: isFromMe ? copy.sharedLocationMe : copy.sharedLocation,
+
+      };
+
     case 'text':
 
     default:
@@ -969,9 +1017,16 @@ function ChatLabelBadges({ labels }: { labels?: MessageLabel[] }) {
 
   return (
 
-    <View className="mt-1 flex-row items-center gap-1">
+    <ScrollView
+      horizontal
+      className="mt-1"
+      contentContainerClassName="flex-row items-center gap-1 pr-2"
+      showsHorizontalScrollIndicator={false}
+      nestedScrollEnabled
+      accessibilityLabel={labels.map(label => label.name).join(', ')}
+    >
 
-      {labels.slice(0, 4).map(label => (
+      {labels.map(label => (
 
         <View
 
@@ -985,17 +1040,7 @@ function ChatLabelBadges({ labels }: { labels?: MessageLabel[] }) {
 
       ))}
 
-      {labels.length > 4 && (
-
-        <Text className="text-[10px] font-semibold text-slate-400">
-
-          +{labels.length - 4}
-
-        </Text>
-
-      )}
-
-    </View>
+    </ScrollView>
 
   );
 
@@ -1081,7 +1126,7 @@ function ChatListItem({
 
     chat.lastMessageKind,
 
-    false, // isFromMe - we don't have this info from chat list
+    Boolean(chat.lastMessageIsMine),
 
     copy,
 

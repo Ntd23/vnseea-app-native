@@ -6400,7 +6400,9 @@ function Wo_GetChatGroupLastMessage($id = false)
 	if ($wo['loggedin'] == false || !$id || !is_numeric($id)) {
 		return false;
 	}
-	$sql   = "SELECT * FROM " . T_MESSAGES . " WHERE `group_id` = {$id} ORDER BY `id` DESC LIMIT 1";
+	$cleared_message_id = VNSEEA_GetGroupHistoryClearMessageId($id, $wo['user']['id']);
+	$clear_sql = $cleared_message_id > 0 ? " AND `id` > {$cleared_message_id}" : '';
+	$sql   = "SELECT * FROM " . T_MESSAGES . " WHERE `group_id` = {$id}{$clear_sql} ORDER BY `id` DESC LIMIT 1";
 	$data  = array();
 	$query = mysqli_query($sqlConnect, $sql);
 	if ($query && mysqli_num_rows($query) > 0) {
@@ -6452,7 +6454,7 @@ function Wo_GetChatGroupData($id = false)
 	$data  = array();
 	$sql   = "SELECT * FROM " . T_GROUP_CHAT . "
                 WHERE (`user_id` = {$user} OR `group_id` IN
-                   (SELECT `group_id` FROM Wo_GroupChatUsers  WHERE `user_id` = {$user})) AND `group_id` = {$id}";
+	                   (SELECT `group_id` FROM Wo_GroupChatUsers  WHERE `user_id` = {$user} AND `active` = '1')) AND `group_id` = {$id}";
 	$query = mysqli_query($sqlConnect, $sql);
 	if (mysqli_num_rows($query)) {
 		while ($fetched_data = mysqli_fetch_assoc($query)) {
@@ -6569,6 +6571,8 @@ function Wo_DeleteGChat($group_id = false)
 	if ($wo['loggedin'] == false || !Wo_IsGChatOwner($group_id)) {
 		return false;
 	}
+	@mysqli_query($sqlConnect, "DELETE pin FROM " . T_MESSAGE_PINS . " pin INNER JOIN " . T_MESSAGES . " message ON message.id = pin.message_id WHERE message.group_id = {$group_id}");
+	@mysqli_query($sqlConnect, "DELETE FROM " . T_GROUP_CHAT_HISTORY_CLEARS . " WHERE `group_id` = {$group_id}");
 	@mysqli_query($sqlConnect, "DELETE FROM " . T_MESSAGES . " WHERE `group_id` = {$group_id}");
 	@mysqli_query($sqlConnect, "DELETE FROM " . T_GROUP_CHAT_USERS . " WHERE `group_id` = {$group_id}");
 	return mysqli_query($sqlConnect, "DELETE FROM " . T_GROUP_CHAT . " WHERE `group_id` = {$group_id}");
@@ -6580,7 +6584,6 @@ function Wo_ExitGChat($group_id = false)
 		return false;
 	}
 	$user = Wo_Secure($wo['user']['id']);
-	@mysqli_query($sqlConnect, "DELETE FROM " . T_MESSAGES . " WHERE `group_id` = {$group_id} AND `from_id` = {$user}");
 	return mysqli_query($sqlConnect, "DELETE FROM " . T_GROUP_CHAT_USERS . " WHERE `group_id` = {$group_id} AND `user_id` = {$user}");
 }
 function Wo_IsGChatMemeberExists($group_id = false, $user_id = false)

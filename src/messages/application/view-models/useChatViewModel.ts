@@ -28,7 +28,7 @@ import {
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
-import { parseSharedPostMessage } from '../shared-posts/sharedPostMessage';
+import { describeMessageTextContent } from '../preview/messageContentDescriptor';
 import {
   applyOptimisticMessageReaction,
   areMessageReactionSummariesEqual,
@@ -539,6 +539,10 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
       const tempId = `pending-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 8)}`;
+      const textDescriptor = describeMessageTextContent(
+        message,
+        apiConfig.webBaseUrl,
+      );
       const optimisticMessage: MessageItem = {
         id: tempId,
         conversationId: '',
@@ -547,7 +551,10 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         message,
         media: attachment?.uri,
         mediaType: attachment?.mediaType,
-        sharedPost: parseSharedPostMessage(message, apiConfig.webBaseUrl),
+        sharedPost: textDescriptor.sharedPost,
+        contentKind: attachment?.mediaType ?? textDescriptor.kind,
+        link: textDescriptor.link,
+        location: textDescriptor.location,
         reactions: createEmptyMessageReactionSummary(),
         time: Math.floor(Date.now() / 1000),
         isSentByMe: true,
@@ -655,7 +662,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   const clearGroupHistory = useCallback(async () => {
     if (chat.chatType !== 'group') return false;
 
-    await repository.clearGroupHistory(getRawGroupId(chat));
+    await repository.clearGroupHistory(chat);
     setMessages([]);
     setGroupSharedAssetsOverride({
       media: [],

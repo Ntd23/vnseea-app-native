@@ -247,7 +247,7 @@ export default function ConversationDetailsScreen({
       }
       const nextMuted = !notificationsMuted;
       await repository.setConversationNotifications(
-        resolvedChat.chatId,
+        resolvedChat,
         !nextMuted,
       );
       setConversationChat(resolvedChat);

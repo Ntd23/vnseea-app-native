@@ -16,9 +16,16 @@ if (!empty($_POST['chat_id']) && is_numeric($_POST['chat_id']) && $_POST['chat_i
         }
     } else {
         $group = $db->where('group_id', $chat_id)->getOne(T_GROUP_CHAT);
-        $is_member = !empty($group) && ((int)$group->user_id === (int)$wo['user']['user_id'] || Wo_IsGChatMemeberExists($chat_id, $wo['user']['user_id']));
+        $active_membership = $db->where('group_id', $chat_id)
+            ->where('user_id', $wo['user']['user_id'])
+            ->where('active', 1)
+            ->getValue(T_GROUP_CHAT_USERS, 'COUNT(*)');
+        $is_member = !empty($group) &&
+            ((int)$group->user_id === (int)$wo['user']['user_id'] || $active_membership > 0);
         if ($is_member) {
-            $query = mysqli_query($sqlConnect, "SELECT pin.* FROM " . T_MESSAGE_PINS . " pin INNER JOIN " . T_MESSAGES . " message ON message.id = pin.message_id WHERE message.group_id = {$chat_id} ORDER BY pin.pinned_at DESC");
+            $cleared_message_id = VNSEEA_GetGroupHistoryClearMessageId($chat_id, $wo['user']['user_id']);
+            $clear_sql = $cleared_message_id > 0 ? " AND message.id > {$cleared_message_id}" : '';
+            $query = mysqli_query($sqlConnect, "SELECT pin.* FROM " . T_MESSAGE_PINS . " pin INNER JOIN " . T_MESSAGES . " message ON message.id = pin.message_id WHERE message.group_id = {$chat_id}{$clear_sql} ORDER BY pin.pinned_at DESC");
             while ($query && $row = mysqli_fetch_object($query)) $chats[] = $row;
         }
     }

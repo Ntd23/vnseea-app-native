@@ -7,19 +7,14 @@ function read(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), 'utf8');
 }
 
-describe('Group info modal swipe dismiss', () => {
-  it('allows the iOS full-screen group info modal to close with a horizontal swipe', () => {
-    const source = read('src/messages/presentation/screens/ChatScreen.tsx');
-    const groupInfoModalStart = source.indexOf('function GroupInfoModal({');
-    const groupInfoModalEnd = source.indexOf('function ChatScreen(', groupInfoModalStart);
-    const groupInfoModalBlock = source.slice(groupInfoModalStart, groupInfoModalEnd);
+describe('Group info native-stack navigation', () => {
+  it('uses the stack gesture instead of a manual modal pan responder', () => {
+    const registry = read('src/navigation/routeRegistry.tsx');
+    const chat = read('src/messages/presentation/screens/ChatScreen.tsx');
 
-    expect(source).toContain('const GROUP_INFO_DISMISS_SWIPE_DISTANCE =');
-    expect(groupInfoModalBlock).toContain('PanResponder.create({');
-    expect(groupInfoModalBlock).toContain("Platform.OS !== 'ios'");
-    expect(groupInfoModalBlock).toContain('Math.abs(gestureState.dx)');
-    expect(groupInfoModalBlock).toContain('onPanResponderRelease');
-    expect(groupInfoModalBlock).toContain('onClose();');
-    expect(groupInfoModalBlock).toContain('{...groupInfoDismissPanResponder.panHandlers}');
+    expect(registry).toContain('{ name: ROUTES.GROUP_INFO, component: GroupInfoScreen }');
+    expect(chat).toContain('navigation.navigate(ROUTES.GROUP_INFO, { chat })');
+    expect(chat).not.toContain('GROUP_INFO_DISMISS_SWIPE_DISTANCE');
+    expect(chat).not.toContain('groupInfoDismissPanResponder');
   });
 });

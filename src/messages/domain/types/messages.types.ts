@@ -15,7 +15,9 @@ export interface ChatItem {
   name: string;
   avatar: string;
   lastMessage: string;
+  lastMessageId?: string;
   lastMessageKind?: ChatPreviewKind;
+  lastMessageIsMine?: boolean;
   lastMessageTime: number;
   paginationCursorTime?: number;
   unreadCount: number;
@@ -55,6 +57,8 @@ export interface LabelRecipient {
 export type ChatPreviewKind =
   | 'text'
   | 'link'
+  | 'shared_post'
+  | 'location'
   | 'image'
   | 'video'
   | 'audio'
@@ -68,6 +72,21 @@ export interface SharedPostMessageReference {
   postId: string;
   url: string;
   note: string;
+}
+
+export interface MessageLinkReference {
+  url: string;
+  host: string;
+}
+
+export interface MessageLocationReference {
+  title: string;
+  latitude: number;
+  longitude: number;
+  pageId?: string;
+  imageUrl?: string;
+  subtitle?: string;
+  address?: string;
 }
 
 export interface MessageReactionSummary {
@@ -96,6 +115,9 @@ export interface MessageItem {
   mediaType?: 'image' | 'video' | 'audio' | 'file';
   thumbnail?: string;
   sharedPost?: SharedPostMessageReference;
+  contentKind?: ChatPreviewKind;
+  link?: MessageLinkReference;
+  location?: MessageLocationReference;
   reactions: MessageReactionSummary;
   time: number;
   isSentByMe: boolean;

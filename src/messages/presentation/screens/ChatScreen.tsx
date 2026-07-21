@@ -33,26 +33,19 @@ import {
 } from 'react-native';
 import {
   ArrowLeft,
-  Check,
   ChevronDown,
   FileText,
   ImagePlus,
   Info,
-  Link as LinkIcon,
-  LogOut,
   MapPin,
   MessageCircle,
   Mic,
-  Pencil,
   Phone,
   PhoneMissed,
   Play,
   Send,
   ShoppingBag,
   Square,
-  Trash2,
-  UserMinus,
-  UserPlus,
   Video,
   X,
   CornerUpLeft,
@@ -64,7 +57,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import {
   launchImageLibrary,
-  type Asset,
   type MediaType,
 } from 'react-native-image-picker';
 import VideoPlayer from 'react-native-video';
@@ -79,6 +71,7 @@ import { useChatViewModel } from '../../application/view-models/useChatViewModel
 import { useGroupLiveKitCallSession } from '../../application/view-models/useGroupLiveKitCallSession';
 import { useLiveKitCallSession } from '../../application/view-models/useLiveKitCallSession';
 import { SharedPostMessageCard } from '../components/SharedPostMessageCard';
+import { MessageLinkPreviewCard } from '../components/MessageLinkPreviewCard';
 import { PinnedMessagesBanner } from '../components/PinnedMessagesBanner';
 import {
   ChatMediaViewerModal,
@@ -90,10 +83,6 @@ import {
   MessageReactionPicker,
 } from '../components/MessageReactions';
 import type {
-  GroupAddableUser,
-  GroupChatInfo,
-  GroupChatMember,
-  GroupSharedAssets,
   MessageAttachment,
   MessageItem,
   MessageSystemEvent,
@@ -122,6 +111,7 @@ import { getCurrentDeviceLocation } from '../../../shared-kernel/application/uti
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import type { ReactionType } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { areMessageReactionSummariesEqual } from '../../domain/reactions/messageReactions';
+import { isValidMessageLocation } from '../../application/preview/messageContentDescriptor';
 
 function formatPrice(price: string, symbolOrCode: string): string {
   const numPrice = parseFloat(price);
@@ -167,11 +157,6 @@ const MAP_SHARE_CARD_WIDTH = Math.min(
 );
 const CHAT_SAFE_AREA_EDGES: Edge[] =
   Platform.OS === 'ios' ? ['top', 'left', 'right'] : ROOT_SAFE_AREA_EDGES;
-const GROUP_INFO_MODAL_SAFE_AREA_EDGES: Edge[] =
-  Platform.OS === 'ios' ? ['left', 'right'] : ROOT_SAFE_AREA_EDGES;
-const GROUP_INFO_DISMISS_SWIPE_DISTANCE = 72;
-const GROUP_INFO_DISMISS_SWIPE_START_DISTANCE = 18;
-const GROUP_INFO_DISMISS_SWIPE_HORIZONTAL_RATIO = 1.35;
 const PRODUCT_INQUIRY_QUICK_OPTIONS = [
   {
     id: 'availability',
@@ -431,6 +416,15 @@ function LinkifiedText({
   );
 }
 
+function getMessageLinkCaption(text: string) {
+  return splitLinkTextSegments(text)
+    .filter(segment => !segment.url)
+    .map(segment => segment.text)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 type ParsedMapShareMessage = {
   location: SharedMapLocation;
   caption: string;
@@ -532,9 +526,17 @@ function parseSharedMapMessage(text: string): ParsedMapShareMessage | null {
   let mapSegment: (typeof segments)[number] | undefined;
   let location: SharedMapLocation | null = null;
   for (const segment of segments) {
-    if (!segment.url) continue;
-    const parsedLocation = parseMapShareUrl(segment.url);
-    if (!parsedLocation) continue;
+      if (!segment.url) continue;
+      const parsedLocation = parseMapShareUrl(segment.url);
+      if (
+        !parsedLocation ||
+        !isValidMessageLocation(
+          parsedLocation.latitude,
+          parsedLocation.longitude,
+        )
+      ) {
+        continue;
+      }
     mapSegment = segment;
     location = parsedLocation;
     break;
@@ -931,25 +933,6 @@ function ChatMessagesSkeleton() {
     </View>
   );
 }
-function assetToAttachment(asset: Asset): MessageAttachment | undefined {
-  if (!asset.uri) return undefined;
-
-  const isVideo =
-    asset.type?.startsWith('video/') ||
-    /\.(mp4|mov|webm|m4v)$/i.test(asset.fileName ?? '');
-  const uri =
-    Platform.OS === 'android' && !/^[a-z][a-z0-9+.-]*:\/\//i.test(asset.uri)
-      ? `file://${asset.uri}`
-      : asset.uri;
-
-  return {
-    uri,
-    name: asset.fileName ?? `chat-${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`,
-    type: asset.type ?? (isVideo ? 'video/mp4' : 'image/jpeg'),
-    mediaType: isVideo ? 'video' : 'image',
-  };
-}
-
 function formatCallDuration(duration: number) {
   const hours = Math.floor(duration / 3600);
   const minutes = Math.floor((duration % 3600) / 60);
@@ -1383,12 +1366,9 @@ function getMessageSnippet(message: MessageItem, chatName: string) {
     return '[File]';
   }
 
-  if (message.media) {
-    if (message.mediaType === 'image') return '📷 Hình ảnh';
-    if (message.mediaType === 'video') return '🎥 Video';
-    if (message.mediaType === 'audio') return '🎵 Tin nhắn thoại';
-    return '📎 Tệp tin';
-  }
+  if (message.sharedPost) return 'Bài viết đã chia sẻ';
+  if (message.location) return `Địa điểm: ${message.location.title}`;
+  if (message.link) return `Liên kết: ${message.link.host}`;
 
   const productInquiry = parseProductInquiry(message.message);
   if (productInquiry) {
@@ -1746,8 +1726,18 @@ function MessageBubble({
   const productInquiry = parseProductInquiry(message.message);
   const replyInfo = parseMessageReply(message.message);
   const sharedPost = message.sharedPost;
-  const mapShare =
+  const parsedMapShare =
     sharedPost || replyInfo ? null : parseSharedMapMessage(message.message);
+  const mapShare = message.location
+    ? {
+        location: message.location,
+        caption: parsedMapShare?.caption ?? '',
+        url: parsedMapShare?.url ?? buildMapShareUrl(message.location),
+      }
+    : parsedMapShare;
+  const linkCaption = message.link
+    ? getMessageLinkCaption(message.message)
+    : '';
   const visibleMessageText = sharedPost
     ? ''
     : orderInquiry
@@ -2045,6 +2035,23 @@ function MessageBubble({
                 {formatMessageTime(message.time)}
               </Text>
             </DoubleTapTouchable>
+          ) : message.link ? (
+            <View className={`mb-1 ${isSentByMe ? 'self-end' : 'self-start'}`}>
+              <MessageLinkPreviewCard
+                reference={message.link}
+                caption={linkCaption}
+                isSentByMe={Boolean(isSentByMe)}
+                onLongPress={() => onLongPress?.(message)}
+                onDoubleTap={() => onDoubleTap?.(message)}
+              />
+              <Text
+                className={`mt-1 text-[9.5px] text-gray-400 ${
+                  isSentByMe ? 'text-right' : 'text-left'
+                }`}
+              >
+                {formatMessageTime(message.time)}
+              </Text>
+            </View>
           ) : orderInquiry ? (
             /* Order Inquiry Card (renders instead of the main text bubble) */
             <DoubleTapTouchable
@@ -2236,6 +2243,12 @@ const MemoizedMessageBubble = React.memo(
       prevProps.message.media === nextProps.message.media &&
       prevProps.message.mediaType === nextProps.message.mediaType &&
       prevProps.message.thumbnail === nextProps.message.thumbnail &&
+      prevProps.message.contentKind === nextProps.message.contentKind &&
+      prevProps.message.link?.url === nextProps.message.link?.url &&
+      prevProps.message.location?.latitude ===
+        nextProps.message.location?.latitude &&
+      prevProps.message.location?.longitude ===
+        nextProps.message.location?.longitude &&
       prevProps.message.deliveryState === nextProps.message.deliveryState &&
       prevProps.message.seen === nextProps.message.seen &&
       prevProps.message.sharedPost?.postId ===
@@ -2700,700 +2713,6 @@ function MediaMessageGroup({
 
 const MemoizedMediaMessageGroup = React.memo(MediaMessageGroup);
 
-type GroupInfoSection = 'members' | 'media' | 'files' | 'links';
-type GroupInfoDialog = 'add' | 'edit' | 'delete' | null;
-
-function SectionHeader({
-  title,
-  isOpen,
-  onPress,
-}: {
-  title: string;
-  isOpen: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      className="flex-row items-center justify-between border-t border-gray-100 px-5 py-4"
-      activeOpacity={0.8}
-      onPress={onPress}
-    >
-      <Text className="text-base font-bold text-gray-950">{title}</Text>
-      <ChevronDown
-        size={20}
-        color="#111827"
-        style={{ transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}
-      />
-    </TouchableOpacity>
-  );
-}
-
-function GroupMemberRow({
-  member,
-  canRemove,
-  onRemove,
-}: {
-  member: GroupChatMember;
-  canRemove: boolean;
-  onRemove: (member: GroupChatMember) => void;
-}) {
-  return (
-    <View className="flex-row items-center px-5 py-2">
-      <Image
-        source={{ uri: member.avatar }}
-        className="h-10 w-10 rounded-full bg-gray-200"
-      />
-      <View className="ml-3 flex-1">
-        <Text className="text-sm font-semibold text-gray-900">
-          {member.name}
-        </Text>
-        <Text className="text-xs text-gray-500">
-          {member.isOwner
-            ? 'Chủ nhóm'
-            : member.isAdmin
-            ? 'Admin'
-            : `@${member.username}`}
-        </Text>
-      </View>
-      {canRemove ? (
-        <TouchableOpacity
-          className="h-9 w-9 items-center justify-center rounded-full bg-red-50"
-          activeOpacity={0.8}
-          onPress={() => onRemove(member)}
-        >
-          <UserMinus size={18} color="#dc2626" />
-        </TouchableOpacity>
-      ) : null}
-    </View>
-  );
-}
-
-function AddableUserRow({
-  user,
-  selected,
-  onToggle,
-}: {
-  user: GroupAddableUser;
-  selected: boolean;
-  onToggle: (user: GroupAddableUser) => void;
-}) {
-  return (
-    <TouchableOpacity
-      className="flex-row items-center px-5 py-2"
-      activeOpacity={0.8}
-      onPress={() => onToggle(user)}
-    >
-      <Image
-        source={{ uri: user.avatar }}
-        className="h-10 w-10 rounded-full bg-gray-200"
-      />
-      <View className="ml-3 flex-1">
-        <Text className="text-sm font-semibold text-gray-900">{user.name}</Text>
-        <Text className="text-xs text-gray-500">@{user.username}</Text>
-      </View>
-      <View
-        className={`h-7 w-7 items-center justify-center rounded-full ${
-          selected ? 'bg-blue-600' : 'border border-gray-300 bg-white'
-        }`}
-      >
-        {selected ? <Check size={16} color="#ffffff" /> : null}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function GroupInfoModal({
-  visible,
-  groupInfo,
-  assets,
-  addableUsers,
-  selectedAddableIds,
-  addableQuery,
-  editName,
-  editAvatar,
-  activeDialog,
-  isLoading,
-  isLoadingAddableUsers,
-  expandedSections,
-  onClose,
-  onOpenAddMembers,
-  onOpenEditGroup,
-  onOpenDeleteGroup,
-  onCloseActionDialog,
-  onToggleSection,
-  onChangeAddableQuery,
-  onSearchAddableUsers,
-  onToggleAddableUser,
-  onSubmitAddUsers,
-  onChangeEditName,
-  onPickAvatar,
-  onSaveGroup,
-  onDeleteGroup,
-  onClearHistory,
-  onLeaveGroup,
-  onRemoveMember,
-  topInset,
-  copy,
-}: {
-  visible: boolean;
-  groupInfo: GroupChatInfo | null;
-  assets: GroupSharedAssets | null;
-  addableUsers: GroupAddableUser[];
-  selectedAddableIds: Set<string>;
-  addableQuery: string;
-  editName: string;
-  editAvatar?: MessageAttachment;
-  activeDialog: GroupInfoDialog;
-  isLoading: boolean;
-  isLoadingAddableUsers: boolean;
-  expandedSections: Set<GroupInfoSection>;
-  onClose: () => void;
-  onOpenAddMembers: () => void;
-  onOpenEditGroup: () => void;
-  onOpenDeleteGroup: () => void;
-  onCloseActionDialog: () => void;
-  onToggleSection: (section: GroupInfoSection) => void;
-  onChangeAddableQuery: (value: string) => void;
-  onSearchAddableUsers: () => void;
-  onToggleAddableUser: (user: GroupAddableUser) => void;
-  onSubmitAddUsers: () => void;
-  onChangeEditName: (value: string) => void;
-  onPickAvatar: () => void;
-  onSaveGroup: () => void;
-  onDeleteGroup: () => void;
-  onClearHistory: () => void;
-  onLeaveGroup: () => void;
-  onRemoveMember: (member: GroupChatMember) => void;
-  topInset: number;
-  copy: typeof CHAT_COPY.vi;
-}) {
-  const isMembersOpen = expandedSections.has('members');
-  const isMediaOpen = expandedSections.has('media');
-  const isFilesOpen = expandedSections.has('files');
-  const isLinksOpen = expandedSections.has('links');
-  const groupInfoDismissPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gestureState) => {
-          if (Platform.OS !== 'ios') return false;
-
-          const horizontalDistance = Math.abs(gestureState.dx);
-          const verticalDistance = Math.abs(gestureState.dy);
-
-          return (
-            horizontalDistance > GROUP_INFO_DISMISS_SWIPE_START_DISTANCE &&
-            horizontalDistance >
-              verticalDistance * GROUP_INFO_DISMISS_SWIPE_HORIZONTAL_RATIO
-          );
-        },
-        onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-          if (Platform.OS !== 'ios') return false;
-
-          const horizontalDistance = Math.abs(gestureState.dx);
-          const verticalDistance = Math.abs(gestureState.dy);
-
-          return (
-            horizontalDistance > GROUP_INFO_DISMISS_SWIPE_START_DISTANCE &&
-            horizontalDistance >
-              verticalDistance * GROUP_INFO_DISMISS_SWIPE_HORIZONTAL_RATIO
-          );
-        },
-        onPanResponderRelease: (_, gestureState) => {
-          const horizontalDistance = Math.abs(gestureState.dx);
-          const verticalDistance = Math.abs(gestureState.dy);
-
-          if (
-            horizontalDistance >= GROUP_INFO_DISMISS_SWIPE_DISTANCE &&
-            horizontalDistance >
-              verticalDistance * GROUP_INFO_DISMISS_SWIPE_HORIZONTAL_RATIO
-          ) {
-            onClose();
-          }
-        },
-      }),
-    [onClose],
-  );
-
-  return (
-    <>
-      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-        <SafeAreaView
-          className="flex-1 bg-white"
-          edges={GROUP_INFO_MODAL_SAFE_AREA_EDGES}
-          style={Platform.OS === 'ios' ? { paddingTop: topInset } : undefined}
-          {...groupInfoDismissPanResponder.panHandlers}
-        >
-          <View className="flex-row items-center justify-between border-b border-gray-100 px-5 py-4">
-            <Text className="text-lg font-bold text-gray-950">Thông tin</Text>
-            <TouchableOpacity
-              className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
-              activeOpacity={0.8}
-              onPress={onClose}
-            >
-              <X size={20} color="#111827" />
-            </TouchableOpacity>
-          </View>
-
-          {isLoading && !groupInfo ? (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator size="large" color="#0000ff" />
-            </View>
-          ) : (
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View className="items-center px-5 py-6">
-                <Image
-                  source={{ uri: groupInfo?.avatar }}
-                  className="h-24 w-24 rounded-full bg-red-100"
-                />
-                <View className="mt-4 flex-row items-center px-4">
-                  <Text className="text-2xl font-bold text-gray-950">
-                    {groupInfo?.name ?? 'Nhóm'}
-                  </Text>
-                </View>
-                <Text className="mt-1 text-sm text-gray-500">
-                  {groupInfo?.memberCount ?? 0} thành viên
-                </Text>
-
-                {groupInfo?.isOwner ? (
-                  <View className="mt-5 w-full flex-row justify-center">
-                    <TouchableOpacity
-                      className="mx-1 flex-1 items-center rounded-2xl bg-blue-50 px-2 py-3"
-                      activeOpacity={0.85}
-                      onPress={onOpenAddMembers}
-                    >
-                      <View className="h-11 w-11 items-center justify-center rounded-full bg-blue-600">
-                        <UserPlus size={20} color="#ffffff" />
-                      </View>
-                      <Text
-                        className="mt-2 text-center text-xs font-semibold text-gray-900"
-                        numberOfLines={2}
-                      >
-                        {copy.addMembers}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      className="mx-1 flex-1 items-center rounded-2xl bg-gray-100 px-2 py-3"
-                      activeOpacity={0.85}
-                      onPress={onOpenEditGroup}
-                    >
-                      <View className="h-11 w-11 items-center justify-center rounded-full bg-white">
-                        <Pencil size={20} color="#111827" />
-                      </View>
-                      <Text
-                        className="mt-2 text-center text-xs font-semibold text-gray-900"
-                        numberOfLines={2}
-                      >
-                        Thay doi thong tin
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      className="mx-1 flex-1 items-center rounded-2xl bg-red-50 px-2 py-3"
-                      activeOpacity={0.85}
-                      onPress={onOpenDeleteGroup}
-                    >
-                      <View className="h-11 w-11 items-center justify-center rounded-full bg-red-600">
-                        <Trash2 size={20} color="#ffffff" />
-                      </View>
-                      <Text
-                        className="mt-2 text-center text-xs font-semibold text-red-700"
-                        numberOfLines={2}
-                      >
-                        Xoa nhom
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : null}
-
-                {false && groupInfo?.isOwner ? (
-                  <View className="mt-4 w-full">
-                    <TextInput
-                      className="rounded-2xl border border-gray-200 px-4 py-3 text-base text-gray-900"
-                      placeholder="Tên nhóm"
-                      placeholderTextColor="#94a3b8"
-                      value={editName}
-                      onChangeText={onChangeEditName}
-                    />
-                    <TouchableOpacity
-                      className="mt-3 rounded-2xl bg-blue-600 py-3"
-                      activeOpacity={0.85}
-                      onPress={onSaveGroup}
-                    >
-                      <Text className="text-center text-base font-bold text-white">
-                        Lưu thay đổi
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : null}
-              </View>
-
-              {false && groupInfo?.isOwner ? (
-                <View className="border-t border-gray-100 px-5 py-4">
-                  <View className="flex-row items-center">
-                    <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-50">
-                      <UserPlus size={20} color="#0000ff" />
-                    </View>
-                    <Text className="ml-3 text-base font-semibold text-gray-900">
-                      {copy.addMembers}
-                    </Text>
-                  </View>
-                  <View className="mt-3 flex-row">
-                    <TextInput
-                      className="mr-2 flex-1 rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-900"
-                      placeholder="Tìm thành viên"
-                      placeholderTextColor="#94a3b8"
-                      value={addableQuery}
-                      onChangeText={onChangeAddableQuery}
-                      onSubmitEditing={onSearchAddableUsers}
-                    />
-                    <TouchableOpacity
-                      className="h-12 w-12 items-center justify-center rounded-2xl bg-blue-600"
-                      activeOpacity={0.85}
-                      onPress={onSearchAddableUsers}
-                    >
-                      {isLoadingAddableUsers ? (
-                        <ActivityIndicator size="small" color="#ffffff" />
-                      ) : (
-                        <UserPlus size={19} color="#ffffff" />
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                  {addableUsers.map(user => (
-                    <AddableUserRow
-                      key={user.id}
-                      user={user}
-                      selected={selectedAddableIds.has(user.id)}
-                      onToggle={onToggleAddableUser}
-                    />
-                  ))}
-                  {!isLoadingAddableUsers && addableUsers.length === 0 ? (
-                    <Text className="mt-3 rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-500">
-                      Chua co goi y. Nguoi dung da follow qua lai va chua o
-                      trong nhom se hien o day.
-                    </Text>
-                  ) : null}
-                  {selectedAddableIds.size > 0 ? (
-                    <TouchableOpacity
-                      className="mt-2 rounded-2xl bg-blue-600 py-3"
-                      activeOpacity={0.85}
-                      onPress={onSubmitAddUsers}
-                    >
-                      <Text className="text-center text-sm font-bold text-white">
-                        Thêm {selectedAddableIds.size} người
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              ) : null}
-
-              <SectionHeader
-                title={copy.groupMembers}
-                isOpen={isMembersOpen}
-                onPress={() => onToggleSection('members')}
-              />
-              {isMembersOpen ? (
-                <View className="pb-3">
-                  {(groupInfo?.members ?? []).map(member => (
-                    <GroupMemberRow
-                      key={member.id}
-                      member={member}
-                      canRemove={
-                        Boolean(groupInfo?.isOwner) &&
-                        !member.isOwner &&
-                        member.id !== groupInfo?.ownerId
-                      }
-                      onRemove={onRemoveMember}
-                    />
-                  ))}
-                </View>
-              ) : null}
-
-              <SectionHeader
-                title={copy.sharedMedia}
-                isOpen={isMediaOpen}
-                onPress={() => onToggleSection('media')}
-              />
-              {isMediaOpen ? (
-                <View className="flex-row flex-wrap px-5 pb-4">
-                  {(assets?.media ?? []).length === 0 ? (
-                    <Text className="py-3 text-sm text-gray-500">
-                      {copy.emptySharedMedia}
-                    </Text>
-                  ) : (
-                    assets!.media.map(item => (
-                      <Image
-                        key={item.id}
-                        source={{ uri: item.uri }}
-                        className="mr-2 mt-2 h-20 w-20 rounded-xl bg-gray-100"
-                      />
-                    ))
-                  )}
-                </View>
-              ) : null}
-
-              <SectionHeader
-                title="File"
-                isOpen={isFilesOpen}
-                onPress={() => onToggleSection('files')}
-              />
-              {isFilesOpen ? (
-                <View className="px-5 pb-4">
-                  {(assets?.files ?? []).length === 0 ? (
-                    <Text className="py-3 text-sm text-gray-500">
-                      Chưa có File được chia sẻ trong hội thoại này
-                    </Text>
-                  ) : (
-                    assets!.files.map(item => (
-                      <TouchableOpacity
-                        key={item.id}
-                        className="flex-row items-center py-2"
-                        activeOpacity={0.8}
-                        onPress={() =>
-                          Linking.openURL(item.uri).catch(() => undefined)
-                        }
-                      >
-                        <FileText size={18} color="#0000ff" />
-                        <Text className="ml-2 flex-1 text-sm font-semibold text-gray-900">
-                          {item.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))
-                  )}
-                </View>
-              ) : null}
-
-              <SectionHeader
-                title="Link"
-                isOpen={isLinksOpen}
-                onPress={() => onToggleSection('links')}
-              />
-              {isLinksOpen ? (
-                <View className="px-5 pb-4">
-                  {(assets?.links ?? []).length === 0 ? (
-                    <Text className="py-3 text-sm text-gray-500">
-                      Chưa có Link được chia sẻ trong hội thoại này
-                    </Text>
-                  ) : (
-                    assets!.links.map(item => (
-                      <TouchableOpacity
-                        key={item.id}
-                        className="flex-row items-center py-2"
-                        activeOpacity={0.8}
-                        onPress={() =>
-                          Linking.openURL(item.url).catch(() => undefined)
-                        }
-                      >
-                        <LinkIcon size={18} color="#0000ff" />
-                        <Text className="ml-2 flex-1 text-sm font-semibold text-blue-700">
-                          {item.title}
-                        </Text>
-                      </TouchableOpacity>
-                    ))
-                  )}
-                </View>
-              ) : null}
-
-              <View className="mt-2 border-t border-gray-100 px-5 py-4">
-                <TouchableOpacity
-                  className="flex-row items-center py-3"
-                  activeOpacity={0.8}
-                  onPress={onClearHistory}
-                >
-                  <Trash2 size={19} color="#111827" />
-                  <Text className="ml-3 text-base text-gray-950">
-                    Xóa lịch sử trò chuyện
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="flex-row items-center py-3"
-                  activeOpacity={0.8}
-                  onPress={onLeaveGroup}
-                >
-                  <LogOut size={19} color="#dc2626" />
-                  <Text className="ml-3 text-base text-red-600">
-                    {copy.leaveGroup}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          )}
-        </SafeAreaView>
-      </Modal>
-      <Modal
-        visible={visible && activeDialog === 'add'}
-        animationType="fade"
-        transparent
-        onRequestClose={onCloseActionDialog}
-      >
-        <View className="flex-1 justify-end bg-black/45">
-          <View className="max-h-[82%] rounded-t-3xl bg-white px-5 pb-6 pt-4">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-lg font-bold text-gray-950">
-                {copy.addMembers}
-              </Text>
-              <TouchableOpacity
-                className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
-                activeOpacity={0.8}
-                onPress={onCloseActionDialog}
-              >
-                <X size={20} color="#111827" />
-              </TouchableOpacity>
-            </View>
-            <View className="mt-4 flex-row">
-              <TextInput
-                className="mr-2 flex-1 rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-900"
-                placeholder="Tim thanh vien"
-                placeholderTextColor="#94a3b8"
-                value={addableQuery}
-                onChangeText={onChangeAddableQuery}
-                onSubmitEditing={onSearchAddableUsers}
-              />
-              <TouchableOpacity
-                className="h-12 w-12 items-center justify-center rounded-2xl bg-blue-600"
-                activeOpacity={0.85}
-                onPress={onSearchAddableUsers}
-              >
-                {isLoadingAddableUsers ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <UserPlus size={19} color="#ffffff" />
-                )}
-              </TouchableOpacity>
-            </View>
-            <ScrollView className="mt-2" showsVerticalScrollIndicator={false}>
-              {addableUsers.map(user => (
-                <AddableUserRow
-                  key={user.id}
-                  user={user}
-                  selected={selectedAddableIds.has(user.id)}
-                  onToggle={onToggleAddableUser}
-                />
-              ))}
-              {!isLoadingAddableUsers && addableUsers.length === 0 ? (
-                <Text className="mt-3 rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-500">
-                  Chua co goi y. Hay thu tim theo ten hoac username.
-                </Text>
-              ) : null}
-            </ScrollView>
-            <TouchableOpacity
-              className={`mt-4 rounded-2xl py-3 ${
-                selectedAddableIds.size > 0 ? 'bg-blue-600' : 'bg-gray-200'
-              }`}
-              activeOpacity={0.85}
-              disabled={selectedAddableIds.size === 0}
-              onPress={onSubmitAddUsers}
-            >
-              <Text
-                className={`text-center text-sm font-bold ${
-                  selectedAddableIds.size > 0 ? 'text-white' : 'text-gray-500'
-                }`}
-              >
-                Them {selectedAddableIds.size} nguoi
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-      <Modal
-        visible={visible && activeDialog === 'edit'}
-        animationType="fade"
-        transparent
-        onRequestClose={onCloseActionDialog}
-      >
-        <View className="flex-1 justify-end bg-black/45">
-          <View className="rounded-t-3xl bg-white px-5 pb-6 pt-4">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-lg font-bold text-gray-950">
-                Thay doi thong tin
-              </Text>
-              <TouchableOpacity
-                className="h-9 w-9 items-center justify-center rounded-full bg-gray-100"
-                activeOpacity={0.8}
-                onPress={onCloseActionDialog}
-              >
-                <X size={20} color="#111827" />
-              </TouchableOpacity>
-            </View>
-            <View className="mt-5 items-center">
-              <Image
-                source={{ uri: editAvatar?.uri || groupInfo?.avatar }}
-                className="h-24 w-24 rounded-full bg-red-100"
-              />
-              <TouchableOpacity
-                className="mt-3 flex-row items-center rounded-full bg-gray-100 px-4 py-2"
-                activeOpacity={0.85}
-                onPress={onPickAvatar}
-              >
-                <ImagePlus size={16} color="#111827" />
-                <Text className="ml-2 text-sm font-semibold text-gray-900">
-                  Doi anh
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              className="mt-5 rounded-2xl border border-gray-200 px-4 py-3 text-base text-gray-900"
-              placeholder="Ten nhom"
-              placeholderTextColor="#94a3b8"
-              value={editName}
-              onChangeText={onChangeEditName}
-            />
-            <TouchableOpacity
-              className="mt-4 rounded-2xl bg-blue-600 py-3"
-              activeOpacity={0.85}
-              onPress={onSaveGroup}
-            >
-              <Text className="text-center text-base font-bold text-white">
-                Luu thay doi
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-      <Modal
-        visible={visible && activeDialog === 'delete'}
-        animationType="fade"
-        transparent
-        onRequestClose={onCloseActionDialog}
-      >
-        <View className="flex-1 justify-end bg-black/45">
-          <View className="rounded-t-3xl bg-white px-5 pb-6 pt-5">
-            <View className="items-center">
-              <View className="h-14 w-14 items-center justify-center rounded-full bg-red-50">
-                <Trash2 size={25} color="#dc2626" />
-              </View>
-              <Text className="mt-3 text-lg font-bold text-gray-950">
-                Xoa nhom
-              </Text>
-              <Text className="mt-2 text-center text-sm leading-5 text-gray-500">
-                Hanh dong nay se xoa nhom hien tai. Ban muon tiep tuc?
-              </Text>
-            </View>
-            <View className="mt-5 flex-row">
-              <TouchableOpacity
-                className="mr-2 flex-1 rounded-2xl bg-gray-100 py-3"
-                activeOpacity={0.85}
-                onPress={onCloseActionDialog}
-              >
-                <Text className="text-center text-sm font-bold text-gray-900">
-                  {copy.cancel}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="ml-2 flex-1 rounded-2xl bg-red-600 py-3"
-                activeOpacity={0.85}
-                onPress={onDeleteGroup}
-              >
-                <Text className="text-center text-sm font-bold text-white">
-                  {copy.delete}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </>
-  );
-}
-
 function ChatScreen({ navigation, route }: ChatScreenProps) {
   const { chat } = route.params;
   const isScreenFocused = useIsFocused();
@@ -3403,11 +2722,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
   const {
     messages,
     groupInfo,
-    groupSharedAssets,
-    addableUsers,
     isLoading,
-    isLoadingGroupInfo,
-    isLoadingAddableUsers,
     isLoadingMore,
     hasMore,
     isTyping,
@@ -3424,13 +2739,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     notifyTyping,
     stopTyping,
     loadGroupInfo,
-    searchAddableUsers,
-    addGroupUsers,
-    removeGroupUser,
-    clearGroupHistory,
-    leaveGroup,
-    deleteGroup,
-    editGroup,
   } = useChatViewModel(chat, isScreenFocused);
 
   const [text, setText] = useState('');
@@ -3496,19 +2804,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     navigation.setParams({ initialText: undefined });
   }, [navigation, notifyTyping, route.params?.initialText]);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
-  const [isGroupInfoVisible, setIsGroupInfoVisible] = useState(false);
-  const [groupInfoDialog, setGroupInfoDialog] = useState<GroupInfoDialog>(null);
-  const [expandedGroupInfoSections, setExpandedGroupInfoSections] = useState<
-    Set<GroupInfoSection>
-  >(new Set(['members', 'media', 'files', 'links']));
-  const [addableQuery, setAddableQuery] = useState('');
-  const [selectedAddableIds, setSelectedAddableIds] = useState<Set<string>>(
-    new Set(),
-  );
-  const [editGroupName, setEditGroupName] = useState(chat.name);
-  const [editGroupAvatar, setEditGroupAvatar] = useState<
-    MessageAttachment | undefined
-  >(undefined);
   const [viewerMediaItems, setViewerMediaItems] = useState<
     ChatMediaViewerItem[]
   >([]);
@@ -4338,268 +3633,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
     ],
   );
 
-  const handleOpenGroupInfo = useCallback(() => {
-    if (chat.chatType !== 'group') return;
-    setIsGroupInfoVisible(true);
-    setGroupInfoDialog(null);
-    setExpandedGroupInfoSections(
-      new Set(['members', 'media', 'files', 'links']),
-    );
-    setSelectedAddableIds(new Set());
-    loadGroupInfo()
-      .then(info => {
-        if (info?.name) setEditGroupName(info.name);
-      })
-      .catch(() => undefined);
-  }, [chat.chatType, loadGroupInfo]);
-
-  const handleCloseGroupInfo = useCallback(() => {
-    setGroupInfoDialog(null);
-    setIsGroupInfoVisible(false);
-  }, []);
-
-  const handleCloseGroupInfoDialog = useCallback(() => {
-    setGroupInfoDialog(null);
-  }, []);
-
-  const handleOpenAddMembersDialog = useCallback(() => {
-    setSelectedAddableIds(new Set());
-    setAddableQuery('');
-    setGroupInfoDialog('add');
-    searchAddableUsers('').catch(caught => {
-      Alert.alert(
-        copy.cannotFindMember,
-        caught instanceof Error ? caught.message : copy.retryHint,
-      );
-    });
-  }, [copy.cannotFindMember, copy.retryHint, searchAddableUsers]);
-
-  const handleOpenEditGroupDialog = useCallback(() => {
-    setEditGroupName(groupInfo?.name || chat.name);
-    setGroupInfoDialog('edit');
-  }, [chat.name, groupInfo?.name]);
-
-  const handleOpenDeleteGroupDialog = useCallback(() => {
-    setGroupInfoDialog('delete');
-  }, []);
-
-  const handleToggleGroupInfoSection = useCallback(
-    (section: GroupInfoSection) => {
-      setExpandedGroupInfoSections(current => {
-        const next = new Set(current);
-        if (next.has(section)) {
-          next.delete(section);
-        } else {
-          next.add(section);
-        }
-        return next;
-      });
-    },
-    [],
-  );
-
-  const handleSearchAddableUsers = useCallback(() => {
-    searchAddableUsers(addableQuery).catch(caught => {
-      Alert.alert(
-        copy.cannotFindMember,
-        caught instanceof Error ? caught.message : copy.retryHint,
-      );
-    });
-  }, [addableQuery, copy.cannotFindMember, copy.retryHint, searchAddableUsers]);
-
-  const handleToggleAddableUser = useCallback((user: GroupAddableUser) => {
-    setSelectedAddableIds(current => {
-      const next = new Set(current);
-      if (next.has(user.id)) {
-        next.delete(user.id);
-      } else {
-        next.add(user.id);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleSubmitAddUsers = useCallback(() => {
-    const userIds = [...selectedAddableIds];
-    addGroupUsers(userIds)
-      .then(success => {
-        if (success) {
-          setSelectedAddableIds(new Set());
-          setAddableQuery('');
-          setGroupInfoDialog(null);
-          searchAddableUsers('').catch(() => undefined);
-        }
-      })
-      .catch(caught => {
-        Alert.alert(
-          copy.cannotAddMember,
-          caught instanceof Error ? caught.message : copy.retryHint,
-        );
-      });
-  }, [
-    addGroupUsers,
-    copy.cannotAddMember,
-    copy.retryHint,
-    searchAddableUsers,
-    selectedAddableIds,
-  ]);
-
-  const handlePickGroupAvatar = useCallback(async () => {
-    const result = await launchImageLibrary({
-      mediaType: 'photo',
-      selectionLimit: 1,
-      quality: 0.8,
-      includeBase64: false,
-    });
-    const asset = result.assets?.[0];
-    const attachment = asset ? assetToAttachment(asset) : undefined;
-    if (attachment) {
-      setEditGroupAvatar({ ...attachment, mediaType: 'image' });
-    }
-  }, []);
-
-  const handleSaveGroup = useCallback(() => {
-    editGroup({
-      name: editGroupName.trim() || groupInfo?.name,
-      avatar: editGroupAvatar,
-    })
-      .then(info => {
-        if (info) {
-          setEditGroupAvatar(undefined);
-          setEditGroupName(info.name);
-          setGroupInfoDialog(null);
-        }
-      })
-      .catch(caught => {
-        Alert.alert(
-          copy.cannotSaveGroup,
-          caught instanceof Error ? caught.message : copy.retryHint,
-        );
-      });
-  }, [
-    copy.cannotSaveGroup,
-    copy.retryHint,
-    editGroup,
-    editGroupAvatar,
-    editGroupName,
-    groupInfo?.name,
-  ]);
-
-  const handleDeleteGroup = useCallback(() => {
-    deleteGroup()
-      .then(success => {
-        if (success) {
-          setGroupInfoDialog(null);
-          setIsGroupInfoVisible(false);
-          navigation.goBack();
-        }
-      })
-      .catch(caught => {
-        Alert.alert(
-          copy.errorTitle,
-          caught instanceof Error ? caught.message : copy.retryHint,
-        );
-      });
-  }, [copy.errorTitle, copy.retryHint, deleteGroup, navigation]);
-
-  const handleClearGroupHistory = useCallback(() => {
-    Alert.alert(copy.clearHistory, copy.clearHistoryMessage, [
-      { text: copy.cancel, style: 'cancel' },
-      {
-        text: copy.delete,
-        style: 'destructive',
-        onPress: () => {
-          clearGroupHistory()
-            .then(success => {
-              if (success) {
-                loadInitial().catch(() => undefined);
-                loadGroupInfo().catch(() => undefined);
-              }
-            })
-            .catch(caught => {
-              Alert.alert(
-                copy.cannotClearHistory,
-                caught instanceof Error ? caught.message : copy.retryHint,
-              );
-            });
-        },
-      },
-    ]);
-  }, [
-    clearGroupHistory,
-    copy.cancel,
-    copy.cannotClearHistory,
-    copy.clearHistory,
-    copy.clearHistoryMessage,
-    copy.delete,
-    copy.retryHint,
-    loadGroupInfo,
-    loadInitial,
-  ]);
-
-  const handleLeaveGroup = useCallback(() => {
-    Alert.alert(copy.leaveGroup, copy.leaveGroupMessage, [
-      { text: copy.cancel, style: 'cancel' },
-      {
-        text: copy.leaveGroupConfirm,
-        style: 'destructive',
-        onPress: () => {
-          leaveGroup()
-            .then(success => {
-              if (success) {
-                setIsGroupInfoVisible(false);
-                navigation.goBack();
-              }
-            })
-            .catch(caught => {
-              Alert.alert(
-                copy.cannotLeaveGroup,
-                caught instanceof Error ? caught.message : copy.retryHint,
-              );
-            });
-        },
-      },
-    ]);
-  }, [
-    copy.cancel,
-    copy.cannotLeaveGroup,
-    copy.leaveGroup,
-    copy.leaveGroupConfirm,
-    copy.leaveGroupMessage,
-    copy.retryHint,
-    leaveGroup,
-    navigation,
-  ]);
-
-  const handleRemoveGroupMember = useCallback(
-    (member: GroupChatMember) => {
-      Alert.alert(copy.removeMember, copy.removeMemberMessage(member.name), [
-        { text: copy.cancel, style: 'cancel' },
-        {
-          text: copy.delete,
-          style: 'destructive',
-          onPress: () => {
-            removeGroupUser(member.id).catch(caught => {
-              Alert.alert(
-                copy.cannotRemoveMember,
-                caught instanceof Error ? caught.message : copy.retryHint,
-              );
-            });
-          },
-        },
-      ]);
-    },
-    [
-      copy.cancel,
-      copy.cannotRemoveMember,
-      copy.delete,
-      copy.removeMember,
-      copy.removeMemberMessage,
-      copy.retryHint,
-      removeGroupUser,
-    ],
-  );
-
   const conversationPartnerId = useMemo(() => {
     if (chat.chatType !== 'user') return '';
     return chat.participantId || chat.userId || '';
@@ -4607,13 +3640,13 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
 
   const handleOpenConversationInfo = useCallback(() => {
     if (chat.chatType === 'group') {
-      handleOpenGroupInfo();
+      navigation.navigate(ROUTES.GROUP_INFO, { chat });
       return;
     }
     if (chat.chatType === 'user' && conversationPartnerId) {
       navigation.navigate(ROUTES.CONVERSATION_DETAILS, { chat });
     }
-  }, [chat, conversationPartnerId, handleOpenGroupInfo, navigation]);
+  }, [chat, conversationPartnerId, navigation]);
 
   const conversationSubtitle = useMemo(() => {
     if (chat.chatType === 'group') {
@@ -4673,7 +3706,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         {
           key: 'info',
           icon: <Info size={21} color="#0000ff" />,
-          onPress: handleOpenGroupInfo,
+          onPress: handleOpenConversationInfo,
         },
       ];
     }
@@ -4690,7 +3723,7 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
         onPress: () => handleStartConversationCall('video'),
       },
     ];
-  }, [chat.chatType, handleOpenGroupInfo, handleStartConversationCall]);
+  }, [chat.chatType, handleOpenConversationInfo, handleStartConversationCall]);
 
   const selectedPinnedMessage = selectedOptionMessage
     ? pinnedMessages.find(message => message.id === selectedOptionMessage.id)
@@ -5208,39 +4241,6 @@ function ChatScreen({ navigation, route }: ChatScreenProps) {
           </Animated.View>
         </View>
       </KeyboardAvoidingView>
-      <GroupInfoModal
-        visible={isGroupInfoVisible}
-        groupInfo={groupInfo}
-        assets={groupSharedAssets}
-        addableUsers={addableUsers}
-        selectedAddableIds={selectedAddableIds}
-        addableQuery={addableQuery}
-        editName={editGroupName}
-        editAvatar={editGroupAvatar}
-        activeDialog={groupInfoDialog}
-        isLoading={isLoadingGroupInfo}
-        isLoadingAddableUsers={isLoadingAddableUsers}
-        expandedSections={expandedGroupInfoSections}
-        onClose={handleCloseGroupInfo}
-        onOpenAddMembers={handleOpenAddMembersDialog}
-        onOpenEditGroup={handleOpenEditGroupDialog}
-        onOpenDeleteGroup={handleOpenDeleteGroupDialog}
-        onCloseActionDialog={handleCloseGroupInfoDialog}
-        onToggleSection={handleToggleGroupInfoSection}
-        onChangeAddableQuery={setAddableQuery}
-        onSearchAddableUsers={handleSearchAddableUsers}
-        onToggleAddableUser={handleToggleAddableUser}
-        onSubmitAddUsers={handleSubmitAddUsers}
-        onChangeEditName={setEditGroupName}
-        onPickAvatar={handlePickGroupAvatar}
-        onSaveGroup={handleSaveGroup}
-        onDeleteGroup={handleDeleteGroup}
-        onClearHistory={handleClearGroupHistory}
-        onLeaveGroup={handleLeaveGroup}
-        onRemoveMember={handleRemoveGroupMember}
-        topInset={insets.top}
-        copy={copy}
-      />
       <ChatMediaViewerModal
         items={viewerMediaItems}
         index={viewerMediaIndex}
