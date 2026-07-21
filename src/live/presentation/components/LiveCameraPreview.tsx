@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  PermissionsAndroid,
   Platform,
   StyleSheet,
   Text,
@@ -9,13 +8,25 @@ import {
   View,
   requireNativeComponent,
 } from 'react-native';
-import type { ViewProps } from 'react-native';
+import type { NativeSyntheticEvent, ViewProps } from 'react-native';
+import { Camera, CameraType } from 'react-native-camera-kit';
+import { requestCallMediaPermissions } from '../../../shared-kernel/application/utils/microphonePermission';
 
 type CameraFacing = 'front' | 'back';
+
+export type LiveCameraPreviewStatus =
+  | 'checking'
+  | 'ready'
+  | 'denied'
+  | 'error'
+  | 'stopped';
 
 type NativeLiveCameraPreviewProps = ViewProps & {
   cameraFacing?: CameraFacing;
   enabled?: boolean;
+  onPreviewStatusChange?: (
+    event: NativeSyntheticEvent<{ status: string; message?: string }>,
+  ) => void;
 };
 
 const absoluteFillStyle = {
@@ -28,59 +39,93 @@ const absoluteFillStyle = {
 
 const NativeLiveCameraPreview =
   Platform.OS === 'android'
-    ? requireNativeComponent<NativeLiveCameraPreviewProps>('VnseeaLiveCameraPreview')
+    ? requireNativeComponent<NativeLiveCameraPreviewProps>(
+        'VnseeaLiveCameraPreview',
+      )
     : null;
-
-async function requestAndroidLivePermissions() {
-  const result = await PermissionsAndroid.requestMultiple([
-    PermissionsAndroid.PERMISSIONS.CAMERA,
-    PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-  ]);
-
-  return (
-    result[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED &&
-    result[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED
-  );
-}
 
 export function LiveCameraPreview({
   cameraFacing = 'front',
   enabled = true,
+  onStatusChange,
 }: {
   cameraFacing?: CameraFacing;
   enabled?: boolean;
+  onStatusChange?: (status: LiveCameraPreviewStatus) => void;
 }) {
-  const [permissionState, setPermissionState] = useState<
-    'checking' | 'granted' | 'denied'
-  >(Platform.OS === 'android' ? 'checking' : 'denied');
+  const [permissionState, setPermissionState] =
+    useState<LiveCameraPreviewStatus>('checking');
+  const [permissionGranted, setPermissionGranted] = useState(false);
 
   const requestPermissions = useCallback(async () => {
-    if (Platform.OS !== 'android') {
-      setPermissionState('denied');
+    if (!enabled) {
+      setPermissionGranted(false);
+      setPermissionState('stopped');
       return;
     }
 
+    setPermissionGranted(false);
     setPermissionState('checking');
-    const granted = await requestAndroidLivePermissions();
-    setPermissionState(granted ? 'granted' : 'denied');
-  }, []);
+    const granted = await requestCallMediaPermissions('video');
+    setPermissionGranted(granted);
+    if (!granted) setPermissionState('denied');
+  }, [enabled]);
+
+  const handlePreviewReady = useCallback(() => {
+    if (enabled && permissionGranted) setPermissionState('ready');
+  }, [enabled, permissionGranted]);
+
+  const handlePreviewError = useCallback(
+    (event?: { nativeEvent?: { errorMessage?: string; message?: string } }) => {
+      const message =
+        event?.nativeEvent?.errorMessage || event?.nativeEvent?.message;
+      console.error('[LiveCameraPreview] preview error:', message || 'unknown');
+      setPermissionState('error');
+    },
+    [],
+  );
+
+  const handleNativePreviewStatus = useCallback(
+    (event: NativeSyntheticEvent<{ status: string; message?: string }>) => {
+      const status = event.nativeEvent.status;
+      if (status === 'ready') {
+        handlePreviewReady();
+      } else if (status === 'error') {
+        handlePreviewError({ nativeEvent: event.nativeEvent });
+      } else if (status === 'stopped' && !enabled) {
+        setPermissionState('stopped');
+      }
+    },
+    [enabled, handlePreviewError, handlePreviewReady],
+  );
 
   useEffect(() => {
     requestPermissions().catch(error => {
       console.error('[LiveCameraPreview] permission error:', error);
-      setPermissionState('denied');
+      setPermissionGranted(false);
+      setPermissionState('error');
     });
   }, [requestPermissions]);
 
-  if (Platform.OS !== 'android' || !NativeLiveCameraPreview) {
-    return (
-      <View style={styles.placeholder}>
-        <Text style={styles.placeholderText}>Camera live tạm thời chỉ hỗ trợ Android.</Text>
-      </View>
-    );
-  }
+  useEffect(() => {
+    onStatusChange?.(permissionState);
+  }, [onStatusChange, permissionState]);
 
-  if (permissionState === 'checking') {
+  useEffect(() => {
+    if (!enabled || !permissionGranted || permissionState !== 'checking') {
+      return undefined;
+    }
+
+    const timeout = setTimeout(() => {
+      console.error('[LiveCameraPreview] preview startup timed out');
+      setPermissionState('error');
+    }, 6000);
+    return () => clearTimeout(timeout);
+  }, [enabled, permissionGranted, permissionState]);
+
+  if (!enabled || permissionState === 'stopped') return null;
+
+  if (permissionState === 'checking' && !permissionGranted) {
     return (
       <View style={styles.placeholder}>
         <ActivityIndicator color="#ffffff" />
@@ -89,7 +134,7 @@ export function LiveCameraPreview({
     );
   }
 
-  if (permissionState === 'denied') {
+  if (permissionState === 'denied' || permissionState === 'error') {
     return (
       <View style={styles.placeholder}>
         <Text style={styles.placeholderTitle}>Chưa có quyền camera</Text>
@@ -107,10 +152,33 @@ export function LiveCameraPreview({
     );
   }
 
+  if (Platform.OS === 'ios') {
+    return (
+      <Camera
+        cameraType={
+          cameraFacing === 'front' ? CameraType.Front : CameraType.Back
+        }
+        onError={handlePreviewError}
+        onZoom={handlePreviewReady}
+        resizeMode="cover"
+        style={absoluteFillStyle}
+      />
+    );
+  }
+
+  if (!NativeLiveCameraPreview) {
+    return (
+      <View style={styles.placeholder}>
+        <Text style={styles.placeholderTitle}>Không thể mở camera</Text>
+      </View>
+    );
+  }
+
   return (
     <NativeLiveCameraPreview
       cameraFacing={cameraFacing}
       enabled={enabled}
+      onPreviewStatusChange={handleNativePreviewStatus}
       style={absoluteFillStyle}
     />
   );

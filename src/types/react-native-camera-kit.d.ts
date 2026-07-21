@@ -18,6 +18,10 @@ declare module 'react-native-camera-kit' {
     laserColor?: string;
     frameColor?: string;
     surfaceColor?: string;
+    resizeMode?: 'cover' | 'contain';
+    iOsDeferredStart?: boolean;
+    onZoom?: (event: { nativeEvent: { zoom: number } }) => void;
+    onError?: (event: { nativeEvent: { errorMessage: string } }) => void;
     onReadCode?: (event: { nativeEvent: { codeStringValue: string } }) => void;
     ref?: React.Ref<any>;
   }

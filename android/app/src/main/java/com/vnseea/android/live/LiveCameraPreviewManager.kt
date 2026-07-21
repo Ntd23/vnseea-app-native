@@ -20,4 +20,12 @@ class LiveCameraPreviewManager : SimpleViewManager<LiveCameraPreviewView>() {
   fun setEnabled(view: LiveCameraPreviewView, value: Boolean) {
     view.setPreviewEnabled(value)
   }
+
+  override fun getExportedCustomDirectEventTypeConstants(): Map<String, Any> =
+    (super.getExportedCustomDirectEventTypeConstants() ?: mutableMapOf()).apply {
+      put(
+        "topPreviewStatusChange",
+        mapOf("registrationName" to "onPreviewStatusChange"),
+      )
+    }
 }

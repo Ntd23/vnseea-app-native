@@ -1,4 +1,5 @@
 <?php
+// English description: Handles mobile API live stream create, heartbeat, join, and end actions.
 
 if (empty($_POST['type'])) {
 	$error_code    = 4;
@@ -6,76 +7,21 @@ if (empty($_POST['type'])) {
 }
 else{
 	if ($_POST['type'] == 'create') {
-
-		if (empty($_POST['stream_name'])) {
-			$error_code    = 5;
-		    $error_message = 'stream_name can not be empty';
-    	}
-    	else{
-            $live_privacy_request = $_POST;
-            if (!isset($live_privacy_request['postPrivacy']) && isset($_POST['post_privacy'])) {
-                $live_privacy_request['postPrivacy'] = $_POST['post_privacy'];
-            } elseif (!isset($live_privacy_request['postPrivacy']) && !empty($_COOKIE['post_privacy'])) {
-                $live_privacy_request['postPrivacy'] = $_COOKIE['post_privacy'];
-            }
-            $live_privacy_request['postType'] = 'live';
-            $live_privacy = VNSEEA_NormalizePostPrivacyRequest($live_privacy_request);
-            $postPrivacy = $live_privacy['postPrivacy'];
-            $token = null;
-            if (!empty($_POST['token']) && !is_null($_POST['token'])) {
-                $token = Wo_Secure($_POST['token']);
-            }
-    		$post_id = $db->insert(T_POSTS,array('user_id' => $wo['user']['id'],
-		    	                                 'postText' => '',
-                                                 'postType' => 'live',
-                                                 'postPrivacy' => $postPrivacy,
-                                                 'is_anonymous' => $live_privacy['is_anonymous'],
-                                                 'agora_token' => $token,
-                                                 'stream_name' => Wo_Secure($_POST['stream_name']),
-                                                 'time' => time()));
-    		$db->where('id',$post_id)->update(T_POSTS,array('post_id' => $post_id));
-            // Wo_RunInBackground(array('status' => 200,
-            //                          'post_id' => $post_id));
-
-            if ($wo['config']['agora_live_video'] == 1 && !empty($wo['config']['agora_app_id']) && !empty($wo['config']['agora_customer_id']) && !empty($wo['config']['agora_customer_certificate']) && $wo['config']['live_video_save'] == 1) {
-
-                if ($wo['config']['amazone_s3_2'] == 1 && !empty($wo['config']['bucket_name_2']) && !empty($wo['config']['amazone_s3_key_2']) && !empty($wo['config']['amazone_s3_s_key_2']) && !empty($wo['config']['region_2'])) {
-
-                    $region_array = array('us-east-1' => 0,'us-east-2' => 1,'us-west-1' => 2,'us-west-2' => 3,'eu-west-1' => 4,'eu-west-2' => 5,'eu-west-3' => 6,'eu-central-1' => 7,'ap-southeast-1' => 8,'ap-southeast-2' => 9,'ap-northeast-1' => 10,'ap-northeast-2' => 11,'sa-east-1' => 12,'ca-central-1' => 13,'ap-south-1' => 14,'cn-north-1' => 15,'us-gov-west-1' => 17);
-
-                    if (in_array(strtolower($wo['config']['region_2']),array_keys($region_array) )) {
-
-                       // StartCloudRecording(1,$region_array[strtolower($wo['config']['region_2'])],$wo['config']['bucket_name_2'],$wo['config']['amazone_s3_key_2'],$wo['config']['amazone_s3_s_key_2'],$_POST['stream_name'],explode('_', $_POST['stream_name'])[2],$post_id);
-                    }
-                    
-                }
-            }
-            Wo_notifyUsersLive($post_id);
-            $post_data = Wo_PostData($post_id);
-            unset($post_data['get_post_comments']);
-
-            foreach ($non_allowed as $key => $value) {
-	           unset($post_data['publisher'][$value]);
-	        }
-
-	        if (!empty($post_data['blog'])) {
-	        	foreach ($non_allowed as $key => $value) {
-		           unset($post_data['blog']['author'][$value]);
-		        }
-	        }
-	        if (!empty($post_data['event'])) {
-	        	foreach ($non_allowed as $key => $value) {
-		           unset($post_data['event']['user_data'][$value]);
-		        }
-	        }
-            $post_data['shared_from'] = (empty($post_data['shared_from'])) ? null : $post_data['shared_from'];
-
-            $response_data = array(
-                                'api_status' => 200,
-                                'post_data' => $post_data
-                            );
-    	}
-	}
+		$live_result = VNSEEA_CreateLiveSession($_POST, 'api_v2');
+		$response_data = array_merge(array(
+			'api_status' => (int) $live_result['status']
+		), $live_result);
+		if ((int) $live_result['status'] === 200) {
+			$post_data = Wo_PostData($live_result['post_id']);
+			if (!empty($post_data)) {
+				unset($post_data['get_post_comments']);
+				foreach ($non_allowed as $key => $value) {
+					unset($post_data['publisher'][$value]);
+				}
+			}
+			$response_data['post_data'] = $post_data;
+		}
+		}
 
 	if ($_POST['type'] == 'check_comments') {
 		if (!empty($_POST['post_id']) && is_numeric($_POST['post_id']) && $_POST['post_id'] > 0) {
@@ -234,41 +180,31 @@ else{
 
     if ($_POST['type'] == 'delete') {
         if (!empty($_POST['post_id']) && is_numeric($_POST['post_id']) && $_POST['post_id'] > 0) {
-            $db->where('post_id',Wo_Secure($_POST['post_id']))->where('user_id',$wo['user']['id'])->update(T_POSTS,array('live_ended' => 1));
-            if ($wo['config']['live_video_save'] == 0) {
-                // $db->where('post_id',Wo_Secure($_POST['post_id']))->where('user_id',$wo['user']['id'])->delete(T_POSTS);
-                // $db->where('parent_id',Wo_Secure($_POST['post_id']))->delete(T_POSTS);
-
-                Wo_DeletePost(Wo_Secure($_POST['post_id']));
+            $post_id = Wo_Secure($_POST['post_id']);
+            $post = $db->where('post_id',$post_id)->where('user_id',$wo['user']['id'])->getOne(T_POSTS);
+            if (!empty($post)) {
+                $db->where('post_id',$post_id)->where('user_id',$wo['user']['id'])->update(T_POSTS,array('live_ended' => 1,'live_time' => 0));
+                if ($wo['config']['agora_live_video'] == 1 && !empty($wo['config']['agora_app_id']) && !empty($wo['config']['agora_customer_id']) && !empty($wo['config']['agora_customer_certificate']) && $wo['config']['live_video_save'] == 1) {
+                    try {
+                        $stream_parts = !empty($post->stream_name) ? explode('_', $post->stream_name) : array();
+                        StopCloudRecording(array('resourceId' => $post->agora_resource_id,
+                                                 'sid' => $post->agora_sid,
+                                                 'cname' => $post->stream_name,
+                                                 'post_id' => $post->post_id,
+                                                 'token' => $post->agora_token,
+                                                 'uid' => !empty($stream_parts[2]) ? $stream_parts[2] : 12));
+                    } catch (Exception $e) {
+                    }
+                }
+                Wo_DeletePost($post_id);
                 $response_data = array(
                                     'api_status' => 200,
                                     'message' => 'deleted successfully'
                                 );
             }
             else{
-                if ($wo['config']['agora_live_video'] == 1 && !empty($wo['config']['agora_app_id']) && !empty($wo['config']['agora_customer_id']) && !empty($wo['config']['agora_customer_certificate']) && $wo['config']['live_video_save'] == 1) {
-                    $post = $db->where('post_id',Wo_Secure($_POST['post_id']))->getOne(T_POSTS);
-                    if (!empty($post)) {
-                        StopCloudRecording(array('resourceId' => $post->agora_resource_id,
-                                                 'sid' => $post->agora_sid,
-                                                 'cname' => $post->stream_name,
-                                                 'post_id' => $post->post_id,
-                                                 'uid' => explode('_', $post->stream_name)[2]));
-                    }
-                }
-                if ($wo['config']['agora_live_video'] == 1 && $wo['config']['amazone_s3_2'] != 1) {
-                    try {
-                        Wo_DeletePost(Wo_Secure($_POST['post_id']));
-                        $response_data = array(
-                                            'api_status' => 200,
-                                            'message' => 'deleted successfully'
-                                        );
-                    } catch (Exception $e) {
-                        $error_code    = 6;
-                        $error_message = 'something went wrong';
-                        
-                    }
-                }
+                $error_code    = 6;
+                $error_message = 'post not found';
             }
         }
         else{
