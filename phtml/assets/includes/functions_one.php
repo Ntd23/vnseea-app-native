@@ -3208,6 +3208,55 @@ function Wo_PublishRealtimeNotification($recipient_id, $notification_id = 0, $ki
     return true;
 }
 
+function VNSEEA_PublishRealtimeMessageChange($message_id, $message_data = null)
+{
+    global $db;
+    $message_id = (int)$message_id;
+    if ($message_id < 1) {
+        return false;
+    }
+
+    $message = !empty($message_data)
+        ? $message_data
+        : $db->where('id', $message_id)->getOne(T_MESSAGES);
+    if (empty($message)) {
+        return false;
+    }
+
+    $recipient_ids = array();
+    if (!empty($message->group_id)) {
+        $from_id = (int)$message->from_id;
+        if ($from_id > 0) {
+            $recipient_ids[$from_id] = true;
+        }
+        $group_members = Wo_GetGChatMemebers($message->group_id);
+        if (is_array($group_members)) {
+            foreach ($group_members as $group_member) {
+                $member_id = is_array($group_member)
+                    ? (int)($group_member['user_id'] ?? 0)
+                    : (int)($group_member->user_id ?? 0);
+                if ($member_id > 0) {
+                    $recipient_ids[$member_id] = true;
+                }
+            }
+        }
+    } else {
+        $from_id = (int)$message->from_id;
+        $to_id = (int)$message->to_id;
+        if ($from_id > 0) {
+            $recipient_ids[$from_id] = true;
+        }
+        if ($to_id > 0) {
+            $recipient_ids[$to_id] = true;
+        }
+    }
+
+    foreach (array_keys($recipient_ids) as $recipient_id) {
+        Wo_PublishRealtimeNotification($recipient_id, 0, 'message');
+    }
+    return !empty($recipient_ids);
+}
+
 function Wo_PublishRealtimePostChange($post_id, $mutation)
 {
     static $realtime_config = null;
@@ -4796,7 +4845,7 @@ function Wo_RegisterMessage($ms_data = array())
             $from_id = $ms_data['from_id'];
         }
         $update_user_chats = Wo_CreateUserChat($ms_data['to_id'], $from_id);
-        Wo_PublishRealtimeNotification($ms_data['to_id'], 0, 'message');
+        VNSEEA_PublishRealtimeMessageChange($message_id);
         return $message_id;
     } else {
         return false;
@@ -4871,18 +4920,7 @@ function Wo_RegisterMessageGroup($ms_data = array())
         if (!empty($ms_data['from_id'])) {
             $from_id = $ms_data['from_id'];
         }
-        $group_members = Wo_GetGChatMemebers($ms_data['group_id']);
-        if (is_array($group_members)) {
-            foreach ($group_members as $group_member) {
-                $member_id = 0;
-                if (is_array($group_member) && !empty($group_member['user_id'])) {
-                    $member_id = (int) $group_member['user_id'];
-                }
-                if ($member_id > 0 && $member_id != $from_id) {
-                    Wo_PublishRealtimeNotification($member_id, 0, 'message');
-                }
-            }
-        }
+        VNSEEA_PublishRealtimeMessageChange($message_id);
         return $message_id;
     } else {
         return false;
@@ -4951,18 +4989,7 @@ function Wo_RegisterGroupMessage($ms_data = array())
     $query = mysqli_query($sqlConnect, " INSERT INTO " . T_MESSAGES . " ({$fields}) VALUES ({$data})");
     if ($query) {
         $message_id = mysqli_insert_id($sqlConnect);
-        $group_members = Wo_GetGChatMemebers($ms_data['group_id']);
-        if (is_array($group_members)) {
-            foreach ($group_members as $group_member) {
-                $member_id = 0;
-                if (is_array($group_member) && !empty($group_member['user_id'])) {
-                    $member_id = (int) $group_member['user_id'];
-                }
-                if ($member_id > 0 && $member_id != (int) $ms_data['from_id']) {
-                    Wo_PublishRealtimeNotification($member_id, 0, 'message');
-                }
-            }
-        }
+        VNSEEA_PublishRealtimeMessageChange($message_id);
         return $message_id;
     } else {
         return false;
@@ -5856,6 +5883,8 @@ function Wo_ShareFile($data = array(), $type = 0, $crop = true)
                 'audio/ogg',
                 'audio/mp4',
                 'audio/x-m4a',
+                'audio/m4a',
+                'audio/aac',
             )));
         }
         if (!in_array($data['type'], $mime_types)) {

@@ -1,8 +1,11 @@
 <?php
-if (!empty($_POST['message_id']) && is_numeric($_POST['message_id']) && $_POST['message_id'] > 0 && !empty($_POST['chat_id']) && is_numeric($_POST['chat_id']) && $_POST['chat_id'] > 0 && !empty($_POST['pin']) && in_array($_POST['pin'], array('yes','no')) && !empty($_POST['type']) && in_array($_POST['type'], array('user','page','group'))) {
+if (!empty($_POST['message_id']) && is_numeric($_POST['message_id']) && $_POST['message_id'] > 0 && !empty($_POST['chat_id']) && is_numeric($_POST['chat_id']) && $_POST['chat_id'] > 0 && !empty($_POST['pin']) && in_array($_POST['pin'], array('yes','no')) && !empty($_POST['type']) && in_array($_POST['type'], array('user','page','group')) && VNSEEA_IsMessageInAuthorizedChat($_POST['type'], $_POST['chat_id'], $_POST['message_id'])) {
 	$info = $db->where('user_id',$wo['user']['id'])->where('message_id',Wo_Secure($_POST['message_id']))->getOne(T_MUTE);
 	if (!empty($info)) {
-		$db->where('id',$info->id)->update(T_MUTE,array('pin' => Wo_Secure($_POST['pin'])));
+		$mutation_succeeded = $db->where('id',$info->id)->update(T_MUTE,array(
+			'pin' => Wo_Secure($_POST['pin']),
+			'time' => time()
+		));
 	}
 	else{
 		$update_data['user_id'] = $wo['user']['id'];
@@ -11,12 +14,19 @@ if (!empty($_POST['message_id']) && is_numeric($_POST['message_id']) && $_POST['
 		$update_data['pin'] = Wo_Secure($_POST['pin']);
 		$update_data['message_id'] = Wo_Secure($_POST['message_id']);
 		$update_data['chat_id'] = Wo_Secure($_POST['chat_id']);
-		$db->insert(T_MUTE,$update_data);
+		$mutation_succeeded = (bool)$db->insert(T_MUTE,$update_data);
 	}
-	$response_data = array(
+	if ($mutation_succeeded !== false) {
+		VNSEEA_PublishRealtimeMessageChange($_POST['message_id']);
+		$response_data = array(
             'api_status' => 200,
             'message' => 'message updated'
         );
+	}
+	else{
+		$error_code = 5;
+		$error_message = 'could not update pinned message';
+	}
 
 }
 else{

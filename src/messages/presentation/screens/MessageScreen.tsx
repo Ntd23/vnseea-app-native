@@ -6,6 +6,8 @@ import {
 
   ActivityIndicator,
 
+  AppState,
+
   Alert,
 
   Animated,
@@ -60,8 +62,6 @@ import {
   ImageIcon,
 
   Link2,
-
-  ListChecks,
 
   MessageCircle,
 
@@ -148,6 +148,11 @@ import { ColorPicker } from '../../../shared-kernel/presentation/components/Colo
 
 import { HeaderProfileDrawer } from '../../../feed/presentation/components/HeaderProfileDrawer';
 import { sortMessageUserChats } from '../utils/messageListOrdering';
+import {
+  isMessageRealtimeConnected,
+  subscribeToMessageInvalidations,
+  subscribeToMessageRealtimeConnection,
+} from '../../infrastructure/realtime/messageRealtimeRuntime';
 import Svg, {
   Circle as SvgCircle,
   Defs,
@@ -2391,18 +2396,28 @@ function MessageLabelsModal({
 
                   {/* Side-by-side color picker indicator & Create button */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                    <TouchableOpacity
-                      style={{
-                        width: 70,
-                        height: 36,
-                        borderRadius: 6,
-                        backgroundColor: hexOK(labelColor) ? labelColor : DEFAULT_LABEL_COLOR,
-                        borderWidth: 1,
-                        borderColor: '#E2E8F0',
-                      }}
-                      activeOpacity={0.8}
-                      onPress={() => setShowColorPicker(v => !v)}
-                    />
+                    {Platform.OS === 'ios' ? (
+                      <View className="flex-1">
+                        <ColorPicker
+                          value={labelColor}
+                          onChange={setLabelColor}
+                          label={copy.labelColorTitle}
+                        />
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={{
+                          width: 70,
+                          height: 36,
+                          borderRadius: 6,
+                          backgroundColor: hexOK(labelColor) ? labelColor : DEFAULT_LABEL_COLOR,
+                          borderWidth: 1,
+                          borderColor: '#E2E8F0',
+                        }}
+                        activeOpacity={0.8}
+                        onPress={() => setShowColorPicker(v => !v)}
+                      />
+                    )}
                     <TouchableOpacity
                       style={{
                         backgroundColor: '#3B82F6',
@@ -2424,7 +2439,7 @@ function MessageLabelsModal({
                     </TouchableOpacity>
                   </View>
 
-                  {showColorPicker && (
+                  {Platform.OS !== 'ios' && showColorPicker && (
                     <View className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 mb-4">
                       <ColorPicker
                         value={labelColor}
@@ -2566,8 +2581,6 @@ function MessageScreen() {
 
     sendBulkMessages,
 
-    markAllAsRead,
-
     createLabel,
 
     deleteLabel,
@@ -2581,6 +2594,10 @@ function MessageScreen() {
   } = useMessagesViewModel();
 
   const [refreshing, setRefreshing] = useState(false);
+
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(
+    isMessageRealtimeConnected(),
+  );
 
   const [query, setQuery] = useState('');
 
@@ -2617,24 +2634,6 @@ function MessageScreen() {
     activeFilter === 'users' ? screenWidth : activeFilter === 'groups' ? screenWidth * 2 : 0
 
   ).current;
-
-  const hasUnreadChats = useMemo(
-    () => chats.some(chat => chat.unreadCount > 0),
-    [chats],
-  );
-
-  const handleMarkAllAsRead = useCallback(async () => {
-    if (!hasUnreadChats) {
-      showToast({ message: 'Không có tin nhắn chưa đọc.', type: 'warning' });
-      return;
-    }
-
-    const ok = await markAllAsRead();
-    showToast({
-      message: ok ? 'Đã đánh dấu là đã đọc.' : 'Không đánh dấu đã đọc được.',
-      type: ok ? 'success' : 'error',
-    });
-  }, [hasUnreadChats, markAllAsRead]);
 
   const handleCreateGroupChat = useCallback(() => {
     navigation.navigate(ROUTES.CREATE_GROUP_CHAT);
@@ -2708,9 +2707,45 @@ function MessageScreen() {
 
   }, [screenWidth]);
 
+  useEffect(
+    () => subscribeToMessageRealtimeConnection(setIsRealtimeConnected),
+    [],
+  );
+
   useFocusEffect(
 
     useCallback(() => {
+
+      let realtimeRefreshRunning = false;
+      let realtimeRefreshDirty = false;
+      let realtimeRefreshCancelled = false;
+      let realtimeRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const flushRealtimeRefresh = async () => {
+        if (realtimeRefreshRunning || realtimeRefreshCancelled) return;
+        realtimeRefreshRunning = true;
+        try {
+          while (realtimeRefreshDirty && !realtimeRefreshCancelled) {
+            realtimeRefreshDirty = false;
+            const refreshed = await loadChats(false, {
+              forceRefresh: true,
+              includeDiscovery: false,
+            });
+            if (!refreshed && !realtimeRefreshCancelled) {
+              realtimeRefreshDirty = true;
+              if (!realtimeRetryTimer) {
+                realtimeRetryTimer = setTimeout(() => {
+                  realtimeRetryTimer = null;
+                  flushRealtimeRefresh().catch(() => undefined);
+                }, 300);
+              }
+              return;
+            }
+          }
+        } finally {
+          realtimeRefreshRunning = false;
+        }
+      };
 
       if (hasFocusedOnceRef.current) {
 
@@ -2724,15 +2759,32 @@ function MessageScreen() {
 
       }
 
+      const unsubscribeRealtime = subscribeToMessageInvalidations(() => {
+        realtimeRefreshDirty = true;
+        flushRealtimeRefresh().catch(() => undefined);
+      });
+
+      if (isRealtimeConnected) {
+        return () => {
+          realtimeRefreshCancelled = true;
+          unsubscribeRealtime();
+          if (realtimeRetryTimer) clearTimeout(realtimeRetryTimer);
+        };
+      }
+
       const interval = setInterval(() => {
-
+        if (AppState.currentState !== 'active') return;
         loadChats(false).catch(() => undefined);
-
       }, 5000);
 
-      return () => clearInterval(interval);
+      return () => {
+        realtimeRefreshCancelled = true;
+        unsubscribeRealtime();
+        if (realtimeRetryTimer) clearTimeout(realtimeRetryTimer);
+        clearInterval(interval);
+      };
 
-    }, [loadChats, loadFollowingUserIds]),
+    }, [isRealtimeConnected, loadChats, loadFollowingUserIds]),
 
   );
 
@@ -3959,45 +4011,6 @@ function MessageScreen() {
         </View>
 
       </ScrollView>
-
-      {activeFilter !== 'broadcast' && (
-
-        <View className="absolute bottom-6 right-6">
-
-          <Pressable
-
-            className="h-14 w-14 items-center justify-center rounded-full bg-blue-600"
-
-            style={({ pressed }: { pressed: boolean }) => ({
-
-              shadowColor: '#2563eb',
-
-              shadowOffset: { width: 0, height: 4 },
-
-              shadowOpacity: 0.3,
-
-              shadowRadius: 8,
-
-              elevation: 8,
-
-              opacity: pressed ? 0.85 : 1,
-
-              transform: [{ scale: pressed ? 0.95 : 1 }],
-
-            })}
-
-            onPress={handleMarkAllAsRead}
-            disabled={!hasUnreadChats}
-
-          >
-
-            <ListChecks size={24} color="#ffffff" />
-
-          </Pressable>
-
-        </View>
-
-      )}
 
       <MessageLabelsModal
 

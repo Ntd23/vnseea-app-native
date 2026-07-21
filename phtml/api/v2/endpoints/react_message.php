@@ -38,6 +38,7 @@ if (!$has_message_id || !$has_valid_action || !$has_valid_reaction) {
             $error_code = 7;
             $error_message = 'could not update message reaction.';
         } else {
+            VNSEEA_PublishRealtimeMessageChange($message_id);
             $response_data = array(
                 'api_status' => 200,
                 'action' => $action,
