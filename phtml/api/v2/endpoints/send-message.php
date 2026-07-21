@@ -43,8 +43,9 @@ if (empty($error_code)) {
     } else {
         if (empty($_POST['product_id'])) {
 
-    	    $mediaFilename = '';
+            $mediaFilename = '';
             $mediaName     = '';
+            $is_audio_message = !empty($_POST['message_type']) && strtolower((string)$_POST['message_type']) === 'audio';
             if (isset($_FILES['file']['name'])) {
                 $fileInfo      = array(
                     'file' => $_FILES["file"]["tmp_name"],
@@ -52,9 +53,30 @@ if (empty($error_code)) {
                     'size' => $_FILES["file"]["size"],
                     'type' => $_FILES["file"]["type"]
                 );
-                $media         = Wo_ShareFile($fileInfo);
-                $mediaFilename = $media['filename'];
-                $mediaName     = $_FILES['file']['name'];
+                $upload_is_valid = !empty($_FILES['file']['tmp_name']) &&
+                    (int)$_FILES['file']['size'] > 0 &&
+                    (!isset($_FILES['file']['error']) || (int)$_FILES['file']['error'] === UPLOAD_ERR_OK);
+                if (!$upload_is_valid) {
+                    $media = false;
+                } else if ($is_audio_message) {
+                    $fileInfo['is_sound'] = 1;
+                    $fileInfo['types'] = 'mp3,wav,ogg,m4a,mp4,aac';
+                    $audio_extension = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
+                    if (!in_array($audio_extension, array('mp3', 'wav', 'ogg', 'm4a', 'mp4', 'aac'))) {
+                        $media = false;
+                    } else {
+                        $media = Wo_ShareFile($fileInfo);
+                    }
+                } else {
+                    $media = Wo_ShareFile($fileInfo);
+                }
+                if ($media === false || empty($media['filename'])) {
+                    $error_code = 7;
+                    $error_message = 'Could not upload the message file.';
+                } else {
+                    $mediaFilename = $media['filename'];
+                    $mediaName = $_FILES['file']['name'];
+                }
             }
             if (!empty($_POST['image_url'])) {
             	$fileend = '_url_image';
@@ -242,10 +264,9 @@ if (empty($error_code)) {
 	            );
 	        }
         }
-        else{
+        else if (empty($error_message)){
             $error_code    = 6;
             $error_message = 'something went wrong.';
         }
     }
 }
-

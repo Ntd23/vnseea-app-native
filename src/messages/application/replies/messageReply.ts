@@ -1,0 +1,193 @@
+import type {
+  MessageItem,
+  MessageReplyReference,
+} from '../../domain/types/messages.types';
+import { describeMessageTextContent } from '../preview/messageContentDescriptor';
+
+const LEGACY_REPLY_TITLE = 'Trả lời tin nhắn';
+
+type LegacyReplyMediaType = 'image' | 'video' | 'audio' | 'file' | 'call';
+
+function normalizeLegacyMediaType(
+  value: string,
+): LegacyReplyMediaType | undefined {
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === 'image' ||
+    normalized === 'video' ||
+    normalized === 'audio' ||
+    normalized === 'file' ||
+    normalized === 'call'
+  ) {
+    return normalized;
+  }
+  return undefined;
+}
+
+function inferLegacyContentKind(
+  originalText: string,
+  mediaType: LegacyReplyMediaType | undefined,
+  webBaseUrl: string,
+): Pick<
+  MessageReplyReference,
+  'contentKind' | 'sharedPost' | 'link' | 'location'
+> {
+  if (mediaType === 'image') return { contentKind: 'image' };
+  if (mediaType === 'video') return { contentKind: 'video' };
+  if (mediaType === 'audio') return { contentKind: 'audio' };
+  if (mediaType === 'file') return { contentKind: 'file' };
+  if (mediaType === 'call') {
+    return {
+      contentKind: /video/i.test(originalText) ? 'video_call' : 'audio_call',
+    };
+  }
+
+  const descriptor = describeMessageTextContent(originalText, webBaseUrl);
+  if (descriptor.kind !== 'text') {
+    return {
+      contentKind: descriptor.kind,
+      sharedPost: descriptor.sharedPost,
+      link: descriptor.link,
+      location: descriptor.location,
+    };
+  }
+
+  const normalized = originalText.toLocaleLowerCase('vi-VN');
+  if (
+    normalized.includes('bài viết đã chia sẻ') ||
+    normalized.includes('bài viết được chia sẻ') ||
+    normalized.includes('shared post')
+  ) {
+    return { contentKind: 'shared_post' };
+  }
+  if (
+    normalized.startsWith('địa điểm:') ||
+    normalized.includes('vị trí được chia sẻ') ||
+    normalized.includes('shared location')
+  ) {
+    return { contentKind: 'location' };
+  }
+  if (
+    normalized.startsWith('liên kết:') ||
+    normalized.startsWith('link:')
+  ) {
+    return { contentKind: 'link' };
+  }
+  if (
+    normalized.includes('cuộc gọi video') ||
+    normalized.includes('video call')
+  ) {
+    return { contentKind: 'video_call' };
+  }
+  if (
+    normalized.includes('cuộc gọi') ||
+    normalized.includes('audio call') ||
+    normalized.includes('voice call')
+  ) {
+    return { contentKind: 'audio_call' };
+  }
+
+  return { contentKind: 'text' };
+}
+
+export function parseLegacyMessageReply(
+  value: string,
+  webBaseUrl: string,
+): { body: string; replyTo: MessageReplyReference } | undefined {
+  if (!value.includes(LEGACY_REPLY_TITLE)) return undefined;
+
+  const senderMatch = value.match(/👉\s*\*(.*?)\*:\s*([\s\S]*?)\s*🆔/);
+  const idMatch = value.match(/🆔\s*ID:\s*\*(.*?)\*/);
+  if (!senderMatch || !idMatch) return undefined;
+
+  const imageMatch = value.match(/🖼️\s*Ảnh:\s*\*(.*?)\*/);
+  const mediaMatch = value.match(/META_MEDIA:\s*\*(.*?)\*/);
+  const mediaTypeMatch = value.match(/META_MEDIA_TYPE:\s*\*(.*?)\*/);
+  const mediaType =
+    normalizeLegacyMediaType(mediaTypeMatch?.[1] ?? '') ??
+    (imageMatch ? 'image' : undefined);
+  const originalText = senderMatch[2].trim();
+  const content = inferLegacyContentKind(originalText, mediaType, webBaseUrl);
+  const separatorIndex = value.indexOf('\n\n');
+  const body =
+    separatorIndex >= 0 ? value.slice(separatorIndex + 2).trim() : '';
+  const media = mediaMatch?.[1] || imageMatch?.[1] || undefined;
+
+  return {
+    body,
+    replyTo: {
+      messageId: idMatch[1].trim(),
+      senderId: '',
+      senderName: senderMatch[1].trim(),
+      text: originalText,
+      contentKind: content.contentKind,
+      media,
+      mediaType: mediaType === 'call' ? undefined : mediaType,
+      thumbnail: mediaType === 'image' ? media : undefined,
+      sharedPost: content.sharedPost,
+      link: content.link,
+      location: content.location,
+    },
+  };
+}
+
+export function createMessageReplyReference(
+  message: MessageItem,
+  senderName?: string,
+): MessageReplyReference {
+  return {
+    messageId: message.id,
+    senderId: message.fromId,
+    senderName: senderName || message.senderName || 'Người dùng',
+    text: message.message,
+    contentKind: message.contentKind ?? 'text',
+    media: message.media,
+    mediaType: message.mediaType,
+    thumbnail: message.thumbnail,
+    sharedPost: message.sharedPost,
+    link: message.link,
+    location: message.location,
+    callEvent: message.callEvent,
+  };
+}
+
+function mediaFileName(value?: string) {
+  if (!value) return '';
+  const withoutQuery = value.split(/[?#]/)[0];
+  try {
+    return decodeURIComponent(withoutQuery.split('/').pop() ?? '');
+  } catch {
+    return withoutQuery.split('/').pop() ?? '';
+  }
+}
+
+export function getMessageReplyPreviewText(reply: MessageReplyReference) {
+  switch (reply.contentKind) {
+    case 'image':
+      return 'Hình ảnh';
+    case 'video':
+      return 'Video';
+    case 'audio':
+      return 'Tin nhắn thoại';
+    case 'file': {
+      const fileName = mediaFileName(reply.media);
+      return fileName ? `Tệp · ${fileName}` : 'Tệp đính kèm';
+    }
+    case 'shared_post':
+      return 'Bài viết được chia sẻ';
+    case 'location':
+      return reply.location?.title || 'Vị trí được chia sẻ';
+    case 'link':
+      return reply.link?.host ? `Liên kết · ${reply.link.host}` : 'Liên kết';
+    case 'video_call':
+      return 'Cuộc gọi video';
+    case 'audio_call':
+      return 'Cuộc gọi thoại';
+    case 'product':
+      return 'Sản phẩm';
+    case 'sticker':
+      return 'Nhãn dán';
+    default:
+      return reply.text || 'Tin nhắn';
+  }
+}

@@ -1,0 +1,58 @@
+const fs = require('fs');
+const path = require('path');
+
+const sourcePath = path.resolve(
+  __dirname,
+  '../messageRealtimeRuntime.ts',
+);
+
+describe('message realtime runtime', () => {
+  it('uses Socket.IO v4 without changing the legacy call transport', () => {
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    const callSource = fs.readFileSync(
+      path.resolve(__dirname, '../liveKitCallRealtime.ts'),
+      'utf8',
+    );
+
+    expect(source).toContain("require('socket.io-client-v4')");
+    expect(source).toContain("nuxtApiUrl('realtime/token')");
+    expect(source).toContain("nextSocket.on('messages:count'");
+    expect(source).toContain("nextSocket.on('message:typing'");
+    expect(source).toContain("nextSocket.on('message:typing-stop'");
+    expect(callSource).toContain("require('socket.io-client')");
+  });
+
+  it('debounces invalidations and exposes connection state for fallback polling', () => {
+    const source = fs.readFileSync(sourcePath, 'utf8');
+
+    expect(source).toContain('MESSAGE_INVALIDATION_DEBOUNCE_MS');
+    expect(source).toContain('subscribeToMessageInvalidations');
+    expect(source).toContain('subscribeToMessageRealtimeConnection');
+    expect(source).toContain('AppState.addEventListener');
+  });
+
+  it('only polls an open chat while its route is focused', () => {
+    const chatScreenSource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../presentation/screens/ChatScreen.tsx',
+      ),
+      'utf8',
+    );
+    const chatViewModelSource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        '../../../application/view-models/useChatViewModel.ts',
+      ),
+      'utf8',
+    );
+
+    expect(chatScreenSource).toContain('useIsFocused()');
+    expect(chatScreenSource).toContain(
+      'useChatViewModel(chat, isScreenFocused)',
+    );
+    expect(chatViewModelSource).toContain(
+      'if (isRealtimeConnected || !isScreenFocused) return undefined;',
+    );
+  });
+});

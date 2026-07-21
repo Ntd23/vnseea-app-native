@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -13,7 +14,10 @@ import { PinOff, Pin } from 'lucide-react-native';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
-import type { MessageItem } from '../../domain/types/messages.types';
+import type {
+  ChatItem,
+  PinnedMessageItem,
+} from '../../domain/types/messages.types';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
 import { ConversationScreenHeader } from '../components/ConversationScreenHeader';
 import { useAppTheme } from '../../../shared-kernel/application/hooks/useAppTheme';
@@ -24,27 +28,36 @@ type Props = NativeStackScreenProps<
 >;
 
 const repository = createMessagesRepository();
+const styles = StyleSheet.create({
+  darkScreen: { backgroundColor: '#020617' },
+  listContent: { flexGrow: 1, padding: 16, paddingBottom: 32 },
+  darkCard: { backgroundColor: '#111827', borderColor: '#293241' },
+});
 
 export default function ConversationPinnedScreen({ navigation, route }: Props) {
   const { chat } = route.params;
   const { isDark } = useAppTheme();
-  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [messages, setMessages] = useState<PinnedMessageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const resolvePinnedChat = useCallback(async (): Promise<ChatItem> => {
+    if (chat.chatType === 'group') return chat;
+    if (chat.hasConversationRecord && chat.chatId) return chat;
+    const conversation = await repository.findUserConversation(
+      chat.participantId || chat.userId,
+    );
+    if (!conversation?.chatId) {
+      throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
+    }
+    return conversation;
+  }, [chat]);
 
   const loadPinnedMessages = useCallback(async () => {
     setIsLoading(true);
     setError('');
     try {
-      const participantId = chat.participantId || chat.userId;
-      const conversation =
-        chat.hasConversationRecord && chat.chatId
-          ? chat
-          : await repository.findUserConversation(participantId);
-      if (!conversation?.chatId) {
-        throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
-      }
-      setMessages(await repository.getPinnedMessages(conversation.chatId));
+      setMessages(await repository.getPinnedMessages(await resolvePinnedChat()));
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -54,25 +67,17 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
     } finally {
       setIsLoading(false);
     }
-  }, [chat]);
+  }, [resolvePinnedChat]);
 
   useEffect(() => {
     loadPinnedMessages().catch(() => undefined);
   }, [loadPinnedMessages]);
 
   const unpin = useCallback(
-    async (message: MessageItem) => {
+    async (message: PinnedMessageItem) => {
       try {
-        const participantId = chat.participantId || chat.userId;
-        const conversation =
-          chat.hasConversationRecord && chat.chatId
-            ? chat
-            : await repository.findUserConversation(participantId);
-        if (!conversation?.chatId) {
-          throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
-        }
         await repository.setMessagePinned(
-          conversation.chatId,
+          await resolvePinnedChat(),
           message.id,
           false,
         );
@@ -84,14 +89,14 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
         );
       }
     },
-    [chat],
+    [resolvePinnedChat],
   );
 
   return (
     <SafeAreaView
       className="flex-1 surface-base"
       edges={['top']}
-      style={isDark ? { backgroundColor: '#020617' } : undefined}
+      style={isDark ? styles.darkScreen : undefined}
     >
       <FocusAwareStatusBar
         barStyle={isDark ? 'light-content' : 'dark-content'}
@@ -118,11 +123,7 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
         <FlatList
           data={messages}
           keyExtractor={item => item.id}
-          contentContainerStyle={{
-            flexGrow: 1,
-            padding: 16,
-            paddingBottom: 32,
-          }}
+          contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View className="flex-1 items-center justify-center px-8">
               <Pin size={38} color="#94A3B8" />
@@ -135,9 +136,7 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
             <TouchableOpacity
               className="surface-card mb-2 flex-row items-center rounded-lg px-4 py-3"
               style={
-                isDark
-                  ? { backgroundColor: '#111827', borderColor: '#293241' }
-                  : undefined
+                isDark ? styles.darkCard : undefined
               }
               onPress={() =>
                 navigation.popTo(ROUTES.CHAT, {
@@ -157,16 +156,22 @@ export default function ConversationPinnedScreen({ navigation, route }: Props) {
                   {item.message || 'Tin nhắn có tệp đính kèm'}
                 </Text>
               </View>
-              <TouchableOpacity
-                accessibilityLabel="Bỏ ghim tin nhắn"
-                className="h-11 w-11 items-center justify-center rounded-full bg-red-50"
-                onPress={event => {
-                  event.stopPropagation();
-                  unpin(item).catch(() => undefined);
-                }}
-              >
-                <PinOff size={20} color="#DC2626" />
-              </TouchableOpacity>
+              {item.canUnpin ? (
+                <TouchableOpacity
+                  accessibilityLabel="Bỏ ghim tin nhắn"
+                  className="h-11 w-11 items-center justify-center rounded-full bg-red-50"
+                  onPress={event => {
+                    event.stopPropagation();
+                    unpin(item).catch(() => undefined);
+                  }}
+                >
+                  <PinOff size={20} color="#DC2626" />
+                </TouchableOpacity>
+              ) : (
+                <Text className="max-w-24 text-right text-xs text-slate-500">
+                  {item.pinnedByName} đã ghim
+                </Text>
+              )}
             </TouchableOpacity>
           )}
         />

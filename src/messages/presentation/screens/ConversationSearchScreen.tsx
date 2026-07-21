@@ -39,7 +39,6 @@ function formatMessageTime(time: number) {
 export default function ConversationSearchScreen({ navigation, route }: Props) {
   const { chat } = route.params;
   const { isDark } = useAppTheme();
-  const participantId = chat.participantId || chat.userId;
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<MessageItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -47,7 +46,7 @@ export default function ConversationSearchScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     const normalizedQuery = query.trim();
-    if (normalizedQuery.length < 2 || !participantId) {
+    if (normalizedQuery.length < 2) {
       setResults([]);
       setError('');
       setIsLoading(false);
@@ -59,7 +58,7 @@ export default function ConversationSearchScreen({ navigation, route }: Props) {
     setError('');
     const timeout = setTimeout(() => {
       repository
-        .searchConversationMessages(participantId, normalizedQuery)
+        .searchConversationMessages(chat, normalizedQuery)
         .then(items => {
           if (!cancelled) {
             setResults(items);
@@ -84,7 +83,7 @@ export default function ConversationSearchScreen({ navigation, route }: Props) {
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [participantId, query]);
+  }, [chat, query]);
 
   const openMessage = useCallback(
     (messageId: string) => {

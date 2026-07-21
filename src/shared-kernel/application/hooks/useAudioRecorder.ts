@@ -5,17 +5,29 @@ import Sound, {
   AudioSourceAndroidType,
   OutputFormatAndroidType,
 } from 'react-native-nitro-sound';
+import ReactNativeBlobUtil from 'react-native-blob-util';
 import type { AudioAttachment } from '../../domain/types/audio.types';
 import { requestMicrophonePermission } from '../utils/microphonePermission';
 
 function withFileScheme(uri: string) {
-  if (
-    Platform.OS !== 'android' ||
-    /^[a-z][a-z0-9+.-]*:\/\//i.test(uri)
-  ) {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(uri)) {
     return uri;
   }
   return `file://${uri}`;
+}
+
+export async function validateRecordedAudioFile(uri: string) {
+  const normalizedUri = withFileScheme(uri.trim());
+  if (!normalizedUri || normalizedUri === 'file://') {
+    throw new Error('Không tạo được tệp ghi âm.');
+  }
+
+  const localPath = decodeURIComponent(normalizedUri.replace(/^file:\/\//i, ''));
+  const stat = await ReactNativeBlobUtil.fs.stat(localPath);
+  if (!stat || Number(stat.size) <= 0) {
+    throw new Error('Tệp ghi âm trống. Vui lòng ghi âm lại.');
+  }
+  return normalizedUri;
 }
 
 export function useAudioRecorder() {
@@ -64,18 +76,23 @@ export function useAudioRecorder() {
 
   const stopRecording = useCallback(async (): Promise<AudioAttachment | null> => {
     if (!recordingRef.current) return null;
-    const uri = await Sound.stopRecorder();
-    Sound.removeRecordBackListener();
-    recordingRef.current = false;
-    if (mountedRef.current) setIsRecording(false);
+    let uri = '';
+    try {
+      uri = await Sound.stopRecorder();
+    } finally {
+      Sound.removeRecordBackListener();
+      recordingRef.current = false;
+      if (mountedRef.current) setIsRecording(false);
+    }
 
-    // WoWonder's chat upload allowlist accepts mp4 and the endpoint stores
-    // `message_type=audio`, so an AAC-only MPEG-4 container remains an audio
-    // message while also passing the backend extension and MIME checks.
+    const validatedUri = await validateRecordedAudioFile(uri);
     return {
-      uri: withFileScheme(uri),
-      name: `voice-${Date.now()}.mp4`,
-      type: 'video/mp4',
+      uri: validatedUri,
+      name:
+        Platform.OS === 'ios'
+          ? `voice-${Date.now()}.m4a`
+          : `voice-${Date.now()}.mp4`,
+      type: 'audio/mp4',
       durationMs,
     };
   }, [durationMs]);

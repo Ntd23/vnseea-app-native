@@ -20,6 +20,8 @@ import type {
   MessageItem,
   MessageLabel,
   MessageReactionSummary,
+  SendMessageOptions,
+  PinnedMessageItem,
   SendMessageResponse,
 } from '../types/messages.types';
 
@@ -74,6 +76,7 @@ export interface MessagesRepository {
     chat: ChatItem | string,
     message: string,
     attachment?: MessageAttachment,
+    options?: SendMessageOptions,
   ): Promise<SendMessageResponse>;
 
   /**
@@ -84,6 +87,7 @@ export interface MessagesRepository {
     groupId: string,
     message: string,
     attachment?: MessageAttachment,
+    options?: SendMessageOptions,
   ): Promise<SendMessageResponse>;
 
   setMessageReaction(
@@ -104,26 +108,26 @@ export interface MessagesRepository {
   markAsSeen(userId: string): Promise<void>;
 
   searchConversationMessages(
-    userId: string,
+    chat: ChatItem,
     query: string,
   ): Promise<MessageItem[]>;
 
   getConversationAssets(
-    userId: string,
+    chat: ChatItem,
     category: ConversationAssetCategory,
     cursor?: ConversationAssetsCursor,
     limit?: number,
   ): Promise<ConversationAssetsPage>;
 
   setConversationNotifications(
-    chatId: string,
+    chat: ChatItem,
     enabled: boolean,
   ): Promise<void>;
 
-  getPinnedMessages(chatId: string): Promise<MessageItem[]>;
+  getPinnedMessages(chat: ChatItem | string): Promise<PinnedMessageItem[]>;
 
   setMessagePinned(
-    chatId: string,
+    chat: ChatItem | string,
     messageId: string,
     pinned: boolean,
   ): Promise<void>;
@@ -146,7 +150,7 @@ export interface MessagesRepository {
 
   removeGroupUser(groupId: string, userId: string): Promise<void>;
 
-  clearGroupHistory(groupId: string): Promise<void>;
+  clearGroupHistory(chat: ChatItem): Promise<void>;
 
   leaveGroup(groupId: string): Promise<void>;
 

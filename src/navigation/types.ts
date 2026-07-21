@@ -87,6 +87,17 @@ export type SettingsPanelRouteParam =
  */
 export type ReelSource = 'home' | 'profile' | 'page' | 'saved' | 'myVideos';
 
+export type MessageLabelTarget = {
+  userId: string;
+  name: string;
+  username?: string;
+  avatar?: string;
+};
+
+export type MessageLabelsRouteParams =
+  | { mode: 'assign'; target: MessageLabelTarget }
+  | { mode: 'create'; initialTarget?: MessageLabelTarget };
+
 export type RootStackParamList = {
   [ROUTES.LOGIN]: undefined;
   [ROUTES.REGISTER]: undefined;
@@ -139,6 +150,7 @@ export type RootStackParamList = {
   [ROUTES.MY_VIDEOS]: undefined;
   [ROUTES.WATCH]: undefined;
   [ROUTES.MESSAGES]: undefined;
+  [ROUTES.MESSAGE_LABELS]: MessageLabelsRouteParams;
   [ROUTES.CREATE_GROUP_CHAT]:
     | { initialMember?: ConversationGroupMember }
     | undefined;
@@ -153,12 +165,7 @@ export type RootStackParamList = {
   [ROUTES.CONVERSATION_SEARCH]: { chat: ChatItem };
   [ROUTES.CONVERSATION_MEDIA]: { chat: ChatItem };
   [ROUTES.CONVERSATION_PINNED]: { chat: ChatItem };
-  [ROUTES.GROUP_INFO]: {
-    groupId: number;
-    groupName: string;
-    avatar: string;
-    memberCount: number;
-  };
+  [ROUTES.GROUP_INFO]: { chat: ChatItem };
   [ROUTES.CALLS]: undefined;
   [ROUTES.CALL_ROOM]: LiveKitCallRouteParams;
   [ROUTES.GROUP_CALL_ROOM]: GroupLiveKitCallRouteParams;

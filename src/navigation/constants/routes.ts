@@ -19,6 +19,7 @@ export const ROUTES = {
   MY_VIDEOS: 'MyVideos',
   WATCH: 'Watch',
   MESSAGES: 'Messages',
+  MESSAGE_LABELS: 'MessageLabels',
   CREATE_GROUP_CHAT: 'CreateGroupChat',
   CHAT: 'Chat',
   CONVERSATION_DETAILS: 'ConversationDetails',

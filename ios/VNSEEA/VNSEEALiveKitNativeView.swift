@@ -408,3 +408,106 @@ class VNSEEALiveKitNativeViewManager: RCTViewManager {
     VNSEEALiveKitNativeView()
   }
 }
+
+@objc(VnseeaCameraLifecycle)
+class VnseeaCameraLifecycle: NSObject, @unchecked Sendable {
+  private var generation = 0
+  private var stopObserver: NSObjectProtocol?
+  private var timeoutWorkItem: DispatchWorkItem?
+  private var completedStatus: String?
+  private var pendingWaitResolve: RCTPromiseResolveBlock?
+
+  static func moduleName() -> String! {
+    "VnseeaCameraLifecycle"
+  }
+
+  static func requiresMainQueueSetup() -> Bool {
+    true
+  }
+
+  @objc
+  func prepareForPreviewStop(
+    _ timeoutMs: NSNumber,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self else {
+        reject("camera_lifecycle_unavailable", "Camera lifecycle module is unavailable.", nil)
+        return
+      }
+
+      self.cancelObservation(result: "superseded")
+      self.generation += 1
+      let token = self.generation
+      self.completedStatus = nil
+
+      self.stopObserver = NotificationCenter.default.addObserver(
+        forName: AVCaptureSession.didStopRunningNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        guard self?.generation == token else { return }
+        self?.completeObservation(result: "stopped")
+      }
+
+      let timeout = max(0.5, min(timeoutMs.doubleValue / 1000.0, 5.0))
+      let workItem = DispatchWorkItem { [weak self] in
+        guard self?.generation == token else { return }
+        self?.completeObservation(result: "timeout")
+      }
+      self.timeoutWorkItem = workItem
+      DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: workItem)
+      resolve(token)
+    }
+  }
+
+  @objc
+  func waitForPreviewStop(
+    _ tokenNumber: NSNumber,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self else {
+        reject("camera_lifecycle_unavailable", "Camera lifecycle module is unavailable.", nil)
+        return
+      }
+
+      guard tokenNumber.intValue == self.generation else {
+        resolve(["status": "superseded"])
+        return
+      }
+      if let status = self.completedStatus {
+        resolve(["status": status])
+        return
+      }
+      self.pendingWaitResolve = resolve
+    }
+  }
+
+  private func completeObservation(result: String) {
+    completedStatus = result
+    cleanupObserver()
+    if let resolve = pendingWaitResolve {
+      pendingWaitResolve = nil
+      resolve(["status": result])
+    }
+  }
+
+  private func cancelObservation(result: String) {
+    if stopObserver != nil || timeoutWorkItem != nil || pendingWaitResolve != nil {
+      completeObservation(result: result)
+    }
+    completedStatus = nil
+  }
+
+  private func cleanupObserver() {
+    timeoutWorkItem?.cancel()
+    timeoutWorkItem = nil
+    if let stopObserver {
+      NotificationCenter.default.removeObserver(stopObserver)
+      self.stopObserver = nil
+    }
+  }
+}

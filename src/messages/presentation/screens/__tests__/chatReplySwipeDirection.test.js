@@ -24,20 +24,51 @@ describe('ChatScreen reply swipe direction', () => {
     expect(source).not.toContain('if (drag > 45 && onReply)');
   });
 
-  it('shows visible swipe feedback and preserves call previews when replying', () => {
+  it('shows visible swipe feedback and uses canonical rich reply previews', () => {
     const source = read('src/messages/presentation/screens/ChatScreen.tsx');
 
-    expect(source).toContain("type ReplyMediaType = 'image' | 'video' | 'audio' | 'file' | 'call';");
-    expect(source).toContain("value === 'call'");
-    expect(source).toContain('if (message.callEvent) {');
-    expect(source).toContain('const title = getCallCardTitle(message.callEvent);');
-    expect(source).toContain("? 'call'");
-    expect(source).toContain('META_MEDIA_TYPE: *${originalMediaType}*');
+    expect(source).toContain('message.replyTo');
+    expect(source).toContain('getMessageReplyPreviewText');
+    expect(source).toContain("reply.contentKind === 'shared_post'");
+    expect(source).toContain("reply.contentKind === 'location'");
+    expect(source).toContain("reply.contentKind === 'link'");
+    expect(source).toContain("reply.contentKind === 'video_call'");
+    expect(source).toContain("reply.contentKind === 'audio_call'");
+    expect(source).toContain('createMessageReplyReference(');
+    expect(source).toContain('replyTo ? { replyTo } : undefined');
+    expect(source).not.toContain('META_MEDIA_TYPE:');
+    expect(source).not.toContain('nextText = `↪️ *Trả lời tin nhắn:*');
     expect(source).toContain('replyCueTranslateX');
     expect(source).toContain('replyCueBackgroundColor');
     expect(source).toContain('<Animated.Text');
     expect(source).toContain('Trả lời tin nhắn');
-    expect(source).toContain('replyingMessage.callEvent ? (');
+  });
+
+  it('keeps the original embedded reply bubble layout while using canonical reply data', () => {
+    const source = read('src/messages/presentation/screens/ChatScreen.tsx');
+
+    expect(source).toContain('replyText: string;');
+    expect(source).toContain('text-[15px] leading-5 mt-1.5');
+    expect(source).toContain('replyText={visibleMessageText}');
+    expect(source).toContain('usesLightReplyBubble || hasMessageMedia');
+    expect(source).toContain(
+      "'rounded-2xl rounded-br-md border border-sky-200 bg-sky-100 px-3 py-2'",
+    );
+    expect(source).toContain(
+      "'rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2'",
+    );
+  });
+
+  it('lets shared-location cards enter reply by swipe or long press', () => {
+    const source = read('src/messages/presentation/screens/ChatScreen.tsx');
+
+    expect(source).toContain('onMoveShouldSetPanResponderCapture: (_, gestureState) =>');
+    expect(source).toMatch(
+      /function MapShareCard\([\s\S]*?onLongPress\?: \(\) => void;[\s\S]*?<TouchableOpacity[\s\S]*?onLongPress=\{onLongPress\}/,
+    );
+    expect(source).toMatch(
+      /<MapShareCard[\s\S]*?location=\{mapShare\.location\}[\s\S]*?onLongPress=\{\(\) => onLongPress\?\.\(message\)\}/,
+    );
   });
 
   it('renders chat video previews with a poster frame and tap-to-open shell', () => {

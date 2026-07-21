@@ -183,7 +183,7 @@ export function useMessagesViewModel() {
     showSpinner = true,
     options: LoadChatsOptions = {},
   ) => {
-    if (isLoadingChatsRef.current) return;
+    if (isLoadingChatsRef.current) return false;
 
     isLoadingChatsRef.current = true;
     setState(prev => ({
@@ -220,6 +220,7 @@ export function useMessagesViewModel() {
     } finally {
       isLoadingChatsRef.current = false;
     }
+    return true;
   }, []);
 
   const syncLatestChats = useCallback(async () => {
@@ -603,34 +604,6 @@ export function useMessagesViewModel() {
     [],
   );
 
-  const markAllAsRead = useCallback(async () => {
-    const unreadChats = state.chats.filter(chat => chat.unreadCount > 0);
-    if (unreadChats.length === 0) return true;
-
-    const unreadUserChats = unreadChats.filter(chat => chat.chatType === 'user');
-
-    setState(prev => ({
-      ...prev,
-      chats: prev.chats.map(chat =>
-        chat.unreadCount > 0 ? { ...chat, unreadCount: 0 } : chat,
-      ),
-      error: null,
-    }));
-
-    try {
-      await Promise.all(
-        unreadUserChats.map(chat => repository.markAsSeen(chat.userId)),
-      );
-      return true;
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : 'Không đánh dấu được tin nhắn là đã đọc';
-      setState(prev => ({ ...prev, error: errorMessage }));
-      await loadChats(false, { includeDiscovery: false, forceRefresh: true });
-      return false;
-    }
-  }, [loadChats, state.chats]);
-
   // Clear selected chat
   const clearSelectedChat = useCallback(() => {
     setState(prev => ({
@@ -717,7 +690,6 @@ export function useMessagesViewModel() {
     loadMessages,
     sendMessage,
     sendBulkMessages,
-    markAllAsRead,
     clearSelectedChat,
     clearError,
   };

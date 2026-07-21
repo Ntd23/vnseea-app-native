@@ -9,6 +9,7 @@ export { useMessagesViewModel } from './application/view-models/useMessagesViewM
 export { useChatViewModel } from './application/view-models/useChatViewModel';
 export { useGroupChatViewModel } from './application/view-models/useGroupChatViewModel';
 export { default as MessageScreen } from './presentation/screens/MessageScreen';
+export { default as MessageLabelsScreen } from './presentation/screens/MessageLabelsScreen';
 export { default as ChatScreen } from './presentation/screens/ChatScreen';
 export { default as ConversationDetailsScreen } from './presentation/screens/ConversationDetailsScreen';
 export { default as ConversationSearchScreen } from './presentation/screens/ConversationSearchScreen';
