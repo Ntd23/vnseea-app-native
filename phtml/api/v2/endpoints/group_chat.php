@@ -13,6 +13,46 @@ $response_data = array(
     'api_status' => 400
 );
 
+function VNSEEA_GroupApiCanAccess($group_id)
+{
+    global $wo, $db;
+    $group = $db->where('group_id', (int)$group_id)->getOne(T_GROUP_CHAT);
+    $active_membership = $db->where('group_id', (int)$group_id)
+        ->where('user_id', $wo['user']['id'])
+        ->where('active', 1)
+        ->getValue(T_GROUP_CHAT_USERS, 'COUNT(*)');
+    return !empty($group) &&
+        ((int)$group->user_id === (int)$wo['user']['id'] ||
+            $active_membership > 0);
+}
+
+function VNSEEA_GroupApiCollectMessages($group_id, $message_ids)
+{
+    global $non_allowed;
+    $result = array();
+    foreach ($message_ids as $message_id) {
+        $messages = Wo_GetGroupMessagesAPP(array(
+            'group_id' => $group_id,
+            'id' => (int)$message_id,
+            'limit' => 1,
+        ));
+        if (empty($messages[0])) {
+            continue;
+        }
+        $message = $messages[0];
+        if (!empty($message['media'])) {
+            $message['media'] = Wo_GetMedia($message['media']);
+        }
+        if (!empty($message['user_data'])) {
+            foreach ($non_allowed as $field) {
+                unset($message['user_data'][$field]);
+            }
+        }
+        $result[] = $message;
+    }
+    return $result;
+}
+
 $required_fields =  array(
                         'create',
                         'delete',
@@ -29,6 +69,8 @@ $required_fields =  array(
                         'get_by_id',
                         'get_message_by_id',
                         'search',
+                        'get_media',
+                        'clear_history',
                         'join',
                         'destruct_at',
                     );
@@ -47,12 +89,13 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
         }
 
         if (empty($error_code)) {
-            if (!Wo_IsGChatMemeberExists($group_id, $wo['user']['id'])) {
+            if (!VNSEEA_GroupApiCanAccess($group_id)) {
                 @mysqli_query($sqlConnect, "INSERT INTO " . T_GROUP_CHAT_USERS . " (`id`,`user_id`,`group_id`,`active`) VALUES (null,".$wo['user']['id'].",$group_id,'1')");
                 $response_data = array(
                     'api_status' => 200,
                     'message_data' => 'joined group successfully'
                 );
+                VNSEEA_PublishRealtimeGroupChange($group_id);
             }
             else{
                 $error_code    = 8;
@@ -72,42 +115,100 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             $error_message = 'keyword can not be empty';
         }
 
-        $group_id = Wo_Secure($_POST['id']);
-        $keyword = Wo_Secure($_POST['keyword']);
-
-        $sql   = "(
-        `text`     LIKE '%$filter_keyword%'
-        )";
-
-        $messages = $db->where('group_id',$group_id)->where($sql)->get(T_MESSAGES);
-
-        $messagesData = [];
-        foreach ($messages as $key => $value) {
-
-            $message_info = array(
-                'group_id' => $group_id,
-                'id' => $last_id
-            );
-            $message_info = Wo_GetGroupMessages($message_info);
-
-            $messagesData[] = messageMarkup($message_info);
-
-            
-
-
-            
-            
-
-
-
-
+        $group_id = (int)$_POST['id'];
+        if (empty($error_code) && !VNSEEA_GroupApiCanAccess($group_id)) {
+            $error_code = 13;
+            $error_message = 'sorry you are not a group member';
         }
-        $response_data = array(
-                                'api_status' => 200,
-                                'data' => $messagesData
-                            );
+        if (empty($error_code)) {
+            $keyword = mysqli_real_escape_string($sqlConnect, trim((string)$_POST['keyword']));
+            $cleared_message_id = VNSEEA_GetGroupHistoryClearMessageId($group_id, $wo['user']['id']);
+            $clear_sql = $cleared_message_id > 0 ? " AND `id` > {$cleared_message_id}" : '';
+            $query = mysqli_query(
+                $sqlConnect,
+                "SELECT `id` FROM " . T_MESSAGES . " WHERE `group_id` = {$group_id}{$clear_sql} AND `text` LIKE '%{$keyword}%' ORDER BY `id` DESC LIMIT 50"
+            );
+            $message_ids = array();
+            while ($query && $row = mysqli_fetch_assoc($query)) {
+                $message_ids[] = (int)$row['id'];
+            }
+            $response_data = array(
+                'api_status' => 200,
+                'data' => VNSEEA_GroupApiCollectMessages($group_id, $message_ids),
+            );
+        }
+    }
 
+    if ($_POST['type'] == 'get_media') {
+        if (empty($_POST['id']) || !is_numeric($_POST['id']) || $_POST['id'] < 1) {
+            $error_code = 7;
+            $error_message = 'id must be numeric and greater than 0';
+        }
+        $allowed_media_types = array('images', 'videos', 'docs', 'links');
+        if (empty($_POST['media_type']) || !in_array($_POST['media_type'], $allowed_media_types)) {
+            $error_code = 8;
+            $error_message = 'media_type is invalid';
+        }
+        $group_id = !empty($_POST['id']) ? (int)$_POST['id'] : 0;
+        if (empty($error_code) && !VNSEEA_GroupApiCanAccess($group_id)) {
+            $error_code = 13;
+            $error_message = 'sorry you are not a group member';
+        }
+        if (empty($error_code)) {
+            $limit = !empty($_POST['limit']) && is_numeric($_POST['limit'])
+                ? min(30, max(1, (int)$_POST['limit']))
+                : 24;
+            $offset = !empty($_POST['offset']) && is_numeric($_POST['offset'])
+                ? (int)$_POST['offset']
+                : 0;
+            $cursor_sql = $offset > 0 ? " AND `id` < {$offset}" : '';
+            $cleared_message_id = VNSEEA_GetGroupHistoryClearMessageId($group_id, $wo['user']['id']);
+            $clear_sql = $cleared_message_id > 0 ? " AND `id` > {$cleared_message_id}" : '';
+            $media_type = (string)$_POST['media_type'];
+            if ($media_type === 'images') {
+                $type_sql = " AND LOWER(`media`) REGEXP '\\.(jpg|jpeg|png|gif|webp)$'";
+            } elseif ($media_type === 'videos') {
+                $type_sql = " AND LOWER(`media`) REGEXP '\\.(mp4|mov|avi|mkv|webm)$'";
+            } elseif ($media_type === 'docs') {
+                $type_sql = " AND `media` <> '' AND LOWER(`media`) NOT REGEXP '\\.(jpg|jpeg|png|gif|webp|mp4|mov|avi|mkv|webm|mp3|wav|ogg|m4a|aac)$'";
+            } else {
+                $type_sql = " AND (`text` LIKE '%http://%' OR `text` LIKE '%https://%' OR `text` LIKE '%vnseea://%')";
+            }
+            $query = mysqli_query(
+                $sqlConnect,
+                "SELECT `id` FROM " . T_MESSAGES . " WHERE `group_id` = {$group_id}{$clear_sql}{$cursor_sql}{$type_sql} ORDER BY `id` DESC LIMIT {$limit}"
+            );
+            $message_ids = array();
+            while ($query && $row = mysqli_fetch_assoc($query)) {
+                $message_ids[] = (int)$row['id'];
+            }
+            $response_data = array(
+                'api_status' => 200,
+                'data' => VNSEEA_GroupApiCollectMessages($group_id, $message_ids),
+            );
+        }
+    }
 
+    if ($_POST['type'] == 'clear_history') {
+        if (empty($_POST['id']) || !is_numeric($_POST['id']) || $_POST['id'] < 1) {
+            $error_code = 7;
+            $error_message = 'id must be numeric and greater than 0';
+        }
+        if (empty($error_code) && !VNSEEA_ClearGroupHistoryForUser((int)$_POST['id'], $wo['user']['id'])) {
+            $error_code = 13;
+            $error_message = 'unable to clear this group history';
+        }
+        if (empty($error_code)) {
+            $response_data = array(
+                'api_status' => 200,
+                'message_data' => 'group history cleared for current user',
+            );
+            VNSEEA_PublishRealtimeGroupChange(
+                (int)$_POST['id'],
+                array($wo['user']['id']),
+                false
+            );
+        }
     }
     if ($_POST['type'] == 'create') {
 
@@ -188,6 +289,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     'api_status' => 200,
                     'data' => $group_data
                 );
+                VNSEEA_PublishRealtimeGroupChange($id);
             }
         }
     }
@@ -199,11 +301,18 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
         }
 
         if (empty($error_code)) {
-            $result = Wo_DeleteGChat($_POST['id']);
+            $group_id = (int)$_POST['id'];
+            $realtime_recipient_ids = VNSEEA_GetGroupRealtimeRecipientIds($group_id);
+            $result = Wo_DeleteGChat($group_id);
             if ($result === true) {
                 $response_data = array(
                     'api_status' => 200,
                     'message_data' => 'group successfully deleted'
+                );
+                VNSEEA_PublishRealtimeGroupChange(
+                    $group_id,
+                    $realtime_recipient_ids,
+                    false
                 );
             }
             else{
@@ -280,7 +389,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
         if (empty($error_code)) {
             $group_id = $id = Wo_Secure($_POST['id']);
             $group_tab = Wo_GroupTabData($group_id);
-            if ($group_tab && is_array($group_tab)) {
+            if ($group_tab && is_array($group_tab) && Wo_IsGChatOwner($group_id)) {
                 $update_data = array();
                 if (!empty($_POST['group_name'])) {
                     $update_data['group_name']    = Wo_Secure($_POST['group_name']);
@@ -304,22 +413,29 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                     
                 }
                 if (!empty($update_data)) {
-                    @Wo_UpdateGChat($id, $update_data);
-                    $group_data = Wo_GetChatGroupData($id);
-                    foreach ($group_data as $key_g => $group) {
-                        foreach ($non_allowed as $key => $value) {
-                            unset($group_data[$key_g]['user_data'][$value]);
-                        }
-                        foreach ($group_data[$key_g]['parts'] as $key1 => $part) {
+                    $updated = Wo_UpdateGChat($id, $update_data);
+                    if (!$updated) {
+                        $error_code = 10;
+                        $error_message = 'unable to update group';
+                    }
+                    else {
+                        $group_data = Wo_GetChatGroupData($id);
+                        foreach ($group_data as $key_g => $group) {
                             foreach ($non_allowed as $key => $value) {
-                                unset($group_data[$key_g]['parts'][$key1][$value]);
+                                unset($group_data[$key_g]['user_data'][$value]);
+                            }
+                            foreach ($group_data[$key_g]['parts'] as $key1 => $part) {
+                                foreach ($non_allowed as $key => $value) {
+                                    unset($group_data[$key_g]['parts'][$key1][$value]);
+                                }
                             }
                         }
+                        $response_data = array(
+                            'api_status' => 200,
+                            'data' => $group_data
+                        );
+                        VNSEEA_PublishRealtimeGroupChange($id);
                     }
-                    $response_data = array(
-                        'api_status' => 200,
-                        'data' => $group_data
-                    );
                 }
             }
             else{
@@ -337,12 +453,28 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
         if (empty($error_code)) {
             $id        = Wo_Secure($_POST['id']);
             $group_tab = Wo_GroupTabData($_POST['id']);
-            if (!empty($group_tab)) {
-                Wo_ExitGChat($id);
-                $response_data = array(
-                    'api_status' => 200,
-                    'message_data' => 'you are successfully leaved this group'
-                );
+            if (!empty($group_tab) && (int)$group_tab['user_id'] === (int)$wo['user']['id']) {
+                $error_code = 11;
+                $error_message = 'group owner can not leave the group';
+            }
+            elseif (!empty($group_tab) && VNSEEA_GroupApiCanAccess($id)) {
+                $realtime_recipient_ids = VNSEEA_GetGroupRealtimeRecipientIds($id);
+                $left_group = Wo_ExitGChat($id);
+                if (!$left_group) {
+                    $error_code = 12;
+                    $error_message = 'unable to leave this group';
+                }
+                else {
+                    $response_data = array(
+                        'api_status' => 200,
+                        'message_data' => 'you are successfully leaved this group'
+                    );
+                    VNSEEA_PublishRealtimeGroupChange(
+                        $id,
+                        $realtime_recipient_ids,
+                        false
+                    );
+                }
             }
             else{
                 $error_code    = 8;
@@ -366,6 +498,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             $group_tab = Wo_GroupTabData($_POST['id']);
             if (!empty($group_tab)) {
                 if ($group_tab['user_id'] == $wo['user']['id']) {
+                    $membership_changed = false;
                     foreach ($users as $key => $user) {
                         $user = Wo_Secure($user);
                         if (empty($user) || !is_numeric($user) || $user < 1) {
@@ -376,17 +509,20 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
                         if ($member_query && mysqli_num_rows($member_query) > 0) {
                             $member_row = mysqli_fetch_assoc($member_query);
                             if ((int) $member_row['active'] !== 1) {
-                                @mysqli_query($sqlConnect, "UPDATE " . T_GROUP_CHAT_USERS . " SET `active` = '1', `last_seen` = '0' WHERE `group_id` = $id AND `user_id` = $user");
+                                $membership_changed = (bool)mysqli_query($sqlConnect, "UPDATE " . T_GROUP_CHAT_USERS . " SET `active` = '1', `last_seen` = '0' WHERE `group_id` = $id AND `user_id` = $user") || $membership_changed;
                             }
                         }
                         else if (!Wo_IsGChatMemeberExists($id, $user)) {
-                            @mysqli_query($sqlConnect, "INSERT INTO " . T_GROUP_CHAT_USERS . " (`id`,`user_id`,`group_id`,`active`,`last_seen`) VALUES (null,$user,$id,'1','0')");
+                            $membership_changed = (bool)mysqli_query($sqlConnect, "INSERT INTO " . T_GROUP_CHAT_USERS . " (`id`,`user_id`,`group_id`,`active`,`last_seen`) VALUES (null,$user,$id,'1','0')") || $membership_changed;
                         }
                     }
                     $response_data = array(
                         'api_status' => 200,
                         'message_data' => 'users successfully invited to group'
                     );
+                    if ($membership_changed) {
+                        VNSEEA_PublishRealtimeGroupChange($id, $users);
+                    }
                 }
                 else{
                     $error_code    = 11;
@@ -492,18 +628,28 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             $group_tab = Wo_GroupTabData($_POST['id']);
             if (!empty($group_tab)) {
                 if ($group_tab['user_id'] == $wo['user']['id']) {
+                    $membership_changed = false;
+                    $removed_user_ids = array();
                     foreach ($users as $key => $user) {
+                        $user = (int)$user;
+                        if ($user < 1) {
+                            continue;
+                        }
                         if ((int) $user === (int) $group_tab['user_id']) {
                             continue;
                         }
                         if (Wo_IsGChatMemeberExists($id, $user)) {
-                            @mysqli_query($sqlConnect, "DELETE FROM " . T_GROUP_CHAT_USERS . " WHERE `user_id` = {$user} AND `group_id` = {$id}");
+                            $membership_changed = (bool)mysqli_query($sqlConnect, "DELETE FROM " . T_GROUP_CHAT_USERS . " WHERE `user_id` = {$user} AND `group_id` = {$id}") || $membership_changed;
+                            $removed_user_ids[] = $user;
                         }
                     }
                     $response_data = array(
                         'api_status' => 200,
                         'message_data' => 'users successfully removed from group'
                     );
+                    if ($membership_changed) {
+                        VNSEEA_PublishRealtimeGroupChange($id, $removed_user_ids);
+                    }
                 }
                 else{
                     $error_code    = 11;
@@ -533,7 +679,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             $error_code    = 8;
             $error_message = 'group not found or removed';
         }
-        if (!Wo_IsGChatMemeberExists($_POST['id'], $wo['user']['id']) && $group_tab['user_id'] != $wo['user']['id']) {
+        if (!empty($group_tab) && !VNSEEA_GroupApiCanAccess((int)$_POST['id'])) {
             $error_code    = 13;
             $error_message = 'sorry you are not a group memeber';
 
@@ -789,7 +935,7 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
             $error_code    = 8;
             $error_message = 'group not found or removed';
         }
-        if (!Wo_IsGChatMemeberExists($_POST['id'], $wo['user']['id']) && $group_tab['user_id'] != $wo['user']['id']) {
+        if (!empty($group_tab) && !VNSEEA_GroupApiCanAccess((int)$_POST['id'])) {
             $error_code    = 13;
             $error_message = 'sorry you are not a group memeber';
 
@@ -1064,21 +1210,27 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
     if ($_POST['type'] == 'get_by_id') {
         if (!empty($_POST['id']) && is_numeric($_POST['id']) && $_POST['id'] > 0) {
             $id = Wo_Secure($_POST['id']);
-            $group_data = Wo_GetChatGroupData($id);
-            foreach ($group_data as $key_g => $group) {
-                foreach ($non_allowed as $key => $value) {
-                    unset($group_data[$key_g]['user_data'][$value]);
-                }
-                foreach ($group_data[$key_g]['parts'] as $key1 => $part) {
+            if (!VNSEEA_GroupApiCanAccess($id)) {
+                $error_code = 13;
+                $error_message = 'sorry you are not a group member';
+            }
+            else {
+                $group_data = Wo_GetChatGroupData($id);
+                foreach ($group_data as $key_g => $group) {
                     foreach ($non_allowed as $key => $value) {
-                        unset($group_data[$key_g]['parts'][$key1][$value]);
+                        unset($group_data[$key_g]['user_data'][$value]);
+                    }
+                    foreach ($group_data[$key_g]['parts'] as $key1 => $part) {
+                        foreach ($non_allowed as $key => $value) {
+                            unset($group_data[$key_g]['parts'][$key1][$value]);
+                        }
                     }
                 }
+                $response_data = array(
+                    'api_status' => 200,
+                    'data' => $group_data
+                );
             }
-            $response_data = array(
-                'api_status' => 200,
-                'data' => $group_data
-            );
         }
         else{
             $error_code    = 4;
@@ -1089,7 +1241,12 @@ if (!empty($_POST['type']) && in_array($_POST['type'], $required_fields)) {
         if (!empty($_POST['group_id']) && is_numeric($_POST['group_id']) && $_POST['group_id'] > 0 && !empty($_POST['message_id']) && is_numeric($_POST['message_id']) && $_POST['message_id'] > 0) {
             $last_id = Wo_Secure($_POST['message_id']);
             $group_id = Wo_Secure($_POST['group_id']);
-            if (!empty($last_id)) {
+            $cleared_message_id = VNSEEA_GetGroupHistoryClearMessageId($group_id, $wo['user']['id']);
+            if (!VNSEEA_GroupApiCanAccess($group_id) || (int)$last_id <= $cleared_message_id) {
+                $error_code = 13;
+                $error_message = 'message is not available in this group';
+            }
+            elseif (!empty($last_id)) {
                 if (!empty($_POST['reply_id']) && is_numeric($_POST['reply_id']) && $_POST['reply_id'] > 0) {
                     $reply_id = Wo_Secure($_POST['reply_id']);
                     $db->where('id',$last_id)->update(T_MESSAGES,array('reply_id' => $reply_id));

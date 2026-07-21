@@ -13,3 +13,15 @@ RCT_EXPORT_VIEW_PROPERTY(connect, BOOL)
 RCT_EXPORT_VIEW_PROPERTY(onLiveNativeEvent, RCTBubblingEventBlock)
 
 @end
+
+@interface RCT_EXTERN_MODULE(VnseeaCameraLifecycle, NSObject)
+
+RCT_EXTERN_METHOD(prepareForPreviewStop:(nonnull NSNumber *)timeoutMs
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(waitForPreviewStop:(nonnull NSNumber *)token
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+@end

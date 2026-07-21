@@ -1,18 +1,30 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated,
   Dimensions,
   FlatList,
   Image,
   Modal,
   PanResponder,
   Pressable,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
+import Animated, {
+  Easing,
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   ChevronLeft,
   ChevronRight,
@@ -25,7 +37,12 @@ import {
   X,
 } from 'lucide-react-native';
 import VideoPlayer from 'react-native-video';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import {
+  getChatMediaDismissTranslation,
+  shouldDismissChatMedia,
+} from './chatMediaViewerGesture';
 
 export type ChatMediaViewerItem = {
   uri: string;
@@ -48,61 +65,54 @@ function SwipeToCloseContainer({
   children: React.ReactNode;
   onClose: () => void;
 }) {
-  const translateY = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gesture) =>
-        Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-      onMoveShouldSetPanResponderCapture: (_, gesture) =>
-        Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-      onPanResponderMove: (_, gesture) => {
-        translateY.setValue(gesture.dy);
-        opacity.setValue(
-          Math.max(1 - Math.abs(gesture.dy) / (SCREEN_HEIGHT / 2), 0.4),
+  const translateY = useSharedValue(0);
+  const isClosing = useSharedValue(false);
+
+  const dismissGesture = Gesture.Pan()
+    .activeOffsetY([-100000, 12])
+    .failOffsetX([-18, 18])
+    .onUpdate(event => {
+      if (isClosing.value) return;
+      translateY.value = getChatMediaDismissTranslation(event.translationY);
+    })
+    .onEnd(event => {
+      if (
+        shouldDismissChatMedia(event.translationY, event.velocityY) &&
+        !isClosing.value
+      ) {
+        isClosing.value = true;
+        translateY.value = withTiming(
+          SCREEN_HEIGHT,
+          { duration: 180, easing: Easing.in(Easing.cubic) },
+          finished => {
+            if (finished) runOnJS(onClose)();
+          },
         );
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (Math.abs(gesture.dy) > 120 || Math.abs(gesture.vy) > 0.8) {
-          Animated.parallel([
-            Animated.timing(translateY, {
-              toValue: gesture.dy > 0 ? SCREEN_HEIGHT : -SCREEN_HEIGHT,
-              duration: 200,
-              useNativeDriver: true,
-            }),
-            Animated.timing(opacity, {
-              toValue: 0,
-              duration: 200,
-              useNativeDriver: true,
-            }),
-          ]).start(onClose);
-          return;
-        }
-        Animated.parallel([
-          Animated.spring(translateY, {
-            toValue: 0,
-            tension: 40,
-            friction: 6,
-            useNativeDriver: true,
-          }),
-          Animated.spring(opacity, {
-            toValue: 1,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      },
-    }),
-  ).current;
+        return;
+      }
+      translateY.value = withSpring(0, { damping: 18, stiffness: 220 });
+    });
+
+  const surfaceStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      translateY.value,
+      [0, SCREEN_HEIGHT * 0.55],
+      [1, 0.45],
+      'clamp',
+    ),
+  }));
+
+  const contentStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
 
   return (
-    <Animated.View style={[styles.blackSurface, { opacity }]}>
-      <Animated.View
-        style={[styles.flex, { transform: [{ translateY }] }]}
-        {...panResponder.panHandlers}
-      >
-        {children}
-      </Animated.View>
+    <Animated.View style={[styles.blackSurface, surfaceStyle]}>
+      <GestureDetector gesture={dismissGesture}>
+        <Animated.View style={[styles.flex, contentStyle]}>
+          {children}
+        </Animated.View>
+      </GestureDetector>
     </Animated.View>
   );
 }
@@ -276,6 +286,7 @@ export function ChatMediaViewerModal({
 }: Props) {
   const listRef = useRef<FlatList<ChatMediaViewerItem>>(null);
   const screenWidth = Dimensions.get('window').width;
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (items.length === 0 || index < 0 || index >= items.length) return;
@@ -289,15 +300,22 @@ export function ChatMediaViewerModal({
     <Modal
       visible={items.length > 0}
       animationType="fade"
-      presentationStyle="fullScreen"
+      presentationStyle="overFullScreen"
+      transparent
+      statusBarTranslucent
       onRequestClose={onClose}
     >
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
-      <SafeAreaView
-        className="flex-1 bg-black"
-        edges={['top', 'right', 'bottom', 'left']}
-      >
-        <View className="z-10 flex-row items-center justify-between px-4 py-3">
+      {items.length > 0 ? (
+        <FocusAwareStatusBar
+          barStyle="light-content"
+          backgroundColor="#000000"
+        />
+      ) : null}
+      <GestureHandlerRootView style={styles.blackSurface}>
+        <View
+          className="z-10 flex-row items-center justify-between px-4 pb-3"
+          style={{ paddingTop: Math.max(insets.top, 12) }}
+        >
           {items.length > 1 ? (
             <View className="rounded-full bg-white/20 px-4 py-2">
               <Text className="text-sm font-semibold text-white">
@@ -374,7 +392,11 @@ export function ChatMediaViewerModal({
             <ChevronRight size={26} color="#ffffff" />
           </TouchableOpacity>
         ) : null}
-      </SafeAreaView>
+        <View
+          pointerEvents="none"
+          style={{ height: Math.max(insets.bottom, 8) }}
+        />
+      </GestureHandlerRootView>
     </Modal>
   );
 }

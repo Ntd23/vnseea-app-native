@@ -54,8 +54,13 @@ function mergeSameChat(current: ChatItem, incoming: ChatItem) {
     };
   }
 
-  const newest =
-    incoming.lastMessageTime >= current.lastMessageTime ? incoming : current;
+  const currentMessageId = Number(current.lastMessageId ?? 0);
+  const incomingMessageId = Number(incoming.lastMessageId ?? 0);
+  const incomingIsNewer =
+    incoming.lastMessageTime > current.lastMessageTime ||
+    (incoming.lastMessageTime === current.lastMessageTime &&
+      incomingMessageId >= currentMessageId);
+  const newest = incomingIsNewer ? incoming : current;
   const oldest = newest === incoming ? current : incoming;
 
   return {

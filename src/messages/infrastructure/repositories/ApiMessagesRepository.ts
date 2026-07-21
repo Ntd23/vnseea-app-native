@@ -10,7 +10,14 @@ import {
 } from '../../../shared-kernel/domain/reactions/reactionCatalog';
 import { normalizeRawUrl } from '../../../foundation/application/normalizers/url';
 import type { MessagesRepository } from '../../domain/repositories/MessagesRepository';
-import { parseSharedPostMessage } from '../../application/shared-posts/sharedPostMessage';
+import {
+  describeMessageTextContent,
+  isValidMessageLocation,
+} from '../../application/preview/messageContentDescriptor';
+import {
+  createMessageReplyReference,
+  parseLegacyMessageReply,
+} from '../../application/replies/messageReply';
 import { mapMessageReactionSummary } from '../../domain/reactions/messageReactions';
 import type {
   ChatItem,
@@ -33,7 +40,10 @@ import type {
   MessageCallEvent,
   MessageItem,
   MessageLabel,
+  MessageLocationReference,
+  MessageSystemEvent,
   PinnedMessageItem,
+  SendMessageOptions,
   SendMessageResponse,
 } from '../../domain/types/messages.types';
 type RawRecord = Record<string, unknown>;
@@ -137,8 +147,17 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   }
   return value as Record<string, unknown>;
 }
+function decodeLegacyLinkMarkup(value: string): string {
+  return value.replace(/\[a\]([\s\S]*?)\[\/a\]/gi, (_match, encoded) => {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  });
+}
 function cleanText(value: string): string {
-  return value
+  return decodeLegacyLinkMarkup(value)
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
@@ -347,16 +366,60 @@ function parseCallEventRecord(
     action,
   };
 }
+
+function mapMessageSystemEvent(
+  raw: Record<string, unknown>,
+): MessageSystemEvent | undefined {
+  const payload = asRecord(raw.system_event ?? raw.systemEvent);
+  const actor =
+    asRecord(raw.messageUser ?? raw.user_data ?? raw.userData) ?? {};
+  const eventType = readString(payload ?? raw, 'type', 'event_type');
+  const rawType = readString(raw, 'type_two');
+  if (eventType !== 'message_pinned' && rawType !== 'message_pin_event') {
+    return undefined;
+  }
+  const actorId = readString(payload ?? raw, 'actor_id', 'actorId', 'from_id');
+  const targetMessageId = readString(
+    payload ?? raw,
+    'target_message_id',
+    'targetMessageId',
+    'reply_id',
+  );
+  if (!actorId || !targetMessageId) return undefined;
+  return {
+    type: 'message_pinned',
+    actorId,
+    actorName:
+      readString(payload ?? raw, 'actor_name', 'actorName') ||
+      getRawUserName(actor),
+    targetMessageId,
+  };
+}
 type MessagePreview = {
   text: string;
   kind: ChatPreviewKind;
 };
 
-const WEB_URL_PATTERN =
-  /(?:https?:\/\/|www\.)[^\s<>"']+|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:\/[^\s<>"']*)?/i;
+function readRawMessageLocation(
+  raw: RawRecord,
+): MessageLocationReference | undefined {
+  const latitude = Number(raw.lat ?? raw.latitude);
+  const longitude = Number(raw.lng ?? raw.longitude);
+  if (!isValidMessageLocation(latitude, longitude)) return undefined;
 
-function hasWebUrl(value: string): boolean {
-  return WEB_URL_PATTERN.test(value);
+  const address = readString(raw, 'address', 'location_address') || undefined;
+  return {
+    title:
+      readString(raw, 'location_title', 'location_name', 'title') ||
+      'Địa điểm đã chia sẻ',
+    latitude,
+    longitude,
+    address,
+    subtitle: address,
+    imageUrl:
+      readString(raw, 'location_image', 'map_image', 'image_url') || undefined,
+    pageId: readString(raw, 'page_id') || undefined,
+  };
 }
 
 function getCallPreview(callEvent: MessageCallEvent): MessagePreview {
@@ -370,46 +433,35 @@ function getCallPreview(callEvent: MessageCallEvent): MessagePreview {
     : { text: 'Cuộc gọi thoại', kind: 'audio_call' };
 }
 function getMessagePreview(raw: Record<string, unknown>): MessagePreview {
-  if (readNumber(raw, 'product_id') > 0 || asRecord(raw.product)) {
-    return { text: 'Đã gửi một sản phẩm', kind: 'product' };
-  }
-  if (readString(raw, 'stickers', 'gif')) {
-    return { text: 'Đã gửi một nhãn dán', kind: 'sticker' };
-  }
-  const media = readMessageMedia(raw);
-  const plainText = readString(raw, 'or_text');
-  const decryptedText = decryptMessageText(
-    readString(raw, 'text'),
-    readNumber(raw, 'time'),
-  );
-  const messageText = plainText ? plainText : decryptedText;
-  if (media) {
-    const mediaType = readMediaType(raw, messageText);
-    if (mediaType === 'image') {
-      return { text: 'Đã gửi một ảnh', kind: 'image' };
-    }
-    if (mediaType === 'video') {
-      return { text: 'Đã gửi một video', kind: 'video' };
-    }
-    if (mediaType === 'audio') {
-      return { text: 'Đã gửi một đoạn âm thanh', kind: 'audio' };
-    }
-    return { text: 'Đã gửi một tệp', kind: 'file' };
-  }
-  const previewText = normalizeMessageText(
-    messageText,
-    false,
-  );
-  const sessionUserId = sessionStorage.getSession()?.userId ?? '';
-  const callEvent =
-    parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
-    parseCallEvent(previewText, sessionUserId);
-  if (callEvent) return getCallPreview(callEvent);
-  if (previewText) {
+  const message = mapMessage(raw);
+  if (message.systemEvent) {
+    const sessionUserId = sessionStorage.getSession()?.userId ?? '';
     return {
-      text: previewText,
-      kind: hasWebUrl(previewText) ? 'link' : 'text',
+      text:
+        message.systemEvent.actorId === sessionUserId
+          ? 'Bạn đã ghim một tin nhắn'
+          : `${message.systemEvent.actorName} đã ghim một tin nhắn`,
+      kind: 'text',
     };
+  }
+  if (message.callEvent) return getCallPreview(message.callEvent);
+  switch (message.contentKind) {
+    case 'product':
+      return { text: 'Đã gửi một sản phẩm', kind: 'product' };
+    case 'sticker':
+      return { text: 'Đã gửi một nhãn dán', kind: 'sticker' };
+    case 'image':
+      return { text: 'Đã gửi một ảnh', kind: 'image' };
+    case 'video':
+      return { text: 'Đã gửi một video', kind: 'video' };
+    case 'audio':
+      return { text: 'Đã gửi một đoạn âm thanh', kind: 'audio' };
+    case 'file':
+      return { text: 'Đã gửi một tệp', kind: 'file' };
+    default:
+      if (message.message) {
+        return { text: message.message, kind: message.contentKind ?? 'text' };
+      }
   }
   // WoWonder encrypts `last_message.text` in `/api/get_chats` with
   // AES-128-ECB. Do not leak the encoded payload into the conversation list.
@@ -460,6 +512,10 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
   const userData = asRecord(raw.user_data) ?? raw;
   const lastMessage = asRecord(raw.last_message) ?? {};
   const lastMessagePreview = getMessagePreview(lastMessage);
+  const lastMessageIsReply = Boolean(
+    mapMessage(lastMessage).replyTo || readNumber(lastMessage, 'reply_id'),
+  );
+  const lastMessageSenderId = readString(lastMessage, 'from_id', 'sender_id');
   const userId = readString(userData, 'user_id', 'id');
   const groupId = readString(raw, 'group_id', 'chat_id', 'id');
   const pageId = readString(raw, 'page_id', 'chat_id', 'id');
@@ -511,7 +567,12 @@ function mapChat(raw: Record<string, unknown>): ChatItem {
       readString(raw, 'avatar') ||
       readString(userData, 'avatar', 'profile_picture'),
     lastMessage: lastMessagePreview.text,
+    lastMessageId: readString(lastMessage, 'id', 'message_id') || undefined,
     lastMessageKind: lastMessagePreview.kind,
+    lastMessageIsMine:
+      Boolean(lastMessageSenderId) &&
+      lastMessageSenderId === sessionStorage.getSession()?.userId,
+    lastMessageIsReply,
     lastMessageTime: lastMessageTime || paginationCursorTime,
     paginationCursorTime: paginationCursorTime || lastMessageTime,
     unreadCount:
@@ -616,7 +677,11 @@ function mergeChats(...chatLists: ChatItem[][]): ChatItem[] {
     const current = chats.get(key);
     if (!current) {
       chats.set(key, chat);
-    } else if (chat.lastMessageTime >= current.lastMessageTime) {
+    } else if (
+      chat.lastMessageTime > current.lastMessageTime ||
+      (chat.lastMessageTime === current.lastMessageTime &&
+        Number(chat.lastMessageId ?? 0) >= Number(current.lastMessageId ?? 0))
+    ) {
       chats.set(key, chat);
     } else {
       chats.set(key, {
@@ -945,7 +1010,10 @@ async function fetchDiscoveredUserChats(forceRefresh?: boolean): Promise<ChatIte
     return [];
   }
 }
-function mapMessage(raw: Record<string, unknown>): MessageItem {
+function mapMessage(
+  raw: Record<string, unknown>,
+  includeNestedReply = true,
+): MessageItem {
   const fromId = String(raw.from_id ?? raw.fromId ?? '');
   const toId = String(raw.to_id ?? raw.toId ?? '');
   const sessionUserId = sessionStorage.getSession()?.userId ?? '';
@@ -960,31 +1028,91 @@ function mapMessage(raw: Record<string, unknown>): MessageItem {
         readString(raw, 'text', 'message'),
         readNumber(raw, 'time'),
       );
-  const message = normalizeMessageText(decodedMessage, Boolean(media));
-  const callEvent =
-    parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
-    parseCallEvent(message, sessionUserId);
-  const displayMessage = media && message === 'Tin nhắn' ? '' : message;
-  const sharedPost = callEvent
+  const normalizedMessage = normalizeMessageText(decodedMessage, Boolean(media));
+  const systemEvent = mapMessageSystemEvent(raw);
+  const legacyReply = systemEvent
     ? undefined
-    : parseSharedPostMessage(displayMessage, apiConfig.webBaseUrl);
+    : parseLegacyMessageReply(normalizedMessage, apiConfig.webBaseUrl);
+  const message = legacyReply?.body ?? normalizedMessage;
+  const callEvent = systemEvent
+    ? undefined
+    : parseCallEventRecord(raw.call_event ?? raw.callEvent, sessionUserId) ??
+      parseCallEvent(message, sessionUserId);
+  const displayMessage = systemEvent
+    ? ''
+    : media && message === 'Tin nhắn'
+      ? ''
+      : message;
+  const textDescriptor =
+    callEvent || systemEvent
+      ? { kind: 'text' as const }
+      : describeMessageTextContent(displayMessage, apiConfig.webBaseUrl);
+  const sharedPost = textDescriptor.sharedPost;
+  const location =
+    textDescriptor.location ??
+    (callEvent || systemEvent || sharedPost
+      ? undefined
+      : readRawMessageLocation(raw));
+  const link = location ? undefined : textDescriptor.link;
+  const mediaType = readMediaType(raw, decodedMessage);
+  let contentKind: ChatPreviewKind = textDescriptor.kind;
+  if (readNumber(raw, 'product_id') > 0 || asRecord(raw.product)) {
+    contentKind = 'product';
+  } else if (readString(raw, 'stickers', 'gif')) {
+    contentKind = 'sticker';
+  } else if (callEvent) {
+    contentKind = callEvent.callType === 'video' ? 'video_call' : 'audio_call';
+  } else if (mediaType) {
+    contentKind = mediaType;
+  } else if (location) {
+    contentKind = 'location';
+  }
+  const nestedReplyRaw = includeNestedReply ? asRecord(raw.reply) : undefined;
+  const nestedReplyMessage = nestedReplyRaw
+    ? mapMessage(nestedReplyRaw, false)
+    : undefined;
+  const nestedReplyUser = nestedReplyRaw
+    ? asRecord(nestedReplyRaw.messageUser) ??
+      asRecord(nestedReplyRaw.user_data) ??
+      asRecord(nestedReplyRaw.userData) ??
+      {}
+    : undefined;
+  const replyTo = nestedReplyMessage
+    ? createMessageReplyReference(
+        nestedReplyMessage,
+        nestedReplyMessage.senderName || getRawUserName(nestedReplyUser ?? {}),
+      )
+    : legacyReply?.replyTo;
+  const messageUser =
+    asRecord(raw.messageUser) ??
+    asRecord(raw.user_data) ??
+    asRecord(raw.userData) ??
+    {};
   return {
     id: readString(raw, 'id', 'message_id'),
     conversationId: readString(raw, 'conversation_id', 'group_id'),
     fromId,
     toId,
+    senderName: getRawUserName(messageUser),
+    senderAvatar:
+      readString(messageUser, 'avatar', 'profile_picture') || undefined,
     message: callEvent ? '' : displayMessage,
     callEvent,
+    systemEvent,
     sharedPost,
+    contentKind,
+    link,
+    location,
+    replyTo,
     media,
-    mediaType: readMediaType(raw, decodedMessage),
+    mediaType,
     thumbnail: normalizeRawUrl(
       readMessageThumbnail(raw),
       apiConfig.webBaseUrl,
     ),
     reactions: mapMessageReactionSummary(raw.reaction ?? raw.reactions),
     time: readNumber(raw, 'time'),
-    isSentByMe: callEvent ? callEvent.isInitiator : (fromId === sessionUserId),
+    isSentByMe: callEvent ? callEvent.isInitiator : fromId === sessionUserId,
     seen: readNumber(raw, 'seen'),
   };
 }
@@ -1061,9 +1189,19 @@ function mapGroupInfo(raw: RawRecord): GroupChatInfo {
   const parts = Array.isArray(group.parts) ? (group.parts as RawRecord[]) : [];
   const ownerId = readString(group, 'user_id', 'owner_id');
   const sessionUserId = sessionStorage.getSession()?.userId ?? '';
-  const members = parts.map(part =>
-    mapGroupMember(asRecord(part) ?? {}, ownerId),
-  );
+  const ownerData = asRecord(group.user_data) ?? {};
+  const membersById = new Map<string, GroupChatMember>();
+  if (ownerId) {
+    membersById.set(
+      ownerId,
+      mapGroupMember({ ...ownerData, user_id: ownerId }, ownerId),
+    );
+  }
+  for (const part of parts) {
+    const member = mapGroupMember(asRecord(part) ?? {}, ownerId);
+    if (member.id) membersById.set(member.id, member);
+  }
+  const members = [...membersById.values()];
   return {
     id: readString(group, 'group_id', 'id', 'chat_id'),
     name: readString(group, 'group_name', 'name') || 'Nhóm',
@@ -1236,6 +1374,7 @@ export function createMessagesRepository(): MessagesRepository {
       groupId: string,
       message: string,
       attachment?: MessageAttachment,
+      options?: SendMessageOptions,
     ) {
       return this.sendMessage(
         {
@@ -1255,12 +1394,14 @@ export function createMessagesRepository(): MessagesRepository {
         },
         message,
         attachment,
+        options,
       );
     },
     async sendMessage(
       chat: ChatItem | string,
       message: string,
       attachment?: MessageAttachment,
+      options?: SendMessageOptions,
     ) {
       const target = getChatTarget(chat);
       const messageHashId = `${Date.now()}-${Math.random()
@@ -1274,12 +1415,18 @@ export function createMessagesRepository(): MessagesRepository {
         user_id: target.id,
         text: textPayload,
         message_hash_id: messageHashId,
+        ...(options?.replyTo?.messageId
+          ? { reply_id: options.replyTo.messageId }
+          : {}),
       };
       const groupPayload = {
         type: 'send',
         id: target.id,
         text: textPayload,
         message_hash_id: messageHashId,
+        ...(options?.replyTo?.messageId
+          ? { reply_id: options.replyTo.messageId }
+          : {}),
       };
       const route =
         target.type === 'group'
@@ -1304,9 +1451,11 @@ export function createMessagesRepository(): MessagesRepository {
         response.message_data ?? (response as { data?: unknown[] }).data ?? [];
       return {
         ...response,
-        sentMessages: rawSentMessages.map(item =>
-          mapMessage(item as RawRecord),
-        ),
+        sentMessages: rawSentMessages.map(item => {
+          const sentMessage = mapMessage(item as RawRecord);
+          if (sentMessage.replyTo || !options?.replyTo) return sentMessage;
+          return { ...sentMessage, replyTo: options.replyTo };
+        }),
       };
     },
     async setMessageReaction(
@@ -1345,23 +1494,36 @@ export function createMessagesRepository(): MessagesRepository {
     async markAsSeen(userId: string) {
       await apiBridge.post(apiRoutes.messages.read, { recipient_id: userId });
     },
-    async searchConversationMessages(userId: string, query: string) {
+    async searchConversationMessages(chat: ChatItem, query: string) {
+      const target = getChatTarget(chat);
+      if (target.type === 'group') {
+        const response = await apiBridge.post<{ data?: RawRecord[] }>(
+          apiRoutes.messages.groupChat,
+          {
+            type: 'search',
+            id: target.id,
+            keyword: query.trim(),
+          },
+        );
+        return (response.data ?? []).map(item => mapMessage(item));
+      }
       const response = await apiBridge.post<{ data?: RawRecord[] }>(
         apiRoutes.messages.chat,
         {
           type: 'search',
-          user_id: userId,
+          user_id: target.id,
           text: query.trim(),
         },
       );
-      return (response.data ?? []).map(mapMessage);
+      return (response.data ?? []).map(item => mapMessage(item));
     },
     async getConversationAssets(
-      userId: string,
+      chat: ChatItem,
       category: ConversationAssetCategory,
       cursor?: ConversationAssetsCursor,
       limit = 24,
     ): Promise<ConversationAssetsPage> {
+      const target = getChatTarget(chat);
       const mediaTypes: ConversationAssetMediaType[] =
         category === 'media'
           ? ['images', 'videos']
@@ -1374,20 +1536,30 @@ export function createMessagesRepository(): MessagesRepository {
           .map(async mediaType => ({
             mediaType,
             response: await apiBridge.post<{ data?: RawRecord[] }>(
-              apiRoutes.messages.chat,
-              {
-                type: 'get_media',
-                user_id: userId,
-                media_type: mediaType,
-                offset: cursor?.[mediaType],
-                limit,
-              },
+              target.type === 'group'
+                ? apiRoutes.messages.groupChat
+                : apiRoutes.messages.chat,
+              target.type === 'group'
+                ? {
+                    type: 'get_media',
+                    id: target.id,
+                    media_type: mediaType,
+                    offset: cursor?.[mediaType],
+                    limit,
+                  }
+                : {
+                    type: 'get_media',
+                    user_id: target.id,
+                    media_type: mediaType,
+                    offset: cursor?.[mediaType],
+                    limit,
+                  },
             ),
           })),
       );
       const items = responses
         .flatMap(({ response }) => response.data ?? [])
-        .map(mapMessage)
+        .map(item => mapMessage(item))
         .filter(item => item.id)
         .sort((left, right) => right.time - left.time);
       const uniqueItems = Array.from(
@@ -1418,10 +1590,14 @@ export function createMessagesRepository(): MessagesRepository {
           : undefined,
       };
     },
-    async setConversationNotifications(chatId: string, enabled: boolean) {
+    async setConversationNotifications(chat: ChatItem, enabled: boolean) {
+      const target = getPinnedChatTarget(chat);
+      if (!target.chatId) {
+        throw new Error('Cuộc trò chuyện chưa có mã hợp lệ.');
+      }
       await apiBridge.post(apiRoutes.messages.mute, {
-        chat_id: chatId,
-        type: 'user',
+        chat_id: target.chatId,
+        type: target.type,
         notify: enabled ? 'yes' : 'no',
       });
     },
@@ -1433,10 +1609,24 @@ export function createMessagesRepository(): MessagesRepository {
         { chat_id: target.chatId, type: target.type },
       );
       return (response.data ?? [])
-        .map(item => ({
-          ...mapMessage(item),
-          pinnedAt: readNumber(item, 'pinned_at') || readNumber(item, 'time'),
-        }))
+        .map(item => {
+          const pinnedByUserId = readString(
+            item,
+            'pinned_by_user_id',
+            'pinned_by',
+          );
+          return {
+            ...mapMessage(item),
+            pinnedAt:
+              readNumber(item, 'pinned_at') || readNumber(item, 'time'),
+            pinnedByUserId,
+            pinnedByName:
+              pinnedByUserId === sessionStorage.getSession()?.userId
+                ? 'Bạn'
+                : readString(item, 'pinned_by_name') || 'Người dùng',
+            canUnpin: readBool(item, 'can_unpin'),
+          };
+        })
         .filter((item): item is PinnedMessageItem => Boolean(item.id))
         .sort((left, right) => right.pinnedAt - left.pinnedAt);
     },
@@ -1524,10 +1714,14 @@ export function createMessagesRepository(): MessagesRepository {
         parts: userId,
       });
     },
-    async clearGroupHistory(groupId: string) {
+    async clearGroupHistory(chat: ChatItem) {
+      const target = getChatTarget(chat);
+      if (target.type !== 'group') {
+        throw new Error('Chỉ nhóm chat hỗ trợ thao tác này.');
+      }
       await apiBridge.post(apiRoutes.messages.groupChat, {
         type: 'clear_history',
-        id: groupId,
+        id: target.id,
       });
     },
     async leaveGroup(groupId: string) {

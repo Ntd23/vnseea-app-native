@@ -15,7 +15,10 @@ export interface ChatItem {
   name: string;
   avatar: string;
   lastMessage: string;
+  lastMessageId?: string;
   lastMessageKind?: ChatPreviewKind;
+  lastMessageIsMine?: boolean;
+  lastMessageIsReply?: boolean;
   lastMessageTime: number;
   paginationCursorTime?: number;
   unreadCount: number;
@@ -55,6 +58,8 @@ export interface LabelRecipient {
 export type ChatPreviewKind =
   | 'text'
   | 'link'
+  | 'shared_post'
+  | 'location'
   | 'image'
   | 'video'
   | 'audio'
@@ -70,6 +75,21 @@ export interface SharedPostMessageReference {
   note: string;
 }
 
+export interface MessageLinkReference {
+  url: string;
+  host: string;
+}
+
+export interface MessageLocationReference {
+  title: string;
+  latitude: number;
+  longitude: number;
+  pageId?: string;
+  imageUrl?: string;
+  subtitle?: string;
+  address?: string;
+}
+
 export interface MessageReactionSummary {
   total: number;
   myReaction: ReactionType | null;
@@ -77,17 +97,52 @@ export interface MessageReactionSummary {
   breakdown: Partial<Record<ReactionType, number>>;
 }
 
+export type MessageMediaType = 'image' | 'video' | 'audio' | 'file';
+
+export interface MessageReplyReference {
+  messageId: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  contentKind: ChatPreviewKind;
+  media?: string;
+  mediaType?: MessageMediaType;
+  thumbnail?: string;
+  sharedPost?: SharedPostMessageReference;
+  link?: MessageLinkReference;
+  location?: MessageLocationReference;
+  callEvent?: MessageCallEvent;
+}
+
+export interface SendMessageOptions {
+  replyTo?: MessageReplyReference;
+}
+
+export interface MessageSystemEvent {
+  type: 'message_pinned';
+  actorId: string;
+  actorName: string;
+  targetMessageId: string;
+}
+
 export interface MessageItem {
   id: string;
   conversationId: string;
   fromId: string;
   toId: string;
+  senderName?: string;
+  senderAvatar?: string;
   message: string;
   callEvent?: MessageCallEvent;
+  systemEvent?: MessageSystemEvent;
   media?: string;
-  mediaType?: 'image' | 'video' | 'audio' | 'file';
+  mediaType?: MessageMediaType;
   thumbnail?: string;
   sharedPost?: SharedPostMessageReference;
+  contentKind?: ChatPreviewKind;
+  link?: MessageLinkReference;
+  location?: MessageLocationReference;
+  replyTo?: MessageReplyReference;
   reactions: MessageReactionSummary;
   time: number;
   isSentByMe: boolean;
@@ -97,6 +152,9 @@ export interface MessageItem {
 
 export interface PinnedMessageItem extends MessageItem {
   pinnedAt: number;
+  pinnedByUserId: string;
+  pinnedByName: string;
+  canUnpin: boolean;
 }
 
 export interface MessageCallEvent {

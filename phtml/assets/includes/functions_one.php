@@ -3257,6 +3257,49 @@ function VNSEEA_PublishRealtimeMessageChange($message_id, $message_data = null)
     return !empty($recipient_ids);
 }
 
+function VNSEEA_GetGroupRealtimeRecipientIds($group_id)
+{
+    global $db;
+    $group_id = (int)$group_id;
+    if ($group_id < 1) {
+        return array();
+    }
+    $recipient_ids = array();
+    $group = $db->where('group_id', $group_id)->getOne(T_GROUP_CHAT);
+    if (!empty($group->user_id)) {
+        $recipient_ids[(int)$group->user_id] = true;
+    }
+    $members = $db->where('group_id', $group_id)
+        ->where('active', 1)
+        ->get(T_GROUP_CHAT_USERS, null, array('user_id'));
+    foreach ($members as $member) {
+        if (!empty($member->user_id)) {
+            $recipient_ids[(int)$member->user_id] = true;
+        }
+    }
+    return array_keys($recipient_ids);
+}
+
+function VNSEEA_PublishRealtimeGroupChange($group_id, $extra_recipient_ids = array(), $include_active_members = true)
+{
+    $recipient_ids = array();
+    if ($include_active_members) {
+        foreach (VNSEEA_GetGroupRealtimeRecipientIds($group_id) as $recipient_id) {
+            $recipient_ids[(int)$recipient_id] = true;
+        }
+    }
+    foreach ((array)$extra_recipient_ids as $recipient_id) {
+        $recipient_id = (int)$recipient_id;
+        if ($recipient_id > 0) {
+            $recipient_ids[$recipient_id] = true;
+        }
+    }
+    foreach (array_keys($recipient_ids) as $recipient_id) {
+        Wo_PublishRealtimeNotification($recipient_id, 0, 'message');
+    }
+    return !empty($recipient_ids);
+}
+
 function Wo_PublishRealtimePostChange($post_id, $mutation)
 {
     static $realtime_config = null;
@@ -4316,6 +4359,35 @@ function Wo_GetPageChatList($user_id, $limit = 50, $new = false, $update = 0)
     return $data;
 }
 
+function VNSEEA_GetMessagePinFlag($message_id)
+{
+    global $wo, $db;
+    $message = $db->where('id', (int)$message_id)->getOne(T_MESSAGES);
+    if (empty($message)) {
+        return 'no';
+    }
+    if (!empty($message->page_id)) {
+        $legacy_pin = $db->where('user_id', $wo['user']['id'])->where('message_id', (int)$message_id)->where('pin', 'yes')->getOne(T_MUTE);
+        return empty($legacy_pin) ? 'no' : 'yes';
+    }
+    return (int)$db->where('message_id', (int)$message_id)->getValue(T_MESSAGE_PINS, 'COUNT(*)') > 0 ? 'yes' : 'no';
+}
+
+function VNSEEA_AttachMessageSystemEvent($message)
+{
+    if (empty($message) || empty($message['type_two']) || $message['type_two'] !== 'message_pin_event') {
+        return $message;
+    }
+    $actor = Wo_UserData((int)$message['from_id']);
+    $message['system_event'] = array(
+        'type' => 'message_pinned',
+        'actor_id' => (string)$message['from_id'],
+        'actor_name' => !empty($actor['name']) ? $actor['name'] : (!empty($actor['username']) ? $actor['username'] : 'Người dùng'),
+        'target_message_id' => (string)$message['reply_id']
+    );
+    return $message;
+}
+
 function Wo_GetMessages($data = array(), $limit = 50)
 {
     global $wo, $sqlConnect;
@@ -4382,7 +4454,7 @@ function Wo_GetMessages($data = array(), $limit = 50)
                     $fetched_data['story'] = $fetched_data['story'][0];
                 }
             }
-            $message_data[] = $fetched_data;
+            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
     }
     return $message_data;
@@ -4416,17 +4488,13 @@ function GetMessageById($id)
                 mysqli_query($sqlConnect, " UPDATE " . T_MESSAGES . " SET `seen` = " . time() . " WHERE `id` = " . $fetched_data['id']);
             }
             $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
-            $fetched_data['pin'] = 'no';
-            $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('pin', 'yes')->getOne(T_MUTE);
-            if (!empty($mute)) {
-                $fetched_data['pin'] = 'yes';
-            }
+            $fetched_data['pin'] = VNSEEA_GetMessagePinFlag($fetched_data['id']);
             $fetched_data['fav'] = 'no';
             $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('fav', 'yes')->getOne(T_MUTE);
             if (!empty($mute)) {
                 $fetched_data['fav'] = 'yes';
             }
-            $data = $fetched_data;
+            $data = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
         return $data;
     }
@@ -4495,17 +4563,13 @@ function Wo_GetGroupMessages($args = array())
             if (!empty($fetched_data['reply_id'])) {
                 $fetched_data['reply'] = GetMessageById($fetched_data['reply_id']);
             }
-            $fetched_data['pin'] = 'no';
-            $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('pin', 'yes')->getOne(T_MUTE);
-            if (!empty($mute)) {
-                $fetched_data['pin'] = 'yes';
-            }
+            $fetched_data['pin'] = VNSEEA_GetMessagePinFlag($fetched_data['id']);
             $fetched_data['fav'] = 'no';
             $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('fav', 'yes')->getOne(T_MUTE);
             if (!empty($mute)) {
                 $fetched_data['fav'] = 'yes';
             }
-            $message_data[] = $fetched_data;
+            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
     }
     return $message_data;
@@ -4632,20 +4696,68 @@ function Wo_GetPageMessages($args = array())
                 ));
             }
             $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
-            $fetched_data['pin'] = 'no';
-            $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('pin', 'yes')->getOne(T_MUTE);
-            if (!empty($mute)) {
-                $fetched_data['pin'] = 'yes';
-            }
+            $fetched_data['pin'] = VNSEEA_GetMessagePinFlag($fetched_data['id']);
             $fetched_data['fav'] = 'no';
             $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('fav', 'yes')->getOne(T_MUTE);
             if (!empty($mute)) {
                 $fetched_data['fav'] = 'yes';
             }
-            $message_data[] = $fetched_data;
+            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
     }
     return $message_data;
+}
+
+function VNSEEA_GetGroupHistoryClearMessageId($group_id, $user_id = 0)
+{
+    global $wo, $db;
+    $group_id = (int)$group_id;
+    $user_id = (int)($user_id ?: (!empty($wo['user']['user_id']) ? $wo['user']['user_id'] : 0));
+    if ($group_id < 1 || $user_id < 1) {
+        return 0;
+    }
+    $clear = $db->where('group_id', $group_id)
+        ->where('user_id', $user_id)
+        ->getOne(T_GROUP_CHAT_HISTORY_CLEARS);
+    return !empty($clear->cleared_message_id) ? (int)$clear->cleared_message_id : 0;
+}
+
+function VNSEEA_ClearGroupHistoryForUser($group_id, $user_id = 0)
+{
+    global $wo, $db;
+    $group_id = (int)$group_id;
+    $user_id = (int)($user_id ?: (!empty($wo['user']['user_id']) ? $wo['user']['user_id'] : 0));
+    $group = $group_id > 0 ? Wo_GroupTabData($group_id) : false;
+    $active_membership = $db->where('group_id', $group_id)
+        ->where('user_id', $user_id)
+        ->where('active', 1)
+        ->getValue(T_GROUP_CHAT_USERS, 'COUNT(*)');
+    $can_access = !empty($group) &&
+        ((int)$group['user_id'] === $user_id || $active_membership > 0);
+    if (!$can_access) {
+        return false;
+    }
+    $last_message_id = (int)$db->where('group_id', $group_id)->getValue(T_MESSAGES, 'MAX(id)');
+    $existing = $db->where('group_id', $group_id)
+        ->where('user_id', $user_id)
+        ->getOne(T_GROUP_CHAT_HISTORY_CLEARS);
+    $data = array(
+        'cleared_message_id' => $last_message_id,
+        'cleared_at' => time(),
+    );
+    if (!empty($existing)) {
+        $saved = $db->where('id', $existing->id)->update(T_GROUP_CHAT_HISTORY_CLEARS, $data);
+    } else {
+        $data['group_id'] = $group_id;
+        $data['user_id'] = $user_id;
+        $saved = (bool)$db->insert(T_GROUP_CHAT_HISTORY_CLEARS, $data);
+    }
+    if ($saved) {
+        $db->where('group_id', $group_id)
+            ->where('user_id', $user_id)
+            ->update(T_GROUP_CHAT_USERS, array('last_seen' => time()));
+    }
+    return (bool)$saved;
 }
 
 function Wo_GetGroupMessagesAPP($args = array())
@@ -4672,6 +4784,7 @@ function Wo_GetGroupMessagesAPP($args = array())
     $query_one = '';
     $data = array();
     $logged_user_id = Wo_Secure($wo['user']['user_id']);
+    $cleared_message_id = VNSEEA_GetGroupHistoryClearMessageId($group_id, $logged_user_id);
     $message_data = array();
     if (empty($group_id) || !is_numeric($group_id) || $group_id < 0) {
         return false;
@@ -4684,6 +4797,9 @@ function Wo_GetGroupMessagesAPP($args = array())
     }
     if ($old && $offset && $offset > 0 && !$new) {
         $query_one .= " AND `id` < {$offset} AND `id` <> {$offset} ";
+    }
+    if ($cleared_message_id > 0) {
+        $query_one .= " AND `id` > {$cleared_message_id} ";
     }
     $query_one = " SELECT * FROM " . T_MESSAGES . " WHERE `group_id` = '$group_id' {$query_one} ";
     $sql_query_one = mysqli_query($sqlConnect, $query_one);
@@ -4704,7 +4820,7 @@ function Wo_GetGroupMessagesAPP($args = array())
                 $fetched_data['reply'] = GetMessageById($fetched_data['reply_id']);
             }
             $fetched_data['chat_data'] = $db->where('user_id', $wo['user']['user_id'])->where('group_id', $group_id)->ArrayBuilder()->getOne(T_GROUP_CHAT_USERS);
-            $message_data[] = $fetched_data;
+            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
     }
     return $message_data;
@@ -4768,7 +4884,7 @@ function Wo_GetMessagesHeader($data = array(), $type = '')
             $fetched_data['text'] = Wo_EditMarkup($fetched_data['text']);
         }
         $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
-        return $fetched_data;
+        return VNSEEA_AttachMessageSystemEvent($fetched_data);
     }
     return false;
 }
@@ -10740,11 +10856,7 @@ function Wo_GetMessagesAPPN($data = array(), $limit = 50)
             if ($fetched_data['messageUser']['user_id'] == $user_id && $fetched_data['seen'] == 0) {
                 mysqli_query($sqlConnect, " UPDATE " . T_MESSAGES . " SET `seen` = " . time() . " WHERE `id` = " . $fetched_data['id']);
             }
-            $fetched_data['pin'] = 'no';
-            $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('pin', 'yes')->getOne(T_MUTE);
-            if (!empty($mute)) {
-                $fetched_data['pin'] = 'yes';
-            }
+            $fetched_data['pin'] = VNSEEA_GetMessagePinFlag($fetched_data['id']);
             $fetched_data['fav'] = 'no';
             $mute = $db->where('user_id', $wo['user']['id'])->where('message_id', $fetched_data['id'])->where('fav', 'yes')->getOne(T_MUTE);
             if (!empty($mute)) {
@@ -10768,7 +10880,7 @@ function Wo_GetMessagesAPPN($data = array(), $limit = 50)
                 }
             }
             $fetched_data['reaction'] = VNSEEA_GetMessageReactionSummary($fetched_data['id']);
-            $message_data[] = $fetched_data;
+            $message_data[] = VNSEEA_AttachMessageSystemEvent($fetched_data);
         }
     }
     return $message_data;
@@ -12697,14 +12809,22 @@ function Wo_CreateTagLabel($data = [])
 }
 function Wo_AttachUserTag($data = [])
 {
-    global $wo, $sqlConnect;
+    global $wo, $sqlConnect, $db;
     if (empty($wo['loggedin'])) {
         return ['status' => 401, 'message' => 'Not logged in'];
     }
     $owner_id = (int)$wo['user']['user_id'];
     $target_user_id = isset($data['target_user_id']) ? (int)$data['target_user_id'] : 0;
     $tag_id = isset($data['tag_id']) ? (int)$data['tag_id'] : 0;
-    $sql = "INSERT INTO " . T_USER_TAG_ASSIGNMENTS . "(`owner_id`,`target_user_id`,`tag_id`) VALUES ($owner_id,$target_user_id,$tag_id) ON DUPLICATE KEY UPDATE `tag_id` = VALUES(`tag_id`)";
+    if ($target_user_id < 1 || $tag_id < 1) {
+        return ['status' => 400, 'message' => 'Target user and label are required'];
+    }
+    $label = $db->where('id', $tag_id)->where('owner_id', $owner_id)->getOne(T_USER_TAG_LABELS);
+    $target = $db->where('user_id', $target_user_id)->getOne(T_USERS);
+    if (empty($label) || empty($target)) {
+        return ['status' => 404, 'message' => 'Label or target user was not found'];
+    }
+    $sql = "INSERT INTO " . T_USER_TAG_ASSIGNMENTS . "(`owner_id`,`target_user_id`,`tag_id`) VALUES ($owner_id,$target_user_id,$tag_id) ON DUPLICATE KEY UPDATE `id` = `id`";
     $ok = mysqli_query($sqlConnect, $sql);
     if (!$ok) {
         return [
@@ -12733,7 +12853,8 @@ function Wo_GetAllAssignedTagsByOwner($owner_id = null)
             FROM " . T_USER_TAG_ASSIGNMENTS . " AS UTA 
             INNER JOIN " . T_USER_TAG_LABELS . " AS UTL ON UTA.tag_id = UTL.id 
             INNER JOIN " . T_USERS . " AS U ON UTA.target_user_id = U.user_id
-            WHERE UTA.owner_id = {$owner_id}";
+            WHERE UTA.owner_id = {$owner_id}
+            ORDER BY UTA.id DESC";
 
     $ok = mysqli_query($sqlConnect, $sql);
     if (!$ok) {
@@ -12783,7 +12904,7 @@ function Wo_GetTagForUser($owner_id = null, $target_user_id = null)
     if ($target_user_id === null) return [];
     $owner_id = (int)$wo['user']['user_id'];
     $target_user_id = (int)$target_user_id;
-    $sql = "SELECT UTA.owner_id,UTA.target_user_id,UTA.tag_id,UTL.name,UTL.color FROM " . T_USER_TAG_ASSIGNMENTS . " AS UTA INNER JOIN " . T_USER_TAG_LABELS . " AS UTL ON UTA.tag_id=UTL.id WHERE UTA.owner_id={$owner_id} AND UTA.target_user_id={$target_user_id}";
+    $sql = "SELECT UTA.owner_id,UTA.target_user_id,UTA.tag_id,UTL.name,UTL.color FROM " . T_USER_TAG_ASSIGNMENTS . " AS UTA INNER JOIN " . T_USER_TAG_LABELS . " AS UTL ON UTA.tag_id=UTL.id WHERE UTA.owner_id={$owner_id} AND UTA.target_user_id={$target_user_id} ORDER BY UTA.id DESC";
     $ok = mysqli_query($sqlConnect, $sql);
     if (!$ok) {
         return [

@@ -19,6 +19,7 @@ import type {
   LiveStreamItem,
   LiveStreamState,
 } from '../../domain/types/live.types';
+import { assertLiveCreateSucceeded } from './liveCreateError';
 
 type RawRecord = Record<string, unknown>;
 
@@ -50,6 +51,10 @@ type LiveCreateResponse = {
   data?: RawRecord;
   post_data?: RawRecord;
   status?: number | string;
+  error_code?: string;
+  blocked_reason?: string;
+  retryable?: boolean | number | string;
+  message?: string;
 };
 
 type LiveSessionResponse = LiveCreateResponse | RawRecord[];
@@ -129,7 +134,7 @@ async function postLiveXHR(s: 'create' | 'join', data: RawRecord) {
   const sessionUserId = sessionStorage.getSession()?.userId;
 
   const url = `${apiConfig.webBaseUrl.replace(/\/+$/, '')}/requests.php?f=live&s=${s}`;
-  
+
   const bodyPayload: RawRecord = {
     ...data,
     user_id: sessionUserId,
@@ -141,7 +146,7 @@ async function postLiveXHR(s: 'create' | 'join', data: RawRecord) {
     url,
     toUrlEncodedPayload(bodyPayload),
     {
-      headers: { 
+      headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'X-Requested-With': 'XMLHttpRequest',
         ...(accessToken ? { Cookie: `user_session=${accessToken}` } : {}),
@@ -687,6 +692,7 @@ export function createLiveRepository(): LiveRepository {
       });
 
       const root = getRootRecord(response);
+      assertLiveCreateSucceeded(root);
       const postId = readNumber(root, 'post_id');
       if (!postId) {
         console.log('[Live] create response without post id:', response);
@@ -796,8 +802,8 @@ export function createLiveRepository(): LiveRepository {
         response.still_live === 'live'
           ? 'live'
           : response.still_live === 'offline'
-            ? 'offline'
-            : 'stale';
+          ? 'offline'
+          : 'stale';
       const liveCommentsReactionCount = readNumber(
         response as RawRecord,
         'reactions_count',

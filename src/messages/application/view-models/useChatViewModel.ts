@@ -11,6 +11,7 @@ import type {
   MessageAttachment,
   MessageItem,
   PinnedMessageItem,
+  SendMessageOptions,
 } from '../../domain/types/messages.types';
 import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
 import {
@@ -28,7 +29,7 @@ import {
 import { sessionStorage } from '../../../shared-kernel/infrastructure/storage/sessionStorage';
 import { setUnreadBadgeCounts } from '../../../shared-kernel/application/stores/unreadBadgeStore';
 import { apiConfig } from '../../../shared-kernel/infrastructure/config/env';
-import { parseSharedPostMessage } from '../shared-posts/sharedPostMessage';
+import { describeMessageTextContent } from '../preview/messageContentDescriptor';
 import {
   applyOptimisticMessageReaction,
   areMessageReactionSummariesEqual,
@@ -74,6 +75,8 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.conversationId === right.conversationId &&
     left.fromId === right.fromId &&
     left.toId === right.toId &&
+    left.senderName === right.senderName &&
+    left.senderAvatar === right.senderAvatar &&
     left.message === right.message &&
     left.media === right.media &&
     left.mediaType === right.mediaType &&
@@ -85,6 +88,23 @@ function areMessagesEqual(left: MessageItem, right: MessageItem) {
     left.sharedPost?.postId === right.sharedPost?.postId &&
     left.sharedPost?.url === right.sharedPost?.url &&
     left.sharedPost?.note === right.sharedPost?.note &&
+    left.replyTo?.messageId === right.replyTo?.messageId &&
+    left.replyTo?.senderId === right.replyTo?.senderId &&
+    left.replyTo?.senderName === right.replyTo?.senderName &&
+    left.replyTo?.text === right.replyTo?.text &&
+    left.replyTo?.contentKind === right.replyTo?.contentKind &&
+    left.replyTo?.media === right.replyTo?.media &&
+    left.replyTo?.thumbnail === right.replyTo?.thumbnail &&
+    left.replyTo?.sharedPost?.postId === right.replyTo?.sharedPost?.postId &&
+    left.replyTo?.link?.url === right.replyTo?.link?.url &&
+    left.replyTo?.location?.latitude === right.replyTo?.location?.latitude &&
+    left.replyTo?.location?.longitude === right.replyTo?.location?.longitude &&
+    areCallEventsEqual(left.replyTo?.callEvent, right.replyTo?.callEvent) &&
+    left.systemEvent?.type === right.systemEvent?.type &&
+    left.systemEvent?.actorId === right.systemEvent?.actorId &&
+    left.systemEvent?.actorName === right.systemEvent?.actorName &&
+    left.systemEvent?.targetMessageId ===
+      right.systemEvent?.targetMessageId &&
     areMessageReactionSummariesEqual(left.reactions, right.reactions) &&
     areCallEventsEqual(left.callEvent, right.callEvent)
   );
@@ -215,20 +235,23 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     [chat],
   );
   const sendMessageForChat = useCallback(
-    (message: string, attachment?: MessageAttachment) =>
-      repository.sendMessage(chat, message, attachment),
+    (
+      message: string,
+      attachment?: MessageAttachment,
+      options?: SendMessageOptions,
+    ) => repository.sendMessage(chat, message, attachment, options),
     [chat],
   );
   const typingRecipientId = getTypingRecipientId(chat);
 
-  const loadPinnedMessages = useCallback(async () => {
-    setIsLoadingPinnedMessages(true);
+  const loadPinnedMessages = useCallback(async (showLoading = true) => {
+    if (showLoading) setIsLoadingPinnedMessages(true);
     try {
       const nextPinnedMessages = await repository.getPinnedMessages(chat);
       setPinnedMessages(nextPinnedMessages);
       return nextPinnedMessages;
     } finally {
-      setIsLoadingPinnedMessages(false);
+      if (showLoading) setIsLoadingPinnedMessages(false);
     }
   }, [chat]);
 
@@ -431,6 +454,9 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         const optimistic: PinnedMessageItem = {
           ...targetMessage,
           pinnedAt: Math.floor(Date.now() / 1000),
+          pinnedByUserId: sessionStorage.getSession()?.userId ?? '',
+          pinnedByName: 'Bạn',
+          canUnpin: true,
         };
         return [optimistic, ...current.filter(item => item.id !== messageId)];
       });
@@ -450,13 +476,16 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
           targetChat = conversation;
         }
         await repository.setMessagePinned(targetChat, messageId, pinned);
-        await loadPinnedMessages();
+        await Promise.all([
+          loadPinnedMessages(false),
+          refreshLatest(false),
+        ]);
       } catch (caught) {
         setPinnedMessages(previousPinnedMessages);
         throw caught;
       }
     },
-    [chat, loadPinnedMessages, pinnedMessages],
+    [chat, loadPinnedMessages, pinnedMessages, refreshLatest],
   );
 
   const setMessageReaction = useCallback(
@@ -520,7 +549,11 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   );
 
   const sendMessage = useCallback(
-    async (text: string, attachment?: MessageAttachment) => {
+    async (
+      text: string,
+      attachment?: MessageAttachment,
+      options?: SendMessageOptions,
+    ) => {
       const message = text.trim();
       if (!message && !attachment) return false;
       stopTyping();
@@ -528,6 +561,10 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
       const tempId = `pending-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 8)}`;
+      const textDescriptor = describeMessageTextContent(
+        message,
+        apiConfig.webBaseUrl,
+      );
       const optimisticMessage: MessageItem = {
         id: tempId,
         conversationId: '',
@@ -536,7 +573,11 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
         message,
         media: attachment?.uri,
         mediaType: attachment?.mediaType,
-        sharedPost: parseSharedPostMessage(message, apiConfig.webBaseUrl),
+        sharedPost: textDescriptor.sharedPost,
+        contentKind: attachment?.mediaType ?? textDescriptor.kind,
+        link: textDescriptor.link,
+        location: textDescriptor.location,
+        replyTo: options?.replyTo,
         reactions: createEmptyMessageReactionSummary(),
         time: Math.floor(Date.now() / 1000),
         isSentByMe: true,
@@ -549,7 +590,11 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
       setError(null);
 
       try {
-        const response = await sendMessageForChat(message, attachment);
+        const response = await sendMessageForChat(
+          message,
+          attachment,
+          options,
+        );
         let sentMessages = response.sentMessages ?? [];
 
         if (sentMessages.length === 0) {
@@ -644,7 +689,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
   const clearGroupHistory = useCallback(async () => {
     if (chat.chatType !== 'group') return false;
 
-    await repository.clearGroupHistory(getRawGroupId(chat));
+    await repository.clearGroupHistory(chat);
     setMessages([]);
     setGroupSharedAssetsOverride({
       media: [],
@@ -711,7 +756,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
             }
             return;
           }
-          await loadPinnedMessages().catch(() => undefined);
+          await loadPinnedMessages(false).catch(() => undefined);
         }
       } finally {
         running = false;
@@ -830,7 +875,7 @@ export function useChatViewModel(chat: ChatItem, isScreenFocused = true) {
     const interval = setInterval(() => {
       if (AppState.currentState !== 'active') return;
       refreshLatest(false).catch(() => undefined);
-      loadPinnedMessages().catch(() => undefined);
+      loadPinnedMessages(false).catch(() => undefined);
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);

@@ -1,15 +1,48 @@
 <?php
 if (!empty($_POST['chat_id']) && is_numeric($_POST['chat_id']) && $_POST['chat_id'] > 0 && !empty($_POST['type']) && in_array($_POST['type'], array('user','page','group'))) {
-    $chats = $db->where('user_id',$wo['user']['id'])->where('chat_id',Wo_Secure($_POST['chat_id']))->where('type',Wo_Secure($_POST['type']))->where('pin','yes')->where('message_id',0,'>')->orderBy('time', 'DESC')->get(T_MUTE);
+    $chat_id = (int)$_POST['chat_id'];
+    $chat_type = (string)$_POST['type'];
+    $is_shared_pin = $chat_type === 'user' || $chat_type === 'group';
+    $chats = array();
+    if ($chat_type === 'page') {
+        $chats = $db->where('user_id',$wo['user']['id'])->where('chat_id',$chat_id)->where('type','page')->where('pin','yes')->where('message_id',0,'>')->orderBy('time', 'DESC')->get(T_MUTE);
+    } elseif ($chat_type === 'user') {
+        $owned_chat = VNSEEA_GetOwnedUserChat($chat_id);
+        if (!empty($owned_chat) && !empty($owned_chat->conversation_user_id)) {
+            $current_user_id = (int)$wo['user']['user_id'];
+            $participant_id = (int)$owned_chat->conversation_user_id;
+            $query = mysqli_query($sqlConnect, "SELECT pin.* FROM " . T_MESSAGE_PINS . " pin INNER JOIN " . T_MESSAGES . " message ON message.id = pin.message_id WHERE message.group_id = 0 AND message.page_id = 0 AND ((message.from_id = {$current_user_id} AND message.to_id = {$participant_id}) OR (message.from_id = {$participant_id} AND message.to_id = {$current_user_id})) ORDER BY pin.pinned_at DESC");
+            while ($query && $row = mysqli_fetch_object($query)) $chats[] = $row;
+        }
+    } else {
+        $group = $db->where('group_id', $chat_id)->getOne(T_GROUP_CHAT);
+        $active_membership = $db->where('group_id', $chat_id)
+            ->where('user_id', $wo['user']['user_id'])
+            ->where('active', 1)
+            ->getValue(T_GROUP_CHAT_USERS, 'COUNT(*)');
+        $is_member = !empty($group) &&
+            ((int)$group->user_id === (int)$wo['user']['user_id'] || $active_membership > 0);
+        if ($is_member) {
+            $cleared_message_id = VNSEEA_GetGroupHistoryClearMessageId($chat_id, $wo['user']['user_id']);
+            $clear_sql = $cleared_message_id > 0 ? " AND message.id > {$cleared_message_id}" : '';
+            $query = mysqli_query($sqlConnect, "SELECT pin.* FROM " . T_MESSAGE_PINS . " pin INNER JOIN " . T_MESSAGES . " message ON message.id = pin.message_id WHERE message.group_id = {$chat_id}{$clear_sql} ORDER BY pin.pinned_at DESC");
+            while ($query && $row = mysqli_fetch_object($query)) $chats[] = $row;
+        }
+    }
     $array = array();
     if (!empty($chats)) {
         foreach ($chats as $key => $value) {
-            if (!VNSEEA_IsMessageInAuthorizedChat($value->type, $value->chat_id, $value->message_id)) {
+            if (!VNSEEA_IsMessageInAuthorizedChat($chat_type, $chat_id, $value->message_id)) {
                 continue;
             }
             $message = GetMessageById($value->message_id);
             if (!empty($message)) {
-                $message['pinned_at'] = (int)$value->time;
+                $pinned_by_user_id = $is_shared_pin ? (int)$value->pinned_by : (int)$value->user_id;
+                $pinned_by_user = Wo_UserData($pinned_by_user_id);
+                $message['pinned_at'] = $is_shared_pin ? (int)$value->pinned_at : (int)$value->time;
+                $message['pinned_by_user_id'] = (string)$pinned_by_user_id;
+                $message['pinned_by_name'] = !empty($pinned_by_user['name']) ? $pinned_by_user['name'] : (!empty($pinned_by_user['username']) ? $pinned_by_user['username'] : 'Người dùng');
+                $message['can_unpin'] = $is_shared_pin ? VNSEEA_CanUnpinSharedMessage($value, $chat_type, $chat_id) : true;
                 foreach ($non_allowed as $key5 => $value5) {
                     if (!empty($message['messageUser'])) {
                         unset($message['messageUser'][$value5]);

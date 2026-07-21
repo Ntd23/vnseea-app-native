@@ -103,4 +103,35 @@ describe('message chat merge', () => {
       discovery,
     ]);
   });
+
+  it('keeps the higher message id when two snapshots have the same timestamp', () => {
+    const latestText = chat({
+      id: 'group:20',
+      chatType: 'group',
+      groupId: '20',
+      userId: '20',
+      lastMessageId: '101',
+      lastMessage: 'Tin nhắn mới nhất',
+      lastMessageKind: 'text',
+      lastMessageTime: 200,
+    });
+    const staleLocation = chat({
+      id: 'group:20',
+      chatType: 'group',
+      groupId: '20',
+      userId: '20',
+      lastMessageId: '100',
+      lastMessage: 'https://v2.vnseea.vn/map?lat=21&lng=105',
+      lastMessageKind: 'location',
+      lastMessageTime: 200,
+    });
+
+    expect(mergeChatItems([latestText], [staleLocation])).toEqual([
+      expect.objectContaining({
+        lastMessageId: '101',
+        lastMessage: 'Tin nhắn mới nhất',
+        lastMessageKind: 'text',
+      }),
+    ]);
+  });
 });

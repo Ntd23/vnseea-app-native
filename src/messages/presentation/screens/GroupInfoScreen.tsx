@@ -1,773 +1,750 @@
-// Description: Group info screen - shows group details and allows editing avatar/name
-// English description: Displays group chat information with edit capabilities for group owner
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
-  FlatList,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Platform,
-  RefreshControl,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import {
+  Bell,
+  BellOff,
   Camera,
-  ChevronLeft,
+  Check,
+  ChevronRight,
   Crown,
-  Edit2,
-  Info,
+  Edit3,
+  FileText,
   LogOut,
-  MoreHorizontal,
-  RefreshCw,
+  Pin,
+  Search,
+  Trash2,
   UserMinus,
   UserPlus,
-  Users,
   X,
-  Check,
+  type LucideIcon,
 } from 'lucide-react-native';
 import {
   launchImageLibrary,
   type MediaType,
 } from 'react-native-image-picker';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../../navigation/types';
 import { ROUTES } from '../../../navigation/constants/routes';
-import { apiBridge } from '../../../shared-kernel/infrastructure/api/apiBridge';
+import { navigateToUserProfile } from '../../../navigation/profileNavigation';
 import FocusAwareStatusBar from '../../../shared-kernel/presentation/components/FocusAwareStatusBar';
+import { useAppTheme } from '../../../shared-kernel/application/hooks/useAppTheme';
+import { useAppLanguage } from '../../../shared-kernel/application/hooks/useAppLanguage';
+import { createMessagesRepository } from '../../infrastructure/repositories/ApiMessagesRepository';
+import { subscribeToMessageInvalidations } from '../../infrastructure/realtime/messageRealtimeRuntime';
+import type {
+  GroupAddableUser,
+  GroupChatInfo,
+  GroupChatMember,
+  MessageAttachment,
+} from '../../domain/types/messages.types';
+import { ConversationScreenHeader } from '../components/ConversationScreenHeader';
 
-type GroupInfoScreenProps = NativeStackScreenProps<RootStackParamList, 'GroupInfo'>;
+type Props = NativeStackScreenProps<
+  RootStackParamList,
+  typeof ROUTES.GROUP_INFO
+>;
 
-const BRAND = '#0000ff';
-const BRAND_LIGHT = 'rgba(0, 0, 255, 0.08)';
+type ActionSheet = 'add' | 'edit' | null;
 
-interface GroupMember {
-  user_id: number;
-  username: string;
-  first_name: string;
-  last_name: string;
-  avatar: string;
-  last_seen: number;
-  active: number;
-}
+const repository = createMessagesRepository();
+const BRAND = '#0000FF';
+const styles = StyleSheet.create({
+  darkScreen: { backgroundColor: '#020617' },
+  scrollContent: { paddingBottom: 36 },
+});
 
-interface GroupChatResponse {
-  api_status: number;
-  data?: Array<{
-    id: number;
-    group_name: string;
-    avatar: string;
-    user_data?: {
-      user_id: number;
-      username: string;
-      first_name: string;
-      last_name: string;
-      avatar: string;
-    };
-    parts?: GroupMember[];
-  }>;
-  message?: string;
-  errors?: { error_text: string };
-}
+const COPY = {
+  vi: {
+    title: 'Thông tin nhóm',
+    members: (count: number) => `${count} thành viên`,
+    search: 'Tìm kiếm',
+    mute: 'Tắt thông báo',
+    unmute: 'Bật thông báo',
+    pinned: 'Tin nhắn đã ghim',
+    sharedAssets: 'File phương tiện, liên kết và tệp',
+    membersTitle: 'Thành viên',
+    addMembers: 'Thêm thành viên',
+    editGroup: 'Chỉnh sửa nhóm',
+    clearMine: 'Xóa lịch sử với tôi',
+    leave: 'Rời nhóm',
+    deleteGroup: 'Xóa nhóm',
+    groupName: 'Tên nhóm',
+    findMembers: 'Tìm người để thêm',
+    noCandidates: 'Không tìm thấy người dùng có thể thêm.',
+    cancel: 'Hủy',
+    save: 'Lưu thay đổi',
+    add: (count: number) => `Thêm ${count} người`,
+    retry: 'Thử lại',
+    loadError: 'Không thể tải thông tin nhóm.',
+    clearTitle: 'Xóa lịch sử với tôi?',
+    clearMessage:
+      'Các tin nhắn hiện tại sẽ chỉ bị ẩn trên tài khoản của bạn. Thành viên khác vẫn xem được.',
+    leaveTitle: 'Rời nhóm?',
+    leaveMessage: 'Bạn sẽ không còn nhận tin nhắn mới từ nhóm này.',
+    deleteTitle: 'Xóa nhóm?',
+    deleteMessage:
+      'Nhóm và toàn bộ lịch sử sẽ bị xóa với tất cả thành viên.',
+    removeTitle: (name: string) => `Xóa ${name} khỏi nhóm?`,
+  },
+  en: {
+    title: 'Group details',
+    members: (count: number) => `${count} members`,
+    search: 'Search',
+    mute: 'Mute notifications',
+    unmute: 'Unmute notifications',
+    pinned: 'Pinned messages',
+    sharedAssets: 'Media, links and files',
+    membersTitle: 'Members',
+    addMembers: 'Add members',
+    editGroup: 'Edit group',
+    clearMine: 'Clear history for me',
+    leave: 'Leave group',
+    deleteGroup: 'Delete group',
+    groupName: 'Group name',
+    findMembers: 'Find people to add',
+    noCandidates: 'No eligible users found.',
+    cancel: 'Cancel',
+    save: 'Save changes',
+    add: (count: number) => `Add ${count} people`,
+    retry: 'Try again',
+    loadError: 'Unable to load group details.',
+    clearTitle: 'Clear history for you?',
+    clearMessage:
+      'Current messages will only be hidden on your account. Other members can still see them.',
+    leaveTitle: 'Leave group?',
+    leaveMessage: 'You will no longer receive new messages from this group.',
+    deleteTitle: 'Delete group?',
+    deleteMessage: 'The group and its history will be deleted for everyone.',
+    removeTitle: (name: string) => `Remove ${name} from the group?`,
+  },
+};
 
-// Member item component with staggered animation
-function MemberItem({ item, index, isOwner }: { item: GroupMember; index: number; isOwner: boolean }) {
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-  const translateXAnim = useRef(new Animated.Value(-20)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(opacityAnim, {
-        toValue: 1,
-        duration: 250,
-        delay: index * 50,
-        useNativeDriver: true,
-      }),
-      Animated.spring(translateXAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 40,
-        delay: index * 50,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [index, opacityAnim, translateXAnim]);
-
-  const name = [item.first_name, item.last_name].filter(Boolean).join(' ') || item.username || 'User';
-  const initial = name[0]?.toUpperCase() || '?';
-
+function ActionButton({
+  Icon,
+  label,
+  onPress,
+  busy,
+}: {
+  Icon: LucideIcon;
+  label: string;
+  onPress: () => void;
+  busy?: boolean;
+}) {
   return (
-    <Animated.View
-      style={{
-        opacity: opacityAnim,
-        transform: [{ translateX: translateXAnim }],
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-      }}
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className="w-1/4 items-center px-1"
+      disabled={busy}
+      onPress={onPress}
     >
-      {/* Avatar */}
-      <View className="relative">
-        {item.avatar ? (
-          <Image
-            source={{ uri: item.avatar }}
-            className="h-12 w-12 rounded-full"
-            resizeMode="cover"
-          />
+      <View className="h-12 w-12 items-center justify-center rounded-full bg-[#0000ff]/10">
+        {busy ? (
+          <ActivityIndicator color={BRAND} />
         ) : (
-          <View
-            className="h-12 w-12 items-center justify-center rounded-full"
-            style={{ backgroundColor: BRAND_LIGHT }}
-          >
-            <Text className="text-[16px] font-bold text-[#0000ff]">{initial}</Text>
-          </View>
-        )}
-        {item.active === 1 && (
-          <View className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
+          <Icon size={22} color={BRAND} />
         )}
       </View>
-
-      {/* Name & username */}
-      <View className="ml-3 flex-1">
-        <View className="flex-row items-center">
-          <Text className="text-[15px] font-semibold text-slate-800" numberOfLines={1}>
-            {name}
-          </Text>
-          {isOwner && (
-            <View className="ml-2 flex-row items-center rounded-full bg-amber-100 px-2 py-0.5">
-              <Crown size={10} color="#d97706" />
-              <Text className="ml-1 text-[10px] font-medium text-amber-700">Trưởng nhóm</Text>
-            </View>
-          )}
-        </View>
-        <Text className="text-[12px] text-slate-500">@{item.username}</Text>
-      </View>
-
-      {/* Remove button (UI only for now) */}
-      <TouchableOpacity
-        className="h-9 w-9 items-center justify-center rounded-full bg-red-50"
-        activeOpacity={0.7}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      <Text
+        className="mt-2 text-center text-[12px] font-medium text-slate-700 dark:text-slate-200"
+        numberOfLines={2}
       >
-        <UserMinus size={16} color="#dc2626" />
-      </TouchableOpacity>
-    </Animated.View>
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
-// Empty state component
-function EmptyMembersState() {
+function MenuRow({
+  Icon,
+  label,
+  onPress,
+  destructive,
+  isLast,
+}: {
+  Icon: LucideIcon;
+  label: string;
+  onPress: () => void;
+  destructive?: boolean;
+  isLast?: boolean;
+}) {
   return (
-    <View className="items-center py-8">
-      <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-slate-100">
-        <Users size={28} color="#94a3b8" />
-      </View>
-      <Text className="text-[14px] font-medium text-slate-500">Chưa có thành viên</Text>
-      <Text className="mt-1 text-[12px] text-slate-400">Thêm bạn bè vào nhóm</Text>
+    <TouchableOpacity
+      className={`min-h-[56px] flex-row items-center px-4 py-3 ${
+        isLast ? '' : 'border-b border-slate-200 dark:border-slate-700'
+      }`}
+      onPress={onPress}
+    >
+      <Icon size={21} color={destructive ? '#DC2626' : '#475569'} />
+      <Text
+        className={`ml-3 flex-1 text-[15px] ${
+          destructive ? 'text-red-600' : 'text-slate-900 dark:text-white'
+        }`}
+      >
+        {label}
+      </Text>
+      <ChevronRight size={19} color="#94A3B8" />
+    </TouchableOpacity>
+  );
+}
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View className="mb-5 px-4">
+      <Text className="mb-2 px-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+        {title}
+      </Text>
+      <View className="surface-card overflow-hidden rounded-lg">{children}</View>
     </View>
   );
 }
 
-export default function GroupInfoScreen({ navigation, route }: GroupInfoScreenProps) {
-  const { groupId, groupName: initialGroupName, avatar: initialAvatar, memberCount: initialMemberCount } = route.params;
+function MemberRow({
+  member,
+  canRemove,
+  onOpen,
+  onRemove,
+}: {
+  member: GroupChatMember;
+  canRemove: boolean;
+  onOpen: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      className="min-h-[62px] flex-row items-center border-b border-slate-100 px-4 py-2 dark:border-slate-700"
+      onPress={onOpen}
+    >
+      <View className="relative">
+        <Image
+          source={{ uri: member.avatar }}
+          className="h-11 w-11 rounded-full bg-slate-200"
+        />
+        {member.isOnline ? (
+          <View className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
+        ) : null}
+      </View>
+      <View className="ml-3 flex-1">
+        <View className="flex-row items-center">
+          <Text className="text-[14px] font-semibold text-slate-900 dark:text-white">
+            {member.name}
+          </Text>
+          {member.isOwner ? (
+            <Crown className="ml-2" size={14} color="#D97706" />
+          ) : null}
+        </View>
+        <Text className="text-xs text-slate-500">@{member.username}</Text>
+      </View>
+      {canRemove ? (
+        <TouchableOpacity
+          accessibilityLabel={`Xóa ${member.name} khỏi nhóm`}
+          className="h-10 w-10 items-center justify-center rounded-full bg-red-50"
+          onPress={event => {
+            event.stopPropagation();
+            onRemove();
+          }}
+        >
+          <UserMinus size={18} color="#DC2626" />
+        </TouchableOpacity>
+      ) : null}
+    </TouchableOpacity>
+  );
+}
 
-  // State
-  const [localAvatar, setLocalAvatar] = useState(initialAvatar);
-  const [localGroupName, setLocalGroupName] = useState(initialGroupName);
-  const [memberCount, setMemberCount] = useState(initialMemberCount);
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [members, setMembers] = useState<GroupMember[]>([]);
-  const [owner, setOwner] = useState<GroupMember | null>(null);
-  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
-  const [showFullAvatar, setShowFullAvatar] = useState(false);
+export default function GroupInfoScreen({ navigation, route }: Props) {
+  const { chat } = route.params;
+  const language = useAppLanguage();
+  const copy = COPY[language];
+  const { isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const [groupInfo, setGroupInfo] = useState<GroupChatInfo>();
+  const [notificationsMuted, setNotificationsMuted] = useState(
+    Boolean(chat.notificationsMuted),
+  );
+  const [isLoading, setIsLoading] = useState(true);
+  const [isMutating, setIsMutating] = useState(false);
+  const [error, setError] = useState('');
+  const [sheet, setSheet] = useState<ActionSheet>(null);
+  const [groupName, setGroupName] = useState(chat.name);
+  const [groupAvatar, setGroupAvatar] = useState<MessageAttachment>();
+  const [query, setQuery] = useState('');
+  const [addableUsers, setAddableUsers] = useState<GroupAddableUser[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const groupId = chat.groupId || chat.chatId || chat.userId;
 
-  // Animation refs
-  const headerOpacity = useRef(new Animated.Value(0)).current;
-  const contentTranslateY = useRef(new Animated.Value(40)).current;
-  const avatarScale = useRef(new Animated.Value(0.8)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const loadGroupInfo = useCallback(async (showLoader = false) => {
+    if (!groupId) return;
+    if (showLoader) setIsLoading(true);
+    setError('');
+    try {
+      const nextInfo = await repository.getGroupInfo(groupId);
+      setGroupInfo(nextInfo);
+      setGroupName(nextInfo.name);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.loadError);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [copy.loadError, groupId]);
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(headerOpacity, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-      Animated.timing(contentTranslateY, {
-        toValue: 0,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-      Animated.spring(avatarScale, {
-        toValue: 1,
-        friction: 5,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Pulse animation for online indicator
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.2,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, [headerOpacity, contentTranslateY, avatarScale, fadeAnim, pulseAnim]);
-
-  // Load group info
-  const loadGroupInfo = useCallback(
-    async (showLoading = false) => {
-      if (showLoading) {
-        setIsRefreshing(true);
-      } else {
-        setIsLoadingMembers(true);
-      }
-      try {
-        console.log('[GroupInfoScreen] Loading group info:', groupId);
-        const response = await apiBridge.post<GroupChatResponse>(
-          'group_chat',
-          { type: 'get_by_id', id: groupId },
-        );
-
-        console.log('[GroupInfoScreen] Group info response:', response);
-
-        if (response.api_status === 200 && response.data?.[0]) {
-          const groupData = response.data[0];
-
-          if (groupData.avatar) setLocalAvatar(groupData.avatar);
-          if (groupData.group_name) setLocalGroupName(groupData.group_name);
-
-          if (groupData.user_data) {
-            setOwner({
-              user_id: Number(groupData.user_data.user_id ?? 0),
-              username: groupData.user_data.username || '',
-              first_name: groupData.user_data.first_name || '',
-              last_name: groupData.user_data.last_name || '',
-              avatar: groupData.user_data.avatar || '',
-              last_seen: 0,
-              active: 1,
-            });
-          }
-
-          if (groupData.parts && groupData.parts.length > 0) {
-            setMembers(groupData.parts);
-            setMemberCount(groupData.parts.length);
-          }
-        }
-      } catch (error: any) {
-        console.error('[GroupInfoScreen] Load group info error:', error);
-      } finally {
-        setIsRefreshing(false);
-        setIsLoadingMembers(false);
-      }
-    },
-    [groupId],
+  useFocusEffect(
+    useCallback(() => {
+      loadGroupInfo(false).catch(() => undefined);
+      const unsubscribe = subscribeToMessageInvalidations(() => {
+        loadGroupInfo(false).catch(() => undefined);
+      });
+      return unsubscribe;
+    }, [loadGroupInfo]),
   );
 
   useEffect(() => {
-    loadGroupInfo(false);
-  }, [loadGroupInfo]);
+    if (sheet !== 'add') return;
+    let cancelled = false;
+    repository
+      .searchAddableUsers(groupId, query.trim())
+      .then(users => {
+        if (!cancelled) setAddableUsers(users);
+      })
+      .catch(() => {
+        if (!cancelled) setAddableUsers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId, query, sheet]);
 
-  // Avatar picker
-  const handlePickAvatar = useCallback(async () => {
+  useEffect(() => {
+    if (!sheet) return;
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        setSheet(null);
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [sheet]);
+
+  const exitToMessages = useCallback(() => {
+    navigation.popTo(ROUTES.MESSAGES);
+  }, [navigation]);
+
+  const toggleNotifications = useCallback(async () => {
+    setIsMutating(true);
+    const nextMuted = !notificationsMuted;
+    try {
+      await repository.setConversationNotifications(chat, !nextMuted);
+      setNotificationsMuted(nextMuted);
+    } catch (caught) {
+      Alert.alert(copy.title, caught instanceof Error ? caught.message : copy.retry);
+    } finally {
+      setIsMutating(false);
+    }
+  }, [chat, copy.retry, copy.title, notificationsMuted]);
+
+  const openEditSheet = useCallback(() => {
+    setGroupName(groupInfo?.name || chat.name);
+    setGroupAvatar(undefined);
+    setSheet('edit');
+  }, [chat.name, groupInfo?.name]);
+
+  const pickAvatar = useCallback(async () => {
     const result = await launchImageLibrary({
       mediaType: 'photo' as MediaType,
       selectionLimit: 1,
       quality: 0.8,
-      maxWidth: 512,
-      maxHeight: 512,
     });
+    const asset = result.assets?.[0];
+    if (!asset?.uri) return;
+    const uri =
+      Platform.OS === 'android' &&
+      !/^[a-z][a-z0-9+.-]*:\/\//i.test(asset.uri)
+        ? `file://${asset.uri}`
+        : asset.uri;
+    setGroupAvatar({
+      uri,
+      name: asset.fileName || `group-${Date.now()}.jpg`,
+      type: asset.type || 'image/jpeg',
+      mediaType: 'image',
+    });
+  }, []);
 
-    if (result.didCancel || result.errorCode || !result.assets?.[0]?.uri) {
-      return;
-    }
-
-    const asset = result.assets[0];
-    const uri = asset.uri ?? '';
-    const imageUri = (Platform.OS === 'android' && uri && !/^[a-z][a-z0-9+.-]*:\/\//i.test(uri))
-      ? `file://${uri}`
-      : uri;
-
-    setLocalAvatar(imageUri);
-    Animated.sequence([
-      Animated.timing(avatarScale, { toValue: 0.85, duration: 150, useNativeDriver: true }),
-      Animated.spring(avatarScale, { toValue: 1, friction: 4, useNativeDriver: true }),
-    ]).start();
-
-    Alert.alert(
-      'Cập nhật ảnh nhóm',
-      'Bạn có muốn lưu ảnh đại diện mới cho nhóm không?',
-      [
-        { text: 'Hủy', style: 'cancel', onPress: () => setLocalAvatar(initialAvatar) },
-        {
-          text: 'Lưu',
-          onPress: async () => {
-            setIsUploading(true);
-            try {
-              const response = await apiBridge.multipart<GroupChatResponse>(
-                'group_chat',
-                {
-                  type: 'edit',
-                  id: groupId,
-                  avatar: {
-                    uri: uri,
-                    name: asset.fileName || `avatar_${Date.now()}.jpg`,
-                    type: asset.type || 'image/jpeg',
-                  },
-                },
-              );
-
-              if (response.api_status === 200 && response.data?.[0]?.avatar) {
-                setLocalAvatar(response.data[0].avatar);
-                Alert.alert('Thành công', 'Ảnh đại diện nhóm đã được cập nhật');
-              } else {
-                setLocalAvatar(initialAvatar);
-                Alert.alert('Lỗi', response.errors?.error_text || 'Không thể cập nhật ảnh nhóm');
-              }
-            } catch (error: any) {
-              console.error('[GroupInfoScreen] Update avatar error:', error);
-              setLocalAvatar(initialAvatar);
-              Alert.alert('Lỗi', error?.message || 'Không thể cập nhật ảnh nhóm');
-            } finally {
-              setIsUploading(false);
-            }
-          },
-        },
-      ],
-    );
-  }, [avatarScale, groupId, initialAvatar]);
-
-  // Save name
-  const handleSaveName = useCallback(async () => {
-    const trimmedName = localGroupName.trim();
-
-    if (trimmedName.length < 4) {
-      Alert.alert('Lỗi', 'Tên nhóm phải có ít nhất 4 ký tự');
-      return;
-    }
-    if (trimmedName.length > 25) {
-      Alert.alert('Lỗi', 'Tên nhóm không được quá 25 ký tự');
-      return;
-    }
-    if (trimmedName === initialGroupName) {
-      setIsEditingName(false);
-      return;
-    }
-
-    setIsUploading(true);
+  const saveGroup = useCallback(async () => {
+    if (!groupName.trim()) return;
+    setIsMutating(true);
     try {
-      const response = await apiBridge.post<GroupChatResponse>(
-        'group_chat',
-        { type: 'edit', id: groupId, group_name: trimmedName },
-      );
-
-      if (response.api_status === 200) {
-        setIsEditingName(false);
-        if (response.data?.[0]?.group_name) {
-          setLocalGroupName(response.data[0].group_name);
-        }
-        Alert.alert('Thành công', 'Tên nhóm đã được cập nhật');
-      } else {
-        Alert.alert('Lỗi', response.errors?.error_text || 'Không thể cập nhật tên nhóm');
-      }
-    } catch (error: any) {
-      console.error('[GroupInfoScreen] Update name error:', error);
-      Alert.alert('Lỗi', error?.message || 'Không thể cập nhật tên nhóm');
+      const next = await repository.editGroup(groupId, {
+        name: groupName.trim(),
+        avatar: groupAvatar,
+      });
+      setGroupInfo(next);
+      setSheet(null);
+    } catch (caught) {
+      Alert.alert(copy.editGroup, caught instanceof Error ? caught.message : copy.retry);
     } finally {
-      setIsUploading(false);
+      setIsMutating(false);
     }
-  }, [groupId, initialGroupName, localGroupName]);
+  }, [copy.editGroup, copy.retry, groupAvatar, groupId, groupName]);
 
-  // Leave group
-  const handleLeaveGroup = useCallback(() => {
-    Alert.alert(
-      'Rời nhóm',
-      'Bạn có chắc muốn rời khỏi nhóm này không?',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Rời nhóm',
-          style: 'destructive',
-          onPress: async () => {
-            setIsUploading(true);
-            try {
-              const response = await apiBridge.post<{
-                api_status: number;
-                message_data?: string;
-                errors?: { error_text: string };
-              }>(
-                'group_chat',
-                { type: 'leave', id: groupId },
-              );
+  const addMembers = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    setIsMutating(true);
+    try {
+      await repository.addGroupUsers(groupId, [...selectedIds]);
+      setSelectedIds(new Set());
+      setSheet(null);
+      await loadGroupInfo(false);
+    } catch (caught) {
+      Alert.alert(copy.addMembers, caught instanceof Error ? caught.message : copy.retry);
+    } finally {
+      setIsMutating(false);
+    }
+  }, [copy.addMembers, copy.retry, groupId, loadGroupInfo, selectedIds]);
 
-              if (response.api_status === 200) {
-                Alert.alert('Thành công', 'Bạn đã rời nhóm', [
-                  { text: 'OK', onPress: () => navigation.goBack() },
-                ]);
-              } else {
-                Alert.alert('Lỗi', response.errors?.error_text || 'Không thể rời nhóm');
-              }
-            } catch (error: any) {
-              console.error('[GroupInfoScreen] Leave group error:', error);
-              Alert.alert('Lỗi', error?.message || 'Không thể rời nhóm');
-            } finally {
-              setIsUploading(false);
-            }
-          },
+  const removeMember = useCallback((member: GroupChatMember) => {
+    Alert.alert(copy.removeTitle(member.name), '', [
+      { text: copy.cancel, style: 'cancel' },
+      {
+        text: language === 'vi' ? 'Xóa' : 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          repository
+            .removeGroupUser(groupId, member.id)
+            .then(() => loadGroupInfo(false))
+            .catch(caught =>
+              Alert.alert(
+                copy.membersTitle,
+                caught instanceof Error ? caught.message : copy.retry,
+              ),
+            );
         },
-      ],
-    );
-  }, [groupId, navigation]);
+      },
+    ]);
+  }, [copy, groupId, language, loadGroupInfo]);
 
-  // Navigate to add members
-  const handleAddMembers = useCallback(() => {
-    navigation.navigate(ROUTES.CREATE_GROUP_CHAT as any, { groupId, groupName: localGroupName });
-  }, [groupId, localGroupName, navigation]);
+  const clearGroupHistory = useCallback(() => {
+    Alert.alert(copy.clearTitle, copy.clearMessage, [
+      { text: copy.cancel, style: 'cancel' },
+      {
+        text: language === 'vi' ? 'Xóa' : 'Clear',
+        style: 'destructive',
+        onPress: () => {
+          repository.clearGroupHistory(chat).catch(caught =>
+            Alert.alert(
+              copy.clearMine,
+              caught instanceof Error ? caught.message : copy.retry,
+            ),
+          );
+        },
+      },
+    ]);
+  }, [chat, copy, language]);
 
-  // Navigate to chat
-  const handleOpenChat = useCallback(() => {
-    const chatItem = {
-      id: `group:${groupId}`,
-      chatType: 'group' as const,
-      userId: String(groupId),
-      username: '',
-      name: localGroupName,
-      avatar: localAvatar,
-      lastMessage: '',
-      lastMessageTime: Date.now() / 1000,
-      unreadCount: 0,
-      isOnline: false,
-      isVerified: false,
-    };
-    navigation.navigate(ROUTES.CHAT, { chat: chatItem });
-  }, [groupId, localAvatar, localGroupName, navigation]);
+  const leaveGroup = useCallback(() => {
+    Alert.alert(copy.leaveTitle, copy.leaveMessage, [
+      { text: copy.cancel, style: 'cancel' },
+      {
+        text: copy.leave,
+        style: 'destructive',
+        onPress: () => {
+          repository
+            .leaveGroup(groupId)
+            .then(exitToMessages)
+            .catch(caught =>
+              Alert.alert(
+                copy.leave,
+                caught instanceof Error ? caught.message : copy.retry,
+              ),
+            );
+        },
+      },
+    ]);
+  }, [copy, exitToMessages, groupId]);
 
-  const ownerId = owner?.user_id;
-  const isOwner = (member: GroupMember) => member.user_id === ownerId;
+  const deleteGroup = useCallback(() => {
+    Alert.alert(copy.deleteTitle, copy.deleteMessage, [
+      { text: copy.cancel, style: 'cancel' },
+      {
+        text: copy.deleteGroup,
+        style: 'destructive',
+        onPress: () => {
+          repository
+            .deleteGroup(groupId)
+            .then(exitToMessages)
+            .catch(caught =>
+              Alert.alert(
+                copy.deleteGroup,
+                caught instanceof Error ? caught.message : copy.retry,
+              ),
+            );
+        },
+      },
+    ]);
+  }, [copy, exitToMessages, groupId]);
+
+  const memberRows = useMemo(() => groupInfo?.members ?? [], [groupInfo?.members]);
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <FocusAwareStatusBar barStyle="dark-content" />
+    <SafeAreaView
+      className="flex-1 surface-base"
+      edges={['top']}
+      style={isDark ? styles.darkScreen : undefined}
+    >
+      <FocusAwareStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      <ConversationScreenHeader title={copy.title} onBack={() => navigation.goBack()} />
 
-      {/* Header with gradient effect */}
-      <Animated.View
-        style={{ opacity: headerOpacity }}
-        className="flex-row items-center justify-between border-b border-slate-100 px-2 py-3"
-      >
-        <TouchableOpacity
-          className="h-11 w-11 items-center justify-center rounded-full active:bg-slate-100"
-          activeOpacity={0.7}
-          onPress={() => navigation.goBack()}
-        >
-          <ChevronLeft size={24} color="#1f2937" />
-        </TouchableOpacity>
-        <Text className="text-[17px] font-bold text-slate-800">Thông tin nhóm</Text>
-        <TouchableOpacity
-          className="h-11 w-11 items-center justify-center rounded-full active:bg-slate-100"
-          activeOpacity={0.7}
-          onPress={() => loadGroupInfo(true)}
-        >
-          <RefreshCw
-            size={20}
-            color="#1f2937"
-            style={isRefreshing ? { transform: [{ rotate: '45deg' }] } : undefined}
-          />
-        </TouchableOpacity>
-      </Animated.View>
-
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <Animated.ScrollView
-          style={{ transform: [{ translateY: contentTranslateY }] }}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={() => loadGroupInfo(true)}
-              tintColor={BRAND}
-              colors={[BRAND]}
-            />
-          }
-        >
-          {/* Gradient header background */}
-          <View
-            className="relative"
-            style={{
-              backgroundColor: BRAND_LIGHT,
-              paddingTop: 24,
-              paddingBottom: 32,
-              borderBottomLeftRadius: 32,
-              borderBottomRightRadius: 32,
-            }}
+      {isLoading && !groupInfo ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color={BRAND} />
+        </View>
+      ) : error && !groupInfo ? (
+        <View className="flex-1 items-center justify-center px-8">
+          <Text className="text-center text-sm text-red-600">{error}</Text>
+          <TouchableOpacity
+            className="mt-4 rounded-lg bg-[#0000ff] px-4 py-3"
+            onPress={() => loadGroupInfo(true)}
           >
-            {/* Decorative circles */}
-            <View className="absolute -left-12 top-8 h-32 w-32 rounded-full bg-white/40" />
-            <View className="absolute -right-8 top-20 h-24 w-24 rounded-full bg-white/30" />
+            <Text className="font-semibold text-white">{copy.retry}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View className="items-center px-4 pb-7 pt-6">
+            <Image
+              source={{ uri: groupInfo?.avatar || chat.avatar }}
+              className="h-28 w-28 rounded-full bg-slate-200"
+            />
+            <Text className="mt-3 text-[24px] font-bold text-slate-950 dark:text-white">
+              {groupInfo?.name || chat.name}
+            </Text>
+            <Text className="mt-1 text-sm text-slate-500">
+              {copy.members(groupInfo?.memberCount ?? 0)}
+            </Text>
 
-            {/* Avatar */}
-            <View className="items-center">
-              <Animated.View
-                style={{
-                  transform: [{ scale: avatarScale }],
-                  shadowColor: BRAND,
-                  shadowOffset: { width: 0, height: 8 },
-                  shadowOpacity: 0.2,
-                  shadowRadius: 16,
-                  elevation: 12,
-                }}
-              >
-                {localAvatar ? (
-                  <Image
-                    source={{ uri: localAvatar }}
-                    className="h-32 w-32 rounded-full border-4 border-white"
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View className="h-32 w-32 items-center justify-center rounded-full border-4 border-white bg-white">
-                    <Users size={48} color={BRAND} />
-                  </View>
-                )}
-
-                {/* Camera button */}
-                <TouchableOpacity
-                  className="absolute bottom-0 right-0 h-10 w-10 items-center justify-center rounded-full bg-[#0000ff] shadow-lg"
-                  activeOpacity={0.8}
-                  onPress={handlePickAvatar}
-                  disabled={isUploading}
-                >
-                  <Camera size={18} color="#ffffff" />
-                </TouchableOpacity>
-              </Animated.View>
-
-              <Text className="mt-3 text-[12px] text-slate-600">Nhấn vào biểu tượng camera để đổi ảnh</Text>
+            <View className="mt-6 w-full flex-row justify-center">
+              <ActionButton
+                Icon={Search}
+                label={copy.search}
+                onPress={() => navigation.navigate(ROUTES.CONVERSATION_SEARCH, { chat })}
+              />
+              <ActionButton
+                Icon={notificationsMuted ? Bell : BellOff}
+                label={notificationsMuted ? copy.unmute : copy.mute}
+                busy={isMutating}
+                onPress={toggleNotifications}
+              />
+              <ActionButton
+                Icon={Pin}
+                label={copy.pinned}
+                onPress={() => navigation.navigate(ROUTES.CONVERSATION_PINNED, { chat })}
+              />
+              {groupInfo?.isOwner ? (
+                <ActionButton
+                  Icon={UserPlus}
+                  label={copy.addMembers}
+                  onPress={() => setSheet('add')}
+                />
+              ) : null}
             </View>
           </View>
 
-          {/* Group Name Section */}
-          <Animated.View
-            style={{ opacity: fadeAnim }}
-            className="mx-4 mt-4 rounded-2xl border border-slate-100 bg-white p-4"
-          >
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center">
-                <View
-                  className="h-9 w-9 items-center justify-center rounded-full"
-                  style={{ backgroundColor: BRAND_LIGHT }}
-                >
-                  <Edit2 size={16} color={BRAND} />
-                </View>
-                <Text className="ml-3 text-[15px] font-semibold text-slate-700">Tên nhóm</Text>
-              </View>
-              {!isEditingName ? (
-                <TouchableOpacity
-                  className="rounded-full px-3 py-1.5"
-                  style={{ backgroundColor: BRAND_LIGHT }}
-                  activeOpacity={0.7}
-                  onPress={() => setIsEditingName(true)}
-                  disabled={isUploading}
-                >
-                  <Text className="text-[13px] font-semibold text-[#0000ff]">Sửa</Text>
-                </TouchableOpacity>
-              ) : (
-                <View className="flex-row">
-                  <TouchableOpacity
-                    className="rounded-full px-3 py-1.5"
-                    activeOpacity={0.7}
-                    onPress={() => {
-                      setLocalGroupName(initialGroupName);
-                      setIsEditingName(false);
-                    }}
-                  >
-                    <Text className="text-[13px] font-medium text-slate-500">Hủy</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+          <Section title={language === 'vi' ? 'Thông tin cuộc trò chuyện' : 'Conversation info'}>
+            <MenuRow
+              Icon={FileText}
+              label={copy.sharedAssets}
+              isLast
+              onPress={() => navigation.navigate(ROUTES.CONVERSATION_MEDIA, { chat })}
+            />
+          </Section>
 
-            {isEditingName ? (
-              <View className="mt-3">
-                <TextInput
-                  className="rounded-xl border-2 px-4 py-3 text-[15px] text-slate-800"
-                  style={{ borderColor: BRAND, backgroundColor: BRAND_LIGHT }}
-                  value={localGroupName}
-                  onChangeText={setLocalGroupName}
-                  placeholder="Nhập tên nhóm mới..."
-                  placeholderTextColor="#94a3b8"
-                  maxLength={25}
-                  autoFocus
-                />
-                <View className="mt-2 flex-row items-center justify-between">
-                  <Text className="text-[11px] text-slate-400">
-                    {localGroupName.length}/25 ký tự
-                  </Text>
-                  <TouchableOpacity
-                    className="rounded-full bg-[#0000ff] px-5 py-2"
-                    activeOpacity={0.8}
-                    onPress={handleSaveName}
-                    disabled={isUploading}
-                  >
-                    <Text className="text-[13px] font-semibold text-white">Lưu</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <Text className="mt-3 text-[16px] font-semibold text-slate-800">
-                {localGroupName}
+          <Section title={copy.membersTitle}>
+            {memberRows.map(member => (
+              <MemberRow
+                key={member.id}
+                member={member}
+                canRemove={Boolean(groupInfo?.isOwner) && !member.isOwner}
+                onOpen={() => navigateToUserProfile(navigation, member.id)}
+                onRemove={() => removeMember(member)}
+              />
+            ))}
+            {memberRows.length === 0 ? (
+              <Text className="px-4 py-5 text-center text-sm text-slate-500">
+                {language === 'vi' ? 'Chưa có thành viên.' : 'No members.'}
               </Text>
+            ) : null}
+            {groupInfo?.isOwner ? (
+              <MenuRow
+                Icon={Edit3}
+                label={copy.editGroup}
+                isLast
+                onPress={openEditSheet}
+              />
+            ) : null}
+          </Section>
+
+          <Section title={language === 'vi' ? 'Hành động' : 'Actions'}>
+            <MenuRow
+              Icon={Trash2}
+              label={copy.clearMine}
+              onPress={clearGroupHistory}
+            />
+            {groupInfo?.isOwner ? (
+              <MenuRow
+                Icon={Trash2}
+                label={copy.deleteGroup}
+                destructive
+                isLast
+                onPress={deleteGroup}
+              />
+            ) : (
+              <MenuRow
+                Icon={LogOut}
+                label={copy.leave}
+                destructive
+                isLast
+                onPress={leaveGroup}
+              />
             )}
-          </Animated.View>
+          </Section>
+        </ScrollView>
+      )}
 
-          {/* Members Quick Stats + Add */}
-          <Animated.View
-            style={{ opacity: fadeAnim }}
-            className="mx-4 mt-3 rounded-2xl border border-slate-100 bg-white p-4"
+      {sheet ? (
+        <View className="absolute inset-0 bg-black/40">
+        <KeyboardAvoidingView
+          className="flex-1 justify-end"
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            className="flex-1"
+            onPress={() => setSheet(null)}
+          />
+          <View
+            className="max-h-[82%] rounded-t-3xl bg-white pt-4 dark:bg-slate-900"
+            style={{ paddingBottom: Math.max(insets.bottom, 24) }}
           >
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center">
-                <View
-                  className="h-10 w-10 items-center justify-center rounded-full"
-                  style={{ backgroundColor: BRAND_LIGHT }}
-                >
-                  <Users size={18} color={BRAND} />
-                </View>
-                <View className="ml-3">
-                  <Text className="text-[13px] text-slate-500">Thành viên</Text>
-                  <Text className="text-[18px] font-bold text-slate-800">{memberCount}</Text>
-                </View>
-              </View>
-
+            <View className="flex-row items-center justify-between px-5 pb-3">
+              <Text className="text-lg font-bold text-slate-950 dark:text-white">
+                {sheet === 'add' ? copy.addMembers : copy.editGroup}
+              </Text>
               <TouchableOpacity
-                className="flex-row items-center rounded-full px-4 py-2"
-                style={{ backgroundColor: BRAND }}
-                activeOpacity={0.8}
-                onPress={handleAddMembers}
+                className="h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"
+                onPress={() => setSheet(null)}
               >
-                <UserPlus size={16} color="#ffffff" />
-                <Text className="ml-2 text-[13px] font-semibold text-white">Thêm</Text>
+                <X size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            {/* Avatars preview */}
-            {members.length > 0 && (
-              <View className="mt-4 flex-row -space-x-2">
-                {members.slice(0, 5).map((m, idx) => (
-                  <View
-                    key={m.user_id}
-                    className="rounded-full border-2 border-white"
-                    style={{ zIndex: 5 - idx }}
-                  >
-                    {m.avatar ? (
-                      <Image
-                        source={{ uri: m.avatar }}
-                        className="h-10 w-10 rounded-full"
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View
-                        className="h-10 w-10 items-center justify-center rounded-full"
-                        style={{ backgroundColor: BRAND_LIGHT }}
+            {sheet === 'add' ? (
+              <>
+                <TextInput
+                  className="mx-5 mb-3 rounded-xl bg-slate-100 px-4 py-3 text-slate-950 dark:bg-slate-800 dark:text-white"
+                  placeholder={copy.findMembers}
+                  placeholderTextColor="#94A3B8"
+                  value={query}
+                  onChangeText={setQuery}
+                />
+                <ScrollView keyboardShouldPersistTaps="handled">
+                  {addableUsers.map(user => {
+                    const selected = selectedIds.has(user.id);
+                    return (
+                      <TouchableOpacity
+                        key={user.id}
+                        className="flex-row items-center px-5 py-2"
+                        onPress={() =>
+                          setSelectedIds(current => {
+                            const next = new Set(current);
+                            if (next.has(user.id)) next.delete(user.id);
+                            else next.add(user.id);
+                            return next;
+                          })
+                        }
                       >
-                        <Text className="text-[12px] font-bold text-[#0000ff]">
-                          {(m.first_name?.[0] || m.username?.[0] || '?').toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                ))}
-                {members.length > 5 && (
-                  <View
-                    className="h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-slate-200"
-                  >
-                    <Text className="text-[12px] font-bold text-slate-600">
-                      +{members.length - 5}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-          </Animated.View>
-
-          {/* Members List */}
-          <Animated.View
-            style={{ opacity: fadeAnim }}
-            className="mx-4 mt-3 rounded-2xl border border-slate-100 bg-white"
-          >
-            {isLoadingMembers ? (
-              <View className="items-center py-10">
-                <ActivityIndicator size="small" color={BRAND} />
-                <Text className="mt-2 text-[13px] text-slate-500">Đang tải thành viên...</Text>
-              </View>
-            ) : members.length === 0 ? (
-              <EmptyMembersState />
+                        <Image source={{ uri: user.avatar }} className="h-11 w-11 rounded-full bg-slate-200" />
+                        <View className="ml-3 flex-1">
+                          <Text className="font-semibold text-slate-900 dark:text-white">{user.name}</Text>
+                          <Text className="text-xs text-slate-500">@{user.username}</Text>
+                        </View>
+                        <View className={`h-7 w-7 items-center justify-center rounded-full ${selected ? 'bg-blue-600' : 'border border-slate-300'}`}>
+                          {selected ? <Check size={16} color="#FFFFFF" /> : null}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {addableUsers.length === 0 ? (
+                    <Text className="px-5 py-6 text-center text-sm text-slate-500">{copy.noCandidates}</Text>
+                  ) : null}
+                </ScrollView>
+                <TouchableOpacity
+                  className="mx-5 mt-3 min-h-[48px] items-center justify-center rounded-xl bg-[#0000ff] disabled:opacity-40"
+                  disabled={selectedIds.size === 0 || isMutating}
+                  onPress={addMembers}
+                >
+                  {isMutating ? <ActivityIndicator color="#FFFFFF" /> : <Text className="font-bold text-white">{copy.add(selectedIds.size)}</Text>}
+                </TouchableOpacity>
+              </>
             ) : (
-              <FlatList
-                data={members}
-                keyExtractor={(item) => String(item.user_id)}
-                renderItem={({ item, index }) => (
-                  <MemberItem item={item} index={index} isOwner={isOwner(item)} />
-                )}
-                ItemSeparatorComponent={() => (
-                  <View className="ml-16 mr-4 h-px bg-slate-100" />
-                )}
-                scrollEnabled={false}
-                showsVerticalScrollIndicator={false}
-              />
+              <View className="px-5">
+                <TouchableOpacity className="mb-4 items-center" onPress={pickAvatar}>
+                  <View className="relative h-24 w-24">
+                    <Image
+                      source={{ uri: groupAvatar?.uri || groupInfo?.avatar || chat.avatar }}
+                      className="h-24 w-24 rounded-full bg-slate-200"
+                    />
+                    <View className="absolute bottom-0 right-0 h-9 w-9 items-center justify-center rounded-full bg-[#0000ff]">
+                      <Camera size={17} color="#FFFFFF" />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+                <TextInput
+                  className="rounded-xl bg-slate-100 px-4 py-3 text-slate-950 dark:bg-slate-800 dark:text-white"
+                  placeholder={copy.groupName}
+                  placeholderTextColor="#94A3B8"
+                  value={groupName}
+                  onChangeText={setGroupName}
+                />
+                <TouchableOpacity
+                  className="mt-4 min-h-[48px] items-center justify-center rounded-xl bg-[#0000ff]"
+                  disabled={isMutating || !groupName.trim()}
+                  onPress={saveGroup}
+                >
+                  {isMutating ? <ActivityIndicator color="#FFFFFF" /> : <Text className="font-bold text-white">{copy.save}</Text>}
+                </TouchableOpacity>
+              </View>
             )}
-          </Animated.View>
-
-          {/* Leave Group Button */}
-          <Animated.View style={{ opacity: fadeAnim }} className="mx-4 mt-6">
-            <TouchableOpacity
-              className="flex-row items-center justify-center rounded-2xl border border-red-200 bg-red-50 py-3.5"
-              activeOpacity={0.8}
-              onPress={handleLeaveGroup}
-              disabled={isUploading}
-            >
-              <LogOut size={18} color="#dc2626" />
-              <Text className="ml-2 text-[14px] font-semibold text-red-600">Rời nhóm</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </Animated.ScrollView>
-      </KeyboardAvoidingView>
-
-      {/* Loading overlay */}
-      {isUploading && (
-        <View className="absolute inset-0 z-50 items-center justify-center bg-black/40">
-          <View className="rounded-2xl bg-white px-8 py-6 shadow-2xl">
-            <ActivityIndicator size="large" color={BRAND} />
-            <Text className="mt-3 text-[14px] font-medium text-slate-700">Đang xử lý...</Text>
           </View>
+        </KeyboardAvoidingView>
         </View>
-      )}
+      ) : null}
     </SafeAreaView>
   );
 }

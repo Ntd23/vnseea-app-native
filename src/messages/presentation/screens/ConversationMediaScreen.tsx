@@ -50,7 +50,6 @@ function getMessageUrl(message: MessageItem) {
 export default function ConversationMediaScreen({ navigation, route }: Props) {
   const { chat } = route.params;
   const { isDark } = useAppTheme();
-  const participantId = chat.participantId || chat.userId;
   const [activeTab, setActiveTab] =
     useState<ConversationAssetCategory>('media');
   const [items, setItems] = useState<MessageItem[]>([]);
@@ -69,7 +68,6 @@ export default function ConversationMediaScreen({ navigation, route }: Props) {
       append: boolean,
       requestVersion: number,
     ) => {
-      if (!participantId) return;
       if (append) {
         if (!cursor || isLoadingMoreRef.current) return;
         isLoadingMoreRef.current = true;
@@ -80,7 +78,7 @@ export default function ConversationMediaScreen({ navigation, route }: Props) {
       setError('');
       try {
         const page = await repository.getConversationAssets(
-          participantId,
+          chat,
           category,
           cursor,
         );
@@ -107,7 +105,7 @@ export default function ConversationMediaScreen({ navigation, route }: Props) {
         }
       }
     },
-    [participantId],
+    [chat],
   );
 
   useEffect(() => {
@@ -119,7 +117,7 @@ export default function ConversationMediaScreen({ navigation, route }: Props) {
     loadPage(activeTab, undefined, false, requestVersion).catch(
       () => undefined,
     );
-  }, [activeTab, loadPage, participantId]);
+  }, [activeTab, loadPage]);
 
   const loadMore = useCallback(() => {
     if (!nextCursor) return;
